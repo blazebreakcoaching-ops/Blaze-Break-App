@@ -1,0 +1,6 @@
+dark:hover
+dark:bg-slate-900
+dark:bg-slate-800
+dark:border-slate-900
+dark:border-slate-900
+dark:bg-slate-800

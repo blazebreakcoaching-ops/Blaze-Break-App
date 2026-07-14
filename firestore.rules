@@ -1,0 +1,287 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Phase 1B: Deny all by default
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(uid) {
+      return isSignedIn() && request.auth.uid == uid;
+    }
+
+    function hasOnly(fields) {
+      return request.resource.data.keys().hasOnly(fields);
+    }
+    
+    function hasAll(fields) {
+      return request.resource.data.keys().hasAll(fields);
+    }
+    
+    function isStringWithMax(val, maxLen) {
+      return val is string && val.size() <= maxLen;
+    }
+    
+    // Optional string check
+    function isOptionalStringWithMax(data, field, maxLen) {
+      return !(field in data) || isStringWithMax(data[field], maxLen);
+    }
+
+    function checkCreatedAtUnchanged() {
+      // On update, createdAt must not change
+      return request.resource.data.createdAt == resource.data.createdAt;
+    }
+
+    // A. users/{uid}
+    match /users/{uid} {
+      allow read: if isOwner(uid);
+      allow create: if isOwner(uid) && 
+                    request.resource.data.keys().hasOnly(['displayName', 'preferredName', 'timezone', 'country', 'locale', 'createdAt', 'updatedAt']) &&
+                    (!request.resource.data.keys().hasAny(['role', 'isAdmin', 'subscriptionLevel', 'organisationId'])) &&
+                    request.resource.data.createdAt is string;
+      allow update: if isOwner(uid) && 
+                    request.resource.data.diff(resource.data).affectedKeys().hasOnly(['displayName', 'preferredName', 'timezone', 'country', 'locale', 'updatedAt']) &&
+                    (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['role', 'isAdmin', 'subscriptionLevel', 'organisationId'])) &&
+                    request.resource.data.createdAt == resource.data.createdAt;
+      
+      // B. users/{uid}/preferences/ui
+      match /preferences/ui {
+        allow read: if isOwner(uid);
+        allow write: if isOwner(uid) && 
+            request.resource.data.keys().hasOnly(['themePreference', 'novaTone', 'greetingEnabled', 'usePreferredName', 'reducedMotion', 'localePreference']);
+      }
+      
+      // C. users/{uid}/preferences/notifications
+      match /preferences/notifications {
+        allow read: if isOwner(uid);
+        allow write: if isOwner(uid) &&
+            request.resource.data.keys().hasOnly([
+              'notificationsEnabled', 'allowedNudgeCategories', 'nudgeFrequency', 
+              'maxNudgesPerDay', 'maxNudgesPerWeek', 'quietHoursStart', 
+              'quietHoursEnd', 'timezone', 'pauseUntil', 'weekendNudgesEnabled', 
+              'preferredNudgeWindow', 'allowMemoryReviewNudges', 
+              'allowWeeklyReviewNudges', 'allowCheckInNudges', 
+              'allowRecoveryActionNudges', 'privacyMode', 'updatedAt'
+            ]);
+      }
+      
+      // D. users/{uid}/consents/current
+      match /consents/current {
+        allow read: if isOwner(uid);
+        allow write: if isOwner(uid) &&
+            request.resource.data.keys().hasOnly(['privacyNoticeVersion', 'termsVersion', 'aiPersonalisationEnabled', 'regionContextEnabled', 'preferredNameGreetingEnabled', 'anonymousOrganisationContributionEnabled', 'acceptedAt', 'updatedAt']);
+      }
+      
+      // E. users/{uid}/entitlements/status
+      match /entitlements/status {
+        allow read: if isOwner(uid);
+        allow write: if false; // Backend/Admin only
+      }
+
+      // ---- PHASE 2B COLLECTIONS ----
+      
+      // A. recovery/fingerprint
+      match /recovery/fingerprint {
+        allow read: if isOwner(uid);
+        allow delete: if isOwner(uid);
+        allow create: if isOwner(uid) 
+            && hasOnly(['archetype', 'identifiedAt', 'version', 'source', 'updatedAt'])
+            && hasAll(['archetype', 'identifiedAt', 'version', 'source'])
+            && request.resource.data.archetype in ['High-Functioning Exhausted', 'Over-Giver', 'Silent Resenter', 'Founder on Fire', 'Manager in the Middle'];
+        allow update: if isOwner(uid)
+            && hasOnly(['archetype', 'identifiedAt', 'version', 'source', 'updatedAt'])
+            && request.resource.data.archetype in ['High-Functioning Exhausted', 'Over-Giver', 'Silent Resenter', 'Founder on Fire', 'Manager in the Middle'];
+      }
+      
+      // B. checkins
+      match /checkins/{checkinId} {
+        allow read: if isOwner(uid);
+        allow delete: if isOwner(uid);
+        allow create, update: if isOwner(uid);
+      }
+      
+      // C. energy_budgets
+      match /energy_budgets/{budgetId} {
+        allow read: if isOwner(uid);
+        allow delete: if isOwner(uid);
+        allow create, update: if isOwner(uid)
+            && hasOnly(['createdAt', 'updatedAt', 'periodType', 'totalCapacity', 'allocatedCapacity', 'remainingCapacity', 'categories', 'note'])
+            && hasAll(['createdAt', 'updatedAt', 'periodType', 'totalCapacity', 'allocatedCapacity', 'remainingCapacity', 'categories'])
+            && request.resource.data.periodType in ['day', 'week']
+            && request.resource.data.totalCapacity >= 0 && request.resource.data.totalCapacity <= 100
+            && request.resource.data.allocatedCapacity >= 0 && request.resource.data.allocatedCapacity <= 100
+            && request.resource.data.remainingCapacity >= 0 && request.resource.data.remainingCapacity <= 100
+            && request.resource.data.categories is list && request.resource.data.categories.size() <= 20
+            && isOptionalStringWithMax(request.resource.data, 'note', 300)
+            && (request.method == 'create' ? true : checkCreatedAtUnchanged());
+      }
+      
+      // D. mood_pulses
+      match /mood_pulses/{entryId} {
+        allow read: if isOwner(uid);
+        allow delete: if isOwner(uid);
+        allow create, update: if isOwner(uid)
+            && hasOnly(['createdAt', 'updatedAt', 'moodLabel', 'intensity', 'note', 'source'])
+            && hasAll(['createdAt', 'updatedAt', 'moodLabel', 'intensity', 'source'])
+            && request.resource.data.moodLabel in ['calm', 'tired', 'pressured', 'frustrated', 'hopeful', 'flat', 'focused', 'overwhelmed']
+            && request.resource.data.intensity >= 1 && request.resource.data.intensity <= 10
+            && request.resource.data.source == 'user'
+            && isOptionalStringWithMax(request.resource.data, 'note', 250)
+            && (request.method == 'create' ? true : checkCreatedAtUnchanged());
+      }
+      
+      // E. body_checkins
+      match /body_checkins/{entryId} {
+        allow read: if isOwner(uid);
+        allow delete: if isOwner(uid);
+        allow create, update: if isOwner(uid)
+            && hasOnly(['createdAt', 'updatedAt', 'signals', 'note', 'source'])
+            && hasAll(['createdAt', 'updatedAt', 'signals', 'source'])
+            && request.resource.data.signals is list && request.resource.data.signals.size() <= 10
+            && request.resource.data.signals.hasOnly(['jaw_tension', 'shoulder_tension', 'shallow_breathing', 'headache', 'fatigue', 'restlessness', 'stomach_discomfort', 'calm_settled'])
+            && request.resource.data.source == 'user'
+            && isOptionalStringWithMax(request.resource.data, 'note', 250)
+            && (request.method == 'create' ? true : checkCreatedAtUnchanged());
+      }
+      
+      // F. wins
+      match /wins/{winId} {
+        allow read: if isOwner(uid);
+        allow delete: if isOwner(uid);
+        allow create, update: if isOwner(uid)
+            && hasOnly(['createdAt', 'updatedAt', 'title', 'content', 'category'])
+            && hasAll(['createdAt', 'updatedAt', 'title', 'content', 'category'])
+            && isStringWithMax(request.resource.data.title, 80)
+            && isStringWithMax(request.resource.data.content, 300)
+            && request.resource.data.category in ['boundary', 'rest', 'clarity', 'courage', 'routine', 'connection', 'recovery_action']
+            && (request.method == 'create' ? true : checkCreatedAtUnchanged());
+      }
+      
+      // G. weekly_reviews
+      match /weekly_reviews/{reviewId} {
+        allow read: if isOwner(uid);
+        allow delete: if isOwner(uid);
+        allow create, update: if isOwner(uid)
+            && hasOnly(['createdAt', 'updatedAt', 'weekStart', 'weekEnd', 'helped', 'drained', 'nextSmallStep', 'gratitude'])
+            && hasAll(['createdAt', 'updatedAt', 'weekStart', 'weekEnd', 'helped', 'drained', 'nextSmallStep'])
+            && isStringWithMax(request.resource.data.helped, 300)
+            && isStringWithMax(request.resource.data.drained, 300)
+            && isStringWithMax(request.resource.data.nextSmallStep, 200)
+            && isOptionalStringWithMax(request.resource.data, 'gratitude', 200)
+            && (request.method == 'create' ? true : checkCreatedAtUnchanged());
+      }
+      
+      // H. boundary_scripts
+      match /boundary_scripts/{scriptId} {
+        allow read: if isOwner(uid);
+        allow delete: if isOwner(uid);
+        allow create, update: if isOwner(uid)
+            && hasOnly(['createdAt', 'updatedAt', 'title', 'scenarioType', 'scriptText', 'status'])
+            && hasAll(['createdAt', 'updatedAt', 'title', 'scenarioType', 'scriptText', 'status'])
+            && isStringWithMax(request.resource.data.title, 80)
+            && isStringWithMax(request.resource.data.scriptText, 500)
+            && request.resource.data.scenarioType in ['workload', 'family', 'client', 'manager', 'friend', 'personal']
+            && request.resource.data.status in ['draft', 'saved']
+            && (request.method == 'create' ? true : checkCreatedAtUnchanged());
+      }
+      
+      // I. goals
+      match /goals/{goalId} {
+        allow read: if isOwner(uid);
+        allow delete: if isOwner(uid);
+        allow create, update: if isOwner(uid)
+            && hasOnly(['createdAt', 'updatedAt', 'title', 'description', 'status', 'targetDate', 'category'])
+            && hasAll(['createdAt', 'updatedAt', 'title', 'status', 'category'])
+            && isStringWithMax(request.resource.data.title, 100)
+            && isOptionalStringWithMax(request.resource.data, 'description', 300)
+            && request.resource.data.status in ['active', 'paused', 'completed']
+            && request.resource.data.category in ['sleep', 'boundaries', 'workload', 'nutrition_rhythm', 'movement', 'reflection', 'recovery_time']
+            && (request.method == 'create' ? true : checkCreatedAtUnchanged());
+      }
+      
+      // J. nova_permissions/current
+      match /nova_permissions/current {
+        allow read: if isOwner(uid);
+        allow delete: if isOwner(uid);
+        allow create, update: if isOwner(uid)
+            && hasOnly(['allowCheckins', 'allowEnergyBudgets', 'allowMoodPulses', 'allowBodyCheckins', 'allowWins', 'allowWeeklyReviews', 'allowBoundaryScripts', 'allowGoals', 'allowRecoveryDebt', 'allowRecoveryVelocity', 'allowEnergyTrend', 'allowMoodTrend', 'allowNovaMemory', 'allowNovaMemorySuggestions', 'allowNovaUseSavedMemories', 'allowNovaRememberCoachingPreferences', 'allowNovaRememberRecoveryPatterns', 'allowNovaRememberGoals', 'updatedAt'])
+            && hasAll(['allowCheckins', 'allowEnergyBudgets', 'allowMoodPulses', 'allowBodyCheckins', 'allowWins', 'allowWeeklyReviews', 'allowBoundaryScripts', 'allowGoals', 'allowRecoveryDebt', 'allowRecoveryVelocity', 'allowEnergyTrend', 'allowMoodTrend', 'allowNovaMemory', 'allowNovaMemorySuggestions', 'allowNovaUseSavedMemories', 'allowNovaRememberCoachingPreferences', 'allowNovaRememberRecoveryPatterns', 'allowNovaRememberGoals'])
+            && request.resource.data.allowCheckins is bool
+            && request.resource.data.allowEnergyBudgets is bool
+            && request.resource.data.allowMoodPulses is bool
+            && request.resource.data.allowBodyCheckins is bool
+            && request.resource.data.allowWins is bool
+            && request.resource.data.allowWeeklyReviews is bool
+            && request.resource.data.allowBoundaryScripts is bool
+            && request.resource.data.allowGoals is bool
+            && request.resource.data.allowRecoveryDebt is bool
+            && request.resource.data.allowRecoveryVelocity is bool
+            && request.resource.data.allowEnergyTrend is bool
+            && request.resource.data.allowMoodTrend is bool
+            && request.resource.data.allowNovaMemory is bool
+            && request.resource.data.allowNovaMemorySuggestions is bool
+            && request.resource.data.allowNovaUseSavedMemories is bool
+            && request.resource.data.allowNovaRememberCoachingPreferences is bool
+            && request.resource.data.allowNovaRememberRecoveryPatterns is bool
+            && request.resource.data.allowNovaRememberGoals is bool;
+      }
+
+      // K. derived summaries
+      match /derived/{summaryId} {
+        allow read: if isOwner(uid);
+        allow write: if false; // Derived summaries are server-only written
+      }
+
+      // L. nova_memories
+      match /nova_memories/{memoryId} {
+        allow read, write: if isOwner(uid);
+      }
+
+      // M. nudge_history
+      match /nudge_history/{nudgeId} {
+        allow read: if isOwner(uid);
+        allow create, update: if isOwner(uid) &&
+            hasOnly(['category', 'message', 'createdAt', 'shownAt', 'dismissedAt', 'actionTakenAt', 'status', 'reasonCategory', 'source', 'expiresAt', 'updatedAt']) &&
+            request.resource.data.category in ['check_in_reminder', 'recovery_action_reminder', 'energy_budget_reflection', 'boundary_practice_reminder', 'weekly_review_reminder', 'memory_review_reminder', 'goal_follow_up'] &&
+            request.resource.data.source == 'in_app_nova' &&
+            request.resource.data.status in ['shown', 'dismissed', 'acted_on'];
+      }
+
+
+    }
+    
+    // F. public_feature_flags/{featureId}
+    match /public_feature_flags/{featureId} {
+      allow read: if isSignedIn();
+      allow write: if false;
+    }
+
+    // GAD-informed anxiety reset events collection
+    match /anxiety_reset_events/{eventId} {
+      allow read, delete: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
+      allow update: if isSignedIn() && request.resource.data.userId == request.auth.uid && resource.data.userId == request.auth.uid;
+    }
+
+    // Admin-specific collections
+    match /admin_users/{uid} {
+      allow read: if isSignedIn() && (request.auth.uid == uid || request.auth.token.admin == true);
+      allow write: if false; // Server-only mutations
+    }
+
+    match /admin_audit_logs/{logId} {
+      allow read: if isSignedIn() && request.auth.token.admin == true;
+      allow write: if false; // Server-only
+    }
+
+    match /app_config/{configId} {
+      allow read: if isSignedIn() && request.auth.token.admin == true;
+      allow write: if false; // Server-only
+    }
+  }
+}

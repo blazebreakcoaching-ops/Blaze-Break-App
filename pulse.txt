@@ -1,0 +1,109 @@
+src/components/OmniNova.tsx:283:                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+src/components/OmniNova.tsx:291:                  className={cn("p-2 rounded-lg transition-colors border", isVoiceActive ? "bg-destructive/20 border-destructive text-destructive animate-pulse" : "border-transparent text-text-muted hover:bg-surface")}
+src/components/RecoveryAlly.tsx:3:import { HeartPulse, CheckSquare, Target, Mail, Send, Award, Trash2, CheckCircle2, AlertTriangle, ShieldCheck, Activity, Brain, Clock, Plus, ArrowRight, Zap } from 'lucide-react';
+src/components/RecoveryAlly.tsx:62:          <HeartPulse className="w-64 h-64 text-text-muted" />
+src/components/RecoveryAlly.tsx:68:              <HeartPulse className="w-6 h-6" />
+src/components/SituationalOnboarding.tsx:9:  HeartPulse,
+src/components/SituationalOnboarding.tsx:72:      icon: HeartPulse,
+src/components/SituationalOnboarding.tsx:77:        { label: "Constant Digital Interruptions", icon: HeartPulse },
+src/components/PrivacyVault.tsx:52:          { id: '2', userId: 'system', action: "Mood Pulse data aggregated for Team Climate Dashboard", timestamp: new Date(Date.now() - 172800000).toISOString(), status: "anonymised" },
+src/components/DailyCheckIn.tsx:59:            <h3 className="font-bold text-text-main">Daily Pulse</h3>
+src/components/DailyCheckIn.tsx:194:            {step < 2 ? "Next Step" : "Record Pulse"}
+src/components/NovaGuardianRelay.tsx:20:  HeartPulse,
+src/components/NovaGuardianRelay.tsx:203:                  ? "bg-destructive text-destructive-foreground animate-pulse shadow-[0_0_20px_rgba(225,29,72,0.6)]" 
+src/components/NovaGuardianRelay.tsx:391:              <div className="w-2 h-2 rounded-full bg-primary animate-pulse shadow-[0_0_10px_rgba(99,102,241,0.8)]" />
+src/components/NovaGuardianRelay.tsx:410:                     <HeartPulse className="w-6 h-6 relative z-10" />
+src/components/NervousSystemReset.tsx:791:              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+src/components/SomaticResetOverlay.tsx:3:import { Wind, X, HeartPulse } from 'lucide-react';
+src/components/SomaticResetOverlay.tsx:62:            <HeartPulse className="w-6 h-6 animate-pulse" />
+src/components/WorkloadRealityCheck.tsx:456:                  <ShieldAlert className="w-5 h-5 animate-pulse" />
+src/components/WorkloadRealityCheck.tsx:834:                  <AlertTriangle className="w-6 h-6 animate-pulse" />
+src/components/ShipJourney.tsx:76:                    layoutId="pulse"
+src/components/RelapseRadar.tsx:21:          <AlertCircle className="w-6 h-6 text-destructive animate-pulse" />
+src/components/NovaChat.tsx:705:      t.includes("pulse") ||
+src/components/NovaChat.tsx:710:        name: "Organization Pulse",
+src/components/NovaChat.tsx:883:              <div className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
+src/components/NovaChat.tsx:1256:                              className="text-[11px] text-emerald-500 font-extrabold uppercase tracking-widest flex items-center gap-1 animate-pulse"
+src/components/NovaChat.tsx:1278:                            <Target className="w-5 h-5 animate-pulse" />
+src/components/NovaChat.tsx:1358:                    <span className="text-xs font-black uppercase tracking-[0.25em] text-primary animate-pulse">
+src/components/NovaChat.tsx:1440:                    ? "border-destructive ring-4 ring-rose-500/15 bg-destructive/[0.04] text-text-main animate-pulse"
+src/components/NovaChat.tsx:1452:                    ? "bg-rose-550 text-destructive-foreground shadow-lg shadow-rose-500/30 animate-pulse bg-destructive scale-110"
+src/components/OrgDashboard.tsx:35:  HeartPulse
+src/components/OrgDashboard.tsx:72:  const [activeSubTab, setActiveSubTab] = useState<'climate' | 'pulse' | 'value' | 'moments'>('pulse');
+src/components/OrgDashboard.tsx:103:           { id: 'pulse', label: 'Resilience Pulse', icon: HeartPulse },
+src/components/OrgDashboard.tsx:129:        {activeSubTab === 'pulse' && (
+src/components/OrgDashboard.tsx:130:          <motion.div key="pulse" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95 }} className="space-y-12 pb-24">
+src/components/OrgDashboard.tsx:133:                <HeartPulse className="w-64 h-64 text-text-main" />
+src/components/OrgDashboard.tsx:137:                  <div className="tag bg-white/10 text-text-main border-white/20">Organizational Resilience Pulse</div>
+src/components/SleepBuilder.tsx:256:               <Moon className="w-5 h-5 group-hover:animate-pulse" /> Begin Official Wind-Down
+src/components/NotificationSettingsView.tsx:149:          message = 'Please provide a valid phone number (e.g. +44 7700 900077) to map escalation pulses.';
+src/components/NotificationSettingsView.tsx:587:                <Send className="w-3 h-3" /> {testLineLoading ? "Broadcasting signal..." : "Dispatch Secure SMS Test Pulse via Twilio"}
+src/components/RuminationFurnace.tsx:126:                    <Flame className="w-20 h-20 text-text-main animate-pulse" />
+src/components/NovaOverloadShield.tsx:361:                   {simulating ? <Zap className="w-8 h-8 animate-pulse" /> : <activeState.icon className="w-8 h-8" />}
+src/components/SmartCard.tsx:121:                energyDrain === 'high' ? 'bg-destructive animate-pulse' : 
+src/components/SmartCard.tsx:197:              <div className={cn("w-2 h-2 rounded-full", isMicroRecovery ? "bg-amber-400 animate-pulse" : "bg-surface")} /> 
+src/components/BoundaryRehearsal.tsx:558:                     <span className="w-2 h-2 rounded-full bg-destructive animate-pulse" />
+src/components/DataPrivacyDashboard.tsx:37:      flagId: 'enable_mood_pulse' as FeatureFlag
+src/components/OmniBrainMap.tsx:6:  Search, ArrowRight, Heart, HeartPulse, GitCommit, Compass
+src/components/OmniBrainMap.tsx:33:  { id: 'home', label: 'Pulse', icon: Home, x: 50, y: 15, group: 'insight', description: 'Real-time autonomic nervous system indicator & delta tracking' },
+src/components/OmniBrainMap.tsx:53:  { id: 'org', label: 'Resilience', icon: Users, x: 90, y: 70, group: 'system', description: 'Anonymized workforce collective pulse monitoring metrics' },
+src/components/OmniBrainMap.tsx:329:              <HeartPulse className="w-5 h-5 animate-pulse" />
+src/components/OmniBrainMap.tsx:580:                      className="animate-pulse"
+src/components/OmniBrainMap.tsx:666:                    <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-indigo-400 animate-pulse" />
+src/components/TrustCentrePage.tsx:61:              <p className="text-sm text-text-muted leading-relaxed font-light">Visible only to the user and Nova where permitted. Contains conversations, Mood Pulses, journals, recovery scores, and personal reflections. Never exposed upward.</p>
+src/components/RecommendationLedger.tsx:38:    sourcesUsed: ['mood_pulse'],
+src/components/AssuranceCentre.tsx:144:                  Minimum N=10 rule applied to all employer dashboards before any grouped wellbeing trends or survey data is visible. Individual indicators (Recovery Velocity, Mood Pulse) are suppressed.
+src/components/AssuranceCentre.tsx:160:                        <td className="py-2">Mood Pulse</td>
+src/components/EnergyBudget.tsx:203:                  <div className="w-2.5 h-2.5 rounded-full bg-destructive animate-pulse" />
+src/components/EnergyBudget.tsx:408:                            <span className="text-[10px] px-3 py-1 rounded-full font-black uppercase tracking-[0.2em] bg-emerald-600 text-white border border-emerald-500 shadow-sm animate-pulse">
+src/components/DebtTracker.tsx:55:                   <div className="w-1.5 h-1.5 rounded-full bg-destructive animate-pulse" />
+src/components/DataZoneVisualizer.tsx:7:    { name: "Mood Pulse Journal", zone: "private", icon: Lock, desc: "Personal logs" },
+src/components/RecoveryIntelligenceLayer.tsx:50:interface MoodPulseData {
+src/components/RecoveryIntelligenceLayer.tsx:76:  const [moodLogs, setMoodLogs] = useState<MoodPulseData[]>([]);
+src/components/RecoveryIntelligenceLayer.tsx:274:  const saveMoods = (newLogs: MoodPulseData[]) => {
+src/components/RecoveryIntelligenceLayer.tsx:286:  // 1. Mood Pulse Temp States
+src/components/RecoveryIntelligenceLayer.tsx:291:  const submitMoodPulse = () => {
+src/components/RecoveryIntelligenceLayer.tsx:292:    const newLog: MoodPulseData = {
+src/components/RecoveryIntelligenceLayer.tsx:304:      'Mood Pulse Room',
+src/components/RecoveryIntelligenceLayer.tsx:307:        content: `User logged mood pulse: ${newLog.emoji} (${newLog.word}). Physiological alignment color: ${newLog.color}.`,
+src/components/RecoveryIntelligenceLayer.tsx:313:    onAwardPoints(10, 'Mood Pulse Telemetry Synchronized');
+src/components/RecoveryIntelligenceLayer.tsx:595:                <Sparkles className="w-3.5 h-3.5 text-primary animate-pulse" /> Feeds Personal Context Brain
+src/components/RecoveryIntelligenceLayer.tsx:627:            { id: 'mood', name: 'Mood Pulse', desc: '3-second quick mood logs', pill: 'Daily' },
+src/components/RecoveryIntelligenceLayer.tsx:776:            {/* 2. Mood Pulse */}
+src/components/RecoveryIntelligenceLayer.tsx:787:                  <h3 className="text-2xl font-display font-black text-text-main mt-1">Mood Pulse Room</h3>
+src/components/RecoveryIntelligenceLayer.tsx:833:                    onClick={submitMoodPulse}
+src/components/RecoveryIntelligenceLayer.tsx:836:                    Sync Mood Pulse (+10 pts)
+src/components/RecoveryIntelligenceLayer.tsx:918:                            ? "bg-destructive/10 text-destructive border-destructive/30 shadow-[0_0_15px_rgba(244,63,94,0.3)] animate-pulse" 
+src/components/RecoveryIntelligenceLayer.tsx:1212:                                <span className="text-primary font-bold animate-pulse">
+src/components/RecoveryIntelligenceLayer.tsx:1480:                    isFocusShieldActive ? "bg-emerald-600 animate-pulse text-white shadow-emerald-500/20" : "bg-border dark:bg-card text-text-muted"
+src/components/FutureSelfSimulator.tsx:201:            <h3 className="text-xl font-display font-bold animate-pulse text-text-main">Running Future-Self Prognostics...</h3>
+src/components/RecoveryFuelEngine.tsx:846:                            <Droplet className="w-3.5 h-3.5 text-sky-500 animate-pulse" /> Hydration Reminders
+src/components/RecoveryFuelEngine.tsx:998:                        insight.type === 'critical' ? 'bg-destructive animate-pulse' :
+src/components/RecoveryFuelEngine.tsx:1114:                  <Activity className="w-5 h-5 animate-pulse" />
+src/components/NovaFeedbackModal.tsx:116:                    <h3 className="text-lg font-bold text-text-main">Nova Coach Pulse</h3>
+src/components/NovaFeedbackModal.tsx:154:                  {isSubmitting ? "Calibrating..." : "Submit Pulse"}
+src/components/CalendarDefenseView.tsx:57:              <><Zap className="w-4 h-4 animate-pulse" /> Scanning Workspace...</>
+src/lib/sync.tsx:118:     return <div className="animate-pulse w-8 h-8 rounded-full bg-border dark:bg-surface" />;
+src/lib/feature-flags.ts:16:  | 'enable_mood_pulse'
+src/lib/feature-flags.ts:57:  enable_mood_pulse: true,
+src/lib/feature-registry.ts:141:  mood_pulse: {
+src/lib/feature-registry.ts:142:    id: 'mood_pulse',
+src/lib/feature-registry.ts:143:    name: 'Mood Pulse',
+src/lib/feature-registry.ts:152:    featureFlagName: 'enable_mood_pulse'
+src/lib/feature-registry.ts:254:    allowedConnections: ['recovery_debt_tracker', 'energy_budget', 'mood_pulse'],
+src/index.css:237:.pulse-indicator {
+src/App.tsx:56:  HeartPulse,
+src/App.tsx:343:      label: "Pulse",
+src/App.tsx:408:      icon: HeartPulse,
+src/App.tsx:693:          <div className="h-2 w-2 bg-accent rounded-full pulse-indicator" />
+src/App.tsx:707:          {activeTab === "org" && "Collective Stability Pulse"}
+src/App.tsx:757:          <span className="text-[10px] uppercase tracking-widest text-destructive font-bold animate-pulse">High Stress Flag</span>
+src/App.tsx:764:                  ? "bg-amber-500 text-text-main border-amber-500 shadow-[0_0_15px_rgba(245,158,11,0.5)] animate-pulse" 
+src/App.tsx:779:              <HeartPulse className="w-4 h-4 animate-pulse" />
+src/App.tsx:1033:                  Pulse Synced
+src/App.tsx:1083:              ? "Your nervous system requires consistent tracking. Complete your daily pulses to unlock predictive recovery forecasting."
+src/App.tsx:1109:              <Trophy className="w-5 h-5 text-amber-400" /> Claim Pulse
+src/App.tsx:1340:  // Daily Pulse State
+src/App.tsx:1661:      setShowRewardNotification({ points: 100, reason: "Daily Pulse Reward" });
+src/App.tsx:1706:    home: "Daily Pulse",
+src/App.tsx:2329:                label: "Pulse",

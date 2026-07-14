@@ -1,0 +1,10 @@
+{
+  "name": "Blaze Break",
+  "description": "Burnout recovery for high achievers with AI coach Nova.",
+  "requestFramePermissions": [
+    "microphone"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

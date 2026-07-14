@@ -1,0 +1,125 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "User Profile",
+      "description": "User profiles containing role and basic recovery data.",
+      "type": "object",
+      "properties": {
+        "userId": {"type": "string"},
+        "authRole": {
+          "type": "string",
+          "enum": ["individual", "employee", "recovery_ally", "manager", "organisation_admin", "executive", "platform_admin", "security_admin"]
+        },
+        "authScope": {
+          "type": "object",
+          "properties": {
+            "organisation_id": {"type": "string"},
+            "team_ids": {"type": "array", "items": {"type": "string"}},
+            "account_type": {"type": "string", "enum": ["personal", "organisation_sponsored", "executive"]}
+          }
+        },
+        "stats": {"type": "object"},
+        "fingerprint": {"type": "object"},
+        "createdAt": {"type": "timestamp"},
+        "updatedAt": {"type": "timestamp"}
+      },
+      "required": ["userId", "authRole", "createdAt"]
+    },
+    "PrivateRecoveryEntry": {
+      "title": "Private Recovery Entry",
+      "description": "Private mood, trigger, or nova memory entry.",
+      "type": "object",
+      "properties": {
+        "userId": {"type": "string"},
+        "type": {"type": "string"},
+        "data": {"type": "object"},
+        "createdAt": {"type": "timestamp"}
+      },
+      "required": ["userId", "createdAt"]
+    },
+    "AllyRelationship": {
+      "title": "Ally Relationship",
+      "description": "A shared trusted connection.",
+      "type": "object",
+      "properties": {
+        "ownerId": {"type": "string"},
+        "allyId": {"type": "string"},
+        "status": {"type": "string", "enum": ["pending", "accepted", "revoked"]},
+        "createdAt": {"type": "timestamp"}
+      },
+      "required": ["ownerId", "allyId", "status"]
+    },
+    "SharedRecoveryItem": {
+      "title": "Shared Recovery Item",
+      "description": "Goals or wins explicitly shared with an ally.",
+      "type": "object",
+      "properties": {
+        "ownerId": {"type": "string"},
+        "type": {"type": "string"},
+        "content": {"type": "string"},
+        "createdAt": {"type": "timestamp"}
+      },
+      "required": ["ownerId", "type"]
+    },
+    "Organisation": {
+      "title": "Organisation",
+      "description": "Organisation settings.",
+      "type": "object",
+      "properties": {
+        "name": {"type": "string"},
+        "settings": {"type": "object"}
+      }
+    },
+    "TeamInsight": {
+      "title": "Team Insight Aggregate",
+      "description": "Anonymous aggregated insights for a team.",
+      "type": "object",
+      "properties": {
+        "teamId": {"type": "string"},
+        "organisationId": {"type": "string"},
+        "workloadTrend": {"type": "number"},
+        "reportingGroupSize": {"type": "number"}
+      },
+      "required": ["teamId", "organisationId"]
+    },
+    "AuditLog": {
+      "title": "Security Log",
+      "type": "object",
+      "properties": {
+        "action": {"type": "string"},
+        "performedBy": {"type": "string"},
+        "timestamp": {"type": "timestamp"}
+      }
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": {"$ref": "#/entities/UserProfile"},
+      "description": "User profile with roles. Editable by self, managed by admin."
+    },
+    "/users/{userId}/private_entries/{entryId}": {
+      "schema": {"$ref": "#/entities/PrivateRecoveryEntry"},
+      "description": "Private Vault Data."
+    },
+    "/ally_relationships/{relationshipId}": {
+      "schema": {"$ref": "#/entities/AllyRelationship"},
+      "description": "Ally connections."
+    },
+    "/shared_recovery_goals/{shareId}": {
+      "schema": {"$ref": "#/entities/SharedRecoveryItem"},
+      "description": "Explicitly shared wins/goals."
+    },
+    "/organisations/{organisationId}": {
+      "schema": {"$ref": "#/entities/Organisation"},
+      "description": "Organisation data."
+    },
+    "/team_insights/{teamId}": {
+      "schema": {"$ref": "#/entities/TeamInsight"},
+      "description": "Anonymous Team Insights."
+    },
+    "/audit_logs/{logId}": {
+      "schema": {"$ref": "#/entities/AuditLog"},
+      "description": "Restricted Governance Data."
+    }
+  }
+}

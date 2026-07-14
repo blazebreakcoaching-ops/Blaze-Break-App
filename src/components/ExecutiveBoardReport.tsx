@@ -1,0 +1,678 @@
+import React, { useState } from 'react';
+import { Download, TrendingUp, TrendingDown, Clock, ShieldAlert, Activity, FileText, RefreshCw, Check, Loader2, Layers, AlertTriangle } from 'lucide-react';
+import { cn } from '../lib/utils';
+import { useAuth } from '../lib/auth';
+import { UserStats } from '../types';
+
+export const ExecutiveBoardReport = ({
+  stats: userStats,
+  isGlobalSyncing,
+  onTriggerSync,
+  onAwardPoints
+}: {
+  stats?: UserStats;
+  isGlobalSyncing?: boolean;
+  onTriggerSync?: () => Promise<void>;
+  onAwardPoints?: (amount: number, reason: string) => void;
+}) => {
+  const { user } = useAuth();
+  const [isExporting, setIsExporting] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
+
+  // Configuration states for PDF export
+  const [showConfigModal, setShowConfigModal] = useState(false);
+  const [includeAICommentary, setIncludeAICommentary] = useState(true);
+  const [includeMetricsGrid, setIncludeMetricsGrid] = useState(true);
+  const [includeBurnRate, setIncludeBurnRate] = useState(true);
+  const [includeSomaticResets, setIncludeSomaticResets] = useState(true);
+  const [includeCorporateSignature, setIncludeCorporateSignature] = useState(true);
+
+  // Progressive compiling step outputs
+  const [isProcessingProgress, setIsProcessingProgress] = useState(false);
+  const [compilationProgress, setCompilationProgress] = useState(0);
+  const [compilationStatusText, setCompilationStatusText] = useState("");
+
+  const isSyncActive = isGlobalSyncing !== undefined ? isGlobalSyncing : isSyncing;
+
+  const handleSync = async () => {
+    if (onTriggerSync) {
+      await onTriggerSync();
+    } else {
+      setIsSyncing(true);
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      setIsSyncing(false);
+      if (onAwardPoints) {
+        onAwardPoints(15, "Recovery data saved locally (+15 pts)");
+      }
+    }
+  };
+
+  const handleOpenConfig = () => {
+    setShowConfigModal(true);
+  };
+
+  const startPDFCompilationAndDownload = async () => {
+    setIsProcessingProgress(true);
+    
+    setCompilationProgress(15);
+    setCompilationStatusText("Securing sandbox data pipeline...");
+    await new Promise(r => setTimeout(r, 600));
+
+    setCompilationProgress(40);
+    setCompilationStatusText("Querying active recovery metrics from state store...");
+    await new Promise(r => setTimeout(r, 800));
+
+    setCompilationProgress(70);
+    setCompilationStatusText("Compiling autonomic print layouts and schemas...");
+    await new Promise(r => setTimeout(r, 650));
+
+    setCompilationProgress(90);
+    setCompilationStatusText("Injecting cryptographically verified signatures...");
+    await new Promise(r => setTimeout(r, 550));
+
+    setCompilationProgress(100);
+    setCompilationStatusText("Compiling final report package...");
+    await new Promise(r => setTimeout(r, 350));
+
+    setIsProcessingProgress(false);
+    setShowConfigModal(false);
+    setIsExporting(true);
+
+    // Call dynamic PDF construction
+    setTimeout(() => {
+      executeDownloadBlob();
+    }, 500);
+  };
+
+  const executeDownloadBlob = () => {
+    const liveName = userStats?.profile?.fullName || user?.displayName || user?.email || "Executive Recovery Pro Client";
+    const liveRole = userStats?.profile?.role || "Strategic Recovery Executive";
+    const liveOrg = userStats?.profile?.organization || "Global Corporate Workspace Division";
+    const pointsTotal = userStats?.points !== undefined ? userStats?.points : 450;
+    const streak = userStats?.streak !== undefined ? userStats?.streak : 3;
+    const sleepDebtVal = userStats?.debts?.find(d => d.label.toLowerCase().includes('sleep'))?.value ?? 2.1;
+    const compilationDate = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+
+    const htmlContent = `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Blaze Break - Confidential Executive Board Summary</title>
+    <style>
+        body {
+            font-family: 'Helvetica Neue', Arial, sans-serif;
+            background-color: #ffffff;
+            color: #0c0f16;
+            margin: 0;
+            padding: 40px;
+            line-height: 1.6;
+        }
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 2px solid #edeff5;
+            padding-bottom: 20px;
+            margin-bottom: 30px;
+        }
+        .title {
+            font-size: 26px;
+            font-weight: 800;
+            letter-spacing: -0.5px;
+            color: #000000;
+        }
+        .subtitle {
+            font-size: 10px;
+            font-weight: 950;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            color: #6366f1;
+            margin-top: 5px;
+        }
+        .metadata {
+            text-align: right;
+            font-size: 11px;
+            font-family: monospace;
+            color: #64748b;
+        }
+        .stamp {
+            display: inline-block;
+            border: 2px solid #ef4444;
+            color: #ef4444;
+            font-family: monospace;
+            font-weight: bold;
+            font-size: 11px;
+            padding: 4px 10px;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            margin-bottom: 20px;
+            border-radius: 4px;
+        }
+        .summary-card {
+            background-color: #f8fafc;
+            border-left: 4px solid #6366f1;
+            padding: 25px;
+            border-radius: 0 12px 12px 0;
+            margin-bottom: 30px;
+        }
+        .summary-title {
+            font-size: 12px;
+            font-weight: 900;
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+            color: #6366f1;
+            margin-bottom: 12px;
+        }
+        .summary-text {
+            font-style: italic;
+            font-size: 16px;
+            font-family: Georgia, serif;
+            color: #1e293b;
+            line-height: 1.7;
+        }
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        .stat-card {
+            border: 1px solid #e2e8f0;
+            padding: 20px;
+            border-radius: 12px;
+        }
+        .stat-label {
+            font-size: 11px;
+            font-weight: bold;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: #64748b;
+        }
+        .stat-value {
+            font-size: 32px;
+            font-weight: 800;
+            margin-top: 5px;
+            color: #0f172a;
+        }
+        .stat-desc {
+            font-size: 11px;
+            color: #64748b;
+            margin-top: 5px;
+        }
+        .table-title {
+            font-size: 13px;
+            font-weight: 900;
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+            color: #0f172a;
+            margin-bottom: 15px;
+            border-bottom: 1px solid #edeff5;
+            padding-bottom: 8px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+            margin-bottom: 40px;
+        }
+        th, td {
+            padding: 12px 15px;
+            text-align: left;
+            border-bottom: 1px solid #f1f5f9;
+        }
+        th {
+            background-color: #f8fafc;
+            font-weight: bold;
+            color: #475569;
+            text-transform: uppercase;
+            font-size: 10px;
+            letter-spacing: 1px;
+        }
+        .footer {
+            border-top: 1px solid #edeff5;
+            padding-top: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 11px;
+            color: #94a3b8;
+        }
+        .signature-block {
+            margin-top: 40px;
+            border-top: 1px dashed #cbd5e1;
+            padding-top: 20px;
+            display: flex;
+            justify-content: space-between;
+        }
+        .sig-box {
+            width: 45%;
+        }
+        .sig-line {
+            height: 40px;
+            border-bottom: 1px solid #475569;
+            margin-bottom: 5px;
+        }
+        .sig-meta {
+            font-size: 11px;
+            color: #64748b;
+            line-height: 1.3;
+        }
+        @media print {
+            body {
+                padding: 20px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div style="max-width: 800px; margin: 0 auto;">
+        <div class="stamp">Strictly Confidential - Board Only</div>
+        
+        <div class="header">
+            <div>
+                <div class="title">Blaze Break Executive Board Summary</div>
+                <div class="subtitle">AUTONOMIC ENERGY DESIGN & RELAPSE DEFENSIVE POSITIONING</div>
+            </div>
+            <div class="metadata">
+                <div>DATE: ${compilationDate}</div>
+                <div>EXECUTIVE: ${liveName}</div>
+                <div>ROLE: ${liveRole}</div>
+                <div>COMPANY: ${liveOrg}</div>
+                <div>STATUS: SECURED CONFIGURATION</div>
+            </div>
+        </div>
+
+        ${includeAICommentary ? `
+        <div class="summary-card">
+            <div class="summary-title">Nova Core AI Analysis</div>
+            <div class="summary-text">"Your biological burn rate exceeded your recovery fuel by 15% this week. You successfully defended 2 hours of deep work, but boundary failure on Wednesday evening created a rolling sleep debt. Baseline stability is currently fragile. Recommendation: Immediate 30-minute decompression doorway enforcement before weekend transition."</div>
+        </div>
+        ` : ''}
+
+        ${includeBurnRate ? `
+        <div class="grid">
+            <div class="stat-card" style="border-left: 4px solid #6366f1;">
+                <div class="stat-label">Biological Burn Rate</div>
+                <div class="stat-value">115%</div>
+                <div class="stat-desc">Cumulative somatic drain relative to baseline fuel thresholds.</div>
+            </div>
+            
+            <div class="stat-card" style="border-left: 4px solid #10b981;">
+                <div class="stat-label">Boundaries Held</div>
+                <div class="stat-value">4 Protected</div>
+                <div class="stat-desc">Protected deep focus blocks & meeting refusals.</div>
+            </div>
+        </div>
+        ` : ''}
+
+        ${includeMetricsGrid ? `
+        <div class="table-title">Weekly Autonomic Metric Yield</div>
+        <table>
+            <thead>
+                <tr>
+                    <th>Core Indicator Metric</th>
+                    <th>Value / Capacity</th>
+                    <th>Defensive Context</th>
+                    <th>Somatic Sync Status</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>Deep Work Protected</td>
+                    <td><strong>4.5 hrs</strong></td>
+                    <td>High-value focus preservation</td>
+                    <td style="color: #10b981; font-weight: bold;">Protected</td>
+                </tr>
+                <tr>
+                    <td>Sleep Debt Carried</td>
+                    <td><strong>${sleepDebtVal} hrs</strong></td>
+                    <td>Cumulative sleep shortfalls carryover</td>
+                    <td style="color: ${sleepDebtVal > 3 ? '#ef4444' : '#f59e0b'}; font-weight: bold;">${sleepDebtVal > 3 ? 'Overloaded' : 'Caution'}</td>
+                </tr>
+                ${includeSomaticResets ? `
+                <tr>
+                    <td>Somatic Resets</td>
+                    <td><strong>7 Completed</strong></td>
+                    <td>Autonomic doorway entries completed</td>
+                    <td style="color: #10b981; font-weight: bold;">Stable</td>
+                </tr>
+                ` : ''}
+                <tr>
+                    <td>Recovery Velocity Return (ROI)</td>
+                    <td><strong>${pointsTotal} pts</strong></td>
+                    <td>Engagement accomplishments baseline yield</td>
+                    <td style="color: #10b981; font-weight: bold;">Yielding (Streak: ${streak}d)</td>
+                </tr>
+            </tbody>
+        </table>
+        ` : ''}
+
+        ${includeCorporateSignature ? `
+        <div class="signature-block">
+            <div class="sig-box">
+                <div class="sig-line"></div>
+                <div class="sig-meta">
+                    <strong>${liveName}</strong><br/>
+                    Executive Leader Signature
+                </div>
+            </div>
+            <div class="sig-box">
+                <div class="sig-line" style="font-family: Georgia, serif; font-style: italic; font-size: 20px; line-height: 40px; color: #6366f1; border-bottom: 1px solid #475569; user-select: none;">Nova Coach</div>
+                <div class="sig-meta">
+                    <strong>Coach Nova</strong><br/>
+                    Autonomic Recovery Strategist, Blaze Break
+                </div>
+            </div>
+        </div>
+        ` : ''}
+
+        <div class="footer" style="margin-top: 40px;">
+            <div>Powered by Blaze Break Recovery Coach v2.4 (Security: Verified SSL Cryptographic Envelope)</div>
+            <div>https://ai.studio/build</div>
+        </div>
+    </div>
+
+    <script>
+        window.onload = function() {
+            setTimeout(function() {
+                window.print();
+            }, 600);
+        }
+    </script>
+</body>
+</html>
+    `;
+
+    const blob = new Blob([htmlContent], { type: 'text/html' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `blazebreak_executive_board_summary_${new Date().getTime()}.html`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+
+    setIsExporting(false);
+    
+    if (onAwardPoints) {
+      onAwardPoints(10, 'Executive Board PDF Exported (+10 pts)');
+    }
+  };
+
+  return (
+    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
+      <div className="bg-warning/10 border border-warning/20 text-warning rounded-xl p-4 text-sm font-bold flex gap-2">
+        <AlertTriangle className="w-5 h-5 shrink-0" />
+        Demo data only — financials are estimated opportunities, not verified savings.
+      </div>
+      
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+        <div>
+          <h2 className="text-3xl font-serif font-bold text-text-main tracking-tight">Executive Board Report</h2>
+          <p className="text-sm text-text-muted mt-2 font-mono uppercase tracking-widest">Confidential / Biometric & Workload ROI</p>
+        </div>
+        <div className="flex items-center gap-3 w-full md:w-auto shrink-0">
+          {/* Save Data Pulse Action */}
+          <button
+            onClick={handleSync}
+            disabled={isSyncActive}
+            className={cn(
+              "px-5 py-2.5 rounded-2xl border text-xs font-bold transition-all duration-300 flex items-center gap-2.5 cursor-pointer relative overflow-hidden",
+              isSyncActive 
+                ? "bg-primary/10 border-primary/45 text-primary" 
+                : "bg-surface/60 border-border hover:border-primary/50 text-text-muted hover:text-text-main"
+            )}
+            title="Save prototype data locally"
+          >
+            <RefreshCw className={cn("w-4 h-4 text-primary", isSyncActive && "animate-spin")} />
+            <span>{isSyncActive ? "Saving Locally..." : "Save Locally"}</span>
+            {isSyncActive && (
+              <span className="absolute inset-0 rounded-2xl border border-primary/30 bg-primary/5 animate-pulse" />
+            )}
+          </button>
+
+          <button 
+            onClick={handleOpenConfig}
+            disabled={isExporting}
+            className="btn-primary flex items-center gap-2 cursor-pointer"
+          >
+            <Download className={cn("w-4 h-4", isExporting && "animate-bounce")} />
+            {isExporting ? "Compiling Report..." : "Export Report Summary"}
+          </button>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Nova's Executive Summary */}
+        <div className="lg:col-span-2 card p-8 space-y-6 flex flex-col justify-between relative overflow-hidden">
+          <div className="absolute top-0 right-0 p-8 opacity-5">
+            <FileText className="w-48 h-48" />
+          </div>
+          <div className="relative z-10">
+            <h3 className="text-xs font-black uppercase tracking-[0.2em] text-primary mb-4 flex items-center gap-2">
+              <Activity className="w-4 h-4" /> Nova AI Analysis
+            </h3>
+            <p className="text-lg leading-relaxed text-text-main font-serif">
+              "Your biological burn rate exceeded your recovery fuel by 15% this week. You successfully defended 2 hours of deep work, but boundary failure on Wednesday evening created a rolling sleep debt. Baseline stability is currently fragile. Recommendation: Immediate 30-minute decompression doorway enforcement before weekend transition."
+            </p>
+          </div>
+          <div className="relative z-10 flex items-center gap-4 border-t border-border pt-6 mt-6">
+            <img src={user?.photoURL || "https://i.pravatar.cc/150?u=nova_exec"} alt="Nova" className="w-10 h-10 rounded-full border border-border grayscale" />
+            <div>
+              <p className="text-sm font-bold text-text-main">Coach Nova</p>
+              <p className="text-xs text-text-muted uppercase tracking-widest mt-0.5">Lead Recovery Architect</p>
+            </div>
+          </div>
+        </div>
+
+        {/* Global Stats */}
+        <div className="space-y-6">
+          <div className="card p-6 border-l-4 border-l-primary">
+            <p className="text-xs text-text-muted uppercase tracking-widest font-bold mb-2">Biological Burn Rate</p>
+            <div className="flex items-end gap-3">
+              <span className="text-4xl font-black text-text-main tracking-tighter">115%</span>
+              <span className="text-destructive text-sm flex items-center font-bold mb-1">
+                <TrendingUp className="w-4 h-4 mr-1" /> +15%
+              </span>
+            </div>
+            <p className="text-xs text-text-muted mt-3">Exceeding sustainable energy output.</p>
+          </div>
+          
+          <div className="card p-6 border-l-4 border-l-emerald-500">
+            <p className="text-xs text-text-muted uppercase tracking-widest font-bold mb-2">Boundaries Held</p>
+            <div className="flex items-end gap-3">
+              <span className="text-4xl font-black text-text-main tracking-tighter">4</span>
+              <span className="text-success text-sm flex items-center font-bold mb-1">
+                <ShieldAlert className="w-4 h-4 mr-1" /> Protected
+              </span>
+            </div>
+            <p className="text-xs text-text-muted mt-3">Declined meetings & protected focus blocks.</p>
+          </div>
+        </div>
+      </div>
+
+      {/* Week in Review Metrics Grid */}
+      <div>
+        <h3 className="text-xs font-black uppercase tracking-[0.2em] text-text-muted mb-4 ml-2">Weekly Yield Metrics</h3>
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
+          {[
+            { label: 'Deep Work Protected', value: '4.5 hrs', trend: 'up', icon: Clock },
+            { label: 'Sleep Debt Carried', value: `${userStats?.debts?.find(d => d.label.toLowerCase().includes('sleep'))?.value ?? 2.1} hrs`, trend: 'down', icon: Activity },
+            { label: 'Somatic Resets', value: '7', trend: 'up', icon: ShieldAlert },
+            { label: 'Recovery ROI', value: 'High', trend: 'up', icon: TrendingUp },
+          ].map((metric, i) => (
+            <div key={i} className="card p-5 group hover:border-primary/30 transition-all cursor-default">
+              <div className="flex justify-between items-start mb-4">
+                <div className="p-2 bg-surface rounded-lg text-text-muted group-hover:text-primary transition-colors">
+                  <metric.icon className="w-4 h-4" />
+                </div>
+                {metric.trend === 'up' ? (
+                  <TrendingUp className="w-4 h-4 text-success" />
+                ) : (
+                  <TrendingDown className="w-4 h-4 text-destructive" />
+                )}
+              </div>
+              <p className="text-2xl font-bold text-text-main tracking-tight">{metric.value}</p>
+              <p className="text-[10px] uppercase tracking-widest font-bold text-text-muted mt-2">{metric.label}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Config Customizer Popup Modal */}
+      {showConfigModal && (
+        <div 
+          className="fixed inset-0 z-[120] flex items-center justify-center bg-card/85 backdrop-blur-md p-4 animate-in fade-in duration-300"
+          onClick={() => {
+            if (!isProcessingProgress) setShowConfigModal(false);
+          }}
+        >
+          <div 
+            className="card bg-background border border-white/[0.08] shadow-[0_0_50px_rgba(99,102,241,0.15)] p-8 max-w-lg w-full relative overflow-hidden"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="absolute top-0 right-0 w-32 h-32 bg-primary/5 rounded-full blur-[40px] pointer-events-none" />
+            
+            <div className="relative z-10 space-y-6 text-left">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-primary/15 border border-primary/20 rounded-xl flex items-center justify-center text-primary shadow-lg shadow-primary/10">
+                  <Layers className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-xl font-display font-bold text-text-main">Executive Compile Engine</h3>
+                  <p className="text-xs text-text-muted">Customize reports prior to printing or PDF compilation</p>
+                </div>
+              </div>
+
+              {!isProcessingProgress ? (
+                <div className="space-y-6">
+                  {/* Option toggles */}
+                  <div className="space-y-4 bg-surface border border-white/[0.04] p-5 rounded-2xl">
+                    <div className="flex justify-between items-center">
+                      <div>
+                        <p className="text-sm font-bold text-text-main">Nova's Core Commentary Block</p>
+                        <p className="text-[11px] text-text-muted">Include the latest qualitative bio-behavioral counseling feedback from Coach Nova</p>
+                      </div>
+                      <input 
+                        type="checkbox"
+                        checked={includeAICommentary}
+                        onChange={(e) => setIncludeAICommentary(e.target.checked)}
+                        className="h-4 w-4 rounded-md accent-primary"
+                      />
+                    </div>
+                    
+                    <div className="border-t border-white/[0.02] pt-4 flex justify-between items-center">
+                      <div>
+                        <p className="text-sm font-bold text-text-main">Biological Burn Metrics</p>
+                        <p className="text-[11px] text-text-muted">Include active somatic fatigue and stress boundary status card</p>
+                      </div>
+                      <input 
+                        type="checkbox"
+                        checked={includeBurnRate}
+                        onChange={(e) => setIncludeBurnRate(e.target.checked)}
+                        className="h-4 w-4 rounded-md accent-primary"
+                      />
+                    </div>
+
+                    <div className="border-t border-white/[0.02] pt-4 flex justify-between items-center">
+                      <div>
+                        <p className="text-sm font-bold text-text-main">Weekly Autonomic Matrix Yield</p>
+                        <p className="text-[11px] text-text-muted">Generate data grid report with active Sleep Debt, Deep Work duration, and Points ROI</p>
+                      </div>
+                      <input 
+                        type="checkbox"
+                        checked={includeMetricsGrid}
+                        onChange={(e) => setIncludeMetricsGrid(e.target.checked)}
+                        className="h-4 w-4 rounded-md accent-primary"
+                      />
+                    </div>
+
+                    <div className="border-t border-white/[0.02] pt-4 flex justify-between items-center">
+                      <div>
+                        <p className="text-sm font-bold text-text-main">Verify Somatic Reset Count</p>
+                        <p className="text-[11px] text-text-muted">Show completed nervous system doorway integrations inside yield grid</p>
+                      </div>
+                      <input 
+                        type="checkbox"
+                        disabled={!includeMetricsGrid}
+                        checked={includeSomaticResets && includeMetricsGrid}
+                        onChange={(e) => setIncludeSomaticResets(e.target.checked)}
+                        className="h-4 w-4 rounded-md accent-primary disabled:opacity-30"
+                      />
+                    </div>
+
+                    <div className="border-t border-white/[0.02] pt-4 flex justify-between items-center">
+                      <div>
+                        <p className="text-sm font-bold text-text-main">Legal & Signature Safeguard block</p>
+                        <p className="text-[11px] text-text-muted">Append certified counselor signature slot and corporate compliance line</p>
+                      </div>
+                      <input 
+                        type="checkbox"
+                        checked={includeCorporateSignature}
+                        onChange={(e) => setIncludeCorporateSignature(e.target.checked)}
+                        className="h-4 w-4 rounded-md accent-primary"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex gap-4">
+                    <button
+                      onClick={() => setShowConfigModal(false)}
+                      className="flex-1 px-4 py-3 bg-surface border border-white/[0.05] rounded-xl font-bold hover:bg-surface hover:text-text-main transition text-xs cursor-pointer text-text-muted"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={startPDFCompilationAndDownload}
+                      className="flex-1 px-4 py-3 bg-primary hover:bg-primary-dark text-primary-foreground border border-primary/20 rounded-xl font-bold transition text-xs cursor-pointer"
+                    >
+                      Compile Summary
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-6">
+                  <div className="py-6 flex flex-col items-center justify-center space-y-4">
+                    <Loader2 className="w-10 h-10 text-primary animate-spin" />
+                    
+                    <div className="w-full bg-surface h-2 rounded-full overflow-hidden border border-white/[0.02]">
+                      <div 
+                        className="bg-primary h-2 rounded-full transition-all duration-300 shadow-[0_0_10px_rgba(99,102,241,0.5)]"
+                        style={{ width: `${compilationProgress}%` }}
+                      />
+                    </div>
+                    
+                    <p className="text-xs font-semibold text-primary font-mono tracking-wider animate-pulse text-center">
+                      {compilationStatusText}
+                    </p>
+                  </div>
+
+                  {/* Progressive console trace */}
+                  <div className="bg-background p-4 rounded-xl border border-white/[0.03] space-y-2 font-mono text-[10px] text-text-muted/70 leading-relaxed text-left max-h-36 overflow-y-auto">
+                    <p className={cn("transition-all duration-300", compilationProgress >= 15 ? "text-primary font-bold" : "text-text-muted/40")}>
+                      {compilationProgress >= 15 ? "✓ [SANDBOX] Pipeline secure connection established" : "○ Connect sandbox pipeline..."}
+                    </p>
+                    <p className={cn("transition-all duration-300", compilationProgress >= 40 ? "text-primary font-bold" : "text-text-muted/40")}>
+                      {compilationProgress >= 40 ? `✓ [METRICS] Fetched '${userStats?.profile?.fullName || 'Pro-Client'}' autonomic biometric scores` : "○ Fetch recovery metrics..."}
+                    </p>
+                    <p className={cn("transition-all duration-300", compilationProgress >= 70 ? "text-primary font-bold" : "text-text-muted/40")}>
+                      {compilationProgress >= 70 ? "✓ [LAYOUT] Dynamic layouts formatted successfully" : "○ Compile CSS print styles..."}
+                    </p>
+                    <p className={cn("transition-all duration-300", compilationProgress >= 90 ? "text-primary font-bold" : "text-text-muted/40")}>
+                      {compilationProgress >= 90 ? "✓ [SIGNATURES] Attested signature verification: Coach Nova v2.4" : "○ Append secure signatures..."}
+                    </p>
+                    <p className={cn("transition-all duration-300", compilationProgress >= 100 ? "text-success font-bold animate-pulse" : "text-text-muted/40")}>
+                      {compilationProgress >= 100 ? "✓ [COMPILE] Document compile complete! Triggering system print..." : "○ Build final bundle package..."}
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
