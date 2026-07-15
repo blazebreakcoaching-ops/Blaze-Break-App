@@ -7,7 +7,10 @@ import dotenv from "dotenv";
 import twilio from "twilio";
 import { WebSocketServer } from 'ws';
 import { NOVA_KNOWLEDGE_BASE } from './server-knowledge';
-import admin from 'firebase-admin';
+import { initializeApp, getApps } from 'firebase-admin/app';
+import { getAuth } from 'firebase-admin/auth';
+import { getFirestore, FieldValue } from 'firebase-admin/firestore';
+import { getAppCheck } from 'firebase-admin/app-check';
 import cors from 'cors';
 import rateLimit from 'express-rate-limit';
 import { z } from 'zod';
@@ -28,8 +31,8 @@ try {
   process.env.GCLOUD_PROJECT = firebaseConfigProject;
 } catch(e) {}
 
-if (!admin.apps.length) {
-  admin.initializeApp({
+if (!getApps().length) {
+  initializeApp({
     projectId: firebaseConfigProject || undefined
   });
 }
@@ -109,7 +112,7 @@ const verifyAppCheck = async (req: express.Request, res: express.Response, next:
   }
 
   try {
-    await admin.appCheck().verifyToken(appCheckToken);
+    await getAppCheck().verifyToken(appCheckToken);
     (req as any).appCheckVerified = true;
     next();
   } catch (e) {
@@ -128,7 +131,7 @@ const authenticateFirebaseUser = async (req: express.Request, res: express.Respo
 
   const token = authHeader.split('Bearer ')[1];
   try {
-    const decodedToken = await admin.auth().verifyIdToken(token);
+    const decodedToken = await getAuth().verifyIdToken(token);
     (req as any).user = decodedToken;
     next();
   } catch (error) {
@@ -955,7 +958,7 @@ const assertNotLastPlatformOwner = async (targetUid: string, databaseId: string 
 };
 
 const getDb = () => {
-  return admin.firestore(firebaseConfigDatabaseId);
+  return getFirestore(firebaseConfigDatabaseId);
 };
 
 const getPermissionsForRole = (role: string): string[] => {
@@ -997,7 +1000,7 @@ const logAdminAction = async (req: any, action: string, targetUid: string, targe
       action,
       targetUid,
       targetEmail,
-      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      createdAt: FieldValue.serverTimestamp(),
       metadata,
       ipAddress: req.ip || "",
       userAgent: req.headers["user-agent"] || ""
@@ -1180,7 +1183,7 @@ app.get("/api/admin/users/:uid", verifyAppCheck, authenticateFirebaseUser, async
     const targetUid = req.params.uid;
     const db = getDb();
     
-    const authUser = await admin.auth().getUser(targetUid);
+    const authUser = await getAuth().getUser(targetUid);
     const userDoc = await db.collection("users").doc(targetUid).get();
     const fingerprintDoc = await db.collection("users").doc(targetUid).collection("recovery").doc("fingerprint").get();
     
@@ -1205,7 +1208,7 @@ app.post("/api/admin/users/:uid/role", verifyAppCheck, authenticateFirebaseUser,
     const targetUid = req.params.uid;
     const { role } = req.body;
     
-    await admin.auth().setCustomUserClaims(targetUid, { role });
+    await getAuth().setCustomUserClaims(targetUid, { role });
     
     const db = getDb();
     await db.collection("users").doc(targetUid).collection("entitlements").doc("status").set({
@@ -1226,7 +1229,7 @@ app.post("/api/admin/users/:uid/suspend", verifyAppCheck, authenticateFirebaseUs
     const targetUid = req.params.uid;
     const { suspend } = req.body;
     
-    await admin.auth().updateUser(targetUid, { disabled: suspend });
+    await getAuth().updateUser(targetUid, { disabled: suspend });
     await logAdminAction(req, suspend ? "suspend_user" : "unsuspend_user", targetUid, "", {});
     res.json({ success: true });
   } catch (err: any) {
@@ -1251,10 +1254,10 @@ app.post("/api/admin/admin-users", verifyAppCheck, authenticateFirebaseUser, asy
     requirePlatformOwner(req);
     const { email, role, displayName } = req.body;
     
-    const authUser = await admin.auth().getUserByEmail(email);
+    const authUser = await getAuth().getUserByEmail(email);
     const targetUid = authUser.uid;
     
-    await admin.auth().setCustomUserClaims(targetUid, {
+    await getAuth().setCustomUserClaims(targetUid, {
       admin: true,
       role: role,
       platformOwner: role === 'platform_owner'
@@ -1268,8 +1271,8 @@ app.post("/api/admin/admin-users", verifyAppCheck, authenticateFirebaseUser, asy
       role: role,
       status: "active",
       permissions: getPermissionsForRole(role),
-      createdAt: admin.firestore.FieldValue.serverTimestamp(),
-      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      createdAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
       createdBy: (req as any).user.email
     }, { merge: true });
     
@@ -1288,7 +1291,7 @@ app.post("/api/admin/admin-users/:uid/role", verifyAppCheck, authenticateFirebas
     
     await assertNotLastPlatformOwner(targetUid, firebaseConfigDatabaseId);
     
-    await admin.auth().setCustomUserClaims(targetUid, {
+    await getAuth().setCustomUserClaims(targetUid, {
       admin: true,
       role: role,
       platformOwner: role === 'platform_owner'
@@ -1298,7 +1301,7 @@ app.post("/api/admin/admin-users/:uid/role", verifyAppCheck, authenticateFirebas
     await db.collection("admin_users").doc(targetUid).update({
       role: role,
       permissions: getPermissionsForRole(role),
-      updatedAt: admin.firestore.FieldValue.serverTimestamp()
+      updatedAt: FieldValue.serverTimestamp()
     });
     
     await logAdminAction(req, "update_admin_role", targetUid, "", { role });
@@ -1314,7 +1317,7 @@ app.delete("/api/admin/admin-users/:uid", verifyAppCheck, authenticateFirebaseUs
     const targetUid = req.params.uid;
     
     await assertNotLastPlatformOwner(targetUid, firebaseConfigDatabaseId);
-    await admin.auth().setCustomUserClaims(targetUid, null);
+    await getAuth().setCustomUserClaims(targetUid, null);
     
     const db = getDb();
     await db.collection("admin_users").doc(targetUid).delete();
@@ -1345,7 +1348,7 @@ app.post("/api/admin/feature-flags", verifyAppCheck, authenticateFirebaseUser, a
     const db = getDb();
     await db.collection("public_feature_flags").doc(featureId).set({
       enabled,
-      updatedAt: admin.firestore.FieldValue.serverTimestamp()
+      updatedAt: FieldValue.serverTimestamp()
     }, { merge: true });
     
     await logAdminAction(req, "manage_feature_flags", "", featureId, { enabled });
@@ -1362,7 +1365,7 @@ app.post("/api/admin/nova-settings", verifyAppCheck, authenticateFirebaseUser, a
     const db = getDb();
     await db.collection("app_config").doc("nova_settings").set({
       ...settings,
-      updatedAt: admin.firestore.FieldValue.serverTimestamp()
+      updatedAt: FieldValue.serverTimestamp()
     }, { merge: true });
     
     await logAdminAction(req, "manage_nova_settings", "", "", { settings });
@@ -1379,7 +1382,7 @@ app.post("/api/admin/knowledge-chunks", verifyAppCheck, authenticateFirebaseUser
     const db = getDb();
     await db.collection("app_config").doc("knowledge_chunks").set({
       chunks,
-      updatedAt: admin.firestore.FieldValue.serverTimestamp()
+      updatedAt: FieldValue.serverTimestamp()
     }, { merge: true });
     
     await logAdminAction(req, "manage_knowledge_chunks", "", "", { chunkCount: chunks?.length });
@@ -1396,7 +1399,7 @@ app.post("/api/admin/content-library", verifyAppCheck, authenticateFirebaseUser,
     const db = getDb();
     await db.collection("app_config").doc("content_library").set({
       content,
-      updatedAt: admin.firestore.FieldValue.serverTimestamp()
+      updatedAt: FieldValue.serverTimestamp()
     }, { merge: true });
     
     await logAdminAction(req, "manage_content_library", "", "", { contentType: typeof content });
@@ -1414,7 +1417,7 @@ app.post("/api/admin/orgs", verifyAppCheck, authenticateFirebaseUser, async (req
     await db.collection("organisations").doc(orgId).set({
       name,
       privacyThreshold: privacyThreshold || 5,
-      updatedAt: admin.firestore.FieldValue.serverTimestamp()
+      updatedAt: FieldValue.serverTimestamp()
     }, { merge: true });
     
     await logAdminAction(req, "manage_organisation", "", orgId, { name, privacyThreshold });
@@ -1450,8 +1453,8 @@ app.post("/api/anxiety-reset", verifyAppCheck, authenticateFirebaseUser, async (
       ...eventData,
       id: eventRef.id,
       userId: uid,
-      createdAt: admin.firestore.FieldValue.serverTimestamp(),
-      updatedAt: admin.firestore.FieldValue.serverTimestamp()
+      createdAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp()
     };
     
     await eventRef.set(savedEvent);
@@ -1467,7 +1470,7 @@ app.post("/api/anxiety-reset", verifyAppCheck, authenticateFirebaseUser, async (
     await statsRef.set({
       points: currentPoints + 50,
       lastEngagementDate: new Date().toISOString().split('T')[0],
-      updatedAt: admin.firestore.FieldValue.serverTimestamp()
+      updatedAt: FieldValue.serverTimestamp()
     }, { merge: true });
     
     res.json({ success: true, event: savedEvent });
