@@ -8,7 +8,7 @@ interface Integration {
   id: string;
   name: string;
   description: string;
-  status: 'connected' | 'disconnected' | 'error' | 'loading';
+  status: 'connected' | 'disconnected' | 'error' | 'loading' | 'coming_soon';
   iconUrl: string;
   errorMessage?: string;
 }
@@ -17,11 +17,11 @@ export const IntegrationsDashboard = () => {
   const { user, accessToken, signInWithCalendar, logOut } = useAuth();
   const [integrations, setIntegrations] = useState<Integration[]>([
     { id: 'google', name: 'Google Workspace', description: 'Calendar events and Gmail inbox shielding.', status: 'disconnected', iconUrl: 'https://upload.wikimedia.org/wikipedia/commons/c/c1/Google_%22G%22_logo.svg' },
-    { id: 'slack', name: 'Slack', description: 'Auto-reply and Do-Not-Disturb scheduling.', status: 'disconnected', iconUrl: 'https://upload.wikimedia.org/wikipedia/commons/d/d5/Slack_icon_2019.svg' },
-    { id: 'calendly', name: 'Calendly', description: 'Time-block buffering and capacity management.', status: 'disconnected', iconUrl: 'https://upload.wikimedia.org/wikipedia/commons/7/70/Calendly_logo.svg' },
-    { id: 'jira', name: 'Jira', description: 'Workload reality checking and sprint velocity tracking.', status: 'disconnected', iconUrl: 'https://upload.wikimedia.org/wikipedia/commons/8/82/Jira_%28Software%29_logo.svg' },
-    { id: 'asana', name: 'Asana', description: 'Task offload and task-debt tracking.', status: 'disconnected', iconUrl: 'https://upload.wikimedia.org/wikipedia/commons/3/3b/Asana_logo.svg' },
-    { id: 'monday', name: 'Monday.com', description: 'Project tracking integration for timeline realities.', status: 'disconnected', iconUrl: 'https://upload.wikimedia.org/wikipedia/commons/c/c6/Monday_logo.svg' }
+    { id: 'slack', name: 'Slack', description: 'Auto-reply and Do-Not-Disturb scheduling.', status: 'coming_soon', iconUrl: 'https://upload.wikimedia.org/wikipedia/commons/d/d5/Slack_icon_2019.svg' },
+    { id: 'calendly', name: 'Calendly', description: 'Time-block buffering and capacity management.', status: 'coming_soon', iconUrl: 'https://upload.wikimedia.org/wikipedia/commons/7/70/Calendly_logo.svg' },
+    { id: 'jira', name: 'Jira', description: 'Workload reality checking and sprint velocity tracking.', status: 'coming_soon', iconUrl: 'https://upload.wikimedia.org/wikipedia/commons/8/82/Jira_%28Software%29_logo.svg' },
+    { id: 'asana', name: 'Asana', description: 'Task offload and task-debt tracking.', status: 'coming_soon', iconUrl: 'https://upload.wikimedia.org/wikipedia/commons/3/3b/Asana_logo.svg' },
+    { id: 'monday', name: 'Monday.com', description: 'Project tracking integration for timeline realities.', status: 'coming_soon', iconUrl: 'https://upload.wikimedia.org/wikipedia/commons/c/c6/Monday_logo.svg' }
   ]);
 
   useEffect(() => {
@@ -55,41 +55,8 @@ export const IntegrationsDashboard = () => {
       return;
     }
 
-    // Simulate behavior for mocked integrations to demonstrate robust error states
-    setIntegrations(prev => prev.map(inv => inv.id === id ? { ...inv, status: 'loading', errorMessage: undefined } : inv));
-    
-    setTimeout(() => {
-      setIntegrations(prev => prev.map(inv => {
-        if (inv.id === id) {
-          // Add a simple simulated 15% fail rate to show the robust retry UI functionality
-          const isSimulatedError = Math.random() < 0.15;
-          if (isSimulatedError && inv.status !== 'connected') {
-            return { 
-               ...inv, 
-               status: 'error', 
-               errorMessage: `Unable to reach ${inv.name} servers. Connection timed out.` 
-            };
-          }
-
-          const nextStatus = inv.status === 'connected' ? 'disconnected' : 'connected';
-          try {
-            const savedPrefs = localStorage.getItem('blaze_notification_preferences');
-            if (savedPrefs) {
-              const prefs = JSON.parse(savedPrefs);
-              if (id === 'slack') {
-                prefs.slack.enabled = (nextStatus === 'connected');
-              }
-              localStorage.setItem('blaze_notification_preferences', JSON.stringify(prefs));
-              window.dispatchEvent(new Event('storage'));
-            }
-          } catch (e) {
-            // Silent fallback
-          }
-          return { ...inv, status: nextStatus, errorMessage: undefined };
-        }
-        return inv;
-      }));
-    }, 1200);
+    // These integrations don't have a backend connection built yet — there's nothing
+    // to toggle, so we don't simulate a fake connect/disconnect cycle for them.
   };
 
   return (
@@ -119,11 +86,12 @@ export const IntegrationsDashboard = () => {
                 integration.status === 'connected' ? "bg-success/10 text-success" : 
                 integration.status === 'error' ? "bg-destructive/10 text-rose-600" :
                 integration.status === 'loading' ? "bg-primary/10 text-primary" :
+                integration.status === 'coming_soon' ? "bg-border dark:bg-surface text-text-muted" :
                 "bg-border dark:bg-surface text-text-muted"
               )}>
                 {integration.status === 'loading' && <RefreshCw className="w-3 h-3 animate-spin" />}
                 {integration.status === 'error' && <AlertTriangle className="w-3 h-3" />}
-                {integration.status}
+                {integration.status === 'coming_soon' ? 'Coming Soon' : integration.status}
               </div>
             </div>
 
@@ -141,23 +109,25 @@ export const IntegrationsDashboard = () => {
 
             <button 
               onClick={() => toggleIntegration(integration.id)}
-              disabled={integration.status === 'loading'}
+              disabled={integration.status === 'loading' || integration.status === 'coming_soon'}
               className={cn(
-                "w-full py-3 rounded-xl text-xs font-black uppercase tracking-widest transition-all cursor-pointer flex justify-center items-center gap-2",
+                "w-full py-3 rounded-xl text-xs font-black uppercase tracking-widest transition-all flex justify-center items-center gap-2",
                 integration.status === 'connected' 
-                  ? "bg-surface dark:bg-surface text-text-muted hover:bg-rose-50 hover:text-destructive" 
+                  ? "bg-surface dark:bg-surface text-text-muted hover:bg-rose-50 hover:text-destructive cursor-pointer" 
                   : integration.status === 'loading'
                   ? "bg-surface dark:bg-surface text-text-muted cursor-not-allowed opacity-70"
                   : integration.status === 'error'
-                  ? "bg-destructive text-destructive-foreground hover:bg-destructive"
-                  : "bg-primary/10 text-primary hover:bg-primary hover:text-primary-foreground"
+                  ? "bg-destructive text-destructive-foreground hover:bg-destructive cursor-pointer"
+                  : integration.status === 'coming_soon'
+                  ? "bg-surface dark:bg-surface text-text-muted cursor-not-allowed opacity-50"
+                  : "bg-primary/10 text-primary hover:bg-primary hover:text-primary-foreground cursor-pointer"
               )}
             >
               {integration.status === 'connected' ? 'Disconnect' : 
                integration.status === 'loading' ? 'Connecting...' : 
                integration.status === 'error' ? (
                  <><RefreshCw className="w-3.5 h-3.5" /> Retry Connection</>
-               ) : 'Connect Account'}
+               ) : integration.status === 'coming_soon' ? 'Not Yet Available' : 'Connect Account'}
             </button>
           </div>
         ))}

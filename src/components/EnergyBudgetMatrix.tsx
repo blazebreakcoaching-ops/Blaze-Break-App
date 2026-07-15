@@ -122,7 +122,7 @@ export const EnergyBudgetMatrix = ({ onPointsEarned }: { onPointsEarned: (pts: n
                 />
               </svg>
               <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
-                <span className={cn("text-4xl font-black font-display tracking-tighter drop-shadow-lg", isOverloaded ? 'text-destructive' : 'text-white')}>
+                <span className={cn("text-4xl font-black font-display tracking-tighter drop-shadow-lg", isOverloaded ? 'text-destructive' : 'text-text-main')}>
                    {Math.round(overloadPercentage)}%
                 </span>
                 <span className="text-xs font-black uppercase tracking-widest text-text-muted mt-1">Load</span>

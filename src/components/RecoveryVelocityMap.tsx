@@ -189,7 +189,7 @@ export const RecoveryVelocityMap = () => {
             className={cn(
               "px-3 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer",
               viewMode === 'all' 
-                ? "bg-primary text-white shadow" 
+                ? "bg-primary text-primary-foreground shadow" 
                 : "text-text-muted hover:text-text-main hover:bg-surface/20"
             )}
           >
@@ -211,7 +211,7 @@ export const RecoveryVelocityMap = () => {
             className={cn(
               "px-3 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer",
               viewMode === 'energy' 
-                ? "bg-primary text-white shadow" 
+                ? "bg-primary text-primary-foreground shadow" 
                 : "text-text-muted hover:text-primary hover:bg-primary/5"
             )}
           >

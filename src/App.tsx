@@ -1392,7 +1392,7 @@ const HomeSection = ({
           ].map((q, i) => (
             <div key={i} className={cn("flex items-center justify-between p-4 rounded-2xl border transition-all", q.done ? "bg-surface/50 border-border/50" : "bg-card border-border shadow-sm hover:shadow-md")}>
               <div className="flex items-center gap-3">
-                <div className={cn("w-5 h-5 rounded-lg flex items-center justify-center transition-all", q.done ? "bg-accent text-white" : "bg-surface dark:bg-surface/50 text-text-muted")}>
+                <div className={cn("w-5 h-5 rounded-lg flex items-center justify-center transition-all", q.done ? "bg-accent text-accent-foreground" : "bg-surface dark:bg-surface/50 text-text-muted")}>
                   {q.done ? <CheckCircle className="w-3 h-3" /> : <Zap className="w-3 h-3" />}
                 </div>
                 <span className={cn("text-xs font-bold tracking-tight", q.done ? "text-text-muted" : "text-text-main")}>{q.label}</span>

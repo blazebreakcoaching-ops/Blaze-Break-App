@@ -1,55 +1,122 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { HeartPulse, CheckSquare, Target, Mail, Send, Award, Trash2, CheckCircle2, AlertTriangle, ShieldCheck, Activity, Brain, Clock, Plus, ArrowRight, Zap } from 'lucide-react';
 import { cn } from '../lib/utils';
 
+const STORAGE_KEY = 'blaze_recovery_ally_state';
+
+interface SharedGoal {
+  id: number;
+  text: string;
+  completed: boolean;
+  category: string;
+  streak: number;
+}
+
+interface Encouragement {
+  id: number;
+  type: 'system' | 'personal';
+  message: string;
+  time: string;
+}
+
+interface AllyPermissions {
+  viewGoals: boolean;
+  viewMilestones: boolean;
+  sendPings: boolean;
+  viewEnergyStats: boolean;
+}
+
+interface PersistedAllyState {
+  isInvited: boolean;
+  allyName: string;
+  allyEmail: string;
+  permissions: AllyPermissions;
+  sharedGoals: SharedGoal[];
+  encouragements: Encouragement[];
+}
+
+const DEFAULT_GOALS: SharedGoal[] = [
+  { id: 1, text: "Hard cut-off from communications at 19:00", completed: false, category: "boundary", streak: 0 },
+  { id: 2, text: "Minimum 45min offline macro-break daily", completed: false, category: "recovery", streak: 0 },
+];
+
+const loadAllyState = (): PersistedAllyState => {
+  const fallback: PersistedAllyState = {
+    isInvited: false,
+    allyName: '',
+    allyEmail: '',
+    permissions: { viewGoals: true, viewMilestones: true, sendPings: true, viewEnergyStats: false },
+    sharedGoals: DEFAULT_GOALS,
+    encouragements: [],
+  };
+  try {
+    const stored = localStorage.getItem(STORAGE_KEY);
+    if (stored) {
+      const parsed = JSON.parse(stored);
+      return { ...fallback, ...parsed };
+    }
+  } catch (e) {
+    // Corrupted or inaccessible storage — fall back to defaults rather than crashing.
+  }
+  return fallback;
+};
+
 export const RecoveryAlly = () => {
-  const [allyEmail, setAllyEmail] = useState('');
-  const [isInvited, setIsInvited] = useState(false);
-  const [allyName, setAllyName] = useState('Sarah J.'); // Mock data if invited
+  const [state, setState] = useState<PersistedAllyState>(loadAllyState);
+  const { isInvited, allyName, permissions, sharedGoals, encouragements } = state;
 
-  const [permissions, setPermissions] = useState({
-    viewGoals: true,
-    viewMilestones: true,
-    sendPings: true,
-    viewEnergyStats: false
-  });
-
-  const [sharedGoals, setSharedGoals] = useState([
-    { id: 1, text: "Hard cut-off from communications at 19:00", completed: false, category: "boundary", streak: 4 },
-    { id: 2, text: "Minimum 45min offline macro-break daily", completed: true, category: "recovery", streak: 12 },
-    { id: 3, text: "Delegate 2 non-critical reviews this sprint", completed: false, category: "delegation", streak: 0 }
-  ]);
-
-  const [encouragements, setEncouragements] = useState([
-    { id: 1, type: "system", message: "Ally reviewed your Q3 capacity matrix.", time: "2 hours ago" },
-    { id: 2, type: "personal", message: "Noticed the energy dip on the dashboard. Remember to delegate the Friday sprint review.", time: "1 day ago" }
-  ]);
-
+  const [emailDraft, setEmailDraft] = useState('');
   const [isAddingGoal, setIsAddingGoal] = useState(false);
   const [newGoalText, setNewGoalText] = useState('');
 
+  // Persist on every change so a refresh or app restart doesn't wipe the connection.
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    } catch (e) {
+      // Storage full or unavailable — continue silently rather than breaking the UI.
+    }
+  }, [state]);
+
+  const setPermissions = (updater: (p: AllyPermissions) => AllyPermissions) => {
+    setState(prev => ({ ...prev, permissions: updater(prev.permissions) }));
+  };
+
   const handleInvite = (e: React.FormEvent) => {
     e.preventDefault();
-    if (allyEmail.trim()) {
-      setIsInvited(true);
-      setAllyName(allyEmail.split('@')[0]);
+    if (emailDraft.trim()) {
+      setState(prev => ({
+        ...prev,
+        isInvited: true,
+        allyEmail: emailDraft.trim(),
+        allyName: emailDraft.split('@')[0],
+        // A genuine invite has no history yet — no fabricated activity from an ally
+        // who hasn't actually done anything.
+        encouragements: [],
+      }));
+      setEmailDraft('');
     }
   };
 
   const handleRevoke = () => {
-    setIsInvited(false);
-    setAllyEmail('');
+    setState(prev => ({ ...prev, isInvited: false, allyEmail: '', allyName: '', encouragements: [] }));
   };
 
   const toggleGoal = (id: number) => {
-    setSharedGoals(prev => prev.map(g => g.id === id ? { ...g, completed: !g.completed } : g));
+    setState(prev => ({
+      ...prev,
+      sharedGoals: prev.sharedGoals.map(g => g.id === id ? { ...g, completed: !g.completed } : g),
+    }));
   };
 
   const addNewGoal = (e: React.FormEvent) => {
     e.preventDefault();
     if (newGoalText.trim()) {
-      setSharedGoals([{ id: Date.now(), text: newGoalText, completed: false, category: "custom", streak: 0 }, ...sharedGoals]);
+      setState(prev => ({
+        ...prev,
+        sharedGoals: [{ id: Date.now(), text: newGoalText, completed: false, category: "custom", streak: 0 }, ...prev.sharedGoals],
+      }));
       setNewGoalText('');
       setIsAddingGoal(false);
     }
@@ -103,8 +170,8 @@ export const RecoveryAlly = () => {
                 <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-text-muted group-focus-within:text-primary transition-colors" />
                 <input
                   type="email"
-                  value={allyEmail}
-                  onChange={(e) => setAllyEmail(e.target.value)}
+                  value={emailDraft}
+                  onChange={(e) => setEmailDraft(e.target.value)}
                   placeholder="executive@organization.com"
                   className="w-full bg-surface dark:bg-surface border border-border focus:border-primary focus:ring-primary/20 text-text-main placeholder:text-text-muted rounded-xl pl-12 pr-4 py-4 font-mono text-sm focus:outline-none focus:ring-2 transition-all"
                   required
@@ -262,11 +329,17 @@ export const RecoveryAlly = () => {
                 <h3 className="font-bold text-text-main text-lg flex items-center gap-2 tracking-tight">
                   <Brain className="w-5 h-5 text-primary" /> Synchronization Log
                 </h3>
-                <p className="text-xs text-text-muted mt-1 leading-relaxed">Incoming diagnostics and structural reinforcement from {allyName}.</p>
+                <p className="text-xs text-text-muted mt-1 leading-relaxed">Incoming diagnostics and structural reinforcement from {allyName || 'your ally'}.</p>
               </div>
 
               <div className="space-y-4">
-                {encouragements.map((enc, i) => (
+                {encouragements.length === 0 ? (
+                  <div className="text-center py-8">
+                    <p className="text-xs text-text-muted font-medium max-w-xs mx-auto leading-relaxed">
+                      No activity yet. Once {allyName || 'your ally'} reviews your ledger or sends a note, it'll appear here.
+                    </p>
+                  </div>
+                ) : encouragements.map((enc, i) => (
                   <motion.div 
                     initial={{ opacity: 0, x: -10 }}
                     animate={{ opacity: 1, x: 0 }}

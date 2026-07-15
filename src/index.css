@@ -53,13 +53,13 @@
     --primary: #ea580c; /* Blaze Orange */
     --primary-dark: #c2410c;
     --primary-light: #ffedd5;
-    --primary-foreground: #ffffff;
+    --primary-foreground: #1c1917; /* Dark ink — white on this orange fails WCAG AA at typical button text sizes (3.56:1); charcoal reaches 4.91:1 */
 
     --accent: #f97316;
-    --accent-foreground: #ffffff;
+    --accent-foreground: #1c1917; /* Same fix as primary-foreground: white on this orange is only 2.80:1 */
     
     --warning: #d97706;
-    --warning-foreground: #ffffff;
+    --warning-foreground: #1c1917; /* Dark ink — white on this amber was only 3.19:1, fails AA for normal text */
 
     --destructive: #b91c1c; /* Controlled Deep Red */
     --destructive-foreground: #ffffff;
@@ -88,13 +88,13 @@
     --primary: #f97316; /* Blaze Orange - slightly brighter for dark mode */
     --primary-dark: #ea580c;
     --primary-light: rgba(249, 115, 22, 0.15);
-    --primary-foreground: #ffffff; /* White on orange ensures readability */
+    --primary-foreground: #1c1917; /* Dark ink — white on this brighter orange was only 2.80:1, a real AA fail; charcoal reaches 6.24:1 */
 
     --accent: #ea580c;
-    --accent-foreground: #ffffff;
+    --accent-foreground: #1c1917; /* Same fix — white on this orange was 3.56:1, still short of AA for normal text */
     
     --warning: #f59e0b;
-    --warning-foreground: #1c1917;
+    --warning-foreground: #1c1917; /* Unchanged — this one was already correct */
 
     --destructive: #dc2626; /* Deep Ember Red */
     --destructive-foreground: #ffffff;
