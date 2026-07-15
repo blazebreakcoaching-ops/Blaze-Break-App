@@ -1,29 +1,54 @@
-import React, { useState, useEffect } from 'react';
-import { Link as LinkIcon, Key, Info, RefreshCw, AlertTriangle } from 'lucide-react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { Link as LinkIcon, Key, Info, RefreshCw, AlertTriangle, CheckCircle2 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { NotificationSettingsView } from './NotificationSettingsView';
 import { useAuth } from '../lib/auth';
+import { secureApiFetch, SecureApiError } from '../lib/secure-api';
 
 interface Integration {
   id: string;
   name: string;
   description: string;
-  status: 'connected' | 'disconnected' | 'error' | 'loading' | 'coming_soon';
+  status: 'connected' | 'disconnected' | 'error' | 'loading' | 'not_configured';
   iconUrl: string;
   errorMessage?: string;
 }
 
+// Services that go through the real backend OAuth flow (server.ts /api/integrations/*).
+// Google is intentionally excluded — it's handled by Firebase Auth directly.
+const OAUTH_SERVICE_IDS = ['slack', 'jira', 'asana', 'calendly', 'monday'] as const;
+
+const BASE_INTEGRATIONS: Integration[] = [
+  { id: 'google', name: 'Google Workspace', description: 'Calendar events and Gmail inbox shielding.', status: 'disconnected', iconUrl: 'https://upload.wikimedia.org/wikipedia/commons/c/c1/Google_%22G%22_logo.svg' },
+  { id: 'slack', name: 'Slack', description: 'Auto-reply and Do-Not-Disturb scheduling.', status: 'disconnected', iconUrl: 'https://upload.wikimedia.org/wikipedia/commons/d/d5/Slack_icon_2019.svg' },
+  { id: 'calendly', name: 'Calendly', description: 'Time-block buffering and capacity management.', status: 'disconnected', iconUrl: 'https://upload.wikimedia.org/wikipedia/commons/7/70/Calendly_logo.svg' },
+  { id: 'jira', name: 'Jira', description: 'Workload reality checking and sprint velocity tracking.', status: 'disconnected', iconUrl: 'https://upload.wikimedia.org/wikipedia/commons/8/82/Jira_%28Software%29_logo.svg' },
+  { id: 'asana', name: 'Asana', description: 'Task offload and task-debt tracking.', status: 'disconnected', iconUrl: 'https://upload.wikimedia.org/wikipedia/commons/3/3b/Asana_logo.svg' },
+  { id: 'monday', name: 'Monday.com', description: 'Project tracking integration for timeline realities.', status: 'disconnected', iconUrl: 'https://upload.wikimedia.org/wikipedia/commons/c/c6/Monday_logo.svg' }
+];
+
 export const IntegrationsDashboard = () => {
   const { user, accessToken, signInWithCalendar, logOut } = useAuth();
-  const [integrations, setIntegrations] = useState<Integration[]>([
-    { id: 'google', name: 'Google Workspace', description: 'Calendar events and Gmail inbox shielding.', status: 'disconnected', iconUrl: 'https://upload.wikimedia.org/wikipedia/commons/c/c1/Google_%22G%22_logo.svg' },
-    { id: 'slack', name: 'Slack', description: 'Auto-reply and Do-Not-Disturb scheduling.', status: 'coming_soon', iconUrl: 'https://upload.wikimedia.org/wikipedia/commons/d/d5/Slack_icon_2019.svg' },
-    { id: 'calendly', name: 'Calendly', description: 'Time-block buffering and capacity management.', status: 'coming_soon', iconUrl: 'https://upload.wikimedia.org/wikipedia/commons/7/70/Calendly_logo.svg' },
-    { id: 'jira', name: 'Jira', description: 'Workload reality checking and sprint velocity tracking.', status: 'coming_soon', iconUrl: 'https://upload.wikimedia.org/wikipedia/commons/8/82/Jira_%28Software%29_logo.svg' },
-    { id: 'asana', name: 'Asana', description: 'Task offload and task-debt tracking.', status: 'coming_soon', iconUrl: 'https://upload.wikimedia.org/wikipedia/commons/3/3b/Asana_logo.svg' },
-    { id: 'monday', name: 'Monday.com', description: 'Project tracking integration for timeline realities.', status: 'coming_soon', iconUrl: 'https://upload.wikimedia.org/wikipedia/commons/c/c6/Monday_logo.svg' }
-  ]);
+  const [integrations, setIntegrations] = useState<Integration[]>(BASE_INTEGRATIONS);
+  const [returnBanner, setReturnBanner] = useState<{ service: string; status: 'connected' | 'error'; reason?: string } | null>(null);
 
+  const refreshOAuthStatus = useCallback(async () => {
+    if (!user) return;
+    try {
+      const res = await secureApiFetch('/api/integrations/status');
+      const data = await res.json();
+      setIntegrations(prev => prev.map(inv => {
+        if (!(OAUTH_SERVICE_IDS as readonly string[]).includes(inv.id)) return inv;
+        const remote = data?.integrations?.[inv.id];
+        if (!remote) return inv;
+        return { ...inv, status: remote.connected ? 'connected' : 'disconnected', errorMessage: undefined };
+      }));
+    } catch (e) {
+      // Status fetch failing shouldn't break the page — cards just stay at their last known state.
+    }
+  }, [user]);
+
+  // Google's connection state comes from Firebase Auth's accessToken directly.
   useEffect(() => {
     setIntegrations(prev => prev.map(inv => {
       if (inv.id === 'google' && inv.status !== 'error') {
@@ -32,6 +57,30 @@ export const IntegrationsDashboard = () => {
       return inv;
     }));
   }, [accessToken]);
+
+  // The other five come from the backend, which only knows the truth after
+  // the OAuth callback has run — fetch it on mount and whenever the user changes.
+  useEffect(() => {
+    refreshOAuthStatus();
+  }, [refreshOAuthStatus]);
+
+  // Handle the redirect back from a provider's consent screen: /?integration=slack&status=connected
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const service = params.get('integration');
+    const status = params.get('status');
+    if (service && (status === 'connected' || status === 'error')) {
+      setReturnBanner({ service, status, reason: params.get('reason') || undefined });
+      if (status === 'connected') refreshOAuthStatus();
+      // Clean the query params out of the URL without a full navigation/reload.
+      const url = new URL(window.location.href);
+      url.searchParams.delete('integration');
+      url.searchParams.delete('status');
+      url.searchParams.delete('reason');
+      window.history.replaceState({}, '', url.toString());
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const toggleIntegration = async (id: string) => {
     if (id === 'google') {
@@ -55,8 +104,38 @@ export const IntegrationsDashboard = () => {
       return;
     }
 
-    // These integrations don't have a backend connection built yet — there's nothing
-    // to toggle, so we don't simulate a fake connect/disconnect cycle for them.
+    if (!(OAUTH_SERVICE_IDS as readonly string[]).includes(id)) return;
+
+    const current = integrations.find(inv => inv.id === id);
+    if (current?.status === 'connected') {
+      if (!window.confirm(`Disconnect ${current.name}?`)) return;
+      setIntegrations(prev => prev.map(inv => inv.id === id ? { ...inv, status: 'loading', errorMessage: undefined } : inv));
+      try {
+        await secureApiFetch(`/api/integrations/${id}/disconnect`, { method: 'POST' });
+        setIntegrations(prev => prev.map(inv => inv.id === id ? { ...inv, status: 'disconnected' } : inv));
+      } catch (e: any) {
+        setIntegrations(prev => prev.map(inv => inv.id === id ? { ...inv, status: 'error', errorMessage: 'Failed to disconnect. Please try again.' } : inv));
+      }
+      return;
+    }
+
+    setIntegrations(prev => prev.map(inv => inv.id === id ? { ...inv, status: 'loading', errorMessage: undefined } : inv));
+    try {
+      const res = await secureApiFetch(`/api/integrations/${id}/connect`, { method: 'POST' });
+      const data = await res.json();
+      if (!data?.authorizeUrl) throw new Error('No authorization URL returned.');
+      // Full-page redirect: these providers don't support popup-based flows like Firebase does for Google.
+      window.location.href = data.authorizeUrl;
+    } catch (e: any) {
+      const isNotConfigured = e instanceof SecureApiError && e.status === 503;
+      setIntegrations(prev => prev.map(inv => inv.id === id ? {
+        ...inv,
+        status: isNotConfigured ? 'not_configured' : 'error',
+        errorMessage: isNotConfigured
+          ? 'This integration has not been set up yet (missing developer credentials on the server).'
+          : 'Could not start the connection. Please try again.',
+      } : inv));
+    }
   };
 
   return (
@@ -67,6 +146,22 @@ export const IntegrationsDashboard = () => {
           Connect your operational tools. Nova uses these connections to enforce boundaries, calculate your workload debt, and trigger preventative actions on your client-side profile.
         </p>
       </div>
+
+      {returnBanner && (
+        <div className={cn(
+          "max-w-3xl p-4 rounded-xl text-sm font-medium flex items-start gap-3 border",
+          returnBanner.status === 'connected'
+            ? "bg-success/10 text-success border-success/20"
+            : "bg-rose-50 dark:bg-rose-900/20 text-rose-600 border-rose-100 dark:border-rose-800/30"
+        )}>
+          {returnBanner.status === 'connected' ? <CheckCircle2 className="w-5 h-5 shrink-0 mt-0.5" /> : <AlertTriangle className="w-5 h-5 shrink-0 mt-0.5" />}
+          <span>
+            {returnBanner.status === 'connected'
+              ? `${returnBanner.service.charAt(0).toUpperCase() + returnBanner.service.slice(1)} connected successfully.`
+              : `Couldn't connect ${returnBanner.service.charAt(0).toUpperCase() + returnBanner.service.slice(1)}${returnBanner.reason ? ` (${returnBanner.reason.replace(/_/g, ' ')})` : ''}. Please try again.`}
+          </span>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {integrations.map(integration => (
@@ -86,12 +181,11 @@ export const IntegrationsDashboard = () => {
                 integration.status === 'connected' ? "bg-success/10 text-success" : 
                 integration.status === 'error' ? "bg-destructive/10 text-rose-600" :
                 integration.status === 'loading' ? "bg-primary/10 text-primary" :
-                integration.status === 'coming_soon' ? "bg-border dark:bg-surface text-text-muted" :
                 "bg-border dark:bg-surface text-text-muted"
               )}>
                 {integration.status === 'loading' && <RefreshCw className="w-3 h-3 animate-spin" />}
                 {integration.status === 'error' && <AlertTriangle className="w-3 h-3" />}
-                {integration.status === 'coming_soon' ? 'Coming Soon' : integration.status}
+                {integration.status === 'not_configured' ? 'Not Configured' : integration.status}
               </div>
             </div>
 
@@ -100,7 +194,7 @@ export const IntegrationsDashboard = () => {
               <p className="text-xs text-text-muted mt-1 leading-relaxed">{integration.description}</p>
             </div>
             
-            {integration.status === 'error' && integration.errorMessage && (
+            {(integration.status === 'error' || integration.status === 'not_configured') && integration.errorMessage && (
               <div className="p-3 bg-rose-50 dark:bg-rose-900/20 text-rose-600 outline-rose-200 rounded-lg text-xs font-medium border border-rose-100 dark:border-rose-800/30 flex items-start gap-2">
                 <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
                 <span className="leading-relaxed">{integration.errorMessage}</span>
@@ -109,7 +203,7 @@ export const IntegrationsDashboard = () => {
 
             <button 
               onClick={() => toggleIntegration(integration.id)}
-              disabled={integration.status === 'loading' || integration.status === 'coming_soon'}
+              disabled={integration.status === 'loading' || integration.status === 'not_configured'}
               className={cn(
                 "w-full py-3 rounded-xl text-xs font-black uppercase tracking-widest transition-all flex justify-center items-center gap-2",
                 integration.status === 'connected' 
@@ -118,7 +212,7 @@ export const IntegrationsDashboard = () => {
                   ? "bg-surface dark:bg-surface text-text-muted cursor-not-allowed opacity-70"
                   : integration.status === 'error'
                   ? "bg-destructive text-destructive-foreground hover:bg-destructive cursor-pointer"
-                  : integration.status === 'coming_soon'
+                  : integration.status === 'not_configured'
                   ? "bg-surface dark:bg-surface text-text-muted cursor-not-allowed opacity-50"
                   : "bg-primary/10 text-primary hover:bg-primary hover:text-primary-foreground cursor-pointer"
               )}
@@ -127,7 +221,7 @@ export const IntegrationsDashboard = () => {
                integration.status === 'loading' ? 'Connecting...' : 
                integration.status === 'error' ? (
                  <><RefreshCw className="w-3.5 h-3.5" /> Retry Connection</>
-               ) : integration.status === 'coming_soon' ? 'Not Yet Available' : 'Connect Account'}
+               ) : integration.status === 'not_configured' ? 'Not Yet Available' : 'Connect Account'}
             </button>
           </div>
         ))}
@@ -151,7 +245,7 @@ export const IntegrationsDashboard = () => {
           </div>
         </div>
         <p className="text-sm text-text-muted max-w-2xl leading-relaxed">
-          The underlying API keys for cloud services (Twilio, Firebase, etc.) are managed via the platform secrets store. User-specific OAuth connections (Slack, Calendly) are initiated above.
+          The underlying API keys for cloud services (Twilio, Firebase, etc.) are managed via the platform secrets store. User-specific OAuth connections (Slack, Calendly, Jira, Asana, Monday.com) are initiated above and require the corresponding Client ID/Secret to be configured on the server first.
         </p>
       </div>
     </div>

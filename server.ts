@@ -1,6 +1,7 @@
 import express from "express";
 import path from "path";
 import fs from "fs";
+import crypto from "crypto";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, Type, Modality, LiveServerMessage } from "@google/genai";
 import dotenv from "dotenv";
@@ -1009,6 +1010,309 @@ const logAdminAction = async (req: any, action: string, targetUid: string, targe
     console.error("Failed to write admin audit log:", err.message);
   }
 };
+
+// ============================================================================
+// Third-Party OAuth Integrations (Slack, Jira, Asana, Calendly, Monday.com)
+// ============================================================================
+// Each provider requires its own registered OAuth app (Client ID + Secret),
+// configured via environment variables. See .env.example for the full list
+// and docs/INTEGRATIONS_SETUP.md for exact redirect URIs and scopes to
+// register with each provider. Google is handled separately via Firebase Auth
+// (see src/lib/auth.tsx) and does not go through this module.
+
+type OAuthTokenStyle = "form" | "json";
+
+interface OAuthProviderConfig {
+  authorizeUrl: string;
+  tokenUrl: string;
+  clientIdEnv: string;
+  clientSecretEnv: string;
+  tokenStyle: OAuthTokenStyle;
+  // Extra static query params always sent on the authorize redirect (e.g. Atlassian's audience/prompt).
+  extraAuthorizeParams?: Record<string, string>;
+  // Scope value sent as `scope` (bot/app-level scopes for Slack; regular scopes for others).
+  scope?: string;
+  // Slack-specific: user-level scopes sent as a separate `user_scope` param.
+  userScope?: string;
+  // Extracts the token fields from that provider's token-endpoint JSON response,
+  // since Slack nests the user token under `authed_user` while others return it flat.
+  extractTokens: (body: any) => { accessToken: string | null; refreshToken: string | null; expiresIn: number | null };
+}
+
+const OAUTH_PROVIDERS: Record<string, OAuthProviderConfig> = {
+  slack: {
+    authorizeUrl: "https://slack.com/oauth/v2/authorize",
+    tokenUrl: "https://slack.com/api/oauth.v2.access",
+    clientIdEnv: "SLACK_CLIENT_ID",
+    clientSecretEnv: "SLACK_CLIENT_SECRET",
+    tokenStyle: "form",
+    userScope: "dnd:write,dnd:read,users.profile:write,users:read",
+    extractTokens: (body) => ({
+      accessToken: body?.authed_user?.access_token || null,
+      refreshToken: body?.authed_user?.refresh_token || null,
+      expiresIn: body?.authed_user?.expires_in || null,
+    }),
+  },
+  jira: {
+    authorizeUrl: "https://auth.atlassian.com/authorize",
+    tokenUrl: "https://auth.atlassian.com/oauth/token",
+    clientIdEnv: "JIRA_CLIENT_ID",
+    clientSecretEnv: "JIRA_CLIENT_SECRET",
+    tokenStyle: "json",
+    scope: "read:jira-work read:jira-user offline_access",
+    extraAuthorizeParams: { audience: "api.atlassian.com", prompt: "consent" },
+    extractTokens: (body) => ({
+      accessToken: body?.access_token || null,
+      refreshToken: body?.refresh_token || null,
+      expiresIn: body?.expires_in || null,
+    }),
+  },
+  asana: {
+    authorizeUrl: "https://app.asana.com/-/oauth_authorize",
+    tokenUrl: "https://app.asana.com/-/oauth_token",
+    clientIdEnv: "ASANA_CLIENT_ID",
+    clientSecretEnv: "ASANA_CLIENT_SECRET",
+    tokenStyle: "form",
+    extractTokens: (body) => ({
+      accessToken: body?.access_token || null,
+      refreshToken: body?.refresh_token || null,
+      expiresIn: body?.expires_in || null,
+    }),
+  },
+  calendly: {
+    authorizeUrl: "https://auth.calendly.com/oauth/authorize",
+    tokenUrl: "https://auth.calendly.com/oauth/token",
+    clientIdEnv: "CALENDLY_CLIENT_ID",
+    clientSecretEnv: "CALENDLY_CLIENT_SECRET",
+    tokenStyle: "form",
+    extractTokens: (body) => ({
+      accessToken: body?.access_token || null,
+      refreshToken: body?.refresh_token || null,
+      expiresIn: body?.expires_in || null,
+    }),
+  },
+  monday: {
+    authorizeUrl: "https://auth.monday.com/oauth2/authorize",
+    tokenUrl: "https://auth.monday.com/oauth2/token",
+    clientIdEnv: "MONDAY_CLIENT_ID",
+    clientSecretEnv: "MONDAY_CLIENT_SECRET",
+    tokenStyle: "form",
+    scope: "me:read boards:read",
+    extractTokens: (body) => ({
+      accessToken: body?.access_token || null,
+      refreshToken: body?.refresh_token || null,
+      expiresIn: body?.expires_in || null,
+    }),
+  },
+};
+
+// Stateless, signed `state` param: binds the OAuth callback back to the Firebase
+// user who initiated it (a plain browser redirect can't carry an Authorization
+// header, so this is how we know whose Firestore doc to write tokens to) and
+// prevents CSRF/replay by signing + expiring it. Requires OAUTH_STATE_SECRET.
+const signOAuthState = (uid: string, service: string): string => {
+  const secret = process.env.OAUTH_STATE_SECRET;
+  if (!secret) {
+    throw new Error("OAUTH_STATE_SECRET is not configured on the server.");
+  }
+  const payload = JSON.stringify({ uid, service, exp: Date.now() + 10 * 60 * 1000 });
+  const payloadB64 = Buffer.from(payload).toString("base64url");
+  const sig = crypto.createHmac("sha256", secret).update(payloadB64).digest("base64url");
+  return `${payloadB64}.${sig}`;
+};
+
+const verifyOAuthState = (state: string, expectedService: string): { uid: string } => {
+  const secret = process.env.OAUTH_STATE_SECRET;
+  if (!secret) {
+    throw new Error("OAUTH_STATE_SECRET is not configured on the server.");
+  }
+  const [payloadB64, sig] = String(state || "").split(".");
+  if (!payloadB64 || !sig) {
+    throw new Error("Malformed state parameter.");
+  }
+  const expectedSig = crypto.createHmac("sha256", secret).update(payloadB64).digest("base64url");
+  if (!crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expectedSig))) {
+    throw new Error("State signature mismatch — possible CSRF attempt.");
+  }
+  const payload = JSON.parse(Buffer.from(payloadB64, "base64url").toString());
+  if (payload.service !== expectedService) {
+    throw new Error("State was issued for a different service.");
+  }
+  if (Date.now() > payload.exp) {
+    throw new Error("State has expired. Please try connecting again.");
+  }
+  return { uid: payload.uid };
+};
+
+const getOAuthRedirectUri = (service: string): string => {
+  const base = (process.env.APP_URL || "").replace(/\/$/, "");
+  if (!base) {
+    throw new Error("APP_URL is not configured on the server — required to build OAuth redirect URIs.");
+  }
+  return `${base}/api/integrations/callback/${service}`;
+};
+
+// Step 1: authenticated SPA call — returns the URL to redirect the browser to.
+app.post("/api/integrations/:service/connect", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const service = req.params.service;
+    const provider = OAUTH_PROVIDERS[service];
+    if (!provider) {
+      return res.status(404).json({ error: `Unknown integration: ${service}` });
+    }
+    const clientId = process.env[provider.clientIdEnv];
+    if (!clientId) {
+      return res.status(503).json({
+        error: `${service} integration is not configured yet. Missing ${provider.clientIdEnv} on the server.`,
+      });
+    }
+    const uid = requireAuth(req).uid;
+    const state = signOAuthState(uid, service);
+    const redirectUri = getOAuthRedirectUri(service);
+
+    const params = new URLSearchParams({
+      client_id: clientId,
+      redirect_uri: redirectUri,
+      state,
+      response_type: "code",
+      ...(provider.scope ? { scope: provider.scope } : {}),
+      ...(provider.userScope ? { user_scope: provider.userScope } : {}),
+      ...(provider.extraAuthorizeParams || {}),
+    });
+
+    res.json({ authorizeUrl: `${provider.authorizeUrl}?${params.toString()}` });
+  } catch (err: any) {
+    console.error(`[Integrations] connect error:`, err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Step 2: provider redirects the browser here after user consent. Not behind
+// authenticateFirebaseUser — the browser can't attach a Bearer header on a
+// top-level navigation, so the signed `state` param is what verifies identity.
+app.get("/api/integrations/callback/:service", async (req, res) => {
+  const service = req.params.service;
+  const appBase = (process.env.APP_URL || "").replace(/\/$/, "");
+  const failRedirect = (reason: string) =>
+    res.redirect(`${appBase}/?integration=${service}&status=error&reason=${encodeURIComponent(reason)}`);
+
+  try {
+    const provider = OAUTH_PROVIDERS[service];
+    if (!provider) return failRedirect("unknown_service");
+
+    const { code, state, error: providerError } = req.query;
+    if (providerError) return failRedirect(String(providerError));
+    if (!code || typeof code !== "string") return failRedirect("missing_code");
+
+    const { uid } = verifyOAuthState(String(state || ""), service);
+
+    const clientId = process.env[provider.clientIdEnv];
+    const clientSecret = process.env[provider.clientSecretEnv];
+    if (!clientId || !clientSecret) return failRedirect("not_configured");
+
+    const redirectUri = getOAuthRedirectUri(service);
+    const tokenParams = {
+      grant_type: "authorization_code",
+      client_id: clientId,
+      client_secret: clientSecret,
+      code,
+      redirect_uri: redirectUri,
+    };
+
+    let tokenResponse: Response;
+    if (provider.tokenStyle === "json") {
+      tokenResponse = await fetch(provider.tokenUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(tokenParams),
+      });
+    } else {
+      tokenResponse = await fetch(provider.tokenUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams(tokenParams as Record<string, string>).toString(),
+      });
+    }
+
+    const tokenBody = await tokenResponse.json();
+    if (!tokenResponse.ok || tokenBody?.ok === false || tokenBody?.error) {
+      console.error(`[Integrations] ${service} token exchange failed:`, tokenBody);
+      return failRedirect("token_exchange_failed");
+    }
+
+    const { accessToken, refreshToken, expiresIn } = provider.extractTokens(tokenBody);
+    if (!accessToken) {
+      console.error(`[Integrations] ${service} response had no access token:`, tokenBody);
+      return failRedirect("no_access_token");
+    }
+
+    const db = getDb();
+    const now = new Date().toISOString();
+
+    // Raw tokens: locked down in firestore.rules, never client-readable. Admin
+    // SDK writes here regardless of rules (rules only govern client SDK access).
+    await db.collection("users").doc(uid).collection("integration_tokens").doc(service).set({
+      accessToken,
+      refreshToken,
+      expiresAt: expiresIn ? new Date(Date.now() + expiresIn * 1000).toISOString() : null,
+      updatedAt: now,
+    });
+
+    // Redacted status doc: client-readable, contains no secrets.
+    await db.collection("users").doc(uid).collection("integrations").doc(service).set({
+      service,
+      connected: true,
+      connectedAt: now,
+    });
+
+    res.redirect(`${appBase}/?integration=${service}&status=connected`);
+  } catch (err: any) {
+    console.error(`[Integrations] ${service} callback error:`, err.message);
+    return failRedirect("internal_error");
+  }
+});
+
+// Returns connection status (never raw tokens) for every known provider.
+app.get("/api/integrations/status", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const uid = requireAuth(req).uid;
+    const db = getDb();
+    const snap = await db.collection("users").doc(uid).collection("integrations").get();
+    const statusByService: Record<string, { connected: boolean; connectedAt?: string }> = {};
+    snap.forEach((doc) => {
+      const data = doc.data();
+      statusByService[doc.id] = { connected: !!data.connected, connectedAt: data.connectedAt };
+    });
+    for (const service of Object.keys(OAUTH_PROVIDERS)) {
+      if (!statusByService[service]) statusByService[service] = { connected: false };
+    }
+    res.json({ integrations: statusByService });
+  } catch (err: any) {
+    console.error("[Integrations] status error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/api/integrations/:service/disconnect", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const service = req.params.service;
+    if (!OAUTH_PROVIDERS[service]) {
+      return res.status(404).json({ error: `Unknown integration: ${service}` });
+    }
+    const uid = requireAuth(req).uid;
+    const db = getDb();
+    await db.collection("users").doc(uid).collection("integration_tokens").doc(service).delete();
+    await db.collection("users").doc(uid).collection("integrations").doc(service).set({
+      service,
+      connected: false,
+      disconnectedAt: new Date().toISOString(),
+    });
+    res.json({ success: true });
+  } catch (err: any) {
+    console.error("[Integrations] disconnect error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
 
 // Admin Dashboard Summary Metrics API
 app.get("/api/admin/summary", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
