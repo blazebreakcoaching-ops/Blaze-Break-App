@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, lazy, Suspense } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import {
   Home,
@@ -67,73 +67,74 @@ import {
   SupportContact,
 } from "./types.ts";
 import { cn } from "./lib/utils.ts";
-import { DiagnoseView, ResultView } from "./components/DiagnoseSection.tsx";
-import { EnergyBudgetTool } from "./components/EnergyBudget.tsx";
-import { BoundaryRehearsal } from "./components/BoundaryRehearsal.tsx";
-import { ReflectSection } from "./components/ReflectSection.tsx";
-import { NovaChat } from "./components/NovaChat.tsx";
+const DiagnoseView = lazy(() => import("./components/DiagnoseSection.tsx").then(m => ({ default: m.DiagnoseView })));
+const ResultView = lazy(() => import("./components/DiagnoseSection.tsx").then(m => ({ default: m.ResultView })));
+const EnergyBudgetTool = lazy(() => import("./components/EnergyBudget.tsx").then(m => ({ default: m.EnergyBudgetTool })));
+const BoundaryRehearsal = lazy(() => import("./components/BoundaryRehearsal.tsx").then(m => ({ default: m.BoundaryRehearsal })));
+const ReflectSection = lazy(() => import("./components/ReflectSection.tsx").then(m => ({ default: m.ReflectSection })));
+const NovaChat = lazy(() => import("./components/NovaChat.tsx").then(m => ({ default: m.NovaChat })));
 import { Walkthrough } from "./components/Walkthrough.tsx";
-import { NovaGuardianRelay } from "./components/NovaGuardianRelay.tsx";
-import { OrgDashboard } from "./components/OrgDashboard.tsx";
-import { PrivacyVault } from "./components/PrivacyVault.tsx";
+const NovaGuardianRelay = lazy(() => import("./components/NovaGuardianRelay.tsx").then(m => ({ default: m.NovaGuardianRelay })));
+const OrgDashboard = lazy(() => import("./components/OrgDashboard.tsx").then(m => ({ default: m.OrgDashboard })));
+const PrivacyVault = lazy(() => import("./components/PrivacyVault.tsx").then(m => ({ default: m.PrivacyVault })));
 import { GamificationDisplay } from "./components/GamificationDisplay.tsx";
 import { LandingPage } from "./components/LandingPage.tsx";
 import { SituationalOnboarding } from "./components/SituationalOnboarding.tsx";
 import { DailyCheckIn } from "./components/DailyCheckIn.tsx";
 import { ConnectedDailyCheckIn } from "./components/ConnectedRecoveryModules.tsx";
-import { NegotiatorTool } from "./components/NegotiatorTool.tsx";
+const NegotiatorTool = lazy(() => import("./components/NegotiatorTool.tsx").then(m => ({ default: m.NegotiatorTool })));
 import { RelapseRadar } from "./components/RelapseRadar.tsx";
 import { MOCK_DEBTS } from "./constants.ts";
 
-import { ResourceLibrary } from "./components/ResourceLibrary.tsx";
-import { NervousSystemReset } from "./components/NervousSystemReset.tsx";
-import { AnxietyResetMode } from "./components/AnxietyResetMode.tsx";
+const ResourceLibrary = lazy(() => import("./components/ResourceLibrary.tsx").then(m => ({ default: m.ResourceLibrary })));
+const NervousSystemReset = lazy(() => import("./components/NervousSystemReset.tsx").then(m => ({ default: m.NervousSystemReset })));
+const AnxietyResetMode = lazy(() => import("./components/AnxietyResetMode.tsx").then(m => ({ default: m.AnxietyResetMode })));
 
-import { MicroRecovery } from "./components/MicroRecovery.tsx";
-import { SleepBuilder } from "./components/SleepBuilder.tsx";
-import { MovementSnacks } from "./components/MovementSnacks.tsx";
-import { DecompressionDoorway } from "./components/DecompressionDoorway.tsx";
-import { DigitalBoundaryShield } from "./components/DigitalBoundaryShield.tsx";
-import { ResentmentTracker } from "./components/ResentmentTracker.tsx";
-import { WorkloadRealityCheck } from "./components/WorkloadRealityCheck.tsx";
-import { OneLessThing } from "./components/OneLessThing.tsx";
-import { RecoveryRecipes } from "./components/RecoveryRecipes.tsx";
-import { RecoveryFuelEngine } from "./components/RecoveryFuelEngine.tsx";
-import { RecoveryIntelligenceLayer } from "./components/RecoveryIntelligenceLayer.tsx";
-import { FaithValuesMode } from "./components/FaithValuesMode.tsx";
-import { OutcomeTracker } from "./components/OutcomeTracker.tsx";
+const MicroRecovery = lazy(() => import("./components/MicroRecovery.tsx").then(m => ({ default: m.MicroRecovery })));
+const SleepBuilder = lazy(() => import("./components/SleepBuilder.tsx").then(m => ({ default: m.SleepBuilder })));
+const MovementSnacks = lazy(() => import("./components/MovementSnacks.tsx").then(m => ({ default: m.MovementSnacks })));
+const DecompressionDoorway = lazy(() => import("./components/DecompressionDoorway.tsx").then(m => ({ default: m.DecompressionDoorway })));
+const DigitalBoundaryShield = lazy(() => import("./components/DigitalBoundaryShield.tsx").then(m => ({ default: m.DigitalBoundaryShield })));
+const ResentmentTracker = lazy(() => import("./components/ResentmentTracker.tsx").then(m => ({ default: m.ResentmentTracker })));
+const WorkloadRealityCheck = lazy(() => import("./components/WorkloadRealityCheck.tsx").then(m => ({ default: m.WorkloadRealityCheck })));
+const OneLessThing = lazy(() => import("./components/OneLessThing.tsx").then(m => ({ default: m.OneLessThing })));
+const RecoveryRecipes = lazy(() => import("./components/RecoveryRecipes.tsx").then(m => ({ default: m.RecoveryRecipes })));
+const RecoveryFuelEngine = lazy(() => import("./components/RecoveryFuelEngine.tsx").then(m => ({ default: m.RecoveryFuelEngine })));
+const RecoveryIntelligenceLayer = lazy(() => import("./components/RecoveryIntelligenceLayer.tsx").then(m => ({ default: m.RecoveryIntelligenceLayer })));
+const FaithValuesMode = lazy(() => import("./components/FaithValuesMode.tsx").then(m => ({ default: m.FaithValuesMode })));
+const OutcomeTracker = lazy(() => import("./components/OutcomeTracker.tsx").then(m => ({ default: m.OutcomeTracker })));
 import { OmniNova } from "./components/OmniNova.tsx";
-import { EnergyBudgetMatrix } from "./components/EnergyBudgetMatrix.tsx";
-import { RuminationFurnace } from "./components/RuminationFurnace.tsx";
+const EnergyBudgetMatrix = lazy(() => import("./components/EnergyBudgetMatrix.tsx").then(m => ({ default: m.EnergyBudgetMatrix })));
+const RuminationFurnace = lazy(() => import("./components/RuminationFurnace.tsx").then(m => ({ default: m.RuminationFurnace })));
 import { SettingsModal } from "./components/SettingsModal.tsx";
-import { FutureSelfSimulator } from "./components/FutureSelfSimulator.tsx";
-import { AssuranceCentre } from "./components/AssuranceCentre.tsx";
+const FutureSelfSimulator = lazy(() => import("./components/FutureSelfSimulator.tsx").then(m => ({ default: m.FutureSelfSimulator })));
+const AssuranceCentre = lazy(() => import("./components/AssuranceCentre.tsx").then(m => ({ default: m.AssuranceCentre })));
 import { SyncEngine, AuthStatusTracker } from "./lib/sync.tsx";
 import { useAuth } from "./lib/auth.tsx";
-import { IntegrationsDashboard } from "./components/IntegrationsDashboard.tsx";
-import { AdminDashboard } from "./components/AdminDashboard.tsx";
+const IntegrationsDashboard = lazy(() => import("./components/IntegrationsDashboard.tsx").then(m => ({ default: m.IntegrationsDashboard })));
+const AdminDashboard = lazy(() => import("./components/AdminDashboard.tsx").then(m => ({ default: m.AdminDashboard })));
 import { ActivityLog } from "./components/ActivityLog.tsx";
 import { NovaFeedbackModal } from "./components/NovaFeedbackModal.tsx";
 import { InAppNudge } from "./components/InAppNudge.tsx";
-import { EvolutionEngine } from "./components/EvolutionEngine.tsx";
+const EvolutionEngine = lazy(() => import("./components/EvolutionEngine.tsx").then(m => ({ default: m.EvolutionEngine })));
 import { DailyGoal } from "./components/DailyGoal.tsx";
 import { MicroInterventions } from "./components/MicroInterventions.tsx";
 import { NovaOverloadShield } from "./components/NovaOverloadShield.tsx";
 import { updateNovaMemoryBySourceAndType, logJourney } from "./lib/nova-brain.ts";
-import { TrustCentrePage } from "./components/TrustCentrePage.tsx";
-import { AccessControlMatrix } from "./components/AccessControlMatrix.tsx";
+const TrustCentrePage = lazy(() => import("./components/TrustCentrePage.tsx").then(m => ({ default: m.TrustCentrePage })));
+const AccessControlMatrix = lazy(() => import("./components/AccessControlMatrix.tsx").then(m => ({ default: m.AccessControlMatrix })));
 import { hasSubscriptionEntitlement } from "./lib/entitlement.ts";
-import { RecoveryAlly } from "./components/RecoveryAlly.tsx";
+const RecoveryAlly = lazy(() => import("./components/RecoveryAlly.tsx").then(m => ({ default: m.RecoveryAlly })));
 import { SomaticResetOverlay } from "./components/SomaticResetOverlay.tsx";
 import { SmartCard } from "./components/SmartCard.tsx";
 import { SomaticCheckInCard } from "./components/SomaticCheckInCard.tsx";
-import { RecoveryPlan } from "./components/RecoveryPlan.tsx";
-import { FocusZone } from "./components/FocusZone.tsx";
+const RecoveryPlan = lazy(() => import("./components/RecoveryPlan.tsx").then(m => ({ default: m.RecoveryPlan })));
+const FocusZone = lazy(() => import("./components/FocusZone.tsx").then(m => ({ default: m.FocusZone })));
 import { SubscriptionTier, AuthRole } from "./types.ts";
 import { RecoveryVelocityMap } from "./components/RecoveryVelocityMap.tsx";
-import { ExecutiveBoardReport } from "./components/ExecutiveBoardReport.tsx";
-import { CalendarDefenseView } from "./components/CalendarDefenseView.tsx";
-import { RecoveryVaultTest } from "./components/RecoveryVaultTest.tsx";
+const ExecutiveBoardReport = lazy(() => import("./components/ExecutiveBoardReport.tsx").then(m => ({ default: m.ExecutiveBoardReport })));
+const CalendarDefenseView = lazy(() => import("./components/CalendarDefenseView.tsx").then(m => ({ default: m.CalendarDefenseView })));
+const RecoveryVaultTest = lazy(() => import("./components/RecoveryVaultTest.tsx").then(m => ({ default: m.RecoveryVaultTest })));
 import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip as RechartsTooltip, CartesianGrid } from "recharts";
 import { secureApiFetch } from "./lib/secure-api";
 
@@ -2386,7 +2387,15 @@ export default function App() {
   }
 
   if (flow === "trust-centre") {
-    return <TrustCentrePage onBack={() => setFlow("landing")} />;
+    return (
+      <Suspense fallback={
+        <div className="flex items-center justify-center min-h-screen">
+          <Loader2 className="w-8 h-8 text-primary animate-spin" />
+        </div>
+      }>
+        <TrustCentrePage onBack={() => setFlow("landing")} />
+      </Suspense>
+    );
   }
 
   if (flow === "onboarding") {
@@ -2528,6 +2537,11 @@ export default function App() {
             exit={{ opacity: 0, y: -10 }}
             transition={{ duration: 0.3 }}
           >
+            <Suspense fallback={
+              <div className="flex items-center justify-center py-32">
+                <Loader2 className="w-8 h-8 text-primary animate-spin" />
+              </div>
+            }>
             <>
             {activeTab === "home" && (
               <HomeSection
@@ -2893,6 +2907,7 @@ export default function App() {
               </div>
             )}
             </>
+            </Suspense>
           </motion.div>
         </AnimatePresence>
 

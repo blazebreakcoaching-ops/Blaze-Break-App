@@ -136,7 +136,7 @@ export const SomaticCheckInCard: React.FC<SomaticCheckInCardProps> = ({
                 disabled={selectedOptions.length === 0 && note.trim().length === 0}
                 className="w-full btn-primary py-3 flex items-center justify-center gap-2 text-xs rounded-xl shadow-lg border border-primary/25 disabled:opacity-50 cursor-pointer"
               >
-                <Check className="w-4 h-4 text-white" />
+                <Check className="w-4 h-4" />
                 <span>Save Check-In</span>
               </button>
             </motion.div>

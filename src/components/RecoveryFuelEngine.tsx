@@ -850,7 +850,7 @@ export const RecoveryFuelEngine = ({
                           className={cn(
                             "px-3 py-1 rounded-lg text-[11px] font-black uppercase tracking-wider transition-all border cursor-pointer",
                             hydrationReminderEnabled 
-                              ? "bg-text-main text-white border-text-main shadow-sm" 
+                              ? "bg-text-main text-background border-text-main shadow-sm" 
                               : "bg-transparent text-text-muted border-border/40"
                           )}
                         >

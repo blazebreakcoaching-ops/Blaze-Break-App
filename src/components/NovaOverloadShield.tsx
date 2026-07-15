@@ -60,6 +60,43 @@ const SHIELD_STATES: Record<ShieldState, { label: string; color: string; icon: a
   }
 };
 
+// Fully-written class strings (not template-literal interpolation) so Tailwind's
+// scanner always generates them — this doesn't depend on some unrelated file
+// coincidentally referencing the same color name.
+const SHIELD_COLOR_CLASSES: Record<string, {
+  cardBorder: string;
+  cardBg: string;
+  iconBg: string;
+  iconShadow: string;
+  heading: string;
+  glow: string;
+}> = {
+  emerald: {
+    cardBorder: 'border-emerald-500/30',
+    cardBg: 'bg-emerald-500/5',
+    iconBg: 'bg-emerald-500',
+    iconShadow: 'shadow-emerald-500/30',
+    heading: 'text-emerald-500 dark:text-emerald-400',
+    glow: 'bg-emerald-500/20',
+  },
+  amber: {
+    cardBorder: 'border-amber-500/30',
+    cardBg: 'bg-amber-500/5',
+    iconBg: 'bg-amber-500',
+    iconShadow: 'shadow-amber-500/30',
+    heading: 'text-amber-500 dark:text-amber-400',
+    glow: 'bg-amber-500/20',
+  },
+  rose: {
+    cardBorder: 'border-rose-500/30',
+    cardBg: 'bg-rose-500/5',
+    iconBg: 'bg-rose-500',
+    iconShadow: 'shadow-rose-500/30',
+    heading: 'text-rose-500 dark:text-rose-400',
+    glow: 'bg-rose-500/20',
+  },
+};
+
 export const NovaOverloadShield = ({ fingerprint, onAwardPoints, onNavigate }: NovaOverloadShieldProps) => {
   const [currentState, setCurrentState] = useState<ShieldState>('stable');
   const [activeTab, setActiveTab] = useState<'manual' | 'integrations'>('manual');
@@ -150,6 +187,7 @@ export const NovaOverloadShield = ({ fingerprint, onAwardPoints, onNavigate }: N
   };
 
   const activeState = SHIELD_STATES[currentState];
+  const stateColors = SHIELD_COLOR_CLASSES[activeState.color];
 
   return (
     <div className="space-y-12 pb-24">
@@ -354,15 +392,15 @@ export const NovaOverloadShield = ({ fingerprint, onAwardPoints, onNavigate }: N
         {/* Right Column: Shield Status & Interventions */}
         <div className="lg:col-span-2 space-y-8">
           
-          <div className={cn("card glass p-8 md:p-12 transition-all duration-500 relative overflow-hidden", `border-${activeState.color}-500/30`, `bg-${activeState.color}-500/5`)}>
+          <div className={cn("card glass p-8 md:p-12 transition-all duration-500 relative overflow-hidden", stateColors.cardBorder, stateColors.cardBg)}>
              <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6 mb-8">
                <div className="flex items-center gap-4">
-                 <div className={cn("w-16 h-16 rounded-2xl flex items-center justify-center text-white shadow-xl transition-all duration-500", `bg-${activeState.color}-500`, `shadow-${activeState.color}-500/30`)}>
+                 <div className={cn("w-16 h-16 rounded-2xl flex items-center justify-center text-white shadow-xl transition-all duration-500", stateColors.iconBg, stateColors.iconShadow)}>
                    {simulating ? <Zap className="w-8 h-8 animate-pulse" /> : <activeState.icon className="w-8 h-8" />}
                  </div>
                  <div>
                    <h3 className="text-xs font-black uppercase tracking-widest text-text-muted mb-1">Current Telemetry Status</h3>
-                   <h2 className={cn("text-3xl font-display font-bold transition-colors", `text-${activeState.color}-500 dark:text-${activeState.color}-400`)}>
+                   <h2 className={cn("text-3xl font-display font-bold transition-colors", stateColors.heading)}>
                      {simulating ? 'Scanning...' : activeState.label}
                    </h2>
                  </div>
@@ -386,7 +424,7 @@ export const NovaOverloadShield = ({ fingerprint, onAwardPoints, onNavigate }: N
                </p>
              </div>
 
-             <div className={cn("absolute right-[-10%] top-[-10%] w-64 h-64 rounded-full blur-[100px] transition-all duration-1000", `bg-${activeState.color}-500/20`)} />
+             <div className={cn("absolute right-[-10%] top-[-10%] w-64 h-64 rounded-full blur-[100px] transition-all duration-1000", stateColors.glow)} />
           </div>
 
           <AnimatePresence mode="popLayout">

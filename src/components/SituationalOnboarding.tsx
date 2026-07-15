@@ -439,7 +439,7 @@ export const SituationalOnboarding = ({ onComplete }: OnboardingProps) => {
                   "w-full sm:w-auto flex items-center justify-center gap-3 px-8 py-4 rounded-xl font-black uppercase tracking-widest text-xs transition-all shadow-lg",
                   steps[step].id === "profile" && !profile.fullName.trim()
                     ? "bg-background border border-white/[0.05] text-text-muted cursor-not-allowed"
-                    : "bg-white text-foreground hover:bg-surface shadow-white/10 hover:shadow-white/20",
+                    : "bg-card text-foreground hover:bg-surface shadow-black/5 dark:shadow-white/10 hover:shadow-black/10 dark:hover:shadow-white/20",
                 )}
               >
                 {step === steps.length - 1 ? "Initialize Protocol" : "Proceed"}{" "}

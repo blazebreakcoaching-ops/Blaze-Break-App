@@ -95,7 +95,7 @@ export const NegotiatorTool = () => {
                     onClick={() => setRequest({ ...request, intensity: i })}
                     className={cn(
                       "flex-1 p-3 rounded-lg border text-xs font-black uppercase tracking-widest transition-all",
-                      request.intensity === i ? "bg-primary text-primary-foreground border-primary shadow-md" : "bg-white text-text-muted border-border hover:border-border"
+                      request.intensity === i ? "bg-primary text-primary-foreground border-primary shadow-md" : "bg-card text-text-muted border-border hover:border-border"
                     )}
                   >
                     {i}

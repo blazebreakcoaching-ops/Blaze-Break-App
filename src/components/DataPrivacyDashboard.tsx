@@ -125,7 +125,7 @@ export const DataPrivacyDashboard = ({
                   <div>
                     <h4 className={cn(
                       "text-sm font-bold transition-colors",
-                      isEnabled ? "text-white" : "text-text-muted"
+                      isEnabled ? "text-text-main" : "text-text-muted"
                     )}>
                       {point.label}
                     </h4>

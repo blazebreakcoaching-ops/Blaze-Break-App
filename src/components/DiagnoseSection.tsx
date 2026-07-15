@@ -276,7 +276,7 @@ export const DiagnoseView = ({
               <button
                 key={`${option.text}-${idx}`}
                 onClick={() => handleAnswer(option.value)}
-                className="group flex items-center justify-between p-6 bg-white border border-border rounded-xl text-left hover:border-primary hover:shadow-md transition-all cursor-pointer"
+                className="group flex items-center justify-between p-6 bg-card border border-border rounded-xl text-left hover:border-primary hover:shadow-md transition-all cursor-pointer"
               >
                 <span className="text-lg text-text-muted font-medium">
                   {option.text}
@@ -932,7 +932,7 @@ export const ResultView = ({
               return (
                 <div
                   key={key}
-                  className="p-6 bg-white rounded-2xl border border-border shadow-sm space-y-4 hover:border-border transition-colors"
+                  className="p-6 bg-card rounded-2xl border border-border shadow-sm space-y-4 hover:border-border transition-colors"
                 >
                   <div className="flex justify-between items-start">
                     <div className="flex items-center gap-3">

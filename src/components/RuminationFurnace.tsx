@@ -107,8 +107,8 @@ export const RuminationFurnace = ({ onCleared }: { onCleared?: () => void }) => 
               disabled={isBurning}
               placeholder="Dump the neural pattern here. e.g., 'I am furious that my Saturday boundary was crossed again...'"
               className={cn(
-                "w-full h-56 bg-transparent p-6 text-lg lg:text-xl font-medium placeholder-slate-700 focus:outline-none resize-none transition-all duration-700 relative z-10",
-                isBurning ? "text-warning grayscale opacity-30" : "text-white"
+                "w-full h-56 bg-transparent p-6 text-lg lg:text-xl font-medium placeholder:text-text-muted focus:outline-none resize-none transition-all duration-700 relative z-10",
+                isBurning ? "text-warning grayscale opacity-30" : "text-text-main"
               )}
               style={{
                 filter: isBurning ? 'blur(4px)' : 'none',

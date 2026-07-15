@@ -150,7 +150,7 @@ const GuardianCard = ({
       </div>
       
       <div className="space-y-1.5 relative z-10 mb-6">
-        <h4 className={cn("font-bold text-lg tracking-tight", contact.role.includes('guardian') ? "text-white" : "text-text-main")}>{contact.name}</h4>
+        <h4 className={cn("font-bold text-lg tracking-tight", contact.role.includes('guardian') ? "text-destructive" : "text-text-main")}>{contact.name}</h4>
         <div className="flex items-center gap-2 flex-wrap">
            <span className={cn(
              "text-[11px] uppercase font-black tracking-widest px-2.5 py-1 rounded-md",

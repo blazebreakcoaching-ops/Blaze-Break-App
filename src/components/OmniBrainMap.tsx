@@ -458,7 +458,7 @@ export const OmniBrainMap = ({ activeTab, setActiveTab, darkMode, setDarkMode, s
                         "px-2.5 py-1 rounded-lg text-xs font-bold border",
                         nodeId === 'nova' 
                           ? "bg-card border-primary text-primary"
-                          : "bg-surface border-white/10 text-white"
+                          : "bg-surface border-white/10 text-text-main"
                       )}>
                         {nodeObj.label}
                       </span>

@@ -160,7 +160,7 @@ export const DailyCheckIn = ({ onComplete, onClose }: DailyCheckInProps) => {
                       onClick={() => setBlameStage(b.id)}
                       className={cn(
                         "w-full flex flex-col p-4 rounded-2xl border transition-all text-left",
-                        blameStage === b.id ? "bg-white border-destructive shadow-md ring-1 ring-rose-500/20" : "bg-surface border-transparent hover:bg-white hover:border-border"
+                        blameStage === b.id ? "bg-card border-destructive shadow-md ring-1 ring-rose-500/20" : "bg-surface border-transparent hover:bg-card hover:border-border"
                       )}
                     >
                       <div className="flex items-center justify-between w-full mb-1">
