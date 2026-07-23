@@ -7,6 +7,7 @@ import React, { useState, useEffect, useRef, lazy, Suspense } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import {
   Home,
+  LifeBuoy,
   MapPin,
   BatteryFull,
   MessageSquare,
@@ -74,6 +75,7 @@ const BoundaryRehearsal = lazy(() => import("./components/BoundaryRehearsal.tsx"
 const ReflectSection = lazy(() => import("./components/ReflectSection.tsx").then(m => ({ default: m.ReflectSection })));
 const NovaChat = lazy(() => import("./components/NovaChat.tsx").then(m => ({ default: m.NovaChat })));
 import { Walkthrough } from "./components/Walkthrough.tsx";
+import { CrisisSupportModal, CrisisSupportButton } from "./components/CrisisSupport.tsx";
 const NovaGuardianRelay = lazy(() => import("./components/NovaGuardianRelay.tsx").then(m => ({ default: m.NovaGuardianRelay })));
 const OrgDashboard = lazy(() => import("./components/OrgDashboard.tsx").then(m => ({ default: m.OrgDashboard })));
 const PrivacyVault = lazy(() => import("./components/PrivacyVault.tsx").then(m => ({ default: m.PrivacyVault })));
@@ -437,6 +439,7 @@ const Sidebar = ({
   currentTier,
   isCollapsed,
   setIsCollapsed,
+  onOpenCrisisSupport,
 }: {
   activeTab: string;
   setActiveTab: (t: string) => void;
@@ -446,6 +449,7 @@ const Sidebar = ({
   currentTier: SubscriptionTier;
   isCollapsed: boolean;
   setIsCollapsed: (v: boolean | ((prev: boolean) => boolean)) => void;
+  onOpenCrisisSupport: () => void;
 }) => {
   const [pendingTasksCount, setPendingTasksCount] = useState(0);
 
@@ -542,12 +546,24 @@ const Sidebar = ({
                 Blaze Break
               </h1>
               <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-primary mt-1 truncate">
-                Executive Suite
+                Recovery Companion
               </span>
             </motion.div>
           )}
         </AnimatePresence>
       </div>
+
+      {!isCollapsed ? (
+        <CrisisSupportButton onClick={onOpenCrisisSupport} className="shrink-0 px-1" />
+      ) : (
+        <button
+          onClick={onOpenCrisisSupport}
+          title="Need support now?"
+          className="shrink-0 w-full flex items-center justify-center p-3 rounded-2xl text-info bg-info/10 hover:bg-info/20 border border-info/20 transition-colors"
+        >
+          <LifeBuoy className="w-5 h-5" />
+        </button>
+      )}
 
       <nav
         className={cn(
@@ -1828,6 +1844,7 @@ export default function App() {
   // Settings State
   const [showSettings, setShowSettings] = useState(false);
   const [showWalkthrough, setShowWalkthrough] = useState(false);
+  const [showCrisisSupport, setShowCrisisSupport] = useState(false);
   const [isMobileNavCollapsed, setIsMobileNavCollapsed] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
 
@@ -2379,41 +2396,71 @@ export default function App() {
 
   if (flow === "landing") {
     return (
-      <LandingPage
-        onStart={() => setFlow("onboarding")}
-        onOpenTrustCentre={() => setFlow("trust-centre")}
-      />
+      <>
+        <LandingPage
+          onStart={() => setFlow("onboarding")}
+          onOpenTrustCentre={() => setFlow("trust-centre")}
+        />
+        <button
+          onClick={() => setShowCrisisSupport(true)}
+          className="fixed left-6 bottom-6 flex items-center gap-2 px-4 py-3 rounded-full text-info bg-info/10 hover:bg-info/20 border border-info/20 shadow-2xl transition-colors z-50 text-xs font-bold"
+        >
+          <LifeBuoy className="w-4 h-4 shrink-0" />
+          <span>Need support now?</span>
+        </button>
+        <CrisisSupportModal isOpen={showCrisisSupport} onClose={() => setShowCrisisSupport(false)} />
+      </>
     );
   }
 
   if (flow === "trust-centre") {
     return (
-      <Suspense fallback={
-        <div className="flex items-center justify-center min-h-screen">
-          <Loader2 className="w-8 h-8 text-primary animate-spin" />
-        </div>
-      }>
-        <TrustCentrePage onBack={() => setFlow("landing")} />
-      </Suspense>
+      <>
+        <Suspense fallback={
+          <div className="flex items-center justify-center min-h-screen">
+            <Loader2 className="w-8 h-8 text-primary animate-spin" />
+          </div>
+        }>
+          <TrustCentrePage onBack={() => setFlow("landing")} />
+        </Suspense>
+        <button
+          onClick={() => setShowCrisisSupport(true)}
+          className="fixed left-6 bottom-6 flex items-center gap-2 px-4 py-3 rounded-full text-info bg-info/10 hover:bg-info/20 border border-info/20 shadow-2xl transition-colors z-50 text-xs font-bold"
+        >
+          <LifeBuoy className="w-4 h-4 shrink-0" />
+          <span>Need support now?</span>
+        </button>
+        <CrisisSupportModal isOpen={showCrisisSupport} onClose={() => setShowCrisisSupport(false)} />
+      </>
     );
   }
 
   if (flow === "onboarding") {
     return (
-      <SituationalOnboarding
-        onComplete={(profile) => {
-          setStats((prev) => ({ ...prev, profile }));
-          localStorage.setItem("blaze_profile", JSON.stringify(profile));
-          setFlow("app");
-          setActiveTab("home");
+      <>
+        <SituationalOnboarding
+          onComplete={(profile) => {
+            setStats((prev) => ({ ...prev, profile }));
+            localStorage.setItem("blaze_profile", JSON.stringify(profile));
+            setFlow("app");
+            setActiveTab("home");
 
-          updateNovaMemoryBySourceAndType("Onboarding Telemetry", "profile", {
-            content: `Executive core established. Objective: ${profile.purpose || "N/A"}. Threat: ${profile.primaryDrain || "N/A"}. Voice: ${profile.novaTone || "N/A"}.`,
-            confidence: "verified",
-            canEdit: true,
-          });
-        }}
-      />
+            updateNovaMemoryBySourceAndType("Onboarding Telemetry", "profile", {
+              content: `Onboarding complete. Goal: ${profile.purpose || "N/A"}. Main drain: ${profile.primaryDrain || "N/A"}. Preferred tone: ${profile.novaTone || "N/A"}.`,
+              confidence: "verified",
+              canEdit: true,
+            });
+          }}
+        />
+        <button
+          onClick={() => setShowCrisisSupport(true)}
+          className="fixed left-6 bottom-6 flex items-center gap-2 px-4 py-3 rounded-full text-info bg-info/10 hover:bg-info/20 border border-info/20 shadow-2xl transition-colors z-50 text-xs font-bold"
+        >
+          <LifeBuoy className="w-4 h-4 shrink-0" />
+          <span>Need support now?</span>
+        </button>
+        <CrisisSupportModal isOpen={showCrisisSupport} onClose={() => setShowCrisisSupport(false)} />
+      </>
     );
   }
 
@@ -2433,6 +2480,7 @@ export default function App() {
         currentTier={stats.profile?.subscription || "recovery"}
         isCollapsed={isSidebarCollapsed}
         setIsCollapsed={setIsSidebarCollapsed}
+        onOpenCrisisSupport={() => setShowCrisisSupport(true)}
       />
 
       <motion.main
@@ -2944,6 +2992,13 @@ export default function App() {
       {/* Mobile Nav */}
       <div className="md:hidden z-50">
         <button
+          onClick={() => setShowCrisisSupport(true)}
+          title="Need support now?"
+          className="fixed left-4 top-1/2 -translate-y-1/2 w-12 h-12 rounded-full text-info bg-info/10 hover:bg-info/20 border border-info/20 flex items-center justify-center shadow-2xl transition-colors z-50"
+        >
+          <LifeBuoy className="w-5 h-5" />
+        </button>
+        <button
           onClick={() => setIsMobileNavCollapsed(!isMobileNavCollapsed)}
           className={cn(
             "fixed right-6 w-12 h-12 rounded-full glass border border-border text-text-main flex items-center justify-center shadow-2xl transition-all duration-300 z-50",
@@ -3008,6 +3063,8 @@ export default function App() {
           onAwardPoints={awardPoints}
         />
       </AnimatePresence>
+
+      <CrisisSupportModal isOpen={showCrisisSupport} onClose={() => setShowCrisisSupport(false)} />
       <InAppNudge />
     </div>
   );

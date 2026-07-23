@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { 
+import { CrisisSupportContent } from './CrisisSupport';
+import {
   Users, 
   ShieldCheck, 
   Plus, 
@@ -397,66 +398,18 @@ export const NovaGuardianRelay = ({ contacts, onAdd, onRemove }: NovaGuardianRel
             </div>
           </div>
 
-          {/* Emergency Handover Protocol */}
-          <div className="card p-8 bg-white dark:bg-card border-border relative overflow-hidden space-y-6 shadow-xl">
+          {/* Crisis support — shared content, see CrisisSupport.tsx */}
+          <div className="card p-8 bg-card border-border relative overflow-hidden space-y-6 shadow-xl">
              <div className="relative z-10 flex items-center justify-between border-b border-border pb-4">
                <div className="flex items-center gap-3">
-                 <PhoneForwarded className="w-5 h-5 text-destructive" />
+                 <PhoneForwarded className="w-5 h-5 text-primary" />
                  <h4 className="font-bold uppercase tracking-widest text-xs tracking-[0.2em] text-text-main">
-                   External Triage
+                   Crisis support
                  </h4>
                </div>
              </div>
-             
-             <div className="relative z-10 space-y-5 pt-2">
-                <p className="text-xs text-text-muted leading-relaxed font-medium">
-                  Direct routing to specialized crisis management organizations when internal mitigation fails.
-                </p>
-
-                <div className="space-y-6">
-                  <div className="space-y-3">
-                    <h5 className="text-[11px] font-black uppercase tracking-widest text-text-muted ml-1">If you're in the UK or Ireland</h5>
-                    <a href="tel:116123" className="flex items-center justify-between p-4 rounded-xl border border-warning/20 dark:border-warning-foreground/30 bg-warning/10 dark:bg-warning-foreground/20 hover:bg-warning/20 dark:hover:bg-warning-foreground/40 transition-colors group">
-                       <div className="space-y-1.5">
-                         <span className="text-sm font-bold text-warning dark:text-warning block">Samaritans</span>
-                         <span className="text-[11px] font-black uppercase tracking-widest text-warning/70 font-mono">Call or Text &middot; Free &middot; 24/7</span>
-                       </div>
-                       <PhoneCall className="w-5 h-5 text-warning group-hover:scale-110 transition-transform" />
-                    </a>
-                    <a href="sms:85258?body=SHOUT" className="flex items-center justify-between p-4 rounded-xl border border-primary-light dark:border-primary-dark/30 bg-primary-light dark:bg-primary-dark/20 hover:bg-primary-light dark:hover:bg-primary-dark/40 transition-colors group">
-                       <div className="space-y-1.5">
-                         <span className="text-sm font-bold text-primary dark:text-primary block">Shout</span>
-                         <span className="text-[11px] font-black uppercase tracking-widest text-primary/70 font-mono">Text "SHOUT" to 85258</span>
-                       </div>
-                       <MessageCircle className="w-5 h-5 text-primary group-hover:scale-110 transition-transform" />
-                    </a>
-                    <a href="tel:999" className="flex items-center justify-between p-4 rounded-xl border border-rose-100 dark:border-rose-900/30 bg-rose-50 dark:bg-rose-950/20 hover:bg-rose-100 dark:hover:bg-rose-900/40 transition-colors group">
-                       <div className="space-y-1.5">
-                         <span className="text-sm font-bold text-rose-600 dark:text-destructive block">Emergency Services</span>
-                         <span className="text-[11px] font-black uppercase tracking-widest text-destructive/70 font-mono">Tap routing &middot; 24/7 Availability</span>
-                       </div>
-                       <PhoneCall className="w-5 h-5 text-destructive group-hover:scale-110 transition-transform" />
-                    </a>
-                  </div>
-
-                  <div className="space-y-3">
-                    <h5 className="text-[11px] font-black uppercase tracking-widest text-text-muted ml-1">If you're in the US or Canada</h5>
-                    <a href="tel:988" className="flex items-center justify-between p-4 rounded-xl border border-rose-100 dark:border-rose-900/30 bg-rose-50 dark:bg-rose-950/20 hover:bg-rose-100 dark:hover:bg-rose-900/40 transition-colors group">
-                       <div className="space-y-1.5">
-                         <span className="text-sm font-bold text-rose-600 dark:text-destructive block">988 Suicide & Crisis Lifeline</span>
-                         <span className="text-[11px] font-black uppercase tracking-widest text-destructive/70 font-mono">Tap routing &middot; 24/7 Availability</span>
-                       </div>
-                       <PhoneCall className="w-5 h-5 text-destructive group-hover:scale-110 transition-transform" />
-                    </a>
-                    <a href="sms:741741?body=HOME" className="flex items-center justify-between p-4 rounded-xl border border-primary-light dark:border-primary-dark/30 bg-primary-light dark:bg-primary-dark/20 hover:bg-primary-light dark:hover:bg-primary-dark/40 transition-colors group">
-                       <div className="space-y-1.5">
-                         <span className="text-sm font-bold text-primary dark:text-primary block">Crisis Text Line</span>
-                         <span className="text-[11px] font-black uppercase tracking-widest text-primary/70 font-mono">Payload: "HOME" TO 741741</span>
-                       </div>
-                       <MessageCircle className="w-5 h-5 text-primary group-hover:scale-110 transition-transform" />
-                    </a>
-                  </div>
-                </div>
+             <div className="relative z-10 pt-2">
+                <CrisisSupportContent />
              </div>
           </div>
           <div className="card p-8 border border-border bg-card text-text-main relative overflow-hidden space-y-6 shadow-lg">
