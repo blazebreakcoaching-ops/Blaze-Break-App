@@ -1020,7 +1020,7 @@ const HomeSection = ({
     micro: "Micro-Recovery",
     activity: "Activity Log",
     directive: "Nova's Suggestion",
-    quests: "Active Quests",
+    quests: "Milestones",
     network: "Guardian Network",
     radar: "Relapse Radar",
   };
@@ -1537,15 +1537,15 @@ const HomeSection = ({
       </SmartCard>
     ),
     quests: (
-      <SmartCard id="quests" key="quests" title="Active Quests" energyDrain="medium" onDragStart={handleDragStart} onDragOver={handleDragOver} onDrop={(e, id) => handleDrop(e, id, 'right')} className="space-y-6 p-6">
+      <SmartCard id="quests" key="quests" title="Milestones" energyDrain="medium" onDragStart={handleDragStart} onDragOver={handleDragOver} onDrop={(e, id) => handleDrop(e, id, 'right')} className="space-y-6 p-6">
         <h3 className="text-xs font-black uppercase tracking-widest text-text-main flex items-center gap-3">
-          <Gift className="w-5 h-5 text-primary" /> Active Quests
+          <Gift className="w-5 h-5 text-primary" /> Milestones
         </h3>
         <div className="space-y-3">
           {[
-            { label: "Save Energy Budget", pts: 50, done: true },
-            { label: "Nova Intelligence Update", pts: 100, done: false },
-            { label: "Practice Framework", pts: 75, done: false }
+            { label: "Complete today's check-in", pts: 50, done: hasClaimedDaily },
+            { label: "Reach a 3-day streak", pts: 100, done: stats.streak >= 3 },
+            { label: "Complete your burnout diagnostic", pts: 75, done: !!fingerprint }
           ].map((q, i) => (
             <div key={i} className={cn("flex items-center justify-between p-4 rounded-2xl border transition-all", q.done ? "bg-surface/50 border-border/50" : "bg-card border-border shadow-sm hover:shadow-md")}>
               <div className="flex items-center gap-3">
@@ -1594,22 +1594,26 @@ const HomeSection = ({
         className="p-6 bg-card border border-border rounded-2xl shadow-xl space-y-6"
       >
         {(() => {
-          // Initialize streak calendar state or load from localStorage
+          const today = new Date();
+          const todayStr = today.toISOString().split('T')[0]; // YYYY-MM-DD, real current date
+          const currentYear = today.getFullYear();
+          const currentMonth = today.getMonth(); // 0-indexed
+          const currentMonthLabel = today.toLocaleString('default', { month: 'long' });
+          const todayDayNum = today.getDate();
+
+          // Initialize streak calendar state or load from localStorage - honest
+          // empty state for new users, no fabricated pre-existing streak.
           const [streakDays, setStreakDays] = useState<string[]>(() => {
             try {
               const saved = localStorage.getItem("blaze_recovery_streak_days");
               if (saved) return JSON.parse(saved);
             } catch (e) {}
-            // Seed a beautiful streak pattern
-            const seeded = ["2026-07-12", "2026-07-11", "2026-07-10", "2026-07-08", "2026-07-07", "2026-07-06"];
-            localStorage.setItem("blaze_recovery_streak_days", JSON.stringify(seeded));
-            return seeded;
+            return [];
           });
 
           const [selectedDay, setSelectedDay] = useState<string | null>(null);
 
           const handleCommitTodayBudget = () => {
-            const todayStr = "2026-07-13";
             if (streakDays.includes(todayStr)) return;
             const updated = [todayStr, ...streakDays];
             setStreakDays(updated);
@@ -1625,43 +1629,51 @@ const HomeSection = ({
             } catch (e) {}
           };
 
-          const isTodayCommitted = streakDays.includes("2026-07-13");
+          const isTodayCommitted = streakDays.includes(todayStr);
 
-          // Monthly Grid Calculation for July 2026
-          // July 2026 starts on a Wednesday (index 3). Has 31 days.
-          const daysInMonth = 31;
-          const startOffset = 3; // Wednesday
+          // Monthly grid for the actual current month/year, computed for real
+          // rather than hardcoded to a single test date.
+          const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
+          const startOffset = new Date(currentYear, currentMonth, 1).getDay(); // 0=Sunday
           const totalCells = daysInMonth + startOffset;
+
+          // Consecutive-day streak counting backward from today, not a hardcoded range.
+          const currentStreakLength = (() => {
+            let count = 0;
+            let cursor = new Date(today);
+            while (streakDays.includes(cursor.toISOString().split('T')[0])) {
+              count++;
+              cursor.setDate(cursor.getDate() - 1);
+            }
+            return count;
+          })();
 
           return (
             <div className="space-y-6 text-left">
               <div className="flex items-center justify-between border-b border-border pb-4">
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded-xl bg-success/15 border border-success/30 flex items-center justify-center text-success">
-                    <Flame className="w-5 h-5 fill-success/20 animate-bounce" />
+                    <Flame className="w-5 h-5 fill-success/20" />
                   </div>
                   <div>
                     <h4 className="text-sm font-bold text-text-main">Recovery Streak</h4>
-                    <p className="text-[10px] text-text-muted font-black uppercase tracking-widest mt-0.5">Budget Preservation Calendar</p>
+                    <p className="text-[10px] text-text-muted font-black uppercase tracking-widest mt-0.5">Days you've checked in</p>
                   </div>
                 </div>
                 <div className="text-right">
                   <span className="text-2xl font-serif font-black text-success tracking-tight">
-                    {streakDays.filter(d => {
-                      const day = new Date(d).getDate();
-                      return day >= 6 && day <= 13; // consecutive streak counting
-                    }).length} Days
+                    {currentStreakLength} Days
                   </span>
-                  <p className="text-[9px] uppercase font-black text-text-muted tracking-widest mt-0.5">Active Streak</p>
+                  <p className="text-[9px] uppercase font-black text-text-muted tracking-widest mt-0.5">Current Streak</p>
                 </div>
               </div>
 
               {/* Calendar Grid */}
               <div>
                 <div className="flex items-center justify-between mb-3 px-1">
-                  <span className="text-xs font-black uppercase text-text-main tracking-wider">July 2026</span>
+                  <span className="text-xs font-black uppercase text-text-main tracking-wider">{currentMonthLabel} {currentYear}</span>
                   <div className="flex items-center gap-1.5 text-[10px] text-text-muted font-bold">
-                    <span className="w-2.5 h-2.5 rounded-full bg-success/20 border border-success/40 inline-block" /> Budget Kept
+                    <span className="w-2.5 h-2.5 rounded-full bg-success/20 border border-success/40 inline-block" /> Checked in
                   </div>
                 </div>
 
@@ -1678,9 +1690,9 @@ const HomeSection = ({
                     }
 
                     const dayNum = i - startOffset + 1;
-                    const dateStr = `2026-07-${String(dayNum).padStart(2, '0')}`;
+                    const dateStr = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-${String(dayNum).padStart(2, '0')}`;
                     const isStreak = streakDays.includes(dateStr);
-                    const isToday = dayNum === 13;
+                    const isToday = dayNum === todayDayNum;
 
                     return (
                       <motion.button
@@ -1730,7 +1742,7 @@ const HomeSection = ({
                       ×
                     </button>
                     <p className="font-bold text-text-main">
-                      July {new Date(selectedDay).getDate()}, 2026 Status:
+                      {new Date(selectedDay + 'T00:00:00').toLocaleDateString('default', { month: 'long', day: 'numeric', year: 'numeric' })} Status:
                     </p>
                     <p className="text-text-muted mt-1.5 font-medium leading-relaxed">
                       {streakDays.includes(selectedDay) 
@@ -1749,7 +1761,7 @@ const HomeSection = ({
                       <Sparkles className="w-5 h-5 text-primary shrink-0 mt-0.5" />
                       <div className="space-y-1">
                         <p className="text-xs font-bold text-text-main">Commit Today's Energy Budget</p>
-                        <p className="text-[10px] text-text-muted font-medium">Verify you kept your meetings and boundaries under budget for today (July 13).</p>
+                        <p className="text-[10px] text-text-muted font-medium">Verify you kept your meetings and boundaries under budget for today ({currentMonthLabel} {todayDayNum}).</p>
                       </div>
                     </div>
                     <button
