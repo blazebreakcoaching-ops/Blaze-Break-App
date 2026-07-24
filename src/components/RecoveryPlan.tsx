@@ -125,7 +125,7 @@ export const RecoveryPlan = ({
       items.push({
         id: 'rec_sleep_1',
         section: 'Recover',
-        text: 'Deploy a 20-minute Non-Sleep Deep Rest (NSDR) somatic breathing loop',
+        text: 'Try a 20-minute Non-Sleep Deep Rest (NSDR) somatic breathing loop',
         points: 50,
         completed: completedIds.includes('rec_sleep_1'),
         tag: 'Sleep Repair'
@@ -443,7 +443,7 @@ export const RecoveryPlan = ({
             </div>
             <div>
               <span className="text-[10px] uppercase tracking-[0.25em] font-black text-primary">Nova Recovery Synthesis</span>
-              <h2 className="text-2xl font-display font-bold text-text-main tracking-tight">Personalized Recovery Protocol</h2>
+              <h2 className="text-2xl font-display font-bold text-text-main tracking-tight">Personalized Recovery Plan</h2>
             </div>
           </div>
           <div className="flex flex-col items-end shrink-0">

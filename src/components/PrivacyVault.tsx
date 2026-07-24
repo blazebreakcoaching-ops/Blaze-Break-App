@@ -256,7 +256,7 @@ export const PrivacyVault = ({
 
               <div className="card bg-destructive/5 border-destructive/20">
                 <h3 className="font-bold text-destructive flex items-center gap-2 mb-4">
-                  <AlertTriangle className="w-5 h-5" /> The Prime Directive
+                  <AlertTriangle className="w-5 h-5" /> Our Privacy Promise
                 </h3>
                 <p className="text-sm text-text-muted leading-relaxed font-light">
                   Blaze Break <strong>will never</strong> expose your private recovery history, current conversations, or individual risk levels to an employer. The system lacks the capability to share un-anonymised private data upwards.
@@ -628,7 +628,7 @@ export const PrivacyVault = ({
                 </div>
                 
                 <div>
-                  <h3 className="text-xl font-display font-bold text-text-main mb-2">Erasure Protocol Authorization</h3>
+                  <h3 className="text-xl font-display font-bold text-text-main mb-2">Confirm Permanent Deletion</h3>
                   <p className="text-text-muted text-sm leading-relaxed font-light">
                     This is a destructive, irreversible action. Executing this will permanently erase your diagnostic metrics, somatic logs, Nova interaction baseline, and sync connection.
                   </p>
@@ -734,7 +734,7 @@ export const PrivacyVault = ({
                           
                           localStorage.clear();
                           
-                          await handleAuditAction('Erasure Protocol Completed', 'All Data Stores', 'deleted');
+                          await handleAuditAction('Data Deletion Completed', 'All Data Stores', 'deleted');
                           setIsDeleting(false);
                           setShowDeleteConfirmModal(false);
                           setTypedFullName("");

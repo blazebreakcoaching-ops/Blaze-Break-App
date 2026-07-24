@@ -316,7 +316,7 @@ export const DecompressionDoorway = ({ fingerprint, onAwardPoints }: Decompressi
                 </div>
                 <h4 className="text-4xl font-display font-bold text-text-main mb-4">Threshold Crossed</h4>
                 <p className="text-xl text-text-muted font-medium mb-2">You are now in {selectedRole?.enter}.</p>
-                <p className="text-success dark:text-success font-bold uppercase tracking-widest text-sm mt-8">Protocol Complete</p>
+                <p className="text-success dark:text-success font-bold uppercase tracking-widest text-sm mt-8">Complete</p>
               </div>
             </motion.div>
           )}

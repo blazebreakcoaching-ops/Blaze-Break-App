@@ -269,7 +269,7 @@ export const SituationalOnboarding = ({ onComplete }: OnboardingProps) => {
                   </span>
                 </div>
                 <span className="text-xs font-mono font-bold text-text-muted">
-                  Nova Protocol Initialization
+                  Setting Up Nova
                 </span>
               </div>
               

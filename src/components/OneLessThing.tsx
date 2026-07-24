@@ -72,7 +72,7 @@ export const OneLessThing = ({ fingerprint, onAwardPoints }: OneLessThingProps) 
 
       setResult(outcome as any);
       setStep('result');
-      if (onAwardPoints) onAwardPoints(10, 'Executed One Less Thing Protocol');
+      if (onAwardPoints) onAwardPoints(10, 'Completed One Less Thing');
     }, 2500);
   };
 

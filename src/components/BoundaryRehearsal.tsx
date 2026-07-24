@@ -322,7 +322,7 @@ export const BoundaryRehearsal = ({ onAwardPoints, onRehearsalComplete }: { onAw
               <div className="absolute inset-0 bg-primary/5 pointer-events-none" />
               <div className="relative z-10 space-y-3 border-b border-white/[0.05] pb-5">
                 <h4 className="text-lg font-bold text-text-main flex items-center gap-2 tracking-tight">
-                  <Wand2 className="w-5 h-5 text-primary" /> Tactical Compiler
+                  <Wand2 className="w-5 h-5 text-primary" /> Script Builder
                 </h4>
                 <p className="text-xs text-text-muted leading-relaxed font-medium">
                   Received an unreasonable demand on Slack or Email? Don't panic and say yes. Paste it here, and Nova will synthesize a tactical, zero-apology script.
@@ -379,7 +379,7 @@ export const BoundaryRehearsal = ({ onAwardPoints, onRehearsalComplete }: { onAw
           
           <div className="lg:col-span-8 space-y-6">
             <h4 className="text-xs font-black uppercase tracking-[0.2em] text-text-muted flex items-center gap-2">
-              <Zap className="w-3.5 h-3.5" /> Generated Defense Vector
+              <Zap className="w-3.5 h-3.5" /> Generated Response
             </h4>
             
             {!generatedResult && !generatingScripts ? (
@@ -526,7 +526,7 @@ export const BoundaryRehearsal = ({ onAwardPoints, onRehearsalComplete }: { onAw
                       <Shield className="w-4 h-4 text-primary" />
                     </div>
                     <div>
-                       <span className="text-[11px] font-black uppercase tracking-widest block text-primary mb-1">Nova Strategic Directive</span>
+                       <span className="text-[11px] font-black uppercase tracking-widest block text-primary mb-1">Nova's Suggestion</span>
                        <span className="text-xs text-primary font-medium leading-relaxed">{selected?.advice}</span>
                     </div>
                   </div>
@@ -600,7 +600,7 @@ export const BoundaryRehearsal = ({ onAwardPoints, onRehearsalComplete }: { onAw
                       </div>
                       <div>
                         <h4 className="text-xl font-bold text-text-main tracking-tight">Post-Session Audit</h4>
-                        <span className="text-[11px] uppercase font-black tracking-widest text-primary">Nova Telemetry</span>
+                        <span className="text-[11px] uppercase font-black tracking-widest text-primary">Nova Insight</span>
                       </div>
                     </div>
                   </div>
@@ -626,7 +626,7 @@ export const BoundaryRehearsal = ({ onAwardPoints, onRehearsalComplete }: { onAw
                         >
                           <div className="flex items-center gap-3 border-b border-white/[0.05] pb-4">
                              <Zap className="w-5 h-5 text-success" />
-                             <span className="text-xs font-black uppercase tracking-widest text-success/80">In-Depth Behavioral Vector</span>
+                             <span className="text-xs font-black uppercase tracking-widest text-success/80">In-Depth Behavioral Insight</span>
                           </div>
                           <div className="prose prose-invert max-w-none text-text-muted leading-relaxed font-mono text-sm">
                              <ReactMarkdown>{detailedFeedback}</ReactMarkdown>

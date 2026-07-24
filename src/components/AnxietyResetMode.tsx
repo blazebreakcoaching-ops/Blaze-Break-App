@@ -266,7 +266,7 @@ export const AnxietyResetMode = ({ onAwardPoints, onNavigate }: AnxietyResetMode
                 onClick={() => setStep('trigger')}
                 className="w-full sm:w-auto px-8 py-4.5 bg-red-600 hover:bg-red-700 text-white font-bold uppercase tracking-widest text-xs rounded-2xl transition-all shadow-lg shadow-red-500/10 flex items-center justify-center gap-3"
               >
-                Start Calm Reset Protocol <ArrowRight className="w-4 h-4" />
+                Start Calm Reset <ArrowRight className="w-4 h-4" />
               </button>
             </div>
           </motion.div>
@@ -390,7 +390,7 @@ export const AnxietyResetMode = ({ onAwardPoints, onNavigate }: AnxietyResetMode
             <div className="bg-red-500/5 border border-red-500/20 rounded-2xl p-5 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
               <div className="space-y-1">
                 <span className="px-2.5 py-0.5 bg-red-500/10 border border-red-500/30 text-red-500 text-[9px] font-bold uppercase tracking-wider rounded-full">
-                  Recommended Protocol
+                  Recommended
                 </span>
                 <h5 className="text-lg font-bold text-text-main">
                   {TOOLS.find(t => t.id === recommendedToolId)?.name}
@@ -406,7 +406,7 @@ export const AnxietyResetMode = ({ onAwardPoints, onNavigate }: AnxietyResetMode
                 }}
                 className="px-6 py-3 shrink-0 bg-red-600 hover:bg-red-700 text-white font-bold uppercase tracking-widest text-xs rounded-xl transition-all shadow-md flex items-center gap-2"
               >
-                Deploy Now <ArrowRight className="w-4 h-4" />
+                Start Now <ArrowRight className="w-4 h-4" />
               </button>
             </div>
 
@@ -894,7 +894,7 @@ export const AnxietyResetMode = ({ onAwardPoints, onNavigate }: AnxietyResetMode
                 onClick={() => setStep('tool_selection')}
                 className="text-xs text-text-muted hover:text-text-main transition-colors"
               >
-                Exit Active Protocol
+                Exit
               </button>
               <button 
                 onClick={handleCompleteTool}

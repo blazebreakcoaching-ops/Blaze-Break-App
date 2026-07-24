@@ -60,7 +60,7 @@ const generate30DayData = (): DayData[] => {
     } else if (balance > 15) {
       notes = "Optimal Reparative Buffer: Active Restoration.";
     } else if (balance < 0) {
-      notes = "Tactical Pressure Overload.";
+      notes = "High Pressure Right Now.";
     }
 
     return {
@@ -95,11 +95,11 @@ export const RecoveryVelocityMap = () => {
       return {
         text: `You have triggered ${deficitDays} output deficits this cycle. While weekend restoration exists, somatic recovery is episodic rather than continuous. Continuous tactical load demands continuous neural resets. Adapt your workflow before relapse.`,
         alert: true,
-        action: "Deploy the 'One Less Thing' worksheet to renegotiate one tomorrow's meeting."
+        action: "Try the 'One Less Thing' worksheet to renegotiate one tomorrow's meeting."
       };
     } else {
       return {
-        text: "Operational sync is within nominal tolerance. Core energy buffers are steady. Keep applying standard autonomic protocols to prevent cumulative exhaustion. Discipline today earns tomorrow's strategic edge.",
+        text: "You're in a steady, sustainable rhythm right now. Keep doing what's working — small consistent habits build real momentum over time.",
         alert: false,
         action: "Maintain current streak of micro-somatic resets."
       };
@@ -388,7 +388,7 @@ export const RecoveryVelocityMap = () => {
           <div className="flex items-center gap-2 pt-1">
             <Info className="w-3.5 h-3.5 text-primary shrink-0" />
             <span className="text-xs font-bold text-text-main">
-              Recommended Protocol Action: {novaCommentary.action}
+              Recommended Next Step: {novaCommentary.action}
             </span>
           </div>
         </div>

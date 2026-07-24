@@ -43,7 +43,7 @@ export const SleepBuilder = ({ fingerprint, onAwardPoints }: SleepBuilderProps) 
 
   const handleStartWindDown = () => {
     setWindDownStarted(true);
-    if (onAwardPoints) onAwardPoints(15, 'Initiated Wind-Down Protocol');
+    if (onAwardPoints) onAwardPoints(15, 'Started Wind-Down Routine');
   };
 
   const renderTooltip = ({ active, payload, label }: any) => {
@@ -249,7 +249,7 @@ export const SleepBuilder = ({ fingerprint, onAwardPoints }: SleepBuilderProps) 
         >
           {windDownStarted ? (
             <>
-              <CheckCircle2 className="w-5 h-5" /> Wind-Down Protocol Active
+              <CheckCircle2 className="w-5 h-5" /> Wind-Down Routine Active
             </>
           ) : (
              <>

@@ -141,7 +141,7 @@ export const EnergyBudgetMatrix = ({ onPointsEarned }: { onPointsEarned: (pts: n
           </div>
 
           <div className="card bg-background border-white/[0.05] p-8 space-y-6 shadow-xl">
-            <h4 className="text-xs font-black uppercase tracking-[0.2em] text-text-muted border-b border-white/5 pb-4">Inject Audit Node</h4>
+            <h4 className="text-xs font-black uppercase tracking-[0.2em] text-text-muted border-b border-white/5 pb-4">Log a Stressor</h4>
             
             <div className="space-y-6">
                <div className="space-y-2">
@@ -168,7 +168,7 @@ export const EnergyBudgetMatrix = ({ onPointsEarned }: { onPointsEarned: (pts: n
               </div>
 
               <div className="space-y-3">
-                 <label className="text-[11px] font-black uppercase tracking-widest text-text-muted ml-1">Classification Vector</label>
+                 <label className="text-[11px] font-black uppercase tracking-widest text-text-muted ml-1">Category</label>
                  <div className="grid grid-cols-2 gap-2">
                    {(['professional', 'emotional', 'social', 'logistical'] as const).map(type => (
                      <button

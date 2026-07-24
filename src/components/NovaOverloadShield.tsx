@@ -332,7 +332,7 @@ export const NovaOverloadShield = ({ fingerprint, onAwardPoints, onNavigate }: N
               >
                 <div className="flex flex-col gap-2">
                   <h4 className="text-sm font-black uppercase tracking-widest text-text-main flex items-center gap-2">
-                    <Server className="w-4 h-4 text-primary" /> Automated Telemetry
+                    <Server className="w-4 h-4 text-primary" /> Automatic Sync
                   </h4>
                   <p className="text-xs font-medium text-text-muted">
                     We track metadata, never message content. Your privacy is paramount.
@@ -399,7 +399,7 @@ export const NovaOverloadShield = ({ fingerprint, onAwardPoints, onNavigate }: N
                    {simulating ? <Zap className="w-8 h-8 animate-pulse" /> : <activeState.icon className="w-8 h-8" />}
                  </div>
                  <div>
-                   <h3 className="text-xs font-black uppercase tracking-widest text-text-muted mb-1">Current Telemetry Status</h3>
+                   <h3 className="text-xs font-black uppercase tracking-widest text-text-muted mb-1">Current Status</h3>
                    <h2 className={cn("text-3xl font-display font-bold transition-colors", stateColors.heading)}>
                      {simulating ? 'Scanning...' : activeState.label}
                    </h2>
@@ -455,7 +455,7 @@ export const NovaOverloadShield = ({ fingerprint, onAwardPoints, onNavigate }: N
                     )}
                   </ul>
                   <button className="btn-primary w-full shadow-lg shadow-primary/20">
-                    Engage Protocol
+                    Get Started
                   </button>
                 </div>
 
@@ -473,10 +473,10 @@ export const NovaOverloadShield = ({ fingerprint, onAwardPoints, onNavigate }: N
                   </div>
                 )}
                 
-                {/* Tactical Shortcuts */}
+                {/* Quick Actions */}
                 <div className="card glass p-6 col-span-1 md:col-span-2 border-border/50">
                    <h4 className="text-sm font-black uppercase tracking-widest text-text-muted mb-4 flex items-center gap-2">
-                     <Zap className="w-4 h-4" /> Tactical Interventions & Energy Sync
+                     <Zap className="w-4 h-4" /> Quick Interventions & Energy Sync
                    </h4>
                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                      <button

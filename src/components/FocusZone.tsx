@@ -568,7 +568,7 @@ export function FocusZone({ onAwardPoints, isFocusActive, setIsFocusActive, curr
                   <AlertTriangle className="w-5 h-5 animate-bounce" />
                 </div>
                 <div>
-                  <h4 className="text-sm font-black text-text-main uppercase tracking-wider">Nova Coach Intercept</h4>
+                  <h4 className="text-sm font-black text-text-main uppercase tracking-wider">Nova Coach Check-In</h4>
                   <p className="text-[10px] text-text-muted font-bold">Unplanned Context Swap Detected</p>
                 </div>
               </div>

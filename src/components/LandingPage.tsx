@@ -49,7 +49,7 @@ export const LandingPage = ({ onStart, onOpenTrustCentre }: LandingPageProps) =>
           </div>
           <div className="flex flex-col">
             <h1 className="font-serif font-black text-lg tracking-tight text-text-main leading-none">Blaze Break</h1>
-            <span className="text-[10px] font-black uppercase tracking-[0.2em] text-primary mt-1">Executive Suite</span>
+            <span className="text-[10px] font-black uppercase tracking-[0.2em] text-primary mt-1">Recovery Companion</span>
           </div>
         </div>
         <div className="flex items-center gap-4">
@@ -77,7 +77,7 @@ export const LandingPage = ({ onStart, onOpenTrustCentre }: LandingPageProps) =>
           className="space-y-8"
         >
           <span className="inline-block px-4 py-1.5 bg-primary/10 border border-primary/20 text-primary rounded-full text-xs uppercase tracking-[0.2em] font-black">
-            The Autonomic Reset Protocol for Corporate Athletes
+            A Recovery Method for High Performers
           </span>
           <h2 className="text-5xl md:text-8xl font-light tracking-tight text-text-main leading-[1.05] max-w-5xl mx-auto">
             Scale ambition <br />
@@ -138,7 +138,7 @@ export const LandingPage = ({ onStart, onOpenTrustCentre }: LandingPageProps) =>
           <h1 className="font-bold text-sm tracking-tight text-text-main">Blaze Break</h1>
         </div>
         <p className="text-[11px] uppercase tracking-[0.3em] font-black text-text-muted">
-          Executive Recovery Protocol v2.4 • Secured via Autonomic Sync
+          Blaze Break — Burnout Recovery, Built Right
         </p>
       </footer>
 

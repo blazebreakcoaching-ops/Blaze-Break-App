@@ -71,7 +71,7 @@ export const DigitalBoundaryShield = ({ fingerprint, onAwardPoints }: DigitalBou
                 </div>
                 <div>
                   <h3 className="text-sm font-display font-bold text-text-main tracking-tight">Nova's Filter: Urgent or Loud?</h3>
-                  <p className="text-[11px] uppercase tracking-[0.2em] font-black text-primary">Threat Assessment</p>
+                  <p className="text-[11px] uppercase tracking-[0.2em] font-black text-primary">Urgency Check</p>
                 </div>
               </div>
               

@@ -184,7 +184,7 @@ export const RecoveryFuelEngine = ({
     setHydrationReminderEnabled(val);
     localStorage.setItem('blaze_fuel_hydration_reminder', String(val));
     if (onAwardPoints && val) {
-      onAwardPoints(5, "Cognitive Hydration Schedule Initialized");
+      onAwardPoints(5, "Hydration Schedule Set");
     }
   };
 
@@ -248,7 +248,7 @@ export const RecoveryFuelEngine = ({
 
     if (caffeineEmptyStomach === true) {
       insights.push({
-        title: "Eskimo Caffeine Override",
+        title: "Caffeine on an Empty Stomach",
         type: "warning" as const,
         description: "Drinking caffeine on an empty stomach triggers pre-mature cortisol spikes and damages gastric mucosa. It trains the nervous system to remain hyper-vigilant.",
         coaching: "Consume a protein baseline (e.g. eggs, seeds, toast) before drinking coffee. Restrict caffeine after 12:00 PM."
@@ -971,7 +971,7 @@ export const RecoveryFuelEngine = ({
           >
             <div className="bg-surface dark:bg-surface p-6 rounded-2xl border border-border/40">
               <h3 className="text-xs uppercase font-black tracking-wider text-text-muted ">Active Coach Overrides</h3>
-              <p className="text-xl font-display font-medium text-text-main mt-1">Nova Nutrition Analysis Protocol</p>
+              <p className="text-xl font-display font-medium text-text-main mt-1">Nova's Nutrition Analysis</p>
               <div className="text-sm bg-primary/5 text-primary font-bold p-4 rounded-xl mt-4 border border-primary/10 italic">
                 “Your emotional resilience might not be failing today. If you skipped lunch, slept poorly, and ran on high caffeine, you are physically unstable. Fuel your body before judging your boundaries.”
               </div>

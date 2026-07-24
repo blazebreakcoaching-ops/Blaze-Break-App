@@ -114,7 +114,7 @@ export const OrgDashboard = () => {
         {/* Telemetry Shift Notification Toggle */}
         <div className="flex items-center gap-3 text-sm bg-surface/50 border border-primary/20 px-4 py-2 rounded-lg shrink-0">
           <AlertTriangle className={cn("w-4 h-4", alertEnabled ? "text-warning" : "text-text-muted")} />
-          <span className="font-bold text-text-main mr-2">Telemetry Decline Alerts</span>
+          <span className="font-bold text-text-main mr-2">Decline Alerts</span>
           <button 
             onClick={() => setAlertEnabled(!alertEnabled)}
             className={cn(
@@ -229,7 +229,7 @@ export const OrgDashboard = () => {
               {/* Early Warning Panel */}
               <div className="card space-y-6">
                 <div>
-                  <h4 className="font-bold text-text-main flex items-center gap-2"><AlertTriangle className="w-5 h-5 text-warning" /> Early Warning Telemetry</h4>
+                  <h4 className="font-bold text-text-main flex items-center gap-2"><AlertTriangle className="w-5 h-5 text-warning" /> Early Warning Signals</h4>
                   <p className="text-xs text-text-muted">Predictive risk modeling based on historic presenteeism and strain progression.</p>
                 </div>
                 <div className="space-y-4">

@@ -49,7 +49,7 @@ export const RuminationFurnace = ({ onCleared }: { onCleared?: () => void }) => 
           onClick={handleReset} 
           className="relative z-10 text-xs font-black uppercase tracking-[0.2em] text-text-muted hover:text-text-main flex items-center gap-2 transition-colors px-6 py-3 rounded-full hover:bg-white/[0.02] border border-transparent hover:border-white/[0.05]"
         >
-          <RotateCcw className="w-3 h-3" /> Reinitialize Protocol
+          <RotateCcw className="w-3 h-3" /> Start Over
         </button>
       </motion.div>
     );
@@ -124,7 +124,7 @@ export const RuminationFurnace = ({ onCleared }: { onCleared?: () => void }) => 
                     className="absolute inset-0 flex flex-col items-center justify-center z-30"
                   >
                     <Flame className="w-20 h-20 text-text-main animate-pulse" />
-                    <span className="text-xs font-black uppercase tracking-[0.3em] text-text-main mt-4 drop-shadow-md">Incinerating Vector...</span>
+                    <span className="text-xs font-black uppercase tracking-[0.3em] text-text-main mt-4 drop-shadow-md">Incinerating...</span>
                   </motion.div>
                )}
             </AnimatePresence>

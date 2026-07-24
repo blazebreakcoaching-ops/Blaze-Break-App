@@ -506,7 +506,7 @@ export const DailyVoiceJournal = ({
                 {/* advice */}
                 <div className="p-4 bg-primary/5 border border-primary/10 rounded-xl mt-auto space-y-1">
                   <h6 className="text-[11px] font-bold text-primary flex items-center gap-1">
-                    <Heart className="w-3.5 h-3.5" /> Nova's Stability Protocol
+                    <Heart className="w-3.5 h-3.5" /> Nova's Stability Practice
                   </h6>
                   <p className="text-xs text-text-main font-medium leading-relaxed">
                     {activeEntry.advice}

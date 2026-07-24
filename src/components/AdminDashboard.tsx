@@ -563,7 +563,7 @@ export const AdminDashboard = () => {
             </div>
           </div>
           <div className="pt-2 border-t border-white/5 flex items-center justify-between text-[11px] text-text-muted">
-            <span>Guardian Protocol: <strong className="text-text-main font-semibold">0 Triggered</strong></span>
+            <span>Guardian Alerts: <strong className="text-text-main font-semibold">0 Triggered</strong></span>
             <span>Crisis Referrals: <strong className="text-text-main font-semibold">0 Triggers</strong></span>
           </div>
         </div>
@@ -892,7 +892,7 @@ export const AdminDashboard = () => {
                     </p>
                     {log.details && Object.keys(log.details).length > 0 && (
                       <div className="p-2.5 bg-surface rounded-lg text-[10px] font-mono text-text-muted mt-2 border border-white/5 max-w-lg truncate">
-                        Payload: {JSON.stringify(log.details)}
+                        Details: {JSON.stringify(log.details)}
                       </div>
                     )}
                   </div>

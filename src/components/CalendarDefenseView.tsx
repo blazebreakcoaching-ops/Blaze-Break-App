@@ -30,7 +30,7 @@ export const CalendarDefenseView = () => {
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
           <h2 className="text-3xl font-serif font-bold text-text-main tracking-tight">Calendar Workload Defense</h2>
-          <p className="text-sm text-text-muted mt-2 font-mono uppercase tracking-widest">Workspace Intelligence / Red Zone Interception</p>
+          <p className="text-sm text-text-muted mt-2 font-mono uppercase tracking-widest">Workspace Insight / Overload Warning</p>
         </div>
       </div>
 
@@ -43,7 +43,7 @@ export const CalendarDefenseView = () => {
             </div>
           </div>
           <div className="max-w-md space-y-3">
-            <h3 className="text-xl font-bold text-text-main tracking-tight">Intercept Calendar Collapse</h3>
+            <h3 className="text-xl font-bold text-text-main tracking-tight">Catch Calendar Overload Early</h3>
             <p className="text-sm text-text-muted leading-relaxed">
               Nova will scan your Google Workspace calendar for the next 7 days to identify "Red Zones" (4+ hours of sequential meetings) and biological deficits, drafting pre-approved scripts to reclaim your time.
             </p>

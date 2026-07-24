@@ -137,7 +137,7 @@ export const RecoveryRecipes = ({ fingerprint, onAwardPoints }: RecoveryRecipesP
     <div className="space-y-12 pb-24">
       <div className="max-w-4xl">
         <div className="flex items-center gap-4 mb-4">
-           <div className="tag">Section 18 / Protocols</div>
+           <div className="tag">Section 18 / Practices</div>
            <div className="h-px flex-1 bg-border/40" />
         </div>
         <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-6">
@@ -185,7 +185,7 @@ export const RecoveryRecipes = ({ fingerprint, onAwardPoints }: RecoveryRecipesP
               </div>
               <div>
                 <h3 className="text-3xl font-display font-bold text-text-main">"{recipe.trigger}"</h3>
-                <p className="text-text-muted font-medium uppercase tracking-widest text-sm mt-1">Recovery Protocol Sequence</p>
+                <p className="text-text-muted font-medium uppercase tracking-widest text-sm mt-1">Recovery Steps</p>
               </div>
             </div>
 
@@ -272,7 +272,7 @@ export const RecoveryRecipes = ({ fingerprint, onAwardPoints }: RecoveryRecipesP
                  }}
                >
                  <CheckCircle2 className="w-5 h-5 mr-2" />
-                 Acknowledge Protocol
+                 Got It
                </button>
             </div>
 

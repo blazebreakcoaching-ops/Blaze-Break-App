@@ -94,7 +94,7 @@ export const FutureSelfSimulator = ({ fingerprint }: FutureSelfSimulatorProps) =
               <div className="space-y-8">
                 <div className="space-y-2 border-b border-border pb-4">
                   <h3 className="text-sm font-black uppercase tracking-widest text-text-main flex items-center gap-2">
-                    <Activity className="w-4 h-4 text-primary" /> Current State Telemetry
+                    <Activity className="w-4 h-4 text-primary" /> Current State
                   </h3>
                   <p className="text-sm text-text-muted">Input your baseline metrics to run the simulation.</p>
                 </div>

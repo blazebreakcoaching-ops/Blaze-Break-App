@@ -101,7 +101,7 @@ export const FEATURE_REGISTRY: Record<string, FeatureDefinition> = {
   },
   guardian_protocol: {
     id: 'guardian_protocol',
-    name: 'Guardian Protocol',
+    name: 'Guardian Alerts',
     purpose: 'Escalation system for when a user is in severe recovery debt or high risk.',
     section: 'Safety',
     status: 'planned',

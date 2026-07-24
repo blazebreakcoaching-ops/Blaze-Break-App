@@ -210,7 +210,7 @@ const GuardianCard = ({
               ) : isRelaying ? (
                 <><Loader2 className="w-4 h-4 animate-spin" /> Transmitting...</>
               ) : (
-                <><Zap className="w-4 h-4 text-warning" /> One-Touch Override</>
+                <><Zap className="w-4 h-4 text-warning" /> One-Touch Alert</>
               )}
             </button>
          </div>
@@ -299,7 +299,7 @@ export const NovaGuardianRelay = ({ contacts, onAdd, onRemove }: NovaGuardianRel
               <ShieldCheck className="w-7 h-7" />
             </div>
             <div>
-               <h2 className="text-3xl lg:text-4xl font-display font-bold text-text-main tracking-tight">Guardian Relay Protocol</h2>
+               <h2 className="text-3xl lg:text-4xl font-display font-bold text-text-main tracking-tight">Guardian Relay</h2>
                <p className="text-destructive text-xs font-black uppercase tracking-widest mt-2 flex items-center gap-2"><Activity className="w-3 h-3" /> Priority Access Subsystem</p>
             </div>
           </div>
@@ -350,7 +350,7 @@ export const NovaGuardianRelay = ({ contacts, onAdd, onRemove }: NovaGuardianRel
                    onClick={() => setIsAdding(true)}
                    className="flex items-center gap-3 btn-primary px-8 py-4 rounded-xl text-xs font-black uppercase tracking-widest shadow-xl shadow-primary/20"
                  >
-                   <UserPlus className="w-4 h-4" /> Initialize Node
+                   <UserPlus className="w-4 h-4" /> Add Contact
                  </button>
                </div>
             )}
@@ -424,7 +424,7 @@ export const NovaGuardianRelay = ({ contacts, onAdd, onRemove }: NovaGuardianRel
                   <p className="text-[11px] leading-relaxed text-text-muted">Nova executes strict data isolation. Incident contexts, biometric markers, and conversation payloads are never transmitted to guardian endpoints.</p>
                 </div>
                 <div className="space-y-2.5">
-                  <h5 className="text-xs font-black uppercase tracking-widest text-success">Logic Priority Directive</h5>
+                  <h5 className="text-xs font-black uppercase tracking-widest text-success">Priority Order</h5>
                   <p className="text-[11px] leading-relaxed text-text-muted">Upon distress detection, system intervention occurs locally first. External proxy (Auto-Relay) activates only following threshold latency.</p>
                 </div>
              </div>
@@ -459,7 +459,7 @@ export const NovaGuardianRelay = ({ contacts, onAdd, onRemove }: NovaGuardianRel
               <div className="space-y-8">
                 <div className="space-y-2 border-b border-border pb-6 pr-8">
                   <h3 className="text-2xl font-bold font-display text-text-main flex items-center gap-3">
-                     <ShieldCheck className="w-6 h-6 text-primary" /> Provision Escalation Node
+                     <ShieldCheck className="w-6 h-6 text-primary" /> Add a Support Contact
                   </h3>
                   <p className="text-sm text-text-muted">Define the endpoint identity and access parameters for severe overload scenarios.</p>
                 </div>
@@ -479,7 +479,7 @@ export const NovaGuardianRelay = ({ contacts, onAdd, onRemove }: NovaGuardianRel
                     </div>
                     
                     <div className="space-y-2">
-                      <label className="text-[11px] font-black uppercase tracking-widest text-text-muted ml-1">Target Vector (Phone)</label>
+                      <label className="text-[11px] font-black uppercase tracking-widest text-text-muted ml-1">Phone Number</label>
                       <input 
                         type="tel" 
                         value={newContact.contactMethod}
@@ -491,13 +491,13 @@ export const NovaGuardianRelay = ({ contacts, onAdd, onRemove }: NovaGuardianRel
                     </div>
 
                     <div className="space-y-2">
-                       <label className="text-[11px] font-black uppercase tracking-widest text-text-muted ml-1">Transmission Protocol</label>
-                       <select 
+                       <label className="text-[11px] font-black uppercase tracking-widest text-text-muted ml-1">Contact Method</label>
+                       <select
                          value={newContact.notificationPreference}
                          onChange={e => setNewContact({...newContact, notificationPreference: e.target.value as any})}
                          className="w-full bg-surface dark:bg-surface border border-border rounded-xl px-4 py-3.5 text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30 transition-all"
                        >
-                         <option value="sms">Encrypted SMS Payload</option>
+                         <option value="sms">Encrypted SMS</option>
                          <option value="whatsapp">WhatsApp Business API</option>
                        </select>
                     </div>
@@ -509,9 +509,9 @@ export const NovaGuardianRelay = ({ contacts, onAdd, onRemove }: NovaGuardianRel
                          onChange={e => setNewContact({...newContact, role: e.target.value as any})}
                          className="w-full bg-surface dark:bg-surface border border-border rounded-xl px-4 py-3.5 text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30 transition-all font-sans"
                        >
-                         <option value="primary_guardian">Primary Sentinel (Initial Escalation)</option>
+                         <option value="primary_guardian">Primary Contact (Contacted First)</option>
                          <option value="backup_guardian">Secondary Sentinel (Failover Endpoint)</option>
-                         <option value="coach">Professional Triage / Analyst</option>
+                         <option value="coach">Therapist / Counselor</option>
                          <option value="peer" disabled>Peer Validator (Blocked by Zone D Privacy Rules)</option>
                          <option value="manager" disabled>Manager (Blocked by Zone A Privacy Isolation Rules)</option>
                        </select>
@@ -538,7 +538,7 @@ export const NovaGuardianRelay = ({ contacts, onAdd, onRemove }: NovaGuardianRel
                            className="hidden"
                          />
                          <div className="space-y-1.5">
-                           <span className={cn("text-sm font-bold block transition-colors", newContact.autoAlertEnabled ? "text-rose-600 dark:text-destructive" : "text-text-main")}>Enable Zero-Click Escalation</span>
+                           <span className={cn("text-sm font-bold block transition-colors", newContact.autoAlertEnabled ? "text-rose-600 dark:text-destructive" : "text-text-main")}>Enable Automatic Alert</span>
                            <span className="text-xs text-text-muted block leading-relaxed pr-6 font-medium">Authorizes the Nova engine to autonomously deploy distress beacons to this endpoint upon detecting a critical instability state, bypassing user confirmation.</span>
                          </div>
                        </label>
@@ -549,7 +549,7 @@ export const NovaGuardianRelay = ({ contacts, onAdd, onRemove }: NovaGuardianRel
                     type="submit"
                     className="w-full bg-surface dark:bg-white text-text-main dark:text-foreground py-5 rounded-xl text-xs font-black uppercase tracking-[0.15em] mt-4 shadow-xl shadow-black/10 transition-all flex items-center justify-center gap-3 hover:scale-[1.01]"
                   >
-                    Commit Node Configuration
+                    Save Contact
                   </button>
                 </form>
               </div>
@@ -582,14 +582,14 @@ export const NovaGuardianRelay = ({ contacts, onAdd, onRemove }: NovaGuardianRel
                   <div className="text-center space-y-3">
                      <h3 className="text-2xl font-bold font-display line-clamp-1 text-text-main tracking-tight">Manual Dispatch</h3>
                      <p className="text-sm text-text-muted px-4 leading-relaxed">
-                       Deploying emergency beacon to <strong className="text-text-main">"{contacts.find(c => c.id === activeSOS)?.name}"</strong>. The endpoint will be instructed to initiate primary contact protocol immediately.
+                       Sending an alert to <strong className="text-text-main">"{contacts.find(c => c.id === activeSOS)?.name}"</strong>. They'll be asked to reach out to you as soon as possible.
                      </p>
                   </div>
 
                   <div className="p-5 bg-black/40 rounded-xl border border-border/50 shadow-inner">
                     <p className="text-[11px] font-mono leading-relaxed text-text-muted">
                       [PAYLOAD PREVIEW]<br/><br/>
-                      "Nova System Directive: [Your Name] requires immediate structural support. Initiate contact protocol. This is an automated routing ping originated from a manual user override."
+                      "Nova Alert: [Your Name] has asked for extra support right now. This message was sent because they manually requested it."
                     </p>
                   </div>
 

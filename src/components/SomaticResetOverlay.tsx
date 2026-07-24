@@ -155,7 +155,7 @@ export const SomaticResetOverlay = ({ isOpen, onClose, onAwardPoints }: SomaticR
           {/* HEADER STATUS */}
           <div className="flex items-center gap-3 mb-8 text-primary">
             <HeartPulse className="w-6 h-6 animate-pulse" />
-            <span className="text-xs font-black uppercase tracking-[0.2em] text-primary">Autonomic Reset Protocol</span>
+            <span className="text-xs font-black uppercase tracking-[0.2em] text-primary">Nervous System Reset</span>
           </div>
 
           <AnimatePresence mode="wait">

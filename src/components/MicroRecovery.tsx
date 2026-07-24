@@ -255,7 +255,7 @@ export const MicroRecovery = ({ fingerprint, onAwardPoints }: MicroRecoveryProps
         completedAt: new Date().toISOString()
       }));
     }
-    if (onAwardPoints) onAwardPoints(10, 'Micro-Recovery Protocol Completed');
+    if (onAwardPoints) onAwardPoints(10, 'Micro-Recovery Completed');
     setTimeout(() => {
       setSelectedDuration(null);
       setCompleted(false);
@@ -428,7 +428,7 @@ export const MicroRecovery = ({ fingerprint, onAwardPoints }: MicroRecoveryProps
             <div className="relative z-10 space-y-8">
               <div className="space-y-2">
                 <h4 className="text-3xl font-display font-bold text-text-main">
-                  Nova Protocol: {ACTIONS[selectedDuration].time}
+                  Suggested by Nova: {ACTIONS[selectedDuration].time}
                 </h4>
                 <p className="text-lg text-text-muted font-medium">
                   {ACTIONS[selectedDuration].description}
@@ -480,7 +480,7 @@ export const MicroRecovery = ({ fingerprint, onAwardPoints }: MicroRecoveryProps
              <div className="w-20 h-20 bg-success rounded-full flex items-center justify-center text-white mb-6 shadow-xl shadow-success/20">
                <CheckCircle2 className="w-10 h-10" />
              </div>
-             <h4 className="text-3xl font-display font-bold text-text-main mb-2">Protocol Executed</h4>
+             <h4 className="text-3xl font-display font-bold text-text-main mb-2">Done</h4>
              <p className="text-lg text-text-muted font-medium">Neural and physiological baseline adjusted. Points awarded.</p>
           </motion.div>
         )}

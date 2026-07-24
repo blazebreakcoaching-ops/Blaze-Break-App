@@ -305,7 +305,7 @@ export const Walkthrough = ({
                         Somatic Anxiety Reset
                       </h4>
                       <p className="text-xs text-text-muted leading-relaxed">
-                        Deploy micro-breathwork and sensory grounding anchors to immediately break high autonomic arousal states.
+                        Use micro-breathwork and sensory grounding anchors to help break high autonomic arousal states.
                       </p>
                     </div>
                   </button>

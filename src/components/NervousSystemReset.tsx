@@ -934,7 +934,7 @@ export const NervousSystemReset = ({ fingerprint }: NervousSystemResetProps) => 
               <div className="w-10 h-10 rounded-full bg-primary flex items-center justify-center text-primary-foreground shadow-lg shadow-primary/20">
                 <Wind className="w-5 h-5" />
               </div>
-              <h4 className="text-xl font-display font-bold text-text-main">Nova's Diagnostic Protocol</h4>
+              <h4 className="text-xl font-display font-bold text-text-main">Nova's Recommendation</h4>
             </div>
             
             <p className="text-lg text-text-muted font-medium">"Do you need calm, clarity, sleep, focus, or release?"</p>
@@ -1059,7 +1059,7 @@ export const NervousSystemReset = ({ fingerprint }: NervousSystemResetProps) => 
               <div className="w-24 h-24 mb-6 rounded-full bg-surface dark:bg-surface flex items-center justify-center opacity-50">
                 <Wind className="w-10 h-10 text-text-muted" />
               </div>
-              <h3 className="text-2xl font-display font-bold text-text-main mb-4">Select a Protocol</h3>
+              <h3 className="text-2xl font-display font-bold text-text-main mb-4">Choose a Practice</h3>
               <p className="text-sm font-medium text-text-muted max-w-md mx-auto">
                 Connect with Nova's diagnostic above or select a breathing mode from the library to begin nervous system regulation.
               </p>

@@ -64,7 +64,7 @@ export const SmartCard = ({
       `📌 *Focus Area*: ${cardTitle}\n` +
       `${energyDrain ? `⚡ *Energy Drain Level*: ${energyDrain.charAt(0).toUpperCase() + energyDrain.slice(1)}\n` : ''}` +
       `🛠️ *Current State*: ${isMicroRecovery ? 'Active Micro-Recovery' : 'Monitoring'}\n\n` +
-      `_Exported via Guardian Protocol_`;
+      `_Exported via Guardian Alert_`;
 
     try {
       await navigator.clipboard.writeText(summary);

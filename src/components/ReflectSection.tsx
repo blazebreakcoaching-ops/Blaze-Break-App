@@ -90,15 +90,15 @@ const getNovaAssessment = (text: string, severity: number) => {
   const lower = text.toLowerCase();
   if (severity >= 8) {
     if (lower.includes("slack") || lower.includes("email") || lower.includes("message")) {
-      return "Nova Decoupling Directive: High-impact digital spillover. Work notifications should terminate after 7 PM. You are fawning over stakeholder availability at the cost of baseline neural storage.";
+      return "It looks like work is spilling into your evenings. Consider turning off notifications after 7 PM to protect your downtime.";
     }
     if (lower.includes("meeting") || lower.includes("sync") || lower.includes("huddle")) {
-      return "Nova Energy Directive: Meeting fatigue exceeds stability margins. Reject status syncs lacking pre-circulated agendas. Deploy the 'Capacity Overflow' boundary script.";
+      return "Meeting fatigue seems high right now. Consider declining status meetings that don't have an agenda, and try the 'Capacity Overflow' boundary script.";
     }
     if (lower.includes("overnight") || lower.includes("weekend") || lower.includes("night") || lower.includes("lunch")) {
       return "Nova Relapse Alert: Sacrificing somatic biological repairs. Unchecked performance-identity will drive immediate system failure. Hard stop scheduled.";
     }
-    return `Nova Core Directive: Severity ${severity}/10 triggers critical capacity depletion. This is a severe boundary breach. Deploy the Guardian Protocol immediately.`;
+    return `This feels really heavy. Consider reaching out through Guardian Relay for extra support.`;
   } else {
     if (lower.includes("breathing") || lower.includes("walk") || lower.includes("water") || lower.includes("hydration")) {
       return "Nova Calibration: Micro-recovery anchor detected. Proactive baseline stability prevents sudden operational drop-offs.";
@@ -638,7 +638,7 @@ export const ReflectSection = ({
                 <div className="w-20 h-20 bg-surface dark:bg-surface rounded-2xl flex items-center justify-center text-text-muted mb-6 border border-border dark:border-border shadow-inner">
                   <Book className="w-8 h-8" />
                 </div>
-                <h3 className="text-xl font-bold text-text-main tracking-tight mb-3">Initialize Knowledge Vector</h3>
+                <h3 className="text-xl font-bold text-text-main tracking-tight mb-3">Start Your Journal</h3>
                 <p className="text-sm text-text-muted max-w-md mx-auto leading-relaxed">Select a curriculum node to review theory and extract actionable blueprints for immediate deployment into your routine.</p>
               </motion.div>
             ) : (
@@ -658,7 +658,7 @@ export const ReflectSection = ({
                     <div className="p-10 lg:p-12 relative z-10 flex flex-col h-full space-y-12">
                       <div className="flex items-center justify-between border-b border-primary/20 pb-6">
                         <div className="flex items-center gap-3">
-                          <span className="px-3 py-1 bg-primary/20 text-primary text-[11px] uppercase font-black tracking-widest rounded-md border border-primary/30">Theory Vector {selected.id}</span>
+                          <span className="px-3 py-1 bg-primary/20 text-primary text-[11px] uppercase font-black tracking-widest rounded-md border border-primary/30">Pattern {selected.id}</span>
                         </div>
                         <span className="text-xs font-mono text-text-muted bg-surface px-3 py-1 rounded border border-border">Est. TTD: 3min</span>
                       </div>
@@ -702,7 +702,7 @@ export const ReflectSection = ({
                         <div className="relative z-10 flex items-center justify-between border-b border-border pb-4">
                            <div className="flex items-center gap-3">
                              <Sparkles className="w-5 h-5 text-success" />
-                             <span className="text-xs font-black uppercase tracking-[0.25em] text-success/80">Extraction Directives</span>
+                             <span className="text-xs font-black uppercase tracking-[0.25em] text-success/80">Key Takeaways</span>
                            </div>
                         </div>
                         
@@ -832,7 +832,7 @@ export const ReflectSection = ({
                   </div>
                   <div className="text-left">
                     <h3 className="text-xl md:text-2xl font-display font-black text-text-main tracking-tight">
-                      Trigger Interception & Energy Correlation
+                      Trigger Log & Energy Correlation
                     </h3>
                     <p className="text-[10px] font-black uppercase tracking-[0.2em] text-text-muted mt-0.5">
                       Nova Analytical Correlation Engine
@@ -910,7 +910,7 @@ export const ReflectSection = ({
                   {/* Metric 3: Total Logs */}
                   <div className="p-5 bg-surface/40 border border-border/60 rounded-2xl text-left flex flex-col justify-between space-y-3">
                     <div className="flex items-center justify-between">
-                      <span className="text-[10px] font-black uppercase tracking-widest text-text-muted">Interceptions Registered</span>
+                      <span className="text-[10px] font-black uppercase tracking-widest text-text-muted">Triggers Logged</span>
                       <Clock className="w-4 h-4 text-primary" />
                     </div>
                     <div>
@@ -1021,7 +1021,7 @@ export const ReflectSection = ({
                   <div className="flex items-center gap-2 pb-2 border-b border-border">
                     <Activity className="w-4 h-4 text-text-muted" />
                     <span className="text-xs font-black uppercase tracking-widest text-text-main">
-                      Chronological Intercept Timeline
+                      Trigger Timeline
                     </span>
                   </div>
 
@@ -1088,7 +1088,7 @@ export const ReflectSection = ({
                                   <Sparkles className="w-3.5 h-3.5 animate-spin" style={{ animationDuration: '8s' }} />
                                 </div>
                                 <div className="space-y-1">
-                                  <span className="text-[9px] font-black uppercase tracking-widest text-primary font-mono block">Nova Intercept Algorithm</span>
+                                  <span className="text-[9px] font-black uppercase tracking-widest text-primary font-mono block">Nova's Pattern Detection</span>
                                   <p className="text-xs font-medium text-text-muted leading-relaxed">
                                     {getNovaAssessment(trigger.text, trigger.severity)}
                                   </p>

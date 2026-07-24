@@ -135,8 +135,8 @@ export const RecoveryAlly = () => {
               <HeartPulse className="w-6 h-6" />
             </div>
             <div>
-              <h2 className="text-3xl font-display font-bold text-text-main tracking-tight">Executive Accountability Network</h2>
-              <p className="text-primary/70 text-xs font-bold uppercase tracking-widest mt-1">Recovery Ally Protocol</p>
+              <h2 className="text-3xl font-display font-bold text-text-main tracking-tight">Recovery Ally Network</h2>
+              <p className="text-primary/70 text-xs font-bold uppercase tracking-widest mt-1">Recovery Ally</p>
             </div>
           </div>
           <p className="text-text-muted text-sm leading-relaxed mb-6 max-w-2xl">
@@ -217,7 +217,7 @@ export const RecoveryAlly = () => {
                   <label className="flex items-center justify-between p-3 rounded-lg border border-border hover:border-primary/30 transition-colors cursor-pointer group bg-surface dark:bg-surface/50">
                     <div className="flex items-center gap-3">
                       <Target className="w-4 h-4 text-text-muted group-hover:text-primary transition-colors" />
-                      <span className="text-xs font-bold text-text-main">Operational Goals</span>
+                      <span className="text-xs font-bold text-text-main">Shared Goals</span>
                     </div>
                     <input type="checkbox" checked={permissions.viewGoals} onChange={() => setPermissions(p => ({ ...p, viewGoals: !p.viewGoals }))} className="w-4 h-4 text-primary rounded border-border focus:ring-primary bg-transparent" />
                   </label>
@@ -225,7 +225,7 @@ export const RecoveryAlly = () => {
                   <label className="flex items-center justify-between p-3 rounded-lg border border-border hover:border-primary/30 transition-colors cursor-pointer group bg-surface dark:bg-surface/50">
                     <div className="flex items-center gap-3">
                       <Award className="w-4 h-4 text-text-muted group-hover:text-primary transition-colors" />
-                      <span className="text-xs font-bold text-text-main">Milestone Telemetry</span>
+                      <span className="text-xs font-bold text-text-main">Milestone Updates</span>
                     </div>
                     <input type="checkbox" checked={permissions.viewMilestones} onChange={() => setPermissions(p => ({ ...p, viewMilestones: !p.viewMilestones }))} className="w-4 h-4 text-primary rounded border-border focus:ring-primary bg-transparent" />
                   </label>
@@ -257,7 +257,7 @@ export const RecoveryAlly = () => {
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div>
                   <h3 className="font-bold text-text-main text-lg flex items-center gap-2 tracking-tight">
-                    <Target className="w-5 h-5 text-primary" /> Boundary Directives
+                    <Target className="w-5 h-5 text-primary" /> Boundary Goals
                   </h3>
                   <p className="text-xs text-text-muted mt-1 leading-relaxed">Delegated accountability targets synchronized with network peer.</p>
                 </div>
@@ -265,7 +265,7 @@ export const RecoveryAlly = () => {
                   onClick={() => setIsAddingGoal(!isAddingGoal)}
                   className="shrink-0 flex items-center gap-2 text-xs font-black uppercase tracking-widest text-text-muted bg-surface dark:bg-surface px-4 py-2.5 rounded-xl hover:bg-border dark:hover:bg-surface transition-colors"
                 >
-                  <Plus className="w-4 h-4" /> Deploy Directive
+                  <Plus className="w-4 h-4" /> Add Goal
                 </button>
               </div>
               

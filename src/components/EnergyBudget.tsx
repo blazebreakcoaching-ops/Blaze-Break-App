@@ -448,7 +448,7 @@ export const EnergyBudgetTool = ({
         <div className="lg:col-span-4 space-y-10">
           <div className="card glass p-6 border-warning/20 bg-warning/5">
             <h4 className="text-sm font-black uppercase tracking-widest text-warning mb-2 flex items-center gap-2">
-              <Zap className="w-4 h-4" /> Telemetry Active
+              <Zap className="w-4 h-4" /> Tracking Active
             </h4>
             <p className="text-text-main font-medium text-xs leading-relaxed">
               Integrations connected via the <strong>Nova Overload Shield</strong> are passively monitoring event pressure. 
@@ -478,7 +478,7 @@ export const EnergyBudgetTool = ({
                 </div>
 
                 <div className="space-y-4">
-                  <p className="text-xs uppercase font-black tracking-widest text-text-muted ">System Vector</p>
+                  <p className="text-xs uppercase font-black tracking-widest text-text-muted ">Overview</p>
                   <div className="grid grid-cols-2 gap-3">
                     {Object.keys(typeConfig).map(type => (
                       <button

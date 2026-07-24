@@ -557,7 +557,7 @@ export const RecoveryIntelligenceLayer = ({ onAwardPoints, fingerprint }: Recove
     setWeeklyReview(summary);
 
     updateNovaMemoryBySourceAndType(
-      'Weekly Review Protocol',
+      'Weekly Review',
       'state',
       {
         content: `Weekly Reflection Completed: Drained by [${reviewAnswers.drain}]. Helpful tools: [${reviewAnswers.support}]. Relinquished baggage: [${reviewAnswers.unloaded}]. Targeted boundary for next cycle: [${reviewAnswers.boundary}].`,
@@ -566,7 +566,7 @@ export const RecoveryIntelligenceLayer = ({ onAwardPoints, fingerprint }: Recove
       }
     );
 
-    onAwardPoints(50, 'Weekly Tactical Reflection Ritual Completed');
+    onAwardPoints(50, 'Weekly Reflection Completed');
     setReviewStep(0);
   };
 
@@ -607,7 +607,7 @@ export const RecoveryIntelligenceLayer = ({ onAwardPoints, fingerprint }: Recove
     );
 
     if (next) {
-      onAwardPoints(15, "Focus Shield Defensive Shell Deployed");
+      onAwardPoints(15, "Focus Shield Activated");
     }
   };
 
@@ -653,7 +653,7 @@ export const RecoveryIntelligenceLayer = ({ onAwardPoints, fingerprint }: Recove
 
   // Next steps mapping for simple actionability
   const getNextAction = () => {
-    if (velocityDirection === 'sliding') return "Initialize deep boundary breathing resets & lower meeting limits.";
+    if (velocityDirection === 'sliding') return "Try deep boundary breathing resets and lower meeting limits.";
     if (velocityDirection === 'stalling') return "Complete a quick Trigger Journal to identify stress anchors.";
     return "Celebrate stability! Secure one major boundary with Nova Coach.";
   };
@@ -1015,7 +1015,7 @@ export const RecoveryIntelligenceLayer = ({ onAwardPoints, fingerprint }: Recove
                     </div>
                     <div>
                       <h3 className="text-2xl font-display font-black text-text-main mt-1">Mood Pulse Room</h3>
-                      <p className="text-xs text-text-muted mt-1">Deploy a safe self-reported mood indicator to detect pressure.</p>
+                      <p className="text-xs text-text-muted mt-1">Add a simple mood check-in to help spot rising pressure.</p>
                     </div>
                   </div>
                   {user ? <ConnectedMoodPulse /> : (
@@ -1459,7 +1459,7 @@ export const RecoveryIntelligenceLayer = ({ onAwardPoints, fingerprint }: Recove
                       isFocusShieldActive ? "bg-destructive text-destructive-foreground shadow-rose-500/10" : "bg-primary text-primary-foreground shadow-primary/10"
                     )}
                   >
-                    {isFocusShieldActive ? "Disengage Shield" : "Deploy Shield Protection (+15 pts)"}
+                    {isFocusShieldActive ? "Disengage Shield" : "Activate Focus Shield (+15 pts)"}
                   </button>
                 </div>
               </motion.div>

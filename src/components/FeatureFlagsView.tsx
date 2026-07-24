@@ -67,7 +67,7 @@ export const FeatureFlagsView = () => {
           </div>
           <div className="flex-1 space-y-1">
             <div className="flex justify-between items-center group cursor-pointer" onClick={() => toggleFlag('enable_guardian_protocol')}>
-              <h4 className="font-bold text-sm text-text-main">Guardian Protocol Auto-Escalation</h4>
+              <h4 className="font-bold text-sm text-text-main">Guardian Alert Auto-Escalation</h4>
               <button type="button" className="text-primary transition-transform active:scale-95">
                 {flags.enable_guardian_protocol ? <ToggleRight className="w-6 h-6" /> : <ToggleLeft className="w-6 h-6 text-text-muted" />}
               </button>

@@ -700,10 +700,10 @@ export const NovaChat = ({
       t.includes("safety")
     ) {
       setActiveToolSuggestion({
-        name: "Guardian Protocol",
+        name: "Guardian Relay",
         tab: "safety",
         description:
-          "Synchronize safety boundaries with peer protectors and biological co-regulation guardians.",
+          "Connect with trusted people who can support you when things feel like too much.",
       });
     } else if (
       t.includes("org") ||
@@ -832,7 +832,7 @@ export const NovaChat = ({
             ${systemInstruction || ""}
             User Burnout Fingerprint: ${JSON.stringify(fingerprint || "Not taken yet")}.
             ${dynamicContext}
-            Conversation context is critical. Refer to past behaviors mentioned in history if relevant. Be an analytical, direct recovery coach. Call out any performance-identity fawning or anxiety-driven overwork if they are pretending things are urgent. Keep responses tactical.
+            Conversation context is critical. Refer to past behaviors mentioned in history if relevant. Match the user's preferred tone noted above. Gently call out performance-identity fawning or anxiety-driven overwork if they're pretending things are urgent, but stay warm - this is a person going through burnout, not a performance review.
             ${toneModifier}
           `,
         },
@@ -1009,7 +1009,7 @@ export const NovaChat = ({
                     prompt: "I need to set a firm boundary. Draft script.",
                   },
                   {
-                    label: "Consult SHIP Protocol",
+                    label: "Learn about SHIP",
                     prompt: "Status check: How am I doing on the SHIP journey?",
                   },
                 ].map((s, i) => (
@@ -1294,7 +1294,7 @@ export const NovaChat = ({
                               Pathway Recommendation
                             </span>
                             <h5 className="text-xs font-bold text-text-main">
-                              Deploy {activeToolSuggestion.name} Protocol?
+                              Start {activeToolSuggestion.name}?
                             </h5>
                             <p className="text-[11px] leading-relaxed text-text-muted opacity-90 max-w-md">
                               {activeToolSuggestion.description}

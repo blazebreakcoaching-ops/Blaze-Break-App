@@ -433,7 +433,7 @@ export const ALL_TABS: {
   {
     id: "admin",
     icon: ShieldCheck,
-    label: "Live Telemetry & Access",
+    label: "Live Activity & Access",
     roles: ["platform_admin"],
   },
 ];
@@ -845,11 +845,11 @@ const Header = ({
         <div className="h-0.5 w-16 bg-primary/30 rounded-full" />
         <span className="text-[11px] font-black uppercase tracking-[0.4em] text-primary transition-all duration-500">
           {activeTab === "home" && "Neuro-Stability Engine"}
-          {activeTab === "diagnose" && "Loop Analysis Protocol"}
+          {activeTab === "diagnose" && "Loop Analysis"}
           {activeTab === "recover" && "Energy Delta Management"}
-          {activeTab === "fuel" && "Recovery Fuel Protocol"}
+          {activeTab === "fuel" && "Recovery Fuel"}
           {activeTab === "reset" && "Nervous System Reset Studio"}
-          {activeTab === "anxiety_reset" && "Autonomic Reset Protocol"}
+          {activeTab === "anxiety_reset" && "Anxiety Reset"}
           {activeTab === "communicate" && "Boundary Architect v2.1"}
           {activeTab === "reflect" && "Behavioral Repatterning"}
           {activeTab === "nova" && "AI Recovery Interface"}
@@ -1455,7 +1455,7 @@ const HomeSection = ({
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 relative z-10">
           <div className="space-y-1 text-left">
             <span className="px-2.5 py-0.5 bg-red-500/10 border border-red-500/30 text-red-400 text-[9px] font-black uppercase tracking-wider rounded-full">
-              Somatic Reset Protocol
+              Body Reset
             </span>
             <h3 className="text-lg font-bold font-serif text-text-main mt-1">Anxiety & Overwhelm Reset</h3>
             <p className="text-xs text-text-muted max-w-md leading-relaxed">
@@ -1466,7 +1466,7 @@ const HomeSection = ({
             onClick={() => window.dispatchEvent(new CustomEvent('navigate_tab', { detail: 'anxiety_reset' }))}
             className="px-5 py-3 shrink-0 bg-red-600 hover:bg-red-700 text-white font-bold uppercase tracking-widest text-xs rounded-xl transition-all shadow-md shadow-red-500/10 flex items-center gap-2"
           >
-            Deploy Reset <ArrowRight className="w-4 h-4" />
+            Start Reset <ArrowRight className="w-4 h-4" />
           </button>
         </div>
       </SmartCard>
@@ -1483,7 +1483,7 @@ const HomeSection = ({
             <StageIcon className="w-10 h-10" />
           </div>
           <div className="space-y-2 flex-1 text-left">
-            <span className="tag">Recovery Protocol Enabled</span>
+            <span className="tag">Recovery Mode Enabled</span>
             <h2 className="text-3xl font-serif font-bold text-text-main tracking-tight">
               Active Repatterning: {shipStage}
             </h2>
@@ -1515,7 +1515,7 @@ const HomeSection = ({
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <div className="w-2 h-2 rounded-full bg-primary animate-ping"></div>
-              <h3 className="text-xs font-black uppercase tracking-widest text-text-main">Nova Target Directive</h3>
+              <h3 className="text-xs font-black uppercase tracking-widest text-text-main">Today's Focus</h3>
             </div>
             <div className="tag bg-warning/20 text-warning border border-warning/20 shadow-sm">+50 ENERGY</div>
           </div>
@@ -1524,7 +1524,7 @@ const HomeSection = ({
               "Diagnostic Analysis Complete. Your single biggest energy leak is unstructured ad-hoc meetings. They account for nearly 45% of your total neural load this cycle."
             </p>
             <div className="mt-8 p-6 bg-primary/5 rounded-3xl border border-primary/10">
-              <span className="text-xs font-black text-primary uppercase tracking-[0.2em] block mb-3">Protocol Goal</span>
+              <span className="text-xs font-black text-primary uppercase tracking-[0.2em] block mb-3">Today's Focus</span>
               <p className="text-sm font-semibold text-text-main tracking-tight">Rehearse the 'I need to push this' script before the 4 PM sync to start patching this energy leak.</p>
             </div>
           </div>
@@ -1911,7 +1911,7 @@ const HomeSection = ({
                   </div>
                   <div>
                     <h5 className="text-xs font-black uppercase tracking-wider text-text-main">Quick Trigger Capture</h5>
-                    <p className="text-[9px] uppercase font-bold text-text-muted">Nova Immediate Intercept</p>
+                    <p className="text-[9px] uppercase font-bold text-text-muted">Nova Quick Check-In</p>
                   </div>
                 </div>
                 <button
@@ -1968,7 +1968,7 @@ const HomeSection = ({
                     disabled={!quickTriggerText.trim()}
                     className="w-full py-2.5 bg-primary hover:bg-primary/95 text-primary-foreground text-xs font-black uppercase tracking-widest rounded-xl transition-all shadow-md cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    Intercept Trigger (+25 XP)
+                    Log a Trigger (+25 XP)
                   </button>
                 </div>
               )}
@@ -2514,7 +2514,7 @@ export default function App() {
     }
 
     // Sync State
-    updateNovaMemoryBySourceAndType("Daily Telemetry", "state", {
+    updateNovaMemoryBySourceAndType("Daily Check-in", "state", {
       content: `Current SHIP Stage: ${shipStage}, Energy Level: ${energyLevel}%, Burnout Risk: ${burnoutRisk}, Debt Count: ${(stats.debts || []).filter((d) => !d.cleared).length}. Active Recovery Plan Goals: ${fingerprint?.priorities.join(" | ") || "None set"}.`,
       confidence: "high",
       canEdit: false,
@@ -2593,7 +2593,7 @@ export default function App() {
       stats.supportCircle?.filter((c: any) => c.isGuardian).length || 0;
 
     updateNovaMemoryBySourceAndType("Safety Engine", "rule", {
-      content: `Guardian Protocol is ${guardianEnabled ? "ENABLED" : "DISABLED"} with ${trustedContactsCount} active trusted contacts. Nova ${guardianEnabled ? "may" : "may not"} escalate to trusted contacts during severe overload.`,
+      content: `Guardian Alerts are ${guardianEnabled ? "ENABLED" : "DISABLED"} with ${trustedContactsCount} active trusted contacts. Nova ${guardianEnabled ? "may" : "may not"} escalate to trusted contacts during severe overload.`,
       confidence: "verified",
       canEdit: false,
     });

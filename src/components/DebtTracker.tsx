@@ -104,10 +104,10 @@ export const DebtTracker = ({ debts }: { debts: Debt[] }) => {
           <AlertTriangle className="w-5 h-5" />
         </div>
         <div className="flex-1">
-          <p className="text-xs font-bold text-text-main uppercase tracking-widest mb-1">Clearance Protocol</p>
+          <p className="text-xs font-bold text-text-main uppercase tracking-widest mb-1">Clear This Task</p>
           <p className="text-xs text-text-muted">Requires 2 days of "Low Effort" budget to clear sleep debt.</p>
         </div>
-        <button className="px-4 py-2 bg-primary text-primary-foreground font-bold text-xs uppercase tracking-widest rounded-lg">Apply Protocol</button>
+        <button className="px-4 py-2 bg-primary text-primary-foreground font-bold text-xs uppercase tracking-widest rounded-lg">Clear It</button>
       </div>
     </div>
   );

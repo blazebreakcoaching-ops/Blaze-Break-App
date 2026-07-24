@@ -10,7 +10,7 @@ interface ResourceLibraryProps {
 const RESOURCES = [
   {
     id: 'r1',
-    title: 'The Neural Fatigue Protocol',
+    title: 'Understanding Neural Fatigue',
     type: 'Guide',
     category: 'Safety',
     readTime: '8 min',
