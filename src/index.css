@@ -310,3 +310,14 @@
   42% { transform: scale(1.02); opacity: 0.8; }
   70% { transform: scale(1); opacity: 1; }
 }
+
+/* MotionConfig reducedMotion="user" (main.tsx) covers motion/react components;
+   this covers raw CSS/Tailwind transitions and animations for the same OS preference. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
