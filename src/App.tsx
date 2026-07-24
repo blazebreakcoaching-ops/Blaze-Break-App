@@ -8,6 +8,8 @@ import { motion, AnimatePresence } from "motion/react";
 import {
   Home,
   LifeBuoy,
+  X,
+  Plus,
   MapPin,
   BatteryFull,
   MessageSquare,
@@ -1003,23 +1005,85 @@ const HomeSection = ({
   onUpdatePulseHistory: (date: string, score: number) => void;
   onLogJourney: (action: string, details: string) => void;
 }) => {
-  const defaultLeftOrder = ['hero', 'stats', 'streakCalendar', 'trends', 'anxietyResetCard', 'somaticAccelerator', 'velocity', 'hub', 'gamification', 'daily', 'micro', 'activity'];
-  const defaultRightOrder = ['directive', 'quests', 'network', 'radar'];
+  // Friendly names for every widget, used by the "Add widget" menu below.
+  const WIDGET_LIBRARY: Record<string, string> = {
+    hero: "Your Recovery Score",
+    stats: "Quick Stats",
+    streakCalendar: "Streak Calendar",
+    trends: "Recovery Trends",
+    anxietyResetCard: "Anxiety Reset Shortcut",
+    somaticAccelerator: "Body Check-In",
+    velocity: "Recovery Velocity Map",
+    hub: "Recovery Hub",
+    gamification: "Points & Badges",
+    daily: "Daily Goal",
+    micro: "Micro-Recovery",
+    activity: "Activity Log",
+    directive: "Nova's Suggestion",
+    quests: "Active Quests",
+    network: "Guardian Network",
+    radar: "Relapse Radar",
+  };
 
-  const [leftOrder, setLeftOrder] = useState<string[]>([]);
-  const [rightOrder, setRightOrder] = useState<string[]>([]);
+  // A small, focused set by default: your score, one clear next step, one
+  // progress view, and a way to find tools. Everything else is one tap away
+  // via "Add widget" instead of all 16 competing for attention at once.
+  const DEFAULT_LEFT = ['hero', 'trends', 'hub'];
+  const DEFAULT_RIGHT = ['directive'];
+  const DEFAULT_HIDDEN = ['stats', 'streakCalendar', 'anxietyResetCard', 'somaticAccelerator', 'velocity', 'gamification', 'daily', 'micro', 'activity', 'quests', 'network', 'radar'];
+  const LAYOUT_STORAGE_KEY = 'blaze_home_dashboard_layout_v2';
+
+  const loadLayout = (): { left: string[]; right: string[]; hidden: string[] } => {
+    try {
+      const stored = localStorage.getItem(LAYOUT_STORAGE_KEY);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (Array.isArray(parsed.left) && Array.isArray(parsed.right) && Array.isArray(parsed.hidden)) {
+          return parsed;
+        }
+      }
+    } catch (e) {
+      // Corrupted storage - fall back to defaults rather than crashing.
+    }
+    return { left: DEFAULT_LEFT, right: DEFAULT_RIGHT, hidden: DEFAULT_HIDDEN };
+  };
+
+  const initialLayout = loadLayout();
+  const [leftOrder, setLeftOrder] = useState<string[]>(initialLayout.left);
+  const [rightOrder, setRightOrder] = useState<string[]>(initialLayout.right);
+  const [hiddenWidgets, setHiddenWidgets] = useState<string[]>(initialLayout.hidden);
+  const [showAddWidgetMenu, setShowAddWidgetMenu] = useState(false);
+
+  // Persist every change so layout and hide/show choices actually stick.
+  useEffect(() => {
+    try {
+      localStorage.setItem(LAYOUT_STORAGE_KEY, JSON.stringify({ left: leftOrder, right: rightOrder, hidden: hiddenWidgets }));
+    } catch (e) {
+      // Storage full or unavailable - continue silently rather than breaking the UI.
+    }
+  }, [leftOrder, rightOrder, hiddenWidgets]);
+
+  const handleHideCard = (id: string) => {
+    setLeftOrder((prev) => prev.filter((cardId) => cardId !== id));
+    setRightOrder((prev) => prev.filter((cardId) => cardId !== id));
+    setHiddenWidgets((prev) => (prev.includes(id) ? prev : [...prev, id]));
+  };
+
+  const handleAddWidget = (id: string) => {
+    setHiddenWidgets((prev) => prev.filter((cardId) => cardId !== id));
+    setLeftOrder((prev) => (prev.includes(id) ? prev : [...prev, id]));
+  };
 
   useEffect(() => {
-    // Merge new cards gracefully
-    const lOrder = leftOrder.length ? leftOrder : ['hero', 'stats', 'streakCalendar', 'anxietyResetCard', 'somaticAccelerator', 'velocity', 'hub', 'gamification', 'daily', 'micro', 'activity'];
-    if (!lOrder.includes('trends') && !rightOrder.includes('trends')) {
-      lOrder.splice(3, 0, 'trends');
+    // Merge any brand-new card types introduced by future app updates so they
+    // aren't silently lost for existing users - anything not already placed
+    // and not already hidden gets added to hidden-by-default, never forced in.
+    const known = new Set([...leftOrder, ...rightOrder, ...hiddenWidgets]);
+    const newlyIntroduced = Object.keys(WIDGET_LIBRARY).filter((id) => !known.has(id));
+    if (newlyIntroduced.length > 0) {
+      setHiddenWidgets((prev) => [...prev, ...newlyIntroduced]);
     }
-    if (!lOrder.includes('anxietyResetCard') && !rightOrder.includes('anxietyResetCard')) {
-      lOrder.splice(4, 0, 'anxietyResetCard');
-    }
-    setLeftOrder(lOrder);
-    setRightOrder(rightOrder.length ? rightOrder : defaultRightOrder);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const [quickNoteOpen, setQuickNoteOpen] = useState(false);
@@ -1208,7 +1272,7 @@ const HomeSection = ({
       <SmartCard 
         id="hero" 
         key="hero"
-        title="Executive Operational Score"
+        title="Your Recovery Score"
         energyDrain="high"
         onDragStart={handleDragStart} 
         onDragOver={handleDragOver} 
@@ -1223,7 +1287,7 @@ const HomeSection = ({
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-white/10 pb-6">
             <div className="flex flex-wrap items-center gap-3">
               <div className="px-3 py-1 text-xs uppercase font-bold tracking-widest bg-card/50 text-text-main rounded-md border border-text-main/20 shadow-sm backdrop-blur-md">
-                Neuro-State: Active
+                Nova is here
               </div>
               <NovaVoiceGuidance stage={shipStage} />
               {hasClaimedDaily && (
@@ -1240,12 +1304,12 @@ const HomeSection = ({
               onClick={onOpenCheckIn}
               className="text-xs font-bold uppercase tracking-[0.2em] text-text-main hover:text-text-main transition-all underline decoration-accent underline-offset-8"
             >
-              Update Telemetry
+              Check in
             </button>
           </div>
           <div className="space-y-4">
             <span className="text-xs font-bold uppercase tracking-[0.4em] text-text-muted">
-              Executive Operational Score
+              Your Recovery Score
             </span>
             <div className="flex items-center gap-4">
               {stats.streak < 3 ? (
@@ -1318,8 +1382,8 @@ const HomeSection = ({
       <div key="stats" className="grid grid-cols-1 md:grid-cols-3 gap-8">
         {[
           { label: "Current Phase", value: shipStage, subLabel: "SHIP Journey", color: "text-primary", bg: "bg-primary/10" },
-          { label: "Protocol Risk", value: dynamicRisk, subLabel: "Analysis Matrix", color: dynamicRisk === "Low" ? "text-success" : dynamicRisk === "Moderate" ? "text-warning" : "text-danger", bg: dynamicRisk === "Low" ? "bg-success/10" : dynamicRisk === "Moderate" ? "bg-warning/10" : "bg-danger/10" },
-          { label: "Energy Cap", value: `${energyLevel}%`, subLabel: "Operational Load", color: "text-primary", bg: "bg-primary/10" },
+          { label: "Burnout Risk", value: dynamicRisk, subLabel: "How you're trending", color: dynamicRisk === "Low" ? "text-success" : dynamicRisk === "Moderate" ? "text-warning" : "text-danger", bg: dynamicRisk === "Low" ? "bg-success/10" : dynamicRisk === "Moderate" ? "bg-warning/10" : "bg-danger/10" },
+          { label: "Energy Cap", value: `${energyLevel}%`, subLabel: "Energy available today", color: "text-primary", bg: "bg-primary/10" },
         ].map((item, i) => (
           <motion.div key={i} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.1 }}>
             <SmartCard id={`stat_${i}`} title={item.label} energyDrain={i === 1 ? 'high' : 'low'} onDragStart={handleDragStart} onDragOver={handleDragOver} onDrop={(e, id) => handleDrop(e, id, 'left')}>
@@ -1737,14 +1801,58 @@ const HomeSection = ({
       >
         <AnimatePresence>
           {leftOrder.map(id => (
-            <motion.div key={id} layout transition={{ type: "spring", stiffness: 350, damping: 25, mass: 0.8 }} initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}}>
+            <motion.div key={id} layout transition={{ type: "spring", stiffness: 350, damping: 25, mass: 0.8 }} initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} className="relative group/widget">
+              <button
+                onClick={() => handleHideCard(id)}
+                title={`Hide ${WIDGET_LIBRARY[id] || 'card'}`}
+                className="absolute top-4 right-4 z-30 p-1.5 rounded-full bg-card/90 border border-border text-text-muted hover:text-destructive opacity-0 group-hover/widget:opacity-100 transition-opacity"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
               {cardsMap[id]}
             </motion.div>
           ))}
         </AnimatePresence>
+
+        <div className="relative">
+          <button
+            onClick={() => setShowAddWidgetMenu((v) => !v)}
+            className="w-full py-4 rounded-2xl border border-dashed border-border text-text-muted hover:text-primary hover:border-primary/40 transition-colors text-sm font-bold flex items-center justify-center gap-2"
+          >
+            <Plus className="w-4 h-4" /> Add widget
+          </button>
+          <AnimatePresence>
+            {showAddWidgetMenu && (
+              <motion.div
+                initial={{ opacity: 0, y: -8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                className="absolute z-30 mt-2 w-full max-h-80 overflow-y-auto custom-scrollbar bg-card border border-border rounded-2xl shadow-2xl p-2 space-y-1"
+              >
+                {hiddenWidgets.length === 0 ? (
+                  <p className="text-xs text-text-muted text-center py-4">Everything's already on your dashboard.</p>
+                ) : (
+                  hiddenWidgets.map((id) => (
+                    <button
+                      key={id}
+                      onClick={() => {
+                        handleAddWidget(id);
+                        setShowAddWidgetMenu(false);
+                      }}
+                      className="w-full flex items-center justify-between px-4 py-3 rounded-xl text-sm text-text-main hover:bg-surface transition-colors text-left"
+                    >
+                      <span>{WIDGET_LIBRARY[id] || id}</span>
+                      <Plus className="w-4 h-4 text-text-muted shrink-0" />
+                    </button>
+                  ))
+                )}
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
       </div>
 
-      <div 
+      <div
         className="flex flex-col gap-10 min-h-[500px]"
         onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; }}
         onDrop={(e) => {
@@ -1760,7 +1868,14 @@ const HomeSection = ({
       >
         <AnimatePresence>
           {rightOrder.map(id => (
-            <motion.div key={id} layout transition={{ type: "spring", stiffness: 350, damping: 25, mass: 0.8 }} initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}}>
+            <motion.div key={id} layout transition={{ type: "spring", stiffness: 350, damping: 25, mass: 0.8 }} initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} className="relative group/widget">
+              <button
+                onClick={() => handleHideCard(id)}
+                title={`Hide ${WIDGET_LIBRARY[id] || 'card'}`}
+                className="absolute top-4 right-4 z-30 p-1.5 rounded-full bg-card/90 border border-border text-text-muted hover:text-destructive opacity-0 group-hover/widget:opacity-100 transition-opacity"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
               {cardsMap[id]}
             </motion.div>
           ))}
