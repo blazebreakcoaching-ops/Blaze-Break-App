@@ -10,9 +10,10 @@ interface SettingsModalProps {
   profile: UserProfileData | undefined;
   onSave: (profile: UserProfileData) => void;
   onClose: () => void;
+  onOpenPrivacyCentre?: () => void;
 }
 
-export const SettingsModal = ({ profile, onSave, onClose }: SettingsModalProps) => {
+export const SettingsModal = ({ profile, onSave, onClose, onOpenPrivacyCentre }: SettingsModalProps) => {
   const [activeTab, setActiveTab] = useState<'profile' | 'notifications' | 'experiments' | 'consent'>('profile');
   const [formData, setFormData] = useState<UserProfileData>(profile || {
     fullName: '',
@@ -279,9 +280,18 @@ export const SettingsModal = ({ profile, onSave, onClose }: SettingsModalProps) 
             </div>
           ) : activeTab === 'consent' ? (
             <div className="space-y-6">
-              <div className="space-y-1">
+              <div className="space-y-3">
                 <h3 className="text-xl font-display font-bold text-text-main">Consent & Privacy</h3>
                 <p className="text-xs text-text-muted">Manage how Nova interacts with your personal data and what permissions are granted.</p>
+                {onOpenPrivacyCentre && (
+                  <button
+                    type="button"
+                    onClick={onOpenPrivacyCentre}
+                    className="text-xs font-bold text-primary hover:underline"
+                  >
+                    Open full Privacy Centre &rarr;
+                  </button>
+                )}
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

@@ -299,6 +299,7 @@ export const ALL_TABS: {
   label: string;
   roles: string[];
   featureId?: string;
+  group?: string;
 }[] = [
   {
     id: "home",
@@ -318,6 +319,7 @@ export const ALL_TABS: {
     label: "Diagnose",
     roles: ["individual", "employee", "executive"],
     featureId: "burnout_diagnostic",
+    group: "recovery_tools",
   },
   {
     id: "recover",
@@ -325,6 +327,7 @@ export const ALL_TABS: {
     label: "Recover",
     roles: ["individual", "employee", "executive"],
     featureId: "energy_budget",
+    group: "recovery_tools",
   },
   {
     id: "fuel",
@@ -332,6 +335,7 @@ export const ALL_TABS: {
     label: "Nutrition",
     roles: ["individual", "employee", "executive"],
     featureId: "nutrition_recovery",
+    group: "recovery_tools",
   },
   {
     id: "reset",
@@ -339,12 +343,14 @@ export const ALL_TABS: {
     label: "Nervous System",
     roles: ["individual", "employee", "executive"],
     featureId: "nervous_system_reset",
+    group: "recovery_tools",
   },
   {
     id: "anxiety_reset",
     icon: HeartPulse,
     label: "Anxiety Reset",
     roles: ["individual", "employee", "executive"],
+    group: "recovery_tools",
   },
   {
     id: "communicate",
@@ -452,6 +458,7 @@ const Sidebar = ({
   onOpenCrisisSupport: () => void;
 }) => {
   const [pendingTasksCount, setPendingTasksCount] = useState(0);
+  const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     const handleResize = () => {
@@ -490,6 +497,7 @@ const Sidebar = ({
   }, []);
 
   const tabs = ALL_TABS.filter((t) => {
+    if (t.id === "privacy") return false; // Reachable via Settings > Consent & Privacy instead
     if (authRole === "platform_admin" && t.id !== "matrix" && t.id !== "vault_test") return true;
     if (!t.roles.includes(authRole)) return false;
     if (t.featureId && !hasSubscriptionEntitlement(currentTier, t.featureId))
@@ -571,70 +579,138 @@ const Sidebar = ({
           !isCollapsed && "pr-2",
         )}
       >
-        {tabs.map((tab) => {
-          const isActive = activeTab === tab.id;
-          return (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              className={cn(
-                "nav-item relative group flex items-center w-full transition-all",
-                isActive && "active",
-                isCollapsed
-                  ? "justify-center p-3 rounded-2xl"
-                  : "justify-between",
-              )}
-              title={isCollapsed ? tab.label : undefined}
-            >
-              <div className="flex items-center gap-3">
-                <tab.icon
-                  className={cn(
-                    "w-5 h-5 transition-colors duration-300",
-                    isActive
-                      ? "text-primary"
-                      : "text-text-muted group-hover:text-primary",
-                  )}
-                />
-                <AnimatePresence>
-                  {!isCollapsed && (
-                    <motion.span
-                      initial={{ opacity: 0, width: 0 }}
-                      animate={{ opacity: 1, width: "auto" }}
-                      exit={{ opacity: 0, width: 0 }}
-                      transition={{ duration: 0.2 }}
-                      className="text-sm whitespace-nowrap overflow-hidden"
-                    >
-                      {tab.label}
-                    </motion.span>
-                  )}
-                </AnimatePresence>
-              </div>
-              {tab.id === "recover" && pendingTasksCount > 0 && (
-                <span
-                  className={cn(
-                    "bg-destructive text-destructive-foreground text-xs font-black flex items-center justify-center rounded-full shrink-0",
-                    isCollapsed
-                      ? "absolute -top-1 -right-1 w-4 h-4 text-[10px]"
-                      : "w-5 h-5",
-                  )}
-                >
-                  {pendingTasksCount}
-                </span>
-              )}
-              {isActive && (
-                <motion.div
-                  layoutId="active-indicator"
-                  className={cn(
-                    "absolute bg-primary rounded-full",
-                    isCollapsed
-                      ? "left-0 w-1 top-2 bottom-2"
-                      : "left-0 w-1 h-6",
-                  )}
-                />
-              )}
-            </button>
-          );
-        })}
+        {(() => {
+          const renderTabButton = (tab: (typeof tabs)[number], indented: boolean) => {
+            const isActive = activeTab === tab.id;
+            return (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className={cn(
+                  "nav-item relative group flex items-center w-full transition-all",
+                  isActive && "active",
+                  isCollapsed
+                    ? "justify-center p-3 rounded-2xl"
+                    : "justify-between",
+                  indented && !isCollapsed && "pl-4",
+                )}
+                title={isCollapsed ? tab.label : undefined}
+              >
+                <div className="flex items-center gap-3">
+                  <tab.icon
+                    className={cn(
+                      "w-5 h-5 transition-colors duration-300",
+                      isActive
+                        ? "text-primary"
+                        : "text-text-muted group-hover:text-primary",
+                    )}
+                  />
+                  <AnimatePresence>
+                    {!isCollapsed && (
+                      <motion.span
+                        initial={{ opacity: 0, width: 0 }}
+                        animate={{ opacity: 1, width: "auto" }}
+                        exit={{ opacity: 0, width: 0 }}
+                        transition={{ duration: 0.2 }}
+                        className="text-sm whitespace-nowrap overflow-hidden"
+                      >
+                        {tab.label}
+                      </motion.span>
+                    )}
+                  </AnimatePresence>
+                </div>
+                {tab.id === "recover" && pendingTasksCount > 0 && (
+                  <span
+                    className={cn(
+                      "bg-destructive text-destructive-foreground text-xs font-black flex items-center justify-center rounded-full shrink-0",
+                      isCollapsed
+                        ? "absolute -top-1 -right-1 w-4 h-4 text-[10px]"
+                        : "w-5 h-5",
+                    )}
+                  >
+                    {pendingTasksCount}
+                  </span>
+                )}
+                {isActive && (
+                  <motion.div
+                    layoutId="active-indicator"
+                    className={cn(
+                      "absolute bg-primary rounded-full",
+                      isCollapsed
+                        ? "left-0 w-1 top-2 bottom-2"
+                        : "left-0 w-1 h-6",
+                    )}
+                  />
+                )}
+              </button>
+            );
+          };
+
+          // Collapsed sidebar is icon-only already, so grouping adds no value there —
+          // just render every tab flat, same as before.
+          if (isCollapsed) {
+            return tabs.map((tab) => renderTabButton(tab, false));
+          }
+
+          const renderedGroups = new Set<string>();
+          return tabs.map((tab) => {
+            if (tab.group) {
+              if (renderedGroups.has(tab.group)) return null;
+              renderedGroups.add(tab.group);
+              const groupTabs = tabs.filter((t) => t.group === tab.group);
+              const isGroupActive = groupTabs.some((t) => t.id === activeTab);
+              const isExpanded = expandedGroups[tab.group] ?? isGroupActive;
+              const groupLabel = tab.group === "recovery_tools" ? "Recovery Tools" : tab.group;
+              return (
+                <div key={tab.group}>
+                  <button
+                    onClick={() =>
+                      setExpandedGroups((prev) => ({ ...prev, [tab.group!]: !isExpanded }))
+                    }
+                    className={cn(
+                      "nav-item relative group flex items-center justify-between w-full transition-all",
+                      isGroupActive && !isExpanded && "active",
+                    )}
+                  >
+                    <div className="flex items-center gap-3">
+                      <Compass
+                        className={cn(
+                          "w-5 h-5 transition-colors duration-300",
+                          isGroupActive
+                            ? "text-primary"
+                            : "text-text-muted group-hover:text-primary",
+                        )}
+                      />
+                      <span className="text-sm whitespace-nowrap overflow-hidden">
+                        {groupLabel}
+                      </span>
+                    </div>
+                    <ChevronRight
+                      className={cn(
+                        "w-4 h-4 text-text-muted transition-transform duration-200 rotate-90",
+                        isExpanded && "-rotate-90",
+                      )}
+                    />
+                  </button>
+                  <AnimatePresence>
+                    {isExpanded && (
+                      <motion.div
+                        initial={{ height: 0, opacity: 0 }}
+                        animate={{ height: "auto", opacity: 1 }}
+                        exit={{ height: 0, opacity: 0 }}
+                        transition={{ duration: 0.2 }}
+                        className="overflow-hidden flex flex-col gap-2 pt-2"
+                      >
+                        {groupTabs.map((t) => renderTabButton(t, true))}
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
+              );
+            }
+            return renderTabButton(tab, false);
+          });
+        })()}
       </nav>
 
       <div className="pt-6 border-t border-border/50 flex flex-col gap-6 shrink-0 w-full">
@@ -1846,6 +1922,7 @@ export default function App() {
   const [showWalkthrough, setShowWalkthrough] = useState(false);
   const [showCrisisSupport, setShowCrisisSupport] = useState(false);
   const [isMobileNavCollapsed, setIsMobileNavCollapsed] = useState(false);
+  const [showMobileToolsSheet, setShowMobileToolsSheet] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
 
   // Daily Pulse State
@@ -2296,6 +2373,7 @@ export default function App() {
     oneless: "One Less Thing",
     recipes: "Recovery Recipes",
     faith: "Grounding",
+    privacy: "Privacy Centre",
   };
 
   useEffect(() => {
@@ -3019,32 +3097,87 @@ export default function App() {
           transition={{ type: "spring", stiffness: 300, damping: 30 }}
           className="fixed bottom-0 left-0 w-full bg-card/80 backdrop-blur-xl border-t border-border p-2 z-40 transition-colors duration-500"
         >
+          <AnimatePresence>
+            {showMobileToolsSheet && (
+              <motion.div
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: 12 }}
+                transition={{ duration: 0.15 }}
+                className="absolute bottom-full left-2 right-2 mb-2 p-3 rounded-2xl bg-card border border-border shadow-2xl grid grid-cols-3 gap-2"
+              >
+                {ALL_TABS.filter((t) => t.group === "recovery_tools").map((tab) => (
+                  <button
+                    key={tab.id}
+                    onClick={() => {
+                      setActiveTab(tab.id as ActiveTab);
+                      setShowMobileToolsSheet(false);
+                    }}
+                    className={`p-2 rounded-xl transition-all flex flex-col items-center gap-1 ${activeTab === tab.id ? "text-primary bg-primary/10" : "text-text-muted hover:text-text-main"}`}
+                  >
+                    <tab.icon className="w-5 h-5" />
+                    <span className="text-[10px] font-bold tracking-wide text-center leading-tight">
+                      {tab.label}
+                    </span>
+                  </button>
+                ))}
+              </motion.div>
+            )}
+          </AnimatePresence>
           <div className="flex justify-around items-center h-14 overflow-x-auto custom-scrollbar px-2 gap-2">
-            {ALL_TABS.filter(
+            {(() => {
+              const visibleTabs = ALL_TABS.filter(
                 (t) =>
-                  (effectiveRole === "platform_admin" && t.id !== "matrix" && t.id !== "vault_test") ||
+                  t.id !== "privacy" && // Reachable via Settings > Consent & Privacy instead
+                  ((effectiveRole === "platform_admin" && t.id !== "matrix" && t.id !== "vault_test") ||
                   (t.roles.includes(effectiveRole || "individual") &&
                   (!t.featureId ||
                     hasSubscriptionEntitlement(
                       stats.profile?.subscription || "recovery",
                       t.featureId,
-                    ))),
-              ).map((tab) => (
-                <button
-                  key={tab.id}
-                  onClick={() => setActiveTab(tab.id as ActiveTab)}
-                  className={`p-2 rounded-lg transition-all flex flex-col items-center gap-1 shrink-0 min-w-[56px] ${activeTab === tab.id ? "text-primary" : "text-text-muted hover:text-text-main"}`}
-                >
-                  <div
-                    className={`p-1.5 rounded-full transition-all ${activeTab === tab.id ? "bg-primary/10" : ""}`}
+                    )))),
+              );
+              const renderedGroups = new Set<string>();
+              return visibleTabs.map((tab) => {
+                if (tab.group) {
+                  if (renderedGroups.has(tab.group)) return null;
+                  renderedGroups.add(tab.group);
+                  const isGroupActive = visibleTabs.some(
+                    (t) => t.group === tab.group && t.id === activeTab,
+                  );
+                  return (
+                    <button
+                      key={tab.group}
+                      onClick={() => setShowMobileToolsSheet((v) => !v)}
+                      className={`p-2 rounded-lg transition-all flex flex-col items-center gap-1 shrink-0 min-w-[56px] ${isGroupActive || showMobileToolsSheet ? "text-primary" : "text-text-muted hover:text-text-main"}`}
+                    >
+                      <div
+                        className={`p-1.5 rounded-full transition-all ${isGroupActive || showMobileToolsSheet ? "bg-primary/10" : ""}`}
+                      >
+                        <Compass className="w-5 h-5" />
+                      </div>
+                      <span className="text-[11px] font-bold tracking-wide">Tools</span>
+                    </button>
+                  );
+                }
+                return (
+                  <button
+                    key={tab.id}
+                    onClick={() => setActiveTab(tab.id as ActiveTab)}
+                    className={`p-2 rounded-lg transition-all flex flex-col items-center gap-1 shrink-0 min-w-[56px] ${activeTab === tab.id ? "text-primary" : "text-text-muted hover:text-text-main"}`}
                   >
-                    <tab.icon className="w-5 h-5" />
-                  </div>
-                  <span className="text-[11px] font-bold tracking-wide">
-                    {tab.label}
-                  </span>
-                </button>
-              ))}
+                    <div
+                      className={`p-1.5 rounded-full transition-all ${activeTab === tab.id ? "bg-primary/10" : ""}`}
+                    >
+                      <tab.icon className="w-5 h-5" />
+                    </div>
+                    <span className="text-[11px] font-bold tracking-wide">
+                      {tab.label}
+                    </span>
+                  </button>
+                );
+              });
+            })()}
           </div>
         </motion.div>
       </div>
@@ -3055,6 +3188,10 @@ export default function App() {
             profile={stats.profile}
             onClose={() => setShowSettings(false)}
             onSave={(profile) => setStats((prev) => ({ ...prev, profile }))}
+            onOpenPrivacyCentre={() => {
+              setShowSettings(false);
+              setActiveTab("privacy");
+            }}
           />
         )}
         <Walkthrough
