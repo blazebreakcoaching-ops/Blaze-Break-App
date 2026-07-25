@@ -102,6 +102,20 @@ export const RecoveryPlan = ({
       feedback = "You are carrying intense resentment because you keep saying yes while your battery screams. Your " + highestDebt.label + " is at " + Math.round(highestDebtRatio * 100) + "% of total collapse. Resentment is your nervous system's way of showing where boundaries are needed.";
     } else if (archetype === 'Manager in the Middle') {
       feedback = "Squeezed between corporate targets and team fatigue, your neural buffers are depleted. Your " + highestDebt.label + " load is at " + Math.round(highestDebtRatio * 100) + "%. Today is about reclaiming your executive authority through radical, protective calendar scheduling.";
+    } else if (archetype === 'The Impostor') {
+      feedback = "You keep adding proof to a case that's already closed. Your " + highestDebt.label + " is at " + Math.round(highestDebtRatio * 100) + "%. The wins are real — today is about letting one of them actually count.";
+    } else if (archetype === 'The Perfectionist') {
+      feedback = "Your standards are the leak, not other people's demands. Your " + highestDebt.label + " is at " + Math.round(highestDebtRatio * 100) + "%. Today is about handing something off and leaving it alone.";
+    } else if (archetype === 'The Constant Adapter') {
+      feedback = "A lot of your energy is going into managing how you come across, not the work itself. Your " + highestDebt.label + " is at " + Math.round(highestDebtRatio * 100) + "%. Today is about protecting real recovery time, not just pushing through.";
+    } else if (archetype === 'The Second Shift') {
+      feedback = "You're running two jobs at once, and only one of them is visible to anyone else. Your " + highestDebt.label + " is at " + Math.round(highestDebtRatio * 100) + "%. Today is about naming the invisible load, not carrying it silently.";
+    } else if (archetype === 'Crisis Sprinter') {
+      feedback = "Your system runs on urgency, and calm feels riskier than pressure does. Your " + highestDebt.label + " is at " + Math.round(highestDebtRatio * 100) + "%. Today is about proving to your own nervous system that quiet is safe.";
+    } else if (archetype === 'People-Pleasing Performer') {
+      feedback = "The version of you that shows up for other people is working overtime. Your " + highestDebt.label + " is at " + Math.round(highestDebtRatio * 100) + "%. Today is about letting one honest reaction through.";
+    } else if (archetype === 'Responsibility Addict') {
+      feedback = "You've quietly taken ownership of things that were never yours to carry. Your " + highestDebt.label + " is at " + Math.round(highestDebtRatio * 100) + "%. Today is about leaving one thing where it actually belongs.";
     } else {
       feedback = "Perfectionism is a slow energy leak. Your " + highestDebt.label + " is currently loaded to " + Math.round(highestDebtRatio * 100) + "% capacity. Stop aiming for 120% where a calm, steady 85% is perfect. Let's practice active nervous system regulation.";
     }
@@ -211,6 +225,69 @@ export const RecoveryPlan = ({
         points: 75,
         completed: completedIds.includes('comm_manager_1'),
         tag: 'Buffer Shielding'
+      });
+    } else if (archetype === 'The Impostor') {
+      items.push({
+        id: 'comm_impostor_1',
+        section: 'Communicate',
+        text: 'Practice accepting praise for a win out loud, without qualifying or deflecting it',
+        points: 75,
+        completed: completedIds.includes('comm_impostor_1'),
+        tag: 'Owning Wins'
+      });
+    } else if (archetype === 'The Perfectionist') {
+      items.push({
+        id: 'comm_perfectionist_1',
+        section: 'Communicate',
+        text: 'Rehearse handing off a task with "this meets what we needed" and no follow-up review',
+        points: 75,
+        completed: completedIds.includes('comm_perfectionist_1'),
+        tag: 'Letting Go'
+      });
+    } else if (archetype === 'The Constant Adapter') {
+      items.push({
+        id: 'comm_adapter_1',
+        section: 'Communicate',
+        text: 'Practice directly requesting one specific accommodation (buffer time, written follow-up) without over-explaining',
+        points: 75,
+        completed: completedIds.includes('comm_adapter_1'),
+        tag: 'Direct Ask'
+      });
+    } else if (archetype === 'The Second Shift') {
+      items.push({
+        id: 'comm_secondshift_1',
+        section: 'Communicate',
+        text: 'Rehearse naming your caregiving load to one person at work who can adjust expectations',
+        points: 75,
+        completed: completedIds.includes('comm_secondshift_1'),
+        tag: 'Naming the Load'
+      });
+    } else if (archetype === 'Crisis Sprinter') {
+      items.push({
+        id: 'comm_crisissprinter_1',
+        section: 'Communicate',
+        text: 'Practice telling a colleague "this can wait until tomorrow" for something that genuinely can',
+        points: 75,
+        completed: completedIds.includes('comm_crisissprinter_1'),
+        tag: 'De-escalating Urgency'
+      });
+    } else if (archetype === 'People-Pleasing Performer') {
+      items.push({
+        id: 'comm_ppperformer_1',
+        section: 'Communicate',
+        text: 'Practice giving an honest, unpolished answer to "how are you" instead of the automatic "fine"',
+        points: 75,
+        completed: completedIds.includes('comm_ppperformer_1'),
+        tag: 'Dropping the Performance'
+      });
+    } else if (archetype === 'Responsibility Addict') {
+      items.push({
+        id: 'comm_respaddict_1',
+        section: 'Communicate',
+        text: 'Rehearse saying "that\'s not mine to fix" and leaving it there',
+        points: 75,
+        completed: completedIds.includes('comm_respaddict_1'),
+        tag: 'Releasing Ownership'
       });
     } else {
       items.push({
@@ -424,6 +501,34 @@ export const RecoveryPlan = ({
     "Manager in the Middle": {
       scenario: "Upper leadership asks for a sudden delivery projection over the weekend. What is yourCapacity protection script?",
       exampleScript: "I will align with the team on Monday morning and deliver our revised capacity projections by midday."
+    },
+    "The Impostor": {
+      scenario: "A colleague praises a project you led as if it were effortless, and your instinct is to explain how much you actually struggled. What do you say instead?",
+      exampleScript: "Thank you — I put real thought into that, and I'm glad it landed well."
+    },
+    "The Perfectionist": {
+      scenario: "A teammate hands you a task done to 90% of your usual standard, and it's genuinely fine for the brief. What do you do?",
+      exampleScript: "This meets what we needed. I'm going to leave it as is rather than adjust it."
+    },
+    "The Constant Adapter": {
+      scenario: "Your calendar has four back-to-back meetings with no gap, and you know you'll need a moment to reset between them. What do you ask for?",
+      exampleScript: "I need a short buffer between these two — could we shift one by 15 minutes?"
+    },
+    "The Second Shift": {
+      scenario: "Work asks for your availability during a window you've reserved for caregiving. What is your response?",
+      exampleScript: "I have a firm commitment during that time. I can pick this up right after."
+    },
+    "Crisis Sprinter": {
+      scenario: "A request comes in framed as urgent, but on reflection it can genuinely wait. What do you say?",
+      exampleScript: "I'll pick this up properly tomorrow morning — nothing here needs a same-day turnaround."
+    },
+    "People-Pleasing Performer": {
+      scenario: "A colleague asks how you're doing, and the honest answer is 'not great.' What do you say instead of the automatic 'fine'?",
+      exampleScript: "Honestly, it's been a heavy week — appreciate you asking."
+    },
+    "Responsibility Addict": {
+      scenario: "Something goes wrong on a project that isn't officially your responsibility, and your instinct is to step in. What do you say?",
+      exampleScript: "That's not mine to fix — I trust it'll get handled by the right person."
     }
   }[archetype] || {
     scenario: "A sudden out-of-scope deliverable lands on your desk at 5 PM. How do you hold your capacity line?",

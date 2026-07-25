@@ -161,6 +161,76 @@ const questions = [
       },
     ],
   },
+  {
+    id: "selfDoubt",
+    text: "When you succeed at something significant, what's your internal reaction?",
+    options: [
+      { text: "I did the work, and I own it.", value: 1 },
+      { text: "I'm pleased, but a part of me wonders if I got lucky.", value: 2 },
+      { text: "I feel a flash of relief that no one \"found out\" this time.", value: 3 },
+      { text: "I immediately start proving myself again — the win doesn't count for long.", value: 4 },
+    ],
+  },
+  {
+    id: "delegationControl",
+    text: "When someone else's version of a task doesn't meet your standard, you:",
+    options: [
+      { text: "Accept it if it meets the actual requirement, even if I'd have done it differently.", value: 1 },
+      { text: "Feel a pull to adjust it, but usually resist.", value: 2 },
+      { text: "Redo it myself quietly, telling myself it's faster this way.", value: 3 },
+      { text: "Take the task back entirely rather than risk it being wrong again.", value: 4 },
+    ],
+  },
+  {
+    id: "maskingLoad",
+    text: "How much of your energy at work goes into managing how you come across, separate from the actual work itself?",
+    options: [
+      { text: "Very little — I don't think about it much.", value: 1 },
+      { text: "Some — I adjust a bit depending on who's in the room.", value: 2 },
+      { text: "A lot — I'm constantly monitoring and adjusting how I present.", value: 3 },
+      { text: "Most of it — by the time I've managed how I seem, there's little energy left for the work.", value: 4 },
+    ],
+  },
+  {
+    id: "caregivingLoad",
+    text: "Outside of work, how much does caring for someone else (a child, aging parent, or family member) cut into the time you'd otherwise use to recover?",
+    options: [
+      { text: "Not at all — I don't have caregiving responsibilities right now.", value: 1 },
+      { text: "Some — it takes a bit of my downtime most weeks.", value: 2 },
+      { text: "Significantly — my recovery time is regularly sacrificed for caregiving.", value: 3 },
+      { text: "Completely — there is no real recovery time; caregiving fills every gap.", value: 4 },
+    ],
+  },
+  {
+    id: "crisisDependency",
+    text: "How do you feel during a genuinely calm, low-urgency stretch at work?",
+    options: [
+      { text: "Comfortable — I use it to plan, recharge, or catch up.", value: 1 },
+      { text: "A little restless, but I settle into it.", value: 2 },
+      { text: "Restless enough that I start creating urgency of my own.", value: 3 },
+      { text: "Anxious and adrift, like something must be wrong if nothing's on fire.", value: 4 },
+    ],
+  },
+  {
+    id: "emotionalPerformance",
+    text: "In front of colleagues or clients, how much of your real internal state actually shows?",
+    options: [
+      { text: "Pretty much what I feel is what shows.", value: 1 },
+      { text: "I keep a professional face on regardless of how I feel underneath.", value: 2 },
+      { text: "I actively perform enthusiasm or ease even when I feel awful.", value: 3 },
+      { text: "I've genuinely lost track of what I feel underneath the performance.", value: 4 },
+    ],
+  },
+  {
+    id: "responsibilityCreep",
+    text: "When something goes wrong on a team or project that isn't officially yours to fix, you:",
+    options: [
+      { text: "Note it, and let the actual owner handle it.", value: 1 },
+      { text: "Feel a pull to step in, but usually resist.", value: 2 },
+      { text: "Quietly take it on because someone has to.", value: 3 },
+      { text: "Immediately absorb it as my problem, regardless of whose job it technically is.", value: 4 },
+    ],
+  },
 ];
 
 export const DiagnoseView = ({
@@ -310,6 +380,13 @@ interface FingerprintScores {
   sleep: number;
   emotionalOverload: number;
   meaning: number;
+  selfDoubt?: number;
+  delegationControl?: number;
+  maskingLoad?: number;
+  caregivingLoad?: number;
+  crisisDependency?: number;
+  emotionalPerformance?: number;
+  responsibilityCreep?: number;
 }
 
 const leakKeys: { key: keyof FingerprintScores; label: string; icon: any }[] = [
@@ -324,6 +401,13 @@ const leakKeys: { key: keyof FingerprintScores; label: string; icon: any }[] = [
     icon: Activity,
   },
   { key: "meaning", label: "Sense of Meaning / Alignment", icon: Compass },
+  { key: "selfDoubt", label: "Self-Doubt / Impostor Feelings", icon: User },
+  { key: "delegationControl", label: "Delegation & Control", icon: ShieldCheck },
+  { key: "maskingLoad", label: "Masking & Adaptation Load", icon: Activity },
+  { key: "caregivingLoad", label: "Caregiving Load", icon: Heart },
+  { key: "crisisDependency", label: "Crisis Dependency", icon: AlertTriangle },
+  { key: "emotionalPerformance", label: "Emotional Performance", icon: User },
+  { key: "responsibilityCreep", label: "Responsibility Creep", icon: ShieldCheck },
 ];
 
 const getLeakDetails = (key: string, score: number) => {
@@ -579,6 +663,244 @@ const getLeakDetails = (key: string, score: number) => {
         width: "100%",
       },
     },
+    selfDoubt: {
+      1: {
+        title: "Grounded",
+        desc: "Wins are owned without needing to re-earn them.",
+        color: "bg-success",
+        bg: "bg-success/10",
+        text: "text-success-foreground",
+        width: "25%",
+      },
+      2: {
+        title: "Second-Guessing",
+        desc: "Success lands, but a quiet doubt follows close behind.",
+        color: "bg-warning",
+        bg: "bg-warning/10",
+        text: "text-warning-foreground",
+        width: "50%",
+      },
+      3: {
+        title: "Discounting",
+        desc: "Achievements are mentally minimised almost as soon as they happen.",
+        color: "bg-primary",
+        bg: "bg-primary-light",
+        text: "text-primary-dark",
+        width: "75%",
+      },
+      4: {
+        title: "Constant Re-Proving",
+        desc: "No win counts for long enough to actually rest on it.",
+        color: "bg-destructive",
+        bg: "bg-destructive/10",
+        text: "text-destructive-foreground",
+        width: "100%",
+      },
+    },
+    delegationControl: {
+      1: {
+        title: "Comfortable Letting Go",
+        desc: "Good enough is genuinely good enough for low-stakes work.",
+        color: "bg-success",
+        bg: "bg-success/10",
+        text: "text-success-foreground",
+        width: "25%",
+      },
+      2: {
+        title: "Reluctant Release",
+        desc: "Handing off work is possible, but not comfortable.",
+        color: "bg-warning",
+        bg: "bg-warning/10",
+        text: "text-warning-foreground",
+        width: "50%",
+      },
+      3: {
+        title: "Quiet Redoing",
+        desc: "Work gets redone privately rather than handed off honestly.",
+        color: "bg-primary",
+        bg: "bg-primary-light",
+        text: "text-primary-dark",
+        width: "75%",
+      },
+      4: {
+        title: "Total Control Hold",
+        desc: "Tasks are pulled back entirely rather than risk imperfection.",
+        color: "bg-destructive",
+        bg: "bg-destructive/10",
+        text: "text-destructive-foreground",
+        width: "100%",
+      },
+    },
+    maskingLoad: {
+      1: {
+        title: "Low Effort",
+        desc: "Little energy spent managing how you come across.",
+        color: "bg-success",
+        bg: "bg-success/10",
+        text: "text-success-foreground",
+        width: "25%",
+      },
+      2: {
+        title: "Situational Adjusting",
+        desc: "Some conscious adjustment depending on the room.",
+        color: "bg-warning",
+        bg: "bg-warning/10",
+        text: "text-warning-foreground",
+        width: "50%",
+      },
+      3: {
+        title: "Constant Calibration",
+        desc: "Ongoing, effortful self-monitoring throughout the day.",
+        color: "bg-primary",
+        bg: "bg-primary-light",
+        text: "text-primary-dark",
+        width: "75%",
+      },
+      4: {
+        title: "Two Full Jobs",
+        desc: "Managing perception consumes the energy the actual work needs.",
+        color: "bg-destructive",
+        bg: "bg-destructive/10",
+        text: "text-destructive-foreground",
+        width: "100%",
+      },
+    },
+    caregivingLoad: {
+      1: {
+        title: "Unaffected",
+        desc: "No outside caregiving demands on recovery time right now.",
+        color: "bg-success",
+        bg: "bg-success/10",
+        text: "text-success-foreground",
+        width: "25%",
+      },
+      2: {
+        title: "Some Overlap",
+        desc: "Caregiving takes a bit of downtime most weeks.",
+        color: "bg-warning",
+        bg: "bg-warning/10",
+        text: "text-warning-foreground",
+        width: "50%",
+      },
+      3: {
+        title: "Regularly Sacrificed",
+        desc: "Recovery time is routinely given up to caregiving.",
+        color: "bg-primary",
+        bg: "bg-primary-light",
+        text: "text-primary-dark",
+        width: "75%",
+      },
+      4: {
+        title: "No Recovery Window",
+        desc: "Caregiving fills every gap that recovery would otherwise use.",
+        color: "bg-destructive",
+        bg: "bg-destructive/10",
+        text: "text-destructive-foreground",
+        width: "100%",
+      },
+    },
+    crisisDependency: {
+      1: {
+        title: "Restful",
+        desc: "Calm stretches are genuinely used to recharge.",
+        color: "bg-success",
+        bg: "bg-success/10",
+        text: "text-success-foreground",
+        width: "25%",
+      },
+      2: {
+        title: "Mildly Restless",
+        desc: "Some discomfort with quiet, but it settles.",
+        color: "bg-warning",
+        bg: "bg-warning/10",
+        text: "text-warning-foreground",
+        width: "50%",
+      },
+      3: {
+        title: "Self-Generated Urgency",
+        desc: "Calm periods get filled with manufactured pressure.",
+        color: "bg-primary",
+        bg: "bg-primary-light",
+        text: "text-primary-dark",
+        width: "75%",
+      },
+      4: {
+        title: "Crisis-Dependent",
+        desc: "Stillness reads as danger; urgency feels like the only safe state.",
+        color: "bg-destructive",
+        bg: "bg-destructive/10",
+        text: "text-destructive-foreground",
+        width: "100%",
+      },
+    },
+    emotionalPerformance: {
+      1: {
+        title: "Congruent",
+        desc: "What you feel and what shows are closely aligned.",
+        color: "bg-success",
+        bg: "bg-success/10",
+        text: "text-success-foreground",
+        width: "25%",
+      },
+      2: {
+        title: "Professional Mask",
+        desc: "A composed front is kept up regardless of internal state.",
+        color: "bg-warning",
+        bg: "bg-warning/10",
+        text: "text-warning-foreground",
+        width: "50%",
+      },
+      3: {
+        title: "Active Performance",
+        desc: "Enthusiasm or ease is performed even when it isn't felt.",
+        color: "bg-primary",
+        bg: "bg-primary-light",
+        text: "text-primary-dark",
+        width: "75%",
+      },
+      4: {
+        title: "Disconnected",
+        desc: "Contact with what's actually felt underneath has been lost.",
+        color: "bg-destructive",
+        bg: "bg-destructive/10",
+        text: "text-destructive-foreground",
+        width: "100%",
+      },
+    },
+    responsibilityCreep: {
+      1: {
+        title: "Clear Boundaries",
+        desc: "Ownership stays with whoever it actually belongs to.",
+        color: "bg-success",
+        bg: "bg-success/10",
+        text: "text-success-foreground",
+        width: "25%",
+      },
+      2: {
+        title: "Occasional Pull",
+        desc: "The urge to step in shows up but is usually resisted.",
+        color: "bg-warning",
+        bg: "bg-warning/10",
+        text: "text-warning-foreground",
+        width: "50%",
+      },
+      3: {
+        title: "Quiet Absorption",
+        desc: "Other people's problems get taken on out of habit.",
+        color: "bg-primary",
+        bg: "bg-primary-light",
+        text: "text-primary-dark",
+        width: "75%",
+      },
+      4: {
+        title: "Total Ownership Creep",
+        desc: "Nearly everything nearby becomes your responsibility to fix.",
+        color: "bg-destructive",
+        bg: "bg-destructive/10",
+        text: "text-destructive-foreground",
+        width: "100%",
+      },
+    },
   };
 
   const defaultConf = {
@@ -685,6 +1007,125 @@ const FINGERPRINT_ENHANCEMENTS: Record<
       "Force trade-offs when someone adds scope: 'I can do X, but I will drop Y.'",
     ],
   },
+  "The Impostor": {
+    insights: [
+      "Wins get mentally discounted almost as fast as they happen.",
+      "Overachievement is driven by proving worth, not by the work itself.",
+      "The finish line keeps moving because no result ever feels like 'enough proof'.",
+    ],
+    recoveryStrategies: [
+      "Keep a running, written record of wins you cannot mentally minimise.",
+      "Practice letting a success stand for a full day before moving to the next thing.",
+      "Notice the specific moment you start 'proving it again' and name it out loud.",
+    ],
+    boundaryStrategies: [
+      "Decline the urge to over-explain or over-justify a decision that was already sound.",
+      "Say 'this is done' and mean it, even when a voice says it could be better.",
+      "Ask directly for feedback instead of assuming the worst about how you're perceived.",
+    ],
+  },
+  "The Perfectionist": {
+    insights: [
+      "Delegation quietly stops happening because redoing it yourself feels safer.",
+      "The exhaustion doesn't look like overwork on paper — it looks like never putting anything down.",
+      "Self-worth has become tied to the flawlessness of the output, not the outcome achieved.",
+    ],
+    recoveryStrategies: [
+      "Define 'good enough' explicitly, in writing, for anything low-stakes.",
+      "Hand off one task per week without reviewing the final result.",
+      "Track how often 'redone myself' actually cost more time than it saved.",
+    ],
+    boundaryStrategies: [
+      "Say 'this meets the bar' out loud, even when it isn't how you'd have done it.",
+      "Set a time limit on any task before starting it, and stop at the limit.",
+      "Ask 'what does done actually require here?' before starting, not after.",
+    ],
+  },
+  "The Constant Adapter": {
+    insights: [
+      "A significant share of daily energy goes into managing how you come across, separate from the work itself.",
+      "Ordinary environments (open offices, back-to-back meetings, notification overload) can be disproportionately draining.",
+      "This kind of exhaustion is often mistaken for low motivation, when the real driver is sustained overexertion in a mismatched environment.",
+    ],
+    recoveryStrategies: [
+      "Schedule real recovery time after high-effort or high-stimulation stretches, not just after long hours.",
+      "Protect quiet, low-input time as a non-negotiable, not a luxury.",
+      "Treat 'just push through' advice as unreliable for you specifically — that's information, not a failing.",
+    ],
+    boundaryStrategies: [
+      "Ask for what actually helps (written follow-ups, fewer back-to-backs, advance notice) directly, without over-explaining why.",
+      "Build in transition time between high-stimulation contexts rather than moving straight through.",
+      "Let go of matching someone else's default pace as the measure of whether you're doing enough.",
+    ],
+  },
+  "The Second Shift": {
+    insights: [
+      "There are effectively two jobs running at once — one paid and visible, one unpaid and invisible.",
+      "Colleagues and managers typically have zero visibility into the caregiving load underneath the work.",
+      "Self-care is almost always the first thing sacrificed, which quietly compounds the exhaustion over time.",
+    ],
+    recoveryStrategies: [
+      "Name the caregiving hours explicitly, even just in your own tracking — invisible labour is easier to under-protect.",
+      "Look for the smallest real handoff or respite option available, even if it's partial.",
+      "Let 'good enough' apply to both roles rather than demanding excellence in either.",
+    ],
+    boundaryStrategies: [
+      "Say the caregiving load out loud to at least one person at work who can adjust expectations accordingly.",
+      "Protect one recurring block of time that is genuinely yours, and defend it the same way you'd defend a client meeting.",
+      "Decline optional asks (at work or at home) that have no real consequence if they don't happen.",
+    ],
+  },
+  "Crisis Sprinter": {
+    insights: [
+      "Adrenaline has become the baseline state; calm can feel more uncomfortable than pressure.",
+      "Urgency created for its own sake looks like productivity, but functions as avoidance of stillness.",
+      "Recovery windows get sabotaged, consciously or not, because rest doesn't feel earned without a crisis behind it.",
+    ],
+    recoveryStrategies: [
+      "Practice sitting in a genuinely calm period without manufacturing urgency to fill it.",
+      "Notice the physical sensation of boredom or stillness without immediately reaching for a new fire.",
+      "Build the recognition that a quiet week is a success, not a warning sign.",
+    ],
+    boundaryStrategies: [
+      "Decline being the default first responder for problems that aren't actually urgent.",
+      "Let a 'crisis' sit for an hour before reacting, to test whether it's real or self-generated.",
+      "Practice ending a day with nothing left to 'fix'.",
+    ],
+  },
+  "People-Pleasing Performer": {
+    insights: [
+      "Maintaining a consistent, agreeable front takes real, invisible energy, separate from the actual work.",
+      "Over time, it becomes genuinely hard to locate an honest reaction underneath the performance.",
+      "Being liked and being known are not the same thing, and only one of them is currently being fed.",
+    ],
+    recoveryStrategies: [
+      "Practice naming one honest internal state out loud each day, even a small one.",
+      "Notice the specific moments the 'performance' switches on, and what triggers it.",
+      "Let one interaction be less polished than usual, on purpose, as practice.",
+    ],
+    boundaryStrategies: [
+      "Say 'actually, that's not going well' instead of automatically reassuring someone.",
+      "Decline the urge to manage other people's reactions to your honesty.",
+      "Let a colleague see a genuine, unfiltered reaction at least once this week.",
+    ],
+  },
+  "Responsibility Addict": {
+    insights: [
+      "Ownership has expanded well past your actual scope, often without a conscious decision.",
+      "Being indispensable feels safer than being replaceable, which keeps you over-extended by design.",
+      "Things that would resolve fine without you often get absorbed anyway, out of habit rather than necessity.",
+    ],
+    recoveryStrategies: [
+      "Practice identifying whose responsibility something actually is before stepping in.",
+      "Let one thing go wrong without your intervention, and observe what actually happens.",
+      "Notice the specific feeling that shows up when you're not the one solving something.",
+    ],
+    boundaryStrategies: [
+      "Say 'that's not mine to fix' and leave it there, even when it's uncomfortable.",
+      "Ask directly whether your involvement was actually requested before offering it.",
+      "Practice the sentence 'I trust this will get handled without me'.",
+    ],
+  },
 };
 
 interface PlanAction {
@@ -785,6 +1226,111 @@ const PERSONALIZED_RECOVERY_PLANS: Record<
     reflectionPrompts: [
       { id: "mimq-1", question: "Am I acting as an emotional shock-absorber for senior leadership targets at the expense of my own physical stability?" },
       { id: "mimq-2", question: "How would my management style change if I allowed my team to navigate setbacks rather than constantly buffering them?" }
+    ]
+  },
+  "The Impostor": {
+    recommendedActions: [
+      { id: "imp-1", text: "Write down one specific win from today, in your own words, without qualifying it.", points: 40 },
+      { id: "imp-2", text: "Let a completed piece of work sit for 24 hours before revisiting or 'improving' it.", points: 50 },
+      { id: "imp-3", text: "Notice one moment today you felt the urge to over-explain a decision, and skip the explanation.", points: 30 }
+    ],
+    boundaryStrategies: [
+      { id: "impb-1", situation: "When praised for a piece of work", script: "Thank you — I put real thought into that, and I'm glad it landed." },
+      { id: "impb-2", situation: "When tempted to take on extra work to 'prove' your value after a win", script: "I delivered what was asked, and it's done well. I don't need to add more to validate it." }
+    ],
+    reflectionPrompts: [
+      { id: "impq-1", question: "What would change if I let this win count, fully, without immediately looking for the next thing to prove?" },
+      { id: "impq-2", question: "Whose voice am I actually hearing when I discount my own results?" }
+    ]
+  },
+  "The Perfectionist": {
+    recommendedActions: [
+      { id: "prf-1", text: "Hand off one task today and deliberately do not review the finished result.", points: 40 },
+      { id: "prf-2", text: "Set a hard time limit before starting a task, and stop when it's reached.", points: 50 },
+      { id: "prf-3", text: "Write down what 'good enough' actually looks like for one low-stakes task, before you start it.", points: 30 }
+    ],
+    boundaryStrategies: [
+      { id: "prfb-1", situation: "When someone's work doesn't match how you'd have done it, but meets the brief", script: "This meets what we needed — I'm going to leave it as is." },
+      { id: "prfb-2", situation: "When you notice the urge to redo someone else's completed work", script: "I trust this is handled. I'm intentionally not going back over it." }
+    ],
+    reflectionPrompts: [
+      { id: "prfq-1", question: "How much time this week did 'redoing it myself' actually cost, compared to what it saved?" },
+      { id: "prfq-2", question: "What would I have to believe about myself to let 'good enough' actually be enough?" }
+    ]
+  },
+  "The Constant Adapter": {
+    recommendedActions: [
+      { id: "ca-1", text: "Block 20 minutes of quiet, low-input recovery time after your most demanding meeting or interaction today.", points: 40 },
+      { id: "ca-2", text: "Identify one environment or routine today that felt disproportionately draining, and name why.", points: 50 },
+      { id: "ca-3", text: "Skip one non-essential social or performative element of your day — notice what changes.", points: 30 }
+    ],
+    boundaryStrategies: [
+      { id: "cab-1", situation: "When asked to join back-to-back meetings with no gap", script: "I need a short buffer between these two — can we shift one by 15 minutes?" },
+      { id: "cab-2", situation: "When told to 'just push through' a draining stretch", script: "That approach doesn't actually work for how I recover — here's what does." }
+    ],
+    reflectionPrompts: [
+      { id: "caq-1", question: "How much of today's exhaustion came from the actual work, versus managing how I came across while doing it?" },
+      { id: "caq-2", question: "What would today have looked like if I'd protected recovery time the same way I protect deadlines?" }
+    ]
+  },
+  "The Second Shift": {
+    recommendedActions: [
+      { id: "ss-1", text: "Write down your actual weekly caregiving hours — just for yourself, as real, countable time.", points: 40 },
+      { id: "ss-2", text: "Identify one task (at work or at home) you could hand off, even partially, this week.", points: 50 },
+      { id: "ss-3", text: "Protect one recurring block of time this week as genuinely yours, and defend it like a work meeting.", points: 30 }
+    ],
+    boundaryStrategies: [
+      { id: "ssb-1", situation: "When work asks for availability during a caregiving-heavy window", script: "I have a firm commitment during that time — I can pick this up right after." },
+      { id: "ssb-2", situation: "When you notice guilt about not doing more in either role", script: "I'm doing what's realistically possible today, and that's enough." }
+    ],
+    reflectionPrompts: [
+      { id: "ssq-1", question: "Where is my caregiving load actually invisible to the people setting my work expectations?" },
+      { id: "ssq-2", question: "What is one place I could accept 'good enough' this week instead of excellent?" }
+    ]
+  },
+  "Crisis Sprinter": {
+    recommendedActions: [
+      { id: "cs-1", text: "Spend one hour today in a genuinely calm task without adding urgency to it.", points: 40 },
+      { id: "cs-2", text: "Notice one moment today you felt the urge to escalate something that wasn't actually urgent, and pause instead.", points: 50 },
+      { id: "cs-3", text: "End today with something deliberately left unresolved until tomorrow.", points: 30 }
+    ],
+    boundaryStrategies: [
+      { id: "csb-1", situation: "When a non-urgent request arrives framed as urgent", script: "I'll take this on properly tomorrow morning — nothing here needs a same-day response." },
+      { id: "csb-2", situation: "When you notice yourself creating a deadline that doesn't need to exist", script: "This doesn't actually need to be done today. I'm giving it its real timeline." }
+    ],
+    reflectionPrompts: [
+      { id: "csq-1", question: "What did a calm hour today actually feel like in my body, and what does that tell me?" },
+      { id: "csq-2", question: "Where did I manufacture urgency today that wasn't really there?" }
+    ]
+  },
+  "People-Pleasing Performer": {
+    recommendedActions: [
+      { id: "ppp-1", text: "Name one honest internal state out loud to someone today, even a small one.", points: 40 },
+      { id: "ppp-2", text: "Notice one moment today the 'professional face' switched on, and what triggered it.", points: 50 },
+      { id: "ppp-3", text: "Let one response today be less polished or upbeat than usual, on purpose.", points: 30 }
+    ],
+    boundaryStrategies: [
+      { id: "pppb-1", situation: "When asked 'how are you' and the honest answer is 'not great'", script: "Honestly, today's been a lot — thanks for asking." },
+      { id: "pppb-2", situation: "When you notice performing enthusiasm you don't feel", script: "I'm going to give this a more measured response than my usual, and that's fine." }
+    ],
+    reflectionPrompts: [
+      { id: "pppq-1", question: "What is the actual feeling underneath the composed version of me that showed up today?" },
+      { id: "pppq-2", question: "Who would notice, or mind, if I stopped performing 'fine' for a day?" }
+    ]
+  },
+  "Responsibility Addict": {
+    recommendedActions: [
+      { id: "ra-1", text: "Identify one problem today that isn't actually yours, and deliberately leave it with its real owner.", points: 40 },
+      { id: "ra-2", text: "Let one small thing go unresolved without stepping in, and observe what happens.", points: 50 },
+      { id: "ra-3", text: "Notice one moment today you felt the pull to take something on, and pause before acting on it.", points: 30 }
+    ],
+    boundaryStrategies: [
+      { id: "rab-1", situation: "When something goes wrong that isn't officially your responsibility", script: "That's not mine to fix — I trust it'll get handled." },
+      { id: "rab-2", situation: "When you notice the urge to step in uninvited", script: "I'll wait to see if my involvement is actually asked for here." }
+    ],
+    reflectionPrompts: [
+      { id: "raq-1", question: "Whose responsibility did I quietly absorb today that wasn't actually mine?" },
+      { id: "raq-2", question: "What does it feel like, specifically, when I'm not the one solving something?" }
     ]
   }
 };

@@ -1,11 +1,17 @@
 
-// ROADMAP MARKER: Three approved Blaze Break fingerprints require a separate controlled scoring-design pass before activation: Crisis Sprinter, People-Pleasing Performer, Responsibility Addict.
-export type BurnoutProfile = 
+export type BurnoutProfile =
   | 'High-Functioning Exhausted'
   | 'Over-Giver'
   | 'Silent Resenter'
   | 'Founder on Fire'
-  | 'Manager in the Middle';
+  | 'Manager in the Middle'
+  | 'The Impostor'
+  | 'The Perfectionist'
+  | 'The Constant Adapter'
+  | 'The Second Shift'
+  | 'Crisis Sprinter'
+  | 'People-Pleasing Performer'
+  | 'Responsibility Addict';
 
 export type SHIPStage = 'Safety' | 'Habits' | 'Identity' | 'Purpose';
 
@@ -21,6 +27,13 @@ export interface BurnoutFingerprint {
     sleep: number;
     emotionalOverload: number;
     meaning: number;
+    selfDoubt?: number;
+    delegationControl?: number;
+    maskingLoad?: number;
+    caregivingLoad?: number;
+    crisisDependency?: number;
+    emotionalPerformance?: number;
+    responsibilityCreep?: number;
   };
   analysis?: string;
 }

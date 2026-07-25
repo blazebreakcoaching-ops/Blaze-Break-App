@@ -661,14 +661,29 @@ app.post("/api/nova/diagnose", verifyAppCheck, authenticateFirebaseUser, async (
     const sleepScore = mapToVal(answers.sleep || answers.wired); // handle legacy wired
     const emotionalScore = mapToVal(answers.emotionalOverload || answers.emotional); // handle legacy emotional
     const meaningScore = mapToVal(answers.meaning || answers.disconnection); // handle legacy disconnection
+    const selfDoubtScore = mapToVal(answers.selfDoubt);
+    const delegationControlScore = mapToVal(answers.delegationControl);
+    const maskingLoadScore = mapToVal(answers.maskingLoad);
+    const caregivingLoadScore = mapToVal(answers.caregivingLoad);
+    const crisisDependencyScore = mapToVal(answers.crisisDependency);
+    const emotionalPerformanceScore = mapToVal(answers.emotionalPerformance);
+    const responsibilityCreepScore = mapToVal(answers.responsibilityCreep);
 
-    // Subscores for each archetype
+    // Subscores for each archetype (coefficients sum to 9 for each, so no
+    // archetype has a scoring advantage purely from its weighting shape)
     const archScores = {
       'Founder on Fire': (workloadScore * 3) + (peoplePleasingScore * 1) + (guiltScore * 3) + (sleepScore * 2),
       'Over-Giver': (peoplePleasingScore * 3) + (boundariesScore * 3) + (guiltScore * 2) + (workloadScore * 1),
       'Silent Resenter': (emotionalScore * 3) + (boundariesScore * 3) + (meaningScore * 3),
       'High-Functioning Exhausted': (workloadScore * 3) + (sleepScore * 3) + (guiltScore * 2) + (meaningScore * 1),
-      'Manager in the Middle': (workloadScore * 2) + (boundariesScore * 3) + (peoplePleasingScore * 2) + (emotionalScore * 1) + (meaningScore * 1)
+      'Manager in the Middle': (workloadScore * 2) + (boundariesScore * 3) + (peoplePleasingScore * 2) + (emotionalScore * 1) + (meaningScore * 1),
+      'The Impostor': (selfDoubtScore * 4) + (guiltScore * 2) + (workloadScore * 2) + (meaningScore * 1),
+      'The Perfectionist': (delegationControlScore * 4) + (boundariesScore * 2) + (workloadScore * 2) + (guiltScore * 1),
+      'The Constant Adapter': (maskingLoadScore * 4) + (emotionalScore * 2) + (sleepScore * 2) + (workloadScore * 1),
+      'The Second Shift': (caregivingLoadScore * 4) + (guiltScore * 3) + (sleepScore * 1) + (workloadScore * 1),
+      'Crisis Sprinter': (crisisDependencyScore * 4) + (workloadScore * 2) + (sleepScore * 2) + (guiltScore * 1),
+      'People-Pleasing Performer': (emotionalPerformanceScore * 4) + (peoplePleasingScore * 2) + (guiltScore * 2) + (emotionalScore * 1),
+      'Responsibility Addict': (responsibilityCreepScore * 4) + (boundariesScore * 2) + (workloadScore * 2) + (guiltScore * 1),
     };
 
     let profile = 'High-Functioning Exhausted';
@@ -701,6 +716,29 @@ app.post("/api/nova/diagnose", verifyAppCheck, authenticateFirebaseUser, async (
       priorities = ['Institute mandatory boredom zones', 'Hard cutoff on evening screen exposure', 'Transition from recovery intensity to consistent stability'];
     }
 
+    if (profile === 'The Impostor') {
+      description = "Your exhaustion isn't really coming from your workload — it's coming from the constant, quiet effort of trying to prove you deserve to be here. Every win gets discounted almost as fast as it happens, so you keep adding more evidence, and the finish line keeps moving. You are not underqualified. You are over-proving.";
+      priorities = ['Keep a running record of wins you cannot mentally discount', 'Notice when "proving it again" is optional, not required', 'Practice letting a success stand without immediately chasing the next one'];
+    } else if (profile === 'The Perfectionist') {
+      description = "Your energy leak isn't other people's demands — it's your own standards. You would rather redo something yourself than risk it being anything less than right, so delegation quietly stops happening. The cost isn't visible as \"overwork\" on paper. It shows up as never actually putting anything down.";
+      priorities = ['Define "good enough" explicitly for low-stakes tasks', 'Practice handing off one task without reviewing the outcome', "Separate your worth from the flawlessness of the output"];
+    } else if (profile === 'The Constant Adapter') {
+      description = "A significant share of your energy goes into managing how you come across and staying on top of a world that isn't built around how you naturally work — separate from the actual work itself. This isn't a motivation problem. It's the cost of running two jobs at once: the one everyone sees, and the constant calibration underneath it.";
+      priorities = ['Protect real recovery time after high-effort or high-stimulation stretches', 'Treat quiet, low-input time as necessary, not optional', 'Stop treating "just push through" advice as the standard you should meet'];
+    } else if (profile === 'The Second Shift') {
+      description = "Your day doesn't end when you log off. There is a second, unpaid job waiting — caring for someone who depends on you — and it runs with no real recovery window between the two. Colleagues likely have no visibility into this at all. The guilt of not doing either role perfectly follows you into both.";
+      priorities = ['Name the caregiving hours explicitly, even just to yourself', 'Look for any real handoff or respite option, even a partial one', 'Let "good enough" apply to both roles rather than demanding excellence in either'];
+    } else if (profile === 'Crisis Sprinter') {
+      description = "Your nervous system has learned to run on urgency. Calm stretches don't feel restful — they feel like something's about to go wrong, so you find, or quietly create, the next fire to fight. You're genuinely excellent in a crisis, which is exactly the problem: the skill that makes you valuable in an emergency is training your body to need one.";
+      priorities = ['Practice sitting in a genuinely calm period without manufacturing urgency to fill it', 'Notice the physical discomfort of stillness without immediately reaching for a new fire', 'Treat a quiet week as a success, not a warning sign'];
+    } else if (profile === 'People-Pleasing Performer') {
+      description = "You've gotten very good at performing \"fine.\" Whatever you're actually feeling — stressed, doubtful, exhausted — a composed, agreeable version of you shows up instead, because the performance keeps things running smoothly for everyone around you. The cost is that fewer people, including you, know what's actually underneath it.";
+      priorities = ['Practice naming one honest internal state out loud each day, even a small one', 'Notice the specific moments the performance switches on, and what triggers it', 'Let one interaction be less polished than usual, on purpose'];
+    } else if (profile === 'Responsibility Addict') {
+      description = "If something's wrong nearby, some part of you has already decided it's yours to fix — whether or not it's actually your role, your task, or something you can control. Being needed has quietly become what makes you feel secure, which means letting something be someone else's problem can feel like a small identity threat.";
+      priorities = ['Practice identifying whose responsibility something actually is before stepping in', 'Let one thing go wrong without your intervention, and observe what actually happens', 'Practice the sentence "I trust this will get handled without me"'];
+    }
+
     let analysis = '';
     const geminiKey = process.env.GEMINI_API_KEY;
     if (geminiKey && geminiKey !== "MY_GEMINI_API_KEY") {
@@ -717,6 +755,13 @@ app.post("/api/nova/diagnose", verifyAppCheck, authenticateFirebaseUser, async (
           - Sleep: ${sleepScore}/4
           - Emotional Overload: ${emotionalScore}/4
           - Sense of Meaning: ${meaningScore}/4
+          - Self-Doubt/Impostor Feelings: ${selfDoubtScore}/4
+          - Delegation/Control: ${delegationControlScore}/4
+          - Masking/Adaptation Load: ${maskingLoadScore}/4
+          - Caregiving Load: ${caregivingLoadScore}/4
+          - Crisis Dependency: ${crisisDependencyScore}/4
+          - Emotional Performance: ${emotionalPerformanceScore}/4
+          - Responsibility Creep: ${responsibilityCreepScore}/4
 
           Provide a brief, direct, and slightly provocative coaching analysis (3-4 sentences maximum).
           Do NOT use generic platitudes, emotional cheerleading, or medical advice.
@@ -762,7 +807,14 @@ app.post("/api/nova/diagnose", verifyAppCheck, authenticateFirebaseUser, async (
         guilt: guiltScore,
         sleep: sleepScore,
         emotionalOverload: emotionalScore,
-        meaning: meaningScore
+        meaning: meaningScore,
+        selfDoubt: selfDoubtScore,
+        delegationControl: delegationControlScore,
+        maskingLoad: maskingLoadScore,
+        caregivingLoad: caregivingLoadScore,
+        crisisDependency: crisisDependencyScore,
+        emotionalPerformance: emotionalPerformanceScore,
+        responsibilityCreep: responsibilityCreepScore
       },
       analysis
     });

@@ -877,7 +877,7 @@ export const ConnectedBurnoutFingerprint = () => {
   
   
   const uid = auth.currentUser?.uid;
-  const ARCHETYPES = ['High-Functioning Exhausted', 'Over-Giver', 'Silent Resenter', 'Founder on Fire', 'Manager in the Middle'];
+  const ARCHETYPES = ['High-Functioning Exhausted', 'Over-Giver', 'Silent Resenter', 'Founder on Fire', 'Manager in the Middle', 'The Impostor', 'The Perfectionist', 'The Constant Adapter', 'The Second Shift', 'Crisis Sprinter', 'People-Pleasing Performer', 'Responsibility Addict'];
 
   const fetchResult = async () => {
     if (!uid) return;
