@@ -126,7 +126,6 @@ import { MicroInterventions } from "./components/MicroInterventions.tsx";
 import { NovaOverloadShield } from "./components/NovaOverloadShield.tsx";
 import { updateNovaMemoryBySourceAndType, logJourney } from "./lib/nova-brain.ts";
 const TrustCentrePage = lazy(() => import("./components/TrustCentrePage.tsx").then(m => ({ default: m.TrustCentrePage })));
-const AccessControlMatrix = lazy(() => import("./components/AccessControlMatrix.tsx").then(m => ({ default: m.AccessControlMatrix })));
 import { hasSubscriptionEntitlement } from "./lib/entitlement.ts";
 const RecoveryAlly = lazy(() => import("./components/RecoveryAlly.tsx").then(m => ({ default: m.RecoveryAlly })));
 import { SomaticResetOverlay } from "./components/SomaticResetOverlay.tsx";
@@ -138,7 +137,6 @@ import { SubscriptionTier, AuthRole } from "./types.ts";
 import { RecoveryVelocityMap } from "./components/RecoveryVelocityMap.tsx";
 const ExecutiveBoardReport = lazy(() => import("./components/ExecutiveBoardReport.tsx").then(m => ({ default: m.ExecutiveBoardReport })));
 const CalendarDefenseView = lazy(() => import("./components/CalendarDefenseView.tsx").then(m => ({ default: m.CalendarDefenseView })));
-const RecoveryVaultTest = lazy(() => import("./components/RecoveryVaultTest.tsx").then(m => ({ default: m.RecoveryVaultTest })));
 import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip as RechartsTooltip, CartesianGrid } from "recharts";
 import { secureApiFetch } from "./lib/secure-api";
 
@@ -158,11 +156,9 @@ type ActiveTab =
   | "ally"
   | "privacy"
   | "org"
-  | "matrix"
   | "evolution"
   | "intelligence"
   | "executive"
-  | "vault_test"
   | "admin"
   | "plan";
 
@@ -413,18 +409,6 @@ export const ALL_TABS: {
     featureId: "burnout_diagnostic",
   },
   {
-    id: "matrix",
-    icon: ShieldCheck,
-    label: "Access Matrix (REMOVED)",
-    roles: [],
-  },
-  {
-    id: "vault_test",
-    icon: Shield,
-    label: "Vault Test Area",
-    roles: ["dev_only"],
-  },
-  {
     id: "executive",
     icon: Zap,
     label: "Executive ROI",
@@ -500,7 +484,7 @@ const Sidebar = ({
 
   const tabs = ALL_TABS.filter((t) => {
     if (t.id === "privacy") return false; // Reachable via Settings > Consent & Privacy instead
-    if (authRole === "platform_admin" && t.id !== "matrix" && t.id !== "vault_test") return true;
+    if (authRole === "platform_admin") return true;
     if (!t.roles.includes(authRole)) return false;
     if (t.featureId && !hasSubscriptionEntitlement(currentTier, t.featureId))
       return false;
@@ -2147,14 +2131,14 @@ export default function App() {
     logJourney('Navigation Context', `User entering module: ${activeTab}`);
     
     // Check route protection as well
-    const adminTabs = ["org", "evolution", "intelligence", "matrix", "admin", "executive"];
+    const adminTabs = ["org", "evolution", "intelligence", "admin", "executive"];
     const isProtected = adminTabs.includes(activeTab);
     
     if (isProtected) {
       if (activeTab === "org" && effectiveRole !== "platform_admin" && !["manager", "organisation_admin", "individual"].includes(effectiveRole)) {
         setActiveTab("home");
       }
-      else if (["evolution", "intelligence", "matrix", "executive", "admin"].includes(activeTab) && !["platform_admin", "security_admin", "executive"].includes(effectiveRole)) {
+      else if (["evolution", "intelligence", "executive", "admin"].includes(activeTab) && !["platform_admin", "security_admin", "executive"].includes(effectiveRole)) {
         setActiveTab("home");
       }
     }
@@ -3037,12 +3021,6 @@ export default function App() {
               </div>
             )}
 
-            {activeTab === "vault_test" && (
-              <div className="space-y-32">
-                <RecoveryVaultTest />
-              </div>
-            )}
-
             {activeTab === "privacy" && (
               <div className="space-y-32">
                 <PrivacyVault
@@ -3070,59 +3048,6 @@ export default function App() {
               <div className="space-y-32">
                 <OrgDashboard />
                 <OutcomeTracker fingerprint={fingerprint} />
-              </div>
-            )}
-
-            {activeTab === "matrix" && (
-              <div className="space-y-32">
-                <AccessControlMatrix
-                  currentRole={stats.profile?.authRole || "individual"}
-                  currentTier={stats.profile?.subscription || "recovery"}
-                  onTierChange={(t) => {
-                    setStats((prev) => ({
-                      ...prev,
-                      profile: {
-                        ...(prev.profile || {
-                          fullName: "",
-                          role: "",
-                          organization: "",
-                          authRole: "individual",
-                        }),
-                        subscription: t,
-                      },
-                    }));
-                  }}
-                  onRoleChange={(r) => {
-                    setStats((prev) => ({
-                      ...prev,
-                      profile: {
-                        ...(prev.profile || {
-                          fullName: "",
-                          role: "",
-                          organization: "",
-                          subscription: "recovery",
-                        }),
-                        authRole: r,
-                      },
-                    }));
-                    // updateRole disabled for Phase 1B security
-                    if (
-                      r === "individual" ||
-                      r === "employee" ||
-                      r === "executive"
-                    ) {
-                      setActiveTab("home");
-                    } else if (r === "manager" || r === "organisation_admin") {
-                      setActiveTab("org");
-                    } else if (r === "recovery_ally") {
-                      setActiveTab("ally");
-                    }
-                  }}
-                />
-
-                <div className="pt-16 border-t border-border mt-16">
-                  <AdminDashboard />
-                </div>
               </div>
             )}
 
@@ -3256,7 +3181,7 @@ export default function App() {
               const visibleTabs = ALL_TABS.filter(
                 (t) =>
                   t.id !== "privacy" && // Reachable via Settings > Consent & Privacy instead
-                  ((effectiveRole === "platform_admin" && t.id !== "matrix" && t.id !== "vault_test") ||
+                  (effectiveRole === "platform_admin" ||
                   (t.roles.includes(effectiveRole || "individual") &&
                   (!t.featureId ||
                     hasSubscriptionEntitlement(
