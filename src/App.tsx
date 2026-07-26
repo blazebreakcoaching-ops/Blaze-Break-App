@@ -83,6 +83,7 @@ const OrgDashboard = lazy(() => import("./components/OrgDashboard.tsx").then(m =
 const PrivacyVault = lazy(() => import("./components/PrivacyVault.tsx").then(m => ({ default: m.PrivacyVault })));
 import { GamificationDisplay } from "./components/GamificationDisplay.tsx";
 import { ArchetypeBlend } from "./components/ArchetypeBlend.tsx";
+import { RecoveryExplanation } from "./components/RecoveryExplanation.tsx";
 import { LandingPage } from "./components/LandingPage.tsx";
 import { SituationalOnboarding } from "./components/SituationalOnboarding.tsx";
 import { DailyCheckIn } from "./components/DailyCheckIn.tsx";
@@ -1166,21 +1167,28 @@ const HomeSection = ({
 
   const calculateRecoveryScore = () => {
     let score = 50; // Base score
-    if (energyLevel > 60) score += 15;
-    else if (energyLevel < 30) score -= 15;
+    const factors: { label: string; points: number }[] = [];
+
+    if (energyLevel > 60) { score += 15; factors.push({ label: "Energy level", points: 15 }); }
+    else if (energyLevel < 30) { score -= 15; factors.push({ label: "Low energy level", points: -15 }); }
 
     // Factor in recovery debt
     const debtCount = (stats.debts || []).filter((d) => !d.cleared).length;
-    score -= Math.min(debtCount * 5, 20); // Cap debt penalty at -20
+    if (debtCount > 0) {
+      const debtPenalty = -Math.min(debtCount * 5, 20);
+      score += debtPenalty;
+      factors.push({ label: "Unresolved recovery debt", points: debtPenalty });
+    }
 
     if (fingerprint?.profile === "High-Functioning Exhausted") {
       score -= 5;
+      factors.push({ label: "High-Functioning Exhausted pattern", points: -5 });
     }
 
     // Factor in daily quests completed
-    if (hasClaimedDaily) score += 10;
-    if (stats.rehearsalCount > 0) score += 5;
-    if (stats.streak > 3) score += 5;
+    if (hasClaimedDaily) { score += 10; factors.push({ label: "Daily check-in claimed", points: 10 }); }
+    if (stats.rehearsalCount > 0) { score += 5; factors.push({ label: "Boundary rehearsal practice", points: 5 }); }
+    if (stats.streak > 3) { score += 5; factors.push({ label: "Streak beyond 3 days", points: 5 }); }
 
     // Integrated Layer 2 Recovery Intelligence Signals
     try {
@@ -1189,64 +1197,65 @@ const HomeSection = ({
         const moodLogs = JSON.parse(moodLogsSaved);
         if (moodLogs.length > 0) {
           const positiveWords = [
-            "good",
-            "great",
-            "rested",
-            "aligned",
-            "steady",
-            "calm",
-            "vibrant",
-            "stable",
+            "good", "great", "rested", "aligned", "steady", "calm", "vibrant", "stable",
           ];
           const recentMood = moodLogs[0].word.toLowerCase();
-          const hasPos = positiveWords.some((w: string) =>
-            recentMood.includes(w),
-          );
+          const hasPos = positiveWords.some((w: string) => recentMood.includes(w));
           score += hasPos ? 15 : -10;
+          factors.push({ label: "Recent mood check-in", points: hasPos ? 15 : -10 });
         }
       }
 
       const triggersSaved = localStorage.getItem("blaze_intelligence_triggers");
       if (triggersSaved) {
         const triggers = JSON.parse(triggersSaved);
-        score -= Math.min(25, triggers.length * 5);
+        if (triggers.length > 0) {
+          const triggerPenalty = -Math.min(25, triggers.length * 5);
+          score += triggerPenalty;
+          factors.push({ label: "Logged triggers", points: triggerPenalty });
+        }
       }
 
-      const socialBatterySaved = localStorage.getItem(
-        "blaze_intelligence_social_battery",
-      );
+      const socialBatterySaved = localStorage.getItem("blaze_intelligence_social_battery");
       if (socialBatterySaved) {
         const socialBattery = parseInt(socialBatterySaved, 10);
-        if (socialBattery > 60) score += 10;
-        if (socialBattery < 30) score -= 15;
+        if (socialBattery > 60) { score += 10; factors.push({ label: "Social battery", points: 10 }); }
+        if (socialBattery < 30) { score -= 15; factors.push({ label: "Low social battery", points: -15 }); }
       }
 
       const winsSaved = localStorage.getItem("blaze_intelligence_wins");
       if (winsSaved) {
         const winsList = JSON.parse(winsSaved);
-        score += Math.min(25, winsList.length * 8);
+        if (winsList.length > 0) {
+          const winsBonus = Math.min(25, winsList.length * 8);
+          score += winsBonus;
+          factors.push({ label: "Logged wins", points: winsBonus });
+        }
       }
 
       const symptomsSaved = localStorage.getItem("blaze_intelligence_symptoms");
       if (symptomsSaved) {
         const symptomsList = JSON.parse(symptomsSaved);
-        score -= Math.min(20, symptomsList.length * 4);
+        if (symptomsList.length > 0) {
+          const symptomsPenalty = -Math.min(20, symptomsList.length * 4);
+          score += symptomsPenalty;
+          factors.push({ label: "Logged symptoms", points: symptomsPenalty });
+        }
       }
 
-      const focusSaved = localStorage.getItem(
-        "blaze_intelligence_focus_shield",
-      );
+      const focusSaved = localStorage.getItem("blaze_intelligence_focus_shield");
       if (focusSaved === "true") {
         score += 10;
+        factors.push({ label: "Focus Shield active", points: 10 });
       }
     } catch (e) {
-      console.warn("Telemetry formulation bypassed.", e);
+      console.warn("Could not read local recovery-intelligence signals.", e);
     }
 
-    return Math.max(10, Math.min(100, score));
+    return { score: Math.max(10, Math.min(100, score)), factors };
   };
 
-  const recoveryScore = calculateRecoveryScore();
+  const { score: recoveryScore, factors: recoveryScoreFactors } = calculateRecoveryScore();
   const dynamicRisk =
     recoveryScore < 40 ? "High" : recoveryScore < 70 ? "Moderate" : "Low";
 
@@ -1319,12 +1328,16 @@ const HomeSection = ({
                   </h1>
                   
                   <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-4 px-4 py-3 bg-card text-text-main text-xs font-mono rounded-lg border border-border dark:border-border shadow-xl opacity-0 invisible group-hover/tooltip:opacity-100 group-hover/tooltip:visible transition-all whitespace-nowrap z-50">
-                    Score Calculation Formula
+                    What's shaping this score
                     <div className="w-full h-px bg-white/20 my-2" />
                     <div className="text-text-muted space-y-1">
-                      <p>Streak Modifier: +{Math.min(20, stats.streak * 5)}</p>
-                      <p>Weekly Goals: +{Math.min(15, (stats.weeklyGoalsComplete || 0) * 5)}</p>
-                      <p>Level Bonus: +{(stats.level || 1) * 2}</p>
+                      {recoveryScoreFactors.length === 0 ? (
+                        <p>Base score — no check-ins logged yet.</p>
+                      ) : (
+                        recoveryScoreFactors.map((f, i) => (
+                          <p key={i}>{f.label}: {f.points > 0 ? "+" : ""}{f.points}</p>
+                        ))
+                      )}
                     </div>
                   </div>
                 </div>
@@ -1342,6 +1355,7 @@ const HomeSection = ({
             )}
             {stats.streak >= 3 && ' Today is about active repair."'}
           </p>
+          <RecoveryExplanation />
         </div>
 
         <div className="absolute -right-20 -top-20 w-80 h-80 bg-primary opacity-10 rounded-full blur-[120px] group-hover:opacity-20 transition-all duration-1000" />

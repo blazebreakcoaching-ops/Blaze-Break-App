@@ -1696,6 +1696,260 @@ app.get("/api/signals/blend", verifyAppCheck, authenticateFirebaseUser, async (r
   }
 });
 
+// ============================================================================
+// Explainable Recovery Score: real signals, with a causal narrative attached
+// ============================================================================
+// This is deliberately separate from the client-side self-report score
+// (calculateRecoveryScore in App.tsx) rather than replacing it — self-report
+// still matters and shouldn't be silently overridden. This endpoint answers
+// a different question: "of what's actually observable in my calendar and
+// Slack, what's driving concern right now, and why" — a real breakdown
+// instead of a single opaque number, using only the two signals actually
+// available (no wearable/biometric integration exists in this app yet).
+app.get("/api/signals/recovery-explanation", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const uid = requireAuth(req).uid;
+    const db = getDb();
+    const [calendarDoc, slackDoc] = await Promise.all([
+      db.collection("users").doc(uid).collection("live_signals").doc("calendar").get(),
+      db.collection("users").doc(uid).collection("live_signals").doc("slack").get(),
+    ]);
+
+    const calendarSignal = calendarDoc.exists ? calendarDoc.data() : null;
+    const slackState = slackDoc.exists ? slackDoc.data() : null;
+    const slackCompleted = slackState?.lastCompleted;
+
+    if (!calendarSignal && !slackCompleted) {
+      return res.json({
+        hasData: false,
+        realSignalScore: null,
+        factors: [],
+        narrative: "Connect Google Calendar or Slack to see what's actually driving your score, based on real data instead of self-report alone.",
+      });
+    }
+
+    let realSignalScore = 100; // 100 = no concerning signal detected; each factor below subtracts from it
+    const factors: { label: string; detail: string; impact: "high" | "moderate"; points: number }[] = [];
+
+    if (calendarSignal) {
+      if (calendarSignal.backToBackCount >= 3) {
+        const points = Math.min(30, calendarSignal.backToBackCount * 4);
+        realSignalScore -= points;
+        factors.push({
+          label: "Back-to-back meetings",
+          detail: `${calendarSignal.backToBackCount} meetings with no gap between them in the last ${calendarSignal.windowDays || 7} days`,
+          impact: calendarSignal.backToBackCount >= 6 ? "high" : "moderate",
+          points,
+        });
+      }
+      if (calendarSignal.totalMeetingHours >= 20) {
+        const points = Math.min(20, Math.round((calendarSignal.totalMeetingHours - 15) * 1.2));
+        if (points > 0) {
+          realSignalScore -= points;
+          factors.push({
+            label: "Total meeting load",
+            detail: `${calendarSignal.totalMeetingHours} hours in meetings over the last ${calendarSignal.windowDays || 7} days`,
+            impact: calendarSignal.totalMeetingHours >= 30 ? "high" : "moderate",
+            points,
+          });
+        }
+      }
+      const offHours = (calendarSignal.eveningMeetingCount || 0) + (calendarSignal.weekendMeetingCount || 0);
+      if (offHours >= 2) {
+        const points = Math.min(20, offHours * 4);
+        realSignalScore -= points;
+        factors.push({
+          label: "Evening & weekend meetings",
+          detail: `${offHours} meetings scheduled outside normal working hours`,
+          impact: offHours >= 5 ? "high" : "moderate",
+          points,
+        });
+      }
+    }
+
+    if (slackCompleted && slackCompleted.totalMessages7d > 0) {
+      const afterHoursRatio = slackCompleted.afterHoursMessages7d / slackCompleted.totalMessages7d;
+      if (afterHoursRatio >= 0.15) {
+        const points = Math.min(25, Math.round(afterHoursRatio * 60));
+        realSignalScore -= points;
+        factors.push({
+          label: "After-hours messaging",
+          detail: `${slackCompleted.afterHoursMessages7d} of your ${slackCompleted.totalMessages7d} Slack messages this week (${Math.round(afterHoursRatio * 100)}%) were sent outside normal hours`,
+          impact: afterHoursRatio >= 0.35 ? "high" : "moderate",
+          points,
+        });
+      }
+    }
+
+    realSignalScore = Math.max(0, Math.min(100, realSignalScore));
+    factors.sort((a, b) => b.points - a.points);
+
+    let narrative: string;
+    if (factors.length === 0) {
+      narrative = "Nothing concerning in your connected accounts right now — your calendar and messaging load look sustainable.";
+    } else {
+      const topFactors = factors.slice(0, 2).map((f) => f.detail.charAt(0).toLowerCase() + f.detail.slice(1));
+      const level = realSignalScore < 50 ? "elevated" : realSignalScore < 75 ? "worth watching" : "mild";
+      narrative = `Your real-signal risk is ${level} this week because of ${topFactors.join(", and ")}.`;
+    }
+
+    res.json({
+      hasData: true,
+      realSignalScore,
+      factors: factors.map(({ label, detail, impact }) => ({ label, detail, impact })),
+      narrative,
+      hasCalendarSignal: !!calendarSignal,
+      hasSlackSignal: !!slackCompleted,
+    });
+  } catch (err: any) {
+    console.error("[Signals] recovery explanation error:", err.message);
+    res.status(500).json({ error: "Could not compute recovery explanation." });
+  }
+});
+
+// ============================================================================
+// Explainable Recovery Score
+// ============================================================================
+// The existing client-side calculateRecoveryScore() in App.tsx is a blind
+// accumulator — it produces a number with no memory of what pushed it there.
+// This endpoint runs the *same* underlying factors (so the score itself stays
+// consistent with what's already shown elsewhere in the app) but tracks each
+// one as a labeled, signed contribution, then layers the real calendar/Slack
+// signals on top the same way — so the final breakdown is a genuine causal
+// chain a person can act on, not just a number.
+const RecoveryExplainRequestSchema = z.object({
+  energyLevel: z.number().min(0).max(100).optional(),
+  debtCount: z.number().int().min(0).optional(),
+  isHighFunctioningExhausted: z.boolean().optional(),
+  hasClaimedDaily: z.boolean().optional(),
+  rehearsalCount: z.number().int().min(0).optional(),
+  streak: z.number().int().min(0).optional(),
+  moodPositive: z.boolean().nullable().optional(),
+  triggerCount: z.number().int().min(0).optional(),
+  socialBattery: z.number().min(0).max(100).nullable().optional(),
+  winsCount: z.number().int().min(0).optional(),
+  symptomsCount: z.number().int().min(0).optional(),
+  focusShieldActive: z.boolean().optional(),
+}).strict();
+
+app.post("/api/signals/recovery-explain", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const parsed = RecoveryExplainRequestSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: "Invalid recovery-explain payload.", details: (parsed as any).error?.errors || [] });
+    }
+    const input = parsed.data;
+    const uid = requireAuth(req).uid;
+    const db = getDb();
+
+    const factors: { label: string; delta: number; source: "self-report" | "calendar" | "slack" }[] = [];
+    let score = 50;
+    factors.push({ label: "Baseline", delta: 50, source: "self-report" });
+
+    if (input.energyLevel !== undefined) {
+      if (input.energyLevel > 60) {
+        score += 15; factors.push({ label: "Energy check-in above 60%", delta: 15, source: "self-report" });
+      } else if (input.energyLevel < 30) {
+        score -= 15; factors.push({ label: "Energy check-in below 30%", delta: -15, source: "self-report" });
+      }
+    }
+    if (input.debtCount) {
+      const penalty = Math.min(input.debtCount * 5, 20);
+      score -= penalty;
+      factors.push({ label: `${input.debtCount} uncleared recovery debt${input.debtCount === 1 ? "" : "s"}`, delta: -penalty, source: "self-report" });
+    }
+    if (input.isHighFunctioningExhausted) {
+      score -= 5;
+      factors.push({ label: "High-Functioning Exhausted archetype", delta: -5, source: "self-report" });
+    }
+    if (input.hasClaimedDaily) {
+      score += 10;
+      factors.push({ label: "Completed today's check-in", delta: 10, source: "self-report" });
+    }
+    if (input.rehearsalCount) {
+      score += 5;
+      factors.push({ label: "Practiced a boundary rehearsal", delta: 5, source: "self-report" });
+    }
+    if (input.streak !== undefined && input.streak > 3) {
+      score += 5;
+      factors.push({ label: `${input.streak}-day streak`, delta: 5, source: "self-report" });
+    }
+    if (input.moodPositive !== null && input.moodPositive !== undefined) {
+      const delta = input.moodPositive ? 15 : -10;
+      score += delta;
+      factors.push({ label: input.moodPositive ? "Recent mood log was positive" : "Recent mood log was negative", delta, source: "self-report" });
+    }
+    if (input.triggerCount) {
+      const penalty = Math.min(25, input.triggerCount * 5);
+      score -= penalty;
+      factors.push({ label: `${input.triggerCount} logged trigger${input.triggerCount === 1 ? "" : "s"} recently`, delta: -penalty, source: "self-report" });
+    }
+    if (input.socialBattery !== null && input.socialBattery !== undefined) {
+      if (input.socialBattery > 60) {
+        score += 10; factors.push({ label: "Social battery above 60%", delta: 10, source: "self-report" });
+      } else if (input.socialBattery < 30) {
+        score -= 15; factors.push({ label: "Social battery below 30%", delta: -15, source: "self-report" });
+      }
+    }
+    if (input.winsCount) {
+      const bonus = Math.min(25, input.winsCount * 8);
+      score += bonus;
+      factors.push({ label: `${input.winsCount} logged win${input.winsCount === 1 ? "" : "s"}`, delta: bonus, source: "self-report" });
+    }
+    if (input.symptomsCount) {
+      const penalty = Math.min(20, input.symptomsCount * 4);
+      score -= penalty;
+      factors.push({ label: `${input.symptomsCount} logged symptom${input.symptomsCount === 1 ? "" : "s"}`, delta: -penalty, source: "self-report" });
+    }
+    if (input.focusShieldActive) {
+      score += 10;
+      factors.push({ label: "Focus Shield active", delta: 10, source: "self-report" });
+    }
+
+    // Real behavioral signals — the part self-report can't see.
+    const [calendarDoc, slackDoc] = await Promise.all([
+      db.collection("users").doc(uid).collection("live_signals").doc("calendar").get(),
+      db.collection("users").doc(uid).collection("live_signals").doc("slack").get(),
+    ]);
+    const calendarSignal = calendarDoc.exists ? calendarDoc.data() : null;
+    const slackState = slackDoc.exists ? slackDoc.data() : null;
+    const slackCompleted = slackState?.lastCompleted;
+    let hasRealSignals = false;
+
+    if (calendarSignal) {
+      hasRealSignals = true;
+      if (calendarSignal.backToBackCount >= 5) {
+        score -= 8;
+        factors.push({ label: `${calendarSignal.backToBackCount} back-to-back meetings this week`, delta: -8, source: "calendar" });
+      }
+      const offHours = (calendarSignal.eveningMeetingCount || 0) + (calendarSignal.weekendMeetingCount || 0);
+      if (offHours >= 3) {
+        score -= 6;
+        factors.push({ label: `${offHours} evening or weekend meetings this week`, delta: -6, source: "calendar" });
+      }
+      if (calendarSignal.totalMeetingHours >= 25) {
+        score -= 7;
+        factors.push({ label: `${calendarSignal.totalMeetingHours}h in meetings this week`, delta: -7, source: "calendar" });
+      }
+    }
+    if (slackCompleted && slackCompleted.totalMessages7d > 0) {
+      hasRealSignals = true;
+      const afterHoursRatio = slackCompleted.afterHoursMessages7d / slackCompleted.totalMessages7d;
+      if (afterHoursRatio >= 0.3) {
+        score -= 8;
+        factors.push({ label: `${Math.round(afterHoursRatio * 100)}% of your Slack messages were after-hours`, delta: -8, source: "slack" });
+      }
+    }
+
+    score = Math.max(10, Math.min(100, score));
+
+    res.json({ score, factors, hasRealSignals });
+  } catch (err: any) {
+    console.error("[Signals] recovery-explain error:", err.message);
+    res.status(500).json({ error: "Could not compute explainable recovery score." });
+  }
+});
+
 // Admin Dashboard Summary Metrics API
 app.get("/api/admin/summary", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
   try {
