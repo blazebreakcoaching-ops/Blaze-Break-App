@@ -95,6 +95,15 @@ service cloud.firestore {
         allow write: if false; // Backend/Admin only
       }
 
+      // live_signals holds real behavioral aggregates (calendar load, Slack
+      // message volume) computed for the Explainable Recovery Score. The raw
+      // Slack scan state includes conversation IDs and a Slack user ID, which
+      // should never reach the client directly — the backend's redacted GET
+      // endpoints are the only intended read path, so this stays fully locked.
+      match /live_signals/{signalType} {
+        allow read, write: if false;
+      }
+
       // ---- PHASE 2B COLLECTIONS ----
       
       // A. recovery/fingerprint

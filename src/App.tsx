@@ -139,6 +139,7 @@ const ExecutiveBoardReport = lazy(() => import("./components/ExecutiveBoardRepor
 const CalendarDefenseView = lazy(() => import("./components/CalendarDefenseView.tsx").then(m => ({ default: m.CalendarDefenseView })));
 import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip as RechartsTooltip, CartesianGrid } from "recharts";
 import { secureApiFetch } from "./lib/secure-api";
+import { syncCalendarSignal } from "./lib/calendar-signals";
 
 type AppFlow = "landing" | "onboarding" | "app" | "trust-centre" | "admin";
 
@@ -1973,12 +1974,36 @@ const HomeSection = ({
 };
 
 export default function App() {
-  const { user, appRole, loading: authLoading } = useAuth();
-  
+  const { user, appRole, loading: authLoading, accessToken } = useAuth();
+
   // Bulletproof global super admin check
   const isSuperAdminUser = user?.email === 'teampublication@gmail.com' || (user as any)?.isAdmin === true;
   const effectiveRole = isSuperAdminUser ? 'platform_admin' : appRole;
-  
+
+  // Opportunistically build the real-signal data behind the Explainable
+  // Recovery Score / archetype-evolution work. Calendar computes locally from
+  // the user's own Google token and posts just the aggregate. Slack advances
+  // one conversation per "tick" (the backend enforces its own 60s minimum
+  // interval to respect Slack's rate limits), so calling this periodically
+  // while the app is open lets a full 7-day scan complete over real usage
+  // instead of needing a single, rate-limit-breaking bulk fetch.
+  useEffect(() => {
+    if (!user) return;
+
+    if (accessToken) {
+      syncCalendarSignal(accessToken);
+    }
+
+    const tickSlack = () => {
+      secureApiFetch('/api/signals/slack/tick', { method: 'POST' }).catch(() => {
+        // Not connected, rate-limited, or a transient error — all safe to skip silently.
+      });
+    };
+    tickSlack();
+    const slackTickInterval = setInterval(tickSlack, 65 * 1000);
+    return () => clearInterval(slackTickInterval);
+  }, [user, accessToken]);
+
   const [flow, setFlow] = useState<AppFlow>("landing");
   const [activeTab, setActiveTab] = useState<ActiveTab>("home");
   const [fingerprint, setFingerprint] = useState<BurnoutFingerprint | null>(

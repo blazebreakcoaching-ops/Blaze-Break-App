@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Link as LinkIcon, Key, Info, RefreshCw, AlertTriangle, CheckCircle2 } from 'lucide-react';
+import { Link as LinkIcon, Key, Info, RefreshCw, AlertTriangle, CheckCircle2, CalendarDays, MessageSquare } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { NotificationSettingsView } from './NotificationSettingsView';
 import { useAuth } from '../lib/auth';
 import { secureApiFetch, SecureApiError } from '../lib/secure-api';
+import { syncCalendarSignal } from '../lib/calendar-signals';
 
 interface Integration {
   id: string;
@@ -31,6 +32,36 @@ export const IntegrationsDashboard = () => {
   const { user, accessToken, signInWithCalendar, logOut } = useAuth();
   const [integrations, setIntegrations] = useState<Integration[]>(BASE_INTEGRATIONS);
   const [returnBanner, setReturnBanner] = useState<{ service: string; status: 'connected' | 'error'; reason?: string } | null>(null);
+  const [calendarSignal, setCalendarSignal] = useState<any>(null);
+  const [slackSignal, setSlackSignal] = useState<any>(null);
+  const [isRefreshingCalendar, setIsRefreshingCalendar] = useState(false);
+
+  const refreshSignalsStatus = useCallback(async () => {
+    if (!user) return;
+    try {
+      const [calRes, slackRes] = await Promise.all([
+        secureApiFetch('/api/signals/calendar'),
+        secureApiFetch('/api/signals/slack'),
+      ]);
+      const calData = await calRes.json();
+      const slackData = await slackRes.json();
+      setCalendarSignal(calData?.state || null);
+      setSlackSignal(slackData?.state || null);
+    } catch (e) {
+      // Signal fetch failing shouldn't break the page — cards just stay hidden or stale.
+    }
+  }, [user]);
+
+  const handleManualCalendarRefresh = async () => {
+    if (!accessToken || isRefreshingCalendar) return;
+    setIsRefreshingCalendar(true);
+    try {
+      await syncCalendarSignal(accessToken);
+      await refreshSignalsStatus();
+    } finally {
+      setIsRefreshingCalendar(false);
+    }
+  };
 
   const refreshOAuthStatus = useCallback(async () => {
     if (!user) return;
@@ -62,7 +93,8 @@ export const IntegrationsDashboard = () => {
   // the OAuth callback has run — fetch it on mount and whenever the user changes.
   useEffect(() => {
     refreshOAuthStatus();
-  }, [refreshOAuthStatus]);
+    refreshSignalsStatus();
+  }, [refreshOAuthStatus, refreshSignalsStatus]);
 
   // Handle the redirect back from a provider's consent screen: /?integration=slack&status=connected
   useEffect(() => {
@@ -226,6 +258,81 @@ export const IntegrationsDashboard = () => {
           </div>
         ))}
       </div>
+
+      {(calendarSignal || slackSignal || accessToken || integrations.find(i => i.id === 'slack')?.status === 'connected') && (
+        <div className="max-w-4xl space-y-4">
+          <h4 className="text-xl font-light text-text-main tracking-tight">Live Signals</h4>
+          <p className="text-sm text-text-muted leading-relaxed max-w-2xl">
+            Real behavioral data pulled from your connected accounts, feeding directly into your Recovery Score. Nothing here is simulated.
+          </p>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="card bg-card border border-border p-6 space-y-4">
+              <div className="flex items-start justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-primary/10 text-primary flex items-center justify-center shrink-0">
+                    <CalendarDays className="w-5 h-5" />
+                  </div>
+                  <h5 className="font-bold text-text-main">Calendar Load</h5>
+                </div>
+                {accessToken && (
+                  <button
+                    onClick={handleManualCalendarRefresh}
+                    disabled={isRefreshingCalendar}
+                    className="text-text-muted hover:text-primary transition-colors disabled:opacity-50"
+                    aria-label="Refresh calendar signal"
+                  >
+                    <RefreshCw className={cn("w-4 h-4", isRefreshingCalendar && "animate-spin")} />
+                  </button>
+                )}
+              </div>
+              {!accessToken ? (
+                <p className="text-xs text-text-muted leading-relaxed">Connect Google Workspace above to see your real meeting load.</p>
+              ) : calendarSignal ? (
+                <div className="space-y-1.5 text-sm">
+                  <p className="text-text-main"><span className="font-black">{calendarSignal.totalMeetingHours}h</span> <span className="text-text-muted">in meetings over the last {calendarSignal.windowDays} days</span></p>
+                  <p className="text-text-muted text-xs">{calendarSignal.meetingCount} meetings &middot; {calendarSignal.backToBackCount} back-to-back &middot; {calendarSignal.eveningMeetingCount + calendarSignal.weekendMeetingCount} evening/weekend</p>
+                </div>
+              ) : (
+                <p className="text-xs text-text-muted leading-relaxed">No calendar data yet — refresh to pull your last 7 days.</p>
+              )}
+            </div>
+
+            <div className="card bg-card border border-border p-6 space-y-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-primary/10 text-primary flex items-center justify-center shrink-0">
+                  <MessageSquare className="w-5 h-5" />
+                </div>
+                <h5 className="font-bold text-text-main">Message Load</h5>
+              </div>
+              {integrations.find(i => i.id === 'slack')?.status !== 'connected' ? (
+                <p className="text-xs text-text-muted leading-relaxed">Connect Slack above to see your real message load.</p>
+              ) : slackSignal?.lastCompleted ? (
+                <div className="space-y-1.5 text-sm">
+                  <p className="text-text-main"><span className="font-black">{slackSignal.lastCompleted.totalMessages7d}</span> <span className="text-text-muted">messages sent over the last 7 days</span></p>
+                  <p className="text-text-muted text-xs">{slackSignal.lastCompleted.afterHoursMessages7d} after-hours &middot; {slackSignal.lastCompleted.weekendMessages7d} on weekends</p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <p className="text-xs text-text-muted leading-relaxed">
+                    Scanning conversation history ({slackSignal?.scanProgress || '0/0'})&hellip; {slackSignal?.inProgress?.totalMessages ?? 0} messages found so far.
+                  </p>
+                  <div className="w-full h-1.5 rounded-full bg-border dark:bg-surface overflow-hidden">
+                    <div
+                      className="h-full bg-primary transition-all duration-500"
+                      style={{
+                        width: (() => {
+                          const [done, total] = (slackSignal?.scanProgress || '0/0').split('/').map(Number);
+                          return total > 0 ? `${Math.min(100, Math.round((done / total) * 100))}%` : '0%';
+                        })(),
+                      }}
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Visual Dynamic Preference Notification Controls */}
       <div className="card max-w-4xl p-8 space-y-8 bg-white dark:bg-card border border-border shadow-md">

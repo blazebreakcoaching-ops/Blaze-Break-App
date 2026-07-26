@@ -1098,7 +1098,7 @@ const OAUTH_PROVIDERS: Record<string, OAuthProviderConfig> = {
     clientIdEnv: "SLACK_CLIENT_ID",
     clientSecretEnv: "SLACK_CLIENT_SECRET",
     tokenStyle: "form",
-    userScope: "dnd:write,dnd:read,users.profile:write,users:read",
+    userScope: "dnd:write,dnd:read,users.profile:write,users:read,channels:read,groups:read,im:read,mpim:read,channels:history,groups:history,im:history,mpim:history",
     extractTokens: (body) => ({
       accessToken: body?.authed_user?.access_token || null,
       refreshToken: body?.authed_user?.refresh_token || null,
@@ -1362,6 +1362,209 @@ app.post("/api/integrations/:service/disconnect", verifyAppCheck, authenticateFi
     res.json({ success: true });
   } catch (err: any) {
     console.error("[Integrations] disconnect error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ============================================================================
+// Real Signals: Slack message-volume (slow incremental scan)
+// ============================================================================
+// Slack rate-limits conversations.history to 1 request/minute for apps outside
+// the Marketplace (as of May 2025), so a full workspace scan cannot happen
+// synchronously. Instead this advances one conversation per "tick", called
+// opportunistically from the client (e.g. on app load). A full pass through
+// all of a user's conversations produces one complete 7-day snapshot; between
+// full passes, the in-progress counts are provisional. This is a genuine
+// signal that builds up over real usage, not an instant one-time read.
+const SLACK_TICK_MIN_INTERVAL_MS = 60 * 1000;
+
+app.post("/api/signals/slack/tick", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const uid = requireAuth(req).uid;
+    const db = getDb();
+
+    const tokenDoc = await db.collection("users").doc(uid).collection("integration_tokens").doc("slack").get();
+    if (!tokenDoc.exists) {
+      return res.status(404).json({ error: "Slack is not connected." });
+    }
+    const slackToken = tokenDoc.data()?.accessToken;
+    if (!slackToken) {
+      return res.status(404).json({ error: "Slack is not connected." });
+    }
+
+    const signalRef = db.collection("users").doc(uid).collection("live_signals").doc("slack");
+    const signalDoc = await signalRef.get();
+    let state = signalDoc.exists ? signalDoc.data()! : null;
+
+    const now = Date.now();
+    if (state?.lastTickAt && now - new Date(state.lastTickAt).getTime() < SLACK_TICK_MIN_INTERVAL_MS) {
+      // Respecting Slack's rate limit - not an error, just nothing to do yet.
+      return res.json({ ticked: false, reason: "rate_limited", state: redactSlackState(state) });
+    }
+
+    const slackFetch = async (method: string, params: Record<string, string>) => {
+      const url = new URL(`https://slack.com/api/${method}`);
+      Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
+      const r = await fetch(url.toString(), { headers: { Authorization: `Bearer ${slackToken}` } });
+      return r.json();
+    };
+
+    // First-ever tick (or after a full cycle): establish who we are and the
+    // conversation list to scan, and roll any in-progress counts into the
+    // last-completed snapshot.
+    if (!state || !state.conversationIds || state.scanIndex >= state.conversationIds.length) {
+      let selfUserId = state?.selfUserId;
+      if (!selfUserId) {
+        const authTest = await slackFetch("auth.test", {});
+        if (!authTest.ok) {
+          return res.status(502).json({ error: "Could not verify Slack identity.", detail: authTest.error });
+        }
+        selfUserId = authTest.user_id;
+      }
+
+      const convList = await slackFetch("conversations.list", {
+        types: "public_channel,private_channel,mpim,im",
+        limit: "100",
+        exclude_archived: "true",
+      });
+      if (!convList.ok) {
+        return res.status(502).json({ error: "Could not list Slack conversations.", detail: convList.error });
+      }
+      const conversationIds: string[] = (convList.channels || []).map((c: any) => c.id);
+
+      const completed = state ? {
+        totalMessages7d: state.inProgressTotal || 0,
+        afterHoursMessages7d: state.inProgressAfterHours || 0,
+        weekendMessages7d: state.inProgressWeekend || 0,
+        completedAt: new Date().toISOString(),
+      } : null;
+
+      state = {
+        selfUserId,
+        conversationIds,
+        scanIndex: 0,
+        inProgressTotal: 0,
+        inProgressAfterHours: 0,
+        inProgressWeekend: 0,
+        lastCompleted: completed || state?.lastCompleted || null,
+        lastTickAt: new Date(now).toISOString(),
+        updatedAt: new Date(now).toISOString(),
+      };
+
+      if (conversationIds.length === 0) {
+        await signalRef.set(state);
+        return res.json({ ticked: true, note: "No conversations to scan yet.", state: redactSlackState(state) });
+      }
+    }
+
+    const conversationId = state.conversationIds[state.scanIndex];
+    const oldestTs = Math.floor((now - 7 * 24 * 60 * 60 * 1000) / 1000).toString();
+    const history = await slackFetch("conversations.history", {
+      channel: conversationId,
+      oldest: oldestTs,
+      limit: "200",
+    });
+
+    if (history.ok) {
+      const messages = history.messages || [];
+      for (const msg of messages) {
+        if (msg.user !== state.selfUserId) continue;
+        state.inProgressTotal += 1;
+        const msgDate = new Date(parseFloat(msg.ts) * 1000);
+        const hour = msgDate.getUTCHours();
+        const day = msgDate.getUTCDay(); // 0 = Sunday, 6 = Saturday
+        if (hour < 8 || hour >= 18) state.inProgressAfterHours += 1;
+        if (day === 0 || day === 6) state.inProgressWeekend += 1;
+      }
+    }
+    // If a single conversation's history call fails (e.g. missing scope for
+    // that conversation type), skip it rather than aborting the whole scan.
+
+    state.scanIndex += 1;
+    state.lastTickAt = new Date(now).toISOString();
+    state.updatedAt = new Date(now).toISOString();
+
+    await signalRef.set(state);
+    res.json({ ticked: true, state: redactSlackState(state) });
+  } catch (err: any) {
+    console.error("[Signals] slack tick error:", err.message);
+    res.status(500).json({ error: "Could not update Slack signal." });
+  }
+});
+
+app.get("/api/signals/slack", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const uid = requireAuth(req).uid;
+    const db = getDb();
+    const signalDoc = await db.collection("users").doc(uid).collection("live_signals").doc("slack").get();
+    if (!signalDoc.exists) {
+      return res.json({ state: null });
+    }
+    res.json({ state: redactSlackState(signalDoc.data()!) });
+  } catch (err: any) {
+    console.error("[Signals] slack read error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Never expose the Slack user ID or raw conversation ID list to the client -
+// only the aggregate counts and scan progress it actually needs.
+function redactSlackState(state: any) {
+  return {
+    scanProgress: state.conversationIds ? `${state.scanIndex}/${state.conversationIds.length}` : "0/0",
+    inProgress: {
+      totalMessages: state.inProgressTotal || 0,
+      afterHoursMessages: state.inProgressAfterHours || 0,
+      weekendMessages: state.inProgressWeekend || 0,
+    },
+    lastCompleted: state.lastCompleted || null,
+    updatedAt: state.updatedAt,
+  };
+}
+
+// ============================================================================
+// Real Signals: Calendar (computed client-side, stored here)
+// ============================================================================
+// Unlike Slack, Google Calendar's API supports direct browser calls with the
+// user's own OAuth token (see src/lib/calendar-signals.ts), so the 7-day
+// aggregate is computed client-side and just persisted through this endpoint,
+// matching the existing pattern already used in MicroRecovery.tsx.
+const CalendarSignalSchema = z.object({
+  totalMeetingHours: z.number(),
+  meetingCount: z.number(),
+  backToBackCount: z.number(),
+  eveningMeetingCount: z.number(),
+  weekendMeetingCount: z.number(),
+  windowDays: z.number(),
+}).strict();
+
+app.post("/api/signals/calendar", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const parsed = CalendarSignalSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: "Invalid calendar signal payload.", details: (parsed as any).error?.errors || [] });
+    }
+    const uid = requireAuth(req).uid;
+    const db = getDb();
+    await db.collection("users").doc(uid).collection("live_signals").doc("calendar").set({
+      ...parsed.data,
+      updatedAt: new Date().toISOString(),
+    });
+    res.json({ success: true });
+  } catch (err: any) {
+    console.error("[Signals] calendar write error:", err.message);
+    res.status(500).json({ error: "Could not save calendar signal." });
+  }
+});
+
+app.get("/api/signals/calendar", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const uid = requireAuth(req).uid;
+    const db = getDb();
+    const doc = await db.collection("users").doc(uid).collection("live_signals").doc("calendar").get();
+    res.json({ state: doc.exists ? doc.data() : null });
+  } catch (err: any) {
+    console.error("[Signals] calendar read error:", err.message);
     res.status(500).json({ error: err.message });
   }
 });
