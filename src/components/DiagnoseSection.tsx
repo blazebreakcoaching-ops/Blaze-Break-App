@@ -1,4 +1,5 @@
 import { auth } from '../lib/firebase';
+import { cn } from '../lib/utils';
 import { ConnectedBurnoutFingerprint } from './ConnectedRecoveryModules.tsx';
 import { useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
@@ -259,9 +260,19 @@ export const DiagnoseView = ({
     setLoading(true);
     setError(null);
     try {
+      let letNovaLearn = true;
+      try {
+        const storedProfile = localStorage.getItem("blaze_profile");
+        if (storedProfile) {
+          const parsed = JSON.parse(storedProfile);
+          if (parsed.letNovaLearn === false) letNovaLearn = false;
+        }
+      } catch (e) {
+        // Corrupted local profile — default to the opt-in behaviour rather than blocking the assessment.
+      }
       const res = await secureApiFetch("/api/nova/diagnose", {
         method: "POST",
-        data: { answers: finalAnswers },
+        data: { answers: finalAnswers, letNovaLearn },
       });
       const data = await res.json();
       if (data.error) throw new Error(data.error);
@@ -1432,6 +1443,32 @@ export const ResultView = ({
         <p className="text-xl text-text-muted max-w-2xl mx-auto leading-relaxed font-serif italic text-balance">
           "{result.description}"
         </p>
+        {result.blend && result.blend.length > 0 && (
+          <div className="pt-2 space-y-3 max-w-md mx-auto">
+            <p className="text-[10px] font-black uppercase tracking-widest text-text-muted">
+              Your real mix, not just one label
+            </p>
+            <div className="space-y-2">
+              {result.blend.map((b, i) => (
+                <div key={b.profile} className="flex items-center gap-3">
+                  <span className={cn(
+                    "text-xs font-bold w-10 text-right shrink-0",
+                    i === 0 ? "text-primary" : "text-text-muted"
+                  )}>
+                    {b.percentage}%
+                  </span>
+                  <div className="flex-1 h-2 bg-surface rounded-full overflow-hidden">
+                    <div
+                      className={cn("h-full rounded-full", i === 0 ? "bg-primary" : "bg-text-muted/40")}
+                      style={{ width: `${b.percentage}%` }}
+                    />
+                  </div>
+                  <span className="text-xs text-text-main text-left w-40 shrink-0 truncate">{b.profile}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Nova AI Coach Assessment Briefing */}

@@ -104,6 +104,14 @@ service cloud.firestore {
         allow read, write: if false;
       }
 
+      // diagnostics holds the burnout-quiz archetype baseline (archScores,
+      // dimension scores) used to compute the evolving blend. Sensitive
+      // personal data — read only via the dedicated /api/signals/blend
+      // endpoint, never directly by the client SDK.
+      match /diagnostics/{docId} {
+        allow read, write: if false;
+      }
+
       // ---- PHASE 2B COLLECTIONS ----
       
       // A. recovery/fingerprint

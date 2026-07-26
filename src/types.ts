@@ -19,6 +19,7 @@ export interface BurnoutFingerprint {
   profile: BurnoutProfile;
   description: string;
   priorities: string[];
+  blend?: { profile: string; percentage: number }[];
   scores?: {
     workload: number;
     boundaries: number;

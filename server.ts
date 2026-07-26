@@ -629,7 +629,8 @@ app.post("/api/nova/chat", verifyAppCheck, authenticateFirebaseUser, async (req,
 });
 
 const DiagnoseRequestSchema = z.object({
-  answers: z.record(z.string(), z.union([z.string(), z.number()])).optional().default({})
+  answers: z.record(z.string(), z.union([z.string(), z.number()])).optional().default({}),
+  letNovaLearn: z.boolean().optional().default(true),
 }).strict();
 
 app.post("/api/nova/diagnose", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
@@ -639,7 +640,7 @@ app.post("/api/nova/diagnose", verifyAppCheck, authenticateFirebaseUser, async (
     if (!parsedParams.success) {
         return res.status(400).json({ error: "Invalid request payload or forbidden fields detected.", details: (parsedParams as any).error?.errors || [] });
     }
-    const { answers } = parsedParams.data;
+    const { answers, letNovaLearn } = parsedParams.data;
 
     
     // Map answer values to numbers if they are passed as strings (for old/legacy support)
@@ -796,10 +797,48 @@ app.post("/api/nova/diagnose", verifyAppCheck, authenticateFirebaseUser, async (
       analysis = `Having analysed your metrics, your primary energy leak is completely clear. With a workload score of ${workloadScore}/4, a boundaries rating of ${boundariesScore}/4, and a sleep disruption score of ${sleepScore}/4, you are trying to rationalise a metabolic deficit that is biologically impossible to sustain. We need to focus on establishing baseline stability and boundary rehearsals immediately. Let's patch this leak.`;
     }
 
+    // The blend: rather than reducing someone to one label, show the real mix.
+    // Coefficients for every archetype sum to 9 (see archScores above), so raw
+    // scores are already on a comparable 9-36 scale — renormalizing the top 3
+    // to sum to 100% gives an honest "62% X, 24% Y, 14% Z" style breakdown.
+    const sortedArchetypes = Object.entries(archScores).sort((a, b) => b[1] - a[1]);
+    const topThree = sortedArchetypes.slice(0, 3);
+    const topThreeSum = topThree.reduce((sum, [, score]) => sum + score, 0);
+    const blend = topThree.map(([archProfile, score]) => ({
+      profile: archProfile,
+      percentage: topThreeSum > 0 ? Math.round((score / topThreeSum) * 100) : 0,
+    }));
+
+    // Persisting a baseline is what makes archetype evolution possible (drift
+    // detection needs something durable to drift *from*), which is exactly what
+    // the "consent-controlled processing" gate above was waiting for — so this
+    // write only happens if the user has actually opted into it via Settings.
+    if (letNovaLearn) {
+      try {
+        const uid = requireAuth(req).uid;
+        await getDb().collection("users").doc(uid).collection("diagnostics").doc("latest").set({
+          archScores,
+          profile,
+          scores: {
+            workload: workloadScore, boundaries: boundariesScore, peoplePleasing: peoplePleasingScore,
+            guilt: guiltScore, sleep: sleepScore, emotionalOverload: emotionalScore, meaning: meaningScore,
+            selfDoubt: selfDoubtScore, delegationControl: delegationControlScore, maskingLoad: maskingLoadScore,
+            caregivingLoad: caregivingLoadScore, crisisDependency: crisisDependencyScore,
+            emotionalPerformance: emotionalPerformanceScore, responsibilityCreep: responsibilityCreepScore,
+          },
+          computedAt: new Date().toISOString(),
+        });
+      } catch (persistErr: any) {
+        // Don't fail the whole diagnosis just because the baseline write hiccuped.
+        console.error("[Diagnose] baseline persistence error:", persistErr.message);
+      }
+    }
+
     res.json({
       profile,
       description,
       priorities,
+      blend,
       scores: {
         workload: workloadScore,
         boundaries: boundariesScore,
@@ -1566,6 +1605,94 @@ app.get("/api/signals/calendar", verifyAppCheck, authenticateFirebaseUser, async
   } catch (err: any) {
     console.error("[Signals] calendar read error:", err.message);
     res.status(500).json({ error: err.message });
+  }
+});
+
+// ============================================================================
+// Archetype evolution: blend the quiz baseline with real behavioral signals
+// ============================================================================
+// The quiz gives a point-in-time snapshot. Real signals (calendar load, Slack
+// message volume) let the blend actually drift toward what someone's doing
+// right now, not just what they answered once. Every nudge below is modest
+// relative to the 9-36 raw-score range, and every nudge has a plain-language
+// note attached — this is the lightweight version of "explainable"; the full
+// causal-narrative treatment is a separate, later piece of work.
+const DRIFT_NUDGE = 4;
+
+app.get("/api/signals/blend", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const uid = requireAuth(req).uid;
+    const db = getDb();
+
+    const [baselineDoc, calendarDoc, slackDoc] = await Promise.all([
+      db.collection("users").doc(uid).collection("diagnostics").doc("latest").get(),
+      db.collection("users").doc(uid).collection("live_signals").doc("calendar").get(),
+      db.collection("users").doc(uid).collection("live_signals").doc("slack").get(),
+    ]);
+
+    if (!baselineDoc.exists) {
+      return res.json({
+        blend: null,
+        driftNotes: [],
+        hasQuizBaseline: false,
+        hasCalendarSignal: calendarDoc.exists,
+        hasSlackSignal: slackDoc.exists,
+        note: "Complete the burnout diagnostic first — the blend evolves from that baseline.",
+      });
+    }
+
+    const baseline = baselineDoc.data()!;
+    const archScores: Record<string, number> = { ...baseline.archScores };
+    const driftNotes: string[] = [];
+
+    const calendarSignal = calendarDoc.exists ? calendarDoc.data() : null;
+    if (calendarSignal) {
+      if (calendarSignal.backToBackCount >= 5) {
+        ["Founder on Fire", "Manager in the Middle", "Crisis Sprinter"].forEach((p) => {
+          if (archScores[p] !== undefined) archScores[p] += DRIFT_NUDGE;
+        });
+        driftNotes.push(`Your calendar shows ${calendarSignal.backToBackCount} back-to-back meetings this week — nudging your blend toward Manager in the Middle and Crisis Sprinter.`);
+      }
+      const offHoursMeetings = (calendarSignal.eveningMeetingCount || 0) + (calendarSignal.weekendMeetingCount || 0);
+      if (offHoursMeetings >= 3) {
+        ["High-Functioning Exhausted", "Crisis Sprinter"].forEach((p) => {
+          if (archScores[p] !== undefined) archScores[p] += DRIFT_NUDGE;
+        });
+        driftNotes.push(`${offHoursMeetings} of your meetings this week were evenings or weekends — nudging your blend toward High-Functioning Exhausted.`);
+      }
+    }
+
+    const slackState = slackDoc.exists ? slackDoc.data() : null;
+    const slackCompleted = slackState?.lastCompleted;
+    if (slackCompleted && slackCompleted.totalMessages7d > 0) {
+      const afterHoursRatio = slackCompleted.afterHoursMessages7d / slackCompleted.totalMessages7d;
+      if (afterHoursRatio >= 0.3) {
+        ["Over-Giver", "People-Pleasing Performer", "Responsibility Addict"].forEach((p) => {
+          if (archScores[p] !== undefined) archScores[p] += DRIFT_NUDGE;
+        });
+        driftNotes.push(`${Math.round(afterHoursRatio * 100)}% of your Slack messages this week were after-hours — nudging your blend toward Over-Giver and Responsibility Addict.`);
+      }
+    }
+
+    const sortedArchetypes = Object.entries(archScores).sort((a, b) => b[1] - a[1]);
+    const topThree = sortedArchetypes.slice(0, 3);
+    const topThreeSum = topThree.reduce((sum, [, score]) => sum + score, 0);
+    const blend = topThree.map(([profile, score]) => ({
+      profile,
+      percentage: topThreeSum > 0 ? Math.round((score / topThreeSum) * 100) : 0,
+    }));
+
+    res.json({
+      blend,
+      driftNotes,
+      hasQuizBaseline: true,
+      hasCalendarSignal: !!calendarSignal,
+      hasSlackSignal: !!slackCompleted,
+      baselineComputedAt: baseline.computedAt,
+    });
+  } catch (err: any) {
+    console.error("[Signals] blend error:", err.message);
+    res.status(500).json({ error: "Could not compute archetype blend." });
   }
 });
 

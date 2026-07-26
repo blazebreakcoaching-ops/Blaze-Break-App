@@ -82,6 +82,7 @@ const NovaGuardianRelay = lazy(() => import("./components/NovaGuardianRelay.tsx"
 const OrgDashboard = lazy(() => import("./components/OrgDashboard.tsx").then(m => ({ default: m.OrgDashboard })));
 const PrivacyVault = lazy(() => import("./components/PrivacyVault.tsx").then(m => ({ default: m.PrivacyVault })));
 import { GamificationDisplay } from "./components/GamificationDisplay.tsx";
+import { ArchetypeBlend } from "./components/ArchetypeBlend.tsx";
 import { LandingPage } from "./components/LandingPage.tsx";
 import { SituationalOnboarding } from "./components/SituationalOnboarding.tsx";
 import { DailyCheckIn } from "./components/DailyCheckIn.tsx";
@@ -1001,6 +1002,7 @@ const HomeSection = ({
     velocity: "Recovery Velocity Map",
     hub: "Recovery Hub",
     gamification: "Points & Badges",
+    archetypeBlend: "Your Blend",
     daily: "Daily Goal",
     micro: "Micro-Recovery",
     activity: "Activity Log",
@@ -1015,7 +1017,7 @@ const HomeSection = ({
   // via "Add widget" instead of all 16 competing for attention at once.
   const DEFAULT_LEFT = ['hero', 'trends', 'hub'];
   const DEFAULT_RIGHT = ['directive'];
-  const DEFAULT_HIDDEN = ['stats', 'streakCalendar', 'anxietyResetCard', 'somaticAccelerator', 'velocity', 'gamification', 'daily', 'micro', 'activity', 'quests', 'network', 'radar'];
+  const DEFAULT_HIDDEN = ['stats', 'streakCalendar', 'anxietyResetCard', 'somaticAccelerator', 'velocity', 'gamification', 'daily', 'micro', 'activity', 'quests', 'network', 'radar', 'archetypeBlend'];
   const LAYOUT_STORAGE_KEY = 'blaze_home_dashboard_layout_v2';
 
   const loadLayout = (): { left: string[]; right: string[]; hidden: string[] } => {
@@ -1483,6 +1485,7 @@ const HomeSection = ({
       </SmartCard>
     ),
     gamification: <GamificationDisplay key="gamification" stats={stats} fingerprint={fingerprint} shipStage={shipStage} pulseHistory={pulseHistory} />,
+    archetypeBlend: <ArchetypeBlend key="archetypeBlend" />,
     somaticAccelerator: (
       <SomaticCheckInCard
         key="somaticAccelerator"
