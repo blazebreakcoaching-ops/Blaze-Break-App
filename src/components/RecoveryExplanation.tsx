@@ -6,36 +6,91 @@ import { secureApiFetch } from '../lib/secure-api';
 
 interface Factor {
   label: string;
-  detail: string;
-  impact: 'high' | 'moderate';
+  delta: number;
+  source: 'self-report' | 'calendar' | 'slack';
 }
 
-interface ExplanationData {
-  hasData: boolean;
-  realSignalScore: number | null;
+interface ExplainResponse {
+  score: number;
   factors: Factor[];
-  narrative: string;
-  hasCalendarSignal?: boolean;
-  hasSlackSignal?: boolean;
+  hasRealSignals: boolean;
 }
 
-// The causal-narrative layer behind the Recovery Score: what's actually
-// observable in connected accounts, not self-report. Deliberately a small,
-// collapsed-by-default section within the existing hero card rather than a
-// separate widget — the goal is one coherent explainable score, not another
-// number competing for attention on an already-busy home screen.
-export const RecoveryExplanation = () => {
-  const [data, setData] = useState<ExplanationData | null>(null);
+interface RecoveryExplanationProps {
+  energyLevel: number;
+  debtCount: number;
+  isHighFunctioningExhausted: boolean;
+  hasClaimedDaily: boolean;
+  rehearsalCount: number;
+  streak: number;
+}
+
+const SOURCE_LABEL: Record<Factor['source'], string> = {
+  'self-report': 'Check-in',
+  calendar: 'Calendar',
+  slack: 'Slack',
+};
+
+// The causal-narrative layer behind the Recovery Score: unifies self-report
+// factors (matching calculateRecoveryScore in App.tsx, so the number itself
+// stays consistent) with real calendar/Slack signals into one explanation,
+// each factor tagged by where it actually came from. Collapsed by default
+// inside the existing hero card rather than a separate widget — one coherent
+// explainable score, not another number competing for attention.
+export const RecoveryExplanation = ({
+  energyLevel, debtCount, isHighFunctioningExhausted, hasClaimedDaily, rehearsalCount, streak,
+}: RecoveryExplanationProps) => {
+  const [data, setData] = useState<ExplainResponse | null>(null);
   const [isOpen, setIsOpen] = useState(false);
 
   useEffect(() => {
-    secureApiFetch('/api/signals/recovery-explanation')
+    let moodPositive: boolean | null = null;
+    let triggerCount = 0;
+    let socialBattery: number | null = null;
+    let winsCount = 0;
+    let symptomsCount = 0;
+    let focusShieldActive = false;
+
+    try {
+      const moodLogsSaved = localStorage.getItem('blaze_intelligence_moods');
+      if (moodLogsSaved) {
+        const moodLogs = JSON.parse(moodLogsSaved);
+        if (moodLogs.length > 0) {
+          const positiveWords = ['good', 'great', 'rested', 'aligned', 'steady', 'calm', 'vibrant', 'stable'];
+          const recentMood = moodLogs[0].word.toLowerCase();
+          moodPositive = positiveWords.some((w) => recentMood.includes(w));
+        }
+      }
+      const triggersSaved = localStorage.getItem('blaze_intelligence_triggers');
+      if (triggersSaved) triggerCount = JSON.parse(triggersSaved).length;
+
+      const socialBatterySaved = localStorage.getItem('blaze_intelligence_social_battery');
+      if (socialBatterySaved) socialBattery = parseInt(socialBatterySaved, 10);
+
+      const winsSaved = localStorage.getItem('blaze_intelligence_wins');
+      if (winsSaved) winsCount = JSON.parse(winsSaved).length;
+
+      const symptomsSaved = localStorage.getItem('blaze_intelligence_symptoms');
+      if (symptomsSaved) symptomsCount = JSON.parse(symptomsSaved).length;
+
+      focusShieldActive = localStorage.getItem('blaze_intelligence_focus_shield') === 'true';
+    } catch (e) {
+      // Corrupted local signals — fall back to the defaults above rather than blocking the explanation.
+    }
+
+    secureApiFetch('/api/signals/recovery-explain', {
+      method: 'POST',
+      data: {
+        energyLevel, debtCount, isHighFunctioningExhausted, hasClaimedDaily, rehearsalCount, streak,
+        moodPositive, triggerCount, socialBattery, winsCount, symptomsCount, focusShieldActive,
+      },
+    })
       .then((res) => res.json())
       .then(setData)
       .catch(() => {
         // Silent — this is a supplementary explanation, not core functionality.
       });
-  }, []);
+  }, [energyLevel, debtCount, isHighFunctioningExhausted, hasClaimedDaily, rehearsalCount, streak]);
 
   if (!data) return null;
 
@@ -59,29 +114,26 @@ export const RecoveryExplanation = () => {
             transition={{ duration: 0.2 }}
             className="overflow-hidden"
           >
-            <div className="pt-4 space-y-3 max-w-xl">
-              <p className="text-sm text-text-muted leading-relaxed italic">{data.narrative}</p>
-              {data.factors.length > 0 && (
-                <div className="space-y-2">
-                  {data.factors.map((f, i) => (
-                    <div key={i} className="flex items-start gap-3 text-xs">
-                      <span className={cn(
-                        "px-2 py-0.5 rounded-full font-bold uppercase tracking-wider shrink-0",
-                        f.impact === 'high' ? "bg-destructive/10 text-destructive" : "bg-warning/10 text-warning"
-                      )}>
-                        {f.impact}
-                      </span>
-                      <div>
-                        <span className="font-bold text-text-main">{f.label}</span>
-                        <span className="text-text-muted"> — {f.detail}</span>
-                      </div>
-                    </div>
-                  ))}
+            <div className="pt-4 space-y-2 max-w-xl">
+              {data.factors.map((f, i) => (
+                <div key={i} className="flex items-center gap-3 text-xs">
+                  <span className={cn(
+                    "px-2 py-0.5 rounded-full font-bold uppercase tracking-wider shrink-0 w-16 text-center",
+                    f.source === 'self-report' ? "bg-primary/10 text-primary" : "bg-info/10 text-info"
+                  )}>
+                    {SOURCE_LABEL[f.source]}
+                  </span>
+                  <span className="text-text-main flex-1">{f.label}</span>
+                  <span className={cn("font-bold", f.delta > 0 ? "text-success" : f.delta < 0 ? "text-destructive" : "text-text-muted")}>
+                    {f.delta > 0 ? '+' : ''}{f.delta}
+                  </span>
                 </div>
+              ))}
+              {!data.hasRealSignals && (
+                <p className="text-[10px] text-text-muted/70 uppercase tracking-widest pt-1">
+                  Connect Google Calendar or Slack in Settings to add real behavioral signals here, not just check-ins
+                </p>
               )}
-              <p className="text-[10px] text-text-muted/70 uppercase tracking-widest pt-1">
-                From your connected accounts, separate from your self check-ins above
-              </p>
             </div>
           </motion.div>
         )}

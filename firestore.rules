@@ -112,6 +112,15 @@ service cloud.firestore {
         allow read, write: if false;
       }
 
+      // autopilot_actions is an audit trail of real actions Boundary Autopilot
+      // took on the user's behalf (messages sent, DND set, etc.) — readable by
+      // the owner directly since transparency about "what did this do for me"
+      // matters here, but only the backend (Admin SDK) ever writes to it.
+      match /autopilot_actions/{actionId} {
+        allow read: if isOwner(uid);
+        allow write: if false;
+      }
+
       // ---- PHASE 2B COLLECTIONS ----
       
       // A. recovery/fingerprint

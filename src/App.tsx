@@ -74,6 +74,7 @@ const DiagnoseView = lazy(() => import("./components/DiagnoseSection.tsx").then(
 const ResultView = lazy(() => import("./components/DiagnoseSection.tsx").then(m => ({ default: m.ResultView })));
 const EnergyBudgetTool = lazy(() => import("./components/EnergyBudget.tsx").then(m => ({ default: m.EnergyBudgetTool })));
 const BoundaryRehearsal = lazy(() => import("./components/BoundaryRehearsal.tsx").then(m => ({ default: m.BoundaryRehearsal })));
+const BoundaryAutopilot = lazy(() => import("./components/BoundaryAutopilot.tsx").then(m => ({ default: m.BoundaryAutopilot })));
 const ReflectSection = lazy(() => import("./components/ReflectSection.tsx").then(m => ({ default: m.ReflectSection })));
 const NovaChat = lazy(() => import("./components/NovaChat.tsx").then(m => ({ default: m.NovaChat })));
 import { Walkthrough } from "./components/Walkthrough.tsx";
@@ -1355,7 +1356,14 @@ const HomeSection = ({
             )}
             {stats.streak >= 3 && ' Today is about active repair."'}
           </p>
-          <RecoveryExplanation />
+          <RecoveryExplanation
+            energyLevel={energyLevel}
+            debtCount={(stats.debts || []).filter((d) => !d.cleared).length}
+            isHighFunctioningExhausted={fingerprint?.profile === "High-Functioning Exhausted"}
+            hasClaimedDaily={hasClaimedDaily}
+            rehearsalCount={stats.rehearsalCount || 0}
+            streak={stats.streak || 0}
+          />
         </div>
 
         <div className="absolute -right-20 -top-20 w-80 h-80 bg-primary opacity-10 rounded-full blur-[120px] group-hover:opacity-20 transition-all duration-1000" />
@@ -2907,11 +2915,12 @@ export default function App() {
             {activeTab === "communicate" && (
               <div className="space-y-32">
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-12">
-                  <div className="lg:col-span-2">
+                  <div className="lg:col-span-2 space-y-12">
                     <BoundaryRehearsal
                       onAwardPoints={awardPoints}
                       onRehearsalComplete={incrementRehearsal}
                     />
+                    <BoundaryAutopilot />
                   </div>
                   <div className="space-y-8">
                     <NegotiatorTool />

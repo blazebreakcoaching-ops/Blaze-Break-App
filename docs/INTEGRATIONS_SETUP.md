@@ -37,8 +37,19 @@ provider-specific, set it once.
    `{APP_URL}/api/integrations/callback/slack`
 3. This app requests **user token scopes** (not bot scopes), so users connect
    their own account rather than installing a bot into a workspace:
-   `dnd:write, dnd:read, users.profile:write, users:read`
+   `dnd:write, dnd:read, users.profile:write, users:read, channels:read, groups:read, im:read, mpim:read, channels:history, groups:history, im:history, mpim:history, chat:write`
    Add these under "User Token Scopes" in the same OAuth & Permissions page.
+   The `*:history` and `*:read` scopes exist so Blaze Break can compute a
+   message-volume/after-hours signal for the Recovery Score, and `chat:write`
+   exists so Boundary Autopilot can send a real Slack message *as the user*
+   when they explicitly ask it to (e.g. declining a meeting, setting a
+   boundary with a colleague) — this is a real privacy and consent-sensitive
+   footprint (reading message history, and sending messages on someone's
+   behalf), so make sure both are disclosed clearly wherever you describe
+   what connecting Slack does for the user.
+   **If anyone already connected Slack under an older, narrower scope set,
+   they'll need to disconnect and reconnect** — Slack doesn't retroactively
+   grant new scopes to an existing token.
 4. Under **Basic Information**, copy the **Client ID** and **Client Secret**
    into `SLACK_CLIENT_ID` / `SLACK_CLIENT_SECRET`.
 5. Note: Slack's default installation flow requires each user's workspace

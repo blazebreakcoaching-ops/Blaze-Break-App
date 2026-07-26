@@ -1137,7 +1137,7 @@ const OAUTH_PROVIDERS: Record<string, OAuthProviderConfig> = {
     clientIdEnv: "SLACK_CLIENT_ID",
     clientSecretEnv: "SLACK_CLIENT_SECRET",
     tokenStyle: "form",
-    userScope: "dnd:write,dnd:read,users.profile:write,users:read,channels:read,groups:read,im:read,mpim:read,channels:history,groups:history,im:history,mpim:history",
+    userScope: "dnd:write,dnd:read,users.profile:write,users:read,channels:read,groups:read,im:read,mpim:read,channels:history,groups:history,im:history,mpim:history,chat:write",
     extractTokens: (body) => ({
       accessToken: body?.authed_user?.access_token || null,
       refreshToken: body?.authed_user?.refresh_token || null,
@@ -1947,6 +1947,198 @@ app.post("/api/signals/recovery-explain", verifyAppCheck, authenticateFirebaseUs
   } catch (err: any) {
     console.error("[Signals] recovery-explain error:", err.message);
     res.status(500).json({ error: "Could not compute explainable recovery score." });
+  }
+});
+
+// ============================================================================
+// Boundary Autopilot: real actions, not just rehearsal scripts
+// ============================================================================
+// Every action here is consequential (sends a real message, changes real
+// account state) and irreversible in the way a rehearsal script never is, so
+// every endpoint: (1) requires a fresh, explicit confirmation from the client
+// — this is not something that fires automatically, (2) logs what happened to
+// an audit trail the user can review, and (3) fails loudly rather than
+// silently if the Slack token is missing or the API call fails, since a
+// silent failure here would mean someone believes a boundary was set when it
+// wasn't.
+
+const slackApiCall = async (accessToken: string, method: string, params: Record<string, string>, httpMethod: "GET" | "POST" = "GET") => {
+  if (httpMethod === "GET") {
+    const url = new URL(`https://slack.com/api/${method}`);
+    Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
+    const r = await fetch(url.toString(), { headers: { Authorization: `Bearer ${accessToken}` } });
+    return r.json();
+  }
+  const r = await fetch(`https://slack.com/api/${method}`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+    body: JSON.stringify(params),
+  });
+  return r.json();
+};
+
+const getSlackTokenOrFail = async (uid: string, res: any): Promise<string | null> => {
+  const db = getDb();
+  const tokenDoc = await db.collection("users").doc(uid).collection("integration_tokens").doc("slack").get();
+  if (!tokenDoc.exists || !tokenDoc.data()?.accessToken) {
+    res.status(400).json({ error: "Slack is not connected. Connect it in Settings first." });
+    return null;
+  }
+  return tokenDoc.data()!.accessToken;
+};
+
+const logAutopilotAction = async (uid: string, action: string, detail: Record<string, any>, success: boolean) => {
+  try {
+    await getDb().collection("users").doc(uid).collection("autopilot_actions").add({
+      action,
+      detail,
+      success,
+      takenAt: new Date().toISOString(),
+    });
+  } catch (e) {
+    // A logging failure shouldn't mask the actual action's result to the caller.
+    console.error("[Boundary Autopilot] audit log failed:", e);
+  }
+};
+
+// Recipient picker: list workspace members so the user can pick who to message
+// by name rather than needing to know a Slack ID.
+app.get("/api/boundary-autopilot/slack/users", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const uid = requireAuth(req).uid;
+    const accessToken = await getSlackTokenOrFail(uid, res);
+    if (!accessToken) return;
+
+    const result = await slackApiCall(accessToken, "users.list", { limit: "200" });
+    if (!result.ok) {
+      return res.status(502).json({ error: `Could not list Slack users: ${result.error || "unknown error"}` });
+    }
+    const members = (result.members || [])
+      .filter((m: any) => !m.is_bot && !m.deleted && m.id !== "USLACKBOT")
+      .map((m: any) => ({ id: m.id, name: m.real_name || m.name, avatar: m.profile?.image_48 }));
+    res.json({ members });
+  } catch (err: any) {
+    console.error("[Boundary Autopilot] slack users error:", err.message);
+    res.status(500).json({ error: "Could not load Slack contacts." });
+  }
+});
+
+const SendMessageSchema = z.object({
+  recipientId: z.string().min(1),
+  message: z.string().min(1).max(2000),
+  confirm: z.literal(true), // Requires the client to explicitly assert intent, not just default to true.
+}).strict();
+
+app.post("/api/boundary-autopilot/slack/send", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  const uid = requireAuth(req).uid;
+  try {
+    const parsed = SendMessageSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: "Invalid send request — a recipient, message, and explicit confirmation are required." });
+    }
+    const { recipientId, message } = parsed.data;
+    const accessToken = await getSlackTokenOrFail(uid, res);
+    if (!accessToken) return;
+
+    // Open (or reuse) a DM channel with the recipient, then post to it.
+    const openResult = await slackApiCall(accessToken, "conversations.open", { users: recipientId }, "POST");
+    if (!openResult.ok) {
+      await logAutopilotAction(uid, "slack_send", { recipientId, message }, false);
+      return res.status(502).json({ error: `Could not open a conversation: ${openResult.error || "unknown error"}` });
+    }
+
+    const sendResult = await slackApiCall(accessToken, "chat.postMessage", {
+      channel: openResult.channel.id,
+      text: message,
+    }, "POST");
+    if (!sendResult.ok) {
+      await logAutopilotAction(uid, "slack_send", { recipientId, message }, false);
+      return res.status(502).json({ error: `Slack rejected the message: ${sendResult.error || "unknown error"}` });
+    }
+
+    await logAutopilotAction(uid, "slack_send", { recipientId, message }, true);
+    res.json({ success: true });
+  } catch (err: any) {
+    console.error("[Boundary Autopilot] slack send error:", err.message);
+    await logAutopilotAction(uid, "slack_send", { error: err.message }, false);
+    res.status(500).json({ error: "Could not send the message." });
+  }
+});
+
+const SetDndSchema = z.object({
+  minutes: z.number().int().min(5).max(480),
+  confirm: z.literal(true),
+}).strict();
+
+app.post("/api/boundary-autopilot/slack/dnd", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  const uid = requireAuth(req).uid;
+  try {
+    const parsed = SetDndSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: "Invalid DND request — a duration in minutes and explicit confirmation are required." });
+    }
+    const { minutes } = parsed.data;
+    const accessToken = await getSlackTokenOrFail(uid, res);
+    if (!accessToken) return;
+
+    const result = await slackApiCall(accessToken, "dnd.setSnooze", { num_minutes: String(minutes) }, "POST");
+    if (!result.ok) {
+      await logAutopilotAction(uid, "slack_dnd", { minutes }, false);
+      return res.status(502).json({ error: `Slack rejected the DND request: ${result.error || "unknown error"}` });
+    }
+
+    await logAutopilotAction(uid, "slack_dnd", { minutes }, true);
+    res.json({ success: true, snoozeEndtime: result.snooze_endtime });
+  } catch (err: any) {
+    console.error("[Boundary Autopilot] slack dnd error:", err.message);
+    await logAutopilotAction(uid, "slack_dnd", { error: err.message }, false);
+    res.status(500).json({ error: "Could not set Do Not Disturb." });
+  }
+});
+
+const SetStatusSchema = z.object({
+  statusText: z.string().max(100),
+  statusEmoji: z.string().max(50).optional().default(""),
+  confirm: z.literal(true),
+}).strict();
+
+app.post("/api/boundary-autopilot/slack/status", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  const uid = requireAuth(req).uid;
+  try {
+    const parsed = SetStatusSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: "Invalid status request — status text and explicit confirmation are required." });
+    }
+    const { statusText, statusEmoji } = parsed.data;
+    const accessToken = await getSlackTokenOrFail(uid, res);
+    if (!accessToken) return;
+
+    const result = await slackApiCall(accessToken, "users.profile.set", {
+      profile: JSON.stringify({ status_text: statusText, status_emoji: statusEmoji, status_expiration: 0 }),
+    }, "POST");
+    if (!result.ok) {
+      await logAutopilotAction(uid, "slack_status", { statusText, statusEmoji }, false);
+      return res.status(502).json({ error: `Slack rejected the status update: ${result.error || "unknown error"}` });
+    }
+
+    await logAutopilotAction(uid, "slack_status", { statusText, statusEmoji }, true);
+    res.json({ success: true });
+  } catch (err: any) {
+    console.error("[Boundary Autopilot] slack status error:", err.message);
+    await logAutopilotAction(uid, "slack_status", { error: err.message }, false);
+    res.status(500).json({ error: "Could not update your Slack status." });
+  }
+});
+
+app.get("/api/boundary-autopilot/history", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const uid = requireAuth(req).uid;
+    const snap = await getDb().collection("users").doc(uid).collection("autopilot_actions")
+      .orderBy("takenAt", "desc").limit(20).get();
+    res.json({ actions: snap.docs.map((d) => ({ id: d.id, ...d.data() })) });
+  } catch (err: any) {
+    console.error("[Boundary Autopilot] history error:", err.message);
+    res.status(500).json({ error: "Could not load action history." });
   }
 });
 
