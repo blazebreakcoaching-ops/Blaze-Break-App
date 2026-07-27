@@ -2190,12 +2190,27 @@ const runScheduledPulseCheck = async () => {
   if (!pushConfigured) return;
   try {
     const db = getDb();
-    const snap = await db.collection("users").get();
     const now = Date.now();
-    for (const userDoc of snap.docs) {
-      const uid = userDoc.id;
-      const pulseDoc = await db.collection("users").doc(uid).collection("pulse_status").doc("latest").get();
-      if (!pulseDoc.exists) continue;
+    const staleCutoffIso = new Date(now - STALE_CHECKIN_HOURS * 60 * 60 * 1000).toISOString();
+
+    // Two narrow collection-group queries instead of reading every user doc
+    // plus a per-user sub-read (that pattern cost 2 reads per user on every
+    // run, regardless of whether they'd ever qualify). These only pull back
+    // docs that are actually candidates — cost now scales with how many
+    // people are stale or low, not with total signups. Needs the
+    // COLLECTION_GROUP field overrides on pulse_status in firestore.indexes.json.
+    const [staleSnap, lowSnap] = await Promise.all([
+      db.collectionGroup("pulse_status").where("reportedAt", "<", staleCutoffIso).get(),
+      db.collectionGroup("pulse_status").where("score", "<", LOW_SCORE_THRESHOLD).get(),
+    ]);
+
+    const candidates = new Map<string, FirebaseFirestore.QueryDocumentSnapshot>();
+    for (const doc of [...staleSnap.docs, ...lowSnap.docs]) {
+      const uid = doc.ref.parent.parent?.id;
+      if (uid) candidates.set(uid, doc);
+    }
+
+    for (const [uid, pulseDoc] of candidates) {
       const pulse = pulseDoc.data()!;
       const reportedAt = new Date(pulse.reportedAt).getTime();
       const hoursSinceReport = (now - reportedAt) / (1000 * 60 * 60);
