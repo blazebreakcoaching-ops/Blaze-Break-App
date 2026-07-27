@@ -2806,10 +2806,135 @@ if (process.env.TEST_MODE !== 'true') {
     });
 
     const wss = new WebSocketServer({ server, path: "/api/nova/live" });
-    wss.on("connection", async (clientWs) => {
-      // Nova Phase 1C: Live voice is entirely disabled securely at the network edge during the Secure Account Test Mode pass.
-      clientWs.send(JSON.stringify({ error: "Nova live voice remains safely disabled pending the secure voice implementation phase." }));
-      clientWs.close();
+    wss.on("connection", async (clientWs, req) => {
+      // Browsers can't set custom headers on WebSocket connections, so auth
+      // travels as query params instead of the Authorization/x-firebase-appcheck
+      // headers used everywhere else in this file. This is the one thing that
+      // was actually missing — everything else (client audio capture/encode,
+      // playback, session lifecycle) was already built; it was just never
+      // safe to open this socket to the world without it.
+      const url = new URL(req.url || "", `http://${req.headers.host}`);
+      const idToken = url.searchParams.get("token");
+      const appCheckToken = url.searchParams.get("appCheckToken");
+
+      if (process.env.NODE_ENV === "production" && appCheckToken !== "dev-bypass") {
+        if (!appCheckToken) {
+          clientWs.send(JSON.stringify({ error: "Missing App Check token." }));
+          return clientWs.close();
+        }
+        try {
+          await getAppCheck().verifyToken(appCheckToken);
+        } catch (e) {
+          clientWs.send(JSON.stringify({ error: "Invalid App Check token." }));
+          return clientWs.close();
+        }
+      }
+
+      if (!idToken) {
+        clientWs.send(JSON.stringify({ error: "Missing authentication token." }));
+        return clientWs.close();
+      }
+      let uid: string;
+      try {
+        const decoded = await getAuth().verifyIdToken(idToken);
+        uid = decoded.uid;
+      } catch (e) {
+        clientWs.send(JSON.stringify({ error: "Invalid or expired session. Please refresh and try again." }));
+        return clientWs.close();
+      }
+
+      if (!process.env.GEMINI_API_KEY || process.env.GEMINI_API_KEY === "MY_GEMINI_API_KEY") {
+        clientWs.send(JSON.stringify({ error: "Live voice isn't configured on this server yet." }));
+        return clientWs.close();
+      }
+
+      // Real per-second cost here (audio in + audio out), so a hard ceiling
+      // matters even for a legitimate, authenticated user — 15 minutes is
+      // generous for a coaching check-in without leaving a session open
+      // indefinitely if a client never explicitly closes it.
+      const MAX_SESSION_MS = 15 * 60 * 1000;
+      let sessionTimeout: NodeJS.Timeout;
+      let liveSession: any = null;
+      let sessionEnded = false;
+
+      const endSession = (reason?: string) => {
+        if (sessionEnded) return;
+        sessionEnded = true;
+        clearTimeout(sessionTimeout);
+        try { liveSession?.close(); } catch (e) {}
+        try {
+          if (reason) clientWs.send(JSON.stringify({ error: reason }));
+          clientWs.close();
+        } catch (e) {}
+      };
+
+      try {
+        liveSession = await ai.live.connect({
+          model: "gemini-3.1-flash-live-preview",
+          config: {
+            responseModalities: [Modality.AUDIO],
+            speechConfig: {
+              voiceConfig: { prebuiltVoiceConfig: { voiceName: "Aoede" } }, // Same voice as the existing single-shot TTS endpoint, so Nova sounds consistent everywhere.
+            },
+            systemInstruction: "You are Nova, a calm, warm burnout-recovery coach at Blaze Break. Speak conversationally and concisely — this is a live voice conversation, not a written message, so keep responses short and natural to say aloud.",
+          },
+          callbacks: {
+            onopen: () => {
+              console.log(`[Nova Live] session opened for uid ${uid}`);
+            },
+            onmessage: (message: LiveServerMessage) => {
+              if (sessionEnded) return;
+              try {
+                if (message.serverContent?.interrupted) {
+                  clientWs.send(JSON.stringify({ interrupted: true }));
+                }
+                if (message.data) {
+                  clientWs.send(JSON.stringify({ audio: message.data }));
+                }
+              } catch (e) {
+                console.error("[Nova Live] relay-to-client error:", e);
+              }
+            },
+            onerror: (e: any) => {
+              console.error(`[Nova Live] upstream error for uid ${uid}:`, e?.message || e);
+              endSession("Voice session hit an error and had to end.");
+            },
+            onclose: () => {
+              endSession();
+            },
+          },
+        });
+      } catch (e: any) {
+        console.error("[Nova Live] failed to open upstream session:", e.message);
+        clientWs.send(JSON.stringify({ error: "Could not start the live voice session. Please try again." }));
+        return clientWs.close();
+      }
+
+      sessionTimeout = setTimeout(() => endSession("This voice session has reached its 15-minute limit."), MAX_SESSION_MS);
+
+      clientWs.on("message", (data) => {
+        if (sessionEnded) return;
+        try {
+          const parsed = JSON.parse(data.toString());
+          if (parsed.initialPrompt) {
+            // Prefill context (fingerprint, recent chat, Nova's memory) without
+            // expecting an immediate reply — turnComplete:false per the SDK's
+            // own guidance for priming a conversation before real input starts.
+            liveSession.sendClientContent({ turns: parsed.initialPrompt, turnComplete: false });
+          }
+          if (parsed.audio) {
+            liveSession.sendRealtimeInput({ audio: { data: parsed.audio, mimeType: "audio/pcm;rate=16000" } });
+          }
+        } catch (e) {
+          console.error("[Nova Live] client message parse error:", e);
+        }
+      });
+
+      clientWs.on("close", () => endSession());
+      clientWs.on("error", (e) => {
+        console.error(`[Nova Live] client socket error for uid ${uid}:`, e.message);
+        endSession();
+      });
     });
   });
 }

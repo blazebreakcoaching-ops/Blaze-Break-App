@@ -2642,7 +2642,7 @@ export default function App() {
         />
         <button
           onClick={() => setShowCrisisSupport(true)}
-          className="fixed left-6 bottom-6 flex items-center gap-2 px-4 py-3 rounded-full text-info bg-info/10 hover:bg-info/20 border border-info/20 shadow-2xl transition-colors z-50 text-xs font-bold"
+          className="fixed left-6 bg-info/10 text-info hover:bg-info/20 border border-info/20 flex items-center gap-2 px-4 py-3 rounded-full shadow-2xl transition-colors z-50 text-xs font-bold" style={{ bottom: "calc(1.5rem + env(safe-area-inset-bottom))" }}
         >
           <LifeBuoy className="w-4 h-4 shrink-0" />
           <span>Need support now?</span>
@@ -2664,7 +2664,7 @@ export default function App() {
         </Suspense>
         <button
           onClick={() => setShowCrisisSupport(true)}
-          className="fixed left-6 bottom-6 flex items-center gap-2 px-4 py-3 rounded-full text-info bg-info/10 hover:bg-info/20 border border-info/20 shadow-2xl transition-colors z-50 text-xs font-bold"
+          className="fixed left-6 bg-info/10 text-info hover:bg-info/20 border border-info/20 flex items-center gap-2 px-4 py-3 rounded-full shadow-2xl transition-colors z-50 text-xs font-bold" style={{ bottom: "calc(1.5rem + env(safe-area-inset-bottom))" }}
         >
           <LifeBuoy className="w-4 h-4 shrink-0" />
           <span>Need support now?</span>
@@ -2693,7 +2693,7 @@ export default function App() {
         />
         <button
           onClick={() => setShowCrisisSupport(true)}
-          className="fixed left-6 bottom-6 flex items-center gap-2 px-4 py-3 rounded-full text-info bg-info/10 hover:bg-info/20 border border-info/20 shadow-2xl transition-colors z-50 text-xs font-bold"
+          className="fixed left-6 bg-info/10 text-info hover:bg-info/20 border border-info/20 flex items-center gap-2 px-4 py-3 rounded-full shadow-2xl transition-colors z-50 text-xs font-bold" style={{ bottom: "calc(1.5rem + env(safe-area-inset-bottom))" }}
         >
           <LifeBuoy className="w-4 h-4 shrink-0" />
           <span>Need support now?</span>
@@ -3175,18 +3175,24 @@ export default function App() {
         <button
           onClick={() => setShowCrisisSupport(true)}
           title="Need support now?"
-          className="fixed left-4 top-1/2 -translate-y-1/2 w-12 h-12 rounded-full text-info bg-info/10 hover:bg-info/20 border border-info/20 flex items-center justify-center shadow-2xl transition-colors z-50"
+          className="fixed top-1/2 -translate-y-1/2 w-12 h-12 rounded-full text-info bg-info/10 hover:bg-info/20 border border-info/20 flex items-center justify-center shadow-2xl transition-colors z-50" style={{ left: "calc(1rem + env(safe-area-inset-left))" }}
         >
           <LifeBuoy className="w-5 h-5" />
         </button>
         <button
           onClick={() => setIsMobileNavCollapsed(!isMobileNavCollapsed)}
           className={cn(
-            "fixed right-6 w-12 h-12 rounded-full glass border border-border text-text-main flex items-center justify-center shadow-2xl transition-all duration-300 z-50",
+            "fixed w-12 h-12 rounded-full glass border border-border text-text-main flex items-center justify-center shadow-2xl transition-all duration-300 z-50",
             isMobileNavCollapsed
-              ? "bottom-6 shadow-primary/20 bg-text-main text-surface"
-              : "bottom-24",
+              ? "shadow-primary/20 bg-text-main text-surface"
+              : "",
           )}
+          style={{
+            right: "calc(1.5rem + env(safe-area-inset-right))",
+            bottom: isMobileNavCollapsed
+              ? "calc(1.5rem + env(safe-area-inset-bottom))"
+              : "calc(6rem + env(safe-area-inset-bottom))",
+          }}
         >
           {isMobileNavCollapsed ? (
             <Menu className="w-6 h-6" />
@@ -3198,7 +3204,8 @@ export default function App() {
           initial={false}
           animate={{ y: isMobileNavCollapsed ? "100%" : 0 }}
           transition={{ type: "spring", stiffness: 300, damping: 30 }}
-          className="fixed bottom-0 left-0 w-full bg-card/80 backdrop-blur-xl border-t border-border p-2 z-40 transition-colors duration-500"
+          className="fixed bottom-0 left-0 w-full bg-card/80 backdrop-blur-xl border-t border-border pt-2 px-2 z-40 transition-colors duration-500"
+          style={{ paddingBottom: "calc(0.5rem + env(safe-area-inset-bottom))" }}
         >
           <AnimatePresence>
             {showMobileToolsSheet && (

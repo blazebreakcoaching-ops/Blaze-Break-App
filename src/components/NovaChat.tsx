@@ -23,6 +23,7 @@ import ReactMarkdown from "react-markdown";
 import { cn } from "../lib/utils";
 import { getNovaBrain, addNovaMemory } from "../lib/nova-brain";
 import { secureApiFetch } from "../lib/secure-api";
+import { auth, getAppCheckToken } from "../lib/firebase";
 
 interface Message {
   role: "user" | "model";
@@ -413,7 +414,19 @@ export const NovaChat = ({
 
     try {
       setIsListening(true);
-      const wsUrl = `ws${window.location.protocol === "https:" ? "s" : ""}://${window.location.host}/api/nova/live`;
+
+      if (!auth.currentUser) {
+        throw new Error("You need to be signed in to use live voice mode.");
+      }
+      const idToken = await auth.currentUser.getIdToken();
+      let appCheckToken = "";
+      try {
+        appCheckToken = await getAppCheckToken();
+      } catch (e) {
+        // App Check may not be configured in dev — the server allows a dev bypass in that case.
+      }
+
+      const wsUrl = `ws${window.location.protocol === "https:" ? "s" : ""}://${window.location.host}/api/nova/live?token=${encodeURIComponent(idToken)}&appCheckToken=${encodeURIComponent(appCheckToken)}`;
       const ws = new WebSocket(wsUrl);
       wsRef.current = ws;
 
