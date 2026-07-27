@@ -425,7 +425,7 @@ export const Walkthrough = ({
                       className="p-5 bg-violet-950/20 border border-violet-500/20 rounded-2xl space-y-3"
                     >
                       <span className="text-[10px] uppercase font-black tracking-widest text-violet-400 block">
-                        Autonomic Boundary Critique
+                        Boundary Script Feedback
                       </span>
                       <p className="text-xs text-text-muted leading-relaxed whitespace-pre-line">
                         {rehearsalFeedback}
@@ -502,7 +502,7 @@ export const Walkthrough = ({
                 {/* Breathing Pacer Simulator block */}
                 <div className="p-6 bg-surface dark:bg-card rounded-2xl border border-border flex flex-col items-center justify-center space-y-4 text-center relative overflow-hidden">
                   <div className="absolute top-2 left-3 text-[9px] font-mono text-text-muted uppercase">
-                    Autonomic Breathwork Loop (Simulated)
+                    Breathwork Loop (Simulated)
                   </div>
 
                   {/* Pacer Visual Circle */}
@@ -535,7 +535,7 @@ export const Walkthrough = ({
 
                   <div className="space-y-1">
                     <p className="text-xs font-bold text-text-main">
-                      {!isBreathingActive ? "Ready to test somatic down-regulation?" : `Autonomic Phase: ${breathPhase}`}
+                      {!isBreathingActive ? "Ready to test somatic down-regulation?" : `Breath Phase: ${breathPhase}`}
                     </p>
                     <p className="text-[10px] text-text-muted max-w-sm">
                       {!isBreathingActive 

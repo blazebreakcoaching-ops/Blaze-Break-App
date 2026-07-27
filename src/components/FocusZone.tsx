@@ -379,7 +379,7 @@ export function FocusZone({ onAwardPoints, isFocusActive, setIsFocusActive, curr
               </div>
               <div>
                 <h3 className="text-xl font-display font-black text-text-main tracking-tight">Nova Focus Zone</h3>
-                <p className="text-[10px] font-black uppercase tracking-[0.25em] text-text-muted mt-0.5">Context Lockout & Autonomic Shelter</p>
+                <p className="text-[10px] font-black uppercase tracking-[0.25em] text-text-muted mt-0.5">Deep Focus & Recovery Mode</p>
               </div>
             </div>
 
@@ -620,7 +620,7 @@ export function FocusZone({ onAwardPoints, isFocusActive, setIsFocusActive, curr
                 </div>
 
                 <div className="space-y-1">
-                  <span className="text-[10px] font-black uppercase tracking-[0.25em] text-success font-mono">Autonomic Victory Recorded</span>
+                  <span className="text-[10px] font-black uppercase tracking-[0.25em] text-success font-mono">Focus Session Complete</span>
                   <h4 className="text-2xl font-serif font-black text-text-main">Fortress Defended</h4>
                 </div>
 
@@ -632,7 +632,7 @@ export function FocusZone({ onAwardPoints, isFocusActive, setIsFocusActive, curr
                 <div className="w-full bg-surface border border-border rounded-2xl p-4 flex justify-between text-left items-center">
                   <div>
                     <span className="text-[10px] font-black uppercase tracking-widest text-text-muted block">Gained Reward</span>
-                    <span className="text-sm font-bold text-text-main">+100 Autonomic Points</span>
+                    <span className="text-sm font-bold text-text-main">+100 Recovery Points</span>
                   </div>
                   <div className="px-3 py-1 bg-success/15 border border-success/25 rounded-lg text-success text-[10px] font-mono font-black uppercase tracking-wider">
                     Laser Focus Badge

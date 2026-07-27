@@ -355,7 +355,7 @@ export const SomaticResetOverlay = ({ isOpen, onClose, onAwardPoints }: SomaticR
 
                 <div className="bg-surface dark:bg-card/40 p-4 rounded-2xl border border-border text-left space-y-2.5 max-w-xs mx-auto">
                   <div className="flex justify-between text-xs">
-                    <span className="text-text-muted font-bold">Autonomic Duration:</span>
+                    <span className="text-text-muted font-bold">Session Duration:</span>
                     <span className="font-mono text-text-main font-bold">60.0 Seconds</span>
                   </div>
                   <div className="flex justify-between text-xs">

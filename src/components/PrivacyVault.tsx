@@ -722,7 +722,7 @@ export const PrivacyVault = ({
                           await new Promise(r => setTimeout(r, 1000));
                           await handleAuditAction('Initiate Demolition Sequence', 'Core Databases', 'deleted');
                           await new Promise(r => setTimeout(r, 1200));
-                          await handleAuditAction('Erase Autonomic Diagnostic Logs', 'Zone A Local DB', 'deleted');
+                          await handleAuditAction('Erase Diagnostic Logs', 'Zone A Local DB', 'deleted');
                           await new Promise(r => setTimeout(r, 1000));
                           
                           onProfileUpdate({
@@ -755,7 +755,7 @@ export const PrivacyVault = ({
                     <div className="flex flex-col items-center justify-center py-6 space-y-3">
                       <Loader2 className="w-8 h-8 text-destructive animate-spin" />
                       <p className="text-xs font-bold text-destructive font-mono tracking-widest uppercase animate-pulse">
-                        Wiping Autonomic Logs...
+                        Wiping Diagnostic Logs...
                       </p>
                     </div>
                     <div className="space-y-1 text-xs text-text-muted font-mono leading-relaxed bg-background p-3 rounded-lg border border-white/[0.02]">

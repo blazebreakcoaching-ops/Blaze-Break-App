@@ -1917,7 +1917,7 @@ const HomeSection = ({
               <div className="flex items-center justify-between border-b border-border pb-3">
                 <div className="flex items-center gap-2">
                   <div className="w-8 h-8 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center text-primary">
-                    <AlertTriangle className="w-4 h-4 animate-bounce" />
+                    <AlertTriangle className="w-4 h-4" />
                   </div>
                   <div>
                     <h5 className="text-xs font-black uppercase tracking-wider text-text-main">Quick Trigger Capture</h5>
@@ -2774,7 +2774,7 @@ export default function App() {
               </div>
               <div className="relative z-10">
                 <p className="text-[11px] font-black uppercase tracking-[0.2em] text-primary">
-                  Autonomic Integration Logged
+                  Recovery Progress Logged
                 </p>
                 <p className="text-sm font-bold">
                   +{showRewardNotification.points} for{" "}

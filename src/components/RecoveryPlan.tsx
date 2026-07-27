@@ -174,7 +174,7 @@ export const RecoveryPlan = ({
       items.push({
         id: 'rec_social_1',
         section: 'Recover',
-        text: 'Autonomic Shield: Turn off all push notifications for 3 consecutive hours',
+        text: 'Notification Shield: Turn off all push notifications for 3 consecutive hours',
         points: 50,
         completed: completedIds.includes('rec_social_1'),
         tag: 'Stimuli Reduction'

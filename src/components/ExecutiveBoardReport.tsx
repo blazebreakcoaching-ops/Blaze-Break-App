@@ -307,7 +307,7 @@ export const ExecutiveBoardReport = ({
         ` : ''}
 
         ${includeMetricsGrid ? `
-        <div class="table-title">Weekly Autonomic Metric Yield</div>
+        <div class="table-title">Weekly Recovery Metrics</div>
         <table>
             <thead>
                 <tr>
@@ -334,7 +334,7 @@ export const ExecutiveBoardReport = ({
                 <tr>
                     <td>Somatic Resets</td>
                     <td><strong>7 Completed</strong></td>
-                    <td>Autonomic doorway entries completed</td>
+                    <td>Decompression Doorway sessions completed</td>
                     <td style="color: #10b981; font-weight: bold;">Stable</td>
                 </tr>
                 ` : ''}
@@ -361,7 +361,7 @@ export const ExecutiveBoardReport = ({
                 <div class="sig-line" style="font-family: Georgia, serif; font-style: italic; font-size: 20px; line-height: 40px; color: #6366f1; border-bottom: 1px solid #475569; user-select: none;">Nova Coach</div>
                 <div class="sig-meta">
                     <strong>Coach Nova</strong><br/>
-                    Autonomic Recovery Strategist, Blaze Break
+                    Recovery Strategist, Blaze Break
                 </div>
             </div>
         </div>
@@ -578,7 +578,7 @@ export const ExecutiveBoardReport = ({
 
                     <div className="border-t border-white/[0.02] pt-4 flex justify-between items-center">
                       <div>
-                        <p className="text-sm font-bold text-text-main">Weekly Autonomic Matrix Yield</p>
+                        <p className="text-sm font-bold text-text-main">Weekly Recovery Metrics</p>
                         <p className="text-[11px] text-text-muted">Generate data grid report with active Sleep Debt, Deep Work duration, and Points ROI</p>
                       </div>
                       <input 

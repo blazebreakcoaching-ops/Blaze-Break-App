@@ -487,7 +487,7 @@ export const RecoveryFuelEngine = ({
                   <Check className="w-6 h-6" />
                 </div>
                 <h3 className="text-xl font-display font-bold text-text-main">
-                  Autonomic Fuel Synchronized for Today
+                  Today's Nutrition Plan Synced
                 </h3>
                 <p className="text-xs text-text-muted max-w-md mx-auto leading-relaxed">
                   Your daily indicators have been committed to Nova's active parameter ledger. Your coach is correlating these inputs against behavioral logs.
@@ -812,7 +812,7 @@ export const RecoveryFuelEngine = ({
                       </div>
                       <div>
                         <h4 className="text-xs uppercase font-black tracking-widest text-warning">Circadian Sunlight Nudge</h4>
-                        <p className="text-xs font-bold text-text-main mt-0.5">Calibrate the Autonomic Clock</p>
+                        <p className="text-xs font-bold text-text-main mt-0.5">Calibrate Your Body Clock</p>
                       </div>
                     </div>
                     <p className="text-xs text-text-muted leading-relaxed">
