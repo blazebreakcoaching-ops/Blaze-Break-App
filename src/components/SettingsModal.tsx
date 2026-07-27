@@ -210,7 +210,7 @@ export const SettingsModal = ({ profile, onSave, onClose, onOpenPrivacyCentre }:
                     {errors.fullName && <p className="text-xs text-destructive px-1 font-medium">{errors.fullName}</p>}
                   </div>
 
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div className="space-y-1.5">
                       <label className="text-xs font-black uppercase tracking-widest text-text-muted px-1">Job Role</label>
                       <input 

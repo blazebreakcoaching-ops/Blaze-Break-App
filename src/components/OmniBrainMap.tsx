@@ -410,7 +410,7 @@ export const OmniBrainMap = ({ activeTab, setActiveTab, darkMode, setDarkMode, s
               <GitCommit className="w-4 h-4 text-primary" /> Neural Path Routing
             </h3>
 
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-1.5 text-left">
                 <label className="text-xs font-black uppercase tracking-wider text-text-muted">Source</label>
                 <select 

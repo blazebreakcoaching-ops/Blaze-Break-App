@@ -423,7 +423,7 @@ export const MicroRecovery = ({ fingerprint, onAwardPoints }: MicroRecoveryProps
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -20 }}
-            className="card glass border-primary/20 bg-primary/5 p-10 relative overflow-hidden"
+            className="card glass border-primary/20 bg-primary/5 p-6 sm:p-8 md:p-10 relative overflow-hidden"
           >
             <div className="relative z-10 space-y-8">
               <div className="space-y-2">
@@ -475,7 +475,7 @@ export const MicroRecovery = ({ fingerprint, onAwardPoints }: MicroRecoveryProps
             key="success"
             initial={{ opacity: 0, scale: 0.9 }}
             animate={{ opacity: 1, scale: 1 }}
-            className="card glass border-success/20 bg-success/5 p-10 flex flex-col items-center justify-center text-center py-20"
+            className="card glass border-success/20 bg-success/5 p-6 sm:p-8 md:p-10 flex flex-col items-center justify-center text-center py-20"
           >
              <div className="w-20 h-20 bg-success rounded-full flex items-center justify-center text-white mb-6 shadow-xl shadow-success/20">
                <CheckCircle2 className="w-10 h-10" />

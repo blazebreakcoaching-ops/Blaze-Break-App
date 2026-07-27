@@ -306,7 +306,7 @@ export const DiagnoseView = ({
 
   if (error) {
     return (
-      <div className="card border-destructive/20 bg-destructive/10 flex flex-col items-center text-center p-12 gap-6">
+      <div className="card border-destructive/20 bg-destructive/10 flex flex-col items-center text-center p-6 sm:p-8 md:p-12 gap-6">
         <AlertCircle className="w-12 h-12 text-destructive" />
         <h3 className="font-display text-2xl font-bold">
           Something went wrong

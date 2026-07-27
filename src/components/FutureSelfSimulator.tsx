@@ -135,7 +135,7 @@ export const FutureSelfSimulator = ({ fingerprint }: FutureSelfSimulatorProps) =
                 <div className="space-y-6">
                    <div className="space-y-2">
                      <label className="text-xs font-bold text-text-main block">Sleep Quality</label>
-                     <div className="grid grid-cols-3 gap-2">
+                     <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                        {['Poor', 'Fair', 'Good'].map((label, i) => (
                          <button 
                            key={label}
@@ -150,7 +150,7 @@ export const FutureSelfSimulator = ({ fingerprint }: FutureSelfSimulatorProps) =
 
                    <div className="space-y-2">
                      <label className="text-xs font-bold text-text-main block">Workload Pressure</label>
-                     <div className="grid grid-cols-3 gap-2">
+                     <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                        {['Low', 'Medium', 'High'].map((label, i) => (
                          <button 
                            key={label}
@@ -165,7 +165,7 @@ export const FutureSelfSimulator = ({ fingerprint }: FutureSelfSimulatorProps) =
 
                    <div className="space-y-2">
                      <label className="text-xs font-bold text-text-main block">Emotional Load</label>
-                     <div className="grid grid-cols-3 gap-2">
+                     <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                        {['Low', 'Medium', 'High'].map((label, i) => (
                          <button 
                            key={label}

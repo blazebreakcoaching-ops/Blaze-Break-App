@@ -275,7 +275,7 @@ export const BoundaryRehearsal = ({ onAwardPoints, onRehearsalComplete }: { onAw
     <div className="space-y-12 pb-24 font-sans max-w-[1400px] mx-auto text-text-main">
       
       {/* Executive Header */}
-      <div className="relative overflow-hidden rounded-3xl bg-background border border-border p-10 shadow-2xl">
+      <div className="relative overflow-hidden rounded-3xl bg-background border border-border p-6 sm:p-8 md:p-10 shadow-2xl">
         <div className="absolute top-0 right-0 p-8 opacity-5 pointer-events-none">
           <ShieldHalf className="w-64 h-64 text-primary" />
         </div>

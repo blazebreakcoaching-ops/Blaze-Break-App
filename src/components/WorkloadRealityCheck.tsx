@@ -432,7 +432,7 @@ export const WorkloadRealityCheck = ({ fingerprint, onAwardPoints }: WorkloadRea
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 1.05 }}
-            className="card glass p-12 flex flex-col items-center justify-center text-center min-h-[400px]"
+            className="card glass p-6 sm:p-8 md:p-12 flex flex-col items-center justify-center text-center min-h-[400px]"
           >
             <motion.div 
               animate={{ rotate: 360 }} 

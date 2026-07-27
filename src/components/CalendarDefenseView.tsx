@@ -35,7 +35,7 @@ export const CalendarDefenseView = () => {
       </div>
 
       {!hasScanned ? (
-        <div className="card border-border bg-surface p-12 text-center flex flex-col items-center justify-center space-y-6">
+        <div className="card border-border bg-surface p-6 sm:p-8 md:p-12 text-center flex flex-col items-center justify-center space-y-6">
           <div className="relative">
             <div className="absolute inset-0 bg-primary/20 blur-2xl rounded-full" />
             <div className="w-20 h-20 bg-card rounded-full border border-primary/20 flex items-center justify-center relative z-10">

@@ -1057,7 +1057,7 @@ export const RecoveryIntelligenceLayer = ({ onAwardPoints, fingerprint }: Recove
 
                     <div className="space-y-2">
                       <label className="text-xs font-bold">2. Trigger Severity Level:</label>
-                      <div className="grid grid-cols-3 gap-2">
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                         {(['low', 'medium', 'high'] as const).map(sev => (
                           <button
                             key={sev}
@@ -1190,7 +1190,7 @@ export const RecoveryIntelligenceLayer = ({ onAwardPoints, fingerprint }: Recove
                     />
                   </div>
 
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <button
                       onClick={() => adjustSocialBattery(socialBattery - 15)}
                       className="py-3 bg-destructive/5 hover:bg-destructive/10 border border-destructive/20 text-destructive text-xs font-black uppercase rounded-xl transition-all"

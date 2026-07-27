@@ -994,7 +994,7 @@ export const NervousSystemReset = ({ fingerprint }: NervousSystemResetProps) => 
 
         <div className="lg:col-span-2">
           {activeMode ? (
-            <div className="card glass p-12 h-full flex flex-col items-center justify-center text-center relative overflow-hidden min-h-[500px]">
+            <div className="card glass p-6 sm:p-8 md:p-12 h-full flex flex-col items-center justify-center text-center relative overflow-hidden min-h-[500px]">
               <div className="absolute top-8 left-8 text-left">
                 <span className="tag mb-4">{BREATHING_MODES[activeMode].name}</span>
                 <p className="text-xl font-display font-medium text-text-main mt-4 max-w-sm">
@@ -1055,7 +1055,7 @@ export const NervousSystemReset = ({ fingerprint }: NervousSystemResetProps) => 
               </button>
             </div>
           ) : (
-            <div className="card glass h-full flex flex-col items-center justify-center text-center p-12 min-h-[500px]">
+            <div className="card glass h-full flex flex-col items-center justify-center text-center p-6 sm:p-8 md:p-12 min-h-[500px]">
               <div className="w-24 h-24 mb-6 rounded-full bg-surface dark:bg-surface flex items-center justify-center opacity-50">
                 <Wind className="w-10 h-10 text-text-muted" />
               </div>
@@ -1104,7 +1104,7 @@ export const NervousSystemReset = ({ fingerprint }: NervousSystemResetProps) => 
 
         <div className="lg:col-span-2">
           {activeGrounding ? (
-            <div className="card glass p-12 h-full flex flex-col items-center justify-center relative overflow-hidden min-h-[500px]">
+            <div className="card glass p-6 sm:p-8 md:p-12 h-full flex flex-col items-center justify-center relative overflow-hidden min-h-[500px]">
               <div className="absolute top-8 left-8 text-left">
                 <span className="tag mb-4">{GROUNDING_MODES[activeGrounding].name}</span>
                 <p className="text-xl font-display font-medium text-text-main mt-4 max-w-sm">
@@ -1169,7 +1169,7 @@ export const NervousSystemReset = ({ fingerprint }: NervousSystemResetProps) => 
               )}
             </div>
           ) : (
-            <div className="card glass h-full flex flex-col items-center justify-center text-center p-12 min-h-[500px]">
+            <div className="card glass h-full flex flex-col items-center justify-center text-center p-6 sm:p-8 md:p-12 min-h-[500px]">
               <div className="w-24 h-24 mb-6 rounded-full bg-surface dark:bg-surface flex items-center justify-center opacity-50">
                 <Brain className="w-10 h-10 text-text-muted" />
               </div>

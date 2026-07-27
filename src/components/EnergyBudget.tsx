@@ -271,7 +271,7 @@ export const EnergyBudgetTool = ({
             </div>
           </div>
 
-          <div className="card glass p-10 space-y-10 relative overflow-hidden">
+          <div className="card glass p-6 sm:p-8 md:p-10 space-y-10 relative overflow-hidden">
             <div className="flex items-center justify-between relative z-10">
               <div>
                 <h3 className="text-2xl font-display font-bold text-text-main tracking-tight">Capacitance Setting</h3>
@@ -458,7 +458,7 @@ export const EnergyBudgetTool = ({
 
           <RelapseRadar />
 
-          <div className="card glass p-10 space-y-8 border-primary/20 shadow-2xl relative overflow-hidden group">
+          <div className="card glass p-6 sm:p-8 md:p-10 space-y-8 border-primary/20 shadow-2xl relative overflow-hidden group">
             <div className="relative z-10 space-y-8">
               <div className="flex items-center gap-3">
                  <div className="w-1.5 h-1.5 rounded-full bg-primary animate-ping" />
@@ -499,7 +499,7 @@ export const EnergyBudgetTool = ({
 
                 <div className="space-y-4">
                   <p className="text-xs uppercase font-black tracking-widest text-text-muted ">Strain Severity</p>
-                  <div className="grid grid-cols-3 gap-3">
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                     {(['High', 'Medium', 'Low'] as const).map(p => (
                       <button
                         key={p}
@@ -519,7 +519,7 @@ export const EnergyBudgetTool = ({
 
                 <div className="space-y-4">
                   <p className="text-xs uppercase font-black tracking-widest text-text-muted ">SHIP Alignment Pillar</p>
-                  <div className="grid grid-cols-4 gap-2">
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                     {(['Safety', 'Habits', 'Identity', 'Purpose'] as const).map(stage => {
                       const currentActiveStage = STAGE_MAP[currentStage] || 'Safety';
                       const isMatched = stage === currentActiveStage;

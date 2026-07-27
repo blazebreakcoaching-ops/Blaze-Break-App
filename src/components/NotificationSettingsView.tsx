@@ -170,7 +170,7 @@ export const NotificationSettingsView = ({ onSaveSuccess }: { onSaveSuccess?: ()
         {/* Frequency */}
         <div className="p-4 bg-surface dark:bg-card border border-border rounded-xl space-y-4">
           <h4 className="font-bold text-sm flex items-center gap-2"><Clock className="w-4 h-4 text-primary" /> Nudge Frequency</h4>
-          <div className="grid grid-cols-3 gap-2">
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
             {(['low', 'medium', 'high'] as const).map(freq => (
               <button
                 key={freq}

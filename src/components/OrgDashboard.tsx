@@ -85,7 +85,7 @@ export const OrgDashboard = () => {
 
   if (cohortSize < minimumThreshold) {
     return (
-      <div className="flex flex-col items-center justify-center p-12 text-center bg-surface dark:bg-surface/50 rounded-3xl border border-dashed border-border dark:border-border">
+      <div className="flex flex-col items-center justify-center p-6 sm:p-8 md:p-12 text-center bg-surface dark:bg-surface/50 rounded-3xl border border-dashed border-border dark:border-border">
         <Lock className="w-12 h-12 text-text-muted mb-4" />
         <h3 className="text-xl font-bold text-text-main mb-2">Insufficient Cohort Size</h3>
         <p className="text-text-muted text-sm max-w-md">

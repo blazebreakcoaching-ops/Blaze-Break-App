@@ -310,7 +310,7 @@ export const DecompressionDoorway = ({ fingerprint, onAwardPoints }: Decompressi
              animate={{ opacity: 1, scale: 1 }}
              className="w-full flex justify-center py-20"
             >
-              <div className="text-center p-12 border border-success/20 bg-success/5 rounded-3xl">
+              <div className="text-center p-6 sm:p-8 md:p-12 border border-success/20 bg-success/5 rounded-3xl">
                 <div className="w-24 h-24 bg-success rounded-full flex items-center justify-center text-white mb-8 shadow-xl shadow-success/20 mx-auto">
                   <CheckCircle2 className="w-12 h-12" />
                 </div>

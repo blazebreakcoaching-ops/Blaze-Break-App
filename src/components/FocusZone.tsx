@@ -391,7 +391,7 @@ export function FocusZone({ onAwardPoints, isFocusActive, setIsFocusActive, curr
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-2">
               <div className="space-y-2.5">
                 <span className="text-[10px] font-black uppercase tracking-widest text-text-muted">Set Block Duration</span>
-                <div className="grid grid-cols-3 gap-2">
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                   {[15, 25, 50].map((mins) => (
                     <button
                       key={mins}
@@ -414,7 +414,7 @@ export function FocusZone({ onAwardPoints, isFocusActive, setIsFocusActive, curr
 
               <div className="space-y-2.5">
                 <span className="text-[10px] font-black uppercase tracking-widest text-text-muted">Calming Audio Shield</span>
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   {[
                     { id: 'none', label: 'Absolute Silence' },
                     { id: 'binaural', label: '8Hz Binaural (Alpha)' },

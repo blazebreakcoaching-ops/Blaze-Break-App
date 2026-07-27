@@ -50,7 +50,7 @@ export const RelapseRadar = () => {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div className="card p-5 bg-card border-none text-text-main overflow-hidden relative group">
           <div className="relative z-10 flex flex-col gap-2">
             <div className="flex items-center gap-2 text-primary">

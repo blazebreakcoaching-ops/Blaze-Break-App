@@ -296,7 +296,7 @@ export const ReflectSection = ({
     <div className="space-y-12 pb-24 font-sans text-text-main">
       
       {/* Executive Header */}
-      <div className="relative overflow-hidden rounded-3xl bg-card border border-border p-10 shadow-2xl">
+      <div className="relative overflow-hidden rounded-3xl bg-card border border-border p-6 sm:p-8 md:p-10 shadow-2xl">
         <div className="absolute top-0 right-0 p-8 opacity-5 pointer-events-none">
           <Layers className="w-64 h-64 text-primary" />
         </div>
@@ -633,7 +633,7 @@ export const ReflectSection = ({
                 key="empty"
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
-                className="card flex flex-col items-center justify-center min-h-[500px] text-center p-12 bg-white dark:bg-card border-dashed border-2 border-border/50"
+                className="card flex flex-col items-center justify-center min-h-[500px] text-center p-6 sm:p-8 md:p-12 bg-white dark:bg-card border-dashed border-2 border-border/50"
               >
                 <div className="w-20 h-20 bg-surface dark:bg-surface rounded-2xl flex items-center justify-center text-text-muted mb-6 border border-border dark:border-border shadow-inner">
                   <Book className="w-8 h-8" />

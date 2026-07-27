@@ -174,7 +174,7 @@ export const OneLessThing = ({ fingerprint, onAwardPoints }: OneLessThingProps) 
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 1.05 }}
-              className="w-full max-w-xl card glass p-16 flex flex-col items-center justify-center text-center"
+              className="w-full max-w-xl card glass p-8 sm:p-12 md:p-16 flex flex-col items-center justify-center text-center"
             >
               <motion.div 
                animate={{ rotate: 360 }} 

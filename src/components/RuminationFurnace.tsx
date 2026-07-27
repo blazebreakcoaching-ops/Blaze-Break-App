@@ -30,7 +30,7 @@ export const RuminationFurnace = ({ onCleared }: { onCleared?: () => void }) => 
       <motion.div 
         initial={{ opacity: 0, scale: 0.95, y: 10 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
-        className="card bg-background border border-white/[0.05] p-16 text-center flex flex-col items-center justify-center space-y-8 shadow-2xl relative overflow-hidden"
+        className="card bg-background border border-white/[0.05] p-8 sm:p-12 md:p-16 text-center flex flex-col items-center justify-center space-y-8 shadow-2xl relative overflow-hidden"
       >
         <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/noise-lines.png')] opacity-10 pointer-events-none" />
         

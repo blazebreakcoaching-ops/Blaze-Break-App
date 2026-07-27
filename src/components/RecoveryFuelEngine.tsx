@@ -314,7 +314,7 @@ export const RecoveryFuelEngine = ({
   };
 
   return (
-    <div className="card glass border border-border/40 p-10 rounded-[3rem] space-y-10 relative overflow-hidden" id="recovery_fuel_engine_container">
+    <div className="card glass border border-border/40 p-6 sm:p-8 md:p-10 rounded-[3rem] space-y-10 relative overflow-hidden" id="recovery_fuel_engine_container">
       {/* Background radial gradient */}
       <div className="absolute top-0 right-0 w-96 h-96 bg-gradient-to-br from-primary/5 to-transparent rounded-full blur-3xl pointer-events-none" />
 
@@ -861,7 +861,7 @@ export const RecoveryFuelEngine = ({
                       {hydrationReminderEnabled && (
                         <div className="space-y-2 animate-in slide-in-from-top-1 bg-white/40 dark:bg-card/40 p-3 rounded-xl border border-border/10">
                           <label className="text-[11px] font-black uppercase text-text-muted tracking-wider block">Reminder Frequency:</label>
-                          <div className="grid grid-cols-3 gap-2">
+                          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                             {[60, 90, 120].map(mins => (
                               <button
                                 key={mins}
