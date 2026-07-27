@@ -1914,6 +1914,7 @@ app.get("/api/boundary-autopilot/slack/users", verifyAppCheck, authenticateFireb
 
 const SendMessageSchema = z.object({
   recipientId: z.string().min(1),
+  recipientName: z.string().max(200).optional(),
   message: z.string().min(1).max(2000),
   confirm: z.literal(true), // Requires the client to explicitly assert intent, not just default to true.
 }).strict();
@@ -1925,14 +1926,14 @@ app.post("/api/boundary-autopilot/slack/send", verifyAppCheck, authenticateFireb
     if (!parsed.success) {
       return res.status(400).json({ error: "Invalid send request — a recipient, message, and explicit confirmation are required." });
     }
-    const { recipientId, message } = parsed.data;
+    const { recipientId, recipientName, message } = parsed.data;
     const accessToken = await getSlackTokenOrFail(uid, res);
     if (!accessToken) return;
 
     // Open (or reuse) a DM channel with the recipient, then post to it.
     const openResult = await slackApiCall(accessToken, "conversations.open", { users: recipientId }, "POST");
     if (!openResult.ok) {
-      await logAutopilotAction(uid, "slack_send", { recipientId, message }, false);
+      await logAutopilotAction(uid, "slack_send", { recipientId, recipientName, message }, false);
       return res.status(502).json({ error: `Could not open a conversation: ${openResult.error || "unknown error"}` });
     }
 
@@ -1941,11 +1942,11 @@ app.post("/api/boundary-autopilot/slack/send", verifyAppCheck, authenticateFireb
       text: message,
     }, "POST");
     if (!sendResult.ok) {
-      await logAutopilotAction(uid, "slack_send", { recipientId, message }, false);
+      await logAutopilotAction(uid, "slack_send", { recipientId, recipientName, message }, false);
       return res.status(502).json({ error: `Slack rejected the message: ${sendResult.error || "unknown error"}` });
     }
 
-    await logAutopilotAction(uid, "slack_send", { recipientId, message }, true);
+    await logAutopilotAction(uid, "slack_send", { recipientId, recipientName, message }, true);
     res.json({ success: true });
   } catch (err: any) {
     console.error("[Boundary Autopilot] slack send error:", err.message);
@@ -2016,6 +2017,30 @@ app.post("/api/boundary-autopilot/slack/status", verifyAppCheck, authenticateFir
     console.error("[Boundary Autopilot] slack status error:", err.message);
     await logAutopilotAction(uid, "slack_status", { error: err.message }, false);
     res.status(500).json({ error: "Could not update your Slack status." });
+  }
+});
+
+const LogCalendarDeclineSchema = z.object({
+  eventSummary: z.string().max(300),
+}).strict();
+
+// The actual decline happens entirely client-side (the user's own Google
+// token calls Calendar's API directly) — this endpoint exists purely so that
+// action shows up in the same audit trail as the Slack actions, since a
+// user reviewing "what has this taken action on my behalf" should see all
+// four action types in one place, not three out of four.
+app.post("/api/boundary-autopilot/log-calendar-decline", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const parsed = LogCalendarDeclineSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: "Invalid request." });
+    }
+    const uid = requireAuth(req).uid;
+    await logAutopilotAction(uid, "calendar_decline", { eventSummary: parsed.data.eventSummary }, true);
+    res.json({ success: true });
+  } catch (err: any) {
+    console.error("[Boundary Autopilot] calendar decline log error:", err.message);
+    res.status(500).json({ error: "Could not log this action." });
   }
 });
 

@@ -1,17 +1,25 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Send, Moon, MessageCircle, CalendarX, Check, X, AlertTriangle, Loader2 } from 'lucide-react';
+import { Send, Moon, MessageCircle, CalendarX, Check, X, AlertTriangle, Loader2, History } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { useAuth } from '../lib/auth';
 import { secureApiFetch } from '../lib/secure-api';
 import { fetchUpcomingEvents, declineCalendarEvent, UpcomingEvent } from '../lib/boundary-autopilot';
 
-type ActionTab = 'message' | 'dnd' | 'status' | 'calendar';
+type ActionTab = 'message' | 'dnd' | 'status' | 'calendar' | 'history';
 
 interface SlackMember {
   id: string;
   name: string;
   avatar?: string;
+}
+
+interface AutopilotAction {
+  id: string;
+  action: 'slack_send' | 'slack_dnd' | 'slack_status' | 'calendar_decline';
+  detail: Record<string, any>;
+  success: boolean;
+  takenAt: string;
 }
 
 // Every action here is real and consequential — the UI pattern throughout is
@@ -43,6 +51,11 @@ export const BoundaryAutopilot = () => {
   const [selectedEventId, setSelectedEventId] = useState('');
   const [eventsLoading, setEventsLoading] = useState(false);
 
+  // History tab state
+  const [historyActions, setHistoryActions] = useState<AutopilotAction[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyLoaded, setHistoryLoaded] = useState(false);
+
   useEffect(() => {
     if (activeTab === 'message' && members.length === 0) {
       secureApiFetch('/api/boundary-autopilot/slack/users')
@@ -56,6 +69,14 @@ export const BoundaryAutopilot = () => {
         .then(setEvents)
         .catch(() => {})
         .finally(() => setEventsLoading(false));
+    }
+    if (activeTab === 'history') {
+      setHistoryLoading(true);
+      secureApiFetch('/api/boundary-autopilot/history')
+        .then((res) => res.json())
+        .then((data) => { setHistoryActions(data.actions || []); setHistoryLoaded(true); })
+        .catch(() => {})
+        .finally(() => setHistoryLoading(false));
     }
   }, [activeTab, accessToken]);
 
@@ -74,9 +95,10 @@ export const BoundaryAutopilot = () => {
   };
 
   const sendMessage = () => runAction(async () => {
+    const recipientName = members.find((m) => m.id === recipientId)?.name;
     const res = await secureApiFetch('/api/boundary-autopilot/slack/send', {
       method: 'POST',
-      data: { recipientId, message: messageDraft, confirm: true },
+      data: { recipientId, recipientName, message: messageDraft, confirm: true },
     });
     const data = await res.json();
     if (data.error) throw new Error(data.error);
@@ -103,9 +125,16 @@ export const BoundaryAutopilot = () => {
 
   const declineMeeting = () => runAction(async () => {
     if (!accessToken) throw new Error('Connect Google Calendar first.');
+    const declinedEvent = events.find((e) => e.id === selectedEventId);
     await declineCalendarEvent(accessToken, selectedEventId);
     setEvents((prev) => prev.filter((e) => e.id !== selectedEventId));
     setSelectedEventId('');
+    secureApiFetch('/api/boundary-autopilot/log-calendar-decline', {
+      method: 'POST',
+      data: { eventSummary: declinedEvent?.summary || 'Untitled meeting' },
+    }).catch(() => {
+      // The decline itself already succeeded — a logging failure shouldn't surface as an error to the user.
+    });
   }, 'Meeting declined.');
 
   const tabs: { id: ActionTab; label: string; icon: any }[] = [
@@ -113,6 +142,7 @@ export const BoundaryAutopilot = () => {
     { id: 'dnd', label: 'Do Not Disturb', icon: Moon },
     { id: 'status', label: 'Status', icon: MessageCircle },
     { id: 'calendar', label: 'Decline Meeting', icon: CalendarX },
+    { id: 'history', label: 'History', icon: History },
   ];
 
   return (
@@ -279,6 +309,40 @@ export const BoundaryAutopilot = () => {
               )}
             </div>
           )}
+
+          {activeTab === 'history' && (
+            <div className="space-y-2">
+              {historyLoading ? (
+                <div className="flex items-center gap-2 text-text-muted text-xs py-4">
+                  <Loader2 className="w-4 h-4 animate-spin" /> Loading history...
+                </div>
+              ) : historyActions.length === 0 ? (
+                <p className="text-xs text-text-muted py-4">
+                  Nothing here yet — every real action Boundary Autopilot takes on your behalf will show up here.
+                </p>
+              ) : (
+                historyActions.map((a) => (
+                  <div
+                    key={a.id}
+                    className={cn(
+                      "p-3 rounded-xl border text-xs flex items-start gap-3",
+                      a.success ? "border-border bg-surface" : "border-destructive/20 bg-destructive/5"
+                    )}
+                  >
+                    <div className="mt-0.5 shrink-0">
+                      {a.success ? <Check className="w-4 h-4 text-success" /> : <AlertTriangle className="w-4 h-4 text-destructive" />}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-text-main font-medium">{describeAutopilotAction(a)}</p>
+                      <p className="text-text-muted text-[10px] mt-1">
+                        {new Date(a.takenAt).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
+                      </p>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          )}
         </motion.div>
       </AnimatePresence>
 
@@ -293,6 +357,29 @@ export const BoundaryAutopilot = () => {
       )}
     </div>
   );
+};
+
+const describeAutopilotAction = (a: AutopilotAction): string => {
+  const { action, detail, success } = a;
+  if (!success) {
+    if (action === 'slack_send') return `Failed to send a message${detail.recipientName ? ` to ${detail.recipientName}` : ''}.`;
+    if (action === 'slack_dnd') return `Failed to set Do Not Disturb${detail.minutes ? ` for ${detail.minutes} minutes` : ''}.`;
+    if (action === 'slack_status') return `Failed to update your Slack status.`;
+    if (action === 'calendar_decline') return `Failed to decline a meeting.`;
+    return 'An action failed.';
+  }
+  switch (action) {
+    case 'slack_send':
+      return `Sent a message to ${detail.recipientName || 'a Slack contact'}${detail.message ? `: "${String(detail.message).slice(0, 60)}${detail.message.length > 60 ? '…' : ''}"` : ''}`;
+    case 'slack_dnd':
+      return `Set Do Not Disturb for ${detail.minutes} minutes.`;
+    case 'slack_status':
+      return `Updated your Slack status to "${detail.statusText}".`;
+    case 'calendar_decline':
+      return `Declined "${detail.eventSummary || 'a meeting'}".`;
+    default:
+      return 'Action completed.';
+  }
 };
 
 const ConfirmBar = ({ label, onConfirm, onCancel, isSubmitting }: {
