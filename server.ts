@@ -7,6 +7,7 @@ import { GoogleGenAI, Type, Modality, LiveServerMessage } from "@google/genai";
 import dotenv from "dotenv";
 import twilio from "twilio";
 import { WebSocketServer } from 'ws';
+import webpush from 'web-push';
 import { NOVA_KNOWLEDGE_BASE } from './server-knowledge';
 import { initializeApp, getApps } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
@@ -265,6 +266,19 @@ const ai = new GoogleGenAI({
     }
   }
 });
+
+const VAPID_PUBLIC_KEY = process.env.VAPID_PUBLIC_KEY || "";
+const VAPID_PRIVATE_KEY = process.env.VAPID_PRIVATE_KEY || "";
+const pushConfigured = !!(VAPID_PUBLIC_KEY && VAPID_PRIVATE_KEY);
+if (pushConfigured) {
+  webpush.setVapidDetails(
+    process.env.VAPID_SUBJECT || "mailto:support@blazebreak.co",
+    VAPID_PUBLIC_KEY,
+    VAPID_PRIVATE_KEY
+  );
+} else {
+  console.warn("[Push] VAPID keys not configured — push notifications are disabled until they are.");
+}
 
 // API Routes
 const NOVA_SYSTEM_PROMPT = `
@@ -2055,6 +2069,158 @@ app.get("/api/boundary-autopilot/history", verifyAppCheck, authenticateFirebaseU
     res.status(500).json({ error: "Could not load action history." });
   }
 });
+
+// ============================================================================
+// Push notifications: reaching someone even when the app isn't open
+// ============================================================================
+// The existing "Pulse Alert" in App.tsx only fires while the tab is already
+// open (new Notification(...) with no service worker involved) — which means
+// it can never reach the person who's stopped opening the app, exactly the
+// moment it matters most. This closes that gap two ways: (1) real Web Push
+// subscriptions so a notification can be delivered by the OS/browser even
+// with the app fully closed, and (2) a lightweight scheduled check that
+// doesn't depend on the client running at all, using pulse data the client
+// now reports here specifically so this check has something to look at.
+
+const sendPushToUser = async (uid: string, payload: { title: string; body: string }): Promise<void> => {
+  if (!pushConfigured) return;
+  const db = getDb();
+  const subsSnap = await db.collection("users").doc(uid).collection("push_subscriptions").get();
+  for (const doc of subsSnap.docs) {
+    try {
+      await webpush.sendNotification(doc.data() as any, JSON.stringify(payload));
+    } catch (err: any) {
+      // A 404/410 means the subscription is dead (browser data cleared, uninstalled, etc.) — clean it up.
+      if (err.statusCode === 404 || err.statusCode === 410) {
+        await doc.ref.delete();
+      } else {
+        console.error(`[Push] send failed for uid ${uid}:`, err.message);
+      }
+    }
+  }
+};
+
+app.get("/api/push/vapid-public-key", verifyAppCheck, (req, res) => {
+  res.json({ publicKey: VAPID_PUBLIC_KEY, configured: pushConfigured });
+});
+
+const PushSubscriptionSchema = z.object({
+  endpoint: z.string().url(),
+  keys: z.object({
+    p256dh: z.string(),
+    auth: z.string(),
+  }),
+}).strict();
+
+app.post("/api/push/subscribe", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const parsed = PushSubscriptionSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: "Invalid push subscription payload." });
+    }
+    const uid = requireAuth(req).uid;
+    // Keyed by a hash of the endpoint so re-subscribing the same device updates
+    // rather than duplicates, and multiple real devices can coexist per user.
+    const subId = crypto.createHash("sha256").update(parsed.data.endpoint).digest("hex").slice(0, 32);
+    await getDb().collection("users").doc(uid).collection("push_subscriptions").doc(subId).set({
+      ...parsed.data,
+      subscribedAt: new Date().toISOString(),
+    });
+    res.json({ success: true });
+  } catch (err: any) {
+    console.error("[Push] subscribe error:", err.message);
+    res.status(500).json({ error: "Could not save your push subscription." });
+  }
+});
+
+app.post("/api/push/unsubscribe", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const uid = requireAuth(req).uid;
+    const endpoint = req.body?.endpoint;
+    if (endpoint) {
+      const subId = crypto.createHash("sha256").update(String(endpoint)).digest("hex").slice(0, 32);
+      await getDb().collection("users").doc(uid).collection("push_subscriptions").doc(subId).delete();
+    } else {
+      // No endpoint provided — remove all of this user's subscriptions rather than silently no-op.
+      const snap = await getDb().collection("users").doc(uid).collection("push_subscriptions").get();
+      await Promise.all(snap.docs.map((d) => d.ref.delete()));
+    }
+    res.json({ success: true });
+  } catch (err: any) {
+    console.error("[Push] unsubscribe error:", err.message);
+    res.status(500).json({ error: "Could not remove your push subscription." });
+  }
+});
+
+const PulseReportSchema = z.object({
+  score: z.number().min(0).max(100),
+}).strict();
+
+// The client already computes this locally on every home-screen load —
+// this just gives the server a copy to check against later without the
+// client needing to be running at that later moment.
+app.post("/api/pulse/report", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const parsed = PulseReportSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: "Invalid pulse report." });
+    }
+    const uid = requireAuth(req).uid;
+    await getDb().collection("users").doc(uid).collection("pulse_status").doc("latest").set({
+      score: parsed.data.score,
+      reportedAt: new Date().toISOString(),
+    });
+    res.json({ success: true });
+  } catch (err: any) {
+    console.error("[Pulse] report error:", err.message);
+    res.status(500).json({ error: "Could not report pulse status." });
+  }
+});
+
+// Scheduled check: runs in-process every 6 hours, looking for two real,
+// server-visible conditions — a score that's stayed low, or a check-in that's
+// gone stale — and sends a real push either way. A 48-hour cooldown per user
+// (tracked via lastPushSentAt) keeps this a gentle nudge, not spam.
+const PULSE_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
+const STALE_CHECKIN_HOURS = 48;
+const LOW_SCORE_THRESHOLD = 30;
+const PUSH_COOLDOWN_HOURS = 48;
+
+const runScheduledPulseCheck = async () => {
+  if (!pushConfigured) return;
+  try {
+    const db = getDb();
+    const snap = await db.collection("users").get();
+    const now = Date.now();
+    for (const userDoc of snap.docs) {
+      const uid = userDoc.id;
+      const pulseDoc = await db.collection("users").doc(uid).collection("pulse_status").doc("latest").get();
+      if (!pulseDoc.exists) continue;
+      const pulse = pulseDoc.data()!;
+      const reportedAt = new Date(pulse.reportedAt).getTime();
+      const hoursSinceReport = (now - reportedAt) / (1000 * 60 * 60);
+
+      const isStale = hoursSinceReport >= STALE_CHECKIN_HOURS;
+      const isLow = pulse.score < LOW_SCORE_THRESHOLD && hoursSinceReport < STALE_CHECKIN_HOURS;
+      if (!isStale && !isLow) continue;
+
+      const lastPush = pulse.lastPushSentAt ? new Date(pulse.lastPushSentAt).getTime() : 0;
+      if ((now - lastPush) / (1000 * 60 * 60) < PUSH_COOLDOWN_HOURS) continue;
+
+      await sendPushToUser(uid, isStale
+        ? { title: "Nova hasn't heard from you in a while", body: "No pressure — just checking in. Your recovery tools are here whenever you're ready." }
+        : { title: "Nova: your recovery score has been low", body: "Things look tough right now. A short reset might help — Blaze Break is here." }
+      );
+      await pulseDoc.ref.set({ lastPushSentAt: new Date().toISOString() }, { merge: true });
+    }
+  } catch (err: any) {
+    console.error("[Push] scheduled pulse check error:", err.message);
+  }
+};
+
+if (pushConfigured && process.env.TEST_MODE !== 'true') {
+  setInterval(runScheduledPulseCheck, PULSE_CHECK_INTERVAL_MS);
+}
 
 // Admin Dashboard Summary Metrics API
 app.get("/api/admin/summary", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {

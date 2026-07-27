@@ -42,3 +42,35 @@ self.addEventListener('fetch', (event) => {
     );
   }
 });
+
+// This is the part that actually solves "reach someone who's stopped opening
+// the app" — this handler runs even when no tab is open at all, because it's
+// the service worker (not the page) receiving the push event.
+self.addEventListener('push', (event) => {
+  let payload = { title: 'Blaze Break', body: "You've got an update." };
+  try {
+    if (event.data) payload = event.data.json();
+  } catch (e) {
+    // Malformed payload — fall back to the generic message above rather than failing silently.
+  }
+  event.waitUntil(
+    self.registration.showNotification(payload.title, {
+      body: payload.body,
+      icon: '/icons/icon-192.png',
+      badge: '/icons/icon-192.png',
+      tag: 'blaze-break-pulse', // Replaces any existing pulse notification rather than stacking duplicates.
+    })
+  );
+});
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window' }).then((clientList) => {
+      for (const client of clientList) {
+        if ('focus' in client) return client.focus();
+      }
+      if (self.clients.openWindow) return self.clients.openWindow('/');
+    })
+  );
+});

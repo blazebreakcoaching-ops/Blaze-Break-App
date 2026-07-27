@@ -121,6 +121,20 @@ service cloud.firestore {
         allow write: if false;
       }
 
+      // push_subscriptions holds Web Push endpoint/key data (effectively a
+      // credential for sending this device a notification) — never client-
+      // readable, written only via the dedicated /api/push/subscribe endpoint.
+      match /push_subscriptions/{subId} {
+        allow read, write: if false;
+      }
+
+      // pulse_status is what the scheduled push-notification check reads —
+      // no reason for the client to read this back directly since it's a
+      // copy of data already computed client-side.
+      match /pulse_status/{docId} {
+        allow read, write: if false;
+      }
+
       // ---- PHASE 2B COLLECTIONS ----
       
       // A. recovery/fingerprint

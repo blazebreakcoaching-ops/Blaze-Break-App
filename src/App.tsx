@@ -144,6 +144,7 @@ const CalendarDefenseView = lazy(() => import("./components/CalendarDefenseView.
 import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip as RechartsTooltip, CartesianGrid } from "recharts";
 import { secureApiFetch } from "./lib/secure-api";
 import { syncCalendarSignal } from "./lib/calendar-signals";
+import { subscribeToPushNotifications, reportPulseStatus } from "./lib/push-notifications";
 
 type AppFlow = "landing" | "onboarding" | "app" | "trust-centre" | "admin";
 
@@ -2201,9 +2202,26 @@ export default function App() {
   // Pulse Alert System
   useEffect(() => {
     if ("Notification" in window && Notification.permission !== "granted" && Notification.permission !== "denied") {
-      Notification.requestPermission();
+      Notification.requestPermission().then((permission) => {
+        if (permission === "granted") {
+          // Real push subscription — this is what lets a notification reach
+          // this person even after they've stopped opening the app, unlike
+          // the foreground-only notification below which only fires while
+          // this tab is already open and looking at it.
+          subscribeToPushNotifications();
+        }
+      });
     }
   }, []);
+
+  useEffect(() => {
+    // The server-side scheduled check (low score sustained, or check-in gone
+    // stale) has nothing to look at without this — report on every score
+    // computation so that check reflects reality, not stale data.
+    if (user) {
+      reportPulseStatus(stats.recoveryScore);
+    }
+  }, [stats.recoveryScore, user]);
 
   useEffect(() => {
     if ("Notification" in window && Notification.permission === "granted") {
