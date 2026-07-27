@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { motion, AnimatePresence } from 'motion/react';
+import { motion, AnimatePresence, useDragControls } from 'motion/react';
 import { X, PhoneCall, MessageCircle, LifeBuoy } from 'lucide-react';
 import { cn } from '../lib/utils';
 
@@ -68,6 +68,8 @@ interface CrisisSupportModalProps {
 // Reachable from anywhere in the app via a persistent button that isn't
 // nested inside any tab — see the floating button rendered in App.tsx.
 export const CrisisSupportModal = ({ isOpen, onClose }: CrisisSupportModalProps) => {
+  const dragControls = useDragControls();
+
   useEffect(() => {
     if (!isOpen) return;
     const onKeyDown = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
@@ -94,8 +96,20 @@ export const CrisisSupportModal = ({ isOpen, onClose }: CrisisSupportModalProps)
             exit={{ opacity: 0, y: 12, scale: 0.98 }}
             transition={{ duration: 0.2 }}
             onClick={(e) => e.stopPropagation()}
+            drag="y"
+            dragControls={dragControls}
+            dragListener={false}
+            dragConstraints={{ top: 0, bottom: 0 }}
+            dragElastic={{ top: 0, bottom: 0.6 }}
+            onDragEnd={(_, info) => { if (info.offset.y > 100) onClose(); }}
             className="card w-full max-w-md max-h-[85vh] overflow-y-auto bg-card border border-border shadow-2xl p-6 space-y-6"
           >
+            <div
+              onPointerDown={(e) => dragControls.start(e)}
+              className="sm:hidden -mt-2 -mx-2 mb-2 flex justify-center py-2 cursor-grab active:cursor-grabbing touch-none"
+            >
+              <div className="w-10 h-1.5 rounded-full bg-border" />
+            </div>
             <div className="flex items-start justify-between gap-4">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-xl bg-primary/10 text-primary flex items-center justify-center shrink-0">

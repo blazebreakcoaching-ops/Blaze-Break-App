@@ -10,6 +10,7 @@ import {
   LifeBuoy,
   X,
   Plus,
+  RefreshCw,
   MapPin,
   BatteryFull,
   MessageSquare,
@@ -1042,6 +1043,47 @@ const HomeSection = ({
   const [rightOrder, setRightOrder] = useState<string[]>(initialLayout.right);
   const [hiddenWidgets, setHiddenWidgets] = useState<string[]>(initialLayout.hidden);
   const [showAddWidgetMenu, setShowAddWidgetMenu] = useState(false);
+  const [homeRefreshKey, setHomeRefreshKey] = useState(0);
+  const [isPullRefreshing, setIsPullRefreshing] = useState(false);
+  const [pullDistance, setPullDistance] = useState(0);
+  const pullStartYRef = useRef<number | null>(null);
+  const PULL_TRIGGER_THRESHOLD = 70;
+  const PULL_MAX_DISTANCE = 90;
+
+  // Raw touch events rather than Framer Motion's drag prop — this screen
+  // already has native HTML5 drag-and-drop for widget reordering, and a
+  // pointer-based drag gesture layered on top would fight it. Gating on
+  // window.scrollY <= 0 at touch-start is what makes this only trigger at
+  // the very top of the page instead of hijacking normal scrolling anywhere
+  // else on a screen with 16 possible widgets.
+  const handleHomeTouchStart = (e: React.TouchEvent) => {
+    if (window.scrollY <= 0 && !isPullRefreshing) {
+      pullStartYRef.current = e.touches[0].clientY;
+    }
+  };
+  const handleHomeTouchMove = (e: React.TouchEvent) => {
+    if (pullStartYRef.current === null) return;
+    const delta = e.touches[0].clientY - pullStartYRef.current;
+    if (delta > 0 && window.scrollY <= 0) {
+      setPullDistance(Math.min(delta * 0.5, PULL_MAX_DISTANCE));
+    } else {
+      pullStartYRef.current = null;
+      setPullDistance(0);
+    }
+  };
+  const handleHomeTouchEnd = () => {
+    if (pullDistance >= PULL_TRIGGER_THRESHOLD) {
+      setIsPullRefreshing(true);
+      setTimeout(() => {
+        setHomeRefreshKey((k) => k + 1);
+        setIsPullRefreshing(false);
+        setPullDistance(0);
+      }, 700); // A brief, deliberate delay — an instant refresh reads as broken, not fast.
+    } else {
+      setPullDistance(0);
+    }
+    pullStartYRef.current = null;
+  };
 
   // Persist every change so layout and hide/show choices actually stick.
   useEffect(() => {
@@ -1267,14 +1309,14 @@ const HomeSection = ({
     daily_1: <DailyGoal shipStage={shipStage} key="daily_1" />,
     hero: (
       <SmartCard 
-        id="hero" 
-        key="hero"
+        id="hero"
+        key={`hero-${homeRefreshKey}`}
         title="Your Recovery Score"
         energyDrain="high"
-        onDragStart={handleDragStart} 
-        onDragOver={handleDragOver} 
+        onDragStart={handleDragStart}
+        onDragOver={handleDragOver}
         onDrop={(e, id) => handleDrop(e, id, 'left')}
-        className="p-12 min-h-[380px] bg-card rounded-[1.5rem] border border-white/10 shadow-2xl flex flex-col justify-between"
+        className="p-6 sm:p-8 md:p-12 min-h-[380px] bg-card rounded-[1.5rem] border border-white/10 shadow-2xl flex flex-col justify-between"
       >
         <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/noise-lines.png')] opacity-10 pointer-events-none" />
         <div className="absolute top-0 right-0 w-96 h-96 bg-accent/10 rounded-full blur-[100px] pointer-events-none z-0" />
@@ -1321,9 +1363,9 @@ const HomeSection = ({
                 </div>
               ) : (
                 <div className="group/tooltip relative inline-flex items-baseline">
-                  <h1 className="cursor-help text-8xl font-serif font-bold tracking-tighter text-text-main">
+                  <h1 className="cursor-help text-5xl sm:text-6xl md:text-8xl font-serif font-bold tracking-tighter text-text-main">
                     {recoveryScore}
-                    <span className="text-4xl font-light opacity-30 ml-2">
+                    <span className="text-2xl sm:text-3xl md:text-4xl font-light opacity-30 ml-2">
                       /100
                     </span>
                   </h1>
@@ -1507,7 +1549,7 @@ const HomeSection = ({
       </SmartCard>
     ),
     gamification: <GamificationDisplay key="gamification" stats={stats} fingerprint={fingerprint} shipStage={shipStage} pulseHistory={pulseHistory} />,
-    archetypeBlend: <ArchetypeBlend key="archetypeBlend" />,
+    archetypeBlend: <ArchetypeBlend key={`archetypeBlend-${homeRefreshKey}`} />,
     somaticAccelerator: (
       <SomaticCheckInCard
         key="somaticAccelerator"
@@ -1805,8 +1847,23 @@ const HomeSection = ({
   };
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-3 gap-10 pb-20">
-      <div 
+    <div
+      onTouchStart={handleHomeTouchStart}
+      onTouchMove={handleHomeTouchMove}
+      onTouchEnd={handleHomeTouchEnd}
+      className="relative"
+    >
+      <div
+        className="flex justify-center overflow-hidden transition-none"
+        style={{ height: pullDistance > 0 || isPullRefreshing ? Math.max(pullDistance, isPullRefreshing ? 50 : 0) : 0 }}
+      >
+        <div className="flex items-center justify-center text-primary" style={{ opacity: Math.min(pullDistance / PULL_TRIGGER_THRESHOLD, 1) }}>
+          <RefreshCw className={cn("w-5 h-5", isPullRefreshing && "animate-spin", !isPullRefreshing && pullDistance >= PULL_TRIGGER_THRESHOLD && "scale-110")} />
+        </div>
+      </div>
+      <div style={{ transform: `translateY(${isPullRefreshing ? 0 : pullDistance}px)`, transition: pullStartYRef.current === null ? "transform 0.2s ease-out" : "none" }}>
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-10 pb-20">
+      <div
         className="lg:col-span-2 flex flex-col gap-10 min-h-[500px]"
         onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; }}
         onDrop={(e) => {
@@ -1902,6 +1959,9 @@ const HomeSection = ({
             </motion.div>
           ))}
         </AnimatePresence>
+      </div>
+
+      </div>
       </div>
 
       {/* 'Quick Note' Floating Trigger Input Field */}
