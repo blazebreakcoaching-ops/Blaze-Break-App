@@ -90,6 +90,15 @@ const speechLimiter = rateLimit({
   validate: { xForwardedForHeader: false, default: true }
 });
 
+const smsLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10, // SMS costs real money per message and could enable harassment if abused — stricter than any other endpoint.
+  message: { error: 'Too many messaging requests, please try again later.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+  validate: { xForwardedForHeader: false, default: true }
+});
+
 app.use('/api/', apiLimiter);
 
 // Global Error Handler for safe JSON error returns (e.g. 413 Payload Too Large)
@@ -106,7 +115,14 @@ app.use((err: any, req: express.Request, res: express.Response, next: express.Ne
 // Firebase App Check Middleware (Enforced Mode)
 const verifyAppCheck = async (req: express.Request, res: express.Response, next: express.NextFunction) => {
   const appCheckToken = req.headers['x-firebase-appcheck'];
-  if (process.env.NODE_ENV !== "production" || appCheckToken === "dev-bypass") {
+  // Deliberately NOT checking for a magic bypass string here anymore — a
+  // fixed string is visible in the shipped client bundle to any user who
+  // opens devtools, so anyone could send it directly to the API regardless
+  // of NODE_ENV, bypassing App Check entirely even in real production. The
+  // only thing that should ever skip this check is genuinely not being in
+  // production — something only the developer running the server controls,
+  // not something a request header can claim its way into.
+  if (process.env.NODE_ENV !== "production") {
     return next();
   }
 
@@ -227,16 +243,36 @@ Details: ${details || 'No details provided'}
 });
 
 // API routes that use Twilio
-app.post("/api/twilio/send", async (req, res) => {
+const TwilioSendSchema = z.object({
+  to: z.string().regex(/^\+[1-9]\d{6,14}$/, "Phone number must be in E.164 format, e.g. +15551234567"),
+  message: z.string().min(1).max(500),
+  useWhatsapp: z.boolean().optional().default(false),
+}).strict();
+
+// SEVERE FIX: this endpoint previously had zero authentication of any kind —
+// anyone on the internet who found this URL could send arbitrary SMS/WhatsApp
+// messages to arbitrary phone numbers using this app's own Twilio account,
+// at real per-message cost, with no way to trace who did it. It was also
+// completely unused by the frontend (confirmed via a full grep of src/) —
+// pure risk with zero current value. Now: real auth, strict input validation
+// (proper E.164 phone format, message length cap), a dedicated strict rate
+// limit given the real cost per message, and an audit log entry so any use
+// going forward is actually traceable to a real, authenticated user.
+app.post("/api/twilio/send", smsLimiter, verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  const uid = requireAuth(req).uid;
   try {
-    const { to, message, useWhatsapp } = req.body;
+    const parsed = TwilioSendSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: "Invalid request — a valid E.164 phone number and message are required." });
+    }
+    const { to, message, useWhatsapp } = parsed.data;
     const client = initTwilio();
     const fromPhone = process.env.TWILIO_PHONE_NUMBER;
 
     if (!client || !fromPhone) {
-      return res.status(400).json({ 
-        success: false, 
-        error: "Messaging is unavailable because the support messaging system is not configured." 
+      return res.status(400).json({
+        success: false,
+        error: "Messaging is unavailable because the support messaging system is not configured."
       });
     }
 
@@ -246,9 +282,11 @@ app.post("/api/twilio/send", async (req, res) => {
       to: useWhatsapp ? `whatsapp:${to}` : to
     });
 
+    await logAutopilotAction(uid, "sms_send", { to, useWhatsapp }, true);
     res.json({ success: true, sid: m.sid });
   } catch (error: any) {
     console.error("Twilio error:", error);
+    await logAutopilotAction(uid, "sms_send", { error: error.message }, false);
     res.status(500).json({ error: error.message });
   }
 });
@@ -2962,7 +3000,11 @@ if (process.env.TEST_MODE !== 'true') {
       const idToken = url.searchParams.get("token");
       const appCheckToken = url.searchParams.get("appCheckToken");
 
-      if (process.env.NODE_ENV === "production" && appCheckToken !== "dev-bypass") {
+      // Same fix as the main verifyAppCheck middleware: no magic bypass
+      // string here, since anyone can read it out of the shipped client
+      // bundle and send it directly regardless of environment. Only
+      // genuinely running outside production skips this check.
+      if (process.env.NODE_ENV === "production") {
         if (!appCheckToken) {
           clientWs.send(JSON.stringify({ error: "Missing App Check token." }));
           return clientWs.close();

@@ -16,7 +16,7 @@ interface SlackMember {
 
 interface AutopilotAction {
   id: string;
-  action: 'slack_send' | 'slack_dnd' | 'slack_status' | 'calendar_decline';
+  action: 'slack_send' | 'slack_dnd' | 'slack_status' | 'calendar_decline' | 'sms_send';
   detail: Record<string, any>;
   success: boolean;
   takenAt: string;
@@ -366,6 +366,7 @@ const describeAutopilotAction = (a: AutopilotAction): string => {
     if (action === 'slack_dnd') return `Failed to set Do Not Disturb${detail.minutes ? ` for ${detail.minutes} minutes` : ''}.`;
     if (action === 'slack_status') return `Failed to update your Slack status.`;
     if (action === 'calendar_decline') return `Failed to decline a meeting.`;
+    if (action === 'sms_send') return `Failed to send a text message.`;
     return 'An action failed.';
   }
   switch (action) {
@@ -377,6 +378,8 @@ const describeAutopilotAction = (a: AutopilotAction): string => {
       return `Updated your Slack status to "${detail.statusText}".`;
     case 'calendar_decline':
       return `Declined "${detail.eventSummary || 'a meeting'}".`;
+    case 'sms_send':
+      return `Sent a text message${detail.to ? ` to ${detail.to}` : ''}.`;
     default:
       return 'Action completed.';
   }
