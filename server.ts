@@ -9,6 +9,8 @@ import twilio from "twilio";
 import { WebSocketServer } from 'ws';
 import webpush from 'web-push';
 import { NOVA_KNOWLEDGE_BASE } from './server-knowledge';
+import { computeDimensionScores, computeArchetypeScores, pickDominantProfile, computeBlend } from './archetype-scoring';
+import { SendMessageSchema, SetDndSchema, SetStatusSchema } from './boundary-autopilot-schemas';
 import { initializeApp, getApps } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
@@ -656,59 +658,26 @@ app.post("/api/nova/diagnose", verifyAppCheck, authenticateFirebaseUser, async (
     }
     const { answers, letNovaLearn } = parsedParams.data;
 
-    
-    // Map answer values to numbers if they are passed as strings (for old/legacy support)
-    const mapToVal = (val: any) => {
-      if (typeof val === 'number') return val;
-      if (!val) return 2;
-      const valStr = String(val).toLowerCase();
-      if (valStr.includes('rarely') || valStr.includes('very little') || valStr.includes('never') || valStr.includes('not at all') || valStr.includes('fully') || valStr.includes('comfortable') || valStr.includes('hold my line')) return 1;
-      if (valStr.includes('sometimes') || valStr.includes('some') || valStr.includes('occasionally') || valStr.includes('vaguely') || valStr.includes('flinch') || valStr.includes('moderate') || valStr.includes('restless') || valStr.includes('fading')) return 2;
-      if (valStr.includes('most days') || valStr.includes('significant') || valStr.includes('noticeably') || valStr.includes('most nights') || valStr.includes('often') || valStr.includes('resentfully') || valStr.includes('simmer') || valStr.includes('guilt') || valStr.includes('disconnection') || valStr.includes('disconnected') || valStr.includes('severe')) return 3;
-      if (valStr.includes('every waking hour') || valStr.includes('entire') || valStr.includes('constantly') || valStr.includes('jar') || valStr.includes('permanent') || valStr.includes('panic') || valStr.includes('prioritize') || valStr.includes('paralysis') || valStr.includes('crisis')) return 4;
-      return 2; // default fallback
-    };
+    const dims = computeDimensionScores(answers);
+    const {
+      workload: workloadScore,
+      boundaries: boundariesScore,
+      peoplePleasing: peoplePleasingScore,
+      guilt: guiltScore,
+      sleep: sleepScore,
+      emotionalOverload: emotionalScore,
+      meaning: meaningScore,
+      selfDoubt: selfDoubtScore,
+      delegationControl: delegationControlScore,
+      maskingLoad: maskingLoadScore,
+      caregivingLoad: caregivingLoadScore,
+      crisisDependency: crisisDependencyScore,
+      emotionalPerformance: emotionalPerformanceScore,
+      responsibilityCreep: responsibilityCreepScore,
+    } = dims;
 
-    const workloadScore = mapToVal(answers.workload);
-    const boundariesScore = mapToVal(answers.boundaries);
-    const peoplePleasingScore = mapToVal(answers.peoplePleasing || answers.identity); // handle legacy identity
-    const guiltScore = mapToVal(answers.guilt || answers.rest); // handle legacy rest
-    const sleepScore = mapToVal(answers.sleep || answers.wired); // handle legacy wired
-    const emotionalScore = mapToVal(answers.emotionalOverload || answers.emotional); // handle legacy emotional
-    const meaningScore = mapToVal(answers.meaning || answers.disconnection); // handle legacy disconnection
-    const selfDoubtScore = mapToVal(answers.selfDoubt);
-    const delegationControlScore = mapToVal(answers.delegationControl);
-    const maskingLoadScore = mapToVal(answers.maskingLoad);
-    const caregivingLoadScore = mapToVal(answers.caregivingLoad);
-    const crisisDependencyScore = mapToVal(answers.crisisDependency);
-    const emotionalPerformanceScore = mapToVal(answers.emotionalPerformance);
-    const responsibilityCreepScore = mapToVal(answers.responsibilityCreep);
-
-    // Subscores for each archetype (coefficients sum to 9 for each, so no
-    // archetype has a scoring advantage purely from its weighting shape)
-    const archScores = {
-      'Founder on Fire': (workloadScore * 3) + (peoplePleasingScore * 1) + (guiltScore * 3) + (sleepScore * 2),
-      'Over-Giver': (peoplePleasingScore * 3) + (boundariesScore * 3) + (guiltScore * 2) + (workloadScore * 1),
-      'Silent Resenter': (emotionalScore * 3) + (boundariesScore * 3) + (meaningScore * 3),
-      'High-Functioning Exhausted': (workloadScore * 3) + (sleepScore * 3) + (guiltScore * 2) + (meaningScore * 1),
-      'Manager in the Middle': (workloadScore * 2) + (boundariesScore * 3) + (peoplePleasingScore * 2) + (emotionalScore * 1) + (meaningScore * 1),
-      'The Impostor': (selfDoubtScore * 4) + (guiltScore * 2) + (workloadScore * 2) + (meaningScore * 1),
-      'The Perfectionist': (delegationControlScore * 4) + (boundariesScore * 2) + (workloadScore * 2) + (guiltScore * 1),
-      'The Constant Adapter': (maskingLoadScore * 4) + (emotionalScore * 2) + (sleepScore * 2) + (workloadScore * 1),
-      'The Second Shift': (caregivingLoadScore * 4) + (guiltScore * 3) + (sleepScore * 1) + (workloadScore * 1),
-      'Crisis Sprinter': (crisisDependencyScore * 4) + (workloadScore * 2) + (sleepScore * 2) + (guiltScore * 1),
-      'People-Pleasing Performer': (emotionalPerformanceScore * 4) + (peoplePleasingScore * 2) + (guiltScore * 2) + (emotionalScore * 1),
-      'Responsibility Addict': (responsibilityCreepScore * 4) + (boundariesScore * 2) + (workloadScore * 2) + (guiltScore * 1),
-    };
-
-    let profile = 'High-Functioning Exhausted';
-    let maxVal = -1;
-    for (const [k, v] of Object.entries(archScores)) {
-      if (v > maxVal) {
-        maxVal = v;
-        profile = k;
-      }
-    }
+    const archScores = computeArchetypeScores(dims);
+    let profile = pickDominantProfile(archScores);
 
     let description = '';
     let priorities: string[] = [];
@@ -815,13 +784,7 @@ app.post("/api/nova/diagnose", verifyAppCheck, authenticateFirebaseUser, async (
     // Coefficients for every archetype sum to 9 (see archScores above), so raw
     // scores are already on a comparable 9-36 scale — renormalizing the top 3
     // to sum to 100% gives an honest "62% X, 24% Y, 14% Z" style breakdown.
-    const sortedArchetypes = Object.entries(archScores).sort((a, b) => b[1] - a[1]);
-    const topThree = sortedArchetypes.slice(0, 3);
-    const topThreeSum = topThree.reduce((sum, [, score]) => sum + score, 0);
-    const blend = topThree.map(([archProfile, score]) => ({
-      profile: archProfile,
-      percentage: topThreeSum > 0 ? Math.round((score / topThreeSum) * 100) : 0,
-    }));
+    const blend = computeBlend(archScores);
 
     // Persisting a baseline is what makes archetype evolution possible (drift
     // detection needs something durable to drift *from*), which is exactly what
@@ -1688,13 +1651,7 @@ app.get("/api/signals/blend", verifyAppCheck, authenticateFirebaseUser, async (r
       }
     }
 
-    const sortedArchetypes = Object.entries(archScores).sort((a, b) => b[1] - a[1]);
-    const topThree = sortedArchetypes.slice(0, 3);
-    const topThreeSum = topThree.reduce((sum, [, score]) => sum + score, 0);
-    const blend = topThree.map(([profile, score]) => ({
-      profile,
-      percentage: topThreeSum > 0 ? Math.round((score / topThreeSum) * 100) : 0,
-    }));
+    const blend = computeBlend(archScores);
 
     res.json({
       blend,
@@ -1926,13 +1883,6 @@ app.get("/api/boundary-autopilot/slack/users", verifyAppCheck, authenticateFireb
   }
 });
 
-const SendMessageSchema = z.object({
-  recipientId: z.string().min(1),
-  recipientName: z.string().max(200).optional(),
-  message: z.string().min(1).max(2000),
-  confirm: z.literal(true), // Requires the client to explicitly assert intent, not just default to true.
-}).strict();
-
 app.post("/api/boundary-autopilot/slack/send", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
   const uid = requireAuth(req).uid;
   try {
@@ -1969,11 +1919,6 @@ app.post("/api/boundary-autopilot/slack/send", verifyAppCheck, authenticateFireb
   }
 });
 
-const SetDndSchema = z.object({
-  minutes: z.number().int().min(5).max(480),
-  confirm: z.literal(true),
-}).strict();
-
 app.post("/api/boundary-autopilot/slack/dnd", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
   const uid = requireAuth(req).uid;
   try {
@@ -1999,12 +1944,6 @@ app.post("/api/boundary-autopilot/slack/dnd", verifyAppCheck, authenticateFireba
     res.status(500).json({ error: "Could not set Do Not Disturb." });
   }
 });
-
-const SetStatusSchema = z.object({
-  statusText: z.string().max(100),
-  statusEmoji: z.string().max(50).optional().default(""),
-  confirm: z.literal(true),
-}).strict();
 
 app.post("/api/boundary-autopilot/slack/status", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
   const uid = requireAuth(req).uid;

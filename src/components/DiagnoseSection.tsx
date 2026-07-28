@@ -1,6 +1,4 @@
-import { auth } from '../lib/firebase';
 import { cn } from '../lib/utils';
-import { ConnectedBurnoutFingerprint } from './ConnectedRecoveryModules.tsx';
 import { useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import {
@@ -234,22 +232,31 @@ const questions = [
   },
 ];
 
+// The original 7 questions, before two rounds of archetype expansion grew
+// the assessment to 14. These already validate well for the 5 founding
+// archetypes — reusing them as the "quick" path means it's a genuinely
+// accurate read on those 5 patterns, not a diluted guess across all 12.
+const QUICK_CHECK_IDS = ['workload', 'boundaries', 'peoplePleasing', 'guilt', 'sleep', 'emotionalOverload', 'meaning'];
+
 export const DiagnoseView = ({
   onComplete,
 }: {
   onComplete: (f: BurnoutFingerprint) => void;
 }) => {
-  if (auth.currentUser) return <ConnectedBurnoutFingerprint />;
-
+  const [mode, setMode] = useState<'choice' | 'quick' | 'full'>('choice');
   const [step, setStep] = useState(0);
   const [answers, setAnswers] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const activeQuestions = mode === 'quick'
+    ? questions.filter((q) => QUICK_CHECK_IDS.includes(q.id))
+    : questions;
+
   const handleAnswer = (val: number) => {
-    const nextAnswers = { ...answers, [questions[step].id]: val };
+    const nextAnswers = { ...answers, [activeQuestions[step].id]: val };
     setAnswers(nextAnswers);
-    if (step < questions.length - 1) {
+    if (step < activeQuestions.length - 1) {
       setStep(step + 1);
     } else {
       submitAssessment(nextAnswers);
@@ -276,13 +283,40 @@ export const DiagnoseView = ({
       });
       const data = await res.json();
       if (data.error) throw new Error(data.error);
-      onComplete(data);
+      onComplete({ ...data, wasQuickCheck: mode === 'quick' });
     } catch (err: any) {
       setError(err.message || "Failed to analyze assessment");
     } finally {
       setLoading(false);
     }
   };
+
+  if (mode === 'choice') {
+    return (
+      <div className="max-w-2xl mx-auto py-12 space-y-10 text-center">
+        <div className="space-y-3">
+          <h2 className="text-3xl font-light text-text-main">How much time do you have right now?</h2>
+          <p className="text-text-muted">Either way gets you a real result — the difference is how much of the picture it covers.</p>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <button
+            onClick={() => setMode('quick')}
+            className="p-6 rounded-2xl border border-border bg-card hover:border-primary transition-all text-left space-y-2"
+          >
+            <span className="text-xs font-black uppercase tracking-widest text-primary">Quick Check — ~90 seconds</span>
+            <p className="text-sm text-text-muted leading-relaxed">7 questions. Covers the 5 core burnout patterns — Founder on Fire, Over-Giver, Silent Resenter, Manager in the Middle, High-Functioning Exhausted.</p>
+          </button>
+          <button
+            onClick={() => setMode('full')}
+            className="p-6 rounded-2xl border border-primary bg-primary/5 hover:bg-primary/10 transition-all text-left space-y-2"
+          >
+            <span className="text-xs font-black uppercase tracking-widest text-primary">Full Assessment — ~3-4 minutes</span>
+            <p className="text-sm text-text-muted leading-relaxed">14 questions. Also checks for Impostor Syndrome, Perfectionism, Crisis Dependency, and 4 more patterns — plus your full blend, not just one label.</p>
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   if (loading) {
     return (
@@ -324,15 +358,15 @@ export const DiagnoseView = ({
       <div className="mb-12">
         <div className="flex justify-between items-end mb-4 text-xs uppercase tracking-widest font-black text-text-muted">
           <span>
-            Question {step + 1} of {questions.length}
+            Question {step + 1} of {activeQuestions.length}
           </span>
-          <span>{Math.round(((step + 1) / questions.length) * 100)}%</span>
+          <span>{Math.round(((step + 1) / activeQuestions.length) * 100)}%</span>
         </div>
         <div className="h-1 bg-surface dark:bg-card rounded-full">
           <motion.div
             className="h-full bg-primary"
             initial={{ width: 0 }}
-            animate={{ width: `${((step + 1) / questions.length) * 100}%` }}
+            animate={{ width: `${((step + 1) / activeQuestions.length) * 100}%` }}
           />
         </div>
       </div>
@@ -346,14 +380,14 @@ export const DiagnoseView = ({
           className="space-y-8"
         >
           <span className="text-xs uppercase tracking-widest text-primary font-bold">
-            Leak Category: {questions[step].id.toUpperCase()}
+            Leak Category: {activeQuestions[step].id.toUpperCase()}
           </span>
           <h3 className="text-3xl font-light text-text-main leading-tight">
-            {questions[step].text}
+            {activeQuestions[step].text}
           </h3>
 
           <div className="grid grid-cols-1 gap-4">
-            {questions[step].options.map((option, idx) => (
+            {activeQuestions[step].options.map((option, idx) => (
               <button
                 key={`${option.text}-${idx}`}
                 onClick={() => handleAnswer(option.value)}
@@ -1470,6 +1504,20 @@ export const ResultView = ({
           </div>
         )}
       </div>
+
+      {result.wasQuickCheck && (
+        <div className="max-w-2xl mx-auto p-5 rounded-2xl border border-primary/20 bg-primary/5 flex flex-col sm:flex-row items-center justify-between gap-4 text-center sm:text-left">
+          <p className="text-sm text-text-muted">
+            This was your <span className="font-bold text-text-main">Quick Check</span>, covering the 5 core patterns. Take the Full Assessment to also check for Impostor Syndrome, Perfectionism, and 5 more — plus your complete blend.
+          </p>
+          <button
+            onClick={onRestart}
+            className="shrink-0 px-5 py-2.5 rounded-xl bg-primary text-primary-foreground text-xs font-bold uppercase tracking-widest whitespace-nowrap"
+          >
+            Take Full Assessment
+          </button>
+        </div>
+      )}
 
       {/* Nova AI Coach Assessment Briefing */}
       <div className="bg-card text-text-main rounded-3xl p-8 border border-border shadow-xl relative overflow-hidden group">
