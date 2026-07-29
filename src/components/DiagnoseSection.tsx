@@ -1467,9 +1467,9 @@ export const ResultView = ({
   return (
     <div className="max-w-5xl mx-auto space-y-12 py-12 px-4">
       {/* Archetype Card */}
-      <div className="text-center space-y-6 bg-gradient-to-b from-slate-50 to-white/0 p-8 rounded-3xl border border-border shadow-sm">
-        <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-primary-light text-primary rounded-lg text-xs uppercase tracking-widest font-black">
-          <User className="w-3 h-3" /> Burnout Fingerprint Assigned
+      <div className="text-center space-y-6 bg-card p-8 rounded-xl border border-border">
+        <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-primary-light text-primary rounded-lg text-xs uppercase tracking-widest font-medium">
+          <User className="w-3 h-3" /> Your burnout fingerprint
         </span>
         <h1 className="text-5xl font-light text-text-main tracking-tight">
           {result.profile}
@@ -1520,26 +1520,25 @@ export const ResultView = ({
       )}
 
       {/* Nova AI Coach Assessment Briefing */}
-      <div className="bg-card text-text-main rounded-3xl p-8 border border-border shadow-xl relative overflow-hidden group">
-        <div className="absolute right-[-10%] top-[-10%] w-72 h-72 bg-primary/20 rounded-full blur-3xl" />
+      <div className="bg-card text-text-main rounded-xl p-8 border border-border relative overflow-hidden group">
         <div className="relative z-10 space-y-4">
           <div className="flex items-center gap-2">
             <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center text-primary-foreground">
               <Sparkles className="w-4 h-4" />
             </div>
-            <span className="text-xs uppercase tracking-widest font-black text-primary">
-              Nova AI Analysis Briefing
+            <span className="text-xs uppercase tracking-widest font-medium text-primary">
+              Nova's analysis
             </span>
           </div>
-          <h3 className="text-2xl font-light">Direct Pattern Diagnosis</h3>
+          <h3 className="text-2xl font-light">What's actually going on</h3>
           <p className="font-serif text-lg leading-relaxed text-text-muted italic">
             "
             {result.analysis ||
-              `Based on your feedback, you are trying to rationalise a structural energy deficit that is biologically unviable. Your metric pattern shows that your baseline stability is leaking through depleted emotional boundaries and hyperarousal loops.`}
+              `Based on what you shared, you're carrying more than you're letting on. Your patterns point to a real, ongoing energy deficit — not a motivation problem, a capacity one. The good news: this is fixable, and that's exactly what we're here to work through together.`}
             "
           </p>
-          <div className="text-xs text-text-muted uppercase tracking-widest font-black">
-            - Provocative Performance Coach, Nova
+          <div className="text-xs text-text-muted uppercase tracking-widest font-medium">
+            — Nova
           </div>
         </div>
       </div>
@@ -1549,10 +1548,10 @@ export const ResultView = ({
         <div className="space-y-6">
           <div className="flex items-center justify-between border-b border-border pb-3">
             <h3 className="text-xl font-light text-text-main">
-              Your Energy Leaks Metric
+              Your energy leaks
             </h3>
-            <span className="text-xs text-text-muted font-bold uppercase tracking-widest">
-              Scale: 1 (Safe) to 4 (Red Alert)
+            <span className="text-xs text-text-muted font-medium uppercase tracking-widest">
+              Scale: 1 (steady) to 4 (needs attention)
             </span>
           </div>
 
@@ -1615,8 +1614,8 @@ export const ResultView = ({
       )}
 
       {/* Burnout Breakdown Map (Enhanced Insights) */}
-      <div className="space-y-6 bg-surface dark:bg-card border border-border rounded-3xl p-8 shadow-sm">
-        <h3 className="text-2xl font-display font-bold text-text-main border-b border-border pb-4 flex items-center gap-3">
+      <div className="space-y-6 bg-surface dark:bg-card border border-border rounded-xl p-8">
+        <h3 className="text-2xl font-display font-medium text-text-main border-b border-border pb-4 flex items-center gap-3">
           <Compass className="w-6 h-6 text-primary" /> Burnout Breakdown Map
         </h3>
 
@@ -1678,15 +1677,12 @@ export const ResultView = ({
       </div>
 
       {/* Interactive Personalized Recovery Plan */}
-      <div className="card space-y-8 border-primary/30 shadow-xl shadow-primary/5 bg-card text-text-main relative overflow-hidden">
-        <div className="absolute top-0 right-0 w-80 h-80 bg-primary/5 rounded-full blur-3xl opacity-30 pointer-events-none" />
-        <div className="absolute bottom-0 left-0 w-60 h-60 bg-success/5 rounded-full blur-3xl opacity-20 pointer-events-none" />
-        
+      <div className="card space-y-8 border border-border bg-card text-text-main relative overflow-hidden">
         <div className="relative z-10 space-y-6">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-border pb-4">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-primary text-primary-foreground flex items-center justify-center font-bold shadow-lg shadow-primary/30">
-                <BookOpen className="w-5 h-5 animate-pulse" />
+              <div className="w-10 h-10 rounded-lg bg-primary text-primary-foreground flex items-center justify-center font-bold">
+                <BookOpen className="w-5 h-5" />
               </div>
               <div>
                 <h3 className="text-2xl font-display font-bold tracking-tight text-text-main">Personalized Recovery Plan</h3>
@@ -1821,12 +1817,12 @@ export const ResultView = ({
       </div>
 
       {/* Energy Budget Navigation */}
-      <div className="card bg-surface dark:bg-card p-8 border border-border rounded-3xl flex flex-col md:flex-row items-center justify-between gap-6">
+      <div className="card bg-surface dark:bg-card p-8 border border-border rounded-xl flex flex-col md:flex-row items-center justify-between gap-6">
         <div className="space-y-1">
           <h4 className="text-lg font-bold text-text-main">
             Next Step: Pillar 2 (Rebuild Energy)
           </h4>
-          <p className="text-text-muted text-sm italic">
+          <p className="text-text-muted text-sm font-serif italic">
             Nova has mapped this diagnostics profile to a baseline daily Energy
             Budget.
           </p>
