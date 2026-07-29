@@ -530,8 +530,9 @@ const Sidebar = ({
         )}
         onClick={() => setActiveTab("home")}
       >
-        <div className="w-10 h-10 bg-primary rounded-xl flex items-center justify-center text-surface shadow-xl shadow-primary/20 group-hover:scale-105 transition-all duration-500 shrink-0">
-          <Sparkles className="w-5 h-5" />
+        <div className="w-10 h-10 flex items-center justify-center shrink-0 group-hover:scale-105 transition-all duration-500">
+          <img src="/brand/flame-mark-light.png" alt="Blaze Break" className="w-10 h-10 dark:hidden" />
+          <img src="/brand/flame-mark-dark.png" alt="Blaze Break" className="w-10 h-10 hidden dark:block" />
         </div>
         <AnimatePresence>
           {!isCollapsed && (
