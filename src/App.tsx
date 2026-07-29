@@ -1451,15 +1451,15 @@ const HomeSection = ({
       </div>
     ),
     trends: (
-      <SmartCard id="trends" key="trends" title="Recovery Trends" energyDrain="medium" onDragStart={handleDragStart} onDragOver={handleDragOver} onDrop={(e, id) => handleDrop(e, id, 'left')} className="p-6">
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6">
+      <SmartCard id="trends" key="trends" title="Recovery Trends" energyDrain="medium" onDragStart={handleDragStart} onDragOver={handleDragOver} onDrop={(e, id) => handleDrop(e, id, 'left')} className="p-6 rounded-xl border border-border">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6 pb-5 border-b border-border">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center text-primary">
-              <History className="w-5 h-5" />
+            <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center text-primary">
+              <History className="w-4 h-4" />
             </div>
             <div>
-              <h3 className="text-lg font-bold text-text-main line-clamp-1">30-Day Recovery Pulse History</h3>
-              <p className="text-xs uppercase font-black tracking-widest text-text-muted">Long-Term Burnout Pattern Analysis</p>
+              <h3 className="text-base font-medium text-text-main line-clamp-1">30-day recovery history</h3>
+              <p className="text-[11px] uppercase font-medium tracking-widest text-text-muted">Long-term pattern</p>
             </div>
           </div>
         </div>
@@ -1468,19 +1468,19 @@ const HomeSection = ({
             <AreaChart data={pulseHistory} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
               <defs>
                 <linearGradient id="colorScore" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#4f46e5" stopOpacity={0.3}/>
-                  <stop offset="95%" stopColor="#4f46e5" stopOpacity={0}/>
+                  <stop offset="5%" stopColor="#ea580c" stopOpacity={0.25}/>
+                  <stop offset="95%" stopColor="#ea580c" stopOpacity={0}/>
                 </linearGradient>
               </defs>
-              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#334155" opacity={0.4} />
-              <XAxis dataKey="date" tick={{ fill: '#64748b', fontSize: 10 }} axisLine={false} tickLine={false} minTickGap={30} />
-              <YAxis tick={{ fill: '#64748b', fontSize: 10 }} axisLine={false} tickLine={false} domain={[0, 100]} />
-              <RechartsTooltip 
-                contentStyle={{ backgroundColor: '#0f172a', border: '1px solid #1e293b', borderRadius: '12px' }}
-                itemStyle={{ color: '#fff', fontSize: '12px', fontWeight: 'bold' }}
-                formatter={(value: number) => [`${value} CR`, 'Score']}
+              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#a8a29e" opacity={0.25} />
+              <XAxis dataKey="date" tick={{ fill: '#a8a29e', fontSize: 10 }} axisLine={false} tickLine={false} minTickGap={30} />
+              <YAxis tick={{ fill: '#a8a29e', fontSize: 10 }} axisLine={false} tickLine={false} domain={[0, 100]} />
+              <RechartsTooltip
+                contentStyle={{ backgroundColor: '#1c1917', border: '1px solid #3a3532', borderRadius: '8px' }}
+                itemStyle={{ color: '#fff', fontSize: '12px', fontWeight: 500 }}
+                formatter={(value: number) => [`${value}`, 'Score']}
               />
-              <Area type="monotone" dataKey="score" stroke="#4f46e5" strokeWidth={3} fillOpacity={1} fill="url(#colorScore)" activeDot={{ r: 6 }} />
+              <Area type="monotone" dataKey="score" stroke="#ea580c" strokeWidth={2} fillOpacity={1} fill="url(#colorScore)" activeDot={{ r: 5 }} />
             </AreaChart>
           </ResponsiveContainer>
         </div>
@@ -1523,22 +1523,22 @@ const HomeSection = ({
       </SmartCard>
     ),
     hub: (
-      <SmartCard id="hub" key="hub" title="Recovery Hub" energyDrain="medium" onDragStart={handleDragStart} onDragOver={handleDragOver} onDrop={(e, id) => handleDrop(e, id, 'left')} className="cursor-pointer">
-        <div className="flex items-center gap-10" onClick={onEnergyRequest}>
-          <div className="w-24 h-24 glass rounded-2xl flex items-center justify-center text-primary shadow-xl group-hover:scale-105 transition-all duration-700">
-            <StageIcon className="w-10 h-10" />
+      <SmartCard id="hub" key="hub" title="Recovery Hub" energyDrain="medium" onDragStart={handleDragStart} onDragOver={handleDragOver} onDrop={(e, id) => handleDrop(e, id, 'left')} className="cursor-pointer rounded-xl border border-border p-6">
+        <div className="flex items-center gap-6 sm:gap-10" onClick={onEnergyRequest}>
+          <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-xl bg-primary/10 flex items-center justify-center text-primary shrink-0">
+            <StageIcon className="w-8 h-8" />
           </div>
-          <div className="space-y-2 flex-1 text-left">
-            <span className="tag">Recovery Mode Enabled</span>
-            <h2 className="text-3xl font-display font-bold text-text-main tracking-tight">
-              Active Repatterning: {shipStage}
+          <div className="space-y-2 flex-1 text-left min-w-0">
+            <span className="text-[11px] font-medium uppercase tracking-widest text-primary">Recovery mode enabled</span>
+            <h2 className="text-2xl font-display font-medium text-text-main tracking-tight">
+              Active repatterning: {shipStage}
             </h2>
-            <p className="text-text-muted text-lg font-medium ">
+            <p className="text-text-muted text-base font-serif italic">
               "Your recovery is not a suggestion. It is a biological prerequisite for the coming cycle."
             </p>
           </div>
-          <button className="w-14 h-14 rounded-full glass flex items-center justify-center text-primary hover:bg-primary hover:text-surface transition-all duration-500 mr-4">
-            <ChevronRight className="w-6 h-6" />
+          <button className="w-11 h-11 rounded-full border border-border flex items-center justify-center text-text-muted hover:text-primary hover:border-primary transition-colors shrink-0">
+            <ChevronRight className="w-5 h-5" />
           </button>
         </div>
       </SmartCard>
@@ -1557,26 +1557,26 @@ const HomeSection = ({
     daily: <DailyGoal key="daily" shipStage={shipStage} />,
     micro: <MicroInterventions key="micro" shipStage={shipStage} id="micro" onDragStart={handleDragStart} onDragOver={handleDragOver} onDrop={(e, id) => handleDrop(e, id, 'left')} />,
     directive: (
-      <SmartCard id="directive" key="directive" title="Nova Directive" energyDrain="high" onDragStart={handleDragStart} onDragOver={handleDragOver} onDrop={(e, id) => handleDrop(e, id, 'right')} className="glass border-primary/20 p-6">
-        <div className="relative z-10 space-y-8">
-          <div className="flex items-center justify-between">
+      <SmartCard id="directive" key="directive" title="Nova's Suggestion" energyDrain="high" onDragStart={handleDragStart} onDragOver={handleDragOver} onDrop={(e, id) => handleDrop(e, id, 'right')} className="rounded-xl border border-border p-6">
+        <div className="relative z-10 space-y-6">
+          <div className="flex items-center justify-between pb-5 border-b border-border">
             <div className="flex items-center gap-3">
-              <div className="w-2 h-2 rounded-full bg-primary animate-ping"></div>
-              <h3 className="text-xs font-black uppercase tracking-widest text-text-main">Today's Focus</h3>
+              <div className="w-2 h-2 rounded-full bg-primary"></div>
+              <h3 className="text-[11px] font-medium uppercase tracking-widest text-text-main">Today's focus</h3>
             </div>
-            <div className="tag bg-warning/20 text-warning border border-warning/20 shadow-sm">+50 ENERGY</div>
+            <span className="text-[11px] font-mono text-text-muted">+50</span>
           </div>
-          <div className="relative">
-            <p className="text-xl font-display font-bold text-text-main leading-tight tracking-tight italic">
-              "Diagnostic Analysis Complete. Your single biggest energy leak is unstructured ad-hoc meetings. They account for nearly 45% of your total neural load this cycle."
+          <div>
+            <p className="text-lg font-serif italic text-text-main leading-snug">
+              "Your single biggest energy leak is unstructured ad-hoc meetings. They account for nearly 45% of your total load this cycle."
             </p>
-            <div className="mt-8 p-6 bg-primary/5 rounded-3xl border border-primary/10">
-              <span className="text-xs font-black text-primary uppercase tracking-[0.2em] block mb-3">Today's Focus</span>
-              <p className="text-sm font-semibold text-text-main tracking-tight">Rehearse the 'I need to push this' script before the 4 PM sync to start patching this energy leak.</p>
+            <div className="mt-6 p-5 bg-surface rounded-lg border border-border">
+              <span className="text-[11px] font-medium text-text-muted uppercase tracking-widest block mb-2">Today's focus</span>
+              <p className="text-sm font-medium text-text-main">Rehearse the "I need to push this" script before the 4 PM sync to start patching this energy leak.</p>
             </div>
           </div>
-          <button onClick={onChatRequest} className="w-full btn-primary py-4 shadow-primary/30 flex items-center justify-center gap-2 group transition-all">
-            <MessageSquare className="w-5 h-5" />
+          <button onClick={onChatRequest} className="w-full btn-primary py-3.5 flex items-center justify-center gap-2 group transition-all">
+            <MessageSquare className="w-4 h-4" />
             <span>Connect with Nova</span>
             <ArrowRight className="w-4 h-4 opacity-70 group-hover:translate-x-1 transition-transform" />
           </button>
