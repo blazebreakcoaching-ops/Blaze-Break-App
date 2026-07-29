@@ -345,7 +345,7 @@ export const DiagnoseView = ({
         <h3 className="font-display text-2xl font-bold">
           Something went wrong
         </h3>
-        <p className="font-serif text-lg opacity-60">{error}</p>
+        <p className="font-display text-lg opacity-60">{error}</p>
         <button onClick={() => setStep(0)} className="btn-primary bg-destructive">
           Try Again
         </button>

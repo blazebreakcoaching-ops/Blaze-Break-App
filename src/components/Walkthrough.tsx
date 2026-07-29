@@ -334,7 +334,7 @@ export const Walkthrough = ({
                       <Zap className="w-5 h-5" />
                     </div>
                     <div>
-                      <h4 className="font-serif text-lg font-bold text-text-main">Module A: Boundary Rehearsal</h4>
+                      <h4 className="font-display text-lg font-bold text-text-main">Module A: Boundary Rehearsal</h4>
                       <p className="text-[10px] text-text-muted uppercase tracking-widest font-black">Interactive Nova Simulator</p>
                     </div>
                   </div>
@@ -456,7 +456,7 @@ export const Walkthrough = ({
                       <HeartPulse className="w-5 h-5 animate-pulse" />
                     </div>
                     <div>
-                      <h4 className="font-serif text-lg font-bold text-text-main">Module B: Somatic Anxiety Reset</h4>
+                      <h4 className="font-display text-lg font-bold text-text-main">Module B: Somatic Anxiety Reset</h4>
                       <p className="text-[10px] text-text-muted uppercase tracking-widest font-black">Autonomic Nervous Regulation</p>
                     </div>
                   </div>

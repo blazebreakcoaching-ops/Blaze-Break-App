@@ -241,7 +241,7 @@ export const AnxietyResetMode = ({ onAwardPoints, onNavigate }: AnxietyResetMode
                 <HeartPulse className="w-6 h-6 animate-pulse" />
               </div>
               <div>
-                <h3 className="font-serif text-2xl font-semibold text-text-main tracking-tight">Anxiety & Overwhelm Reset</h3>
+                <h3 className="font-display text-2xl font-semibold text-text-main tracking-tight">Anxiety & Overwhelm Reset</h3>
                 <span className="text-xs uppercase tracking-widest text-red-500 font-bold">gad_informed_anxiety_support</span>
               </div>
             </div>
@@ -283,7 +283,7 @@ export const AnxietyResetMode = ({ onAwardPoints, onNavigate }: AnxietyResetMode
           >
             <div>
               <span className="text-[10px] font-black uppercase tracking-[0.2em] text-red-500">Step 1 of 5</span>
-              <h4 className="font-serif text-xl font-medium text-text-main mt-1">What's happening in your body or mind right now?</h4>
+              <h4 className="font-display text-xl font-medium text-text-main mt-1">What's happening in your body or mind right now?</h4>
               <p className="text-xs text-text-muted mt-1">Naming the trigger helps disarm the amygdala's automatic panic cycle.</p>
             </div>
 
@@ -326,7 +326,7 @@ export const AnxietyResetMode = ({ onAwardPoints, onNavigate }: AnxietyResetMode
           >
             <div className="text-left">
               <span className="text-[10px] font-black uppercase tracking-[0.2em] text-red-500">Step 2 of 5</span>
-              <h4 className="font-serif text-xl font-medium text-text-main mt-1">Rate the current distress level</h4>
+              <h4 className="font-display text-xl font-medium text-text-main mt-1">Rate the current distress level</h4>
               <p className="text-xs text-text-muted mt-1">A simple scale to anchor where your nervous system is baseline.</p>
             </div>
 
@@ -382,7 +382,7 @@ export const AnxietyResetMode = ({ onAwardPoints, onNavigate }: AnxietyResetMode
           >
             <div>
               <span className="text-[10px] font-black uppercase tracking-[0.2em] text-red-500">Step 3 of 5</span>
-              <h4 className="font-serif text-xl font-medium text-text-main mt-1">Select your de-escalation tool</h4>
+              <h4 className="font-display text-xl font-medium text-text-main mt-1">Select your de-escalation tool</h4>
               <p className="text-xs text-text-muted mt-1">We matched tools to counter your current physiological trigger.</p>
             </div>
 
@@ -453,7 +453,7 @@ export const AnxietyResetMode = ({ onAwardPoints, onNavigate }: AnxietyResetMode
           >
             <div className="flex justify-between items-center border-b border-white/[0.03] pb-4">
               <div>
-                <h4 className="font-serif text-lg font-medium text-text-main">{activeTool.name}</h4>
+                <h4 className="font-display text-lg font-medium text-text-main">{activeTool.name}</h4>
                 <p className="text-xs text-text-muted">Stay here until the arousal spikes begin to taper.</p>
               </div>
               <div className="text-right">
@@ -917,7 +917,7 @@ export const AnxietyResetMode = ({ onAwardPoints, onNavigate }: AnxietyResetMode
           >
             <div className="text-left">
               <span className="text-[10px] font-black uppercase tracking-[0.2em] text-red-500">Step 4 of 5</span>
-              <h4 className="font-serif text-xl font-medium text-text-main mt-1">Rate your intensity now</h4>
+              <h4 className="font-display text-xl font-medium text-text-main mt-1">Rate your intensity now</h4>
               <p className="text-xs text-text-muted mt-1">Check back in. Has your heart rate or mental spinning shifted at all?</p>
             </div>
 
@@ -980,7 +980,7 @@ export const AnxietyResetMode = ({ onAwardPoints, onNavigate }: AnxietyResetMode
                 <Sparkles className="w-6 h-6" />
               </div>
               <div>
-                <h3 className="font-serif text-xl font-semibold text-text-main tracking-tight">De-escalation Stabilized</h3>
+                <h3 className="font-display text-xl font-semibold text-text-main tracking-tight">De-escalation Stabilized</h3>
                 <span className="text-xs uppercase tracking-widest text-emerald-500 font-bold">Secure baseline restored (+50 points earned)</span>
               </div>
             </div>

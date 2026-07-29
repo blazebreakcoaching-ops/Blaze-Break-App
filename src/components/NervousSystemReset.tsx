@@ -775,7 +775,7 @@ export const NervousSystemReset = ({ fingerprint }: NervousSystemResetProps) => 
             <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
             Acute Overwhelm / Somatic Panic Alert
           </div>
-          <h4 className="font-serif text-lg font-medium text-text-main">Experiencing severe anxiety, tight chest, or racing thoughts?</h4>
+          <h4 className="font-display text-lg font-medium text-text-main">Experiencing severe anxiety, tight chest, or racing thoughts?</h4>
           <p className="text-xs text-text-muted max-w-2xl leading-relaxed">
             The standard Breathwork and Grounding tools are below. If you need a fully structured sensory reset path with intensity tracking and interactive de-escalation tools, launch the dedicated Reset Mode.
           </p>

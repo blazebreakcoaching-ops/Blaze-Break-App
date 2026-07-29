@@ -364,7 +364,7 @@ export const AdminDashboard = () => {
         </div>
         
         <div className="space-y-2">
-          <h3 className="text-xl font-serif font-bold text-text-main">Access Denied</h3>
+          <h3 className="text-xl font-display font-bold text-text-main">Access Denied</h3>
           <p className="text-xs text-text-muted uppercase tracking-widest font-black">
             Required: Platform Admin Role
           </p>
@@ -441,7 +441,7 @@ export const AdminDashboard = () => {
       {/* Title Bar */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-white/10 pb-6">
         <div>
-          <h3 className="text-2xl font-serif font-bold text-text-main flex items-center gap-3">
+          <h3 className="text-2xl font-display font-bold text-text-main flex items-center gap-3">
             <ShieldCheck className="w-6 h-6 text-primary" /> Master Super Admin Portal
           </h3>
           <p className="text-xs text-text-muted mt-1 uppercase tracking-widest font-black">
@@ -625,7 +625,7 @@ export const AdminDashboard = () => {
                   exit={{ opacity: 0, height: 0 }}
                   className="p-6 bg-primary/5 rounded-2xl border border-primary/20 space-y-4 overflow-hidden"
                 >
-                  <h4 className="font-serif text-lg font-bold text-text-main flex items-center gap-2">
+                  <h4 className="font-display text-lg font-bold text-text-main flex items-center gap-2">
                     <Key className="w-4 h-4 text-primary" /> Modify Custom User Claims
                   </h4>
                   <p className="text-xs text-text-muted">
@@ -739,7 +739,7 @@ export const AdminDashboard = () => {
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
             {/* Invite Form */}
             <div className="card p-6 bg-surface dark:bg-card border border-border rounded-2xl h-fit space-y-6">
-              <h4 className="font-serif text-lg font-bold text-text-main flex items-center gap-2">
+              <h4 className="font-display text-lg font-bold text-text-main flex items-center gap-2">
                 <UserPlus className="w-5 h-5 text-primary" /> Promote Admin Account
               </h4>
               <p className="text-xs text-text-muted leading-relaxed">
@@ -971,7 +971,7 @@ export const AdminDashboard = () => {
                   <div className="p-2.5 bg-red-500/10 text-red-400 rounded-xl w-fit">
                     <Heart className="w-5 h-5 fill-current" />
                   </div>
-                  <h4 className="font-serif text-lg font-bold text-text-main">Somatic Efficacy Insight</h4>
+                  <h4 className="font-display text-lg font-bold text-text-main">Somatic Efficacy Insight</h4>
                   <p className="text-xs text-text-muted leading-relaxed">
                     Based on anonymized telemetry events, <span className="text-text-main font-semibold">"{metrics.mostEffectiveTool}"</span> is the highest-performing tool, causing the largest percentage drops in subjective anxiety.
                   </p>

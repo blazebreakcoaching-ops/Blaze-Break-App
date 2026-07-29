@@ -29,7 +29,7 @@ export const CalendarDefenseView = () => {
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
-          <h2 className="text-3xl font-serif font-bold text-text-main tracking-tight">Calendar Workload Defense</h2>
+          <h2 className="text-3xl font-display font-bold text-text-main tracking-tight">Calendar Workload Defense</h2>
           <p className="text-sm text-text-muted mt-2 font-mono uppercase tracking-widest">Workspace Insight / Overload Warning</p>
         </div>
       </div>

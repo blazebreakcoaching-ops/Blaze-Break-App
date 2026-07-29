@@ -621,7 +621,7 @@ export function FocusZone({ onAwardPoints, isFocusActive, setIsFocusActive, curr
 
                 <div className="space-y-1">
                   <span className="text-[10px] font-black uppercase tracking-[0.25em] text-success font-mono">Focus Session Complete</span>
-                  <h4 className="text-2xl font-serif font-black text-text-main">Fortress Defended</h4>
+                  <h4 className="text-2xl font-display font-black text-text-main">Fortress Defended</h4>
                 </div>
 
                 <p className="text-xs text-text-muted leading-relaxed font-semibold max-w-sm">

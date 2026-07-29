@@ -410,7 +410,7 @@ export const ExecutiveBoardReport = ({
       
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
-          <h2 className="text-3xl font-serif font-bold text-text-main tracking-tight">Executive Board Report</h2>
+          <h2 className="text-3xl font-display font-bold text-text-main tracking-tight">Executive Board Report</h2>
           <p className="text-sm text-text-muted mt-2 font-mono uppercase tracking-widest">Confidential / Biometric & Workload ROI</p>
         </div>
         <div className="flex items-center gap-3 w-full md:w-auto shrink-0">

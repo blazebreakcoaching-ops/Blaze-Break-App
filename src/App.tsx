@@ -1318,45 +1318,41 @@ const HomeSection = ({
         onDragStart={handleDragStart}
         onDragOver={handleDragOver}
         onDrop={(e, id) => handleDrop(e, id, 'left')}
-        className="p-6 sm:p-8 md:p-12 min-h-[380px] bg-card rounded-[1.5rem] border border-white/10 shadow-2xl flex flex-col justify-between"
+        className="p-6 sm:p-8 md:p-10 min-h-[380px] bg-card rounded-xl border border-border flex flex-col justify-between"
       >
-        <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/noise-lines.png')] opacity-10 pointer-events-none" />
-        <div className="absolute top-0 right-0 w-96 h-96 bg-accent/10 rounded-full blur-[100px] pointer-events-none z-0" />
-        <div className="absolute bottom-0 left-0 w-96 h-96 bg-primary/10 rounded-full blur-[100px] pointer-events-none z-0" />
-
-        <div className="relative z-10 space-y-8">
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-white/10 pb-6">
+        <div className="space-y-6">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-border pb-5">
             <div className="flex flex-wrap items-center gap-3">
-              <div className="px-3 py-1 text-xs uppercase font-bold tracking-widest bg-card/50 text-text-main rounded-md border border-text-main/20 shadow-sm backdrop-blur-md">
+              <span className="text-[11px] font-medium uppercase tracking-widest text-text-muted">
                 Nova is here
-              </div>
+              </span>
               <NovaVoiceGuidance stage={shipStage} />
               {hasClaimedDaily && (
-                <motion.div
-                  initial={{ opacity: 0, scale: 0.9 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  className="px-3 py-1 text-xs uppercase font-bold tracking-widest bg-accent/20 text-accent rounded-md border border-accent/20"
+                <motion.span
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  className="text-[11px] font-medium uppercase tracking-widest text-primary"
                 >
-                  Pulse Saved
-                </motion.div>
+                  Pulse saved
+                </motion.span>
               )}
             </div>
             <button
               onClick={onOpenCheckIn}
-              className="text-xs font-bold uppercase tracking-[0.2em] text-text-main hover:text-text-main transition-all underline decoration-accent underline-offset-8"
+              className="text-xs font-medium uppercase tracking-widest text-text-muted hover:text-text-main transition-colors"
             >
               Check in
             </button>
           </div>
-          <div className="space-y-4">
-            <span className="text-xs font-bold uppercase tracking-[0.4em] text-text-muted">
+          <div className="space-y-3 border-b border-border pb-6">
+            <span className="text-[11px] font-medium uppercase tracking-[0.3em] text-text-muted">
               Your Recovery Score
             </span>
             <div className="flex items-center gap-4">
               {stats.streak < 3 ? (
                 <div className="flex flex-col gap-1">
-                  <h1 className="text-4xl font-serif font-bold tracking-tighter text-text-muted italic">
-                    CALCULATING
+                  <h1 className="text-4xl font-mono font-medium tracking-tight text-text-muted">
+                    Calculating
                   </h1>
                   <p className="text-xs text-text-muted">
                     Nova requires a 3-day baseline pattern to establish your
@@ -1365,16 +1361,16 @@ const HomeSection = ({
                 </div>
               ) : (
                 <div className="group/tooltip relative inline-flex items-baseline">
-                  <h1 className="cursor-help text-5xl sm:text-6xl md:text-8xl font-serif font-bold tracking-tighter text-text-main">
+                  <h1 className="cursor-help text-5xl sm:text-6xl md:text-7xl font-mono font-medium tracking-tight text-text-main">
                     {recoveryScore}
-                    <span className="text-2xl sm:text-3xl md:text-4xl font-light opacity-30 ml-2">
+                    <span className="text-xl sm:text-2xl md:text-3xl font-normal text-text-muted ml-2">
                       /100
                     </span>
                   </h1>
-                  
-                  <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-4 px-4 py-3 bg-card text-text-main text-xs font-mono rounded-lg border border-border dark:border-border shadow-xl opacity-0 invisible group-hover/tooltip:opacity-100 group-hover/tooltip:visible transition-all whitespace-nowrap z-50">
+
+                  <div className="absolute left-0 bottom-full mb-4 px-4 py-3 bg-card text-text-main text-xs font-mono rounded-lg border border-border shadow-lg opacity-0 invisible group-hover/tooltip:opacity-100 group-hover/tooltip:visible transition-all whitespace-nowrap z-50">
                     What's shaping this score
-                    <div className="w-full h-px bg-white/20 my-2" />
+                    <div className="w-full h-px bg-border my-2" />
                     <div className="text-text-muted space-y-1">
                       {recoveryScoreFactors.length === 0 ? (
                         <p>Base score — no check-ins logged yet.</p>
@@ -1389,12 +1385,12 @@ const HomeSection = ({
               )}
             </div>
           </div>
-          <p className="text-text-muted text-xl max-w-lg leading-relaxed font-serif">
+          <p className="text-text-muted text-lg max-w-lg leading-relaxed font-display">
             {stats.streak < 3
               ? "Your nervous system requires consistent tracking. Complete your daily pulses to unlock predictive recovery forecasting."
               : '"Your nervous system is carrying recovery debt. '}
             {stats.streak >= 3 && (
-              <span className="text-text-main font-semibold">
+              <span className="text-text-main font-serif italic">
                 Cease the optimization narrative.
               </span>
             )}
@@ -1410,22 +1406,19 @@ const HomeSection = ({
           />
         </div>
 
-        <div className="absolute -right-20 -top-20 w-80 h-80 bg-primary opacity-10 rounded-full blur-[120px] group-hover:opacity-20 transition-all duration-1000" />
-        <div className="absolute right-20 bottom-10 w-40 h-40 bg-accent opacity-5 rounded-full blur-[80px] group-hover:opacity-10 transition-all duration-1000 delay-300" />
-
-        <div className="flex gap-6 mt-12 relative z-10">
+        <div className="flex gap-4 mt-10 pt-6 border-t border-border">
           <button
             onClick={onEnergyRequest}
-            className="btn-primary flex items-center gap-3 px-8"
+            className="btn-primary flex items-center gap-2 px-6"
           >
-            Manage Budget <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
+            Manage Budget <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
           </button>
           {!hasClaimedDaily && (
             <button
               onClick={onClaimDaily}
-              className="px-8 py-3 rounded-2xl bg-surface dark:bg-card/5 border border-border text-text-main font-display font-bold hover:bg-white/10 hover:scale-[1.02] transition-all flex items-center gap-3"
+              className="px-6 py-3 rounded-xl border border-border text-text-main font-display font-medium hover:bg-surface transition-colors flex items-center gap-2"
             >
-              <Trophy className="w-5 h-5 text-warning" /> Claim Pulse
+              <Trophy className="w-4 h-4 text-text-muted" /> Claim Pulse
             </button>
           )}
         </div>
@@ -1510,7 +1503,7 @@ const HomeSection = ({
             <span className="px-2.5 py-0.5 bg-red-500/10 border border-red-500/30 text-red-400 text-[9px] font-black uppercase tracking-wider rounded-full">
               Body Reset
             </span>
-            <h3 className="text-lg font-bold font-serif text-text-main mt-1">Anxiety & Overwhelm Reset</h3>
+            <h3 className="text-lg font-bold font-display text-text-main mt-1">Anxiety & Overwhelm Reset</h3>
             <p className="text-xs text-text-muted max-w-md leading-relaxed">
               Facing work dread, racing thoughts, or panic spikes? Deploy a sensory reset immediately to restore baseline executive safety.
             </p>
@@ -1537,7 +1530,7 @@ const HomeSection = ({
           </div>
           <div className="space-y-2 flex-1 text-left">
             <span className="tag">Recovery Mode Enabled</span>
-            <h2 className="text-3xl font-serif font-bold text-text-main tracking-tight">
+            <h2 className="text-3xl font-display font-bold text-text-main tracking-tight">
               Active Repatterning: {shipStage}
             </h2>
             <p className="text-text-muted text-lg font-medium ">
@@ -1715,7 +1708,7 @@ const HomeSection = ({
                   </div>
                 </div>
                 <div className="text-right">
-                  <span className="text-2xl font-serif font-black text-success tracking-tight">
+                  <span className="text-2xl font-mono font-black text-success tracking-tight">
                     {currentStreakLength} Days
                   </span>
                   <p className="text-[9px] uppercase font-black text-text-muted tracking-widest mt-0.5">Current Streak</p>
