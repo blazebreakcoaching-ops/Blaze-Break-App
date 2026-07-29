@@ -421,29 +421,26 @@ export const RecoveryPlan = ({
           animate={{ opacity: 1, y: 0 }}
           className="card text-center p-6 sm:p-8 md:p-12 bg-card border-dashed border-border flex flex-col items-center justify-center space-y-8 relative overflow-hidden"
         >
-          <div className="absolute top-0 right-0 w-80 h-80 bg-primary/5 rounded-full blur-[100px] pointer-events-none" />
-          <div className="absolute bottom-0 left-0 w-80 h-80 bg-destructive/5 rounded-full blur-[100px] pointer-events-none" />
-          
-          <div className="w-20 h-20 bg-primary/10 text-primary border border-primary/20 rounded-3xl flex items-center justify-center shadow-lg relative">
-            <Lock className="w-10 h-10 animate-pulse" />
-            <span className="absolute -top-1.5 -right-1.5 bg-red-500 text-white text-[9px] font-black uppercase px-2 py-0.5 rounded-full shadow">
+          <div className="w-20 h-20 bg-primary/10 text-primary border border-primary/20 rounded-xl flex items-center justify-center relative">
+            <Lock className="w-9 h-9" />
+            <span className="absolute -top-1.5 -right-1.5 bg-destructive text-destructive-foreground text-[9px] font-medium uppercase px-2 py-0.5 rounded-full">
               Locked
             </span>
           </div>
 
           <div className="space-y-4 max-w-lg">
-            <h3 className="text-3xl font-display font-bold tracking-tight text-text-main">Recovery Plan Synthesis Locked</h3>
-            <p className="text-sm text-text-muted leading-relaxed font-medium">
-              Nova requires both your **Burnout Fingerprint Diagnostic** and your **Recovery Debt Tracker** to compile a personalized recovery plan.
+            <h3 className="text-2xl font-display font-medium tracking-tight text-text-main">Recovery Plan locked</h3>
+            <p className="text-sm text-text-muted leading-relaxed">
+              Nova needs both your <strong className="font-medium text-text-main">Burnout Fingerprint Diagnostic</strong> and your <strong className="font-medium text-text-main">Recovery Debt Tracker</strong> to build a personalized recovery plan.
             </p>
           </div>
 
-          <div className="w-full max-w-md p-6 bg-surface dark:bg-surface/50 border border-border rounded-2xl space-y-4 text-left">
-            <h4 className="text-xs uppercase tracking-widest font-black text-text-muted">Prerequisites</h4>
-            
-            <div className="flex items-center justify-between p-3 bg-card border border-border rounded-xl">
+          <div className="w-full max-w-md p-6 bg-surface dark:bg-surface/50 border border-border rounded-xl space-y-4 text-left">
+            <h4 className="text-xs uppercase tracking-widest font-medium text-text-muted">Prerequisites</h4>
+
+            <div className="flex items-center justify-between p-3 bg-card border border-border rounded-lg">
               <div className="flex items-center gap-3">
-                <div className="w-6 h-6 rounded-lg bg-red-500/10 text-red-500 flex items-center justify-center text-xs font-bold">
+                <div className="w-6 h-6 rounded-lg bg-destructive/10 text-destructive flex items-center justify-center text-xs font-bold">
                   !
                 </div>
                 <div>
@@ -451,17 +448,17 @@ export const RecoveryPlan = ({
                   <p className="text-[10px] text-text-muted font-semibold">Diagnostic Questionnaire</p>
                 </div>
               </div>
-              <button 
+              <button
                 onClick={() => onNavigateTab('diagnose')}
-                className="btn-primary py-1.5 px-4 text-[10px] font-black uppercase tracking-widest rounded-lg flex items-center gap-1.5"
+                className="btn-primary py-1.5 px-4 text-[10px] font-medium uppercase tracking-widest rounded-lg flex items-center gap-1.5"
               >
                 Diagnose Now <ChevronRight className="w-3.5 h-3.5" />
               </button>
             </div>
 
-            <div className="flex items-center justify-between p-3 bg-card border border-border rounded-xl">
+            <div className="flex items-center justify-between p-3 bg-card border border-border rounded-lg">
               <div className="flex items-center gap-3">
-                <div className="w-6 h-6 rounded-lg bg-green-500/10 text-green-500 flex items-center justify-center text-xs font-bold">
+                <div className="w-6 h-6 rounded-lg bg-success/10 text-success flex items-center justify-center text-xs font-bold">
                   ✓
                 </div>
                 <div>
@@ -537,25 +534,23 @@ export const RecoveryPlan = ({
 
   return (
     <div className="max-w-5xl mx-auto space-y-12 pb-24">
-      {/* 1. Header Synthesis */}
-      <div className="card glass border-primary/20 bg-primary/5 space-y-6 relative overflow-hidden">
-        <div className="absolute top-0 right-0 w-96 h-96 bg-primary/10 rounded-full blur-[100px] pointer-events-none" />
-        
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-6 border-b border-primary/15 pb-6">
+      {/* Recovery plan header */}
+      <div className="card border border-border rounded-xl bg-card space-y-6">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-6 border-b border-border pb-6">
           <div className="flex items-center gap-4">
-            <div className="w-12 h-12 rounded-2xl bg-primary text-primary-foreground flex items-center justify-center font-bold shadow-lg shadow-primary/20">
-              <Unlock className="w-5 h-5 animate-pulse text-warning" />
+            <div className="w-11 h-11 rounded-lg bg-primary text-primary-foreground flex items-center justify-center font-bold">
+              <Unlock className="w-4 h-4" />
             </div>
             <div>
-              <span className="text-[10px] uppercase tracking-[0.25em] font-black text-primary">Nova Recovery Synthesis</span>
-              <h2 className="text-2xl font-display font-bold text-text-main tracking-tight">Personalized Recovery Plan</h2>
+              <span className="text-[11px] uppercase tracking-widest font-medium text-primary">Your recovery plan</span>
+              <h2 className="text-xl font-display font-medium text-text-main tracking-tight">Personalized Recovery Plan</h2>
             </div>
           </div>
           <div className="flex flex-col items-end shrink-0">
-            <span className="tag text-xs bg-primary/15 border border-primary/20 text-primary font-black uppercase tracking-wider">
+            <span className="tag text-xs bg-primary/10 border border-primary/20 text-primary font-medium uppercase tracking-wider">
               Profile: {archetype}
             </span>
-            <span className="text-[10px] text-text-muted mt-1 font-semibold">
+            <span className="text-[10px] text-text-muted mt-1 font-medium">
               Highest Debt: {highestDebt.label} ({highestDebt.value}{highestDebt.unit})
             </span>
           </div>
@@ -564,24 +559,24 @@ export const RecoveryPlan = ({
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           <div className="lg:col-span-2 space-y-3">
             <div className="flex items-center gap-2">
-              <Sparkles className="w-4 h-4 text-warning" />
-              <span className="text-[11px] font-black uppercase tracking-widest text-text-main">Nova's Direct Diagnosis</span>
+              <Sparkles className="w-4 h-4 text-primary" />
+              <span className="text-[11px] font-medium uppercase tracking-widest text-text-main">Nova's Direct Diagnosis</span>
             </div>
-            <p className="text-sm text-text-muted leading-relaxed font-serif italic border-l-2 border-warning/40 pl-4">
+            <p className="text-sm text-text-muted leading-relaxed font-serif italic border-l-2 border-primary/30 pl-4">
               "{getNovaSynthesis()}"
             </p>
           </div>
-          
-          <div className="bg-surface dark:bg-surface/30 p-4 rounded-2xl border border-border flex flex-col justify-between">
+
+          <div className="bg-surface dark:bg-surface/30 p-4 rounded-lg border border-border flex flex-col justify-between">
             <div className="space-y-1.5">
-              <span className="text-[10px] font-black uppercase tracking-widest text-text-muted block">Systemic Health Indicators</span>
+              <span className="text-[10px] font-medium uppercase tracking-widest text-text-muted block">Recovery signals</span>
               <div className="flex justify-between items-center text-xs">
                 <span className="font-medium text-text-main">{highestDebt.label} Load</span>
-                <span className="font-mono font-bold text-red-500">{Math.round(highestDebtRatio * 100)}%</span>
+                <span className="font-mono font-bold text-destructive">{Math.round(highestDebtRatio * 100)}%</span>
               </div>
               <div className="h-1.5 w-full bg-border rounded-full overflow-hidden">
-                <div 
-                  className="h-full bg-red-500 rounded-full"
+                <div
+                  className="h-full bg-destructive rounded-full"
                   style={{ width: `${highestDebtRatio * 100}%` }}
                 />
               </div>
