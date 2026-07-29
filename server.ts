@@ -1,4 +1,5 @@
 import express from "express";
+import helmet from "helmet";
 import path from "path";
 import fs from "fs";
 import crypto from "crypto";
@@ -56,6 +57,45 @@ const allowedOrigins = [
 ];
 if (process.env.APP_CHECK_DOMAIN) {
   allowedOrigins.push(`https://${process.env.APP_CHECK_DOMAIN}`);
+}
+
+// Production-only: Vite's dev-mode HMR client injects its own inline
+// bootstrap script into the page, which a strict script-src would block
+// (confirmed locally — it breaks React Fast Refresh under `npm run dev`).
+// The built production bundle has zero inline scripts (every script is an
+// external module, including the service worker registration below), so
+// the strict policy only needs to hold where it actually ships.
+if (process.env.NODE_ENV === "production") {
+  app.use(helmet({
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        // No 'unsafe-inline' for scripts — the one inline script this app had
+        // (service worker registration) was moved to an external file
+        // specifically so this could stay strict.
+        scriptSrc: ["'self'"],
+        // Tailwind/Framer Motion rely on inline style attributes at runtime;
+        // disallowing that would require a much larger refactor than this
+        // security pass covers, so this one directive stays permissive.
+        styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
+        fontSrc: ["'self'", "https://fonts.gstatic.com"],
+        imgSrc: ["'self'", "data:", "https:"], // Slack avatars, Google profile photos, etc. are remote images
+        connectSrc: [
+          "'self'",
+          "https://*.googleapis.com",   // Firebase Auth/Firestore + the direct Google Calendar API calls
+          "https://*.firebaseio.com",
+          "wss://*.firebaseio.com",
+          "ws:", "wss:",                // same-origin WebSocket (Nova live voice) — scheme itself, not a host, since it's same-origin
+        ],
+        frameAncestors: ["'none'"], // Blocks clickjacking — this app should never be framed by another site
+        objectSrc: ["'none'"],
+        baseUri: ["'self'"],
+      },
+    },
+    // Boundary Autopilot/OAuth flows open real popups/redirects to Slack, Google,
+    // etc. — a default-strict Cross-Origin-Opener-Policy breaks that handoff.
+    crossOriginOpenerPolicy: { policy: "same-origin-allow-popups" },
+  }));
 }
 
 app.use(cors({
