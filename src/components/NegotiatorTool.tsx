@@ -113,7 +113,7 @@ export const NegotiatorTool = () => {
 
         {step === 2 && (
           <motion.div key="step2" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="space-y-6 text-center">
-            <div className="p-8 bg-card text-text-main rounded-3xl relative overflow-hidden text-left mb-6 shadow-sm border border-border">
+            <div className="p-8 bg-card text-text-main rounded-xl relative overflow-hidden text-left mb-6 border border-border">
               <p className="text-xl font-light leading-relaxed mb-8 italic">"{generatedScript}"</p>
               <div className="flex gap-3 relative z-10">
                 <button 

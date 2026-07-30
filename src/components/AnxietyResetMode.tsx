@@ -223,6 +223,7 @@ export const AnxietyResetMode = ({ onAwardPoints, onNavigate }: AnxietyResetMode
 
   return (
     <div className="bg-card border border-border rounded-xl p-6 sm:p-10 text-left relative overflow-hidden transition-all max-w-4xl mx-auto">
+      
       <AnimatePresence mode="wait">
         
         {/* Intro view */}
@@ -235,7 +236,7 @@ export const AnxietyResetMode = ({ onAwardPoints, onNavigate }: AnxietyResetMode
             className="space-y-6"
           >
             <div className="flex items-center gap-3">
-              <div className="w-12 h-12 bg-destructive/10 border border-destructive/20 text-destructive rounded-xl flex items-center justify-center">
+              <div className="w-12 h-12 bg-destructive/10 border border-destructive/20 text-destructive rounded-2xl flex items-center justify-center">
                 <HeartPulse className="w-6 h-6 animate-pulse" />
               </div>
               <div>
@@ -245,24 +246,24 @@ export const AnxietyResetMode = ({ onAwardPoints, onNavigate }: AnxietyResetMode
             </div>
 
             <p className="text-sm text-text-muted leading-relaxed">
-              For moments when racing thoughts, a tight chest, panic, or work dread start taking over.
-              We're not diagnosing or treating anything — this is just a steady handrail to help your body
-              settle back down, in real time.
+              For moments when racing thoughts, tight chest, panic, or work dread start taking over your nervous system. 
+              We are not diagnosing or treating medical conditions. This is a secure handrail to stabilize your body 
+              and de-escalate acute mental fatigue in real time.
             </p>
 
-            <div className="border border-destructive/20 bg-destructive/5 rounded-xl p-4 flex gap-3 items-start">
+            <div className="border border-destructive/20 bg-destructive/5 rounded-2xl p-4 flex gap-3 items-start">
               <ShieldCheck className="w-5 h-5 text-destructive shrink-0 mt-0.5" />
               <div className="text-xs text-text-muted leading-normal">
-                <strong className="text-text-main">A quick note:</strong> This tool supports moments of high anxiety,
-                dread, or panic, but it's not a replacement for therapy or emergency care. Everything you log here
-                stays private and is never shared with anyone.
+                <strong className="text-text-main">Safety Boundary:</strong> This tool supports moments of high anxiety, 
+                dread, or somatic panic. It is not a clinical replacement for therapy, GAD diagnosis, or emergency care. 
+                All logs are encrypted, completely confidential, and never shared with B2B organizations.
               </div>
             </div>
 
             <div className="pt-4">
-              <button
+              <button 
                 onClick={() => setStep('trigger')}
-                className="w-full sm:w-auto px-8 py-4.5 bg-destructive hover:opacity-90 text-destructive-foreground font-bold uppercase tracking-widest text-xs rounded-xl transition-all flex items-center justify-center gap-3"
+                className="w-full sm:w-auto px-8 py-4.5 bg-destructive hover:opacity-90 text-destructive-foreground font-bold uppercase tracking-widest text-xs rounded-2xl transition-all shadow-lg shadow-destructive/10 flex items-center justify-center gap-3"
               >
                 Start Calm Reset <ArrowRight className="w-4 h-4" />
               </button>
@@ -282,7 +283,7 @@ export const AnxietyResetMode = ({ onAwardPoints, onNavigate }: AnxietyResetMode
             <div>
               <span className="text-[10px] font-black uppercase tracking-[0.2em] text-destructive">Step 1 of 5</span>
               <h4 className="font-display text-xl font-medium text-text-main mt-1">What's happening in your body or mind right now?</h4>
-              <p className="text-xs text-text-muted mt-1">Naming what's going on helps calm the panic response.</p>
+              <p className="text-xs text-text-muted mt-1">Naming the trigger helps disarm the amygdala's automatic panic cycle.</p>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -293,9 +294,9 @@ export const AnxietyResetMode = ({ onAwardPoints, onNavigate }: AnxietyResetMode
                     setSelectedTrigger(t.id);
                     setStep('intensity_before');
                   }}
-                  className={`p-4 text-left rounded-xl border text-sm font-medium transition-all ${
-                    selectedTrigger === t.id
-                      ? 'bg-destructive/10 border-destructive text-text-main'
+                  className={`p-4 text-left rounded-2xl border text-sm font-medium transition-all ${
+                    selectedTrigger === t.id 
+                      ? 'bg-destructive/10 border-destructive text-text-main' 
                       : 'bg-surface/50 border-white/[0.04] text-text-muted hover:border-destructive/30 hover:text-text-main'
                   }`}
                 >
@@ -325,7 +326,7 @@ export const AnxietyResetMode = ({ onAwardPoints, onNavigate }: AnxietyResetMode
             <div className="text-left">
               <span className="text-[10px] font-black uppercase tracking-[0.2em] text-destructive">Step 2 of 5</span>
               <h4 className="font-display text-xl font-medium text-text-main mt-1">Rate the current distress level</h4>
-              <p className="text-xs text-text-muted mt-1">A simple scale to check in on where you're at right now.</p>
+              <p className="text-xs text-text-muted mt-1">A simple scale to anchor where your nervous system is baseline.</p>
             </div>
 
             <div className="py-6">
@@ -337,10 +338,10 @@ export const AnxietyResetMode = ({ onAwardPoints, onNavigate }: AnxietyResetMode
             </div>
 
             <div className="px-4">
-              <input
-                type="range"
-                min="1"
-                max="10"
+              <input 
+                type="range" 
+                min="1" 
+                max="10" 
                 value={intensityBefore}
                 onChange={(e) => setIntensityBefore(Number(e.target.value))}
                 className="w-full accent-destructive cursor-pointer h-2 bg-border rounded-lg appearance-none"
@@ -359,11 +360,11 @@ export const AnxietyResetMode = ({ onAwardPoints, onNavigate }: AnxietyResetMode
               >
                 <ArrowLeft className="w-4 h-4" /> Change Trigger
               </button>
-              <button
+              <button 
                 onClick={() => setStep('tool_selection')}
-                className="px-6 py-3 bg-destructive hover:opacity-90 text-destructive-foreground font-bold uppercase tracking-widest text-xs rounded-xl transition-all"
+                className="px-6 py-3 bg-destructive hover:opacity-90 text-destructive-foreground font-bold uppercase tracking-widest text-xs rounded-xl transition-all shadow-md"
               >
-                Find My Reset Tool
+                Analyze & Match Reset Tool
               </button>
             </div>
           </motion.div>
@@ -381,11 +382,11 @@ export const AnxietyResetMode = ({ onAwardPoints, onNavigate }: AnxietyResetMode
             <div>
               <span className="text-[10px] font-black uppercase tracking-[0.2em] text-destructive">Step 3 of 5</span>
               <h4 className="font-display text-xl font-medium text-text-main mt-1">Select your de-escalation tool</h4>
-              <p className="text-xs text-text-muted mt-1">We matched a tool to what you're feeling right now.</p>
+              <p className="text-xs text-text-muted mt-1">We matched tools to counter your current physiological trigger.</p>
             </div>
 
             {/* Recommended Tool Hero */}
-            <div className="bg-destructive/5 border border-destructive/20 rounded-xl p-5 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+            <div className="bg-destructive/5 border border-destructive/20 rounded-2xl p-5 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
               <div className="space-y-1">
                 <span className="px-2.5 py-0.5 bg-destructive/10 border border-destructive/30 text-destructive text-[9px] font-bold uppercase tracking-wider rounded-full">
                   Recommended
@@ -402,7 +403,7 @@ export const AnxietyResetMode = ({ onAwardPoints, onNavigate }: AnxietyResetMode
                   setSelectedToolId(recommendedToolId);
                   startTool();
                 }}
-                className="px-6 py-3 shrink-0 bg-destructive hover:opacity-90 text-destructive-foreground font-bold uppercase tracking-widest text-xs rounded-xl transition-all flex items-center gap-2"
+                className="px-6 py-3 shrink-0 bg-destructive hover:opacity-90 text-destructive-foreground font-bold uppercase tracking-widest text-xs rounded-xl transition-all shadow-md flex items-center gap-2"
               >
                 Start Now <ArrowRight className="w-4 h-4" />
               </button>
@@ -410,7 +411,7 @@ export const AnxietyResetMode = ({ onAwardPoints, onNavigate }: AnxietyResetMode
 
             {/* Other tools option */}
             <div className="space-y-3">
-              <h6 className="text-xs uppercase tracking-widest text-text-muted font-bold">Other tools to try</h6>
+              <h6 className="text-xs uppercase tracking-widest text-text-muted font-bold">Alternative somatosensory tools</h6>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 {TOOLS.filter(t => t.id !== recommendedToolId).map(t => (
                   <button
@@ -483,10 +484,10 @@ export const AnxietyResetMode = ({ onAwardPoints, onNavigate }: AnxietyResetMode
                     </div>
                   </div>
                   <p className="text-sm text-text-muted italic leading-relaxed">
-                    {timerSeconds > 70 ? 'Breathe in slowly. Notice the space around you — you are safe here.' :
-                     timerSeconds > 45 ? 'Let your shoulders drop. You don\'t need to hold this tension anymore.' :
-                     timerSeconds > 20 ? 'Nothing is required of you right now. We\'re not fixing everything, just calming your body.' :
-                     'You\'re settling back to your baseline. Keep breathing slowly.'}
+                    {timerSeconds > 70 ? 'Inhale deeply. Notice the safe, solid boundaries of the space you are in.' :
+                     timerSeconds > 45 ? 'Let your shoulders drop 2 inches. Release any fawning response to external demands.' :
+                     timerSeconds > 20 ? 'Nothing is required of you right now. We are not fixing the whole problem, just calming the nerve.' :
+                     'You are crossing the threshold into baseline stability. Breathe slowly.'}
                   </p>
                 </div>
               )}
@@ -642,10 +643,10 @@ export const AnxietyResetMode = ({ onAwardPoints, onNavigate }: AnxietyResetMode
                     </div>
                   </div>
                   <div className="text-xs text-text-muted uppercase tracking-widest font-black">
-                    {breathPhase === 'inhale' ? 'Breathe in, let your belly fill' :
-                     breathPhase === 'hold' ? 'Hold gently' :
-                     breathPhase === 'exhale' ? 'Let it all go' :
-                     'Rest here for a moment'}
+                    {breathPhase === 'inhale' ? 'Breathe in, slow and full' : 
+                     breathPhase === 'hold' ? 'Hold gently' : 
+                     breathPhase === 'exhale' ? 'Let it all the way out' : 
+                     'Rest before the next breath'}
                   </div>
                 </div>
               )}
@@ -672,28 +673,28 @@ export const AnxietyResetMode = ({ onAwardPoints, onNavigate }: AnxietyResetMode
                             setIsWorryReleased(true);
                             onAwardPoints(15, "Worry Dump Cleared");
                           }}
-                          className="w-full px-5 py-3 bg-destructive hover:opacity-90 text-destructive-foreground font-bold uppercase tracking-widest text-xs rounded-xl transition-all flex items-center justify-center gap-2 disabled:opacity-40"
+                          className="w-full px-5 py-3 bg-destructive hover:opacity-90 text-destructive-foreground font-bold uppercase tracking-widest text-xs rounded-xl transition-all shadow-md flex items-center justify-center gap-2 disabled:opacity-40"
                         >
-                          <Trash2 className="w-4 h-4" /> Clear It & Move On
+                          <Trash2 className="w-4 h-4" /> Vaporize Chaos & Move On
                         </button>
                       </motion.div>
                     ) : (
-                      <motion.div
+                      <motion.div 
                         key="dump_success"
                         initial={{ opacity: 0, scale: 0.95 }}
                         animate={{ opacity: 1, scale: 1 }}
-                        className="text-center py-8 space-y-4 bg-success/5 border border-success/20 p-6 rounded-xl"
+                        className="text-center py-8 space-y-4 bg-success/5 border border-success/20 p-6 rounded-2xl"
                       >
                         <CheckCircle2 className="w-10 h-10 text-success mx-auto" />
-                        <h6 className="font-bold text-text-main text-base">That worry is off your chest now</h6>
+                        <h6 className="font-bold text-text-main text-base">Anxious energy dumped into negative space</h6>
                         <p className="text-xs text-text-muted max-w-md mx-auto">
-                          You don't have to carry or fix any of it right now. You've done enough for this moment.
+                          It is off your shoulders. We do not have to carry or fix any of this right now. You have done enough.
                         </p>
                         <button
                           onClick={handleCompleteTool}
                           className="px-6 py-2.5 bg-success hover:opacity-90 text-success-foreground font-bold text-xs uppercase tracking-widest rounded-xl transition-all"
                         >
-                          Next: Check In Again
+                          Next: Re-Evaluate Baseline
                         </button>
                       </motion.div>
                     )}
@@ -711,8 +712,8 @@ export const AnxietyResetMode = ({ onAwardPoints, onNavigate }: AnxietyResetMode
                     {fearsList.map((f, idx) => (
                       <div key={idx} className="grid grid-cols-1 sm:grid-cols-2 gap-3 border-b border-white/[0.03] pb-3">
                         <div className="space-y-1">
-                          <label className="text-[10px] text-destructive font-bold uppercase tracking-wider">The Fear</label>
-                          <input
+                          <label className="text-[10px] text-destructive font-bold uppercase tracking-wider">The Fear Loop</label>
+                          <input 
                             type="text"
                             value={f.fear}
                             onChange={(e) => {
@@ -725,8 +726,8 @@ export const AnxietyResetMode = ({ onAwardPoints, onNavigate }: AnxietyResetMode
                           />
                         </div>
                         <div className="space-y-1">
-                          <label className="text-[10px] text-success font-bold uppercase tracking-wider">The Fact</label>
-                          <input
+                          <label className="text-[10px] text-success font-bold uppercase tracking-wider">The Factual Reality</label>
+                          <input 
                             type="text"
                             value={f.fact}
                             onChange={(e) => {
@@ -767,10 +768,10 @@ export const AnxietyResetMode = ({ onAwardPoints, onNavigate }: AnxietyResetMode
                   </span>
                   <h5 className="font-bold text-text-main text-base">One Tiny Controllable Step</h5>
                   <p className="text-xs text-text-muted leading-relaxed">
-                    Anxiety wants us to solve everything at once. We can't — and we don't need to.
-                    What's one small step you could take in the next 15 minutes that's fully within your control?
+                    Anxiety wants us to solve things 6 months in advance. We can't. 
+                    What is exactly ONE tiny step you can take in the next 15 minutes that is 100% within your immediate physical control?
                   </p>
-                  <input
+                  <input 
                     type="text"
                     value={oneAction}
                     onChange={(e) => setOneAction(e.target.value)}
@@ -792,18 +793,18 @@ export const AnxietyResetMode = ({ onAwardPoints, onNavigate }: AnxietyResetMode
               {/* Tool 7: Nova Grounding Script */}
               {selectedToolId === 'nova_script' && (
                 <div className="space-y-6 max-w-lg mx-auto w-full">
-                  <div className="bg-destructive/5 border border-destructive/20 p-5 rounded-xl flex gap-3 items-start">
+                  <div className="bg-destructive/5 border border-destructive/20 p-5 rounded-2xl flex gap-3 items-start">
                     <Sparkles className="w-5 h-5 text-destructive shrink-0 mt-1" />
                     <div className="space-y-3">
-                      <strong className="text-sm font-semibold text-text-main block">Nova's grounding script</strong>
-                      <p className="text-xs text-text-muted leading-relaxed italic">
-                        "You're safe enough for the next two minutes. We're not solving your whole life right now — just helping your body come down a level."
+                      <strong className="text-sm font-semibold text-text-main block">Nova's Direct Nervous Restoring Anchor</strong>
+                      <p className="text-xs text-text-muted leading-relaxed font-serif italic">
+                        "You are safe enough for the next two minutes. We are not solving your whole life right now. We are helping your body come down one level."
                       </p>
-                      <p className="text-xs text-text-muted leading-relaxed italic">
-                        "Notice the ground supporting your weight. That's real and solid. Notice your breathing — it doesn't have to be perfect or calm, it just has to be there."
+                      <p className="text-xs text-text-muted leading-relaxed font-serif italic">
+                        "Notice the ground supporting your weight. That is a concrete physical fact. Notice your breathing. It does not have to be perfect or calm; it just has to be present."
                       </p>
-                      <p className="text-xs text-text-muted leading-relaxed italic">
-                        "What you're feeling is a signal, not a prediction of the future. Let's just let it pass through, one breath at a time."
+                      <p className="text-xs text-text-muted leading-relaxed font-serif italic">
+                        "The dread or panic you're feeling right now is a signal, not a fact about what's actually going to happen. You don't have to believe every thought your body sends you while it's stressed."
                       </p>
                     </div>
                   </div>
@@ -813,7 +814,7 @@ export const AnxietyResetMode = ({ onAwardPoints, onNavigate }: AnxietyResetMode
                       onClick={handleCompleteTool}
                       className="px-6 py-3 bg-destructive hover:opacity-90 text-destructive-foreground font-bold uppercase tracking-widest text-xs rounded-xl transition-all"
                     >
-                      Continue
+                      Proceed to Integration
                     </button>
                   </div>
                 </div>
@@ -877,7 +878,7 @@ export const AnxietyResetMode = ({ onAwardPoints, onNavigate }: AnxietyResetMode
                           onClick={handleCompleteTool}
                           className="px-5 py-1.5 text-xs bg-success hover:opacity-90 text-success-foreground font-bold rounded transition-all"
                         >
-                          Done
+                          Done PMR Reset
                         </button>
                       )}
                     </div>
@@ -894,11 +895,11 @@ export const AnxietyResetMode = ({ onAwardPoints, onNavigate }: AnxietyResetMode
               >
                 Exit
               </button>
-              <button
+              <button 
                 onClick={handleCompleteTool}
                 className="px-5 py-2.5 bg-destructive/10 border border-destructive/20 text-destructive hover:bg-destructive/20 rounded-xl text-xs uppercase tracking-widest font-black transition-all"
               >
-                Skip / Finish Early
+                Skip / Finish Reset Early
               </button>
             </div>
           </motion.div>
@@ -928,10 +929,10 @@ export const AnxietyResetMode = ({ onAwardPoints, onNavigate }: AnxietyResetMode
             </div>
 
             <div className="px-4">
-              <input
-                type="range"
-                min="1"
-                max="10"
+              <input 
+                type="range" 
+                min="1" 
+                max="10" 
                 value={intensityAfter}
                 onChange={(e) => setIntensityAfter(Number(e.target.value))}
                 className="w-full accent-success cursor-pointer h-2 bg-border rounded-lg appearance-none"
@@ -944,8 +945,8 @@ export const AnxietyResetMode = ({ onAwardPoints, onNavigate }: AnxietyResetMode
             </div>
 
             <div className="space-y-3 pt-4 text-left">
-              <label className="text-xs uppercase tracking-widest text-text-muted font-bold block">Private Notes</label>
-              <input
+              <label className="text-xs uppercase tracking-widest text-text-muted font-bold block">Private Notes (Encrypted Trigger Journal)</label>
+              <input 
                 type="text"
                 value={userNote}
                 onChange={(e) => setUserNote(e.target.value)}
@@ -955,11 +956,11 @@ export const AnxietyResetMode = ({ onAwardPoints, onNavigate }: AnxietyResetMode
             </div>
 
             <div className="pt-6 text-left flex justify-end">
-              <button
+              <button 
                 onClick={handleSaveResetEvent}
-                className="px-8 py-4.5 bg-success hover:opacity-90 text-success-foreground font-bold uppercase tracking-widest text-xs rounded-xl transition-all"
+                className="px-8 py-4.5 bg-success hover:opacity-90 text-success-foreground font-bold uppercase tracking-widest text-xs rounded-2xl transition-all shadow-lg"
               >
-                Log Reset & See Nova's Notes
+                Log Reset & Fetch Nova Aftercare
               </button>
             </div>
           </motion.div>
@@ -974,42 +975,42 @@ export const AnxietyResetMode = ({ onAwardPoints, onNavigate }: AnxietyResetMode
             className="space-y-6"
           >
             <div className="flex items-center gap-3">
-              <div className="w-12 h-12 bg-success/10 border border-success/20 text-success rounded-xl flex items-center justify-center">
+              <div className="w-12 h-12 bg-success/10 border border-success/20 text-success rounded-2xl flex items-center justify-center">
                 <Sparkles className="w-6 h-6" />
               </div>
               <div>
-                <h3 className="font-display text-xl font-semibold text-text-main tracking-tight">You're steadier now</h3>
-                <span className="text-xs uppercase tracking-widest text-success font-bold">+50 points earned</span>
+                <h3 className="font-display text-xl font-semibold text-text-main tracking-tight">De-escalation Stabilized</h3>
+                <span className="text-xs uppercase tracking-widest text-success font-bold">Secure baseline restored (+50 points earned)</span>
               </div>
             </div>
 
-            <div className="p-5 bg-surface rounded-xl border border-white/[0.04] space-y-3">
-              <strong className="text-xs uppercase tracking-widest text-destructive font-bold block">Nova's aftercare notes</strong>
+            <div className="p-5 bg-surface rounded-2xl border border-white/[0.04] space-y-3">
+              <strong className="text-xs uppercase tracking-widest text-destructive font-bold block">Nova's Strategic Aftercare Action</strong>
               <p className="text-sm text-text-main leading-relaxed italic">
-                "Nice work. You brought your intensity from {intensityBefore}/10 down to {intensityAfter}/10.
-                That's real work — you didn't let the thoughts run the show, you stepped in and helped yourself."
+                "Excellent. You reduced your intensity from {intensityBefore}/10 to {intensityAfter}/10. 
+                That is measurable autonomic work. Your thoughts did not define reality; you intervened and patched the leak."
               </p>
               <p className="text-sm text-text-muted leading-relaxed">
-                <strong className="text-text-main">Your next small step:</strong> {oneAction || 'Take it slow for the next 20 minutes. Maybe hold off on Slack or email while your body settles.'}
+                <strong className="text-text-main">Your Tiny Action:</strong> {oneAction || 'Slow down physical tasks for the next 20 minutes. Give your inbox a break while your body settles.'}
               </p>
               <p className="text-xs text-text-muted leading-relaxed italic">
-                "We saved this privately. Over time, we'll help you notice what tends to set these off — whether it's Sunday evening meetings or a rough night's sleep."
+                "We saved this event securely. Over time, we will help you map exactly what triggers these spikes—whether it is Sunday evening meetings or poor sleep debt. Your recovery score is stabilizing."
               </p>
             </div>
 
             <div className="flex flex-col sm:flex-row gap-3 pt-4">
-              <button
+              <button 
                 onClick={() => setStep('intro')}
-                className="flex-1 px-6 py-4 bg-white/5 border border-white/[0.04] hover:bg-white/10 text-text-main font-bold text-xs uppercase tracking-widest rounded-xl transition-all text-center"
+                className="flex-1 px-6 py-4 bg-white/5 border border-white/[0.04] hover:bg-white/10 text-text-main font-bold text-xs uppercase tracking-widest rounded-2xl transition-all text-center"
               >
                 Done / Back to Reset Home
               </button>
               {onNavigate && (
-                <button
+                <button 
                   onClick={() => onNavigate('nova')}
-                  className="flex-1 px-6 py-4 bg-destructive hover:opacity-90 text-destructive-foreground font-bold text-xs uppercase tracking-widest rounded-xl transition-all text-center"
+                  className="flex-1 px-6 py-4 bg-destructive hover:opacity-90 text-destructive-foreground font-bold text-xs uppercase tracking-widest rounded-2xl transition-all text-center shadow-lg shadow-destructive/10"
                 >
-                  Talk to Nova about this
+                  Consult Nova on this trigger
                 </button>
               )}
             </div>
