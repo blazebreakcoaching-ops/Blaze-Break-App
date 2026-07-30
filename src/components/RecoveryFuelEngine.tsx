@@ -212,24 +212,24 @@ export const RecoveryFuelEngine = ({
   const triggerHydrationTest = () => {
     setActiveNudge({
       type: 'hydration',
-      title: 'Water Intake Alert',
-      message: 'Nova Nudge: Physical and mental fogginess imminent. Your brain is 73% water; even a tiny 1-2% dehydration baseline level immediately degrades synaptic pathways and mimics emotional exhaustion. Take a deep breath, and drink a full glass of pristine water!'
+      title: 'Time for water',
+      message: "Nova here — you haven't logged water in a while, and even mild dehydration can feel a lot like fatigue or brain fog. Take a moment for a full glass."
     });
   };
 
   const triggerMeetingTest = () => {
     setActiveNudge({
       type: 'meeting',
-      title: 'Pre-Meeting Stabilization Nudge',
-      message: 'Nova Nudge: You have a high-stakes call or stress node approaching on your calendar. Entering this space with flatlined blood glucose forces cortisol and adrenaline spikes. Eat a handful of almonds, an oatcake, or slow-release seeds now to protect your autonomic baseline!'
+      title: 'Before your next meeting',
+      message: "Nova here — you've got a high-stakes call coming up. Going in without eating can spike your stress response and make it harder to stay steady. A handful of almonds, an oatcake, or something slow-release now could help."
     });
   };
 
   const triggerEmotionalTest = () => {
     setActiveNudge({
       type: 'emotional',
-      title: 'Emotional Decision Guard Nudge',
-      message: 'Nova Nudge: Cognitive boundary checkpoint! If you are feeling resentful, defensive, or ready to pen a heavy strategic message, HALT. Do not make key emotional choices or reply on empty stomach loops. Consume clean slow-release foods FIRST.'
+      title: 'A quick check before you respond',
+      message: "Nova here — if you're feeling resentful, defensive, or about to send a heavy message, it might be worth pausing. Big decisions are harder on an empty stomach. Worth eating something first."
     });
   };
 
@@ -314,10 +314,7 @@ export const RecoveryFuelEngine = ({
   };
 
   return (
-    <div className="card glass border border-border/40 p-6 sm:p-8 md:p-10 rounded-[3rem] space-y-10 relative overflow-hidden" id="recovery_fuel_engine_container">
-      {/* Background radial gradient */}
-      <div className="absolute top-0 right-0 w-96 h-96 bg-gradient-to-br from-primary/5 to-transparent rounded-full blur-3xl pointer-events-none" />
-
+    <div className="card border border-border p-6 sm:p-8 md:p-10 rounded-xl space-y-10 relative overflow-hidden" id="recovery_fuel_engine_container">
       {/* Active Nudge Notification Banner */}
       <AnimatePresence>
         {activeNudge && (
@@ -326,27 +323,27 @@ export const RecoveryFuelEngine = ({
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -20, scale: 0.95 }}
             className={cn(
-              "absolute top-6 left-6 right-6 z-50 p-6 rounded-2xl border shadow-2xl flex flex-col md:flex-row items-start justify-between gap-4 backdrop-blur-xl animate-in",
-              activeNudge.type === 'hydration' ? "bg-text-main/10 border-text-main/30 text-sky-950 dark:text-sky-100" :
+              "absolute top-6 left-6 right-6 z-50 p-6 rounded-xl border shadow-lg flex flex-col md:flex-row items-start justify-between gap-4 animate-in",
+              activeNudge.type === 'hydration' ? "bg-primary/5 border-primary/30 text-text-main" :
               activeNudge.type === 'meeting' ? "bg-warning/10 border-warning/30 text-warning-foreground dark:text-warning/20" :
-              "bg-destructive/10 border-destructive/30 text-rose-950 dark:text-rose-100"
+              "bg-destructive/10 border-destructive/30 text-text-main"
             )}
             id="active_nova_fuel_nudge"
           >
             <div className="flex gap-4 items-start">
               <div className={cn(
-                "w-12 h-12 rounded-xl flex items-center justify-center shrink-0 shadow-lg",
+                "w-11 h-11 rounded-lg flex items-center justify-center shrink-0",
                 activeNudge.type === 'hydration' ? "bg-surface text-text-main" :
                 activeNudge.type === 'meeting' ? "bg-warning/20 text-warning" :
                 "bg-destructive/20 text-destructive"
               )}>
-                {activeNudge.type === 'hydration' ? <Droplet className="w-6 h-6 animate-bounce" /> :
-                 activeNudge.type === 'meeting' ? <Clock className="w-6 h-6" /> :
-                 <ShieldAlert className="w-6 h-6" />}
+                {activeNudge.type === 'hydration' ? <Droplet className="w-5 h-5" /> :
+                 activeNudge.type === 'meeting' ? <Clock className="w-5 h-5" /> :
+                 <ShieldAlert className="w-5 h-5" />}
               </div>
               <div className="space-y-1">
-                <span className="text-xs font-black uppercase tracking-widest  flex items-center gap-1.5">
-                  <Sparkles className="w-3 h-3 text-primary" /> Nova Active Nudge System
+                <span className="text-xs font-medium uppercase tracking-widest  flex items-center gap-1.5">
+                  <Sparkles className="w-3 h-3 text-primary" /> Nova Check-in
                 </span>
                 <h4 className="text-base font-bold tracking-tight">{activeNudge.title}</h4>
                 <p className="text-xs leading-relaxed opacity-90 max-w-2xl">{activeNudge.message}</p>
@@ -394,7 +391,7 @@ export const RecoveryFuelEngine = ({
       {/* Flag / Header */}
       <div className="flex flex-col md:flex-row md:items-start justify-between gap-6 pb-6 border-b border-border/40 relative z-10">
         <div className="flex items-center gap-6">
-          <div className="w-16 h-16 bg-primary/15 text-primary rounded-2xl flex items-center justify-center shadow-xl shadow-primary/5">
+          <div className="w-14 h-14 bg-primary/10 text-primary rounded-lg flex items-center justify-center">
             <Apple className="w-8 h-8" />
           </div>
           <div>
@@ -609,7 +606,7 @@ export const RecoveryFuelEngine = ({
                             onClick={() => setCaffeineTiming('early')}
                             className={cn(
                               "py-2.5 rounded-xl text-xs font-bold border transition-all cursor-pointer",
-                              caffeineTiming === 'early' ? "bg-primary/10 border-primary/45 text-indigo-505" : "bg-white dark:bg-surface border-border/40 text-text-muted"
+                              caffeineTiming === 'early' ? "bg-primary/10 border-primary/45 text-primary" : "bg-white dark:bg-surface border-border/40 text-text-muted"
                             )}
                           >
                             Early (Before 12 PM)
@@ -841,7 +838,7 @@ export const RecoveryFuelEngine = ({
                       <div className="flex items-center justify-between">
                         <div className="space-y-0.5">
                           <span className="text-xs font-bold text-text-main flex items-center gap-1.5">
-                            <Droplet className="w-3.5 h-3.5 text-text-main animate-pulse" /> Hydration Reminders
+                            <Droplet className="w-3.5 h-3.5 text-text-main" /> Hydration Reminders
                           </span>
                           <p className="text-xs text-text-muted">Prevent fogginess & cognitive fatigue</p>
                         </div>
@@ -927,8 +924,8 @@ export const RecoveryFuelEngine = ({
                             onClick={() => handleEmotionalToggle(!emotionalReminderEnabled)}
                             className={cn(
                               "px-2.5 py-1 rounded-lg text-[11px] font-black uppercase tracking-wider transition-all border cursor-pointer",
-                              emotionalReminderEnabled 
-                                ? "bg-destructive text-destructive-foreground border-rose-600 shadow-sm" 
+                              emotionalReminderEnabled
+                                ? "bg-destructive text-destructive-foreground border-destructive shadow-sm"
                                 : "bg-transparent text-text-muted border-border/40"
                             )}
                           >
@@ -1034,12 +1031,12 @@ export const RecoveryFuelEngine = ({
             {/* Gut-Brain Education */}
             <div className="bg-surface dark:bg-surface p-6 rounded-2xl border border-border/40 space-y-4">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-violet-500/10 flex items-center justify-center text-violet-500">
+                <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center text-primary">
                   <Heart className="w-5 h-5" />
                 </div>
                 <div>
-                  <h4 className="text-xs uppercase font-black tracking-widest text-violet-500">Gut-Brain Education Card</h4>
-                  <p className="text-xs font-bold text-text-main mt-0.5">Bidirectional Nervous Highways</p>
+                  <h4 className="text-xs uppercase font-medium tracking-widest text-primary">Gut-Brain Connection</h4>
+                  <p className="text-xs font-bold text-text-main mt-0.5">How they affect each other</p>
                 </div>
               </div>
               <p className="text-xs text-text-muted leading-relaxed">
@@ -1109,10 +1106,10 @@ export const RecoveryFuelEngine = ({
             <div className="bg-surface dark:bg-surface p-6 rounded-2xl border border-border/40 space-y-4 col-span-1 md:col-span-2">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-xl bg-warning/10 flex items-center justify-center text-warning">
-                  <Activity className="w-5 h-5 animate-pulse" />
+                  <Activity className="w-5 h-5" />
                 </div>
                 <div>
-                  <h4 className="text-xs uppercase font-black tracking-widest text-warning">Blood Sugar Stability Card</h4>
+                  <h4 className="text-xs uppercase font-medium tracking-widest text-warning">Blood Sugar Stability</h4>
                   <p className="text-xs font-bold text-text-main mt-0.5">Slow-Release Energy Foods for Calm Resiliency</p>
                 </div>
               </div>
