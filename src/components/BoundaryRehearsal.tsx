@@ -274,43 +274,38 @@ export const BoundaryRehearsal = ({ onAwardPoints, onRehearsalComplete }: { onAw
   return (
     <div className="space-y-12 pb-24 font-sans max-w-[1400px] mx-auto text-text-main">
       
-      {/* Executive Header */}
-      <div className="relative overflow-hidden rounded-3xl bg-background border border-border p-6 sm:p-8 md:p-10 shadow-2xl">
-        <div className="absolute top-0 right-0 p-8 opacity-5 pointer-events-none">
-          <ShieldHalf className="w-64 h-64 text-primary" />
-        </div>
-        <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/noise-lines.png')] opacity-10 pointer-events-none" />
-        
+      {/* Boundary rehearsal header */}
+      <div className="relative overflow-hidden rounded-xl bg-card border border-border p-6 sm:p-8 md:p-10">
         <div className="relative z-10 max-w-4xl space-y-6">
-          <div className="flex items-center gap-4 border-b border-white/[0.05] pb-6">
-             <div className="w-14 h-14 rounded-2xl bg-primary/10 border border-primary/20 text-primary flex items-center justify-center shrink-0 shadow-inner">
-               <ShieldAlert className="w-7 h-7" />
+          <div className="flex items-center gap-4 border-b border-border pb-6">
+             <div className="w-12 h-12 rounded-lg bg-primary/10 border border-primary/20 text-primary flex items-center justify-center shrink-0">
+               <ShieldAlert className="w-6 h-6" />
              </div>
              <div className="flex flex-col md:flex-row md:items-center justify-between w-full">
                 <div>
-                  <h2 className="text-3xl lg:text-4xl font-display font-bold text-text-main tracking-tight">Boundary Architect v2.1</h2>
+                  <h2 className="text-2xl lg:text-3xl font-display font-medium text-text-main tracking-tight">Boundary Rehearsal</h2>
                   <div className="flex items-center gap-3 mt-2">
-                    <span className="text-xs font-black uppercase tracking-[0.2em] text-primary flex items-center gap-1.5"><Network className="w-3 h-3" /> Core Pillar: Practice</span>
+                    <span className="text-xs font-medium uppercase tracking-widest text-primary flex items-center gap-1.5"><Network className="w-3 h-3" /> Core Pillar: Practice</span>
                   </div>
                 </div>
-                <div className="mt-4 md:mt-0 flex bg-surface border border-white/[0.05] rounded-xl p-1 shadow-inner">
+                <div className="mt-4 md:mt-0 flex bg-surface border border-border rounded-lg p-1">
                   <button
                     onClick={() => setMode('library')}
-                    className={cn("px-5 py-2.5 rounded-lg text-xs font-black uppercase tracking-widest transition-all", mode === 'library' ? "bg-white text-text-main shadow-sm" : "text-text-muted hover:text-text-main hover:bg-white/[0.02]")}
+                    className={cn("px-5 py-2.5 rounded-md text-xs font-medium uppercase tracking-widest transition-colors", mode === 'library' ? "bg-card text-text-main" : "text-text-muted hover:text-text-main")}
                   >
                     Library
                   </button>
                   <button
                     onClick={() => setMode('generator')}
-                    className={cn("px-5 py-2.5 rounded-lg text-xs font-black uppercase tracking-widest transition-all", mode === 'generator' ? "bg-white text-text-main shadow-sm" : "text-text-muted hover:text-text-main hover:bg-white/[0.02]")}
+                    className={cn("px-5 py-2.5 rounded-md text-xs font-medium uppercase tracking-widest transition-colors", mode === 'generator' ? "bg-card text-text-main" : "text-text-muted hover:text-text-main")}
                   >
                     Custom Generator
                   </button>
                 </div>
              </div>
           </div>
-          <p className="text-sm lg:text-base text-text-muted leading-relaxed font-medium max-w-2xl border-l-[3px] border-primary/30 pl-5 py-1">
-            "Master the 'Firm No' and the 'Strategic Yes'. Practical scripts for high-stakes moments. Stop apologizing for protecting the asset."
+          <p className="text-sm lg:text-base text-text-muted font-serif italic leading-relaxed max-w-2xl border-l-2 border-primary/30 pl-5 py-1">
+            "Master the 'Firm No' and the 'Strategic Yes'. Practical scripts for high-stakes moments. Stop apologizing for protecting your own time."
           </p>
         </div>
       </div>
@@ -318,25 +313,24 @@ export const BoundaryRehearsal = ({ onAwardPoints, onRehearsalComplete }: { onAw
       {mode === 'generator' ? (
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
           <div className="lg:col-span-4 max-w-none space-y-6">
-            <div className="card bg-card border-none p-8 space-y-6 shadow-2xl relative overflow-hidden group">
-              <div className="absolute inset-0 bg-primary/5 pointer-events-none" />
-              <div className="relative z-10 space-y-3 border-b border-white/[0.05] pb-5">
+            <div className="card bg-card border border-border p-8 space-y-6 relative overflow-hidden group">
+              <div className="relative z-10 space-y-3 border-b border-border pb-5">
                 <h4 className="text-lg font-bold text-text-main flex items-center gap-2 tracking-tight">
                   <Wand2 className="w-5 h-5 text-primary" /> Script Builder
                 </h4>
                 <p className="text-xs text-text-muted leading-relaxed font-medium">
-                  Received an unreasonable demand on Slack or Email? Don't panic and say yes. Paste it here, and Nova will synthesize a tactical, zero-apology script.
+                  Received an unreasonable demand on Slack or Email? Don't panic and say yes. Paste it here, and Nova will draft a confident, zero-apology script.
                 </p>
               </div>
-              
+
               <div className="relative z-10 space-y-5">
                 <div>
-                  <label className="text-[11px] font-black uppercase tracking-widest text-text-muted ml-1 mb-2 block">The Incoming Demand</label>
+                  <label className="text-[11px] font-medium uppercase tracking-widest text-text-muted ml-1 mb-2 block">The Incoming Demand</label>
                   <textarea
                     value={generatorInput}
                     onChange={(e) => setGeneratorInput(e.target.value)}
                     placeholder='e.g. "Can you quickly throw together a 10-slide deck for the board meeting tomorrow morning?"'
-                    className="w-full h-32 bg-background border border-border rounded-xl p-4 text-sm text-text-main placeholder-slate-700 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/50 resize-none transition-all font-mono"
+                    className="w-full h-32 bg-background border border-border rounded-lg p-4 text-sm text-text-main placeholder:text-text-muted focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/50 resize-none transition-all font-mono"
                   />
                 </div>
 
@@ -368,9 +362,9 @@ export const BoundaryRehearsal = ({ onAwardPoints, onRehearsalComplete }: { onAw
                   <button
                     onClick={handleGenerateScrips}
                     disabled={!generatorInput.trim() || generatingScripts}
-                    className="w-full bg-surface dark:bg-card hover:bg-border text-text-main py-4 rounded-xl text-xs font-black uppercase tracking-widest flex items-center justify-center gap-2 cursor-pointer transition-colors shadow-[0_0_20px_rgba(255,255,255,0.1)] disabled: disabled:grayscale"
+                    className="w-full bg-primary hover:opacity-90 text-primary-foreground py-4 rounded-lg text-xs font-medium uppercase tracking-widest flex items-center justify-center gap-2 cursor-pointer transition-all disabled:opacity-40 disabled:grayscale"
                   >
-                    {generatingScripts ? <><Loader2 className="w-4 h-4 animate-spin text-primary" /> Compiling Tactics...</> : <><Sparkles className="w-4 h-4" /> Generate Pushback Script</>}
+                    {generatingScripts ? <><Loader2 className="w-4 h-4 animate-spin" /> Drafting your script...</> : <><Sparkles className="w-4 h-4" /> Generate Pushback Script</>}
                   </button>
                 </div>
               </div>
@@ -378,29 +372,26 @@ export const BoundaryRehearsal = ({ onAwardPoints, onRehearsalComplete }: { onAw
           </div>
           
           <div className="lg:col-span-8 space-y-6">
-            <h4 className="text-xs font-black uppercase tracking-[0.2em] text-text-muted flex items-center gap-2">
+            <h4 className="text-xs font-medium uppercase tracking-[0.2em] text-text-muted flex items-center gap-2">
               <Zap className="w-3.5 h-3.5" /> Generated Response
             </h4>
-            
+
             {!generatedResult && !generatingScripts ? (
-              <div className="h-[400px] rounded-3xl border-2 border-dashed border-border flex flex-col items-center justify-center text-text-muted p-8 text-center bg-background/50 relative overflow-hidden">
-                <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/noise-lines.png')] opacity-[0.05] pointer-events-none" />
+              <div className="h-[400px] rounded-xl border-2 border-dashed border-border flex flex-col items-center justify-center text-text-muted p-8 text-center bg-surface">
                 <ShieldAlert className="w-8 h-8 mb-4 opacity-20" />
                 <p className="text-xs font-medium max-w-sm">Scripts will populate here. Choose the tone that matches the political capital you want to spend.</p>
               </div>
             ) : generatingScripts ? (
-              <div className="h-[400px] rounded-3xl border border-primary/20 bg-primary/5 flex flex-col items-center justify-center text-primary relative overflow-hidden shadow-inner">
-                 <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/noise-lines.png')] opacity-10 pointer-events-none" />
+              <div className="h-[400px] rounded-xl border border-primary/20 bg-primary/5 flex flex-col items-center justify-center text-primary relative overflow-hidden">
                 <Loader2 className="w-8 h-8 animate-spin mb-4" />
-                <p className="text-xs font-black uppercase tracking-widest">Nova is compiling specific parameters...</p>
+                <p className="text-xs font-medium uppercase tracking-widest">Nova is drafting your script...</p>
               </div>
             ) : (
-              <motion.div 
+              <motion.div
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
-                className="prose prose-invert prose-sm max-w-none text-text-muted bg-card p-8 lg:p-10 rounded-3xl border border-border shadow-2xl relative"
+                className="prose dark:prose-invert prose-sm max-w-none text-text-muted bg-card p-8 lg:p-10 rounded-xl border border-border relative"
               >
-                <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/noise-lines.png')] opacity-10 pointer-events-none rounded-3xl" />
                 <div className="relative z-10">
                   <ReactMarkdown
                     components={{
@@ -409,13 +400,13 @@ export const BoundaryRehearsal = ({ onAwardPoints, onRehearsalComplete }: { onAw
                       ),
                       p: ({node, ...props}) => (
                         <div className="relative group mb-6">
-                          <p className="bg-background p-5 rounded-2xl border border-white/[0.05] text-text-muted pr-12 leading-relaxed shadow-inner" {...props} />
-                          <button 
+                          <p className="bg-surface p-5 rounded-lg border border-border text-text-muted pr-12 leading-relaxed" {...props} />
+                          <button
                             onClick={(e) => {
                               const text = (e.currentTarget.previousElementSibling as HTMLElement)?.innerText;
                               if (text) copyToClipboard(text);
                             }}
-                            className="absolute right-4 top-4 p-2 bg-card rounded-lg shadow-sm border border-border text-text-muted hover:text-success opacity-0 group-hover:opacity-100 transition-all focus:outline-none"
+                            className="absolute right-4 top-4 p-2 bg-card rounded-lg border border-border text-text-muted hover:text-success opacity-0 group-hover:opacity-100 transition-all focus:outline-none"
                             title="Copy script"
                           >
                             <Copy className="w-4 h-4" />
@@ -461,31 +452,30 @@ export const BoundaryRehearsal = ({ onAwardPoints, onRehearsalComplete }: { onAw
 
           <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
             {currentGroup.scenarios.map((s) => (
-              <div 
-                key={s.id} 
-                className="bg-card border border-border p-8 rounded-3xl flex flex-col justify-between hover:border-primary/30 transition-all group shadow-xl relative overflow-hidden"
+              <div
+                key={s.id}
+                className="bg-card border border-border p-8 rounded-xl flex flex-col justify-between hover:border-primary/30 transition-all group relative overflow-hidden"
               >
-                <div className="absolute inset-0 bg-primary/5 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none" />
                 <div className="relative z-10 space-y-5">
                   <div className="flex items-center justify-between border-b border-border pb-4">
                     <h4 className="text-xl font-bold text-text-main tracking-tight">{s.title}</h4>
                     <MessageSquare className="w-5 h-5 text-text-muted group-hover:text-primary transition-colors" />
                   </div>
-                  <div className="bg-background p-4 rounded-xl border border-white/[0.02]">
-                    <span className="text-[11px] uppercase font-black tracking-widest text-text-muted mb-1 block">Context</span>
+                  <div className="bg-surface p-4 rounded-lg border border-border">
+                    <span className="text-[11px] uppercase font-medium tracking-widest text-text-muted mb-1 block">Context</span>
                     <p className="text-sm text-text-muted leading-relaxed">"{s.situation}"</p>
                   </div>
                 </div>
-                
+
                 <div className="mt-8 space-y-3 relative z-10">
-                  <button 
+                  <button
                     onClick={() => startPractice(s)}
-                    className="w-full bg-surface dark:bg-card hover:bg-border text-text-main py-3.5 rounded-xl text-xs uppercase font-black tracking-widest flex items-center justify-center gap-2 transition-colors shadow-lg"
+                    className="w-full bg-primary hover:opacity-90 text-primary-foreground py-3.5 rounded-lg text-xs uppercase font-medium tracking-widest flex items-center justify-center gap-2 transition-all"
                   >
-                     <Zap className="w-3.5 h-3.5" /> Load Rehearsal
+                     <Zap className="w-3.5 h-3.5" /> Start Practice
                   </button>
-                  <button className="w-full py-3.5 rounded-xl text-xs font-black uppercase tracking-widest text-text-muted hover:text-text-main bg-background hover:bg-card border border-white/[0.05] transition-all">
-                    Copy Baseline Transcript
+                  <button className="w-full py-3.5 rounded-lg text-xs font-medium uppercase tracking-widest text-text-muted hover:text-text-main bg-surface hover:bg-border border border-border transition-colors">
+                    Copy Script
                   </button>
                 </div>
               </div>
@@ -499,34 +489,31 @@ export const BoundaryRehearsal = ({ onAwardPoints, onRehearsalComplete }: { onAw
           className="grid grid-cols-1 lg:grid-cols-12 gap-8"
         >
           <div className="lg:col-span-5 space-y-6">
-            <button 
+            <button
               onClick={() => setIsPractising(false)}
-              className="text-xs font-black uppercase tracking-widest text-text-muted hover:text-text-main transition-colors flex items-center gap-2 bg-background px-4 py-2 rounded-xl border border-white/[0.05]"
+              className="text-xs font-medium uppercase tracking-widest text-text-muted hover:text-text-main transition-colors flex items-center gap-2 bg-surface px-4 py-2 rounded-lg border border-border"
             >
-              <ArrowRight className="w-3.5 h-3.5 rotate-180" /> Abort & Return
+              <ArrowRight className="w-3.5 h-3.5 rotate-180" /> Exit Practice
             </button>
 
-            <div className="bg-card p-8 rounded-3xl space-y-8 border-primary/20 shadow-2xl ring-1 ring-primary/10 relative overflow-hidden">
-               <div className="absolute top-0 right-0 p-6 opacity-5 pointer-events-none">
-                 <Shield className="w-32 h-32 text-primary" />
-               </div>
+            <div className="bg-card p-8 rounded-xl space-y-8 border border-border relative overflow-hidden">
               <div className="space-y-4 border-b border-border pb-6 relative z-10">
-                <span className="inline-flex items-center gap-2 px-3 py-1 rounded bg-primary/10 border border-primary/20 text-[11px] font-black uppercase tracking-widest text-primary">
+                <span className="inline-flex items-center gap-2 px-3 py-1 rounded bg-primary/10 border border-primary/20 text-[11px] font-medium uppercase tracking-widest text-primary">
                   <Zap className="w-3 h-3" /> Live Blueprint
                 </span>
-                <h3 className="text-3xl font-display font-bold text-text-main tracking-tight">{selected?.title}</h3>
+                <h3 className="text-2xl font-display font-medium text-text-main tracking-tight">{selected?.title}</h3>
               </div>
 
-              <div className="p-6 bg-background text-text-main rounded-2xl relative overflow-hidden group border border-white/[0.05] shadow-inner">
+              <div className="p-6 bg-surface text-text-main rounded-xl relative overflow-hidden group border border-border">
                 <div className="relative z-10 space-y-6">
                   <p className="text-lg lg:text-xl font-medium leading-relaxed">"{selected?.script}"</p>
-                  
-                  <div className="flex items-start gap-4 p-4 rounded-xl bg-primary/5 border border-primary/10">
+
+                  <div className="flex items-start gap-4 p-4 rounded-lg bg-primary/5 border border-primary/10">
                     <div className="mt-0.5">
                       <Shield className="w-4 h-4 text-primary" />
                     </div>
                     <div>
-                       <span className="text-[11px] font-black uppercase tracking-widest block text-primary mb-1">Nova's Suggestion</span>
+                       <span className="text-[11px] font-medium uppercase tracking-widest block text-primary mb-1">Nova's Suggestion</span>
                        <span className="text-xs text-primary font-medium leading-relaxed">{selected?.advice}</span>
                     </div>
                   </div>
@@ -534,15 +521,15 @@ export const BoundaryRehearsal = ({ onAwardPoints, onRehearsalComplete }: { onAw
               </div>
 
               <div className="space-y-4 relative z-10">
-                <h5 className="text-xs font-black uppercase tracking-widest text-text-muted">Communication Parameters</h5>
-                <div className="space-y-3 bg-background p-5 rounded-xl border border-white/[0.02]">
+                <h5 className="text-xs font-medium uppercase tracking-widest text-text-muted">What to keep in mind</h5>
+                <div className="space-y-3 bg-surface p-5 rounded-lg border border-border">
                   {[
-                    "Watch for 'I'm sorry'—it is a structural weakness.",
+                    "Watch for 'I'm sorry'—it undercuts what you're about to say.",
                     "Neutral tone. Keep the register low and steady.",
                     "The silent pause is your power transfer. Use it."
                   ].map((tip, i) => (
                     <div key={i} className="flex items-center gap-3 text-xs text-text-muted font-serif italic">
-                      <div className="w-1.5 h-1.5 rounded-full bg-surface" />
+                      <div className="w-1.5 h-1.5 rounded-full bg-primary/40" />
                       {tip}
                     </div>
                   ))}
@@ -553,14 +540,12 @@ export const BoundaryRehearsal = ({ onAwardPoints, onRehearsalComplete }: { onAw
 
           <div className="lg:col-span-7 flex flex-col min-h-[600px] h-[800px] gap-6 relative">
             {!showCritique ? (
-              <div className="flex-1 flex flex-col bg-card border border-border rounded-3xl shadow-2xl overflow-hidden relative">
-                <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/noise-lines.png')] opacity-10 pointer-events-none" />
-                <div className="p-4 border-b border-border bg-background/50 flex items-center justify-between relative z-10">
+              <div className="flex-1 flex flex-col bg-card border border-border rounded-xl overflow-hidden relative">
+                <div className="p-4 border-b border-border bg-surface flex items-center justify-between relative z-10">
                    <div className="flex items-center gap-3">
                      <span className="w-2 h-2 rounded-full bg-destructive animate-pulse" />
-                     <span className="text-xs font-black uppercase tracking-widest text-text-muted">Live Simulation Agent</span>
+                     <span className="text-xs font-medium uppercase tracking-widest text-text-muted">Live Practice</span>
                    </div>
-                   <span className="text-[11px] font-mono text-text-muted bg-card px-2 py-0.5 rounded">NODE-0</span>
                 </div>
                 <div className="flex-1 relative z-10 pb-16">
                   <div className="absolute inset-0">
@@ -570,37 +555,34 @@ export const BoundaryRehearsal = ({ onAwardPoints, onRehearsalComplete }: { onAw
                       ROLEPLAY: You are the manager, client, or family member. BE TOUGH. Push back slightly. Ask 'Why?' or 'Can't you just squeeze it in?'.
                       CRITIQUE: After they reply, give them a one-sentence critique if they apologized or sounded weak.
                       GOAL: Help them deliver the line with zero apology and maximum professionalism. Executive tone.`}
-                      initialMessage={`"Alright, initiating roleplay. I am the stressor. Here I come: 'Hey, I know you're at capacity, but I really need this handled by tonight. Can you just make it happen?'"`}
+                      initialMessage={`"Alright, let's practice. I'll play the other side of this conversation and push back a little — that's the point. Here goes: 'Hey, I know you're at capacity, but I really need this handled by tonight. Can you just make it happen?'"`}
                     />
                   </div>
                 </div>
                 <div className="absolute bottom-4 left-4 right-4 z-20">
-                  <button 
+                  <button
                     onClick={generateFinalCritique}
-                    className="w-full py-4 bg-primary hover:bg-primary text-primary-foreground rounded-xl font-black text-xs uppercase tracking-widest transition-all shadow-[0_0_20px_rgba(79,70,229,0.3)] flex items-center justify-center gap-3"
+                    className="w-full py-4 bg-primary hover:opacity-90 text-primary-foreground rounded-lg font-medium text-xs uppercase tracking-widest transition-all flex items-center justify-center gap-3"
                   >
-                    <CheckCircle2 className="w-4 h-4" /> End Simulation & Extract Critique
+                    <CheckCircle2 className="w-4 h-4" /> End Practice & Get Feedback
                   </button>
                 </div>
               </div>
             ) : (
-              <motion.div 
+              <motion.div
                 initial={{ opacity: 0, scale: 0.98 }}
                 animate={{ opacity: 1, scale: 1 }}
-                className="flex-1 bg-card border-primary/30 rounded-3xl shadow-2xl relative overflow-hidden flex flex-col border"
+                className="flex-1 bg-card border border-border rounded-xl relative overflow-hidden flex flex-col"
               >
-                <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/noise-lines.png')] opacity-10 pointer-events-none" />
-                <div className="absolute top-0 left-0 w-[500px] h-[500px] bg-primary/10 rounded-full blur-[120px] pointer-events-none" />
-
                 <div className="p-8 lg:p-10 space-y-8 flex-1 overflow-y-auto relative z-10 custom-scrollbar">
-                  <div className="flex items-center justify-between border-b border-white/[0.05] pb-6">
+                  <div className="flex items-center justify-between border-b border-border pb-6">
                     <div className="flex items-center gap-4">
-                      <div className="w-12 h-12 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center shadow-inner">
-                        <Sparkles className="w-6 h-6 text-primary" />
+                      <div className="w-11 h-11 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center">
+                        <Sparkles className="w-5 h-5 text-primary" />
                       </div>
                       <div>
-                        <h4 className="text-xl font-bold text-text-main tracking-tight">Post-Session Audit</h4>
-                        <span className="text-[11px] uppercase font-black tracking-widest text-primary">Nova Insight</span>
+                        <h4 className="text-xl font-bold text-text-main tracking-tight">Your Feedback</h4>
+                        <span className="text-[11px] uppercase font-medium tracking-widest text-primary">Nova Insight</span>
                       </div>
                     </div>
                   </div>
@@ -608,27 +590,27 @@ export const BoundaryRehearsal = ({ onAwardPoints, onRehearsalComplete }: { onAw
                   {critiqueLoading ? (
                     <div className="flex flex-col items-center justify-center py-24 space-y-6">
                       <Loader2 className="w-10 h-10 animate-spin text-primary" />
-                      <p className="text-text-muted text-xs font-black uppercase tracking-widest">Processing simulation transcript...</p>
+                      <p className="text-text-muted text-xs font-medium uppercase tracking-widest">Reviewing your practice session...</p>
                     </div>
                   ) : (
                     <div className="space-y-8">
-                      <div className="prose prose-invert max-w-none">
+                      <div className="prose dark:prose-invert max-w-none">
                         <div id="final-critique-text" className="text-text-main text-lg leading-relaxed font-medium">
                           <ReactMarkdown>{finalCritique || ''}</ReactMarkdown>
                         </div>
                       </div>
 
                       {detailedFeedback && (
-                        <motion.div 
+                        <motion.div
                           initial={{ opacity: 0, y: 10 }}
                           animate={{ opacity: 1, y: 0 }}
-                          className="p-8 bg-background rounded-2xl border border-white/[0.05] space-y-6 shadow-inner"
+                          className="p-8 bg-surface rounded-xl border border-border space-y-6"
                         >
-                          <div className="flex items-center gap-3 border-b border-white/[0.05] pb-4">
+                          <div className="flex items-center gap-3 border-b border-border pb-4">
                              <Zap className="w-5 h-5 text-success" />
-                             <span className="text-xs font-black uppercase tracking-widest text-success/80">In-Depth Behavioral Insight</span>
+                             <span className="text-xs font-medium uppercase tracking-widest text-success/80">A closer look</span>
                           </div>
-                          <div className="prose prose-invert max-w-none text-text-muted leading-relaxed font-mono text-sm">
+                          <div className="prose dark:prose-invert max-w-none text-text-muted leading-relaxed font-mono text-sm">
                              <ReactMarkdown>{detailedFeedback}</ReactMarkdown>
                           </div>
                         </motion.div>
