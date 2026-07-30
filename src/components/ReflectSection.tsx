@@ -295,61 +295,50 @@ export const ReflectSection = ({
   return (
     <div className="space-y-12 pb-24 font-sans text-text-main">
       
-      {/* Executive Header */}
-      <div className="relative overflow-hidden rounded-3xl bg-card border border-border p-6 sm:p-8 md:p-10 shadow-2xl">
-        <div className="absolute top-0 right-0 p-8 opacity-5 pointer-events-none">
-          <Layers className="w-64 h-64 text-primary" />
-        </div>
-        <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/noise-lines.png')] opacity-10 pointer-events-none" />
-        
+      {/* Reflect header */}
+      <div className="relative overflow-hidden rounded-xl bg-card border border-border p-6 sm:p-8 md:p-10">
         <div className="relative z-10 max-w-4xl">
           <div className="flex items-center gap-4 mb-6">
-             <div className="w-14 h-14 rounded-xl bg-primary/10 border border-primary/20 text-primary flex items-center justify-center shrink-0 shadow-inner">
-               <BookOpen className="w-7 h-7" />
+             <div className="w-12 h-12 rounded-lg bg-primary/10 border border-primary/20 text-primary flex items-center justify-center shrink-0">
+               <BookOpen className="w-6 h-6" />
              </div>
              <div>
-                <h2 className="text-3xl lg:text-4xl font-display font-bold text-text-main tracking-tight">Behavioral Repatterning</h2>
+                <h2 className="text-2xl lg:text-3xl font-display font-medium text-text-main tracking-tight">Reflect</h2>
                 <div className="flex items-center gap-3 mt-2">
-                  <span className="text-xs font-black uppercase tracking-[0.2em] text-primary flex items-center gap-1.5"><Activity className="w-3 h-3" /> Core OS Integration</span>
-                  <span className="w-1 h-1 rounded-full bg-surface" />
-                  <span className="text-xs uppercase font-bold tracking-widest text-text-muted">v4.1</span>
+                  <span className="text-xs font-medium uppercase tracking-widest text-primary flex items-center gap-1.5"><Activity className="w-3 h-3" /> Recovery Insights</span>
                 </div>
              </div>
           </div>
-          <p className="text-sm text-text-muted leading-relaxed font-medium max-w-2xl border-l-2 border-primary/30 pl-4 py-1">
-            "Theoretical recovery is a performance. Physical repatterning is the solution. Translate complex cognitive dissonance into structured, actionable algorithms for immediate integration."
+          <p className="text-sm text-text-muted font-serif italic leading-relaxed max-w-2xl border-l-2 border-primary/30 pl-4 py-1">
+            "Understanding your patterns is the easy part. Actually changing them takes practice — turning what you've learned into small, repeatable actions."
           </p>
         </div>
       </div>
 
-      {/* 30-Day Recurrent Emotional Pattern Analysis */}
-      <div className="card bg-card border border-border rounded-[2rem] p-8 md:p-10 shadow-2xl relative overflow-hidden">
-        <div className="absolute top-0 right-0 w-96 h-96 bg-primary/10 rounded-full blur-[100px] pointer-events-none" />
-        <div className="absolute bottom-0 left-0 w-96 h-96 bg-warning/5 rounded-full blur-[100px] pointer-events-none" />
-        <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/noise-lines.png')] opacity-10 pointer-events-none" />
-
+      {/* 30-day recurrent emotional pattern analysis */}
+      <div className="card bg-card border border-border rounded-xl p-8 md:p-10 relative overflow-hidden">
         <div className="relative z-10 space-y-8">
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 border-b border-border pb-6">
             <div className="flex items-center gap-4">
-              <div className="w-12 h-12 rounded-2xl bg-primary/10 border border-primary/25 flex items-center justify-center text-primary shadow-inner">
-                <Brain className="w-6 h-6 animate-pulse" />
+              <div className="w-11 h-11 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center text-primary">
+                <Brain className="w-5 h-5" />
               </div>
               <div className="text-left">
-                <h3 className="text-2xl font-display font-black text-text-main tracking-tight">30-Day Recurrent Emotional Patterns</h3>
-                <p className="text-xs font-black uppercase tracking-[0.25em] text-text-muted mt-1">Nova Pattern Decoupling Engine</p>
+                <h3 className="text-xl font-display font-medium text-text-main tracking-tight">30-Day Emotional Patterns</h3>
+                <p className="text-xs font-medium uppercase tracking-widest text-text-muted mt-1">What Nova's noticed</p>
               </div>
             </div>
 
             <div className="flex flex-wrap items-center gap-3 self-start md:self-auto">
               <button
                 onClick={() => setShowTriggerTimeline(true)}
-                className="flex items-center gap-2 px-4 py-2.5 bg-primary/10 hover:bg-primary/20 border border-primary/20 hover:border-primary/35 text-primary text-xs font-black uppercase tracking-wider rounded-xl transition-all cursor-pointer shadow-sm hover:scale-[1.02] active:scale-[0.98]"
+                className="flex items-center gap-2 px-4 py-2.5 bg-primary/10 hover:bg-primary/20 border border-primary/20 hover:border-primary/35 text-primary text-xs font-medium uppercase tracking-wider rounded-lg transition-colors cursor-pointer"
               >
-                <TrendingUp className="w-4 h-4 animate-pulse" /> Trigger Timeline Correlation
+                <TrendingUp className="w-4 h-4" /> Trigger Timeline
               </button>
 
               {/* Filter controls */}
-              <div className="flex bg-surface dark:bg-card/80 p-1 rounded-xl border border-border">
+              <div className="flex bg-surface dark:bg-card/80 p-1 rounded-lg border border-border">
               {[
                 { id: 'all', label: 'All Patterns' },
                 { id: 'negative', label: 'Stress Leaks' },
@@ -497,22 +486,22 @@ export const ReflectSection = ({
                 <Sparkles className="w-5 h-5 animate-spin" style={{ animationDuration: '6s' }} />
               </div>
               <div className="space-y-2">
-                <span className="text-[10px] font-black uppercase tracking-widest text-primary font-mono block">Nova Diagnostic Assessment</span>
-                <p className="text-sm font-bold text-text-main tracking-tight leading-snug">
+                <span className="text-[10px] font-medium uppercase tracking-widest text-primary font-mono block">Nova's read on your patterns</span>
+                <p className="text-sm font-medium text-text-main tracking-tight leading-snug font-serif italic">
                   {(() => {
                     const negCount = moodLogs.filter(l => l.category === 'negative').length;
                     const fawningCount = moodLogs.filter(l => l.word === 'Fawning').length;
                     const resentfulCount = moodLogs.filter(l => l.word === 'Resentful').length;
-                    
+
                     if (negCount > 15) {
-                      return `"Warning: Severe stress loading patterns detected. Your logs indicate frequent '${fawningCount > resentfulCount ? 'Fawning' : 'Resentful'}' loops. This points directly to capacity over-allocations and unexpressed boundary drafts. Initiate a communication rehearsal immediately."`;
+                      return `"You've logged a lot of '${fawningCount > resentfulCount ? 'Fawning' : 'Resentful'}' moments lately. That usually means you're taking on more than you can hold, and a boundary conversation is overdue. Worth rehearsing one soon."`;
                     }
-                    return `"Observation: Your emotional baseline is currently stable, but continue logging triggers. Unchecked high performance identity loops can create a sudden relapse cliff."`;
+                    return `"Your emotional baseline looks steady — keep logging as things come up. Even when things feel fine, unspoken pressure can build quietly, so it's worth staying on top of it."`;
                   })()}
                 </p>
                 <div className="flex items-center gap-2 pt-1">
-                  <span className="w-1.5 h-1.5 rounded-full bg-danger animate-ping" />
-                  <span className="text-[10px] font-black uppercase tracking-widest text-danger">Real-Time Pattern Analysis Active</span>
+                  <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
+                  <span className="text-[10px] font-medium uppercase tracking-widest text-text-muted">Updated as you log</span>
                 </div>
               </div>
             </div>
@@ -584,8 +573,8 @@ export const ReflectSection = ({
                 onClick={() => handleSelect(c)}
                 className={cn(
                   "w-full text-left p-5 rounded-2xl transition-all duration-300 relative group overflow-hidden border",
-                  selected?.id === c.id 
-                    ? "bg-card border-primary/30 shadow-xl shadow-primary/5 rotate-0 scale-100" 
+                  selected?.id === c.id
+                    ? "bg-card border-primary/40"
                     : "bg-white dark:bg-card/50 border-border hover:border-primary/20"
                 )}
               >
@@ -651,35 +640,32 @@ export const ReflectSection = ({
                 className="h-full"
               >
                 {view === 'content' ? (
-                  <div className="card h-full p-0 overflow-hidden bg-card border-border shadow-2xl relative group/card">
-                    {/* Abstract design elements */}
-                    <div className="absolute right-[-20%] top-[-10%] w-[500px] h-[500px] bg-primary/10 rounded-full blur-[100px] pointer-events-none" />
-                    
+                  <div className="card h-full p-0 overflow-hidden bg-card border border-border relative group/card">
                     <div className="p-10 lg:p-12 relative z-10 flex flex-col h-full space-y-12">
                       <div className="flex items-center justify-between border-b border-primary/20 pb-6">
                         <div className="flex items-center gap-3">
-                          <span className="px-3 py-1 bg-primary/20 text-primary text-[11px] uppercase font-black tracking-widest rounded-md border border-primary/30">Pattern {selected.id}</span>
+                          <span className="px-3 py-1 bg-primary/20 text-primary text-[11px] uppercase font-medium tracking-widest rounded-md border border-primary/30">Pattern {selected.id}</span>
                         </div>
-                        <span className="text-xs font-mono text-text-muted bg-surface px-3 py-1 rounded border border-border">Est. TTD: 3min</span>
+                        <span className="text-xs font-mono text-text-muted bg-surface px-3 py-1 rounded border border-border">~3 min read</span>
                       </div>
-                      
+
                       <div className="flex-1 space-y-8">
-                        <h4 className="text-4xl lg:text-5xl font-display font-extrabold text-text-main leading-[1.1] tracking-tight">{selected.title}</h4>
-                        
+                        <h4 className="text-4xl lg:text-5xl font-display font-medium text-text-main leading-[1.1] tracking-tight">{selected.title}</h4>
+
                         <div className="pl-6 border-l-4 border-primary/50">
-                          <p className="text-lg lg:text-xl text-text-muted leading-relaxed font-medium italic">
+                          <p className="text-lg lg:text-xl text-text-muted leading-relaxed font-serif italic">
                             "{selected.content}"
                           </p>
                         </div>
                       </div>
-                      
+
                       <div className="pt-8 flex flex-col sm:flex-row items-center gap-6 justify-between border-t border-border">
-                        <p className="text-xs font-black text-text-muted uppercase tracking-[0.2em]">Theory Confirmed?</p>
-                        <button 
+                        <p className="text-xs font-medium text-text-muted uppercase tracking-[0.2em]">Ready to put this into practice?</p>
+                        <button
                           onClick={() => setView('action')}
-                          className="w-full sm:w-auto px-8 py-4 bg-primary hover:bg-primary text-primary-foreground rounded-xl text-xs font-black uppercase tracking-widest flex items-center justify-center gap-3 shadow-[0_0_20px_rgba(79,70,229,0.3)] transition-all group/btn"
+                          className="w-full sm:w-auto px-8 py-4 bg-primary hover:opacity-90 text-primary-foreground rounded-lg text-xs font-medium uppercase tracking-widest flex items-center justify-center gap-3 transition-all group/btn"
                         >
-                          Synthesize Action Plan <ArrowRight className="w-4 h-4 group-hover/btn:translate-x-1 transition-transform" />
+                          See What To Do <ArrowRight className="w-4 h-4 group-hover/btn:translate-x-1 transition-transform" />
                         </button>
                       </div>
                     </div>
@@ -687,17 +673,17 @@ export const ReflectSection = ({
                 ) : (
                   <div className="space-y-8">
                     <div className="flex items-center justify-between">
-                       <button 
+                       <button
                          onClick={() => setView('content')}
-                         className="flex items-center gap-2 text-xs font-black uppercase tracking-widest text-text-muted hover:text-text-main transition-colors group/back"
+                         className="flex items-center gap-2 text-xs font-medium uppercase tracking-widest text-text-muted hover:text-text-main transition-colors group/back"
                        >
-                          <ChevronRight className="w-4 h-4 rotate-180 group-hover/back:-translate-x-1 transition-transform" /> Return to Theory
+                          <ChevronRight className="w-4 h-4 rotate-180 group-hover/back:-translate-x-1 transition-transform" /> Back
                        </button>
                     </div>
 
                     <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
                       {/* Action Plans */}
-                      <div className="card bg-card border-none p-8 space-y-8 shadow-2xl relative overflow-hidden">
+                      <div className="card bg-card border border-border p-8 space-y-8 relative overflow-hidden">
                         <div className="absolute inset-0 bg-primary/5 pointer-events-none" />
                         <div className="relative z-10 flex items-center justify-between border-b border-border pb-4">
                            <div className="flex items-center gap-3">
@@ -772,10 +758,10 @@ export const ReflectSection = ({
 
                       {/* Nova Dialogue Column */}
                       <div className="flex flex-col gap-6">
-                         <div className="card bg-white dark:bg-card h-full flex flex-col p-0 overflow-hidden shadow-xl border-border min-h-[500px]">
+                         <div className="card bg-white dark:bg-card h-full flex flex-col p-0 overflow-hidden border border-border min-h-[500px]">
                             <div className="bg-surface dark:bg-surface/50 border-b border-border p-5 flex items-center justify-between">
                               <div className="flex items-center gap-3">
-                                <div className="w-10 h-10 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center text-primary shadow-inner">
+                                <div className="w-10 h-10 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center text-primary">
                                   <Sparkles className="w-5 h-5" />
                                 </div>
                                 <div>
@@ -822,13 +808,13 @@ export const ReflectSection = ({
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 20 }}
               transition={{ type: "spring", duration: 0.5 }}
-              className="relative w-full max-w-5xl bg-card border border-border/80 rounded-[2rem] p-6 md:p-8 shadow-2xl flex flex-col max-h-[90vh] overflow-hidden z-10 backdrop-blur-xl"
+              className="relative w-full max-w-5xl bg-card border border-border rounded-xl p-6 md:p-8 shadow-lg flex flex-col max-h-[90vh] overflow-hidden z-10"
             >
               {/* Header */}
               <div className="flex items-center justify-between border-b border-border pb-5 mb-6">
                 <div className="flex items-center gap-3">
                   <div className="w-11 h-11 rounded-xl bg-primary/15 border border-primary/25 text-primary flex items-center justify-center shrink-0 shadow-inner">
-                    <TrendingUp className="w-5 h-5 animate-pulse" />
+                    <TrendingUp className="w-5 h-5" />
                   </div>
                   <div className="text-left">
                     <h3 className="text-xl md:text-2xl font-display font-black text-text-main tracking-tight">
@@ -867,8 +853,8 @@ export const ReflectSection = ({
                   {/* Metric 1: Correlation Status */}
                   <div className={cn(
                     "p-5 rounded-2xl border text-left flex flex-col justify-between space-y-3 shadow-inner",
-                    calculateCorrelation(triggers) <= -0.5 
-                      ? "bg-danger/5 border-danger/20 text-danger" 
+                    calculateCorrelation(triggers) <= -0.5
+                      ? "bg-destructive/5 border-destructive/20 text-destructive"
                       : "bg-primary/5 border-primary/10 text-primary"
                   )}>
                     <div className="flex items-center justify-between">
@@ -974,7 +960,7 @@ export const ReflectSection = ({
                             formatter={(value: any, name: any, props: any) => {
                               if (name === "severityPercent") {
                                 return [
-                                  <span key="val-sev" className="text-danger font-bold">{props.payload.severity}/10</span>,
+                                  <span key="val-sev" className="text-destructive font-bold">{props.payload.severity}/10</span>,
                                   "Severity Burden"
                                 ];
                               }
@@ -1051,10 +1037,10 @@ export const ReflectSection = ({
                             <div className={cn(
                               "absolute -left-[31px] top-1.5 w-4.5 h-4.5 rounded-full border-2 flex items-center justify-center transition-all shadow-md",
                               isHighSeverity
-                                ? "bg-card border-danger text-danger ring-4 ring-danger/10"
+                                ? "bg-card border-destructive text-destructive ring-4 ring-destructive/10"
                                 : "bg-card border-primary text-primary ring-4 ring-primary/10"
                             )}>
-                              <div className={cn("w-1.5 h-1.5 rounded-full", isHighSeverity ? "bg-danger" : "bg-primary")} />
+                              <div className={cn("w-1.5 h-1.5 rounded-full", isHighSeverity ? "bg-destructive" : "bg-primary")} />
                             </div>
 
                             {/* Timeline content box */}
@@ -1067,7 +1053,7 @@ export const ReflectSection = ({
                                   <span className={cn(
                                     "px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider border",
                                     isHighSeverity
-                                      ? "bg-danger/10 text-danger border-danger/20"
+                                      ? "bg-destructive/10 text-destructive border-destructive/20"
                                       : "bg-warning/10 text-warning border-warning/20"
                                   )}>
                                     Severity {trigger.severity}/10
