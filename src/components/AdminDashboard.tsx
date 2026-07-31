@@ -356,9 +356,9 @@ export const AdminDashboard = () => {
       <motion.div
         initial={{ opacity: 0, scale: 0.95 }}
         animate={{ opacity: 1, scale: 1 }}
-        className="max-w-xl mx-auto p-8 rounded-3xl border border-border bg-card space-y-6 text-center shadow-2xl relative overflow-hidden my-12"
+        className="max-w-xl mx-auto p-8 rounded-xl border border-border bg-card space-y-6 text-center shadow-lg relative overflow-hidden my-12"
       >
-        <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-red-500 via-primary to-amber-500" />
+        <div className="absolute top-0 left-0 w-full h-1 bg-destructive" />
         <div className="p-4 bg-destructive/10 text-destructive rounded-full w-16 h-16 flex items-center justify-center mx-auto border border-destructive/20">
           <Lock className="w-8 h-8" />
         </div>
@@ -538,7 +538,7 @@ export const AdminDashboard = () => {
                 </span>
               </h4>
             </div>
-            <div className="p-3 bg-indigo-500/10 text-indigo-400 rounded-xl">
+            <div className="p-3 bg-primary/10 text-primary rounded-xl">
               <CreditCard className="w-5 h-5" />
             </div>
           </div>
@@ -558,7 +558,7 @@ export const AdminDashboard = () => {
                 <span className="text-xs text-text-muted font-normal">Active Resets</span>
               </h4>
             </div>
-            <div className="p-3 bg-red-500/10 text-red-400 rounded-xl">
+            <div className="p-3 bg-destructive/10 text-destructive rounded-xl">
               <HeartPulse className="w-5 h-5" />
             </div>
           </div>
@@ -824,7 +824,7 @@ export const AdminDashboard = () => {
                         <td className="py-4">
                           <span className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-widest ${
                             adminUser.role === 'platform_owner' 
-                              ? 'bg-red-500/10 text-red-400 border border-red-500/20' 
+                              ? 'bg-destructive/10 text-destructive border border-destructive/20'
                               : adminUser.role === 'platform_admin'
                               ? 'bg-primary/10 text-primary border border-primary/20'
                               : 'bg-accent/10 text-accent border border-accent/20'
@@ -966,9 +966,9 @@ export const AdminDashboard = () => {
               </div>
 
               {/* Secure Insights */}
-              <div className="p-6 bg-red-950/10 border border-red-500/20 rounded-2xl flex flex-col justify-between">
+              <div className="p-6 bg-destructive/10 border border-destructive/20 rounded-2xl flex flex-col justify-between">
                 <div className="space-y-4">
-                  <div className="p-2.5 bg-red-500/10 text-red-400 rounded-xl w-fit">
+                  <div className="p-2.5 bg-destructive/10 text-destructive rounded-xl w-fit">
                     <Heart className="w-5 h-5 fill-current" />
                   </div>
                   <h4 className="font-display text-lg font-bold text-text-main">Somatic Efficacy Insight</h4>
