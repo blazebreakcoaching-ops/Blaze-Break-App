@@ -49,7 +49,7 @@ export const SleepBuilder = ({ fingerprint, onAwardPoints }: SleepBuilderProps) 
   const renderTooltip = ({ active, payload, label }: any) => {
     if (active && payload && payload.length) {
       return (
-        <div className="glass p-3 rounded-2xl shadow-xl border border-white/20 backdrop-blur-xl">
+        <div className="bg-card p-3 rounded-xl shadow-md border border-border">
           <p className="text-xs font-black uppercase tracking-widest text-text-muted mb-1">{label} - Sleep Debt</p>
           <div className="flex flex-col gap-1">
             <p className="text-xs font-bold flex items-center gap-2">
@@ -80,7 +80,7 @@ export const SleepBuilder = ({ fingerprint, onAwardPoints }: SleepBuilderProps) 
         </div>
       </div>
 
-      <div className="card glass border-primary/20 bg-primary/5 p-8 relative overflow-hidden">
+      <div className="card border border-primary/20 bg-primary/5 p-8 relative overflow-hidden">
         <div className="relative z-10 space-y-4">
           <div className="flex items-center gap-3 mb-2">
             <div className="w-8 h-8 rounded-xl bg-primary text-primary-foreground flex items-center justify-center shadow-lg shadow-primary/20">
@@ -88,21 +88,20 @@ export const SleepBuilder = ({ fingerprint, onAwardPoints }: SleepBuilderProps) 
             </div>
             <div>
               <h3 className="text-sm font-display font-bold text-text-main tracking-tight">Nova's Evening Voice</h3>
-              <p className="text-[11px] uppercase tracking-[0.2em] font-black text-primary">Pre-Sleep Synthesis</p>
+              <p className="text-[11px] uppercase tracking-[0.2em] font-black text-primary">Winding Down</p>
             </div>
           </div>
-          <p className="text-sm text-text-main leading-relaxed font-medium">
-            "Your profile indicates a tendency to carry operational anxiety into the evening. We need to actively decouple your performance identity before bed. Use the parking list below to offload tomorrow's problems securely. They will not be solved at 11 PM."
+          <p className="text-sm text-text-main leading-relaxed font-serif italic">
+            "You tend to carry the day's pressure into the evening. Let's help you set it down. Use the parking list below to write down tomorrow's problems — they'll still be there in the morning. They don't need solving at 11 PM."
           </p>
         </div>
-        <div className="absolute right-[-5%] top-[-5%] w-64 h-64 bg-primary/10 rounded-full blur-[80px]" />
-      </div>
+              </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         <div className="lg:col-span-2 space-y-8">
           
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div className="card glass p-6 space-y-6 relative overflow-hidden group hover:border-primary/30 transition-colors">
+            <div className="card border border-border p-6 space-y-6 relative overflow-hidden group hover:border-primary/30 transition-colors">
                <div className="flex items-center gap-3 mb-2">
                  <div className="w-10 h-10 rounded-full bg-surface dark:bg-surface flex items-center justify-center text-text-main">
                    <Bed className="w-5 h-5" />
@@ -118,10 +117,9 @@ export const SleepBuilder = ({ fingerprint, onAwardPoints }: SleepBuilderProps) 
                  onChange={(e) => setBedtime(e.target.value)}
                  className="w-full bg-transparent border-b-2 border-border/50 text-3xl font-display font-black text-primary focus:outline-none focus:border-primary transition-colors py-2"
                />
-               <div className="absolute right-[-10%] bottom-[-10%] w-32 h-32 bg-primary/5 rounded-full blur-[40px] group-hover:bg-primary/10 transition-colors" />
-            </div>
+                           </div>
 
-            <div className="card glass p-6 space-y-4">
+            <div className="card border border-border p-6 space-y-4">
                <span className="text-xs font-black uppercase tracking-widest text-text-muted">Environmental Control</span>
                
                <button 
@@ -148,7 +146,7 @@ export const SleepBuilder = ({ fingerprint, onAwardPoints }: SleepBuilderProps) 
             </div>
           </div>
 
-          <div className="card glass p-8 space-y-6">
+          <div className="card border border-border p-8 space-y-6">
             <div className="flex items-center justify-between mb-2">
               <div className="flex items-center gap-3">
                 <Edit3 className="w-5 h-5 text-primary" />
@@ -169,7 +167,7 @@ export const SleepBuilder = ({ fingerprint, onAwardPoints }: SleepBuilderProps) 
 
         <div className="lg:col-span-1 space-y-8">
            
-           <div className="card glass p-6 space-y-6 h-[250px] flex flex-col">
+           <div className="card border border-border p-6 space-y-6 h-[250px] flex flex-col">
               <div className="flex items-center gap-2 mb-1">
                 <Activity className="w-4 h-4 text-primary" />
                 <span className="text-xs uppercase tracking-[0.2em] font-black text-text-muted">Sleep Debt Trend</span>
@@ -193,7 +191,7 @@ export const SleepBuilder = ({ fingerprint, onAwardPoints }: SleepBuilderProps) 
               </div>
            </div>
 
-           <div className="card glass p-6 space-y-6">
+           <div className="card border border-border p-6 space-y-6">
               <div className="flex items-center gap-3 mb-2">
                 <ZapOff className="w-5 h-5 text-primary" />
                 <h4 className="text-xl font-display font-bold text-text-main">Tomorrow Parking List</h4>

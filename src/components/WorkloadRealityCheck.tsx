@@ -364,7 +364,7 @@ export const WorkloadRealityCheck = ({ fingerprint, onAwardPoints }: WorkloadRea
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -20 }}
-            className="card glass p-8 md:p-12 relative overflow-hidden"
+            className="card p-8 md:p-12 relative overflow-hidden border border-border"
           >
             <div className="flex items-center justify-between mb-8 overflow-hidden">
               <div className="flex gap-2">
@@ -419,7 +419,7 @@ export const WorkloadRealityCheck = ({ fingerprint, onAwardPoints }: WorkloadRea
                   disabled={!answers[activeQuestion].trim()}
                   className="btn-primary"
                 >
-                  {currentStep === questionKeys.length - 1 ? "Synthesize Plan" : "Next Question"} <ArrowRight className="w-4 h-4" />
+                  {currentStep === questionKeys.length - 1 ? "Build My Plan" : "Next Question"} <ArrowRight className="w-4 h-4" />
                 </button>
               </div>
             </div>
@@ -432,12 +432,12 @@ export const WorkloadRealityCheck = ({ fingerprint, onAwardPoints }: WorkloadRea
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 1.05 }}
-            className="card glass p-6 sm:p-8 md:p-12 flex flex-col items-center justify-center text-center min-h-[400px]"
+            className="card p-6 sm:p-8 md:p-12 flex flex-col items-center justify-center text-center min-h-[400px] border border-border"
           >
-            <motion.div 
-              animate={{ rotate: 360 }} 
+            <motion.div
+              animate={{ rotate: 360 }}
               transition={{ repeat: Infinity, duration: 2, ease: 'linear' }}
-              className="w-16 h-16 border-4 border-primary/20 border-t-indigo-500 rounded-full mb-8 shrink-0"
+              className="w-16 h-16 border-4 border-primary/20 border-t-primary rounded-full mb-8 shrink-0"
             />
             <h3 className="text-2xl font-display font-bold text-text-main mb-2">Stripping the Noise...</h3>
             <p className="text-text-muted font-medium max-w-md">Nova is categorizing your inputs to protect your energy baseline.</p>
@@ -452,19 +452,19 @@ export const WorkloadRealityCheck = ({ fingerprint, onAwardPoints }: WorkloadRea
             className="space-y-8"
           >
             {/* Real Coach Warning Prompt */}
-            <div className="card glass border-primary/20 bg-primary/5 p-6 relative overflow-hidden">
+            <div className="card border border-primary/20 bg-primary/5 p-6 relative overflow-hidden">
               <div className="relative z-10 space-y-3">
                 <div className="flex items-center gap-3">
                   <div className="w-8 h-8 rounded-xl bg-primary text-primary-foreground flex items-center justify-center shadow-lg shadow-primary/20">
                     <Target className="w-4 h-4" />
                   </div>
                   <div>
-                    <h3 className="text-sm font-display font-bold text-text-main tracking-tight">Nova's Calibrated Workspace</h3>
-                    <p className="text-[11px] uppercase tracking-[0.2em] font-black text-primary">Urgency Neutralizer</p>
+                    <h3 className="text-sm font-display font-bold text-text-main tracking-tight">Nova's Take</h3>
+                    <p className="text-[11px] uppercase tracking-[0.2em] font-black text-primary">Cutting Through the Urgency</p>
                   </div>
                 </div>
-                <p className="text-sm text-text-main font-medium leading-relaxed">
-                  "I have extracted the anxiety-backed urgency from your task roster. Manage your physical energy reserves below and discard high-drain tasks that trigger baseline neural burnout."
+                <p className="text-sm text-text-main font-serif italic leading-relaxed">
+                  "A lot of what's on here reads as urgent because of anxiety, not because it actually has to happen today. Let's separate what's real from what's just loud, and drop what's actually draining you for no reason."
                 </p>
               </div>
             </div>
@@ -487,7 +487,7 @@ export const WorkloadRealityCheck = ({ fingerprint, onAwardPoints }: WorkloadRea
                 </div>
               </motion.div>
             )}
-            <div className="bg-surface dark:bg-card/60 p-6 md:p-8 rounded-3xl border border-border/40 space-y-6">
+            <div className="bg-surface dark:bg-card/60 p-6 md:p-8 rounded-xl border border-border space-y-6">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center text-primary shrink-0">
                   <Plus className="w-5 h-5" />
@@ -577,7 +577,7 @@ export const WorkloadRealityCheck = ({ fingerprint, onAwardPoints }: WorkloadRea
                       step="5"
                       value={newDrain}
                       onChange={(e) => setNewDrain(parseInt(e.target.value, 10))}
-                      className="w-full accent-indigo-500 h-1.5 rounded-full cursor-pointer bg-border dark:bg-surface"
+                      className="w-full accent-primary h-1.5 rounded-full cursor-pointer bg-border dark:bg-surface"
                     />
                   </div>
                   <div className="flex items-center gap-2 justify-end">
@@ -684,7 +684,7 @@ export const WorkloadRealityCheck = ({ fingerprint, onAwardPoints }: WorkloadRea
 
             {/* Task Checklist Items Listing */}
             {sortedTasks.length === 0 ? (
-              <div className="text-center py-12 border border-dashed border-border/30 rounded-3xl font-sans">
+              <div className="text-center py-12 border border-dashed border-border rounded-xl font-sans">
                 <ListTodo className="w-8 h-8 text-text-muted mx-auto opacity-45 mb-2" />
                 <p className="text-sm text-text-main font-bold">No calibrated tasks remaining.</p>
                 <p className="text-xs text-text-muted mt-1">Add tasks above to begin mapping your physical energy budget.</p>
@@ -796,7 +796,7 @@ export const WorkloadRealityCheck = ({ fingerprint, onAwardPoints }: WorkloadRea
                               step="5"
                               value={editingDrain}
                               onChange={(e) => setEditingDrain(parseInt(e.target.value, 10))}
-                              className="w-full h-1.5 rounded-full cursor-pointer bg-border dark:bg-surface/80 accent-indigo-500"
+                              className="w-full h-1.5 rounded-full cursor-pointer bg-border dark:bg-surface/80 accent-primary"
                             />
                           ) : (
                             /* Colored scale progress bar */
@@ -864,7 +864,7 @@ export const WorkloadRealityCheck = ({ fingerprint, onAwardPoints }: WorkloadRea
                 <Sparkles className="w-3.5 h-3.5 animate-bounce" /> Your Prescribed Recovery Action Plan Step
               </span>
               <p className="text-xs text-text-muted leading-relaxed">
-                Review your task inventory prioritized by energetic drain. To prevent cognitive fatigue and protect baseline neural recovery velocity indexes, commit to completing your <strong>Must Do Today</strong> lists early, then completely power down during the <strong>Mandatory Recovery Block</strong>.
+                Review your task inventory prioritized by energetic drain. To prevent burnout, commit to completing your <strong>Must Do Today</strong> lists early, then completely power down during the <strong>Mandatory Recovery Block</strong>.
               </p>
               <div className="flex flex-wrap gap-2.5">
                 <button
@@ -906,7 +906,7 @@ export const WorkloadRealityCheck = ({ fingerprint, onAwardPoints }: WorkloadRea
               initial={{ opacity: 0, scale: 0.95, y: 15 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 15 }}
-              className="bg-white dark:bg-surface border border-border/40 rounded-3xl p-6 md:p-8 max-w-md w-full relative z-[110] shadow-2xl font-sans"
+              className="bg-white dark:bg-surface border border-border/40 rounded-xl p-6 md:p-8 max-w-md w-full relative z-[110] shadow-lg font-sans"
             >
               <div className="flex gap-4 items-start mb-5">
                 <div className="w-12 h-12 rounded-2xl bg-destructive/10 text-destructive flex items-center justify-center shrink-0">
