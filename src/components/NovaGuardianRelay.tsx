@@ -110,7 +110,7 @@ const GuardianCard = ({
       className={cn(
         "guardian-network-card p-6 rounded-2xl border transition-all overflow-hidden relative shadow-lg group",
         contact.role.includes('guardian')
-          ? "bg-card border-destructive/30 text-destructive shadow-rose-900/10" 
+          ? "bg-card border-destructive/30 text-destructive shadow-destructive/10"
           : "bg-white dark:bg-card border-border"
       )}
     >
@@ -155,7 +155,7 @@ const GuardianCard = ({
         <div className="flex items-center gap-2 flex-wrap">
            <span className={cn(
              "text-[11px] uppercase font-black tracking-widest px-2.5 py-1 rounded-md",
-             contact.role === 'primary_guardian' ? "bg-destructive/20 text-rose-300" : "bg-border dark:bg-surface text-text-muted"
+             contact.role === 'primary_guardian' ? "bg-destructive/20 text-destructive" : "bg-border dark:bg-surface text-text-muted"
            )}>
              {contact.role.replace('_', ' ')}
            </span>
@@ -183,7 +183,7 @@ const GuardianCard = ({
          <div className="grid grid-cols-2 gap-2">
             <button 
               onClick={() => onActivateSOS(contact.id)}
-              className={cn("col-span-1 py-3 text-[11px] font-black uppercase tracking-widest rounded-xl transition-all shadow-sm", contact.role.includes('guardian') ? "bg-destructive hover:bg-destructive text-destructive-foreground" : "bg-white dark:bg-surface border border-rose-200 dark:border-rose-900 text-rose-600 dark:text-destructive hover:bg-rose-50 dark:hover:bg-rose-950")}
+              className={cn("col-span-1 py-3 text-[11px] font-black uppercase tracking-widest rounded-xl transition-all shadow-sm", contact.role.includes('guardian') ? "bg-destructive hover:bg-destructive text-destructive-foreground" : "bg-white dark:bg-surface border border-destructive dark:border-destructive text-destructive dark:text-destructive hover:bg-destructive dark:hover:bg-destructive")}
             >
               Manual SOS
             </button>
@@ -289,7 +289,7 @@ export const NovaGuardianRelay = ({ contacts, onAdd, onRemove }: NovaGuardianRel
 
   return (
     <div className="space-y-12 pb-12">
-      <div className="relative overflow-hidden rounded-3xl bg-card border border-border p-8 sm:p-12 shadow-2xl">
+      <div className="relative overflow-hidden rounded-xl bg-card border border-border p-8 sm:p-12">
         <div className="absolute top-0 right-0 p-8 opacity-5 pointer-events-none">
           <Network className="w-64 h-64 text-text-muted" />
         </div>
@@ -342,10 +342,10 @@ export const NovaGuardianRelay = ({ contacts, onAdd, onRemove }: NovaGuardianRel
             </AnimatePresence>
 
             {contacts.length === 0 && !isAdding && (
-               <div className="col-span-full py-16 flex flex-col items-center justify-center text-center border border-dashed border-border rounded-3xl bg-surface dark:bg-card/50">
+               <div className="col-span-full py-16 flex flex-col items-center justify-center text-center border border-dashed border-border rounded-xl bg-surface dark:bg-card/50">
                  <Shield className="w-12 h-12 text-text-muted mb-6" />
                  <h4 className="font-bold text-text-main mb-2 text-lg">Infrastructure Offline</h4>
-                 <p className="text-sm text-text-muted max-w-md px-6 mb-8 leading-relaxed">Establish your escalation network now. Nova requires a defined path when autonomous regulation protocols hit their physical limits.</p>
+                 <p className="text-sm text-text-muted max-w-md px-6 mb-8 leading-relaxed">Set up your emergency contacts now, so there's a clear path to reach someone if things ever get to be too much.</p>
                  <button 
                    onClick={() => setIsAdding(true)}
                    className="flex items-center gap-3 btn-primary px-8 py-4 rounded-xl text-xs font-black uppercase tracking-widest shadow-xl shadow-primary/20"
@@ -360,7 +360,7 @@ export const NovaGuardianRelay = ({ contacts, onAdd, onRemove }: NovaGuardianRel
         {/* Info Sidebar */}
         <div className="xl:col-span-4 space-y-6">
           {/* Nova's Anchor: Grounding State */}
-          <div className="card p-8 bg-card border border-border text-text-main relative overflow-hidden space-y-6 shadow-2xl">
+          <div className="card p-8 bg-card border border-border text-text-main relative overflow-hidden space-y-6">
             <div className="absolute top-0 right-0 w-full h-full bg-gradient-to-br from-primary/10 via-transparent to-transparent pointer-events-none" />
             
             <div className="relative z-10 flex items-center justify-between">
@@ -370,7 +370,7 @@ export const NovaGuardianRelay = ({ contacts, onAdd, onRemove }: NovaGuardianRel
                   Nova's Anchor
                 </h4>
               </div>
-              <div className="w-2 h-2 rounded-full bg-primary animate-pulse shadow-[0_0_10px_rgba(99,102,241,0.8)]" />
+              <div className="w-2 h-2 rounded-full bg-primary animate-pulse shadow-[0_0_10px_rgba(234,88,12,0.8)]" />
             </div>
 
             <div className="relative z-10 space-y-5">
@@ -382,7 +382,7 @@ export const NovaGuardianRelay = ({ contacts, onAdd, onRemove }: NovaGuardianRel
                    <motion.div 
                      animate={{ scale: [1, 1.15, 1] }}
                      transition={{ duration: 8, repeat: Infinity, ease: "easeInOut" }}
-                     className="w-16 h-16 rounded-full border border-primary/30 mx-auto flex items-center justify-center text-primary relative shadow-[0_0_30px_rgba(99,102,241,0.2)]"
+                     className="w-16 h-16 rounded-full border border-primary/30 mx-auto flex items-center justify-center text-primary relative shadow-[0_0_30px_rgba(234,88,12,0.2)]"
                    >
                      <motion.div 
                        animate={{ opacity: [0.5, 1, 0.5] }}
@@ -447,7 +447,7 @@ export const NovaGuardianRelay = ({ contacts, onAdd, onRemove }: NovaGuardianRel
               initial={{ opacity: 0, scale: 0.95, y: 10 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 10 }}
-               className="relative card w-full max-w-xl p-8 overflow-hidden bg-white dark:bg-card border-border shadow-2xl"
+               className="relative card w-full max-w-xl p-8 overflow-hidden bg-white dark:bg-card border border-border shadow-lg"
             >
               <button 
                 onClick={() => setIsAdding(false)}
@@ -522,8 +522,8 @@ export const NovaGuardianRelay = ({ contacts, onAdd, onRemove }: NovaGuardianRel
                   </div>
 
                   {newContact.role.includes('guardian') && (
-                    <div className="p-6 bg-rose-50/50 dark:bg-rose-950/20 border border-rose-200 dark:border-rose-900/30 rounded-2xl space-y-5">
-                       <h5 className="text-xs font-black uppercase tracking-widest text-rose-600 dark:text-destructive flex items-center gap-2">
+                    <div className="p-6 bg-destructive/50 dark:bg-destructive/20 border border-destructive dark:border-destructive/30 rounded-2xl space-y-5">
+                       <h5 className="text-xs font-black uppercase tracking-widest text-destructive dark:text-destructive flex items-center gap-2">
                           <AlertTriangle className="w-4 h-4" /> Automation Parameters
                        </h5>
                        
@@ -538,7 +538,7 @@ export const NovaGuardianRelay = ({ contacts, onAdd, onRemove }: NovaGuardianRel
                            className="hidden"
                          />
                          <div className="space-y-1.5">
-                           <span className={cn("text-sm font-bold block transition-colors", newContact.autoAlertEnabled ? "text-rose-600 dark:text-destructive" : "text-text-main")}>Enable Automatic Alert</span>
+                           <span className={cn("text-sm font-bold block transition-colors", newContact.autoAlertEnabled ? "text-destructive dark:text-destructive" : "text-text-main")}>Enable Automatic Alert</span>
                            <span className="text-xs text-text-muted block leading-relaxed pr-6 font-medium">Authorizes the Nova engine to autonomously deploy distress beacons to this endpoint upon detecting a critical instability state, bypassing user confirmation.</span>
                          </div>
                        </label>
@@ -573,7 +573,7 @@ export const NovaGuardianRelay = ({ contacts, onAdd, onRemove }: NovaGuardianRel
               initial={{ opacity: 0, scale: 0.95, y: 10 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 10 }}
-               className="relative card w-full max-w-md p-0 overflow-hidden bg-card border-destructive/30 text-text-main shadow-2xl shadow-destructive/20"
+               className="relative card w-full max-w-md p-0 overflow-hidden bg-card border border-destructive/30 text-text-main shadow-lg shadow-destructive/10"
             >
                 <div className="p-8 space-y-6 relative z-10">
                   <div className="w-20 h-20 rounded-2xl bg-destructive/20 flex items-center justify-center mx-auto text-destructive border border-destructive/30 shadow-[0_0_30px_rgba(225,29,72,0.2)]">
@@ -615,7 +615,7 @@ export const NovaGuardianRelay = ({ contacts, onAdd, onRemove }: NovaGuardianRel
                            if (c) triggerLiveRelay(c);
                         }}
                         disabled={isSending}
-                        className="py-4 rounded-xl font-bold text-xs uppercase tracking-widest bg-destructive text-destructive-foreground hover:bg-destructive transition-colors flex items-center justify-center gap-2 shadow-lg shadow-rose-600/30 disabled:"
+                        className="py-4 rounded-xl font-bold text-xs uppercase tracking-widest bg-destructive text-destructive-foreground hover:bg-destructive transition-colors flex items-center justify-center gap-2 shadow-lg shadow-destructive/30 disabled:opacity-40"
                       >
                        {isSending ? <Loader2 className="w-4 h-4 animate-spin" /> : <><Send className="w-4 h-4 relative -left-0.5" /> Execute</>}
                       </button>
