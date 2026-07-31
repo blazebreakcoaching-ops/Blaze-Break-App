@@ -21,6 +21,7 @@ export const OneLessThing = ({ fingerprint, onAwardPoints }: OneLessThingProps) 
     icon: any;
     colorClass: string;
     bgColorClass: string;
+    borderClass: string;
   } | null>(null);
 
   const handleAnalyze = () => {
@@ -39,7 +40,8 @@ export const OneLessThing = ({ fingerprint, onAwardPoints }: OneLessThingProps) 
           template: "Hi team, I’m re-evaluating priorities for today to protect focus time. Let's handle this update asynchronously via Slack/Email instead of a meeting.",
           icon: Trash2,
           colorClass: "text-destructive",
-          bgColorClass: "bg-destructive"
+          bgColorClass: "bg-destructive",
+          borderClass: "border-destructive/30"
         };
       } else if (lowerTask.includes('report') || lowerTask.includes('presentation') || lowerTask.includes('deck')) {
         outcome = {
@@ -48,7 +50,8 @@ export const OneLessThing = ({ fingerprint, onAwardPoints }: OneLessThingProps) 
           template: "Here is the raw data / rough outline. I wanted to get this to you quickly rather than over-polishing. Let me know if you need specific details expanded.",
           icon: Zap,
           colorClass: "text-success",
-          bgColorClass: "bg-success"
+          bgColorClass: "bg-success",
+          borderClass: "border-success/30"
         };
       } else if (lowerTask.includes('help') || lowerTask.includes('team') || lowerTask.includes('fix')) {
         outcome = {
@@ -57,7 +60,8 @@ export const OneLessThing = ({ fingerprint, onAwardPoints }: OneLessThingProps) 
           template: "Hey, I need to pass this over to you to run with. Do your best with it, no need to run decisions by me unless it's a catastrophic blocker.",
           icon: Users,
           colorClass: "text-primary",
-          bgColorClass: "bg-primary"
+          bgColorClass: "bg-primary",
+          borderClass: "border-primary/30"
         };
       } else {
         outcome = {
@@ -66,7 +70,8 @@ export const OneLessThing = ({ fingerprint, onAwardPoints }: OneLessThingProps) 
           template: "To ensure I can give this the attention it needs, I am going to push my delivery on this to next [Tuesday]. Let me know if that creates a critical blocker.",
           icon: Clock,
           colorClass: "text-warning",
-          bgColorClass: "bg-warning"
+          bgColorClass: "bg-warning",
+          borderClass: "border-warning/30"
         };
       }
 
@@ -112,7 +117,7 @@ export const OneLessThing = ({ fingerprint, onAwardPoints }: OneLessThingProps) 
             >
               <button
                 onClick={() => setStep('input')}
-                className="w-full aspect-square md:aspect-auto md:h-80 rounded-[3rem] bg-primary hover:bg-primary transition-all flex flex-col items-center justify-center p-8 text-primary-foreground shadow-2xl shadow-primary/30 group hover:scale-[1.02]"
+                className="w-full aspect-square md:aspect-auto md:h-80 rounded-xl bg-primary hover:opacity-90 transition-all flex flex-col items-center justify-center p-8 text-primary-foreground shadow-lg shadow-primary/20 group hover:scale-[1.02]"
               >
                 <div className="w-24 h-24 bg-white/10 rounded-full flex items-center justify-center mb-6 group-hover:scale-110 transition-transform duration-500">
                   <MinusCircle className="w-12 h-12" />
@@ -129,7 +134,7 @@ export const OneLessThing = ({ fingerprint, onAwardPoints }: OneLessThingProps) 
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -20 }}
-              className="w-full max-w-2xl card glass p-8 md:p-12"
+              className="w-full max-w-2xl card p-8 md:p-12 border border-border"
             >
               <div className="flex items-center gap-4 mb-6">
                 <div className="w-12 h-12 bg-primary/10 rounded-full flex items-center justify-center">
@@ -174,12 +179,12 @@ export const OneLessThing = ({ fingerprint, onAwardPoints }: OneLessThingProps) 
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 1.05 }}
-              className="w-full max-w-xl card glass p-8 sm:p-12 md:p-16 flex flex-col items-center justify-center text-center"
+              className="w-full max-w-xl card p-8 sm:p-12 md:p-16 flex flex-col items-center justify-center text-center border border-border"
             >
-              <motion.div 
-               animate={{ rotate: 360 }} 
+              <motion.div
+               animate={{ rotate: 360 }}
                transition={{ repeat: Infinity, duration: 2, ease: 'linear' }}
-               className="w-20 h-20 border-4 border-primary/20 border-t-indigo-500 rounded-full mb-8 shrink-0"
+               className="w-20 h-20 border-4 border-primary/20 border-t-primary rounded-full mb-8 shrink-0"
               />
               <h3 className="text-3xl font-display font-bold text-text-main mb-4">Nova is processing...</h3>
               <p className="text-text-muted font-medium text-lg">Finding the structural weakness in this task so you can drop it.</p>
@@ -193,10 +198,10 @@ export const OneLessThing = ({ fingerprint, onAwardPoints }: OneLessThingProps) 
               animate={{ opacity: 1, y: 0 }}
               className="w-full max-w-2xl space-y-6"
              >
-                <div className={cn("card glass p-8 md:p-12 relative overflow-hidden", `border-${result.colorClass.split('-')[1]}-500/30`)}>
+                <div className={cn("card p-8 md:p-12 relative overflow-hidden border", result.borderClass)}>
                   <div className="relative z-10">
                     <div className="flex items-start gap-6 mb-8">
-                      <div className={cn("w-16 h-16 rounded-2xl flex items-center justify-center text-white shrink-0 shadow-lg", result.bgColorClass, `shadow-${result.colorClass.split('-')[1]}-500/30`)}>
+                      <div className={cn("w-16 h-16 rounded-xl flex items-center justify-center text-white shrink-0 shadow-lg", result.bgColorClass)}>
                         <result.icon className="w-8 h-8" />
                       </div>
                       <div>
@@ -211,7 +216,7 @@ export const OneLessThing = ({ fingerprint, onAwardPoints }: OneLessThingProps) 
                       </p>
                       
                       {result.template && (
-                        <div className="p-6 bg-surface dark:bg-surface/50 rounded-2xl border border-border/50 space-y-3">
+                        <div className="p-6 bg-surface dark:bg-surface/50 rounded-xl border border-border space-y-3">
                           <span className="text-xs font-black uppercase tracking-widest text-text-muted flex items-center gap-2">
                             Communication Template
                           </span>
@@ -222,16 +227,15 @@ export const OneLessThing = ({ fingerprint, onAwardPoints }: OneLessThingProps) 
                       )}
                     </div>
 
-                    <div className="pt-10 flex flex-col sm:flex-row gap-4 items-center justify-between border-t border-border/50 mt-10">
+                    <div className="pt-10 flex flex-col sm:flex-row gap-4 items-center justify-between border-t border-border mt-10">
                       <span className="text-sm font-bold text-text-muted flex items-center gap-2">
-                         <CheckCircle2 className="w-4 h-4 text-success" /> Operation Authorized by Recovery Coach
+                         <CheckCircle2 className="w-4 h-4 text-success" /> Nice work, one less thing
                       </span>
-                      <button onClick={handleReset} className={cn("btn-primary", result.bgColorClass, `border-${result.colorClass.split('-')[1]}-500 hover:bg-${result.colorClass.split('-')[1]}-600`)}>
+                      <button onClick={handleReset} className={cn("btn-primary", result.bgColorClass, "hover:opacity-90")}>
                         Task Removed
                       </button>
                     </div>
                   </div>
-                  <div className={cn("absolute right-[-10%] top-[-10%] w-64 h-64 rounded-full blur-[100px] opacity-20", result.bgColorClass)} />
                 </div>
              </motion.div>
           )}
