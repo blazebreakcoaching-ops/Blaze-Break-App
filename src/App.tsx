@@ -1428,7 +1428,7 @@ const HomeSection = ({
       <div key="stats" className="grid grid-cols-1 md:grid-cols-3 gap-8">
         {[
           { label: "Current Phase", value: shipStage, subLabel: "SHIP Journey", color: "text-primary", bg: "bg-primary/10" },
-          { label: "Burnout Risk", value: dynamicRisk, subLabel: "How you're trending", color: dynamicRisk === "Low" ? "text-success" : dynamicRisk === "Moderate" ? "text-warning" : "text-danger", bg: dynamicRisk === "Low" ? "bg-success/10" : dynamicRisk === "Moderate" ? "bg-warning/10" : "bg-danger/10" },
+          { label: "Burnout Risk", value: dynamicRisk, subLabel: "How you're trending", color: dynamicRisk === "Low" ? "text-success" : dynamicRisk === "Moderate" ? "text-warning" : "text-destructive", bg: dynamicRisk === "Low" ? "bg-success/10" : dynamicRisk === "Moderate" ? "bg-warning/10" : "bg-destructive/10" },
           { label: "Energy Cap", value: `${energyLevel}%`, subLabel: "Energy available today", color: "text-primary", bg: "bg-primary/10" },
         ].map((item, i) => (
           <motion.div key={i} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.1 }}>

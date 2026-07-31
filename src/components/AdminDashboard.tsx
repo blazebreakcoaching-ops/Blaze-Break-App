@@ -387,7 +387,7 @@ export const AdminDashboard = () => {
                 localStorage.setItem('blaze_simulated_admin_role', 'platform_admin');
                 showSuccess("Successfully elevated to simulated Platform Admin!");
               }}
-              className="w-full py-2.5 bg-primary hover:bg-primary-hover text-white text-xs font-bold uppercase tracking-widest rounded-xl transition-all shadow-md flex items-center justify-center gap-2"
+              className="w-full py-2.5 bg-primary hover:opacity-90 text-primary-foreground text-xs font-bold uppercase tracking-widest rounded-xl transition-all shadow-md flex items-center justify-center gap-2"
             >
               <ShieldCheck className="w-4 h-4" /> Simulate Platform Admin
             </button>

@@ -149,8 +149,8 @@ export const RecoveryVelocityMap = () => {
             </span>
             <span className={cn(
               "font-mono font-black px-1.5 py-0.5 rounded",
-              isDeficit 
-                ? "bg-danger/10 text-danger" 
+              isDeficit
+                ? "bg-destructive/10 text-destructive"
                 : "bg-success/10 text-success"
             )}>
               {isDeficit ? "" : "+"}{dataPoint.balance}% {isDeficit ? "Deficit" : "Surplus"}
@@ -253,7 +253,7 @@ export const RecoveryVelocityMap = () => {
           <div className="flex items-baseline gap-1.5">
             <span className={cn(
               "text-2xl font-black font-mono",
-              deficitDays > 10 ? "text-danger" : "text-warning"
+              deficitDays > 10 ? "text-destructive" : "text-warning"
             )}>
               {deficitDays}
             </span>
@@ -268,7 +268,7 @@ export const RecoveryVelocityMap = () => {
           <div className="flex items-baseline gap-1.5">
             <span className={cn(
               "text-2xl font-black font-mono",
-              netVelocityBalance >= 0 ? "text-success" : "text-danger"
+              netVelocityBalance >= 0 ? "text-success" : "text-destructive"
             )}>
               {netVelocityBalance >= 0 ? "+" : ""}{netVelocityBalance}%
             </span>

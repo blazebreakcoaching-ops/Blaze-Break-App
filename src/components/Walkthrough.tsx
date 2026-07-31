@@ -669,7 +669,7 @@ export const Walkthrough = ({
                     </button>
                     <button
                       onClick={handleNext}
-                      className="px-8 py-3.5 bg-primary hover:bg-primary-hover text-primary-foreground rounded-xl text-xs font-black uppercase tracking-[0.15em] flex items-center gap-2 shadow-lg shadow-primary/30 hover:scale-[1.02] active:scale-95 transition-all cursor-pointer"
+                      className="px-8 py-3.5 bg-primary hover:opacity-90 text-primary-foreground rounded-xl text-xs font-black uppercase tracking-[0.15em] flex items-center gap-2 shadow-lg shadow-primary/30 hover:scale-[1.02] active:scale-95 transition-all cursor-pointer"
                     >
                       {currentStep === steps.length - 1 ? (
                         <>Graduate Tour (+30 pts) <Sparkles className="w-4 h-4" /></>

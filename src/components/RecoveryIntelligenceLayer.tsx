@@ -966,7 +966,7 @@ export const RecoveryIntelligenceLayer = ({ onAwardPoints, fingerprint }: Recove
                           <div className="pt-2">
                             <button
                               onClick={() => setExpandedFormula(isExpanded ? null : card.id)}
-                              className="text-[10px] font-black uppercase tracking-wider text-primary hover:text-primary-hover flex items-center gap-1 cursor-pointer"
+                              className="text-[10px] font-black uppercase tracking-wider text-primary hover:opacity-80 flex items-center gap-1 cursor-pointer"
                             >
                               <Info className="w-3.5 h-3.5" />
                               {isExpanded ? "Hide calculation model" : "How is this calculated?"}
