@@ -155,12 +155,7 @@ export const PrivacyVault = ({
   return (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
       {/* Header */}
-      <div className="relative overflow-hidden rounded-[2rem] bg-background border border-white/[0.04] p-8 md:p-12 shadow-2xl">
-        <div className="absolute top-0 right-0 p-8 opacity-5">
-          <ShieldCheck className="w-48 h-48 text-primary" />
-        </div>
-        <div className="absolute top-0 left-1/4 w-[300px] h-[300px] bg-primary/10 rounded-full blur-[100px] pointer-events-none" />
-
+      <div className="relative overflow-hidden rounded-xl bg-background border border-border p-8 md:p-12">
         <div className="relative z-10 max-w-3xl">
           <div className="bg-warning/10 border border-warning/20 text-warning rounded-xl p-4 text-sm font-bold flex gap-2 mb-6">
             <AlertTriangle className="w-5 h-5 shrink-0" />
@@ -178,7 +173,7 @@ export const PrivacyVault = ({
                 <h2 className="text-3xl font-display font-light text-text-main tracking-tight cursor-help underline decoration-primary/30 underline-offset-8 decoration-dashed">
                   Trust & Privacy Centre
                 </h2>
-                <div className="absolute left-0 top-full mt-4 p-4 w-72 bg-card text-text-main text-sm font-medium rounded-xl border border-border shadow-2xl opacity-0 invisible group-hover/tooltip:opacity-100 group-hover/tooltip:visible transition-all z-50 pointer-events-none">
+                <div className="absolute left-0 top-full mt-4 p-4 w-72 bg-card text-text-main text-sm font-medium rounded-xl border border-border shadow-lg opacity-0 invisible group-hover/tooltip:opacity-100 group-hover/tooltip:visible transition-all z-50 pointer-events-none">
                   <div className="text-xs uppercase font-black tracking-widest text-primary mb-2">Welcome to the Vault</div>
                   Manage your data boundaries, review AI governance polices, and control what Nova remembers about your burnout baseline.
                 </div>
@@ -457,7 +452,7 @@ export const PrivacyVault = ({
 
               <div className="space-y-8 pl-4 border-l border-white/[0.05] max-w-3xl">
                 <div className="relative">
-                  <div className="absolute -left-[21px] top-1 w-3 h-3 rounded-full bg-primary shadow-[0_0_10px_rgba(99,102,241,0.5)]" />
+                  <div className="absolute -left-[21px] top-1 w-3 h-3 rounded-full bg-primary shadow-[0_0_10px_rgba(234,88,12,0.5)]" />
                   <h4 className="font-bold text-text-main mb-2">A. Recommendation Transparency</h4>
                   <p className="text-sm text-text-muted mb-3 font-light">When Nova advises you, the logic path is exposed. No "black box" guidance.</p>
                   <div className="bg-background/60 border border-white/[0.02] p-4 rounded-xl text-xs space-y-3 font-mono">
@@ -467,7 +462,7 @@ export const PrivacyVault = ({
                 </div>
 
                 <div className="relative">
-                  <div className="absolute -left-[21px] top-1 w-3 h-3 rounded-full bg-primary shadow-[0_0_10px_rgba(99,102,241,0.5)]" />
+                  <div className="absolute -left-[21px] top-1 w-3 h-3 rounded-full bg-primary shadow-[0_0_10px_rgba(234,88,12,0.5)]" />
                   <h4 className="font-bold text-text-main mb-2">B. Edit AI Context</h4>
                   <p className="text-sm text-text-muted mb-3 font-light">View and delete any pattern Nova has memorised about your symptoms.</p>
                   <div className="flex items-start gap-4 bg-background/60 border border-white/[0.02] p-4 rounded-xl text-sm">
@@ -495,7 +490,7 @@ export const PrivacyVault = ({
           )}
 
           {activeTab === 'audit' && (
-            <div className="card shadow-2xl">
+            <div className="card border border-border">
               <div className="flex items-center justify-between mb-8 pb-6 border-b border-white/[0.04]">
                 <div>
                   <h3 className="font-bold text-text-main text-lg mb-1">AI Action Audit Log</h3>
@@ -565,12 +560,11 @@ export const PrivacyVault = ({
               initial={{ scale: 0.95 }}
               animate={{ scale: 1 }}
               exit={{ scale: 0.95 }}
-              className="card bg-card border border-border shadow-2xl p-8 max-w-sm w-full relative overflow-hidden"
+              className="card bg-card border border-border shadow-lg p-8 max-w-sm w-full relative overflow-hidden"
               onClick={e => e.stopPropagation()}
             >
-              <div className="absolute top-0 right-0 w-32 h-32 bg-primary/10 rounded-full blur-[40px] pointer-events-none" />
               <div className="relative z-10 space-y-6">
-                <div className="w-12 h-12 bg-primary/20 rounded-2xl flex items-center justify-center text-primary">
+                <div className="w-12 h-12 bg-primary/20 rounded-lg flex items-center justify-center text-primary">
                   <Download className="w-6 h-6" />
                 </div>
                 <div>
@@ -618,10 +612,9 @@ export const PrivacyVault = ({
               initial={{ scale: 0.95 }}
               animate={{ scale: 1 }}
               exit={{ scale: 0.95 }}
-              className="card bg-background border border-destructive/30 shadow-[0_0_50px_rgba(239,68,68,0.2)] p-8 max-w-md w-full relative overflow-hidden"
+              className="card bg-background border border-destructive/30 shadow-[0_0_50px_rgba(220,38,38,0.2)] p-8 max-w-md w-full relative overflow-hidden"
               onClick={e => e.stopPropagation()}
             >
-              <div className="absolute top-0 right-0 w-32 h-32 bg-destructive/5 rounded-full blur-[40px] pointer-events-none" />
               <div className="relative z-10 space-y-6 text-left">
                 <div className="w-12 h-12 bg-destructive/10 border border-destructive/20 rounded-2xl flex items-center justify-center text-destructive shadow-lg shadow-destructive/10 animate-pulse">
                   <Trash2 className="w-6 h-6" />
@@ -643,7 +636,7 @@ export const PrivacyVault = ({
                           type="checkbox" 
                           checked={acknowledgedLoss} 
                           onChange={(e) => setAcknowledgedLoss(e.target.checked)}
-                          className="mt-0.5 accent-red-500 rounded border-white/[0.1] bg-background cursor-pointer"
+                          className="mt-0.5 accent-destructive rounded border-white/[0.1] bg-background cursor-pointer"
                         />
                         <span>I understand that all somatic stress metrics & audit ledgers will be permanently destroyed.</span>
                       </label>
@@ -652,7 +645,7 @@ export const PrivacyVault = ({
                           type="checkbox" 
                           checked={acknowledgedUnlink} 
                           onChange={(e) => setAcknowledgedUnlink(e.target.checked)}
-                          className="mt-0.5 accent-red-500 rounded border-white/[0.1] bg-background cursor-pointer"
+                          className="mt-0.5 accent-destructive rounded border-white/[0.1] bg-background cursor-pointer"
                         />
                         <span>I authorize immediate termination of Firebase Cloud Run sync channels.</span>
                       </label>
@@ -661,7 +654,7 @@ export const PrivacyVault = ({
                           type="checkbox" 
                           checked={acknowledgedNoRecovery} 
                           onChange={(e) => setAcknowledgedNoRecovery(e.target.checked)}
-                          className="mt-0.5 accent-red-500 rounded border-white/[0.1] bg-background cursor-pointer"
+                          className="mt-0.5 accent-destructive rounded border-white/[0.1] bg-background cursor-pointer"
                         />
                         <span>I accept Nova Coach will forget my behavioral baseline and cannot recover it.</span>
                       </label>
