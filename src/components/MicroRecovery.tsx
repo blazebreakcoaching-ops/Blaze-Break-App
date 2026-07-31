@@ -37,7 +37,7 @@ const ACTIONS: Record<Duration, { time: string, description: string, details: st
   },
   '2m': {
     time: '2 Minutes',
-    description: 'Quick recalibration protocol.',
+    description: 'A quick reset.',
     details: [
       'Stand up, unclench your jaw, breathe slowly.',
       'Drink a full glass of water.',
@@ -129,7 +129,7 @@ export const MicroRecovery = ({ fingerprint, onAwardPoints }: MicroRecoveryProps
           sourceType: 'prolonged',
           meetingA: current.summary,
           timeLabel: `${current.start} - ${current.end}`,
-          reason: `"${current.summary}" runs for ${current.durationMinutes}m, triggering heavy neural fatigue.`,
+          reason: `"${current.summary}" runs for ${current.durationMinutes}m — long enough to leave you drained.`,
           recommendedDuration: current.durationMinutes >= 120 ? '10m' : '5m'
         });
       }
@@ -327,7 +327,7 @@ export const MicroRecovery = ({ fingerprint, onAwardPoints }: MicroRecoveryProps
         </div>
 
         {calendarError && (
-          <div className="p-3 bg-rose-50 dark:bg-rose-950/20 rounded-xl border border-rose-200/50 text-xs text-rose-700 dark:text-destructive flex items-start gap-2">
+          <div className="p-3 bg-destructive dark:bg-destructive/20 rounded-xl border border-destructive/50 text-xs text-destructive dark:text-destructive flex items-start gap-2">
             <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
             <span>{calendarError}</span>
           </div>
@@ -399,7 +399,7 @@ export const MicroRecovery = ({ fingerprint, onAwardPoints }: MicroRecoveryProps
                "p-6 rounded-2xl border transition-all text-left group relative overflow-hidden",
                selectedDuration === duration
                  ? "bg-primary border-primary text-primary-foreground shadow-xl shadow-primary/20 scale-105 z-10"
-                 : "glass hover:border-primary/50 text-text-main hover:bg-surface dark:hover:bg-surface"
+                 : "border border-border hover:border-primary/50 text-text-main hover:bg-surface dark:hover:bg-surface"
              )}
            >
              <div className="flex flex-col gap-2 relative z-10">
@@ -423,7 +423,7 @@ export const MicroRecovery = ({ fingerprint, onAwardPoints }: MicroRecoveryProps
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -20 }}
-            className="card glass border-primary/20 bg-primary/5 p-6 sm:p-8 md:p-10 relative overflow-hidden"
+            className="card border border-primary/20 bg-primary/5 p-6 sm:p-8 md:p-10 relative overflow-hidden"
           >
             <div className="relative z-10 space-y-8">
               <div className="space-y-2">
@@ -466,8 +466,7 @@ export const MicroRecovery = ({ fingerprint, onAwardPoints }: MicroRecoveryProps
                  )}
               </div>
             </div>
-            <div className="absolute right-[-10%] top-[-10%] w-96 h-96 bg-primary/10 rounded-full blur-[100px]" />
-          </motion.div>
+                      </motion.div>
         )}
 
         {completed && (
@@ -475,13 +474,13 @@ export const MicroRecovery = ({ fingerprint, onAwardPoints }: MicroRecoveryProps
             key="success"
             initial={{ opacity: 0, scale: 0.9 }}
             animate={{ opacity: 1, scale: 1 }}
-            className="card glass border-success/20 bg-success/5 p-6 sm:p-8 md:p-10 flex flex-col items-center justify-center text-center py-20"
+            className="card border border-success/20 bg-success/5 p-6 sm:p-8 md:p-10 flex flex-col items-center justify-center text-center py-20"
           >
              <div className="w-20 h-20 bg-success rounded-full flex items-center justify-center text-white mb-6 shadow-xl shadow-success/20">
                <CheckCircle2 className="w-10 h-10" />
              </div>
              <h4 className="text-3xl font-display font-bold text-text-main mb-2">Done</h4>
-             <p className="text-lg text-text-muted font-medium">Neural and physiological baseline adjusted. Points awarded.</p>
+             <p className="text-lg text-text-muted font-medium">Nice reset. Points awarded.</p>
           </motion.div>
         )}
       </AnimatePresence>
