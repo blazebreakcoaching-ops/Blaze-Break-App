@@ -238,7 +238,7 @@ export const RecoveryIntelligenceLayer = ({ onAwardPoints, fingerprint }: Recove
       id: 'eyerelease',
       name: 'Optic Drift (20-20-20 Rule)',
       durationSeconds: 60,
-      description: 'Relieves screens mental strain and frontal neural focus fatigue.',
+      description: 'Relieves eye strain and mental fatigue from screen time.',
       steps: [
         'Avert eyes from any digital screen.',
         'Find a physical object 20 feet away to look at softly.',
@@ -511,11 +511,11 @@ export const RecoveryIntelligenceLayer = ({ onAwardPoints, fingerprint }: Recove
   // 5. Body Symptoms
   const SYMPTOM_OPTIONS = [
     { id: 'jaw', name: 'Jaw Clenching / Tension' },
-    { id: 'breathing', name: 'Shallow or Suspended Breathing' },
+    { id: 'breathing', name: 'Shallow Breathing' },
     { id: 'chest', name: 'Tightness in Chest / Hyperventilating feeling' },
     { id: 'shoulders', name: 'Elevated Shoulders / Neck Pain' },
-    { id: 'stomach', name: 'Butterflies / Stomach Cramp Nodes' },
-    { id: 'head', name: 'Frontal Neural Headaches' },
+    { id: 'stomach', name: 'Butterflies / Stomach Cramps' },
+    { id: 'head', name: 'Tension Headaches' },
     { id: 'fidget', name: 'Restless Legs / Hyperactive tapping' },
     { id: 'cold', name: 'Cold Extremities (Hands/Feet)' }
   ];
@@ -759,7 +759,7 @@ export const RecoveryIntelligenceLayer = ({ onAwardPoints, fingerprint }: Recove
                 className="space-y-8"
               >
                 {/* Control Panel Bar */}
-                <div className="bg-card border border-border p-6 sm:p-8 rounded-3xl shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-6" id="derived_intelligence_control_panel">
+                <div className="bg-card border border-border p-6 sm:p-8 rounded-xl shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-6" id="derived_intelligence_control_panel">
                   <div className="flex items-center gap-4">
                     <div className="w-12 h-12 rounded-2xl bg-primary/10 text-primary flex items-center justify-center shrink-0">
                       <LineChart className="w-6 h-6" />
@@ -779,14 +779,14 @@ export const RecoveryIntelligenceLayer = ({ onAwardPoints, fingerprint }: Recove
                       recalculating
                         ? "bg-text-main/20 text-text-muted/75 cursor-not-allowed"
                         : recalculateSuccess
-                        ? "bg-emerald-500/10 text-emerald-500 border border-emerald-500/30"
+                        ? "bg-success/10 text-success border border-success/30"
                         : "bg-text-main text-surface hover:scale-[1.02] shadow-lg shadow-text-main/5 active:scale-[0.98]"
                     )}
                   >
                     {recalculating ? (
                       <Loader2 className="w-4 h-4 animate-spin" />
                     ) : recalculateSuccess ? (
-                      <Check className="w-4 h-4 text-emerald-500" />
+                      <Check className="w-4 h-4 text-success" />
                     ) : (
                       <RefreshCw className="w-4 h-4 transition-transform group-hover:rotate-45" />
                     )}
@@ -796,23 +796,23 @@ export const RecoveryIntelligenceLayer = ({ onAwardPoints, fingerprint }: Recove
 
                 {/* Status Feeback Alerts */}
                 {recalculateError && (
-                  <div className="bg-red-500/5 border border-red-500/20 p-4 rounded-xl flex items-start gap-3" id="recalculate_error_banner">
-                    <ShieldAlert className="w-5 h-5 text-red-500 shrink-0 mt-0.5" />
+                  <div className="bg-destructive/5 border border-destructive/20 p-4 rounded-xl flex items-start gap-3" id="recalculate_error_banner">
+                    <ShieldAlert className="w-5 h-5 text-destructive shrink-0 mt-0.5" />
                     <div>
-                      <span className="text-xs font-black uppercase tracking-wider text-red-500 block">Calculation Sync Failure</span>
+                      <span className="text-xs font-black uppercase tracking-wider text-destructive block">Couldn't Update</span>
                       <p className="text-xs text-text-muted mt-1 leading-relaxed">{recalculateError}</p>
                     </div>
                   </div>
                 )}
 
                 {recalculateSuccess && (
-                  <div className="bg-emerald-500/5 border border-emerald-500/20 p-4 rounded-xl flex items-start gap-4" id="recalculate_success_banner">
-                    <div className="w-5 h-5 rounded-full bg-emerald-500/10 text-emerald-500 flex items-center justify-center shrink-0 mt-0.5">
+                  <div className="bg-success/5 border border-success/20 p-4 rounded-xl flex items-start gap-4" id="recalculate_success_banner">
+                    <div className="w-5 h-5 rounded-full bg-success/10 text-success flex items-center justify-center shrink-0 mt-0.5">
                       <Check className="w-3.5 h-3.5" />
                     </div>
                     <div>
-                      <span className="text-xs font-black uppercase tracking-wider text-emerald-500 block">Recalculation Complete</span>
-                      <p className="text-xs text-text-muted mt-0.5 leading-relaxed">Secure indicators refreshed. Vault entries recalculated with 15 XP reward points credited.</p>
+                      <span className="text-xs font-black uppercase tracking-wider text-success block">Updated</span>
+                      <p className="text-xs text-text-muted mt-0.5 leading-relaxed">Your numbers are refreshed — +15 XP for staying on top of it.</p>
                     </div>
                   </div>
                 )}
@@ -855,7 +855,7 @@ export const RecoveryIntelligenceLayer = ({ onAwardPoints, fingerprint }: Recove
                     return (
                       <div
                         key={card.id}
-                        className="bg-card border border-border p-6 sm:p-8 rounded-3xl flex flex-col justify-between space-y-6 transition-all shadow-sm"
+                        className="bg-card border border-border p-6 sm:p-8 rounded-xl flex flex-col justify-between space-y-6 transition-all shadow-sm"
                         id={`derived_card_${card.id}`}
                       >
                         {/* Header info */}
@@ -868,9 +868,9 @@ export const RecoveryIntelligenceLayer = ({ onAwardPoints, fingerprint }: Recove
                               <span className={cn(
                                 "text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full border",
                                 data.status === 'available'
-                                  ? "bg-emerald-500/10 text-emerald-500 border-emerald-500/20"
+                                  ? "bg-success/10 text-success border-success/20"
                                   : data.status === 'early_signal'
-                                  ? "bg-amber-500/10 text-amber-500 border-amber-500/20"
+                                  ? "bg-warning/10 text-warning border-warning/20"
                                   : "bg-text-main/5 text-text-muted border-border/40"
                               )}>
                                 {data.status === 'available' ? 'Analytical Active' : data.status === 'early_signal' ? 'Early Detection' : 'Data Required'}
@@ -917,7 +917,7 @@ export const RecoveryIntelligenceLayer = ({ onAwardPoints, fingerprint }: Recove
                                   </span>
                                 )}
                                 {data.direction === 'falling' && (
-                                  <span className="text-amber-500 flex items-center gap-1">
+                                  <span className="text-warning flex items-center gap-1">
                                     <TrendingDown className="w-4 h-4" /> Falling
                                   </span>
                                 )}
@@ -954,7 +954,7 @@ export const RecoveryIntelligenceLayer = ({ onAwardPoints, fingerprint }: Recove
                                 <span className="flex items-center gap-1 font-bold text-text-main">
                                   <span className={cn(
                                     "w-2 h-2 rounded-full",
-                                    data.confidenceLevel === 'high' ? "bg-emerald-500" : data.confidenceLevel === 'medium' ? "bg-amber-500" : "bg-red-500"
+                                    data.confidenceLevel === 'high' ? "bg-success" : data.confidenceLevel === 'medium' ? "bg-warning" : "bg-destructive"
                                   )} />
                                   <span className="capitalize">{data.confidenceLevel}</span>
                                 </span>
@@ -1007,7 +1007,7 @@ export const RecoveryIntelligenceLayer = ({ onAwardPoints, fingerprint }: Recove
                   initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: -10 }}
-                  className="bg-card border border-border p-6 sm:p-8 rounded-3xl"
+                  className="bg-card border border-border p-6 sm:p-8 rounded-xl"
                 >
                   <div className="flex items-center gap-3 mb-6">
                     <div className="w-10 h-10 rounded-xl bg-primary/20 text-primary flex items-center justify-center shrink-0">
@@ -1186,7 +1186,7 @@ export const RecoveryIntelligenceLayer = ({ onAwardPoints, fingerprint }: Recove
                       max="100"
                       value={socialBattery}
                       onChange={e => adjustSocialBattery(parseInt(e.target.value, 10))}
-                      className="w-full cursor-pointer accent-indigo-500"
+                      className="w-full cursor-pointer accent-primary"
                     />
                   </div>
 
@@ -1222,7 +1222,7 @@ export const RecoveryIntelligenceLayer = ({ onAwardPoints, fingerprint }: Recove
                   initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: -10 }}
-                  className="bg-card border border-border p-6 sm:p-8 rounded-3xl"
+                  className="bg-card border border-border p-6 sm:p-8 rounded-xl"
                 >
                   <div className="flex items-center gap-3 mb-6">
                     <div className="w-10 h-10 rounded-xl bg-warning/20 text-warning flex items-center justify-center shrink-0">
@@ -1245,7 +1245,7 @@ export const RecoveryIntelligenceLayer = ({ onAwardPoints, fingerprint }: Recove
                   initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: -10 }}
-                  className="bg-card border border-border p-6 sm:p-8 rounded-3xl"
+                  className="bg-card border border-border p-6 sm:p-8 rounded-xl"
                 >
                   <div className="flex items-center gap-3 mb-6">
                     <div className="w-10 h-10 rounded-xl bg-primary/20 text-primary flex items-center justify-center shrink-0">
@@ -1435,7 +1435,7 @@ export const RecoveryIntelligenceLayer = ({ onAwardPoints, fingerprint }: Recove
                   <p className="text-xs text-text-muted mt-1">Mute notification siphons during work hours to protect reserves.</p>
                 </div>
 
-                <div className="p-8 bg-surface dark:bg-surface rounded-3xl border border-border/40 flex flex-col items-center text-center space-y-6">
+                <div className="p-8 bg-surface dark:bg-surface rounded-xl border border-border/40 flex flex-col items-center text-center space-y-6">
                   <div className={cn(
                     "w-16 h-16 rounded-full flex items-center justify-center transition-all shadow-lg",
                     isFocusShieldActive ? "bg-success animate-pulse text-white shadow-success/20" : "bg-border dark:bg-card text-text-muted"
@@ -1456,7 +1456,7 @@ export const RecoveryIntelligenceLayer = ({ onAwardPoints, fingerprint }: Recove
                     onClick={toggleFocusShield}
                     className={cn(
                       "px-8 py-3.5 rounded-2xl text-xs font-black uppercase tracking-widest cursor-pointer transition-all hover:scale-[1.02] active:scale-95 shadow-md",
-                      isFocusShieldActive ? "bg-destructive text-destructive-foreground shadow-rose-500/10" : "bg-primary text-primary-foreground shadow-primary/10"
+                      isFocusShieldActive ? "bg-destructive text-destructive-foreground shadow-destructive/10" : "bg-primary text-primary-foreground shadow-primary/10"
                     )}
                   >
                     {isFocusShieldActive ? "Disengage Shield" : "Activate Focus Shield (+15 pts)"}

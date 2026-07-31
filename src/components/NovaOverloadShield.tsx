@@ -72,28 +72,28 @@ const SHIELD_COLOR_CLASSES: Record<string, {
   glow: string;
 }> = {
   emerald: {
-    cardBorder: 'border-emerald-500/30',
-    cardBg: 'bg-emerald-500/5',
-    iconBg: 'bg-emerald-500',
-    iconShadow: 'shadow-emerald-500/30',
-    heading: 'text-emerald-500 dark:text-emerald-400',
-    glow: 'bg-emerald-500/20',
+    cardBorder: 'border-success/30',
+    cardBg: 'bg-success/5',
+    iconBg: 'bg-success',
+    iconShadow: 'shadow-success/30',
+    heading: 'text-success dark:text-success',
+    glow: 'bg-success/20',
   },
   amber: {
-    cardBorder: 'border-amber-500/30',
-    cardBg: 'bg-amber-500/5',
-    iconBg: 'bg-amber-500',
-    iconShadow: 'shadow-amber-500/30',
-    heading: 'text-amber-500 dark:text-amber-400',
-    glow: 'bg-amber-500/20',
+    cardBorder: 'border-warning/30',
+    cardBg: 'bg-warning/5',
+    iconBg: 'bg-warning',
+    iconShadow: 'shadow-warning/30',
+    heading: 'text-warning dark:text-warning',
+    glow: 'bg-warning/20',
   },
   rose: {
-    cardBorder: 'border-rose-500/30',
-    cardBg: 'bg-rose-500/5',
-    iconBg: 'bg-rose-500',
-    iconShadow: 'shadow-rose-500/30',
-    heading: 'text-rose-500 dark:text-rose-400',
-    glow: 'bg-rose-500/20',
+    cardBorder: 'border-destructive/30',
+    cardBg: 'bg-destructive/5',
+    iconBg: 'bg-destructive',
+    iconShadow: 'shadow-destructive/30',
+    heading: 'text-destructive dark:text-destructive',
+    glow: 'bg-destructive/20',
   },
 };
 
@@ -210,7 +210,7 @@ export const NovaOverloadShield = ({ fingerprint, onAwardPoints, onNavigate }: N
         
         {/* Left Column: Input & Privacy */}
         <div className="space-y-8">
-          <div className="card glass p-2 flex bg-surface/50 border-border/50">
+          <div className="card p-2 flex bg-surface border border-border">
             <button 
               onClick={() => setActiveTab('manual')}
               className={cn("flex-1 py-2 text-sm font-bold rounded-xl transition-all", activeTab === 'manual' ? "bg-white dark:bg-surface text-text-main shadow-sm" : "text-text-muted hover:text-text-main")}
@@ -232,7 +232,7 @@ export const NovaOverloadShield = ({ fingerprint, onAwardPoints, onNavigate }: N
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -10 }}
-                className="card glass p-6 space-y-6"
+                className="card p-6 space-y-6 border border-border"
               >
                 <div className="flex items-center justify-between">
                   <h4 className="text-sm font-black uppercase tracking-widest text-text-main flex items-center gap-2">
@@ -314,7 +314,7 @@ export const NovaOverloadShield = ({ fingerprint, onAwardPoints, onNavigate }: N
                       </button>
                       <button 
                         onClick={() => setManualData({...manualData, recoveryGaps: 'no'})}
-                        className={cn("flex-1 p-3 rounded-xl font-bold transition-all text-center", manualData.recoveryGaps === 'no' ? 'bg-destructive/10 text-rose-600 border border-destructive/30' : 'bg-surface border border-border/50 text-text-muted hover:border-text-muted/30')}
+                        className={cn("flex-1 p-3 rounded-xl font-bold transition-all text-center", manualData.recoveryGaps === 'no' ? 'bg-destructive/10 text-destructive border border-destructive/30' : 'bg-surface border border-border/50 text-text-muted hover:border-text-muted/30')}
                       >
                         No
                       </button>
@@ -328,7 +328,7 @@ export const NovaOverloadShield = ({ fingerprint, onAwardPoints, onNavigate }: N
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -10 }}
-                className="card glass p-6 space-y-6"
+                className="card p-6 space-y-6 border border-border"
               >
                 <div className="flex flex-col gap-2">
                   <h4 className="text-sm font-black uppercase tracking-widest text-text-main flex items-center gap-2">
@@ -368,7 +368,7 @@ export const NovaOverloadShield = ({ fingerprint, onAwardPoints, onNavigate }: N
             )}
           </AnimatePresence>
 
-          <div className="card glass p-6 border-primary/20 bg-primary/5">
+          <div className="card p-6 border border-primary/20 bg-primary/5">
             <h4 className="text-sm font-black uppercase tracking-widest text-primary mb-4 flex items-center gap-2">
               <Lock className="w-4 h-4" /> Privacy Perimeter
             </h4>
@@ -392,7 +392,7 @@ export const NovaOverloadShield = ({ fingerprint, onAwardPoints, onNavigate }: N
         {/* Right Column: Shield Status & Interventions */}
         <div className="lg:col-span-2 space-y-8">
           
-          <div className={cn("card glass p-8 md:p-12 transition-all duration-500 relative overflow-hidden", stateColors.cardBorder, stateColors.cardBg)}>
+          <div className={cn("card p-8 md:p-12 transition-all duration-500 relative overflow-hidden border", stateColors.cardBorder, stateColors.cardBg)}>
              <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6 mb-8">
                <div className="flex items-center gap-4">
                  <div className={cn("w-16 h-16 rounded-2xl flex items-center justify-center text-white shadow-xl transition-all duration-500", stateColors.iconBg, stateColors.iconShadow)}>
@@ -435,7 +435,7 @@ export const NovaOverloadShield = ({ fingerprint, onAwardPoints, onNavigate }: N
                 exit={{ opacity: 0, scale: 0.95 }}
                 className="grid grid-cols-1 md:grid-cols-2 gap-6"
               >
-                <div className="card glass p-6 border-primary/20">
+                <div className="card p-6 border border-primary/20">
                   <h4 className="text-sm font-black uppercase tracking-widest text-primary mb-4 flex items-center gap-2">
                     <Zap className="w-4 h-4" /> Recommended Recovery Mode: {currentState === 'drifting' ? 'Soft' : currentState === 'overload' ? 'Strong' : ''}
                   </h4>
@@ -460,21 +460,21 @@ export const NovaOverloadShield = ({ fingerprint, onAwardPoints, onNavigate }: N
                 </div>
 
                  {currentState === 'overload' && (
-                  <div className="card glass p-6 border-destructive/20 bg-destructive/5">
+                  <div className="card p-6 border border-destructive/20 bg-destructive/5">
                     <h4 className="text-sm font-black uppercase tracking-widest text-destructive mb-2 flex items-center gap-2">
                       <ShieldAlert className="w-4 h-4" /> Guardian Dispatch
                     </h4>
                     <p className="text-text-main font-medium text-sm leading-relaxed mb-6">
                       Your biometric load and event pressure indicate a high risk of systemic crash. Do you want me to notify a trusted Guardian?
                     </p>
-                    <button className="btn-primary w-full bg-destructive hover:bg-destructive border-destructive text-destructive-foreground shadow-lg shadow-rose-500/20">
+                    <button className="btn-primary w-full bg-destructive hover:bg-destructive border-destructive text-destructive-foreground shadow-lg shadow-destructive/20">
                       Notify Guardian Network
                     </button>
                   </div>
                 )}
                 
                 {/* Quick Actions */}
-                <div className="card glass p-6 col-span-1 md:col-span-2 border-border/50">
+                <div className="card p-6 col-span-1 md:col-span-2 border border-border">
                    <h4 className="text-sm font-black uppercase tracking-widest text-text-muted mb-4 flex items-center gap-2">
                      <Zap className="w-4 h-4" /> Quick Interventions & Energy Sync
                    </h4>

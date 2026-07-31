@@ -178,25 +178,25 @@ const CATEGORY_STYLES = {
     color: 'blue',
     border: 'border-primary/30 hover:border-primary/70',
     bg: 'bg-primary-dark/40 hover:bg-primary-dark/70',
-    text: 'text-blue-300',
-    glow: 'shadow-[rgba(59,130,246,0.25)_0px_0px_20px]',
+    text: 'text-primary',
+    glow: 'shadow-[rgba(234,88,12,0.25)_0px_0px_20px]',
     dotClass: 'bg-primary',
     label: 'Executive & Diagnosis'
   },
   action: {
     color: 'rose',
     border: 'border-destructive/30 hover:border-destructive/70',
-    bg: 'bg-rose-950/40 hover:bg-rose-950/70',
-    text: 'text-rose-300',
-    glow: 'shadow-[rgba(244,63,94,0.25)_0px_0px_20px]',
-    dotClass: 'bg-rose-400',
+    bg: 'bg-destructive/10 hover:bg-destructive/20',
+    text: 'text-destructive',
+    glow: 'shadow-[rgba(220,38,38,0.25)_0px_0px_20px]',
+    dotClass: 'bg-destructive',
     label: 'Boundaries & Priorities'
   },
   regulation: {
     color: 'emerald',
     border: 'border-success/30 hover:border-success/70',
-    bg: 'bg-success-foreground/40 hover:bg-success-foreground/70',
-    text: 'text-success/40',
+    bg: 'bg-success/10 hover:bg-success/20',
+    text: 'text-success',
     glow: 'shadow-[rgba(16,185,129,0.25)_0px_0px_20px]',
     dotClass: 'bg-success',
     label: 'Somatic Restoration'
@@ -204,19 +204,19 @@ const CATEGORY_STYLES = {
   data: {
     color: 'amber',
     border: 'border-warning/30 hover:border-warning/70',
-    bg: 'bg-warning-foreground/40 hover:bg-warning-foreground/70',
-    text: 'text-warning/40',
+    bg: 'bg-warning/10 hover:bg-warning/20',
+    text: 'text-warning',
     glow: 'shadow-[rgba(245,158,11,0.25)_0px_0px_20px]',
     dotClass: 'bg-warning',
     label: 'Biometrics & Takeaways'
   },
   system: {
-    color: 'violet',
-    border: 'border-violet-500/30 hover:border-violet-500/70',
-    bg: 'bg-violet-950/40 hover:bg-violet-950/70',
-    text: 'text-violet-300',
-    glow: 'shadow-[rgba(139,92,246,0.25)_0px_0px_20px]',
-    dotClass: 'bg-violet-400',
+    color: 'neutral',
+    border: 'border-text-muted/30 hover:border-text-muted/70',
+    bg: 'bg-surface hover:bg-border',
+    text: 'text-text-muted',
+    glow: 'shadow-[rgba(120,113,108,0.2)_0px_0px_20px]',
+    dotClass: 'bg-text-muted',
     label: 'ESC & workspace integrations'
   }
 };
@@ -351,7 +351,7 @@ export const OmniBrainMap = ({ activeTab, setActiveTab, darkMode, setDarkMode, s
         <div className="lg:col-span-4 flex flex-col gap-6">
           
           {/* Node Direct Search Input */}
-          <div className="card glass p-6 border-white/10 bg-surface/40 space-y-4">
+          <div className="card p-6 border border-border bg-surface space-y-4">
             <h3 className="text-xs font-black uppercase tracking-widest text-text-muted flex items-center gap-2">
               <Compass className="w-4 h-4 text-primary" /> Core Module Search
             </h3>
@@ -405,7 +405,7 @@ export const OmniBrainMap = ({ activeTab, setActiveTab, darkMode, setDarkMode, s
           </div>
 
           {/* Interactive Path Finder Setup */}
-          <div className="card glass p-6 border-white/10 bg-surface/40 space-y-5">
+          <div className="card p-6 border border-border bg-surface space-y-5">
             <h3 className="text-xs font-black uppercase tracking-widest text-text-muted flex items-center gap-2">
               <GitCommit className="w-4 h-4 text-primary" /> Neural Path Routing
             </h3>
@@ -476,7 +476,7 @@ export const OmniBrainMap = ({ activeTab, setActiveTab, darkMode, setDarkMode, s
           </div>
 
           {/* Somatic Context Checklist */}
-          <div className="card glass p-6 border-white/10 bg-surface/40 text-left space-y-4">
+          <div className="card p-6 border border-border bg-surface text-left space-y-4">
              <h4 className="text-xs font-black uppercase tracking-widest text-[#94a3b8]">Biological Coherence Checklist</h4>
              <ul className="space-y-2.5 text-xs text-text-muted">
                <li className="flex items-start gap-2.5">
@@ -500,13 +500,13 @@ export const OmniBrainMap = ({ activeTab, setActiveTab, darkMode, setDarkMode, s
               onClick={() => setDarkMode(!darkMode)}
               className="w-full px-6 py-3.5 rounded-2xl bg-surface border border-white/10 hover:border-muted-foreground text-text-muted hover:text-text-main transition-all text-xs font-black uppercase tracking-widest cursor-pointer hover:bg-card/60"
             >
-              {darkMode ? 'Switch to Light Master' : 'Switch to Dark Matrix'}
+              {darkMode ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
             </button>
           </div>
         </div>
 
         {/* Right Hand: Interactive Map Card Grid */}
-        <div className="lg:col-span-8 flex flex-col relative bg-surface/20 rounded-3xl border border-white/5 p-6 min-h-[500px] md:min-h-[600px] justify-center items-center">
+        <div className="lg:col-span-8 flex flex-col relative bg-surface rounded-xl border border-border p-6 min-h-[500px] md:min-h-[600px] justify-center items-center">
           
           {/* Main Visual Core map wrapper */}
           <div className="relative w-full max-w-4xl aspect-square z-10 flex items-center justify-center scale-90 md:scale-100">
@@ -600,7 +600,7 @@ export const OmniBrainMap = ({ activeTab, setActiveTab, darkMode, setDarkMode, s
               whileTap={{ scale: 0.95 }}
               className={cn(
                 "absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-24 h-24 rounded-full bg-card border border-primary flex flex-col items-center justify-center gap-1 cursor-pointer z-20 group transition-all duration-300",
-                shortestPath.includes('nova') ? "shadow-[0_0_55px_rgba(129,140,248,0.85)] scale-[1.08]" : "shadow-[0_0_35px_rgba(99,102,241,0.4)]"
+                shortestPath.includes('nova') ? "shadow-[0_0_55px_rgba(234,88,12,0.85)] scale-[1.08]" : "shadow-[0_0_35px_rgba(234,88,12,0.4)]"
               )}
             >
               <Sparkles className="w-8 h-8 text-primary group-hover:text-text-main transition-colors" />
@@ -645,8 +645,8 @@ export const OmniBrainMap = ({ activeTab, setActiveTab, darkMode, setDarkMode, s
                     styles.bg,
                     styles.border,
                     styles.text,
-                    isPathActive 
-                      ? "border-primary outline outline-3 outline-indigo-500/60 shadow-[0_0_35px_rgba(99,102,241,0.6)] font-extrabold" 
+                    isPathActive
+                      ? "border-primary outline outline-3 outline-primary/60 shadow-[0_0_35px_rgba(234,88,12,0.6)] font-extrabold"  
                       : isGroupActive 
                         ? "border-success/80 shadow-[0_0_20px_rgba(16,185,129,0.35)]" 
                         : styles.glow,
@@ -674,7 +674,7 @@ export const OmniBrainMap = ({ activeTab, setActiveTab, darkMode, setDarkMode, s
           </div>
 
           {/* 5. FLOATING CATEGORY LEGEND */}
-          <div className="absolute bottom-6 right-6 md:right-8 bg-surface/85 border border-white/10 backdrop-blur-xl p-5 rounded-2xl max-w-sm text-left shadow-2xl space-y-3.5">
+          <div className="absolute bottom-6 right-6 md:right-8 bg-card border border-border p-5 rounded-xl max-w-sm text-left shadow-lg space-y-3.5">
             <div className="flex items-center gap-2 border-b border-white/5 pb-2">
               <Compass className="w-4 h-4 text-primary" />
               <span className="text-xs font-black uppercase tracking-wider text-text-main">Interactive Legend</span>
