@@ -37,7 +37,7 @@ export const GamificationDisplay = ({ stats, fingerprint, shipStage = 'Safety', 
   const renderTooltip = ({ active, payload, label }: any) => {
     if (active && payload && payload.length) {
       return (
-        <div className="glass p-3 rounded-2xl shadow-xl border border-white/20 backdrop-blur-xl">
+        <div className="bg-card p-3 rounded-xl shadow-md border border-border">
           <p className="text-xs font-black uppercase tracking-widest text-text-muted mb-1">{label}</p>
           <div className="flex flex-col gap-1">
             {payload.map((entry: any, index: number) => (
@@ -56,14 +56,14 @@ export const GamificationDisplay = ({ stats, fingerprint, shipStage = 'Safety', 
   return (
     <div className="space-y-8">
       {/* Nova Insight Panel */}
-      <div className="card glass border-primary/20 bg-primary/5 space-y-4">
+      <div className="card border border-primary/20 bg-primary/5 space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-2">
           <div className="flex items-center gap-3">
             <div className="w-8 h-8 rounded-xl bg-primary text-primary-foreground flex items-center justify-center shadow-lg shadow-primary/20">
               <Sparkles className="w-4 h-4" />
             </div>
             <div>
-              <h3 className="text-sm font-display font-bold text-text-main tracking-tight">Nova's Weekly Synthesis</h3>
+              <h3 className="text-sm font-display font-bold text-text-main tracking-tight">Nova's Weekly Summary</h3>
               <p className="text-[11px] uppercase tracking-[0.2em] font-black text-primary">Biometric & Behavioral Review</p>
             </div>
           </div>
@@ -111,7 +111,7 @@ export const GamificationDisplay = ({ stats, fingerprint, shipStage = 'Safety', 
 
           <div className="relative w-full h-3 bg-surface dark:bg-surface rounded-full overflow-hidden">
             <motion.div 
-              className="absolute top-0 left-0 h-full bg-gradient-to-r from-primary to-indigo-500 rounded-full"
+              className="absolute top-0 left-0 h-full bg-gradient-to-r from-primary to-primary/70 rounded-full"
               initial={{ width: 0 }}
               animate={{ width: `${((stats.points % 500) / 500) * 100}%` }}
               transition={{ type: "spring", stiffness: 45, damping: 14, delay: 0.1 }}

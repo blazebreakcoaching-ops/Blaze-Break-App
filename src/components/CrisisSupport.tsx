@@ -30,9 +30,9 @@ export const CrisisSupportContent = () => (
           </div>
           <MessageCircle className="w-5 h-5 text-primary group-hover:scale-110 transition-transform shrink-0" />
         </a>
-        <a href="tel:999" className="flex items-center justify-between p-4 rounded-xl border border-rose-100 dark:border-rose-900/30 bg-rose-50 dark:bg-rose-950/20 hover:bg-rose-100 dark:hover:bg-rose-900/40 transition-colors group">
+        <a href="tel:999" className="flex items-center justify-between p-4 rounded-xl border border-destructive dark:border-destructive/30 bg-destructive dark:bg-destructive/20 hover:bg-destructive dark:hover:bg-destructive/40 transition-colors group">
           <div className="space-y-1.5">
-            <span className="text-sm font-bold text-rose-600 dark:text-destructive block">Emergency services</span>
+            <span className="text-sm font-bold text-destructive dark:text-destructive block">Emergency services</span>
             <span className="text-[11px] font-black uppercase tracking-widest text-destructive/70 font-mono">Call 999 &middot; for immediate danger</span>
           </div>
           <PhoneCall className="w-5 h-5 text-destructive group-hover:scale-110 transition-transform shrink-0" />
@@ -41,9 +41,9 @@ export const CrisisSupportContent = () => (
 
       <div className="space-y-3">
         <h5 className="text-[11px] font-black uppercase tracking-widest text-text-muted ml-1">If you're in the US or Canada</h5>
-        <a href="tel:988" className="flex items-center justify-between p-4 rounded-xl border border-rose-100 dark:border-rose-900/30 bg-rose-50 dark:bg-rose-950/20 hover:bg-rose-100 dark:hover:bg-rose-900/40 transition-colors group">
+        <a href="tel:988" className="flex items-center justify-between p-4 rounded-xl border border-destructive dark:border-destructive/30 bg-destructive dark:bg-destructive/20 hover:bg-destructive dark:hover:bg-destructive/40 transition-colors group">
           <div className="space-y-1.5">
-            <span className="text-sm font-bold text-rose-600 dark:text-destructive block">988 Suicide & Crisis Lifeline</span>
+            <span className="text-sm font-bold text-destructive dark:text-destructive block">988 Suicide & Crisis Lifeline</span>
             <span className="text-[11px] font-black uppercase tracking-widest text-destructive/70 font-mono">Call or text 988 &middot; free &middot; 24/7</span>
           </div>
           <PhoneCall className="w-5 h-5 text-destructive group-hover:scale-110 transition-transform shrink-0" />
@@ -102,7 +102,7 @@ export const CrisisSupportModal = ({ isOpen, onClose }: CrisisSupportModalProps)
             dragConstraints={{ top: 0, bottom: 0 }}
             dragElastic={{ top: 0, bottom: 0.6 }}
             onDragEnd={(_, info) => { if (info.offset.y > 100) onClose(); }}
-            className="card w-full max-w-md max-h-[85vh] overflow-y-auto bg-card border border-border shadow-2xl p-6 space-y-6"
+            className="card w-full max-w-md max-h-[85vh] overflow-y-auto bg-card border border-border shadow-lg p-6 space-y-6"
           >
             <div
               onPointerDown={(e) => dragControls.start(e)}

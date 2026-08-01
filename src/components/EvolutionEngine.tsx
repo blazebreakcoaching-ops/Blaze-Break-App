@@ -186,7 +186,7 @@ export const EvolutionEngine = () => {
                      </span>
                    </div>
                    {mem.canEdit && (
-                     <button onClick={() => deleteNovaMemory(mem.id)} className="text-xs text-destructive hover:text-rose-700 font-medium cursor-pointer">Forget</button>
+                     <button onClick={() => deleteNovaMemory(mem.id)} className="text-xs text-destructive hover:opacity-80 font-medium cursor-pointer">Forget</button>
                    )}
                  </div>
                  <p className="text-sm font-medium text-text-main leading-relaxed font-mono">
@@ -205,7 +205,7 @@ export const EvolutionEngine = () => {
       {activeTab === 'scanner' && (
         <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2">
           
-          <div className="bg-card text-text-main p-8 rounded-3xl relative overflow-hidden border border-border/40">
+          <div className="bg-card text-text-main p-8 rounded-xl relative overflow-hidden border border-border/40">
              <Search className="w-48 h-48 absolute right-[-5%] top-[-10%] text-text-muted opacity-10" />
              <div className="relative z-10 max-w-2xl">
                <h3 className="text-2xl font-display font-bold mb-2">Change Impact Scanner</h3>
@@ -247,7 +247,7 @@ export const EvolutionEngine = () => {
       {/* Connectors Tab */}
       {activeTab === 'connectors' && (
         <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2">
-          <div className="bg-surface/50 border border-border/40 p-8 rounded-3xl text-center space-y-4">
+          <div className="bg-surface/50 border border-border/40 p-8 rounded-xl text-center space-y-4">
             <Network className="w-12 h-12 text-text-muted mx-auto" />
             <h3 className="text-xl font-bold text-text-main">Safe Connector Layer</h3>
             <p className="text-text-muted max-w-lg mx-auto text-sm">Features share context without directly modifying each other's state machines.</p>
