@@ -35,7 +35,7 @@ export const LandingPage = ({ onStart, onOpenTrustCentre }: LandingPageProps) =>
   };
 
   return (
-    <div className="min-h-screen bg-background selection:bg-primary/20 selection:text-primary relative overflow-hidden text-[#f9fafb]">
+    <div className="min-h-screen bg-background selection:bg-primary/20 selection:text-primary relative overflow-hidden text-text-main">
       {/* Premium Glow Aura Backdrops */}
       <div className="absolute top-0 left-1/4 w-[500px] h-[500px] bg-primary/5 rounded-full blur-[140px] pointer-events-none" />
       <div className="absolute bottom-10 right-1/4 w-[600px] h-[600px] bg-teal-500/3 rounded-full blur-[160px] pointer-events-none" />
@@ -125,7 +125,7 @@ export const LandingPage = ({ onStart, onOpenTrustCentre }: LandingPageProps) =>
           </div>
           <h3 className="text-lg font-bold text-text-main tracking-wide">Autonomous Guardian System</h3>
           <p className="text-text-muted text-xs leading-relaxed">
-            A premium safety protocol for executive groups. Nominate trust guardians who automatically receive high-risk relational alerts ONLY when your neural indicators signal a critical crash state.
+            A pre-set escalation network for high-stakes moments. Add trusted contacts once, then reach them in one tap when you need real support — no automatic monitoring, no biometric tracking, just a fast, private way to ask for help.
           </p>
         </div>
       </section>

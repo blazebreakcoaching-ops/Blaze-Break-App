@@ -253,9 +253,9 @@ export const SituationalOnboarding = ({ onComplete }: OnboardingProps) => {
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.98, y: -20 }}
             transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
-            className="w-full p-10 sm:p-20 flex flex-col items-center space-y-12 bg-surface/80 backdrop-blur-3xl border border-white/[0.04] rounded-[2.5rem] shadow-2xl relative overflow-hidden"
+            className="w-full p-10 sm:p-20 flex flex-col items-center space-y-12 bg-surface border border-border rounded-xl shadow-lg relative overflow-hidden"
           >
-            <div className="absolute top-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-indigo-500/30 to-transparent" />
+            <div className="absolute top-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-primary/30 to-transparent" />
 
             {/* Onboarding Progress Tracker */}
             <div className="w-full space-y-4 border-b border-white/[0.04] pb-6">
@@ -286,7 +286,7 @@ export const SituationalOnboarding = ({ onComplete }: OnboardingProps) => {
                       <div className="w-full h-1.5 rounded-full relative overflow-hidden bg-white/[0.04]">
                         {(isDone || isActive) && (
                           <motion.div 
-                            className="absolute top-0 left-0 h-full bg-gradient-to-r from-primary to-indigo-500 rounded-full"
+                            className="absolute top-0 left-0 h-full bg-gradient-to-r from-primary to-primary/70 rounded-full"
                             initial={{ width: 0 }}
                             animate={{ width: "100%" }}
                             transition={{ duration: 0.5, ease: "easeOut" }}

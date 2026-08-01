@@ -307,7 +307,7 @@ export const NovaGuardianRelay = ({ contacts, onAdd, onRemove }: NovaGuardianRel
             "When you can't reach out, Nova reaches in."
           </p>
           <p className="text-sm text-text-muted leading-relaxed max-w-2xl">
-            A secure, pre-consented escalation network. When the system detects cascading emotional burnout or critical overload, it authorizes a direct support flow—bridging external human intervention seamlessly, without exposing your private biometric or conversational transcripts.
+            A pre-set escalation network you control. Add trusted contacts once, then reach them in one tap whenever you need real support — nothing is monitored or triggered automatically, and your private details are never shared with your guardians.
           </p>
           
           <button 
@@ -420,8 +420,8 @@ export const NovaGuardianRelay = ({ contacts, onAdd, onRemove }: NovaGuardianRel
              
              <div className="relative z-10 space-y-5 pt-2">
                 <div className="space-y-2.5">
-                  <h5 className="text-xs font-black uppercase tracking-widest text-success dark:text-success">Zero-Knowledge Architecture</h5>
-                  <p className="text-[11px] leading-relaxed text-text-muted">Nova executes strict data isolation. Incident contexts, biometric markers, and conversation payloads are never transmitted to guardian endpoints.</p>
+                  <h5 className="text-xs font-black uppercase tracking-widest text-success dark:text-success">Your Privacy, Protected</h5>
+                  <p className="text-[11px] leading-relaxed text-text-muted">Your guardians only ever see that you've reached out — never your conversation history, journal entries, or any other private details.</p>
                 </div>
                 <div className="space-y-2.5">
                   <h5 className="text-xs font-black uppercase tracking-widest text-success">Priority Order</h5>

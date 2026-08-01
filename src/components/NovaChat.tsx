@@ -946,7 +946,7 @@ export const NovaChat = ({
             className="absolute inset-0 bg-gradient-to-tr from-destructive/5 via-transparent to-primary/5 opacity-50"
           />
           <div className="space-y-6 text-center relative z-10">
-            <div className="w-32 h-32 mx-auto rounded-full bg-destructive/10 flex items-center justify-center relative shadow-2xl shadow-rose-500/20">
+            <div className="w-32 h-32 mx-auto rounded-full bg-destructive/10 flex items-center justify-center relative shadow-lg shadow-destructive/20">
               <motion.div
                 animate={{ scale: [1, 1.2, 1], opacity: [0.5, 0.8, 0.5] }}
                 transition={{
@@ -978,7 +978,7 @@ export const NovaChat = ({
                     repeat: Infinity,
                     ease: "easeInOut",
                   }}
-                  className="w-1.5 bg-rose-400 rounded-full"
+                  className="w-1.5 bg-destructive rounded-full"
                 />
               ))}
             </div>
@@ -1074,7 +1074,7 @@ export const NovaChat = ({
                       <button
                         onClick={() => speakText(msg.parts[0].text, i)}
                         className={cn(
-                          "absolute -right-12 top-0 w-10 h-10 glass rounded-full flex items-center justify-center transition-all opacity-0 group-hover:opacity-100",
+                          "absolute -right-12 top-0 w-10 h-10 bg-card border border-border rounded-full flex items-center justify-center transition-all opacity-0 group-hover:opacity-100",
                           speakingIndex === i
                             ? "opacity-100 text-primary"
                             : "text-text-muted hover:text-primary",
