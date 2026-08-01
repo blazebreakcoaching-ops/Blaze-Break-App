@@ -184,7 +184,7 @@ export const IntegrationsDashboard = () => {
           "max-w-3xl p-4 rounded-xl text-sm font-medium flex items-start gap-3 border",
           returnBanner.status === 'connected'
             ? "bg-success/10 text-success border-success/20"
-            : "bg-rose-50 dark:bg-rose-900/20 text-rose-600 border-rose-100 dark:border-rose-800/30"
+            : "bg-destructive dark:bg-destructive/20 text-destructive border-destructive dark:border-destructive/30"
         )}>
           {returnBanner.status === 'connected' ? <CheckCircle2 className="w-5 h-5 shrink-0 mt-0.5" /> : <AlertTriangle className="w-5 h-5 shrink-0 mt-0.5" />}
           <span>
@@ -201,7 +201,7 @@ export const IntegrationsDashboard = () => {
             key={integration.id} 
             className={cn(
               "card bg-card border p-6 space-y-6 relative overflow-hidden group transition-all duration-300",
-              integration.status === 'error' ? "border-rose-200 dark:border-rose-900/50" : "border-border hover:border-primary/50"
+              integration.status === 'error' ? "border-destructive dark:border-destructive/50" : "border-border hover:border-primary/50"
             )}
           >
             <div className="flex items-start justify-between">
@@ -211,7 +211,7 @@ export const IntegrationsDashboard = () => {
               <div className={cn(
                 "px-3 py-1 rounded-full text-xs font-black uppercase tracking-widest flex items-center gap-1.5",
                 integration.status === 'connected' ? "bg-success/10 text-success" : 
-                integration.status === 'error' ? "bg-destructive/10 text-rose-600" :
+                integration.status === 'error' ? "bg-destructive/10 text-destructive" :
                 integration.status === 'loading' ? "bg-primary/10 text-primary" :
                 "bg-border dark:bg-surface text-text-muted"
               )}>
@@ -227,7 +227,7 @@ export const IntegrationsDashboard = () => {
             </div>
             
             {(integration.status === 'error' || integration.status === 'not_configured') && integration.errorMessage && (
-              <div className="p-3 bg-rose-50 dark:bg-rose-900/20 text-rose-600 outline-rose-200 rounded-lg text-xs font-medium border border-rose-100 dark:border-rose-800/30 flex items-start gap-2">
+              <div className="p-3 bg-destructive dark:bg-destructive/20 text-destructive outline-destructive rounded-lg text-xs font-medium border border-destructive dark:border-destructive/30 flex items-start gap-2">
                 <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
                 <span className="leading-relaxed">{integration.errorMessage}</span>
               </div>
@@ -239,7 +239,7 @@ export const IntegrationsDashboard = () => {
               className={cn(
                 "w-full py-3 rounded-xl text-xs font-black uppercase tracking-widest transition-all flex justify-center items-center gap-2",
                 integration.status === 'connected' 
-                  ? "bg-surface dark:bg-surface text-text-muted hover:bg-rose-50 hover:text-destructive cursor-pointer" 
+                  ? "bg-surface dark:bg-surface text-text-muted hover:bg-destructive hover:text-destructive cursor-pointer"
                   : integration.status === 'loading'
                   ? "bg-surface dark:bg-surface text-text-muted cursor-not-allowed opacity-70"
                   : integration.status === 'error'
@@ -346,9 +346,9 @@ export const IntegrationsDashboard = () => {
             API Configuration
             <Info className="w-4 h-4 text-text-muted cursor-help hover:text-primary transition-colors" />
           </h4>
-          <div className="absolute -left-4 bottom-full mb-2 w-80 p-4 bg-card text-text-muted text-xs rounded-xl opacity-0 invisible group-hover/tooltip:opacity-100 group-hover/tooltip:visible transition-all shadow-2xl border border-border pointer-events-none z-20 font-medium leading-relaxed">
+          <div className="absolute -left-4 bottom-full mb-2 w-80 p-4 bg-card text-text-muted text-xs rounded-xl opacity-0 invisible group-hover/tooltip:opacity-100 group-hover/tooltip:visible transition-all shadow-lg border border-border pointer-events-none z-20 font-medium leading-relaxed">
              API keys and secrets are managed via the platform Settings menu. Add your specific service keys (e.g., Google Calendar, GitHub) to your environment variables and securely store them in the platform. You must restart the workspace after defining new variables.
-             <div className="absolute top-full text-text-main border-4 border-transparent left-8 border-t-slate-800"></div>
+             <div className="absolute top-full text-text-main border-4 border-transparent left-8 border-t-card"></div>
           </div>
         </div>
         <p className="text-sm text-text-muted max-w-2xl leading-relaxed">
