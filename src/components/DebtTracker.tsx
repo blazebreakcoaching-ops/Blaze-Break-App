@@ -75,7 +75,7 @@ export const DebtTracker = ({ debts }: { debts: Debt[] }) => {
                 )}
               </div>
               
-              <div className="p-6 bg-primary/5 rounded-3xl border border-primary/10 relative overflow-hidden flex flex-col justify-between">
+              <div className="p-6 bg-primary/5 rounded-xl border border-primary/10 relative overflow-hidden flex flex-col justify-between">
                 <div className="relative z-10 space-y-4">
                   <div className="flex items-center gap-2">
                     <Sparkles className="w-3.5 h-3.5 text-primary" />

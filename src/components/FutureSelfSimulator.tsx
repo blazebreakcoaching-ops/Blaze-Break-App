@@ -198,9 +198,9 @@ export const FutureSelfSimulator = ({ fingerprint }: FutureSelfSimulatorProps) =
             className="flex flex-col items-center justify-center py-32 space-y-6 card"
           >
             <RefreshCw className="w-12 h-12 text-primary animate-spin" />
-            <h3 className="text-xl font-display font-bold animate-pulse text-text-main">Running Future-Self Prognostics...</h3>
+            <h3 className="text-xl font-display font-bold animate-pulse text-text-main">Mapping Your Future Self...</h3>
             <p className="text-text-muted font-mono text-sm max-w-sm text-center">
-              Analyzing metadata... Calculating trajectory variance... Mapping neural fatigue probability vectors...
+              Looking at where your current patterns lead...
             </p>
           </motion.div>
         )}
@@ -214,7 +214,6 @@ export const FutureSelfSimulator = ({ fingerprint }: FutureSelfSimulatorProps) =
           >
              {/* Path A vs B Header */}
              <div className="card p-8 bg-card border-destructive/20 text-text-main relative overflow-hidden">
-                <div className="absolute right-0 top-0 w-64 h-64 bg-destructive/10 blur-3xl rounded-full" />
                 <div className="relative z-10 space-y-6">
                    <div className="flex items-center gap-3">
                      <Zap className={cn("w-6 h-6", currentRiskColor)} />
@@ -233,7 +232,7 @@ export const FutureSelfSimulator = ({ fingerprint }: FutureSelfSimulatorProps) =
                    <div className="flex items-center gap-4 text-sm font-bold text-text-muted p-4 bg-black/20 rounded-xl">
                       <Shield className="w-5 h-5 text-warning" />
                       <span>{isMitigated 
-                        ? 'Root causes addressed: Neural gap secured, boundary established.' 
+                        ? 'Root causes addressed: you closed the gap and set a real boundary.'
                         : 'Root causes building: Too many meetings, low baseline energy, insufficient recovery windows.'}
                       </span>
                    </div>

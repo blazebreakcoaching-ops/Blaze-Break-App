@@ -79,7 +79,7 @@ export const FaithValuesMode = ({ fingerprint, onAwardPoints }: FaithValuesModeP
                  "p-6 rounded-2xl border transition-all text-left group",
                  isSelected 
                    ? "bg-primary border-primary text-primary-foreground shadow-xl shadow-primary/20 scale-[1.02]" 
-                   : "glass border-border/50 hover:border-primary/30 text-text-main hover:bg-surface dark:hover:bg-surface"
+                   : "border border-border/50 hover:border-primary/30 text-text-main hover:bg-surface dark:hover:bg-surface"
                )}
              >
                <div className={cn("w-10 h-10 rounded-full flex items-center justify-center mb-4 transition-colors", isSelected ? "bg-white/20" : "bg-surface dark:bg-surface text-text-muted group-hover:text-primary")}>
@@ -108,7 +108,7 @@ export const FaithValuesMode = ({ fingerprint, onAwardPoints }: FaithValuesModeP
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, scale: 0.95 }}
-                className="card glass p-8 border-primary/10 flex flex-col justify-between"
+                className="card border border-primary/10 p-8 flex flex-col justify-between"
               >
                 <div>
                   <h4 className="text-xl font-bold text-text-main mb-3">{ref.title}</h4>

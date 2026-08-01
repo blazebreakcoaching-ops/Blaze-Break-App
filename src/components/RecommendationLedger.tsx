@@ -45,7 +45,7 @@ const MOCK_LEDGER: RecommendationLedgerEntry[] = [
 
 export const RecommendationLedger = () => {
   return (
-    <div className="card space-y-6 mt-12 bg-background shadow-2xl border border-white/[0.05]">
+    <div className="card space-y-6 mt-12 bg-background shadow-lg border border-border">
       <div className="flex items-center gap-4 mb-6">
         <div className="w-12 h-12 bg-success/10 border border-success/20 rounded-xl flex items-center justify-center text-success">
           <ShieldCheck className="w-6 h-6" />
@@ -77,7 +77,7 @@ export const RecommendationLedger = () => {
                    {entry.status === 'verified' ? (
                      <span className="flex items-center gap-1 text-xs font-bold uppercase tracking-wider text-success bg-success/10 px-2 py-1 rounded w-fit"><CheckCircle2 className="w-3 h-3"/> Verified</span>
                    ) : (
-                     <span className="flex items-center gap-1 text-xs font-bold uppercase tracking-wider text-destructive bg-rose-400/10 px-2 py-1 rounded w-fit"><AlertTriangle className="w-3 h-3"/> Rejected</span>
+                     <span className="flex items-center gap-1 text-xs font-bold uppercase tracking-wider text-destructive bg-destructive/10 px-2 py-1 rounded w-fit"><AlertTriangle className="w-3 h-3"/> Rejected</span>
                    )}
                 </td>
                 <td className="px-4 py-3 text-text-muted max-w-sm truncate" title={entry.content}>{entry.content}</td>
