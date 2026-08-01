@@ -153,7 +153,7 @@ export const InAppNudge = () => {
           exit={{ opacity: 0, y: 20, scale: 0.9 }}
           className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[100] w-[90%] max-w-sm"
         >
-          <div className="bg-card border border-primary/20 shadow-2xl rounded-2xl overflow-hidden backdrop-blur-xl">
+          <div className="bg-card border border-primary/20 shadow-lg rounded-xl overflow-hidden">
             <div className="flex items-center justify-between px-4 py-2 bg-surface/50 border-b border-border">
               <div className="flex items-center gap-2">
                 <Sparkles className="w-3.5 h-3.5 text-primary" />

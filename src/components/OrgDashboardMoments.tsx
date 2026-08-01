@@ -15,7 +15,7 @@ export const OrgDashboardMoments = () => {
   return (
     <div className="space-y-8 pb-24">
       {/* Header */}
-      <div className="relative overflow-hidden rounded-3xl bg-warning/10 border border-warning/20 p-8">
+      <div className="relative overflow-hidden rounded-xl bg-warning/10 border border-warning/20 p-8">
         <div className="absolute top-0 right-0 p-8 opacity-10">
           <Sparkles className="w-48 h-48 text-warning" />
         </div>

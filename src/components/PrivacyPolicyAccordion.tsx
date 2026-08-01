@@ -84,7 +84,7 @@ export const PrivacyPolicyAccordion = () => {
               className={cn(
                 "rounded-xl border transition-all duration-500 overflow-hidden cursor-pointer",
                 isActive 
-                  ? "bg-surface border-primary/50 shadow-[0_0_20px_rgba(99,102,241,0.15)]" 
+                  ? "bg-surface border-primary/50 shadow-[0_0_20px_rgba(234,88,12,0.15)]"
                   : "bg-background/40 border-white/[0.04] hover:bg-surface/60"
               )}
               onClick={() => setActiveSection(isActive ? null : policy.id)}

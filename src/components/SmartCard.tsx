@@ -162,7 +162,7 @@ export const SmartCard = ({
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.95 }}
-            className="absolute z-50 bg-card border border-border shadow-2xl rounded-lg py-1 min-w-[160px]"
+            className="absolute z-50 bg-card border border-border shadow-lg rounded-lg py-1 min-w-[160px]"
             style={{ 
               top: `${Math.min(contextMenuPos.y, (cardRef.current?.clientHeight || 500) - 150)}px`, 
               left: `${Math.min(contextMenuPos.x, (cardRef.current?.clientWidth || 300) - 180)}px` 

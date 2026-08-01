@@ -109,7 +109,7 @@ export const DataPrivacyDashboard = ({
               className={cn(
                 "rounded-xl border transition-all duration-300 overflow-hidden",
                 isExpanded 
-                  ? "bg-surface border-primary/30 shadow-[0_0_15px_rgba(99,102,241,0.1)]" 
+                  ? "bg-surface border-primary/30 shadow-[0_0_15px_rgba(234,88,12,0.1)]"
                   : "bg-background/40 border-white/[0.04] hover:bg-surface/60 cursor-pointer"
               )}
               onClick={() => setExpandedId(isExpanded ? null : point.id)}
