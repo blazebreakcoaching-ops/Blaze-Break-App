@@ -243,7 +243,7 @@ export const OmniNova = ({ activeTab, fingerprint, stats }: OmniNovaProps) => {
       
       setMessages(prev => [...prev, { role: 'model', text: data.text, privacyMetadata: data.privacyMetadata }]);
     } catch (err: any) {
-      setMessages(prev => [...prev, { role: 'model', text: 'Error connecting to neural link. Please check your API key in Settings.' }]);
+      setMessages(prev => [...prev, { role: 'model', text: 'Could not connect to voice chat. Please check your API key in Settings.' }]);
     } finally {
       setIsTyping(false);
     }
@@ -255,7 +255,7 @@ export const OmniNova = ({ activeTab, fingerprint, stats }: OmniNovaProps) => {
         whileHover={{ scale: 1.05 }}
         whileTap={{ scale: 0.95 }}
         onClick={() => setIsOpen(!isOpen)}
-        className="fixed bottom-20 md:bottom-6 right-6 z-50 w-14 h-14 rounded-2xl bg-card border border-border shadow-2xl flex items-center justify-center text-text-main hover:bg-card transition-colors group"
+        className="fixed bottom-20 md:bottom-6 right-6 z-50 w-14 h-14 rounded-xl bg-card border border-border shadow-lg flex items-center justify-center text-text-main hover:bg-card transition-colors group"
       >
         <Sparkles className="w-6 h-6 text-primary group-hover:rotate-12 transition-transform" />
       </motion.button>
@@ -267,7 +267,7 @@ export const OmniNova = ({ activeTab, fingerprint, stats }: OmniNovaProps) => {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 20, scale: 0.95 }}
             className={cn(
-              "fixed bottom-36 md:bottom-24 right-6 z-50 flex flex-col bg-card border border-border shadow-2xl rounded-2xl overflow-hidden transition-all duration-300",
+              "fixed bottom-36 md:bottom-24 right-6 z-50 flex flex-col bg-card border border-border shadow-lg rounded-xl overflow-hidden transition-all duration-300",
               isExpanded ? "w-[calc(100vw-3rem)] md:w-[450px] h-[75vh]" : "w-[calc(100vw-3rem)] md:w-[350px] h-[500px]"
             )}
           >
@@ -309,7 +309,7 @@ export const OmniNova = ({ activeTab, fingerprint, stats }: OmniNovaProps) => {
 
             {isVoiceActive ? (
               <div className="flex-1 flex flex-col items-center justify-center p-6 bg-surface relative">
-                <div className="w-24 h-24 rounded-full bg-destructive/10 flex items-center justify-center relative shadow-2xl shadow-rose-500/10">
+                <div className="w-24 h-24 rounded-full bg-destructive/10 flex items-center justify-center relative shadow-lg shadow-destructive/10">
                   <motion.div 
                      animate={{ scale: [1, 1.3, 1], opacity: [0.5, 0.8, 0.5] }}
                      transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
@@ -327,7 +327,7 @@ export const OmniNova = ({ activeTab, fingerprint, stats }: OmniNovaProps) => {
                        key={i}
                        animate={{ height: ["8px", `${15 + Math.random() * 20}px`, "8px"] }}
                        transition={{ duration: 0.6 + Math.random() * 0.4, repeat: Infinity, ease: "easeInOut" }}
-                       className="w-1.5 bg-rose-400 rounded-full"
+                       className="w-1.5 bg-destructive rounded-full"
                      />
                    ))}
                 </div>

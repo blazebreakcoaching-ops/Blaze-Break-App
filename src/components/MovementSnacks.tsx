@@ -117,7 +117,7 @@ export const MovementSnacks = ({ fingerprint, onAwardPoints }: MovementSnacksPro
                  "p-6 rounded-2xl border transition-all text-left group relative overflow-hidden",
                  isSelected
                    ? "bg-success border-success text-white shadow-xl shadow-success/20 scale-[1.02] z-10"
-                   : "glass hover:border-success/50 text-text-main hover:bg-surface dark:hover:bg-surface"
+                   : "border border-border hover:border-success/50 text-text-main hover:bg-surface dark:hover:bg-surface"
                )}
              >
                <div className="flex items-center justify-between mb-4 relative z-10">
@@ -155,7 +155,7 @@ export const MovementSnacks = ({ fingerprint, onAwardPoints }: MovementSnacksPro
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -20 }}
-            className="card glass border-success/20 bg-success/5 p-6 sm:p-8 md:p-10 relative overflow-hidden mt-8"
+            className="card border border-success/20 bg-success/5 p-6 sm:p-8 md:p-10 relative overflow-hidden mt-8"
           >
             <div className="relative z-10 space-y-8">
               <div className="space-y-2">
@@ -198,8 +198,7 @@ export const MovementSnacks = ({ fingerprint, onAwardPoints }: MovementSnacksPro
                  )}
               </div>
             </div>
-            <div className="absolute right-[-10%] top-[-10%] w-96 h-96 bg-success/10 rounded-full blur-[100px]" />
-          </motion.div>
+                      </motion.div>
         )}
 
         {completed && (
@@ -207,7 +206,7 @@ export const MovementSnacks = ({ fingerprint, onAwardPoints }: MovementSnacksPro
             key="success"
             initial={{ opacity: 0, scale: 0.9 }}
             animate={{ opacity: 1, scale: 1 }}
-            className="card glass border-success/20 bg-success/5 p-6 sm:p-8 md:p-10 flex flex-col items-center justify-center text-center py-20 mt-8"
+            className="card border border-success/20 bg-success/5 p-6 sm:p-8 md:p-10 flex flex-col items-center justify-center text-center py-20 mt-8"
           >
              <div className="w-20 h-20 bg-success rounded-full flex items-center justify-center text-white mb-6 shadow-xl shadow-success/20">
                <CheckCircle2 className="w-10 h-10" />
