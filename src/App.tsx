@@ -1046,6 +1046,20 @@ const HomeSection = ({
   const [hiddenWidgets, setHiddenWidgets] = useState<string[]>(initialLayout.hidden);
   const [showAddWidgetMenu, setShowAddWidgetMenu] = useState(false);
   const [homeRefreshKey, setHomeRefreshKey] = useState(0);
+  // Streak calendar state - lives here, not inside the streakCalendar widget's
+  // IIFE below, because calling useState inside a nested function/IIFE is a
+  // Rules of Hooks violation: it would call this hook conditionally on
+  // whatever triggers a re-render of that JSX block, rather than
+  // unconditionally on every render of this component, exactly the pattern
+  // that causes "Rendered fewer hooks than expected" crashes.
+  const [streakDays, setStreakDays] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem("blaze_recovery_streak_days");
+      if (saved) return JSON.parse(saved);
+    } catch (e) {}
+    return [];
+  });
+  const [selectedDay, setSelectedDay] = useState<string | null>(null);
   const [isPullRefreshing, setIsPullRefreshing] = useState(false);
   const [pullDistance, setPullDistance] = useState(0);
   const pullStartYRef = useRef<number | null>(null);
@@ -1647,18 +1661,6 @@ const HomeSection = ({
           const currentMonth = today.getMonth(); // 0-indexed
           const currentMonthLabel = today.toLocaleString('default', { month: 'long' });
           const todayDayNum = today.getDate();
-
-          // Initialize streak calendar state or load from localStorage - honest
-          // empty state for new users, no fabricated pre-existing streak.
-          const [streakDays, setStreakDays] = useState<string[]>(() => {
-            try {
-              const saved = localStorage.getItem("blaze_recovery_streak_days");
-              if (saved) return JSON.parse(saved);
-            } catch (e) {}
-            return [];
-          });
-
-          const [selectedDay, setSelectedDay] = useState<string | null>(null);
 
           const handleCommitTodayBudget = () => {
             if (streakDays.includes(todayStr)) return;
@@ -2703,7 +2705,7 @@ export default function App() {
       confidence: "verified",
       canEdit: false,
     });
-  }, [stats.profile, shipStage, energyLevel, burnoutRisk, fingerprint]);
+  }, [stats.profile, shipStage, energyLevel, burnoutRisk, fingerprint, stats.debts, stats.supportCircle]);
 
   if (flow === "landing") {
     return (

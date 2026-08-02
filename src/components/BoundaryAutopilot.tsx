@@ -78,7 +78,7 @@ export const BoundaryAutopilot = () => {
         .catch(() => {})
         .finally(() => setHistoryLoading(false));
     }
-  }, [activeTab, accessToken]);
+  }, [activeTab, accessToken, members.length, events.length]);
 
   const runAction = async (fn: () => Promise<void>, successMessage: string) => {
     setIsSubmitting(true);
