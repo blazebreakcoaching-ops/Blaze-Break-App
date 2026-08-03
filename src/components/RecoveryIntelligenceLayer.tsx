@@ -79,7 +79,7 @@ export const RecoveryIntelligenceLayer = ({ onAwardPoints, fingerprint }: Recove
   const [moodLogs, setMoodLogs] = useState<MoodPulseData[]>([]);
   const [triggers, setTriggers] = useState<TriggerData[]>([]);
   const [socialBattery, setSocialBattery] = useState<number>(70);
-  const [wins, setWins] = useState<WinLogData[]>([
+  const [wins, setWins] = useState<WinLogData[]>(() => [
     { id: '1', timestamp: new Date(Date.now() - 86400000).toISOString(), category: 'boundary', description: 'Politely declined a non-urgent Sunday slack thread request.' },
     { id: '2', timestamp: new Date(Date.now() - 172800000).toISOString(), category: 'rest', description: 'Used the Reset Studio shallow breathing pacer for 5 minutes during a packed sprint.' }
   ]);

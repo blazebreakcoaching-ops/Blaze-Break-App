@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Sparkles, X, Send, Loader2, Maximize2, Minimize2, Mic, MicOff } from 'lucide-react';
 import { cn } from '../lib/utils';
@@ -13,6 +13,13 @@ interface OmniNovaProps {
 }
 
 export const OmniNova = ({ activeTab, fingerprint, stats }: OmniNovaProps) => {
+  // Computed once rather than inline in the animate prop - regenerating
+  // these on every render would make the waveform's rhythm visibly jump if
+  // anything causes this component to re-render while it's showing.
+  const waveformBars = useMemo(() => [...Array(4)].map(() => ({
+    peakHeight: 15 + Math.random() * 20,
+    duration: 0.6 + Math.random() * 0.4,
+  })), []);
   const [isOpen, setIsOpen] = useState(false);
   const [messages, setMessages] = useState<{role: 'user' | 'model', text: string, privacyMetadata?: { contextTriggered: boolean, modulesUsed: string[], rationale: string }}[]>([]);
   const [input, setInput] = useState('');
@@ -322,11 +329,11 @@ export const OmniNova = ({ activeTab, fingerprint, stats }: OmniNovaProps) => {
                   <p className="text-sm text-text-muted mt-2">Speaking with Nova directly.</p>
                 </div>
                 <div className="flex gap-1.5 mt-8 z-10">
-                   {[...Array(4)].map((_, i) => (
+                   {waveformBars.map((bar, i) => (
                      <motion.div
                        key={i}
-                       animate={{ height: ["8px", `${15 + Math.random() * 20}px`, "8px"] }}
-                       transition={{ duration: 0.6 + Math.random() * 0.4, repeat: Infinity, ease: "easeInOut" }}
+                       animate={{ height: ["8px", `${bar.peakHeight}px`, "8px"] }}
+                       transition={{ duration: bar.duration, repeat: Infinity, ease: "easeInOut" }}
                        className="w-1.5 bg-destructive rounded-full"
                      />
                    ))}

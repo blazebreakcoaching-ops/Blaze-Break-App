@@ -1,6 +1,6 @@
 import { auth } from '../lib/firebase';
 import { ConnectedEnergyBudget } from './ConnectedRecoveryModules.tsx';
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Zap, ShieldAlert, CheckCircle2, TrendingDown, Crosshair, ArrowRight, Activity, ArchiveX, BatteryWarning, BatteryCharging, Network } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
@@ -15,8 +15,6 @@ interface Commitment {
 }
 
 export const EnergyBudgetMatrix = ({ onPointsEarned }: { onPointsEarned: (pts: number, reason: string) => void }) => {
-  if (auth.currentUser) return <ConnectedEnergyBudget />;
-
   const [commitments, setCommitments] = useState<Commitment[]>([
     { id: '1', name: 'Weekly sync with marketing', energyDrain: 45, type: 'professional', status: 'active' },
     { id: '2', name: 'Managing team conflict', energyDrain: 80, type: 'emotional', status: 'active' },
@@ -27,6 +25,8 @@ export const EnergyBudgetMatrix = ({ onPointsEarned }: { onPointsEarned: (pts: n
   const [input, setInput] = useState('');
   const [drainSlider, setDrainSlider] = useState(50);
   const [selectedType, setSelectedType] = useState<Commitment['type']>('professional');
+
+  if (auth.currentUser) return <ConnectedEnergyBudget />;
 
   const addCommitment = () => {
     if (!input.trim()) return;
@@ -61,7 +61,7 @@ export const EnergyBudgetMatrix = ({ onPointsEarned }: { onPointsEarned: (pts: n
   const overloadPercentage = (activeTotal / maxCapacity) * 100;
   const isOverloaded = overloadPercentage > 85;
 
-  const velocityData = Array.from({ length: 7 }).map((_, i) => {
+  const velocityData = useMemo(() => Array.from({ length: 7 }).map((_, i) => {
     const daysAgo = 6 - i;
     const date = new Date(Date.now() - daysAgo * 24 * 60 * 60 * 1000);
     return {
@@ -69,7 +69,7 @@ export const EnergyBudgetMatrix = ({ onPointsEarned }: { onPointsEarned: (pts: n
       drain: 120 + Math.floor(Math.random() * 80) + (i * -10),
       completed: 40 + Math.floor(Math.random() * 60) + (i * 15)
     };
-  });
+  }), []);
 
   return (
     <div className="space-y-12 pb-24 font-sans max-w-[1400px] mx-auto">

@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, useRef, lazy, Suspense } from "react";
+import React, { useState, useEffect, useRef, useMemo, lazy, Suspense } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import {
   Home,
@@ -2062,6 +2062,11 @@ export default function App() {
   const isSuperAdminUser = user?.email === 'teampublication@gmail.com' || (user as any)?.isAdmin === true;
   const effectiveRole = isSuperAdminUser ? 'platform_admin' : appRole;
 
+  // Computed once rather than inline in the animate prop - regenerating these
+  // on every render would make the sparkle burst's trajectories visibly jump
+  // mid-animation if anything causes a re-render while it's looping.
+  const sparkleOffsets = useMemo(() => [...Array(10)].map(() => 50 + Math.random() * 60), []);
+
   // Opportunistically build the real-signal data behind the Explainable
   // Recovery Score / archetype-evolution work. Calendar computes locally from
   // the user's own Google token and posts just the aggregate. Slack advances
@@ -2824,12 +2829,12 @@ export default function App() {
                     x: [
                       0,
                       Math.sin((i * 2 * Math.PI) / 10) *
-                        (50 + Math.random() * 60),
+                        sparkleOffsets[i],
                     ],
                     y: [
                       0,
                       Math.cos((i * 2 * Math.PI) / 10) *
-                        (50 + Math.random() * 60),
+                        sparkleOffsets[i],
                     ],
                     opacity: [1, 1, 0],
                   }}
