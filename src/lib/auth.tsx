@@ -72,8 +72,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             } else if (userRecord.email === 'teampublication@gmail.com' || userRecord.email === 'teampublication@googlemail.com') {
               role = 'platform_owner';
             }
-          } catch(e) {}
-          
+          } catch(e) {
+            console.warn("Could not read custom claims from ID token — defaulting to standard role.", e);
+          }
+
           setAppRole(role);
         } catch (e) {
           console.error("Authorised Access Framework mapping failed:", e);
