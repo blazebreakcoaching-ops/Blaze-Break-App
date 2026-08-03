@@ -73,6 +73,64 @@ const generate30DayData = (): DayData[] => {
   });
 };
 
+// Custom high-contrast tooltip conforming to premium dark palette
+const CustomTooltip = ({ active, payload }: any) => {
+  if (active && payload && payload.length) {
+    const dataPoint = payload[0].payload as DayData;
+    const isDeficit = dataPoint.balance < 0;
+
+    return (
+      <div className="bg-card/95 border border-border/80 p-4 rounded-xl shadow-2xl backdrop-blur-md max-w-xs space-y-3 font-sans transition-colors duration-500 text-text-main">
+        <div className="flex items-center gap-1.5 text-xs text-text-muted font-bold font-mono">
+          <Calendar className="w-3.5 h-3.5 text-primary" />
+          {dataPoint.date}
+        </div>
+
+        <div className="space-y-1.5 text-xs">
+          <div className="flex justify-between items-center gap-6">
+            <span className="text-text-muted flex items-center gap-1">
+              <Activity className="w-3 h-3 text-primary" /> Energy Output
+            </span>
+            <span className="font-mono font-black text-primary">
+              {dataPoint.energyOutput}%
+            </span>
+          </div>
+
+          <div className="flex justify-between items-center gap-6">
+            <span className="text-text-muted flex items-center gap-1">
+              <Heart className="w-3 h-3 text-success" /> Recovery Input
+            </span>
+            <span className="font-mono font-black text-success">
+              {dataPoint.recoveryInput}%
+            </span>
+          </div>
+        </div>
+
+        <div className="h-px bg-border/40 my-1" />
+
+        <div className="flex justify-between items-center text-xs">
+          <span className="font-bold text-text-muted uppercase tracking-wider text-[10px]">
+            Velocity Balance
+          </span>
+          <span className={cn(
+            "font-mono font-black px-1.5 py-0.5 rounded",
+            isDeficit
+              ? "bg-destructive/10 text-destructive"
+              : "bg-success/10 text-success"
+          )}>
+            {isDeficit ? "" : "+"}{dataPoint.balance}% {isDeficit ? "Deficit" : "Surplus"}
+          </span>
+        </div>
+
+        <p className="text-[10px] text-text-muted italic leading-snug font-serif pr-1">
+          "{dataPoint.notes}"
+        </p>
+      </div>
+    );
+  }
+  return null;
+};
+
 export const RecoveryVelocityMap = () => {
   const [data] = useState<DayData[]>(generate30DayData);
   const [viewMode, setViewMode] = useState<'all' | 'recovery' | 'energy'>('all');
@@ -107,64 +165,6 @@ export const RecoveryVelocityMap = () => {
   };
 
   const novaCommentary = getNovaDirectComment();
-
-  // Custom high-contrast tooltip conforming to premium dark palette
-  const CustomTooltip = ({ active, payload }: any) => {
-    if (active && payload && payload.length) {
-      const dataPoint = payload[0].payload as DayData;
-      const isDeficit = dataPoint.balance < 0;
-      
-      return (
-        <div className="bg-card/95 border border-border/80 p-4 rounded-xl shadow-2xl backdrop-blur-md max-w-xs space-y-3 font-sans transition-colors duration-500 text-text-main">
-          <div className="flex items-center gap-1.5 text-xs text-text-muted font-bold font-mono">
-            <Calendar className="w-3.5 h-3.5 text-primary" />
-            {dataPoint.date}
-          </div>
-          
-          <div className="space-y-1.5 text-xs">
-            <div className="flex justify-between items-center gap-6">
-              <span className="text-text-muted flex items-center gap-1">
-                <Activity className="w-3 h-3 text-primary" /> Energy Output
-              </span>
-              <span className="font-mono font-black text-primary">
-                {dataPoint.energyOutput}%
-              </span>
-            </div>
-            
-            <div className="flex justify-between items-center gap-6">
-              <span className="text-text-muted flex items-center gap-1">
-                <Heart className="w-3 h-3 text-success" /> Recovery Input
-              </span>
-              <span className="font-mono font-black text-success">
-                {dataPoint.recoveryInput}%
-              </span>
-            </div>
-          </div>
-
-          <div className="h-px bg-border/40 my-1" />
-
-          <div className="flex justify-between items-center text-xs">
-            <span className="font-bold text-text-muted uppercase tracking-wider text-[10px]">
-              Velocity Balance
-            </span>
-            <span className={cn(
-              "font-mono font-black px-1.5 py-0.5 rounded",
-              isDeficit
-                ? "bg-destructive/10 text-destructive"
-                : "bg-success/10 text-success"
-            )}>
-              {isDeficit ? "" : "+"}{dataPoint.balance}% {isDeficit ? "Deficit" : "Surplus"}
-            </span>
-          </div>
-          
-          <p className="text-[10px] text-text-muted italic leading-snug font-serif pr-1">
-            "{dataPoint.notes}"
-          </p>
-        </div>
-      );
-    }
-    return null;
-  };
 
   return (
     <div className="space-y-6 font-sans text-text-main transition-colors duration-500">
