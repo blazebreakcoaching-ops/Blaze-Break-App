@@ -502,7 +502,6 @@ export const NervousSystemReset = ({ fingerprint }: NervousSystemResetProps) => 
       const ctx = ensureAudioContext();
       if (ctx) {
         startPacerSynth();
-        applyPhaseAudio(phase);
       }
     } else {
       stopPacerSynth();
@@ -511,6 +510,18 @@ export const NervousSystemReset = ({ fingerprint }: NervousSystemResetProps) => 
       stopPacerSynth();
     };
   }, [isPlaying, pacerSoundEnabled, isMuted]);
+
+  // Separate from the start/stop effect above deliberately - applyPhaseAudio
+  // smoothly ramps the already-running synth's parameters (Web Audio's
+  // linearRampToValueAtTime), it doesn't restart it. Combining this into the
+  // effect above would stop/restart the oscillator on every phase change
+  // instead of ramping it, and previously phase wasn't a dependency at all,
+  // so the audio never updated past the very first phase of a session.
+  useEffect(() => {
+    if (isPlaying && pacerSoundEnabled && !isMuted) {
+      applyPhaseAudio(phase);
+    }
+  }, [phase, isPlaying, pacerSoundEnabled, isMuted]);
 
   // Compute precise pacer duration in seconds
   const getPhaseDuration = (mode: BreathingMode, p: typeof phase): number => {

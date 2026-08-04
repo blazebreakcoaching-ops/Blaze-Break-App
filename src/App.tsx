@@ -2254,6 +2254,8 @@ export default function App() {
 
   // Track previous flow / auth changes to detect transitions
   const prevUserRef = useRef<any>(null);
+  const flowRef = useRef(flow);
+  flowRef.current = flow;
 
   // Route Protection
   useEffect(() => {
@@ -2374,7 +2376,7 @@ export default function App() {
     }
 
     if (user) {
-      if (flow === "landing") {
+      if (flowRef.current === "landing") {
         const parsedStats = savedStats ? JSON.parse(savedStats) : null;
         if (parsedStats?.profile?.fullName) {
           setFlow("app");
