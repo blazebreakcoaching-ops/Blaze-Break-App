@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { Target, CheckCircle } from 'lucide-react';
-import { cn } from '../lib/utils';
 import { SHIPStage } from '../types';
 
 import { auth } from '../lib/firebase';

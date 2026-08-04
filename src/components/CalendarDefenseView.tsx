@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import { Calendar, AlertTriangle, ShieldCheck, Clock, CheckCircle2, ChevronRight, Zap } from 'lucide-react';
-import { cn } from '../lib/utils';
 import { useAuth } from '../lib/auth';
 
 export const CalendarDefenseView = () => {

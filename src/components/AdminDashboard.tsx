@@ -1,9 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { 
-  ShieldCheck, Filter, Search, Loader2, StopCircle, RefreshCw, 
-  UserPlus, Trash2, Key, Activity, Heart, ShieldAlert, Check,
-  AlertCircle, ChevronRight, UserMinus, Eye, Lock, Users, CreditCard, AlertOctagon,
-  ArrowUpRight, HeartPulse, ShieldCheck as ShieldCheckIcon
+  ShieldCheck, Search, Loader2, RefreshCw, 
+  UserPlus, Key, Activity, Heart, ShieldAlert, Check,
+  AlertCircle, UserMinus, Lock, Users, CreditCard,
+  ArrowUpRight, HeartPulse
 } from 'lucide-react';
 import { secureApiFetch } from '../lib/secure-api';
 import { motion, AnimatePresence } from 'motion/react';

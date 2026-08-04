@@ -7,11 +7,9 @@ import {
   XAxis, 
   YAxis, 
   CartesianGrid, 
-  Tooltip, 
-  Legend 
+  Tooltip 
 } from 'recharts';
 import { 
-  Zap, 
   Heart, 
   TrendingUp, 
   AlertTriangle, 

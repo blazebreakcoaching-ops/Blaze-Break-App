@@ -9,21 +9,16 @@ import {
   Trash2, 
   Download,
   AlertTriangle,
-  CheckCircle2,
   Settings2,
   Building,
-  User,
   History,
   Brain,
-  Users,
-  CheckCircle,
   Network,
   RefreshCw,
   Loader2
 } from 'lucide-react';
 import { cn } from '../lib/utils.ts';
 import { useFeatureFlags, setFeatureFlag, FeatureFlag } from '../lib/feature-flags.ts';
-import { ConsentMatrix } from './ConsentMatrix.tsx';
 import { TrustCompliance } from './TrustCompliance.tsx';
 import { RetentionSchedule } from './RetentionSchedule.tsx';
 import { DataZoneVisualizer } from './DataZoneVisualizer.tsx';
@@ -447,7 +442,9 @@ export const PrivacyVault = ({
               </div>
 
               {auth.currentUser ? <ConnectedNovaPermissions /> : (
-                 <div className="p-4 bg-surface text-xs text-text-muted rounded-xl">Demo mode locked. Authentic users sync securely.</div>
+                 <div className="p-4 bg-surface text-xs text-text-muted rounded-xl flex items-center gap-2">
+                   <Loader2 className="w-3.5 h-3.5 animate-spin" /> Connecting...
+                 </div>
               )}
 
               <div className="space-y-8 pl-4 border-l border-white/[0.05] max-w-3xl">

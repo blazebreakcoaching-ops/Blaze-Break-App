@@ -2,7 +2,7 @@ import { auth } from '../lib/firebase';
 import { ConnectedEnergyBudget } from './ConnectedRecoveryModules.tsx';
 import React, { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Zap, ShieldAlert, CheckCircle2, TrendingDown, Crosshair, ArrowRight, Activity, ArchiveX, BatteryWarning, BatteryCharging, Network } from 'lucide-react';
+import { CheckCircle2, TrendingDown, Crosshair, Activity, ArchiveX, BatteryWarning, BatteryCharging, Network } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { cn } from '../lib/utils';
 

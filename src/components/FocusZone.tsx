@@ -2,19 +2,14 @@ import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Target, 
-  Clock, 
   Play, 
-  Square, 
   Volume2, 
   VolumeX, 
-  Compass, 
   Sparkles, 
   Brain, 
   CheckCircle, 
   AlertTriangle, 
-  X,
-  RefreshCw,
-  Heart
+  X
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 

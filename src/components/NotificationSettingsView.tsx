@@ -1,9 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Shield, Bell, Moon, Clock, Settings, Brain, Activity, Heart, Bookmark, Eye, Hand } from 'lucide-react';
-import { secureApiFetch } from '../lib/secure-api';
+import { Shield, Bell, Moon, Clock, Settings, Brain, Activity, Heart, Bookmark, Eye } from 'lucide-react';
 import { useAuth } from '../lib/auth';
 import { cn } from '../lib/utils';
-import { doc, getDoc, setDoc, updateDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 
 export interface NudgePreferences {

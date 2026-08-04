@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Flame, Brain, ArrowRight, AlertOctagon, ShieldAlert, CheckCircle2 } from 'lucide-react';
-import { cn } from '../lib/utils';
+import { Flame, Brain, ArrowRight, AlertOctagon, ShieldAlert } from 'lucide-react';
 import { BurnoutFingerprint } from '../types';
 
 interface ResentmentTrackerProps {

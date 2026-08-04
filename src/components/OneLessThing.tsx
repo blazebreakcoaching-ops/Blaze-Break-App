@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { MinusCircle, Brain, ArrowRight, Trash2, Clock, Users, Zap, CheckCircle2 } from 'lucide-react';
+import { MinusCircle, Brain, Trash2, Clock, Users, Zap, CheckCircle2 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { BurnoutFingerprint } from '../types';
 

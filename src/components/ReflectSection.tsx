@@ -2,11 +2,11 @@ import { auth } from '../lib/firebase';
 import { ConnectedWeeklyReviews } from './ConnectedRecoveryModules.tsx';
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Book, CheckCircle2, ChevronRight, Sparkles, MessageSquare, Zap, Shield, ArrowRight, BookOpen, Activity, LayoutTemplate, Layers, Brain, AlertTriangle, TrendingUp, Compass, Heart, Award, RefreshCw, Star, X, Clock, HelpCircle } from 'lucide-react';
+import { Book, CheckCircle2, ChevronRight, Sparkles, Zap, ArrowRight, BookOpen, Activity, LayoutTemplate, Brain, AlertTriangle, TrendingUp, X, Clock, HelpCircle } from 'lucide-react';
 import { NovaChat } from './NovaChat';
 import { DailyVoiceJournal } from './DailyVoiceJournal.tsx';
 import { cn } from '../lib/utils';
-import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip as RechartsTooltip, CartesianGrid, BarChart, Bar, Cell, LineChart, Line, Legend } from 'recharts';
+import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip as RechartsTooltip, CartesianGrid, BarChart, Bar, Cell, Legend } from 'recharts';
 
 interface Chapter {
   id: string;

@@ -1,4 +1,3 @@
-import { UserProfileData } from '../types.ts';
 import { auth } from './firebase.ts';
 
 export interface AuditLogEntry {

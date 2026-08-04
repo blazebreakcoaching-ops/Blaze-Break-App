@@ -4,7 +4,6 @@ import { CrisisSupportContent } from './CrisisSupport';
 import {
   Users, 
   ShieldCheck, 
-  Plus, 
   Trash2, 
   Send, 
   AlertTriangle,
@@ -14,10 +13,8 @@ import {
   X,
   Eye,
   Loader2,
-  MessageCircle,
   Phone,
   Zap,
-  PhoneCall,
   HeartPulse,
   Sparkles,
   PhoneForwarded,

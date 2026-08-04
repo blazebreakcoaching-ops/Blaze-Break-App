@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { HeartPulse, CheckSquare, Target, Mail, Send, Award, Trash2, CheckCircle2, AlertTriangle, ShieldCheck, Activity, Brain, Clock, Plus, ArrowRight, Zap } from 'lucide-react';
+import { HeartPulse, CheckSquare, Target, Mail, Award, Trash2, CheckCircle2, AlertTriangle, ShieldCheck, Activity, Brain, Clock, Plus, ArrowRight, Zap } from 'lucide-react';
 import { cn } from '../lib/utils';
 
 const STORAGE_KEY = 'blaze_recovery_ally_state';

@@ -1,7 +1,5 @@
-import { useState } from 'react';
 import { motion } from 'motion/react';
 import { TrendingUp, ShieldCheck, Moon, Shield, Zap, BatteryCharging, Briefcase, Star, ArrowUpRight, ArrowDownRight, Activity } from 'lucide-react';
-import { cn } from '../lib/utils';
 import { BurnoutFingerprint } from '../types';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, LineChart, Line, Legend } from 'recharts';
 

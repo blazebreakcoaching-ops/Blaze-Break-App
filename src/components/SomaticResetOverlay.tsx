@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Wind, X, HeartPulse, ShieldCheck, Check, Sparkles, Award } from 'lucide-react';
+import { Wind, X, HeartPulse, ShieldCheck, Check, Award } from 'lucide-react';
 
 interface SomaticResetOverlayProps {
   isOpen: boolean;

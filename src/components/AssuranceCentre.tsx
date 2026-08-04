@@ -1,8 +1,7 @@
 import React, { useState } from 'react';
-import { motion } from 'motion/react';
-import { ShieldCheck, Lock, Settings, Activity, Cloud, BarChart, FileText, AlertTriangle, Server, Zap, ShieldAlert } from 'lucide-react';
+import { ShieldCheck, Lock, BarChart, FileText, AlertTriangle, Server, Zap, ShieldAlert } from 'lucide-react';
 import { cn } from '../lib/utils.ts';
-import { useFeatureFlags, setFeatureFlag, FeatureFlag } from '../lib/feature-flags.ts';
+import { useFeatureFlags } from '../lib/feature-flags.ts';
 
 export const AssuranceCentre = () => {
   const [activeTab, setActiveTab] = useState('governance');

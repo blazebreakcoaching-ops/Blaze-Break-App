@@ -1,5 +1,5 @@
 import { motion } from 'motion/react';
-import { Trophy, Zap, Target, Star, Award, Sparkles } from 'lucide-react';
+import { Trophy, Zap, Star, Award, Sparkles } from 'lucide-react';
 import { UserStats, BADGES, BurnoutFingerprint } from '../types';
 import * as LucideIcons from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, BarChart, Bar } from 'recharts';

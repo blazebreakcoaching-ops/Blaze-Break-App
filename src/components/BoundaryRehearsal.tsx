@@ -1,18 +1,15 @@
 import { auth } from '../lib/firebase';
 import { ConnectedBoundaryScripts } from './ConnectedRecoveryModules.tsx';
-import { useState, useRef } from 'react';
-import { motion, AnimatePresence } from 'motion/react';
+import { useState } from 'react';
+import { motion } from 'motion/react';
 import ReactMarkdown from 'react-markdown';
 import { secureApiFetch } from '../lib/secure-api';
 import { 
   ShieldAlert, 
-  Info, 
   ArrowRight, 
   MessageSquare, 
-  Mic, 
   Shield, 
   CheckCircle2, 
-  ChevronRight, 
   UserPlus, 
   Briefcase, 
   Heart,
@@ -24,7 +21,6 @@ import {
   Wand2,
   Copy,
   Users,
-  ShieldHalf,
   Network
 } from 'lucide-react';
 import { NovaChat } from './NovaChat';

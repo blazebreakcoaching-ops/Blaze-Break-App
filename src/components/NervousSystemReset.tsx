@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Wind, Brain, Moon, Zap, Waves, Play, Pause, Activity, RefreshCw, Eye, Ear, UserCircle, MapPin, Minimize2, Clock, Volume2, VolumeX, Music, CheckCircle2 } from 'lucide-react';
+import { Wind, Brain, Moon, Waves, Play, Pause, Activity, RefreshCw, Eye, Ear, UserCircle, MapPin, Minimize2, Clock, Volume2, VolumeX, Music, CheckCircle2 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { BurnoutFingerprint } from '../types';
 

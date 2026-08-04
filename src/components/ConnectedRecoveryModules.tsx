@@ -1,8 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { getFirestore, collection, doc, setDoc, getDocs, updateDoc, deleteDoc, query, orderBy, getDoc } from 'firebase/firestore';
+import { collection, doc, setDoc, getDocs, updateDoc, deleteDoc, query, orderBy, getDoc } from 'firebase/firestore';
 import { auth, db } from '../lib/firebase';
-import { motion, AnimatePresence } from 'motion/react';
-import { Check, X, Sparkles, Activity, Shield, Target, Plus, Trash2, Edit2, AlertCircle, CheckCircle } from 'lucide-react';
+import { X, Sparkles, Shield, Target, Plus, Trash2, Edit2, AlertCircle, CheckCircle } from 'lucide-react';
 import { cn } from '../lib/utils';
 
 // Helper for empty states

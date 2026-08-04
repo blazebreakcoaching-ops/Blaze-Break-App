@@ -1,5 +1,5 @@
 import React from 'react';
-import { Database, Calendar, Heart, MessageSquare, BookOpen, Brain, Network, Activity } from 'lucide-react';
+import { Database, Calendar, BookOpen, Brain, Activity } from 'lucide-react';
 import { cn } from '../lib/utils.ts';
 import { UserProfileData } from '../types.ts';
 import { logAuditAction } from '../lib/audit-logger.ts';

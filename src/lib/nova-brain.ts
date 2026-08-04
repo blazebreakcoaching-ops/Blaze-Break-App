@@ -75,7 +75,7 @@ export const updateNovaMemoryBySourceAndType = (
   type: MemoryType,
   memoryParams: Omit<NovaMemory, 'id' | 'createdAt' | 'updatedAt' | 'source' | 'type'>
 ) => {
-  let brain = getNovaBrain();
+  const brain = getNovaBrain();
   const existingIndex = brain.findIndex(m => m.source === source && m.type === type);
   
   if (existingIndex > -1) {

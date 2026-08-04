@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Moon, Coffee, Smartphone, Edit3, Bed, ZapOff, CheckCircle2, CloudFog, Sparkles, Activity } from 'lucide-react';
+import { Moon, Coffee, Smartphone, Edit3, Bed, ZapOff, CheckCircle2, Activity } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { BurnoutFingerprint } from '../types';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';

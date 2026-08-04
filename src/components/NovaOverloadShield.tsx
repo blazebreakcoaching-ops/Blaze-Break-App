@@ -8,7 +8,6 @@ import {
   MessageSquare, 
   CheckSquare, 
   Zap, 
-  Clock, 
   Lock, 
   EyeOff, 
   ArrowRight,

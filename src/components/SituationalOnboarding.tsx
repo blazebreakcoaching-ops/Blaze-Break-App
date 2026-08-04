@@ -10,7 +10,6 @@ import {
   Brain,
   Lock,
   CheckCircle2,
-  Building,
   Activity,
   Briefcase,
   BatteryLow,

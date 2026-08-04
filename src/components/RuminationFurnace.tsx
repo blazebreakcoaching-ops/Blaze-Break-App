@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Flame, Wind, CheckCircle2, RotateCcw, AlertTriangle, Cpu, TerminalSquare } from 'lucide-react';
+import { Flame, Wind, RotateCcw, TerminalSquare } from 'lucide-react';
 import { cn } from '../lib/utils';
 
 export const RuminationFurnace = ({ onCleared }: { onCleared?: () => void }) => {

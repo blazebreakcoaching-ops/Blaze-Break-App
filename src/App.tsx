@@ -15,17 +15,12 @@ import {
   BatteryFull,
   MessageSquare,
   Book,
-  Library,
   Sparkles,
   Shield,
   Users,
   User,
-  Search,
   ArrowRight,
-  ArrowLeft,
-  CreditCard,
   History,
-  AlertCircle,
   Trophy,
   Gift,
   CheckCircle,
@@ -41,33 +36,21 @@ import {
   ChevronLeft,
   Menu,
   Wind,
-  Clock,
   Activity,
-  DoorOpen,
   ShieldCheck,
   Flame,
-  CheckSquare,
-  MinusCircle,
-  ChefHat,
-  Feather,
-  LineChart,
-  Settings,
   Compass,
-  HelpCircle,
   Apple,
   Brain,
   Lock,
   HeartPulse,
   PencilLine,
-  Check,
-  Calendar,
   AlertTriangle,
 } from "lucide-react";
 
 import {
   BurnoutFingerprint,
   UserStats,
-  BADGES,
   SupportContact,
 } from "./types.ts";
 import { cn } from "./lib/utils.ts";
@@ -137,7 +120,7 @@ import { SmartCard } from "./components/SmartCard.tsx";
 import { SomaticCheckInCard } from "./components/SomaticCheckInCard.tsx";
 const RecoveryPlan = lazy(() => import("./components/RecoveryPlan.tsx").then(m => ({ default: m.RecoveryPlan })));
 const FocusZone = lazy(() => import("./components/FocusZone.tsx").then(m => ({ default: m.FocusZone })));
-import { SubscriptionTier, AuthRole } from "./types.ts";
+import { SubscriptionTier } from "./types.ts";
 import { RecoveryVelocityMap } from "./components/RecoveryVelocityMap.tsx";
 const ExecutiveBoardReport = lazy(() => import("./components/ExecutiveBoardReport.tsx").then(m => ({ default: m.ExecutiveBoardReport })));
 const CalendarDefenseView = lazy(() => import("./components/CalendarDefenseView.tsx").then(m => ({ default: m.CalendarDefenseView })));
@@ -1062,6 +1045,7 @@ const HomeSection = ({
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
   const [isPullRefreshing, setIsPullRefreshing] = useState(false);
   const [pullDistance, setPullDistance] = useState(0);
+  const [isDragging, setIsDragging] = useState(false);
   const pullStartYRef = useRef<number | null>(null);
   const PULL_TRIGGER_THRESHOLD = 70;
   const PULL_MAX_DISTANCE = 90;
@@ -1075,6 +1059,7 @@ const HomeSection = ({
   const handleHomeTouchStart = (e: React.TouchEvent) => {
     if (window.scrollY <= 0 && !isPullRefreshing) {
       pullStartYRef.current = e.touches[0].clientY;
+      setIsDragging(true);
     }
   };
   const handleHomeTouchMove = (e: React.TouchEvent) => {
@@ -1084,6 +1069,7 @@ const HomeSection = ({
       setPullDistance(Math.min(delta * 0.5, PULL_MAX_DISTANCE));
     } else {
       pullStartYRef.current = null;
+      setIsDragging(false);
       setPullDistance(0);
     }
   };
@@ -1099,6 +1085,7 @@ const HomeSection = ({
       setPullDistance(0);
     }
     pullStartYRef.current = null;
+    setIsDragging(false);
   };
 
   // Persist every change so layout and hide/show choices actually stick.
@@ -1178,7 +1165,7 @@ const HomeSection = ({
     const draggedId = e.dataTransfer.getData('cardId');
     if (!draggedId || draggedId === id) return;
 
-    let sourceColOrder = leftOrder.includes(draggedId) ? leftOrder : (rightOrder.includes(draggedId) ? rightOrder : null);
+    const sourceColOrder = leftOrder.includes(draggedId) ? leftOrder : (rightOrder.includes(draggedId) ? rightOrder : null);
     if (!sourceColOrder) return;
     
     const setSourceCol = leftOrder.includes(draggedId) ? setLeftOrder : setRightOrder;
@@ -1689,7 +1676,7 @@ const HomeSection = ({
           // Consecutive-day streak counting backward from today, not a hardcoded range.
           const currentStreakLength = (() => {
             let count = 0;
-            let cursor = new Date(today);
+            const cursor = new Date(today);
             while (streakDays.includes(cursor.toISOString().split('T')[0])) {
               count++;
               cursor.setDate(cursor.getDate() - 1);
@@ -1858,7 +1845,7 @@ const HomeSection = ({
           <RefreshCw className={cn("w-5 h-5", isPullRefreshing && "animate-spin", !isPullRefreshing && pullDistance >= PULL_TRIGGER_THRESHOLD && "scale-110")} />
         </div>
       </div>
-      <div style={{ transform: `translateY(${isPullRefreshing ? 0 : pullDistance}px)`, transition: pullStartYRef.current === null ? "transform 0.2s ease-out" : "none" }}>
+      <div style={{ transform: `translateY(${isPullRefreshing ? 0 : pullDistance}px)`, transition: isDragging ? "none" : "transform 0.2s ease-out" }}>
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-10 pb-20">
       <div
         className="lg:col-span-2 flex flex-col gap-10 min-h-[500px]"

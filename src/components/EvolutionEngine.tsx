@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
 import { Shield, Database, Plus, Search, Cpu, Brain, Network, Lock, ZapOff, CheckCircle2, AlertTriangle, Layers } from 'lucide-react';
-import { FEATURE_REGISTRY, FeatureDefinition } from '../lib/feature-registry';
+import { FEATURE_REGISTRY } from '../lib/feature-registry';
 import { useFeatureFlags, setFeatureFlag, FeatureFlag } from '../lib/feature-flags';
 import { getNovaBrain, NovaMemory, deleteNovaMemory } from '../lib/nova-brain';
 import { cn } from '../lib/utils';

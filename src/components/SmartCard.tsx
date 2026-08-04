@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useLayoutEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { ChevronDown, MoreHorizontal, FileText, CheckCircle, Share2, Check } from 'lucide-react';
+import { ChevronDown, FileText, CheckCircle, Share2, Check } from 'lucide-react';
 import { cn } from '../lib/utils.ts';
 
 interface SmartCardProps {
@@ -62,8 +62,8 @@ export const SmartCard = ({
     // Position menu relative to card
     if (cardRef.current) {
       const rect = cardRef.current.getBoundingClientRect();
-      let x = e.clientX - rect.left;
-      let y = e.clientY - rect.top;
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
       
       setContextMenuPos({ x, y });
       setShowContextMenu(true);

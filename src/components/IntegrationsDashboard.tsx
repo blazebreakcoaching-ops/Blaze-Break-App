@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Link as LinkIcon, Key, Info, RefreshCw, AlertTriangle, CheckCircle2, CalendarDays, MessageSquare } from 'lucide-react';
+import { Key, Info, RefreshCw, AlertTriangle, CheckCircle2, CalendarDays, MessageSquare } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { NotificationSettingsView } from './NotificationSettingsView';
 import { useAuth } from '../lib/auth';

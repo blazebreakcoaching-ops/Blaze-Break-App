@@ -14,7 +14,7 @@ import {
   ResponsiveContainer, 
   ReferenceLine 
 } from 'recharts';
-import { EnergyCredit, Debt } from '../types.ts';
+import { EnergyCredit } from '../types.ts';
 import { cn } from '../lib/utils.ts';
 import { logJourney } from '../lib/nova-brain.ts';
 import { ShipJourney } from './ShipJourney';

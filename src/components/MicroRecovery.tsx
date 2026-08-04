@@ -2,7 +2,6 @@ import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Clock, 
-  Zap, 
   Target, 
   ArrowRight, 
   CheckCircle2, 
@@ -10,8 +9,7 @@ import {
   ShieldAlert, 
   Sparkles, 
   AlertCircle, 
-  RefreshCw, 
-  Settings 
+  RefreshCw 
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { BurnoutFingerprint } from '../types';

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Activity, Maximize, User, RefreshCcw, Sun, ArrowRight, CheckCircle2 } from 'lucide-react';
+import { Activity, Maximize, User, RefreshCcw, Sun, CheckCircle2 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { BurnoutFingerprint } from '../types';
 

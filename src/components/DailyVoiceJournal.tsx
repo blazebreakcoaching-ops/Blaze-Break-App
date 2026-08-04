@@ -1,8 +1,8 @@
 import React, { useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { Mic, Square, Trash2, Volume2, Sparkles, AlertCircle, RefreshCw, CheckCircle, Brain, Heart, Waves } from "lucide-react";
+import { Mic, Square, Trash2, Volume2, Sparkles, AlertCircle, CheckCircle, Brain, Heart, Waves } from "lucide-react";
 import { secureApiFetch } from "../lib/secure-api";
-import { addNovaMemory, getNovaBrain } from "../lib/nova-brain";
+import { addNovaMemory } from "../lib/nova-brain";
 import { cn } from "../lib/utils";
 
 interface VoiceJournalEntry {

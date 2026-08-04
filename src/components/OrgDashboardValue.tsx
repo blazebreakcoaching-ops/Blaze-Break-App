@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion } from 'motion/react';
-import { Building, TrendingUp, AlertTriangle, ArrowRight, TrendingDown, Target, Brain, FileText, CheckCircle2 } from 'lucide-react';
+import { Building, AlertTriangle, ArrowRight, TrendingDown, Target, Brain, FileText, CheckCircle2 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 

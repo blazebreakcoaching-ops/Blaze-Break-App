@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Briefcase, Calendar, Clock, Send, Copy, CheckCircle2, ChevronRight, AlertTriangle } from 'lucide-react';
+import { Briefcase, Send, Copy, AlertTriangle } from 'lucide-react';
 import { cn } from '../lib/utils';
 
 export const NegotiatorTool = () => {

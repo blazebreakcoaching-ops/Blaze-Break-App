@@ -3,38 +3,18 @@ import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useAuth } from '../lib/auth';
 import { db } from '../lib/firebase';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
-import { 
-  Compass,
-  Activity,
-  Heart,
-  Smile,
-  Flame, 
-  Users, 
-  Trophy, 
+import { doc, getDoc } from 'firebase/firestore';
+import {
+  Activity, 
   Zap, 
-  Calendar, 
-  Coffee, 
   ShieldAlert, 
   Check, 
-  BookOpen, 
-  Plus, 
-  Trash2, 
   Sparkles, 
-  ChevronRight, 
-  ChevronLeft,
-  Briefcase,
-  Sliders,
-  BellRing,
+  ChevronRight,
   Award,
-  CircleCheck,
   Info,
-  Clock,
-  Eye,
-  Send,
   Loader2,
   LineChart,
-  ArrowRight,
   Mic,
   MicOff,
 HeartPulse, Star, Wind, RefreshCw, TrendingUp, TrendingDown,
@@ -42,7 +22,6 @@ HeartPulse, Star, Wind, RefreshCw, TrendingUp, TrendingDown,
 import { cn } from '../lib/utils';
 import { updateNovaMemoryBySourceAndType } from '../lib/nova-brain';
 import { secureApiFetch } from '../lib/secure-api';
-import { RecoveryVelocityChart } from './RecoveryVelocityChart';
 
 interface RecoveryIntelligenceProps {
   onAwardPoints: (amount: number, reason: string) => void;
@@ -1019,7 +998,9 @@ export const RecoveryIntelligenceLayer = ({ onAwardPoints, fingerprint }: Recove
                     </div>
                   </div>
                   {user ? <ConnectedMoodPulse /> : (
-                    <div className="p-4 bg-surface text-xs text-text-muted rounded-xl">Demo mode locked. Authentic users sync securely.</div>
+                    <div className="p-4 bg-surface text-xs text-text-muted rounded-xl flex items-center gap-2">
+                       <Loader2 className="w-3.5 h-3.5 animate-spin" /> Connecting...
+                    </div>
                   )}
                 </motion.div>
               )}
@@ -1234,7 +1215,9 @@ export const RecoveryIntelligenceLayer = ({ onAwardPoints, fingerprint }: Recove
                     </div>
                   </div>
                   {user ? <ConnectedWinsLog /> : (
-                    <div className="p-4 bg-surface text-xs text-text-muted rounded-xl">Demo mode locked. Authentic users sync securely.</div>
+                    <div className="p-4 bg-surface text-xs text-text-muted rounded-xl flex items-center gap-2">
+                       <Loader2 className="w-3.5 h-3.5 animate-spin" /> Connecting...
+                    </div>
                   )}
                 </motion.div>
               )}
@@ -1257,7 +1240,9 @@ export const RecoveryIntelligenceLayer = ({ onAwardPoints, fingerprint }: Recove
                     </div>
                   </div>
                   {user ? <ConnectedBodyCheckIn /> : (
-                    <div className="p-4 bg-surface text-xs text-text-muted rounded-xl">Demo mode locked. Authentic users sync securely.</div>
+                    <div className="p-4 bg-surface text-xs text-text-muted rounded-xl flex items-center gap-2">
+                       <Loader2 className="w-3.5 h-3.5 animate-spin" /> Connecting...
+                    </div>
                   )}
                 </motion.div>
               )}

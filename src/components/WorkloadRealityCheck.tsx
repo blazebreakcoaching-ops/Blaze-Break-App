@@ -6,8 +6,6 @@ import {
   Clock, 
   ArrowRight, 
   ShieldAlert, 
-  CheckCircle2, 
-  BatteryCharging, 
   ListTodo, 
   Trash2, 
   Brain, 

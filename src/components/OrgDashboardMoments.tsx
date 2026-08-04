@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Sparkles, Heart, Award, Target, MessageSquare, Zap, Clock, ThumbsUp, AlertTriangle, CheckCircle2 } from 'lucide-react';
+import { Sparkles, Heart, Award, Target, MessageSquare, Clock, ThumbsUp, AlertTriangle, CheckCircle2 } from 'lucide-react';
 import { cn } from '../lib/utils';
 
 export const OrgDashboardMoments = () => {

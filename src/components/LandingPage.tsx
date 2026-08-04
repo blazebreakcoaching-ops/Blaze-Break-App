@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Sparkles, ArrowRight, ShieldCheck, BatteryLow, MessageSquareText, User, LogIn, ArrowLeft, Loader2 } from 'lucide-react';
+import { Sparkles, ArrowRight, ShieldCheck, BatteryLow, MessageSquareText, LogIn, ArrowLeft, Loader2 } from 'lucide-react';
 import { useAuth } from '../lib/auth';
 
 interface LandingPageProps {

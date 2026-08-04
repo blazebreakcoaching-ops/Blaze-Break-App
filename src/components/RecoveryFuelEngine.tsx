@@ -11,13 +11,9 @@ import {
   Sparkles, 
   Clock, 
   Check, 
-  Loader2, 
   Compass,
   ArrowRight,
-  ShieldAlert as AlertIcon,
-  HelpCircle,
   Wine,
-  TrendingDown,
   Activity,
   Lightbulb
 } from 'lucide-react';

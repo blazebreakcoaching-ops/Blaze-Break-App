@@ -1,5 +1,4 @@
 import React from 'react';
-import { motion } from 'motion/react';
 import { ShieldCheck, Lock, FileText, ArrowLeft, Brain, Database, Server, Building, Users } from 'lucide-react';
 import { RecommendationLedger } from './RecommendationLedger.tsx';
 

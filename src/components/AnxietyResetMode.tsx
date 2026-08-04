@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
-  Activity, Wind, Brain, Sparkles, BookOpen, Clock, ArrowRight, ArrowLeft,
-  CheckCircle2, AlertTriangle, ShieldCheck, HeartPulse, Send, Trash2, ShieldAlert
+  Activity, Sparkles, Clock, ArrowRight, ArrowLeft,
+  CheckCircle2, ShieldCheck, HeartPulse, Trash2
 } from 'lucide-react';
 import { useAuth } from '../lib/auth';
 import { db } from '../lib/firebase';

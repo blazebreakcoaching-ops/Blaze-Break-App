@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Shield, Smartphone, BellOff, MessageSquare, Calendar, Power, AlertTriangle, ShieldCheck, CheckCircle2 } from 'lucide-react';
+import { Shield, BellOff, MessageSquare, Calendar, Power, AlertTriangle, ShieldCheck, CheckCircle2 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { BurnoutFingerprint } from '../types';
 

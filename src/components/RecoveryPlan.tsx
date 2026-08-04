@@ -1,30 +1,16 @@
 import React, { useState, useEffect } from 'react';
-import { motion, AnimatePresence } from 'motion/react';
+import { motion } from 'motion/react';
 import { 
-  Shield, 
-  MapPin, 
-  BatteryFull, 
   Sparkles, 
-  Award, 
-  CheckCircle2, 
   Lock, 
   Unlock, 
-  TrendingUp, 
   BookOpen, 
   MessageSquare, 
-  Heart, 
   Users, 
-  ChevronRight, 
-  UserCheck, 
-  User, 
-  Send,
-  Zap,
-  Moon,
-  Volume2,
-  Check,
-  AlertTriangle
+  ChevronRight,
+  Check
 } from 'lucide-react';
-import { BurnoutFingerprint, UserStats, BADGES, Debt } from '../types';
+import { BurnoutFingerprint, UserStats } from '../types';
 import { cn } from '../lib/utils';
 
 interface RecoveryPlanProps {

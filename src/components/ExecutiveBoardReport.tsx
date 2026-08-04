@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Download, TrendingUp, TrendingDown, Clock, ShieldAlert, Activity, FileText, RefreshCw, Check, Loader2, Layers, AlertTriangle } from 'lucide-react';
+import { Download, TrendingUp, TrendingDown, Clock, ShieldAlert, Activity, FileText, RefreshCw, Loader2, Layers, AlertTriangle } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { useAuth } from '../lib/auth';
 import { UserStats } from '../types';

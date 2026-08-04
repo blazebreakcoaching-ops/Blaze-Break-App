@@ -9,11 +9,7 @@ import {
   Mic,
   MicOff,
   VolumeX,
-  Activity,
-  Zap,
-  Waves,
   Target,
-  Heart,
   History as HistoryIcon,
   ThumbsUp,
   ThumbsDown,
@@ -1449,7 +1445,7 @@ export const NovaChat = ({
                 className={cn(
                   "w-full bg-surface text-text-main border rounded-xl py-4 px-12 pr-16 text-base font-display focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all placeholder:text-text-muted",
                   isDictating
-                    ? "border-destructive ring-2 ring-rose-500/15 bg-destructive/[0.04] text-text-main animate-pulse"
+                    ? "border-destructive ring-2 ring-destructive/15 bg-destructive/[0.04] text-text-main animate-pulse"
                     : "border-border focus:border-primary",
                 )}
               />

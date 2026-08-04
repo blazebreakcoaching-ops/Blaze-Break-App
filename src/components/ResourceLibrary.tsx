@@ -1,6 +1,5 @@
 import { motion } from 'motion/react';
 import { BookOpen, Headphones, Presentation, PlayCircle, Library, Lock, Star } from 'lucide-react';
-import { cn } from '../lib/utils';
 import { BurnoutFingerprint } from '../types';
 
 interface ResourceLibraryProps {

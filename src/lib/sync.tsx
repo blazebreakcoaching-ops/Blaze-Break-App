@@ -1,9 +1,6 @@
-import React, { useEffect, useRef } from 'react';
+import React from 'react';
 import { useAuth } from './auth';
-import { db } from './firebase';
-import { doc, getDoc, setDoc, serverTimestamp, updateDoc } from 'firebase/firestore';
 import { BurnoutFingerprint, UserStats } from '../types';
-import { Loader2 } from 'lucide-react';
 
 interface SyncEngineProps {
   stats: UserStats;

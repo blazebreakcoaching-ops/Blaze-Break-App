@@ -1,5 +1,5 @@
 import React from 'react';
-import { ShieldCheck, Target, AlertTriangle, FileText, CheckCircle2 } from 'lucide-react';
+import { ShieldCheck, AlertTriangle, CheckCircle2 } from 'lucide-react';
 import { RecommendationLedgerEntry } from '../lib/nova-intelligence.ts';
 
 const MOCK_LEDGER: RecommendationLedgerEntry[] = [
