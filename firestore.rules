@@ -40,12 +40,12 @@ service cloud.firestore {
     // A. users/{uid}
     match /users/{uid} {
       allow read: if isOwner(uid);
-      allow create: if isOwner(uid) && 
-                    request.resource.data.keys().hasOnly(['displayName', 'preferredName', 'timezone', 'country', 'locale', 'createdAt', 'updatedAt']) &&
+      allow create: if isOwner(uid) &&
+                    request.resource.data.keys().hasOnly(['displayName', 'preferredName', 'timezone', 'country', 'locale', 'createdAt', 'updatedAt', 'shareAnonymizedDataWithOrg']) &&
                     (!request.resource.data.keys().hasAny(['role', 'isAdmin', 'subscriptionLevel', 'organisationId'])) &&
                     request.resource.data.createdAt is string;
-      allow update: if isOwner(uid) && 
-                    request.resource.data.diff(resource.data).affectedKeys().hasOnly(['displayName', 'preferredName', 'timezone', 'country', 'locale', 'updatedAt']) &&
+      allow update: if isOwner(uid) &&
+                    request.resource.data.diff(resource.data).affectedKeys().hasOnly(['displayName', 'preferredName', 'timezone', 'country', 'locale', 'updatedAt', 'shareAnonymizedDataWithOrg']) &&
                     (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['role', 'isAdmin', 'subscriptionLevel', 'organisationId'])) &&
                     request.resource.data.createdAt == resource.data.createdAt;
       

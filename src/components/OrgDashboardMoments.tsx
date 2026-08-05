@@ -1,16 +1,122 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Sparkles, Heart, Award, Target, MessageSquare, Clock, ThumbsUp, AlertTriangle, CheckCircle2 } from 'lucide-react';
+import { Sparkles, Heart, Award, Target, MessageSquare, ThumbsUp, AlertTriangle, CheckCircle2, Loader2, Send } from 'lucide-react';
 import { cn } from '../lib/utils';
+import { secureApiFetch } from '../lib/secure-api';
+import { auth, db } from '../lib/firebase';
+import { collection, getDocs, query, orderBy, limit } from 'firebase/firestore';
+
+interface RecognitionItem {
+  id: string;
+  from: string;
+  message: string;
+  createdAt?: string;
+}
+
+interface WinItem {
+  id: string;
+  title: string;
+  content: string;
+  category: string;
+}
 
 export const OrgDashboardMoments = () => {
   const [activeTab, setActiveTab] = useState<'wall' | 'challenges' | 'personal'>('wall');
 
-  const MOMENTS = [
-    { id: 1, from: 'Sarah', message: 'Thank you for supporting me during a busy shift today. Really appreciate the cover.', type: 'support', time: '2 hours ago' },
-    { id: 2, from: 'Anonymous', message: 'Noticed the team was under pressure and helped sort out the backlog. Hero!', type: 'recognition', time: '4 hours ago' },
-    { id: 3, from: 'Marcus (Manager)', message: 'Great job setting a healthy boundary on the Friday deploy. It made the team safer.', type: 'manager', time: 'Yesterday' }
-  ];
+  const [orgId, setOrgId] = useState<string | null>(null);
+  const [recognitions, setRecognitions] = useState<RecognitionItem[]>([]);
+  const [wallLoading, setWallLoading] = useState(true);
+  const [wallError, setWallError] = useState('');
+  const [newMessage, setNewMessage] = useState('');
+  const [isAnonymous, setIsAnonymous] = useState(false);
+  const [posting, setPosting] = useState(false);
+
+  const [wins, setWins] = useState<WinItem[]>([]);
+  const [winsLoading, setWinsLoading] = useState(true);
+
+  const fetchWall = async (currentOrgId: string) => {
+    setWallLoading(true);
+    setWallError('');
+    try {
+      const res = await secureApiFetch(`/api/org/${currentOrgId}/recognition`);
+      const data = await res.json();
+      if (!res.ok) {
+        setWallError(data.error || 'Could not load the recognition wall.');
+      } else {
+        setRecognitions(data.items || []);
+      }
+    } catch (e) {
+      setWallError('Could not load the recognition wall.');
+    }
+    setWallLoading(false);
+  };
+
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const meRes = await secureApiFetch('/api/org/me');
+        const me = await meRes.json();
+        if (me.organisationId) {
+          setOrgId(me.organisationId);
+          await fetchWall(me.organisationId);
+        } else {
+          setWallLoading(false);
+        }
+      } catch (e) {
+        setWallLoading(false);
+      }
+    };
+    load();
+  }, []);
+
+  useEffect(() => {
+    const loadWins = async () => {
+      if (!auth.currentUser) return;
+      setWinsLoading(true);
+      try {
+        const q = query(collection(db, 'users', auth.currentUser.uid, 'wins'), orderBy('createdAt', 'desc'), limit(10));
+        const snap = await getDocs(q);
+        setWins(snap.docs.map(d => ({ id: d.id, ...d.data() } as WinItem)));
+      } catch (e) {
+        // Leaves wins empty - honest empty state.
+      }
+      setWinsLoading(false);
+    };
+    loadWins();
+  }, []);
+
+  const handlePost = async () => {
+    if (!newMessage.trim() || !orgId) return;
+    setPosting(true);
+    setWallError('');
+    try {
+      const res = await secureApiFetch(`/api/org/${orgId}/recognition`, {
+        method: 'POST',
+        data: { message: newMessage.trim(), isAnonymous },
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setWallError(data.error || 'Could not post that.');
+      } else {
+        setNewMessage('');
+        await fetchWall(orgId);
+      }
+    } catch (e) {
+      setWallError('Could not post that.');
+    }
+    setPosting(false);
+  };
+
+  const formatWhen = (createdAt?: string) => {
+    if (!createdAt) return '';
+    const diffMs = Date.now() - new Date(createdAt).getTime();
+    const hours = Math.floor(diffMs / (1000 * 60 * 60));
+    if (hours < 1) return 'Just now';
+    if (hours < 24) return `${hours} hour${hours === 1 ? '' : 's'} ago`;
+    const days = Math.floor(hours / 24);
+    if (days === 1) return 'Yesterday';
+    return `${days} days ago`;
+  };
 
   return (
     <div className="space-y-8 pb-24">
@@ -29,7 +135,7 @@ export const OrgDashboardMoments = () => {
             Notice What Works.
           </h3>
           <p className="text-sm text-text-muted leading-relaxed max-w-2xl mb-8">
-            A positive reinforcement system built around appreciation, belonging and healthy team behaviour. 
+            A positive reinforcement system built around appreciation, belonging and healthy team behaviour.
             We do not reward perfect attendance or working late. We celebrate how people support a healthy team.
           </p>
 
@@ -46,8 +152,8 @@ export const OrgDashboardMoments = () => {
                   onClick={() => setActiveTab(tab.id as any)}
                   className={cn(
                     "flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all",
-                    activeTab === tab.id 
-                      ? "bg-warning text-warning-foreground shadow-md shadow-warning/20" 
+                    activeTab === tab.id
+                      ? "bg-warning text-warning-foreground shadow-md shadow-warning/20"
                       : "bg-white dark:bg-surface text-text-muted border border-border hover:border-warning/50"
                   )}
                 >
@@ -63,53 +169,63 @@ export const OrgDashboardMoments = () => {
       <AnimatePresence mode="wait">
         {activeTab === 'wall' && (
           <motion.div key="wall" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95 }} className="space-y-6">
-            <div className="flex items-center justify-between">
-              <h3 className="text-lg font-bold text-text-main">Recent Appreciation</h3>
-              <button className="px-4 py-2 bg-warning text-warning-foreground rounded-xl text-xs font-bold hover:bg-warning transition-colors shadow-sm">
-                + Note Appreciation
-              </button>
-            </div>
-            
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              {MOMENTS.map(moment => (
-                <div key={moment.id} className="card bg-white dark:bg-card border-border hover:border-warning/30 transition-colors group">
-                  <div className="flex items-center gap-3 mb-4">
-                    <div className={cn(
-                      "w-8 h-8 rounded-full flex items-center justify-center shrink-0",
-                      moment.type === 'support' ? "bg-rose-100 text-destructive" :
-                      moment.type === 'manager' ? "bg-primary/10 text-primary" :
-                      "bg-warning/20 text-warning"
-                    )}>
-                      {moment.type === 'support' ? <Heart className="w-4 h-4" /> :
-                       moment.type === 'manager' ? <Award className="w-4 h-4" /> :
-                       <ThumbsUp className="w-4 h-4" />}
-                    </div>
-                    <div>
-                      <p className="text-xs font-bold text-text-main">{moment.from}</p>
-                      <p className="text-xs text-text-muted uppercase tracking-widest">{moment.time}</p>
-                    </div>
-                  </div>
-                  <p className="text-sm font-medium text-text-main leading-relaxed italic">"{moment.message}"</p>
-                </div>
-              ))}
-            </div>
-
-            <div className="card bg-primary/5 border-primary/20 mt-8">
-              <div className="flex items-start gap-4">
-                <div className="w-10 h-10 rounded-full bg-primary/20 text-primary flex items-center justify-center shrink-0 mt-1">
-                  <Sparkles className="w-5 h-5" />
-                </div>
-                <div>
-                  <h4 className="font-bold text-primary mb-1">Nova Prompt</h4>
-                  <p className="text-sm text-text-main mb-3 leading-relaxed">
-                    "Marcus, you have three quiet contributors in your team who handled heavy support tickets this week. Have you acknowledged their effort?"
-                  </p>
-                  <button className="text-xs font-bold text-primary-foreground bg-primary px-4 py-2 rounded-lg shadow-sm hover:bg-primary/90 transition-colors">
-                    Send Appreciation Note
-                  </button>
-                </div>
+            <div className="card bg-white dark:bg-card border-border space-y-4">
+              <h4 className="text-sm font-bold text-text-main flex items-center gap-2"><Heart className="w-4 h-4 text-warning" /> Note Some Appreciation</h4>
+              <textarea
+                value={newMessage}
+                onChange={(e) => setNewMessage(e.target.value)}
+                placeholder="Thank a teammate, or call out something great someone did this week..."
+                maxLength={300}
+                className="w-full h-20 bg-surface dark:bg-surface/50 border border-border rounded-xl p-3 text-sm text-text-main placeholder:text-text-muted focus:outline-none focus:border-warning resize-none"
+              />
+              <div className="flex items-center justify-between">
+                <label className="flex items-center gap-2 text-xs text-text-muted cursor-pointer">
+                  <input type="checkbox" checked={isAnonymous} onChange={(e) => setIsAnonymous(e.target.checked)} className="rounded border-border" />
+                  Post anonymously
+                </label>
+                <button
+                  onClick={handlePost}
+                  disabled={posting || !newMessage.trim()}
+                  className="px-4 py-2 bg-warning text-warning-foreground rounded-xl text-xs font-bold hover:opacity-90 transition-colors shadow-sm disabled:opacity-50 flex items-center gap-2"
+                >
+                  {posting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+                  Post
+                </button>
               </div>
             </div>
+
+            {wallError && (
+              <div className="p-3 bg-destructive/10 border border-destructive/20 text-destructive text-xs rounded-xl">{wallError}</div>
+            )}
+
+            {wallLoading ? (
+              <div className="flex items-center justify-center py-16">
+                <Loader2 className="w-6 h-6 animate-spin text-warning" />
+              </div>
+            ) : !orgId ? (
+              <div className="py-12 text-center text-text-muted text-sm">Join an organisation from the Trust &amp; Privacy Centre to see and post recognitions.</div>
+            ) : recognitions.length === 0 ? (
+              <div className="py-12 text-center border-2 border-dashed border-border rounded-xl">
+                <p className="text-text-muted text-sm">Nothing posted yet. Be the first to recognize a teammate above.</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                {recognitions.map(item => (
+                  <div key={item.id} className="card bg-white dark:bg-card border-border hover:border-warning/30 transition-colors group">
+                    <div className="flex items-center gap-3 mb-4">
+                      <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 bg-warning/20 text-warning">
+                        <ThumbsUp className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <p className="text-xs font-bold text-text-main">{item.from}</p>
+                        <p className="text-xs text-text-muted uppercase tracking-widest">{formatWhen(item.createdAt)}</p>
+                      </div>
+                    </div>
+                    <p className="text-sm font-medium text-text-main leading-relaxed italic">"{item.message}"</p>
+                  </div>
+                ))}
+              </div>
+            )}
           </motion.div>
         )}
 
@@ -125,35 +241,11 @@ export const OrgDashboardMoments = () => {
               </p>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div className="card space-y-4">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Clock className="w-5 h-5 text-success" />
-                    <h4 className="font-bold text-text-main">Protect the Break Week</h4>
-                  </div>
-                  <span className="text-xs font-bold uppercase tracking-widest text-success bg-success/10 px-2 py-1 rounded">Active</span>
-                </div>
-                <p className="text-xs text-text-muted">Team goal to build a healthier lunch-break culture by actually logging off for 45 minutes.</p>
-                <div className="w-full bg-surface dark:bg-surface rounded-full h-2">
-                  <div className="bg-success h-2 rounded-full" style={{ width: '65%' }}></div>
-                </div>
-                <p className="text-xs text-right font-bold text-text-muted">65% Participation</p>
-              </div>
-
-              <div className="card space-y-4 opacity-75">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <MessageSquare className="w-5 h-5 text-warning" />
-                    <h4 className="font-bold text-text-main">Appreciation Ripple</h4>
-                  </div>
-                  <span className="text-xs font-bold uppercase tracking-widest text-text-muted bg-surface dark:bg-surface px-2 py-1 rounded">Starts Monday</span>
-                </div>
-                <p className="text-xs text-text-muted">Each person thanks someone for a specific helpful action. Creates a web of team support.</p>
-                <button className="w-full py-2 border border-border rounded-lg text-xs font-bold text-text-muted cursor-not-allowed">
-                  Join Waitlist
-                </button>
-              </div>
+            <div className="card border border-dashed border-border bg-surface/50 space-y-3">
+              <h4 className="font-bold text-text-main">Team Challenges — Not Yet Available</h4>
+              <p className="text-sm text-text-muted leading-relaxed max-w-2xl">
+                A real version of this needs an actual challenge-creation and participation system — your org admin defining a challenge, teammates opting in, and genuine (not invented) participation counts. That isn't built yet, so rather than show placeholder numbers, this space is honestly empty until it is.
+              </p>
             </div>
           </motion.div>
         )}
@@ -166,29 +258,47 @@ export const OrgDashboardMoments = () => {
                  These are visible only to you. You can choose to share them to the wall or keep them private.
                </p>
 
-               <div className="space-y-3">
-                 <div className="p-4 border border-border bg-surface rounded-xl flex items-center justify-between group">
-                   <div className="flex items-center gap-3">
-                     <CheckCircle2 className="w-5 h-5 text-success" />
-                     <span className="text-sm font-medium text-text-main">Protected my lunch break</span>
-                   </div>
-                   <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                     <span className="text-xs text-text-muted">Completed today</span>
-                     <button className="text-xs text-warning bg-warning/10 dark:bg-warning/10 px-2 py-1 rounded border border-warning/30 dark:border-warning/20 font-bold hover:bg-warning/20 dark:hover:bg-warning/20">Share to Wall</button>
-                   </div>
+               {winsLoading ? (
+                 <div className="flex items-center justify-center py-10">
+                   <Loader2 className="w-5 h-5 animate-spin text-primary" />
                  </div>
-                 
-                 <div className="p-4 border border-border bg-surface rounded-xl flex items-center justify-between group">
-                   <div className="flex items-center gap-3">
-                     <CheckCircle2 className="w-5 h-5 text-success" />
-                     <span className="text-sm font-medium text-text-main">Completed a recovery reset after tense meeting</span>
-                   </div>
-                   <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                     <span className="text-xs text-text-muted">Completed yesterday</span>
-                     <button className="text-xs text-warning bg-warning/10 dark:bg-warning/10 px-2 py-1 rounded border border-warning/30 dark:border-warning/20 font-bold hover:bg-warning/20 dark:hover:bg-warning/20">Share to Wall</button>
-                   </div>
+               ) : wins.length === 0 ? (
+                 <div className="py-10 text-center border-2 border-dashed border-border rounded-xl">
+                   <p className="text-text-muted text-sm">No wins logged yet — these come from the wins you track elsewhere in the app.</p>
                  </div>
-               </div>
+               ) : (
+                 <div className="space-y-3">
+                   {wins.map(win => (
+                     <div key={win.id} className="p-4 border border-border bg-surface rounded-xl flex items-center justify-between group">
+                       <div className="flex items-center gap-3 min-w-0">
+                         <CheckCircle2 className="w-5 h-5 text-success shrink-0" />
+                         <span className="text-sm font-medium text-text-main truncate">{win.title || win.content}</span>
+                       </div>
+                       <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+                         <button
+                           onClick={async () => {
+                             if (!orgId) return;
+                             try {
+                               await secureApiFetch(`/api/org/${orgId}/recognition`, {
+                                 method: 'POST',
+                                 data: { message: win.content || win.title, isAnonymous: false },
+                               });
+                               await fetchWall(orgId);
+                               setActiveTab('wall');
+                             } catch (e) {
+                               // Non-critical - the win itself stays intact either way.
+                             }
+                           }}
+                           disabled={!orgId}
+                           className="text-xs text-warning bg-warning/10 dark:bg-warning/10 px-2 py-1 rounded border border-warning/30 dark:border-warning/20 font-bold hover:bg-warning/20 dark:hover:bg-warning/20 disabled:opacity-40"
+                         >
+                           Share to Wall
+                         </button>
+                       </div>
+                     </div>
+                   ))}
+                 </div>
+               )}
              </div>
           </motion.div>
         )}

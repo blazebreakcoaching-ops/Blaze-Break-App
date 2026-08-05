@@ -28,7 +28,9 @@ import { DataPrivacyDashboard } from './DataPrivacyDashboard.tsx';
 import { PrivacyPolicyAccordion } from './PrivacyPolicyAccordion.tsx';
 
 import { ConnectedNovaPermissions } from './ConnectedRecoveryModules.tsx';
-import { auth } from '../lib/firebase';
+import { auth, db } from '../lib/firebase';
+import { doc, setDoc } from 'firebase/firestore';
+import { secureApiFetch } from '../lib/secure-api.ts';
 
 export const PrivacyVault = ({ 
   profile, 
@@ -47,6 +49,89 @@ export const PrivacyVault = ({
   const flags = useFeatureFlags();
   const [auditLogs, setAuditLogs] = useState<AuditLogEntry[]>([]);
   const [isSyncing, setIsSyncing] = useState(false);
+
+  const [orgStatus, setOrgStatus] = useState<{
+    organisationId: string | null;
+    organisationName?: string;
+    isOrgAdmin?: boolean;
+    joinCode?: string;
+    shareAnonymizedDataWithOrg?: boolean;
+  } | null>(null);
+  const [orgLoading, setOrgLoading] = useState(false);
+  const [orgError, setOrgError] = useState('');
+  const [joinCodeInput, setJoinCodeInput] = useState('');
+  const [joining, setJoining] = useState(false);
+  const [consentSaving, setConsentSaving] = useState(false);
+  const [leaving, setLeaving] = useState(false);
+
+  const fetchOrgStatus = async () => {
+    if (!auth.currentUser) return;
+    setOrgLoading(true);
+    setOrgError('');
+    try {
+      const res = await secureApiFetch('/api/org/me');
+      const data = await res.json();
+      setOrgStatus(data);
+    } catch (e) {
+      setOrgError('Could not load your organisation status.');
+    }
+    setOrgLoading(false);
+  };
+
+  useEffect(() => {
+    if (activeTab === 'org') fetchOrgStatus();
+  }, [activeTab]);
+
+  const handleJoinOrg = async () => {
+    if (!joinCodeInput.trim()) return;
+    setJoining(true);
+    setOrgError('');
+    try {
+      const res = await secureApiFetch('/api/org/join', {
+        method: 'POST',
+        data: { joinCode: joinCodeInput.trim() },
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setOrgError(data.error || 'Could not join that organisation.');
+      } else {
+        setJoinCodeInput('');
+        await fetchOrgStatus();
+      }
+    } catch (e) {
+      setOrgError('Could not join that organisation.');
+    }
+    setJoining(false);
+  };
+
+  const handleToggleOrgConsent = async (next: boolean) => {
+    if (!auth.currentUser) return;
+    setConsentSaving(true);
+    try {
+      await setDoc(doc(db, 'users', auth.currentUser.uid), {
+        shareAnonymizedDataWithOrg: next,
+        updatedAt: new Date().toISOString(),
+      }, { merge: true });
+      setOrgStatus(prev => prev ? { ...prev, shareAnonymizedDataWithOrg: next } : prev);
+      await handleAuditAction(next ? 'Enabled anonymized org data sharing' : 'Disabled anonymized org data sharing', 'organisation', next ? 'authorised' : 'denied');
+    } catch (e) {
+      setOrgError('Could not save that change.');
+    }
+    setConsentSaving(false);
+  };
+
+  const handleLeaveOrg = async () => {
+    setLeaving(true);
+    setOrgError('');
+    try {
+      await secureApiFetch('/api/org/leave', { method: 'POST' });
+      await handleAuditAction('Left Organisation', 'organisation', 'deleted');
+      setOrgStatus({ organisationId: null });
+    } catch (e) {
+      setOrgError('Could not leave the organisation. Please try again.');
+    }
+    setLeaving(false);
+  };
   const [showDeleteConfirmModal, setShowDeleteConfirmModal] = useState(false);
   const [typedFullName, setTypedFullName] = useState("");
   const [isDeleting, setIsDeleting] = useState(false);
@@ -279,11 +364,11 @@ export const PrivacyVault = ({
                 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                    <div className="space-y-4">
-                     <h4 className="text-xs font-black uppercase tracking-[0.2em] text-success">What they CAN see (Zone D)</h4>
+                     <h4 className="text-xs font-black uppercase tracking-[0.2em] text-success">What they CAN see</h4>
                      <ul className="space-y-3 text-sm text-text-muted">
                        <li className="flex items-start gap-2">
                          <Network className="w-4 h-4 text-success mt-0.5 shrink-0" />
-                         <span>Grouped trends (e.g., team workload pressure rising)</span>
+                         <span>Grouped trends (e.g., team mood distribution) — only if you opt in below</span>
                        </li>
                        <li className="flex items-start gap-2">
                          <Network className="w-4 h-4 text-success mt-0.5 shrink-0" />
@@ -291,7 +376,7 @@ export const PrivacyVault = ({
                        </li>
                        <li className="flex items-start gap-2">
                          <Network className="w-4 h-4 text-success mt-0.5 shrink-0" />
-                         <span>Anonymous team survey aggregates (N {'<'} 10 suppressed)</span>
+                         <span>Anonymous team aggregates (never shown below your org's configured minimum group size)</span>
                        </li>
                      </ul>
                    </div>
@@ -308,24 +393,89 @@ export const PrivacyVault = ({
                        </li>
                        <li className="flex items-start gap-2">
                          <EyeOff className="w-4 h-4 text-destructive mt-0.5 shrink-0" />
-                         <span>Your personal Recovery Velocity Score</span>
+                         <span>Your personal Recovery Score</span>
                        </li>
                      </ul>
                    </div>
                 </div>
 
-                <div className="p-4 rounded-2xl bg-primary/10 border border-primary/20 flex flex-col sm:flex-row items-center justify-between gap-4">
-                  <div>
-                    <h4 className="text-sm font-bold text-text-main">Current Status: Connected</h4>
-                    <p className="text-xs text-text-muted mt-1">Acme Corp is currently sponsoring your access.</p>
+                {orgError && (
+                  <div className="p-3 bg-destructive/10 border border-destructive/20 text-destructive text-xs rounded-xl">{orgError}</div>
+                )}
+
+                {orgLoading ? (
+                  <div className="flex items-center justify-center py-8">
+                    <Loader2 className="w-6 h-6 animate-spin text-primary" />
                   </div>
-                  <button 
-                    onClick={() => handleAuditAction('Leave Organisation', undefined, 'deleted')}
-                    className="px-4 py-2 bg-background border border-white/[0.05] hover:border-white/[0.1] rounded-xl text-xs font-bold text-text-main transition-all whitespace-nowrap"
-                  >
-                    Leave Organisation
-                  </button>
-                </div>
+                ) : orgStatus?.organisationId ? (
+                  <>
+                    <div className="p-4 rounded-2xl bg-primary/10 border border-primary/20 flex flex-col sm:flex-row items-center justify-between gap-4">
+                      <div>
+                        <h4 className="text-sm font-bold text-text-main">Current Status: Connected</h4>
+                        <p className="text-xs text-text-muted mt-1">{orgStatus.organisationName || 'Your organisation'} is currently sponsoring your access.</p>
+                      </div>
+                      <button
+                        onClick={handleLeaveOrg}
+                        disabled={leaving}
+                        className="px-4 py-2 bg-background border border-white/[0.05] hover:border-white/[0.1] rounded-xl text-xs font-bold text-text-main transition-all whitespace-nowrap disabled:opacity-50 flex items-center gap-2"
+                      >
+                        {leaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
+                        Leave Organisation
+                      </button>
+                    </div>
+
+                    <div className="p-4 rounded-2xl bg-surface border border-border flex flex-col sm:flex-row items-center justify-between gap-4">
+                      <div>
+                        <h4 className="text-sm font-bold text-text-main">Share anonymized data with {orgStatus.organisationName || 'your organisation'}</h4>
+                        <p className="text-xs text-text-muted mt-1 max-w-lg">Off by default. When on, your mood and body check-ins count toward your team's aggregate wellbeing trends — never shown individually, and never shown at all unless enough teammates also opt in.</p>
+                      </div>
+                      <button
+                        onClick={() => handleToggleOrgConsent(!orgStatus.shareAnonymizedDataWithOrg)}
+                        disabled={consentSaving}
+                        className={cn(
+                          "relative w-14 h-7 rounded-full transition-colors shrink-0 disabled:opacity-50",
+                          orgStatus.shareAnonymizedDataWithOrg ? "bg-success" : "bg-border"
+                        )}
+                      >
+                        <span className={cn(
+                          "absolute top-1 left-1 w-5 h-5 rounded-full bg-white transition-transform shadow-sm",
+                          orgStatus.shareAnonymizedDataWithOrg && "translate-x-7"
+                        )} />
+                      </button>
+                    </div>
+
+                    {orgStatus.isOrgAdmin && orgStatus.joinCode && (
+                      <div className="p-4 rounded-2xl bg-primary/5 border border-primary/20 space-y-2">
+                        <h4 className="text-xs font-black uppercase tracking-widest text-primary">Your Team's Join Code</h4>
+                        <p className="text-xs text-text-muted">Share this with employees so they can link their own account to {orgStatus.organisationName}.</p>
+                        <div className="font-mono text-lg font-bold text-text-main bg-background px-4 py-2 rounded-lg border border-border w-fit tracking-widest">{orgStatus.joinCode}</div>
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <div className="p-6 rounded-2xl bg-surface border border-dashed border-border space-y-4">
+                    <h4 className="text-sm font-bold text-text-main">Join Your Organisation</h4>
+                    <p className="text-xs text-text-muted max-w-lg">If your employer has a Blaze Break account, ask them for your team's join code to link your account. This is entirely optional — everything works fully without it.</p>
+                    <div className="flex flex-col sm:flex-row gap-3">
+                      <input
+                        type="text"
+                        value={joinCodeInput}
+                        onChange={(e) => setJoinCodeInput(e.target.value.toUpperCase())}
+                        placeholder="e.g. F3K9QZ"
+                        maxLength={8}
+                        className="flex-1 bg-background border border-border rounded-xl px-4 py-3 text-sm font-mono tracking-widest focus:outline-none focus:border-primary text-text-main"
+                      />
+                      <button
+                        onClick={handleJoinOrg}
+                        disabled={joining || !joinCodeInput.trim()}
+                        className="btn-primary px-6 whitespace-nowrap disabled:opacity-50 flex items-center justify-center gap-2"
+                      >
+                        {joining ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                        Join
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           )}

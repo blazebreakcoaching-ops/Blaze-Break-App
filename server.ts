@@ -2656,16 +2656,348 @@ app.post("/api/admin/content-library", verifyAppCheck, authenticateFirebaseUser,
 app.post("/api/admin/orgs", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
   try {
     requireAdmin(req);
-    const { orgId, name, privacyThreshold } = req.body;
+    const { orgId, name, privacyThreshold, initialAdminEmail } = req.body;
     const db = getDb();
-    await db.collection("organisations").doc(orgId).set({
+
+    let initialAdminUid: string | null = null;
+    if (initialAdminEmail) {
+      try {
+        const adminUserRecord = await getAuth().getUserByEmail(initialAdminEmail);
+        initialAdminUid = adminUserRecord.uid;
+      } catch (e) {
+        return res.status(400).json({ error: `No existing account found for ${initialAdminEmail}. They need to sign up for Blaze Break first, then be designated as this org's admin.` });
+      }
+    }
+
+    const existingOrgDoc = await db.collection("organisations").doc(orgId).get();
+    // Join code is generated once, on first creation, and kept stable across
+    // updates - regenerating it on every edit would silently invalidate any
+    // invite links already sent out to employees.
+    const joinCode = existingOrgDoc.exists && existingOrgDoc.data()?.joinCode
+      ? existingOrgDoc.data()!.joinCode
+      : Math.random().toString(36).substring(2, 8).toUpperCase();
+
+    const updatePayload: any = {
       name,
       privacyThreshold: privacyThreshold || 5,
-      updatedAt: FieldValue.serverTimestamp()
-    }, { merge: true });
-    
+      joinCode,
+      updatedAt: FieldValue.serverTimestamp(),
+    };
+    if (!existingOrgDoc.exists) {
+      updatePayload.createdAt = FieldValue.serverTimestamp();
+      updatePayload.memberUids = initialAdminUid ? [initialAdminUid] : [];
+      updatePayload.adminUids = initialAdminUid ? [initialAdminUid] : [];
+    } else if (initialAdminUid) {
+      updatePayload.adminUids = FieldValue.arrayUnion(initialAdminUid);
+      updatePayload.memberUids = FieldValue.arrayUnion(initialAdminUid);
+    }
+
+    await db.collection("organisations").doc(orgId).set(updatePayload, { merge: true });
+
+    if (initialAdminUid) {
+      await db.collection("users").doc(initialAdminUid).set({
+        organisationId: orgId,
+        updatedAt: FieldValue.serverTimestamp(),
+      }, { merge: true });
+    }
+
     await logAdminAction(req, "manage_organisation", "", orgId, { name, privacyThreshold });
+    res.json({ success: true, joinCode });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// A member removing themselves from their organisation - the reverse of
+// /api/org/join. Their own wellbeing data is entirely unaffected; this only
+// touches the membership link itself.
+app.post("/api/org/leave", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const user = requireAuth(req);
+    const db = getDb();
+    const userDoc = await db.collection("users").doc(user.uid).get();
+    const orgId = userDoc.exists ? userDoc.data()?.organisationId : null;
+    if (!orgId) {
+      return res.status(400).json({ error: "You're not currently part of an organisation." });
+    }
+
+    await db.collection("users").doc(user.uid).set({
+      organisationId: FieldValue.delete(),
+      shareAnonymizedDataWithOrg: false,
+      updatedAt: FieldValue.serverTimestamp(),
+    }, { merge: true });
+
+    await db.collection("organisations").doc(orgId).update({
+      memberUids: FieldValue.arrayRemove(user.uid),
+      adminUids: FieldValue.arrayRemove(user.uid),
+    });
+
     res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ============ Organisation Membership & Aggregate Dashboard ============
+// Everything below reads/writes the top-level `organisations` collection and
+// other users' `users/{uid}` docs via the Admin SDK, which is why none of it
+// needs (or has) client-facing Firestore rules - a hand-written security rule
+// complex enough to safely express "return an aggregate, never a record" is
+// much harder to get right than an explicit, testable server check. Org
+// admins never get direct Firestore read access to another member's data;
+// they only ever see what these endpoints choose to compute and return.
+
+const requireOrgAdmin = async (req: any, orgId: string) => {
+  const user = requireAuth(req);
+  const db = getDb();
+  const orgDoc = await db.collection("organisations").doc(orgId).get();
+  if (!orgDoc.exists) {
+    throw new Error("Organisation not found.");
+  }
+  const org = orgDoc.data()!;
+  const adminUids: string[] = org.adminUids || [];
+  if (!adminUids.includes(user.uid)) {
+    throw new Error("Forbidden: Organisation admin privileges required for this organisation.");
+  }
+  return { user, org };
+};
+
+// Employee redeems a join code to link themselves to their employer's org.
+// This is the only way `organisationId` ever gets set on a user - the
+// Firestore rules explicitly block clients from setting it directly, so
+// nobody can self-assign into a company they don't actually work for.
+app.post("/api/org/join", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const user = requireAuth(req);
+    const { joinCode } = req.body;
+    if (!joinCode || typeof joinCode !== 'string') {
+      return res.status(400).json({ error: "A join code is required." });
+    }
+    const db = getDb();
+
+    const existingUserDoc = await db.collection("users").doc(user.uid).get();
+    if (existingUserDoc.exists && existingUserDoc.data()?.organisationId) {
+      return res.status(400).json({ error: "You're already part of an organisation. Contact support to switch." });
+    }
+
+    const orgsSnap = await db.collection("organisations").where("joinCode", "==", joinCode.trim().toUpperCase()).limit(1).get();
+    if (orgsSnap.empty) {
+      return res.status(404).json({ error: "That join code doesn't match any organisation. Double-check with your admin." });
+    }
+    const orgDoc = orgsSnap.docs[0];
+
+    await db.collection("users").doc(user.uid).set({
+      organisationId: orgDoc.id,
+      updatedAt: FieldValue.serverTimestamp(),
+    }, { merge: true });
+
+    await db.collection("organisations").doc(orgDoc.id).update({
+      memberUids: FieldValue.arrayUnion(user.uid),
+    });
+
+    res.json({ success: true, organisationId: orgDoc.id, organisationName: orgDoc.data().name });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// The current user's own org membership status - which org (if any), whether
+// they're that org's admin, and their own consent setting. Drives which UI
+// the frontend shows; carries no information about anyone else.
+app.get("/api/org/me", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const user = requireAuth(req);
+    const db = getDb();
+    const userDoc = await db.collection("users").doc(user.uid).get();
+    const orgId = userDoc.exists ? userDoc.data()?.organisationId : null;
+    if (!orgId) {
+      return res.json({ organisationId: null });
+    }
+    const orgDoc = await db.collection("organisations").doc(orgId).get();
+    if (!orgDoc.exists) {
+      return res.json({ organisationId: null });
+    }
+    const org = orgDoc.data()!;
+    const isOrgAdmin = (org.adminUids || []).includes(user.uid);
+    res.json({
+      organisationId: orgId,
+      organisationName: org.name,
+      isOrgAdmin,
+      joinCode: isOrgAdmin ? org.joinCode : undefined,
+      shareAnonymizedDataWithOrg: userDoc.data()?.shareAnonymizedDataWithOrg === true,
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// The real, server-side aggregation. This is the only place any individual
+// member's wellbeing data is ever read for org-reporting purposes, and it
+// never returns individual records - only aggregate counts. It refuses to
+// return anything at all below the organisation's configured minimum cohort
+// size, checked against the actual consenting count for this specific
+// request, not the org's total headcount.
+app.get("/api/org/:orgId/dashboard", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const { orgId } = req.params;
+    const { org } = await requireOrgAdmin(req, orgId);
+    const db = getDb();
+
+    const threshold = org.privacyThreshold || 5;
+    const memberUids: string[] = org.memberUids || [];
+
+    // Only members who've explicitly opted in count toward anything below.
+    const consentingUids: string[] = [];
+    await Promise.all(memberUids.map(async (uid) => {
+      const userDoc = await db.collection("users").doc(uid).get();
+      if (userDoc.exists && userDoc.data()?.shareAnonymizedDataWithOrg === true) {
+        consentingUids.push(uid);
+      }
+    }));
+
+    if (consentingUids.length < threshold) {
+      return res.json({ locked: true, cohortSize: consentingUids.length, threshold });
+    }
+
+    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+
+    let moodPositive = 0, moodNegative = 0, moodNeutral = 0, moodIntensitySum = 0, moodCount = 0;
+    let activeMembers = 0;
+    const bodySignalCounts: Record<string, number> = {};
+
+    await Promise.all(consentingUids.map(async (uid) => {
+      let hadActivity = false;
+
+      const moodSnap = await db.collection("users").doc(uid).collection("mood_pulses")
+        .where("createdAt", ">=", sevenDaysAgo).get();
+      moodSnap.forEach(doc => {
+        const d = doc.data();
+        hadActivity = true;
+        moodCount++;
+        moodIntensitySum += d.intensity || 0;
+        if (d.moodLabel === 'calm' || d.moodLabel === 'hopeful' || d.moodLabel === 'focused') moodPositive++;
+        else if (d.moodLabel === 'overwhelmed' || d.moodLabel === 'frustrated' || d.moodLabel === 'pressured' || d.moodLabel === 'tired') moodNegative++;
+        else moodNeutral++;
+      });
+
+      const bodySnap = await db.collection("users").doc(uid).collection("body_checkins")
+        .where("createdAt", ">=", sevenDaysAgo).get();
+      bodySnap.forEach(doc => {
+        hadActivity = true;
+        const signals: string[] = doc.data().signals || [];
+        signals.forEach(s => {
+          if (s === 'calm_settled') return;
+          bodySignalCounts[s] = (bodySignalCounts[s] || 0) + 1;
+        });
+      });
+
+      if (hadActivity) activeMembers++;
+    }));
+
+    const topBodySignals = Object.entries(bodySignalCounts)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5)
+      .map(([signal, count]) => ({ signal, count }));
+
+    res.json({
+      locked: false,
+      cohortSize: consentingUids.length,
+      threshold,
+      windowDays: 7,
+      engagementRate: Math.round((activeMembers / consentingUids.length) * 100),
+      moodDistribution: { positive: moodPositive, negative: moodNegative, neutral: moodNeutral },
+      avgMoodIntensity: moodCount > 0 ? Number((moodIntensitySum / moodCount).toFixed(1)) : null,
+      topBodySignals,
+    });
+  } catch (err: any) {
+    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
+  }
+});
+
+// Team recognition wall. Unlike the aggregate dashboard above, these posts
+// ARE attributed by design - naming who you're thanking is the point of a
+// recognition, not a privacy concern the way individual wellbeing data is.
+app.post("/api/org/:orgId/recognition", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const { orgId } = req.params;
+    const user = requireAuth(req);
+    const db = getDb();
+    const orgDoc = await db.collection("organisations").doc(orgId).get();
+    if (!orgDoc.exists || !(orgDoc.data()?.memberUids || []).includes(user.uid)) {
+      return res.status(403).json({ error: "You're not a member of this organisation." });
+    }
+    const { message, isAnonymous } = req.body;
+    if (!message || typeof message !== 'string' || message.trim().length === 0 || message.length > 300) {
+      return res.status(400).json({ error: "Message must be 1-300 characters." });
+    }
+    const userDoc = await db.collection("users").doc(user.uid).get();
+    const fromName = isAnonymous ? "Anonymous" : (userDoc.data()?.displayName || userDoc.data()?.preferredName || "A teammate");
+
+    const ref = await db.collection("organisations").doc(orgId).collection("recognition_wall").add({
+      from: fromName,
+      message: message.trim(),
+      createdAt: FieldValue.serverTimestamp(),
+    });
+    res.json({ success: true, id: ref.id });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get("/api/org/:orgId/recognition", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const { orgId } = req.params;
+    const user = requireAuth(req);
+    const db = getDb();
+    const orgDoc = await db.collection("organisations").doc(orgId).get();
+    if (!orgDoc.exists || !(orgDoc.data()?.memberUids || []).includes(user.uid)) {
+      return res.status(403).json({ error: "You're not a member of this organisation." });
+    }
+    const snap = await db.collection("organisations").doc(orgId).collection("recognition_wall")
+      .orderBy("createdAt", "desc").limit(20).get();
+    const items = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    res.json({ items });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// The org admin's own real figures for the cost-of-pressure calculator. This
+// replaces what used to be entirely fabricated example numbers - real
+// figures in, a calculation out, rather than a made-up ROI claim.
+app.post("/api/org/:orgId/cost-inputs", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const { orgId } = req.params;
+    await requireOrgAdmin(req, orgId);
+    const { annualSicknessDays, avgDailyCostPerEmployee, headcount } = req.body;
+    if (
+      typeof annualSicknessDays !== 'number' || annualSicknessDays < 0 ||
+      typeof avgDailyCostPerEmployee !== 'number' || avgDailyCostPerEmployee < 0 ||
+      typeof headcount !== 'number' || headcount < 0
+    ) {
+      return res.status(400).json({ error: "All three figures must be non-negative numbers." });
+    }
+    const db = getDb();
+    await db.collection("organisations").doc(orgId).update({
+      costInputs: { annualSicknessDays, avgDailyCostPerEmployee, headcount },
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
+  }
+});
+
+app.get("/api/org/:orgId/cost-inputs", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const { orgId } = req.params;
+    const user = requireAuth(req);
+    const db = getDb();
+    const orgDoc = await db.collection("organisations").doc(orgId).get();
+    if (!orgDoc.exists || !(orgDoc.data()?.memberUids || []).includes(user.uid)) {
+      return res.status(403).json({ error: "You're not a member of this organisation." });
+    }
+    res.json({ costInputs: orgDoc.data()?.costInputs || null });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
