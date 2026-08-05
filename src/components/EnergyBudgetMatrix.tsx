@@ -1,8 +1,8 @@
-import { auth } from '../lib/firebase';
-import { ConnectedEnergyBudget } from './ConnectedRecoveryModules.tsx';
-import React, { useState, useMemo } from 'react';
+import { auth, db } from '../lib/firebase';
+import { collection, doc, setDoc, getDocs, updateDoc, query, orderBy } from 'firebase/firestore';
+import React, { useState, useMemo, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { CheckCircle2, TrendingDown, Crosshair, Activity, ArchiveX, BatteryWarning, BatteryCharging, Network } from 'lucide-react';
+import { CheckCircle2, TrendingDown, Crosshair, Activity, ArchiveX, BatteryWarning, BatteryCharging, Network, Loader2 } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { cn } from '../lib/utils';
 
@@ -12,46 +12,74 @@ interface Commitment {
   energyDrain: number; // 0-100
   type: 'professional' | 'social' | 'emotional' | 'logistical';
   status: 'active' | 'dropped' | 'delegated' | 'restructured';
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export const EnergyBudgetMatrix = ({ onPointsEarned }: { onPointsEarned: (pts: number, reason: string) => void }) => {
-  const [commitments, setCommitments] = useState<Commitment[]>([
-    { id: '1', name: 'Weekly sync with marketing', energyDrain: 45, type: 'professional', status: 'active' },
-    { id: '2', name: 'Managing team conflict', energyDrain: 80, type: 'emotional', status: 'active' },
-    { id: '3', name: 'Hosting dinner for in-laws', energyDrain: 60, type: 'social', status: 'active' },
-    { id: '4', name: 'Writing Q3 Report', energyDrain: 70, type: 'professional', status: 'active' },
-  ]);
+  const [commitments, setCommitments] = useState<Commitment[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
   const [input, setInput] = useState('');
   const [drainSlider, setDrainSlider] = useState(50);
   const [selectedType, setSelectedType] = useState<Commitment['type']>('professional');
 
-  if (auth.currentUser) return <ConnectedEnergyBudget />;
+  const uid = auth.currentUser?.uid;
 
-  const addCommitment = () => {
-    if (!input.trim()) return;
-    setCommitments([
-      ...commitments,
-      {
-        id: Date.now().toString(),
-        name: input,
-        energyDrain: drainSlider,
-        type: selectedType,
-        status: 'active'
-      }
-    ]);
+  const fetchCommitments = async () => {
+    if (!uid) return;
+    setLoading(true);
+    try {
+      const q = query(collection(db, 'users', uid, 'energy_commitments'), orderBy('createdAt', 'desc'));
+      const snap = await getDocs(q);
+      setCommitments(snap.docs.map(d => ({ id: d.id, ...d.data() } as Commitment)));
+    } catch (e) {
+      setError('Could not load your commitments.');
+    }
+    setLoading(false);
+  };
+  useEffect(() => { fetchCommitments(); }, [uid]);
+
+  const addCommitment = async () => {
+    if (!input.trim() || !uid) return;
+    const id = Date.now().toString();
+    const newCommitment: Commitment = {
+      id,
+      name: input.trim(),
+      energyDrain: drainSlider,
+      type: selectedType,
+      status: 'active'
+    };
+    // Optimistic: show it immediately, Firestore write happens alongside.
+    setCommitments(prev => [newCommitment, ...prev]);
     setInput('');
     setDrainSlider(50);
+    try {
+      await setDoc(doc(db, 'users', uid, 'energy_commitments', id), {
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        name: newCommitment.name,
+        energyDrain: newCommitment.energyDrain,
+        type: newCommitment.type,
+        status: newCommitment.status
+      });
+    } catch (e) {
+      setError('This entry could not be saved.');
+      setCommitments(prev => prev.filter(c => c.id !== id));
+    }
   };
 
-  const handleAction = (id: string, action: Commitment['status']) => {
-    setCommitments(prev => prev.map(c => {
-      if (c.id === id) {
-        onPointsEarned(action === 'dropped' ? 20 : 10, `Energy ${action}: ${c.name}`);
-        return { ...c, status: action };
-      }
-      return c;
-    }));
+  const handleAction = async (id: string, action: Commitment['status']) => {
+    const commitment = commitments.find(c => c.id === id);
+    if (!commitment || !uid) return;
+    onPointsEarned(action === 'dropped' ? 20 : 10, `Energy ${action}: ${commitment.name}`);
+    setCommitments(prev => prev.map(c => c.id === id ? { ...c, status: action } : c));
+    try {
+      await updateDoc(doc(db, 'users', uid, 'energy_commitments', id), { status: action, updatedAt: new Date().toISOString() });
+    } catch (e) {
+      setError('This entry could not be saved.');
+    }
   };
 
   const activeTotal = commitments.filter(c => c.status === 'active').reduce((sum, c) => sum + c.energyDrain, 0);
@@ -61,18 +89,41 @@ export const EnergyBudgetMatrix = ({ onPointsEarned }: { onPointsEarned: (pts: n
   const overloadPercentage = (activeTotal / maxCapacity) * 100;
   const isOverloaded = overloadPercentage > 85;
 
-  const velocityData = useMemo(() => Array.from({ length: 7 }).map((_, i) => {
-    const daysAgo = 6 - i;
-    const date = new Date(Date.now() - daysAgo * 24 * 60 * 60 * 1000);
-    return {
-      day: date.toLocaleDateString('en-US', { weekday: 'short' }),
-      drain: 120 + Math.floor(Math.random() * 80) + (i * -10),
-      completed: 40 + Math.floor(Math.random() * 60) + (i * 15)
-    };
-  }), []);
+  const velocityData = useMemo(() => {
+    return Array.from({ length: 7 }).map((_, i) => {
+      const daysAgo = 6 - i;
+      const date = new Date(Date.now() - daysAgo * 24 * 60 * 60 * 1000);
+      const dateStr = date.toISOString().split('T')[0];
+      // Real totals from actual commitment history - a commitment counts
+      // toward "drain" on the day it was created, and toward "completed"
+      // (recovery input) on the day it was last resolved off active status.
+      const drain = commitments
+        .filter(c => c.createdAt?.startsWith(dateStr))
+        .reduce((sum, c) => sum + c.energyDrain, 0);
+      const completed = commitments
+        .filter(c => c.status !== 'active' && c.updatedAt?.startsWith(dateStr))
+        .reduce((sum, c) => sum + c.energyDrain, 0);
+      return {
+        day: date.toLocaleDateString('en-US', { weekday: 'short' }),
+        drain,
+        completed
+      };
+    });
+  }, [commitments]);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-24">
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-12 pb-24 font-sans max-w-[1400px] mx-auto">
+      {error && (
+        <div className="bg-destructive/10 border border-destructive/20 text-destructive text-sm p-4 rounded-xl">{error}</div>
+      )}
       {/* Executive Header */}
       <div className="relative overflow-hidden rounded-xl bg-background border border-border p-6 sm:p-8 md:p-10">
         <div className="relative z-10 max-w-4xl space-y-6">
