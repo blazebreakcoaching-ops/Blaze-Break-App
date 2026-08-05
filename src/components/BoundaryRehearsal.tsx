@@ -1,6 +1,6 @@
-import { auth } from '../lib/firebase';
-import { ConnectedBoundaryScripts } from './ConnectedRecoveryModules.tsx';
-import { useState } from 'react';
+import { auth, db } from '../lib/firebase';
+import { collection, doc, setDoc, getDocs, query, orderBy, limit } from 'firebase/firestore';
+import { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
 import ReactMarkdown from 'react-markdown';
 import { secureApiFetch } from '../lib/secure-api';
@@ -138,8 +138,6 @@ const scriptGroups: ScriptGroup[] = [
 ];
 
 export const BoundaryRehearsal = ({ onAwardPoints, onRehearsalComplete }: { onAwardPoints: (amount: number, reason: string) => void, onRehearsalComplete: () => void }) => {
-  if (auth.currentUser) return <ConnectedBoundaryScripts />;
-
   const [selected, setSelected] = useState<Script | null>(null);
   const [activeCategory, setActiveCategory] = useState(scriptGroups[0].category);
   const [isPractising, setIsPractising] = useState(false);
@@ -155,6 +153,21 @@ export const BoundaryRehearsal = ({ onAwardPoints, onRehearsalComplete }: { onAw
   const [finalCritique, setFinalCritique] = useState<string | null>(null);
   const [detailedFeedback, setDetailedFeedback] = useState<string | null>(null);
   const [feedbackLoading, setFeedbackLoading] = useState(false);
+  const [savedScripts, setSavedScripts] = useState<{ id: string, title: string, scriptText: string, createdAt: string }[]>([]);
+
+  const uid = auth.currentUser?.uid;
+
+  const fetchSavedScripts = async () => {
+    if (!uid) return;
+    try {
+      const q = query(collection(db, 'users', uid, 'boundary_scripts'), orderBy('createdAt', 'desc'), limit(5));
+      const snap = await getDocs(q);
+      setSavedScripts(snap.docs.map(d => ({ id: d.id, ...d.data() } as any)));
+    } catch (e) {
+      // Non-critical - the generator still works even if history fails to load.
+    }
+  };
+  useEffect(() => { fetchSavedScripts(); }, [uid]);
 
   const getParsedCustomScript = () => {
     if (!generatedResult) return { script: '', advice: '' };
@@ -194,6 +207,31 @@ export const BoundaryRehearsal = ({ onAwardPoints, onRehearsalComplete }: { onAw
       const data = await response.json();
       setGeneratedResult(data.text);
       onAwardPoints(20, "Generated Custom Boundary Script");
+
+      // Persist so this generation survives a refresh and shows up in
+      // Recent Custom Scripts below - reuses the same boundary_scripts
+      // collection and schema ConnectedBoundaryScripts already reads from.
+      if (uid) {
+        try {
+          const { script } = (() => {
+            const parts = data.text.split(/###\s*(?:Script|Behavioral Strategy)/gi);
+            return { script: parts[1]?.trim() || data.text };
+          })();
+          const id = Date.now().toString();
+          await setDoc(doc(db, 'users', uid, 'boundary_scripts', id), {
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+            title: generatorInput.slice(0, 80),
+            scenarioType: 'workload',
+            scriptText: script.slice(0, 500),
+            status: 'saved',
+          });
+          fetchSavedScripts();
+        } catch (e) {
+          // Non-critical - the generated script is still shown and usable
+          // for practice even if saving it to history fails.
+        }
+      }
     } catch (e) {
       setGeneratedResult("### Script\nI have received your request. Let me check my capacity and I will outline the trade-offs required to take this on.\n\n### Behavioral Strategy\nThis delays commitment, giving your cognitive load time to level out.");
     } finally {
@@ -365,8 +403,22 @@ export const BoundaryRehearsal = ({ onAwardPoints, onRehearsalComplete }: { onAw
                 </div>
               </div>
             </div>
+
+            {savedScripts.length > 0 && (
+              <div className="card bg-card border border-border p-6 space-y-4">
+                <h5 className="text-xs font-medium uppercase tracking-widest text-text-muted">Recent Custom Scripts</h5>
+                <div className="space-y-2">
+                  {savedScripts.map(s => (
+                    <div key={s.id} className="p-3 bg-surface rounded-lg border border-border text-xs">
+                      <p className="font-bold text-text-main truncate">{s.title}</p>
+                      <p className="text-text-muted mt-1 line-clamp-2">{s.scriptText}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
-          
+
           <div className="lg:col-span-8 space-y-6">
             <h4 className="text-xs font-medium uppercase tracking-[0.2em] text-text-muted flex items-center gap-2">
               <Zap className="w-3.5 h-3.5" /> Generated Response
