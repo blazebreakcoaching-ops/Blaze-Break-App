@@ -1,18 +1,18 @@
-import { auth } from '../lib/firebase';
-import { ConnectedEnergyBudget } from './ConnectedRecoveryModules.tsx';
-import { useState } from 'react';
+import { auth, db } from '../lib/firebase';
+import { collection, doc, setDoc, getDoc, getDocs, updateDoc, deleteDoc, deleteField, query, orderBy } from 'firebase/firestore';
+import { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Plus, Minus, BatteryFull, Zap, Waves, Users, X, AlertCircle, History, CheckCircle2, PieChart } from 'lucide-react';
-import { 
-  BarChart, 
-  Bar, 
-  XAxis, 
-  YAxis, 
-  CartesianGrid, 
-  Tooltip, 
-  Legend, 
-  ResponsiveContainer, 
-  ReferenceLine 
+import { Plus, Minus, BatteryFull, Zap, Waves, Users, X, AlertCircle, History, CheckCircle2, PieChart, Loader2 } from 'lucide-react';
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+  ResponsiveContainer,
+  ReferenceLine
 } from 'recharts';
 import { EnergyCredit } from '../types.ts';
 import { cn } from '../lib/utils.ts';
@@ -20,17 +20,6 @@ import { logJourney } from '../lib/nova-brain.ts';
 import { ShipJourney } from './ShipJourney';
 import { RelapseRadar } from './RelapseRadar';
 import { DebtTracker } from './DebtTracker';
-
-const WEEKLY_DATA = [
-  { day: 'Mon', Executive: 20, Social: 15, Emotional: 10, Logistical: 5, total: 50 },
-  { day: 'Tue', Executive: 25, Social: 10, Emotional: 15, Logistical: 10, total: 60 },
-  { day: 'Wed', Executive: 35, Social: 20, Emotional: 15, Logistical: 15, total: 85 }, // Overload!
-  { day: 'Thu', Executive: 15, Social: 10, Emotional: 5, Logistical: 10, total: 40 },
-  { day: 'Fri', Executive: 30, Social: 25, Emotional: 20, Logistical: 15, total: 90 }, // Overload!
-  { day: 'Sat', Executive: 5, Social: 10, Emotional: 5, Logistical: 5, total: 25 },
-  { day: 'Sun', Executive: 10, Social: 5, Emotional: 5, Logistical: 5, total: 25 },
-];
-
 import { SHIPStage } from '../types';
 
 export const EnergyBudgetTool = ({ 
@@ -42,8 +31,6 @@ export const EnergyBudgetTool = ({
   currentStage?: SHIPStage,
   debts?: any[]
 }) => {
-  if (auth.currentUser) return <ConnectedEnergyBudget />;
-
   const STAGE_MAP: Record<SHIPStage, 'Safety' | 'Habits' | 'Identity' | 'Purpose'> = {
     Safety: 'Safety',
     Habits: 'Habits',
@@ -51,11 +38,10 @@ export const EnergyBudgetTool = ({
     Purpose: 'Purpose'
   };
 
-  const [budget, setBudget] = useState(60);
-  const [tasks, setTasks] = useState<EnergyCredit[]>([
-    { id: '1', task: 'Morning status meeting', cost: 15, type: 'Social', priority: 'Medium', shipStage: 'Safety' },
-    { id: '2', task: 'Deep work on project alpha', cost: 25, type: 'Executive', priority: 'High', shipStage: 'Habits' },
-  ]);
+  const [budgetState, setBudgetState] = useState(60);
+  const [tasks, setTasks] = useState<(EnergyCredit & { createdAt?: string })[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
   const [newTaskName, setNewTaskName] = useState('');
   const [newType, setNewType] = useState<EnergyCredit['type']>('Executive');
   const [newPriority, setNewPriority] = useState<EnergyCredit['priority']>('Medium');
@@ -66,18 +52,61 @@ export const EnergyBudgetTool = ({
   const [taskToDelete, setTaskToDelete] = useState<string | null>(null);
   const [filterAction, setFilterAction] = useState<undefined | 'keep' | 'delegate' | 'defer'>();
 
+  const uid = auth.currentUser?.uid;
+
+  const fetchAll = async () => {
+    if (!uid) return;
+    setLoading(true);
+    try {
+      const [creditsSnap, settingsSnap] = await Promise.all([
+        getDocs(query(collection(db, 'users', uid, 'energy_credits'), orderBy('createdAt', 'desc'))),
+        getDoc(doc(db, 'users', uid, 'energy_credits_settings', 'current')),
+      ]);
+      setTasks(creditsSnap.docs.map(d => ({ id: d.id, ...d.data() } as EnergyCredit & { createdAt?: string })));
+      if (settingsSnap.exists()) {
+        setBudgetState(settingsSnap.data().budget ?? 60);
+      }
+    } catch (e) {
+      setError('Could not load your energy budget.');
+    }
+    setLoading(false);
+  };
+  useEffect(() => { fetchAll(); }, [uid]);
+
+  const persistBudget = async (value: number) => {
+    if (!uid) return;
+    try {
+      await setDoc(doc(db, 'users', uid, 'energy_credits_settings', 'current'), {
+        budget: value,
+        updatedAt: new Date().toISOString(),
+      });
+    } catch (e) {
+      setError('This entry could not be saved.');
+    }
+  };
+
+  const setBudget = (value: number) => {
+    setBudgetState(value);
+    persistBudget(value);
+  };
+
+  const budget = budgetState;
+
   const totalSpent = tasks.reduce((sum, t) => sum + t.cost, 0);
   const currentRatio = isNaN(totalSpent / budget) ? 0 : totalSpent / budget;
   const isOverBudget = totalSpent > budget;
 
-  const toggleTaskAction = (id: string, action: 'keep' | 'delegate' | 'defer') => {
-    setTasks(current => current.map(t => {
-      if (t.id === id) {
-        if (t.action === action) return { ...t, action: undefined };
-        return { ...t, action };
-      }
-      return t;
-    }));
+  const toggleTaskAction = async (id: string, action: 'keep' | 'delegate' | 'defer') => {
+    if (!uid) return;
+    const task = tasks.find(t => t.id === id);
+    if (!task) return;
+    const nextAction = task.action === action ? undefined : action;
+    setTasks(current => current.map(t => t.id === id ? { ...t, action: nextAction } : t));
+    try {
+      await updateDoc(doc(db, 'users', uid, 'energy_credits', id), { action: nextAction ?? deleteField(), updatedAt: new Date().toISOString() });
+    } catch (e) {
+      setError('This entry could not be saved.');
+    }
   };
 
   const typeConfig: Record<string, { color: string, glow: string, icon: any }> = {
@@ -125,24 +154,44 @@ export const EnergyBudgetTool = ({
     return 0; // default order
   });
 
-  const addTask = () => {
-    if (!newTaskName) return;
+  const addTask = async () => {
+    if (!newTaskName || !uid) return;
     const currentActiveStage = STAGE_MAP[currentStage] || 'Safety';
     const isAnchor = currentActiveStage === newShipStage;
-    
-    setTasks([...tasks, { 
-      id: Math.random().toString(), 
-      task: newTaskName, 
-      type: newType as any, 
+
+    const id = Date.now().toString();
+    const createdAt = new Date().toISOString();
+    const newTask: EnergyCredit & { createdAt?: string } = {
+      id,
+      task: newTaskName,
+      type: newType as any,
       cost: newCost,
       priority: newPriority,
-      shipStage: newShipStage
-    }]);
-    
-    logJourney('Energy Budget Update', `Added task: '${newTaskName}' (Cost: ${newCost}, Type: ${newType})`);
-    
+      shipStage: newShipStage,
+      createdAt,
+    };
+
+    setTasks(prev => [newTask, ...prev]);
     setNewTaskName('');
-    
+
+    try {
+      await setDoc(doc(db, 'users', uid, 'energy_credits', id), {
+        createdAt,
+        updatedAt: createdAt,
+        task: newTask.task,
+        cost: newTask.cost,
+        priority: newTask.priority,
+        type: newTask.type,
+        shipStage: newTask.shipStage,
+      });
+    } catch (e) {
+      setError('This entry could not be saved.');
+      setTasks(prev => prev.filter(t => t.id !== id));
+      return;
+    }
+
+    logJourney('Energy Budget Update', `Added task: '${newTaskName}' (Cost: ${newCost}, Type: ${newType})`);
+
     if (isAnchor) {
       onAwardPoints(25, `Phase Anchor Task Integrated (+15 bonus)`);
     } else {
@@ -164,8 +213,51 @@ export const EnergyBudgetTool = ({
     setTaskToDelete(id);
   };
 
+  const confirmDeleteTask = async () => {
+    if (!taskToDelete || !uid) return;
+    const id = taskToDelete;
+    setTaskToDelete(null);
+    setTasks(current => current.filter(t => t.id !== id));
+    try {
+      await deleteDoc(doc(db, 'users', uid, 'energy_credits', id));
+    } catch (e) {
+      setError('This entry could not be deleted.');
+    }
+  };
+
+  const weeklyData = useMemo(() => {
+    return Array.from({ length: 7 }).map((_, i) => {
+      const daysAgo = 6 - i;
+      const date = new Date(Date.now() - daysAgo * 24 * 60 * 60 * 1000);
+      const dateStr = date.toISOString().split('T')[0];
+      const dayTasks = tasks.filter(t => t.createdAt?.startsWith(dateStr));
+      const byType = { Executive: 0, Social: 0, Emotional: 0, Physical: 0 };
+      dayTasks.forEach(t => { byType[t.type as keyof typeof byType] = (byType[t.type as keyof typeof byType] || 0) + t.cost; });
+      const total = dayTasks.reduce((sum, t) => sum + t.cost, 0);
+      return {
+        day: date.toLocaleDateString('en-US', { weekday: 'short' }),
+        ...byType,
+        total
+      };
+    });
+  }, [tasks]);
+
+  const overloadDays = weeklyData.filter(d => d.total > budget);
+  const safeDays = weeklyData.filter(d => d.total <= budget && d.total > 0);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-24">
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-12 pb-24">
+      {error && (
+        <div className="bg-destructive/10 border border-destructive/20 text-destructive text-sm p-4 rounded-xl">{error}</div>
+      )}
       <div className="max-w-4xl">
         <div className="flex items-center gap-4 mb-4">
            <div className="tag">Nervous System Controller v2.1</div>
@@ -211,7 +303,7 @@ export const EnergyBudgetTool = ({
             <div className="h-80 w-full">
               <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                 <BarChart
-                  data={WEEKLY_DATA}
+                  data={weeklyData}
                   margin={{ top: 20, right: 10, left: -20, bottom: 5 }}
                 >
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E2E8F0" className="dark:stroke-border" />
@@ -249,8 +341,8 @@ export const EnergyBudgetTool = ({
                   <Bar dataKey="Executive" stackId="energy" fill="#312E81" />
                   <Bar dataKey="Social" stackId="energy" fill="#38BDF8" />
                   <Bar dataKey="Emotional" stackId="energy" fill="#14B8A6" />
-                  <Bar dataKey="Logistical" stackId="energy" fill="#F43F5E" radius={[4, 4, 0, 0]} />
-                  <ReferenceLine y={60} stroke="#EF4444" strokeDasharray="5 5" label={{ value: 'Capacitance limit (60 CR)', fill: '#EF4444', fontSize: 9, position: 'top', fontWeight: 'bold' }} />
+                  <Bar dataKey="Physical" stackId="energy" fill="#F43F5E" radius={[4, 4, 0, 0]} />
+                  <ReferenceLine y={budget} stroke="#EF4444" strokeDasharray="5 5" label={{ value: `Capacitance limit (${budget} CR)`, fill: '#EF4444', fontSize: 9, position: 'top', fontWeight: 'bold' }} />
                 </BarChart>
               </ResponsiveContainer>
             </div>
@@ -259,13 +351,19 @@ export const EnergyBudgetTool = ({
               <div className="flex items-center gap-3 p-3 bg-destructive/5 dark:bg-destructive/10 rounded-xl border border-destructive/15">
                 <AlertCircle className="w-5 h-5 text-destructive" />
                 <div className="text-xs leading-tight text-text-muted font-sans font-bold">
-                  <span className="text-destructive font-extrabold uppercase tracking-wide">System warning:</span> Wednesday & Friday active strain exceeded baseline capacitance by <span className="text-destructive">+25 CR</span> and <span className="text-destructive">+30 CR</span>. Autocortex recovery protocols activated.
+                  <span className="text-destructive font-extrabold uppercase tracking-wide">System warning:</span>{' '}
+                  {overloadDays.length > 0
+                    ? <>{overloadDays.map(d => d.day).join(' & ')} active strain exceeded baseline capacitance. Autocortex recovery protocols activated.</>
+                    : 'No days this week exceeded baseline capacitance.'}
                 </div>
               </div>
               <div className="flex items-center gap-3 p-3 bg-success/5 dark:bg-success/10 rounded-xl border border-success/15">
                 <CheckCircle2 className="w-5 h-5 text-success" />
                 <div className="text-xs leading-tight text-text-muted font-sans font-bold">
-                  <span className="text-success font-extrabold uppercase tracking-wide">Weekend buffer check:</span> Saturday & Sunday load maintained safely under <span className="text-success font-extrabold">25 CR</span>. High recharge score synchronized.
+                  <span className="text-success font-extrabold uppercase tracking-wide">Weekend buffer check:</span>{' '}
+                  {safeDays.length > 0
+                    ? <>{safeDays.map(d => d.day).join(' & ')} load maintained safely under budget. High recharge score synchronized.</>
+                    : 'No load logged yet this week.'}
                 </div>
               </div>
             </div>
@@ -564,20 +662,20 @@ export const EnergyBudgetTool = ({
                     disabled={!newTaskName}
                     className="w-full btn-primary py-5 rounded-xl disabled:opacity-40 uppercase tracking-[0.2em] font-medium text-[11px] flex items-center justify-center gap-3 transition-all hover:scale-[1.02] active:scale-95"
                   >
-                    Integrate Load <Plus className="w-5 h-5" />
+                    Add Task <Plus className="w-5 h-5" />
                   </button>
-                  
-                  <button 
-                    onClick={handleCommit} 
-                    disabled={isOverBudget || hasCommitted} 
+
+                  <button
+                    onClick={handleCommit}
+                    disabled={isOverBudget || hasCommitted}
                     className={cn(
                       "w-full py-5 rounded-[2rem] text-xs font-black uppercase tracking-[0.2em] transition-all border",
-                      hasCommitted 
-                        ? "bg-teal-500/10 text-teal-500 border-teal-500/20" 
+                      hasCommitted
+                        ? "bg-teal-500/10 text-teal-500 border-teal-500/20"
                         : "bg-surface/40 text-text-muted border-border hover:bg-white dark:hover:bg-surface disabled:opacity-30"
                     )}
                   >
-                    {hasCommitted ? "Matrix Synced" : "Lock Matrix & Sync"}
+                    {hasCommitted ? "Budget Locked In" : "Lock In Today's Budget"}
                   </button>
                 </div>
               </div>
@@ -629,10 +727,7 @@ export const EnergyBudgetTool = ({
                     Cancel
                   </button>
                   <button
-                    onClick={() => {
-                      if (taskToDelete) setTasks(tasks.filter(t => t.id !== taskToDelete));
-                      setTaskToDelete(null);
-                    }}
+                    onClick={confirmDeleteTask}
                     className="flex-1 px-4 py-3 bg-destructive text-destructive-foreground rounded-xl font-bold hover:bg-rose-700 transition"
                   >
                     Delete Task
