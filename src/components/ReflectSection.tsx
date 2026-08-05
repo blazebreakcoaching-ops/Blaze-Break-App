@@ -163,8 +163,6 @@ export const ReflectSection = ({
   committedActionIds?: string[],
   onCommitAction?: (actionId: string) => void
 }) => {
-  if (auth.currentUser) return <ConnectedWeeklyReviews />;
-
   const [selected, setSelected] = useState<Chapter | null>(null);
   const [view, setView] = useState<'content' | 'action'>('content');
 
@@ -262,6 +260,8 @@ export const ReflectSection = ({
   const [newMoodWord, setNewMoodWord] = useState('');
   const [newMoodIntensity, setNewMoodIntensity] = useState(5);
   const [newMoodCategory, setNewMoodCategory] = useState<'negative' | 'positive' | 'neutral'>('negative');
+
+  if (auth.currentUser) return <ConnectedWeeklyReviews />;
 
   const handleAddMoodLog = () => {
     if (!newMoodWord.trim()) return;
