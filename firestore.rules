@@ -342,6 +342,35 @@ service cloud.firestore {
             && request.resource.data.budget is number && request.resource.data.budget >= 0 && request.resource.data.budget <= 200;
       }
 
+      // Q. stress_triggers (the "Quick Note" floating trigger logger)
+      match /stress_triggers/{triggerId} {
+        allow read: if isOwner(uid);
+        allow delete: if isOwner(uid);
+        allow create, update: if isOwner(uid)
+            && hasOnly(['createdAt', 'updatedAt', 'text', 'date', 'severity', 'energyLevel'])
+            && hasAll(['createdAt', 'updatedAt', 'text', 'date', 'severity', 'energyLevel'])
+            && isStringWithMax(request.resource.data.text, 300)
+            && request.resource.data.severity is number && request.resource.data.severity >= 1 && request.resource.data.severity <= 10
+            && request.resource.data.energyLevel is number && request.resource.data.energyLevel >= 0 && request.resource.data.energyLevel <= 100
+            && (request.method == 'create' ? true : checkCreatedAtUnchanged());
+      }
+
+      // R. emotional_patterns (free-form word/intensity mood log used by
+      // Reflect's 30-day pattern chart - distinct from mood_pulses' fixed
+      // moodLabel enum, since this tracks arbitrary self-described words for
+      // word-frequency analysis)
+      match /emotional_patterns/{entryId} {
+        allow read: if isOwner(uid);
+        allow delete: if isOwner(uid);
+        allow create, update: if isOwner(uid)
+            && hasOnly(['createdAt', 'updatedAt', 'word', 'intensity', 'category'])
+            && hasAll(['createdAt', 'updatedAt', 'word', 'intensity', 'category'])
+            && isStringWithMax(request.resource.data.word, 40)
+            && request.resource.data.intensity is number && request.resource.data.intensity >= 1 && request.resource.data.intensity <= 10
+            && request.resource.data.category in ['negative', 'positive', 'neutral']
+            && (request.method == 'create' ? true : checkCreatedAtUnchanged());
+      }
+
     }
     
     // F. public_feature_flags/{featureId}

@@ -54,6 +54,8 @@ import {
   SupportContact,
 } from "./types.ts";
 import { cn } from "./lib/utils.ts";
+import { auth, db } from "./lib/firebase.ts";
+import { doc, setDoc } from "firebase/firestore";
 const DiagnoseView = lazy(() => import("./components/DiagnoseSection.tsx").then(m => ({ default: m.DiagnoseView })));
 const ResultView = lazy(() => import("./components/DiagnoseSection.tsx").then(m => ({ default: m.ResultView })));
 const EnergyBudgetTool = lazy(() => import("./components/EnergyBudget.tsx").then(m => ({ default: m.EnergyBudgetTool })));
@@ -1125,22 +1127,22 @@ const HomeSection = ({
   const [quickSeverity, setQuickSeverity] = useState(7);
   const [quickSuccess, setQuickSuccess] = useState(false);
 
-  const handleSaveQuickTrigger = () => {
+  const handleSaveQuickTrigger = async () => {
     if (!quickTriggerText.trim()) return;
-    
-    const saved = localStorage.getItem("blaze_intelligence_triggers") || '[]';
+    const uid = auth.currentUser?.uid;
+    if (!uid) return;
+
     try {
-      const parsed = JSON.parse(saved);
-      parsed.unshift({
-        id: String(Date.now()),
+      await setDoc(doc(db, 'users', uid, 'stress_triggers', Date.now().toString()), {
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
         text: quickTriggerText.trim(),
         date: new Date().toISOString(),
         severity: Number(quickSeverity),
-        energyLevel: Number(energyLevel)
+        energyLevel: Number(energyLevel),
       });
-      localStorage.setItem("blaze_intelligence_triggers", JSON.stringify(parsed));
     } catch (e) {
-      console.warn(e);
+      console.error("Could not save this trigger note:", e);
     }
 
     setQuickSuccess(true);
