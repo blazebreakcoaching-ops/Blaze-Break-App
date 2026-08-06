@@ -3300,6 +3300,110 @@ app.post("/api/org/:orgId/settings", verifyAppCheck, authenticateFirebaseUser, a
   }
 });
 
+// ============ Email Invites ============
+// Sends real invite emails via the existing Brevo integration and tracks
+// pending invites so an org admin can see who's been asked but hasn't
+// joined yet, without needing to cross-reference anything manually. This is
+// a convenience layer on top of the join code, not a replacement for it -
+// join-by-code still works even if an invite email never arrives.
+
+app.post("/api/org/:orgId/invite", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const { orgId } = req.params;
+    const { org } = await requireOrgAdmin(req, orgId);
+    const { emails } = req.body;
+    const emailList: string[] = Array.isArray(emails) ? emails : (typeof emails === 'string' ? [emails] : []);
+    const cleaned = emailList
+      .map(e => (typeof e === 'string' ? e.trim().toLowerCase() : ''))
+      .filter(e => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e));
+
+    if (cleaned.length === 0) {
+      return res.status(400).json({ error: "Provide at least one valid email address." });
+    }
+    if (cleaned.length > 50) {
+      return res.status(400).json({ error: "You can invite up to 50 people at once." });
+    }
+
+    const db = getDb();
+    const results: { email: string; sent: boolean }[] = [];
+
+    for (const email of cleaned) {
+      const sent = await sendBrevoEmail(
+        email,
+        `You're invited to ${org.name} on Blaze Break`,
+        `${org.name} has set up Blaze Break, a burnout recovery tool, for their team.\n\nTo join, sign in to Blaze Break and enter this code in your Privacy Centre under "Organisation Participation":\n\n${org.joinCode}\n\nJoining is entirely optional, and any data sharing with ${org.name} is off by default and fully within your control.`
+      );
+      results.push({ email, sent });
+      await db.collection("organisations").doc(orgId).collection("pending_invites").doc(email).set({
+        email,
+        invitedAt: FieldValue.serverTimestamp(),
+        emailSent: sent,
+      });
+    }
+
+    res.json({ success: true, results });
+  } catch (err: any) {
+    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
+  }
+});
+
+app.get("/api/org/:orgId/invites", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const { orgId } = req.params;
+    await requireOrgAdmin(req, orgId);
+    const db = getDb();
+    const snap = await db.collection("organisations").doc(orgId).collection("pending_invites")
+      .orderBy("invitedAt", "desc").limit(100).get();
+    const invites = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    res.json({ invites });
+  } catch (err: any) {
+    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
+  }
+});
+
+app.post("/api/org/:orgId/invites/:email/cancel", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const { orgId, email } = req.params;
+    await requireOrgAdmin(req, orgId);
+    const db = getDb();
+    await db.collection("organisations").doc(orgId).collection("pending_invites").doc(email).delete();
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
+  }
+});
+
+// ============ Moderation ============
+
+app.post("/api/org/:orgId/recognition/:recognitionId/delete", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const { orgId, recognitionId } = req.params;
+    await requireOrgAdmin(req, orgId);
+    const db = getDb();
+    await db.collection("organisations").doc(orgId).collection("recognition_wall").doc(recognitionId).delete();
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
+  }
+});
+
+app.post("/api/org/:orgId/challenges/:challengeId/toggle-active", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const { orgId, challengeId } = req.params;
+    await requireOrgAdmin(req, orgId);
+    const db = getDb();
+    const challengeDoc = await db.collection("organisations").doc(orgId).collection("challenges").doc(challengeId).get();
+    if (!challengeDoc.exists) {
+      return res.status(404).json({ error: "Challenge not found." });
+    }
+    const newActive = !challengeDoc.data()?.active;
+    await db.collection("organisations").doc(orgId).collection("challenges").doc(challengeId).update({ active: newActive });
+    res.json({ success: true, active: newActive });
+  } catch (err: any) {
+    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
+  }
+});
+
 // Anxiety Reset API endpoints
 app.get("/api/anxiety-reset", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
   try {

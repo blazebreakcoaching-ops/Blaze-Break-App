@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Sparkles, Heart, Award, Target, MessageSquare, ThumbsUp, AlertTriangle, CheckCircle2, Loader2, Send } from 'lucide-react';
+import { Sparkles, Heart, Award, Target, MessageSquare, ThumbsUp, AlertTriangle, CheckCircle2, Loader2, Send, Trash2, Play, Pause } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { secureApiFetch } from '../lib/secure-api';
 import { auth, db } from '../lib/firebase';
@@ -35,7 +35,7 @@ export const OrgDashboardMoments = () => {
   const [winsLoading, setWinsLoading] = useState(true);
 
   const [isOrgAdmin, setIsOrgAdmin] = useState(false);
-  const [challenges, setChallenges] = useState<{ id: string; title: string; description: string; participantCount: number; participationRate: number; joined: boolean }[]>([]);
+  const [challenges, setChallenges] = useState<{ id: string; title: string; description: string; participantCount: number; participationRate: number; joined: boolean; active: boolean }[]>([]);
   const [challengesLoading, setChallengesLoading] = useState(true);
   const [challengesError, setChallengesError] = useState('');
   const [newChallengeTitle, setNewChallengeTitle] = useState('');
@@ -180,6 +180,33 @@ export const OrgDashboardMoments = () => {
     setJoiningId(null);
   };
 
+  const [deletingRecognitionId, setDeletingRecognitionId] = useState<string | null>(null);
+  const [togglingChallengeId, setTogglingChallengeId] = useState<string | null>(null);
+
+  const handleDeleteRecognition = async (recognitionId: string) => {
+    if (!orgId) return;
+    setDeletingRecognitionId(recognitionId);
+    try {
+      await secureApiFetch(`/api/org/${orgId}/recognition/${recognitionId}/delete`, { method: 'POST' });
+      await fetchWall(orgId);
+    } catch (e) {
+      setWallError('Could not remove that post.');
+    }
+    setDeletingRecognitionId(null);
+  };
+
+  const handleToggleChallengeActive = async (challengeId: string) => {
+    if (!orgId) return;
+    setTogglingChallengeId(challengeId);
+    try {
+      await secureApiFetch(`/api/org/${orgId}/challenges/${challengeId}/toggle-active`, { method: 'POST' });
+      await fetchChallenges(orgId);
+    } catch (e) {
+      setChallengesError('Could not update that challenge.');
+    }
+    setTogglingChallengeId(null);
+  };
+
   const formatWhen = (createdAt?: string) => {
     if (!createdAt) return '';
     const diffMs = Date.now() - new Date(createdAt).getTime();
@@ -284,7 +311,17 @@ export const OrgDashboardMoments = () => {
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 {recognitions.map(item => (
-                  <div key={item.id} className="card bg-white dark:bg-card border-border hover:border-warning/30 transition-colors group">
+                  <div key={item.id} className="card bg-white dark:bg-card border-border hover:border-warning/30 transition-colors group relative">
+                    {isOrgAdmin && (
+                      <button
+                        onClick={() => handleDeleteRecognition(item.id)}
+                        disabled={deletingRecognitionId === item.id}
+                        className="absolute top-3 right-3 text-text-muted hover:text-destructive transition-colors opacity-0 group-hover:opacity-100 disabled:opacity-50"
+                        title="Remove this post"
+                      >
+                        {deletingRecognitionId === item.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+                      </button>
+                    )}
                     <div className="flex items-center gap-3 mb-4">
                       <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 bg-warning/20 text-warning">
                         <ThumbsUp className="w-4 h-4" />
@@ -363,18 +400,23 @@ export const OrgDashboardMoments = () => {
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 {challenges.map(challenge => (
-                  <div key={challenge.id} className="card space-y-4">
+                  <div key={challenge.id} className={cn("card space-y-4", !challenge.active && "opacity-60")}>
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
                         <Target className="w-5 h-5 text-primary" />
                         <h4 className="font-bold text-text-main">{challenge.title}</h4>
                       </div>
-                      <span className={cn(
-                        "text-xs font-bold uppercase tracking-widest px-2 py-1 rounded",
-                        challenge.joined ? "text-success bg-success/10" : "text-text-muted bg-surface"
-                      )}>
-                        {challenge.joined ? 'Joined' : 'Not Joined'}
-                      </span>
+                      <div className="flex items-center gap-2">
+                        {!challenge.active && (
+                          <span className="text-xs font-bold uppercase tracking-widest px-2 py-1 rounded text-text-muted bg-surface">Ended</span>
+                        )}
+                        <span className={cn(
+                          "text-xs font-bold uppercase tracking-widest px-2 py-1 rounded",
+                          challenge.joined ? "text-success bg-success/10" : "text-text-muted bg-surface"
+                        )}>
+                          {challenge.joined ? 'Joined' : 'Not Joined'}
+                        </span>
+                      </div>
                     </div>
                     {challenge.description && (
                       <p className="text-xs text-text-muted">{challenge.description}</p>
@@ -384,19 +426,31 @@ export const OrgDashboardMoments = () => {
                     </div>
                     <div className="flex items-center justify-between">
                       <p className="text-xs font-bold text-text-muted">{challenge.participationRate}% Participation ({challenge.participantCount})</p>
-                      <button
-                        onClick={() => handleToggleChallenge(challenge.id, challenge.joined)}
-                        disabled={joiningId === challenge.id}
-                        className={cn(
-                          "text-xs font-bold px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50 flex items-center gap-1.5",
-                          challenge.joined
-                            ? "border border-border text-text-muted hover:text-text-main"
-                            : "bg-warning text-warning-foreground hover:opacity-90"
+                      <div className="flex items-center gap-2">
+                        {isOrgAdmin && (
+                          <button
+                            onClick={() => handleToggleChallengeActive(challenge.id)}
+                            disabled={togglingChallengeId === challenge.id}
+                            className="text-xs font-bold px-3 py-1.5 rounded-lg border border-border text-text-muted hover:text-text-main transition-colors disabled:opacity-50 flex items-center gap-1.5"
+                            title={challenge.active ? 'End this challenge' : 'Reactivate this challenge'}
+                          >
+                            {togglingChallengeId === challenge.id ? <Loader2 className="w-3 h-3 animate-spin" /> : challenge.active ? <Pause className="w-3 h-3" /> : <Play className="w-3 h-3" />}
+                          </button>
                         )}
-                      >
-                        {joiningId === challenge.id ? <Loader2 className="w-3 h-3 animate-spin" /> : null}
-                        {challenge.joined ? 'Leave' : 'Join'}
-                      </button>
+                        <button
+                          onClick={() => handleToggleChallenge(challenge.id, challenge.joined)}
+                          disabled={joiningId === challenge.id || !challenge.active}
+                          className={cn(
+                            "text-xs font-bold px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50 flex items-center gap-1.5",
+                            challenge.joined
+                              ? "border border-border text-text-muted hover:text-text-main"
+                              : "bg-warning text-warning-foreground hover:opacity-90"
+                          )}
+                        >
+                          {joiningId === challenge.id ? <Loader2 className="w-3 h-3 animate-spin" /> : null}
+                          {challenge.joined ? 'Leave' : 'Join'}
+                        </button>
+                      </div>
                     </div>
                   </div>
                 ))}

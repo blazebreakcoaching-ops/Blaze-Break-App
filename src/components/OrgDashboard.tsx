@@ -20,7 +20,10 @@ import {
   UserMinus,
   ShieldPlus,
   Copy,
-  Save
+  Save,
+  Mail,
+  Send,
+  X
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { OrgDashboardValue } from './OrgDashboardValue';
@@ -84,6 +87,14 @@ export const OrgDashboard = () => {
   const [settingsSaved, setSettingsSaved] = useState(false);
   const [regeneratingCode, setRegeneratingCode] = useState(false);
   const [currentJoinCode, setCurrentJoinCode] = useState('');
+
+  const [inviteEmails, setInviteEmails] = useState('');
+  const [sendingInvites, setSendingInvites] = useState(false);
+  const [inviteResult, setInviteResult] = useState('');
+  const [pendingInvites, setPendingInvites] = useState<{ id: string; email: string; emailSent: boolean }[]>([]);
+  const [invitesLoading, setInvitesLoading] = useState(false);
+  const [cancelingInviteId, setCancelingInviteId] = useState<string | null>(null);
+
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -117,6 +128,7 @@ export const OrgDashboard = () => {
           }
 
           fetchMembers(me.organisationId);
+          fetchInvites(me.organisationId);
         }
       } catch (e) {
         setError("Could not load your organisation's dashboard.");
@@ -218,6 +230,55 @@ export const OrgDashboard = () => {
       // Non-critical - the existing code just stays valid if this fails.
     }
     setRegeneratingCode(false);
+  };
+
+  const fetchInvites = async (currentOrgId: string) => {
+    setInvitesLoading(true);
+    try {
+      const res = await secureApiFetch(`/api/org/${currentOrgId}/invites`);
+      const data = await res.json();
+      if (res.ok) setPendingInvites(data.invites || []);
+    } catch (e) {
+      // Non-fatal - the rest of the Team & Settings tab still works.
+    }
+    setInvitesLoading(false);
+  };
+
+  const handleSendInvites = async () => {
+    if (!orgStatus?.organisationId || !inviteEmails.trim()) return;
+    setSendingInvites(true);
+    setInviteResult('');
+    try {
+      const emails = inviteEmails.split(/[\n,]+/).map(e => e.trim()).filter(Boolean);
+      const res = await secureApiFetch(`/api/org/${orgStatus.organisationId}/invite`, {
+        method: 'POST',
+        data: { emails },
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setInviteResult(data.error || 'Could not send those invites.');
+      } else {
+        const sentCount = (data.results || []).filter((r: any) => r.sent).length;
+        setInviteResult(`Sent ${sentCount} of ${(data.results || []).length} invites.`);
+        setInviteEmails('');
+        await fetchInvites(orgStatus.organisationId);
+      }
+    } catch (e) {
+      setInviteResult('Could not send those invites.');
+    }
+    setSendingInvites(false);
+  };
+
+  const handleCancelInvite = async (inviteId: string) => {
+    if (!orgStatus?.organisationId) return;
+    setCancelingInviteId(inviteId);
+    try {
+      await secureApiFetch(`/api/org/${orgStatus.organisationId}/invites/${inviteId}/cancel`, { method: 'POST' });
+      await fetchInvites(orgStatus.organisationId);
+    } catch (e) {
+      // Non-critical - the invite just stays listed if this fails.
+    }
+    setCancelingInviteId(null);
   };
 
   if (loading) {
@@ -693,6 +754,52 @@ export const OrgDashboard = () => {
                     Regenerate Code
                   </button>
                   <p className="text-[11px] text-text-muted">Regenerating invalidates the old code — anyone who hasn't joined yet will need the new one.</p>
+                </div>
+
+                <div className="card space-y-3">
+                  <h4 className="font-bold text-text-main text-sm flex items-center gap-2"><Mail className="w-4 h-4 text-primary" /> Invite by Email</h4>
+                  <p className="text-xs text-text-muted">One email per line, or separated by commas. Up to 50 at once.</p>
+                  {inviteResult && (
+                    <div className="p-2.5 bg-primary/5 border border-primary/20 text-primary text-xs rounded-lg">{inviteResult}</div>
+                  )}
+                  <textarea
+                    value={inviteEmails}
+                    onChange={(e) => setInviteEmails(e.target.value)}
+                    placeholder="jane@company.com&#10;alex@company.com"
+                    className="w-full h-20 bg-surface border border-border rounded-xl p-3 text-xs text-text-main placeholder:text-text-muted focus:outline-none focus:border-primary resize-none font-mono"
+                  />
+                  <button
+                    onClick={handleSendInvites}
+                    disabled={sendingInvites || !inviteEmails.trim()}
+                    className="w-full py-2.5 bg-primary hover:opacity-90 text-primary-foreground text-xs font-bold uppercase tracking-widest rounded-xl transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+                  >
+                    {sendingInvites ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                    Send Invites
+                  </button>
+
+                  {!invitesLoading && pendingInvites.length > 0 && (
+                    <div className="pt-3 border-t border-border space-y-2">
+                      <span className="text-[11px] font-bold uppercase tracking-widest text-text-muted">Pending ({pendingInvites.length})</span>
+                      {pendingInvites.map(invite => (
+                        <div key={invite.id} className="flex items-center justify-between text-xs">
+                          <span className="text-text-main truncate">{invite.email}</span>
+                          <div className="flex items-center gap-2 shrink-0">
+                            {!invite.emailSent && (
+                              <span className="text-[10px] text-warning uppercase font-bold">No email sent</span>
+                            )}
+                            <button
+                              onClick={() => handleCancelInvite(invite.id)}
+                              disabled={cancelingInviteId === invite.id}
+                              className="text-text-muted hover:text-destructive transition-colors disabled:opacity-50"
+                              title="Cancel invite"
+                            >
+                              {cancelingInviteId === invite.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <X className="w-3.5 h-3.5" />}
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
