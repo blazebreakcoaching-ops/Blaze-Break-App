@@ -2824,6 +2824,7 @@ app.get("/api/org/me", verifyAppCheck, authenticateFirebaseUser, async (req, res
       organisationName: org.name,
       isOrgAdmin,
       joinCode: isOrgAdmin ? org.joinCode : undefined,
+      privacyThreshold: isOrgAdmin ? (org.privacyThreshold || 5) : undefined,
       shareAnonymizedDataWithOrg: userDoc.data()?.shareAnonymizedDataWithOrg === true,
     });
   } catch (err: any) {
@@ -3000,6 +3001,302 @@ app.get("/api/org/:orgId/cost-inputs", verifyAppCheck, authenticateFirebaseUser,
     res.json({ costInputs: orgDoc.data()?.costInputs || null });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+// Platform admin's list of all provisioned customer organisations - powers
+// the onboarding UI so Blaze Break's own team can see what already exists
+// before creating something new or looking up a join code to resend.
+app.get("/api/admin/orgs", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    requireAdmin(req);
+    const db = getDb();
+    const snap = await db.collection("organisations").orderBy("createdAt", "desc").limit(200).get();
+    const orgs = snap.docs.map(d => {
+      const data = d.data();
+      return {
+        id: d.id,
+        name: data.name,
+        joinCode: data.joinCode,
+        privacyThreshold: data.privacyThreshold || 5,
+        memberCount: (data.memberUids || []).length,
+        adminCount: (data.adminUids || []).length,
+        createdAt: data.createdAt,
+      };
+    });
+    res.json({ orgs });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ============ Team Climate Survey (real HSE-aligned aggregation) ============
+// Individual responses live in each member's own climate_survey_responses
+// subcollection (Firestore rules let them write directly, same as
+// mood_pulses). This endpoint is the only place those get read across
+// members, and - exactly like the pulse dashboard - it only ever returns
+// averaged numbers, gated by the same minimum cohort size.
+
+app.get("/api/org/:orgId/climate", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const { orgId } = req.params;
+    const { org } = await requireOrgAdmin(req, orgId);
+    const db = getDb();
+
+    const threshold = org.privacyThreshold || 5;
+    const memberUids: string[] = org.memberUids || [];
+
+    const consentingUids: string[] = [];
+    await Promise.all(memberUids.map(async (uid) => {
+      const userDoc = await db.collection("users").doc(uid).get();
+      if (userDoc.exists && userDoc.data()?.shareAnonymizedDataWithOrg === true) {
+        consentingUids.push(uid);
+      }
+    }));
+
+    if (consentingUids.length < threshold) {
+      return res.json({ locked: true, cohortSize: consentingUids.length, threshold, responseCount: 0 });
+    }
+
+    // Climate surveys are periodic, not daily - a 90-day window catches a
+    // quarter's worth of responses rather than the last-7-days window used
+    // for mood/body signals.
+    const ninetyDaysAgo = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString();
+    const dimensions = ['demands', 'control', 'support', 'relationships', 'role', 'change'] as const;
+    const sums: Record<string, number> = { demands: 0, control: 0, support: 0, relationships: 0, role: 0, change: 0 };
+    let responseCount = 0;
+    const respondedUids = new Set<string>();
+
+    await Promise.all(consentingUids.map(async (uid) => {
+      const snap = await db.collection("users").doc(uid).collection("climate_survey_responses")
+        .where("createdAt", ">=", ninetyDaysAgo).orderBy("createdAt", "desc").limit(1).get();
+      if (!snap.empty) {
+        const d = snap.docs[0].data();
+        dimensions.forEach(dim => { sums[dim] += d[dim] || 0; });
+        responseCount++;
+        respondedUids.add(uid);
+      }
+    }));
+
+    if (responseCount < threshold) {
+      return res.json({ locked: true, cohortSize: responseCount, threshold, responseCount });
+    }
+
+    const averages: Record<string, number> = {};
+    dimensions.forEach(dim => { averages[dim] = Number((sums[dim] / responseCount).toFixed(1)); });
+
+    res.json({
+      locked: false,
+      cohortSize: consentingUids.length,
+      responseCount,
+      threshold,
+      averages,
+      responseRate: Math.round((responseCount / consentingUids.length) * 100),
+    });
+  } catch (err: any) {
+    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
+  }
+});
+
+// ============ Team Challenges (real creation & participation) ============
+
+app.post("/api/org/:orgId/challenges", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const { orgId } = req.params;
+    await requireOrgAdmin(req, orgId);
+    const { title, description } = req.body;
+    if (!title || typeof title !== 'string' || title.trim().length === 0 || title.length > 100) {
+      return res.status(400).json({ error: "Title must be 1-100 characters." });
+    }
+    if (description && (typeof description !== 'string' || description.length > 300)) {
+      return res.status(400).json({ error: "Description must be under 300 characters." });
+    }
+    const db = getDb();
+    const ref = await db.collection("organisations").doc(orgId).collection("challenges").add({
+      title: title.trim(),
+      description: (description || '').trim(),
+      active: true,
+      createdAt: FieldValue.serverTimestamp(),
+      participantUids: [],
+    });
+    res.json({ success: true, id: ref.id });
+  } catch (err: any) {
+    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
+  }
+});
+
+app.get("/api/org/:orgId/challenges", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const { orgId } = req.params;
+    const user = requireAuth(req);
+    const db = getDb();
+    const orgDoc = await db.collection("organisations").doc(orgId).get();
+    if (!orgDoc.exists || !(orgDoc.data()?.memberUids || []).includes(user.uid)) {
+      return res.status(403).json({ error: "You're not a member of this organisation." });
+    }
+    const memberCount = (orgDoc.data()?.memberUids || []).length;
+    const snap = await db.collection("organisations").doc(orgId).collection("challenges")
+      .orderBy("createdAt", "desc").limit(20).get();
+    const challenges = snap.docs.map(d => {
+      const data = d.data();
+      const participantUids: string[] = data.participantUids || [];
+      return {
+        id: d.id,
+        title: data.title,
+        description: data.description,
+        active: data.active,
+        participantCount: participantUids.length,
+        participationRate: memberCount > 0 ? Math.round((participantUids.length / memberCount) * 100) : 0,
+        joined: participantUids.includes(user.uid),
+      };
+    });
+    res.json({ challenges });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/api/org/:orgId/challenges/:challengeId/join", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const { orgId, challengeId } = req.params;
+    const user = requireAuth(req);
+    const db = getDb();
+    const orgDoc = await db.collection("organisations").doc(orgId).get();
+    if (!orgDoc.exists || !(orgDoc.data()?.memberUids || []).includes(user.uid)) {
+      return res.status(403).json({ error: "You're not a member of this organisation." });
+    }
+    await db.collection("organisations").doc(orgId).collection("challenges").doc(challengeId).update({
+      participantUids: FieldValue.arrayUnion(user.uid),
+    });
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/api/org/:orgId/challenges/:challengeId/leave", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const { orgId, challengeId } = req.params;
+    const user = requireAuth(req);
+    const db = getDb();
+    await db.collection("organisations").doc(orgId).collection("challenges").doc(challengeId).update({
+      participantUids: FieldValue.arrayRemove(user.uid),
+    });
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ============ Org Admin: Member Management & Settings ============
+
+app.get("/api/org/:orgId/members", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const { orgId } = req.params;
+    const { org } = await requireOrgAdmin(req, orgId);
+    const memberUids: string[] = org.memberUids || [];
+    const adminUids: string[] = org.adminUids || [];
+
+    const members = await Promise.all(memberUids.map(async (uid) => {
+      try {
+        const authUser = await getAuth().getUser(uid);
+        return {
+          uid,
+          email: authUser.email || null,
+          displayName: authUser.displayName || null,
+          isAdmin: adminUids.includes(uid),
+        };
+      } catch (e) {
+        return { uid, email: null, displayName: null, isAdmin: adminUids.includes(uid) };
+      }
+    }));
+
+    res.json({ members });
+  } catch (err: any) {
+    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
+  }
+});
+
+app.post("/api/org/:orgId/members/:memberUid/remove", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const { orgId, memberUid } = req.params;
+    const { user, org } = await requireOrgAdmin(req, orgId);
+    if (memberUid === user.uid) {
+      return res.status(400).json({ error: "Use 'Leave Organisation' from your own Privacy Centre to remove yourself." });
+    }
+    const db = getDb();
+    await db.collection("users").doc(memberUid).set({
+      organisationId: FieldValue.delete(),
+      shareAnonymizedDataWithOrg: false,
+      updatedAt: FieldValue.serverTimestamp(),
+    }, { merge: true });
+    await db.collection("organisations").doc(orgId).update({
+      memberUids: FieldValue.arrayRemove(memberUid),
+      adminUids: FieldValue.arrayRemove(memberUid),
+    });
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
+  }
+});
+
+app.post("/api/org/:orgId/members/:memberUid/make-admin", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const { orgId, memberUid } = req.params;
+    await requireOrgAdmin(req, orgId);
+    const db = getDb();
+    const orgDoc = await db.collection("organisations").doc(orgId).get();
+    if (!(orgDoc.data()?.memberUids || []).includes(memberUid)) {
+      return res.status(400).json({ error: "That person isn't a member of this organisation." });
+    }
+    await db.collection("organisations").doc(orgId).update({
+      adminUids: FieldValue.arrayUnion(memberUid),
+    });
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
+  }
+});
+
+app.post("/api/org/:orgId/regenerate-join-code", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const { orgId } = req.params;
+    await requireOrgAdmin(req, orgId);
+    const db = getDb();
+    const newCode = Math.random().toString(36).substring(2, 8).toUpperCase();
+    await db.collection("organisations").doc(orgId).update({
+      joinCode: newCode,
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+    res.json({ success: true, joinCode: newCode });
+  } catch (err: any) {
+    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
+  }
+});
+
+app.post("/api/org/:orgId/settings", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const { orgId } = req.params;
+    await requireOrgAdmin(req, orgId);
+    const { name, privacyThreshold } = req.body;
+    const update: any = { updatedAt: FieldValue.serverTimestamp() };
+    if (name !== undefined) {
+      if (typeof name !== 'string' || name.trim().length === 0 || name.length > 100) {
+        return res.status(400).json({ error: "Name must be 1-100 characters." });
+      }
+      update.name = name.trim();
+    }
+    if (privacyThreshold !== undefined) {
+      if (typeof privacyThreshold !== 'number' || privacyThreshold < 3 || privacyThreshold > 100) {
+        return res.status(400).json({ error: "Minimum cohort size must be between 3 and 100." });
+      }
+      update.privacyThreshold = privacyThreshold;
+    }
+    const db = getDb();
+    await db.collection("organisations").doc(orgId).update(update);
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
   }
 });
 

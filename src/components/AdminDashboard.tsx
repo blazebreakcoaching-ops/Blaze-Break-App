@@ -3,7 +3,7 @@ import {
   ShieldCheck, Search, Loader2, RefreshCw, 
   UserPlus, Key, Activity, Heart, ShieldAlert, Check,
   AlertCircle, UserMinus, Lock, Users, CreditCard,
-  ArrowUpRight, HeartPulse
+  ArrowUpRight, HeartPulse, Building2, Copy, Plus
 } from 'lucide-react';
 import { secureApiFetch } from '../lib/secure-api';
 import { motion, AnimatePresence } from 'motion/react';
@@ -77,11 +77,12 @@ export const AdminDashboard = () => {
     'viewer_admin'
   ].includes(currentRole);
 
-  const [activeTab, setActiveTab] = useState<'users' | 'admins' | 'audit' | 'somatic'>('users');
+  const [activeTab, setActiveTab] = useState<'users' | 'admins' | 'orgs' | 'audit' | 'somatic'>('users');
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [admins, setAdmins] = useState<PlatformAdmin[]>([]);
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
   const [metrics, setMetrics] = useState<ResetMetrics | null>(null);
+  const [orgs, setOrgs] = useState<{ id: string; name: string; joinCode: string; privacyThreshold: number; memberCount: number; adminCount: number }[]>([]);
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -99,6 +100,14 @@ export const AdminDashboard = () => {
   const [newAdminName, setNewAdminName] = useState('');
   const [newAdminRole, setNewAdminRole] = useState('platform_admin');
   const [isAddingAdmin, setIsAddingAdmin] = useState(false);
+
+  // New Organisation Form State
+  const [newOrgId, setNewOrgId] = useState('');
+  const [newOrgName, setNewOrgName] = useState('');
+  const [newOrgThreshold, setNewOrgThreshold] = useState('5');
+  const [newOrgAdminEmail, setNewOrgAdminEmail] = useState('');
+  const [isCreatingOrg, setIsCreatingOrg] = useState(false);
+  const [orgFormError, setOrgFormError] = useState('');
 
   const showSuccess = (msg: string) => {
     setSuccessMsg(msg);
@@ -160,6 +169,20 @@ export const AdminDashboard = () => {
         console.error("Could not reach audit logs API:", e);
         fetchFailed = true;
       }
+
+      let loadedOrgs: typeof orgs = [];
+      try {
+        // 3b. Fetch Organisations (not fatal if this fails - a fresh install
+        // with no customer orgs yet is a normal, expected state)
+        const orgsRes = await secureApiFetch('/api/admin/orgs');
+        if (orgsRes.ok) {
+          const orgData = await orgsRes.json();
+          loadedOrgs = orgData.orgs || [];
+        }
+      } catch (e) {
+        console.error("Could not reach organisations API:", e);
+      }
+      setOrgs(loadedOrgs);
 
       if (fetchFailed || loadedUsers.length === 0 || loadedAdmins.length === 0 || loadedLogs.length === 0) {
         setLoadError(true);
@@ -231,6 +254,41 @@ export const AdminDashboard = () => {
     } catch (err) {
       console.error("Somatic aggregation failed: ", err);
     }
+  };
+
+  const handleCreateOrg = async () => {
+    if (!newOrgId.trim() || !newOrgName.trim()) return;
+    setIsCreatingOrg(true);
+    setOrgFormError('');
+    try {
+      const res = await secureApiFetch('/api/admin/orgs', {
+        method: 'POST',
+        data: {
+          orgId: newOrgId.trim().toLowerCase().replace(/[^a-z0-9-]/g, '-'),
+          name: newOrgName.trim(),
+          privacyThreshold: Number(newOrgThreshold) || 5,
+          initialAdminEmail: newOrgAdminEmail.trim() || undefined,
+        },
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setOrgFormError(data.error || 'Could not create that organisation.');
+      } else {
+        showSuccess(`Organisation created. Join code: ${data.joinCode}`);
+        setNewOrgId('');
+        setNewOrgName('');
+        setNewOrgThreshold('5');
+        setNewOrgAdminEmail('');
+        const orgsRes = await secureApiFetch('/api/admin/orgs');
+        if (orgsRes.ok) {
+          const orgData = await orgsRes.json();
+          setOrgs(orgData.orgs || []);
+        }
+      }
+    } catch (e) {
+      setOrgFormError('Could not create that organisation.');
+    }
+    setIsCreatingOrg(false);
   };
 
   useEffect(() => {
@@ -574,6 +632,7 @@ export const AdminDashboard = () => {
         {[
           { id: 'users', label: 'User Roles & claims', icon: Key },
           { id: 'admins', label: 'Promote Platform Admins', icon: ShieldAlert },
+          { id: 'orgs', label: 'Organisations', icon: Building2 },
           { id: 'audit', label: 'Auditor Event Log', icon: Activity },
           { id: 'somatic', label: 'Somatic De-escalation Stats', icon: Heart }
         ].map((tab) => {
@@ -853,6 +912,114 @@ export const AdminDashboard = () => {
                   </tbody>
                 </table>
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* Tab: Organisations (customer B2B provisioning) */}
+        {activeTab === 'orgs' && (
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            <div className="card p-6 bg-surface dark:bg-card border border-border rounded-2xl h-fit space-y-6">
+              <h4 className="font-display text-lg font-bold text-text-main flex items-center gap-2">
+                <Building2 className="w-5 h-5 text-primary" /> Provision New Organisation
+              </h4>
+              <p className="text-xs text-text-muted leading-relaxed">
+                Creates a new customer organisation. If you designate an initial admin, they must already have a Blaze Break account under that email.
+              </p>
+              {orgFormError && (
+                <div className="p-3 bg-destructive/10 border border-destructive/20 text-destructive text-xs rounded-xl">{orgFormError}</div>
+              )}
+              <div className="space-y-4">
+                <div>
+                  <label className="text-xs font-bold uppercase tracking-widest text-text-muted block mb-1.5">Organisation ID (slug)</label>
+                  <input
+                    type="text"
+                    value={newOrgId}
+                    onChange={(e) => setNewOrgId(e.target.value)}
+                    placeholder="e.g. acme-corp"
+                    className="w-full bg-background border border-border rounded-xl px-4 py-2.5 text-sm text-text-main focus:outline-none focus:border-primary"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-bold uppercase tracking-widest text-text-muted block mb-1.5">Display Name</label>
+                  <input
+                    type="text"
+                    value={newOrgName}
+                    onChange={(e) => setNewOrgName(e.target.value)}
+                    placeholder="e.g. Acme Corp"
+                    className="w-full bg-background border border-border rounded-xl px-4 py-2.5 text-sm text-text-main focus:outline-none focus:border-primary"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-bold uppercase tracking-widest text-text-muted block mb-1.5">Minimum Cohort Size</label>
+                  <input
+                    type="number"
+                    min="3"
+                    max="100"
+                    value={newOrgThreshold}
+                    onChange={(e) => setNewOrgThreshold(e.target.value)}
+                    className="w-full bg-background border border-border rounded-xl px-4 py-2.5 text-sm text-text-main focus:outline-none focus:border-primary"
+                  />
+                  <p className="text-[11px] text-text-muted mt-1">Aggregate dashboards stay locked below this many opted-in members.</p>
+                </div>
+                <div>
+                  <label className="text-xs font-bold uppercase tracking-widest text-text-muted block mb-1.5">Initial Admin Email (optional)</label>
+                  <input
+                    type="email"
+                    value={newOrgAdminEmail}
+                    onChange={(e) => setNewOrgAdminEmail(e.target.value)}
+                    placeholder="hr-lead@acmecorp.com"
+                    className="w-full bg-background border border-border rounded-xl px-4 py-2.5 text-sm text-text-main focus:outline-none focus:border-primary"
+                  />
+                </div>
+              </div>
+              <button
+                onClick={handleCreateOrg}
+                disabled={isCreatingOrg || !newOrgId.trim() || !newOrgName.trim()}
+                className="w-full py-3 bg-primary hover:opacity-90 text-primary-foreground text-xs font-bold uppercase tracking-widest rounded-xl transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                {isCreatingOrg ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+                Create Organisation
+              </button>
+            </div>
+
+            <div className="lg:col-span-2 space-y-4">
+              <h4 className="font-display text-lg font-bold text-text-main">Existing Organisations ({orgs.length})</h4>
+              {orgs.length === 0 ? (
+                <div className="p-12 text-center border-2 border-dashed border-border rounded-2xl">
+                  <Building2 className="w-8 h-8 mx-auto text-text-muted mb-3 opacity-40" />
+                  <p className="text-text-muted text-sm">No organisations provisioned yet.</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {orgs.map(org => (
+                    <div key={org.id} className="card p-5 bg-surface dark:bg-card border border-border rounded-xl">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                        <div>
+                          <h5 className="font-bold text-text-main">{org.name}</h5>
+                          <p className="text-xs text-text-muted font-mono">{org.id}</p>
+                        </div>
+                        <div className="flex items-center gap-4 text-xs">
+                          <span className="text-text-muted"><strong className="text-text-main">{org.memberCount}</strong> members</span>
+                          <span className="text-text-muted"><strong className="text-text-main">{org.adminCount}</strong> admins</span>
+                          <span className="text-text-muted">min <strong className="text-text-main">{org.privacyThreshold}</strong></span>
+                        </div>
+                      </div>
+                      <div className="mt-3 flex items-center gap-2 pt-3 border-t border-border">
+                        <span className="text-[11px] uppercase font-bold tracking-widest text-text-muted">Join Code</span>
+                        <span className="font-mono text-sm font-bold text-primary bg-primary/10 px-3 py-1 rounded-lg tracking-widest">{org.joinCode}</span>
+                        <button
+                          onClick={() => { navigator.clipboard.writeText(org.joinCode); showSuccess('Join code copied'); }}
+                          className="p-1.5 text-text-muted hover:text-primary transition-colors"
+                          title="Copy join code"
+                        >
+                          <Copy className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         )}

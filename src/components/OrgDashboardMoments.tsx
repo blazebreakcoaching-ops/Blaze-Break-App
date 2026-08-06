@@ -34,6 +34,32 @@ export const OrgDashboardMoments = () => {
   const [wins, setWins] = useState<WinItem[]>([]);
   const [winsLoading, setWinsLoading] = useState(true);
 
+  const [isOrgAdmin, setIsOrgAdmin] = useState(false);
+  const [challenges, setChallenges] = useState<{ id: string; title: string; description: string; participantCount: number; participationRate: number; joined: boolean }[]>([]);
+  const [challengesLoading, setChallengesLoading] = useState(true);
+  const [challengesError, setChallengesError] = useState('');
+  const [newChallengeTitle, setNewChallengeTitle] = useState('');
+  const [newChallengeDesc, setNewChallengeDesc] = useState('');
+  const [creatingChallenge, setCreatingChallenge] = useState(false);
+  const [joiningId, setJoiningId] = useState<string | null>(null);
+
+  const fetchChallenges = async (currentOrgId: string) => {
+    setChallengesLoading(true);
+    setChallengesError('');
+    try {
+      const res = await secureApiFetch(`/api/org/${currentOrgId}/challenges`);
+      const data = await res.json();
+      if (!res.ok) {
+        setChallengesError(data.error || 'Could not load challenges.');
+      } else {
+        setChallenges(data.challenges || []);
+      }
+    } catch (e) {
+      setChallengesError('Could not load challenges.');
+    }
+    setChallengesLoading(false);
+  };
+
   const fetchWall = async (currentOrgId: string) => {
     setWallLoading(true);
     setWallError('');
@@ -58,12 +84,16 @@ export const OrgDashboardMoments = () => {
         const me = await meRes.json();
         if (me.organisationId) {
           setOrgId(me.organisationId);
+          setIsOrgAdmin(!!me.isOrgAdmin);
           await fetchWall(me.organisationId);
+          await fetchChallenges(me.organisationId);
         } else {
           setWallLoading(false);
+          setChallengesLoading(false);
         }
       } catch (e) {
         setWallLoading(false);
+        setChallengesLoading(false);
       }
     };
     load();
@@ -105,6 +135,49 @@ export const OrgDashboardMoments = () => {
       setWallError('Could not post that.');
     }
     setPosting(false);
+  };
+
+  const handleCreateChallenge = async () => {
+    if (!newChallengeTitle.trim() || !orgId) return;
+    setCreatingChallenge(true);
+    setChallengesError('');
+    try {
+      const res = await secureApiFetch(`/api/org/${orgId}/challenges`, {
+        method: 'POST',
+        data: { title: newChallengeTitle.trim(), description: newChallengeDesc.trim() },
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setChallengesError(data.error || 'Could not create that challenge.');
+      } else {
+        setNewChallengeTitle('');
+        setNewChallengeDesc('');
+        await fetchChallenges(orgId);
+      }
+    } catch (e) {
+      setChallengesError('Could not create that challenge.');
+    }
+    setCreatingChallenge(false);
+  };
+
+  const handleToggleChallenge = async (challengeId: string, currentlyJoined: boolean) => {
+    if (!orgId) return;
+    setJoiningId(challengeId);
+    setChallengesError('');
+    try {
+      const res = await secureApiFetch(`/api/org/${orgId}/challenges/${challengeId}/${currentlyJoined ? 'leave' : 'join'}`, {
+        method: 'POST',
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        setChallengesError(data.error || 'Could not update your participation.');
+      } else {
+        await fetchChallenges(orgId);
+      }
+    } catch (e) {
+      setChallengesError('Could not update your participation.');
+    }
+    setJoiningId(null);
   };
 
   const formatWhen = (createdAt?: string) => {
@@ -241,12 +314,94 @@ export const OrgDashboardMoments = () => {
               </p>
             </div>
 
-            <div className="card border border-dashed border-border bg-surface/50 space-y-3">
-              <h4 className="font-bold text-text-main">Team Challenges — Not Yet Available</h4>
-              <p className="text-sm text-text-muted leading-relaxed max-w-2xl">
-                A real version of this needs an actual challenge-creation and participation system — your org admin defining a challenge, teammates opting in, and genuine (not invented) participation counts. That isn't built yet, so rather than show placeholder numbers, this space is honestly empty until it is.
-              </p>
-            </div>
+            {isOrgAdmin && (
+              <div className="card space-y-4">
+                <h4 className="font-bold text-text-main flex items-center gap-2"><Target className="w-4 h-4 text-primary" /> Start a Challenge</h4>
+                {challengesError && (
+                  <div className="p-3 bg-destructive/10 border border-destructive/20 text-destructive text-xs rounded-xl">{challengesError}</div>
+                )}
+                <input
+                  type="text"
+                  value={newChallengeTitle}
+                  onChange={(e) => setNewChallengeTitle(e.target.value)}
+                  placeholder="e.g. Protect the Break Week"
+                  maxLength={100}
+                  className="w-full bg-surface border border-border rounded-xl px-4 py-2.5 text-sm text-text-main placeholder:text-text-muted focus:outline-none focus:border-primary"
+                />
+                <textarea
+                  value={newChallengeDesc}
+                  onChange={(e) => setNewChallengeDesc(e.target.value)}
+                  placeholder="What's the goal, and how does someone take part?"
+                  maxLength={300}
+                  className="w-full h-16 bg-surface border border-border rounded-xl p-3 text-sm text-text-main placeholder:text-text-muted focus:outline-none focus:border-primary resize-none"
+                />
+                <button
+                  onClick={handleCreateChallenge}
+                  disabled={creatingChallenge || !newChallengeTitle.trim()}
+                  className="px-4 py-2 bg-primary text-primary-foreground rounded-xl text-xs font-bold hover:opacity-90 transition-colors disabled:opacity-50 flex items-center gap-2"
+                >
+                  {creatingChallenge ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Award className="w-3.5 h-3.5" />}
+                  Create Challenge
+                </button>
+              </div>
+            )}
+
+            {!isOrgAdmin && challengesError && (
+              <div className="p-3 bg-destructive/10 border border-destructive/20 text-destructive text-xs rounded-xl">{challengesError}</div>
+            )}
+
+            {challengesLoading ? (
+              <div className="flex items-center justify-center py-16">
+                <Loader2 className="w-6 h-6 animate-spin text-primary" />
+              </div>
+            ) : challenges.length === 0 ? (
+              <div className="py-12 text-center border-2 border-dashed border-border rounded-xl">
+                <p className="text-text-muted text-sm">
+                  {isOrgAdmin ? 'No challenges yet — create one above to get your team started.' : 'No challenges running right now. Check back soon.'}
+                </p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {challenges.map(challenge => (
+                  <div key={challenge.id} className="card space-y-4">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Target className="w-5 h-5 text-primary" />
+                        <h4 className="font-bold text-text-main">{challenge.title}</h4>
+                      </div>
+                      <span className={cn(
+                        "text-xs font-bold uppercase tracking-widest px-2 py-1 rounded",
+                        challenge.joined ? "text-success bg-success/10" : "text-text-muted bg-surface"
+                      )}>
+                        {challenge.joined ? 'Joined' : 'Not Joined'}
+                      </span>
+                    </div>
+                    {challenge.description && (
+                      <p className="text-xs text-text-muted">{challenge.description}</p>
+                    )}
+                    <div className="w-full bg-surface dark:bg-surface rounded-full h-2">
+                      <div className="bg-success h-2 rounded-full transition-all" style={{ width: `${challenge.participationRate}%` }} />
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <p className="text-xs font-bold text-text-muted">{challenge.participationRate}% Participation ({challenge.participantCount})</p>
+                      <button
+                        onClick={() => handleToggleChallenge(challenge.id, challenge.joined)}
+                        disabled={joiningId === challenge.id}
+                        className={cn(
+                          "text-xs font-bold px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50 flex items-center gap-1.5",
+                          challenge.joined
+                            ? "border border-border text-text-muted hover:text-text-main"
+                            : "bg-warning text-warning-foreground hover:opacity-90"
+                        )}
+                      >
+                        {joiningId === challenge.id ? <Loader2 className="w-3 h-3 animate-spin" /> : null}
+                        {challenge.joined ? 'Leave' : 'Join'}
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </motion.div>
         )}
 

@@ -371,8 +371,28 @@ service cloud.firestore {
             && (request.method == 'create' ? true : checkCreatedAtUnchanged());
       }
 
+      // S. climate_survey_responses (the real HSE-aligned team climate
+      // survey - individual responses, read only by the owner. Aggregation
+      // for org admins happens server-side via the Admin SDK, same as
+      // mood_pulses/body_checkins, never by giving an admin direct read
+      // access to this subcollection.)
+      match /climate_survey_responses/{responseId} {
+        allow read: if isOwner(uid);
+        allow delete: if isOwner(uid);
+        allow create, update: if isOwner(uid)
+            && hasOnly(['createdAt', 'updatedAt', 'demands', 'control', 'support', 'relationships', 'role', 'change'])
+            && hasAll(['createdAt', 'updatedAt', 'demands', 'control', 'support', 'relationships', 'role', 'change'])
+            && request.resource.data.demands is number && request.resource.data.demands >= 1 && request.resource.data.demands <= 5
+            && request.resource.data.control is number && request.resource.data.control >= 1 && request.resource.data.control <= 5
+            && request.resource.data.support is number && request.resource.data.support >= 1 && request.resource.data.support <= 5
+            && request.resource.data.relationships is number && request.resource.data.relationships >= 1 && request.resource.data.relationships <= 5
+            && request.resource.data.role is number && request.resource.data.role >= 1 && request.resource.data.role <= 5
+            && request.resource.data.change is number && request.resource.data.change >= 1 && request.resource.data.change <= 5
+            && (request.method == 'create' ? true : checkCreatedAtUnchanged());
+      }
+
     }
-    
+
     // F. public_feature_flags/{featureId}
     match /public_feature_flags/{featureId} {
       allow read: if isSignedIn();

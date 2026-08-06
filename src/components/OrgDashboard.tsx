@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { secureApiFetch } from '../lib/secure-api';
+import { RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, ResponsiveContainer, Tooltip } from 'recharts';
 
 
 import {
@@ -15,7 +16,11 @@ import {
   Lightbulb,
   LineChart as LineChartIcon,
   HeartPulse,
-  Loader2
+  Loader2,
+  UserMinus,
+  ShieldPlus,
+  Copy,
+  Save
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { OrgDashboardValue } from './OrgDashboardValue';
@@ -45,10 +50,10 @@ const BODY_SIGNAL_LABELS: Record<string, string> = {
 };
 
 export const OrgDashboard = () => {
-  const [activeSubTab, setActiveSubTab] = useState<'climate' | 'pulse' | 'value' | 'moments'>('pulse');
+  const [activeSubTab, setActiveSubTab] = useState<'climate' | 'pulse' | 'value' | 'moments' | 'team'>('pulse');
   const [alertEnabled, setAlertEnabled] = useState(false);
 
-  const [orgStatus, setOrgStatus] = useState<{ organisationId: string | null; organisationName?: string; isOrgAdmin?: boolean } | null>(null);
+  const [orgStatus, setOrgStatus] = useState<{ organisationId: string | null; organisationName?: string; isOrgAdmin?: boolean; joinCode?: string; privacyThreshold?: number } | null>(null);
   const [dashboardData, setDashboardData] = useState<{
     locked: boolean;
     cohortSize: number;
@@ -59,6 +64,26 @@ export const OrgDashboard = () => {
     avgMoodIntensity?: number | null;
     topBodySignals?: { signal: string; count: number }[];
   } | null>(null);
+  const [climateData, setClimateData] = useState<{
+    locked: boolean;
+    cohortSize: number;
+    threshold: number;
+    responseCount?: number;
+    responseRate?: number;
+    averages?: Record<string, number>;
+  } | null>(null);
+
+  const [members, setMembers] = useState<{ uid: string; email: string | null; displayName: string | null; isAdmin: boolean }[]>([]);
+  const [membersLoading, setMembersLoading] = useState(false);
+  const [membersError, setMembersError] = useState('');
+  const [memberActionUid, setMemberActionUid] = useState<string | null>(null);
+
+  const [settingsName, setSettingsName] = useState('');
+  const [settingsThreshold, setSettingsThreshold] = useState('');
+  const [savingSettings, setSavingSettings] = useState(false);
+  const [settingsSaved, setSettingsSaved] = useState(false);
+  const [regeneratingCode, setRegeneratingCode] = useState(false);
+  const [currentJoinCode, setCurrentJoinCode] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -71,6 +96,10 @@ export const OrgDashboard = () => {
         const me = await meRes.json();
         setOrgStatus(me);
         if (me.organisationId && me.isOrgAdmin) {
+          setSettingsName(me.organisationName || '');
+          setSettingsThreshold(String(me.privacyThreshold || 5));
+          setCurrentJoinCode(me.joinCode || '');
+
           const dashRes = await secureApiFetch(`/api/org/${me.organisationId}/dashboard`);
           const dash = await dashRes.json();
           if (!dashRes.ok) {
@@ -78,6 +107,16 @@ export const OrgDashboard = () => {
           } else {
             setDashboardData(dash);
           }
+
+          try {
+            const climateRes = await secureApiFetch(`/api/org/${me.organisationId}/climate`);
+            const climate = await climateRes.json();
+            if (climateRes.ok) setClimateData(climate);
+          } catch (e) {
+            // Non-fatal - the pulse dashboard above still works even if this fails.
+          }
+
+          fetchMembers(me.organisationId);
         }
       } catch (e) {
         setError("Could not load your organisation's dashboard.");
@@ -86,6 +125,100 @@ export const OrgDashboard = () => {
     };
     load();
   }, []);
+
+  const fetchMembers = async (currentOrgId: string) => {
+    setMembersLoading(true);
+    setMembersError('');
+    try {
+      const res = await secureApiFetch(`/api/org/${currentOrgId}/members`);
+      const data = await res.json();
+      if (!res.ok) {
+        setMembersError(data.error || 'Could not load your team roster.');
+      } else {
+        setMembers(data.members || []);
+      }
+    } catch (e) {
+      setMembersError('Could not load your team roster.');
+    }
+    setMembersLoading(false);
+  };
+
+  const handleRemoveMember = async (memberUid: string) => {
+    if (!orgStatus?.organisationId) return;
+    setMemberActionUid(memberUid);
+    setMembersError('');
+    try {
+      const res = await secureApiFetch(`/api/org/${orgStatus.organisationId}/members/${memberUid}/remove`, { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok) {
+        setMembersError(data.error || 'Could not remove that person.');
+      } else {
+        await fetchMembers(orgStatus.organisationId);
+      }
+    } catch (e) {
+      setMembersError('Could not remove that person.');
+    }
+    setMemberActionUid(null);
+  };
+
+  const handleMakeAdmin = async (memberUid: string) => {
+    if (!orgStatus?.organisationId) return;
+    setMemberActionUid(memberUid);
+    setMembersError('');
+    try {
+      const res = await secureApiFetch(`/api/org/${orgStatus.organisationId}/members/${memberUid}/make-admin`, { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok) {
+        setMembersError(data.error || 'Could not promote that person.');
+      } else {
+        await fetchMembers(orgStatus.organisationId);
+      }
+    } catch (e) {
+      setMembersError('Could not promote that person.');
+    }
+    setMemberActionUid(null);
+  };
+
+  const handleSaveSettings = async () => {
+    if (!orgStatus?.organisationId) return;
+    const threshold = Number(settingsThreshold);
+    if (!settingsName.trim() || !Number.isFinite(threshold) || threshold < 3) {
+      setMembersError('Please enter a name and a minimum cohort size of at least 3.');
+      return;
+    }
+    setSavingSettings(true);
+    setSettingsSaved(false);
+    try {
+      const res = await secureApiFetch(`/api/org/${orgStatus.organisationId}/settings`, {
+        method: 'POST',
+        data: { name: settingsName.trim(), privacyThreshold: threshold },
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setMembersError(data.error || 'Could not save those settings.');
+      } else {
+        setSettingsSaved(true);
+        setOrgStatus(prev => prev ? { ...prev, organisationName: settingsName.trim(), privacyThreshold: threshold } : prev);
+        setTimeout(() => setSettingsSaved(false), 3000);
+      }
+    } catch (e) {
+      setMembersError('Could not save those settings.');
+    }
+    setSavingSettings(false);
+  };
+
+  const handleRegenerateCode = async () => {
+    if (!orgStatus?.organisationId) return;
+    setRegeneratingCode(true);
+    try {
+      const res = await secureApiFetch(`/api/org/${orgStatus.organisationId}/regenerate-join-code`, { method: 'POST' });
+      const data = await res.json();
+      if (res.ok) setCurrentJoinCode(data.joinCode);
+    } catch (e) {
+      // Non-critical - the existing code just stays valid if this fails.
+    }
+    setRegeneratingCode(false);
+  };
 
   if (loading) {
     return (
@@ -185,7 +318,8 @@ export const OrgDashboard = () => {
            { id: 'pulse', label: 'Resilience Pulse', icon: HeartPulse },
            { id: 'climate', label: 'Team Climate Dashboard', icon: LineChartIcon },
            { id: 'value', label: 'People Value Engine', icon: Building },
-           { id: 'moments', label: 'Blaze Bright Moments', icon: Sparkles }
+           { id: 'moments', label: 'Blaze Bright Moments', icon: Sparkles },
+           { id: 'team', label: 'Team & Settings', icon: Users }
         ].map(tab => {
           const Icon = tab.icon;
           return (
@@ -302,34 +436,89 @@ export const OrgDashboard = () => {
               <div className="relative z-10 max-w-3xl">
                 <div className="flex items-center gap-3 mb-4">
                   <div className="tag bg-surface dark:bg-card/10 text-text-main border-white/20">Team Climate Dashboard</div>
-                  <div className="flex items-center gap-2 text-xs font-black uppercase tracking-widest text-success bg-success/10 px-3 py-1 rounded-full border border-success/20">
-                    <ShieldCheck className="w-3 h-3" /> Privacy Threshold Met ({cohortSize} members)
-                  </div>
+                  {climateData && !climateData.locked && (
+                    <div className="flex items-center gap-2 text-xs font-black uppercase tracking-widest text-success bg-success/10 px-3 py-1 rounded-full border border-success/20">
+                      <ShieldCheck className="w-3 h-3" /> {climateData.responseCount} responses this quarter
+                    </div>
+                  )}
                 </div>
                 <h3 className="text-4xl sm:text-5xl font-display font-bold text-text-main tracking-tight leading-tight mb-4">
                   Measure Conditions, Not People.
                 </h3>
-                <p className="text-base text-text-muted font-medium leading-relaxed max-w-2xl mb-8">
-                  Understand whether team conditions are supporting or draining your people.
-                  Aligned with the HSE Management Standards, this dashboard provides anonymous trends and actionable manager coaching without exposing any individual's private emotional data.
+                <p className="text-base text-text-muted font-medium leading-relaxed max-w-2xl">
+                  A real, HSE-aligned climate survey across your six work-design areas — Demands, Control, Support, Relationships, Role, and Change. Individual responses are never shown; only combined averages, once enough teammates have responded.
                 </p>
               </div>
             </div>
 
-            <div className="card space-y-6 border border-dashed border-border bg-surface/50">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-surface text-text-muted flex items-center justify-center shrink-0">
-                  <Lock className="w-5 h-5" />
+            {climateData?.locked ? (
+              <div className="card space-y-4 text-center py-12">
+                <ShieldCheck className="w-10 h-10 mx-auto text-text-muted" />
+                <h4 className="font-bold text-text-main">Not Enough Responses Yet</h4>
+                <p className="text-sm text-text-muted max-w-md mx-auto">
+                  {climateData.cohortSize} of {climateData.threshold} needed teammates have completed the survey this quarter. Ask your team to take it from their own Privacy Centre — it takes about a minute.
+                </p>
+              </div>
+            ) : climateData?.averages ? (
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                <div className="card space-y-6">
+                  <div>
+                    <h4 className="font-bold text-text-main">Team Climate, Six Dimensions</h4>
+                    <p className="text-xs text-text-muted">Average score per dimension (1–5), from real survey responses.</p>
+                  </div>
+                  <div className="h-72">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <RadarChart
+                        cx="50%" cy="50%" outerRadius="75%"
+                        data={[
+                          { subject: 'Demands', value: climateData.averages.demands },
+                          { subject: 'Control', value: climateData.averages.control },
+                          { subject: 'Support', value: climateData.averages.support },
+                          { subject: 'Relationships', value: climateData.averages.relationships },
+                          { subject: 'Role', value: climateData.averages.role },
+                          { subject: 'Change', value: climateData.averages.change },
+                        ]}
+                      >
+                        <PolarGrid stroke="#78716c" strokeOpacity={0.3} />
+                        <PolarAngleAxis dataKey="subject" tick={{ fill: '#78716c', fontSize: 11, fontWeight: 600 }} />
+                        <PolarRadiusAxis angle={30} domain={[0, 5]} tick={false} axisLine={false} />
+                        <Radar name="Team Average" dataKey="value" stroke="#ea580c" fill="#ea580c" fillOpacity={0.35} />
+                        <Tooltip
+                          contentStyle={{ backgroundColor: '#1c1917', border: '1px solid #3a3532', borderRadius: '8px' }}
+                          itemStyle={{ color: '#fff', fontSize: '12px' }}
+                          formatter={(value: any) => [`${value}/5`, 'Average']}
+                        />
+                      </RadarChart>
+                    </ResponsiveContainer>
+                  </div>
                 </div>
-                <div>
-                  <h4 className="font-bold text-text-main text-lg">Team Climate Survey — Not Yet Available</h4>
-                  <p className="text-xs text-text-muted">This view would need a genuine periodic HSE-style climate survey, which isn't built yet.</p>
+
+                <div className="card space-y-4">
+                  <h4 className="font-bold text-text-main">Breakdown</h4>
+                  <div className="space-y-3">
+                    {Object.entries(climateData.averages).map(([dim, value]) => (
+                      <div key={dim} className="flex items-center justify-between">
+                        <span className="text-sm text-text-main capitalize">{dim}</span>
+                        <div className="flex items-center gap-3 flex-1 max-w-[60%]">
+                          <div className="flex-1 h-2 bg-surface rounded-full overflow-hidden">
+                            <div className="h-full bg-primary" style={{ width: `${(value / 5) * 100}%` }} />
+                          </div>
+                          <span className="text-xs font-mono font-bold text-text-main w-8 text-right">{value}/5</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <p className="text-xs text-text-muted pt-3 border-t border-border">
+                    Response rate: {climateData.responseRate}% of opted-in teammates this quarter.
+                  </p>
                 </div>
               </div>
-              <p className="text-sm text-text-muted leading-relaxed max-w-2xl">
-                A real version of this tab means designing an actual recurring questionnaire covering the standard six work-design areas (Demands, Control, Support, Relationships, Role, Change), collecting genuine responses from your team, and aggregating those — not inferring it from data that was never collected for this purpose. For real, available-today insight into how your team is actually doing, see the <strong className="text-text-main">Resilience Pulse</strong> tab, which reflects real mood and body check-in data from teammates who've opted in.
-              </p>
-            </div>
+            ) : (
+              <div className="card space-y-4 text-center py-12">
+                <Lock className="w-10 h-10 mx-auto text-text-muted" />
+                <p className="text-sm text-text-muted max-w-md mx-auto">No survey data available yet.</p>
+              </div>
+            )}
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
 
@@ -390,6 +579,123 @@ export const OrgDashboard = () => {
         {activeSubTab === 'moments' && (
           <motion.div key="moments" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95 }}>
             <OrgDashboardMoments />
+          </motion.div>
+        )}
+
+        {activeSubTab === 'team' && (
+          <motion.div key="team" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95 }} className="space-y-8 pb-24">
+            {membersError && (
+              <div className="p-3 bg-destructive/10 border border-destructive/20 text-destructive text-sm rounded-xl">{membersError}</div>
+            )}
+
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+              <div className="lg:col-span-2 space-y-4">
+                <h4 className="font-bold text-text-main flex items-center gap-2"><Users className="w-5 h-5 text-primary" /> Team Roster ({members.length})</h4>
+                {membersLoading ? (
+                  <div className="flex items-center justify-center py-16">
+                    <Loader2 className="w-6 h-6 animate-spin text-primary" />
+                  </div>
+                ) : members.length === 0 ? (
+                  <div className="py-12 text-center border-2 border-dashed border-border rounded-xl">
+                    <p className="text-text-muted text-sm">No members yet — share your join code to get your team started.</p>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {members.map(member => (
+                      <div key={member.uid} className="card flex items-center justify-between p-4">
+                        <div className="min-w-0">
+                          <p className="text-sm font-bold text-text-main truncate">{member.displayName || member.email || member.uid}</p>
+                          {member.email && member.displayName && (
+                            <p className="text-xs text-text-muted truncate">{member.email}</p>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          {member.isAdmin ? (
+                            <span className="text-xs font-bold uppercase tracking-widest text-primary bg-primary/10 px-2 py-1 rounded">Admin</span>
+                          ) : (
+                            <button
+                              onClick={() => handleMakeAdmin(member.uid)}
+                              disabled={memberActionUid === member.uid}
+                              className="text-xs font-bold text-text-muted hover:text-primary transition-colors flex items-center gap-1 disabled:opacity-50"
+                              title="Make organisation admin"
+                            >
+                              <ShieldPlus className="w-3.5 h-3.5" /> Make Admin
+                            </button>
+                          )}
+                          <button
+                            onClick={() => handleRemoveMember(member.uid)}
+                            disabled={memberActionUid === member.uid}
+                            className="text-xs font-bold text-text-muted hover:text-destructive transition-colors flex items-center gap-1 disabled:opacity-50"
+                            title="Remove from organisation"
+                          >
+                            {memberActionUid === member.uid ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <UserMinus className="w-3.5 h-3.5" />}
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="space-y-6">
+                <div className="card space-y-4">
+                  <h4 className="font-bold text-text-main text-sm">Organisation Settings</h4>
+                  <div>
+                    <label className="text-xs font-bold uppercase tracking-widest text-text-muted block mb-1.5">Display Name</label>
+                    <input
+                      type="text"
+                      value={settingsName}
+                      onChange={(e) => setSettingsName(e.target.value)}
+                      className="w-full bg-surface border border-border rounded-xl px-3 py-2 text-sm text-text-main focus:outline-none focus:border-primary"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-bold uppercase tracking-widest text-text-muted block mb-1.5">Minimum Cohort Size</label>
+                    <input
+                      type="number"
+                      min="3"
+                      max="100"
+                      value={settingsThreshold}
+                      onChange={(e) => setSettingsThreshold(e.target.value)}
+                      className="w-full bg-surface border border-border rounded-xl px-3 py-2 text-sm text-text-main focus:outline-none focus:border-primary"
+                    />
+                    <p className="text-[11px] text-text-muted mt-1">Aggregate dashboards stay locked below this many opted-in members.</p>
+                  </div>
+                  <button
+                    onClick={handleSaveSettings}
+                    disabled={savingSettings}
+                    className="w-full py-2.5 bg-primary hover:opacity-90 text-primary-foreground text-xs font-bold uppercase tracking-widest rounded-xl transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+                  >
+                    {savingSettings ? <Loader2 className="w-4 h-4 animate-spin" /> : settingsSaved ? <ShieldCheck className="w-4 h-4" /> : <Save className="w-4 h-4" />}
+                    {settingsSaved ? 'Saved' : 'Save Settings'}
+                  </button>
+                </div>
+
+                <div className="card space-y-3">
+                  <h4 className="font-bold text-text-main text-sm">Join Code</h4>
+                  <p className="text-xs text-text-muted">Share this with employees so they can link their account.</p>
+                  <div className="flex items-center gap-2">
+                    <div className="font-mono text-lg font-bold text-text-main bg-surface px-3 py-2 rounded-lg border border-border tracking-widest flex-1 text-center">{currentJoinCode}</div>
+                    <button
+                      onClick={() => { navigator.clipboard.writeText(currentJoinCode); }}
+                      className="p-2 text-text-muted hover:text-primary transition-colors"
+                      title="Copy join code"
+                    >
+                      <Copy className="w-4 h-4" />
+                    </button>
+                  </div>
+                  <button
+                    onClick={handleRegenerateCode}
+                    disabled={regeneratingCode}
+                    className="w-full py-2 border border-border rounded-xl text-xs font-bold text-text-muted hover:text-text-main transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+                  >
+                    {regeneratingCode ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
+                    Regenerate Code
+                  </button>
+                  <p className="text-[11px] text-text-muted">Regenerating invalidates the old code — anyone who hasn't joined yet will need the new one.</p>
+                </div>
+              </div>
+            </div>
           </motion.div>
         )}
       </AnimatePresence>

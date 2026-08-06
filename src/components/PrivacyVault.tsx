@@ -31,6 +31,7 @@ import { ConnectedNovaPermissions } from './ConnectedRecoveryModules.tsx';
 import { auth, db } from '../lib/firebase';
 import { doc, setDoc } from 'firebase/firestore';
 import { secureApiFetch } from '../lib/secure-api.ts';
+import { TeamClimateSurvey } from './TeamClimateSurvey.tsx';
 
 export const PrivacyVault = ({ 
   profile, 
@@ -443,6 +444,12 @@ export const PrivacyVault = ({
                         )} />
                       </button>
                     </div>
+
+                    {orgStatus.shareAnonymizedDataWithOrg && (
+                      <div className="p-6 rounded-2xl bg-surface border border-border">
+                        <TeamClimateSurvey organisationName={orgStatus.organisationName} />
+                      </div>
+                    )}
 
                     {orgStatus.isOrgAdmin && orgStatus.joinCode && (
                       <div className="p-4 rounded-2xl bg-primary/5 border border-primary/20 space-y-2">
