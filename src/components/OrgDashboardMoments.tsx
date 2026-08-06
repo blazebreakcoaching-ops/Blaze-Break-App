@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Sparkles, Heart, Award, Target, MessageSquare, ThumbsUp, AlertTriangle, CheckCircle2, Loader2, Send, Trash2, Play, Pause } from 'lucide-react';
+import { Sparkles, Heart, Award, Target, MessageSquare, ThumbsUp, AlertTriangle, CheckCircle2, Loader2, Send, Trash2, Play, Pause, Pencil, XCircle } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { secureApiFetch } from '../lib/secure-api';
 import { auth, db } from '../lib/firebase';
@@ -181,7 +181,12 @@ export const OrgDashboardMoments = () => {
   };
 
   const [deletingRecognitionId, setDeletingRecognitionId] = useState<string | null>(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [togglingChallengeId, setTogglingChallengeId] = useState<string | null>(null);
+  const [editingChallengeId, setEditingChallengeId] = useState<string | null>(null);
+  const [editTitle, setEditTitle] = useState('');
+  const [editDesc, setEditDesc] = useState('');
+  const [savingEdit, setSavingEdit] = useState(false);
 
   const handleDeleteRecognition = async (recognitionId: string) => {
     if (!orgId) return;
@@ -193,6 +198,7 @@ export const OrgDashboardMoments = () => {
       setWallError('Could not remove that post.');
     }
     setDeletingRecognitionId(null);
+    setConfirmDeleteId(null);
   };
 
   const handleToggleChallengeActive = async (challengeId: string) => {
@@ -205,6 +211,34 @@ export const OrgDashboardMoments = () => {
       setChallengesError('Could not update that challenge.');
     }
     setTogglingChallengeId(null);
+  };
+
+  const openEditChallenge = (challenge: { id: string; title: string; description: string }) => {
+    setEditingChallengeId(challenge.id);
+    setEditTitle(challenge.title);
+    setEditDesc(challenge.description);
+  };
+
+  const handleSaveEdit = async () => {
+    if (!orgId || !editingChallengeId || !editTitle.trim()) return;
+    setSavingEdit(true);
+    setChallengesError('');
+    try {
+      const res = await secureApiFetch(`/api/org/${orgId}/challenges/${editingChallengeId}/edit`, {
+        method: 'POST',
+        data: { title: editTitle.trim(), description: editDesc.trim() },
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setChallengesError(data.error || 'Could not save those changes.');
+      } else {
+        setEditingChallengeId(null);
+        await fetchChallenges(orgId);
+      }
+    } catch (e) {
+      setChallengesError('Could not save those changes.');
+    }
+    setSavingEdit(false);
   };
 
   const formatWhen = (createdAt?: string) => {
@@ -313,14 +347,34 @@ export const OrgDashboardMoments = () => {
                 {recognitions.map(item => (
                   <div key={item.id} className="card bg-white dark:bg-card border-border hover:border-warning/30 transition-colors group relative">
                     {isOrgAdmin && (
-                      <button
-                        onClick={() => handleDeleteRecognition(item.id)}
-                        disabled={deletingRecognitionId === item.id}
-                        className="absolute top-3 right-3 text-text-muted hover:text-destructive transition-colors opacity-0 group-hover:opacity-100 disabled:opacity-50"
-                        title="Remove this post"
-                      >
-                        {deletingRecognitionId === item.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
-                      </button>
+                      confirmDeleteId === item.id ? (
+                        <div className="absolute top-3 right-3 flex items-center gap-1 bg-card border border-border rounded-lg px-1.5 py-1 shadow-sm z-10">
+                          <span className="text-[10px] font-bold text-text-muted pl-1">Remove?</span>
+                          <button
+                            onClick={() => handleDeleteRecognition(item.id)}
+                            disabled={deletingRecognitionId === item.id}
+                            className="text-destructive hover:opacity-70 transition-opacity disabled:opacity-50"
+                            title="Confirm removal"
+                          >
+                            {deletingRecognitionId === item.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
+                          </button>
+                          <button
+                            onClick={() => setConfirmDeleteId(null)}
+                            className="text-text-muted hover:text-text-main transition-colors"
+                            title="Cancel"
+                          >
+                            <XCircle className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          onClick={() => setConfirmDeleteId(item.id)}
+                          className="absolute top-3 right-3 text-text-muted hover:text-destructive transition-colors opacity-0 group-hover:opacity-100"
+                          title="Remove this post"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )
                     )}
                     <div className="flex items-center gap-3 mb-4">
                       <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 bg-warning/20 text-warning">
@@ -401,57 +455,102 @@ export const OrgDashboardMoments = () => {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 {challenges.map(challenge => (
                   <div key={challenge.id} className={cn("card space-y-4", !challenge.active && "opacity-60")}>
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <Target className="w-5 h-5 text-primary" />
-                        <h4 className="font-bold text-text-main">{challenge.title}</h4>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        {!challenge.active && (
-                          <span className="text-xs font-bold uppercase tracking-widest px-2 py-1 rounded text-text-muted bg-surface">Ended</span>
-                        )}
-                        <span className={cn(
-                          "text-xs font-bold uppercase tracking-widest px-2 py-1 rounded",
-                          challenge.joined ? "text-success bg-success/10" : "text-text-muted bg-surface"
-                        )}>
-                          {challenge.joined ? 'Joined' : 'Not Joined'}
-                        </span>
-                      </div>
-                    </div>
-                    {challenge.description && (
-                      <p className="text-xs text-text-muted">{challenge.description}</p>
-                    )}
-                    <div className="w-full bg-surface dark:bg-surface rounded-full h-2">
-                      <div className="bg-success h-2 rounded-full transition-all" style={{ width: `${challenge.participationRate}%` }} />
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <p className="text-xs font-bold text-text-muted">{challenge.participationRate}% Participation ({challenge.participantCount})</p>
-                      <div className="flex items-center gap-2">
-                        {isOrgAdmin && (
+                    {editingChallengeId === challenge.id ? (
+                      <div className="space-y-3">
+                        <input
+                          type="text"
+                          value={editTitle}
+                          onChange={(e) => setEditTitle(e.target.value)}
+                          maxLength={100}
+                          className="w-full bg-surface border border-border rounded-lg px-3 py-2 text-sm font-bold text-text-main focus:outline-none focus:border-primary"
+                        />
+                        <textarea
+                          value={editDesc}
+                          onChange={(e) => setEditDesc(e.target.value)}
+                          maxLength={300}
+                          className="w-full h-16 bg-surface border border-border rounded-lg p-3 text-xs text-text-main focus:outline-none focus:border-primary resize-none"
+                        />
+                        <div className="flex items-center gap-2">
                           <button
-                            onClick={() => handleToggleChallengeActive(challenge.id)}
-                            disabled={togglingChallengeId === challenge.id}
-                            className="text-xs font-bold px-3 py-1.5 rounded-lg border border-border text-text-muted hover:text-text-main transition-colors disabled:opacity-50 flex items-center gap-1.5"
-                            title={challenge.active ? 'End this challenge' : 'Reactivate this challenge'}
+                            onClick={handleSaveEdit}
+                            disabled={savingEdit || !editTitle.trim()}
+                            className="text-xs font-bold px-3 py-1.5 rounded-lg bg-primary text-primary-foreground hover:opacity-90 transition-colors disabled:opacity-50 flex items-center gap-1.5"
                           >
-                            {togglingChallengeId === challenge.id ? <Loader2 className="w-3 h-3 animate-spin" /> : challenge.active ? <Pause className="w-3 h-3" /> : <Play className="w-3 h-3" />}
+                            {savingEdit ? <Loader2 className="w-3 h-3 animate-spin" /> : null}
+                            Save
                           </button>
-                        )}
-                        <button
-                          onClick={() => handleToggleChallenge(challenge.id, challenge.joined)}
-                          disabled={joiningId === challenge.id || !challenge.active}
-                          className={cn(
-                            "text-xs font-bold px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50 flex items-center gap-1.5",
-                            challenge.joined
-                              ? "border border-border text-text-muted hover:text-text-main"
-                              : "bg-warning text-warning-foreground hover:opacity-90"
-                          )}
-                        >
-                          {joiningId === challenge.id ? <Loader2 className="w-3 h-3 animate-spin" /> : null}
-                          {challenge.joined ? 'Leave' : 'Join'}
-                        </button>
+                          <button
+                            onClick={() => setEditingChallengeId(null)}
+                            className="text-xs font-bold px-3 py-1.5 rounded-lg border border-border text-text-muted hover:text-text-main transition-colors"
+                          >
+                            Cancel
+                          </button>
+                        </div>
                       </div>
-                    </div>
+                    ) : (
+                      <>
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <Target className="w-5 h-5 text-primary" />
+                            <h4 className="font-bold text-text-main">{challenge.title}</h4>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            {!challenge.active && (
+                              <span className="text-xs font-bold uppercase tracking-widest px-2 py-1 rounded text-text-muted bg-surface">Ended</span>
+                            )}
+                            <span className={cn(
+                              "text-xs font-bold uppercase tracking-widest px-2 py-1 rounded",
+                              challenge.joined ? "text-success bg-success/10" : "text-text-muted bg-surface"
+                            )}>
+                              {challenge.joined ? 'Joined' : 'Not Joined'}
+                            </span>
+                          </div>
+                        </div>
+                        {challenge.description && (
+                          <p className="text-xs text-text-muted">{challenge.description}</p>
+                        )}
+                        <div className="w-full bg-surface dark:bg-surface rounded-full h-2">
+                          <div className="bg-success h-2 rounded-full transition-all" style={{ width: `${challenge.participationRate}%` }} />
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <p className="text-xs font-bold text-text-muted">{challenge.participationRate}% Participation ({challenge.participantCount})</p>
+                          <div className="flex items-center gap-2">
+                            {isOrgAdmin && (
+                              <>
+                                <button
+                                  onClick={() => openEditChallenge(challenge)}
+                                  className="text-xs font-bold px-3 py-1.5 rounded-lg border border-border text-text-muted hover:text-text-main transition-colors flex items-center gap-1.5"
+                                  title="Edit this challenge"
+                                >
+                                  <Pencil className="w-3 h-3" />
+                                </button>
+                                <button
+                                  onClick={() => handleToggleChallengeActive(challenge.id)}
+                                  disabled={togglingChallengeId === challenge.id}
+                                  className="text-xs font-bold px-3 py-1.5 rounded-lg border border-border text-text-muted hover:text-text-main transition-colors disabled:opacity-50 flex items-center gap-1.5"
+                                  title={challenge.active ? 'End this challenge' : 'Reactivate this challenge'}
+                                >
+                                  {togglingChallengeId === challenge.id ? <Loader2 className="w-3 h-3 animate-spin" /> : challenge.active ? <Pause className="w-3 h-3" /> : <Play className="w-3 h-3" />}
+                                </button>
+                              </>
+                            )}
+                            <button
+                              onClick={() => handleToggleChallenge(challenge.id, challenge.joined)}
+                              disabled={joiningId === challenge.id || !challenge.active}
+                              className={cn(
+                                "text-xs font-bold px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50 flex items-center gap-1.5",
+                                challenge.joined
+                                  ? "border border-border text-text-muted hover:text-text-main"
+                                  : "bg-warning text-warning-foreground hover:opacity-90"
+                              )}
+                            >
+                              {joiningId === challenge.id ? <Loader2 className="w-3 h-3 animate-spin" /> : null}
+                              {challenge.joined ? 'Leave' : 'Join'}
+                            </button>
+                          </div>
+                        </div>
+                      </>
+                    )}
                   </div>
                 ))}
               </div>

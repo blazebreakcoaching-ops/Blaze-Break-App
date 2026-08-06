@@ -64,6 +64,7 @@ export const PrivacyVault = ({
   const [joining, setJoining] = useState(false);
   const [consentSaving, setConsentSaving] = useState(false);
   const [leaving, setLeaving] = useState(false);
+  const [showLeaveConfirm, setShowLeaveConfirm] = useState(false);
 
   const fetchOrgStatus = async () => {
     if (!auth.currentUser) return;
@@ -132,6 +133,7 @@ export const PrivacyVault = ({
       setOrgError('Could not leave the organisation. Please try again.');
     }
     setLeaving(false);
+    setShowLeaveConfirm(false);
   };
   const [showDeleteConfirmModal, setShowDeleteConfirmModal] = useState(false);
   const [typedFullName, setTypedFullName] = useState("");
@@ -416,7 +418,7 @@ export const PrivacyVault = ({
                         <p className="text-xs text-text-muted mt-1">{orgStatus.organisationName || 'Your organisation'} is currently sponsoring your access.</p>
                       </div>
                       <button
-                        onClick={handleLeaveOrg}
+                        onClick={() => setShowLeaveConfirm(true)}
                         disabled={leaving}
                         className="px-4 py-2 bg-background border border-white/[0.05] hover:border-white/[0.1] rounded-xl text-xs font-bold text-text-main transition-all whitespace-nowrap disabled:opacity-50 flex items-center gap-2"
                       >
@@ -916,6 +918,44 @@ export const PrivacyVault = ({
               </div>
             </motion.div>
           </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {showLeaveConfirm && (
+          <div className="fixed inset-0 z-[200] flex items-center justify-center p-4" onClick={() => setShowLeaveConfirm(false)}>
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 bg-black/50" />
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              onClick={(e) => e.stopPropagation()}
+              className="relative card bg-card border border-border shadow-lg p-6 max-w-sm w-full space-y-4"
+            >
+              <div>
+                <h4 className="text-lg font-bold text-text-main">Leave {orgStatus?.organisationName || 'this organisation'}?</h4>
+                <p className="text-sm text-text-muted mt-2">
+                  You'll lose access to your team's climate survey, recognition wall, and challenges, and your data-sharing consent will be turned off. Your own recovery data is entirely unaffected — you can rejoin later with a join code if you change your mind.
+                </p>
+              </div>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setShowLeaveConfirm(false)}
+                  className="flex-1 px-4 py-2.5 border border-border rounded-xl text-sm font-bold text-text-muted hover:text-text-main transition-colors"
+                >
+                  Stay
+                </button>
+                <button
+                  onClick={handleLeaveOrg}
+                  disabled={leaving}
+                  className="flex-1 px-4 py-2.5 bg-destructive text-destructive-foreground rounded-xl text-sm font-bold hover:opacity-90 transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  {leaving ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                  Leave
+                </button>
+              </div>
+            </motion.div>
+          </div>
         )}
       </AnimatePresence>
     </div>

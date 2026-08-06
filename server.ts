@@ -3258,6 +3258,26 @@ app.post("/api/org/:orgId/members/:memberUid/make-admin", verifyAppCheck, authen
   }
 });
 
+app.post("/api/org/:orgId/members/:memberUid/revoke-admin", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const { orgId, memberUid } = req.params;
+    const { user, org } = await requireOrgAdmin(req, orgId);
+    if (memberUid === user.uid) {
+      return res.status(400).json({ error: "You can't revoke your own admin access - ask another admin to do it." });
+    }
+    if ((org.adminUids || []).length <= 1) {
+      return res.status(400).json({ error: "This organisation needs at least one admin - promote someone else first." });
+    }
+    const db = getDb();
+    await db.collection("organisations").doc(orgId).update({
+      adminUids: FieldValue.arrayRemove(memberUid),
+    });
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
+  }
+});
+
 app.post("/api/org/:orgId/regenerate-join-code", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
   try {
     const { orgId } = req.params;
@@ -3399,6 +3419,30 @@ app.post("/api/org/:orgId/challenges/:challengeId/toggle-active", verifyAppCheck
     const newActive = !challengeDoc.data()?.active;
     await db.collection("organisations").doc(orgId).collection("challenges").doc(challengeId).update({ active: newActive });
     res.json({ success: true, active: newActive });
+  } catch (err: any) {
+    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
+  }
+});
+
+app.post("/api/org/:orgId/challenges/:challengeId/edit", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const { orgId, challengeId } = req.params;
+    await requireOrgAdmin(req, orgId);
+    const { title, description } = req.body;
+    if (!title || typeof title !== 'string' || title.trim().length === 0 || title.length > 100) {
+      return res.status(400).json({ error: "Title must be 1-100 characters." });
+    }
+    if (description !== undefined && (typeof description !== 'string' || description.length > 300)) {
+      return res.status(400).json({ error: "Description must be under 300 characters." });
+    }
+    const db = getDb();
+    const challengeRef = db.collection("organisations").doc(orgId).collection("challenges").doc(challengeId);
+    const challengeDoc = await challengeRef.get();
+    if (!challengeDoc.exists) {
+      return res.status(404).json({ error: "Challenge not found." });
+    }
+    await challengeRef.update({ title: title.trim(), description: (description || '').trim() });
+    res.json({ success: true });
   } catch (err: any) {
     res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
   }

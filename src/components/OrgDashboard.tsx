@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { secureApiFetch } from '../lib/secure-api';
+import { auth } from '../lib/firebase';
 import { RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, ResponsiveContainer, Tooltip } from 'recharts';
 
 
@@ -23,7 +24,9 @@ import {
   Save,
   Mail,
   Send,
-  X
+  X,
+  Upload,
+  RotateCw
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { OrgDashboardValue } from './OrgDashboardValue';
@@ -80,6 +83,7 @@ export const OrgDashboard = () => {
   const [membersLoading, setMembersLoading] = useState(false);
   const [membersError, setMembersError] = useState('');
   const [memberActionUid, setMemberActionUid] = useState<string | null>(null);
+  const [memberToRemove, setMemberToRemove] = useState<{ uid: string; label: string } | null>(null);
 
   const [settingsName, setSettingsName] = useState('');
   const [settingsThreshold, setSettingsThreshold] = useState('');
@@ -94,6 +98,8 @@ export const OrgDashboard = () => {
   const [pendingInvites, setPendingInvites] = useState<{ id: string; email: string; emailSent: boolean }[]>([]);
   const [invitesLoading, setInvitesLoading] = useState(false);
   const [cancelingInviteId, setCancelingInviteId] = useState<string | null>(null);
+  const [csvError, setCsvError] = useState('');
+  const [resendingEmail, setResendingEmail] = useState<string | null>(null);
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -191,6 +197,24 @@ export const OrgDashboard = () => {
     setMemberActionUid(null);
   };
 
+  const handleRevokeAdmin = async (memberUid: string) => {
+    if (!orgStatus?.organisationId) return;
+    setMemberActionUid(memberUid);
+    setMembersError('');
+    try {
+      const res = await secureApiFetch(`/api/org/${orgStatus.organisationId}/members/${memberUid}/revoke-admin`, { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok) {
+        setMembersError(data.error || 'Could not revoke that admin access.');
+      } else {
+        await fetchMembers(orgStatus.organisationId);
+      }
+    } catch (e) {
+      setMembersError('Could not revoke that admin access.');
+    }
+    setMemberActionUid(null);
+  };
+
   const handleSaveSettings = async () => {
     if (!orgStatus?.organisationId) return;
     const threshold = Number(settingsThreshold);
@@ -267,6 +291,47 @@ export const OrgDashboard = () => {
       setInviteResult('Could not send those invites.');
     }
     setSendingInvites(false);
+  };
+
+  // Extracts email addresses from an uploaded CSV, regardless of whether it's
+  // a bare one-per-line list or a full multi-column export with an "email"
+  // header - pulling out anything email-shaped is simpler and more forgiving
+  // than requiring a specific column layout, and the person still reviews
+  // the extracted list in the textarea before anything actually sends.
+  const handleCsvUpload = (file: File) => {
+    setCsvError('');
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const text = (e.target?.result as string) || '';
+      const found = text.match(/[^\s@,;"']+@[^\s@,;"']+\.[^\s@,;"']+/g) || [];
+      const unique = Array.from(new Set(found.map(f => f.toLowerCase())));
+      if (unique.length === 0) {
+        setCsvError("Couldn't find any email addresses in that file.");
+        return;
+      }
+      setInviteEmails(prev => {
+        const existing = prev.split(/[\n,]+/).map(e => e.trim()).filter(Boolean);
+        const combined = Array.from(new Set([...existing, ...unique]));
+        return combined.join('\n');
+      });
+    };
+    reader.onerror = () => setCsvError('Could not read that file.');
+    reader.readAsText(file);
+  };
+
+  const handleResendInvite = async (email: string) => {
+    if (!orgStatus?.organisationId) return;
+    setResendingEmail(email);
+    try {
+      await secureApiFetch(`/api/org/${orgStatus.organisationId}/invite`, {
+        method: 'POST',
+        data: { emails: [email] },
+      });
+      await fetchInvites(orgStatus.organisationId);
+    } catch (e) {
+      // Non-critical - the invite stays listed either way, they can just try again.
+    }
+    setResendingEmail(null);
   };
 
   const handleCancelInvite = async (inviteId: string) => {
@@ -662,7 +727,9 @@ export const OrgDashboard = () => {
                   </div>
                 ) : (
                   <div className="space-y-2">
-                    {members.map(member => (
+                    {members.map(member => {
+                      const isSelf = member.uid === auth.currentUser?.uid;
+                      return (
                       <div key={member.uid} className="card flex items-center justify-between p-4">
                         <div className="min-w-0">
                           <p className="text-sm font-bold text-text-main truncate">{member.displayName || member.email || member.uid}</p>
@@ -671,8 +738,18 @@ export const OrgDashboard = () => {
                           )}
                         </div>
                         <div className="flex items-center gap-2 shrink-0">
-                          {member.isAdmin ? (
-                            <span className="text-xs font-bold uppercase tracking-widest text-primary bg-primary/10 px-2 py-1 rounded">Admin</span>
+                          {isSelf ? (
+                            <span className="text-xs font-bold uppercase tracking-widest text-text-muted bg-surface px-2 py-1 rounded">You</span>
+                          ) : member.isAdmin ? (
+                            <button
+                              onClick={() => handleRevokeAdmin(member.uid)}
+                              disabled={memberActionUid === member.uid}
+                              className="text-xs font-bold text-primary hover:opacity-70 transition-opacity flex items-center gap-1 disabled:opacity-50"
+                              title="Revoke admin access"
+                            >
+                              {memberActionUid === member.uid ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
+                              Admin
+                            </button>
                           ) : (
                             <button
                               onClick={() => handleMakeAdmin(member.uid)}
@@ -683,17 +760,20 @@ export const OrgDashboard = () => {
                               <ShieldPlus className="w-3.5 h-3.5" /> Make Admin
                             </button>
                           )}
-                          <button
-                            onClick={() => handleRemoveMember(member.uid)}
-                            disabled={memberActionUid === member.uid}
-                            className="text-xs font-bold text-text-muted hover:text-destructive transition-colors flex items-center gap-1 disabled:opacity-50"
-                            title="Remove from organisation"
-                          >
-                            {memberActionUid === member.uid ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <UserMinus className="w-3.5 h-3.5" />}
-                          </button>
+                          {!isSelf && (
+                            <button
+                              onClick={() => setMemberToRemove({ uid: member.uid, label: member.displayName || member.email || 'this person' })}
+                              disabled={memberActionUid === member.uid}
+                              className="text-xs font-bold text-text-muted hover:text-destructive transition-colors flex items-center gap-1 disabled:opacity-50"
+                              title="Remove from organisation"
+                            >
+                              {memberActionUid === member.uid ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <UserMinus className="w-3.5 h-3.5" />}
+                            </button>
+                          )}
                         </div>
                       </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </div>
@@ -757,8 +837,26 @@ export const OrgDashboard = () => {
                 </div>
 
                 <div className="card space-y-3">
-                  <h4 className="font-bold text-text-main text-sm flex items-center gap-2"><Mail className="w-4 h-4 text-primary" /> Invite by Email</h4>
+                  <div className="flex items-center justify-between">
+                    <h4 className="font-bold text-text-main text-sm flex items-center gap-2"><Mail className="w-4 h-4 text-primary" /> Invite by Email</h4>
+                    <label className="text-[11px] font-bold uppercase tracking-widest text-primary hover:opacity-80 transition-opacity cursor-pointer flex items-center gap-1">
+                      <Upload className="w-3.5 h-3.5" /> Upload CSV
+                      <input
+                        type="file"
+                        accept=".csv,text/csv,text/plain"
+                        className="hidden"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file) handleCsvUpload(file);
+                          e.target.value = '';
+                        }}
+                      />
+                    </label>
+                  </div>
                   <p className="text-xs text-text-muted">One email per line, or separated by commas. Up to 50 at once.</p>
+                  {csvError && (
+                    <div className="p-2.5 bg-destructive/10 border border-destructive/20 text-destructive text-xs rounded-lg">{csvError}</div>
+                  )}
                   {inviteResult && (
                     <div className="p-2.5 bg-primary/5 border border-primary/20 text-primary text-xs rounded-lg">{inviteResult}</div>
                   )}
@@ -788,6 +886,14 @@ export const OrgDashboard = () => {
                               <span className="text-[10px] text-warning uppercase font-bold">No email sent</span>
                             )}
                             <button
+                              onClick={() => handleResendInvite(invite.email)}
+                              disabled={resendingEmail === invite.email}
+                              className="text-text-muted hover:text-primary transition-colors disabled:opacity-50"
+                              title="Resend invite"
+                            >
+                              {resendingEmail === invite.email ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RotateCw className="w-3.5 h-3.5" />}
+                            </button>
+                            <button
                               onClick={() => handleCancelInvite(invite.id)}
                               disabled={cancelingInviteId === invite.id}
                               className="text-text-muted hover:text-destructive transition-colors disabled:opacity-50"
@@ -804,6 +910,44 @@ export const OrgDashboard = () => {
               </div>
             </div>
           </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {memberToRemove && (
+          <div className="fixed inset-0 z-[200] flex items-center justify-center p-4" onClick={() => setMemberToRemove(null)}>
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 bg-black/50" />
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              onClick={(e) => e.stopPropagation()}
+              className="relative card bg-card border border-border shadow-lg p-6 max-w-sm w-full space-y-4"
+            >
+              <div>
+                <h4 className="text-lg font-bold text-text-main">Remove {memberToRemove.label}?</h4>
+                <p className="text-sm text-text-muted mt-2">
+                  They'll be unlinked from {orgStatus?.organisationName || 'this organisation'} and their data-sharing consent will be turned off. This doesn't affect their own Blaze Break account or personal data.
+                </p>
+              </div>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setMemberToRemove(null)}
+                  className="flex-1 px-4 py-2.5 border border-border rounded-xl text-sm font-bold text-text-muted hover:text-text-main transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => handleRemoveMember(memberToRemove.uid)}
+                  disabled={memberActionUid === memberToRemove.uid}
+                  className="flex-1 px-4 py-2.5 bg-destructive text-destructive-foreground rounded-xl text-sm font-bold hover:opacity-90 transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  {memberActionUid === memberToRemove.uid ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                  Remove
+                </button>
+              </div>
+            </motion.div>
+          </div>
         )}
       </AnimatePresence>
     </div>
