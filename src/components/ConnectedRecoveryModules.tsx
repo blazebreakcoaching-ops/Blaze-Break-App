@@ -3,6 +3,8 @@ import { collection, doc, setDoc, getDocs, updateDoc, deleteDoc, query, orderBy,
 import { auth, db } from '../lib/firebase';
 import { X, Sparkles, Shield, Target, Plus, Trash2, Edit2, AlertCircle, CheckCircle } from 'lucide-react';
 import { cn } from '../lib/utils';
+import { secureApiFetch } from '../lib/secure-api';
+import { logJourney } from '../lib/nova-brain';
 
 // Helper for empty states
 const SecureVaultNotice = () => (
@@ -71,6 +73,13 @@ export const ConnectedDailyCheckIn = ({ onClose, onReviewWithNova }: { onClose: 
       } else {
         await setDoc(ref, { createdAt: new Date().toISOString(), ...data });
       }
+      secureApiFetch('/api/user/mark-activity', {
+        method: 'POST',
+        data: { activity: 'checkIn' },
+      }).catch(() => {
+        // Non-fatal - only affects the home recommendation engine's freshness.
+      });
+      logJourney('Daily check-in logged', `Energy ${energyLevel}/10, Focus ${focusLevel}/10, Stress ${stressLoad}/10.`);
       setStep(0);
       setEditingId(null);
       setNote('');

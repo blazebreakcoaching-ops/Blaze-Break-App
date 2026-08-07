@@ -692,7 +692,26 @@ app.post("/api/nova/chat", verifyAppCheck, authenticateFirebaseUser, async (req,
     const verifiedUser = (req as any).user;
     const uid = verifiedUser?.uid;
 
-    const mergedSystemPrompt = (systemInstruction || NOVA_SYSTEM_PROMPT);
+    // This is the real, consent-gated read of the person's actual recovery
+    // data - mood, energy, boundaries, goals, wins, and more, each only
+    // included if they've explicitly opted in via their own Privacy Centre.
+    // This was previously built in full but never actually called here, so
+    // every response was generated blind regardless of what someone had
+    // consented to share.
+    let contextAddendum = "";
+    let contextMetadata: NovaConsentMetadata = { contextTriggered: false, modulesUsed: [], rationale: "" };
+    if (uid) {
+      try {
+        const db = getDb();
+        const contextResult = await getNovaContextAndMetadata(uid, db);
+        contextAddendum = contextResult.systemInstructionsAddendum;
+        contextMetadata = contextResult.metadata;
+      } catch (e) {
+        console.warn("Nova context build failed - continuing without it.", e);
+      }
+    }
+
+    const mergedSystemPrompt = (systemInstruction || NOVA_SYSTEM_PROMPT) + contextAddendum;
 
     const abortController = new AbortController();
     const timeoutId = setTimeout(() => abortController.abort(), 15000); // 15s timeout
@@ -708,7 +727,7 @@ app.post("/api/nova/chat", verifyAppCheck, authenticateFirebaseUser, async (req,
 
       const result = await chat.sendMessage({ message });
       clearTimeout(timeoutId);
-      res.json({ text: result.text, privacyMetadata: { contextTriggered: false, modulesUsed: [], rationale: "" } });
+      res.json({ text: result.text, privacyMetadata: contextMetadata });
     } catch (modelError: any) {
       clearTimeout(timeoutId);
       if (modelError.name === 'AbortError') {
@@ -719,6 +738,101 @@ app.post("/api/nova/chat", verifyAppCheck, authenticateFirebaseUser, async (req,
   } catch (error: any) {
     console.error("Gemini Chat Error"); // Redacted raw error
     res.status(500).json({ error: `Nova Chat Sync Failure: A safe operational error occurred.` });
+  }
+});
+
+// Real, deterministic recommendation - which tool actually matters most
+// right now, computed from the person's own real activity across the app.
+// This is a rule-based computation over their own data for their own
+// screen, not data sent to an AI model, so it's a different privacy
+// boundary than the consent-gated AI context above and doesn't require the
+// same opt-in.
+app.get("/api/nova/recommendation", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const user = requireAuth(req);
+    const db = getDb();
+    const uid = user.uid;
+
+    const threeDaysAgo = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString();
+    const todayStr = new Date().toISOString().split('T')[0];
+
+    const [moodSnap, bodySnap, commitSnap, boundarySnap, winsSnap, reviewSnap] = await Promise.all([
+      db.collection('users').doc(uid).collection('mood_pulses').where('createdAt', '>=', threeDaysAgo).get(),
+      db.collection('users').doc(uid).collection('body_checkins').where('createdAt', '>=', threeDaysAgo).get(),
+      db.collection('users').doc(uid).collection('energy_commitments').where('status', '==', 'active').get(),
+      db.collection('users').doc(uid).collection('boundary_scripts').orderBy('createdAt', 'desc').limit(1).get(),
+      db.collection('users').doc(uid).collection('wins').orderBy('createdAt', 'desc').limit(1).get(),
+      db.collection('users').doc(uid).collection('weekly_reviews').orderBy('createdAt', 'desc').limit(1).get(),
+    ]);
+
+    // Priority-ordered real signals - the first genuinely true condition
+    // wins, most urgent first.
+    const negativeMoods = moodSnap.docs.filter(d => ['overwhelmed', 'frustrated', 'pressured', 'tired'].includes(d.data().moodLabel));
+    if (negativeMoods.length >= 2) {
+      return res.json({
+        tab: 'reset',
+        title: 'A few tough check-ins recently',
+        message: `You've logged ${negativeMoods.length} stressed or tired mood pulses in the last 3 days. A grounding session might genuinely help right now.`,
+      });
+    }
+
+    const totalActiveDrain = commitSnap.docs.reduce((sum, d) => sum + (d.data().energyDrain || 0), 0);
+    if (totalActiveDrain >= 200) {
+      return res.json({
+        tab: 'recover',
+        title: 'Your energy budget is stretched',
+        message: `You currently have ${commitSnap.size} active commitments totalling ${totalActiveDrain} energy units. Worth reviewing what can be dropped or delegated.`,
+      });
+    }
+
+    const boundaryDoc = boundarySnap.docs[0];
+    const daysSinceBoundary = boundaryDoc ? (Date.now() - new Date(boundaryDoc.data().createdAt).getTime()) / (1000 * 60 * 60 * 24) : Infinity;
+    if (bodySnap.size > 0 && daysSinceBoundary >= 7) {
+      return res.json({
+        tab: 'communicate',
+        title: 'Physical tension, no recent boundary practice',
+        message: "You've logged body tension recently, and it's been over a week since you rehearsed a boundary script. Often the two are connected.",
+      });
+    }
+
+    const hasCheckedInToday = moodSnap.docs.some(d => typeof d.data().createdAt === 'string' && d.data().createdAt.startsWith(todayStr))
+      || bodySnap.docs.some(d => typeof d.data().createdAt === 'string' && d.data().createdAt.startsWith(todayStr));
+    if (!hasCheckedInToday) {
+      return res.json({
+        tab: 'home',
+        title: "You haven't checked in today",
+        message: "A quick mood or body pulse takes seconds, and it's what makes every other recommendation here actually accurate.",
+      });
+    }
+
+    const reviewDoc = reviewSnap.docs[0];
+    const daysSinceReview = reviewDoc ? (Date.now() - new Date(reviewDoc.data().createdAt).getTime()) / (1000 * 60 * 60 * 24) : Infinity;
+    if (daysSinceReview >= 7) {
+      return res.json({
+        tab: 'reflect',
+        title: 'Weekly review is overdue',
+        message: reviewDoc ? "It's been over a week since your last weekly review — worth a few minutes to see what's actually changed." : "You haven't done a weekly review yet — it's a genuinely useful way to see your own patterns.",
+      });
+    }
+
+    const winDoc = winsSnap.docs[0];
+    const daysSinceWin = winDoc ? (Date.now() - new Date(winDoc.data().createdAt).getTime()) / (1000 * 60 * 60 * 24) : Infinity;
+    if (daysSinceWin >= 3) {
+      return res.json({
+        tab: 'communicate',
+        title: 'No wins logged in a few days',
+        message: "It's been a few days since you logged a recovery win. Doesn't have to be big — noticing it is most of the value.",
+      });
+    }
+
+    // Nothing urgent - genuinely say so, rather than inventing a fake concern.
+    res.json({
+      tab: null,
+      title: "You're on a steady rhythm",
+      message: "Recent check-ins, energy load, and boundary practice all look reasonably balanced. Nothing urgent to flag right now.",
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
   }
 });
 
@@ -3600,9 +3714,10 @@ app.post("/api/anxiety-reset", verifyAppCheck, authenticateFirebaseUser, async (
     await statsRef.set({
       points: currentPoints + 50,
       lastEngagementDate: new Date().toISOString().split('T')[0],
+      lastAnxietyReset: new Date().toISOString(),
       updatedAt: FieldValue.serverTimestamp()
     }, { merge: true });
-    
+
     res.json({ success: true, event: savedEvent });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
@@ -3872,6 +3987,126 @@ app.post("/api/recovery/recalculate", verifyAppCheck, authenticateFirebaseUser, 
   } catch (error: any) {
     console.warn("Calculations Error Observation"); // Redacted raw details
     res.status(500).json({ error: "Calculations Sync Failure: A safe operational error occurred." });
+  }
+});
+
+// ============ Cross-Module Activity & Recommendation Engine ============
+// This is the actual backing for "Nova sees what's happening everywhere" -
+// a single per-user derived/stats document that every module marks when a
+// real session completes, and one endpoint that reads across that plus a
+// couple of live signals to compute what's actually worth suggesting right
+// now, replacing what used to be static, unchanging copy on the home
+// dashboard regardless of anything the person had actually done.
+
+const ACTIVITY_FIELD_MAP: Record<string, string> = {
+  nervousSystemReset: 'lastNervousSystemReset',
+  boundaryRehearsal: 'lastBoundaryRehearsal',
+  checkIn: 'lastCheckIn',
+  moodPulse: 'lastMoodPulse',
+  energyBudgetUpdate: 'lastEnergyBudgetUpdate',
+  recoveryAllyActivity: 'lastRecoveryAllyActivity',
+};
+
+app.post("/api/user/mark-activity", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const user = requireAuth(req);
+    const { activity } = req.body;
+    const fieldName = ACTIVITY_FIELD_MAP[activity];
+    if (!fieldName) {
+      return res.status(400).json({ error: "Unknown activity type." });
+    }
+    const db = getDb();
+    await db.collection("users").doc(user.uid).collection("derived").doc("stats").set({
+      [fieldName]: new Date().toISOString(),
+      updatedAt: FieldValue.serverTimestamp(),
+    }, { merge: true });
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get("/api/user/recommendation", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const user = requireAuth(req);
+    const db = getDb();
+
+    const statsDoc = await db.collection("users").doc(user.uid).collection("derived").doc("stats").get();
+    const stats = statsDoc.exists ? statsDoc.data()! : {};
+    const now = Date.now();
+    const hoursSince = (iso?: string) => iso ? (now - new Date(iso).getTime()) / (1000 * 60 * 60) : Infinity;
+
+    // Real, recent high-severity signals - if something acute happened
+    // recently, that outranks everything else below.
+    const triggersSnap = await db.collection("users").doc(user.uid).collection("stress_triggers")
+      .orderBy("createdAt", "desc").limit(3).get();
+    const recentHighSeverity = triggersSnap.docs
+      .map(d => d.data())
+      .find(d => hoursSince(d.createdAt) < 3 && (d.severity || 0) >= 7);
+
+    // Real current active load, not a guess.
+    const commitmentsSnap = await db.collection("users").doc(user.uid).collection("energy_commitments")
+      .where("status", "==", "active").get();
+    const activeLoad = commitmentsSnap.docs.reduce((sum, d) => sum + (d.data().energyDrain || 0), 0);
+
+    let recommendation: { tool: string; tab: string; title: string; message: string; points: number };
+
+    if (recentHighSeverity) {
+      const snippet = String(recentHighSeverity.text || '').slice(0, 90);
+      recommendation = {
+        tool: 'Nervous System Reset',
+        tab: 'reset',
+        title: "You flagged something heavy recently",
+        message: snippet
+          ? `You logged "${snippet}" a little while ago as high-intensity. A short reset now could help before it compounds.`
+          : "Something you logged recently was high-intensity. A short reset now could help before it compounds.",
+        points: 25,
+      };
+    } else if (hoursSince(stats.lastCheckIn) > 20 && hoursSince(stats.lastMoodPulse) > 20) {
+      recommendation = {
+        tool: 'Pulse Check-In',
+        tab: 'home',
+        title: "Haven't heard from you today",
+        message: "You haven't logged a check-in yet today. A quick pulse helps Nova actually track how you're doing, not just guess.",
+        points: 15,
+      };
+    } else if (activeLoad >= 60) {
+      recommendation = {
+        tool: 'Energy Budget',
+        tab: 'recover',
+        title: "Your active load looks heavy",
+        message: `You've got ${activeLoad} units of active energy commitments logged right now. Worth reviewing what can be delegated or dropped before it adds up.`,
+        points: 20,
+      };
+    } else if (hoursSince(stats.lastBoundaryRehearsal) > 24 * 7 && activeLoad > 0) {
+      recommendation = {
+        tool: 'Boundary Rehearsal',
+        tab: 'communicate',
+        title: "Worth rehearsing a script",
+        message: "It's been a while since you practiced a boundary script. If something's been sitting on your plate, a few minutes of rehearsal makes it easier to actually say.",
+        points: 20,
+      };
+    } else if (hoursSince(stats.lastNervousSystemReset) > 48) {
+      recommendation = {
+        tool: 'Nervous System Reset',
+        tab: 'reset',
+        title: "A reset might help",
+        message: "It's been a couple of days since your last nervous system reset. Even five minutes of breathing work adds up.",
+        points: 15,
+      };
+    } else {
+      recommendation = {
+        tool: 'Nova Coach',
+        tab: 'nova',
+        title: "You're on track",
+        message: "Nothing urgent flagged right now based on what you've logged. If something's on your mind, Nova's a good place to think it through.",
+        points: 10,
+      };
+    }
+
+    res.json(recommendation);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
   }
 });
 

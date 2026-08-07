@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
 import ReactMarkdown from 'react-markdown';
 import { secureApiFetch } from '../lib/secure-api';
+import { logJourney } from '../lib/nova-brain';
 import { 
   ShieldAlert, 
   ArrowRight, 
@@ -265,6 +266,17 @@ export const BoundaryRehearsal = ({ onAwardPoints, onRehearsalComplete }: { onAw
   const generateFinalCritique = async () => {
     setCritiqueLoading(true);
     setShowCritique(true);
+
+    if (uid) {
+      secureApiFetch('/api/user/mark-activity', {
+        method: 'POST',
+        data: { activity: 'boundaryRehearsal' },
+      }).catch(() => {
+        // Non-fatal - only affects the home recommendation engine's freshness.
+      });
+    }
+    logJourney(`Completed a boundary rehearsal practice session`, selected?.title ? `Scenario: "${selected.title}"` : undefined);
+
     try {
       const response = await secureApiFetch('/api/nova/chat', {
         method: 'POST',

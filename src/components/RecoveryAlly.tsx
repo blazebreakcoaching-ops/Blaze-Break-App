@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { HeartPulse, CheckSquare, Target, Mail, Award, Trash2, CheckCircle2, AlertTriangle, ShieldCheck, Activity, Brain, Clock, Plus, ArrowRight, Zap } from 'lucide-react';
 import { cn } from '../lib/utils';
+import { logJourney } from '../lib/nova-brain';
 
 const STORAGE_KEY = 'blaze_recovery_ally_state';
 
@@ -117,6 +118,7 @@ export const RecoveryAlly = () => {
         ...prev,
         sharedGoals: [{ id: Date.now(), text: newGoalText, completed: false, category: "custom", streak: 0 }, ...prev.sharedGoals],
       }));
+      logJourney(`Set a boundary goal shared with Recovery Ally`, newGoalText);
       setNewGoalText('');
       setIsAddingGoal(false);
     }

@@ -3,9 +3,13 @@ import { motion, AnimatePresence } from 'motion/react';
 import { Wind, Brain, Moon, Waves, Play, Pause, Activity, RefreshCw, Eye, Ear, UserCircle, MapPin, Minimize2, Clock, Volume2, VolumeX, Music, CheckCircle2 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { BurnoutFingerprint } from '../types';
+import { secureApiFetch } from '../lib/secure-api';
+import { logJourney } from '../lib/nova-brain';
+import { auth } from '../lib/firebase';
 
 interface NervousSystemResetProps {
   fingerprint: BurnoutFingerprint | null;
+  onAwardPoints?: (amount: number, reason: string) => void;
 }
 
 type Section = 'breathwork' | 'grounding';
@@ -41,7 +45,7 @@ const GROUNDING_MODES: Record<GroundingMode, { name: string; description: string
   'timer': { name: 'Calm Visual Timer', description: 'A soothing focus anchor.', instructions: ['Watch the shape expand and contract', 'Let your thoughts drift past', 'Keep your eyes on the center point', 'Allow 2 minutes to pass', 'Return to your task'], icon: Minimize2 },
 };
 
-export const NervousSystemReset = ({ fingerprint }: NervousSystemResetProps) => {
+export const NervousSystemReset = ({ fingerprint, onAwardPoints }: NervousSystemResetProps) => {
   const [activeSection, setActiveSection] = useState<Section>('breathwork');
   const [selectedNeed, setSelectedNeed] = useState<Needs>(null);
   const [activeMode, setActiveMode] = useState<BreathingMode | null>(null);
@@ -58,6 +62,35 @@ export const NervousSystemReset = ({ fingerprint }: NervousSystemResetProps) => 
   const [interactiveChimes, setInteractiveChimes] = useState<boolean>(true);
   const [isMuted, setIsMuted] = useState<boolean>(false);
   const [completedSteps, setCompletedSteps] = useState<number[]>([]);
+
+  // ============ Real Completion Tracking ============
+  // Previously this whole module had no onAwardPoints, no activity
+  // marking, and no journey logging at all - meaning finishing a real
+  // breathing or grounding session left no trace anywhere Nova (or the
+  // rest of the app) could see it happened.
+  const breathingSessionStartRef = useRef<number | null>(null);
+  const groundingCompletionFiredRef = useRef(false);
+
+  const markResetComplete = (toolName: string, durationLabel: string) => {
+    if (onAwardPoints) {
+      try {
+        onAwardPoints(15, `Completed ${toolName}`);
+      } catch (e) {
+        // Non-fatal - the session itself still counts even if the points callback fails.
+      }
+    }
+    if (auth.currentUser) {
+      secureApiFetch('/api/user/mark-activity', {
+        method: 'POST',
+        data: { activity: 'nervousSystemReset' },
+      }).catch(() => {
+        // Non-fatal - this only affects the home recommendation engine's
+        // freshness, not the session the person just completed.
+      });
+    }
+    logJourney(`Completed a nervous system reset (${toolName})`, durationLabel);
+  };
+
 
   // Persistent Web Audio Graph Reference
   const audioEngineRef = useRef<{
@@ -669,6 +702,21 @@ export const NervousSystemReset = ({ fingerprint }: NervousSystemResetProps) => 
     });
   };
 
+  // All grounding steps checked off is a genuine completion, same as a
+  // full-length breathing session above - guarded so toggling steps back
+  // and forth after finishing doesn't fire this repeatedly.
+  useEffect(() => {
+    if (!activeGrounding) {
+      groundingCompletionFiredRef.current = false;
+      return;
+    }
+    const totalSteps = GROUNDING_MODES[activeGrounding].instructions.length;
+    if (completedSteps.length >= totalSteps && totalSteps > 0 && !groundingCompletionFiredRef.current) {
+      groundingCompletionFiredRef.current = true;
+      markResetComplete(GROUNDING_MODES[activeGrounding].name, 'All grounding steps completed.');
+    }
+  }, [completedSteps, activeGrounding]);
+
   // Master Breathing loop timer triggering React states
   useEffect(() => {
     if (!isPlaying || !activeMode) return;
@@ -1047,6 +1095,20 @@ export const NervousSystemReset = ({ fingerprint }: NervousSystemResetProps) => 
               <button
                 onClick={async () => {
                   ensureAudioContext();
+                  const startingNow = !isPlaying;
+                  if (startingNow) {
+                    breathingSessionStartRef.current = Date.now();
+                  } else if (breathingSessionStartRef.current) {
+                    const elapsedSeconds = (Date.now() - breathingSessionStartRef.current) / 1000;
+                    if (elapsedSeconds >= 60) {
+                      const minutes = Math.round(elapsedSeconds / 60);
+                      markResetComplete(
+                        activeMode ? BREATHING_MODES[activeMode].name : 'Breathing Pacer',
+                        `${minutes} minute${minutes === 1 ? '' : 's'} of practice.`
+                      );
+                    }
+                    breathingSessionStartRef.current = null;
+                  }
                   setIsPlaying(!isPlaying);
                 }}
                 className="mt-8 flex items-center gap-3 px-8 py-4 bg-text-main text-bg-main rounded-full font-bold uppercase tracking-widest hover:scale-105 transition-transform"
@@ -1090,6 +1152,7 @@ export const NervousSystemReset = ({ fingerprint }: NervousSystemResetProps) => 
                 key={key}
                 onClick={() => {
                   setActiveGrounding(key as GroundingMode);
+                  setCompletedSteps([]);
                 }}
                 className={cn(
                   "w-full text-left p-4 rounded-xl border transition-all flex items-center gap-4",

@@ -2421,6 +2421,14 @@ export default function App() {
     blameStage?: string;
   }) => {
     logJourney('Daily Check-In Completed', `Energy: ${data.energy}/100, Risk: ${data.risk}, Stage: ${data.stage}. ${data.blameStage ? `Identified Issue: ${data.blameStage}` : ''}`);
+    if (auth.currentUser) {
+      secureApiFetch('/api/user/mark-activity', {
+        method: 'POST',
+        data: { activity: 'checkIn' },
+      }).catch(() => {
+        // Non-fatal - only affects the home recommendation engine's freshness.
+      });
+    }
     setEnergyLevel(data.energy);
     setBurnoutRisk(data.risk);
     if (data.stage) setShipStage(data.stage);
@@ -3095,7 +3103,7 @@ export default function App() {
                 <RuminationFurnace
                   onCleared={() => awardPoints(20, "Rumination Cleared")}
                 />
-                <NervousSystemReset fingerprint={fingerprint} />
+                <NervousSystemReset fingerprint={fingerprint} onAwardPoints={awardPoints} />
                 <SleepBuilder
                   fingerprint={fingerprint}
                   onAwardPoints={awardPoints}
