@@ -2956,8 +2956,92 @@ app.get("/api/org/:orgId/recognition", verifyAppCheck, authenticateFirebaseUser,
     }
     const snap = await db.collection("organisations").doc(orgId).collection("recognition_wall")
       .orderBy("createdAt", "desc").limit(20).get();
-    const items = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    const items = snap.docs.map(d => {
+      const data = d.data();
+      const reactedUids: string[] = data.reactedUids || [];
+      return {
+        id: d.id,
+        from: data.from,
+        message: data.message,
+        createdAt: data.createdAt,
+        reactionCount: reactedUids.length,
+        reacted: reactedUids.includes(user.uid),
+      };
+    });
     res.json({ items });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/api/org/:orgId/recognition/:recognitionId/react", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const { orgId, recognitionId } = req.params;
+    const user = requireAuth(req);
+    const db = getDb();
+    const orgDoc = await db.collection("organisations").doc(orgId).get();
+    if (!orgDoc.exists || !(orgDoc.data()?.memberUids || []).includes(user.uid)) {
+      return res.status(403).json({ error: "You're not a member of this organisation." });
+    }
+    const ref = db.collection("organisations").doc(orgId).collection("recognition_wall").doc(recognitionId);
+    const doc = await ref.get();
+    if (!doc.exists) {
+      return res.status(404).json({ error: "That post no longer exists." });
+    }
+    const reactedUids: string[] = doc.data()?.reactedUids || [];
+    const alreadyReacted = reactedUids.includes(user.uid);
+    await ref.update({
+      reactedUids: alreadyReacted ? FieldValue.arrayRemove(user.uid) : FieldValue.arrayUnion(user.uid),
+    });
+    res.json({ success: true, reacted: !alreadyReacted });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ============ Anonymous Team Voice ============
+// Genuinely, structurally anonymous - the write itself never includes the
+// submitter's uid, not even transiently, so there's nothing for an org
+// admin (or anyone with database access) to trace back. The endpoint is
+// still authenticated to confirm the submitter is a real member and to
+// apply basic rate/content limits, but that check never touches what
+// actually gets stored.
+app.post("/api/org/:orgId/suggestions", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const { orgId } = req.params;
+    const user = requireAuth(req);
+    const db = getDb();
+    const orgDoc = await db.collection("organisations").doc(orgId).get();
+    if (!orgDoc.exists || !(orgDoc.data()?.memberUids || []).includes(user.uid)) {
+      return res.status(403).json({ error: "You're not a member of this organisation." });
+    }
+    const { message } = req.body;
+    if (!message || typeof message !== 'string' || message.trim().length === 0 || message.length > 500) {
+      return res.status(400).json({ error: "Message must be 1-500 characters." });
+    }
+    await db.collection("organisations").doc(orgId).collection("anonymous_suggestions").add({
+      message: message.trim(),
+      createdAt: FieldValue.serverTimestamp(),
+    });
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get("/api/org/:orgId/suggestions", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const { orgId } = req.params;
+    const user = requireAuth(req);
+    const db = getDb();
+    const orgDoc = await db.collection("organisations").doc(orgId).get();
+    if (!orgDoc.exists || !(orgDoc.data()?.memberUids || []).includes(user.uid)) {
+      return res.status(403).json({ error: "You're not a member of this organisation." });
+    }
+    const snap = await db.collection("organisations").doc(orgId).collection("anonymous_suggestions")
+      .orderBy("createdAt", "desc").limit(30).get();
+    const suggestions = snap.docs.map(d => ({ id: d.id, message: d.data().message, createdAt: d.data().createdAt }));
+    res.json({ suggestions });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }

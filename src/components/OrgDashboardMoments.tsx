@@ -4,13 +4,15 @@ import { Sparkles, Heart, Award, Target, MessageSquare, ThumbsUp, AlertTriangle,
 import { cn } from '../lib/utils';
 import { secureApiFetch } from '../lib/secure-api';
 import { auth, db } from '../lib/firebase';
-import { collection, getDocs, query, orderBy, limit } from 'firebase/firestore';
+import { collection, getDocs, query, orderBy, limit, doc, updateDoc } from 'firebase/firestore';
 
 interface RecognitionItem {
   id: string;
   from: string;
   message: string;
   createdAt?: string;
+  reactionCount: number;
+  reacted: boolean;
 }
 
 interface WinItem {
@@ -18,6 +20,7 @@ interface WinItem {
   title: string;
   content: string;
   category: string;
+  sharedToWall?: boolean;
 }
 
 export const OrgDashboardMoments = () => {
@@ -201,6 +204,22 @@ export const OrgDashboardMoments = () => {
     setConfirmDeleteId(null);
   };
 
+  const handleReact = async (recognitionId: string) => {
+    if (!orgId) return;
+    // Optimistic - toggling a reaction should feel instant, and this is
+    // low-stakes enough that a rare rollback on failure is an acceptable
+    // trade for that responsiveness.
+    setRecognitions(prev => prev.map(item => item.id === recognitionId
+      ? { ...item, reacted: !item.reacted, reactionCount: item.reactionCount + (item.reacted ? -1 : 1) }
+      : item
+    ));
+    try {
+      await secureApiFetch(`/api/org/${orgId}/recognition/${recognitionId}/react`, { method: 'POST' });
+    } catch (e) {
+      await fetchWall(orgId);
+    }
+  };
+
   const handleToggleChallengeActive = async (challengeId: string) => {
     if (!orgId) return;
     setTogglingChallengeId(challengeId);
@@ -378,7 +397,7 @@ export const OrgDashboardMoments = () => {
                     )}
                     <div className="flex items-center gap-3 mb-4">
                       <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 bg-warning/20 text-warning">
-                        <ThumbsUp className="w-4 h-4" />
+                        <Heart className="w-4 h-4" />
                       </div>
                       <div>
                         <p className="text-xs font-bold text-text-main">{item.from}</p>
@@ -386,6 +405,16 @@ export const OrgDashboardMoments = () => {
                       </div>
                     </div>
                     <p className="text-sm font-medium text-text-main leading-relaxed italic">"{item.message}"</p>
+                    <button
+                      onClick={() => handleReact(item.id)}
+                      className={cn(
+                        "mt-4 flex items-center gap-1.5 text-xs font-bold transition-colors",
+                        item.reacted ? "text-warning" : "text-text-muted hover:text-warning"
+                      )}
+                    >
+                      <ThumbsUp className={cn("w-3.5 h-3.5", item.reacted && "fill-current")} />
+                      {item.reactionCount > 0 ? item.reactionCount : 'React'}
+                    </button>
                   </div>
                 ))}
               </div>
@@ -583,25 +612,33 @@ export const OrgDashboardMoments = () => {
                          <span className="text-sm font-medium text-text-main truncate">{win.title || win.content}</span>
                        </div>
                        <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
-                         <button
-                           onClick={async () => {
-                             if (!orgId) return;
-                             try {
-                               await secureApiFetch(`/api/org/${orgId}/recognition`, {
-                                 method: 'POST',
-                                 data: { message: win.content || win.title, isAnonymous: false },
-                               });
-                               await fetchWall(orgId);
-                               setActiveTab('wall');
-                             } catch (e) {
-                               // Non-critical - the win itself stays intact either way.
-                             }
-                           }}
-                           disabled={!orgId}
-                           className="text-xs text-warning bg-warning/10 dark:bg-warning/10 px-2 py-1 rounded border border-warning/30 dark:border-warning/20 font-bold hover:bg-warning/20 dark:hover:bg-warning/20 disabled:opacity-40"
-                         >
-                           Share to Wall
-                         </button>
+                         {win.sharedToWall ? (
+                           <span className="text-xs text-success font-bold px-2 py-1 flex items-center gap-1">
+                             <CheckCircle2 className="w-3.5 h-3.5" /> Shared
+                           </span>
+                         ) : (
+                           <button
+                             onClick={async () => {
+                               if (!orgId || !auth.currentUser) return;
+                               try {
+                                 await secureApiFetch(`/api/org/${orgId}/recognition`, {
+                                   method: 'POST',
+                                   data: { message: win.content || win.title, isAnonymous: false },
+                                 });
+                                 await updateDoc(doc(db, 'users', auth.currentUser.uid, 'wins', win.id), { sharedToWall: true });
+                                 setWins(prev => prev.map(w => w.id === win.id ? { ...w, sharedToWall: true } : w));
+                                 await fetchWall(orgId);
+                                 setActiveTab('wall');
+                               } catch (e) {
+                                 // Non-critical - the win itself stays intact either way.
+                               }
+                             }}
+                             disabled={!orgId}
+                             className="text-xs text-warning bg-warning/10 dark:bg-warning/10 px-2 py-1 rounded border border-warning/30 dark:border-warning/20 font-bold hover:bg-warning/20 dark:hover:bg-warning/20 disabled:opacity-40"
+                           >
+                             Share to Wall
+                           </button>
+                         )}
                        </div>
                      </div>
                    ))}

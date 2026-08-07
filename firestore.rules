@@ -206,11 +206,12 @@ service cloud.firestore {
         allow read: if isOwner(uid);
         allow delete: if isOwner(uid);
         allow create, update: if isOwner(uid)
-            && hasOnly(['createdAt', 'updatedAt', 'title', 'content', 'category'])
+            && hasOnly(['createdAt', 'updatedAt', 'title', 'content', 'category', 'sharedToWall'])
             && hasAll(['createdAt', 'updatedAt', 'title', 'content', 'category'])
             && isStringWithMax(request.resource.data.title, 80)
             && isStringWithMax(request.resource.data.content, 300)
             && request.resource.data.category in ['boundary', 'rest', 'clarity', 'courage', 'routine', 'connection', 'recovery_action']
+            && (!('sharedToWall' in request.resource.data) || request.resource.data.sharedToWall is bool)
             && (request.method == 'create' ? true : checkCreatedAtUnchanged());
       }
       

@@ -79,6 +79,8 @@ export const OrgDashboard = () => {
     averages?: Record<string, number>;
   } | null>(null);
 
+  const [suggestions, setSuggestions] = useState<{ id: string; message: string }[]>([]);
+
   const [members, setMembers] = useState<{ uid: string; email: string | null; displayName: string | null; isAdmin: boolean }[]>([]);
   const [membersLoading, setMembersLoading] = useState(false);
   const [membersError, setMembersError] = useState('');
@@ -135,6 +137,7 @@ export const OrgDashboard = () => {
 
           fetchMembers(me.organisationId);
           fetchInvites(me.organisationId);
+          fetchSuggestions(me.organisationId);
         }
       } catch (e) {
         setError("Could not load your organisation's dashboard.");
@@ -266,6 +269,16 @@ export const OrgDashboard = () => {
       // Non-fatal - the rest of the Team & Settings tab still works.
     }
     setInvitesLoading(false);
+  };
+
+  const fetchSuggestions = async (currentOrgId: string) => {
+    try {
+      const res = await secureApiFetch(`/api/org/${currentOrgId}/suggestions`);
+      const data = await res.json();
+      if (res.ok) setSuggestions(data.suggestions || []);
+    } catch (e) {
+      // Non-fatal - falls back to the illustrative examples shown below.
+    }
   };
 
   const handleSendInvites = async () => {
@@ -653,22 +666,40 @@ export const OrgDashboard = () => {
                 <div className="card">
                   <div className="flex items-center gap-2 mb-4">
                     <MessageSquare className="w-5 h-5 text-warning" />
-                    <h4 className="font-bold text-text-main">Example Coaching Themes</h4>
+                    <h4 className="font-bold text-text-main">{suggestions.length > 0 ? 'Anonymous Team Voice' : 'Example Coaching Themes'}</h4>
                   </div>
-                  <p className="text-xs text-text-muted mb-4">Illustrative starting points — not generated from your team's actual data, since there's no anonymous suggestion channel built yet.</p>
-                  <div className="space-y-3">
-                    {SUGGESTIONS.map((s, i) => (
-                      <div key={i} className="flex items-start gap-4 p-3 bg-surface border border-border rounded-xl">
-                        <div className="w-8 h-8 rounded-full bg-surface dark:bg-surface flex items-center justify-center shrink-0 font-bold text-xs text-text-muted">
-                          <Lightbulb className="w-4 h-4" />
-                        </div>
-                        <div>
-                          <span className="text-xs font-black uppercase tracking-widest text-primary block mb-1">{s.theme}</span>
-                          <p className="text-sm font-medium text-text-main">"{s.text}"</p>
-                        </div>
+                  {suggestions.length > 0 ? (
+                    <>
+                      <p className="text-xs text-text-muted mb-4">Submitted anonymously by your team — no name or account is ever attached to these.</p>
+                      <div className="space-y-3">
+                        {suggestions.map((s) => (
+                          <div key={s.id} className="flex items-start gap-4 p-3 bg-surface border border-border rounded-xl">
+                            <div className="w-8 h-8 rounded-full bg-surface dark:bg-surface flex items-center justify-center shrink-0 font-bold text-xs text-text-muted">
+                              <Lightbulb className="w-4 h-4" />
+                            </div>
+                            <p className="text-sm font-medium text-text-main">"{s.message}"</p>
+                          </div>
+                        ))}
                       </div>
-                    ))}
-                  </div>
+                    </>
+                  ) : (
+                    <>
+                      <p className="text-xs text-text-muted mb-4">Illustrative starting points — no anonymous suggestions submitted yet. Your team can submit one from their own Privacy Centre, and real ones will show up here instead.</p>
+                      <div className="space-y-3">
+                        {SUGGESTIONS.map((s, i) => (
+                          <div key={i} className="flex items-start gap-4 p-3 bg-surface border border-border rounded-xl">
+                            <div className="w-8 h-8 rounded-full bg-surface dark:bg-surface flex items-center justify-center shrink-0 font-bold text-xs text-text-muted">
+                              <Lightbulb className="w-4 h-4" />
+                            </div>
+                            <div>
+                              <span className="text-xs font-black uppercase tracking-widest text-primary block mb-1">{s.theme}</span>
+                              <p className="text-sm font-medium text-text-main">"{s.text}"</p>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </>
+                  )}
                 </div>
 
                 <div className="card bg-card border-border text-text-main">

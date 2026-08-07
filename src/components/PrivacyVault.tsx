@@ -32,6 +32,7 @@ import { auth, db } from '../lib/firebase';
 import { doc, setDoc } from 'firebase/firestore';
 import { secureApiFetch } from '../lib/secure-api.ts';
 import { TeamClimateSurvey } from './TeamClimateSurvey.tsx';
+import { AnonymousSuggestionBox } from './AnonymousSuggestionBox.tsx';
 
 export const PrivacyVault = ({ 
   profile, 
@@ -450,6 +451,12 @@ export const PrivacyVault = ({
                     {orgStatus.shareAnonymizedDataWithOrg && (
                       <div className="p-6 rounded-2xl bg-surface border border-border">
                         <TeamClimateSurvey organisationName={orgStatus.organisationName} />
+                      </div>
+                    )}
+
+                    {orgStatus.organisationId && (
+                      <div className="p-6 rounded-2xl bg-surface border border-border">
+                        <AnonymousSuggestionBox orgId={orgStatus.organisationId} organisationName={orgStatus.organisationName} />
                       </div>
                     )}
 
