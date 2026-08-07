@@ -2795,6 +2795,17 @@ app.post("/api/org/join", verifyAppCheck, authenticateFirebaseUser, async (req, 
       memberUids: FieldValue.arrayUnion(user.uid),
     });
 
+    // If this person was invited by email, that invite is now resolved -
+    // clean it up so the admin's pending list only shows people still
+    // waiting to join, not everyone who's ever been invited.
+    if (user.email) {
+      try {
+        await db.collection("organisations").doc(orgDoc.id).collection("pending_invites").doc(user.email.toLowerCase()).delete();
+      } catch (e) {
+        // Non-critical - joining itself already succeeded above.
+      }
+    }
+
     res.json({ success: true, organisationId: orgDoc.id, organisationName: orgDoc.data().name });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
@@ -3063,9 +3074,18 @@ app.post("/api/org/:orgId/cost-inputs", verifyAppCheck, authenticateFirebaseUser
       return res.status(400).json({ error: "All three figures must be non-negative numbers." });
     }
     const db = getDb();
+    const costInputs = { annualSicknessDays, avgDailyCostPerEmployee, headcount };
     await db.collection("organisations").doc(orgId).update({
-      costInputs: { annualSicknessDays, avgDailyCostPerEmployee, headcount },
+      costInputs,
       updatedAt: FieldValue.serverTimestamp(),
+    });
+    // Also appended to a real history log, not just overwritten - this is
+    // what makes the "track your trend over months" claim already shown in
+    // the UI an honest one rather than another insinuated-but-missing
+    // capability.
+    await db.collection("organisations").doc(orgId).collection("cost_input_history").add({
+      annualSicknessDays, avgDailyCostPerEmployee, headcount,
+      enteredAt: new Date().toISOString(),
     });
     res.json({ success: true });
   } catch (err: any) {
@@ -3082,7 +3102,10 @@ app.get("/api/org/:orgId/cost-inputs", verifyAppCheck, authenticateFirebaseUser,
     if (!orgDoc.exists || !(orgDoc.data()?.memberUids || []).includes(user.uid)) {
       return res.status(403).json({ error: "You're not a member of this organisation." });
     }
-    res.json({ costInputs: orgDoc.data()?.costInputs || null });
+    const historySnap = await db.collection("organisations").doc(orgId).collection("cost_input_history")
+      .orderBy("enteredAt", "asc").limit(24).get();
+    const history = historySnap.docs.map(d => d.data());
+    res.json({ costInputs: orgDoc.data()?.costInputs || null, history });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
@@ -3417,9 +3440,11 @@ app.post("/api/org/:orgId/invite", verifyAppCheck, authenticateFirebaseUser, asy
     const { org } = await requireOrgAdmin(req, orgId);
     const { emails } = req.body;
     const emailList: string[] = Array.isArray(emails) ? emails : (typeof emails === 'string' ? [emails] : []);
-    const cleaned = emailList
-      .map(e => (typeof e === 'string' ? e.trim().toLowerCase() : ''))
-      .filter(e => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e));
+    const cleaned = Array.from(new Set(
+      emailList
+        .map(e => (typeof e === 'string' ? e.trim().toLowerCase() : ''))
+        .filter(e => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e))
+    ));
 
     if (cleaned.length === 0) {
       return res.status(400).json({ error: "Provide at least one valid email address." });

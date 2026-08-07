@@ -260,7 +260,7 @@ export const EnergyBudgetTool = ({
       )}
       <div className="max-w-4xl">
         <div className="flex items-center gap-4 mb-4">
-           <div className="tag">Nervous System Controller v2.1</div>
+           <div className="tag">Energy & Capacity</div>
            <div className="h-px flex-1 bg-border/40" />
         </div>
         <div className="group/tooltip relative inline-flex items-center mb-4">
@@ -728,7 +728,7 @@ export const EnergyBudgetTool = ({
                   </button>
                   <button
                     onClick={confirmDeleteTask}
-                    className="flex-1 px-4 py-3 bg-destructive text-destructive-foreground rounded-xl font-bold hover:bg-rose-700 transition"
+                    className="flex-1 px-4 py-3 bg-destructive text-destructive-foreground rounded-xl font-bold hover:opacity-90 transition"
                   >
                     Delete Task
                   </button>

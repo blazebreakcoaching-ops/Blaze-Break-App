@@ -3,6 +3,7 @@ import { motion } from 'motion/react';
 import { Building, AlertTriangle, ArrowRight, Target, Brain, CheckCircle2, Loader2, Lock, Save } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { secureApiFetch } from '../lib/secure-api';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
 interface CostInputs {
   annualSicknessDays: number;
@@ -16,6 +17,7 @@ export const OrgDashboardValue = () => {
   const [orgId, setOrgId] = useState<string | null>(null);
   const [isOrgAdmin, setIsOrgAdmin] = useState(false);
   const [costInputs, setCostInputs] = useState<CostInputs | null>(null);
+  const [costHistory, setCostHistory] = useState<(CostInputs & { enteredAt: string })[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
@@ -41,6 +43,7 @@ export const OrgDashboardValue = () => {
 
         const inputsRes = await secureApiFetch(`/api/org/${me.organisationId}/cost-inputs`);
         const inputsData = await inputsRes.json();
+        if (inputsRes.ok) setCostHistory(inputsData.history || []);
         if (inputsRes.ok && inputsData.costInputs) {
           setCostInputs(inputsData.costInputs);
           setFormSicknessDays(String(inputsData.costInputs.annualSicknessDays));
@@ -247,6 +250,36 @@ export const OrgDashboardValue = () => {
                     </button>
                   )}
 
+                  {costHistory.length >= 2 && (
+                    <div className="card space-y-4 max-w-2xl">
+                      <div>
+                        <h4 className="font-bold text-text-main">Cost Per Employee Over Time</h4>
+                        <p className="text-xs text-text-muted">Every time these figures are updated, it's logged here — a real trend from your own entries, not a projection.</p>
+                      </div>
+                      <div className="h-52">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <LineChart
+                            data={costHistory.map(h => ({
+                              date: new Date(h.enteredAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+                              perEmployee: h.headcount > 0 ? Math.round((h.annualSicknessDays * h.avgDailyCostPerEmployee) / h.headcount) : 0,
+                            }))}
+                            margin={{ top: 10, right: 10, left: -10, bottom: 0 }}
+                          >
+                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#78716c" strokeOpacity={0.2} />
+                            <XAxis dataKey="date" tick={{ fill: '#78716c', fontSize: 10 }} axisLine={false} tickLine={false} />
+                            <YAxis tick={{ fill: '#78716c', fontSize: 10 }} axisLine={false} tickLine={false} />
+                            <Tooltip
+                              contentStyle={{ backgroundColor: '#1c1917', border: '1px solid #3a3532', borderRadius: '8px' }}
+                              itemStyle={{ color: '#fff', fontSize: '12px' }}
+                              formatter={(value: any) => [`£${value}`, 'Per Employee']}
+                            />
+                            <Line type="monotone" dataKey="perEmployee" stroke="#ea580c" strokeWidth={2} dot={{ r: 3, fill: '#ea580c' }} />
+                          </LineChart>
+                        </ResponsiveContainer>
+                      </div>
+                    </div>
+                  )}
+
                   <div className="card space-y-6 border-border dark:border-border max-w-2xl">
                     <h4 className="font-bold text-text-main flex items-center gap-2"><Brain className="w-5 h-5 text-primary" /> General Strategy</h4>
                     <p className="text-sm text-text-muted leading-relaxed">
@@ -254,7 +287,7 @@ export const OrgDashboardValue = () => {
                     </p>
                     <div className="bg-primary/5 border border-primary/20 p-4 rounded-xl">
                       <p className="text-xs text-primary font-medium leading-relaxed">
-                        Reduce unnecessary meeting load, introduce weekly appreciation rituals, and protect uninterrupted recovery breaks. Track your own sickness-absence trend over the following months to see whether it actually moves for your team.
+                        Reduce unnecessary meeting load, introduce weekly appreciation rituals, and protect uninterrupted recovery breaks. Update your figures above periodically — the chart tracks whether the cost per employee actually moves for your team.
                       </p>
                     </div>
                   </div>

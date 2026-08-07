@@ -69,7 +69,25 @@ service cloud.firestore {
               'allowRecoveryActionNudges', 'privacyMode', 'updatedAt'
             ]);
       }
-      
+
+      // C2. users/{uid}/preferences/fuel_reminders - Recovery Fuel Engine's
+      // own hydration/meeting/emotional reminder setup, distinct from the
+      // general nudge system above since these are genuinely scheduled
+      // (interval timers, real calendar checks) rather than randomly picked.
+      match /preferences/fuel_reminders {
+        allow read: if isOwner(uid);
+        allow write: if isOwner(uid) &&
+            request.resource.data.keys().hasOnly([
+              'hydrationEnabled', 'hydrationIntervalMinutes',
+              'meetingEnabled', 'meetingLeadMinutes',
+              'emotionalEnabled', 'emotionalIntervalMinutes',
+              'updatedAt'
+            ]) &&
+            (!('hydrationIntervalMinutes' in request.resource.data) || (request.resource.data.hydrationIntervalMinutes is number && request.resource.data.hydrationIntervalMinutes >= 30 && request.resource.data.hydrationIntervalMinutes <= 240)) &&
+            (!('emotionalIntervalMinutes' in request.resource.data) || (request.resource.data.emotionalIntervalMinutes is number && request.resource.data.emotionalIntervalMinutes >= 30 && request.resource.data.emotionalIntervalMinutes <= 240)) &&
+            (!('meetingLeadMinutes' in request.resource.data) || (request.resource.data.meetingLeadMinutes is number && request.resource.data.meetingLeadMinutes >= 5 && request.resource.data.meetingLeadMinutes <= 60));
+      }
+
       // D. users/{uid}/consents/current
       match /consents/current {
         allow read: if isOwner(uid);
@@ -300,7 +318,7 @@ service cloud.firestore {
         allow read: if isOwner(uid);
         allow create, update: if isOwner(uid) &&
             hasOnly(['category', 'message', 'createdAt', 'shownAt', 'dismissedAt', 'actionTakenAt', 'status', 'reasonCategory', 'source', 'expiresAt', 'updatedAt']) &&
-            request.resource.data.category in ['check_in_reminder', 'recovery_action_reminder', 'energy_budget_reflection', 'boundary_practice_reminder', 'weekly_review_reminder', 'memory_review_reminder', 'goal_follow_up'] &&
+            request.resource.data.category in ['check_in_reminder', 'recovery_action_reminder', 'energy_budget_reflection', 'boundary_practice_reminder', 'weekly_review_reminder', 'memory_review_reminder', 'goal_follow_up', 'climate_survey_reminder'] &&
             request.resource.data.source == 'in_app_nova' &&
             request.resource.data.status in ['shown', 'dismissed', 'acted_on'];
       }

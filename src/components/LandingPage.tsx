@@ -90,7 +90,7 @@ export const LandingPage = ({ onStart, onOpenTrustCentre }: LandingPageProps) =>
           <div className="pt-8 flex flex-col sm:flex-row items-center justify-center gap-4">
             <button 
               onClick={handleStartRequest}
-              className="px-10 py-5 bg-white text-text-main hover:bg-surface dark:bg-card rounded-xl font-bold uppercase tracking-[0.2em] text-xs transition-all shadow-2xl flex items-center gap-4 group"
+              className="px-10 py-5 bg-white text-text-main hover:bg-surface dark:bg-card rounded-xl font-bold uppercase tracking-[0.2em] text-xs transition-all shadow-lg flex items-center gap-4 group"
             >
               Get Burnout Fingerprint 
               <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
@@ -162,7 +162,7 @@ export const LandingPage = ({ onStart, onOpenTrustCentre }: LandingPageProps) =>
               animate={{ scale: 1, y: 0, opacity: 1 }}
               exit={{ scale: 0.95, y: 15, opacity: 0 }}
               transition={{ type: 'spring', damping: 25, stiffness: 350 }}
-              className="bg-surface border border-border rounded-3xl p-8 max-w-md w-full shadow-2xl relative z-10 flex flex-col space-y-6"
+              className="bg-surface border border-border rounded-xl p-8 max-w-md w-full shadow-lg relative z-10 flex flex-col space-y-6"
             >
               <button 
                 onClick={() => setShowAuthModal(false)}
