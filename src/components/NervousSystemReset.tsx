@@ -55,7 +55,7 @@ export const NervousSystemReset = ({ fingerprint, onAwardPoints }: NervousSystem
   const [showResetConfirm, setShowResetConfirm] = useState(false);
 
   // Audio Console States
-  const [soundscape, setSoundscape] = useState<'none' | 'solfeggio' | 'waves' | 'cosmic'>('none');
+  const [soundscape, setSoundscape] = useState<'none' | 'solfeggio' | 'wind' | 'waves' | 'cosmic'>('none');
   const [ambientVol, setAmbientVol] = useState<number>(0.3);
   const [pacerSoundEnabled, setPacerSoundEnabled] = useState<boolean>(true);
   const [pacerVol, setPacerVol] = useState<number>(0.4);
@@ -124,6 +124,13 @@ export const NervousSystemReset = ({ fingerprint, onAwardPoints }: NervousSystem
   } | null>(null);
 
   const visualizerCanvasRef = useRef<HTMLCanvasElement>(null);
+
+  // The active ambient soundscape's own filter/gain, exposed here so
+  // applyPhaseAudio can genuinely swell and recede the sound itself with
+  // each breath - not just the separate pacer tone layered on top of it.
+  // Only populated for soundscapes that are meant to breathe (wind, waves);
+  // solfeggio and cosmic stay as steady atmospheric beds by design.
+  const ambientBreathNodesRef = useRef<{ filter: BiquadFilterNode; gain: GainNode; baseFreq: number; peakFreq: number; baseGain: number; peakGain: number } | null>(null);
 
   // Visualizer drawing loop
   useEffect(() => {
@@ -243,6 +250,7 @@ export const NervousSystemReset = ({ fingerprint, onAwardPoints }: NervousSystem
     });
     audioEngineRef.current.oscillators = [];
     audioEngineRef.current.noiseSources = [];
+    ambientBreathNodesRef.current = null;
   };
 
   // Play beautiful high-fidelity Zen chimes
@@ -360,8 +368,44 @@ export const NervousSystemReset = ({ fingerprint, onAwardPoints }: NervousSystem
 
         audioEngineRef.current.oscillators.push(osc1, osc2, osc3, lfo);
 
+      } else if (soundscape === 'wind') {
+        // Filtered noise with a bandpass sweep - a whoosh character distinct
+        // from the lower, rumbling waves below. Starts at its "exhale" resting
+        // point; applyPhaseAudio takes over the actual swell/recede once
+        // breathing starts.
+        const bufferSize = ctx.sampleRate * 4;
+        const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+        const data = buffer.getChannelData(0);
+        for (let i = 0; i < bufferSize; i++) {
+          data[i] = Math.random() * 2 - 1;
+        }
+
+        const source = ctx.createBufferSource();
+        source.buffer = buffer;
+        source.loop = true;
+
+        const filter = ctx.createBiquadFilter();
+        filter.type = 'bandpass';
+        filter.Q.setValueAtTime(0.8, now);
+        filter.frequency.setValueAtTime(500, now);
+
+        const gain = ctx.createGain();
+        gain.gain.setValueAtTime(0.12, now);
+
+        source.connect(filter);
+        filter.connect(gain);
+        gain.connect(ambientGain);
+
+        source.start(now);
+        audioEngineRef.current.noiseSources.push(source);
+
+        ambientBreathNodesRef.current = { filter, gain, baseFreq: 500, peakFreq: 1400, baseGain: 0.1, peakGain: 0.32 };
+
       } else if (soundscape === 'waves') {
-        // Programmatic ocean tide synthesis (Pink-filtered surf noise)
+        // Programmatic ocean tide synthesis (Pink-filtered surf noise).
+        // Genuinely breath-synced now - applyPhaseAudio drives the actual
+        // swell on inhale and recede on exhale via ambientBreathNodesRef,
+        // rather than this running on its own disconnected timer.
         const bufferSize = ctx.sampleRate * 4;
         const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
         const data = buffer.getChannelData(0);
@@ -378,26 +422,18 @@ export const NervousSystemReset = ({ fingerprint, onAwardPoints }: NervousSystem
         filter.Q.setValueAtTime(2.0, now);
         filter.frequency.setValueAtTime(220, now);
 
-        const lfo = ctx.createOscillator();
-        lfo.frequency.setValueAtTime(0.12, now); // Ocean tide swells takes 8.3s
-        const lfoGain = ctx.createGain();
-        lfoGain.gain.setValueAtTime(120, now);
-
-        lfo.connect(lfoGain);
-        lfoGain.connect(filter.frequency);
-
         const gain = ctx.createGain();
-        gain.gain.setValueAtTime(0.35, now);
+        gain.gain.setValueAtTime(0.22, now);
 
         source.connect(filter);
         filter.connect(gain);
         gain.connect(ambientGain);
 
         source.start(now);
-        lfo.start(now);
 
         audioEngineRef.current.noiseSources.push(source);
-        audioEngineRef.current.oscillators.push(lfo);
+
+        ambientBreathNodesRef.current = { filter, gain, baseFreq: 160, peakFreq: 520, baseGain: 0.16, peakGain: 0.4 };
 
       } else if (soundscape === 'cosmic') {
         const bufferSize = ctx.sampleRate * 4;
@@ -611,6 +647,17 @@ export const NervousSystemReset = ({ fingerprint, onAwardPoints }: NervousSystem
       nodes.windFilter.frequency.setValueAtTime(nodes.windFilter.frequency.value, now);
       nodes.windFilter.frequency.exponentialRampToValueAtTime(600, now + dur);
 
+      const ambient = ambientBreathNodesRef.current;
+      if (ambient) {
+        ambient.gain.gain.cancelScheduledValues(now);
+        ambient.gain.gain.setValueAtTime(ambient.gain.gain.value, now);
+        ambient.gain.gain.linearRampToValueAtTime(ambient.peakGain, now + dur);
+
+        ambient.filter.frequency.cancelScheduledValues(now);
+        ambient.filter.frequency.setValueAtTime(ambient.filter.frequency.value, now);
+        ambient.filter.frequency.exponentialRampToValueAtTime(ambient.peakFreq, now + dur);
+      }
+
       if (interactiveChimes) {
         nodes.chimeGain.gain.cancelScheduledValues(now);
         nodes.chimeGain.gain.setValueAtTime(0, now);
@@ -626,6 +673,16 @@ export const NervousSystemReset = ({ fingerprint, onAwardPoints }: NervousSystem
       nodes.windGain.gain.cancelScheduledValues(now);
       nodes.windGain.gain.setValueAtTime(nodes.windGain.gain.value, now);
       nodes.windGain.gain.linearRampToValueAtTime(0.01, now + dur);
+
+      const ambient = ambientBreathNodesRef.current;
+      if (ambient) {
+        // Held at the top of the breath - ease slightly off the peak rather
+        // than snapping, so a long hold doesn't sit at full intensity.
+        const settled = ambient.baseGain + (ambient.peakGain - ambient.baseGain) * 0.6;
+        ambient.gain.gain.cancelScheduledValues(now);
+        ambient.gain.gain.setValueAtTime(ambient.gain.gain.value, now);
+        ambient.gain.gain.linearRampToValueAtTime(settled, now + dur);
+      }
 
     } else if (currentPhase === 'exhale') {
       // Relaxing and descending sweeps
@@ -649,6 +706,17 @@ export const NervousSystemReset = ({ fingerprint, onAwardPoints }: NervousSystem
       nodes.windFilter.frequency.setValueAtTime(nodes.windFilter.frequency.value, now);
       nodes.windFilter.frequency.exponentialRampToValueAtTime(180, now + dur);
 
+      const ambient = ambientBreathNodesRef.current;
+      if (ambient) {
+        ambient.gain.gain.cancelScheduledValues(now);
+        ambient.gain.gain.setValueAtTime(ambient.gain.gain.value, now);
+        ambient.gain.gain.linearRampToValueAtTime(ambient.baseGain, now + dur);
+
+        ambient.filter.frequency.cancelScheduledValues(now);
+        ambient.filter.frequency.setValueAtTime(ambient.filter.frequency.value, now);
+        ambient.filter.frequency.exponentialRampToValueAtTime(ambient.baseFreq, now + dur);
+      }
+
       if (interactiveChimes) {
         nodes.chimeGain.gain.cancelScheduledValues(now);
         nodes.chimeGain.gain.setValueAtTime(0, now);
@@ -664,6 +732,16 @@ export const NervousSystemReset = ({ fingerprint, onAwardPoints }: NervousSystem
       nodes.windGain.gain.cancelScheduledValues(now);
       nodes.windGain.gain.setValueAtTime(nodes.windGain.gain.value, now);
       nodes.windGain.gain.linearRampToValueAtTime(0.0, now + dur);
+
+      const ambient = ambientBreathNodesRef.current;
+      if (ambient) {
+        // Bottom of the breath, held empty - ease toward (not all the way
+        // to) the resting floor, matching the pacer tone's own restraint here.
+        const settled = ambient.baseGain * 0.7;
+        ambient.gain.gain.cancelScheduledValues(now);
+        ambient.gain.gain.setValueAtTime(ambient.gain.gain.value, now);
+        ambient.gain.gain.linearRampToValueAtTime(settled, now + dur);
+      }
     }
   };
 
@@ -884,7 +962,7 @@ export const NervousSystemReset = ({ fingerprint, onAwardPoints }: NervousSystem
             <div className="flex flex-col gap-1.5">
               <span className="text-xs uppercase tracking-wider font-medium text-text-muted">Choose a Sound</span>
               <div className="flex bg-surface dark:bg-surface rounded-xl p-1 border border-border/50">
-                {(['none', 'solfeggio', 'waves', 'cosmic'] as const).map((sc) => (
+                {(['none', 'solfeggio', 'wind', 'waves', 'cosmic'] as const).map((sc) => (
                   <button
                     key={sc}
                     onClick={() => {
@@ -907,6 +985,9 @@ export const NervousSystemReset = ({ fingerprint, onAwardPoints }: NervousSystem
                   </button>
                 ))}
               </div>
+              {(soundscape === 'wind' || soundscape === 'waves') && (
+                <span className="text-[10px] text-text-muted">Breathes with you — swells on inhale, settles on exhale.</span>
+              )}
             </div>
 
             <div className="flex flex-col gap-1.5 w-32">

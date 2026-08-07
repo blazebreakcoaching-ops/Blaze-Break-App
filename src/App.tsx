@@ -1010,6 +1010,32 @@ const HomeSection = ({
   const DEFAULT_HIDDEN = ['stats', 'streakCalendar', 'anxietyResetCard', 'somaticAccelerator', 'velocity', 'gamification', 'daily', 'micro', 'activity', 'quests', 'network', 'radar', 'archetypeBlend'];
   const LAYOUT_STORAGE_KEY = 'blaze_home_dashboard_layout_v2';
 
+  // Real recommendation, computed server-side from actual cross-module
+  // signals (recent stress triggers, active energy load, time since last
+  // reset/rehearsal/check-in) - replaces what used to be static copy shown
+  // identically to everyone regardless of what they'd actually done.
+  const [recommendation, setRecommendation] = useState<{
+    tool: string; tab: string; title: string; message: string; points: number;
+  } | null>(null);
+  const [recommendationLoading, setRecommendationLoading] = useState(true);
+
+  useEffect(() => {
+    const loadRecommendation = async () => {
+      if (!auth.currentUser) { setRecommendationLoading(false); return; }
+      try {
+        const res = await secureApiFetch('/api/user/recommendation');
+        if (res.ok) {
+          setRecommendation(await res.json());
+        }
+      } catch (e) {
+        // Leaves recommendation null - the card below shows a graceful
+        // fallback rather than a broken or fake state.
+      }
+      setRecommendationLoading(false);
+    };
+    loadRecommendation();
+  }, []);
+
   const loadLayout = (): { left: string[]; right: string[]; hidden: string[] } => {
     try {
       const stored = localStorage.getItem(LAYOUT_STORAGE_KEY);
@@ -1567,20 +1593,44 @@ const HomeSection = ({
               <div className="w-2 h-2 rounded-full bg-primary"></div>
               <h3 className="text-[11px] font-medium uppercase tracking-widest text-text-main">Today's focus</h3>
             </div>
-            <span className="text-[11px] font-mono text-text-muted">+50</span>
+            {recommendation && <span className="text-[11px] font-mono text-text-muted">+{recommendation.points}</span>}
           </div>
-          <div>
-            <p className="text-lg font-serif italic text-text-main leading-snug">
-              "Your single biggest energy leak is unstructured ad-hoc meetings. They account for nearly 45% of your total load this cycle."
-            </p>
-            <div className="mt-6 p-5 bg-surface rounded-lg border border-border">
-              <span className="text-[11px] font-medium text-text-muted uppercase tracking-widest block mb-2">Today's focus</span>
-              <p className="text-sm font-medium text-text-main">Rehearse the "I need to push this" script before the 4 PM sync to start patching this energy leak.</p>
+          {recommendationLoading ? (
+            <div className="flex items-center justify-center py-8">
+              <RefreshCw className="w-5 h-5 animate-spin text-text-muted" />
             </div>
-          </div>
-          <button onClick={onChatRequest} className="w-full btn-primary py-3.5 flex items-center justify-center gap-2 group transition-all">
+          ) : recommendation ? (
+            <div>
+              <p className="text-lg font-serif italic text-text-main leading-snug">
+                "{recommendation.title}"
+              </p>
+              <div className="mt-6 p-5 bg-surface rounded-lg border border-border">
+                <span className="text-[11px] font-medium text-text-muted uppercase tracking-widest block mb-2">{recommendation.tool}</span>
+                <p className="text-sm font-medium text-text-main">{recommendation.message}</p>
+              </div>
+            </div>
+          ) : (
+            <div>
+              <p className="text-lg font-serif italic text-text-main leading-snug">
+                "Nothing specific flagged right now — that's a good sign."
+              </p>
+              <div className="mt-6 p-5 bg-surface rounded-lg border border-border">
+                <p className="text-sm font-medium text-text-main">Complete a check-in or use any recovery tool, and Nova will start noticing patterns to point you toward.</p>
+              </div>
+            </div>
+          )}
+          <button
+            onClick={() => {
+              if (recommendation && recommendation.tab !== 'home') {
+                window.dispatchEvent(new CustomEvent('navigate_tab', { detail: recommendation.tab }));
+              } else {
+                onChatRequest();
+              }
+            }}
+            className="w-full btn-primary py-3.5 flex items-center justify-center gap-2 group transition-all"
+          >
             <MessageSquare className="w-4 h-4" />
-            <span>Connect with Nova</span>
+            <span>{recommendation && recommendation.tab !== 'home' ? `Open ${recommendation.tool}` : 'Connect with Nova'}</span>
             <ArrowRight className="w-4 h-4 opacity-70 group-hover:translate-x-1 transition-transform" />
           </button>
         </div>
