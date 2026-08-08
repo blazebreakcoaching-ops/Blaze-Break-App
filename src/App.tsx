@@ -55,7 +55,7 @@ import {
 } from "./types.ts";
 import { cn } from "./lib/utils.ts";
 import { auth, db } from "./lib/firebase.ts";
-import { doc, setDoc } from "firebase/firestore";
+import { doc, setDoc, onSnapshot } from "firebase/firestore";
 const DiagnoseView = lazy(() => import("./components/DiagnoseSection.tsx").then(m => ({ default: m.DiagnoseView })));
 const ResultView = lazy(() => import("./components/DiagnoseSection.tsx").then(m => ({ default: m.ResultView })));
 const EnergyBudgetTool = lazy(() => import("./components/EnergyBudget.tsx").then(m => ({ default: m.EnergyBudgetTool })));
@@ -451,26 +451,22 @@ const Sidebar = ({
   }, []);
 
   useEffect(() => {
-    const updateTasksCount = () => {
-      try {
-        const stored = localStorage.getItem("blaze_workload_tasks");
-        if (stored) {
-          const tasks = JSON.parse(stored);
-          const pending = tasks.filter((t: any) => !t.completed).length;
+    if (!auth.currentUser) return;
+    const unsubscribe = onSnapshot(
+      doc(db, "users", auth.currentUser.uid, "workload_reality_check", "state"),
+      (snap) => {
+        if (snap.exists()) {
+          const data = snap.data();
+          const tasksList = Array.isArray(data.tasks) ? data.tasks : [];
+          const pending = tasksList.filter((t: any) => !t.completed).length;
           setPendingTasksCount(pending);
         }
-      } catch (e) {
-        console.error(e);
+      },
+      (err) => {
+        console.error(err);
       }
-    };
-
-    updateTasksCount();
-    window.addEventListener("storage", updateTasksCount);
-    window.addEventListener("workload_tasks_changed", updateTasksCount);
-    return () => {
-      window.removeEventListener("storage", updateTasksCount);
-      window.removeEventListener("workload_tasks_changed", updateTasksCount);
-    };
+    );
+    return () => unsubscribe();
   }, []);
 
   const tabs = ALL_TABS.filter((t) => {

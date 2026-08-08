@@ -88,6 +88,19 @@ service cloud.firestore {
             (!('meetingLeadMinutes' in request.resource.data) || (request.resource.data.meetingLeadMinutes is number && request.resource.data.meetingLeadMinutes >= 5 && request.resource.data.meetingLeadMinutes <= 60));
       }
 
+      // C3. users/{uid}/preferences/recovery_intelligence - current-state
+      // values for the Recovery Intelligence Layer's interactive widgets
+      // (social battery, body symptoms, focus shield, return-to-work phase).
+      match /preferences/recovery_intelligence {
+        allow read: if isOwner(uid);
+        allow write: if isOwner(uid) &&
+            request.resource.data.keys().hasOnly(['bodySymptoms', 'socialBattery', 'isFocusShieldActive', 'rtwPhase', 'meetingLimit', 'updatedAt']) &&
+            (!('bodySymptoms' in request.resource.data) || (request.resource.data.bodySymptoms is list && request.resource.data.bodySymptoms.size() <= 20)) &&
+            (!('socialBattery' in request.resource.data) || (request.resource.data.socialBattery is number && request.resource.data.socialBattery >= 0 && request.resource.data.socialBattery <= 100)) &&
+            (!('rtwPhase' in request.resource.data) || (request.resource.data.rtwPhase is number && request.resource.data.rtwPhase >= 1 && request.resource.data.rtwPhase <= 10)) &&
+            (!('meetingLimit' in request.resource.data) || (request.resource.data.meetingLimit is number && request.resource.data.meetingLimit >= 0 && request.resource.data.meetingLimit <= 50));
+      }
+
       // D. users/{uid}/consents/current
       match /consents/current {
         allow read: if isOwner(uid);
@@ -457,6 +470,67 @@ service cloud.firestore {
             && isStringWithMax(request.resource.data.advice, 500)
             && isStringWithMax(request.resource.data.emotionalTone, 100);
         allow update: if false;
+      }
+
+      // V. diagnosis_progress - completed recovery actions, committed
+      // boundary scripts, and written reflections, keyed per burnout
+      // profile since retaking with a different profile gets its own
+      // tracked progress.
+      match /diagnosis_progress/{profileId} {
+        allow read, delete: if isOwner(uid);
+        allow create, update: if isOwner(uid)
+            && hasOnly(['completedActions', 'committedBoundaries', 'reflections', 'awardedReflections', 'updatedAt'])
+            && (!('completedActions' in request.resource.data) || request.resource.data.completedActions is list)
+            && (!('committedBoundaries' in request.resource.data) || request.resource.data.committedBoundaries is list)
+            && (!('awardedReflections' in request.resource.data) || request.resource.data.awardedReflections is list)
+            && (!('reflections' in request.resource.data) || request.resource.data.reflections is map);
+      }
+
+      // W. recovery_plan_progress/state
+      match /recovery_plan_progress/state {
+        allow read, delete: if isOwner(uid);
+        allow create, update: if isOwner(uid)
+            && hasOnly(['completedIds', 'submittedJournals', 'nickname', 'leaderboardOptIn', 'updatedAt'])
+            && (!('completedIds' in request.resource.data) || request.resource.data.completedIds is list)
+            && (!('submittedJournals' in request.resource.data) || (request.resource.data.submittedJournals is list && request.resource.data.submittedJournals.size() <= 100))
+            && (!('nickname' in request.resource.data) || isStringWithMax(request.resource.data.nickname, 40))
+            && (!('leaderboardOptIn' in request.resource.data) || request.resource.data.leaderboardOptIn is bool);
+      }
+
+      // X. workload_reality_check/state
+      match /workload_reality_check/state {
+        allow read, delete: if isOwner(uid);
+        allow create, update: if isOwner(uid)
+            && hasOnly(['answers', 'completed', 'tasks', 'updatedAt'])
+            && (!('answers' in request.resource.data) || request.resource.data.answers is map)
+            && (!('completed' in request.resource.data) || request.resource.data.completed is bool)
+            && (!('tasks' in request.resource.data) || (request.resource.data.tasks is list && request.resource.data.tasks.size() <= 100));
+      }
+
+      // Y. focus_sessions
+      match /focus_sessions/{sessionId} {
+        allow read, delete: if isOwner(uid);
+        allow create, update: if isOwner(uid)
+            && hasOnly(['createdAt', 'updatedAt', 'durationMinutes', 'completed', 'stage'])
+            && hasAll(['createdAt', 'updatedAt', 'durationMinutes', 'completed'])
+            && request.resource.data.durationMinutes is number
+            && request.resource.data.completed is bool
+            && (request.method == 'create' ? true : checkCreatedAtUnchanged());
+      }
+
+      // Z. support_circle - Guardian contacts. A real, dedicated collection
+      // rather than living only in local component state, since this is
+      // safety-relevant data.
+      match /support_circle/{contactId} {
+        allow read, delete: if isOwner(uid);
+        allow create, update: if isOwner(uid)
+            && hasOnly(['createdAt', 'updatedAt', 'name', 'role', 'isGuardian', 'contactMethod', 'relation', 'notificationPreference', 'autoAlertEnabled'])
+            && hasAll(['createdAt', 'updatedAt', 'name', 'role', 'isGuardian', 'contactMethod'])
+            && isStringWithMax(request.resource.data.name, 100)
+            && isStringWithMax(request.resource.data.contactMethod, 100)
+            && request.resource.data.role in ['primary_guardian', 'backup_guardian', 'coach', 'peer']
+            && request.resource.data.isGuardian is bool
+            && (request.method == 'create' ? true : checkCreatedAtUnchanged());
       }
 
     }

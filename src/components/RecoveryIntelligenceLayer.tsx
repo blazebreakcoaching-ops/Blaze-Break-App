@@ -3,7 +3,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useAuth } from '../lib/auth';
 import { db } from '../lib/firebase';
-import { doc, getDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc, addDoc, collection, getDocs, query, orderBy, limit } from 'firebase/firestore';
 import {
   Activity, 
   Zap, 
@@ -58,10 +58,7 @@ export const RecoveryIntelligenceLayer = ({ onAwardPoints, fingerprint }: Recove
   const [moodLogs, setMoodLogs] = useState<MoodPulseData[]>([]);
   const [triggers, setTriggers] = useState<TriggerData[]>([]);
   const [socialBattery, setSocialBattery] = useState<number>(70);
-  const [wins, setWins] = useState<WinLogData[]>(() => [
-    { id: '1', timestamp: new Date(Date.now() - 86400000).toISOString(), category: 'boundary', description: 'Politely declined a non-urgent Sunday slack thread request.' },
-    { id: '2', timestamp: new Date(Date.now() - 172800000).toISOString(), category: 'rest', description: 'Used the Reset Studio shallow breathing pacer for 5 minutes during a packed sprint.' }
-  ]);
+  const [wins, setWins] = useState<WinLogData[]>([]);
   const [bodySymptoms, setBodySymptoms] = useState<string[]>([]);
   const [weeklyReview, setWeeklyReview] = useState<any>(null);
   const [rtwPhase, setRtwPhase] = useState<number>(1);
@@ -99,18 +96,76 @@ export const RecoveryIntelligenceLayer = ({ onAwardPoints, fingerprint }: Recove
   const { user } = useAuth();
   const initLoaded = useRef(false);
 
-  useEffect(() => {
-    if (!user) return;
-    // Phase 1C: Sensitive recovery data syncing is entirely disabled in Secure Account Test Mode.
-    // We do not load data from Firestore here.
-    initLoaded.current = true;
-  }, [user]);
+  // Derives a positive/negative category from the mood word using the same
+  // heuristic already used elsewhere in this file for scoring, so a word
+  // logged here reads the same way whether it's being scored locally or
+  // aggregated later from emotional_patterns.
+  const derivedMoodCategory = (word: string): 'positive' | 'negative' => {
+    const positiveWords = ['good', 'great', 'rested', 'aligned', 'steady', 'calm', 'vibrant', 'stable'];
+    return positiveWords.some(w => word.toLowerCase().includes(w)) ? 'positive' : 'negative';
+  };
 
   useEffect(() => {
+    if (!user) return;
+    const loadAll = async () => {
+      try {
+        const [moodSnap, triggerSnap, winsSnap, prefsSnap] = await Promise.all([
+          getDocs(query(collection(db, 'users', user.uid, 'emotional_patterns'), orderBy('createdAt', 'desc'), limit(30))),
+          getDocs(query(collection(db, 'users', user.uid, 'stress_triggers'), orderBy('createdAt', 'desc'), limit(30))),
+          getDocs(query(collection(db, 'users', user.uid, 'wins'), orderBy('createdAt', 'desc'), limit(30))),
+          getDoc(doc(db, 'users', user.uid, 'preferences', 'recovery_intelligence')),
+        ]);
+
+        setMoodLogs(moodSnap.docs.map(d => {
+          const data = d.data();
+          return { timestamp: data.createdAt, emoji: data.category === 'positive' ? '😊' : '😔', color: data.category === 'positive' ? 'bg-success' : 'bg-warning', word: data.word };
+        }));
+
+        setTriggers(triggerSnap.docs.map(d => {
+          const data = d.data();
+          const severityLabel: 'low' | 'medium' | 'high' = data.severity <= 4 ? 'low' : data.severity <= 7 ? 'medium' : 'high';
+          return { id: d.id, timestamp: data.createdAt, source: 'general', notes: data.text, severity: severityLabel };
+        }));
+
+        setWins(winsSnap.docs.map(d => {
+          const data = d.data();
+          return { id: d.id, timestamp: data.createdAt, category: data.category, description: data.content || data.title };
+        }));
+
+        if (prefsSnap.exists()) {
+          const prefs = prefsSnap.data();
+          if (Array.isArray(prefs.bodySymptoms)) setBodySymptoms(prefs.bodySymptoms);
+          if (typeof prefs.socialBattery === 'number') setSocialBattery(prefs.socialBattery);
+          if (typeof prefs.isFocusShieldActive === 'boolean') setIsFocusShieldActive(prefs.isFocusShieldActive);
+          if (typeof prefs.rtwPhase === 'number') setRtwPhase(prefs.rtwPhase);
+          if (typeof prefs.meetingLimit === 'number') setMeetingLimit(prefs.meetingLimit);
+        }
+      } catch (e) {
+        // Leaves the honest empty/default state in place rather than
+        // silently pretending everything loaded.
+      }
+      initLoaded.current = true;
+    };
+    loadAll();
+  }, [user]);
+
+  // Only the current-state preferences autosave here - moods/triggers/wins
+  // are written explicitly at the moment they're submitted, not on every
+  // render, since they're append-only logs rather than a single toggle-able
+  // state.
+  useEffect(() => {
     if (!user || !initLoaded.current) return;
-    // Phase 1C: Sensitive recovery data syncing is entirely disabled.
-    // We do not save to Firestore here.
-  }, [user, moodLogs, triggers, socialBattery, wins, bodySymptoms, weeklyReview, rtwPhase, meetingLimit, isFocusShieldActive]);
+    const t = setTimeout(() => {
+      setDoc(doc(db, 'users', user.uid, 'preferences', 'recovery_intelligence'), {
+        bodySymptoms, socialBattery, isFocusShieldActive, rtwPhase, meetingLimit,
+        updatedAt: new Date().toISOString(),
+      }, { merge: true }).catch(() => {
+        // Non-fatal - the widget still reflects the change locally even if
+        // this particular save fails.
+      });
+    }, 800); // Debounced - sliders/toggles can fire rapidly.
+    return () => clearTimeout(t);
+  }, [user, socialBattery, isFocusShieldActive, rtwPhase, meetingLimit, bodySymptoms]);
 
   const fetchDerivedSummaries = async () => {
     if (!user) return;
@@ -333,17 +388,57 @@ export const RecoveryIntelligenceLayer = ({ onAwardPoints, fingerprint }: Recove
     return () => clearTimeout(timer);
   }, [presetRunning, presetTimeLeft]);
 
-  // Saving helpers
-  const saveMoods = (newLogs: MoodPulseData[]) => {
+  // Saving helpers - these now genuinely persist rather than only updating
+  // local React state.
+  const saveMoods = async (newLogs: MoodPulseData[], latest: MoodPulseData) => {
     setMoodLogs(newLogs);
+    if (!user) return;
+    try {
+      await addDoc(collection(db, 'users', user.uid, 'emotional_patterns'), {
+        word: latest.word,
+        intensity: 5,
+        category: derivedMoodCategory(latest.word),
+        createdAt: latest.timestamp,
+        updatedAt: latest.timestamp,
+      });
+    } catch (e) {
+      // Non-fatal - it still shows in this session's list; a future reload
+      // just won't have it.
+    }
   };
 
-  const saveTriggers = (newTriggers: TriggerData[]) => {
+  const saveTriggers = async (newTriggers: TriggerData[], latest: TriggerData) => {
     setTriggers(newTriggers);
+    if (!user) return;
+    const severityNumber = latest.severity === 'low' ? 3 : latest.severity === 'high' ? 9 : 6;
+    try {
+      await addDoc(collection(db, 'users', user.uid, 'stress_triggers'), {
+        text: latest.notes,
+        date: latest.timestamp,
+        severity: severityNumber,
+        energyLevel: 50,
+        createdAt: latest.timestamp,
+        updatedAt: latest.timestamp,
+      });
+    } catch (e) {
+      // Non-fatal, same reasoning as above.
+    }
   };
 
-  const saveWins = (newWins: WinLogData[]) => {
+  const saveWins = async (newWins: WinLogData[], latest: WinLogData) => {
     setWins(newWins);
+    if (!user) return;
+    try {
+      await addDoc(collection(db, 'users', user.uid, 'wins'), {
+        title: latest.description.slice(0, 80),
+        content: latest.description,
+        category: latest.category,
+        createdAt: latest.timestamp,
+        updatedAt: latest.timestamp,
+      });
+    } catch (e) {
+      // Non-fatal, same reasoning as above.
+    }
   };
 
   // 1. Mood Pulse Temp States
@@ -359,7 +454,7 @@ export const RecoveryIntelligenceLayer = ({ onAwardPoints, fingerprint }: Recove
       word: moodWord.trim() || 'Steady'
     };
     const updated = [newLog, ...moodLogs].slice(0, 30);
-    saveMoods(updated);
+    saveMoods(updated, newLog);
     setMoodWord('');
     
     // Push context to Nova Brain
@@ -428,7 +523,7 @@ export const RecoveryIntelligenceLayer = ({ onAwardPoints, fingerprint }: Recove
       severity: triggerSeverity
     };
     const updated = [newTrigger, ...triggers];
-    saveTriggers(updated);
+    saveTriggers(updated, newTrigger);
     setTriggerNotes('');
 
     // Brain sync
@@ -471,7 +566,7 @@ export const RecoveryIntelligenceLayer = ({ onAwardPoints, fingerprint }: Recove
       description: newWinText.trim()
     };
     const updated = [item, ...wins];
-    saveWins(updated);
+    saveWins(updated, item);
     setNewWinText('');
 
     updateNovaMemoryBySourceAndType(

@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
-import { 
+import { auth, db } from '../lib/firebase';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
+import {
   Sparkles, 
   Lock, 
   Unlock, 
@@ -38,25 +40,43 @@ export const RecoveryPlan = ({
   onRehearsalComplete
 }: RecoveryPlanProps) => {
 
-  // Load opt-in and nickname settings from localStorage
-  const [optInLeaderboard, setOptInLeaderboard] = useState(() => {
-    return localStorage.getItem('blaze_leaderboard_opt_in') === 'true';
-  });
-  const [nickname, setNickname] = useState(() => {
-    return localStorage.getItem('blaze_leaderboard_nickname') || 'AnonymousPractitioner';
-  });
+  // Opt-in and nickname settings, plan progress, and journals - all now
+  // genuinely persisted to Firestore rather than trapped in one browser.
+  const [optInLeaderboard, setOptInLeaderboard] = useState(false);
+  const [nickname, setNickname] = useState('AnonymousPractitioner');
   const [isEditingNickname, setIsEditingNickname] = useState(false);
 
   // Journal Reflections
   const [journalText, setJournalText] = useState('');
-  const [submittedJournals, setSubmittedJournals] = useState<string[]>(() => {
-    try {
-      const saved = localStorage.getItem('blaze_submitted_journals');
-      return saved ? JSON.parse(saved) : [];
-    } catch {
-      return [];
-    }
-  });
+  const [submittedJournals, setSubmittedJournals] = useState<string[]>([]);
+
+  useEffect(() => {
+    const load = async () => {
+      if (!auth.currentUser) return;
+      try {
+        const snap = await getDoc(doc(db, 'users', auth.currentUser.uid, 'recovery_plan_progress', 'state'));
+        if (snap.exists()) {
+          const data = snap.data();
+          if (typeof data.leaderboardOptIn === 'boolean') setOptInLeaderboard(data.leaderboardOptIn);
+          if (typeof data.nickname === 'string') setNickname(data.nickname);
+          if (Array.isArray(data.submittedJournals)) setSubmittedJournals(data.submittedJournals);
+        }
+      } catch (e) {
+        // Leaves the honest defaults in place rather than pretending progress loaded.
+      }
+    };
+    load();
+  }, []);
+
+  const savePlanProgress = (updates: Record<string, any>) => {
+    if (!auth.currentUser) return;
+    setDoc(doc(db, 'users', auth.currentUser.uid, 'recovery_plan_progress', 'state'), {
+      ...updates,
+      updatedAt: new Date().toISOString(),
+    }, { merge: true }).catch(() => {
+      // Non-fatal - the UI still reflects the change locally even if this save fails.
+    });
+  };
 
   // Rehearsal Practice Input
   const [rehearsalText, setRehearsalText] = useState('');
@@ -112,13 +132,23 @@ export const RecoveryPlan = ({
   useEffect(() => {
     if (!fingerprint) return;
 
-    const archetype = fingerprint.profile || 'High-Functioning Exhausted';
-    const debtLabel = highestDebt.label;
+    const buildPlan = async () => {
+      const archetype = fingerprint.profile || 'High-Functioning Exhausted';
+      const debtLabel = highestDebt.label;
 
-    const savedCompletedActions = localStorage.getItem('blaze_completed_plan_actions');
-    const completedIds: string[] = savedCompletedActions ? JSON.parse(savedCompletedActions) : [];
+      let completedIds: string[] = [];
+      if (auth.currentUser) {
+        try {
+          const snap = await getDoc(doc(db, 'users', auth.currentUser.uid, 'recovery_plan_progress', 'state'));
+          if (snap.exists() && Array.isArray(snap.data().completedIds)) {
+            completedIds = snap.data().completedIds;
+          }
+        } catch (e) {
+          // Leaves the honest empty state in place rather than pretending progress loaded.
+        }
+      }
 
-    const items: ActionItem[] = [];
+      const items: ActionItem[] = [];
 
     // section A: RECOVER (Tailored physiological rest based on highest debt)
     if (debtLabel === 'Sleep Debt') {
@@ -296,7 +326,9 @@ export const RecoveryPlan = ({
       tag: 'Self-Awareness'
     });
 
-    setActions(items);
+      setActions(items);
+    };
+    buildPlan();
   }, [fingerprint, stats.debts]);
 
   // Handle completion check toggling
@@ -314,7 +346,7 @@ export const RecoveryPlan = ({
 
     setActions(updated);
     const completedIds = updated.filter(a => a.completed).map(a => a.id);
-    localStorage.setItem('blaze_completed_plan_actions', JSON.stringify(completedIds));
+    savePlanProgress({ completedIds });
   };
 
   // Submit reflection journal
@@ -327,7 +359,7 @@ export const RecoveryPlan = ({
       ...submittedJournals
     ];
     setSubmittedJournals(newJournals);
-    localStorage.setItem('blaze_submitted_journals', JSON.stringify(newJournals));
+    savePlanProgress({ submittedJournals: newJournals });
     
     // Auto complete the reflection action if it exists
     const reflectAct = actions.find(a => a.section === 'Reflect');
@@ -362,7 +394,7 @@ export const RecoveryPlan = ({
     const trimmed = nickname.trim().replace(/\s+/g, '');
     if (trimmed.length > 2) {
       setNickname(trimmed);
-      localStorage.setItem('blaze_leaderboard_nickname', trimmed);
+      savePlanProgress({ nickname: trimmed });
     }
     setIsEditingNickname(false);
   };
@@ -370,33 +402,21 @@ export const RecoveryPlan = ({
   // Toggle leaderboard opt-in
   const handleToggleLeaderboard = (checked: boolean) => {
     setOptInLeaderboard(checked);
-    localStorage.setItem('blaze_leaderboard_opt_in', String(checked));
+    savePlanProgress({ leaderboardOptIn: checked });
   };
 
-  // Dynamic Leaderboard Generation
-  const getLeaderboardData = () => {
-    const defaultPeers = [
-      { name: 'SovereignPractitioner', level: 6, points: 2750, stage: 'Identity', isUser: false },
-      { name: 'NervousRegulator_88', level: 5, points: 2150, stage: 'Habits', isUser: false },
-      { name: 'ZenFounder', level: 4, points: 1850, stage: 'Identity', isUser: false },
-      { name: 'CalmCeo_3', level: 3, points: 1450, stage: 'Safety', isUser: false },
-      { name: 'BoundaryPractitioner', level: 2, points: 850, stage: 'Safety', isUser: false },
-    ];
-
-    const userEntry = {
-      name: optInLeaderboard ? nickname : 'You (Anonymized)',
-      level: Math.floor(stats.points / 500) + 1,
-      points: stats.points,
-      stage: stats.unlockedBadges.includes('boundary_set') ? 'Identity' : 'Safety',
-      isUser: true
-    };
-
-    // Slot user in correctly sorted by points
-    const fullList = [...defaultPeers, userEntry].sort((a, b) => b.points - a.points);
-    return fullList;
+  // A real cross-user leaderboard would need actual shared aggregation
+  // infrastructure (a public collection, opt-in writes, server-side
+  // sorting) that doesn't exist yet - rather than inventing fictional
+  // peers to fill the space, this honestly shows just the real user's own
+  // standing until that's genuinely built.
+  const userEntry = {
+    name: optInLeaderboard ? nickname : 'You (Anonymized)',
+    level: Math.floor(stats.points / 500) + 1,
+    points: stats.points,
+    stage: stats.unlockedBadges.includes('boundary_set') ? 'Identity' : 'Safety',
+    isUser: true
   };
-
-  const leaderboardEntries = getLeaderboardData();
 
   // LOCKED STATE RENDER
   if (!fingerprint) {
@@ -768,19 +788,19 @@ export const RecoveryPlan = ({
             )}
           </div>
 
-          {/* Gamified Community Leaderboard */}
+          {/* Community Sync (currently: your own standing only) */}
           <div className="card space-y-6 border border-border">
             <div className="flex flex-col space-y-1 text-left border-b border-border pb-3">
               <div className="flex items-center gap-2 text-primary font-bold uppercase tracking-widest text-xs">
-                <Users className="w-4 h-4" /> Anonymized Leaderboard
+                <Users className="w-4 h-4" /> Your Progress
               </div>
-              <span className="text-[10px] text-text-muted font-semibold">Practice regulation together, safely</span>
+              <span className="text-[10px] text-text-muted font-semibold">A real community leaderboard isn't built yet — this shows your own standing for now</span>
             </div>
 
             {/* Nickname setting & Opt-in */}
             <div className="p-4 bg-surface dark:bg-surface/50 rounded-2xl border border-border space-y-4 text-left">
               <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-text-main">Join Community Sync</span>
+                <span className="text-xs font-bold text-text-main">Notify me when community sync launches</span>
                 <input 
                   type="checkbox"
                   checked={optInLeaderboard}
@@ -823,43 +843,33 @@ export const RecoveryPlan = ({
               )}
             </div>
 
-            {/* Leaderboard Table */}
+            {/* Your Standing */}
             <div className="space-y-2 text-left">
-              <span className="text-[10px] font-black uppercase tracking-widest text-text-muted">Weekly Sync Rank</span>
+              <span className="text-[10px] font-black uppercase tracking-widest text-text-muted">Your Standing</span>
               <div className="border border-border rounded-xl overflow-hidden bg-surface dark:bg-surface/30">
-                {leaderboardEntries.map((peer, idx) => (
-                  <div 
-                    key={idx} 
-                    className={cn(
-                      "flex items-center justify-between p-3 text-xs border-b border-border/40 last:border-none",
-                      peer.isUser ? "bg-primary/10 font-bold" : ""
-                    )}
-                  >
-                    <div className="flex items-center gap-2">
-                      <span className={cn(
-                        "w-5 h-5 rounded-md flex items-center justify-center text-[10px] font-black",
-                        idx === 0 ? "bg-warning/20 text-warning" : 
-                        idx === 1 ? "bg-slate-400/20 text-slate-300" : 
-                        idx === 2 ? "bg-amber-600/20 text-amber-500" : "bg-card text-text-muted"
-                      )}>
-                        {idx + 1}
-                      </span>
-                      <span className={cn("truncate max-w-[120px] font-mono", peer.isUser ? "text-primary" : "text-text-main")}>
-                        {peer.name}
-                      </span>
-                    </div>
-                    
-                    <div className="flex items-center gap-2">
-                      <span className="text-[9px] uppercase tracking-widest font-black text-text-muted">
-                        {peer.stage}
-                      </span>
-                      <span className="font-mono font-bold text-text-main">
-                        {peer.points} pts
-                      </span>
-                    </div>
+                <div className="flex items-center justify-between p-3 text-xs bg-primary/10 font-bold">
+                  <div className="flex items-center gap-2">
+                    <span className="w-5 h-5 rounded-md flex items-center justify-center text-[10px] font-black bg-card text-text-muted">
+                      1
+                    </span>
+                    <span className="truncate max-w-[120px] font-mono text-primary">
+                      {userEntry.name}
+                    </span>
                   </div>
-                ))}
+
+                  <div className="flex items-center gap-2">
+                    <span className="text-[9px] uppercase tracking-widest font-black text-text-muted">
+                      {userEntry.stage}
+                    </span>
+                    <span className="font-mono font-bold text-text-main">
+                      {userEntry.points} pts
+                    </span>
+                  </div>
+                </div>
               </div>
+              <p className="text-[10px] text-text-muted leading-relaxed pt-1">
+                Real peer comparison isn't available yet — this shows your own progress only, not a ranking against other people.
+              </p>
             </div>
           </div>
         </div>
