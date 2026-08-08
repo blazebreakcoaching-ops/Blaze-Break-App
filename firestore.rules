@@ -410,6 +410,40 @@ service cloud.firestore {
             && (request.method == 'create' ? true : checkCreatedAtUnchanged());
       }
 
+      // T. Recovery Ally - a real, two-sided accountability system. The
+      // owner manages their own state/goals directly; personal encouragement
+      // messages from the ally themselves are server-only writes (via a
+      // token-based public endpoint using the Admin SDK), so a user can
+      // never fabricate a message and attribute it to their own ally.
+      match /recovery_ally/state {
+        allow read, delete: if isOwner(uid);
+        allow create, update: if isOwner(uid)
+            && request.resource.data.keys().hasOnly(['isInvited', 'allyName', 'allyEmail', 'permissions', 'shareToken', 'invitedAt', 'updatedAt'])
+            && (!('allyEmail' in request.resource.data) || isStringWithMax(request.resource.data.allyEmail, 200))
+            && (!('allyName' in request.resource.data) || isStringWithMax(request.resource.data.allyName, 100));
+      }
+
+      match /ally_shared_goals/{goalId} {
+        allow read, delete: if isOwner(uid);
+        allow create, update: if isOwner(uid)
+            && hasOnly(['createdAt', 'updatedAt', 'text', 'category', 'completedDates'])
+            && hasAll(['createdAt', 'updatedAt', 'text', 'category'])
+            && isStringWithMax(request.resource.data.text, 200)
+            && (request.method == 'create' ? true : checkCreatedAtUnchanged());
+      }
+
+      match /ally_encouragements/{id} {
+        allow read, delete: if isOwner(uid);
+        // Only system-generated (client-computed milestone) messages can be
+        // written by the owner. Personal messages - the actual point of
+        // this feature - only ever arrive via the server endpoint below.
+        allow create: if isOwner(uid)
+            && hasOnly(['createdAt', 'type', 'message'])
+            && request.resource.data.type == 'system'
+            && isStringWithMax(request.resource.data.message, 300);
+        allow update: if false;
+      }
+
     }
 
     // F. public_feature_flags/{featureId}

@@ -3671,6 +3671,180 @@ app.post("/api/org/:orgId/challenges/:challengeId/edit", verifyAppCheck, authent
   }
 });
 
+// Counts consecutive completed days ending today or yesterday - a streak
+// isn't considered broken just because today hasn't happened yet, but two
+// missed days in a row genuinely ends it.
+const computeStreak = (completedDates: string[]): number => {
+  if (!completedDates || completedDates.length === 0) return 0;
+  const dateSet = new Set(completedDates);
+  const today = new Date();
+  let streak = 0;
+  const cursor = new Date(today);
+  const todayStr = today.toISOString().split('T')[0];
+  if (!dateSet.has(todayStr)) {
+    cursor.setDate(cursor.getDate() - 1);
+  }
+  while (dateSet.has(cursor.toISOString().split('T')[0])) {
+    streak++;
+    cursor.setDate(cursor.getDate() - 1);
+  }
+  return streak;
+};
+
+// ============ Recovery Ally (real, two-sided accountability) ============
+// The ally doesn't need their own Blaze Break account - they get a real
+// emailed link to an unauthenticated, token-scoped view of exactly what the
+// person chose to share, and can leave a real encouragement note back. This
+// is what makes "they'll get a link to accept" and "once they send a note
+// it'll appear here" - both already promised in the UI - actually true.
+
+app.post("/api/ally/invite", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const user = requireAuth(req);
+    const { allyEmail } = req.body;
+    if (!allyEmail || typeof allyEmail !== 'string' || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(allyEmail)) {
+      return res.status(400).json({ error: "Please provide a valid email address." });
+    }
+    const db = getDb();
+    const shareToken = crypto.randomBytes(24).toString('hex');
+    const allyName = allyEmail.split('@')[0];
+
+    await db.collection("users").doc(user.uid).collection("recovery_ally").doc("state").set({
+      isInvited: true,
+      allyName,
+      allyEmail: allyEmail.trim().toLowerCase(),
+      permissions: { viewGoals: true, viewMilestones: true, sendPings: true, viewEnergyStats: false },
+      shareToken,
+      invitedAt: new Date().toISOString(),
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+
+    const appBase = (process.env.APP_URL || "").replace(/\/$/, "");
+    const link = `${appBase}/ally/${shareToken}`;
+    const emailSent = await sendBrevoEmail(
+      allyEmail,
+      "You've been invited as a Recovery Ally",
+      `Someone you know is using Blaze Break to work on burnout recovery, and asked you to be their accountability ally.\n\nYou can see what they've chosen to share and leave them an encouraging note here, no account needed:\n\n${link}\n\nThis is just for everyday accountability, not a crisis service.`
+    );
+
+    res.json({ success: true, emailSent, shareToken });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/api/ally/revoke", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const user = requireAuth(req);
+    const db = getDb();
+    await db.collection("users").doc(user.uid).collection("recovery_ally").doc("state").set({
+      isInvited: false,
+      allyName: '',
+      allyEmail: '',
+      shareToken: FieldValue.delete(),
+      updatedAt: FieldValue.serverTimestamp(),
+    }, { merge: true });
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Public - the ally doesn't have an account. Access is entirely gated by
+// possession of an unguessable 48-character token, and the response only
+// ever includes what the owner explicitly toggled on.
+app.get("/api/ally/view/:token", verifyAppCheck, async (req, res) => {
+  try {
+    const { token } = req.params;
+    if (!token || token.length < 20) {
+      return res.status(404).json({ error: "This link isn't valid." });
+    }
+    const db = getDb();
+    const stateSnap = await db.collectionGroup("recovery_ally")
+      .where("shareToken", "==", token).limit(1).get();
+    if (stateSnap.empty) {
+      return res.status(404).json({ error: "This link isn't valid or has been revoked." });
+    }
+    const stateDoc = stateSnap.docs[0];
+    const state = stateDoc.data();
+    const ownerRef = stateDoc.ref.parent.parent;
+    if (!ownerRef) {
+      return res.status(404).json({ error: "This link isn't valid." });
+    }
+    const permissions = state.permissions || {};
+    const response: any = { allyName: state.allyName || 'there' };
+
+    if (permissions.viewGoals) {
+      const goalsSnap = await ownerRef.collection("ally_shared_goals").orderBy("createdAt", "desc").limit(20).get();
+      response.sharedGoals = goalsSnap.docs.map(d => {
+        const data = d.data();
+        const dates: string[] = data.completedDates || [];
+        return {
+          id: d.id,
+          text: data.text,
+          category: data.category,
+          completedToday: dates.includes(new Date().toISOString().split('T')[0]),
+          streak: computeStreak(dates),
+        };
+      });
+    }
+
+    if (permissions.viewMilestones) {
+      const goalsSnap = await ownerRef.collection("ally_shared_goals").get();
+      const longestStreak = goalsSnap.docs.reduce((max, d) => Math.max(max, computeStreak(d.data().completedDates || [])), 0);
+      response.longestStreak = longestStreak;
+    }
+
+    if (permissions.viewEnergyStats) {
+      const moodSnap = await ownerRef.collection("mood_pulses").orderBy("createdAt", "desc").limit(7).get();
+      const intensities = moodSnap.docs.map(d => d.data().intensity).filter((n: any) => typeof n === 'number');
+      response.recentAvgMood = intensities.length > 0
+        ? Number((intensities.reduce((a: number, b: number) => a + b, 0) / intensities.length).toFixed(1))
+        : null;
+    }
+
+    res.json(response);
+  } catch (err: any) {
+    res.status(500).json({ error: "Could not load this page." });
+  }
+});
+
+app.post("/api/ally/view/:token/encourage", verifyAppCheck, async (req, res) => {
+  try {
+    const { token } = req.params;
+    const { message } = req.body;
+    if (!message || typeof message !== 'string' || message.trim().length === 0 || message.length > 300) {
+      return res.status(400).json({ error: "Message must be 1-300 characters." });
+    }
+    if (!token || token.length < 20) {
+      return res.status(404).json({ error: "This link isn't valid." });
+    }
+    const db = getDb();
+    const stateSnap = await db.collectionGroup("recovery_ally")
+      .where("shareToken", "==", token).limit(1).get();
+    if (stateSnap.empty) {
+      return res.status(404).json({ error: "This link isn't valid or has been revoked." });
+    }
+    const stateDoc = stateSnap.docs[0];
+    const state = stateDoc.data();
+    if (state.permissions?.sendPings === false) {
+      return res.status(403).json({ error: "This person has turned off messages for now." });
+    }
+    const ownerRef = stateDoc.ref.parent.parent;
+    if (!ownerRef) {
+      return res.status(404).json({ error: "This link isn't valid." });
+    }
+    await ownerRef.collection("ally_encouragements").add({
+      type: 'personal',
+      message: message.trim(),
+      createdAt: new Date().toISOString(),
+    });
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: "Could not send that." });
+  }
+});
+
 // Anxiety Reset API endpoints
 app.get("/api/anxiety-reset", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
   try {

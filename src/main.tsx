@@ -2,6 +2,7 @@ import {StrictMode} from 'react';
 import {createRoot} from 'react-dom/client';
 import { MotionConfig } from 'motion/react';
 import App from './App.tsx';
+import { AllyView } from './components/AllyView.tsx';
 import './index.css';
 import { testFirebaseConnection } from './lib/firebase.ts';
 import { AuthProvider } from './lib/auth.tsx';
@@ -45,11 +46,13 @@ if (typeof window !== 'undefined') {
 
 testFirebaseConnection();
 
+const allyTokenMatch = window.location.pathname.match(/^\/ally\/([a-zA-Z0-9]+)$/);
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <AuthProvider>
       <MotionConfig reducedMotion="user">
-        <App />
+        {allyTokenMatch ? <AllyView token={allyTokenMatch[1]} /> : <App />}
       </MotionConfig>
     </AuthProvider>
   </StrictMode>,
