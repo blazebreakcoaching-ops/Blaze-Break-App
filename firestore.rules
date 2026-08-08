@@ -444,6 +444,21 @@ service cloud.firestore {
         allow update: if false;
       }
 
+      // U. voice_journal_entries (Daily Voice Journal - Gemini transcribes
+      // and analyzes the memo server-side; the client only ever writes back
+      // the exact response it received, never edits transcription/analysis).
+      match /voice_journal_entries/{entryId} {
+        allow read, delete: if isOwner(uid);
+        allow create: if isOwner(uid)
+            && hasOnly(['createdAt', 'date', 'transcription', 'themes', 'analysis', 'advice', 'emotionalTone'])
+            && hasAll(['createdAt', 'date', 'transcription', 'themes', 'analysis', 'advice', 'emotionalTone'])
+            && isStringWithMax(request.resource.data.transcription, 4000)
+            && isStringWithMax(request.resource.data.analysis, 1000)
+            && isStringWithMax(request.resource.data.advice, 500)
+            && isStringWithMax(request.resource.data.emotionalTone, 100);
+        allow update: if false;
+      }
+
     }
 
     // F. public_feature_flags/{featureId}

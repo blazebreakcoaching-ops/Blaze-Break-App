@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { ChevronDown, Radio } from 'lucide-react';
+import { collection, query, orderBy, limit, getDocs } from 'firebase/firestore';
+import { auth, db } from '../lib/firebase';
 import { cn } from '../lib/utils';
 import { secureApiFetch } from '../lib/secure-api';
 
@@ -44,52 +46,54 @@ export const RecoveryExplanation = ({
   const [isOpen, setIsOpen] = useState(false);
 
   useEffect(() => {
-    let moodPositive: boolean | null = null;
-    let triggerCount = 0;
-    let socialBattery: number | null = null;
-    let winsCount = 0;
-    let symptomsCount = 0;
-    let focusShieldActive = false;
+    const uid = auth.currentUser?.uid;
+    if (!uid) return;
 
-    try {
-      const moodLogsSaved = localStorage.getItem('blaze_intelligence_moods');
-      if (moodLogsSaved) {
-        const moodLogs = JSON.parse(moodLogsSaved);
-        if (moodLogs.length > 0) {
-          const positiveWords = ['good', 'great', 'rested', 'aligned', 'steady', 'calm', 'vibrant', 'stable'];
-          const recentMood = moodLogs[0].word.toLowerCase();
-          moodPositive = positiveWords.some((w) => recentMood.includes(w));
+    const loadSignalsAndExplain = async () => {
+      let moodPositive: boolean | null = null;
+      let triggerCount = 0;
+      // No real signal source exists yet for social battery / focus shield -
+      // left null/false (honest "no data") rather than fabricated.
+      const socialBattery: number | null = null;
+      let winsCount = 0;
+      let symptomsCount = 0;
+      const focusShieldActive = false;
+
+      try {
+        const [moodSnap, triggerSnap, winsSnap, bodySnap] = await Promise.all([
+          getDocs(query(collection(db, 'users', uid, 'emotional_patterns'), orderBy('createdAt', 'desc'), limit(1))),
+          getDocs(query(collection(db, 'users', uid, 'stress_triggers'), orderBy('createdAt', 'desc'), limit(30))),
+          getDocs(query(collection(db, 'users', uid, 'wins'), orderBy('createdAt', 'desc'), limit(30))),
+          getDocs(query(collection(db, 'users', uid, 'body_checkins'), orderBy('createdAt', 'desc'), limit(1))),
+        ]);
+
+        if (!moodSnap.empty) {
+          moodPositive = (moodSnap.docs[0].data() as any).category === 'positive';
         }
+        triggerCount = triggerSnap.size;
+        winsCount = winsSnap.size;
+        if (!bodySnap.empty) {
+          symptomsCount = ((bodySnap.docs[0].data() as any).signals || []).length;
+        }
+      } catch (e) {
+        // Real signals unavailable — fall back to the defaults above rather than blocking the explanation.
       }
-      const triggersSaved = localStorage.getItem('blaze_intelligence_triggers');
-      if (triggersSaved) triggerCount = JSON.parse(triggersSaved).length;
 
-      const socialBatterySaved = localStorage.getItem('blaze_intelligence_social_battery');
-      if (socialBatterySaved) socialBattery = parseInt(socialBatterySaved, 10);
+      secureApiFetch('/api/signals/recovery-explain', {
+        method: 'POST',
+        data: {
+          energyLevel, debtCount, isHighFunctioningExhausted, hasClaimedDaily, rehearsalCount, streak,
+          moodPositive, triggerCount, socialBattery, winsCount, symptomsCount, focusShieldActive,
+        },
+      })
+        .then((res) => res.json())
+        .then(setData)
+        .catch(() => {
+          // Silent — this is a supplementary explanation, not core functionality.
+        });
+    };
 
-      const winsSaved = localStorage.getItem('blaze_intelligence_wins');
-      if (winsSaved) winsCount = JSON.parse(winsSaved).length;
-
-      const symptomsSaved = localStorage.getItem('blaze_intelligence_symptoms');
-      if (symptomsSaved) symptomsCount = JSON.parse(symptomsSaved).length;
-
-      focusShieldActive = localStorage.getItem('blaze_intelligence_focus_shield') === 'true';
-    } catch (e) {
-      // Corrupted local signals — fall back to the defaults above rather than blocking the explanation.
-    }
-
-    secureApiFetch('/api/signals/recovery-explain', {
-      method: 'POST',
-      data: {
-        energyLevel, debtCount, isHighFunctioningExhausted, hasClaimedDaily, rehearsalCount, streak,
-        moodPositive, triggerCount, socialBattery, winsCount, symptomsCount, focusShieldActive,
-      },
-    })
-      .then((res) => res.json())
-      .then(setData)
-      .catch(() => {
-        // Silent — this is a supplementary explanation, not core functionality.
-      });
+    loadSignalsAndExplain();
   }, [energyLevel, debtCount, isHighFunctioningExhausted, hasClaimedDaily, rehearsalCount, streak]);
 
   if (!data) return null;

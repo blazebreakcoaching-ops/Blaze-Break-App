@@ -1123,13 +1123,15 @@ Your job is to:
 2. Identify 1 to 3 key recurring burnout themes or energy leaks from their spoken words.
 3. Provide a direct, slightly provocative coaching analysis (2-3 sentences max) matching Nova's high-performance persona.
 4. Give actionable, firm, custom recovery advice or a boundary script (2 sentences max).
+5. Name the single dominant emotional tone you hear in their voice and words, in 2-4 plain words (e.g. "wired but exhausted", "quietly resentful", "cautiously hopeful").
 
 You MUST respond strictly in the following JSON format. Do not include markdown codeblocks or wrap it in anything. Just return the JSON object:
 {
   "transcription": "A complete, accurate transcription of the user's audio",
   "themes": ["Theme 1", "Theme 2"],
   "analysis": "Nova's direct, slightly provocative coaching feedback in British English",
-  "advice": "Actionable, firm, custom recovery advice or script"
+  "advice": "Actionable, firm, custom recovery advice or script",
+  "emotionalTone": "A short, plain-language description of the dominant emotional tone"
 }`
       };
 
@@ -1144,9 +1146,10 @@ You MUST respond strictly in the following JSON format. Do not include markdown 
               transcription: { type: Type.STRING },
               themes: { type: Type.ARRAY, items: { type: Type.STRING } },
               analysis: { type: Type.STRING },
-              advice: { type: Type.STRING }
+              advice: { type: Type.STRING },
+              emotionalTone: { type: Type.STRING }
             },
-            required: ["transcription", "themes", "analysis", "advice"]
+            required: ["transcription", "themes", "analysis", "advice", "emotionalTone"]
           }
         }
       });
