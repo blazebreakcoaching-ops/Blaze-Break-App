@@ -307,7 +307,7 @@ export const ExecutiveBoardReport = ({
         ` : ''}
 
         ${includeMetricsGrid ? `
-        <div class="table-title">Weekly Autonomic Metric Yield</div>
+        <div class="table-title">Weekly Recovery Metrics</div>
         <table>
             <thead>
                 <tr>
@@ -334,7 +334,7 @@ export const ExecutiveBoardReport = ({
                 <tr>
                     <td>Somatic Resets</td>
                     <td><strong>7 Completed</strong></td>
-                    <td>Autonomic doorway entries completed</td>
+                    <td>Decompression Doorway sessions completed</td>
                     <td style="color: #10b981; font-weight: bold;">Stable</td>
                 </tr>
                 ` : ''}
@@ -361,7 +361,7 @@ export const ExecutiveBoardReport = ({
                 <div class="sig-line" style="font-family: Georgia, serif; font-style: italic; font-size: 20px; line-height: 40px; color: #6366f1; border-bottom: 1px solid #475569; user-select: none;">Nova Coach</div>
                 <div class="sig-meta">
                     <strong>Coach Nova</strong><br/>
-                    Autonomic Recovery Strategist, Blaze Break
+                    Recovery Strategist, Blaze Break
                 </div>
             </div>
         </div>
@@ -410,7 +410,7 @@ export const ExecutiveBoardReport = ({
       
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
-          <h2 className="text-3xl font-serif font-bold text-text-main tracking-tight">Executive Board Report</h2>
+          <h2 className="text-3xl font-display font-bold text-text-main tracking-tight">Executive Board Report</h2>
           <p className="text-sm text-text-muted mt-2 font-mono uppercase tracking-widest">Confidential / Biometric & Workload ROI</p>
         </div>
         <div className="flex items-center gap-3 w-full md:w-auto shrink-0">
@@ -439,7 +439,7 @@ export const ExecutiveBoardReport = ({
             className="btn-primary flex items-center gap-2 cursor-pointer"
           >
             <Download className={cn("w-4 h-4", isExporting && "animate-bounce")} />
-            {isExporting ? "Compiling Report..." : "Export Report Summary"}
+            {isExporting ? "Preparing Report..." : "Export Report Summary"}
           </button>
         </div>
       </div>
@@ -480,7 +480,7 @@ export const ExecutiveBoardReport = ({
             <p className="text-xs text-text-muted mt-3">Exceeding sustainable energy output.</p>
           </div>
           
-          <div className="card p-6 border-l-4 border-l-emerald-500">
+          <div className="card p-6 border-l-4 border-l-success">
             <p className="text-xs text-text-muted uppercase tracking-widest font-bold mb-2">Boundaries Held</p>
             <div className="flex items-end gap-3">
               <span className="text-4xl font-black text-text-main tracking-tighter">4</span>
@@ -529,15 +529,13 @@ export const ExecutiveBoardReport = ({
             if (!isProcessingProgress) setShowConfigModal(false);
           }}
         >
-          <div 
-            className="card bg-background border border-white/[0.08] shadow-[0_0_50px_rgba(99,102,241,0.15)] p-8 max-w-lg w-full relative overflow-hidden"
+          <div
+            className="card bg-background border border-border shadow-lg p-8 max-w-lg w-full relative overflow-hidden"
             onClick={e => e.stopPropagation()}
           >
-            <div className="absolute top-0 right-0 w-32 h-32 bg-primary/5 rounded-full blur-[40px] pointer-events-none" />
-            
             <div className="relative z-10 space-y-6 text-left">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-primary/15 border border-primary/20 rounded-xl flex items-center justify-center text-primary shadow-lg shadow-primary/10">
+                <div className="w-10 h-10 bg-primary/15 border border-primary/20 rounded-lg flex items-center justify-center text-primary">
                   <Layers className="w-5 h-5" />
                 </div>
                 <div>
@@ -578,7 +576,7 @@ export const ExecutiveBoardReport = ({
 
                     <div className="border-t border-white/[0.02] pt-4 flex justify-between items-center">
                       <div>
-                        <p className="text-sm font-bold text-text-main">Weekly Autonomic Matrix Yield</p>
+                        <p className="text-sm font-bold text-text-main">Weekly Recovery Metrics</p>
                         <p className="text-[11px] text-text-muted">Generate data grid report with active Sleep Debt, Deep Work duration, and Points ROI</p>
                       </div>
                       <input 
@@ -637,34 +635,34 @@ export const ExecutiveBoardReport = ({
                   <div className="py-6 flex flex-col items-center justify-center space-y-4">
                     <Loader2 className="w-10 h-10 text-primary animate-spin" />
                     
-                    <div className="w-full bg-surface h-2 rounded-full overflow-hidden border border-white/[0.02]">
-                      <div 
-                        className="bg-primary h-2 rounded-full transition-all duration-300 shadow-[0_0_10px_rgba(99,102,241,0.5)]"
+                    <div className="w-full bg-surface h-2 rounded-full overflow-hidden border border-border">
+                      <div
+                        className="bg-primary h-2 rounded-full transition-all duration-300"
                         style={{ width: `${compilationProgress}%` }}
                       />
                     </div>
-                    
-                    <p className="text-xs font-semibold text-primary font-mono tracking-wider animate-pulse text-center">
+
+                    <p className="text-xs font-medium text-primary font-mono tracking-wider animate-pulse text-center">
                       {compilationStatusText}
                     </p>
                   </div>
 
-                  {/* Progressive console trace */}
-                  <div className="bg-background p-4 rounded-xl border border-white/[0.03] space-y-2 font-mono text-[10px] text-text-muted/70 leading-relaxed text-left max-h-36 overflow-y-auto">
+                  {/* Progress trace */}
+                  <div className="bg-background p-4 rounded-lg border border-border space-y-2 font-mono text-[10px] text-text-muted/70 leading-relaxed text-left max-h-36 overflow-y-auto">
                     <p className={cn("transition-all duration-300", compilationProgress >= 15 ? "text-primary font-bold" : "text-text-muted/40")}>
-                      {compilationProgress >= 15 ? "✓ [SANDBOX] Pipeline secure connection established" : "○ Connect sandbox pipeline..."}
+                      {compilationProgress >= 15 ? "✓ Connected securely" : "○ Connecting..."}
                     </p>
                     <p className={cn("transition-all duration-300", compilationProgress >= 40 ? "text-primary font-bold" : "text-text-muted/40")}>
-                      {compilationProgress >= 40 ? `✓ [METRICS] Fetched '${userStats?.profile?.fullName || 'Pro-Client'}' autonomic biometric scores` : "○ Fetch recovery metrics..."}
+                      {compilationProgress >= 40 ? `✓ Fetched ${userStats?.profile?.fullName || 'your'} recovery data` : "○ Fetching recovery metrics..."}
                     </p>
                     <p className={cn("transition-all duration-300", compilationProgress >= 70 ? "text-primary font-bold" : "text-text-muted/40")}>
-                      {compilationProgress >= 70 ? "✓ [LAYOUT] Dynamic layouts formatted successfully" : "○ Compile CSS print styles..."}
+                      {compilationProgress >= 70 ? "✓ Formatted your report" : "○ Formatting report..."}
                     </p>
                     <p className={cn("transition-all duration-300", compilationProgress >= 90 ? "text-primary font-bold" : "text-text-muted/40")}>
-                      {compilationProgress >= 90 ? "✓ [SIGNATURES] Attested signature verification: Coach Nova v2.4" : "○ Append secure signatures..."}
+                      {compilationProgress >= 90 ? "✓ Reviewed by Nova" : "○ Nova reviewing..."}
                     </p>
                     <p className={cn("transition-all duration-300", compilationProgress >= 100 ? "text-success font-bold animate-pulse" : "text-text-muted/40")}>
-                      {compilationProgress >= 100 ? "✓ [COMPILE] Document compile complete! Triggering system print..." : "○ Build final bundle package..."}
+                      {compilationProgress >= 100 ? "✓ Report ready — opening print dialog..." : "○ Finishing up..."}
                     </p>
                   </div>
                 </div>

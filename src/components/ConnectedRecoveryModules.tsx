@@ -104,7 +104,7 @@ export const ConnectedDailyCheckIn = ({ onClose, onReviewWithNova }: { onClose: 
   return (
     <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-card/60 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative w-full max-w-md bg-card rounded-3xl shadow-2xl overflow-hidden max-h-[90vh] flex flex-col">
+      <div className="relative w-full max-w-md bg-card rounded-xl shadow-lg overflow-hidden max-h-[90vh] flex flex-col">
         <div className="p-6 border-b border-border flex items-center justify-between shrink-0">
           <div className="flex items-center gap-2">
             <Sparkles className="w-5 h-5 text-primary" />
@@ -867,97 +867,3 @@ export const ConnectedWeeklyReviews = () => {
   );
 };
 
-// 10. Connected Burnout Fingerprint
-export const ConnectedBurnoutFingerprint = () => {
-  const [result, setResult] = useState<any>(null);
-  const [error, setError] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [takingTest, setTakingTest] = useState(false);
-  const [selectedArchetype, setSelectedArchetype] = useState('High-Functioning Exhausted');
-  
-  
-  const uid = auth.currentUser?.uid;
-  const ARCHETYPES = ['High-Functioning Exhausted', 'Over-Giver', 'Silent Resenter', 'Founder on Fire', 'Manager in the Middle'];
-
-  const fetchResult = async () => {
-    if (!uid) return;
-    try {
-      const snap = await getDoc(doc(db, 'users', uid, 'recovery', 'fingerprint'));
-      if (snap.exists()) setResult(snap.data());
-      else setResult(null);
-    } catch(e) { setError('You do not have permission to access this record.'); }
-  };
-  useEffect(() => { fetchResult(); }, [uid]);
-
-  const handleSubmit = async () => {
-    if (!uid) return;
-    setLoading(true); setError('');
-    try {
-      await setDoc(doc(db, 'users', uid, 'recovery', 'fingerprint'), {
-        archetype: selectedArchetype,
-        identifiedAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        version: '1.0',
-        source: 'user_assessment'
-      });
-      setTakingTest(false);
-      fetchResult();
-    } catch(e) { setError('This entry could not be saved.'); }
-    setLoading(false);
-  };
-  
-  const handleDelete = async () => {
-    if(!uid) return;
-    try { await deleteDoc(doc(db, 'users', uid, 'recovery', 'fingerprint')); fetchResult(); }
-    catch(e) { setError('This entry could not be saved.'); }
-  };
-
-  return (
-    <div className="space-y-6">
-      <SecureVaultNotice />
-      <ErrorMessage msg={error} />
-      
-      {!result && !takingTest && (
-         <div className="text-center py-8">
-           <p className="text-sm text-text-muted mb-4">No secure Fingerprint saved yet.</p>
-           <button onClick={() => setTakingTest(true)} className="btn-primary py-2 px-6 text-sm rounded-xl">Take Deterministic Assessment</button>
-         </div>
-      )}
-      
-      {takingTest && (
-         <div className="bg-surface p-4 rounded-xl border border-border space-y-4">
-           <h4 className="font-bold text-sm">Deterministic Assessment</h4>
-           <p className="text-xs text-text-muted">This is a coaching reflection tool, not a clinical diagnosis.</p>
-           <h5 className="text-xs font-bold mt-2">Select your closest match to save to vault:</h5>
-           <div className="flex flex-col gap-2">
-             {ARCHETYPES.map(a => (
-               <button key={a} onClick={() => setSelectedArchetype(a)} className={cn("p-3 text-left text-xs rounded-lg border", selectedArchetype === a ? "bg-primary/20 border-primary text-primary" : "border-border hover:bg-card")} >
-                 {a}
-               </button>
-             ))}
-           </div>
-           
-           <div className="flex gap-2">
-             <button onClick={() => setTakingTest(false)} className="flex-1 py-2 text-xs font-bold text-text-muted">Cancel</button>
-             <button onClick={handleSubmit} disabled={loading} className="flex-1 btn-primary py-2 text-xs">Save Result</button>
-           </div>
-         </div>
-      )}
-      
-      {result && !takingTest && (
-        <div className="bg-primary/5 border border-primary/20 p-6 rounded-2xl relative">
-          <button onClick={handleDelete} className="absolute top-4 right-4 text-text-muted hover:text-destructive text-xs flex gap-1 items-center"><Trash2 className="w-3 h-3"/> Reset</button>
-          <div className="text-xs uppercase tracking-widest font-black text-primary mb-2">Active Archetype</div>
-          <h3 className="text-2xl font-bold text-text-main">{result.archetype}</h3>
-          
-          <div className="text-xs text-text-muted mt-4 p-3 bg-surface rounded-xl border border-border">
-            Based on your answers, this pattern may describe how burnout is currently showing up for you. This is a coaching reflection tool, not a clinical diagnosis.
-          </div>
-          
-          <div className="text-[10px] text-text-muted mt-4">Identified: {new Date(result.identifiedAt).toLocaleDateString()}</div>
-          <div className="mt-4"><button onClick={() => setTakingTest(true)} className="text-primary text-xs hover:underline font-bold">Retake Assessment</button></div>
-        </div>
-      )}
-    </div>
-  );
-};

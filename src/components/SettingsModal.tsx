@@ -10,9 +10,10 @@ interface SettingsModalProps {
   profile: UserProfileData | undefined;
   onSave: (profile: UserProfileData) => void;
   onClose: () => void;
+  onOpenPrivacyCentre?: () => void;
 }
 
-export const SettingsModal = ({ profile, onSave, onClose }: SettingsModalProps) => {
+export const SettingsModal = ({ profile, onSave, onClose, onOpenPrivacyCentre }: SettingsModalProps) => {
   const [activeTab, setActiveTab] = useState<'profile' | 'notifications' | 'experiments' | 'consent'>('profile');
   const [formData, setFormData] = useState<UserProfileData>(profile || {
     fullName: '',
@@ -85,7 +86,7 @@ export const SettingsModal = ({ profile, onSave, onClose }: SettingsModalProps) 
         initial={{ opacity: 0, scale: 0.9, y: 20 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.9, y: 20 }}
-        className="relative card w-full max-w-2xl p-8 overflow-hidden bg-white dark:bg-card max-h-[90vh] flex flex-col border border-border dark:border-border shadow-2xl"
+        className="relative card w-full max-w-2xl p-8 overflow-hidden bg-white dark:bg-card max-h-[90vh] flex flex-col border border-border shadow-lg"
       >
         <AnimatePresence>
           {saved && (
@@ -163,12 +164,12 @@ export const SettingsModal = ({ profile, onSave, onClose }: SettingsModalProps) 
         </div>
 
         {/* Scrollable Container Content */}
-        <div className="overflow-y-auto flex-1 pr-1 pb-2 space-y-6 scrollbar-thin scrollbar-thumb-slate-200 dark:scrollbar-thumb-slate-800">
+        <div className="overflow-y-auto flex-1 pr-1 pb-2 space-y-6 scrollbar-thin scrollbar-thumb-border">
           {activeTab === 'profile' ? (
             <div className="space-y-6">
               <div className="space-y-1">
                 <h3 className="text-xl font-display font-bold text-text-main">Identity Settings</h3>
-                <p className="text-xs text-text-muted">Update your private identity information. This is used to tailor your recovery protocols.</p>
+                <p className="text-xs text-text-muted">Update your private identity information. This is used to tailor your recovery plan.</p>
               </div>
 
               <form onSubmit={handleSubmit} className="space-y-6">
@@ -201,15 +202,15 @@ export const SettingsModal = ({ profile, onSave, onClose }: SettingsModalProps) 
                       }}
                       className={cn(
                         "w-full bg-surface dark:bg-surface/50 border rounded-xl px-4 py-3 text-sm focus:outline-none transition-all placeholder-slate-400 dark:placeholder-slate-500 text-text-main",
-                        errors.fullName 
-                          ? "border-rose-300 dark:border-destructive/50 focus:border-destructive focus:ring-2 focus:ring-rose-500/20" 
+                        errors.fullName
+                          ? "border-destructive/50 focus:border-destructive focus:ring-2 focus:ring-destructive/20"
                           : "border-border dark:border-border focus:border-primary dark:focus:border-primary focus:ring-2 focus:ring-primary/20"
                       )}
                     />
                     {errors.fullName && <p className="text-xs text-destructive px-1 font-medium">{errors.fullName}</p>}
                   </div>
 
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div className="space-y-1.5">
                       <label className="text-xs font-black uppercase tracking-widest text-text-muted px-1">Job Role</label>
                       <input 
@@ -242,8 +243,8 @@ export const SettingsModal = ({ profile, onSave, onClose }: SettingsModalProps) 
                       }}
                       className={cn(
                         "w-full bg-surface dark:bg-surface/50 border rounded-xl px-4 py-3 text-sm focus:outline-none transition-all placeholder-slate-400 dark:placeholder-slate-500 text-text-main",
-                        errors.email 
-                          ? "border-rose-300 dark:border-destructive/50 focus:border-destructive focus:ring-2 focus:ring-rose-500/20" 
+                        errors.email
+                          ? "border-destructive/50 focus:border-destructive focus:ring-2 focus:ring-destructive/20"
                           : "border-border dark:border-border focus:border-primary dark:focus:border-primary focus:ring-2 focus:ring-primary/20"
                       )}
                     />
@@ -279,9 +280,18 @@ export const SettingsModal = ({ profile, onSave, onClose }: SettingsModalProps) 
             </div>
           ) : activeTab === 'consent' ? (
             <div className="space-y-6">
-              <div className="space-y-1">
+              <div className="space-y-3">
                 <h3 className="text-xl font-display font-bold text-text-main">Consent & Privacy</h3>
                 <p className="text-xs text-text-muted">Manage how Nova interacts with your personal data and what permissions are granted.</p>
+                {onOpenPrivacyCentre && (
+                  <button
+                    type="button"
+                    onClick={onOpenPrivacyCentre}
+                    className="text-xs font-bold text-primary hover:underline"
+                  >
+                    Open full Privacy Centre &rarr;
+                  </button>
+                )}
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

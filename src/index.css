@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;1,9..144,400;1,9..144,500&display=swap');
 @import "tailwindcss";
 
 @custom-variant dark (&:is(.dark *));
@@ -7,8 +7,13 @@
   --font-sans: "Manrope", ui-sans-serif, system-ui, sans-serif;
   --font-display: "Manrope", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+  /* Reserved for exactly one meaning: Nova is speaking (or the user's own
+     reflective words are being quoted back to them) — never used for section
+     headings, admin UI chrome, or generic emphasis. Typography should signal
+     who's talking before a word is read, not just add visual variety. */
+  --font-serif: "Fraunces", ui-serif, Georgia, serif;
 
-  /* Executive Suite Colors */
+  /* Brand colors */
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-surface: var(--surface);
@@ -53,13 +58,13 @@
     --primary: #ea580c; /* Blaze Orange */
     --primary-dark: #c2410c;
     --primary-light: #ffedd5;
-    --primary-foreground: #ffffff;
+    --primary-foreground: #1c1917; /* Dark ink — white on this orange fails WCAG AA at typical button text sizes (3.56:1); charcoal reaches 4.91:1 */
 
     --accent: #f97316;
-    --accent-foreground: #ffffff;
+    --accent-foreground: #1c1917; /* Same fix as primary-foreground: white on this orange is only 2.80:1 */
     
     --warning: #d97706;
-    --warning-foreground: #ffffff;
+    --warning-foreground: #1c1917; /* Dark ink — white on this amber was only 3.19:1, fails AA for normal text */
 
     --destructive: #b91c1c; /* Controlled Deep Red */
     --destructive-foreground: #ffffff;
@@ -88,13 +93,13 @@
     --primary: #f97316; /* Blaze Orange - slightly brighter for dark mode */
     --primary-dark: #ea580c;
     --primary-light: rgba(249, 115, 22, 0.15);
-    --primary-foreground: #ffffff; /* White on orange ensures readability */
+    --primary-foreground: #1c1917; /* Dark ink — white on this brighter orange was only 2.80:1, a real AA fail; charcoal reaches 6.24:1 */
 
     --accent: #ea580c;
-    --accent-foreground: #ffffff;
+    --accent-foreground: #1c1917; /* Same fix — white on this orange was 3.56:1, still short of AA for normal text */
     
     --warning: #f59e0b;
-    --warning-foreground: #1c1917;
+    --warning-foreground: #1c1917; /* Unchanged — this one was already correct */
 
     --destructive: #dc2626; /* Deep Ember Red */
     --destructive-foreground: #ffffff;
@@ -309,4 +314,15 @@
   28% { transform: scale(1); opacity: 1; }
   42% { transform: scale(1.02); opacity: 0.8; }
   70% { transform: scale(1); opacity: 1; }
+}
+
+/* MotionConfig reducedMotion="user" (main.tsx) covers motion/react components;
+   this covers raw CSS/Tailwind transitions and animations for the same OS preference. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

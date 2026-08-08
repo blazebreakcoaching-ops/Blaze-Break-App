@@ -38,51 +38,51 @@ export const SituationalOnboarding = ({ onComplete }: OnboardingProps) => {
   const steps = [
     {
       id: "welcome",
-      title: "Welcome to the Executive Suite.",
-      subtitle: "Let's establish your baseline.",
+      title: "Welcome. Let's take this one step at a time.",
+      subtitle: "A few quick questions to help Nova understand where you're at.",
       icon: Sparkles,
-      question: "What is your primary objective today?",
+      question: "What brought you here today?",
       options: [
-        { label: "Restore depleted energy reserves", icon: BatteryLow },
-        { label: "Disconnect from relentless demands", icon: Activity },
-        { label: "Prevent an impending burnout", icon: Shield },
-        { label: "Navigate high-stakes pressure", icon: Target },
-        { label: "Support my team as a leader", icon: Briefcase },
+        { label: "I need to restore my energy", icon: BatteryLow },
+        { label: "I need to disconnect from constant demands", icon: Activity },
+        { label: "I want to head off burnout before it hits", icon: Shield },
+        { label: "I'm under a lot of pressure right now", icon: Target },
+        { label: "I'm trying to support my team well", icon: Briefcase },
       ],
       field: "purpose",
     },
     {
       id: "pathway",
-      title: "Operational Context",
-      subtitle: "Nova adapts to your specific operational environment.",
+      title: "A bit about your work",
+      subtitle: "This helps Nova tailor its support to your situation.",
       icon: Briefcase,
-      question: "Which of these best describes your current reality?",
+      question: "Which of these sounds most like you?",
       options: [
         { label: "Executive / Founder", icon: Briefcase },
         { label: "Manager / Team Leader", icon: Target },
-        { label: "High-Performance Individual Core", icon: User },
+        { label: "Individual Contributor", icon: User },
         { label: "Entrepreneur", icon: Sparkles },
       ],
       field: "pathway",
     },
     {
       id: "pressure",
-      title: "Threat Assessment",
-      subtitle: "Identifying the root cause dictates the recovery protocol.",
+      title: "What's weighing on you",
+      subtitle: "This helps shape the kind of support that fits you.",
       icon: HeartPulse,
-      question: "What is currently draining your reserves the most?",
+      question: "What's draining you the most right now?",
       options: [
-        { label: "Relentless Workload & Deadlines", icon: Activity },
-        { label: "People & Complex Expectations", icon: User },
-        { label: "Constant Digital Interruptions", icon: HeartPulse },
-        { label: "Strategic Leadership Pressure", icon: Briefcase },
+        { label: "Workload and deadlines", icon: Activity },
+        { label: "People and expectations", icon: User },
+        { label: "Constant notifications and interruptions", icon: HeartPulse },
+        { label: "The pressure of leading others", icon: Briefcase },
       ],
       field: "primaryDrain",
     },
     {
       id: "nova_tone",
-      title: "Nova's Configuration",
-      subtitle: "Your AI coach can adapt its approach to your needs.",
+      title: "How Nova should talk to you",
+      subtitle: "Your coach can match the tone that works best for you.",
       icon: Brain,
       question: "How should Nova communicate with you?",
       options: [
@@ -95,19 +95,19 @@ export const SituationalOnboarding = ({ onComplete }: OnboardingProps) => {
     },
     {
       id: "consent",
-      title: "Data Sovereignty",
-      subtitle: "Your data remains yours. Configure Nova's boundaries.",
+      title: "Your privacy",
+      subtitle: "Your data stays yours. Set your own boundaries below.",
       icon: Lock,
       content: (
         <div className="space-y-6 text-left w-full h-[360px] overflow-y-auto pr-4 custom-scrollbar">
           <div className="p-4 bg-primary-light border border-border rounded-xl mb-4">
             <h4 className="font-bold text-primary flex items-center gap-2 mb-2">
-              <CheckCircle2 className="w-4 h-4" /> Zero-Trust Architecture
+              <CheckCircle2 className="w-4 h-4" /> How your data is protected
             </h4>
             <p className="text-xs text-text-muted">
-              Your transcripts and metrics are strictly isolated. If accessing
-              via an organization, only aggregate operational health scores are
-              exposed.
+              Your entries and personal metrics stay private. If you're using
+              this through an employer, they only ever see anonymized,
+              aggregated trends — never your individual data.
             </p>
           </div>
 
@@ -147,10 +147,10 @@ export const SituationalOnboarding = ({ onComplete }: OnboardingProps) => {
             <div className="flex items-start justify-between p-4 rounded-xl border border-border bg-surface hover:border-text-muted transition-colors">
               <div className="space-y-1">
                 <h4 className="text-sm font-semibold text-text-main">
-                  Behavioral Learning Engine
+                  Personalized learning
                 </h4>
                 <p className="text-xs text-text-muted">
-                  Allow Nova to adapt dynamically to your check-ins.
+                  Let Nova adjust its suggestions based on your check-ins.
                 </p>
               </div>
               <button
@@ -176,10 +176,10 @@ export const SituationalOnboarding = ({ onComplete }: OnboardingProps) => {
             <div className="flex items-start justify-between p-4 rounded-xl border border-border bg-surface hover:border-text-muted transition-colors">
               <div className="space-y-1">
                 <h4 className="text-sm font-semibold text-text-main">
-                  Nova Interventions
+                  Gentle reminders
                 </h4>
                 <p className="text-xs text-text-muted">
-                  Receive proactive operational nudges.
+                  Get occasional check-in prompts when it might help.
                 </p>
               </div>
               <button
@@ -210,8 +210,8 @@ export const SituationalOnboarding = ({ onComplete }: OnboardingProps) => {
     },
     {
       id: "profile",
-      title: "Executive Profile",
-      subtitle: "Finalize your suite credentials.",
+      title: "Just a few details",
+      subtitle: "Let's finish setting up your account.",
       icon: User,
       content: null, // Form rendered via custom logic
     },
@@ -253,9 +253,9 @@ export const SituationalOnboarding = ({ onComplete }: OnboardingProps) => {
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.98, y: -20 }}
             transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
-            className="w-full p-10 sm:p-20 flex flex-col items-center space-y-12 bg-surface/80 backdrop-blur-3xl border border-white/[0.04] rounded-[2.5rem] shadow-2xl relative overflow-hidden"
+            className="w-full p-10 sm:p-20 flex flex-col items-center space-y-12 bg-surface border border-border rounded-xl shadow-lg relative overflow-hidden"
           >
-            <div className="absolute top-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-indigo-500/30 to-transparent" />
+            <div className="absolute top-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-primary/30 to-transparent" />
 
             {/* Onboarding Progress Tracker */}
             <div className="w-full space-y-4 border-b border-white/[0.04] pb-6">
@@ -269,7 +269,7 @@ export const SituationalOnboarding = ({ onComplete }: OnboardingProps) => {
                   </span>
                 </div>
                 <span className="text-xs font-mono font-bold text-text-muted">
-                  Nova Protocol Initialization
+                  Setting Up Nova
                 </span>
               </div>
               
@@ -286,7 +286,7 @@ export const SituationalOnboarding = ({ onComplete }: OnboardingProps) => {
                       <div className="w-full h-1.5 rounded-full relative overflow-hidden bg-white/[0.04]">
                         {(isDone || isActive) && (
                           <motion.div 
-                            className="absolute top-0 left-0 h-full bg-gradient-to-r from-primary to-indigo-500 rounded-full"
+                            className="absolute top-0 left-0 h-full bg-gradient-to-r from-primary to-primary/70 rounded-full"
                             initial={{ width: 0 }}
                             animate={{ width: "100%" }}
                             transition={{ duration: 0.5, ease: "easeOut" }}
@@ -297,7 +297,7 @@ export const SituationalOnboarding = ({ onComplete }: OnboardingProps) => {
                         "hidden sm:block text-[9px] font-bold uppercase tracking-wider truncate text-center",
                         isActive ? "text-primary font-black" : isDone ? "text-text-muted/60" : "text-text-muted/30"
                       )}>
-                        {s.id === "nova_tone" ? "Nova" : s.id === "consent" ? "Sovereignty" : s.id === "welcome" ? "Objective" : s.id}
+                        {s.id === "nova_tone" ? "Nova" : s.id === "consent" ? "Privacy" : s.id === "welcome" ? "Start" : s.id === "pathway" ? "Context" : s.id === "pressure" ? "Pressure" : s.id === "profile" ? "Profile" : s.id}
                       </span>
                     </div>
                   );
@@ -397,7 +397,7 @@ export const SituationalOnboarding = ({ onComplete }: OnboardingProps) => {
                   </div>
                   <div className="space-y-3">
                     <p className="text-xs font-black text-text-muted uppercase tracking-widest pl-1">
-                      Operational Role
+                      Job Title / Role
                     </p>
                     <input
                       type="text"
@@ -439,10 +439,10 @@ export const SituationalOnboarding = ({ onComplete }: OnboardingProps) => {
                   "w-full sm:w-auto flex items-center justify-center gap-3 px-8 py-4 rounded-xl font-black uppercase tracking-widest text-xs transition-all shadow-lg",
                   steps[step].id === "profile" && !profile.fullName.trim()
                     ? "bg-background border border-white/[0.05] text-text-muted cursor-not-allowed"
-                    : "bg-white text-foreground hover:bg-surface shadow-white/10 hover:shadow-white/20",
+                    : "bg-card text-foreground hover:bg-surface shadow-black/5 dark:shadow-white/10 hover:shadow-black/10 dark:hover:shadow-white/20",
                 )}
               >
-                {step === steps.length - 1 ? "Initialize Protocol" : "Proceed"}{" "}
+                {step === steps.length - 1 ? "Get started" : "Continue"}{" "}
                 <ArrowRight className="w-4 h-4" />
               </button>
             </div>

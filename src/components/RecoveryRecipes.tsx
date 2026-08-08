@@ -21,6 +21,8 @@ interface Recipe {
   boundary: string;
   icon: any;
   colorClass: string;
+  borderClass: string;
+  bgTintClass: string;
   bgColorClass: string;
 }
 
@@ -35,7 +37,9 @@ const RECIPES: Record<RecipeId, Recipe> = {
     boundary: 'Tell your team: "I am operating on low battery today, so my response times will be slower."',
     icon: Moon,
     colorClass: 'text-primary',
-    bgColorClass: 'bg-primary'
+    bgColorClass: 'bg-primary',
+    borderClass: 'border-l-primary',
+    bgTintClass: 'bg-primary/5'
   },
   meeting: {
     id: 'meeting',
@@ -47,7 +51,9 @@ const RECIPES: Record<RecipeId, Recipe> = {
     boundary: 'If asked to jump on another call: "I need 15 minutes to process the last meeting before pivoting."',
     icon: Zap,
     colorClass: 'text-warning',
-    bgColorClass: 'bg-warning'
+    bgColorClass: 'bg-warning',
+    borderClass: 'border-l-warning',
+    bgTintClass: 'bg-warning/5'
   },
   guilty: {
     id: 'guilty',
@@ -59,7 +65,9 @@ const RECIPES: Record<RecipeId, Recipe> = {
     boundary: 'Put your phone in Do Not Disturb Mode for the next hour.',
     icon: Shield,
     colorClass: 'text-success',
-    bgColorClass: 'bg-success'
+    bgColorClass: 'bg-success',
+    borderClass: 'border-l-success',
+    bgTintClass: 'bg-success/5'
   },
   angry: {
     id: 'angry',
@@ -71,7 +79,9 @@ const RECIPES: Record<RecipeId, Recipe> = {
     boundary: '"I am not in a productive headspace to discuss this right now. We will revisit this tomorrow at 10 AM."',
     icon: Flame,
     colorClass: 'text-destructive',
-    bgColorClass: 'bg-destructive'
+    bgColorClass: 'bg-destructive',
+    borderClass: 'border-l-destructive',
+    bgTintClass: 'bg-destructive/5'
   },
   numb: {
     id: 'numb',
@@ -83,7 +93,9 @@ const RECIPES: Record<RecipeId, Recipe> = {
     boundary: 'Decline all optional social interactions today. Protect the shell.',
     icon: CloudFog,
     colorClass: 'text-text-muted',
-    bgColorClass: 'bg-surface'
+    bgColorClass: 'bg-surface',
+    borderClass: 'border-l-border',
+    bgTintClass: 'bg-surface'
   },
   focus: {
     id: 'focus',
@@ -95,7 +107,9 @@ const RECIPES: Record<RecipeId, Recipe> = {
     boundary: 'Close all tabs except the one you need. Put the phone in another room.',
     icon: Crosshair,
     colorClass: 'text-primary',
-    bgColorClass: 'bg-primary'
+    bgColorClass: 'bg-primary',
+    borderClass: 'border-l-primary',
+    bgTintClass: 'bg-primary/5'
   },
   switch_off: {
     id: 'switch_off',
@@ -106,8 +120,10 @@ const RECIPES: Record<RecipeId, Recipe> = {
     action: 'Change your clothes. Create a physical transition away from your "work uniform".',
     boundary: 'Turn off Slack/Email notifications until tomorrow morning. State: "I am offline until tomorrow."',
     icon: Power,
-    colorClass: 'text-violet-500',
-    bgColorClass: 'bg-violet-500'
+    colorClass: 'text-primary',
+    bgColorClass: 'bg-primary',
+    borderClass: 'border-l-primary',
+    bgTintClass: 'bg-primary/5'
   },
   capacity: {
     id: 'capacity',
@@ -119,7 +135,9 @@ const RECIPES: Record<RecipeId, Recipe> = {
     boundary: '"I am currently over capacity and cannot take this on without dropping an existing priority. Which should I drop?"',
     icon: AlertTriangle,
     colorClass: 'text-destructive',
-    bgColorClass: 'bg-destructive'
+    bgColorClass: 'bg-destructive',
+    borderClass: 'border-l-destructive',
+    bgTintClass: 'bg-destructive/5'
   }
 };
 
@@ -137,7 +155,7 @@ export const RecoveryRecipes = ({ fingerprint, onAwardPoints }: RecoveryRecipesP
     <div className="space-y-12 pb-24">
       <div className="max-w-4xl">
         <div className="flex items-center gap-4 mb-4">
-           <div className="tag">Section 18 / Protocols</div>
+           <div className="tag">Section 18 / Practices</div>
            <div className="h-px flex-1 bg-border/40" />
         </div>
         <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-6">
@@ -159,7 +177,7 @@ export const RecoveryRecipes = ({ fingerprint, onAwardPoints }: RecoveryRecipesP
                "p-6 rounded-2xl border text-left transition-all group flex flex-col items-center sm:items-start text-center sm:text-left h-full",
                activeRecipe === r.id
                  ? "bg-primary/10 border-primary scale-[1.02] shadow-xl shadow-primary/10"
-                 : "glass border-transparent hover:border-primary/30 hover:bg-surface dark:hover:bg-surface"
+                 : "border border-transparent hover:border-primary/30 hover:bg-surface dark:hover:bg-surface"
             )}
           >
              <div className={cn("w-12 h-12 rounded-full flex items-center justify-center mb-4 transition-colors", activeRecipe === r.id ? r.bgColorClass + " text-white" : `bg-surface dark:bg-surface ${r.colorClass}`)}>
@@ -177,15 +195,15 @@ export const RecoveryRecipes = ({ fingerprint, onAwardPoints }: RecoveryRecipesP
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -20 }}
-            className={cn("card glass border-l-4 p-8 md:p-12 mt-8", `border-l-${recipe.colorClass.split('-')[1]}-500`, activeRecipe ? `bg-${recipe.colorClass.split('-')[1]}-500/5` : '')}
+            className={cn("card border-l-4 p-8 md:p-12 mt-8", recipe.borderClass, activeRecipe ? recipe.bgTintClass : '')}
           >
             <div className="flex items-center gap-4 mb-10">
-              <div className={cn("w-16 h-16 rounded-2xl flex items-center justify-center text-white shadow-xl", recipe.bgColorClass, `shadow-${recipe.colorClass.split('-')[1]}-500/30`)}>
+              <div className={cn("w-16 h-16 rounded-xl flex items-center justify-center text-white shadow-lg", recipe.bgColorClass)}>
                 <recipe.icon className="w-8 h-8" />
               </div>
               <div>
                 <h3 className="text-3xl font-display font-bold text-text-main">"{recipe.trigger}"</h3>
-                <p className="text-text-muted font-medium uppercase tracking-widest text-sm mt-1">Recovery Protocol Sequence</p>
+                <p className="text-text-muted font-medium uppercase tracking-widest text-sm mt-1">Recovery Steps</p>
               </div>
             </div>
 
@@ -256,7 +274,7 @@ export const RecoveryRecipes = ({ fingerprint, onAwardPoints }: RecoveryRecipesP
                    </div>
                    <h4 className="font-bold text-text-main uppercase tracking-widest text-sm">One Boundary</h4>
                  </div>
-                 <div className="p-5 bg-white/50 dark:bg-surface/50 rounded-2xl border border-border/50 text-text-main font-bold leading-relaxed border-l-4 border-l-red-500 group-hover:bg-destructive/5 transition-colors">
+                 <div className="p-5 bg-white/50 dark:bg-surface/50 rounded-2xl border border-border/50 text-text-main font-bold leading-relaxed border-l-4 border-l-destructive group-hover:bg-destructive/5 transition-colors">
                    {recipe.boundary}
                  </div>
                </div>
@@ -272,7 +290,7 @@ export const RecoveryRecipes = ({ fingerprint, onAwardPoints }: RecoveryRecipesP
                  }}
                >
                  <CheckCircle2 className="w-5 h-5 mr-2" />
-                 Acknowledge Protocol
+                 Got It
                </button>
             </div>
 

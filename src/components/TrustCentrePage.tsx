@@ -17,7 +17,7 @@ export const TrustCentrePage = ({ onBack }: TrustCentrePageProps) => {
       {/* Navigation */}
       <nav className="fixed top-0 w-full z-50 px-8 py-6 flex justify-between items-center backdrop-blur-xl bg-background/70 border-b border-primary/10">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 bg-gradient-to-tr from-primary to-indigo-600 rounded-xl flex items-center justify-center text-text-main shadow-xl shadow-primary/20">
+          <div className="w-10 h-10 bg-gradient-to-tr from-primary to-primary/70 rounded-xl flex items-center justify-center text-text-main shadow-lg shadow-primary/20">
             <ShieldCheck className="w-5 h-5" />
           </div>
           <div className="flex flex-col">
@@ -38,7 +38,7 @@ export const TrustCentrePage = ({ onBack }: TrustCentrePageProps) => {
         {/* Hero */}
         <section className="text-center space-y-6">
           <h2 className="text-4xl md:text-6xl font-light tracking-tight text-text-main leading-tight">
-            The moat is <span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 via-purple-300 to-indigo-300 italic font-serif font-normal">trust.</span>
+            The moat is <span className="text-transparent bg-clip-text bg-gradient-to-r from-primary via-primary/70 to-primary italic font-serif font-normal">trust.</span>
           </h2>
           <p className="text-text-muted text-base md:text-lg max-w-2xl mx-auto font-light leading-relaxed">
             Blaze Break understands you, but it does not expose you. We help organisations improve culture, but we do not allow them to spy on staff. Welcome to our public trust and assurance documentation.
@@ -87,7 +87,7 @@ export const TrustCentrePage = ({ onBack }: TrustCentrePageProps) => {
              </div>
           </div>
 
-          <div className="prose prose-invert prose-indigo max-w-none text-text-muted font-light text-sm leading-loose">
+          <div className="prose dark:prose-invert prose-primary max-w-none text-text-muted font-light text-sm leading-loose">
             <p>
               Nova is our proprietary recovery coach. She is provided access to your data only when you permit it, and her actions are heavily constrained by our deterministic permission engine.
             </p>

@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { ChevronDown, MoreHorizontal, FileText, CheckCircle, EyeOff, Share2, Check } from 'lucide-react';
+import { ChevronDown, MoreHorizontal, FileText, CheckCircle, Share2, Check } from 'lucide-react';
 import { cn } from '../lib/utils.ts';
 
 interface SmartCardProps {
@@ -27,21 +27,18 @@ export const SmartCard = ({
   const [isExpanded, setIsExpanded] = useState(true);
   const [showContextMenu, setShowContextMenu] = useState(false);
   const [contextMenuPos, setContextMenuPos] = useState({ x: 0, y: 0 });
-  const [isVisible, setIsVisible] = useState(true);
-  const [showHideConfirm, setShowHideConfirm] = useState(false);
   const [isMicroRecovery, setIsMicroRecovery] = useState(id === 'micro');
   const [isCopied, setIsCopied] = useState(false);
-  
+
   const cardRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       if (showContextMenu) setShowContextMenu(false);
-      if (showHideConfirm) setShowHideConfirm(false);
     };
     window.addEventListener('click', handleClickOutside);
     return () => window.removeEventListener('click', handleClickOutside);
-  }, [showContextMenu, showHideConfirm]);
+  }, [showContextMenu]);
 
   const handleContextMenu = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -67,7 +64,7 @@ export const SmartCard = ({
       `📌 *Focus Area*: ${cardTitle}\n` +
       `${energyDrain ? `⚡ *Energy Drain Level*: ${energyDrain.charAt(0).toUpperCase() + energyDrain.slice(1)}\n` : ''}` +
       `🛠️ *Current State*: ${isMicroRecovery ? 'Active Micro-Recovery' : 'Monitoring'}\n\n` +
-      `_Exported via Guardian Protocol_`;
+      `_Exported via Guardian Alert_`;
 
     try {
       await navigator.clipboard.writeText(summary);
@@ -80,8 +77,6 @@ export const SmartCard = ({
       console.error('Failed to copy text', err);
     }
   };
-
-  if (!isVisible) return null;
 
   return (
     <motion.div 
@@ -167,7 +162,7 @@ export const SmartCard = ({
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.95 }}
-            className="absolute z-50 bg-card border border-border shadow-2xl rounded-lg py-1 min-w-[160px]"
+            className="absolute z-50 bg-card border border-border shadow-lg rounded-lg py-1 min-w-[160px]"
             style={{ 
               top: `${Math.min(contextMenuPos.y, (cardRef.current?.clientHeight || 500) - 150)}px`, 
               left: `${Math.min(contextMenuPos.x, (cardRef.current?.clientWidth || 300) - 180)}px` 
@@ -194,50 +189,9 @@ export const SmartCard = ({
               }}
               className="w-full px-4 py-2 text-left text-xs font-medium text-warning hover:bg-card hover:text-warning/40 flex items-center gap-2"
             >
-              <div className={cn("w-2 h-2 rounded-full", isMicroRecovery ? "bg-warning animate-pulse" : "bg-surface")} /> 
+              <div className={cn("w-2 h-2 rounded-full", isMicroRecovery ? "bg-warning animate-pulse" : "bg-surface")} />
               {isMicroRecovery ? "End Micro-Recovery" : "Micro-Recovery Mode"}
             </button>
-            <div className="h-px bg-card my-1" />
-            <button 
-              onClick={(e) => { 
-                e.stopPropagation(); 
-                setShowContextMenu(false);
-                setShowHideConfirm(true); 
-              }}
-              className="w-full px-4 py-2 text-left text-xs font-medium text-destructive hover:bg-card hover:text-destructive/40 flex items-center gap-2"
-            >
-              <EyeOff className="w-3.5 h-3.5" /> Hide Card
-            </button>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      <AnimatePresence>
-        {showHideConfirm && (
-          <motion.div
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.95 }}
-            className="absolute inset-0 z-50 bg-card/90 backdrop-blur-sm rounded-[1.5rem] flex flex-col items-center justify-center p-6 text-center shadow-2xl"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <EyeOff className="w-8 h-8 text-destructive mb-3" />
-            <h3 className="text-text-main font-bold text-lg mb-1">Hide this card?</h3>
-            <p className="text-text-muted text-xs mb-6 max-w-[200px]">You can restore it later from your dashboard settings.</p>
-            <div className="flex gap-3 w-full max-w-[240px]">
-              <button 
-                onClick={(e) => { e.stopPropagation(); setShowHideConfirm(false); }}
-                className="flex-1 py-2 rounded-lg bg-card text-text-muted text-xs font-bold hover:bg-surface transition-colors"
-              >
-                Cancel
-              </button>
-              <button 
-                onClick={(e) => { e.stopPropagation(); setIsVisible(false); setShowHideConfirm(false); }}
-                className="flex-1 py-2 rounded-lg bg-destructive text-destructive-foreground text-xs font-bold hover:bg-destructive transition-colors"
-              >
-                Hide
-              </button>
-            </div>
           </motion.div>
         )}
       </AnimatePresence>

@@ -67,7 +67,7 @@ export const NovaFeedbackModal = () => {
   return (
     <AnimatePresence>
       {isOpen && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6 shadow-2xl">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6">
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
@@ -89,7 +89,7 @@ export const NovaFeedbackModal = () => {
                 <div className="space-y-2">
                   <h3 className="text-xl font-bold font-display text-text-main">Thank You</h3>
                   <p className="text-text-muted text-sm leading-relaxed">
-                    Nova uses your feedback to continuously calibrate the support model. Your neural pattern optimizations have been logged.
+                    Nova uses your feedback to get better at supporting you over time. Thanks for taking the time to share it.
                   </p>
                 </div>
               </div>

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { 
+import { CrisisSupportContent } from './CrisisSupport';
+import {
   Users, 
   ShieldCheck, 
   Plus, 
@@ -109,7 +110,7 @@ const GuardianCard = ({
       className={cn(
         "guardian-network-card p-6 rounded-2xl border transition-all overflow-hidden relative shadow-lg group",
         contact.role.includes('guardian')
-          ? "bg-card border-destructive/30 text-destructive shadow-rose-900/10" 
+          ? "bg-card border-destructive/30 text-destructive shadow-destructive/10"
           : "bg-white dark:bg-card border-border"
       )}
     >
@@ -150,11 +151,11 @@ const GuardianCard = ({
       </div>
       
       <div className="space-y-1.5 relative z-10 mb-6">
-        <h4 className={cn("font-bold text-lg tracking-tight", contact.role.includes('guardian') ? "text-white" : "text-text-main")}>{contact.name}</h4>
+        <h4 className={cn("font-bold text-lg tracking-tight", contact.role.includes('guardian') ? "text-destructive" : "text-text-main")}>{contact.name}</h4>
         <div className="flex items-center gap-2 flex-wrap">
            <span className={cn(
              "text-[11px] uppercase font-black tracking-widest px-2.5 py-1 rounded-md",
-             contact.role === 'primary_guardian' ? "bg-destructive/20 text-rose-300" : "bg-border dark:bg-surface text-text-muted"
+             contact.role === 'primary_guardian' ? "bg-destructive/20 text-destructive" : "bg-border dark:bg-surface text-text-muted"
            )}>
              {contact.role.replace('_', ' ')}
            </span>
@@ -182,7 +183,7 @@ const GuardianCard = ({
          <div className="grid grid-cols-2 gap-2">
             <button 
               onClick={() => onActivateSOS(contact.id)}
-              className={cn("col-span-1 py-3 text-[11px] font-black uppercase tracking-widest rounded-xl transition-all shadow-sm", contact.role.includes('guardian') ? "bg-destructive hover:bg-destructive text-destructive-foreground" : "bg-white dark:bg-surface border border-rose-200 dark:border-rose-900 text-rose-600 dark:text-destructive hover:bg-rose-50 dark:hover:bg-rose-950")}
+              className={cn("col-span-1 py-3 text-[11px] font-black uppercase tracking-widest rounded-xl transition-all shadow-sm", contact.role.includes('guardian') ? "bg-destructive hover:bg-destructive text-destructive-foreground" : "bg-white dark:bg-surface border border-destructive dark:border-destructive text-destructive dark:text-destructive hover:bg-destructive dark:hover:bg-destructive")}
             >
               Manual SOS
             </button>
@@ -209,7 +210,7 @@ const GuardianCard = ({
               ) : isRelaying ? (
                 <><Loader2 className="w-4 h-4 animate-spin" /> Transmitting...</>
               ) : (
-                <><Zap className="w-4 h-4 text-warning" /> One-Touch Override</>
+                <><Zap className="w-4 h-4 text-warning" /> One-Touch Alert</>
               )}
             </button>
          </div>
@@ -288,7 +289,7 @@ export const NovaGuardianRelay = ({ contacts, onAdd, onRemove }: NovaGuardianRel
 
   return (
     <div className="space-y-12 pb-12">
-      <div className="relative overflow-hidden rounded-3xl bg-card border border-border p-8 sm:p-12 shadow-2xl">
+      <div className="relative overflow-hidden rounded-xl bg-card border border-border p-8 sm:p-12">
         <div className="absolute top-0 right-0 p-8 opacity-5 pointer-events-none">
           <Network className="w-64 h-64 text-text-muted" />
         </div>
@@ -298,7 +299,7 @@ export const NovaGuardianRelay = ({ contacts, onAdd, onRemove }: NovaGuardianRel
               <ShieldCheck className="w-7 h-7" />
             </div>
             <div>
-               <h2 className="text-3xl lg:text-4xl font-display font-bold text-text-main tracking-tight">Guardian Relay Protocol</h2>
+               <h2 className="text-3xl lg:text-4xl font-display font-bold text-text-main tracking-tight">Guardian Relay</h2>
                <p className="text-destructive text-xs font-black uppercase tracking-widest mt-2 flex items-center gap-2"><Activity className="w-3 h-3" /> Priority Access Subsystem</p>
             </div>
           </div>
@@ -306,7 +307,7 @@ export const NovaGuardianRelay = ({ contacts, onAdd, onRemove }: NovaGuardianRel
             "When you can't reach out, Nova reaches in."
           </p>
           <p className="text-sm text-text-muted leading-relaxed max-w-2xl">
-            A secure, pre-consented escalation network. When the system detects cascading emotional burnout or critical overload, it authorizes a direct support flow—bridging external human intervention seamlessly, without exposing your private biometric or conversational transcripts.
+            A pre-set escalation network you control. Add trusted contacts once, then reach them in one tap whenever you need real support — nothing is monitored or triggered automatically, and your private details are never shared with your guardians.
           </p>
           
           <button 
@@ -341,15 +342,15 @@ export const NovaGuardianRelay = ({ contacts, onAdd, onRemove }: NovaGuardianRel
             </AnimatePresence>
 
             {contacts.length === 0 && !isAdding && (
-               <div className="col-span-full py-16 flex flex-col items-center justify-center text-center border border-dashed border-border rounded-3xl bg-surface dark:bg-card/50">
+               <div className="col-span-full py-16 flex flex-col items-center justify-center text-center border border-dashed border-border rounded-xl bg-surface dark:bg-card/50">
                  <Shield className="w-12 h-12 text-text-muted mb-6" />
                  <h4 className="font-bold text-text-main mb-2 text-lg">Infrastructure Offline</h4>
-                 <p className="text-sm text-text-muted max-w-md px-6 mb-8 leading-relaxed">Establish your escalation network now. Nova requires a defined path when autonomous regulation protocols hit their physical limits.</p>
+                 <p className="text-sm text-text-muted max-w-md px-6 mb-8 leading-relaxed">Set up your emergency contacts now, so there's a clear path to reach someone if things ever get to be too much.</p>
                  <button 
                    onClick={() => setIsAdding(true)}
                    className="flex items-center gap-3 btn-primary px-8 py-4 rounded-xl text-xs font-black uppercase tracking-widest shadow-xl shadow-primary/20"
                  >
-                   <UserPlus className="w-4 h-4" /> Initialize Node
+                   <UserPlus className="w-4 h-4" /> Add Contact
                  </button>
                </div>
             )}
@@ -359,7 +360,7 @@ export const NovaGuardianRelay = ({ contacts, onAdd, onRemove }: NovaGuardianRel
         {/* Info Sidebar */}
         <div className="xl:col-span-4 space-y-6">
           {/* Nova's Anchor: Grounding State */}
-          <div className="card p-8 bg-card border border-border text-text-main relative overflow-hidden space-y-6 shadow-2xl">
+          <div className="card p-8 bg-card border border-border text-text-main relative overflow-hidden space-y-6">
             <div className="absolute top-0 right-0 w-full h-full bg-gradient-to-br from-primary/10 via-transparent to-transparent pointer-events-none" />
             
             <div className="relative z-10 flex items-center justify-between">
@@ -369,7 +370,7 @@ export const NovaGuardianRelay = ({ contacts, onAdd, onRemove }: NovaGuardianRel
                   Nova's Anchor
                 </h4>
               </div>
-              <div className="w-2 h-2 rounded-full bg-primary animate-pulse shadow-[0_0_10px_rgba(99,102,241,0.8)]" />
+              <div className="w-2 h-2 rounded-full bg-primary animate-pulse shadow-[0_0_10px_rgba(234,88,12,0.8)]" />
             </div>
 
             <div className="relative z-10 space-y-5">
@@ -381,7 +382,7 @@ export const NovaGuardianRelay = ({ contacts, onAdd, onRemove }: NovaGuardianRel
                    <motion.div 
                      animate={{ scale: [1, 1.15, 1] }}
                      transition={{ duration: 8, repeat: Infinity, ease: "easeInOut" }}
-                     className="w-16 h-16 rounded-full border border-primary/30 mx-auto flex items-center justify-center text-primary relative shadow-[0_0_30px_rgba(99,102,241,0.2)]"
+                     className="w-16 h-16 rounded-full border border-primary/30 mx-auto flex items-center justify-center text-primary relative shadow-[0_0_30px_rgba(234,88,12,0.2)]"
                    >
                      <motion.div 
                        animate={{ opacity: [0.5, 1, 0.5] }}
@@ -397,66 +398,18 @@ export const NovaGuardianRelay = ({ contacts, onAdd, onRemove }: NovaGuardianRel
             </div>
           </div>
 
-          {/* Emergency Handover Protocol */}
-          <div className="card p-8 bg-white dark:bg-card border-border relative overflow-hidden space-y-6 shadow-xl">
+          {/* Crisis support — shared content, see CrisisSupport.tsx */}
+          <div className="card p-8 bg-card border-border relative overflow-hidden space-y-6 shadow-xl">
              <div className="relative z-10 flex items-center justify-between border-b border-border pb-4">
                <div className="flex items-center gap-3">
-                 <PhoneForwarded className="w-5 h-5 text-destructive" />
+                 <PhoneForwarded className="w-5 h-5 text-primary" />
                  <h4 className="font-bold uppercase tracking-widest text-xs tracking-[0.2em] text-text-main">
-                   External Triage
+                   Crisis support
                  </h4>
                </div>
              </div>
-             
-             <div className="relative z-10 space-y-5 pt-2">
-                <p className="text-xs text-text-muted leading-relaxed font-medium">
-                  Direct routing to specialized crisis management organizations when internal mitigation fails.
-                </p>
-
-                <div className="space-y-6">
-                  <div className="space-y-3">
-                    <h5 className="text-[11px] font-black uppercase tracking-widest text-text-muted ml-1">If you're in the UK or Ireland</h5>
-                    <a href="tel:116123" className="flex items-center justify-between p-4 rounded-xl border border-warning/20 dark:border-warning-foreground/30 bg-warning/10 dark:bg-warning-foreground/20 hover:bg-warning/20 dark:hover:bg-warning-foreground/40 transition-colors group">
-                       <div className="space-y-1.5">
-                         <span className="text-sm font-bold text-warning dark:text-warning block">Samaritans</span>
-                         <span className="text-[11px] font-black uppercase tracking-widest text-warning/70 font-mono">Call or Text &middot; Free &middot; 24/7</span>
-                       </div>
-                       <PhoneCall className="w-5 h-5 text-warning group-hover:scale-110 transition-transform" />
-                    </a>
-                    <a href="sms:85258?body=SHOUT" className="flex items-center justify-between p-4 rounded-xl border border-primary-light dark:border-primary-dark/30 bg-primary-light dark:bg-primary-dark/20 hover:bg-primary-light dark:hover:bg-primary-dark/40 transition-colors group">
-                       <div className="space-y-1.5">
-                         <span className="text-sm font-bold text-primary dark:text-primary block">Shout</span>
-                         <span className="text-[11px] font-black uppercase tracking-widest text-primary/70 font-mono">Text "SHOUT" to 85258</span>
-                       </div>
-                       <MessageCircle className="w-5 h-5 text-primary group-hover:scale-110 transition-transform" />
-                    </a>
-                    <a href="tel:999" className="flex items-center justify-between p-4 rounded-xl border border-rose-100 dark:border-rose-900/30 bg-rose-50 dark:bg-rose-950/20 hover:bg-rose-100 dark:hover:bg-rose-900/40 transition-colors group">
-                       <div className="space-y-1.5">
-                         <span className="text-sm font-bold text-rose-600 dark:text-destructive block">Emergency Services</span>
-                         <span className="text-[11px] font-black uppercase tracking-widest text-destructive/70 font-mono">Tap routing &middot; 24/7 Availability</span>
-                       </div>
-                       <PhoneCall className="w-5 h-5 text-destructive group-hover:scale-110 transition-transform" />
-                    </a>
-                  </div>
-
-                  <div className="space-y-3">
-                    <h5 className="text-[11px] font-black uppercase tracking-widest text-text-muted ml-1">If you're in the US or Canada</h5>
-                    <a href="tel:988" className="flex items-center justify-between p-4 rounded-xl border border-rose-100 dark:border-rose-900/30 bg-rose-50 dark:bg-rose-950/20 hover:bg-rose-100 dark:hover:bg-rose-900/40 transition-colors group">
-                       <div className="space-y-1.5">
-                         <span className="text-sm font-bold text-rose-600 dark:text-destructive block">988 Suicide & Crisis Lifeline</span>
-                         <span className="text-[11px] font-black uppercase tracking-widest text-destructive/70 font-mono">Tap routing &middot; 24/7 Availability</span>
-                       </div>
-                       <PhoneCall className="w-5 h-5 text-destructive group-hover:scale-110 transition-transform" />
-                    </a>
-                    <a href="sms:741741?body=HOME" className="flex items-center justify-between p-4 rounded-xl border border-primary-light dark:border-primary-dark/30 bg-primary-light dark:bg-primary-dark/20 hover:bg-primary-light dark:hover:bg-primary-dark/40 transition-colors group">
-                       <div className="space-y-1.5">
-                         <span className="text-sm font-bold text-primary dark:text-primary block">Crisis Text Line</span>
-                         <span className="text-[11px] font-black uppercase tracking-widest text-primary/70 font-mono">Payload: "HOME" TO 741741</span>
-                       </div>
-                       <MessageCircle className="w-5 h-5 text-primary group-hover:scale-110 transition-transform" />
-                    </a>
-                  </div>
-                </div>
+             <div className="relative z-10 pt-2">
+                <CrisisSupportContent />
              </div>
           </div>
           <div className="card p-8 border border-border bg-card text-text-main relative overflow-hidden space-y-6 shadow-lg">
@@ -467,11 +420,11 @@ export const NovaGuardianRelay = ({ contacts, onAdd, onRemove }: NovaGuardianRel
              
              <div className="relative z-10 space-y-5 pt-2">
                 <div className="space-y-2.5">
-                  <h5 className="text-xs font-black uppercase tracking-widest text-success dark:text-success">Zero-Knowledge Architecture</h5>
-                  <p className="text-[11px] leading-relaxed text-text-muted">Nova executes strict data isolation. Incident contexts, biometric markers, and conversation payloads are never transmitted to guardian endpoints.</p>
+                  <h5 className="text-xs font-black uppercase tracking-widest text-success dark:text-success">Your Privacy, Protected</h5>
+                  <p className="text-[11px] leading-relaxed text-text-muted">Your guardians only ever see that you've reached out — never your conversation history, journal entries, or any other private details.</p>
                 </div>
                 <div className="space-y-2.5">
-                  <h5 className="text-xs font-black uppercase tracking-widest text-success">Logic Priority Directive</h5>
+                  <h5 className="text-xs font-black uppercase tracking-widest text-success">Priority Order</h5>
                   <p className="text-[11px] leading-relaxed text-text-muted">Upon distress detection, system intervention occurs locally first. External proxy (Auto-Relay) activates only following threshold latency.</p>
                 </div>
              </div>
@@ -494,7 +447,7 @@ export const NovaGuardianRelay = ({ contacts, onAdd, onRemove }: NovaGuardianRel
               initial={{ opacity: 0, scale: 0.95, y: 10 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 10 }}
-               className="relative card w-full max-w-xl p-8 overflow-hidden bg-white dark:bg-card border-border shadow-2xl"
+               className="relative card w-full max-w-xl p-8 overflow-hidden bg-white dark:bg-card border border-border shadow-lg"
             >
               <button 
                 onClick={() => setIsAdding(false)}
@@ -506,7 +459,7 @@ export const NovaGuardianRelay = ({ contacts, onAdd, onRemove }: NovaGuardianRel
               <div className="space-y-8">
                 <div className="space-y-2 border-b border-border pb-6 pr-8">
                   <h3 className="text-2xl font-bold font-display text-text-main flex items-center gap-3">
-                     <ShieldCheck className="w-6 h-6 text-primary" /> Provision Escalation Node
+                     <ShieldCheck className="w-6 h-6 text-primary" /> Add a Support Contact
                   </h3>
                   <p className="text-sm text-text-muted">Define the endpoint identity and access parameters for severe overload scenarios.</p>
                 </div>
@@ -526,7 +479,7 @@ export const NovaGuardianRelay = ({ contacts, onAdd, onRemove }: NovaGuardianRel
                     </div>
                     
                     <div className="space-y-2">
-                      <label className="text-[11px] font-black uppercase tracking-widest text-text-muted ml-1">Target Vector (Phone)</label>
+                      <label className="text-[11px] font-black uppercase tracking-widest text-text-muted ml-1">Phone Number</label>
                       <input 
                         type="tel" 
                         value={newContact.contactMethod}
@@ -538,13 +491,13 @@ export const NovaGuardianRelay = ({ contacts, onAdd, onRemove }: NovaGuardianRel
                     </div>
 
                     <div className="space-y-2">
-                       <label className="text-[11px] font-black uppercase tracking-widest text-text-muted ml-1">Transmission Protocol</label>
-                       <select 
+                       <label className="text-[11px] font-black uppercase tracking-widest text-text-muted ml-1">Contact Method</label>
+                       <select
                          value={newContact.notificationPreference}
                          onChange={e => setNewContact({...newContact, notificationPreference: e.target.value as any})}
                          className="w-full bg-surface dark:bg-surface border border-border rounded-xl px-4 py-3.5 text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30 transition-all"
                        >
-                         <option value="sms">Encrypted SMS Payload</option>
+                         <option value="sms">Encrypted SMS</option>
                          <option value="whatsapp">WhatsApp Business API</option>
                        </select>
                     </div>
@@ -556,9 +509,9 @@ export const NovaGuardianRelay = ({ contacts, onAdd, onRemove }: NovaGuardianRel
                          onChange={e => setNewContact({...newContact, role: e.target.value as any})}
                          className="w-full bg-surface dark:bg-surface border border-border rounded-xl px-4 py-3.5 text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30 transition-all font-sans"
                        >
-                         <option value="primary_guardian">Primary Sentinel (Initial Escalation)</option>
+                         <option value="primary_guardian">Primary Contact (Contacted First)</option>
                          <option value="backup_guardian">Secondary Sentinel (Failover Endpoint)</option>
-                         <option value="coach">Professional Triage / Analyst</option>
+                         <option value="coach">Therapist / Counselor</option>
                          <option value="peer" disabled>Peer Validator (Blocked by Zone D Privacy Rules)</option>
                          <option value="manager" disabled>Manager (Blocked by Zone A Privacy Isolation Rules)</option>
                        </select>
@@ -569,8 +522,8 @@ export const NovaGuardianRelay = ({ contacts, onAdd, onRemove }: NovaGuardianRel
                   </div>
 
                   {newContact.role.includes('guardian') && (
-                    <div className="p-6 bg-rose-50/50 dark:bg-rose-950/20 border border-rose-200 dark:border-rose-900/30 rounded-2xl space-y-5">
-                       <h5 className="text-xs font-black uppercase tracking-widest text-rose-600 dark:text-destructive flex items-center gap-2">
+                    <div className="p-6 bg-destructive/50 dark:bg-destructive/20 border border-destructive dark:border-destructive/30 rounded-2xl space-y-5">
+                       <h5 className="text-xs font-black uppercase tracking-widest text-destructive dark:text-destructive flex items-center gap-2">
                           <AlertTriangle className="w-4 h-4" /> Automation Parameters
                        </h5>
                        
@@ -585,7 +538,7 @@ export const NovaGuardianRelay = ({ contacts, onAdd, onRemove }: NovaGuardianRel
                            className="hidden"
                          />
                          <div className="space-y-1.5">
-                           <span className={cn("text-sm font-bold block transition-colors", newContact.autoAlertEnabled ? "text-rose-600 dark:text-destructive" : "text-text-main")}>Enable Zero-Click Escalation</span>
+                           <span className={cn("text-sm font-bold block transition-colors", newContact.autoAlertEnabled ? "text-destructive dark:text-destructive" : "text-text-main")}>Enable Automatic Alert</span>
                            <span className="text-xs text-text-muted block leading-relaxed pr-6 font-medium">Authorizes the Nova engine to autonomously deploy distress beacons to this endpoint upon detecting a critical instability state, bypassing user confirmation.</span>
                          </div>
                        </label>
@@ -596,7 +549,7 @@ export const NovaGuardianRelay = ({ contacts, onAdd, onRemove }: NovaGuardianRel
                     type="submit"
                     className="w-full bg-surface dark:bg-white text-text-main dark:text-foreground py-5 rounded-xl text-xs font-black uppercase tracking-[0.15em] mt-4 shadow-xl shadow-black/10 transition-all flex items-center justify-center gap-3 hover:scale-[1.01]"
                   >
-                    Commit Node Configuration
+                    Save Contact
                   </button>
                 </form>
               </div>
@@ -620,7 +573,7 @@ export const NovaGuardianRelay = ({ contacts, onAdd, onRemove }: NovaGuardianRel
               initial={{ opacity: 0, scale: 0.95, y: 10 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 10 }}
-               className="relative card w-full max-w-md p-0 overflow-hidden bg-card border-destructive/30 text-text-main shadow-2xl shadow-destructive/20"
+               className="relative card w-full max-w-md p-0 overflow-hidden bg-card border border-destructive/30 text-text-main shadow-lg shadow-destructive/10"
             >
                 <div className="p-8 space-y-6 relative z-10">
                   <div className="w-20 h-20 rounded-2xl bg-destructive/20 flex items-center justify-center mx-auto text-destructive border border-destructive/30 shadow-[0_0_30px_rgba(225,29,72,0.2)]">
@@ -629,14 +582,14 @@ export const NovaGuardianRelay = ({ contacts, onAdd, onRemove }: NovaGuardianRel
                   <div className="text-center space-y-3">
                      <h3 className="text-2xl font-bold font-display line-clamp-1 text-text-main tracking-tight">Manual Dispatch</h3>
                      <p className="text-sm text-text-muted px-4 leading-relaxed">
-                       Deploying emergency beacon to <strong className="text-text-main">"{contacts.find(c => c.id === activeSOS)?.name}"</strong>. The endpoint will be instructed to initiate primary contact protocol immediately.
+                       Sending an alert to <strong className="text-text-main">"{contacts.find(c => c.id === activeSOS)?.name}"</strong>. They'll be asked to reach out to you as soon as possible.
                      </p>
                   </div>
 
                   <div className="p-5 bg-black/40 rounded-xl border border-border/50 shadow-inner">
                     <p className="text-[11px] font-mono leading-relaxed text-text-muted">
                       [PAYLOAD PREVIEW]<br/><br/>
-                      "Nova System Directive: [Your Name] requires immediate structural support. Initiate contact protocol. This is an automated routing ping originated from a manual user override."
+                      "Nova Alert: [Your Name] has asked for extra support right now. This message was sent because they manually requested it."
                     </p>
                   </div>
 
@@ -662,7 +615,7 @@ export const NovaGuardianRelay = ({ contacts, onAdd, onRemove }: NovaGuardianRel
                            if (c) triggerLiveRelay(c);
                         }}
                         disabled={isSending}
-                        className="py-4 rounded-xl font-bold text-xs uppercase tracking-widest bg-destructive text-destructive-foreground hover:bg-destructive transition-colors flex items-center justify-center gap-2 shadow-lg shadow-rose-600/30 disabled:"
+                        className="py-4 rounded-xl font-bold text-xs uppercase tracking-widest bg-destructive text-destructive-foreground hover:bg-destructive transition-colors flex items-center justify-center gap-2 shadow-lg shadow-destructive/30 disabled:opacity-40"
                       >
                        {isSending ? <Loader2 className="w-4 h-4 animate-spin" /> : <><Send className="w-4 h-4 relative -left-0.5" /> Execute</>}
                       </button>

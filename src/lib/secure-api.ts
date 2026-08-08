@@ -41,7 +41,13 @@ export async function secureApiFetch(path: string, options: SecureApiOptions = {
   headers.set('Authorization', `Bearer ${idToken}`);
   if (appCheckToken) {
     headers.set('X-Firebase-AppCheck', appCheckToken);
-  } else if (!needsAppCheck || (import.meta as any).env.DEV) {
+  } else if ((import.meta as any).env.DEV) {
+    // Only meaningful in genuine local development, where the server's own
+    // NODE_ENV check already skips App Check entirely — this header is inert
+    // there either way. It is deliberately NOT sent as a fallback for a
+    // misconfigured production deployment (missing App Check setup): the
+    // server no longer honors this string outside of non-production, so
+    // sending it there would just mask the real error with a misleading one.
     headers.set('X-Firebase-AppCheck', "dev-bypass");
   }
 

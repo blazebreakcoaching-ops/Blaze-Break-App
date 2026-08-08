@@ -31,14 +31,14 @@ const OVERCAPACITY_DATA = [
 export const OutcomeTracker = ({ fingerprint }: OutcomeTrackerProps) => {
 
   const KPIs = [
-    { label: 'Recovery Score Improvement', value: '+45%', metric: '85/100', icon: TrendingUp, color: 'emerald', trend: 'up' },
-    { label: 'Burnout Risk Reduction', value: '-50%', metric: 'Low Risk', icon: ShieldCheck, color: 'blue', trend: 'down' },
-    { label: 'Sleep Consistency', value: '+50%', metric: '80/100', icon: Moon, color: 'indigo', trend: 'up' },
-    { label: 'Boundary Confidence', value: '+65%', metric: '85/100', icon: Shield, color: 'amber', trend: 'up' },
-    { label: 'Energy Stability', value: 'High', metric: 'No Crashes', icon: Zap, color: 'yellow', trend: 'up' },
-    { label: 'Overcapacity Days', value: '-80%', metric: '1 day/wk', icon: BatteryCharging, color: 'emerald', trend: 'down' },
-    { label: 'Return-to-Work Confidence', value: '8/10', metric: 'Ready', icon: Briefcase, color: 'purple', trend: 'up' },
-    { label: 'User-Rated Helpfulness', value: '4.9/5', metric: 'Excellent', icon: Star, color: 'rose', trend: 'up' }
+    { label: 'Recovery Score Improvement', value: '+45%', metric: '85/100', icon: TrendingUp, trend: 'up' },
+    { label: 'Burnout Risk Reduction', value: '-50%', metric: 'Low Risk', icon: ShieldCheck, trend: 'down' },
+    { label: 'Sleep Consistency', value: '+50%', metric: '80/100', icon: Moon, trend: 'up' },
+    { label: 'Boundary Confidence', value: '+65%', metric: '85/100', icon: Shield, trend: 'up' },
+    { label: 'Energy Stability', value: 'High', metric: 'No Crashes', icon: Zap, trend: 'up' },
+    { label: 'Overcapacity Days', value: '-80%', metric: '1 day/wk', icon: BatteryCharging, trend: 'down' },
+    { label: 'Return-to-Work Confidence', value: '8/10', metric: 'Ready', icon: Briefcase, trend: 'up' },
+    { label: 'User-Rated Helpfulness', value: '4.9/5', metric: 'Excellent', icon: Star, trend: 'up' }
   ];
 
   return (
@@ -65,13 +65,13 @@ export const OutcomeTracker = ({ fingerprint }: OutcomeTrackerProps) => {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: i * 0.1 }}
-            className={`card glass p-6 border-${kpi.color}-500/20 relative overflow-hidden group`}
+            className="card p-6 border border-success/20 relative overflow-hidden group"
           >
              <div className="flex items-center justify-between mb-4 relative z-10">
-               <div className={`w-10 h-10 rounded-xl bg-${kpi.color}-500/10 text-${kpi.color}-500 flex items-center justify-center`}>
+               <div className="w-10 h-10 rounded-lg bg-success/10 text-success flex items-center justify-center">
                  <kpi.icon className="w-5 h-5" />
                </div>
-               <div className={`px-2 py-1 rounded bg-${kpi.color}-500/10 text-${kpi.color}-600 dark:text-${kpi.color}-400 text-xs font-bold flex items-center gap-1`}>
+               <div className="px-2 py-1 rounded bg-success/10 text-success text-xs font-bold flex items-center gap-1">
                  {kpi.trend === 'up' ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
                  {kpi.value}
                </div>
@@ -80,7 +80,6 @@ export const OutcomeTracker = ({ fingerprint }: OutcomeTrackerProps) => {
                <h4 className="text-sm font-black uppercase tracking-wider text-text-muted mb-1">{kpi.label}</h4>
                <p className="text-2xl font-display font-bold text-text-main">{kpi.metric}</p>
              </div>
-             <div className={`absolute right-[-20%] bottom-[-20%] w-32 h-32 bg-${kpi.color}-500/5 rounded-full blur-2xl group-hover:bg-${kpi.color}-500/10 transition-colors`} />
           </motion.div>
         ))}
       </div>
@@ -88,7 +87,7 @@ export const OutcomeTracker = ({ fingerprint }: OutcomeTrackerProps) => {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
         
         {/* Recovery vs Burnout Risk Chart */}
-        <div className="card glass p-8">
+        <div className="card border border-border p-8">
            <div className="flex items-center justify-between mb-8">
               <div>
                 <h3 className="text-xl font-display font-bold text-text-main">Recovery Progression</h3>
@@ -128,7 +127,7 @@ export const OutcomeTracker = ({ fingerprint }: OutcomeTrackerProps) => {
         </div>
 
         {/* Boundary Confidence & Sleep Consistency */}
-        <div className="card glass p-8">
+        <div className="card border border-border p-8">
            <div className="flex items-center justify-between mb-8">
               <div>
                 <h3 className="text-xl font-display font-bold text-text-main">Biological & Behavioral Metrics</h3>
@@ -157,7 +156,7 @@ export const OutcomeTracker = ({ fingerprint }: OutcomeTrackerProps) => {
         </div>
 
         {/* Overcapacity Days Reduction */}
-        <div className="card glass p-8 lg:col-span-2">
+        <div className="card border border-border p-8 lg:col-span-2">
            <div className="flex items-center justify-between mb-8">
               <div>
                 <h3 className="text-xl font-display font-bold text-text-main">Overcapacity Days</h3>

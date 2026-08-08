@@ -7,7 +7,8 @@
     "dev": "tsx server.ts",
     "build": "vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
     "start": "node dist/server.cjs",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "test": "vitest run"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
@@ -23,6 +24,7 @@
     "express": "^5.2.1",
     "express-rate-limit": "^8.5.2",
     "firebase": "^12.13.0",
+    "helmet": "^8.3.0",
     "lucide-react": "^1.16.0",
     "motion": "^12.23.24",
     "njre": "^1.5.4",
@@ -32,6 +34,7 @@
     "recharts": "^3.8.1",
     "tailwind-merge": "^3.6.0",
     "twilio": "^6.0.2",
+    "web-push": "^3.6.7",
     "ws": "^8.20.1",
     "zod": "^4.4.3"
   },
@@ -46,10 +49,11 @@
     "@types/ws": "^8.18.1",
     "autoprefixer": "^10.4.21",
     "esbuild": "^0.28.0",
-    "firebase-admin": "^13.10.0",
+    "firebase-admin": "^14.2.0",
     "tailwindcss": "^4.1.14",
     "tsx": "^4.22.2",
     "typescript": "~5.8.2",
-    "vite": "^8.0.13"
+    "vite": "^8.0.13",
+    "vitest": "^4.1.10"
   }
 }

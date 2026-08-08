@@ -369,9 +369,8 @@ export function FocusZone({ onAwardPoints, isFocusActive, setIsFocusActive, curr
     <div className="font-sans">
       {/* 1. Dashboard Preview Card */}
       {!isFocusActive && !sessionCompleted && (
-        <div className="card bg-card border border-border rounded-[2rem] p-8 md:p-10 shadow-2xl relative overflow-hidden text-left">
-          <div className="absolute top-0 right-0 w-72 h-72 bg-primary/10 rounded-full blur-[80px] pointer-events-none" />
-          
+        <div className="card bg-card border border-border rounded-xl p-8 md:p-10 relative overflow-hidden text-left">
+
           <div className="relative z-10 space-y-6">
             <div className="flex items-center gap-4">
               <div className="w-12 h-12 rounded-2xl bg-primary/15 border border-primary/25 flex items-center justify-center text-primary shadow-inner">
@@ -379,7 +378,7 @@ export function FocusZone({ onAwardPoints, isFocusActive, setIsFocusActive, curr
               </div>
               <div>
                 <h3 className="text-xl font-display font-black text-text-main tracking-tight">Nova Focus Zone</h3>
-                <p className="text-[10px] font-black uppercase tracking-[0.25em] text-text-muted mt-0.5">Context Lockout & Autonomic Shelter</p>
+                <p className="text-[10px] font-black uppercase tracking-[0.25em] text-text-muted mt-0.5">Deep Focus & Recovery Mode</p>
               </div>
             </div>
 
@@ -391,7 +390,7 @@ export function FocusZone({ onAwardPoints, isFocusActive, setIsFocusActive, curr
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-2">
               <div className="space-y-2.5">
                 <span className="text-[10px] font-black uppercase tracking-widest text-text-muted">Set Block Duration</span>
-                <div className="grid grid-cols-3 gap-2">
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                   {[15, 25, 50].map((mins) => (
                     <button
                       key={mins}
@@ -414,7 +413,7 @@ export function FocusZone({ onAwardPoints, isFocusActive, setIsFocusActive, curr
 
               <div className="space-y-2.5">
                 <span className="text-[10px] font-black uppercase tracking-widest text-text-muted">Calming Audio Shield</span>
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   {[
                     { id: 'none', label: 'Absolute Silence' },
                     { id: 'binaural', label: '8Hz Binaural (Alpha)' },
@@ -486,7 +485,7 @@ export function FocusZone({ onAwardPoints, isFocusActive, setIsFocusActive, curr
                 </button>
                 <button
                   onClick={handleCancelRequest}
-                  className="p-3 bg-danger/10 hover:bg-danger/20 border border-danger/25 text-danger rounded-xl transition-all flex items-center gap-2 text-xs font-black uppercase tracking-widest cursor-pointer"
+                  className="p-3 bg-destructive/10 hover:bg-destructive/20 border border-destructive/25 text-destructive rounded-xl transition-all flex items-center gap-2 text-xs font-black uppercase tracking-widest cursor-pointer"
                 >
                   <X className="w-4 h-4" />
                   Break Focus
@@ -510,7 +509,7 @@ export function FocusZone({ onAwardPoints, isFocusActive, setIsFocusActive, curr
                   className="absolute inset-4 rounded-full border border-success/15 bg-success/5 blur-[1px]" 
                 />
 
-                <div className="w-44 h-44 rounded-full bg-slate-900/90 border border-border/80 shadow-2xl flex flex-col items-center justify-center space-y-1 relative z-10">
+                <div className="w-44 h-44 rounded-full bg-surface border border-border shadow-md flex flex-col items-center justify-center space-y-1 relative z-10">
                   <span className="text-4xl font-mono font-black text-white tracking-tight">
                     {formatTime(timeLeft)}
                   </span>
@@ -558,17 +557,16 @@ export function FocusZone({ onAwardPoints, isFocusActive, setIsFocusActive, curr
               initial={{ scale: 0.9, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.9, opacity: 0 }}
-              className="max-w-md w-full bg-card border border-border p-8 rounded-3xl shadow-2xl space-y-6 text-left relative overflow-hidden"
+              className="max-w-md w-full bg-card border border-border p-8 rounded-xl shadow-lg space-y-6 text-left relative overflow-hidden"
             >
               {/* Caution background */}
-              <div className="absolute top-0 right-0 w-44 h-44 bg-danger/10 rounded-full blur-[50px] pointer-events-none" />
 
               <div className="flex items-center gap-4 border-b border-border pb-4">
-                <div className="w-10 h-10 rounded-xl bg-danger/10 border border-danger/20 flex items-center justify-center text-danger">
+                <div className="w-10 h-10 rounded-xl bg-destructive/10 border border-destructive/20 flex items-center justify-center text-destructive">
                   <AlertTriangle className="w-5 h-5 animate-bounce" />
                 </div>
                 <div>
-                  <h4 className="text-sm font-black text-text-main uppercase tracking-wider">Nova Coach Intercept</h4>
+                  <h4 className="text-sm font-black text-text-main uppercase tracking-wider">Nova Coach Check-In</h4>
                   <p className="text-[10px] text-text-muted font-bold">Unplanned Context Swap Detected</p>
                 </div>
               </div>
@@ -591,7 +589,7 @@ export function FocusZone({ onAwardPoints, isFocusActive, setIsFocusActive, curr
                 </button>
                 <button
                   onClick={confirmQuit}
-                  className="py-3 bg-surface hover:bg-card border border-border text-danger rounded-xl text-xs font-black uppercase tracking-widest text-center cursor-pointer"
+                  className="py-3 bg-surface hover:bg-card border border-border text-destructive rounded-xl text-xs font-black uppercase tracking-widest text-center cursor-pointer"
                 >
                   Abandon Block
                 </button>
@@ -608,20 +606,18 @@ export function FocusZone({ onAwardPoints, isFocusActive, setIsFocusActive, curr
             <motion.div
               initial={{ scale: 0.9, opacity: 0, y: 30 }}
               animate={{ scale: 1, opacity: 1, y: 0 }}
-              className="max-w-md w-full bg-card border border-primary/25 p-8 rounded-[2.5rem] shadow-[0_20px_50px_rgba(99,102,241,0.2)] text-center space-y-6 relative overflow-hidden"
+              className="max-w-md w-full bg-card border border-primary/25 p-8 rounded-xl shadow-lg text-center space-y-6 relative overflow-hidden"
             >
-              <div className="absolute -top-12 -left-12 w-44 h-44 bg-success/15 rounded-full blur-[60px]" />
-              <div className="absolute -bottom-12 -right-12 w-44 h-44 bg-primary/10 rounded-full blur-[60px]" />
 
               <div className="relative z-10 flex flex-col items-center space-y-4">
-                <div className="w-16 h-16 bg-success/20 border border-success/40 rounded-3xl flex items-center justify-center text-success relative">
+                <div className="w-16 h-16 bg-success/20 border border-success/40 rounded-xl flex items-center justify-center text-success relative">
                   <Sparkles className="w-8 h-8 animate-spin" style={{ animationDuration: '4s' }} />
                   <CheckCircle className="w-4 h-4 text-white bg-success rounded-full absolute -bottom-1 -right-1" />
                 </div>
 
                 <div className="space-y-1">
-                  <span className="text-[10px] font-black uppercase tracking-[0.25em] text-success font-mono">Autonomic Victory Recorded</span>
-                  <h4 className="text-2xl font-serif font-black text-text-main">Fortress Defended</h4>
+                  <span className="text-[10px] font-black uppercase tracking-[0.25em] text-success font-mono">Focus Session Complete</span>
+                  <h4 className="text-2xl font-display font-black text-text-main">Fortress Defended</h4>
                 </div>
 
                 <p className="text-xs text-text-muted leading-relaxed font-semibold max-w-sm">
@@ -632,7 +628,7 @@ export function FocusZone({ onAwardPoints, isFocusActive, setIsFocusActive, curr
                 <div className="w-full bg-surface border border-border rounded-2xl p-4 flex justify-between text-left items-center">
                   <div>
                     <span className="text-[10px] font-black uppercase tracking-widest text-text-muted block">Gained Reward</span>
-                    <span className="text-sm font-bold text-text-main">+100 Autonomic Points</span>
+                    <span className="text-sm font-bold text-text-main">+100 Recovery Points</span>
                   </div>
                   <div className="px-3 py-1 bg-success/15 border border-success/25 rounded-lg text-success text-[10px] font-mono font-black uppercase tracking-wider">
                     Laser Focus Badge

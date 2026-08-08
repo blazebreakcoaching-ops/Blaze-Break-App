@@ -715,10 +715,10 @@ export const NervousSystemReset = ({ fingerprint }: NervousSystemResetProps) => 
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
-              className="bg-white dark:bg-card border border-border rounded-3xl p-6 max-w-md w-full shadow-2xl space-y-6"
+              className="bg-white dark:bg-card border border-border rounded-xl p-6 max-w-md w-full shadow-lg space-y-6"
             >
               <div className="space-y-2">
-                <h4 className="text-xl font-display font-bold text-text-main">Reset Reset Studio State?</h4>
+                <h4 className="text-xl font-display font-medium text-text-main">Reset Studio State?</h4>
                 <p className="text-sm text-text-muted leading-relaxed">
                   Are you sure you want to clear your active somatic diagnostic choices, ongoing breathwork routines, and grounding toolkit selections? This action will reset your studio work-in-progress state.
                 </p>
@@ -768,14 +768,13 @@ export const NervousSystemReset = ({ fingerprint }: NervousSystemResetProps) => 
       </div>
 
       {/* Acute Overwhelm / Panic shortcut */}
-      <div className="mt-8 p-6 rounded-2xl border border-red-500/20 bg-red-500/5 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 relative overflow-hidden">
-        <div className="absolute top-0 right-0 w-32 h-32 bg-red-500/10 rounded-full blur-[40px] pointer-events-none" />
+      <div className="mt-8 p-6 rounded-xl border border-destructive/20 bg-destructive/5 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 relative overflow-hidden">
         <div className="space-y-1 relative z-10 text-left">
-          <div className="flex items-center gap-2 text-red-400 font-bold uppercase tracking-wider text-[10px]">
-            <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
-            Acute Overwhelm / Somatic Panic Alert
+          <div className="flex items-center gap-2 text-destructive font-medium uppercase tracking-wider text-[10px]">
+            <span className="w-2 h-2 rounded-full bg-destructive animate-pulse" />
+            Feeling Overwhelmed Right Now?
           </div>
-          <h4 className="font-serif text-lg font-medium text-text-main">Experiencing severe anxiety, tight chest, or racing thoughts?</h4>
+          <h4 className="font-display text-lg font-medium text-text-main">Experiencing severe anxiety, tight chest, or racing thoughts?</h4>
           <p className="text-xs text-text-muted max-w-2xl leading-relaxed">
             The standard Breathwork and Grounding tools are below. If you need a fully structured sensory reset path with intensity tracking and interactive de-escalation tools, launch the dedicated Reset Mode.
           </p>
@@ -785,7 +784,7 @@ export const NervousSystemReset = ({ fingerprint }: NervousSystemResetProps) => 
             const event = new CustomEvent('navigate_tab', { detail: 'anxiety_reset' });
             window.dispatchEvent(event);
           }}
-          className="px-5 py-3 shrink-0 bg-red-600 hover:bg-red-700 text-white font-bold uppercase tracking-widest text-xs rounded-xl transition-all shadow-md shadow-red-500/10 relative z-10 flex items-center gap-2 cursor-pointer"
+          className="px-5 py-3 shrink-0 bg-destructive hover:opacity-90 text-destructive-foreground font-medium uppercase tracking-widest text-xs rounded-lg transition-all relative z-10 flex items-center gap-2 cursor-pointer"
         >
           Launch Reset Mode <Play className="w-4 h-4 fill-current" />
         </button>
@@ -806,26 +805,25 @@ export const NervousSystemReset = ({ fingerprint }: NervousSystemResetProps) => 
         </button>
       </div>
 
-      {/* Somatic Audio Synthesizer Console */}
-      <div className="card glass border-primary/20 bg-primary/5 p-6 relative overflow-hidden mb-8 shadow-xl">
-        <div className="absolute inset-0 bg-radial-gradient from-primary/5 to-transparent pointer-events-none" />
+      {/* Soundscape player */}
+      <div className="card border border-primary/20 bg-primary/5 p-6 relative overflow-hidden mb-8">
         <div className="relative z-10 flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
           <div className="space-y-1.5 max-w-sm">
             <div className="flex items-center gap-2">
               <span className="w-2 h-2 rounded-full bg-success animate-pulse" />
-              <h4 className="text-xs font-black uppercase tracking-widest text-text-muted">Acoustic Bio-Guidance Console</h4>
+              <h4 className="text-xs font-medium uppercase tracking-widest text-text-muted">Background Sound</h4>
             </div>
             <p className="text-sm font-bold text-text-main flex items-center gap-1.5">
-              <Music className="w-4 h-4 text-primary" /> Synthesized Neural Entrainment
+              <Music className="w-4 h-4 text-primary" /> Calming Audio
             </p>
             <p className="text-[11px] text-text-muted">
-              Generates physical wave frequencies locally to anchor breathing & soothe autonomic overdrive.
+              Gentle background tones to help you settle into your breathing.
             </p>
           </div>
 
           <div className="flex flex-wrap items-center gap-6">
             <div className="flex flex-col gap-1.5">
-              <span className="text-xs uppercase tracking-wider font-black text-text-muted">Soundscape Selection</span>
+              <span className="text-xs uppercase tracking-wider font-medium text-text-muted">Choose a Sound</span>
               <div className="flex bg-surface dark:bg-surface rounded-xl p-1 border border-border/50">
                 {(['none', 'solfeggio', 'waves', 'cosmic'] as const).map((sc) => (
                   <button
@@ -928,26 +926,26 @@ export const NervousSystemReset = ({ fingerprint }: NervousSystemResetProps) => 
 
       {activeSection === 'breathwork' && (
       <>
-      <div className="card glass border-primary/20 bg-primary/5 p-8 relative overflow-hidden mb-8">
+      <div className="card border border-primary/20 bg-primary/5 p-8 relative overflow-hidden mb-8">
         <div className="relative z-10 space-y-6">
            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-full bg-primary flex items-center justify-center text-primary-foreground shadow-lg shadow-primary/20">
+              <div className="w-10 h-10 rounded-full bg-primary flex items-center justify-center text-primary-foreground">
                 <Wind className="w-5 h-5" />
               </div>
-              <h4 className="text-xl font-display font-bold text-text-main">Nova's Diagnostic Protocol</h4>
+              <h4 className="text-xl font-display font-medium text-text-main">Nova's Recommendation</h4>
             </div>
-            
-            <p className="text-lg text-text-muted font-medium">"Do you need calm, clarity, sleep, focus, or release?"</p>
-            
+
+            <p className="text-lg text-text-muted font-serif italic">"Do you need calm, clarity, sleep, focus, or release?"</p>
+
             <div className="flex flex-wrap gap-4">
               {(['calm', 'clarity', 'sleep', 'focus', 'release'] as const).map((need) => (
                 <button
                   key={need}
                   onClick={() => handleNeedSelect(need)}
                   className={cn(
-                    "px-6 py-3 rounded-full text-sm font-bold uppercase tracking-widest transition-all",
-                    selectedNeed === need 
-                      ? "bg-primary text-primary-foreground shadow-xl shadow-primary/20 scale-105" 
+                    "px-6 py-3 rounded-full text-sm font-medium uppercase tracking-widest transition-all",
+                    selectedNeed === need
+                      ? "bg-primary text-primary-foreground scale-105"
                       : "bg-white/5 dark:bg-surface text-text-muted hover:bg-white/10 dark:hover:bg-surface border border-border/50"
                   )}
                 >
@@ -956,7 +954,6 @@ export const NervousSystemReset = ({ fingerprint }: NervousSystemResetProps) => 
               ))}
             </div>
         </div>
-        <div className="absolute right-[-10%] top-[-10%] w-96 h-96 bg-primary/10 rounded-full blur-[100px]" />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
@@ -974,10 +971,10 @@ export const NervousSystemReset = ({ fingerprint }: NervousSystemResetProps) => 
                   setSelectedNeed(null);
                 }}
                 className={cn(
-                  "w-full text-left p-4 rounded-2xl border transition-all flex items-center gap-4",
-                  isSelected 
-                    ? "bg-primary/10 border-primary/30 shadow-inner" 
-                    : "glass border-transparent hover:border-border/50 opacity-70 hover:opacity-100"
+                  "w-full text-left p-4 rounded-xl border transition-all flex items-center gap-4",
+                  isSelected
+                    ? "bg-primary/10 border-primary/30"
+                    : "bg-transparent border-transparent hover:border-border/50 opacity-70 hover:opacity-100"
                 )}
               >
                 <div className={cn("w-10 h-10 rounded-full flex items-center justify-center transition-colors", isSelected ? "bg-primary text-primary-foreground" : "bg-white/10 text-text-main")}>
@@ -994,7 +991,7 @@ export const NervousSystemReset = ({ fingerprint }: NervousSystemResetProps) => 
 
         <div className="lg:col-span-2">
           {activeMode ? (
-            <div className="card glass p-12 h-full flex flex-col items-center justify-center text-center relative overflow-hidden min-h-[500px]">
+            <div className="card border border-border p-6 sm:p-8 md:p-12 h-full flex flex-col items-center justify-center text-center relative overflow-hidden min-h-[500px]">
               <div className="absolute top-8 left-8 text-left">
                 <span className="tag mb-4">{BREATHING_MODES[activeMode].name}</span>
                 <p className="text-xl font-display font-medium text-text-main mt-4 max-w-sm">
@@ -1055,11 +1052,11 @@ export const NervousSystemReset = ({ fingerprint }: NervousSystemResetProps) => 
               </button>
             </div>
           ) : (
-            <div className="card glass h-full flex flex-col items-center justify-center text-center p-12 min-h-[500px]">
+            <div className="card border border-border h-full flex flex-col items-center justify-center text-center p-6 sm:p-8 md:p-12 min-h-[500px]">
               <div className="w-24 h-24 mb-6 rounded-full bg-surface dark:bg-surface flex items-center justify-center opacity-50">
                 <Wind className="w-10 h-10 text-text-muted" />
               </div>
-              <h3 className="text-2xl font-display font-bold text-text-main mb-4">Select a Protocol</h3>
+              <h3 className="text-2xl font-display font-bold text-text-main mb-4">Choose a Practice</h3>
               <p className="text-sm font-medium text-text-muted max-w-md mx-auto">
                 Connect with Nova's diagnostic above or select a breathing mode from the library to begin nervous system regulation.
               </p>
@@ -1084,10 +1081,10 @@ export const NervousSystemReset = ({ fingerprint }: NervousSystemResetProps) => 
                   setActiveGrounding(key as GroundingMode);
                 }}
                 className={cn(
-                  "w-full text-left p-4 rounded-2xl border transition-all flex items-center gap-4",
-                  isSelected 
-                    ? "bg-primary/10 border-primary/30 shadow-inner" 
-                    : "glass border-transparent hover:border-border/50 opacity-70 hover:opacity-100"
+                  "w-full text-left p-4 rounded-xl border transition-all flex items-center gap-4",
+                  isSelected
+                    ? "bg-primary/10 border-primary/30"
+                    : "bg-transparent border-transparent hover:border-border/50 opacity-70 hover:opacity-100"
                 )}
               >
                 <div className={cn("w-10 h-10 rounded-full flex items-center justify-center transition-colors", isSelected ? "bg-primary text-primary-foreground" : "bg-white/10 text-text-main")}>
@@ -1104,7 +1101,7 @@ export const NervousSystemReset = ({ fingerprint }: NervousSystemResetProps) => 
 
         <div className="lg:col-span-2">
           {activeGrounding ? (
-            <div className="card glass p-12 h-full flex flex-col items-center justify-center relative overflow-hidden min-h-[500px]">
+            <div className="card border border-border p-6 sm:p-8 md:p-12 h-full flex flex-col items-center justify-center relative overflow-hidden min-h-[500px]">
               <div className="absolute top-8 left-8 text-left">
                 <span className="tag mb-4">{GROUNDING_MODES[activeGrounding].name}</span>
                 <p className="text-xl font-display font-medium text-text-main mt-4 max-w-sm">
@@ -1169,7 +1166,7 @@ export const NervousSystemReset = ({ fingerprint }: NervousSystemResetProps) => 
               )}
             </div>
           ) : (
-            <div className="card glass h-full flex flex-col items-center justify-center text-center p-12 min-h-[500px]">
+            <div className="card border border-border h-full flex flex-col items-center justify-center text-center p-6 sm:p-8 md:p-12 min-h-[500px]">
               <div className="w-24 h-24 mb-6 rounded-full bg-surface dark:bg-surface flex items-center justify-center opacity-50">
                 <Brain className="w-10 h-10 text-text-muted" />
               </div>

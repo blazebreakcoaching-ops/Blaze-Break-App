@@ -3,10 +3,14 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, lazy, Suspense } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import {
   Home,
+  LifeBuoy,
+  X,
+  Plus,
+  RefreshCw,
   MapPin,
   BatteryFull,
   MessageSquare,
@@ -67,75 +71,80 @@ import {
   SupportContact,
 } from "./types.ts";
 import { cn } from "./lib/utils.ts";
-import { DiagnoseView, ResultView } from "./components/DiagnoseSection.tsx";
-import { EnergyBudgetTool } from "./components/EnergyBudget.tsx";
-import { BoundaryRehearsal } from "./components/BoundaryRehearsal.tsx";
-import { ReflectSection } from "./components/ReflectSection.tsx";
-import { NovaChat } from "./components/NovaChat.tsx";
+const DiagnoseView = lazy(() => import("./components/DiagnoseSection.tsx").then(m => ({ default: m.DiagnoseView })));
+const ResultView = lazy(() => import("./components/DiagnoseSection.tsx").then(m => ({ default: m.ResultView })));
+const EnergyBudgetTool = lazy(() => import("./components/EnergyBudget.tsx").then(m => ({ default: m.EnergyBudgetTool })));
+const BoundaryRehearsal = lazy(() => import("./components/BoundaryRehearsal.tsx").then(m => ({ default: m.BoundaryRehearsal })));
+const BoundaryAutopilot = lazy(() => import("./components/BoundaryAutopilot.tsx").then(m => ({ default: m.BoundaryAutopilot })));
+const ReflectSection = lazy(() => import("./components/ReflectSection.tsx").then(m => ({ default: m.ReflectSection })));
+const NovaChat = lazy(() => import("./components/NovaChat.tsx").then(m => ({ default: m.NovaChat })));
 import { Walkthrough } from "./components/Walkthrough.tsx";
-import { NovaGuardianRelay } from "./components/NovaGuardianRelay.tsx";
-import { OrgDashboard } from "./components/OrgDashboard.tsx";
-import { PrivacyVault } from "./components/PrivacyVault.tsx";
+import { CrisisSupportModal, CrisisSupportButton } from "./components/CrisisSupport.tsx";
+const NovaGuardianRelay = lazy(() => import("./components/NovaGuardianRelay.tsx").then(m => ({ default: m.NovaGuardianRelay })));
+const OrgDashboard = lazy(() => import("./components/OrgDashboard.tsx").then(m => ({ default: m.OrgDashboard })));
+const PrivacyVault = lazy(() => import("./components/PrivacyVault.tsx").then(m => ({ default: m.PrivacyVault })));
 import { GamificationDisplay } from "./components/GamificationDisplay.tsx";
+import { ArchetypeBlend } from "./components/ArchetypeBlend.tsx";
+import { RecoveryExplanation } from "./components/RecoveryExplanation.tsx";
 import { LandingPage } from "./components/LandingPage.tsx";
 import { SituationalOnboarding } from "./components/SituationalOnboarding.tsx";
 import { DailyCheckIn } from "./components/DailyCheckIn.tsx";
 import { ConnectedDailyCheckIn } from "./components/ConnectedRecoveryModules.tsx";
-import { NegotiatorTool } from "./components/NegotiatorTool.tsx";
+const NegotiatorTool = lazy(() => import("./components/NegotiatorTool.tsx").then(m => ({ default: m.NegotiatorTool })));
 import { RelapseRadar } from "./components/RelapseRadar.tsx";
 import { MOCK_DEBTS } from "./constants.ts";
 
-import { ResourceLibrary } from "./components/ResourceLibrary.tsx";
-import { NervousSystemReset } from "./components/NervousSystemReset.tsx";
-import { AnxietyResetMode } from "./components/AnxietyResetMode.tsx";
+const ResourceLibrary = lazy(() => import("./components/ResourceLibrary.tsx").then(m => ({ default: m.ResourceLibrary })));
+const NervousSystemReset = lazy(() => import("./components/NervousSystemReset.tsx").then(m => ({ default: m.NervousSystemReset })));
+const AnxietyResetMode = lazy(() => import("./components/AnxietyResetMode.tsx").then(m => ({ default: m.AnxietyResetMode })));
 
-import { MicroRecovery } from "./components/MicroRecovery.tsx";
-import { SleepBuilder } from "./components/SleepBuilder.tsx";
-import { MovementSnacks } from "./components/MovementSnacks.tsx";
-import { DecompressionDoorway } from "./components/DecompressionDoorway.tsx";
-import { DigitalBoundaryShield } from "./components/DigitalBoundaryShield.tsx";
-import { ResentmentTracker } from "./components/ResentmentTracker.tsx";
-import { WorkloadRealityCheck } from "./components/WorkloadRealityCheck.tsx";
-import { OneLessThing } from "./components/OneLessThing.tsx";
-import { RecoveryRecipes } from "./components/RecoveryRecipes.tsx";
-import { RecoveryFuelEngine } from "./components/RecoveryFuelEngine.tsx";
-import { RecoveryIntelligenceLayer } from "./components/RecoveryIntelligenceLayer.tsx";
-import { FaithValuesMode } from "./components/FaithValuesMode.tsx";
-import { OutcomeTracker } from "./components/OutcomeTracker.tsx";
+const MicroRecovery = lazy(() => import("./components/MicroRecovery.tsx").then(m => ({ default: m.MicroRecovery })));
+const SleepBuilder = lazy(() => import("./components/SleepBuilder.tsx").then(m => ({ default: m.SleepBuilder })));
+const MovementSnacks = lazy(() => import("./components/MovementSnacks.tsx").then(m => ({ default: m.MovementSnacks })));
+const DecompressionDoorway = lazy(() => import("./components/DecompressionDoorway.tsx").then(m => ({ default: m.DecompressionDoorway })));
+const DigitalBoundaryShield = lazy(() => import("./components/DigitalBoundaryShield.tsx").then(m => ({ default: m.DigitalBoundaryShield })));
+const ResentmentTracker = lazy(() => import("./components/ResentmentTracker.tsx").then(m => ({ default: m.ResentmentTracker })));
+const WorkloadRealityCheck = lazy(() => import("./components/WorkloadRealityCheck.tsx").then(m => ({ default: m.WorkloadRealityCheck })));
+const OneLessThing = lazy(() => import("./components/OneLessThing.tsx").then(m => ({ default: m.OneLessThing })));
+const RecoveryRecipes = lazy(() => import("./components/RecoveryRecipes.tsx").then(m => ({ default: m.RecoveryRecipes })));
+const RecoveryFuelEngine = lazy(() => import("./components/RecoveryFuelEngine.tsx").then(m => ({ default: m.RecoveryFuelEngine })));
+const RecoveryIntelligenceLayer = lazy(() => import("./components/RecoveryIntelligenceLayer.tsx").then(m => ({ default: m.RecoveryIntelligenceLayer })));
+const FaithValuesMode = lazy(() => import("./components/FaithValuesMode.tsx").then(m => ({ default: m.FaithValuesMode })));
+const OutcomeTracker = lazy(() => import("./components/OutcomeTracker.tsx").then(m => ({ default: m.OutcomeTracker })));
 import { OmniNova } from "./components/OmniNova.tsx";
-import { EnergyBudgetMatrix } from "./components/EnergyBudgetMatrix.tsx";
-import { RuminationFurnace } from "./components/RuminationFurnace.tsx";
+const EnergyBudgetMatrix = lazy(() => import("./components/EnergyBudgetMatrix.tsx").then(m => ({ default: m.EnergyBudgetMatrix })));
+const RuminationFurnace = lazy(() => import("./components/RuminationFurnace.tsx").then(m => ({ default: m.RuminationFurnace })));
 import { SettingsModal } from "./components/SettingsModal.tsx";
-import { FutureSelfSimulator } from "./components/FutureSelfSimulator.tsx";
-import { AssuranceCentre } from "./components/AssuranceCentre.tsx";
+const FutureSelfSimulator = lazy(() => import("./components/FutureSelfSimulator.tsx").then(m => ({ default: m.FutureSelfSimulator })));
+const AssuranceCentre = lazy(() => import("./components/AssuranceCentre.tsx").then(m => ({ default: m.AssuranceCentre })));
 import { SyncEngine, AuthStatusTracker } from "./lib/sync.tsx";
 import { useAuth } from "./lib/auth.tsx";
-import { IntegrationsDashboard } from "./components/IntegrationsDashboard.tsx";
-import { AdminDashboard } from "./components/AdminDashboard.tsx";
+const IntegrationsDashboard = lazy(() => import("./components/IntegrationsDashboard.tsx").then(m => ({ default: m.IntegrationsDashboard })));
+const AdminDashboard = lazy(() => import("./components/AdminDashboard.tsx").then(m => ({ default: m.AdminDashboard })));
 import { ActivityLog } from "./components/ActivityLog.tsx";
 import { NovaFeedbackModal } from "./components/NovaFeedbackModal.tsx";
 import { InAppNudge } from "./components/InAppNudge.tsx";
-import { EvolutionEngine } from "./components/EvolutionEngine.tsx";
+const EvolutionEngine = lazy(() => import("./components/EvolutionEngine.tsx").then(m => ({ default: m.EvolutionEngine })));
 import { DailyGoal } from "./components/DailyGoal.tsx";
 import { MicroInterventions } from "./components/MicroInterventions.tsx";
 import { NovaOverloadShield } from "./components/NovaOverloadShield.tsx";
 import { updateNovaMemoryBySourceAndType, logJourney } from "./lib/nova-brain.ts";
-import { TrustCentrePage } from "./components/TrustCentrePage.tsx";
-import { AccessControlMatrix } from "./components/AccessControlMatrix.tsx";
+const TrustCentrePage = lazy(() => import("./components/TrustCentrePage.tsx").then(m => ({ default: m.TrustCentrePage })));
 import { hasSubscriptionEntitlement } from "./lib/entitlement.ts";
-import { RecoveryAlly } from "./components/RecoveryAlly.tsx";
+const RecoveryAlly = lazy(() => import("./components/RecoveryAlly.tsx").then(m => ({ default: m.RecoveryAlly })));
 import { SomaticResetOverlay } from "./components/SomaticResetOverlay.tsx";
 import { SmartCard } from "./components/SmartCard.tsx";
 import { SomaticCheckInCard } from "./components/SomaticCheckInCard.tsx";
-import { RecoveryPlan } from "./components/RecoveryPlan.tsx";
-import { FocusZone } from "./components/FocusZone.tsx";
+const RecoveryPlan = lazy(() => import("./components/RecoveryPlan.tsx").then(m => ({ default: m.RecoveryPlan })));
+const FocusZone = lazy(() => import("./components/FocusZone.tsx").then(m => ({ default: m.FocusZone })));
 import { SubscriptionTier, AuthRole } from "./types.ts";
 import { RecoveryVelocityMap } from "./components/RecoveryVelocityMap.tsx";
-import { ExecutiveBoardReport } from "./components/ExecutiveBoardReport.tsx";
-import { CalendarDefenseView } from "./components/CalendarDefenseView.tsx";
-import { RecoveryVaultTest } from "./components/RecoveryVaultTest.tsx";
+const ExecutiveBoardReport = lazy(() => import("./components/ExecutiveBoardReport.tsx").then(m => ({ default: m.ExecutiveBoardReport })));
+const CalendarDefenseView = lazy(() => import("./components/CalendarDefenseView.tsx").then(m => ({ default: m.CalendarDefenseView })));
 import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip as RechartsTooltip, CartesianGrid } from "recharts";
 import { secureApiFetch } from "./lib/secure-api";
+import { syncCalendarSignal } from "./lib/calendar-signals";
+import { subscribeToPushNotifications, reportPulseStatus } from "./lib/push-notifications";
 
 type AppFlow = "landing" | "onboarding" | "app" | "trust-centre" | "admin";
 
@@ -153,11 +162,9 @@ type ActiveTab =
   | "ally"
   | "privacy"
   | "org"
-  | "matrix"
   | "evolution"
   | "intelligence"
   | "executive"
-  | "vault_test"
   | "admin"
   | "plan";
 
@@ -296,6 +303,7 @@ export const ALL_TABS: {
   label: string;
   roles: string[];
   featureId?: string;
+  group?: string;
 }[] = [
   {
     id: "home",
@@ -315,6 +323,7 @@ export const ALL_TABS: {
     label: "Diagnose",
     roles: ["individual", "employee", "executive"],
     featureId: "burnout_diagnostic",
+    group: "recovery_tools",
   },
   {
     id: "recover",
@@ -322,6 +331,7 @@ export const ALL_TABS: {
     label: "Recover",
     roles: ["individual", "employee", "executive"],
     featureId: "energy_budget",
+    group: "recovery_tools",
   },
   {
     id: "fuel",
@@ -329,6 +339,7 @@ export const ALL_TABS: {
     label: "Nutrition",
     roles: ["individual", "employee", "executive"],
     featureId: "nutrition_recovery",
+    group: "recovery_tools",
   },
   {
     id: "reset",
@@ -336,12 +347,14 @@ export const ALL_TABS: {
     label: "Nervous System",
     roles: ["individual", "employee", "executive"],
     featureId: "nervous_system_reset",
+    group: "recovery_tools",
   },
   {
     id: "anxiety_reset",
     icon: HeartPulse,
     label: "Anxiety Reset",
     roles: ["individual", "employee", "executive"],
+    group: "recovery_tools",
   },
   {
     id: "communicate",
@@ -402,18 +415,6 @@ export const ALL_TABS: {
     featureId: "burnout_diagnostic",
   },
   {
-    id: "matrix",
-    icon: ShieldCheck,
-    label: "Access Matrix (REMOVED)",
-    roles: [],
-  },
-  {
-    id: "vault_test",
-    icon: Shield,
-    label: "Vault Test Area",
-    roles: ["dev_only"],
-  },
-  {
     id: "executive",
     icon: Zap,
     label: "Executive ROI",
@@ -422,7 +423,7 @@ export const ALL_TABS: {
   {
     id: "admin",
     icon: ShieldCheck,
-    label: "Live Telemetry & Access",
+    label: "Live Activity & Access",
     roles: ["platform_admin"],
   },
 ];
@@ -436,6 +437,7 @@ const Sidebar = ({
   currentTier,
   isCollapsed,
   setIsCollapsed,
+  onOpenCrisisSupport,
 }: {
   activeTab: string;
   setActiveTab: (t: string) => void;
@@ -445,8 +447,10 @@ const Sidebar = ({
   currentTier: SubscriptionTier;
   isCollapsed: boolean;
   setIsCollapsed: (v: boolean | ((prev: boolean) => boolean)) => void;
+  onOpenCrisisSupport: () => void;
 }) => {
   const [pendingTasksCount, setPendingTasksCount] = useState(0);
+  const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     const handleResize = () => {
@@ -485,7 +489,8 @@ const Sidebar = ({
   }, []);
 
   const tabs = ALL_TABS.filter((t) => {
-    if (authRole === "platform_admin" && t.id !== "matrix" && t.id !== "vault_test") return true;
+    if (t.id === "privacy") return false; // Reachable via Settings > Consent & Privacy instead
+    if (authRole === "platform_admin") return true;
     if (!t.roles.includes(authRole)) return false;
     if (t.featureId && !hasSubscriptionEntitlement(currentTier, t.featureId))
       return false;
@@ -525,8 +530,9 @@ const Sidebar = ({
         )}
         onClick={() => setActiveTab("home")}
       >
-        <div className="w-10 h-10 bg-primary rounded-xl flex items-center justify-center text-surface shadow-xl shadow-primary/20 group-hover:scale-105 transition-all duration-500 shrink-0">
-          <Sparkles className="w-5 h-5" />
+        <div className="w-10 h-10 flex items-center justify-center shrink-0 group-hover:scale-105 transition-all duration-500">
+          <img src="/brand/flame-mark-light.png" alt="Blaze Break" className="w-10 h-10 dark:hidden" />
+          <img src="/brand/flame-mark-dark.png" alt="Blaze Break" className="w-10 h-10 hidden dark:block" />
         </div>
         <AnimatePresence>
           {!isCollapsed && (
@@ -541,12 +547,24 @@ const Sidebar = ({
                 Blaze Break
               </h1>
               <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-primary mt-1 truncate">
-                Executive Suite
+                Recovery Companion
               </span>
             </motion.div>
           )}
         </AnimatePresence>
       </div>
+
+      {!isCollapsed ? (
+        <CrisisSupportButton onClick={onOpenCrisisSupport} className="shrink-0 px-1" />
+      ) : (
+        <button
+          onClick={onOpenCrisisSupport}
+          title="Need support now?"
+          className="shrink-0 w-full flex items-center justify-center p-3 rounded-2xl text-info bg-info/10 hover:bg-info/20 border border-info/20 transition-colors"
+        >
+          <LifeBuoy className="w-5 h-5" />
+        </button>
+      )}
 
       <nav
         className={cn(
@@ -554,70 +572,138 @@ const Sidebar = ({
           !isCollapsed && "pr-2",
         )}
       >
-        {tabs.map((tab) => {
-          const isActive = activeTab === tab.id;
-          return (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              className={cn(
-                "nav-item relative group flex items-center w-full transition-all",
-                isActive && "active",
-                isCollapsed
-                  ? "justify-center p-3 rounded-2xl"
-                  : "justify-between",
-              )}
-              title={isCollapsed ? tab.label : undefined}
-            >
-              <div className="flex items-center gap-3">
-                <tab.icon
-                  className={cn(
-                    "w-5 h-5 transition-colors duration-300",
-                    isActive
-                      ? "text-primary"
-                      : "text-text-muted group-hover:text-primary",
-                  )}
-                />
-                <AnimatePresence>
-                  {!isCollapsed && (
-                    <motion.span
-                      initial={{ opacity: 0, width: 0 }}
-                      animate={{ opacity: 1, width: "auto" }}
-                      exit={{ opacity: 0, width: 0 }}
-                      transition={{ duration: 0.2 }}
-                      className="text-sm whitespace-nowrap overflow-hidden"
-                    >
-                      {tab.label}
-                    </motion.span>
-                  )}
-                </AnimatePresence>
-              </div>
-              {tab.id === "recover" && pendingTasksCount > 0 && (
-                <span
-                  className={cn(
-                    "bg-destructive text-destructive-foreground text-xs font-black flex items-center justify-center rounded-full shrink-0",
-                    isCollapsed
-                      ? "absolute -top-1 -right-1 w-4 h-4 text-[10px]"
-                      : "w-5 h-5",
-                  )}
-                >
-                  {pendingTasksCount}
-                </span>
-              )}
-              {isActive && (
-                <motion.div
-                  layoutId="active-indicator"
-                  className={cn(
-                    "absolute bg-primary rounded-full",
-                    isCollapsed
-                      ? "left-0 w-1 top-2 bottom-2"
-                      : "left-0 w-1 h-6",
-                  )}
-                />
-              )}
-            </button>
-          );
-        })}
+        {(() => {
+          const renderTabButton = (tab: (typeof tabs)[number], indented: boolean) => {
+            const isActive = activeTab === tab.id;
+            return (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className={cn(
+                  "nav-item relative group flex items-center w-full transition-all",
+                  isActive && "active",
+                  isCollapsed
+                    ? "justify-center p-3 rounded-2xl"
+                    : "justify-between",
+                  indented && !isCollapsed && "pl-4",
+                )}
+                title={isCollapsed ? tab.label : undefined}
+              >
+                <div className="flex items-center gap-3">
+                  <tab.icon
+                    className={cn(
+                      "w-5 h-5 transition-colors duration-300",
+                      isActive
+                        ? "text-primary"
+                        : "text-text-muted group-hover:text-primary",
+                    )}
+                  />
+                  <AnimatePresence>
+                    {!isCollapsed && (
+                      <motion.span
+                        initial={{ opacity: 0, width: 0 }}
+                        animate={{ opacity: 1, width: "auto" }}
+                        exit={{ opacity: 0, width: 0 }}
+                        transition={{ duration: 0.2 }}
+                        className="text-sm whitespace-nowrap overflow-hidden"
+                      >
+                        {tab.label}
+                      </motion.span>
+                    )}
+                  </AnimatePresence>
+                </div>
+                {tab.id === "recover" && pendingTasksCount > 0 && (
+                  <span
+                    className={cn(
+                      "bg-destructive text-destructive-foreground text-xs font-black flex items-center justify-center rounded-full shrink-0",
+                      isCollapsed
+                        ? "absolute -top-1 -right-1 w-4 h-4 text-[10px]"
+                        : "w-5 h-5",
+                    )}
+                  >
+                    {pendingTasksCount}
+                  </span>
+                )}
+                {isActive && (
+                  <motion.div
+                    layoutId="active-indicator"
+                    className={cn(
+                      "absolute bg-primary rounded-full",
+                      isCollapsed
+                        ? "left-0 w-1 top-2 bottom-2"
+                        : "left-0 w-1 h-6",
+                    )}
+                  />
+                )}
+              </button>
+            );
+          };
+
+          // Collapsed sidebar is icon-only already, so grouping adds no value there —
+          // just render every tab flat, same as before.
+          if (isCollapsed) {
+            return tabs.map((tab) => renderTabButton(tab, false));
+          }
+
+          const renderedGroups = new Set<string>();
+          return tabs.map((tab) => {
+            if (tab.group) {
+              if (renderedGroups.has(tab.group)) return null;
+              renderedGroups.add(tab.group);
+              const groupTabs = tabs.filter((t) => t.group === tab.group);
+              const isGroupActive = groupTabs.some((t) => t.id === activeTab);
+              const isExpanded = expandedGroups[tab.group] ?? isGroupActive;
+              const groupLabel = tab.group === "recovery_tools" ? "Recovery Tools" : tab.group;
+              return (
+                <div key={tab.group}>
+                  <button
+                    onClick={() =>
+                      setExpandedGroups((prev) => ({ ...prev, [tab.group!]: !isExpanded }))
+                    }
+                    className={cn(
+                      "nav-item relative group flex items-center justify-between w-full transition-all",
+                      isGroupActive && !isExpanded && "active",
+                    )}
+                  >
+                    <div className="flex items-center gap-3">
+                      <Compass
+                        className={cn(
+                          "w-5 h-5 transition-colors duration-300",
+                          isGroupActive
+                            ? "text-primary"
+                            : "text-text-muted group-hover:text-primary",
+                        )}
+                      />
+                      <span className="text-sm whitespace-nowrap overflow-hidden">
+                        {groupLabel}
+                      </span>
+                    </div>
+                    <ChevronRight
+                      className={cn(
+                        "w-4 h-4 text-text-muted transition-transform duration-200 rotate-90",
+                        isExpanded && "-rotate-90",
+                      )}
+                    />
+                  </button>
+                  <AnimatePresence>
+                    {isExpanded && (
+                      <motion.div
+                        initial={{ height: 0, opacity: 0 }}
+                        animate={{ height: "auto", opacity: 1 }}
+                        exit={{ height: 0, opacity: 0 }}
+                        transition={{ duration: 0.2 }}
+                        className="overflow-hidden flex flex-col gap-2 pt-2"
+                      >
+                        {groupTabs.map((t) => renderTabButton(t, true))}
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
+              );
+            }
+            return renderTabButton(tab, false);
+          });
+        })()}
       </nav>
 
       <div className="pt-6 border-t border-border/50 flex flex-col gap-6 shrink-0 w-full">
@@ -750,11 +836,11 @@ const Header = ({
         <div className="h-0.5 w-16 bg-primary/30 rounded-full" />
         <span className="text-[11px] font-black uppercase tracking-[0.4em] text-primary transition-all duration-500">
           {activeTab === "home" && "Neuro-Stability Engine"}
-          {activeTab === "diagnose" && "Loop Analysis Protocol"}
+          {activeTab === "diagnose" && "Loop Analysis"}
           {activeTab === "recover" && "Energy Delta Management"}
-          {activeTab === "fuel" && "Recovery Fuel Protocol"}
+          {activeTab === "fuel" && "Recovery Fuel"}
           {activeTab === "reset" && "Nervous System Reset Studio"}
-          {activeTab === "anxiety_reset" && "Autonomic Reset Protocol"}
+          {activeTab === "anxiety_reset" && "Anxiety Reset"}
           {activeTab === "communicate" && "Boundary Architect v2.1"}
           {activeTab === "reflect" && "Behavioral Repatterning"}
           {activeTab === "nova" && "AI Recovery Interface"}
@@ -910,23 +996,127 @@ const HomeSection = ({
   onUpdatePulseHistory: (date: string, score: number) => void;
   onLogJourney: (action: string, details: string) => void;
 }) => {
-  const defaultLeftOrder = ['hero', 'stats', 'streakCalendar', 'trends', 'anxietyResetCard', 'somaticAccelerator', 'velocity', 'hub', 'gamification', 'daily', 'micro', 'activity'];
-  const defaultRightOrder = ['directive', 'quests', 'network', 'radar'];
+  // Friendly names for every widget, used by the "Add widget" menu below.
+  const WIDGET_LIBRARY: Record<string, string> = {
+    hero: "Your Recovery Score",
+    stats: "Quick Stats",
+    streakCalendar: "Streak Calendar",
+    trends: "Recovery Trends",
+    anxietyResetCard: "Anxiety Reset Shortcut",
+    somaticAccelerator: "Body Check-In",
+    velocity: "Recovery Velocity Map",
+    hub: "Recovery Hub",
+    gamification: "Points & Badges",
+    archetypeBlend: "Your Blend",
+    daily: "Daily Goal",
+    micro: "Micro-Recovery",
+    activity: "Activity Log",
+    directive: "Nova's Suggestion",
+    quests: "Milestones",
+    network: "Guardian Network",
+    radar: "Relapse Radar",
+  };
 
-  const [leftOrder, setLeftOrder] = useState<string[]>([]);
-  const [rightOrder, setRightOrder] = useState<string[]>([]);
+  // A small, focused set by default: your score, one clear next step, one
+  // progress view, and a way to find tools. Everything else is one tap away
+  // via "Add widget" instead of all 16 competing for attention at once.
+  const DEFAULT_LEFT = ['hero', 'trends', 'hub'];
+  const DEFAULT_RIGHT = ['directive'];
+  const DEFAULT_HIDDEN = ['stats', 'streakCalendar', 'anxietyResetCard', 'somaticAccelerator', 'velocity', 'gamification', 'daily', 'micro', 'activity', 'quests', 'network', 'radar', 'archetypeBlend'];
+  const LAYOUT_STORAGE_KEY = 'blaze_home_dashboard_layout_v2';
+
+  const loadLayout = (): { left: string[]; right: string[]; hidden: string[] } => {
+    try {
+      const stored = localStorage.getItem(LAYOUT_STORAGE_KEY);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (Array.isArray(parsed.left) && Array.isArray(parsed.right) && Array.isArray(parsed.hidden)) {
+          return parsed;
+        }
+      }
+    } catch (e) {
+      // Corrupted storage - fall back to defaults rather than crashing.
+    }
+    return { left: DEFAULT_LEFT, right: DEFAULT_RIGHT, hidden: DEFAULT_HIDDEN };
+  };
+
+  const initialLayout = loadLayout();
+  const [leftOrder, setLeftOrder] = useState<string[]>(initialLayout.left);
+  const [rightOrder, setRightOrder] = useState<string[]>(initialLayout.right);
+  const [hiddenWidgets, setHiddenWidgets] = useState<string[]>(initialLayout.hidden);
+  const [showAddWidgetMenu, setShowAddWidgetMenu] = useState(false);
+  const [homeRefreshKey, setHomeRefreshKey] = useState(0);
+  const [isPullRefreshing, setIsPullRefreshing] = useState(false);
+  const [pullDistance, setPullDistance] = useState(0);
+  const pullStartYRef = useRef<number | null>(null);
+  const PULL_TRIGGER_THRESHOLD = 70;
+  const PULL_MAX_DISTANCE = 90;
+
+  // Raw touch events rather than Framer Motion's drag prop — this screen
+  // already has native HTML5 drag-and-drop for widget reordering, and a
+  // pointer-based drag gesture layered on top would fight it. Gating on
+  // window.scrollY <= 0 at touch-start is what makes this only trigger at
+  // the very top of the page instead of hijacking normal scrolling anywhere
+  // else on a screen with 16 possible widgets.
+  const handleHomeTouchStart = (e: React.TouchEvent) => {
+    if (window.scrollY <= 0 && !isPullRefreshing) {
+      pullStartYRef.current = e.touches[0].clientY;
+    }
+  };
+  const handleHomeTouchMove = (e: React.TouchEvent) => {
+    if (pullStartYRef.current === null) return;
+    const delta = e.touches[0].clientY - pullStartYRef.current;
+    if (delta > 0 && window.scrollY <= 0) {
+      setPullDistance(Math.min(delta * 0.5, PULL_MAX_DISTANCE));
+    } else {
+      pullStartYRef.current = null;
+      setPullDistance(0);
+    }
+  };
+  const handleHomeTouchEnd = () => {
+    if (pullDistance >= PULL_TRIGGER_THRESHOLD) {
+      setIsPullRefreshing(true);
+      setTimeout(() => {
+        setHomeRefreshKey((k) => k + 1);
+        setIsPullRefreshing(false);
+        setPullDistance(0);
+      }, 700); // A brief, deliberate delay — an instant refresh reads as broken, not fast.
+    } else {
+      setPullDistance(0);
+    }
+    pullStartYRef.current = null;
+  };
+
+  // Persist every change so layout and hide/show choices actually stick.
+  useEffect(() => {
+    try {
+      localStorage.setItem(LAYOUT_STORAGE_KEY, JSON.stringify({ left: leftOrder, right: rightOrder, hidden: hiddenWidgets }));
+    } catch (e) {
+      // Storage full or unavailable - continue silently rather than breaking the UI.
+    }
+  }, [leftOrder, rightOrder, hiddenWidgets]);
+
+  const handleHideCard = (id: string) => {
+    setLeftOrder((prev) => prev.filter((cardId) => cardId !== id));
+    setRightOrder((prev) => prev.filter((cardId) => cardId !== id));
+    setHiddenWidgets((prev) => (prev.includes(id) ? prev : [...prev, id]));
+  };
+
+  const handleAddWidget = (id: string) => {
+    setHiddenWidgets((prev) => prev.filter((cardId) => cardId !== id));
+    setLeftOrder((prev) => (prev.includes(id) ? prev : [...prev, id]));
+  };
 
   useEffect(() => {
-    // Merge new cards gracefully
-    const lOrder = leftOrder.length ? leftOrder : ['hero', 'stats', 'streakCalendar', 'anxietyResetCard', 'somaticAccelerator', 'velocity', 'hub', 'gamification', 'daily', 'micro', 'activity'];
-    if (!lOrder.includes('trends') && !rightOrder.includes('trends')) {
-      lOrder.splice(3, 0, 'trends');
+    // Merge any brand-new card types introduced by future app updates so they
+    // aren't silently lost for existing users - anything not already placed
+    // and not already hidden gets added to hidden-by-default, never forced in.
+    const known = new Set([...leftOrder, ...rightOrder, ...hiddenWidgets]);
+    const newlyIntroduced = Object.keys(WIDGET_LIBRARY).filter((id) => !known.has(id));
+    if (newlyIntroduced.length > 0) {
+      setHiddenWidgets((prev) => [...prev, ...newlyIntroduced]);
     }
-    if (!lOrder.includes('anxietyResetCard') && !rightOrder.includes('anxietyResetCard')) {
-      lOrder.splice(4, 0, 'anxietyResetCard');
-    }
-    setLeftOrder(lOrder);
-    setRightOrder(rightOrder.length ? rightOrder : defaultRightOrder);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const [quickNoteOpen, setQuickNoteOpen] = useState(false);
@@ -1022,21 +1212,28 @@ const HomeSection = ({
 
   const calculateRecoveryScore = () => {
     let score = 50; // Base score
-    if (energyLevel > 60) score += 15;
-    else if (energyLevel < 30) score -= 15;
+    const factors: { label: string; points: number }[] = [];
+
+    if (energyLevel > 60) { score += 15; factors.push({ label: "Energy level", points: 15 }); }
+    else if (energyLevel < 30) { score -= 15; factors.push({ label: "Low energy level", points: -15 }); }
 
     // Factor in recovery debt
     const debtCount = (stats.debts || []).filter((d) => !d.cleared).length;
-    score -= Math.min(debtCount * 5, 20); // Cap debt penalty at -20
+    if (debtCount > 0) {
+      const debtPenalty = -Math.min(debtCount * 5, 20);
+      score += debtPenalty;
+      factors.push({ label: "Unresolved recovery debt", points: debtPenalty });
+    }
 
     if (fingerprint?.profile === "High-Functioning Exhausted") {
       score -= 5;
+      factors.push({ label: "High-Functioning Exhausted pattern", points: -5 });
     }
 
     // Factor in daily quests completed
-    if (hasClaimedDaily) score += 10;
-    if (stats.rehearsalCount > 0) score += 5;
-    if (stats.streak > 3) score += 5;
+    if (hasClaimedDaily) { score += 10; factors.push({ label: "Daily check-in claimed", points: 10 }); }
+    if (stats.rehearsalCount > 0) { score += 5; factors.push({ label: "Boundary rehearsal practice", points: 5 }); }
+    if (stats.streak > 3) { score += 5; factors.push({ label: "Streak beyond 3 days", points: 5 }); }
 
     // Integrated Layer 2 Recovery Intelligence Signals
     try {
@@ -1045,64 +1242,65 @@ const HomeSection = ({
         const moodLogs = JSON.parse(moodLogsSaved);
         if (moodLogs.length > 0) {
           const positiveWords = [
-            "good",
-            "great",
-            "rested",
-            "aligned",
-            "steady",
-            "calm",
-            "vibrant",
-            "stable",
+            "good", "great", "rested", "aligned", "steady", "calm", "vibrant", "stable",
           ];
           const recentMood = moodLogs[0].word.toLowerCase();
-          const hasPos = positiveWords.some((w: string) =>
-            recentMood.includes(w),
-          );
+          const hasPos = positiveWords.some((w: string) => recentMood.includes(w));
           score += hasPos ? 15 : -10;
+          factors.push({ label: "Recent mood check-in", points: hasPos ? 15 : -10 });
         }
       }
 
       const triggersSaved = localStorage.getItem("blaze_intelligence_triggers");
       if (triggersSaved) {
         const triggers = JSON.parse(triggersSaved);
-        score -= Math.min(25, triggers.length * 5);
+        if (triggers.length > 0) {
+          const triggerPenalty = -Math.min(25, triggers.length * 5);
+          score += triggerPenalty;
+          factors.push({ label: "Logged triggers", points: triggerPenalty });
+        }
       }
 
-      const socialBatterySaved = localStorage.getItem(
-        "blaze_intelligence_social_battery",
-      );
+      const socialBatterySaved = localStorage.getItem("blaze_intelligence_social_battery");
       if (socialBatterySaved) {
         const socialBattery = parseInt(socialBatterySaved, 10);
-        if (socialBattery > 60) score += 10;
-        if (socialBattery < 30) score -= 15;
+        if (socialBattery > 60) { score += 10; factors.push({ label: "Social battery", points: 10 }); }
+        if (socialBattery < 30) { score -= 15; factors.push({ label: "Low social battery", points: -15 }); }
       }
 
       const winsSaved = localStorage.getItem("blaze_intelligence_wins");
       if (winsSaved) {
         const winsList = JSON.parse(winsSaved);
-        score += Math.min(25, winsList.length * 8);
+        if (winsList.length > 0) {
+          const winsBonus = Math.min(25, winsList.length * 8);
+          score += winsBonus;
+          factors.push({ label: "Logged wins", points: winsBonus });
+        }
       }
 
       const symptomsSaved = localStorage.getItem("blaze_intelligence_symptoms");
       if (symptomsSaved) {
         const symptomsList = JSON.parse(symptomsSaved);
-        score -= Math.min(20, symptomsList.length * 4);
+        if (symptomsList.length > 0) {
+          const symptomsPenalty = -Math.min(20, symptomsList.length * 4);
+          score += symptomsPenalty;
+          factors.push({ label: "Logged symptoms", points: symptomsPenalty });
+        }
       }
 
-      const focusSaved = localStorage.getItem(
-        "blaze_intelligence_focus_shield",
-      );
+      const focusSaved = localStorage.getItem("blaze_intelligence_focus_shield");
       if (focusSaved === "true") {
         score += 10;
+        factors.push({ label: "Focus Shield active", points: 10 });
       }
     } catch (e) {
-      console.warn("Telemetry formulation bypassed.", e);
+      console.warn("Could not read local recovery-intelligence signals.", e);
     }
 
-    return Math.max(10, Math.min(100, score));
+    return { score: Math.max(10, Math.min(100, score)), factors };
   };
 
-  const recoveryScore = calculateRecoveryScore();
+  const { score: recoveryScore, factors: recoveryScoreFactors } = calculateRecoveryScore();
   const dynamicRisk =
     recoveryScore < 40 ? "High" : recoveryScore < 70 ? "Moderate" : "Low";
 
@@ -1113,52 +1311,48 @@ const HomeSection = ({
     daily_1: <DailyGoal shipStage={shipStage} key="daily_1" />,
     hero: (
       <SmartCard 
-        id="hero" 
-        key="hero"
-        title="Executive Operational Score"
+        id="hero"
+        key={`hero-${homeRefreshKey}`}
+        title="Your Recovery Score"
         energyDrain="high"
-        onDragStart={handleDragStart} 
-        onDragOver={handleDragOver} 
+        onDragStart={handleDragStart}
+        onDragOver={handleDragOver}
         onDrop={(e, id) => handleDrop(e, id, 'left')}
-        className="p-12 min-h-[380px] bg-card rounded-[1.5rem] border border-white/10 shadow-2xl flex flex-col justify-between"
+        className="p-6 sm:p-8 md:p-10 min-h-[380px] bg-card rounded-xl border border-border flex flex-col justify-between"
       >
-        <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/noise-lines.png')] opacity-10 pointer-events-none" />
-        <div className="absolute top-0 right-0 w-96 h-96 bg-accent/10 rounded-full blur-[100px] pointer-events-none z-0" />
-        <div className="absolute bottom-0 left-0 w-96 h-96 bg-primary/10 rounded-full blur-[100px] pointer-events-none z-0" />
-
-        <div className="relative z-10 space-y-8">
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-white/10 pb-6">
+        <div className="space-y-6">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-border pb-5">
             <div className="flex flex-wrap items-center gap-3">
-              <div className="px-3 py-1 text-xs uppercase font-bold tracking-widest bg-card/50 text-text-main rounded-md border border-text-main/20 shadow-sm backdrop-blur-md">
-                Neuro-State: Active
-              </div>
+              <span className="text-[11px] font-medium uppercase tracking-widest text-text-muted">
+                Nova is here
+              </span>
               <NovaVoiceGuidance stage={shipStage} />
               {hasClaimedDaily && (
-                <motion.div
-                  initial={{ opacity: 0, scale: 0.9 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  className="px-3 py-1 text-xs uppercase font-bold tracking-widest bg-accent/20 text-accent rounded-md border border-accent/20"
+                <motion.span
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  className="text-[11px] font-medium uppercase tracking-widest text-primary"
                 >
-                  Pulse Saved
-                </motion.div>
+                  Pulse saved
+                </motion.span>
               )}
             </div>
             <button
               onClick={onOpenCheckIn}
-              className="text-xs font-bold uppercase tracking-[0.2em] text-text-main hover:text-text-main transition-all underline decoration-accent underline-offset-8"
+              className="text-xs font-medium uppercase tracking-widest text-text-muted hover:text-text-main transition-colors"
             >
-              Update Telemetry
+              Check in
             </button>
           </div>
-          <div className="space-y-4">
-            <span className="text-xs font-bold uppercase tracking-[0.4em] text-text-muted">
-              Executive Operational Score
+          <div className="space-y-3 border-b border-border pb-6">
+            <span className="text-[11px] font-medium uppercase tracking-[0.3em] text-text-muted">
+              Your Recovery Score
             </span>
             <div className="flex items-center gap-4">
               {stats.streak < 3 ? (
                 <div className="flex flex-col gap-1">
-                  <h1 className="text-4xl font-serif font-bold tracking-tighter text-text-muted italic">
-                    CALCULATING
+                  <h1 className="text-4xl font-mono font-medium tracking-tight text-text-muted">
+                    Calculating
                   </h1>
                   <p className="text-xs text-text-muted">
                     Nova requires a 3-day baseline pattern to establish your
@@ -1167,55 +1361,64 @@ const HomeSection = ({
                 </div>
               ) : (
                 <div className="group/tooltip relative inline-flex items-baseline">
-                  <h1 className="cursor-help text-8xl font-serif font-bold tracking-tighter text-text-main">
+                  <h1 className="cursor-help text-5xl sm:text-6xl md:text-7xl font-mono font-medium tracking-tight text-text-main">
                     {recoveryScore}
-                    <span className="text-4xl font-light opacity-30 ml-2">
+                    <span className="text-xl sm:text-2xl md:text-3xl font-normal text-text-muted ml-2">
                       /100
                     </span>
                   </h1>
-                  
-                  <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-4 px-4 py-3 bg-card text-text-main text-xs font-mono rounded-lg border border-border dark:border-border shadow-xl opacity-0 invisible group-hover/tooltip:opacity-100 group-hover/tooltip:visible transition-all whitespace-nowrap z-50">
-                    Score Calculation Formula
-                    <div className="w-full h-px bg-white/20 my-2" />
+
+                  <div className="absolute left-0 bottom-full mb-4 px-4 py-3 bg-card text-text-main text-xs font-mono rounded-lg border border-border shadow-lg opacity-0 invisible group-hover/tooltip:opacity-100 group-hover/tooltip:visible transition-all whitespace-nowrap z-50">
+                    What's shaping this score
+                    <div className="w-full h-px bg-border my-2" />
                     <div className="text-text-muted space-y-1">
-                      <p>Streak Modifier: +{Math.min(20, stats.streak * 5)}</p>
-                      <p>Weekly Goals: +{Math.min(15, (stats.weeklyGoalsComplete || 0) * 5)}</p>
-                      <p>Level Bonus: +{(stats.level || 1) * 2}</p>
+                      {recoveryScoreFactors.length === 0 ? (
+                        <p>Base score — no check-ins logged yet.</p>
+                      ) : (
+                        recoveryScoreFactors.map((f, i) => (
+                          <p key={i}>{f.label}: {f.points > 0 ? "+" : ""}{f.points}</p>
+                        ))
+                      )}
                     </div>
                   </div>
                 </div>
               )}
             </div>
           </div>
-          <p className="text-text-muted text-xl max-w-lg leading-relaxed font-serif">
+          <p className="text-text-muted text-lg max-w-lg leading-relaxed font-display">
             {stats.streak < 3
               ? "Your nervous system requires consistent tracking. Complete your daily pulses to unlock predictive recovery forecasting."
               : '"Your nervous system is carrying recovery debt. '}
             {stats.streak >= 3 && (
-              <span className="text-text-main font-semibold">
+              <span className="text-text-main font-serif italic">
                 Cease the optimization narrative.
               </span>
             )}
             {stats.streak >= 3 && ' Today is about active repair."'}
           </p>
+          <RecoveryExplanation
+            energyLevel={energyLevel}
+            debtCount={(stats.debts || []).filter((d) => !d.cleared).length}
+            isHighFunctioningExhausted={fingerprint?.profile === "High-Functioning Exhausted"}
+            hasClaimedDaily={hasClaimedDaily}
+            rehearsalCount={stats.rehearsalCount || 0}
+            streak={stats.streak || 0}
+          />
         </div>
 
-        <div className="absolute -right-20 -top-20 w-80 h-80 bg-primary opacity-10 rounded-full blur-[120px] group-hover:opacity-20 transition-all duration-1000" />
-        <div className="absolute right-20 bottom-10 w-40 h-40 bg-accent opacity-5 rounded-full blur-[80px] group-hover:opacity-10 transition-all duration-1000 delay-300" />
-
-        <div className="flex gap-6 mt-12 relative z-10">
+        <div className="flex gap-4 mt-10 pt-6 border-t border-border">
           <button
             onClick={onEnergyRequest}
-            className="btn-primary flex items-center gap-3 px-8"
+            className="btn-primary flex items-center gap-2 px-6"
           >
-            Manage Budget <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
+            Manage Budget <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
           </button>
           {!hasClaimedDaily && (
             <button
               onClick={onClaimDaily}
-              className="px-8 py-3 rounded-2xl bg-surface dark:bg-card/5 border border-border text-text-main font-display font-bold hover:bg-white/10 hover:scale-[1.02] transition-all flex items-center gap-3"
+              className="px-6 py-3 rounded-xl border border-border text-text-main font-display font-medium hover:bg-surface transition-colors flex items-center gap-2"
             >
-              <Trophy className="w-5 h-5 text-warning" /> Claim Pulse
+              <Trophy className="w-4 h-4 text-text-muted" /> Claim Pulse
             </button>
           )}
         </div>
@@ -1225,8 +1428,8 @@ const HomeSection = ({
       <div key="stats" className="grid grid-cols-1 md:grid-cols-3 gap-8">
         {[
           { label: "Current Phase", value: shipStage, subLabel: "SHIP Journey", color: "text-primary", bg: "bg-primary/10" },
-          { label: "Protocol Risk", value: dynamicRisk, subLabel: "Analysis Matrix", color: dynamicRisk === "Low" ? "text-success" : dynamicRisk === "Moderate" ? "text-warning" : "text-danger", bg: dynamicRisk === "Low" ? "bg-success/10" : dynamicRisk === "Moderate" ? "bg-warning/10" : "bg-danger/10" },
-          { label: "Energy Cap", value: `${energyLevel}%`, subLabel: "Operational Load", color: "text-primary", bg: "bg-primary/10" },
+          { label: "Burnout Risk", value: dynamicRisk, subLabel: "How you're trending", color: dynamicRisk === "Low" ? "text-success" : dynamicRisk === "Moderate" ? "text-warning" : "text-destructive", bg: dynamicRisk === "Low" ? "bg-success/10" : dynamicRisk === "Moderate" ? "bg-warning/10" : "bg-destructive/10" },
+          { label: "Energy Cap", value: `${energyLevel}%`, subLabel: "Energy available today", color: "text-primary", bg: "bg-primary/10" },
         ].map((item, i) => (
           <motion.div key={i} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.1 }}>
             <SmartCard id={`stat_${i}`} title={item.label} energyDrain={i === 1 ? 'high' : 'low'} onDragStart={handleDragStart} onDragOver={handleDragOver} onDrop={(e, id) => handleDrop(e, id, 'left')}>
@@ -1248,15 +1451,15 @@ const HomeSection = ({
       </div>
     ),
     trends: (
-      <SmartCard id="trends" key="trends" title="Recovery Trends" energyDrain="medium" onDragStart={handleDragStart} onDragOver={handleDragOver} onDrop={(e, id) => handleDrop(e, id, 'left')} className="p-6">
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6">
+      <SmartCard id="trends" key="trends" title="Recovery Trends" energyDrain="medium" onDragStart={handleDragStart} onDragOver={handleDragOver} onDrop={(e, id) => handleDrop(e, id, 'left')} className="p-6 rounded-xl border border-border">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6 pb-5 border-b border-border">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center text-primary">
-              <History className="w-5 h-5" />
+            <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center text-primary">
+              <History className="w-4 h-4" />
             </div>
             <div>
-              <h3 className="text-lg font-bold text-text-main line-clamp-1">30-Day Recovery Pulse History</h3>
-              <p className="text-xs uppercase font-black tracking-widest text-text-muted">Long-Term Burnout Pattern Analysis</p>
+              <h3 className="text-base font-medium text-text-main line-clamp-1">30-day recovery history</h3>
+              <p className="text-[11px] uppercase font-medium tracking-widest text-text-muted">Long-term pattern</p>
             </div>
           </div>
         </div>
@@ -1265,19 +1468,19 @@ const HomeSection = ({
             <AreaChart data={pulseHistory} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
               <defs>
                 <linearGradient id="colorScore" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#4f46e5" stopOpacity={0.3}/>
-                  <stop offset="95%" stopColor="#4f46e5" stopOpacity={0}/>
+                  <stop offset="5%" stopColor="#ea580c" stopOpacity={0.25}/>
+                  <stop offset="95%" stopColor="#ea580c" stopOpacity={0}/>
                 </linearGradient>
               </defs>
-              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#334155" opacity={0.4} />
-              <XAxis dataKey="date" tick={{ fill: '#64748b', fontSize: 10 }} axisLine={false} tickLine={false} minTickGap={30} />
-              <YAxis tick={{ fill: '#64748b', fontSize: 10 }} axisLine={false} tickLine={false} domain={[0, 100]} />
-              <RechartsTooltip 
-                contentStyle={{ backgroundColor: '#0f172a', border: '1px solid #1e293b', borderRadius: '12px' }}
-                itemStyle={{ color: '#fff', fontSize: '12px', fontWeight: 'bold' }}
-                formatter={(value: number) => [`${value} CR`, 'Score']}
+              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#a8a29e" opacity={0.25} />
+              <XAxis dataKey="date" tick={{ fill: '#a8a29e', fontSize: 10 }} axisLine={false} tickLine={false} minTickGap={30} />
+              <YAxis tick={{ fill: '#a8a29e', fontSize: 10 }} axisLine={false} tickLine={false} domain={[0, 100]} />
+              <RechartsTooltip
+                contentStyle={{ backgroundColor: '#1c1917', border: '1px solid #3a3532', borderRadius: '8px' }}
+                itemStyle={{ color: '#fff', fontSize: '12px', fontWeight: 500 }}
+                formatter={(value: number) => [`${value}`, 'Score']}
               />
-              <Area type="monotone" dataKey="score" stroke="#4f46e5" strokeWidth={3} fillOpacity={1} fill="url(#colorScore)" activeDot={{ r: 6 }} />
+              <Area type="monotone" dataKey="score" stroke="#ea580c" strokeWidth={2} fillOpacity={1} fill="url(#colorScore)" activeDot={{ r: 5 }} />
             </AreaChart>
           </ResponsiveContainer>
         </div>
@@ -1298,9 +1501,9 @@ const HomeSection = ({
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 relative z-10">
           <div className="space-y-1 text-left">
             <span className="px-2.5 py-0.5 bg-red-500/10 border border-red-500/30 text-red-400 text-[9px] font-black uppercase tracking-wider rounded-full">
-              Somatic Reset Protocol
+              Body Reset
             </span>
-            <h3 className="text-lg font-bold font-serif text-text-main mt-1">Anxiety & Overwhelm Reset</h3>
+            <h3 className="text-lg font-bold font-display text-text-main mt-1">Anxiety & Overwhelm Reset</h3>
             <p className="text-xs text-text-muted max-w-md leading-relaxed">
               Facing work dread, racing thoughts, or panic spikes? Deploy a sensory reset immediately to restore baseline executive safety.
             </p>
@@ -1309,7 +1512,7 @@ const HomeSection = ({
             onClick={() => window.dispatchEvent(new CustomEvent('navigate_tab', { detail: 'anxiety_reset' }))}
             className="px-5 py-3 shrink-0 bg-red-600 hover:bg-red-700 text-white font-bold uppercase tracking-widest text-xs rounded-xl transition-all shadow-md shadow-red-500/10 flex items-center gap-2"
           >
-            Deploy Reset <ArrowRight className="w-4 h-4" />
+            Start Reset <ArrowRight className="w-4 h-4" />
           </button>
         </div>
       </SmartCard>
@@ -1320,27 +1523,28 @@ const HomeSection = ({
       </SmartCard>
     ),
     hub: (
-      <SmartCard id="hub" key="hub" title="Recovery Hub" energyDrain="medium" onDragStart={handleDragStart} onDragOver={handleDragOver} onDrop={(e, id) => handleDrop(e, id, 'left')} className="cursor-pointer">
-        <div className="flex items-center gap-10" onClick={onEnergyRequest}>
-          <div className="w-24 h-24 glass rounded-2xl flex items-center justify-center text-primary shadow-xl group-hover:scale-105 transition-all duration-700">
-            <StageIcon className="w-10 h-10" />
+      <SmartCard id="hub" key="hub" title="Recovery Hub" energyDrain="medium" onDragStart={handleDragStart} onDragOver={handleDragOver} onDrop={(e, id) => handleDrop(e, id, 'left')} className="cursor-pointer rounded-xl border border-border p-6">
+        <div className="flex items-center gap-6 sm:gap-10" onClick={onEnergyRequest}>
+          <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-xl bg-primary/10 flex items-center justify-center text-primary shrink-0">
+            <StageIcon className="w-8 h-8" />
           </div>
-          <div className="space-y-2 flex-1 text-left">
-            <span className="tag">Recovery Protocol Enabled</span>
-            <h2 className="text-3xl font-serif font-bold text-text-main tracking-tight">
-              Active Repatterning: {shipStage}
+          <div className="space-y-2 flex-1 text-left min-w-0">
+            <span className="text-[11px] font-medium uppercase tracking-widest text-primary">Recovery mode enabled</span>
+            <h2 className="text-2xl font-display font-medium text-text-main tracking-tight">
+              Active repatterning: {shipStage}
             </h2>
-            <p className="text-text-muted text-lg font-medium ">
+            <p className="text-text-muted text-base font-serif italic">
               "Your recovery is not a suggestion. It is a biological prerequisite for the coming cycle."
             </p>
           </div>
-          <button className="w-14 h-14 rounded-full glass flex items-center justify-center text-primary hover:bg-primary hover:text-surface transition-all duration-500 mr-4">
-            <ChevronRight className="w-6 h-6" />
+          <button className="w-11 h-11 rounded-full border border-border flex items-center justify-center text-text-muted hover:text-primary hover:border-primary transition-colors shrink-0">
+            <ChevronRight className="w-5 h-5" />
           </button>
         </div>
       </SmartCard>
     ),
     gamification: <GamificationDisplay key="gamification" stats={stats} fingerprint={fingerprint} shipStage={shipStage} pulseHistory={pulseHistory} />,
+    archetypeBlend: <ArchetypeBlend key={`archetypeBlend-${homeRefreshKey}`} />,
     somaticAccelerator: (
       <SomaticCheckInCard
         key="somaticAccelerator"
@@ -1353,26 +1557,26 @@ const HomeSection = ({
     daily: <DailyGoal key="daily" shipStage={shipStage} />,
     micro: <MicroInterventions key="micro" shipStage={shipStage} id="micro" onDragStart={handleDragStart} onDragOver={handleDragOver} onDrop={(e, id) => handleDrop(e, id, 'left')} />,
     directive: (
-      <SmartCard id="directive" key="directive" title="Nova Directive" energyDrain="high" onDragStart={handleDragStart} onDragOver={handleDragOver} onDrop={(e, id) => handleDrop(e, id, 'right')} className="glass border-primary/20 p-6">
-        <div className="relative z-10 space-y-8">
-          <div className="flex items-center justify-between">
+      <SmartCard id="directive" key="directive" title="Nova's Suggestion" energyDrain="high" onDragStart={handleDragStart} onDragOver={handleDragOver} onDrop={(e, id) => handleDrop(e, id, 'right')} className="rounded-xl border border-border p-6">
+        <div className="relative z-10 space-y-6">
+          <div className="flex items-center justify-between pb-5 border-b border-border">
             <div className="flex items-center gap-3">
-              <div className="w-2 h-2 rounded-full bg-primary animate-ping"></div>
-              <h3 className="text-xs font-black uppercase tracking-widest text-text-main">Nova Target Directive</h3>
+              <div className="w-2 h-2 rounded-full bg-primary"></div>
+              <h3 className="text-[11px] font-medium uppercase tracking-widest text-text-main">Today's focus</h3>
             </div>
-            <div className="tag bg-warning/20 text-warning border border-warning/20 shadow-sm">+50 ENERGY</div>
+            <span className="text-[11px] font-mono text-text-muted">+50</span>
           </div>
-          <div className="relative">
-            <p className="text-xl font-display font-bold text-text-main leading-tight tracking-tight italic">
-              "Diagnostic Analysis Complete. Your single biggest energy leak is unstructured ad-hoc meetings. They account for nearly 45% of your total neural load this cycle."
+          <div>
+            <p className="text-lg font-serif italic text-text-main leading-snug">
+              "Your single biggest energy leak is unstructured ad-hoc meetings. They account for nearly 45% of your total load this cycle."
             </p>
-            <div className="mt-8 p-6 bg-primary/5 rounded-3xl border border-primary/10">
-              <span className="text-xs font-black text-primary uppercase tracking-[0.2em] block mb-3">Protocol Goal</span>
-              <p className="text-sm font-semibold text-text-main tracking-tight">Rehearse the 'I need to push this' script before the 4 PM sync to start patching this energy leak.</p>
+            <div className="mt-6 p-5 bg-surface rounded-lg border border-border">
+              <span className="text-[11px] font-medium text-text-muted uppercase tracking-widest block mb-2">Today's focus</span>
+              <p className="text-sm font-medium text-text-main">Rehearse the "I need to push this" script before the 4 PM sync to start patching this energy leak.</p>
             </div>
           </div>
-          <button onClick={onChatRequest} className="w-full btn-primary py-4 shadow-primary/30 flex items-center justify-center gap-2 group transition-all">
-            <MessageSquare className="w-5 h-5" />
+          <button onClick={onChatRequest} className="w-full btn-primary py-3.5 flex items-center justify-center gap-2 group transition-all">
+            <MessageSquare className="w-4 h-4" />
             <span>Connect with Nova</span>
             <ArrowRight className="w-4 h-4 opacity-70 group-hover:translate-x-1 transition-transform" />
           </button>
@@ -1380,19 +1584,19 @@ const HomeSection = ({
       </SmartCard>
     ),
     quests: (
-      <SmartCard id="quests" key="quests" title="Active Quests" energyDrain="medium" onDragStart={handleDragStart} onDragOver={handleDragOver} onDrop={(e, id) => handleDrop(e, id, 'right')} className="space-y-6 p-6">
+      <SmartCard id="quests" key="quests" title="Milestones" energyDrain="medium" onDragStart={handleDragStart} onDragOver={handleDragOver} onDrop={(e, id) => handleDrop(e, id, 'right')} className="space-y-6 p-6">
         <h3 className="text-xs font-black uppercase tracking-widest text-text-main flex items-center gap-3">
-          <Gift className="w-5 h-5 text-primary" /> Active Quests
+          <Gift className="w-5 h-5 text-primary" /> Milestones
         </h3>
         <div className="space-y-3">
           {[
-            { label: "Save Energy Budget", pts: 50, done: true },
-            { label: "Nova Intelligence Update", pts: 100, done: false },
-            { label: "Practice Framework", pts: 75, done: false }
+            { label: "Complete today's check-in", pts: 50, done: hasClaimedDaily },
+            { label: "Reach a 3-day streak", pts: 100, done: stats.streak >= 3 },
+            { label: "Complete your burnout diagnostic", pts: 75, done: !!fingerprint }
           ].map((q, i) => (
             <div key={i} className={cn("flex items-center justify-between p-4 rounded-2xl border transition-all", q.done ? "bg-surface/50 border-border/50" : "bg-card border-border shadow-sm hover:shadow-md")}>
               <div className="flex items-center gap-3">
-                <div className={cn("w-5 h-5 rounded-lg flex items-center justify-center transition-all", q.done ? "bg-accent text-white" : "bg-surface dark:bg-surface/50 text-text-muted")}>
+                <div className={cn("w-5 h-5 rounded-lg flex items-center justify-center transition-all", q.done ? "bg-accent text-accent-foreground" : "bg-surface dark:bg-surface/50 text-text-muted")}>
                   {q.done ? <CheckCircle className="w-3 h-3" /> : <Zap className="w-3 h-3" />}
                 </div>
                 <span className={cn("text-xs font-bold tracking-tight", q.done ? "text-text-muted" : "text-text-main")}>{q.label}</span>
@@ -1437,22 +1641,26 @@ const HomeSection = ({
         className="p-6 bg-card border border-border rounded-2xl shadow-xl space-y-6"
       >
         {(() => {
-          // Initialize streak calendar state or load from localStorage
+          const today = new Date();
+          const todayStr = today.toISOString().split('T')[0]; // YYYY-MM-DD, real current date
+          const currentYear = today.getFullYear();
+          const currentMonth = today.getMonth(); // 0-indexed
+          const currentMonthLabel = today.toLocaleString('default', { month: 'long' });
+          const todayDayNum = today.getDate();
+
+          // Initialize streak calendar state or load from localStorage - honest
+          // empty state for new users, no fabricated pre-existing streak.
           const [streakDays, setStreakDays] = useState<string[]>(() => {
             try {
               const saved = localStorage.getItem("blaze_recovery_streak_days");
               if (saved) return JSON.parse(saved);
             } catch (e) {}
-            // Seed a beautiful streak pattern
-            const seeded = ["2026-07-12", "2026-07-11", "2026-07-10", "2026-07-08", "2026-07-07", "2026-07-06"];
-            localStorage.setItem("blaze_recovery_streak_days", JSON.stringify(seeded));
-            return seeded;
+            return [];
           });
 
           const [selectedDay, setSelectedDay] = useState<string | null>(null);
 
           const handleCommitTodayBudget = () => {
-            const todayStr = "2026-07-13";
             if (streakDays.includes(todayStr)) return;
             const updated = [todayStr, ...streakDays];
             setStreakDays(updated);
@@ -1468,43 +1676,51 @@ const HomeSection = ({
             } catch (e) {}
           };
 
-          const isTodayCommitted = streakDays.includes("2026-07-13");
+          const isTodayCommitted = streakDays.includes(todayStr);
 
-          // Monthly Grid Calculation for July 2026
-          // July 2026 starts on a Wednesday (index 3). Has 31 days.
-          const daysInMonth = 31;
-          const startOffset = 3; // Wednesday
+          // Monthly grid for the actual current month/year, computed for real
+          // rather than hardcoded to a single test date.
+          const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
+          const startOffset = new Date(currentYear, currentMonth, 1).getDay(); // 0=Sunday
           const totalCells = daysInMonth + startOffset;
+
+          // Consecutive-day streak counting backward from today, not a hardcoded range.
+          const currentStreakLength = (() => {
+            let count = 0;
+            let cursor = new Date(today);
+            while (streakDays.includes(cursor.toISOString().split('T')[0])) {
+              count++;
+              cursor.setDate(cursor.getDate() - 1);
+            }
+            return count;
+          })();
 
           return (
             <div className="space-y-6 text-left">
               <div className="flex items-center justify-between border-b border-border pb-4">
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded-xl bg-success/15 border border-success/30 flex items-center justify-center text-success">
-                    <Flame className="w-5 h-5 fill-success/20 animate-bounce" />
+                    <Flame className="w-5 h-5 fill-success/20" />
                   </div>
                   <div>
                     <h4 className="text-sm font-bold text-text-main">Recovery Streak</h4>
-                    <p className="text-[10px] text-text-muted font-black uppercase tracking-widest mt-0.5">Budget Preservation Calendar</p>
+                    <p className="text-[10px] text-text-muted font-black uppercase tracking-widest mt-0.5">Days you've checked in</p>
                   </div>
                 </div>
                 <div className="text-right">
-                  <span className="text-2xl font-serif font-black text-success tracking-tight">
-                    {streakDays.filter(d => {
-                      const day = new Date(d).getDate();
-                      return day >= 6 && day <= 13; // consecutive streak counting
-                    }).length} Days
+                  <span className="text-2xl font-mono font-black text-success tracking-tight">
+                    {currentStreakLength} Days
                   </span>
-                  <p className="text-[9px] uppercase font-black text-text-muted tracking-widest mt-0.5">Active Streak</p>
+                  <p className="text-[9px] uppercase font-black text-text-muted tracking-widest mt-0.5">Current Streak</p>
                 </div>
               </div>
 
               {/* Calendar Grid */}
               <div>
                 <div className="flex items-center justify-between mb-3 px-1">
-                  <span className="text-xs font-black uppercase text-text-main tracking-wider">July 2026</span>
+                  <span className="text-xs font-black uppercase text-text-main tracking-wider">{currentMonthLabel} {currentYear}</span>
                   <div className="flex items-center gap-1.5 text-[10px] text-text-muted font-bold">
-                    <span className="w-2.5 h-2.5 rounded-full bg-success/20 border border-success/40 inline-block" /> Budget Kept
+                    <span className="w-2.5 h-2.5 rounded-full bg-success/20 border border-success/40 inline-block" /> Checked in
                   </div>
                 </div>
 
@@ -1521,9 +1737,9 @@ const HomeSection = ({
                     }
 
                     const dayNum = i - startOffset + 1;
-                    const dateStr = `2026-07-${String(dayNum).padStart(2, '0')}`;
+                    const dateStr = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-${String(dayNum).padStart(2, '0')}`;
                     const isStreak = streakDays.includes(dateStr);
-                    const isToday = dayNum === 13;
+                    const isToday = dayNum === todayDayNum;
 
                     return (
                       <motion.button
@@ -1573,7 +1789,7 @@ const HomeSection = ({
                       ×
                     </button>
                     <p className="font-bold text-text-main">
-                      July {new Date(selectedDay).getDate()}, 2026 Status:
+                      {new Date(selectedDay + 'T00:00:00').toLocaleDateString('default', { month: 'long', day: 'numeric', year: 'numeric' })} Status:
                     </p>
                     <p className="text-text-muted mt-1.5 font-medium leading-relaxed">
                       {streakDays.includes(selectedDay) 
@@ -1592,7 +1808,7 @@ const HomeSection = ({
                       <Sparkles className="w-5 h-5 text-primary shrink-0 mt-0.5" />
                       <div className="space-y-1">
                         <p className="text-xs font-bold text-text-main">Commit Today's Energy Budget</p>
-                        <p className="text-[10px] text-text-muted font-medium">Verify you kept your meetings and boundaries under budget for today (July 13).</p>
+                        <p className="text-[10px] text-text-muted font-medium">Verify you kept your meetings and boundaries under budget for today ({currentMonthLabel} {todayDayNum}).</p>
                       </div>
                     </div>
                     <button
@@ -1626,8 +1842,23 @@ const HomeSection = ({
   };
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-3 gap-10 pb-20">
-      <div 
+    <div
+      onTouchStart={handleHomeTouchStart}
+      onTouchMove={handleHomeTouchMove}
+      onTouchEnd={handleHomeTouchEnd}
+      className="relative"
+    >
+      <div
+        className="flex justify-center overflow-hidden transition-none"
+        style={{ height: pullDistance > 0 || isPullRefreshing ? Math.max(pullDistance, isPullRefreshing ? 50 : 0) : 0 }}
+      >
+        <div className="flex items-center justify-center text-primary" style={{ opacity: Math.min(pullDistance / PULL_TRIGGER_THRESHOLD, 1) }}>
+          <RefreshCw className={cn("w-5 h-5", isPullRefreshing && "animate-spin", !isPullRefreshing && pullDistance >= PULL_TRIGGER_THRESHOLD && "scale-110")} />
+        </div>
+      </div>
+      <div style={{ transform: `translateY(${isPullRefreshing ? 0 : pullDistance}px)`, transition: pullStartYRef.current === null ? "transform 0.2s ease-out" : "none" }}>
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-10 pb-20">
+      <div
         className="lg:col-span-2 flex flex-col gap-10 min-h-[500px]"
         onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; }}
         onDrop={(e) => {
@@ -1644,14 +1875,58 @@ const HomeSection = ({
       >
         <AnimatePresence>
           {leftOrder.map(id => (
-            <motion.div key={id} layout transition={{ type: "spring", stiffness: 350, damping: 25, mass: 0.8 }} initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}}>
+            <motion.div key={id} layout transition={{ type: "spring", stiffness: 350, damping: 25, mass: 0.8 }} initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} className="relative group/widget">
+              <button
+                onClick={() => handleHideCard(id)}
+                title={`Hide ${WIDGET_LIBRARY[id] || 'card'}`}
+                className="absolute top-4 right-4 z-30 p-1.5 rounded-full bg-card/90 border border-border text-text-muted hover:text-destructive opacity-0 group-hover/widget:opacity-100 transition-opacity"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
               {cardsMap[id]}
             </motion.div>
           ))}
         </AnimatePresence>
+
+        <div className="relative">
+          <button
+            onClick={() => setShowAddWidgetMenu((v) => !v)}
+            className="w-full py-4 rounded-2xl border border-dashed border-border text-text-muted hover:text-primary hover:border-primary/40 transition-colors text-sm font-bold flex items-center justify-center gap-2"
+          >
+            <Plus className="w-4 h-4" /> Add widget
+          </button>
+          <AnimatePresence>
+            {showAddWidgetMenu && (
+              <motion.div
+                initial={{ opacity: 0, y: -8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                className="absolute z-30 mt-2 w-full max-h-80 overflow-y-auto custom-scrollbar bg-card border border-border rounded-2xl shadow-2xl p-2 space-y-1"
+              >
+                {hiddenWidgets.length === 0 ? (
+                  <p className="text-xs text-text-muted text-center py-4">Everything's already on your dashboard.</p>
+                ) : (
+                  hiddenWidgets.map((id) => (
+                    <button
+                      key={id}
+                      onClick={() => {
+                        handleAddWidget(id);
+                        setShowAddWidgetMenu(false);
+                      }}
+                      className="w-full flex items-center justify-between px-4 py-3 rounded-xl text-sm text-text-main hover:bg-surface transition-colors text-left"
+                    >
+                      <span>{WIDGET_LIBRARY[id] || id}</span>
+                      <Plus className="w-4 h-4 text-text-muted shrink-0" />
+                    </button>
+                  ))
+                )}
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
       </div>
 
-      <div 
+      <div
         className="flex flex-col gap-10 min-h-[500px]"
         onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; }}
         onDrop={(e) => {
@@ -1667,11 +1942,21 @@ const HomeSection = ({
       >
         <AnimatePresence>
           {rightOrder.map(id => (
-            <motion.div key={id} layout transition={{ type: "spring", stiffness: 350, damping: 25, mass: 0.8 }} initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}}>
+            <motion.div key={id} layout transition={{ type: "spring", stiffness: 350, damping: 25, mass: 0.8 }} initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} className="relative group/widget">
+              <button
+                onClick={() => handleHideCard(id)}
+                title={`Hide ${WIDGET_LIBRARY[id] || 'card'}`}
+                className="absolute top-4 right-4 z-30 p-1.5 rounded-full bg-card/90 border border-border text-text-muted hover:text-destructive opacity-0 group-hover/widget:opacity-100 transition-opacity"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
               {cardsMap[id]}
             </motion.div>
           ))}
         </AnimatePresence>
+      </div>
+
+      </div>
       </div>
 
       {/* 'Quick Note' Floating Trigger Input Field */}
@@ -1687,11 +1972,11 @@ const HomeSection = ({
               <div className="flex items-center justify-between border-b border-border pb-3">
                 <div className="flex items-center gap-2">
                   <div className="w-8 h-8 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center text-primary">
-                    <AlertTriangle className="w-4 h-4 animate-bounce" />
+                    <AlertTriangle className="w-4 h-4" />
                   </div>
                   <div>
                     <h5 className="text-xs font-black uppercase tracking-wider text-text-main">Quick Trigger Capture</h5>
-                    <p className="text-[9px] uppercase font-bold text-text-muted">Nova Immediate Intercept</p>
+                    <p className="text-[9px] uppercase font-bold text-text-muted">Nova Quick Check-In</p>
                   </div>
                 </div>
                 <button
@@ -1748,7 +2033,7 @@ const HomeSection = ({
                     disabled={!quickTriggerText.trim()}
                     className="w-full py-2.5 bg-primary hover:bg-primary/95 text-primary-foreground text-xs font-black uppercase tracking-widest rounded-xl transition-all shadow-md cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    Intercept Trigger (+25 XP)
+                    Log a Trigger (+25 XP)
                   </button>
                 </div>
               )}
@@ -1769,12 +2054,36 @@ const HomeSection = ({
 };
 
 export default function App() {
-  const { user, appRole, loading: authLoading } = useAuth();
-  
+  const { user, appRole, loading: authLoading, accessToken } = useAuth();
+
   // Bulletproof global super admin check
   const isSuperAdminUser = user?.email === 'teampublication@gmail.com' || (user as any)?.isAdmin === true;
   const effectiveRole = isSuperAdminUser ? 'platform_admin' : appRole;
-  
+
+  // Opportunistically build the real-signal data behind the Explainable
+  // Recovery Score / archetype-evolution work. Calendar computes locally from
+  // the user's own Google token and posts just the aggregate. Slack advances
+  // one conversation per "tick" (the backend enforces its own 60s minimum
+  // interval to respect Slack's rate limits), so calling this periodically
+  // while the app is open lets a full 7-day scan complete over real usage
+  // instead of needing a single, rate-limit-breaking bulk fetch.
+  useEffect(() => {
+    if (!user) return;
+
+    if (accessToken) {
+      syncCalendarSignal(accessToken);
+    }
+
+    const tickSlack = () => {
+      secureApiFetch('/api/signals/slack/tick', { method: 'POST' }).catch(() => {
+        // Not connected, rate-limited, or a transient error — all safe to skip silently.
+      });
+    };
+    tickSlack();
+    const slackTickInterval = setInterval(tickSlack, 65 * 1000);
+    return () => clearInterval(slackTickInterval);
+  }, [user, accessToken]);
+
   const [flow, setFlow] = useState<AppFlow>("landing");
   const [activeTab, setActiveTab] = useState<ActiveTab>("home");
   const [fingerprint, setFingerprint] = useState<BurnoutFingerprint | null>(
@@ -1827,7 +2136,9 @@ export default function App() {
   // Settings State
   const [showSettings, setShowSettings] = useState(false);
   const [showWalkthrough, setShowWalkthrough] = useState(false);
+  const [showCrisisSupport, setShowCrisisSupport] = useState(false);
   const [isMobileNavCollapsed, setIsMobileNavCollapsed] = useState(false);
+  const [showMobileToolsSheet, setShowMobileToolsSheet] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
 
   // Daily Pulse State
@@ -1885,9 +2196,26 @@ export default function App() {
   // Pulse Alert System
   useEffect(() => {
     if ("Notification" in window && Notification.permission !== "granted" && Notification.permission !== "denied") {
-      Notification.requestPermission();
+      Notification.requestPermission().then((permission) => {
+        if (permission === "granted") {
+          // Real push subscription — this is what lets a notification reach
+          // this person even after they've stopped opening the app, unlike
+          // the foreground-only notification below which only fires while
+          // this tab is already open and looking at it.
+          subscribeToPushNotifications();
+        }
+      });
     }
   }, []);
+
+  useEffect(() => {
+    // The server-side scheduled check (low score sustained, or check-in gone
+    // stale) has nothing to look at without this — report on every score
+    // computation so that check reflects reality, not stale data.
+    if (user) {
+      reportPulseStatus(stats.recoveryScore);
+    }
+  }, [stats.recoveryScore, user]);
 
   useEffect(() => {
     if ("Notification" in window && Notification.permission === "granted") {
@@ -1925,14 +2253,14 @@ export default function App() {
     logJourney('Navigation Context', `User entering module: ${activeTab}`);
     
     // Check route protection as well
-    const adminTabs = ["org", "evolution", "intelligence", "matrix", "admin", "executive"];
+    const adminTabs = ["org", "evolution", "intelligence", "admin", "executive"];
     const isProtected = adminTabs.includes(activeTab);
     
     if (isProtected) {
       if (activeTab === "org" && effectiveRole !== "platform_admin" && !["manager", "organisation_admin", "individual"].includes(effectiveRole)) {
         setActiveTab("home");
       }
-      else if (["evolution", "intelligence", "matrix", "executive", "admin"].includes(activeTab) && !["platform_admin", "security_admin", "executive"].includes(effectiveRole)) {
+      else if (["evolution", "intelligence", "executive", "admin"].includes(activeTab) && !["platform_admin", "security_admin", "executive"].includes(effectiveRole)) {
         setActiveTab("home");
       }
     }
@@ -2278,6 +2606,7 @@ export default function App() {
     oneless: "One Less Thing",
     recipes: "Recovery Recipes",
     faith: "Grounding",
+    privacy: "Privacy Centre",
   };
 
   useEffect(() => {
@@ -2291,7 +2620,7 @@ export default function App() {
     }
 
     // Sync State
-    updateNovaMemoryBySourceAndType("Daily Telemetry", "state", {
+    updateNovaMemoryBySourceAndType("Daily Check-in", "state", {
       content: `Current SHIP Stage: ${shipStage}, Energy Level: ${energyLevel}%, Burnout Risk: ${burnoutRisk}, Debt Count: ${(stats.debts || []).filter((d) => !d.cleared).length}. Active Recovery Plan Goals: ${fingerprint?.priorities.join(" | ") || "None set"}.`,
       confidence: "high",
       canEdit: false,
@@ -2370,7 +2699,7 @@ export default function App() {
       stats.supportCircle?.filter((c: any) => c.isGuardian).length || 0;
 
     updateNovaMemoryBySourceAndType("Safety Engine", "rule", {
-      content: `Guardian Protocol is ${guardianEnabled ? "ENABLED" : "DISABLED"} with ${trustedContactsCount} active trusted contacts. Nova ${guardianEnabled ? "may" : "may not"} escalate to trusted contacts during severe overload.`,
+      content: `Guardian Alerts are ${guardianEnabled ? "ENABLED" : "DISABLED"} with ${trustedContactsCount} active trusted contacts. Nova ${guardianEnabled ? "may" : "may not"} escalate to trusted contacts during severe overload.`,
       confidence: "verified",
       canEdit: false,
     });
@@ -2378,33 +2707,71 @@ export default function App() {
 
   if (flow === "landing") {
     return (
-      <LandingPage
-        onStart={() => setFlow("onboarding")}
-        onOpenTrustCentre={() => setFlow("trust-centre")}
-      />
+      <>
+        <LandingPage
+          onStart={() => setFlow("onboarding")}
+          onOpenTrustCentre={() => setFlow("trust-centre")}
+        />
+        <button
+          onClick={() => setShowCrisisSupport(true)}
+          className="fixed left-6 bg-info/10 text-info hover:bg-info/20 border border-info/20 flex items-center gap-2 px-4 py-3 rounded-full shadow-2xl transition-colors z-50 text-xs font-bold" style={{ bottom: "calc(1.5rem + env(safe-area-inset-bottom))" }}
+        >
+          <LifeBuoy className="w-4 h-4 shrink-0" />
+          <span>Need support now?</span>
+        </button>
+        <CrisisSupportModal isOpen={showCrisisSupport} onClose={() => setShowCrisisSupport(false)} />
+      </>
     );
   }
 
   if (flow === "trust-centre") {
-    return <TrustCentrePage onBack={() => setFlow("landing")} />;
+    return (
+      <>
+        <Suspense fallback={
+          <div className="flex items-center justify-center min-h-screen">
+            <Loader2 className="w-8 h-8 text-primary animate-spin" />
+          </div>
+        }>
+          <TrustCentrePage onBack={() => setFlow("landing")} />
+        </Suspense>
+        <button
+          onClick={() => setShowCrisisSupport(true)}
+          className="fixed left-6 bg-info/10 text-info hover:bg-info/20 border border-info/20 flex items-center gap-2 px-4 py-3 rounded-full shadow-2xl transition-colors z-50 text-xs font-bold" style={{ bottom: "calc(1.5rem + env(safe-area-inset-bottom))" }}
+        >
+          <LifeBuoy className="w-4 h-4 shrink-0" />
+          <span>Need support now?</span>
+        </button>
+        <CrisisSupportModal isOpen={showCrisisSupport} onClose={() => setShowCrisisSupport(false)} />
+      </>
+    );
   }
 
   if (flow === "onboarding") {
     return (
-      <SituationalOnboarding
-        onComplete={(profile) => {
-          setStats((prev) => ({ ...prev, profile }));
-          localStorage.setItem("blaze_profile", JSON.stringify(profile));
-          setFlow("app");
-          setActiveTab("home");
+      <>
+        <SituationalOnboarding
+          onComplete={(profile) => {
+            setStats((prev) => ({ ...prev, profile }));
+            localStorage.setItem("blaze_profile", JSON.stringify(profile));
+            setFlow("app");
+            setActiveTab("home");
 
-          updateNovaMemoryBySourceAndType("Onboarding Telemetry", "profile", {
-            content: `Executive core established. Objective: ${profile.purpose || "N/A"}. Threat: ${profile.primaryDrain || "N/A"}. Voice: ${profile.novaTone || "N/A"}.`,
-            confidence: "verified",
-            canEdit: true,
-          });
-        }}
-      />
+            updateNovaMemoryBySourceAndType("Onboarding Telemetry", "profile", {
+              content: `Onboarding complete. Goal: ${profile.purpose || "N/A"}. Main drain: ${profile.primaryDrain || "N/A"}. Preferred tone: ${profile.novaTone || "N/A"}.`,
+              confidence: "verified",
+              canEdit: true,
+            });
+          }}
+        />
+        <button
+          onClick={() => setShowCrisisSupport(true)}
+          className="fixed left-6 bg-info/10 text-info hover:bg-info/20 border border-info/20 flex items-center gap-2 px-4 py-3 rounded-full shadow-2xl transition-colors z-50 text-xs font-bold" style={{ bottom: "calc(1.5rem + env(safe-area-inset-bottom))" }}
+        >
+          <LifeBuoy className="w-4 h-4 shrink-0" />
+          <span>Need support now?</span>
+        </button>
+        <CrisisSupportModal isOpen={showCrisisSupport} onClose={() => setShowCrisisSupport(false)} />
+      </>
     );
   }
 
@@ -2424,6 +2791,7 @@ export default function App() {
         currentTier={stats.profile?.subscription || "recovery"}
         isCollapsed={isSidebarCollapsed}
         setIsCollapsed={setIsSidebarCollapsed}
+        onOpenCrisisSupport={() => setShowCrisisSupport(true)}
       />
 
       <motion.main
@@ -2478,7 +2846,7 @@ export default function App() {
               </div>
               <div className="relative z-10">
                 <p className="text-[11px] font-black uppercase tracking-[0.2em] text-primary">
-                  Autonomic Integration Logged
+                  Recovery Progress Logged
                 </p>
                 <p className="text-sm font-bold">
                   +{showRewardNotification.points} for{" "}
@@ -2528,6 +2896,11 @@ export default function App() {
             exit={{ opacity: 0, y: -10 }}
             transition={{ duration: 0.3 }}
           >
+            <Suspense fallback={
+              <div className="flex items-center justify-center py-32">
+                <Loader2 className="w-8 h-8 text-primary animate-spin" />
+              </div>
+            }>
             <>
             {activeTab === "home" && (
               <HomeSection
@@ -2614,11 +2987,12 @@ export default function App() {
             {activeTab === "communicate" && (
               <div className="space-y-32">
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-12">
-                  <div className="lg:col-span-2">
+                  <div className="lg:col-span-2 space-y-12">
                     <BoundaryRehearsal
                       onAwardPoints={awardPoints}
                       onRehearsalComplete={incrementRehearsal}
                     />
+                    <BoundaryAutopilot />
                   </div>
                   <div className="space-y-8">
                     <NegotiatorTool />
@@ -2770,12 +3144,6 @@ export default function App() {
               </div>
             )}
 
-            {activeTab === "vault_test" && (
-              <div className="space-y-32">
-                <RecoveryVaultTest />
-              </div>
-            )}
-
             {activeTab === "privacy" && (
               <div className="space-y-32">
                 <PrivacyVault
@@ -2803,59 +3171,6 @@ export default function App() {
               <div className="space-y-32">
                 <OrgDashboard />
                 <OutcomeTracker fingerprint={fingerprint} />
-              </div>
-            )}
-
-            {activeTab === "matrix" && (
-              <div className="space-y-32">
-                <AccessControlMatrix
-                  currentRole={stats.profile?.authRole || "individual"}
-                  currentTier={stats.profile?.subscription || "recovery"}
-                  onTierChange={(t) => {
-                    setStats((prev) => ({
-                      ...prev,
-                      profile: {
-                        ...(prev.profile || {
-                          fullName: "",
-                          role: "",
-                          organization: "",
-                          authRole: "individual",
-                        }),
-                        subscription: t,
-                      },
-                    }));
-                  }}
-                  onRoleChange={(r) => {
-                    setStats((prev) => ({
-                      ...prev,
-                      profile: {
-                        ...(prev.profile || {
-                          fullName: "",
-                          role: "",
-                          organization: "",
-                          subscription: "recovery",
-                        }),
-                        authRole: r,
-                      },
-                    }));
-                    // updateRole disabled for Phase 1B security
-                    if (
-                      r === "individual" ||
-                      r === "employee" ||
-                      r === "executive"
-                    ) {
-                      setActiveTab("home");
-                    } else if (r === "manager" || r === "organisation_admin") {
-                      setActiveTab("org");
-                    } else if (r === "recovery_ally") {
-                      setActiveTab("ally");
-                    }
-                  }}
-                />
-
-                <div className="pt-16 border-t border-border mt-16">
-                  <AdminDashboard />
-                </div>
               </div>
             )}
 
@@ -2893,6 +3208,7 @@ export default function App() {
               </div>
             )}
             </>
+            </Suspense>
           </motion.div>
         </AnimatePresence>
 
@@ -2929,13 +3245,26 @@ export default function App() {
       {/* Mobile Nav */}
       <div className="md:hidden z-50">
         <button
+          onClick={() => setShowCrisisSupport(true)}
+          title="Need support now?"
+          className="fixed top-1/2 -translate-y-1/2 w-12 h-12 rounded-full text-info bg-info/10 hover:bg-info/20 border border-info/20 flex items-center justify-center shadow-2xl transition-colors z-50" style={{ left: "calc(1rem + env(safe-area-inset-left))" }}
+        >
+          <LifeBuoy className="w-5 h-5" />
+        </button>
+        <button
           onClick={() => setIsMobileNavCollapsed(!isMobileNavCollapsed)}
           className={cn(
-            "fixed right-6 w-12 h-12 rounded-full glass border border-border text-text-main flex items-center justify-center shadow-2xl transition-all duration-300 z-50",
+            "fixed w-12 h-12 rounded-full glass border border-border text-text-main flex items-center justify-center shadow-2xl transition-all duration-300 z-50",
             isMobileNavCollapsed
-              ? "bottom-6 shadow-primary/20 bg-text-main text-surface"
-              : "bottom-24",
+              ? "shadow-primary/20 bg-text-main text-surface"
+              : "",
           )}
+          style={{
+            right: "calc(1.5rem + env(safe-area-inset-right))",
+            bottom: isMobileNavCollapsed
+              ? "calc(1.5rem + env(safe-area-inset-bottom))"
+              : "calc(6rem + env(safe-area-inset-bottom))",
+          }}
         >
           {isMobileNavCollapsed ? (
             <Menu className="w-6 h-6" />
@@ -2947,34 +3276,90 @@ export default function App() {
           initial={false}
           animate={{ y: isMobileNavCollapsed ? "100%" : 0 }}
           transition={{ type: "spring", stiffness: 300, damping: 30 }}
-          className="fixed bottom-0 left-0 w-full bg-card/80 backdrop-blur-xl border-t border-border p-2 z-40 transition-colors duration-500"
+          className="fixed bottom-0 left-0 w-full bg-card/80 backdrop-blur-xl border-t border-border pt-2 px-2 z-40 transition-colors duration-500"
+          style={{ paddingBottom: "calc(0.5rem + env(safe-area-inset-bottom))" }}
         >
+          <AnimatePresence>
+            {showMobileToolsSheet && (
+              <motion.div
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: 12 }}
+                transition={{ duration: 0.15 }}
+                className="absolute bottom-full left-2 right-2 mb-2 p-3 rounded-2xl bg-card border border-border shadow-2xl grid grid-cols-3 gap-2"
+              >
+                {ALL_TABS.filter((t) => t.group === "recovery_tools").map((tab) => (
+                  <button
+                    key={tab.id}
+                    onClick={() => {
+                      setActiveTab(tab.id as ActiveTab);
+                      setShowMobileToolsSheet(false);
+                    }}
+                    className={`p-2 rounded-xl transition-all flex flex-col items-center gap-1 ${activeTab === tab.id ? "text-primary bg-primary/10" : "text-text-muted hover:text-text-main"}`}
+                  >
+                    <tab.icon className="w-5 h-5" />
+                    <span className="text-[10px] font-bold tracking-wide text-center leading-tight">
+                      {tab.label}
+                    </span>
+                  </button>
+                ))}
+              </motion.div>
+            )}
+          </AnimatePresence>
           <div className="flex justify-around items-center h-14 overflow-x-auto custom-scrollbar px-2 gap-2">
-            {ALL_TABS.filter(
+            {(() => {
+              const visibleTabs = ALL_TABS.filter(
                 (t) =>
-                  (effectiveRole === "platform_admin" && t.id !== "matrix" && t.id !== "vault_test") ||
+                  t.id !== "privacy" && // Reachable via Settings > Consent & Privacy instead
+                  (effectiveRole === "platform_admin" ||
                   (t.roles.includes(effectiveRole || "individual") &&
                   (!t.featureId ||
                     hasSubscriptionEntitlement(
                       stats.profile?.subscription || "recovery",
                       t.featureId,
-                    ))),
-              ).map((tab) => (
-                <button
-                  key={tab.id}
-                  onClick={() => setActiveTab(tab.id as ActiveTab)}
-                  className={`p-2 rounded-lg transition-all flex flex-col items-center gap-1 shrink-0 min-w-[56px] ${activeTab === tab.id ? "text-primary" : "text-text-muted hover:text-text-main"}`}
-                >
-                  <div
-                    className={`p-1.5 rounded-full transition-all ${activeTab === tab.id ? "bg-primary/10" : ""}`}
+                    )))),
+              );
+              const renderedGroups = new Set<string>();
+              return visibleTabs.map((tab) => {
+                if (tab.group) {
+                  if (renderedGroups.has(tab.group)) return null;
+                  renderedGroups.add(tab.group);
+                  const isGroupActive = visibleTabs.some(
+                    (t) => t.group === tab.group && t.id === activeTab,
+                  );
+                  return (
+                    <button
+                      key={tab.group}
+                      onClick={() => setShowMobileToolsSheet((v) => !v)}
+                      className={`p-2 rounded-lg transition-all flex flex-col items-center gap-1 shrink-0 min-w-[56px] ${isGroupActive || showMobileToolsSheet ? "text-primary" : "text-text-muted hover:text-text-main"}`}
+                    >
+                      <div
+                        className={`p-1.5 rounded-full transition-all ${isGroupActive || showMobileToolsSheet ? "bg-primary/10" : ""}`}
+                      >
+                        <Compass className="w-5 h-5" />
+                      </div>
+                      <span className="text-[11px] font-bold tracking-wide">Tools</span>
+                    </button>
+                  );
+                }
+                return (
+                  <button
+                    key={tab.id}
+                    onClick={() => setActiveTab(tab.id as ActiveTab)}
+                    className={`p-2 rounded-lg transition-all flex flex-col items-center gap-1 shrink-0 min-w-[56px] ${activeTab === tab.id ? "text-primary" : "text-text-muted hover:text-text-main"}`}
                   >
-                    <tab.icon className="w-5 h-5" />
-                  </div>
-                  <span className="text-[11px] font-bold tracking-wide">
-                    {tab.label}
-                  </span>
-                </button>
-              ))}
+                    <div
+                      className={`p-1.5 rounded-full transition-all ${activeTab === tab.id ? "bg-primary/10" : ""}`}
+                    >
+                      <tab.icon className="w-5 h-5" />
+                    </div>
+                    <span className="text-[11px] font-bold tracking-wide">
+                      {tab.label}
+                    </span>
+                  </button>
+                );
+              });
+            })()}
           </div>
         </motion.div>
       </div>
@@ -2985,6 +3370,10 @@ export default function App() {
             profile={stats.profile}
             onClose={() => setShowSettings(false)}
             onSave={(profile) => setStats((prev) => ({ ...prev, profile }))}
+            onOpenPrivacyCentre={() => {
+              setShowSettings(false);
+              setActiveTab("privacy");
+            }}
           />
         )}
         <Walkthrough
@@ -2993,6 +3382,8 @@ export default function App() {
           onAwardPoints={awardPoints}
         />
       </AnimatePresence>
+
+      <CrisisSupportModal isOpen={showCrisisSupport} onClose={() => setShowCrisisSupport(false)} />
       <InAppNudge />
     </div>
   );

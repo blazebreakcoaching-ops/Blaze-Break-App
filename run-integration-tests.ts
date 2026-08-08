@@ -1,12 +1,13 @@
 import { app } from "./server.ts";
-import admin from 'firebase-admin';
+import { getAuth } from 'firebase-admin/auth';
+import { getAppCheck } from 'firebase-admin/app-check';
 import fetch from "node-fetch";
 
 const server = app.listen(8081, async () => {
   console.log("Test server running on port 8081");
   
   // Mint a custom token using the emulator
-  const customToken = await admin.auth().createCustomToken("synthetic-test-user-123");
+  const customToken = await getAuth().createCustomToken("synthetic-test-user-123");
   
   // Exchange it against the AUTH EMULATOR for an ID token
   const emulatorHost = process.env.FIREBASE_AUTH_EMULATOR_HOST;
@@ -23,21 +24,21 @@ const server = app.listen(8081, async () => {
   const validToken = (swapData as any).idToken;
   console.log("Successfully minted valid synthetic test token from emulator:", !!validToken);
   
-  // Mock admin.appCheck().verifyToken for tests since there's no App Check emulator
-  const originalVerify = admin.appCheck().verifyToken;
-  admin.appCheck().verifyToken = async (token) => {
+  // Mock getAppCheck().verifyToken for tests since there's no App Check emulator
+  const originalVerify = getAppCheck().verifyToken;
+  getAppCheck().verifyToken = async (token) => {
     if (token === "valid_mock_app_check_token_999") {
       return { appId: "mock-app-id", token: token } as any;
     }
     throw new Error("Invalid token");
   };
   
-  const originalVerifyId = admin.auth().verifyIdToken;
-  admin.auth().verifyIdToken = async (token) => {
+  const originalVerifyId = getAuth().verifyIdToken;
+  getAuth().verifyIdToken = async (token) => {
     if (token === validToken) {
        return { uid: 'synthetic-test-user-123', aud: 'ais-europe-west2-04e495469f024' } as any;
     }
-    return originalVerifyId.call(admin.auth(), token);
+    return originalVerifyId.call(getAuth(), token);
   };
   
   const validAppCheckToken = "valid_mock_app_check_token_999";

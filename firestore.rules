@@ -83,6 +83,58 @@ service cloud.firestore {
         allow write: if false; // Backend/Admin only
       }
 
+      // Third-party OAuth integrations (Slack, Jira, Asana, Calendly, Monday.com)
+      // integration_tokens holds raw access/refresh tokens — never client-readable,
+      // written only by the backend via the Admin SDK (which bypasses these rules).
+      match /integration_tokens/{service} {
+        allow read, write: if false;
+      }
+      // integrations holds redacted connection status only (no secrets) — safe to read.
+      match /integrations/{service} {
+        allow read: if isOwner(uid);
+        allow write: if false; // Backend/Admin only
+      }
+
+      // live_signals holds real behavioral aggregates (calendar load, Slack
+      // message volume) computed for the Explainable Recovery Score. The raw
+      // Slack scan state includes conversation IDs and a Slack user ID, which
+      // should never reach the client directly — the backend's redacted GET
+      // endpoints are the only intended read path, so this stays fully locked.
+      match /live_signals/{signalType} {
+        allow read, write: if false;
+      }
+
+      // diagnostics holds the burnout-quiz archetype baseline (archScores,
+      // dimension scores) used to compute the evolving blend. Sensitive
+      // personal data — read only via the dedicated /api/signals/blend
+      // endpoint, never directly by the client SDK.
+      match /diagnostics/{docId} {
+        allow read, write: if false;
+      }
+
+      // autopilot_actions is an audit trail of real actions Boundary Autopilot
+      // took on the user's behalf (messages sent, DND set, etc.) — readable by
+      // the owner directly since transparency about "what did this do for me"
+      // matters here, but only the backend (Admin SDK) ever writes to it.
+      match /autopilot_actions/{actionId} {
+        allow read: if isOwner(uid);
+        allow write: if false;
+      }
+
+      // push_subscriptions holds Web Push endpoint/key data (effectively a
+      // credential for sending this device a notification) — never client-
+      // readable, written only via the dedicated /api/push/subscribe endpoint.
+      match /push_subscriptions/{subId} {
+        allow read, write: if false;
+      }
+
+      // pulse_status is what the scheduled push-notification check reads —
+      // no reason for the client to read this back directly since it's a
+      // copy of data already computed client-side.
+      match /pulse_status/{docId} {
+        allow read, write: if false;
+      }
+
       // ---- PHASE 2B COLLECTIONS ----
       
       // A. recovery/fingerprint

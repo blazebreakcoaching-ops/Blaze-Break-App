@@ -74,15 +74,10 @@ export const EnergyBudgetMatrix = ({ onPointsEarned }: { onPointsEarned: (pts: n
   return (
     <div className="space-y-12 pb-24 font-sans max-w-[1400px] mx-auto">
       {/* Executive Header */}
-      <div className="relative overflow-hidden rounded-3xl bg-background border border-white/[0.05] p-10 shadow-2xl">
-        <div className="absolute top-0 right-0 p-8 opacity-5 pointer-events-none">
-          <Activity className="w-96 h-96 text-primary" />
-        </div>
-        <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/noise-lines.png')] opacity-10 pointer-events-none" />
-        
+      <div className="relative overflow-hidden rounded-xl bg-background border border-border p-6 sm:p-8 md:p-10">
         <div className="relative z-10 max-w-4xl space-y-6">
           <div className="flex items-center gap-4">
-             <div className="w-14 h-14 rounded-2xl bg-primary/10 border border-primary/20 text-primary flex items-center justify-center shrink-0 shadow-inner">
+             <div className="w-14 h-14 rounded-xl bg-primary/10 border border-primary/20 text-primary flex items-center justify-center shrink-0">
                <BatteryCharging className="w-7 h-7" />
              </div>
              <div>
@@ -92,8 +87,8 @@ export const EnergyBudgetMatrix = ({ onPointsEarned }: { onPointsEarned: (pts: n
                 </div>
              </div>
           </div>
-          <p className="text-sm lg:text-base text-text-muted leading-relaxed font-medium max-w-2xl border-l-[3px] border-primary/30 pl-5 py-1">
-            "Burnout isn't just working too much; it's funding $1,000 algorithmic load commitments with a $100 biological nervous system. Audit your leaks and violently shed the deficit load."
+          <p className="text-sm lg:text-base text-text-muted leading-relaxed font-serif italic max-w-2xl border-l-[3px] border-primary/30 pl-5 py-1">
+            "Burnout isn't just working too much — it's taking on more commitments than your actual energy can fund. Find where the gap is, and start closing it."
           </p>
         </div>
       </div>
@@ -101,19 +96,19 @@ export const EnergyBudgetMatrix = ({ onPointsEarned }: { onPointsEarned: (pts: n
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
         {/* Left Column: Input & Capacity Gauge */}
         <div className="lg:col-span-4 space-y-8">
-          <div className="card border-none bg-card border border-border p-8 space-y-8 shadow-2xl relative overflow-hidden group/gauge">
+          <div className="card bg-card border border-border p-8 space-y-8 relative overflow-hidden group/gauge">
             <div className="absolute inset-0 bg-gradient-to-br from-white/[0.02] to-transparent pointer-events-none" />
             <h4 className="text-xs font-black uppercase tracking-[0.2em] text-text-muted flex items-center justify-between">
-              <span>Biological Capacity</span>
+              <span>Energy Capacity</span>
               <Activity className="w-4 h-4 text-text-muted" />
             </h4>
             
             <div className="relative h-56 flex items-center justify-center">
               <svg className="w-48 h-48 transform -rotate-90">
-                <circle cx="96" cy="96" r="80" fill="none" className="stroke-slate-800" strokeWidth="12" />
-                <motion.circle 
-                  cx="96" cy="96" r="80" fill="none" 
-                  className={cn("transition-colors duration-700 shadow-glow", isOverloaded ? 'stroke-rose-500' : 'stroke-primary')} 
+                <circle cx="96" cy="96" r="80" fill="none" className="stroke-border" strokeWidth="12" />
+                <motion.circle
+                  cx="96" cy="96" r="80" fill="none"
+                  className={cn("transition-colors duration-700 shadow-glow", isOverloaded ? 'stroke-destructive' : 'stroke-primary')}  
                   strokeWidth="12"
                   strokeLinecap="round"
                   strokeDasharray="502.6"
@@ -122,7 +117,7 @@ export const EnergyBudgetMatrix = ({ onPointsEarned }: { onPointsEarned: (pts: n
                 />
               </svg>
               <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
-                <span className={cn("text-4xl font-black font-display tracking-tighter drop-shadow-lg", isOverloaded ? 'text-destructive' : 'text-white')}>
+                <span className={cn("text-4xl font-black font-display tracking-tighter drop-shadow-lg", isOverloaded ? 'text-destructive' : 'text-text-main')}>
                    {Math.round(overloadPercentage)}%
                 </span>
                 <span className="text-xs font-black uppercase tracking-widest text-text-muted mt-1">Load</span>
@@ -141,7 +136,7 @@ export const EnergyBudgetMatrix = ({ onPointsEarned }: { onPointsEarned: (pts: n
           </div>
 
           <div className="card bg-background border-white/[0.05] p-8 space-y-6 shadow-xl">
-            <h4 className="text-xs font-black uppercase tracking-[0.2em] text-text-muted border-b border-white/5 pb-4">Inject Audit Node</h4>
+            <h4 className="text-xs font-black uppercase tracking-[0.2em] text-text-muted border-b border-white/5 pb-4">Log a Stressor</h4>
             
             <div className="space-y-6">
                <div className="space-y-2">
@@ -151,7 +146,7 @@ export const EnergyBudgetMatrix = ({ onPointsEarned }: { onPointsEarned: (pts: n
                    value={input}
                    onChange={(e) => setInput(e.target.value)}
                    placeholder="e.g. Hostile code review..."
-                   className="w-full bg-surface border border-white/10 rounded-xl px-4 py-4 text-sm text-text-main placeholder-slate-600 focus:ring-1 focus:ring-primary/50 focus:border-primary outline-none transition-all font-mono"
+                   className="w-full bg-surface border border-white/10 rounded-xl px-4 py-4 text-sm text-text-main placeholder:text-text-muted focus:ring-1 focus:ring-primary/50 focus:border-primary outline-none transition-all font-mono"
                  />
                </div>
               
@@ -163,13 +158,13 @@ export const EnergyBudgetMatrix = ({ onPointsEarned }: { onPointsEarned: (pts: n
                 <input 
                   type="range" min="10" max="100" step="5"
                   value={drainSlider} onChange={(e) => setDrainSlider(Number(e.target.value))}
-                  className="w-full h-1.5 bg-card rounded-lg appearance-none cursor-pointer accent-indigo-500 hover:accent-indigo-400 transition-all"
+                  className="w-full h-1.5 bg-card rounded-lg appearance-none cursor-pointer accent-primary transition-all"
                 />
               </div>
 
               <div className="space-y-3">
-                 <label className="text-[11px] font-black uppercase tracking-widest text-text-muted ml-1">Classification Vector</label>
-                 <div className="grid grid-cols-2 gap-2">
+                 <label className="text-[11px] font-black uppercase tracking-widest text-text-muted ml-1">Category</label>
+                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                    {(['professional', 'emotional', 'social', 'logistical'] as const).map(type => (
                      <button
                        key={type}
@@ -199,8 +194,7 @@ export const EnergyBudgetMatrix = ({ onPointsEarned }: { onPointsEarned: (pts: n
         {/* Right Column: Execution Board */}
         <div className="lg:col-span-8 flex flex-col gap-6">
           {/* Workload Velocity Chart Dashboard */}
-          <div className="card bg-background p-8 border border-white/[0.05] space-y-6 text-text-main shadow-2xl relative overflow-hidden">
-             <div className="absolute right-0 top-0 w-64 h-64 bg-primary/5 rounded-full blur-[80px] pointer-events-none" />
+          <div className="card bg-background p-8 border border-border space-y-6 text-text-main relative overflow-hidden">
             <h4 className="text-xs font-black uppercase tracking-[0.2em] text-text-muted flex items-center justify-between">
               <span>7-Day Biometric Workload Velocity</span>
               <Activity className="w-4 h-4 text-text-muted" />
@@ -235,19 +229,17 @@ export const EnergyBudgetMatrix = ({ onPointsEarned }: { onPointsEarned: (pts: n
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
              <div className="bg-card border border-border rounded-2xl p-8 relative overflow-hidden group shadow-lg">
-               <div className="absolute right-0 top-0 w-32 h-32 bg-destructive/5 rounded-full blur-3xl -z-10 group-hover:scale-150 transition-transform duration-700" />
                <p className="text-xs font-black text-text-muted uppercase tracking-widest mb-3">Gross Energy Expenditure</p>
                <h3 className="text-5xl font-display font-black text-text-main tracking-tighter">{activeTotal.toLocaleString()} <span className="text-xl text-text-muted font-medium tracking-normal">units</span></h3>
              </div>
              
              <div className="bg-primary-dark/30 border border-primary/20 rounded-2xl p-8 relative overflow-hidden group shadow-lg">
-               <div className="absolute right-0 top-0 w-32 h-32 bg-primary/10 rounded-full blur-3xl -z-10 group-hover:scale-150 transition-transform duration-700" />
                <p className="text-xs font-black text-primary/80 uppercase tracking-widest mb-3">Recovered Bandwidth</p>
                <h3 className="text-5xl font-display font-black text-primary tracking-tighter">+{recoveredTotal.toLocaleString()} <span className="text-xl text-primary font-medium tracking-normal">saved</span></h3>
              </div>
           </div>
 
-          <div className="card bg-card border border-border p-8 flex-1 space-y-6 shadow-2xl">
+          <div className="card bg-card border border-border p-8 flex-1 space-y-6">
             <div className="flex items-center justify-between border-b border-white/[0.05] pb-4">
               <h4 className="text-xs font-black uppercase tracking-[0.2em] text-text-muted">Live Audit Ledger</h4>
               <span className="text-xs font-mono text-text-muted bg-card px-3 py-1 rounded">{commitments.filter(c => c.status === 'active').length} Nodes</span>
@@ -292,9 +284,9 @@ export const EnergyBudgetMatrix = ({ onPointsEarned }: { onPointsEarned: (pts: n
               </AnimatePresence>
 
               {commitments.filter(c => c.status === 'active').length === 0 && (
-                <div className="py-16 text-center text-text-muted bg-white/[0.02] rounded-2xl border border-white/[0.02]">
+                <div className="py-16 text-center text-text-muted bg-surface rounded-xl border border-border">
                   <CheckCircle2 className="w-12 h-12 mx-auto mb-4 text-primary" />
-                  <p className="font-medium text-sm">All load vectors audited. Neural capacity structurally sound.</p>
+                  <p className="font-medium text-sm">Nothing pending — you're all caught up.</p>
                 </div>
               )}
             </div>

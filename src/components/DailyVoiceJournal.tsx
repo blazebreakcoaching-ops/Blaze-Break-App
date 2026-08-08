@@ -308,9 +308,8 @@ export const DailyVoiceJournal = ({
   };
 
   return (
-    <div className="card bg-card border border-border rounded-[2rem] p-8 md:p-10 shadow-2xl relative overflow-hidden" id="daily-voice-journal-module">
-      <div className="absolute top-0 right-0 w-96 h-96 bg-primary/10 rounded-full blur-[100px] pointer-events-none" />
-      
+    <div className="card bg-card border border-border rounded-xl p-8 md:p-10 relative overflow-hidden" id="daily-voice-journal-module">
+
       <div className="relative z-10 flex flex-col gap-8">
         {/* Header */}
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-border/40 pb-6">
@@ -373,7 +372,7 @@ export const DailyVoiceJournal = ({
                         animate={{ scale: [1, 1.4, 1], opacity: [0.1, 0.4, 0.1] }}
                         exit={{ scale: 0.8, opacity: 0 }}
                         transition={{ repeat: Infinity, duration: 2 }}
-                        className="absolute w-28 h-28 rounded-full bg-danger/20 border border-danger/30"
+                        className="absolute w-28 h-28 rounded-full bg-destructive/20 border border-destructive/30"
                       />
                     )}
                   </AnimatePresence>
@@ -383,8 +382,8 @@ export const DailyVoiceJournal = ({
                     className={cn(
                       "w-20 h-20 rounded-full flex items-center justify-center shadow-lg transition-all border duration-300 relative z-10",
                       isRecording
-                        ? "bg-danger hover:bg-danger-hover border-danger-hover text-white animate-pulse"
-                        : audioBlob 
+                        ? "bg-destructive hover:opacity-90 border-destructive/90 text-destructive-foreground animate-pulse"
+                        : audioBlob
                           ? "bg-success/20 hover:bg-success/30 border-success/40 text-success"
                           : "bg-primary/10 hover:bg-primary/15 border-primary/20 text-primary"
                     )}
@@ -396,8 +395,8 @@ export const DailyVoiceJournal = ({
                 <div className="space-y-2">
                   {isRecording ? (
                     <div className="space-y-1">
-                      <p className="text-lg font-mono font-bold text-danger">00:{recordingDuration.toString().padStart(2, "0")}</p>
-                      <span className="text-[10px] font-black uppercase tracking-widest text-danger/80 flex items-center justify-center gap-1.5">
+                      <p className="text-lg font-mono font-bold text-destructive">00:{recordingDuration.toString().padStart(2, "0")}</p>
+                      <span className="text-[10px] font-black uppercase tracking-widest text-destructive/80 flex items-center justify-center gap-1.5">
                         <Waves className="w-3.5 h-3.5 animate-bounce" /> Streaming Spoken Feed
                       </span>
                     </div>
@@ -409,7 +408,7 @@ export const DailyVoiceJournal = ({
                       <div className="flex items-center justify-center gap-2">
                         <button
                           onClick={analyzeVoiceJournal}
-                          className="px-6 py-2.5 bg-primary hover:bg-primary-hover text-white font-bold text-xs uppercase tracking-widest rounded-xl transition-all shadow-md flex items-center gap-2"
+                          className="px-6 py-2.5 bg-primary hover:opacity-90 text-primary-foreground font-bold text-xs uppercase tracking-widest rounded-xl transition-all shadow-md flex items-center gap-2"
                         >
                           <Sparkles className="w-3.5 h-3.5" /> Analyze with Nova
                         </button>
@@ -432,9 +431,9 @@ export const DailyVoiceJournal = ({
                   )}
 
                   {error && (
-                    <div className="mt-3 p-3 bg-danger/10 border border-danger/20 rounded-xl flex items-start gap-2 max-w-[280px]">
-                      <AlertCircle className="w-4 h-4 text-danger shrink-0 mt-0.5" />
-                      <p className="text-[11px] text-danger text-left">{error}</p>
+                    <div className="mt-3 p-3 bg-destructive/10 border border-destructive/20 rounded-xl flex items-start gap-2 max-w-[280px]">
+                      <AlertCircle className="w-4 h-4 text-destructive shrink-0 mt-0.5" />
+                      <p className="text-[11px] text-destructive text-left">{error}</p>
                     </div>
                   )}
                 </div>
@@ -462,7 +461,7 @@ export const DailyVoiceJournal = ({
                     className={cn(
                       "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all border",
                       isPlayingNova
-                        ? "bg-danger/10 border-danger/30 text-danger"
+                        ? "bg-destructive/10 border-destructive/30 text-destructive"
                         : "bg-surface hover:bg-border/30 border-border text-text-main"
                     )}
                   >
@@ -506,7 +505,7 @@ export const DailyVoiceJournal = ({
                 {/* advice */}
                 <div className="p-4 bg-primary/5 border border-primary/10 rounded-xl mt-auto space-y-1">
                   <h6 className="text-[11px] font-bold text-primary flex items-center gap-1">
-                    <Heart className="w-3.5 h-3.5" /> Nova's Stability Protocol
+                    <Heart className="w-3.5 h-3.5" /> Nova's Stability Practice
                   </h6>
                   <p className="text-xs text-text-main font-medium leading-relaxed">
                     {activeEntry.advice}

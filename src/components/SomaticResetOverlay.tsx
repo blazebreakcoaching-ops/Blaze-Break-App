@@ -148,14 +148,14 @@ export const SomaticResetOverlay = ({ isOpen, onClose, onAwardPoints }: SomaticR
           <X className="w-6 h-6" />
         </button>
 
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(99,102,241,0.08)_0%,transparent_70%)] pointer-events-none" />
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(234,88,12,0.08)_0%,transparent_70%)] pointer-events-none" />
 
         <div className="max-w-md w-full p-8 text-center flex flex-col items-center justify-center relative z-10">
           
           {/* HEADER STATUS */}
           <div className="flex items-center gap-3 mb-8 text-primary">
             <HeartPulse className="w-6 h-6 animate-pulse" />
-            <span className="text-xs font-black uppercase tracking-[0.2em] text-primary">Autonomic Reset Protocol</span>
+            <span className="text-xs font-black uppercase tracking-[0.2em] text-primary">Nervous System Reset</span>
           </div>
 
           <AnimatePresence mode="wait">
@@ -234,7 +234,7 @@ export const SomaticResetOverlay = ({ isOpen, onClose, onAwardPoints }: SomaticR
                       scale: breathPhase === 'inhale' ? [1, 1.4] : 
                              breathPhase === 'hold' ? 1.4 : 
                              breathPhase === 'exhale' ? [1.4, 1] : 1,
-                      backgroundColor: breathPhase === 'hold' ? 'rgba(99,102,241,0.15)' : 'rgba(99,102,241,0.08)'
+                      backgroundColor: breathPhase === 'hold' ? 'rgba(234,88,12,0.15)' : 'rgba(234,88,12,0.08)'
                     }}
                     transition={{ duration: breathTimer, ease: 'linear' }}
                     className="absolute w-36 h-36 rounded-full border border-primary/20 flex flex-col items-center justify-center"
@@ -338,8 +338,8 @@ export const SomaticResetOverlay = ({ isOpen, onClose, onAwardPoints }: SomaticR
                 animate={{ scale: 1, opacity: 1 }}
                 className="space-y-6 text-center w-full"
               >
-                <div className="relative w-24 h-24 bg-success/10 rounded-3xl border border-success/30 text-success flex items-center justify-center mx-auto mb-6 shadow-xl shadow-success/5">
-                  <div className="absolute inset-0 bg-success/5 rounded-3xl animate-ping pointer-events-none" style={{ animationDuration: '3s' }} />
+                <div className="relative w-24 h-24 bg-success/10 rounded-xl border border-success/30 text-success flex items-center justify-center mx-auto mb-6">
+                  <div className="absolute inset-0 bg-success/5 rounded-xl animate-ping pointer-events-none" style={{ animationDuration: '3s' }} />
                   <ShieldCheck className="w-12 h-12 stroke-[1.5]" />
                 </div>
 
@@ -355,7 +355,7 @@ export const SomaticResetOverlay = ({ isOpen, onClose, onAwardPoints }: SomaticR
 
                 <div className="bg-surface dark:bg-card/40 p-4 rounded-2xl border border-border text-left space-y-2.5 max-w-xs mx-auto">
                   <div className="flex justify-between text-xs">
-                    <span className="text-text-muted font-bold">Autonomic Duration:</span>
+                    <span className="text-text-muted font-bold">Session Duration:</span>
                     <span className="font-mono text-text-main font-bold">60.0 Seconds</span>
                   </div>
                   <div className="flex justify-between text-xs">

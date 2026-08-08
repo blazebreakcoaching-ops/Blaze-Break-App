@@ -1,9 +1,10 @@
 import express from "express";
-import admin from 'firebase-admin';
+import { initializeApp } from 'firebase-admin/app';
+import { getAuth } from 'firebase-admin/auth';
 import fetch from "node-fetch";
 
 // Initialize the Admin SDK pointing to local emulators
-admin.initializeApp({ projectId: "demo-no-project" });
+initializeApp({ projectId: "demo-no-project" });
 
 const app = express();
 app.use(express.json());
@@ -16,7 +17,7 @@ const authenticateFirebaseUser = async (req, res, next) => {
 
   const token = authHeader.split('Bearer ')[1];
   try {
-    const decodedToken = await admin.auth().verifyIdToken(token);
+    const decodedToken = await getAuth().verifyIdToken(token);
     req.user = decodedToken;
     next();
   } catch (error) {
@@ -32,7 +33,7 @@ const server = app.listen(8081, async () => {
   console.log("Test server running on port 8081");
   
   // Mint a custom token using the emulator
-  const customToken = await admin.auth().createCustomToken("synthetic-test-user-123");
+  const customToken = await getAuth().createCustomToken("synthetic-test-user-123");
   
   // Exchange it against the AUTH EMULATOR for an ID token
   const emulatorHost = process.env.FIREBASE_AUTH_EMULATOR_HOST;

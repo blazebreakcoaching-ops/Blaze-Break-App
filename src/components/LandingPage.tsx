@@ -35,7 +35,7 @@ export const LandingPage = ({ onStart, onOpenTrustCentre }: LandingPageProps) =>
   };
 
   return (
-    <div className="min-h-screen bg-background selection:bg-primary/20 selection:text-primary relative overflow-hidden text-[#f9fafb]">
+    <div className="min-h-screen bg-background selection:bg-primary/20 selection:text-primary relative overflow-hidden text-text-main">
       {/* Premium Glow Aura Backdrops */}
       <div className="absolute top-0 left-1/4 w-[500px] h-[500px] bg-primary/5 rounded-full blur-[140px] pointer-events-none" />
       <div className="absolute bottom-10 right-1/4 w-[600px] h-[600px] bg-teal-500/3 rounded-full blur-[160px] pointer-events-none" />
@@ -44,12 +44,13 @@ export const LandingPage = ({ onStart, onOpenTrustCentre }: LandingPageProps) =>
       {/* Navigation */}
       <nav className="fixed top-0 w-full z-50 px-8 py-6 flex justify-between items-center backdrop-blur-xl bg-background/70 border-b border-white/[0.04]">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 bg-gradient-to-tr from-primary to-indigo-600 rounded-xl flex items-center justify-center text-text-main shadow-xl shadow-primary/20">
-            <Sparkles className="w-5 h-5" />
+          <div className="w-10 h-10 flex items-center justify-center shadow-xl shadow-primary/20">
+            <img src="/brand/flame-mark-light.png" alt="Blaze Break" className="w-10 h-10 dark:hidden" />
+            <img src="/brand/flame-mark-dark.png" alt="Blaze Break" className="w-10 h-10 hidden dark:block" />
           </div>
           <div className="flex flex-col">
             <h1 className="font-serif font-black text-lg tracking-tight text-text-main leading-none">Blaze Break</h1>
-            <span className="text-[10px] font-black uppercase tracking-[0.2em] text-primary mt-1">Executive Suite</span>
+            <span className="text-[10px] font-black uppercase tracking-[0.2em] text-primary mt-1">Recovery Companion</span>
           </div>
         </div>
         <div className="flex items-center gap-4">
@@ -77,7 +78,7 @@ export const LandingPage = ({ onStart, onOpenTrustCentre }: LandingPageProps) =>
           className="space-y-8"
         >
           <span className="inline-block px-4 py-1.5 bg-primary/10 border border-primary/20 text-primary rounded-full text-xs uppercase tracking-[0.2em] font-black">
-            The Autonomic Reset Protocol for Corporate Athletes
+            A Recovery Method for High Performers
           </span>
           <h2 className="text-5xl md:text-8xl font-light tracking-tight text-text-main leading-[1.05] max-w-5xl mx-auto">
             Scale ambition <br />
@@ -124,7 +125,7 @@ export const LandingPage = ({ onStart, onOpenTrustCentre }: LandingPageProps) =>
           </div>
           <h3 className="text-lg font-bold text-text-main tracking-wide">Autonomous Guardian System</h3>
           <p className="text-text-muted text-xs leading-relaxed">
-            A premium safety protocol for executive groups. Nominate trust guardians who automatically receive high-risk relational alerts ONLY when your neural indicators signal a critical crash state.
+            A pre-set escalation network for high-stakes moments. Add trusted contacts once, then reach them in one tap when you need real support — no automatic monitoring, no biometric tracking, just a fast, private way to ask for help.
           </p>
         </div>
       </section>
@@ -138,7 +139,7 @@ export const LandingPage = ({ onStart, onOpenTrustCentre }: LandingPageProps) =>
           <h1 className="font-bold text-sm tracking-tight text-text-main">Blaze Break</h1>
         </div>
         <p className="text-[11px] uppercase tracking-[0.3em] font-black text-text-muted">
-          Executive Recovery Protocol v2.4 • Secured via Autonomic Sync
+          Blaze Break — Burnout Recovery, Built Right
         </p>
       </footer>
 

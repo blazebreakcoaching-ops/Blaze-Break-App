@@ -1,4 +1,6 @@
-import admin from 'firebase-admin';
+import { initializeApp, getApps } from 'firebase-admin/app';
+import { getAuth } from 'firebase-admin/auth';
+import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -23,22 +25,22 @@ try {
   firebaseConfigDatabaseId = firebaseConfigFile.firestoreDatabaseId;
 } catch(e) {}
 
-if (!admin.apps.length) {
-  admin.initializeApp({
+if (!getApps().length) {
+  initializeApp({
     projectId: firebaseConfigProject || undefined
   });
 }
 
-const db = admin.firestore(firebaseConfigDatabaseId);
+const db = getFirestore(firebaseConfigDatabaseId);
 
 async function makePlatformOwner() {
   try {
     console.log(`Locating user in Firebase Auth with email: ${email}...`);
-    const user = await admin.auth().getUserByEmail(email);
+    const user = await getAuth().getUserByEmail(email);
     const uid = user.uid;
 
     console.log(`Setting custom claims for UID ${uid}...`);
-    await admin.auth().setCustomUserClaims(uid, {
+    await getAuth().setCustomUserClaims(uid, {
       admin: true,
       role: "platform_owner",
       platformOwner: true
@@ -64,8 +66,8 @@ async function makePlatformOwner() {
         "audit.read",
         "settings.manage"
       ],
-      createdAt: admin.firestore.FieldValue.serverTimestamp(),
-      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      createdAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
       createdBy: "system_bootstrap",
       lastLoginAt: null
     }, { merge: true });
@@ -78,7 +80,7 @@ async function makePlatformOwner() {
       action: "platform_owner_bootstrapped",
       targetUid: uid,
       targetEmail: email,
-      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      createdAt: FieldValue.serverTimestamp(),
       metadata: {
         role: "platform_owner"
       }

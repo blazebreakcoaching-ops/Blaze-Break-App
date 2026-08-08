@@ -17,7 +17,7 @@ export const OrgDashboardValue = () => {
   return (
     <div className="space-y-8 pb-24">
       {/* Header */}
-      <div className="relative overflow-hidden rounded-3xl bg-card border border-border p-8">
+      <div className="relative overflow-hidden rounded-xl bg-card border border-border p-8">
         <div className="absolute top-0 right-0 p-8 opacity-5">
           <Building className="w-64 h-64 text-text-main" />
         </div>
@@ -59,7 +59,7 @@ export const OrgDashboardValue = () => {
       {activeTab === 'cost' && (
         <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-8">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div className="card border-destructive/20 shadow-xl shadow-rose-500/5">
+            <div className="card border border-destructive/20 shadow-md shadow-destructive/5">
               <div className="flex items-center gap-2 mb-2">
                 <AlertTriangle className="w-4 h-4 text-destructive" />
                 <span className="text-xs uppercase tracking-widest font-bold text-text-muted">Avoidable Sickness</span>

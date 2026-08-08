@@ -85,7 +85,7 @@ export const OrgDashboard = () => {
 
   if (cohortSize < minimumThreshold) {
     return (
-      <div className="flex flex-col items-center justify-center p-12 text-center bg-surface dark:bg-surface/50 rounded-3xl border border-dashed border-border dark:border-border">
+      <div className="flex flex-col items-center justify-center p-6 sm:p-8 md:p-12 text-center bg-surface dark:bg-surface/50 rounded-xl border border-dashed border-border dark:border-border">
         <Lock className="w-12 h-12 text-text-muted mb-4" />
         <h3 className="text-xl font-bold text-text-main mb-2">Insufficient Cohort Size</h3>
         <p className="text-text-muted text-sm max-w-md">
@@ -114,7 +114,7 @@ export const OrgDashboard = () => {
         {/* Telemetry Shift Notification Toggle */}
         <div className="flex items-center gap-3 text-sm bg-surface/50 border border-primary/20 px-4 py-2 rounded-lg shrink-0">
           <AlertTriangle className={cn("w-4 h-4", alertEnabled ? "text-warning" : "text-text-muted")} />
-          <span className="font-bold text-text-main mr-2">Telemetry Decline Alerts</span>
+          <span className="font-bold text-text-main mr-2">Decline Alerts</span>
           <button 
             onClick={() => setAlertEnabled(!alertEnabled)}
             className={cn(
@@ -167,7 +167,7 @@ export const OrgDashboard = () => {
 
         {activeSubTab === 'pulse' && (
           <motion.div key="pulse" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95 }} className="space-y-12 pb-24">
-            <div className="relative overflow-hidden rounded-3xl bg-card border border-border p-8 pt-12">
+            <div className="relative overflow-hidden rounded-xl bg-card border border-border p-8 pt-12">
               <div className="absolute top-0 right-0 p-8 opacity-5">
                 <HeartPulse className="w-64 h-64 text-text-main" />
               </div>
@@ -229,7 +229,7 @@ export const OrgDashboard = () => {
               {/* Early Warning Panel */}
               <div className="card space-y-6">
                 <div>
-                  <h4 className="font-bold text-text-main flex items-center gap-2"><AlertTriangle className="w-5 h-5 text-warning" /> Early Warning Telemetry</h4>
+                  <h4 className="font-bold text-text-main flex items-center gap-2"><AlertTriangle className="w-5 h-5 text-warning" /> Early Warning Signals</h4>
                   <p className="text-xs text-text-muted">Predictive risk modeling based on historic presenteeism and strain progression.</p>
                 </div>
                 <div className="space-y-4">
@@ -295,7 +295,7 @@ export const OrgDashboard = () => {
         {activeSubTab === 'climate' && (
           <motion.div key="climate" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95 }} className="space-y-12 pb-24">
             {/* Header */}
-            <div className="relative overflow-hidden rounded-3xl bg-card border border-border p-8 pt-12">
+            <div className="relative overflow-hidden rounded-xl bg-card border border-border p-8 pt-12">
               <div className="absolute top-0 right-0 p-8 opacity-5">
                 <LineChartIcon className="w-64 h-64 text-text-main" />
               </div>

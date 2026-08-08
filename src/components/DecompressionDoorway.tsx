@@ -90,7 +90,7 @@ export const DecompressionDoorway = ({ fingerprint, onAwardPoints }: Decompressi
         </div>
       </div>
 
-      <div className="card glass p-8 md:p-12 min-h-[500px] flex flex-col items-center justify-center relative overflow-hidden">
+      <div className="card border border-border p-8 md:p-12 min-h-[500px] flex flex-col items-center justify-center relative overflow-hidden">
         <AnimatePresence mode="wait">
           {step === 'roles' && (
             <motion.div
@@ -116,7 +116,7 @@ export const DecompressionDoorway = ({ fingerprint, onAwardPoints }: Decompressi
                       setSelectedRole(role);
                       setStep('carrying');
                     }}
-                    className="flex justify-between items-center p-6 rounded-2xl glass border-transparent hover:border-primary/50 hover:bg-surface dark:bg-card dark:hover:bg-surface/50 transition-all group group-hover:scale-[1.01]"
+                    className="flex justify-between items-center p-6 rounded-xl border border-transparent bg-surface hover:border-primary/50 hover:bg-surface dark:bg-card dark:hover:bg-surface/50 transition-all group group-hover:scale-[1.01]"
                   >
                     <div className="flex items-center gap-6 flex-1">
                       <div className="flex-1 text-right">
@@ -196,7 +196,7 @@ export const DecompressionDoorway = ({ fingerprint, onAwardPoints }: Decompressi
                        "w-full text-left p-4 rounded-xl border transition-all font-bold text-lg",
                        selectedNeed === need 
                          ? "bg-success/10 border-success text-success dark:text-success scale-[1.01]"
-                         : "glass border-transparent hover:border-success/50 text-text-main"
+                         : "bg-surface border border-transparent hover:border-success/50 text-text-main"
                      )}
                    >
                      {need}
@@ -224,7 +224,7 @@ export const DecompressionDoorway = ({ fingerprint, onAwardPoints }: Decompressi
              >
                 <div className="text-center space-y-4 mb-16">
                  <h3 className="text-3xl font-display font-bold text-text-main">Cleanse the System</h3>
-                 <p className="text-text-muted">3 cycles of physiological reset. Follow the guide.</p>
+                 <p className="text-text-muted">3 breathing cycles to help you reset. Follow along.</p>
                </div>
 
                 <div className="relative w-64 h-64 flex items-center justify-center mb-12">
@@ -310,13 +310,13 @@ export const DecompressionDoorway = ({ fingerprint, onAwardPoints }: Decompressi
              animate={{ opacity: 1, scale: 1 }}
              className="w-full flex justify-center py-20"
             >
-              <div className="text-center p-12 border border-success/20 bg-success/5 rounded-3xl">
+              <div className="text-center p-6 sm:p-8 md:p-12 border border-success/20 bg-success/5 rounded-xl">
                 <div className="w-24 h-24 bg-success rounded-full flex items-center justify-center text-white mb-8 shadow-xl shadow-success/20 mx-auto">
                   <CheckCircle2 className="w-12 h-12" />
                 </div>
                 <h4 className="text-4xl font-display font-bold text-text-main mb-4">Threshold Crossed</h4>
                 <p className="text-xl text-text-muted font-medium mb-2">You are now in {selectedRole?.enter}.</p>
-                <p className="text-success dark:text-success font-bold uppercase tracking-widest text-sm mt-8">Protocol Complete</p>
+                <p className="text-success dark:text-success font-bold uppercase tracking-widest text-sm mt-8">Complete</p>
               </div>
             </motion.div>
           )}

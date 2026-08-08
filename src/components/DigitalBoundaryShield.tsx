@@ -63,7 +63,7 @@ export const DigitalBoundaryShield = ({ fingerprint, onAwardPoints }: DigitalBou
         
         {/* Urgent or Loud Filter */}
         <div className="lg:col-span-2 space-y-8">
-           <div className="card glass border-primary/20 bg-primary/5 p-8 relative overflow-hidden">
+           <div className="card border border-primary/20 bg-primary/5 p-8 relative overflow-hidden">
             <div className="relative z-10 space-y-6">
               <div className="flex items-center gap-3 mb-2">
                 <div className="w-8 h-8 rounded-xl bg-primary text-primary-foreground flex items-center justify-center shadow-lg shadow-primary/20">
@@ -71,7 +71,7 @@ export const DigitalBoundaryShield = ({ fingerprint, onAwardPoints }: DigitalBou
                 </div>
                 <div>
                   <h3 className="text-sm font-display font-bold text-text-main tracking-tight">Nova's Filter: Urgent or Loud?</h3>
-                  <p className="text-[11px] uppercase tracking-[0.2em] font-black text-primary">Threat Assessment</p>
+                  <p className="text-[11px] uppercase tracking-[0.2em] font-black text-primary">Urgency Check</p>
                 </div>
               </div>
               
@@ -120,11 +120,10 @@ export const DigitalBoundaryShield = ({ fingerprint, onAwardPoints }: DigitalBou
                 </AnimatePresence>
               </div>
             </div>
-            <div className="absolute right-[-5%] top-[-5%] w-64 h-64 bg-primary/10 rounded-full blur-[80px]" />
-          </div>
+                      </div>
 
           {/* Work App Shutdown Ritual */}
-          <div className="card glass p-8">
+          <div className="card border border-border p-8">
             <div className="flex items-center gap-3 mb-6">
               <Power className="w-5 h-5 text-success" />
               <h3 className="text-2xl font-display font-bold text-text-main">Work App Shutdown Ritual</h3>
@@ -150,7 +149,7 @@ export const DigitalBoundaryShield = ({ fingerprint, onAwardPoints }: DigitalBou
         <div className="lg:col-span-1 space-y-8">
           
           {/* Weekend Protection Mode */}
-          <div className="card glass p-6 border-primary/20 relative overflow-hidden group">
+          <div className="card border border-primary/20 p-6 relative overflow-hidden group">
             <div className="flex items-center justify-between mb-4 relative z-10">
               <div className="flex items-center gap-2">
                 <Calendar className={cn("w-5 h-5", weekendMode ? "text-primary" : "text-text-muted")} />
@@ -187,7 +186,7 @@ export const DigitalBoundaryShield = ({ fingerprint, onAwardPoints }: DigitalBou
           </div>
 
           {/* Notification Audit */}
-          <div className="card glass p-6">
+          <div className="card border border-border p-6">
             <div className="flex items-center gap-2 mb-6">
               <BellOff className="w-5 h-5 text-text-main" />
               <h3 className="font-bold text-text-main font-display">Notification Audit</h3>
@@ -215,7 +214,7 @@ export const DigitalBoundaryShield = ({ fingerprint, onAwardPoints }: DigitalBou
             </div>
           </div>
 
-          <div className="card glass p-6 bg-surface dark:bg-surface/50">
+          <div className="card border border-border p-6 bg-surface dark:bg-surface/50">
              <div className="flex items-center gap-2 mb-2">
                <MessageSquare className="w-4 h-4 text-text-muted" />
                <span className="text-xs font-black uppercase tracking-widest text-text-muted">Template</span>

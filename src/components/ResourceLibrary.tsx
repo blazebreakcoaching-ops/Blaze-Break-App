@@ -10,7 +10,7 @@ interface ResourceLibraryProps {
 const RESOURCES = [
   {
     id: 'r1',
-    title: 'The Neural Fatigue Protocol',
+    title: 'Understanding Neural Fatigue',
     type: 'Guide',
     category: 'Safety',
     readTime: '8 min',
@@ -61,7 +61,7 @@ export const ResourceLibrary = ({ fingerprint }: ResourceLibraryProps) => {
               "You cannot out-work a structural deficit. Learn the mechanics of High-Performance Recovery."
             </p>
           </div>
-          <div className="flex items-center gap-3 px-6 py-3 glass rounded-full border border-primary/20 shadow-xl shadow-primary/5">
+          <div className="flex items-center gap-3 px-6 py-3 bg-card rounded-full border border-primary/20 shadow-md">
             <Library className="w-5 h-5 text-primary" />
             <span className="text-xs font-black uppercase tracking-[0.2em] text-text-muted">4 Archives Available</span>
           </div>
@@ -69,7 +69,7 @@ export const ResourceLibrary = ({ fingerprint }: ResourceLibraryProps) => {
       </div>
 
       {fingerprint && (
-        <div className="card glass border-accent/20 bg-accent/5 p-8 relative overflow-hidden">
+        <div className="card border border-accent/20 bg-accent/5 p-8 relative overflow-hidden">
           <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
             <div className="space-y-2">
               <div className="flex items-center gap-2 mb-2">
@@ -81,8 +81,7 @@ export const ResourceLibrary = ({ fingerprint }: ResourceLibraryProps) => {
             </div>
             <button className="btn-primary hover:bg-accent hover:border-accent">Access Workshop</button>
           </div>
-          <div className="absolute right-0 top-0 w-64 h-64 bg-accent/10 rounded-full blur-[80px]" />
-        </div>
+                  </div>
       )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
@@ -92,7 +91,7 @@ export const ResourceLibrary = ({ fingerprint }: ResourceLibraryProps) => {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: i * 0.1 }}
-            className="card glass p-8 group hover:-translate-y-1 transition-all cursor-pointer relative overflow-hidden"
+            className="card border border-border p-8 group hover:-translate-y-1 transition-all cursor-pointer relative overflow-hidden"
           >
             <div className="flex items-start justify-between mb-8">
               <div className="w-14 h-14 bg-white/50 dark:bg-surface rounded-2xl border border-border/40 shadow-inner flex items-center justify-center text-text-main group-hover:bg-primary group-hover:text-primary-foreground group-hover:border-primary transition-all">
@@ -111,9 +110,9 @@ export const ResourceLibrary = ({ fingerprint }: ResourceLibraryProps) => {
         ))}
 
         {/* Locked Pro Resource Placeholder */}
-        <div className="card glass p-8 bg-surface/50 dark:bg-card/50 relative overflow-hidden border-dashed">
+        <div className="card border border-dashed border-border p-8 bg-surface dark:bg-card/50 relative overflow-hidden">
             <div className="absolute inset-0 bg-card/5 backdrop-blur-[2px] z-20 flex items-center justify-center">
-              <div className="bg-white dark:bg-surface px-6 py-3 rounded-full shadow-2xl flex items-center gap-3 border border-border/50">
+              <div className="bg-white dark:bg-surface px-6 py-3 rounded-full shadow-md flex items-center gap-3 border border-border">
                 <Lock className="w-4 h-4 text-text-muted" />
                 <span className="text-xs font-black uppercase tracking-widest text-text-main">Unlock at Rank: Vanguard</span>
               </div>

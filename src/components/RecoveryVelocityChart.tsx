@@ -50,11 +50,11 @@ export const RecoveryVelocityChart = ({ data }: { data: { day: string, score: nu
         .attr('y2', '100%');
       areaGrad.append('stop')
         .attr('offset', '0%')
-        .attr('stop-color', '#818cf8')
+        .attr('stop-color', '#ea580c')
         .attr('stop-opacity', '0.24');
       areaGrad.append('stop')
         .attr('offset', '100%')
-        .attr('stop-color', '#818cf8')
+        .attr('stop-color', '#ea580c')
         .attr('stop-opacity', '0.0');
 
       // Gradient for bars
@@ -93,7 +93,7 @@ export const RecoveryVelocityChart = ({ data }: { data: { day: string, score: nu
       svg.append('g')
         .attr('transform', `translate(0,${height})`)
         .call(d3.axisBottom(x))
-        .attr('color', '#475569') // slate-600
+        .attr('color', '#78716c') // stone-500
         .selectAll('text')
         .attr('font-family', 'var(--font-mono)')
         .attr('font-weight', 'bold')
@@ -151,7 +151,7 @@ export const RecoveryVelocityChart = ({ data }: { data: { day: string, score: nu
       svg.append('path')
         .datum(data)
         .attr('fill', 'none')
-        .attr('stroke', '#818cf8') // lighter neon indigo on top
+        .attr('stroke', '#ea580c') // lighter accent on top
         .attr('stroke-width', 2.5)
         .attr('stroke-linecap', 'round')
         .attr('d', line);
@@ -165,7 +165,7 @@ export const RecoveryVelocityChart = ({ data }: { data: { day: string, score: nu
         .attr('cx', d => x(d.day) as number)
         .attr('cy', d => y1(d.score))
         .attr('r', 4.5)
-        .attr('fill', '#818cf8')
+        .attr('fill', '#ea580c')
         .attr('stroke', '#02040a') // pristine obsidian background color
         .attr('stroke-width', 2);
     }

@@ -23,6 +23,7 @@ import ReactMarkdown from "react-markdown";
 import { cn } from "../lib/utils";
 import { getNovaBrain, addNovaMemory } from "../lib/nova-brain";
 import { secureApiFetch } from "../lib/secure-api";
+import { auth, getAppCheckToken } from "../lib/firebase";
 
 interface Message {
   role: "user" | "model";
@@ -183,24 +184,24 @@ export const NovaChat = ({
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const recognitionRef = useRef<any>(null);
   const [thinkingMessage, setThinkingMessage] = useState(
-    "Analyzing pattern delta...",
+    "Thinking about your patterns...",
   );
 
   const thinkingMessages = [
-    "Analyzing behavioral pattern delta...",
-    "Reviewing Blaze Break methodology...",
-    "Identifying latent energy leaks...",
-    "Mapping cortical load factors...",
-    "Consulting the SHIP framework...",
-    "Synthesizing recovery strategy...",
-    "Checking value-alignment matrix...",
-    "Optimizing for baseline stability...",
-    "Recalibrating event/verdict loops...",
-    "Parsing baseline hydration factors to counter fogginess...",
-    "Evaluating slow-release nutritional stability metrics...",
-    "Reviewing pre-meeting metabolic and cortisol buffers...",
-    "Scanning autonomic nervous system state...",
-    "Triggering cognitive feedback indicators...",
+    "Thinking about your patterns...",
+    "Drawing on what's worked before...",
+    "Looking for where your energy's going...",
+    "Considering what's weighing on you...",
+    "Checking in with the SHIP framework...",
+    "Putting together a next step...",
+    "Making sure this actually fits you...",
+    "Looking for what will actually help...",
+    "Working through the Event vs. Verdict lens...",
+    "Considering how hydration might be playing in...",
+    "Thinking through your nutrition...",
+    "Considering your stress load before that meeting...",
+    "Checking in on your nervous system...",
+    "Almost there...",
   ];
 
   // Speech Recognition / Voice Input Dictation State & Hook
@@ -413,7 +414,19 @@ export const NovaChat = ({
 
     try {
       setIsListening(true);
-      const wsUrl = `ws${window.location.protocol === "https:" ? "s" : ""}://${window.location.host}/api/nova/live`;
+
+      if (!auth.currentUser) {
+        throw new Error("You need to be signed in to use live voice mode.");
+      }
+      const idToken = await auth.currentUser.getIdToken();
+      let appCheckToken = "";
+      try {
+        appCheckToken = await getAppCheckToken();
+      } catch (e) {
+        // App Check may not be configured in dev — the server allows a dev bypass in that case.
+      }
+
+      const wsUrl = `ws${window.location.protocol === "https:" ? "s" : ""}://${window.location.host}/api/nova/live?token=${encodeURIComponent(idToken)}&appCheckToken=${encodeURIComponent(appCheckToken)}`;
       const ws = new WebSocket(wsUrl);
       wsRef.current = ws;
 
@@ -700,10 +713,10 @@ export const NovaChat = ({
       t.includes("safety")
     ) {
       setActiveToolSuggestion({
-        name: "Guardian Protocol",
+        name: "Guardian Relay",
         tab: "safety",
         description:
-          "Synchronize safety boundaries with peer protectors and biological co-regulation guardians.",
+          "Connect with trusted people who can support you when things feel like too much.",
       });
     } else if (
       t.includes("org") ||
@@ -832,7 +845,7 @@ export const NovaChat = ({
             ${systemInstruction || ""}
             User Burnout Fingerprint: ${JSON.stringify(fingerprint || "Not taken yet")}.
             ${dynamicContext}
-            Conversation context is critical. Refer to past behaviors mentioned in history if relevant. Be an analytical, direct recovery coach. Call out any performance-identity fawning or anxiety-driven overwork if they are pretending things are urgent. Keep responses tactical.
+            Conversation context is critical. Refer to past behaviors mentioned in history if relevant. Match the user's preferred tone noted above. Gently call out performance-identity fawning or anxiety-driven overwork if they're pretending things are urgent, but stay warm - this is a person going through burnout, not a performance review.
             ${toneModifier}
           `,
         },
@@ -873,34 +886,33 @@ export const NovaChat = ({
   };
 
   return (
-    <div className="flex flex-col h-full bg-surface/30 backdrop-blur-3xl rounded-[2.5rem] border border-border/40 overflow-hidden shadow-2xl relative transition-all duration-500">
-      <div className="p-6 border-b border-border/40 bg-white/5 flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <div className="w-10 h-10 glass rounded-[1.2rem] flex items-center justify-center text-primary relative overflow-hidden group">
-            <Sparkles className="w-5 h-5 relative z-10" />
-            <div className="absolute inset-0 bg-primary/20 scale-0 group-hover:scale-100 transition-transform duration-500 rounded-full" />
+    <div className="flex flex-col h-full bg-card rounded-xl border border-border overflow-hidden relative transition-all duration-500">
+      <div className="p-5 border-b border-border flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center text-primary relative overflow-hidden group">
+            <Sparkles className="w-4 h-4 relative z-10" />
           </div>
           <div>
-            <h3 className="text-sm font-display font-bold text-text-main tracking-tight">
-              Nova AI Interface
+            <h3 className="text-sm font-display font-medium text-text-main tracking-tight">
+              Nova
             </h3>
             <div className="flex items-center gap-2">
-              <div className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
-              <span className="text-[11px] uppercase tracking-[0.25em] font-black text-primary ">
-                NLP ACTIVE | Neural Analysis v5.0
+              <div className="w-1.5 h-1.5 rounded-full bg-primary" />
+              <span className="text-[11px] uppercase tracking-widest font-medium text-text-muted">
+                Ready
               </span>
             </div>
           </div>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2">
           {voiceFeatureEnabled && (
             <button
               onClick={() => setIsVoiceEnabled(!isVoiceEnabled)}
               className={cn(
-                "w-10 h-10 rounded-xl flex items-center justify-center transition-all",
+                "w-9 h-9 rounded-lg flex items-center justify-center transition-colors",
                 isVoiceEnabled
-                  ? "bg-primary text-primary-foreground shadow-lg shadow-primary/20"
-                  : "glass text-text-muted hover:text-primary",
+                  ? "bg-primary text-primary-foreground"
+                  : "border border-border text-text-muted hover:text-primary",
               )}
             >
               {isVoiceEnabled ? (
@@ -913,13 +925,13 @@ export const NovaChat = ({
           <button
             onClick={() => {
               if (
-                window.confirm("Nuclear protocol: Clear all session memory?")
+                window.confirm("Clear this conversation? This can't be undone.")
               ) {
                 setMessages([]);
                 localStorage.removeItem("nova_chat_history");
               }
             }}
-            className="w-10 h-10 rounded-xl glass flex items-center justify-center text-text-muted hover:text-destructive transition-all"
+            className="w-9 h-9 rounded-lg border border-border flex items-center justify-center text-text-muted hover:text-destructive transition-colors"
           >
             <HistoryIcon className="w-4 h-4" />
           </button>
@@ -934,7 +946,7 @@ export const NovaChat = ({
             className="absolute inset-0 bg-gradient-to-tr from-destructive/5 via-transparent to-primary/5 opacity-50"
           />
           <div className="space-y-6 text-center relative z-10">
-            <div className="w-32 h-32 mx-auto rounded-full bg-destructive/10 flex items-center justify-center relative shadow-2xl shadow-rose-500/20">
+            <div className="w-32 h-32 mx-auto rounded-full bg-destructive/10 flex items-center justify-center relative shadow-lg shadow-destructive/20">
               <motion.div
                 animate={{ scale: [1, 1.2, 1], opacity: [0.5, 0.8, 0.5] }}
                 transition={{
@@ -966,7 +978,7 @@ export const NovaChat = ({
                     repeat: Infinity,
                     ease: "easeInOut",
                   }}
-                  className="w-1.5 bg-rose-400 rounded-full"
+                  className="w-1.5 bg-destructive rounded-full"
                 />
               ))}
             </div>
@@ -984,39 +996,39 @@ export const NovaChat = ({
           className="flex-1 overflow-y-auto p-8 space-y-8 no-scrollbar"
         >
           {messages.length === 0 && !loading && (
-            <div className="h-full flex flex-col items-center justify-center max-w-sm mx-auto text-center space-y-10">
+            <div className="h-full flex flex-col items-center justify-center max-w-sm mx-auto text-center space-y-8">
               <div className="space-y-4">
-                <div className="w-20 h-20 glass rounded-[2.5rem] mx-auto flex items-center justify-center text-primary">
-                  <Sparkles className="w-10 h-10" />
+                <div className="w-16 h-16 rounded-xl bg-primary/10 mx-auto flex items-center justify-center text-primary">
+                  <Sparkles className="w-7 h-7" />
                 </div>
-                <h4 className="text-3xl font-display font-bold text-text-main tracking-tight">
-                  Neural Sync Active
+                <h4 className="text-2xl font-display font-medium text-text-main tracking-tight">
+                  Nova is ready
                 </h4>
-                <p className="text-text-muted font-medium  leading-relaxed italic">
-                  "I don't offer tips. I offer structural repatterning for
-                  high-performance recovery."
+                <p className="text-text-muted font-serif italic leading-relaxed">
+                  "I don't do surface-level tips. I look at what's actually
+                  driving this."
                 </p>
               </div>
 
               <div className="grid grid-cols-1 gap-2 w-full">
                 {[
                   {
-                    label: "Analyze Energy Leak",
+                    label: "What's draining me today?",
                     prompt: "I'm leaking energy today. Run analysis.",
                   },
                   {
-                    label: "Draft Boundary Script",
+                    label: "Help me set a boundary",
                     prompt: "I need to set a firm boundary. Draft script.",
                   },
                   {
-                    label: "Consult SHIP Protocol",
-                    prompt: "Status check: How am I doing on the SHIP journey?",
+                    label: "How am I doing on SHIP?",
+                    prompt: "How am I doing on the SHIP journey?",
                   },
                 ].map((s, i) => (
                   <button
                     key={i}
                     onClick={() => handleSend(s.prompt)}
-                    className="p-5 text-xs uppercase font-black tracking-[0.2em] text-text-muted glass border-transparent hover:border-primary/40 hover:text-primary transition-all rounded-[1.5rem]"
+                    className="p-4 text-sm font-medium text-text-muted border border-border hover:border-primary/40 hover:text-primary transition-colors rounded-lg"
                   >
                     {s.label}
                   </button>
@@ -1037,9 +1049,9 @@ export const NovaChat = ({
               >
                 <div
                   className={cn(
-                    "w-9 h-9 rounded-[1rem] flex items-center justify-center shrink-0 shadow-lg relative overflow-hidden",
+                    "w-9 h-9 rounded-lg flex items-center justify-center shrink-0 relative overflow-hidden",
                     msg.role === "user"
-                      ? "bg-card dark:bg-surface text-text-main"
+                      ? "bg-card dark:bg-surface text-text-main border border-border"
                       : "bg-primary text-primary-foreground",
                   )}
                 >
@@ -1048,32 +1060,21 @@ export const NovaChat = ({
                   ) : (
                     <Sparkles className="w-4 h-4" />
                   )}
-                  {msg.role === "model" && (
-                    <motion.div
-                      animate={{ rotate: 360 }}
-                      transition={{
-                        duration: 10,
-                        repeat: Infinity,
-                        ease: "linear",
-                      }}
-                      className="absolute inset-0 bg-white/10 opacity-20"
-                    />
-                  )}
                 </div>
                 <div className="space-y-2">
                   <div
                     className={cn(
-                      "px-6 py-5 rounded-[2rem] relative group min-w-[80px] shadow-sm",
+                      "px-5 py-4 rounded-xl relative group min-w-[80px]",
                       msg.role === "user"
-                        ? "bg-primary text-primary-foreground font-medium text-sm rounded-tr-none"
-                        : "bg-white dark:bg-card text-text-main border border-border/40 rounded-tl-none",
+                        ? "bg-primary text-primary-foreground font-medium text-sm rounded-tr-sm"
+                        : "bg-surface text-text-main border border-border rounded-tl-sm",
                     )}
                   >
                     {msg.role === "model" && (
                       <button
                         onClick={() => speakText(msg.parts[0].text, i)}
                         className={cn(
-                          "absolute -right-12 top-0 w-10 h-10 glass rounded-full flex items-center justify-center transition-all opacity-0 group-hover:opacity-100",
+                          "absolute -right-12 top-0 w-10 h-10 bg-card border border-border rounded-full flex items-center justify-center transition-all opacity-0 group-hover:opacity-100",
                           speakingIndex === i
                             ? "opacity-100 text-primary"
                             : "text-text-muted hover:text-primary",
@@ -1282,19 +1283,19 @@ export const NovaChat = ({
                       <motion.div
                         initial={{ opacity: 0, y: 15, scale: 0.95 }}
                         animate={{ opacity: 1, y: 0, scale: 1 }}
-                        className="p-5 bg-gradient-to-r from-primary/10 via-indigo-500/5 to-surface/40 backdrop-blur-xl border border-primary/30 rounded-3xl flex flex-col md:flex-row items-start md:items-center justify-between gap-4 shadow-xl relative z-10"
+                        className="p-5 bg-primary/5 border border-primary/20 rounded-xl flex flex-col md:flex-row items-start md:items-center justify-between gap-4 relative z-10"
                       >
                         <div className="flex gap-3.5 items-start">
-                          <div className="w-10 h-10 rounded-2xl bg-primary/20 text-primary flex items-center justify-center shrink-0">
-                            <Target className="w-5 h-5 animate-pulse" />
+                          <div className="w-9 h-9 rounded-lg bg-primary/10 text-primary flex items-center justify-center shrink-0">
+                            <Target className="w-4 h-4" />
                           </div>
                           <div className="space-y-0.5">
-                            <span className="text-[11px] font-black uppercase tracking-widest text-primary flex items-center gap-1">
-                              <Sparkles className="w-3 h-3 text-primary animate-bounce" />{" "}
-                              Pathway Recommendation
+                            <span className="text-[11px] font-medium uppercase tracking-widest text-primary flex items-center gap-1">
+                              <Sparkles className="w-3 h-3 text-primary" />{" "}
+                              Suggested for you
                             </span>
                             <h5 className="text-xs font-bold text-text-main">
-                              Deploy {activeToolSuggestion.name} Protocol?
+                              Start {activeToolSuggestion.name}?
                             </h5>
                             <p className="text-[11px] leading-relaxed text-text-muted opacity-90 max-w-md">
                               {activeToolSuggestion.description}
@@ -1313,7 +1314,7 @@ export const NovaChat = ({
                                   );
                                 }
                               }}
-                              className="px-4 py-2 bg-indigo-550/10 hover:bg-primary hover:text-text-main dark:hover:text-primary-foreground font-bold text-[11px] uppercase tracking-wider rounded-xl transition-all shadow-md text-primary border border-primary/25 cursor-pointer"
+                              className="px-4 py-2 bg-primary/10 hover:bg-primary hover:text-primary-foreground font-medium text-[11px] uppercase tracking-wider rounded-lg transition-colors text-primary border border-primary/25 cursor-pointer"
                             >
                               Open Tool
                             </button>
@@ -1321,17 +1322,17 @@ export const NovaChat = ({
                           <button
                             onClick={() => {
                               handleSend(
-                                `Initiate ${activeToolSuggestion.name} protocol.`,
+                                `Start ${activeToolSuggestion.name}.`,
                               );
                               setActiveToolSuggestion(null);
                             }}
-                            className="px-4 py-2 bg-primary hover:bg-primary/95 text-primary-foreground font-bold text-[11px] uppercase tracking-wider rounded-xl shadow-lg transition-all cursor-pointer"
+                            className="px-4 py-2 bg-primary hover:opacity-90 text-primary-foreground font-medium text-[11px] uppercase tracking-wider rounded-lg transition-all cursor-pointer"
                           >
-                            Send Command
+                            Start
                           </button>
                           <button
                             onClick={() => setActiveToolSuggestion(null)}
-                            className="px-3 py-2 border border-border/20 text-text-muted hover:text-text-main font-bold text-[11px] uppercase tracking-wider rounded-xl hover:bg-surface/30 transition-all cursor-pointer"
+                            className="px-3 py-2 border border-border text-text-muted hover:text-text-main font-medium text-[11px] uppercase tracking-wider rounded-lg hover:bg-surface transition-colors cursor-pointer"
                           >
                             Ignore
                           </button>
@@ -1385,13 +1386,13 @@ export const NovaChat = ({
                     </div>
                   </div>
 
-                  <div className="glass p-6 rounded-[2rem] border border-primary/10 shadow-xl bg-gradient-to-r from-primary/5 via-indigo-500/[0.02] to-transparent space-y-4">
-                    <p className="text-xs text-text-muted font-bold font-display tracking-tight leading-relaxed flex items-center gap-2">
+                  <div className="p-5 rounded-xl border border-border bg-surface space-y-4">
+                    <p className="text-xs text-text-muted font-serif italic leading-relaxed flex items-center gap-2">
                       <Loader2 className="w-4 h-4 animate-spin text-primary shrink-0" />
                       "{thinkingMessage}"
                     </p>
 
-                    {/* Glowing Neural Waveform Visualizer */}
+                    {/* Waveform indicator while Nova composes a response */}
                     <div className="flex items-center gap-[4px] h-6 px-1">
                       {[...Array(16)].map((_, index) => (
                         <motion.div
@@ -1424,14 +1425,14 @@ export const NovaChat = ({
 
       {/* Hide the text input bar during voice session to enforce clean experience */}
       {!isListening && (
-        <div className="p-8 bg-white/5 backdrop-blur-xl border-t border-border/40 font-sans">
-          <div className="flex items-center gap-4">
+        <div className="p-6 border-t border-border font-sans">
+          <div className="flex items-center gap-3">
             {voiceFeatureEnabled && (
               <button
                 onClick={toggleListening}
-                className="w-16 h-16 rounded-[2rem] border transition-all flex items-center justify-center relative overflow-hidden group glass border-transparent text-text-muted hover:text-primary hover:border-primary/40 cursor-pointer"
+                className="w-12 h-12 rounded-xl border border-border flex items-center justify-center relative overflow-hidden group text-text-muted hover:text-primary hover:border-primary/40 transition-colors cursor-pointer"
               >
-                <Mic className="w-6 h-6" />
+                <Mic className="w-5 h-5" />
               </button>
             )}
             <div className="relative flex-1">
@@ -1443,13 +1444,13 @@ export const NovaChat = ({
                 placeholder={
                   isDictating
                     ? "Listening... Speak naturally"
-                    : "Type or speak for neural analysis..."
+                    : "Type or speak to Nova..."
                 }
                 className={cn(
-                  "w-full bg-surface/40 backdrop-blur-2xl text-text-main border rounded-[2.5rem] py-5 px-14 pr-20 text-lg font-display font-bold shadow-inner focus:outline-none focus:ring-4 focus:ring-primary/10 transition-all placeholder:text-text-muted",
+                  "w-full bg-surface text-text-main border rounded-xl py-4 px-12 pr-16 text-base font-display focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all placeholder:text-text-muted",
                   isDictating
-                    ? "border-destructive ring-4 ring-rose-500/15 bg-destructive/[0.04] text-text-main animate-pulse"
-                    : "border-border/40 focus:border-primary",
+                    ? "border-destructive ring-2 ring-rose-500/15 bg-destructive/[0.04] text-text-main animate-pulse"
+                    : "border-border focus:border-primary",
                 )}
               />
 
@@ -1458,10 +1459,10 @@ export const NovaChat = ({
                 type="button"
                 onClick={isDictating ? stopDictation : startDictation}
                 className={cn(
-                  "absolute left-4 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full flex items-center justify-center transition-all cursor-pointer",
+                  "absolute left-3 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full flex items-center justify-center transition-all cursor-pointer",
                   isDictating
-                    ? "bg-rose-550 text-destructive-foreground shadow-lg shadow-rose-500/30 animate-pulse bg-destructive scale-110"
-                    : "text-text-muted hover:text-destructive hover:bg-surface/10 hover:scale-105",
+                    ? "bg-destructive text-destructive-foreground animate-pulse scale-110"
+                    : "text-text-muted hover:text-destructive hover:bg-surface/50 hover:scale-105",
                 )}
                 title="Speak to type (voice dictation)"
               >
@@ -1473,9 +1474,9 @@ export const NovaChat = ({
               <button
                 onClick={() => handleSend()}
                 disabled={loading || !input.trim()}
-                className="absolute right-3 top-3 w-14 h-14 bg-card border border-white/10 dark:bg-primary text-primary-foreground rounded-[1.8rem] flex items-center justify-center hover:scale-105 active:scale-95 transition-all disabled:opacity-30 shadow-xl cursor-pointer"
+                className="absolute right-2 top-2 w-11 h-11 bg-primary text-primary-foreground rounded-lg flex items-center justify-center hover:opacity-90 active:scale-95 transition-all disabled:opacity-30 cursor-pointer"
               >
-                <Send className="w-5 h-5" />
+                <Send className="w-4.5 h-4.5" />
               </button>
             </div>
           </div>

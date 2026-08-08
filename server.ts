@@ -1,13 +1,21 @@
 import express from "express";
+import helmet from "helmet";
 import path from "path";
 import fs from "fs";
+import crypto from "crypto";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, Type, Modality, LiveServerMessage } from "@google/genai";
 import dotenv from "dotenv";
 import twilio from "twilio";
 import { WebSocketServer } from 'ws';
+import webpush from 'web-push';
 import { NOVA_KNOWLEDGE_BASE } from './server-knowledge';
-import admin from 'firebase-admin';
+import { computeDimensionScores, computeArchetypeScores, pickDominantProfile, computeBlend } from './archetype-scoring';
+import { SendMessageSchema, SetDndSchema, SetStatusSchema } from './boundary-autopilot-schemas';
+import { initializeApp, getApps } from 'firebase-admin/app';
+import { getAuth } from 'firebase-admin/auth';
+import { getFirestore, FieldValue } from 'firebase-admin/firestore';
+import { getAppCheck } from 'firebase-admin/app-check';
 import cors from 'cors';
 import rateLimit from 'express-rate-limit';
 import { z } from 'zod';
@@ -28,8 +36,8 @@ try {
   process.env.GCLOUD_PROJECT = firebaseConfigProject;
 } catch(e) {}
 
-if (!admin.apps.length) {
-  admin.initializeApp({
+if (!getApps().length) {
+  initializeApp({
     projectId: firebaseConfigProject || undefined
   });
 }
@@ -49,6 +57,45 @@ const allowedOrigins = [
 ];
 if (process.env.APP_CHECK_DOMAIN) {
   allowedOrigins.push(`https://${process.env.APP_CHECK_DOMAIN}`);
+}
+
+// Production-only: Vite's dev-mode HMR client injects its own inline
+// bootstrap script into the page, which a strict script-src would block
+// (confirmed locally — it breaks React Fast Refresh under `npm run dev`).
+// The built production bundle has zero inline scripts (every script is an
+// external module, including the service worker registration below), so
+// the strict policy only needs to hold where it actually ships.
+if (process.env.NODE_ENV === "production") {
+  app.use(helmet({
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        // No 'unsafe-inline' for scripts — the one inline script this app had
+        // (service worker registration) was moved to an external file
+        // specifically so this could stay strict.
+        scriptSrc: ["'self'"],
+        // Tailwind/Framer Motion rely on inline style attributes at runtime;
+        // disallowing that would require a much larger refactor than this
+        // security pass covers, so this one directive stays permissive.
+        styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
+        fontSrc: ["'self'", "https://fonts.gstatic.com"],
+        imgSrc: ["'self'", "data:", "https:"], // Slack avatars, Google profile photos, etc. are remote images
+        connectSrc: [
+          "'self'",
+          "https://*.googleapis.com",   // Firebase Auth/Firestore + the direct Google Calendar API calls
+          "https://*.firebaseio.com",
+          "wss://*.firebaseio.com",
+          "ws:", "wss:",                // same-origin WebSocket (Nova live voice) — scheme itself, not a host, since it's same-origin
+        ],
+        frameAncestors: ["'none'"], // Blocks clickjacking — this app should never be framed by another site
+        objectSrc: ["'none'"],
+        baseUri: ["'self'"],
+      },
+    },
+    // Boundary Autopilot/OAuth flows open real popups/redirects to Slack, Google,
+    // etc. — a default-strict Cross-Origin-Opener-Policy breaks that handoff.
+    crossOriginOpenerPolicy: { policy: "same-origin-allow-popups" },
+  }));
 }
 
 app.use(cors({
@@ -83,6 +130,15 @@ const speechLimiter = rateLimit({
   validate: { xForwardedForHeader: false, default: true }
 });
 
+const smsLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10, // SMS costs real money per message and could enable harassment if abused — stricter than any other endpoint.
+  message: { error: 'Too many messaging requests, please try again later.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+  validate: { xForwardedForHeader: false, default: true }
+});
+
 app.use('/api/', apiLimiter);
 
 // Global Error Handler for safe JSON error returns (e.g. 413 Payload Too Large)
@@ -99,7 +155,14 @@ app.use((err: any, req: express.Request, res: express.Response, next: express.Ne
 // Firebase App Check Middleware (Enforced Mode)
 const verifyAppCheck = async (req: express.Request, res: express.Response, next: express.NextFunction) => {
   const appCheckToken = req.headers['x-firebase-appcheck'];
-  if (process.env.NODE_ENV !== "production" || appCheckToken === "dev-bypass") {
+  // Deliberately NOT checking for a magic bypass string here anymore — a
+  // fixed string is visible in the shipped client bundle to any user who
+  // opens devtools, so anyone could send it directly to the API regardless
+  // of NODE_ENV, bypassing App Check entirely even in real production. The
+  // only thing that should ever skip this check is genuinely not being in
+  // production — something only the developer running the server controls,
+  // not something a request header can claim its way into.
+  if (process.env.NODE_ENV !== "production") {
     return next();
   }
 
@@ -109,7 +172,7 @@ const verifyAppCheck = async (req: express.Request, res: express.Response, next:
   }
 
   try {
-    await admin.appCheck().verifyToken(appCheckToken);
+    await getAppCheck().verifyToken(appCheckToken);
     (req as any).appCheckVerified = true;
     next();
   } catch (e) {
@@ -128,7 +191,7 @@ const authenticateFirebaseUser = async (req: express.Request, res: express.Respo
 
   const token = authHeader.split('Bearer ')[1];
   try {
-    const decodedToken = await admin.auth().verifyIdToken(token);
+    const decodedToken = await getAuth().verifyIdToken(token);
     (req as any).user = decodedToken;
     next();
   } catch (error) {
@@ -220,16 +283,36 @@ Details: ${details || 'No details provided'}
 });
 
 // API routes that use Twilio
-app.post("/api/twilio/send", async (req, res) => {
+const TwilioSendSchema = z.object({
+  to: z.string().regex(/^\+[1-9]\d{6,14}$/, "Phone number must be in E.164 format, e.g. +15551234567"),
+  message: z.string().min(1).max(500),
+  useWhatsapp: z.boolean().optional().default(false),
+}).strict();
+
+// SEVERE FIX: this endpoint previously had zero authentication of any kind —
+// anyone on the internet who found this URL could send arbitrary SMS/WhatsApp
+// messages to arbitrary phone numbers using this app's own Twilio account,
+// at real per-message cost, with no way to trace who did it. It was also
+// completely unused by the frontend (confirmed via a full grep of src/) —
+// pure risk with zero current value. Now: real auth, strict input validation
+// (proper E.164 phone format, message length cap), a dedicated strict rate
+// limit given the real cost per message, and an audit log entry so any use
+// going forward is actually traceable to a real, authenticated user.
+app.post("/api/twilio/send", smsLimiter, verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  const uid = requireAuth(req).uid;
   try {
-    const { to, message, useWhatsapp } = req.body;
+    const parsed = TwilioSendSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: "Invalid request — a valid E.164 phone number and message are required." });
+    }
+    const { to, message, useWhatsapp } = parsed.data;
     const client = initTwilio();
     const fromPhone = process.env.TWILIO_PHONE_NUMBER;
 
     if (!client || !fromPhone) {
-      return res.status(400).json({ 
-        success: false, 
-        error: "Messaging is unavailable because the support messaging system is not configured." 
+      return res.status(400).json({
+        success: false,
+        error: "Messaging is unavailable because the support messaging system is not configured."
       });
     }
 
@@ -239,9 +322,11 @@ app.post("/api/twilio/send", async (req, res) => {
       to: useWhatsapp ? `whatsapp:${to}` : to
     });
 
+    await logAutopilotAction(uid, "sms_send", { to, useWhatsapp }, true);
     res.json({ success: true, sid: m.sid });
   } catch (error: any) {
     console.error("Twilio error:", error);
+    await logAutopilotAction(uid, "sms_send", { error: error.message }, false);
     res.status(500).json({ error: error.message });
   }
 });
@@ -261,6 +346,19 @@ const ai = new GoogleGenAI({
     }
   }
 });
+
+const VAPID_PUBLIC_KEY = process.env.VAPID_PUBLIC_KEY || "";
+const VAPID_PRIVATE_KEY = process.env.VAPID_PRIVATE_KEY || "";
+const pushConfigured = !!(VAPID_PUBLIC_KEY && VAPID_PRIVATE_KEY);
+if (pushConfigured) {
+  webpush.setVapidDetails(
+    process.env.VAPID_SUBJECT || "mailto:support@blazebreak.co",
+    VAPID_PUBLIC_KEY,
+    VAPID_PRIVATE_KEY
+  );
+} else {
+  console.warn("[Push] VAPID keys not configured — push notifications are disabled until they are.");
+}
 
 // API Routes
 const NOVA_SYSTEM_PROMPT = `
@@ -625,7 +723,8 @@ app.post("/api/nova/chat", verifyAppCheck, authenticateFirebaseUser, async (req,
 });
 
 const DiagnoseRequestSchema = z.object({
-  answers: z.record(z.string(), z.union([z.string(), z.number()])).optional().default({})
+  answers: z.record(z.string(), z.union([z.string(), z.number()])).optional().default({}),
+  letNovaLearn: z.boolean().optional().default(true),
 }).strict();
 
 app.post("/api/nova/diagnose", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
@@ -635,46 +734,28 @@ app.post("/api/nova/diagnose", verifyAppCheck, authenticateFirebaseUser, async (
     if (!parsedParams.success) {
         return res.status(400).json({ error: "Invalid request payload or forbidden fields detected.", details: (parsedParams as any).error?.errors || [] });
     }
-    const { answers } = parsedParams.data;
+    const { answers, letNovaLearn } = parsedParams.data;
 
-    
-    // Map answer values to numbers if they are passed as strings (for old/legacy support)
-    const mapToVal = (val: any) => {
-      if (typeof val === 'number') return val;
-      if (!val) return 2;
-      const valStr = String(val).toLowerCase();
-      if (valStr.includes('rarely') || valStr.includes('very little') || valStr.includes('never') || valStr.includes('not at all') || valStr.includes('fully') || valStr.includes('comfortable') || valStr.includes('hold my line')) return 1;
-      if (valStr.includes('sometimes') || valStr.includes('some') || valStr.includes('occasionally') || valStr.includes('vaguely') || valStr.includes('flinch') || valStr.includes('moderate') || valStr.includes('restless') || valStr.includes('fading')) return 2;
-      if (valStr.includes('most days') || valStr.includes('significant') || valStr.includes('noticeably') || valStr.includes('most nights') || valStr.includes('often') || valStr.includes('resentfully') || valStr.includes('simmer') || valStr.includes('guilt') || valStr.includes('disconnection') || valStr.includes('disconnected') || valStr.includes('severe')) return 3;
-      if (valStr.includes('every waking hour') || valStr.includes('entire') || valStr.includes('constantly') || valStr.includes('jar') || valStr.includes('permanent') || valStr.includes('panic') || valStr.includes('prioritize') || valStr.includes('paralysis') || valStr.includes('crisis')) return 4;
-      return 2; // default fallback
-    };
+    const dims = computeDimensionScores(answers);
+    const {
+      workload: workloadScore,
+      boundaries: boundariesScore,
+      peoplePleasing: peoplePleasingScore,
+      guilt: guiltScore,
+      sleep: sleepScore,
+      emotionalOverload: emotionalScore,
+      meaning: meaningScore,
+      selfDoubt: selfDoubtScore,
+      delegationControl: delegationControlScore,
+      maskingLoad: maskingLoadScore,
+      caregivingLoad: caregivingLoadScore,
+      crisisDependency: crisisDependencyScore,
+      emotionalPerformance: emotionalPerformanceScore,
+      responsibilityCreep: responsibilityCreepScore,
+    } = dims;
 
-    const workloadScore = mapToVal(answers.workload);
-    const boundariesScore = mapToVal(answers.boundaries);
-    const peoplePleasingScore = mapToVal(answers.peoplePleasing || answers.identity); // handle legacy identity
-    const guiltScore = mapToVal(answers.guilt || answers.rest); // handle legacy rest
-    const sleepScore = mapToVal(answers.sleep || answers.wired); // handle legacy wired
-    const emotionalScore = mapToVal(answers.emotionalOverload || answers.emotional); // handle legacy emotional
-    const meaningScore = mapToVal(answers.meaning || answers.disconnection); // handle legacy disconnection
-
-    // Subscores for each archetype
-    const archScores = {
-      'Founder on Fire': (workloadScore * 3) + (peoplePleasingScore * 1) + (guiltScore * 3) + (sleepScore * 2),
-      'Over-Giver': (peoplePleasingScore * 3) + (boundariesScore * 3) + (guiltScore * 2) + (workloadScore * 1),
-      'Silent Resenter': (emotionalScore * 3) + (boundariesScore * 3) + (meaningScore * 3),
-      'High-Functioning Exhausted': (workloadScore * 3) + (sleepScore * 3) + (guiltScore * 2) + (meaningScore * 1),
-      'Manager in the Middle': (workloadScore * 2) + (boundariesScore * 3) + (peoplePleasingScore * 2) + (emotionalScore * 1) + (meaningScore * 1)
-    };
-
-    let profile = 'High-Functioning Exhausted';
-    let maxVal = -1;
-    for (const [k, v] of Object.entries(archScores)) {
-      if (v > maxVal) {
-        maxVal = v;
-        profile = k;
-      }
-    }
+    const archScores = computeArchetypeScores(dims);
+    let profile = pickDominantProfile(archScores);
 
     let description = '';
     let priorities: string[] = [];
@@ -697,6 +778,29 @@ app.post("/api/nova/diagnose", verifyAppCheck, authenticateFirebaseUser, async (
       priorities = ['Institute mandatory boredom zones', 'Hard cutoff on evening screen exposure', 'Transition from recovery intensity to consistent stability'];
     }
 
+    if (profile === 'The Impostor') {
+      description = "Your exhaustion isn't really coming from your workload — it's coming from the constant, quiet effort of trying to prove you deserve to be here. Every win gets discounted almost as fast as it happens, so you keep adding more evidence, and the finish line keeps moving. You are not underqualified. You are over-proving.";
+      priorities = ['Keep a running record of wins you cannot mentally discount', 'Notice when "proving it again" is optional, not required', 'Practice letting a success stand without immediately chasing the next one'];
+    } else if (profile === 'The Perfectionist') {
+      description = "Your energy leak isn't other people's demands — it's your own standards. You would rather redo something yourself than risk it being anything less than right, so delegation quietly stops happening. The cost isn't visible as \"overwork\" on paper. It shows up as never actually putting anything down.";
+      priorities = ['Define "good enough" explicitly for low-stakes tasks', 'Practice handing off one task without reviewing the outcome', "Separate your worth from the flawlessness of the output"];
+    } else if (profile === 'The Constant Adapter') {
+      description = "A significant share of your energy goes into managing how you come across and staying on top of a world that isn't built around how you naturally work — separate from the actual work itself. This isn't a motivation problem. It's the cost of running two jobs at once: the one everyone sees, and the constant calibration underneath it.";
+      priorities = ['Protect real recovery time after high-effort or high-stimulation stretches', 'Treat quiet, low-input time as necessary, not optional', 'Stop treating "just push through" advice as the standard you should meet'];
+    } else if (profile === 'The Second Shift') {
+      description = "Your day doesn't end when you log off. There is a second, unpaid job waiting — caring for someone who depends on you — and it runs with no real recovery window between the two. Colleagues likely have no visibility into this at all. The guilt of not doing either role perfectly follows you into both.";
+      priorities = ['Name the caregiving hours explicitly, even just to yourself', 'Look for any real handoff or respite option, even a partial one', 'Let "good enough" apply to both roles rather than demanding excellence in either'];
+    } else if (profile === 'Crisis Sprinter') {
+      description = "Your nervous system has learned to run on urgency. Calm stretches don't feel restful — they feel like something's about to go wrong, so you find, or quietly create, the next fire to fight. You're genuinely excellent in a crisis, which is exactly the problem: the skill that makes you valuable in an emergency is training your body to need one.";
+      priorities = ['Practice sitting in a genuinely calm period without manufacturing urgency to fill it', 'Notice the physical discomfort of stillness without immediately reaching for a new fire', 'Treat a quiet week as a success, not a warning sign'];
+    } else if (profile === 'People-Pleasing Performer') {
+      description = "You've gotten very good at performing \"fine.\" Whatever you're actually feeling — stressed, doubtful, exhausted — a composed, agreeable version of you shows up instead, because the performance keeps things running smoothly for everyone around you. The cost is that fewer people, including you, know what's actually underneath it.";
+      priorities = ['Practice naming one honest internal state out loud each day, even a small one', 'Notice the specific moments the performance switches on, and what triggers it', 'Let one interaction be less polished than usual, on purpose'];
+    } else if (profile === 'Responsibility Addict') {
+      description = "If something's wrong nearby, some part of you has already decided it's yours to fix — whether or not it's actually your role, your task, or something you can control. Being needed has quietly become what makes you feel secure, which means letting something be someone else's problem can feel like a small identity threat.";
+      priorities = ['Practice identifying whose responsibility something actually is before stepping in', 'Let one thing go wrong without your intervention, and observe what actually happens', 'Practice the sentence "I trust this will get handled without me"'];
+    }
+
     let analysis = '';
     const geminiKey = process.env.GEMINI_API_KEY;
     if (geminiKey && geminiKey !== "MY_GEMINI_API_KEY") {
@@ -713,6 +817,13 @@ app.post("/api/nova/diagnose", verifyAppCheck, authenticateFirebaseUser, async (
           - Sleep: ${sleepScore}/4
           - Emotional Overload: ${emotionalScore}/4
           - Sense of Meaning: ${meaningScore}/4
+          - Self-Doubt/Impostor Feelings: ${selfDoubtScore}/4
+          - Delegation/Control: ${delegationControlScore}/4
+          - Masking/Adaptation Load: ${maskingLoadScore}/4
+          - Caregiving Load: ${caregivingLoadScore}/4
+          - Crisis Dependency: ${crisisDependencyScore}/4
+          - Emotional Performance: ${emotionalPerformanceScore}/4
+          - Responsibility Creep: ${responsibilityCreepScore}/4
 
           Provide a brief, direct, and slightly provocative coaching analysis (3-4 sentences maximum).
           Do NOT use generic platitudes, emotional cheerleading, or medical advice.
@@ -747,10 +858,42 @@ app.post("/api/nova/diagnose", verifyAppCheck, authenticateFirebaseUser, async (
       analysis = `Having analysed your metrics, your primary energy leak is completely clear. With a workload score of ${workloadScore}/4, a boundaries rating of ${boundariesScore}/4, and a sleep disruption score of ${sleepScore}/4, you are trying to rationalise a metabolic deficit that is biologically impossible to sustain. We need to focus on establishing baseline stability and boundary rehearsals immediately. Let's patch this leak.`;
     }
 
+    // The blend: rather than reducing someone to one label, show the real mix.
+    // Coefficients for every archetype sum to 9 (see archScores above), so raw
+    // scores are already on a comparable 9-36 scale — renormalizing the top 3
+    // to sum to 100% gives an honest "62% X, 24% Y, 14% Z" style breakdown.
+    const blend = computeBlend(archScores);
+
+    // Persisting a baseline is what makes archetype evolution possible (drift
+    // detection needs something durable to drift *from*), which is exactly what
+    // the "consent-controlled processing" gate above was waiting for — so this
+    // write only happens if the user has actually opted into it via Settings.
+    if (letNovaLearn) {
+      try {
+        const uid = requireAuth(req).uid;
+        await getDb().collection("users").doc(uid).collection("diagnostics").doc("latest").set({
+          archScores,
+          profile,
+          scores: {
+            workload: workloadScore, boundaries: boundariesScore, peoplePleasing: peoplePleasingScore,
+            guilt: guiltScore, sleep: sleepScore, emotionalOverload: emotionalScore, meaning: meaningScore,
+            selfDoubt: selfDoubtScore, delegationControl: delegationControlScore, maskingLoad: maskingLoadScore,
+            caregivingLoad: caregivingLoadScore, crisisDependency: crisisDependencyScore,
+            emotionalPerformance: emotionalPerformanceScore, responsibilityCreep: responsibilityCreepScore,
+          },
+          computedAt: new Date().toISOString(),
+        });
+      } catch (persistErr: any) {
+        // Don't fail the whole diagnosis just because the baseline write hiccuped.
+        console.error("[Diagnose] baseline persistence error:", persistErr.message);
+      }
+    }
+
     res.json({
       profile,
       description,
       priorities,
+      blend,
       scores: {
         workload: workloadScore,
         boundaries: boundariesScore,
@@ -758,7 +901,14 @@ app.post("/api/nova/diagnose", verifyAppCheck, authenticateFirebaseUser, async (
         guilt: guiltScore,
         sleep: sleepScore,
         emotionalOverload: emotionalScore,
-        meaning: meaningScore
+        meaning: meaningScore,
+        selfDoubt: selfDoubtScore,
+        delegationControl: delegationControlScore,
+        maskingLoad: maskingLoadScore,
+        caregivingLoad: caregivingLoadScore,
+        crisisDependency: crisisDependencyScore,
+        emotionalPerformance: emotionalPerformanceScore,
+        responsibilityCreep: responsibilityCreepScore
       },
       analysis
     });
@@ -955,7 +1105,7 @@ const assertNotLastPlatformOwner = async (targetUid: string, databaseId: string 
 };
 
 const getDb = () => {
-  return admin.firestore(firebaseConfigDatabaseId);
+  return getFirestore(firebaseConfigDatabaseId);
 };
 
 const getPermissionsForRole = (role: string): string[] => {
@@ -997,7 +1147,7 @@ const logAdminAction = async (req: any, action: string, targetUid: string, targe
       action,
       targetUid,
       targetEmail,
-      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      createdAt: FieldValue.serverTimestamp(),
       metadata,
       ipAddress: req.ip || "",
       userAgent: req.headers["user-agent"] || ""
@@ -1006,6 +1156,1103 @@ const logAdminAction = async (req: any, action: string, targetUid: string, targe
     console.error("Failed to write admin audit log:", err.message);
   }
 };
+
+// ============================================================================
+// Third-Party OAuth Integrations (Slack, Jira, Asana, Calendly, Monday.com)
+// ============================================================================
+// Each provider requires its own registered OAuth app (Client ID + Secret),
+// configured via environment variables. See .env.example for the full list
+// and docs/INTEGRATIONS_SETUP.md for exact redirect URIs and scopes to
+// register with each provider. Google is handled separately via Firebase Auth
+// (see src/lib/auth.tsx) and does not go through this module.
+
+type OAuthTokenStyle = "form" | "json";
+
+interface OAuthProviderConfig {
+  authorizeUrl: string;
+  tokenUrl: string;
+  clientIdEnv: string;
+  clientSecretEnv: string;
+  tokenStyle: OAuthTokenStyle;
+  // Extra static query params always sent on the authorize redirect (e.g. Atlassian's audience/prompt).
+  extraAuthorizeParams?: Record<string, string>;
+  // Scope value sent as `scope` (bot/app-level scopes for Slack; regular scopes for others).
+  scope?: string;
+  // Slack-specific: user-level scopes sent as a separate `user_scope` param.
+  userScope?: string;
+  // Extracts the token fields from that provider's token-endpoint JSON response,
+  // since Slack nests the user token under `authed_user` while others return it flat.
+  extractTokens: (body: any) => { accessToken: string | null; refreshToken: string | null; expiresIn: number | null };
+}
+
+const OAUTH_PROVIDERS: Record<string, OAuthProviderConfig> = {
+  slack: {
+    authorizeUrl: "https://slack.com/oauth/v2/authorize",
+    tokenUrl: "https://slack.com/api/oauth.v2.access",
+    clientIdEnv: "SLACK_CLIENT_ID",
+    clientSecretEnv: "SLACK_CLIENT_SECRET",
+    tokenStyle: "form",
+    userScope: "dnd:write,dnd:read,users.profile:write,users:read,channels:read,groups:read,im:read,mpim:read,channels:history,groups:history,im:history,mpim:history,chat:write",
+    extractTokens: (body) => ({
+      accessToken: body?.authed_user?.access_token || null,
+      refreshToken: body?.authed_user?.refresh_token || null,
+      expiresIn: body?.authed_user?.expires_in || null,
+    }),
+  },
+  jira: {
+    authorizeUrl: "https://auth.atlassian.com/authorize",
+    tokenUrl: "https://auth.atlassian.com/oauth/token",
+    clientIdEnv: "JIRA_CLIENT_ID",
+    clientSecretEnv: "JIRA_CLIENT_SECRET",
+    tokenStyle: "json",
+    scope: "read:jira-work read:jira-user offline_access",
+    extraAuthorizeParams: { audience: "api.atlassian.com", prompt: "consent" },
+    extractTokens: (body) => ({
+      accessToken: body?.access_token || null,
+      refreshToken: body?.refresh_token || null,
+      expiresIn: body?.expires_in || null,
+    }),
+  },
+  asana: {
+    authorizeUrl: "https://app.asana.com/-/oauth_authorize",
+    tokenUrl: "https://app.asana.com/-/oauth_token",
+    clientIdEnv: "ASANA_CLIENT_ID",
+    clientSecretEnv: "ASANA_CLIENT_SECRET",
+    tokenStyle: "form",
+    extractTokens: (body) => ({
+      accessToken: body?.access_token || null,
+      refreshToken: body?.refresh_token || null,
+      expiresIn: body?.expires_in || null,
+    }),
+  },
+  calendly: {
+    authorizeUrl: "https://auth.calendly.com/oauth/authorize",
+    tokenUrl: "https://auth.calendly.com/oauth/token",
+    clientIdEnv: "CALENDLY_CLIENT_ID",
+    clientSecretEnv: "CALENDLY_CLIENT_SECRET",
+    tokenStyle: "form",
+    extractTokens: (body) => ({
+      accessToken: body?.access_token || null,
+      refreshToken: body?.refresh_token || null,
+      expiresIn: body?.expires_in || null,
+    }),
+  },
+  monday: {
+    authorizeUrl: "https://auth.monday.com/oauth2/authorize",
+    tokenUrl: "https://auth.monday.com/oauth2/token",
+    clientIdEnv: "MONDAY_CLIENT_ID",
+    clientSecretEnv: "MONDAY_CLIENT_SECRET",
+    tokenStyle: "form",
+    scope: "me:read boards:read",
+    extractTokens: (body) => ({
+      accessToken: body?.access_token || null,
+      refreshToken: body?.refresh_token || null,
+      expiresIn: body?.expires_in || null,
+    }),
+  },
+};
+
+// Stateless, signed `state` param: binds the OAuth callback back to the Firebase
+// user who initiated it (a plain browser redirect can't carry an Authorization
+// header, so this is how we know whose Firestore doc to write tokens to) and
+// prevents CSRF/replay by signing + expiring it. Requires OAUTH_STATE_SECRET.
+const signOAuthState = (uid: string, service: string): string => {
+  const secret = process.env.OAUTH_STATE_SECRET;
+  if (!secret) {
+    throw new Error("OAUTH_STATE_SECRET is not configured on the server.");
+  }
+  const payload = JSON.stringify({ uid, service, exp: Date.now() + 10 * 60 * 1000 });
+  const payloadB64 = Buffer.from(payload).toString("base64url");
+  const sig = crypto.createHmac("sha256", secret).update(payloadB64).digest("base64url");
+  return `${payloadB64}.${sig}`;
+};
+
+const verifyOAuthState = (state: string, expectedService: string): { uid: string } => {
+  const secret = process.env.OAUTH_STATE_SECRET;
+  if (!secret) {
+    throw new Error("OAUTH_STATE_SECRET is not configured on the server.");
+  }
+  const [payloadB64, sig] = String(state || "").split(".");
+  if (!payloadB64 || !sig) {
+    throw new Error("Malformed state parameter.");
+  }
+  const expectedSig = crypto.createHmac("sha256", secret).update(payloadB64).digest("base64url");
+  if (!crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expectedSig))) {
+    throw new Error("State signature mismatch — possible CSRF attempt.");
+  }
+  const payload = JSON.parse(Buffer.from(payloadB64, "base64url").toString());
+  if (payload.service !== expectedService) {
+    throw new Error("State was issued for a different service.");
+  }
+  if (Date.now() > payload.exp) {
+    throw new Error("State has expired. Please try connecting again.");
+  }
+  return { uid: payload.uid };
+};
+
+const getOAuthRedirectUri = (service: string): string => {
+  const base = (process.env.APP_URL || "").replace(/\/$/, "");
+  if (!base) {
+    throw new Error("APP_URL is not configured on the server — required to build OAuth redirect URIs.");
+  }
+  return `${base}/api/integrations/callback/${service}`;
+};
+
+// Step 1: authenticated SPA call — returns the URL to redirect the browser to.
+app.post("/api/integrations/:service/connect", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const service = req.params.service;
+    const provider = OAUTH_PROVIDERS[service];
+    if (!provider) {
+      return res.status(404).json({ error: `Unknown integration: ${service}` });
+    }
+    const clientId = process.env[provider.clientIdEnv];
+    if (!clientId) {
+      return res.status(503).json({
+        error: `${service} integration is not configured yet. Missing ${provider.clientIdEnv} on the server.`,
+      });
+    }
+    const uid = requireAuth(req).uid;
+    const state = signOAuthState(uid, service);
+    const redirectUri = getOAuthRedirectUri(service);
+
+    const params = new URLSearchParams({
+      client_id: clientId,
+      redirect_uri: redirectUri,
+      state,
+      response_type: "code",
+      ...(provider.scope ? { scope: provider.scope } : {}),
+      ...(provider.userScope ? { user_scope: provider.userScope } : {}),
+      ...(provider.extraAuthorizeParams || {}),
+    });
+
+    res.json({ authorizeUrl: `${provider.authorizeUrl}?${params.toString()}` });
+  } catch (err: any) {
+    console.error(`[Integrations] connect error:`, err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Step 2: provider redirects the browser here after user consent. Not behind
+// authenticateFirebaseUser — the browser can't attach a Bearer header on a
+// top-level navigation, so the signed `state` param is what verifies identity.
+app.get("/api/integrations/callback/:service", async (req, res) => {
+  const service = req.params.service;
+  const appBase = (process.env.APP_URL || "").replace(/\/$/, "");
+  const failRedirect = (reason: string) =>
+    res.redirect(`${appBase}/?integration=${service}&status=error&reason=${encodeURIComponent(reason)}`);
+
+  try {
+    const provider = OAUTH_PROVIDERS[service];
+    if (!provider) return failRedirect("unknown_service");
+
+    const { code, state, error: providerError } = req.query;
+    if (providerError) return failRedirect(String(providerError));
+    if (!code || typeof code !== "string") return failRedirect("missing_code");
+
+    const { uid } = verifyOAuthState(String(state || ""), service);
+
+    const clientId = process.env[provider.clientIdEnv];
+    const clientSecret = process.env[provider.clientSecretEnv];
+    if (!clientId || !clientSecret) return failRedirect("not_configured");
+
+    const redirectUri = getOAuthRedirectUri(service);
+    const tokenParams = {
+      grant_type: "authorization_code",
+      client_id: clientId,
+      client_secret: clientSecret,
+      code,
+      redirect_uri: redirectUri,
+    };
+
+    let tokenResponse: Response;
+    if (provider.tokenStyle === "json") {
+      tokenResponse = await fetch(provider.tokenUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(tokenParams),
+      });
+    } else {
+      tokenResponse = await fetch(provider.tokenUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams(tokenParams as Record<string, string>).toString(),
+      });
+    }
+
+    const tokenBody = await tokenResponse.json();
+    if (!tokenResponse.ok || tokenBody?.ok === false || tokenBody?.error) {
+      console.error(`[Integrations] ${service} token exchange failed:`, tokenBody);
+      return failRedirect("token_exchange_failed");
+    }
+
+    const { accessToken, refreshToken, expiresIn } = provider.extractTokens(tokenBody);
+    if (!accessToken) {
+      console.error(`[Integrations] ${service} response had no access token:`, tokenBody);
+      return failRedirect("no_access_token");
+    }
+
+    const db = getDb();
+    const now = new Date().toISOString();
+
+    // Raw tokens: locked down in firestore.rules, never client-readable. Admin
+    // SDK writes here regardless of rules (rules only govern client SDK access).
+    await db.collection("users").doc(uid).collection("integration_tokens").doc(service).set({
+      accessToken,
+      refreshToken,
+      expiresAt: expiresIn ? new Date(Date.now() + expiresIn * 1000).toISOString() : null,
+      updatedAt: now,
+    });
+
+    // Redacted status doc: client-readable, contains no secrets.
+    await db.collection("users").doc(uid).collection("integrations").doc(service).set({
+      service,
+      connected: true,
+      connectedAt: now,
+    });
+
+    res.redirect(`${appBase}/?integration=${service}&status=connected`);
+  } catch (err: any) {
+    console.error(`[Integrations] ${service} callback error:`, err.message);
+    return failRedirect("internal_error");
+  }
+});
+
+// Returns connection status (never raw tokens) for every known provider.
+app.get("/api/integrations/status", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const uid = requireAuth(req).uid;
+    const db = getDb();
+    const snap = await db.collection("users").doc(uid).collection("integrations").get();
+    const statusByService: Record<string, { connected: boolean; connectedAt?: string }> = {};
+    snap.forEach((doc) => {
+      const data = doc.data();
+      statusByService[doc.id] = { connected: !!data.connected, connectedAt: data.connectedAt };
+    });
+    for (const service of Object.keys(OAUTH_PROVIDERS)) {
+      if (!statusByService[service]) statusByService[service] = { connected: false };
+    }
+    res.json({ integrations: statusByService });
+  } catch (err: any) {
+    console.error("[Integrations] status error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/api/integrations/:service/disconnect", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const service = req.params.service;
+    if (!OAUTH_PROVIDERS[service]) {
+      return res.status(404).json({ error: `Unknown integration: ${service}` });
+    }
+    const uid = requireAuth(req).uid;
+    const db = getDb();
+    await db.collection("users").doc(uid).collection("integration_tokens").doc(service).delete();
+    await db.collection("users").doc(uid).collection("integrations").doc(service).set({
+      service,
+      connected: false,
+      disconnectedAt: new Date().toISOString(),
+    });
+    res.json({ success: true });
+  } catch (err: any) {
+    console.error("[Integrations] disconnect error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ============================================================================
+// Real Signals: Slack message-volume (slow incremental scan)
+// ============================================================================
+// Slack rate-limits conversations.history to 1 request/minute for apps outside
+// the Marketplace (as of May 2025), so a full workspace scan cannot happen
+// synchronously. Instead this advances one conversation per "tick", called
+// opportunistically from the client (e.g. on app load). A full pass through
+// all of a user's conversations produces one complete 7-day snapshot; between
+// full passes, the in-progress counts are provisional. This is a genuine
+// signal that builds up over real usage, not an instant one-time read.
+const SLACK_TICK_MIN_INTERVAL_MS = 60 * 1000;
+
+app.post("/api/signals/slack/tick", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const uid = requireAuth(req).uid;
+    const db = getDb();
+
+    const tokenDoc = await db.collection("users").doc(uid).collection("integration_tokens").doc("slack").get();
+    if (!tokenDoc.exists) {
+      return res.status(404).json({ error: "Slack is not connected." });
+    }
+    const slackToken = tokenDoc.data()?.accessToken;
+    if (!slackToken) {
+      return res.status(404).json({ error: "Slack is not connected." });
+    }
+
+    const signalRef = db.collection("users").doc(uid).collection("live_signals").doc("slack");
+    const signalDoc = await signalRef.get();
+    let state = signalDoc.exists ? signalDoc.data()! : null;
+
+    const now = Date.now();
+    if (state?.lastTickAt && now - new Date(state.lastTickAt).getTime() < SLACK_TICK_MIN_INTERVAL_MS) {
+      // Respecting Slack's rate limit - not an error, just nothing to do yet.
+      return res.json({ ticked: false, reason: "rate_limited", state: redactSlackState(state) });
+    }
+
+    const slackFetch = async (method: string, params: Record<string, string>) => {
+      const url = new URL(`https://slack.com/api/${method}`);
+      Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
+      const r = await fetch(url.toString(), { headers: { Authorization: `Bearer ${slackToken}` } });
+      return r.json();
+    };
+
+    // First-ever tick (or after a full cycle): establish who we are and the
+    // conversation list to scan, and roll any in-progress counts into the
+    // last-completed snapshot.
+    if (!state || !state.conversationIds || state.scanIndex >= state.conversationIds.length) {
+      let selfUserId = state?.selfUserId;
+      if (!selfUserId) {
+        const authTest = await slackFetch("auth.test", {});
+        if (!authTest.ok) {
+          return res.status(502).json({ error: "Could not verify Slack identity.", detail: authTest.error });
+        }
+        selfUserId = authTest.user_id;
+      }
+
+      const convList = await slackFetch("conversations.list", {
+        types: "public_channel,private_channel,mpim,im",
+        limit: "100",
+        exclude_archived: "true",
+      });
+      if (!convList.ok) {
+        return res.status(502).json({ error: "Could not list Slack conversations.", detail: convList.error });
+      }
+      const conversationIds: string[] = (convList.channels || []).map((c: any) => c.id);
+
+      const completed = state ? {
+        totalMessages7d: state.inProgressTotal || 0,
+        afterHoursMessages7d: state.inProgressAfterHours || 0,
+        weekendMessages7d: state.inProgressWeekend || 0,
+        completedAt: new Date().toISOString(),
+      } : null;
+
+      state = {
+        selfUserId,
+        conversationIds,
+        scanIndex: 0,
+        inProgressTotal: 0,
+        inProgressAfterHours: 0,
+        inProgressWeekend: 0,
+        lastCompleted: completed || state?.lastCompleted || null,
+        lastTickAt: new Date(now).toISOString(),
+        updatedAt: new Date(now).toISOString(),
+      };
+
+      if (conversationIds.length === 0) {
+        await signalRef.set(state);
+        return res.json({ ticked: true, note: "No conversations to scan yet.", state: redactSlackState(state) });
+      }
+    }
+
+    const conversationId = state.conversationIds[state.scanIndex];
+    const oldestTs = Math.floor((now - 7 * 24 * 60 * 60 * 1000) / 1000).toString();
+    const history = await slackFetch("conversations.history", {
+      channel: conversationId,
+      oldest: oldestTs,
+      limit: "200",
+    });
+
+    if (history.ok) {
+      const messages = history.messages || [];
+      for (const msg of messages) {
+        if (msg.user !== state.selfUserId) continue;
+        state.inProgressTotal += 1;
+        const msgDate = new Date(parseFloat(msg.ts) * 1000);
+        const hour = msgDate.getUTCHours();
+        const day = msgDate.getUTCDay(); // 0 = Sunday, 6 = Saturday
+        if (hour < 8 || hour >= 18) state.inProgressAfterHours += 1;
+        if (day === 0 || day === 6) state.inProgressWeekend += 1;
+      }
+    }
+    // If a single conversation's history call fails (e.g. missing scope for
+    // that conversation type), skip it rather than aborting the whole scan.
+
+    state.scanIndex += 1;
+    state.lastTickAt = new Date(now).toISOString();
+    state.updatedAt = new Date(now).toISOString();
+
+    await signalRef.set(state);
+    res.json({ ticked: true, state: redactSlackState(state) });
+  } catch (err: any) {
+    console.error("[Signals] slack tick error:", err.message);
+    res.status(500).json({ error: "Could not update Slack signal." });
+  }
+});
+
+app.get("/api/signals/slack", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const uid = requireAuth(req).uid;
+    const db = getDb();
+    const signalDoc = await db.collection("users").doc(uid).collection("live_signals").doc("slack").get();
+    if (!signalDoc.exists) {
+      return res.json({ state: null });
+    }
+    res.json({ state: redactSlackState(signalDoc.data()!) });
+  } catch (err: any) {
+    console.error("[Signals] slack read error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Never expose the Slack user ID or raw conversation ID list to the client -
+// only the aggregate counts and scan progress it actually needs.
+function redactSlackState(state: any) {
+  return {
+    scanProgress: state.conversationIds ? `${state.scanIndex}/${state.conversationIds.length}` : "0/0",
+    inProgress: {
+      totalMessages: state.inProgressTotal || 0,
+      afterHoursMessages: state.inProgressAfterHours || 0,
+      weekendMessages: state.inProgressWeekend || 0,
+    },
+    lastCompleted: state.lastCompleted || null,
+    updatedAt: state.updatedAt,
+  };
+}
+
+// ============================================================================
+// Real Signals: Calendar (computed client-side, stored here)
+// ============================================================================
+// Unlike Slack, Google Calendar's API supports direct browser calls with the
+// user's own OAuth token (see src/lib/calendar-signals.ts), so the 7-day
+// aggregate is computed client-side and just persisted through this endpoint,
+// matching the existing pattern already used in MicroRecovery.tsx.
+const CalendarSignalSchema = z.object({
+  totalMeetingHours: z.number(),
+  meetingCount: z.number(),
+  backToBackCount: z.number(),
+  eveningMeetingCount: z.number(),
+  weekendMeetingCount: z.number(),
+  windowDays: z.number(),
+}).strict();
+
+app.post("/api/signals/calendar", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const parsed = CalendarSignalSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: "Invalid calendar signal payload.", details: (parsed as any).error?.errors || [] });
+    }
+    const uid = requireAuth(req).uid;
+    const db = getDb();
+    await db.collection("users").doc(uid).collection("live_signals").doc("calendar").set({
+      ...parsed.data,
+      updatedAt: new Date().toISOString(),
+    });
+    res.json({ success: true });
+  } catch (err: any) {
+    console.error("[Signals] calendar write error:", err.message);
+    res.status(500).json({ error: "Could not save calendar signal." });
+  }
+});
+
+app.get("/api/signals/calendar", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const uid = requireAuth(req).uid;
+    const db = getDb();
+    const doc = await db.collection("users").doc(uid).collection("live_signals").doc("calendar").get();
+    res.json({ state: doc.exists ? doc.data() : null });
+  } catch (err: any) {
+    console.error("[Signals] calendar read error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ============================================================================
+// Archetype evolution: blend the quiz baseline with real behavioral signals
+// ============================================================================
+// The quiz gives a point-in-time snapshot. Real signals (calendar load, Slack
+// message volume) let the blend actually drift toward what someone's doing
+// right now, not just what they answered once. Every nudge below is modest
+// relative to the 9-36 raw-score range, and every nudge has a plain-language
+// note attached — this is the lightweight version of "explainable"; the full
+// causal-narrative treatment is a separate, later piece of work.
+const DRIFT_NUDGE = 4;
+
+app.get("/api/signals/blend", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const uid = requireAuth(req).uid;
+    const db = getDb();
+
+    const [baselineDoc, calendarDoc, slackDoc] = await Promise.all([
+      db.collection("users").doc(uid).collection("diagnostics").doc("latest").get(),
+      db.collection("users").doc(uid).collection("live_signals").doc("calendar").get(),
+      db.collection("users").doc(uid).collection("live_signals").doc("slack").get(),
+    ]);
+
+    if (!baselineDoc.exists) {
+      return res.json({
+        blend: null,
+        driftNotes: [],
+        hasQuizBaseline: false,
+        hasCalendarSignal: calendarDoc.exists,
+        hasSlackSignal: slackDoc.exists,
+        note: "Complete the burnout diagnostic first — the blend evolves from that baseline.",
+      });
+    }
+
+    const baseline = baselineDoc.data()!;
+    const archScores: Record<string, number> = { ...baseline.archScores };
+    const driftNotes: string[] = [];
+
+    const calendarSignal = calendarDoc.exists ? calendarDoc.data() : null;
+    if (calendarSignal) {
+      if (calendarSignal.backToBackCount >= 5) {
+        ["Founder on Fire", "Manager in the Middle", "Crisis Sprinter"].forEach((p) => {
+          if (archScores[p] !== undefined) archScores[p] += DRIFT_NUDGE;
+        });
+        driftNotes.push(`Your calendar shows ${calendarSignal.backToBackCount} back-to-back meetings this week — nudging your blend toward Manager in the Middle and Crisis Sprinter.`);
+      }
+      const offHoursMeetings = (calendarSignal.eveningMeetingCount || 0) + (calendarSignal.weekendMeetingCount || 0);
+      if (offHoursMeetings >= 3) {
+        ["High-Functioning Exhausted", "Crisis Sprinter"].forEach((p) => {
+          if (archScores[p] !== undefined) archScores[p] += DRIFT_NUDGE;
+        });
+        driftNotes.push(`${offHoursMeetings} of your meetings this week were evenings or weekends — nudging your blend toward High-Functioning Exhausted.`);
+      }
+    }
+
+    const slackState = slackDoc.exists ? slackDoc.data() : null;
+    const slackCompleted = slackState?.lastCompleted;
+    if (slackCompleted && slackCompleted.totalMessages7d > 0) {
+      const afterHoursRatio = slackCompleted.afterHoursMessages7d / slackCompleted.totalMessages7d;
+      if (afterHoursRatio >= 0.3) {
+        ["Over-Giver", "People-Pleasing Performer", "Responsibility Addict"].forEach((p) => {
+          if (archScores[p] !== undefined) archScores[p] += DRIFT_NUDGE;
+        });
+        driftNotes.push(`${Math.round(afterHoursRatio * 100)}% of your Slack messages this week were after-hours — nudging your blend toward Over-Giver and Responsibility Addict.`);
+      }
+    }
+
+    const blend = computeBlend(archScores);
+
+    res.json({
+      blend,
+      driftNotes,
+      hasQuizBaseline: true,
+      hasCalendarSignal: !!calendarSignal,
+      hasSlackSignal: !!slackCompleted,
+      baselineComputedAt: baseline.computedAt,
+    });
+  } catch (err: any) {
+    console.error("[Signals] blend error:", err.message);
+    res.status(500).json({ error: "Could not compute archetype blend." });
+  }
+});
+
+// ============================================================================
+// Explainable Recovery Score
+// ============================================================================
+// The existing client-side calculateRecoveryScore() in App.tsx is a blind
+// accumulator — it produces a number with no memory of what pushed it there.
+// This endpoint runs the *same* underlying factors (so the score itself stays
+// consistent with what's already shown elsewhere in the app) but tracks each
+// one as a labeled, signed contribution, then layers the real calendar/Slack
+// signals on top the same way — so the final breakdown is a genuine causal
+// chain a person can act on, not just a number.
+const RecoveryExplainRequestSchema = z.object({
+  energyLevel: z.number().min(0).max(100).optional(),
+  debtCount: z.number().int().min(0).optional(),
+  isHighFunctioningExhausted: z.boolean().optional(),
+  hasClaimedDaily: z.boolean().optional(),
+  rehearsalCount: z.number().int().min(0).optional(),
+  streak: z.number().int().min(0).optional(),
+  moodPositive: z.boolean().nullable().optional(),
+  triggerCount: z.number().int().min(0).optional(),
+  socialBattery: z.number().min(0).max(100).nullable().optional(),
+  winsCount: z.number().int().min(0).optional(),
+  symptomsCount: z.number().int().min(0).optional(),
+  focusShieldActive: z.boolean().optional(),
+}).strict();
+
+app.post("/api/signals/recovery-explain", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const parsed = RecoveryExplainRequestSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: "Invalid recovery-explain payload.", details: (parsed as any).error?.errors || [] });
+    }
+    const input = parsed.data;
+    const uid = requireAuth(req).uid;
+    const db = getDb();
+
+    const factors: { label: string; delta: number; source: "self-report" | "calendar" | "slack" }[] = [];
+    let score = 50;
+    factors.push({ label: "Baseline", delta: 50, source: "self-report" });
+
+    if (input.energyLevel !== undefined) {
+      if (input.energyLevel > 60) {
+        score += 15; factors.push({ label: "Energy check-in above 60%", delta: 15, source: "self-report" });
+      } else if (input.energyLevel < 30) {
+        score -= 15; factors.push({ label: "Energy check-in below 30%", delta: -15, source: "self-report" });
+      }
+    }
+    if (input.debtCount) {
+      const penalty = Math.min(input.debtCount * 5, 20);
+      score -= penalty;
+      factors.push({ label: `${input.debtCount} uncleared recovery debt${input.debtCount === 1 ? "" : "s"}`, delta: -penalty, source: "self-report" });
+    }
+    if (input.isHighFunctioningExhausted) {
+      score -= 5;
+      factors.push({ label: "High-Functioning Exhausted archetype", delta: -5, source: "self-report" });
+    }
+    if (input.hasClaimedDaily) {
+      score += 10;
+      factors.push({ label: "Completed today's check-in", delta: 10, source: "self-report" });
+    }
+    if (input.rehearsalCount) {
+      score += 5;
+      factors.push({ label: "Practiced a boundary rehearsal", delta: 5, source: "self-report" });
+    }
+    if (input.streak !== undefined && input.streak > 3) {
+      score += 5;
+      factors.push({ label: `${input.streak}-day streak`, delta: 5, source: "self-report" });
+    }
+    if (input.moodPositive !== null && input.moodPositive !== undefined) {
+      const delta = input.moodPositive ? 15 : -10;
+      score += delta;
+      factors.push({ label: input.moodPositive ? "Recent mood log was positive" : "Recent mood log was negative", delta, source: "self-report" });
+    }
+    if (input.triggerCount) {
+      const penalty = Math.min(25, input.triggerCount * 5);
+      score -= penalty;
+      factors.push({ label: `${input.triggerCount} logged trigger${input.triggerCount === 1 ? "" : "s"} recently`, delta: -penalty, source: "self-report" });
+    }
+    if (input.socialBattery !== null && input.socialBattery !== undefined) {
+      if (input.socialBattery > 60) {
+        score += 10; factors.push({ label: "Social battery above 60%", delta: 10, source: "self-report" });
+      } else if (input.socialBattery < 30) {
+        score -= 15; factors.push({ label: "Social battery below 30%", delta: -15, source: "self-report" });
+      }
+    }
+    if (input.winsCount) {
+      const bonus = Math.min(25, input.winsCount * 8);
+      score += bonus;
+      factors.push({ label: `${input.winsCount} logged win${input.winsCount === 1 ? "" : "s"}`, delta: bonus, source: "self-report" });
+    }
+    if (input.symptomsCount) {
+      const penalty = Math.min(20, input.symptomsCount * 4);
+      score -= penalty;
+      factors.push({ label: `${input.symptomsCount} logged symptom${input.symptomsCount === 1 ? "" : "s"}`, delta: -penalty, source: "self-report" });
+    }
+    if (input.focusShieldActive) {
+      score += 10;
+      factors.push({ label: "Focus Shield active", delta: 10, source: "self-report" });
+    }
+
+    // Real behavioral signals — the part self-report can't see.
+    const [calendarDoc, slackDoc] = await Promise.all([
+      db.collection("users").doc(uid).collection("live_signals").doc("calendar").get(),
+      db.collection("users").doc(uid).collection("live_signals").doc("slack").get(),
+    ]);
+    const calendarSignal = calendarDoc.exists ? calendarDoc.data() : null;
+    const slackState = slackDoc.exists ? slackDoc.data() : null;
+    const slackCompleted = slackState?.lastCompleted;
+    let hasRealSignals = false;
+
+    if (calendarSignal) {
+      hasRealSignals = true;
+      if (calendarSignal.backToBackCount >= 5) {
+        score -= 8;
+        factors.push({ label: `${calendarSignal.backToBackCount} back-to-back meetings this week`, delta: -8, source: "calendar" });
+      }
+      const offHours = (calendarSignal.eveningMeetingCount || 0) + (calendarSignal.weekendMeetingCount || 0);
+      if (offHours >= 3) {
+        score -= 6;
+        factors.push({ label: `${offHours} evening or weekend meetings this week`, delta: -6, source: "calendar" });
+      }
+      if (calendarSignal.totalMeetingHours >= 25) {
+        score -= 7;
+        factors.push({ label: `${calendarSignal.totalMeetingHours}h in meetings this week`, delta: -7, source: "calendar" });
+      }
+    }
+    if (slackCompleted && slackCompleted.totalMessages7d > 0) {
+      hasRealSignals = true;
+      const afterHoursRatio = slackCompleted.afterHoursMessages7d / slackCompleted.totalMessages7d;
+      if (afterHoursRatio >= 0.3) {
+        score -= 8;
+        factors.push({ label: `${Math.round(afterHoursRatio * 100)}% of your Slack messages were after-hours`, delta: -8, source: "slack" });
+      }
+    }
+
+    score = Math.max(10, Math.min(100, score));
+
+    res.json({ score, factors, hasRealSignals });
+  } catch (err: any) {
+    console.error("[Signals] recovery-explain error:", err.message);
+    res.status(500).json({ error: "Could not compute explainable recovery score." });
+  }
+});
+
+// ============================================================================
+// Boundary Autopilot: real actions, not just rehearsal scripts
+// ============================================================================
+// Every action here is consequential (sends a real message, changes real
+// account state) and irreversible in the way a rehearsal script never is, so
+// every endpoint: (1) requires a fresh, explicit confirmation from the client
+// — this is not something that fires automatically, (2) logs what happened to
+// an audit trail the user can review, and (3) fails loudly rather than
+// silently if the Slack token is missing or the API call fails, since a
+// silent failure here would mean someone believes a boundary was set when it
+// wasn't.
+
+const slackApiCall = async (accessToken: string, method: string, params: Record<string, string>, httpMethod: "GET" | "POST" = "GET") => {
+  if (httpMethod === "GET") {
+    const url = new URL(`https://slack.com/api/${method}`);
+    Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
+    const r = await fetch(url.toString(), { headers: { Authorization: `Bearer ${accessToken}` } });
+    return r.json();
+  }
+  const r = await fetch(`https://slack.com/api/${method}`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+    body: JSON.stringify(params),
+  });
+  return r.json();
+};
+
+const getSlackTokenOrFail = async (uid: string, res: any): Promise<string | null> => {
+  const db = getDb();
+  const tokenDoc = await db.collection("users").doc(uid).collection("integration_tokens").doc("slack").get();
+  if (!tokenDoc.exists || !tokenDoc.data()?.accessToken) {
+    res.status(400).json({ error: "Slack is not connected. Connect it in Settings first." });
+    return null;
+  }
+  return tokenDoc.data()!.accessToken;
+};
+
+const logAutopilotAction = async (uid: string, action: string, detail: Record<string, any>, success: boolean) => {
+  try {
+    await getDb().collection("users").doc(uid).collection("autopilot_actions").add({
+      action,
+      detail,
+      success,
+      takenAt: new Date().toISOString(),
+    });
+  } catch (e) {
+    // A logging failure shouldn't mask the actual action's result to the caller.
+    console.error("[Boundary Autopilot] audit log failed:", e);
+  }
+};
+
+// Recipient picker: list workspace members so the user can pick who to message
+// by name rather than needing to know a Slack ID.
+app.get("/api/boundary-autopilot/slack/users", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const uid = requireAuth(req).uid;
+    const accessToken = await getSlackTokenOrFail(uid, res);
+    if (!accessToken) return;
+
+    const result = await slackApiCall(accessToken, "users.list", { limit: "200" });
+    if (!result.ok) {
+      return res.status(502).json({ error: `Could not list Slack users: ${result.error || "unknown error"}` });
+    }
+    const members = (result.members || [])
+      .filter((m: any) => !m.is_bot && !m.deleted && m.id !== "USLACKBOT")
+      .map((m: any) => ({ id: m.id, name: m.real_name || m.name, avatar: m.profile?.image_48 }));
+    res.json({ members });
+  } catch (err: any) {
+    console.error("[Boundary Autopilot] slack users error:", err.message);
+    res.status(500).json({ error: "Could not load Slack contacts." });
+  }
+});
+
+app.post("/api/boundary-autopilot/slack/send", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  const uid = requireAuth(req).uid;
+  try {
+    const parsed = SendMessageSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: "Invalid send request — a recipient, message, and explicit confirmation are required." });
+    }
+    const { recipientId, recipientName, message } = parsed.data;
+    const accessToken = await getSlackTokenOrFail(uid, res);
+    if (!accessToken) return;
+
+    // Open (or reuse) a DM channel with the recipient, then post to it.
+    const openResult = await slackApiCall(accessToken, "conversations.open", { users: recipientId }, "POST");
+    if (!openResult.ok) {
+      await logAutopilotAction(uid, "slack_send", { recipientId, recipientName, message }, false);
+      return res.status(502).json({ error: `Could not open a conversation: ${openResult.error || "unknown error"}` });
+    }
+
+    const sendResult = await slackApiCall(accessToken, "chat.postMessage", {
+      channel: openResult.channel.id,
+      text: message,
+    }, "POST");
+    if (!sendResult.ok) {
+      await logAutopilotAction(uid, "slack_send", { recipientId, recipientName, message }, false);
+      return res.status(502).json({ error: `Slack rejected the message: ${sendResult.error || "unknown error"}` });
+    }
+
+    await logAutopilotAction(uid, "slack_send", { recipientId, recipientName, message }, true);
+    res.json({ success: true });
+  } catch (err: any) {
+    console.error("[Boundary Autopilot] slack send error:", err.message);
+    await logAutopilotAction(uid, "slack_send", { error: err.message }, false);
+    res.status(500).json({ error: "Could not send the message." });
+  }
+});
+
+app.post("/api/boundary-autopilot/slack/dnd", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  const uid = requireAuth(req).uid;
+  try {
+    const parsed = SetDndSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: "Invalid DND request — a duration in minutes and explicit confirmation are required." });
+    }
+    const { minutes } = parsed.data;
+    const accessToken = await getSlackTokenOrFail(uid, res);
+    if (!accessToken) return;
+
+    const result = await slackApiCall(accessToken, "dnd.setSnooze", { num_minutes: String(minutes) }, "POST");
+    if (!result.ok) {
+      await logAutopilotAction(uid, "slack_dnd", { minutes }, false);
+      return res.status(502).json({ error: `Slack rejected the DND request: ${result.error || "unknown error"}` });
+    }
+
+    await logAutopilotAction(uid, "slack_dnd", { minutes }, true);
+    res.json({ success: true, snoozeEndtime: result.snooze_endtime });
+  } catch (err: any) {
+    console.error("[Boundary Autopilot] slack dnd error:", err.message);
+    await logAutopilotAction(uid, "slack_dnd", { error: err.message }, false);
+    res.status(500).json({ error: "Could not set Do Not Disturb." });
+  }
+});
+
+app.post("/api/boundary-autopilot/slack/status", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  const uid = requireAuth(req).uid;
+  try {
+    const parsed = SetStatusSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: "Invalid status request — status text and explicit confirmation are required." });
+    }
+    const { statusText, statusEmoji } = parsed.data;
+    const accessToken = await getSlackTokenOrFail(uid, res);
+    if (!accessToken) return;
+
+    const result = await slackApiCall(accessToken, "users.profile.set", {
+      profile: JSON.stringify({ status_text: statusText, status_emoji: statusEmoji, status_expiration: 0 }),
+    }, "POST");
+    if (!result.ok) {
+      await logAutopilotAction(uid, "slack_status", { statusText, statusEmoji }, false);
+      return res.status(502).json({ error: `Slack rejected the status update: ${result.error || "unknown error"}` });
+    }
+
+    await logAutopilotAction(uid, "slack_status", { statusText, statusEmoji }, true);
+    res.json({ success: true });
+  } catch (err: any) {
+    console.error("[Boundary Autopilot] slack status error:", err.message);
+    await logAutopilotAction(uid, "slack_status", { error: err.message }, false);
+    res.status(500).json({ error: "Could not update your Slack status." });
+  }
+});
+
+const LogCalendarDeclineSchema = z.object({
+  eventSummary: z.string().max(300),
+}).strict();
+
+// The actual decline happens entirely client-side (the user's own Google
+// token calls Calendar's API directly) — this endpoint exists purely so that
+// action shows up in the same audit trail as the Slack actions, since a
+// user reviewing "what has this taken action on my behalf" should see all
+// four action types in one place, not three out of four.
+app.post("/api/boundary-autopilot/log-calendar-decline", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const parsed = LogCalendarDeclineSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: "Invalid request." });
+    }
+    const uid = requireAuth(req).uid;
+    await logAutopilotAction(uid, "calendar_decline", { eventSummary: parsed.data.eventSummary }, true);
+    res.json({ success: true });
+  } catch (err: any) {
+    console.error("[Boundary Autopilot] calendar decline log error:", err.message);
+    res.status(500).json({ error: "Could not log this action." });
+  }
+});
+
+app.get("/api/boundary-autopilot/history", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const uid = requireAuth(req).uid;
+    const snap = await getDb().collection("users").doc(uid).collection("autopilot_actions")
+      .orderBy("takenAt", "desc").limit(20).get();
+    res.json({ actions: snap.docs.map((d) => ({ id: d.id, ...d.data() })) });
+  } catch (err: any) {
+    console.error("[Boundary Autopilot] history error:", err.message);
+    res.status(500).json({ error: "Could not load action history." });
+  }
+});
+
+// ============================================================================
+// Push notifications: reaching someone even when the app isn't open
+// ============================================================================
+// The existing "Pulse Alert" in App.tsx only fires while the tab is already
+// open (new Notification(...) with no service worker involved) — which means
+// it can never reach the person who's stopped opening the app, exactly the
+// moment it matters most. This closes that gap two ways: (1) real Web Push
+// subscriptions so a notification can be delivered by the OS/browser even
+// with the app fully closed, and (2) a lightweight scheduled check that
+// doesn't depend on the client running at all, using pulse data the client
+// now reports here specifically so this check has something to look at.
+
+const sendPushToUser = async (uid: string, payload: { title: string; body: string }): Promise<void> => {
+  if (!pushConfigured) return;
+  const db = getDb();
+  const subsSnap = await db.collection("users").doc(uid).collection("push_subscriptions").get();
+  for (const doc of subsSnap.docs) {
+    try {
+      await webpush.sendNotification(doc.data() as any, JSON.stringify(payload));
+    } catch (err: any) {
+      // A 404/410 means the subscription is dead (browser data cleared, uninstalled, etc.) — clean it up.
+      if (err.statusCode === 404 || err.statusCode === 410) {
+        await doc.ref.delete();
+      } else {
+        console.error(`[Push] send failed for uid ${uid}:`, err.message);
+      }
+    }
+  }
+};
+
+app.get("/api/push/vapid-public-key", verifyAppCheck, (req, res) => {
+  res.json({ publicKey: VAPID_PUBLIC_KEY, configured: pushConfigured });
+});
+
+const PushSubscriptionSchema = z.object({
+  endpoint: z.string().url(),
+  keys: z.object({
+    p256dh: z.string(),
+    auth: z.string(),
+  }),
+}).strict();
+
+app.post("/api/push/subscribe", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const parsed = PushSubscriptionSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: "Invalid push subscription payload." });
+    }
+    const uid = requireAuth(req).uid;
+    // Keyed by a hash of the endpoint so re-subscribing the same device updates
+    // rather than duplicates, and multiple real devices can coexist per user.
+    const subId = crypto.createHash("sha256").update(parsed.data.endpoint).digest("hex").slice(0, 32);
+    await getDb().collection("users").doc(uid).collection("push_subscriptions").doc(subId).set({
+      ...parsed.data,
+      subscribedAt: new Date().toISOString(),
+    });
+    res.json({ success: true });
+  } catch (err: any) {
+    console.error("[Push] subscribe error:", err.message);
+    res.status(500).json({ error: "Could not save your push subscription." });
+  }
+});
+
+app.post("/api/push/unsubscribe", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const uid = requireAuth(req).uid;
+    const endpoint = req.body?.endpoint;
+    if (endpoint) {
+      const subId = crypto.createHash("sha256").update(String(endpoint)).digest("hex").slice(0, 32);
+      await getDb().collection("users").doc(uid).collection("push_subscriptions").doc(subId).delete();
+    } else {
+      // No endpoint provided — remove all of this user's subscriptions rather than silently no-op.
+      const snap = await getDb().collection("users").doc(uid).collection("push_subscriptions").get();
+      await Promise.all(snap.docs.map((d) => d.ref.delete()));
+    }
+    res.json({ success: true });
+  } catch (err: any) {
+    console.error("[Push] unsubscribe error:", err.message);
+    res.status(500).json({ error: "Could not remove your push subscription." });
+  }
+});
+
+const PulseReportSchema = z.object({
+  score: z.number().min(0).max(100),
+}).strict();
+
+// The client already computes this locally on every home-screen load —
+// this just gives the server a copy to check against later without the
+// client needing to be running at that later moment.
+app.post("/api/pulse/report", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const parsed = PulseReportSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: "Invalid pulse report." });
+    }
+    const uid = requireAuth(req).uid;
+    await getDb().collection("users").doc(uid).collection("pulse_status").doc("latest").set({
+      score: parsed.data.score,
+      reportedAt: new Date().toISOString(),
+    });
+    res.json({ success: true });
+  } catch (err: any) {
+    console.error("[Pulse] report error:", err.message);
+    res.status(500).json({ error: "Could not report pulse status." });
+  }
+});
+
+// Scheduled check: runs in-process every 6 hours, looking for two real,
+// server-visible conditions — a score that's stayed low, or a check-in that's
+// gone stale — and sends a real push either way. A 48-hour cooldown per user
+// (tracked via lastPushSentAt) keeps this a gentle nudge, not spam.
+const PULSE_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
+const STALE_CHECKIN_HOURS = 48;
+const LOW_SCORE_THRESHOLD = 30;
+const PUSH_COOLDOWN_HOURS = 48;
+
+const runScheduledPulseCheck = async () => {
+  if (!pushConfigured) return;
+  try {
+    const db = getDb();
+    const now = Date.now();
+    const staleCutoffIso = new Date(now - STALE_CHECKIN_HOURS * 60 * 60 * 1000).toISOString();
+
+    // Two narrow collection-group queries instead of reading every user doc
+    // plus a per-user sub-read (that pattern cost 2 reads per user on every
+    // run, regardless of whether they'd ever qualify). These only pull back
+    // docs that are actually candidates — cost now scales with how many
+    // people are stale or low, not with total signups. Needs the
+    // COLLECTION_GROUP field overrides on pulse_status in firestore.indexes.json.
+    const [staleSnap, lowSnap] = await Promise.all([
+      db.collectionGroup("pulse_status").where("reportedAt", "<", staleCutoffIso).get(),
+      db.collectionGroup("pulse_status").where("score", "<", LOW_SCORE_THRESHOLD).get(),
+    ]);
+
+    const candidates = new Map<string, FirebaseFirestore.QueryDocumentSnapshot>();
+    for (const doc of [...staleSnap.docs, ...lowSnap.docs]) {
+      const uid = doc.ref.parent.parent?.id;
+      if (uid) candidates.set(uid, doc);
+    }
+
+    for (const [uid, pulseDoc] of candidates) {
+      const pulse = pulseDoc.data()!;
+      const reportedAt = new Date(pulse.reportedAt).getTime();
+      const hoursSinceReport = (now - reportedAt) / (1000 * 60 * 60);
+
+      const isStale = hoursSinceReport >= STALE_CHECKIN_HOURS;
+      const isLow = pulse.score < LOW_SCORE_THRESHOLD && hoursSinceReport < STALE_CHECKIN_HOURS;
+      if (!isStale && !isLow) continue;
+
+      const lastPush = pulse.lastPushSentAt ? new Date(pulse.lastPushSentAt).getTime() : 0;
+      if ((now - lastPush) / (1000 * 60 * 60) < PUSH_COOLDOWN_HOURS) continue;
+
+      await sendPushToUser(uid, isStale
+        ? { title: "Nova hasn't heard from you in a while", body: "No pressure — just checking in. Your recovery tools are here whenever you're ready." }
+        : { title: "Nova: your recovery score has been low", body: "Things look tough right now. A short reset might help — Blaze Break is here." }
+      );
+      await pulseDoc.ref.set({ lastPushSentAt: new Date().toISOString() }, { merge: true });
+    }
+  } catch (err: any) {
+    console.error("[Push] scheduled pulse check error:", err.message);
+  }
+};
+
+if (pushConfigured && process.env.TEST_MODE !== 'true') {
+  setInterval(runScheduledPulseCheck, PULSE_CHECK_INTERVAL_MS);
+}
 
 // Admin Dashboard Summary Metrics API
 app.get("/api/admin/summary", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
@@ -1180,7 +2427,7 @@ app.get("/api/admin/users/:uid", verifyAppCheck, authenticateFirebaseUser, async
     const targetUid = req.params.uid;
     const db = getDb();
     
-    const authUser = await admin.auth().getUser(targetUid);
+    const authUser = await getAuth().getUser(targetUid);
     const userDoc = await db.collection("users").doc(targetUid).get();
     const fingerprintDoc = await db.collection("users").doc(targetUid).collection("recovery").doc("fingerprint").get();
     
@@ -1205,7 +2452,7 @@ app.post("/api/admin/users/:uid/role", verifyAppCheck, authenticateFirebaseUser,
     const targetUid = req.params.uid;
     const { role } = req.body;
     
-    await admin.auth().setCustomUserClaims(targetUid, { role });
+    await getAuth().setCustomUserClaims(targetUid, { role });
     
     const db = getDb();
     await db.collection("users").doc(targetUid).collection("entitlements").doc("status").set({
@@ -1226,7 +2473,7 @@ app.post("/api/admin/users/:uid/suspend", verifyAppCheck, authenticateFirebaseUs
     const targetUid = req.params.uid;
     const { suspend } = req.body;
     
-    await admin.auth().updateUser(targetUid, { disabled: suspend });
+    await getAuth().updateUser(targetUid, { disabled: suspend });
     await logAdminAction(req, suspend ? "suspend_user" : "unsuspend_user", targetUid, "", {});
     res.json({ success: true });
   } catch (err: any) {
@@ -1251,10 +2498,10 @@ app.post("/api/admin/admin-users", verifyAppCheck, authenticateFirebaseUser, asy
     requirePlatformOwner(req);
     const { email, role, displayName } = req.body;
     
-    const authUser = await admin.auth().getUserByEmail(email);
+    const authUser = await getAuth().getUserByEmail(email);
     const targetUid = authUser.uid;
     
-    await admin.auth().setCustomUserClaims(targetUid, {
+    await getAuth().setCustomUserClaims(targetUid, {
       admin: true,
       role: role,
       platformOwner: role === 'platform_owner'
@@ -1268,8 +2515,8 @@ app.post("/api/admin/admin-users", verifyAppCheck, authenticateFirebaseUser, asy
       role: role,
       status: "active",
       permissions: getPermissionsForRole(role),
-      createdAt: admin.firestore.FieldValue.serverTimestamp(),
-      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      createdAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
       createdBy: (req as any).user.email
     }, { merge: true });
     
@@ -1288,7 +2535,7 @@ app.post("/api/admin/admin-users/:uid/role", verifyAppCheck, authenticateFirebas
     
     await assertNotLastPlatformOwner(targetUid, firebaseConfigDatabaseId);
     
-    await admin.auth().setCustomUserClaims(targetUid, {
+    await getAuth().setCustomUserClaims(targetUid, {
       admin: true,
       role: role,
       platformOwner: role === 'platform_owner'
@@ -1298,7 +2545,7 @@ app.post("/api/admin/admin-users/:uid/role", verifyAppCheck, authenticateFirebas
     await db.collection("admin_users").doc(targetUid).update({
       role: role,
       permissions: getPermissionsForRole(role),
-      updatedAt: admin.firestore.FieldValue.serverTimestamp()
+      updatedAt: FieldValue.serverTimestamp()
     });
     
     await logAdminAction(req, "update_admin_role", targetUid, "", { role });
@@ -1314,7 +2561,7 @@ app.delete("/api/admin/admin-users/:uid", verifyAppCheck, authenticateFirebaseUs
     const targetUid = req.params.uid;
     
     await assertNotLastPlatformOwner(targetUid, firebaseConfigDatabaseId);
-    await admin.auth().setCustomUserClaims(targetUid, null);
+    await getAuth().setCustomUserClaims(targetUid, null);
     
     const db = getDb();
     await db.collection("admin_users").doc(targetUid).delete();
@@ -1345,7 +2592,7 @@ app.post("/api/admin/feature-flags", verifyAppCheck, authenticateFirebaseUser, a
     const db = getDb();
     await db.collection("public_feature_flags").doc(featureId).set({
       enabled,
-      updatedAt: admin.firestore.FieldValue.serverTimestamp()
+      updatedAt: FieldValue.serverTimestamp()
     }, { merge: true });
     
     await logAdminAction(req, "manage_feature_flags", "", featureId, { enabled });
@@ -1362,7 +2609,7 @@ app.post("/api/admin/nova-settings", verifyAppCheck, authenticateFirebaseUser, a
     const db = getDb();
     await db.collection("app_config").doc("nova_settings").set({
       ...settings,
-      updatedAt: admin.firestore.FieldValue.serverTimestamp()
+      updatedAt: FieldValue.serverTimestamp()
     }, { merge: true });
     
     await logAdminAction(req, "manage_nova_settings", "", "", { settings });
@@ -1379,7 +2626,7 @@ app.post("/api/admin/knowledge-chunks", verifyAppCheck, authenticateFirebaseUser
     const db = getDb();
     await db.collection("app_config").doc("knowledge_chunks").set({
       chunks,
-      updatedAt: admin.firestore.FieldValue.serverTimestamp()
+      updatedAt: FieldValue.serverTimestamp()
     }, { merge: true });
     
     await logAdminAction(req, "manage_knowledge_chunks", "", "", { chunkCount: chunks?.length });
@@ -1396,7 +2643,7 @@ app.post("/api/admin/content-library", verifyAppCheck, authenticateFirebaseUser,
     const db = getDb();
     await db.collection("app_config").doc("content_library").set({
       content,
-      updatedAt: admin.firestore.FieldValue.serverTimestamp()
+      updatedAt: FieldValue.serverTimestamp()
     }, { merge: true });
     
     await logAdminAction(req, "manage_content_library", "", "", { contentType: typeof content });
@@ -1414,7 +2661,7 @@ app.post("/api/admin/orgs", verifyAppCheck, authenticateFirebaseUser, async (req
     await db.collection("organisations").doc(orgId).set({
       name,
       privacyThreshold: privacyThreshold || 5,
-      updatedAt: admin.firestore.FieldValue.serverTimestamp()
+      updatedAt: FieldValue.serverTimestamp()
     }, { merge: true });
     
     await logAdminAction(req, "manage_organisation", "", orgId, { name, privacyThreshold });
@@ -1450,8 +2697,8 @@ app.post("/api/anxiety-reset", verifyAppCheck, authenticateFirebaseUser, async (
       ...eventData,
       id: eventRef.id,
       userId: uid,
-      createdAt: admin.firestore.FieldValue.serverTimestamp(),
-      updatedAt: admin.firestore.FieldValue.serverTimestamp()
+      createdAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp()
     };
     
     await eventRef.set(savedEvent);
@@ -1467,7 +2714,7 @@ app.post("/api/anxiety-reset", verifyAppCheck, authenticateFirebaseUser, async (
     await statsRef.set({
       points: currentPoints + 50,
       lastEngagementDate: new Date().toISOString().split('T')[0],
-      updatedAt: admin.firestore.FieldValue.serverTimestamp()
+      updatedAt: FieldValue.serverTimestamp()
     }, { merge: true });
     
     res.json({ success: true, event: savedEvent });
@@ -1782,10 +3029,139 @@ if (process.env.TEST_MODE !== 'true') {
     });
 
     const wss = new WebSocketServer({ server, path: "/api/nova/live" });
-    wss.on("connection", async (clientWs) => {
-      // Nova Phase 1C: Live voice is entirely disabled securely at the network edge during the Secure Account Test Mode pass.
-      clientWs.send(JSON.stringify({ error: "Nova live voice remains safely disabled pending the secure voice implementation phase." }));
-      clientWs.close();
+    wss.on("connection", async (clientWs, req) => {
+      // Browsers can't set custom headers on WebSocket connections, so auth
+      // travels as query params instead of the Authorization/x-firebase-appcheck
+      // headers used everywhere else in this file. This is the one thing that
+      // was actually missing — everything else (client audio capture/encode,
+      // playback, session lifecycle) was already built; it was just never
+      // safe to open this socket to the world without it.
+      const url = new URL(req.url || "", `http://${req.headers.host}`);
+      const idToken = url.searchParams.get("token");
+      const appCheckToken = url.searchParams.get("appCheckToken");
+
+      // Same fix as the main verifyAppCheck middleware: no magic bypass
+      // string here, since anyone can read it out of the shipped client
+      // bundle and send it directly regardless of environment. Only
+      // genuinely running outside production skips this check.
+      if (process.env.NODE_ENV === "production") {
+        if (!appCheckToken) {
+          clientWs.send(JSON.stringify({ error: "Missing App Check token." }));
+          return clientWs.close();
+        }
+        try {
+          await getAppCheck().verifyToken(appCheckToken);
+        } catch (e) {
+          clientWs.send(JSON.stringify({ error: "Invalid App Check token." }));
+          return clientWs.close();
+        }
+      }
+
+      if (!idToken) {
+        clientWs.send(JSON.stringify({ error: "Missing authentication token." }));
+        return clientWs.close();
+      }
+      let uid: string;
+      try {
+        const decoded = await getAuth().verifyIdToken(idToken);
+        uid = decoded.uid;
+      } catch (e) {
+        clientWs.send(JSON.stringify({ error: "Invalid or expired session. Please refresh and try again." }));
+        return clientWs.close();
+      }
+
+      if (!process.env.GEMINI_API_KEY || process.env.GEMINI_API_KEY === "MY_GEMINI_API_KEY") {
+        clientWs.send(JSON.stringify({ error: "Live voice isn't configured on this server yet." }));
+        return clientWs.close();
+      }
+
+      // Real per-second cost here (audio in + audio out), so a hard ceiling
+      // matters even for a legitimate, authenticated user — 15 minutes is
+      // generous for a coaching check-in without leaving a session open
+      // indefinitely if a client never explicitly closes it.
+      const MAX_SESSION_MS = 15 * 60 * 1000;
+      let sessionTimeout: NodeJS.Timeout;
+      let liveSession: any = null;
+      let sessionEnded = false;
+
+      const endSession = (reason?: string) => {
+        if (sessionEnded) return;
+        sessionEnded = true;
+        clearTimeout(sessionTimeout);
+        try { liveSession?.close(); } catch (e) {}
+        try {
+          if (reason) clientWs.send(JSON.stringify({ error: reason }));
+          clientWs.close();
+        } catch (e) {}
+      };
+
+      try {
+        liveSession = await ai.live.connect({
+          model: "gemini-3.1-flash-live-preview",
+          config: {
+            responseModalities: [Modality.AUDIO],
+            speechConfig: {
+              voiceConfig: { prebuiltVoiceConfig: { voiceName: "Aoede" } }, // Same voice as the existing single-shot TTS endpoint, so Nova sounds consistent everywhere.
+            },
+            systemInstruction: "You are Nova, a calm, warm burnout-recovery coach at Blaze Break. Speak conversationally and concisely — this is a live voice conversation, not a written message, so keep responses short and natural to say aloud.",
+          },
+          callbacks: {
+            onopen: () => {
+              console.log(`[Nova Live] session opened for uid ${uid}`);
+            },
+            onmessage: (message: LiveServerMessage) => {
+              if (sessionEnded) return;
+              try {
+                if (message.serverContent?.interrupted) {
+                  clientWs.send(JSON.stringify({ interrupted: true }));
+                }
+                if (message.data) {
+                  clientWs.send(JSON.stringify({ audio: message.data }));
+                }
+              } catch (e) {
+                console.error("[Nova Live] relay-to-client error:", e);
+              }
+            },
+            onerror: (e: any) => {
+              console.error(`[Nova Live] upstream error for uid ${uid}:`, e?.message || e);
+              endSession("Voice session hit an error and had to end.");
+            },
+            onclose: () => {
+              endSession();
+            },
+          },
+        });
+      } catch (e: any) {
+        console.error("[Nova Live] failed to open upstream session:", e.message);
+        clientWs.send(JSON.stringify({ error: "Could not start the live voice session. Please try again." }));
+        return clientWs.close();
+      }
+
+      sessionTimeout = setTimeout(() => endSession("This voice session has reached its 15-minute limit."), MAX_SESSION_MS);
+
+      clientWs.on("message", (data) => {
+        if (sessionEnded) return;
+        try {
+          const parsed = JSON.parse(data.toString());
+          if (parsed.initialPrompt) {
+            // Prefill context (fingerprint, recent chat, Nova's memory) without
+            // expecting an immediate reply — turnComplete:false per the SDK's
+            // own guidance for priming a conversation before real input starts.
+            liveSession.sendClientContent({ turns: parsed.initialPrompt, turnComplete: false });
+          }
+          if (parsed.audio) {
+            liveSession.sendRealtimeInput({ audio: { data: parsed.audio, mimeType: "audio/pcm;rate=16000" } });
+          }
+        } catch (e) {
+          console.error("[Nova Live] client message parse error:", e);
+        }
+      });
+
+      clientWs.on("close", () => endSession());
+      clientWs.on("error", (e) => {
+        console.error(`[Nova Live] client socket error for uid ${uid}:`, e.message);
+        endSession();
+      });
     });
   });
 }

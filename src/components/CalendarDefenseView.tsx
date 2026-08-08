@@ -29,21 +29,20 @@ export const CalendarDefenseView = () => {
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
-          <h2 className="text-3xl font-serif font-bold text-text-main tracking-tight">Calendar Workload Defense</h2>
-          <p className="text-sm text-text-muted mt-2 font-mono uppercase tracking-widest">Workspace Intelligence / Red Zone Interception</p>
+          <h2 className="text-3xl font-display font-bold text-text-main tracking-tight">Calendar Workload Defense</h2>
+          <p className="text-sm text-text-muted mt-2 font-mono uppercase tracking-widest">Workspace Insight / Overload Warning</p>
         </div>
       </div>
 
       {!hasScanned ? (
-        <div className="card border-border bg-surface p-12 text-center flex flex-col items-center justify-center space-y-6">
+        <div className="card border-border bg-surface p-6 sm:p-8 md:p-12 text-center flex flex-col items-center justify-center space-y-6">
           <div className="relative">
-            <div className="absolute inset-0 bg-primary/20 blur-2xl rounded-full" />
             <div className="w-20 h-20 bg-card rounded-full border border-primary/20 flex items-center justify-center relative z-10">
               <Calendar className="w-8 h-8 text-primary" />
             </div>
           </div>
           <div className="max-w-md space-y-3">
-            <h3 className="text-xl font-bold text-text-main tracking-tight">Intercept Calendar Collapse</h3>
+            <h3 className="text-xl font-bold text-text-main tracking-tight">Catch Calendar Overload Early</h3>
             <p className="text-sm text-text-muted leading-relaxed">
               Nova will scan your Google Workspace calendar for the next 7 days to identify "Red Zones" (4+ hours of sequential meetings) and biological deficits, drafting pre-approved scripts to reclaim your time.
             </p>
@@ -72,7 +71,6 @@ export const CalendarDefenseView = () => {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {redZones.map((zone, i) => (
               <div key={i} className="card p-6 border border-destructive/30 relative overflow-hidden group">
-                <div className="absolute top-0 right-0 w-32 h-32 bg-destructive/5 rounded-full blur-3xl -z-10 group-hover:bg-destructive/10 transition-colors" />
                 <div className="flex justify-between items-start mb-6">
                   <div>
                     <h4 className="text-lg font-bold text-text-main">{zone.day}</h4>

@@ -6,10 +6,10 @@ import { logAuditAction } from '../lib/audit-logger.ts';
 
 export const ConsentMatrix = ({ profile, onUpdate }: { profile: UserProfileData, onUpdate: (p: UserProfileData) => void }) => {
   const dataPoints = [
-    { id: 'mood', label: 'Mood & Biological Processing', icon: Activity, required: true, desc: "Aggregates inputs into your Recovery Velocity Score.", zone: "Zone A", zoneColor: "indigo" },
-    { id: 'calendar', label: 'Calendar Integration', icon: Calendar, required: false, desc: "Scans meeting density to calculate 'Meeting Fatigue'.", zone: "Zone A", zoneColor: "indigo" },
-    { id: 'ai_memory', label: 'Nova AI Memory Context', icon: Brain, required: false, desc: "Permits Nova to remember conversational context.", zone: "Zone A", zoneColor: "indigo" },
-    { id: 'journal', label: 'Trigger Journal Scanning', icon: BookOpen, required: false, desc: "Used for detecting pattern similarities over 90 days.", zone: "Zone A", zoneColor: "indigo" },
+    { id: 'mood', label: 'Mood & Biological Processing', icon: Activity, required: true, desc: "Aggregates inputs into your Recovery Velocity Score.", zone: "Zone A", zoneColor: "primary" },
+    { id: 'calendar', label: 'Calendar Integration', icon: Calendar, required: false, desc: "Scans meeting density to calculate 'Meeting Fatigue'.", zone: "Zone A", zoneColor: "primary" },
+    { id: 'ai_memory', label: 'Nova AI Memory Context', icon: Brain, required: false, desc: "Permits Nova to remember conversational context.", zone: "Zone A", zoneColor: "primary" },
+    { id: 'journal', label: 'Trigger Journal Scanning', icon: BookOpen, required: false, desc: "Used for detecting pattern similarities over 90 days.", zone: "Zone A", zoneColor: "primary" },
   ];
 
   const toggleConsent = (pointId: string, current: boolean) => {
@@ -34,13 +34,11 @@ export const ConsentMatrix = ({ profile, onUpdate }: { profile: UserProfileData,
   };
 
   return (
-    <div className="card space-y-6 shadow-2xl relative overflow-hidden bg-background border border-white/[0.05]">
-      <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/noise-lines.png')] opacity-10 pointer-events-none" />
-      <div className="absolute top-0 right-0 w-[400px] h-[400px] bg-primary/10 rounded-full blur-[100px] pointer-events-none" />
-      
+    <div className="card space-y-6 relative overflow-hidden bg-background border border-border">
+
       <div className="relative z-10">
         <h3 className="text-xl font-bold text-text-main flex items-center gap-2 mb-2">
-          <Database className="w-5 h-5 text-primary" /> Data Consent & Processing Matrix
+          <Database className="w-5 h-5 text-primary" /> Data & Privacy Controls
         </h3>
         <p className="text-xs text-text-muted max-w-xl leading-relaxed">
           You are the sole custodian of your recovery telemetry. Visualize and strictly govern which data nodes Nova can process to model your biological performance.
@@ -62,7 +60,7 @@ export const ConsentMatrix = ({ profile, onUpdate }: { profile: UserProfileData,
                     {point.zone && (
                       <span className={cn(
                         "px-1.5 py-0.5 text-[10px] uppercase tracking-wider rounded-full font-bold border",
-                        point.zoneColor === 'indigo' && "bg-primary/20 text-primary border-primary/30"
+                        point.zoneColor === 'primary' && "bg-primary/20 text-primary border-primary/30"
                       )}>
                         {point.zone}
                       </span>

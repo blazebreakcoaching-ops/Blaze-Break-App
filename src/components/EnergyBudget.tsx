@@ -172,12 +172,12 @@ export const EnergyBudgetTool = ({
            <div className="h-px flex-1 bg-border/40" />
         </div>
         <div className="group/tooltip relative inline-flex items-center mb-4">
-          <h3 className="text-5xl font-display font-bold text-text-main tracking-tight cursor-help underline decoration-primary/30 underline-offset-8 decoration-dashed">
-            Energy & Capacity Matrix
+          <h3 className="text-4xl sm:text-5xl font-display font-medium text-text-main tracking-tight cursor-help underline decoration-primary/30 underline-offset-8 decoration-dashed">
+            Energy & Capacity
           </h3>
-          <div className="absolute left-0 top-full mt-4 p-4 w-80 bg-card text-text-main text-sm font-medium rounded-xl border border-border shadow-2xl opacity-0 invisible group-hover/tooltip:opacity-100 group-hover/tooltip:visible transition-all z-50 pointer-events-none">
-            <div className="text-xs uppercase font-black tracking-widest text-primary mb-2">Matrix Purpose</div>
-            Visualize your neural expenditure before you burn out. Add daily tasks below to see how they drain your total capacity cap.
+          <div className="absolute left-0 top-full mt-4 p-4 w-80 bg-card text-text-main text-sm font-medium rounded-lg border border-border shadow-lg opacity-0 invisible group-hover/tooltip:opacity-100 group-hover/tooltip:visible transition-all z-50 pointer-events-none">
+            <div className="text-xs uppercase font-medium tracking-widest text-primary mb-2">What this shows</div>
+            See where your energy actually goes. Add daily tasks below to see how they draw down your total capacity.
           </div>
         </div>
         <p className="text-xl text-text-muted font-medium  mt-2">"Burnout is a resource allocation failure. Recovery is a structural redesign."</p>
@@ -194,16 +194,16 @@ export const EnergyBudgetTool = ({
           <DebtTracker debts={debts} />
 
           {/* Recharts Stacked Weekly Allocation Chart */}
-          <div className="card glass p-8 space-y-6 relative overflow-hidden border border-border/40">
+          <div className="card p-8 space-y-6 relative overflow-hidden border border-border">
             <div className="flex items-center justify-between">
               <div>
-                <h3 className="text-xl font-display font-bold text-text-main">Weekly Energy Load Stack</h3>
-                <p className="text-xs uppercase font-black tracking-[0.25em] text-text-muted mt-1">Resource Drain per Category over 7-Day Cycle</p>
+                <h3 className="text-xl font-display font-medium text-text-main">Weekly Energy Load</h3>
+                <p className="text-xs uppercase font-medium tracking-[0.25em] text-text-muted mt-1">By category, over the last 7 days</p>
               </div>
               <div className="flex items-center gap-4 text-xs">
-                <div className="flex items-center gap-1.5 font-bold text-destructive">
-                  <div className="w-2.5 h-2.5 rounded-full bg-destructive animate-pulse" />
-                  Overload Threshold (60 CR)
+                <div className="flex items-center gap-1.5 font-medium text-destructive">
+                  <div className="w-2.5 h-2.5 rounded-full bg-destructive" />
+                  Overload Threshold
                 </div>
               </div>
             </div>
@@ -214,7 +214,7 @@ export const EnergyBudgetTool = ({
                   data={WEEKLY_DATA}
                   margin={{ top: 20, right: 10, left: -20, bottom: 5 }}
                 >
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E2E8F0" className="dark:stroke-slate-800" />
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E2E8F0" className="dark:stroke-border" />
                   <XAxis 
                     dataKey="day" 
                     tick={{ fill: 'currentColor', fontSize: 10 }}
@@ -271,14 +271,14 @@ export const EnergyBudgetTool = ({
             </div>
           </div>
 
-          <div className="card glass p-10 space-y-10 relative overflow-hidden">
+          <div className="card p-6 sm:p-8 md:p-10 space-y-10 relative overflow-hidden border border-border">
             <div className="flex items-center justify-between relative z-10">
               <div>
-                <h3 className="text-2xl font-display font-bold text-text-main tracking-tight">Capacitance Setting</h3>
-                <p className="text-xs text-text-muted uppercase tracking-[0.2em] font-black mt-1">Available Daily Credits</p>
+                <h3 className="text-xl font-display font-medium text-text-main tracking-tight">Daily Energy Budget</h3>
+                <p className="text-xs text-text-muted uppercase tracking-[0.2em] font-medium mt-1">Available Daily Credits</p>
               </div>
-              <div className="flex items-center gap-6 p-1 bg-surface/40 rounded-[2rem] border border-border/40 backdrop-blur-xl">
-                <button 
+              <div className="flex items-center gap-6 p-1 bg-surface rounded-full border border-border">
+                <button
                   onClick={() => setBudget(Math.max(20, budget - 10))}
                   className="w-12 h-12 flex items-center justify-center rounded-full hover:bg-white dark:hover:bg-card transition-all text-text-muted hover:text-primary active:scale-90"
                 >
@@ -334,9 +334,6 @@ export const EnergyBudgetTool = ({
                 ))}
               </div>
             </div>
-
-            {/* Background pattern */}
-            <div className="absolute right-[-20%] bottom-[-20%] w-[400px] h-[400px] bg-primary opacity-[0.03] rounded-full blur-[100px]" />
           </div>
 
           <div className="space-y-6">
@@ -364,7 +361,7 @@ export const EnergyBudgetTool = ({
               <button onClick={() => setFilterAction(undefined)} className={cn("px-3 py-1.5 rounded-full text-xs font-bold uppercase tracking-widest transition-all", !filterAction ? "bg-primary text-primary-foreground dark:bg-border dark:text-text-main" : "bg-surface text-text-muted hover:bg-border dark:bg-white/5 dark:hover:bg-white/10 dark:text-text-muted")}>All Load</button>
               <button onClick={() => setFilterAction('keep')} className={cn("px-3 py-1.5 rounded-full text-xs font-bold uppercase tracking-widest transition-all", filterAction === 'keep' ? "bg-success text-white shadow-md shadow-success/20" : "bg-surface text-text-muted hover:bg-border dark:bg-white/5 dark:hover:bg-white/10 dark:text-text-muted")}>Keep</button>
               <button onClick={() => setFilterAction('delegate')} className={cn("px-3 py-1.5 rounded-full text-xs font-bold uppercase tracking-widest transition-all", filterAction === 'delegate' ? "bg-warning text-warning-foreground shadow-md shadow-warning/20" : "bg-surface text-text-muted hover:bg-border dark:bg-white/5 dark:hover:bg-white/10 dark:text-text-muted")}>Delegate</button>
-              <button onClick={() => setFilterAction('defer')} className={cn("px-3 py-1.5 rounded-full text-xs font-bold uppercase tracking-widest transition-all", filterAction === 'defer' ? "bg-destructive text-destructive-foreground shadow-md shadow-rose-500/20" : "bg-surface text-text-muted hover:bg-border dark:bg-white/5 dark:hover:bg-white/10 dark:text-text-muted")}>Defer</button>
+              <button onClick={() => setFilterAction('defer')} className={cn("px-3 py-1.5 rounded-full text-xs font-bold uppercase tracking-widest transition-all", filterAction === 'defer' ? "bg-destructive text-destructive-foreground shadow-md shadow-destructive/20" : "bg-surface text-text-muted hover:bg-border dark:bg-white/5 dark:hover:bg-white/10 dark:text-text-muted")}>Defer</button>
             </div>
             <div className="grid grid-cols-1 gap-4">
               <AnimatePresence mode="popLayout">
@@ -421,7 +418,7 @@ export const EnergyBudgetTool = ({
                       <div className="flex flex-col gap-1 relative z-10 border-l border-border/40 pl-6 mr-2">
                          <button onClick={() => toggleTaskAction(task.id, 'keep')} className={cn("text-[11px] font-black uppercase tracking-widest px-2 py-1 rounded transition-all w-20 text-center", task.action === 'keep' ? "bg-success text-white shadow-md shadow-success/20" : "text-success/50 hover:bg-success/10")}>Keep</button>
                          <button onClick={() => toggleTaskAction(task.id, 'delegate')} className={cn("text-[11px] font-black uppercase tracking-widest px-2 py-1 rounded transition-all w-20 text-center", task.action === 'delegate' ? "bg-warning text-warning-foreground shadow-md shadow-warning/20" : "text-warning/50 hover:bg-warning/10")}>Delegate</button>
-                         <button onClick={() => toggleTaskAction(task.id, 'defer')} className={cn("text-[11px] font-black uppercase tracking-widest px-2 py-1 rounded transition-all w-20 text-center", task.action === 'defer' ? "bg-destructive text-destructive-foreground shadow-md shadow-rose-500/20" : "text-destructive/50 hover:bg-destructive/10")}>Defer</button>
+                         <button onClick={() => toggleTaskAction(task.id, 'defer')} className={cn("text-[11px] font-black uppercase tracking-widest px-2 py-1 rounded transition-all w-20 text-center", task.action === 'defer' ? "bg-destructive text-destructive-foreground shadow-md shadow-destructive/20" : "text-destructive/50 hover:bg-destructive/10")}>Defer</button>
                       </div>
                       <button 
                         onClick={() => removeTask(task.id)} 
@@ -434,11 +431,11 @@ export const EnergyBudgetTool = ({
                 })}
               </AnimatePresence>
               {tasks.length === 0 && (
-                <div className="p-20 text-center border-2 border-dashed border-border/40 rounded-[3rem] space-y-4">
-                   <div className="w-20 h-20 glass mx-auto rounded-[2rem] flex items-center justify-center text-text-muted">
-                      <Zap className="w-8 h-8" />
+                <div className="p-20 text-center border-2 border-dashed border-border rounded-xl space-y-4">
+                   <div className="w-16 h-16 bg-surface mx-auto rounded-xl flex items-center justify-center text-text-muted">
+                      <Zap className="w-7 h-7" />
                    </div>
-                   <p className="text-text-muted font-medium">No load allocated. Nervous system at baseline.</p>
+                   <p className="text-text-muted font-medium">Nothing added yet — your energy budget is at baseline.</p>
                 </div>
               )}
             </div>
@@ -446,23 +443,23 @@ export const EnergyBudgetTool = ({
         </div>
 
         <div className="lg:col-span-4 space-y-10">
-          <div className="card glass p-6 border-warning/20 bg-warning/5">
-            <h4 className="text-sm font-black uppercase tracking-widest text-warning mb-2 flex items-center gap-2">
-              <Zap className="w-4 h-4" /> Telemetry Active
+          <div className="card p-6 border border-warning/20 bg-warning/5">
+            <h4 className="text-sm font-medium uppercase tracking-widest text-warning mb-2 flex items-center gap-2">
+              <Zap className="w-4 h-4" /> Tracking Active
             </h4>
             <p className="text-text-main font-medium text-xs leading-relaxed">
-              Integrations connected via the <strong>Nova Overload Shield</strong> are passively monitoring event pressure. 
-              If calendar load or message volume spikes, credits will be auto-deducted here to preserve capacity.
+              Integrations connected via <strong>Nova Overload Shield</strong> automatically factor in your calendar and message load here,
+              so if things spike, your budget adjusts to reflect it.
             </p>
           </div>
 
           <RelapseRadar />
 
-          <div className="card glass p-10 space-y-8 border-primary/20 shadow-2xl relative overflow-hidden group">
+          <div className="card p-6 sm:p-8 md:p-10 space-y-8 border border-primary/20 relative overflow-hidden group">
             <div className="relative z-10 space-y-8">
               <div className="flex items-center gap-3">
-                 <div className="w-1.5 h-1.5 rounded-full bg-primary animate-ping" />
-                 <h4 className="text-xs font-black text-text-muted uppercase tracking-[0.3em]">Load Assessor</h4>
+                 <div className="w-1.5 h-1.5 rounded-full bg-primary" />
+                 <h4 className="text-xs font-medium text-text-muted uppercase tracking-[0.3em]">Add a Task</h4>
               </div>
               
               <div className="space-y-6">
@@ -478,7 +475,7 @@ export const EnergyBudgetTool = ({
                 </div>
 
                 <div className="space-y-4">
-                  <p className="text-xs uppercase font-black tracking-widest text-text-muted ">System Vector</p>
+                  <p className="text-xs uppercase font-black tracking-widest text-text-muted ">Overview</p>
                   <div className="grid grid-cols-2 gap-3">
                     {Object.keys(typeConfig).map(type => (
                       <button
@@ -499,7 +496,7 @@ export const EnergyBudgetTool = ({
 
                 <div className="space-y-4">
                   <p className="text-xs uppercase font-black tracking-widest text-text-muted ">Strain Severity</p>
-                  <div className="grid grid-cols-3 gap-3">
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                     {(['High', 'Medium', 'Low'] as const).map(p => (
                       <button
                         key={p}
@@ -519,7 +516,7 @@ export const EnergyBudgetTool = ({
 
                 <div className="space-y-4">
                   <p className="text-xs uppercase font-black tracking-widest text-text-muted ">SHIP Alignment Pillar</p>
-                  <div className="grid grid-cols-4 gap-2">
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                     {(['Safety', 'Habits', 'Identity', 'Purpose'] as const).map(stage => {
                       const currentActiveStage = STAGE_MAP[currentStage] || 'Safety';
                       const isMatched = stage === currentActiveStage;
@@ -529,8 +526,8 @@ export const EnergyBudgetTool = ({
                           onClick={() => setNewShipStage(stage)}
                           className={cn(
                             "py-3 rounded-xl border text-[11px] font-black uppercase tracking-widest transition-all relative overflow-hidden",
-                            newShipStage === stage 
-                              ? "bg-primary text-primary-foreground border-indigo-600 shadow-lg shadow-indigo-600/20 scale-[1.02]" 
+                            newShipStage === stage
+                              ? "bg-primary text-primary-foreground border-primary shadow-lg shadow-primary/20 scale-[1.02]"
                               : "bg-surface/40 text-text-muted border-border/40 hover:border-border"
                           )}
                         >
@@ -562,10 +559,10 @@ export const EnergyBudgetTool = ({
                 </div>
 
                 <div className="space-y-4 pt-6">
-                  <button 
-                    onClick={addTask} 
-                    disabled={!newTaskName} 
-                    className="w-full btn-primary py-5 rounded-[2rem] disabled: uppercase tracking-[0.2em] font-black text-[11px] shadow-2xl shadow-primary/30 flex items-center justify-center gap-3 transition-all hover:scale-[1.02] active:scale-95"
+                  <button
+                    onClick={addTask}
+                    disabled={!newTaskName}
+                    className="w-full btn-primary py-5 rounded-xl disabled:opacity-40 uppercase tracking-[0.2em] font-medium text-[11px] flex items-center justify-center gap-3 transition-all hover:scale-[1.02] active:scale-95"
                   >
                     Integrate Load <Plus className="w-5 h-5" />
                   </button>
@@ -585,18 +582,15 @@ export const EnergyBudgetTool = ({
                 </div>
               </div>
             </div>
-            
-            <div className="absolute top-[-10%] left-[-10%] w-40 h-40 bg-primary opacity-[0.02] rounded-full blur-[60px]" />
           </div>
 
-          <div className="card glass p-8 space-y-4 border-none shadow-xl bg-card text-text-main relative overflow-hidden">
-            <div className="w-12 h-12 bg-primary/20 rounded-2xl flex items-center justify-center text-primary relative z-10">
-               <Zap className="w-6 h-6" />
+          <div className="card p-8 space-y-4 border border-border bg-card text-text-main relative overflow-hidden">
+            <div className="w-11 h-11 bg-primary/10 rounded-lg flex items-center justify-center text-primary relative z-10">
+               <Zap className="w-5 h-5" />
             </div>
-            <p className="italic text-text-muted text-sm leading-relaxed relative z-10 font-medium">
+            <p className="font-serif italic text-text-muted text-sm leading-relaxed relative z-10">
                {getAIAnalysis()}
             </p>
-            <div className="absolute right-0 bottom-0 opacity-10 blur-2xl w-32 h-32 bg-primary rounded-full" />
           </div>
         </div>
       </div>
@@ -614,18 +608,17 @@ export const EnergyBudgetTool = ({
               initial={{ scale: 0.95 }}
               animate={{ scale: 1 }}
               exit={{ scale: 0.95 }}
-              className="card bg-card border border-border shadow-2xl p-8 max-w-sm w-full relative overflow-hidden"
+              className="card bg-card border border-border shadow-lg p-8 max-w-sm w-full relative overflow-hidden"
               onClick={e => e.stopPropagation()}
             >
-              <div className="absolute top-0 right-0 w-32 h-32 bg-destructive/10 rounded-full blur-[40px] pointer-events-none" />
               <div className="relative z-10 space-y-6">
-                <div className="w-12 h-12 bg-destructive/20 rounded-2xl flex items-center justify-center text-destructive">
-                  <PieChart className="w-6 h-6" />
+                <div className="w-11 h-11 bg-destructive/10 rounded-lg flex items-center justify-center text-destructive">
+                  <PieChart className="w-5 h-5" />
                 </div>
                 <div>
-                  <h3 className="text-xl font-display font-bold text-text-main mb-2">Delete Task?</h3>
+                  <h3 className="text-xl font-display font-medium text-text-main mb-2">Delete Task?</h3>
                   <p className="text-text-muted text-sm">
-                    Warning: Deleting this task removes its energy allocation from your matrix. Are you sure you wish to proceed?
+                    This removes it from your energy budget for good. Are you sure?
                   </p>
                 </div>
                 <div className="flex gap-4">

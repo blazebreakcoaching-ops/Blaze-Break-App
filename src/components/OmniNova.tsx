@@ -211,19 +211,18 @@ export const OmniNova = ({ activeTab, fingerprint, stats }: OmniNovaProps) => {
     } catch(e) {}
 
     const contextContext = `
-      You are Nova, an elite-tier AI Recovery Coach for Corporate Athletes and High Achievers. 
+      You are Nova, an AI recovery coach helping someone through burnout recovery.
       CURRENT APP STATE:
       - Active Module: ${activeTab}
-      - Primary Objective: ${stats?.profile?.purpose || 'Not defined'}
-      - Role Environment: ${stats?.profile?.role || 'Executive'}
-      - Primary Drain/Threat: ${stats?.profile?.primaryDrain || 'Unknown'}
-      - Operational Tone: ${stats?.profile?.novaTone || 'Direct'}
+      - What they're working toward: ${stats?.profile?.purpose || 'Not defined'}
+      - Their role: ${stats?.profile?.role || 'Not specified'}
+      - What's draining them most: ${stats?.profile?.primaryDrain || 'Unknown'}
+      - Their preferred tone: ${stats?.profile?.novaTone || 'Direct'}
       - Burnout Profile: ${fingerprint?.profile || 'Unknown'}
       ${brainContext}
-      
-      You must provide contextual advice tailored to the '${activeTab}' module. 
-      Be direct, executive-focused, and never a generic therapist. Your goal is operational stability and preserving the asset (the user).
-      Use structured, highly analytical language, similar to a high-end management consultant focused on human performance. No apologies.
+
+      You must provide contextual advice tailored to the '${activeTab}' module.
+      Be practical and grounded rather than a generic therapist - give real, actionable support, not just validation. Match the tone they've indicated they prefer. Your goal is their wellbeing and sustainable recovery, not their output.
     `;
 
     try {
@@ -244,7 +243,7 @@ export const OmniNova = ({ activeTab, fingerprint, stats }: OmniNovaProps) => {
       
       setMessages(prev => [...prev, { role: 'model', text: data.text, privacyMetadata: data.privacyMetadata }]);
     } catch (err: any) {
-      setMessages(prev => [...prev, { role: 'model', text: 'Error connecting to neural link. Please check your API key in Settings.' }]);
+      setMessages(prev => [...prev, { role: 'model', text: 'Could not connect to voice chat. Please check your API key in Settings.' }]);
     } finally {
       setIsTyping(false);
     }
@@ -256,7 +255,7 @@ export const OmniNova = ({ activeTab, fingerprint, stats }: OmniNovaProps) => {
         whileHover={{ scale: 1.05 }}
         whileTap={{ scale: 0.95 }}
         onClick={() => setIsOpen(!isOpen)}
-        className="fixed bottom-20 md:bottom-6 right-6 z-50 w-14 h-14 rounded-2xl bg-card border border-border shadow-2xl flex items-center justify-center text-text-main hover:bg-card transition-colors group"
+        className="fixed bottom-20 md:bottom-6 right-6 z-50 w-14 h-14 rounded-xl bg-card border border-border shadow-lg flex items-center justify-center text-text-main hover:bg-card transition-colors group"
       >
         <Sparkles className="w-6 h-6 text-primary group-hover:rotate-12 transition-transform" />
       </motion.button>
@@ -268,7 +267,7 @@ export const OmniNova = ({ activeTab, fingerprint, stats }: OmniNovaProps) => {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 20, scale: 0.95 }}
             className={cn(
-              "fixed bottom-36 md:bottom-24 right-6 z-50 flex flex-col bg-card border border-border shadow-2xl rounded-2xl overflow-hidden transition-all duration-300",
+              "fixed bottom-36 md:bottom-24 right-6 z-50 flex flex-col bg-card border border-border shadow-lg rounded-xl overflow-hidden transition-all duration-300",
               isExpanded ? "w-[calc(100vw-3rem)] md:w-[450px] h-[75vh]" : "w-[calc(100vw-3rem)] md:w-[350px] h-[500px]"
             )}
           >
@@ -310,7 +309,7 @@ export const OmniNova = ({ activeTab, fingerprint, stats }: OmniNovaProps) => {
 
             {isVoiceActive ? (
               <div className="flex-1 flex flex-col items-center justify-center p-6 bg-surface relative">
-                <div className="w-24 h-24 rounded-full bg-destructive/10 flex items-center justify-center relative shadow-2xl shadow-rose-500/10">
+                <div className="w-24 h-24 rounded-full bg-destructive/10 flex items-center justify-center relative shadow-lg shadow-destructive/10">
                   <motion.div 
                      animate={{ scale: [1, 1.3, 1], opacity: [0.5, 0.8, 0.5] }}
                      transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
@@ -328,7 +327,7 @@ export const OmniNova = ({ activeTab, fingerprint, stats }: OmniNovaProps) => {
                        key={i}
                        animate={{ height: ["8px", `${15 + Math.random() * 20}px`, "8px"] }}
                        transition={{ duration: 0.6 + Math.random() * 0.4, repeat: Infinity, ease: "easeInOut" }}
-                       className="w-1.5 bg-rose-400 rounded-full"
+                       className="w-1.5 bg-destructive rounded-full"
                      />
                    ))}
                 </div>

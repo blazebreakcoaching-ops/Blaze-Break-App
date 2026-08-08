@@ -30,10 +30,9 @@ export const RuminationFurnace = ({ onCleared }: { onCleared?: () => void }) => 
       <motion.div 
         initial={{ opacity: 0, scale: 0.95, y: 10 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
-        className="card bg-background border border-white/[0.05] p-16 text-center flex flex-col items-center justify-center space-y-8 shadow-2xl relative overflow-hidden"
+        className="card bg-background border border-border p-8 sm:p-12 md:p-16 text-center flex flex-col items-center justify-center space-y-8 relative overflow-hidden"
       >
-        <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/noise-lines.png')] opacity-10 pointer-events-none" />
-        
+
         <div className="w-24 h-24 bg-white/[0.02] border border-white/[0.05] rounded-full flex items-center justify-center shadow-inner relative z-10">
           <Wind className="w-10 h-10 text-text-muted" />
         </div>
@@ -41,7 +40,7 @@ export const RuminationFurnace = ({ onCleared }: { onCleared?: () => void }) => 
         <div className="relative z-10 space-y-3 max-w-md">
           <h3 className="text-3xl font-display font-medium text-text-main tracking-tight">Vented to the Void</h3>
           <p className="text-text-muted leading-relaxed max-w-sm mx-auto">
-            The neural pattern has been forcefully dispersed. It no longer holds structural weight in your energy budget.
+            It's been let go. That thought no longer has a hold on your energy today.
           </p>
         </div>
         
@@ -49,16 +48,15 @@ export const RuminationFurnace = ({ onCleared }: { onCleared?: () => void }) => 
           onClick={handleReset} 
           className="relative z-10 text-xs font-black uppercase tracking-[0.2em] text-text-muted hover:text-text-main flex items-center gap-2 transition-colors px-6 py-3 rounded-full hover:bg-white/[0.02] border border-transparent hover:border-white/[0.05]"
         >
-          <RotateCcw className="w-3 h-3" /> Reinitialize Protocol
+          <RotateCcw className="w-3 h-3" /> Start Over
         </button>
       </motion.div>
     );
   }
 
   return (
-    <div className="card bg-background border-white/[0.05] p-10 lg:p-14 text-text-main relative overflow-hidden group shadow-2xl">
-      <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/noise-lines.png')] opacity-10 pointer-events-none" />
-      
+    <div className="card bg-background border border-border p-10 lg:p-14 text-text-main relative overflow-hidden group">
+
       {/* Dynamic Background Glow */}
       <div className={cn(
         "absolute top-0 right-0 p-6 flex opacity-20 transition-all duration-1000 transform pointer-events-none",
@@ -75,7 +73,7 @@ export const RuminationFurnace = ({ onCleared }: { onCleared?: () => void }) => 
           <div className="space-y-4">
             <h3 className="text-4xl lg:text-5xl font-display font-extrabold tracking-tight text-text-main">The Rumination Furnace</h3>
             <p className="text-text-muted leading-relaxed max-w-xl text-center mx-auto text-sm lg:text-base">
-              Transfer the recurring neural loop perfectly out of your system. The anger, the hypothetical arguments, the frustration. Render it as raw text. We will execute a hard incineration.
+              Get the recurring thought completely out of your head and onto the page. The anger, the hypothetical arguments, the frustration. Write it all out — then let it burn.
             </p>
           </div>
         </div>
@@ -105,10 +103,10 @@ export const RuminationFurnace = ({ onCleared }: { onCleared?: () => void }) => 
               value={input}
               onChange={(e) => setInput(e.target.value)}
               disabled={isBurning}
-              placeholder="Dump the neural pattern here. e.g., 'I am furious that my Saturday boundary was crossed again...'"
+              placeholder="Write down what's stuck in your head. e.g., 'I am furious that my Saturday boundary was crossed again...'"
               className={cn(
-                "w-full h-56 bg-transparent p-6 text-lg lg:text-xl font-medium placeholder-slate-700 focus:outline-none resize-none transition-all duration-700 relative z-10",
-                isBurning ? "text-warning grayscale opacity-30" : "text-white"
+                "w-full h-56 bg-transparent p-6 text-lg lg:text-xl font-medium placeholder:text-text-muted focus:outline-none resize-none transition-all duration-700 relative z-10",
+                isBurning ? "text-warning grayscale opacity-30" : "text-text-main"
               )}
               style={{
                 filter: isBurning ? 'blur(4px)' : 'none',
@@ -124,7 +122,7 @@ export const RuminationFurnace = ({ onCleared }: { onCleared?: () => void }) => 
                     className="absolute inset-0 flex flex-col items-center justify-center z-30"
                   >
                     <Flame className="w-20 h-20 text-text-main animate-pulse" />
-                    <span className="text-xs font-black uppercase tracking-[0.3em] text-text-main mt-4 drop-shadow-md">Incinerating Vector...</span>
+                    <span className="text-xs font-black uppercase tracking-[0.3em] text-text-main mt-4 drop-shadow-md">Incinerating...</span>
                   </motion.div>
                )}
             </AnimatePresence>

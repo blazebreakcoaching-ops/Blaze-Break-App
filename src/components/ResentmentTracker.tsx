@@ -31,7 +31,7 @@ export const ResentmentTracker = ({ fingerprint, onAwardPoints, onNavigate }: Re
         yesMeantNo: "You likely agreed to handle this outside of your core responsibilities because it felt faster than pushing back.",
         unappreciated: "The effort required remains invisible to the requestor, creating an emotional deficit.",
         unclear: "The standard operating procedure for this task is vaguely defined, making you the default fail-safe.",
-        missingBoundary: "A structural 'No' or a 'Not right now' protocol."
+        missingBoundary: "A clear 'No' or a 'Not right now.'"
       });
     }, 2000);
   };
@@ -62,7 +62,7 @@ export const ResentmentTracker = ({ fingerprint, onAwardPoints, onNavigate }: Re
         
         {/* Input Section */}
         <div className="space-y-6">
-          <div className="card glass p-8">
+          <div className="card border border-border p-8">
             <div className="flex items-center gap-3 mb-6">
               <div className="w-10 h-10 rounded-full bg-destructive/10 text-destructive flex items-center justify-center">
                 <Flame className="w-5 h-5" />
@@ -118,7 +118,7 @@ export const ResentmentTracker = ({ fingerprint, onAwardPoints, onNavigate }: Re
                  initial={{ opacity: 0 }}
                  animate={{ opacity: 1 }}
                  exit={{ opacity: 0 }}
-                 className="h-full min-h-[400px] flex flex-col items-center justify-center border-2 border-dashed border-border/50 rounded-3xl p-8 text-center text-text-muted "
+                 className="h-full min-h-[400px] flex flex-col items-center justify-center border-2 border-dashed border-border rounded-xl p-8 text-center text-text-muted "
                >
                  <AlertOctagon className="w-12 h-12 mb-4 opacity-50" />
                  <p className="font-display font-bold text-xl">Awaiting Data</p>
@@ -131,7 +131,7 @@ export const ResentmentTracker = ({ fingerprint, onAwardPoints, onNavigate }: Re
                  key="analysis"
                  initial={{ opacity: 0, scale: 0.95 }}
                  animate={{ opacity: 1, scale: 1 }}
-                 className="card glass border-primary/20 bg-primary/5 p-8 relative overflow-hidden h-full"
+                 className="card border border-primary/20 bg-primary/5 p-8 relative overflow-hidden h-full"
                >
                  <div className="relative z-10 space-y-8">
                    <div className="flex items-center gap-3">
@@ -190,8 +190,7 @@ export const ResentmentTracker = ({ fingerprint, onAwardPoints, onNavigate }: Re
                      </button>
                    </div>
                  </div>
-                 <div className="absolute right-[-10%] top-[-10%] w-64 h-64 bg-primary/10 rounded-full blur-[80px]" />
-               </motion.div>
+                                </motion.div>
              )}
            </AnimatePresence>
         </div>

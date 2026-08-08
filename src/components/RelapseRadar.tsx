@@ -6,7 +6,7 @@ export const RelapseRadar = () => {
   const triggers = [
     { label: 'Sleep Quality', value: 45, status: 'Low', color: 'text-destructive' },
     { label: 'Caffeine Intake', value: 80, status: 'High', color: 'text-warning' },
-    { label: 'Back-to-back Meetings', value: 95, status: 'Critical', color: 'text-rose-600' },
+    { label: 'Back-to-back Meetings', value: 95, status: 'Critical', color: 'text-destructive' },
     { label: 'Exercise Frequency', value: 20, status: 'At Risk', color: 'text-destructive' },
   ];
 
@@ -40,7 +40,7 @@ export const RelapseRadar = () => {
         </div>
 
         <div className="p-4 bg-rose-50 border border-rose-100 rounded-xl space-y-2">
-          <div className="flex items-center gap-2 text-rose-600">
+          <div className="flex items-center gap-2 text-destructive">
             <TrendingUp className="w-4 h-4" />
             <span className="text-xs uppercase font-black tracking-widest">Early Warning</span>
           </div>
@@ -50,7 +50,7 @@ export const RelapseRadar = () => {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div className="card p-5 bg-card border-none text-text-main overflow-hidden relative group">
           <div className="relative z-10 flex flex-col gap-2">
             <div className="flex items-center gap-2 text-primary">
@@ -60,8 +60,7 @@ export const RelapseRadar = () => {
             <div className="text-2xl font-light">10:45 AM</div>
             <p className="text-xs text-text-muted italic">High Executive Peak</p>
           </div>
-          <div className="absolute right-[-10%] bottom-[-10%] w-24 h-24 bg-primary/20 rounded-full blur-2xl group-hover:bg-primary/30 transition-colors" />
-        </div>
+                  </div>
 
         <div className="card p-5 bg-card border-none text-text-main overflow-hidden relative group">
           <div className="relative z-10 flex flex-col gap-2">
@@ -72,8 +71,7 @@ export const RelapseRadar = () => {
             <div className="text-2xl font-light">08:30 PM</div>
             <p className="text-xs text-text-muted italic">Mandatory Shutdown</p>
           </div>
-          <div className="absolute right-[-10%] bottom-[-10%] w-24 h-24 bg-text-main/20 rounded-full blur-2xl group-hover:bg-text-main/30 transition-colors" />
-        </div>
+                  </div>
       </div>
     </div>
   );

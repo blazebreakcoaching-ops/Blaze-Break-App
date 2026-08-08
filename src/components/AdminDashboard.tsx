@@ -356,15 +356,15 @@ export const AdminDashboard = () => {
       <motion.div
         initial={{ opacity: 0, scale: 0.95 }}
         animate={{ opacity: 1, scale: 1 }}
-        className="max-w-xl mx-auto p-8 rounded-3xl border border-border bg-card space-y-6 text-center shadow-2xl relative overflow-hidden my-12"
+        className="max-w-xl mx-auto p-8 rounded-xl border border-border bg-card space-y-6 text-center shadow-lg relative overflow-hidden my-12"
       >
-        <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-red-500 via-primary to-amber-500" />
+        <div className="absolute top-0 left-0 w-full h-1 bg-destructive" />
         <div className="p-4 bg-destructive/10 text-destructive rounded-full w-16 h-16 flex items-center justify-center mx-auto border border-destructive/20">
           <Lock className="w-8 h-8" />
         </div>
         
         <div className="space-y-2">
-          <h3 className="text-xl font-serif font-bold text-text-main">Access Denied</h3>
+          <h3 className="text-xl font-display font-bold text-text-main">Access Denied</h3>
           <p className="text-xs text-text-muted uppercase tracking-widest font-black">
             Required: Platform Admin Role
           </p>
@@ -387,7 +387,7 @@ export const AdminDashboard = () => {
                 localStorage.setItem('blaze_simulated_admin_role', 'platform_admin');
                 showSuccess("Successfully elevated to simulated Platform Admin!");
               }}
-              className="w-full py-2.5 bg-primary hover:bg-primary-hover text-white text-xs font-bold uppercase tracking-widest rounded-xl transition-all shadow-md flex items-center justify-center gap-2"
+              className="w-full py-2.5 bg-primary hover:opacity-90 text-primary-foreground text-xs font-bold uppercase tracking-widest rounded-xl transition-all shadow-md flex items-center justify-center gap-2"
             >
               <ShieldCheck className="w-4 h-4" /> Simulate Platform Admin
             </button>
@@ -441,7 +441,7 @@ export const AdminDashboard = () => {
       {/* Title Bar */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-white/10 pb-6">
         <div>
-          <h3 className="text-2xl font-serif font-bold text-text-main flex items-center gap-3">
+          <h3 className="text-2xl font-display font-bold text-text-main flex items-center gap-3">
             <ShieldCheck className="w-6 h-6 text-primary" /> Master Super Admin Portal
           </h3>
           <p className="text-xs text-text-muted mt-1 uppercase tracking-widest font-black">
@@ -538,7 +538,7 @@ export const AdminDashboard = () => {
                 </span>
               </h4>
             </div>
-            <div className="p-3 bg-indigo-500/10 text-indigo-400 rounded-xl">
+            <div className="p-3 bg-primary/10 text-primary rounded-xl">
               <CreditCard className="w-5 h-5" />
             </div>
           </div>
@@ -558,12 +558,12 @@ export const AdminDashboard = () => {
                 <span className="text-xs text-text-muted font-normal">Active Resets</span>
               </h4>
             </div>
-            <div className="p-3 bg-red-500/10 text-red-400 rounded-xl">
+            <div className="p-3 bg-destructive/10 text-destructive rounded-xl">
               <HeartPulse className="w-5 h-5" />
             </div>
           </div>
           <div className="pt-2 border-t border-white/5 flex items-center justify-between text-[11px] text-text-muted">
-            <span>Guardian Protocol: <strong className="text-text-main font-semibold">0 Triggered</strong></span>
+            <span>Guardian Alerts: <strong className="text-text-main font-semibold">0 Triggered</strong></span>
             <span>Crisis Referrals: <strong className="text-text-main font-semibold">0 Triggers</strong></span>
           </div>
         </div>
@@ -625,7 +625,7 @@ export const AdminDashboard = () => {
                   exit={{ opacity: 0, height: 0 }}
                   className="p-6 bg-primary/5 rounded-2xl border border-primary/20 space-y-4 overflow-hidden"
                 >
-                  <h4 className="font-serif text-lg font-bold text-text-main flex items-center gap-2">
+                  <h4 className="font-display text-lg font-bold text-text-main flex items-center gap-2">
                     <Key className="w-4 h-4 text-primary" /> Modify Custom User Claims
                   </h4>
                   <p className="text-xs text-text-muted">
@@ -739,7 +739,7 @@ export const AdminDashboard = () => {
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
             {/* Invite Form */}
             <div className="card p-6 bg-surface dark:bg-card border border-border rounded-2xl h-fit space-y-6">
-              <h4 className="font-serif text-lg font-bold text-text-main flex items-center gap-2">
+              <h4 className="font-display text-lg font-bold text-text-main flex items-center gap-2">
                 <UserPlus className="w-5 h-5 text-primary" /> Promote Admin Account
               </h4>
               <p className="text-xs text-text-muted leading-relaxed">
@@ -824,7 +824,7 @@ export const AdminDashboard = () => {
                         <td className="py-4">
                           <span className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-widest ${
                             adminUser.role === 'platform_owner' 
-                              ? 'bg-red-500/10 text-red-400 border border-red-500/20' 
+                              ? 'bg-destructive/10 text-destructive border border-destructive/20'
                               : adminUser.role === 'platform_admin'
                               ? 'bg-primary/10 text-primary border border-primary/20'
                               : 'bg-accent/10 text-accent border border-accent/20'
@@ -892,7 +892,7 @@ export const AdminDashboard = () => {
                     </p>
                     {log.details && Object.keys(log.details).length > 0 && (
                       <div className="p-2.5 bg-surface rounded-lg text-[10px] font-mono text-text-muted mt-2 border border-white/5 max-w-lg truncate">
-                        Payload: {JSON.stringify(log.details)}
+                        Details: {JSON.stringify(log.details)}
                       </div>
                     )}
                   </div>
@@ -966,12 +966,12 @@ export const AdminDashboard = () => {
               </div>
 
               {/* Secure Insights */}
-              <div className="p-6 bg-red-950/10 border border-red-500/20 rounded-2xl flex flex-col justify-between">
+              <div className="p-6 bg-destructive/10 border border-destructive/20 rounded-2xl flex flex-col justify-between">
                 <div className="space-y-4">
-                  <div className="p-2.5 bg-red-500/10 text-red-400 rounded-xl w-fit">
+                  <div className="p-2.5 bg-destructive/10 text-destructive rounded-xl w-fit">
                     <Heart className="w-5 h-5 fill-current" />
                   </div>
-                  <h4 className="font-serif text-lg font-bold text-text-main">Somatic Efficacy Insight</h4>
+                  <h4 className="font-display text-lg font-bold text-text-main">Somatic Efficacy Insight</h4>
                   <p className="text-xs text-text-muted leading-relaxed">
                     Based on anonymized telemetry events, <span className="text-text-main font-semibold">"{metrics.mostEffectiveTool}"</span> is the highest-performing tool, causing the largest percentage drops in subjective anxiety.
                   </p>

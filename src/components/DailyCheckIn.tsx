@@ -51,7 +51,7 @@ export const DailyCheckIn = ({ onComplete, onClose }: DailyCheckInProps) => {
         initial={{ opacity: 0, scale: 0.95, y: 20 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.95, y: 20 }}
-        className="relative w-full max-w-md bg-card rounded-3xl shadow-2xl overflow-hidden"
+        className="relative w-full max-w-md bg-card rounded-xl shadow-lg overflow-hidden"
       >
         <div className="p-6 border-b border-border flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -160,11 +160,11 @@ export const DailyCheckIn = ({ onComplete, onClose }: DailyCheckInProps) => {
                       onClick={() => setBlameStage(b.id)}
                       className={cn(
                         "w-full flex flex-col p-4 rounded-2xl border transition-all text-left",
-                        blameStage === b.id ? "bg-white border-destructive shadow-md ring-1 ring-rose-500/20" : "bg-surface border-transparent hover:bg-white hover:border-border"
+                        blameStage === b.id ? "bg-card border-destructive shadow-md ring-1 ring-destructive/20" : "bg-surface border-transparent hover:bg-card hover:border-border"
                       )}
                     >
                       <div className="flex items-center justify-between w-full mb-1">
-                        <span className={cn("font-bold text-sm", blameStage === b.id ? "text-rose-600" : "text-text-muted")}>{b.label}</span>
+                        <span className={cn("font-bold text-sm", blameStage === b.id ? "text-destructive" : "text-text-muted")}>{b.label}</span>
                         {blameStage === b.id && <Check className="w-4 h-4 text-destructive" />}
                       </div>
                       <p className={cn("text-xs leading-relaxed", blameStage === b.id ? "text-destructive/80" : "text-text-muted")}>

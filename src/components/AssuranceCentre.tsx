@@ -12,7 +12,7 @@ export const AssuranceCentre = () => {
     { id: 'governance', icon: FileText, label: 'Product Governance' },
     { id: 'ai', icon: Zap, label: 'AI Governance' },
     { id: 'privacy', icon: Lock, label: 'Privacy & Consent' },
-    { id: 'safety', icon: AlertTriangle, label: 'Safety Protocol' },
+    { id: 'safety', icon: AlertTriangle, label: 'Safety Practices' },
     { id: 'security', icon: Server, label: 'Security & Auth' },
     { id: 'compliance', icon: ShieldCheck, label: 'Compliance Features' },
     { id: 'evidence', icon: BarChart, label: 'Evidence & ROI' },
@@ -184,12 +184,12 @@ export const AssuranceCentre = () => {
             <div>
               <h2 className="text-xl font-bold text-text-main mb-2">Guardian & Safety Framework</h2>
               <p className="text-sm text-text-muted max-w-3xl leading-relaxed">
-                Rules governing the Guardian Protocol and emergency signposting. Not an automated crisis detection system.
+                Rules governing Guardian Alerts and emergency signposting. Not an automated crisis detection system.
               </p>
             </div>
             <div className="p-6 bg-warning/10 border border-warning/20 rounded-2xl border-dashed">
               <h3 className="text-warning font-bold mb-2 flex items-center gap-2">
-                <AlertTriangle className="w-4 h-4" /> Operational Safeguards
+                <AlertTriangle className="w-4 h-4" /> Safety Measures
               </h3>
               <ul className="text-sm text-warning space-y-2 list-none">
                 <li>• No AI auto-triggering without explicit user confirmation step.</li>
@@ -264,7 +264,7 @@ export const AssuranceCentre = () => {
               </p>
             </div>
             <div className="p-6 bg-surface/50 border border-white/[0.04] rounded-2xl">
-              <h3 className="font-semibold text-text-main mb-4">Metric Validation Protocol</h3>
+              <h3 className="font-semibold text-text-main mb-4">How We Validate Our Metrics</h3>
               <div className="space-y-4">
                 <div className="flex items-center gap-4">
                   <div className="w-8 h-8 rounded-full bg-card flex items-center justify-center text-text-muted text-xs font-bold">1</div>

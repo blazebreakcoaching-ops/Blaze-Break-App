@@ -69,52 +69,52 @@ export const Walkthrough = ({
       themeColor: "from-amber-500/10 to-orange-500/10 text-warning border-warning/20"
     },
     {
-      title: "The Burnout diagnostic & Fingerprint",
+      title: "The Burnout Diagnostic & Fingerprint",
       pill: "Pillar 1: Diagnostic Profile",
-      description: "Analyze your burnout archetype across five specialized profiles (hyper-achieved, martyr fawners, isolated-solitary, etc.). Spotting your core looping behaviors prevents future relapse cycles.",
-      recoveryInference: "Helps you surface hidden energy leaks and identify behavioral loops before they trigger autonomic exhaustion.",
+      description: "Take the assessment to find your burnout archetype — 12 real patterns, from Founder on Fire to The Impostor to Crisis Sprinter — plus your actual blend, not just one label. Spotting the pattern is what prevents it from repeating.",
+      recoveryInference: "Helps you surface where your energy is actually leaking, before it turns into full burnout.",
       icon: ShieldAlert,
-      themeColor: "from-destructive/10 to-red-500/10 text-destructive border-destructive/20"
+      themeColor: "from-destructive/10 to-destructive/5 text-destructive border-destructive/20"
     },
     {
-      title: "Neuro-Stability Score and Dashboard",
+      title: "Your Recovery Score & Dashboard",
       pill: "Pillar 2: Ledger & Dashboard",
-      description: "Monitor your stability metrics. Your Burnout Recovery Score represents real-time integration. Earning points through actions recalibrates your cognitive and nervous baseline stability.",
-      recoveryInference: "Gamification anchors positive behaviors. Tracking streaks prevents fawning relapse patterns.",
+      description: "Track your Recovery Score in real time. Completing recovery actions and staying consistent moves the number — a clear, honest read on where you actually stand.",
+      recoveryInference: "Consistency is what actually moves the score. Streaks aren't just gamification — they're the pattern that prevents relapse.",
       icon: Activity,
       themeColor: "from-emerald-500/10 to-teal-500/10 text-success border-success/20"
     },
     {
-      title: "Capacitance & Energy Budgets",
+      title: "Energy Budget",
       pill: "Pillar 3: Load Allocator",
-      description: "Never allocate task loads blindly. Restrict total active tasks based on your weekly capacitance limits. Assign SHIP stages and prioritize tasks safely to maintain nervous reserves.",
-      recoveryInference: "Tasks matching your current SHIP recovery phase are designated 'Phase Anchors'—earning bonus rewards on integration.",
+      description: "Don't take on tasks blindly. Set a weekly energy budget, assign your SHIP recovery stage to each task, and see clearly what you can actually handle right now.",
+      recoveryInference: "Tasks that match your current SHIP stage are flagged as 'Phase Anchors' — the ones worth prioritizing while you recover.",
       icon: Battery,
-      themeColor: "from-primary/10 to-purple-500/10 text-primary border-primary/20"
+      themeColor: "from-primary/10 to-primary/5 text-primary border-primary/20"
     },
     {
       title: "Boundary Rehearsal Workroom",
       pill: "Pillar 4: Boundary Rehearsal",
-      description: "Rehearse direct script parameters under stress. Work through challenging verbal negotiators (boss pushing tight scope, fawning clients) and record script firm ratings.",
-      recoveryInference: "Builds somatic neural paths for saying 'No' precisely, without performance fawning or cognitive guilt.",
+      description: "Practice saying no before you actually have to. Rehearse real scripts against a tough roleplay partner (the pushy boss, the demanding client) and build the confidence to hold the line.",
+      recoveryInference: "Saying 'no' gets easier with practice — this builds the muscle before you need it in the moment.",
       icon: Zap,
-      themeColor: "from-violet-500/10 to-primary/10 text-violet-500 border-violet-500/25"
+      themeColor: "from-primary/15 to-primary/5 text-primary border-primary/25"
     },
     {
       title: "Nova AI – Strategic Recovery Coach",
       pill: "Pillar 5: Coached Training",
-      description: "Consult Nova, your direct, analytical recovery advocate. Nova checks diagnostic logs, active load matrices, and leverages a Context Memory Brain to help you dismantle behavioral patterns.",
-      recoveryInference: "Not therapist platitudes—firm, technical, goal-oriented parameters that safeguard your mental & neural energy stability.",
+      description: "Nova is your direct, honest recovery coach. She checks in on your patterns, remembers your history, and helps you actually work through what's going on — not generic advice.",
+      recoveryInference: "Direct and specific, not therapist platitudes — practical guidance that actually accounts for your situation.",
       icon: Brain,
       themeColor: "from-primary/10 to-primary/10 text-primary border-primary/20"
     },
     {
-      title: "The Safe Evolution Engine",
+      title: "Settings & Controls",
       pill: "Governance Layer",
-      description: "Toggle active experimental feature flags or audit the Cognitive Brain. Your feedback ratings on advice are stored inside Nova's context and help refine future coaching directives.",
-      recoveryInference: "Decentralized control ensures full privacy, absolute transparency, and architectural self-determination.",
+      description: "Toggle experimental features on or off, and review what Nova remembers about you. Your feedback on her advice helps her get better over time.",
+      recoveryInference: "You're always in control — full transparency into what's tracked and what Nova knows.",
       icon: Layers,
-      themeColor: "from-slate-500/10 to-slate-700/10 text-text-muted border-muted-foreground/25"
+      themeColor: "from-surface to-surface text-text-muted border-border"
     }
   ];
 
@@ -211,7 +211,7 @@ export const Walkthrough = ({
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.95, y: 20 }}
             transition={{ type: "spring", damping: 25, stiffness: 180 }}
-            className="w-full max-w-2xl bg-white dark:bg-card rounded-[2.5rem] border border-border shadow-2xl relative overflow-hidden my-8"
+            className="w-full max-w-2xl bg-white dark:bg-card rounded-xl border border-border shadow-lg relative overflow-hidden my-8"
           >
             {/* Header / progress ribbon */}
             <div className="absolute top-0 left-0 right-0 h-1.5 bg-surface dark:bg-card/40 flex">
@@ -225,7 +225,7 @@ export const Walkthrough = ({
                 />
               ))}
               {activeModule !== 'general_tour' && (
-                <div className="h-full w-full bg-gradient-to-r from-primary via-indigo-500 to-amber-500" />
+                <div className="h-full w-full bg-primary" />
               )}
             </div>
 
@@ -263,18 +263,18 @@ export const Walkthrough = ({
                       setPracticeInput('');
                       setRehearsalFeedback(null);
                     }}
-                    className="p-5 rounded-2xl bg-surface dark:bg-card border border-border hover:border-violet-500/40 hover:bg-violet-500/[0.02] transition-all text-left space-y-3 group"
+                    className="p-5 rounded-2xl bg-surface dark:bg-card border border-border hover:border-primary/40 hover:bg-primary/[0.02] transition-all text-left space-y-3 group"
                   >
                     <div className="flex justify-between items-center">
-                      <div className="p-2.5 bg-violet-500/10 text-violet-400 rounded-xl">
+                      <div className="p-2.5 bg-primary/10 text-primary rounded-xl">
                         <Zap className="w-5 h-5" />
                       </div>
-                      <span className="text-[10px] uppercase font-black tracking-widest text-violet-400 bg-violet-500/10 px-2 py-0.5 rounded-full">
+                      <span className="text-[10px] uppercase font-black tracking-widest text-primary bg-primary/10 px-2 py-0.5 rounded-full">
                         Module A
                       </span>
                     </div>
                     <div className="space-y-1">
-                      <h4 className="font-bold text-sm text-text-main flex items-center gap-1 group-hover:text-violet-400 transition-colors">
+                      <h4 className="font-bold text-sm text-text-main flex items-center gap-1 group-hover:text-primary transition-colors">
                         Boundary Rehearsal
                       </h4>
                       <p className="text-xs text-text-muted leading-relaxed">
@@ -290,22 +290,22 @@ export const Walkthrough = ({
                       setIsBreathingActive(false);
                       setSomaticComplete(false);
                     }}
-                    className="p-5 rounded-2xl bg-surface dark:bg-card border border-border hover:border-red-500/40 hover:bg-red-500/[0.02] transition-all text-left space-y-3 group"
+                    className="p-5 rounded-2xl bg-surface dark:bg-card border border-border hover:border-destructive/40 hover:bg-destructive/[0.02] transition-all text-left space-y-3 group"
                   >
                     <div className="flex justify-between items-center">
-                      <div className="p-2.5 bg-red-500/10 text-red-400 rounded-xl">
+                      <div className="p-2.5 bg-destructive/10 text-destructive rounded-xl">
                         <HeartPulse className="w-5 h-5 animate-pulse" />
                       </div>
-                      <span className="text-[10px] uppercase font-black tracking-widest text-red-400 bg-red-500/10 px-2 py-0.5 rounded-full">
+                      <span className="text-[10px] uppercase font-black tracking-widest text-destructive bg-destructive/10 px-2 py-0.5 rounded-full">
                         Module B
                       </span>
                     </div>
                     <div className="space-y-1">
-                      <h4 className="font-bold text-sm text-text-main flex items-center gap-1 group-hover:text-red-400 transition-colors">
+                      <h4 className="font-bold text-sm text-text-main flex items-center gap-1 group-hover:text-destructive transition-colors">
                         Somatic Anxiety Reset
                       </h4>
                       <p className="text-xs text-text-muted leading-relaxed">
-                        Deploy micro-breathwork and sensory grounding anchors to immediately break high autonomic arousal states.
+                        Use micro-breathwork and sensory grounding anchors to help break high autonomic arousal states.
                       </p>
                     </div>
                   </button>
@@ -330,11 +330,11 @@ export const Walkthrough = ({
               <div className="p-8 md:p-12 space-y-6">
                 <div className="flex items-center justify-between border-b border-border pb-4">
                   <div className="flex items-center gap-3">
-                    <div className="p-2 bg-violet-500/10 text-violet-400 rounded-xl">
+                    <div className="p-2 bg-primary/10 text-primary rounded-xl">
                       <Zap className="w-5 h-5" />
                     </div>
                     <div>
-                      <h4 className="font-serif text-lg font-bold text-text-main">Module A: Boundary Rehearsal</h4>
+                      <h4 className="font-display text-lg font-bold text-text-main">Module A: Boundary Rehearsal</h4>
                       <p className="text-[10px] text-text-muted uppercase tracking-widest font-black">Interactive Nova Simulator</p>
                     </div>
                   </div>
@@ -364,9 +364,9 @@ export const Walkthrough = ({
                         }}
                         className={cn(
                           "p-3 rounded-xl border text-left transition-all space-y-1",
-                          selectedScriptId === scen.id 
-                            ? "bg-violet-500/10 border-violet-500 text-text-main" 
-                            : "bg-surface dark:bg-card/40 border-border hover:border-violet-500/20 text-text-muted"
+                          selectedScriptId === scen.id
+                            ? "bg-primary/10 border-primary text-text-main"
+                            : "bg-surface dark:bg-card/40 border-border hover:border-primary/20 text-text-muted"
                         )}
                       >
                         <h5 className="font-bold text-xs">{scen.label}</h5>
@@ -378,7 +378,7 @@ export const Walkthrough = ({
 
                 {/* Script Display */}
                 <div className="p-4 bg-surface rounded-xl border border-border space-y-2">
-                  <span className="text-[10px] font-black uppercase tracking-widest text-violet-400 block">
+                  <span className="text-[10px] font-black uppercase tracking-widest text-primary block">
                     Nova Approved Coping Script:
                   </span>
                   <p className="text-xs italic font-serif text-text-main leading-relaxed">
@@ -402,13 +402,13 @@ export const Walkthrough = ({
                     value={practiceInput}
                     onChange={(e) => setPracticeInput(e.target.value)}
                     placeholder="Type or copy your response to test against Nova's analytical boundaries (e.g. 'I can do that, but to maintain quality I need...')"
-                    className="w-full bg-surface dark:bg-card border border-border p-3 text-xs rounded-xl focus:outline-none focus:border-violet-500"
+                    className="w-full bg-surface dark:bg-card border border-border p-3 text-xs rounded-xl focus:outline-none focus:border-primary"
                   />
                   <div className="flex justify-end gap-3">
                     <button
                       onClick={generateSimulatedCritique}
                       disabled={feedbackLoading || !practiceInput.trim()}
-                      className="px-6 py-2.5 bg-violet-600 hover:bg-violet-700 disabled:opacity-30 text-white font-bold uppercase tracking-widest text-xs rounded-xl transition-all shadow-md shadow-violet-500/10 flex items-center gap-2"
+                      className="px-6 py-2.5 bg-primary hover:opacity-90 disabled:opacity-30 text-primary-foreground font-bold uppercase tracking-widest text-xs rounded-xl transition-all shadow-md shadow-primary/10 flex items-center gap-2"
                     >
                       {feedbackLoading ? 'Processing...' : 'Submit to Nova for Critique'} <MessageSquare className="w-4 h-4" />
                     </button>
@@ -422,10 +422,10 @@ export const Walkthrough = ({
                       initial={{ opacity: 0, y: 10 }}
                       animate={{ opacity: 1, y: 0 }}
                       exit={{ opacity: 0, y: 10 }}
-                      className="p-5 bg-violet-950/20 border border-violet-500/20 rounded-2xl space-y-3"
+                      className="p-5 bg-primary/20 border border-primary/20 rounded-2xl space-y-3"
                     >
-                      <span className="text-[10px] uppercase font-black tracking-widest text-violet-400 block">
-                        Autonomic Boundary Critique
+                      <span className="text-[10px] uppercase font-black tracking-widest text-primary block">
+                        Boundary Script Feedback
                       </span>
                       <p className="text-xs text-text-muted leading-relaxed whitespace-pre-line">
                         {rehearsalFeedback}
@@ -436,7 +436,7 @@ export const Walkthrough = ({
                         </span>
                         <button
                           onClick={() => navigateTabDirect('communicate')}
-                          className="px-4 py-2 bg-violet-600 hover:bg-violet-700 text-white text-[10px] uppercase font-black tracking-wider rounded-lg transition-colors flex items-center gap-1"
+                          className="px-4 py-2 bg-primary hover:opacity-90 text-primary-foreground text-[10px] uppercase font-black tracking-wider rounded-lg transition-colors flex items-center gap-1"
                         >
                           Launch Full Workroom <ArrowRight className="w-3 h-3" />
                         </button>
@@ -452,11 +452,11 @@ export const Walkthrough = ({
               <div className="p-8 md:p-12 space-y-6">
                 <div className="flex items-center justify-between border-b border-border pb-4">
                   <div className="flex items-center gap-3">
-                    <div className="p-2 bg-red-500/10 text-red-400 rounded-xl">
+                    <div className="p-2 bg-destructive/10 text-destructive rounded-xl">
                       <HeartPulse className="w-5 h-5 animate-pulse" />
                     </div>
                     <div>
-                      <h4 className="font-serif text-lg font-bold text-text-main">Module B: Somatic Anxiety Reset</h4>
+                      <h4 className="font-display text-lg font-bold text-text-main">Module B: Somatic Anxiety Reset</h4>
                       <p className="text-[10px] text-text-muted uppercase tracking-widest font-black">Autonomic Nervous Regulation</p>
                     </div>
                   </div>
@@ -487,9 +487,9 @@ export const Walkthrough = ({
                         }}
                         className={cn(
                           "p-3 rounded-xl border text-center transition-all space-y-1",
-                          selectedTrigger === trig.id 
-                            ? "bg-red-500/10 border-red-500 text-text-main" 
-                            : "bg-surface dark:bg-card/40 border-border hover:border-red-500/20 text-text-muted"
+                          selectedTrigger === trig.id
+                            ? "bg-destructive/10 border-destructive text-text-main"
+                            : "bg-surface dark:bg-card/40 border-border hover:border-destructive/20 text-text-muted"
                         )}
                       >
                         <h5 className="font-bold text-xs">{trig.label}</h5>
@@ -502,7 +502,7 @@ export const Walkthrough = ({
                 {/* Breathing Pacer Simulator block */}
                 <div className="p-6 bg-surface dark:bg-card rounded-2xl border border-border flex flex-col items-center justify-center space-y-4 text-center relative overflow-hidden">
                   <div className="absolute top-2 left-3 text-[9px] font-mono text-text-muted uppercase">
-                    Autonomic Breathwork Loop (Simulated)
+                    Breathwork Loop (Simulated)
                   </div>
 
                   {/* Pacer Visual Circle */}
@@ -521,8 +521,8 @@ export const Walkthrough = ({
                         )}
                       />
                     </AnimatePresence>
-                    <div className="w-24 h-24 rounded-full border-2 border-dashed border-red-500/40 flex flex-col items-center justify-center z-10 bg-card">
-                      <span className="text-xs font-black uppercase text-red-400 tracking-wider">
+                    <div className="w-24 h-24 rounded-full border-2 border-dashed border-destructive/40 flex flex-col items-center justify-center z-10 bg-card">
+                      <span className="text-xs font-black uppercase text-destructive tracking-wider">
                         {isBreathingActive ? breathPhase : 'Standby'}
                       </span>
                       {isBreathingActive && (
@@ -535,7 +535,7 @@ export const Walkthrough = ({
 
                   <div className="space-y-1">
                     <p className="text-xs font-bold text-text-main">
-                      {!isBreathingActive ? "Ready to test somatic down-regulation?" : `Autonomic Phase: ${breathPhase}`}
+                      {!isBreathingActive ? "Ready to test somatic down-regulation?" : `Breath Phase: ${breathPhase}`}
                     </p>
                     <p className="text-[10px] text-text-muted max-w-sm">
                       {!isBreathingActive 
@@ -554,9 +554,9 @@ export const Walkthrough = ({
                     }}
                     className={cn(
                       "px-5 py-2 rounded-xl text-xs font-bold uppercase tracking-wider transition-all flex items-center gap-1.5",
-                      isBreathingActive 
-                        ? "bg-red-500/10 border border-red-500/30 text-red-400 hover:bg-red-500/20" 
-                        : "bg-red-600 hover:bg-red-700 text-white"
+                      isBreathingActive
+                        ? "bg-destructive/10 border border-destructive/30 text-destructive hover:bg-destructive/20"
+                        : "bg-destructive hover:opacity-90 text-destructive-foreground"
                     )}
                   >
                     {isBreathingActive ? (
@@ -573,9 +573,9 @@ export const Walkthrough = ({
                     <motion.div
                       initial={{ opacity: 0, y: 10 }}
                       animate={{ opacity: 1, y: 0 }}
-                      className="p-5 bg-red-950/20 border border-red-500/20 rounded-2xl space-y-2.5"
+                      className="p-5 bg-destructive/20 border border-destructive/20 rounded-2xl space-y-2.5"
                     >
-                      <span className="text-[10px] uppercase font-black tracking-widest text-red-400 block">
+                      <span className="text-[10px] uppercase font-black tracking-widest text-destructive block">
                         Biometric Down-Regulation Profile
                       </span>
                       <p className="text-xs text-text-muted leading-relaxed">
@@ -590,7 +590,7 @@ export const Walkthrough = ({
                             if (onAwardPoints) onAwardPoints(25, "Completed Somatic Reset Pacer Test");
                             navigateTabDirect('anxiety_reset');
                           }}
-                          className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-[10px] uppercase font-black tracking-wider rounded-lg transition-colors flex items-center gap-1"
+                          className="px-4 py-2 bg-destructive hover:opacity-90 text-destructive-foreground text-[10px] uppercase font-black tracking-wider rounded-lg transition-colors flex items-center gap-1"
                         >
                           Open Full Somatic Studio <ArrowRight className="w-3 h-3" />
                         </button>
@@ -669,7 +669,7 @@ export const Walkthrough = ({
                     </button>
                     <button
                       onClick={handleNext}
-                      className="px-8 py-3.5 bg-primary hover:bg-primary-hover text-primary-foreground rounded-xl text-xs font-black uppercase tracking-[0.15em] flex items-center gap-2 shadow-lg shadow-primary/30 hover:scale-[1.02] active:scale-95 transition-all cursor-pointer"
+                      className="px-8 py-3.5 bg-primary hover:opacity-90 text-primary-foreground rounded-xl text-xs font-black uppercase tracking-[0.15em] flex items-center gap-2 shadow-lg shadow-primary/30 hover:scale-[1.02] active:scale-95 transition-all cursor-pointer"
                     >
                       {currentStep === steps.length - 1 ? (
                         <>Graduate Tour (+30 pts) <Sparkles className="w-4 h-4" /></>

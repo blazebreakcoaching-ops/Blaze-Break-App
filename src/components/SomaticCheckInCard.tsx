@@ -136,7 +136,7 @@ export const SomaticCheckInCard: React.FC<SomaticCheckInCardProps> = ({
                 disabled={selectedOptions.length === 0 && note.trim().length === 0}
                 className="w-full btn-primary py-3 flex items-center justify-center gap-2 text-xs rounded-xl shadow-lg border border-primary/25 disabled:opacity-50 cursor-pointer"
               >
-                <Check className="w-4 h-4 text-white" />
+                <Check className="w-4 h-4" />
                 <span>Save Check-In</span>
               </button>
             </motion.div>
@@ -168,7 +168,7 @@ const SmartCardWrapper = ({ id, title, children }: { id: string, title: string, 
       onDragStart={(e) => { e.dataTransfer.setData('cardId', id); }}
       onDragOver={(e) => { e.preventDefault(); }}
       className={cn(
-        "card group select-none cursor-grab active:cursor-grabbing border border-white/[0.05] dark:bg-card/45 bg-background/40 backdrop-blur-xl relative transition-all duration-500 hover:shadow-[0_0_30px_rgba(99,102,241,0.06)] overflow-hidden rounded-3xl"
+        "card group select-none cursor-grab active:cursor-grabbing border border-white/[0.05] dark:bg-card/45 bg-background/40 relative transition-all duration-500 hover:shadow-[0_0_30px_rgba(234,88,12,0.06)] overflow-hidden rounded-xl"
       )}
     >
       <div className="absolute top-1.5 right-3 text-[9px] text-text-muted/20 font-black uppercase tracking-widest pointer-events-none font-mono">
