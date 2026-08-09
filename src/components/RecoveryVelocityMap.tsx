@@ -1,24 +1,26 @@
-import React, { useState } from 'react';
-import { 
-  ResponsiveContainer, 
-  ComposedChart, 
-  Area, 
-  Line, 
-  XAxis, 
-  YAxis, 
-  CartesianGrid, 
-  Tooltip 
+import React, { useState, useEffect } from 'react';
+import {
+  ResponsiveContainer,
+  ComposedChart,
+  Area,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip
 } from 'recharts';
-import { 
-  Heart, 
-  TrendingUp, 
-  AlertTriangle, 
-  Activity, 
+import {
+  Heart,
+  TrendingUp,
+  AlertTriangle,
+  Activity,
   Info,
   Calendar,
-  Sparkles
+  Sparkles,
+  Loader2
 } from 'lucide-react';
 import { cn } from '../lib/utils';
+import { secureApiFetch } from '../lib/secure-api';
 
 interface DayData {
   date: string;
@@ -28,47 +30,20 @@ interface DayData {
   notes: string;
 }
 
-// Generate high-resolution 30-day data points tracking energy output vs recovery input
-const generate30DayData = (): DayData[] => {
-  return Array.from({ length: 30 }).map((_, i) => {
-    const d = new Date();
-    d.setDate(d.getDate() - (29 - i));
-    const formattedDate = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-    
-    // Day of week determines load curves
-    const dayOfWeek = d.getDay(); 
-    const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
-
-    // Workload peaks on Tue-Thursday
-    const baseEnergy = isWeekend ? 30 : 65;
-    const dayNoise = Math.sin(i * 0.8) * 15;
-    const energyOutput = Math.max(20, Math.min(100, Math.floor(baseEnergy + dayNoise + Math.random() * 10)));
-
-    // Recovery inputs lag behind, but peak on weekends or after burnout events
-    const baseRecovery = isWeekend ? 80 : 50;
-    const recoveryNoise = Math.cos(i * 0.6) * 12;
-    const recoveryInput = Math.max(25, Math.min(100, Math.floor(baseRecovery + recoveryNoise + Math.random() * 12)));
-
-    const balance = recoveryInput - energyOutput;
-
-    // Adaptive diagnostic annotations based on balance status
-    let notes = "Steady state dynamic.";
-    if (balance < -15) {
-      notes = "Critical Neurological Load: High Output Deficit.";
-    } else if (balance > 15) {
-      notes = "Optimal Reparative Buffer: Active Restoration.";
-    } else if (balance < 0) {
-      notes = "High Pressure Right Now.";
-    }
-
-    return {
-      date: formattedDate,
-      energyOutput,
-      recoveryInput,
-      balance,
-      notes
-    };
-  });
+// Derives the diagnostic annotation from a real day's balance - the numbers
+// themselves now come from the person's own logged activity via
+// /api/recovery/velocity-map, not a generated sine/cosine curve.
+const annotateDay = (energyOutput: number, recoveryInput: number): DayData => {
+  const balance = recoveryInput - energyOutput;
+  let notes = "Steady state dynamic.";
+  if (balance < -15) {
+    notes = "High Output Deficit.";
+  } else if (balance > 15) {
+    notes = "Active Restoration.";
+  } else if (balance < 0) {
+    notes = "High Pressure Right Now.";
+  }
+  return { date: '', energyOutput, recoveryInput, balance, notes };
 };
 
 // Custom high-contrast tooltip conforming to premium dark palette
@@ -130,18 +105,49 @@ const CustomTooltip = ({ active, payload }: any) => {
 };
 
 export const RecoveryVelocityMap = () => {
-  const [data] = useState<DayData[]>(generate30DayData);
+  const [data, setData] = useState<DayData[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [hasAnyData, setHasAnyData] = useState(false);
   const [viewMode, setViewMode] = useState<'all' | 'recovery' | 'energy'>('all');
 
-  // Compute key analytics to feed Nova's direct analytical comments
-  const averageEnergy = Math.round(data.reduce((acc, curr) => acc + curr.energyOutput, 0) / data.length);
-  const averageRecovery = Math.round(data.reduce((acc, curr) => acc + curr.recoveryInput, 0) / data.length);
-  const deficitDays = data.filter(d => d.balance < 0).length;
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const res = await secureApiFetch('/api/recovery/velocity-map');
+        if (res.ok) {
+          const json = await res.json();
+          const mapped: DayData[] = (json.days || []).map((d: any) => ({
+            ...annotateDay(d.energyOutput ?? 0, d.recoveryInput ?? 0),
+            date: d.date,
+          }));
+          setData(mapped);
+          setHasAnyData(!!json.hasAnyData);
+        }
+      } catch (e) {
+        // Leaves data empty - the honest "not enough logged yet" state below.
+      }
+      setLoading(false);
+    };
+    load();
+  }, []);
+
+  // Only days with genuinely logged activity count toward these averages -
+  // a day with no real signal isn't a "0", it's simply unknown.
+  const daysWithData = data.filter(d => d.energyOutput > 0 || d.recoveryInput > 0);
+  const averageEnergy = daysWithData.length > 0 ? Math.round(daysWithData.reduce((acc, curr) => acc + curr.energyOutput, 0) / daysWithData.length) : 0;
+  const averageRecovery = daysWithData.length > 0 ? Math.round(daysWithData.reduce((acc, curr) => acc + curr.recoveryInput, 0) / daysWithData.length) : 0;
+  const deficitDays = daysWithData.filter(d => d.balance < 0).length;
   const netVelocityBalance = averageRecovery - averageEnergy;
 
   // Analytical coaching suggestions from Nova based on computed results
   const getNovaDirectComment = () => {
-    if (netVelocityBalance < -5) {
+    if (daysWithData.length < 5) {
+      return {
+        text: "Not enough activity logged yet to spot a real pattern here. Keep using the app's recovery tools and daily check-ins, and this will start reflecting your actual rhythm.",
+        alert: false,
+        action: "Log a check-in or complete a recovery tool to start building this picture."
+      };
+    } else if (netVelocityBalance < -5) {
       return {
         text: "Your neural fuel reserves are leaking. Your cumulative energy output rate is consistently outrunning autonomic regulation inputs. This is not a sustainable operational pace — you are borrowing against next month's cognitive baseline. Patch this leak now.",
         alert: true,
@@ -218,6 +224,17 @@ export const RecoveryVelocityMap = () => {
         </div>
       </div>
 
+      {loading ? (
+        <div className="flex items-center justify-center py-16">
+          <Loader2 className="w-6 h-6 animate-spin text-primary" />
+        </div>
+      ) : !hasAnyData ? (
+        <div className="py-16 text-center border-2 border-dashed border-border rounded-2xl space-y-2">
+          <TrendingUp className="w-8 h-8 mx-auto text-text-muted opacity-30" />
+          <p className="text-text-muted text-sm font-medium max-w-sm mx-auto">Nothing logged yet. Use energy budgets, focus sessions, check-ins, or wins, and this will start reflecting your real trend.</p>
+        </div>
+      ) : (
+      <>
       {/* Primary Analytics Summary Band */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <div className="bg-surface/30 dark:bg-card/20 border border-border/40 p-4 rounded-2xl transition-all hover:border-border duration-500">
@@ -350,6 +367,8 @@ export const RecoveryVelocityMap = () => {
           </ComposedChart>
         </ResponsiveContainer>
       </div>
+      </>
+      )}
 
       {/* Nova Coaching Diagnostics Panel */}
       <div className={cn(

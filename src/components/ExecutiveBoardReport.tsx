@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
-import { Download, TrendingUp, TrendingDown, Clock, ShieldAlert, Activity, FileText, RefreshCw, Loader2, Layers, AlertTriangle } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Download, TrendingUp, Clock, ShieldAlert, Activity, FileText, RefreshCw, Loader2, Layers } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { useAuth } from '../lib/auth';
 import { UserStats } from '../types';
+import { secureApiFetch } from '../lib/secure-api';
 
 export const ExecutiveBoardReport = ({
   stats: userStats,
@@ -24,13 +25,37 @@ export const ExecutiveBoardReport = ({
   const [includeAICommentary, setIncludeAICommentary] = useState(true);
   const [includeMetricsGrid, setIncludeMetricsGrid] = useState(true);
   const [includeBurnRate, setIncludeBurnRate] = useState(true);
-  const [includeSomaticResets, setIncludeSomaticResets] = useState(true);
   const [includeCorporateSignature, setIncludeCorporateSignature] = useState(true);
 
   // Progressive compiling step outputs
   const [isProcessingProgress, setIsProcessingProgress] = useState(false);
   const [compilationProgress, setCompilationProgress] = useState(0);
   const [compilationStatusText, setCompilationStatusText] = useState("");
+
+  const [reportData, setReportData] = useState<{
+    deepWorkHours: number;
+    boundariesProtected: number;
+    burnRatePercent: number | null;
+    sleepDebtHours: number | null;
+    aiAnalysis: string | null;
+    hasEnoughData: boolean;
+  } | null>(null);
+  const [reportLoading, setReportLoading] = useState(true);
+
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const res = await secureApiFetch('/api/signals/executive-report');
+        if (res.ok) {
+          setReportData(await res.json());
+        }
+      } catch (e) {
+        // Leaves reportData null - the UI shows an honest "no data yet" state.
+      }
+      setReportLoading(false);
+    };
+    load();
+  }, []);
 
   const isSyncActive = isGlobalSyncing !== undefined ? isGlobalSyncing : isSyncing;
 
@@ -60,14 +85,26 @@ export const ExecutiveBoardReport = ({
 
     setCompilationProgress(40);
     setCompilationStatusText("Querying active recovery metrics from state store...");
-    await new Promise(r => setTimeout(r, 800));
+    let fetchedData = reportData;
+    if (!fetchedData) {
+      try {
+        const res = await secureApiFetch('/api/signals/executive-report');
+        if (res.ok) {
+          fetchedData = await res.json();
+          setReportData(fetchedData);
+        }
+      } catch (e) {
+        // Falls through to the honest "not enough data yet" state below.
+      }
+    }
+    await new Promise(r => setTimeout(r, 300));
 
     setCompilationProgress(70);
     setCompilationStatusText("Compiling autonomic print layouts and schemas...");
     await new Promise(r => setTimeout(r, 650));
 
     setCompilationProgress(90);
-    setCompilationStatusText("Injecting cryptographically verified signatures...");
+    setCompilationStatusText(fetchedData?.aiAnalysis ? "Reviewed by Nova..." : "Finalizing without AI commentary...");
     await new Promise(r => setTimeout(r, 550));
 
     setCompilationProgress(100);
@@ -80,17 +117,17 @@ export const ExecutiveBoardReport = ({
 
     // Call dynamic PDF construction
     setTimeout(() => {
-      executeDownloadBlob();
+      executeDownloadBlob(fetchedData);
     }, 500);
   };
 
-  const executeDownloadBlob = () => {
+  const executeDownloadBlob = (liveReportData: typeof reportData) => {
     const liveName = userStats?.profile?.fullName || user?.displayName || user?.email || "Executive Recovery Pro Client";
-    const liveRole = userStats?.profile?.role || "Strategic Recovery Executive";
-    const liveOrg = userStats?.profile?.organization || "Global Corporate Workspace Division";
-    const pointsTotal = userStats?.points !== undefined ? userStats?.points : 450;
-    const streak = userStats?.streak !== undefined ? userStats?.streak : 3;
-    const sleepDebtVal = userStats?.debts?.find(d => d.label.toLowerCase().includes('sleep'))?.value ?? 2.1;
+    const liveRole = userStats?.profile?.role || "Not specified";
+    const liveOrg = userStats?.profile?.organization || "Not specified";
+    const pointsTotal = userStats?.points ?? 0;
+    const streak = userStats?.streak ?? 0;
+    const sleepDebtVal = liveReportData?.sleepDebtHours;
     const compilationDate = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
 
     const htmlContent = `
@@ -286,22 +323,24 @@ export const ExecutiveBoardReport = ({
         ${includeAICommentary ? `
         <div class="summary-card">
             <div class="summary-title">Nova Core AI Analysis</div>
-            <div class="summary-text">"Your biological burn rate exceeded your recovery fuel by 15% this week. You successfully defended 2 hours of deep work, but boundary failure on Wednesday evening created a rolling sleep debt. Baseline stability is currently fragile. Recommendation: Immediate 30-minute decompression doorway enforcement before weekend transition."</div>
+            <div class="summary-text">${liveReportData?.aiAnalysis
+              ? liveReportData.aiAnalysis
+              : "Not enough activity has been logged yet to generate a grounded analysis. This section will populate once you've used the app's recovery tools (deep work sessions, boundary rehearsal, workload check-ins)."}</div>
         </div>
         ` : ''}
 
         ${includeBurnRate ? `
         <div class="grid">
             <div class="stat-card" style="border-left: 4px solid #6366f1;">
-                <div class="stat-label">Biological Burn Rate</div>
-                <div class="stat-value">115%</div>
-                <div class="stat-desc">Cumulative somatic drain relative to baseline fuel thresholds.</div>
+                <div class="stat-label">Workload Burn Rate</div>
+                <div class="stat-value">${liveReportData?.burnRatePercent !== null && liveReportData?.burnRatePercent !== undefined ? `${liveReportData.burnRatePercent}%` : 'No data yet'}</div>
+                <div class="stat-desc">Active task energy drain relative to weekly capacity, from your Workload Reality Check.</div>
             </div>
-            
+
             <div class="stat-card" style="border-left: 4px solid #10b981;">
-                <div class="stat-label">Boundaries Held</div>
-                <div class="stat-value">4 Protected</div>
-                <div class="stat-desc">Protected deep focus blocks & meeting refusals.</div>
+                <div class="stat-label">Boundaries Protected</div>
+                <div class="stat-value">${liveReportData ? `${liveReportData.boundariesProtected} Practiced` : 'No data yet'}</div>
+                <div class="stat-desc">Boundary scripts rehearsed this week.</div>
             </div>
         </div>
         ` : ''}
@@ -314,30 +353,22 @@ export const ExecutiveBoardReport = ({
                     <th>Core Indicator Metric</th>
                     <th>Value / Capacity</th>
                     <th>Defensive Context</th>
-                    <th>Somatic Sync Status</th>
+                    <th>Status</th>
                 </tr>
             </thead>
             <tbody>
                 <tr>
                     <td>Deep Work Protected</td>
-                    <td><strong>4.5 hrs</strong></td>
-                    <td>High-value focus preservation</td>
-                    <td style="color: #10b981; font-weight: bold;">Protected</td>
+                    <td><strong>${liveReportData ? `${liveReportData.deepWorkHours} hrs` : 'No data yet'}</strong></td>
+                    <td>High-value focus preservation, this week</td>
+                    <td style="color: #10b981; font-weight: bold;">${liveReportData && liveReportData.deepWorkHours > 0 ? 'Protected' : 'Not yet logged'}</td>
                 </tr>
                 <tr>
                     <td>Sleep Debt Carried</td>
-                    <td><strong>${sleepDebtVal} hrs</strong></td>
+                    <td><strong>${sleepDebtVal !== null && sleepDebtVal !== undefined ? `${sleepDebtVal} hrs` : 'Not logged'}</strong></td>
                     <td>Cumulative sleep shortfalls carryover</td>
-                    <td style="color: ${sleepDebtVal > 3 ? '#ef4444' : '#f59e0b'}; font-weight: bold;">${sleepDebtVal > 3 ? 'Overloaded' : 'Caution'}</td>
+                    <td style="color: ${sleepDebtVal !== null && sleepDebtVal !== undefined ? (sleepDebtVal > 3 ? '#ef4444' : '#f59e0b') : '#6b7280'}; font-weight: bold;">${sleepDebtVal !== null && sleepDebtVal !== undefined ? (sleepDebtVal > 3 ? 'Overloaded' : 'Caution') : 'No data'}</td>
                 </tr>
-                ${includeSomaticResets ? `
-                <tr>
-                    <td>Somatic Resets</td>
-                    <td><strong>7 Completed</strong></td>
-                    <td>Decompression Doorway sessions completed</td>
-                    <td style="color: #10b981; font-weight: bold;">Stable</td>
-                </tr>
-                ` : ''}
                 <tr>
                     <td>Recovery Velocity Return (ROI)</td>
                     <td><strong>${pointsTotal} pts</strong></td>
@@ -403,11 +434,6 @@ export const ExecutiveBoardReport = ({
 
   return (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
-      <div className="bg-warning/10 border border-warning/20 text-warning rounded-xl p-4 text-sm font-bold flex gap-2">
-        <AlertTriangle className="w-5 h-5 shrink-0" />
-        Demo data only — financials are estimated opportunities, not verified savings.
-      </div>
-      
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
           <h2 className="text-3xl font-display font-bold text-text-main tracking-tight">Executive Board Report</h2>
@@ -455,7 +481,11 @@ export const ExecutiveBoardReport = ({
               <Activity className="w-4 h-4" /> Nova AI Analysis
             </h3>
             <p className="text-lg leading-relaxed text-text-main font-serif">
-              "Your biological burn rate exceeded your recovery fuel by 15% this week. You successfully defended 2 hours of deep work, but boundary failure on Wednesday evening created a rolling sleep debt. Baseline stability is currently fragile. Recommendation: Immediate 30-minute decompression doorway enforcement before weekend transition."
+              {reportLoading
+                ? "Loading your recovery analysis..."
+                : reportData?.aiAnalysis
+                  ? reportData.aiAnalysis
+                  : "Not enough activity has been logged yet to generate a grounded analysis. Use the app's recovery tools this week - deep work sessions, boundary rehearsal, workload check-ins - and this will populate."}
             </p>
           </div>
           <div className="relative z-10 flex items-center gap-4 border-t border-border pt-6 mt-6">
@@ -470,25 +500,24 @@ export const ExecutiveBoardReport = ({
         {/* Global Stats */}
         <div className="space-y-6">
           <div className="card p-6 border-l-4 border-l-primary">
-            <p className="text-xs text-text-muted uppercase tracking-widest font-bold mb-2">Biological Burn Rate</p>
+            <p className="text-xs text-text-muted uppercase tracking-widest font-bold mb-2">Workload Burn Rate</p>
             <div className="flex items-end gap-3">
-              <span className="text-4xl font-black text-text-main tracking-tighter">115%</span>
-              <span className="text-destructive text-sm flex items-center font-bold mb-1">
-                <TrendingUp className="w-4 h-4 mr-1" /> +15%
+              <span className="text-4xl font-black text-text-main tracking-tighter">
+                {reportData?.burnRatePercent !== null && reportData?.burnRatePercent !== undefined ? `${reportData.burnRatePercent}%` : '—'}
               </span>
             </div>
-            <p className="text-xs text-text-muted mt-3">Exceeding sustainable energy output.</p>
+            <p className="text-xs text-text-muted mt-3">{reportData?.burnRatePercent !== null && reportData?.burnRatePercent !== undefined ? 'Active task energy drain vs. weekly capacity.' : 'No workload data logged yet.'}</p>
           </div>
-          
+
           <div className="card p-6 border-l-4 border-l-success">
             <p className="text-xs text-text-muted uppercase tracking-widest font-bold mb-2">Boundaries Held</p>
             <div className="flex items-end gap-3">
-              <span className="text-4xl font-black text-text-main tracking-tighter">4</span>
+              <span className="text-4xl font-black text-text-main tracking-tighter">{reportData?.boundariesProtected ?? 0}</span>
               <span className="text-success text-sm flex items-center font-bold mb-1">
-                <ShieldAlert className="w-4 h-4 mr-1" /> Protected
+                <ShieldAlert className="w-4 h-4 mr-1" /> Practiced
               </span>
             </div>
-            <p className="text-xs text-text-muted mt-3">Declined meetings & protected focus blocks.</p>
+            <p className="text-xs text-text-muted mt-3">Boundary scripts rehearsed this week.</p>
           </div>
         </div>
       </div>
@@ -498,21 +527,16 @@ export const ExecutiveBoardReport = ({
         <h3 className="text-xs font-black uppercase tracking-[0.2em] text-text-muted mb-4 ml-2">Weekly Yield Metrics</h3>
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
           {[
-            { label: 'Deep Work Protected', value: '4.5 hrs', trend: 'up', icon: Clock },
-            { label: 'Sleep Debt Carried', value: `${userStats?.debts?.find(d => d.label.toLowerCase().includes('sleep'))?.value ?? 2.1} hrs`, trend: 'down', icon: Activity },
-            { label: 'Somatic Resets', value: '7', trend: 'up', icon: ShieldAlert },
-            { label: 'Recovery ROI', value: 'High', trend: 'up', icon: TrendingUp },
+            { label: 'Deep Work Protected', value: reportData ? `${reportData.deepWorkHours} hrs` : '—', icon: Clock },
+            { label: 'Sleep Debt Carried', value: reportData?.sleepDebtHours !== null && reportData?.sleepDebtHours !== undefined ? `${reportData.sleepDebtHours} hrs` : 'Not logged', icon: Activity },
+            { label: 'Boundaries Practiced', value: String(reportData?.boundariesProtected ?? 0), icon: ShieldAlert },
+            { label: 'Recovery ROI', value: userStats?.points ? `${userStats.points} pts` : 'No data yet', icon: TrendingUp },
           ].map((metric, i) => (
             <div key={i} className="card p-5 group hover:border-primary/30 transition-all cursor-default">
               <div className="flex justify-between items-start mb-4">
                 <div className="p-2 bg-surface rounded-lg text-text-muted group-hover:text-primary transition-colors">
                   <metric.icon className="w-4 h-4" />
                 </div>
-                {metric.trend === 'up' ? (
-                  <TrendingUp className="w-4 h-4 text-success" />
-                ) : (
-                  <TrendingDown className="w-4 h-4 text-destructive" />
-                )}
               </div>
               <p className="text-2xl font-bold text-text-main tracking-tight">{metric.value}</p>
               <p className="text-[10px] uppercase tracking-widest font-bold text-text-muted mt-2">{metric.label}</p>
@@ -564,9 +588,9 @@ export const ExecutiveBoardReport = ({
                     <div className="border-t border-white/[0.02] pt-4 flex justify-between items-center">
                       <div>
                         <p className="text-sm font-bold text-text-main">Biological Burn Metrics</p>
-                        <p className="text-[11px] text-text-muted">Include active somatic fatigue and stress boundary status card</p>
+                        <p className="text-[11px] text-text-muted">Include workload burn rate and boundaries-practiced card</p>
                       </div>
-                      <input 
+                      <input
                         type="checkbox"
                         checked={includeBurnRate}
                         onChange={(e) => setIncludeBurnRate(e.target.checked)}
@@ -579,25 +603,11 @@ export const ExecutiveBoardReport = ({
                         <p className="text-sm font-bold text-text-main">Weekly Recovery Metrics</p>
                         <p className="text-[11px] text-text-muted">Generate data grid report with active Sleep Debt, Deep Work duration, and Points ROI</p>
                       </div>
-                      <input 
+                      <input
                         type="checkbox"
                         checked={includeMetricsGrid}
                         onChange={(e) => setIncludeMetricsGrid(e.target.checked)}
                         className="h-4 w-4 rounded-md accent-primary"
-                      />
-                    </div>
-
-                    <div className="border-t border-white/[0.02] pt-4 flex justify-between items-center">
-                      <div>
-                        <p className="text-sm font-bold text-text-main">Verify Somatic Reset Count</p>
-                        <p className="text-[11px] text-text-muted">Show completed nervous system doorway integrations inside yield grid</p>
-                      </div>
-                      <input 
-                        type="checkbox"
-                        disabled={!includeMetricsGrid}
-                        checked={includeSomaticResets && includeMetricsGrid}
-                        onChange={(e) => setIncludeSomaticResets(e.target.checked)}
-                        className="h-4 w-4 rounded-md accent-primary disabled:opacity-30"
                       />
                     </div>
 
