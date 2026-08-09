@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Key, Info, RefreshCw, AlertTriangle, CheckCircle2, CalendarDays, MessageSquare } from 'lucide-react';
+import { Key, Info, RefreshCw, AlertTriangle, CheckCircle2, CalendarDays, MessageSquare, ListChecks, CheckSquare, LayoutGrid, Clock3, Mail } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { NotificationSettingsView } from './NotificationSettingsView';
 import { useAuth } from '../lib/auth';
 import { secureApiFetch, SecureApiError } from '../lib/secure-api';
 import { syncCalendarSignal } from '../lib/calendar-signals';
+import { syncGmailSignal } from '../lib/gmail-signals';
 
 interface Integration {
   id: string;
@@ -20,12 +21,12 @@ interface Integration {
 const OAUTH_SERVICE_IDS = ['slack', 'jira', 'asana', 'calendly', 'monday'] as const;
 
 const BASE_INTEGRATIONS: Integration[] = [
-  { id: 'google', name: 'Google Workspace', description: 'Calendar events and Gmail inbox shielding.', status: 'disconnected', iconUrl: 'https://upload.wikimedia.org/wikipedia/commons/c/c1/Google_%22G%22_logo.svg' },
-  { id: 'slack', name: 'Slack', description: 'Auto-reply and Do-Not-Disturb scheduling.', status: 'disconnected', iconUrl: 'https://upload.wikimedia.org/wikipedia/commons/d/d5/Slack_icon_2019.svg' },
-  { id: 'calendly', name: 'Calendly', description: 'Time-block buffering and capacity management.', status: 'disconnected', iconUrl: 'https://upload.wikimedia.org/wikipedia/commons/7/70/Calendly_logo.svg' },
-  { id: 'jira', name: 'Jira', description: 'Workload reality checking and sprint velocity tracking.', status: 'disconnected', iconUrl: 'https://upload.wikimedia.org/wikipedia/commons/8/82/Jira_%28Software%29_logo.svg' },
-  { id: 'asana', name: 'Asana', description: 'Task offload and task-debt tracking.', status: 'disconnected', iconUrl: 'https://upload.wikimedia.org/wikipedia/commons/3/3b/Asana_logo.svg' },
-  { id: 'monday', name: 'Monday.com', description: 'Project tracking integration for timeline realities.', status: 'disconnected', iconUrl: 'https://upload.wikimedia.org/wikipedia/commons/c/c6/Monday_logo.svg' }
+  { id: 'google', name: 'Google Workspace', description: 'Real calendar meeting-load and Gmail inbox-load tracking.', status: 'disconnected', iconUrl: 'https://upload.wikimedia.org/wikipedia/commons/c/c1/Google_%22G%22_logo.svg' },
+  { id: 'slack', name: 'Slack', description: 'Real message-load tracking, Do-Not-Disturb scheduling, and auto-reply.', status: 'disconnected', iconUrl: 'https://upload.wikimedia.org/wikipedia/commons/d/d5/Slack_icon_2019.svg' },
+  { id: 'jira', name: 'Jira', description: 'Real open issue count, overdue issues, and priority load.', status: 'disconnected', iconUrl: 'https://upload.wikimedia.org/wikipedia/commons/8/82/Jira_%28Software%29_logo.svg' },
+  { id: 'asana', name: 'Asana', description: 'Real incomplete and overdue task counts.', status: 'disconnected', iconUrl: 'https://upload.wikimedia.org/wikipedia/commons/3/3b/Asana_logo.svg' },
+  { id: 'calendly', name: 'Calendly', description: 'Real upcoming booking load and back-to-back tracking.', status: 'disconnected', iconUrl: 'https://upload.wikimedia.org/wikipedia/commons/7/70/Calendly_logo.svg' },
+  { id: 'monday', name: 'Monday.com', description: 'Real active item and overdue-timeline tracking.', status: 'disconnected', iconUrl: 'https://upload.wikimedia.org/wikipedia/commons/c/c6/Monday_logo.svg' }
 ];
 
 export const IntegrationsDashboard = () => {
@@ -34,19 +35,44 @@ export const IntegrationsDashboard = () => {
   const [returnBanner, setReturnBanner] = useState<{ service: string; status: 'connected' | 'error'; reason?: string } | null>(null);
   const [calendarSignal, setCalendarSignal] = useState<any>(null);
   const [slackSignal, setSlackSignal] = useState<any>(null);
+  const [jiraSignal, setJiraSignal] = useState<any>(null);
+  const [asanaSignal, setAsanaSignal] = useState<any>(null);
+  const [mondaySignal, setMondaySignal] = useState<any>(null);
+  const [calendlySignal, setCalendlySignal] = useState<any>(null);
+  const [gmailSignal, setGmailSignal] = useState<any>(null);
   const [isRefreshingCalendar, setIsRefreshingCalendar] = useState(false);
+  const [isRefreshingJira, setIsRefreshingJira] = useState(false);
+  const [isRefreshingAsana, setIsRefreshingAsana] = useState(false);
+  const [isRefreshingMonday, setIsRefreshingMonday] = useState(false);
+  const [isRefreshingCalendly, setIsRefreshingCalendly] = useState(false);
+  const [isRefreshingGmail, setIsRefreshingGmail] = useState(false);
 
   const refreshSignalsStatus = useCallback(async () => {
     if (!user) return;
     try {
-      const [calRes, slackRes] = await Promise.all([
+      const [calRes, slackRes, jiraRes, asanaRes, mondayRes, calendlyRes, gmailRes] = await Promise.all([
         secureApiFetch('/api/signals/calendar'),
         secureApiFetch('/api/signals/slack'),
+        secureApiFetch('/api/signals/jira'),
+        secureApiFetch('/api/signals/asana'),
+        secureApiFetch('/api/signals/monday'),
+        secureApiFetch('/api/signals/calendly'),
+        secureApiFetch('/api/signals/gmail'),
       ]);
       const calData = await calRes.json();
       const slackData = await slackRes.json();
+      const jiraData = await jiraRes.json();
+      const asanaData = await asanaRes.json();
+      const mondayData = await mondayRes.json();
+      const calendlyData = await calendlyRes.json();
+      const gmailData = await gmailRes.json();
       setCalendarSignal(calData?.state || null);
       setSlackSignal(slackData?.state || null);
+      setJiraSignal(jiraData?.state || null);
+      setAsanaSignal(asanaData?.state || null);
+      setMondaySignal(mondayData?.state || null);
+      setCalendlySignal(calendlyData?.state || null);
+      setGmailSignal(gmailData?.state || null);
     } catch (e) {
       // Signal fetch failing shouldn't break the page — cards just stay hidden or stale.
     }
@@ -60,6 +86,61 @@ export const IntegrationsDashboard = () => {
       await refreshSignalsStatus();
     } finally {
       setIsRefreshingCalendar(false);
+    }
+  };
+
+  const handleManualJiraRefresh = async () => {
+    if (isRefreshingJira) return;
+    setIsRefreshingJira(true);
+    try {
+      await secureApiFetch('/api/signals/jira/refresh', { method: 'POST' });
+      await refreshSignalsStatus();
+    } finally {
+      setIsRefreshingJira(false);
+    }
+  };
+
+  const handleManualAsanaRefresh = async () => {
+    if (isRefreshingAsana) return;
+    setIsRefreshingAsana(true);
+    try {
+      await secureApiFetch('/api/signals/asana/refresh', { method: 'POST' });
+      await refreshSignalsStatus();
+    } finally {
+      setIsRefreshingAsana(false);
+    }
+  };
+
+  const handleManualMondayRefresh = async () => {
+    if (isRefreshingMonday) return;
+    setIsRefreshingMonday(true);
+    try {
+      await secureApiFetch('/api/signals/monday/refresh', { method: 'POST' });
+      await refreshSignalsStatus();
+    } finally {
+      setIsRefreshingMonday(false);
+    }
+  };
+
+  const handleManualCalendlyRefresh = async () => {
+    if (isRefreshingCalendly) return;
+    setIsRefreshingCalendly(true);
+    try {
+      await secureApiFetch('/api/signals/calendly/refresh', { method: 'POST' });
+      await refreshSignalsStatus();
+    } finally {
+      setIsRefreshingCalendly(false);
+    }
+  };
+
+  const handleManualGmailRefresh = async () => {
+    if (!accessToken || isRefreshingGmail) return;
+    setIsRefreshingGmail(true);
+    try {
+      await syncGmailSignal(accessToken);
+      await refreshSignalsStatus();
+    } finally {
+      setIsRefreshingGmail(false);
     }
   };
 
@@ -259,7 +340,12 @@ export const IntegrationsDashboard = () => {
         ))}
       </div>
 
-      {(calendarSignal || slackSignal || accessToken || integrations.find(i => i.id === 'slack')?.status === 'connected') && (
+      {(calendarSignal || slackSignal || jiraSignal || asanaSignal || mondaySignal || calendlySignal || gmailSignal || accessToken ||
+        integrations.find(i => i.id === 'slack')?.status === 'connected' ||
+        integrations.find(i => i.id === 'jira')?.status === 'connected' ||
+        integrations.find(i => i.id === 'asana')?.status === 'connected' ||
+        integrations.find(i => i.id === 'monday')?.status === 'connected' ||
+        integrations.find(i => i.id === 'calendly')?.status === 'connected') && (
         <div className="max-w-4xl space-y-4">
           <h4 className="text-xl font-light text-text-main tracking-tight">Live Signals</h4>
           <p className="text-sm text-text-muted leading-relaxed max-w-2xl">
@@ -328,6 +414,161 @@ export const IntegrationsDashboard = () => {
                     />
                   </div>
                 </div>
+              )}
+            </div>
+
+            <div className="card bg-card border border-border p-6 space-y-4">
+              <div className="flex items-start justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-primary/10 text-primary flex items-center justify-center shrink-0">
+                    <ListChecks className="w-5 h-5" />
+                  </div>
+                  <h5 className="font-bold text-text-main">Jira Workload</h5>
+                </div>
+                {integrations.find(i => i.id === 'jira')?.status === 'connected' && (
+                  <button
+                    onClick={handleManualJiraRefresh}
+                    disabled={isRefreshingJira}
+                    className="text-text-muted hover:text-primary transition-colors disabled:opacity-50"
+                    aria-label="Refresh Jira signal"
+                  >
+                    <RefreshCw className={cn("w-4 h-4", isRefreshingJira && "animate-spin")} />
+                  </button>
+                )}
+              </div>
+              {integrations.find(i => i.id === 'jira')?.status !== 'connected' ? (
+                <p className="text-xs text-text-muted leading-relaxed">Connect Jira above to see your real open issue count.</p>
+              ) : jiraSignal ? (
+                <div className="space-y-1.5 text-sm">
+                  <p className="text-text-main"><span className="font-black">{jiraSignal.totalOpenIssues}</span> <span className="text-text-muted">open issues assigned to you{jiraSignal.siteName ? ` on ${jiraSignal.siteName}` : ''}</span></p>
+                  <p className="text-text-muted text-xs">{jiraSignal.overdueIssues} overdue &middot; {jiraSignal.highPriorityOpen} high priority</p>
+                </div>
+              ) : (
+                <p className="text-xs text-text-muted leading-relaxed">No data yet — tap refresh to pull your assigned issues.</p>
+              )}
+            </div>
+
+            <div className="card bg-card border border-border p-6 space-y-4">
+              <div className="flex items-start justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-primary/10 text-primary flex items-center justify-center shrink-0">
+                    <CheckSquare className="w-5 h-5" />
+                  </div>
+                  <h5 className="font-bold text-text-main">Asana Task Debt</h5>
+                </div>
+                {integrations.find(i => i.id === 'asana')?.status === 'connected' && (
+                  <button
+                    onClick={handleManualAsanaRefresh}
+                    disabled={isRefreshingAsana}
+                    className="text-text-muted hover:text-primary transition-colors disabled:opacity-50"
+                    aria-label="Refresh Asana signal"
+                  >
+                    <RefreshCw className={cn("w-4 h-4", isRefreshingAsana && "animate-spin")} />
+                  </button>
+                )}
+              </div>
+              {integrations.find(i => i.id === 'asana')?.status !== 'connected' ? (
+                <p className="text-xs text-text-muted leading-relaxed">Connect Asana above to see your real incomplete task count.</p>
+              ) : asanaSignal ? (
+                <div className="space-y-1.5 text-sm">
+                  <p className="text-text-main"><span className="font-black">{asanaSignal.totalIncompleteTasks}</span> <span className="text-text-muted">incomplete tasks assigned to you</span></p>
+                  <p className="text-text-muted text-xs">{asanaSignal.overdueTasks} overdue</p>
+                </div>
+              ) : (
+                <p className="text-xs text-text-muted leading-relaxed">No data yet — tap refresh to pull your assigned tasks.</p>
+              )}
+            </div>
+
+            <div className="card bg-card border border-border p-6 space-y-4">
+              <div className="flex items-start justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-primary/10 text-primary flex items-center justify-center shrink-0">
+                    <LayoutGrid className="w-5 h-5" />
+                  </div>
+                  <h5 className="font-bold text-text-main">Monday.com Load</h5>
+                </div>
+                {integrations.find(i => i.id === 'monday')?.status === 'connected' && (
+                  <button
+                    onClick={handleManualMondayRefresh}
+                    disabled={isRefreshingMonday}
+                    className="text-text-muted hover:text-primary transition-colors disabled:opacity-50"
+                    aria-label="Refresh Monday.com signal"
+                  >
+                    <RefreshCw className={cn("w-4 h-4", isRefreshingMonday && "animate-spin")} />
+                  </button>
+                )}
+              </div>
+              {integrations.find(i => i.id === 'monday')?.status !== 'connected' ? (
+                <p className="text-xs text-text-muted leading-relaxed">Connect Monday.com above to see your real active item count.</p>
+              ) : mondaySignal ? (
+                <div className="space-y-1.5 text-sm">
+                  <p className="text-text-main"><span className="font-black">{mondaySignal.totalActiveItems}</span> <span className="text-text-muted">active items across {mondaySignal.boardsScanned} boards</span></p>
+                  <p className="text-text-muted text-xs">{mondaySignal.overdueItems} with a past-due date column</p>
+                </div>
+              ) : (
+                <p className="text-xs text-text-muted leading-relaxed">No data yet — tap refresh to scan your boards.</p>
+              )}
+            </div>
+
+            <div className="card bg-card border border-border p-6 space-y-4">
+              <div className="flex items-start justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-primary/10 text-primary flex items-center justify-center shrink-0">
+                    <Clock3 className="w-5 h-5" />
+                  </div>
+                  <h5 className="font-bold text-text-main">Calendly Load</h5>
+                </div>
+                {integrations.find(i => i.id === 'calendly')?.status === 'connected' && (
+                  <button
+                    onClick={handleManualCalendlyRefresh}
+                    disabled={isRefreshingCalendly}
+                    className="text-text-muted hover:text-primary transition-colors disabled:opacity-50"
+                    aria-label="Refresh Calendly signal"
+                  >
+                    <RefreshCw className={cn("w-4 h-4", isRefreshingCalendly && "animate-spin")} />
+                  </button>
+                )}
+              </div>
+              {integrations.find(i => i.id === 'calendly')?.status !== 'connected' ? (
+                <p className="text-xs text-text-muted leading-relaxed">Connect Calendly above to see your real upcoming booking load.</p>
+              ) : calendlySignal ? (
+                <div className="space-y-1.5 text-sm">
+                  <p className="text-text-main"><span className="font-black">{calendlySignal.upcomingBookings7d}</span> <span className="text-text-muted">bookings in the next 7 days ({calendlySignal.bookedHours7d}h)</span></p>
+                  <p className="text-text-muted text-xs">{calendlySignal.backToBackCount} back-to-back</p>
+                </div>
+              ) : (
+                <p className="text-xs text-text-muted leading-relaxed">No data yet — tap refresh to pull your upcoming bookings.</p>
+              )}
+            </div>
+
+            <div className="card bg-card border border-border p-6 space-y-4">
+              <div className="flex items-start justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-primary/10 text-primary flex items-center justify-center shrink-0">
+                    <Mail className="w-5 h-5" />
+                  </div>
+                  <h5 className="font-bold text-text-main">Inbox Load</h5>
+                </div>
+                {accessToken && (
+                  <button
+                    onClick={handleManualGmailRefresh}
+                    disabled={isRefreshingGmail}
+                    className="text-text-muted hover:text-primary transition-colors disabled:opacity-50"
+                    aria-label="Refresh Gmail signal"
+                  >
+                    <RefreshCw className={cn("w-4 h-4", isRefreshingGmail && "animate-spin")} />
+                  </button>
+                )}
+              </div>
+              {!accessToken ? (
+                <p className="text-xs text-text-muted leading-relaxed">Connect Google Workspace above to see your real inbox load.</p>
+              ) : gmailSignal ? (
+                <div className="space-y-1.5 text-sm">
+                  <p className="text-text-main"><span className="font-black">{gmailSignal.unreadCount}</span> <span className="text-text-muted">unread in your inbox</span></p>
+                  <p className="text-text-muted text-xs">{gmailSignal.totalInboxCount} total in inbox</p>
+                </div>
+              ) : (
+                <p className="text-xs text-text-muted leading-relaxed">No data yet — tap refresh to check your inbox.</p>
               )}
             </div>
           </div>

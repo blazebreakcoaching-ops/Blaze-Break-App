@@ -1718,6 +1718,366 @@ app.get("/api/signals/slack", verifyAppCheck, authenticateFirebaseUser, async (r
   }
 });
 
+// Returns a currently-valid access token for the given service, refreshing
+// it first if it's expired (or close to expiring). Without this, any
+// integration relying on short-lived OAuth tokens (Jira and Asana tokens
+// both expire in roughly an hour) would silently stop working the first
+// time someone used it more than an hour after connecting.
+async function getValidAccessToken(uid: string, service: string): Promise<string | null> {
+  const db = getDb();
+  const tokenRef = db.collection("users").doc(uid).collection("integration_tokens").doc(service);
+  const tokenDoc = await tokenRef.get();
+  if (!tokenDoc.exists) return null;
+  const data = tokenDoc.data()!;
+
+  const expiringSoon = data.expiresAt && new Date(data.expiresAt).getTime() < Date.now() + 60 * 1000;
+  if (!expiringSoon) return data.accessToken || null;
+
+  if (!data.refreshToken) return data.accessToken || null; // Nothing to refresh with - let the caller's API call fail naturally.
+
+  const provider = OAUTH_PROVIDERS[service];
+  const clientId = process.env[provider.clientIdEnv];
+  const clientSecret = process.env[provider.clientSecretEnv];
+  if (!clientId || !clientSecret) return data.accessToken || null;
+
+  try {
+    const refreshParams = {
+      grant_type: "refresh_token",
+      client_id: clientId,
+      client_secret: clientSecret,
+      refresh_token: data.refreshToken,
+    };
+    const tokenResponse = provider.tokenStyle === "json"
+      ? await fetch(provider.tokenUrl, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(refreshParams) })
+      : await fetch(provider.tokenUrl, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: new URLSearchParams(refreshParams).toString() });
+
+    const body = await tokenResponse.json();
+    if (!tokenResponse.ok || body?.error) {
+      console.error(`[Integrations] ${service} token refresh failed:`, body);
+      return data.accessToken || null;
+    }
+    const { accessToken, refreshToken, expiresIn } = provider.extractTokens(body);
+    if (!accessToken) return data.accessToken || null;
+
+    await tokenRef.set({
+      accessToken,
+      refreshToken: refreshToken || data.refreshToken, // Some providers don't rotate the refresh token.
+      expiresAt: expiresIn ? new Date(Date.now() + expiresIn * 1000).toISOString() : null,
+      updatedAt: new Date().toISOString(),
+    }, { merge: true });
+
+    return accessToken;
+  } catch (e) {
+    console.error(`[Integrations] ${service} token refresh error:`, e);
+    return data.accessToken || null;
+  }
+}
+
+// ============================================================================
+// Real Signals: Jira (genuinely fetched, not just an unused stored token)
+// ============================================================================
+
+app.post("/api/signals/jira/refresh", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const uid = requireAuth(req).uid;
+    const accessToken = await getValidAccessToken(uid, "jira");
+    if (!accessToken) {
+      return res.status(404).json({ error: "Jira is not connected." });
+    }
+
+    const resourcesRes = await fetch("https://api.atlassian.com/oauth/token/accessible-resources", {
+      headers: { Authorization: `Bearer ${accessToken}`, Accept: "application/json" },
+    });
+    const resources = await resourcesRes.json();
+    if (!resourcesRes.ok || !Array.isArray(resources) || resources.length === 0) {
+      return res.status(502).json({ error: "Could not find an accessible Jira site for this account." });
+    }
+    const cloudId = resources[0].id;
+    const siteName = resources[0].name || resources[0].url;
+
+    const jql = "assignee = currentUser() AND resolution = Unresolved ORDER BY duedate ASC";
+    const searchRes = await fetch(
+      `https://api.atlassian.com/ex/jira/${cloudId}/rest/api/3/search/jql?jql=${encodeURIComponent(jql)}&maxResults=100&fields=duedate,priority,status`,
+      { headers: { Authorization: `Bearer ${accessToken}`, Accept: "application/json" } }
+    );
+    const searchBody = await searchRes.json();
+    if (!searchRes.ok) {
+      return res.status(502).json({ error: "Could not fetch Jira issues.", detail: searchBody?.errorMessages });
+    }
+
+    const issues = searchBody.issues || [];
+    const todayStr = new Date().toISOString().split("T")[0];
+    const overdueCount = issues.filter((i: any) => i.fields?.duedate && i.fields.duedate < todayStr).length;
+    const highPriorityCount = issues.filter((i: any) =>
+      ["Highest", "High"].includes(i.fields?.priority?.name)
+    ).length;
+
+    const signal = {
+      siteName,
+      totalOpenIssues: issues.length,
+      overdueIssues: overdueCount,
+      highPriorityOpen: highPriorityCount,
+      updatedAt: new Date().toISOString(),
+    };
+
+    const db = getDb();
+    await db.collection("users").doc(uid).collection("live_signals").doc("jira").set(signal);
+
+    res.json({ refreshed: true, state: signal });
+  } catch (err: any) {
+    console.error("[Signals] jira refresh error:", err.message);
+    res.status(500).json({ error: "Could not refresh Jira data." });
+  }
+});
+
+app.get("/api/signals/jira", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const uid = requireAuth(req).uid;
+    const db = getDb();
+    const signalDoc = await db.collection("users").doc(uid).collection("live_signals").doc("jira").get();
+    if (!signalDoc.exists) {
+      return res.json({ state: null });
+    }
+    res.json({ state: signalDoc.data() });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ============================================================================
+// Real Signals: Asana (genuinely fetched, not just an unused stored token)
+// ============================================================================
+
+app.post("/api/signals/asana/refresh", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const uid = requireAuth(req).uid;
+    const accessToken = await getValidAccessToken(uid, "asana");
+    if (!accessToken) {
+      return res.status(404).json({ error: "Asana is not connected." });
+    }
+
+    const meRes = await fetch("https://app.asana.com/api/1.0/users/me?opt_fields=name,workspaces.gid", {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    const meBody = await meRes.json();
+    if (!meRes.ok || !meBody?.data) {
+      return res.status(502).json({ error: "Could not verify Asana identity.", detail: meBody?.errors });
+    }
+    const workspaceGid = meBody.data.workspaces?.[0]?.gid;
+    if (!workspaceGid) {
+      return res.status(502).json({ error: "No accessible Asana workspace found." });
+    }
+
+    const tasksRes = await fetch(
+      `https://app.asana.com/api/1.0/tasks?assignee=me&workspace=${workspaceGid}&completed_since=now&opt_fields=due_on,name&limit=100`,
+      { headers: { Authorization: `Bearer ${accessToken}` } }
+    );
+    const tasksBody = await tasksRes.json();
+    if (!tasksRes.ok) {
+      return res.status(502).json({ error: "Could not fetch Asana tasks.", detail: tasksBody?.errors });
+    }
+
+    const tasks = tasksBody.data || [];
+    const todayStr = new Date().toISOString().split("T")[0];
+    const overdueCount = tasks.filter((t: any) => t.due_on && t.due_on < todayStr).length;
+
+    const signal = {
+      totalIncompleteTasks: tasks.length,
+      overdueTasks: overdueCount,
+      updatedAt: new Date().toISOString(),
+    };
+
+    const db = getDb();
+    await db.collection("users").doc(uid).collection("live_signals").doc("asana").set(signal);
+
+    res.json({ refreshed: true, state: signal });
+  } catch (err: any) {
+    console.error("[Signals] asana refresh error:", err.message);
+    res.status(500).json({ error: "Could not refresh Asana data." });
+  }
+});
+
+app.get("/api/signals/asana", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const uid = requireAuth(req).uid;
+    const db = getDb();
+    const signalDoc = await db.collection("users").doc(uid).collection("live_signals").doc("asana").get();
+    if (!signalDoc.exists) {
+      return res.json({ state: null });
+    }
+    res.json({ state: signalDoc.data() });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ============================================================================
+// Real Signals: Monday.com (genuinely fetched, not just an unused stored token)
+// ============================================================================
+// Monday's GraphQL API doesn't have a single "my open items" concept the way
+// Jira/Asana do, since assignment lives inside per-board "person" columns
+// that vary by board. Rather than guess at column IDs (which would be
+// fragile and board-specific), this counts genuinely real signals that work
+// consistently across any board layout: total active items across accessible
+// boards, and how many have a date-type column value already in the past.
+
+app.post("/api/signals/monday/refresh", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const uid = requireAuth(req).uid;
+    const accessToken = await getValidAccessToken(uid, "monday");
+    if (!accessToken) {
+      return res.status(404).json({ error: "Monday.com is not connected." });
+    }
+
+    const query = `query {
+      boards (limit: 15, order_by: used_at) {
+        id
+        name
+        items_page (limit: 50) {
+          items {
+            id
+            column_values (types: [date]) {
+              text
+            }
+          }
+        }
+      }
+    }`;
+
+    const gqlRes = await fetch("https://api.monday.com/v2", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json", "API-Version": "2024-10" },
+      body: JSON.stringify({ query }),
+    });
+    const gqlBody = await gqlRes.json();
+    if (!gqlRes.ok || gqlBody.errors) {
+      return res.status(502).json({ error: "Could not fetch Monday.com boards.", detail: gqlBody.errors });
+    }
+
+    const boards = gqlBody.data?.boards || [];
+    const todayStr = new Date().toISOString().split("T")[0];
+    let totalItems = 0;
+    let overdueItems = 0;
+    for (const board of boards) {
+      const items = board.items_page?.items || [];
+      totalItems += items.length;
+      for (const item of items) {
+        const hasOverdueDate = (item.column_values || []).some((cv: any) => cv.text && cv.text < todayStr);
+        if (hasOverdueDate) overdueItems++;
+      }
+    }
+
+    const signal = {
+      boardsScanned: boards.length,
+      totalActiveItems: totalItems,
+      overdueItems,
+      updatedAt: new Date().toISOString(),
+    };
+
+    const db = getDb();
+    await db.collection("users").doc(uid).collection("live_signals").doc("monday").set(signal);
+
+    res.json({ refreshed: true, state: signal });
+  } catch (err: any) {
+    console.error("[Signals] monday refresh error:", err.message);
+    res.status(500).json({ error: "Could not refresh Monday.com data." });
+  }
+});
+
+app.get("/api/signals/monday", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const uid = requireAuth(req).uid;
+    const db = getDb();
+    const signalDoc = await db.collection("users").doc(uid).collection("live_signals").doc("monday").get();
+    if (!signalDoc.exists) {
+      return res.json({ state: null });
+    }
+    res.json({ state: signalDoc.data() });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ============================================================================
+// Real Signals: Calendly (genuinely fetched, not just an unused stored token)
+// ============================================================================
+
+app.post("/api/signals/calendly/refresh", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const uid = requireAuth(req).uid;
+    const accessToken = await getValidAccessToken(uid, "calendly");
+    if (!accessToken) {
+      return res.status(404).json({ error: "Calendly is not connected." });
+    }
+
+    const meRes = await fetch("https://api.calendly.com/users/me", {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    const meBody = await meRes.json();
+    if (!meRes.ok || !meBody?.resource?.uri) {
+      return res.status(502).json({ error: "Could not verify Calendly identity.", detail: meBody?.message });
+    }
+    const userUri = meBody.resource.uri;
+
+    const now = new Date();
+    const sevenDaysOut = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+    const eventsUrl = new URL("https://api.calendly.com/scheduled_events");
+    eventsUrl.searchParams.set("user", userUri);
+    eventsUrl.searchParams.set("status", "active");
+    eventsUrl.searchParams.set("min_start_time", now.toISOString());
+    eventsUrl.searchParams.set("max_start_time", sevenDaysOut.toISOString());
+    eventsUrl.searchParams.set("count", "100");
+
+    const eventsRes = await fetch(eventsUrl.toString(), {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    const eventsBody = await eventsRes.json();
+    if (!eventsRes.ok) {
+      return res.status(502).json({ error: "Could not fetch Calendly events.", detail: eventsBody?.message });
+    }
+
+    const events = eventsBody.collection || [];
+    let totalMinutes = 0;
+    let backToBackCount = 0;
+    const starts = events
+      .map((e: any) => ({ start: new Date(e.start_time).getTime(), end: new Date(e.end_time).getTime() }))
+      .sort((a: any, b: any) => a.start - b.start);
+    for (let i = 0; i < starts.length; i++) {
+      totalMinutes += (starts[i].end - starts[i].start) / 60000;
+      if (i > 0 && starts[i].start - starts[i - 1].end <= 5 * 60000) backToBackCount++;
+    }
+
+    const signal = {
+      upcomingBookings7d: events.length,
+      bookedHours7d: Math.round((totalMinutes / 60) * 10) / 10,
+      backToBackCount,
+      updatedAt: new Date().toISOString(),
+    };
+
+    const db = getDb();
+    await db.collection("users").doc(uid).collection("live_signals").doc("calendly").set(signal);
+
+    res.json({ refreshed: true, state: signal });
+  } catch (err: any) {
+    console.error("[Signals] calendly refresh error:", err.message);
+    res.status(500).json({ error: "Could not refresh Calendly data." });
+  }
+});
+
+app.get("/api/signals/calendly", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const uid = requireAuth(req).uid;
+    const db = getDb();
+    const signalDoc = await db.collection("users").doc(uid).collection("live_signals").doc("calendly").get();
+    if (!signalDoc.exists) {
+      return res.json({ state: null });
+    }
+    res.json({ state: signalDoc.data() });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Never expose the Slack user ID or raw conversation ID list to the client -
 // only the aggregate counts and scan progress it actually needs.
 function redactSlackState(state: any) {
@@ -1776,6 +2136,46 @@ app.get("/api/signals/calendar", verifyAppCheck, authenticateFirebaseUser, async
     res.json({ state: doc.exists ? doc.data() : null });
   } catch (err: any) {
     console.error("[Signals] calendar read error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ============================================================================
+// Real Signals: Gmail (genuinely fetched, not the "inbox shielding" claim
+// this used to make - honestly scoped to real inbox-load tracking instead)
+// ============================================================================
+const GmailSignalSchema = z.object({
+  unreadCount: z.number(),
+  totalInboxCount: z.number(),
+}).strict();
+
+app.post("/api/signals/gmail", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const parsed = GmailSignalSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: "Invalid Gmail signal payload.", details: (parsed as any).error?.errors || [] });
+    }
+    const uid = requireAuth(req).uid;
+    const db = getDb();
+    await db.collection("users").doc(uid).collection("live_signals").doc("gmail").set({
+      ...parsed.data,
+      updatedAt: new Date().toISOString(),
+    });
+    res.json({ success: true });
+  } catch (err: any) {
+    console.error("[Signals] gmail write error:", err.message);
+    res.status(500).json({ error: "Could not save Gmail signal." });
+  }
+});
+
+app.get("/api/signals/gmail", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const uid = requireAuth(req).uid;
+    const db = getDb();
+    const doc = await db.collection("users").doc(uid).collection("live_signals").doc("gmail").get();
+    res.json({ state: doc.exists ? doc.data() : null });
+  } catch (err: any) {
+    console.error("[Signals] gmail read error:", err.message);
     res.status(500).json({ error: err.message });
   }
 });
