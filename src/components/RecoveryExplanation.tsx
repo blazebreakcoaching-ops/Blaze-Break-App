@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { ChevronDown, Radio } from 'lucide-react';
-import { collection, query, orderBy, limit, getDocs } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, query, orderBy, limit } from 'firebase/firestore';
 import { auth, db } from '../lib/firebase';
 import { cn } from '../lib/utils';
 import { secureApiFetch } from '../lib/secure-api';
@@ -52,19 +52,17 @@ export const RecoveryExplanation = ({
     const loadSignalsAndExplain = async () => {
       let moodPositive: boolean | null = null;
       let triggerCount = 0;
-      // No real signal source exists yet for social battery / focus shield -
-      // left null/false (honest "no data") rather than fabricated.
-      const socialBattery: number | null = null;
+      let socialBattery: number | null = null;
       let winsCount = 0;
       let symptomsCount = 0;
-      const focusShieldActive = false;
+      let focusShieldActive = false;
 
       try {
-        const [moodSnap, triggerSnap, winsSnap, bodySnap] = await Promise.all([
+        const [moodSnap, triggerSnap, winsSnap, prefsSnap] = await Promise.all([
           getDocs(query(collection(db, 'users', uid, 'emotional_patterns'), orderBy('createdAt', 'desc'), limit(1))),
           getDocs(query(collection(db, 'users', uid, 'stress_triggers'), orderBy('createdAt', 'desc'), limit(30))),
           getDocs(query(collection(db, 'users', uid, 'wins'), orderBy('createdAt', 'desc'), limit(30))),
-          getDocs(query(collection(db, 'users', uid, 'body_checkins'), orderBy('createdAt', 'desc'), limit(1))),
+          getDoc(doc(db, 'users', uid, 'preferences', 'recovery_intelligence')),
         ]);
 
         if (!moodSnap.empty) {
@@ -72,8 +70,11 @@ export const RecoveryExplanation = ({
         }
         triggerCount = triggerSnap.size;
         winsCount = winsSnap.size;
-        if (!bodySnap.empty) {
-          symptomsCount = ((bodySnap.docs[0].data() as any).signals || []).length;
+        if (prefsSnap.exists()) {
+          const prefs = prefsSnap.data();
+          if (typeof prefs.socialBattery === 'number') socialBattery = prefs.socialBattery;
+          if (Array.isArray(prefs.bodySymptoms)) symptomsCount = prefs.bodySymptoms.length;
+          if (typeof prefs.isFocusShieldActive === 'boolean') focusShieldActive = prefs.isFocusShieldActive;
         }
       } catch (e) {
         // Real signals unavailable — fall back to the defaults above rather than blocking the explanation.

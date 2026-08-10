@@ -180,6 +180,7 @@ export const OrgDashboard = () => {
       setMembersError('Could not remove that person.');
     }
     setMemberActionUid(null);
+    setMemberToRemove(null);
   };
 
   const handleMakeAdmin = async (memberUid: string) => {

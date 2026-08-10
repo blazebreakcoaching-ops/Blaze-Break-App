@@ -101,7 +101,7 @@ const RuminationFurnace = lazy(() => import("./components/RuminationFurnace.tsx"
 import { SettingsModal } from "./components/SettingsModal.tsx";
 const FutureSelfSimulator = lazy(() => import("./components/FutureSelfSimulator.tsx").then(m => ({ default: m.FutureSelfSimulator })));
 const AssuranceCentre = lazy(() => import("./components/AssuranceCentre.tsx").then(m => ({ default: m.AssuranceCentre })));
-import { SyncEngine, AuthStatusTracker } from "./lib/sync.tsx";
+import { AuthStatusTracker } from "./lib/sync.tsx";
 import { useAuth } from "./lib/auth.tsx";
 const IntegrationsDashboard = lazy(() => import("./components/IntegrationsDashboard.tsx").then(m => ({ default: m.IntegrationsDashboard })));
 const AdminDashboard = lazy(() => import("./components/AdminDashboard.tsx").then(m => ({ default: m.AdminDashboard })));
@@ -2949,22 +2949,6 @@ export default function App() {
         />
 
         <SomaticResetOverlay isOpen={showSomaticReset} onClose={() => setShowSomaticReset(false)} onAwardPoints={awardPoints} />
-
-        <SyncEngine
-          stats={stats}
-          setStats={setStats}
-          fingerprint={fingerprint}
-          setFingerprint={setFingerprint}
-        />
-
-        {user && (
-          <div className="max-w-7xl mx-auto px-4 mt-8">
-            <div className="bg-primary-dark/40 border border-primary/30 text-purple-200 px-4 py-3 rounded-xl text-sm font-medium flex flex-col sm:flex-row items-center justify-center gap-2 mb-4 text-center">
-              <span className="font-bold flex items-center gap-1"><Shield className="w-4 h-4"/> Secure Account Test Mode</span>
-              <span className="opacity-80">Personal recovery tracking, Nova memory, notifications, payments, and organisation features are not yet active. Do not enter sensitive info.</span>
-            </div>
-          </div>
-        )}
 
         <AnimatePresence mode="wait">
           <motion.div

@@ -108,7 +108,7 @@ export const MicroRecovery = ({ fingerprint, onAwardPoints }: MicroRecoveryProps
   const [completed, setCompleted] = useState(false);
   
   // Google Calendar Integration states
-  const [isDemoMode, setIsDemoMode] = useState(true);
+  const [isDemoMode, setIsDemoMode] = useState(!accessToken);
   const [realEvents, setRealEvents] = useState<CalendarEvent[]>([]);
   const [loadingCalendar, setLoadingCalendar] = useState(false);
   const [calendarError, setCalendarError] = useState<string | null>(null);
@@ -221,7 +221,11 @@ export const MicroRecovery = ({ fingerprint, onAwardPoints }: MicroRecoveryProps
         setRealEvents(formatted);
         setIsDemoMode(false);
       } else {
+        // A successful fetch with zero events (a genuinely light day) is
+        // still real data - it should show the honest "no risks" empty
+        // state, not silently fall back to fake demo meetings.
         setRealEvents([]);
+        setIsDemoMode(false);
       }
     } catch (e: any) {
       console.error(e);
