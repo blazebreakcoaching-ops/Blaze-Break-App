@@ -14,6 +14,8 @@ import {
 import { cn } from '../lib/utils';
 import { BurnoutFingerprint } from '../types';
 import { useAuth } from '../lib/auth';
+import { auth, db } from '../lib/firebase';
+import { doc, setDoc } from 'firebase/firestore';
 
 interface MicroRecoveryProps {
   fingerprint: BurnoutFingerprint | null;
@@ -245,13 +247,18 @@ export const MicroRecovery = ({ fingerprint, onAwardPoints }: MicroRecoveryProps
     setCompleted(true);
     if (selectedDuration) {
       const activeAction = ACTIONS[selectedDuration];
-      localStorage.setItem('blaze_micro_recovery', JSON.stringify({
+      const sessionData = {
         duration: selectedDuration,
         time: activeAction.time,
         description: activeAction.description,
         details: activeAction.details,
         completedAt: new Date().toISOString()
-      }));
+      };
+      if (auth.currentUser) {
+        setDoc(doc(db, 'users', auth.currentUser.uid, 'micro_recovery', 'latest'), sessionData).catch(() => {
+          // Non-fatal - the completion itself still counts even if this save fails.
+        });
+      }
     }
     if (onAwardPoints) onAwardPoints(10, 'Micro-Recovery Completed');
     setTimeout(() => {

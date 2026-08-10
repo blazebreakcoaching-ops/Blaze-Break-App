@@ -19,7 +19,8 @@ import ReactMarkdown from "react-markdown";
 import { cn } from "../lib/utils";
 import { getNovaBrain, addNovaMemory } from "../lib/nova-brain";
 import { secureApiFetch } from "../lib/secure-api";
-import { auth, getAppCheckToken } from "../lib/firebase";
+import { auth, db, getAppCheckToken } from "../lib/firebase";
+import { doc, getDoc } from "firebase/firestore";
 
 interface Message {
   role: "user" | "model";
@@ -756,7 +757,7 @@ export const NovaChat = ({
     }
   };
 
-  const getDynamicContext = () => {
+  const getDynamicContext = async () => {
     let contextStr = "";
 
     if (situationalContext) {
@@ -775,36 +776,40 @@ export const NovaChat = ({
     } catch (e) {}
 
     try {
-      const workloadStr = localStorage.getItem("blaze_workload_check");
-      if (workloadStr) {
-        const workload = JSON.parse(workloadStr);
-        const answeredKeys = Object.keys(workload).filter(
-          (k) => workload[k].trim() !== "",
-        );
-        if (answeredKeys.length > 0) {
-          contextStr += `\nLatest Workload Reality Check Answers:\n`;
-          if (workload.must)
-            contextStr += `- Must happen today: ${workload.must}\n`;
-          if (workload.wait) contextStr += `- Can wait: ${workload.wait}\n`;
-          if (workload.delegate)
-            contextStr += `- Can delegate: ${workload.delegate}\n`;
-          if (workload.pretend)
-            contextStr += `- Pretending is urgent: ${workload.pretend}\n`;
-          if (workload.future)
-            contextStr += `- Future self wants removed: ${workload.future}\n`;
+      if (auth.currentUser) {
+        const snap = await getDoc(doc(db, "users", auth.currentUser.uid, "workload_reality_check", "state"));
+        const workload = snap.exists() ? snap.data().answers : null;
+        if (workload) {
+          const answeredKeys = Object.keys(workload).filter(
+            (k) => (workload[k] || "").trim() !== "",
+          );
+          if (answeredKeys.length > 0) {
+            contextStr += `\nLatest Workload Reality Check Answers:\n`;
+            if (workload.must)
+              contextStr += `- Must happen today: ${workload.must}\n`;
+            if (workload.wait) contextStr += `- Can wait: ${workload.wait}\n`;
+            if (workload.delegate)
+              contextStr += `- Can delegate: ${workload.delegate}\n`;
+            if (workload.pretend)
+              contextStr += `- Pretending is urgent: ${workload.pretend}\n`;
+            if (workload.future)
+              contextStr += `- Future self wants removed: ${workload.future}\n`;
+          }
         }
       }
     } catch (e) {}
 
     try {
-      const recoveryStr = localStorage.getItem("blaze_micro_recovery");
-      if (recoveryStr) {
-        const recovery = JSON.parse(recoveryStr);
-        contextStr += `\nLatest Completed Micro-Recovery Session:\n`;
-        contextStr += `- Protocol duration: ${recovery.duration || "N/A"}\n`;
-        contextStr += `- Executed time: ${recovery.time || "N/A"}\n`;
-        contextStr += `- Description: ${recovery.description || "N/A"}\n`;
-        contextStr += `- Completed at: ${recovery.completedAt || "N/A"}\n`;
+      if (auth.currentUser) {
+        const recoverySnap = await getDoc(doc(db, "users", auth.currentUser.uid, "micro_recovery", "latest"));
+        if (recoverySnap.exists()) {
+          const recovery = recoverySnap.data();
+          contextStr += `\nLatest Completed Micro-Recovery Session:\n`;
+          contextStr += `- Protocol duration: ${recovery.duration || "N/A"}\n`;
+          contextStr += `- Executed time: ${recovery.time || "N/A"}\n`;
+          contextStr += `- Description: ${recovery.description || "N/A"}\n`;
+          contextStr += `- Completed at: ${recovery.completedAt || "N/A"}\n`;
+        }
       }
     } catch (e) {}
     return contextStr;
@@ -822,7 +827,7 @@ export const NovaChat = ({
     setLoading(true);
 
     try {
-      const dynamicContext = getDynamicContext();
+      const dynamicContext = await getDynamicContext();
       let toneModifier = "";
       if (fingerprint?.profile === "High-Functioning Exhausted") {
         toneModifier =

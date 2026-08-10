@@ -1,6 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Wind, X, HeartPulse, ShieldCheck, Check, Award } from 'lucide-react';
+import { auth, db } from '../lib/firebase';
+import { addDoc, collection } from 'firebase/firestore';
+import { secureApiFetch } from '../lib/secure-api';
+import { logJourney } from '../lib/nova-brain';
 
 interface SomaticResetOverlayProps {
   isOpen: boolean;
@@ -112,15 +116,27 @@ export const SomaticResetOverlay = ({ isOpen, onClose, onAwardPoints }: SomaticR
     if (onAwardPoints) {
       onAwardPoints(75, "Completed 60s Somatic Reset Session");
     }
-    // Record in local storage for streak calculations or activity log
-    const history = localStorage.getItem('blaze_somatic_reset_history') || '[]';
-    try {
-      const parsed = JSON.parse(history);
-      parsed.unshift({ date: new Date().toISOString(), duration: 60 });
-      localStorage.setItem('blaze_somatic_reset_history', JSON.stringify(parsed));
-    } catch (e) {
-      console.warn(e);
+
+    // Persist to Firestore, mark real activity for the recommendation
+    // engine, and log to Nova's journey - previously this only wrote to a
+    // localStorage key that nothing ever read, and Nova had no visibility
+    // into this session happening at all.
+    if (auth.currentUser) {
+      addDoc(collection(db, 'users', auth.currentUser.uid, 'somatic_reset_sessions'), {
+        durationSeconds: 60,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      }).catch(() => {
+        // Non-fatal - the completion still counts for this session even if the write fails.
+      });
+      secureApiFetch('/api/user/mark-activity', {
+        method: 'POST',
+        data: { activity: 'nervousSystemReset' },
+      }).catch(() => {
+        // Non-fatal - only affects the home recommendation engine's freshness.
+      });
     }
+    logJourney('Completed a 60-second somatic reset session', 'Breathing and grounding sequence.');
 
     onClose();
   };

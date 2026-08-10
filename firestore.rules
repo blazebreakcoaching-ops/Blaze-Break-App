@@ -533,11 +533,63 @@ service cloud.firestore {
             && (request.method == 'create' ? true : checkCreatedAtUnchanged());
       }
 
+      // AA. user_stats/core - points, streak, badges, debts, profile,
+      // support circle, and the burnout fingerprint. Client-writable (unlike
+      // derived/stats, which is server-only) since these are earned/edited
+      // directly through normal app use, not server-computed aggregates.
+      match /user_stats/core {
+        allow read, delete: if isOwner(uid);
+        allow create, update: if isOwner(uid)
+            && request.resource.data.keys().hasOnly([
+              'points', 'streak', 'rehearsalCount', 'lastEngagementDate',
+              'unlockedBadges', 'supportCircle', 'committedActionIds',
+              'weeklyGoalsComplete', 'level', 'profile', 'debts',
+              'recoveryScore', 'fingerprint', 'updatedAt'
+            ])
+            && (!('points' in request.resource.data) || (request.resource.data.points is number && request.resource.data.points >= 0))
+            && (!('streak' in request.resource.data) || (request.resource.data.streak is number && request.resource.data.streak >= 0))
+            && (!('unlockedBadges' in request.resource.data) || (request.resource.data.unlockedBadges is list && request.resource.data.unlockedBadges.size() <= 50))
+            && (!('committedActionIds' in request.resource.data) || (request.resource.data.committedActionIds is list && request.resource.data.committedActionIds.size() <= 500))
+            && (!('supportCircle' in request.resource.data) || (request.resource.data.supportCircle is list && request.resource.data.supportCircle.size() <= 20))
+            && (!('debts' in request.resource.data) || (request.resource.data.debts is list && request.resource.data.debts.size() <= 20))
+            && (!('profile' in request.resource.data) || request.resource.data.profile is map)
+            && (!('fingerprint' in request.resource.data) || request.resource.data.fingerprint is map || request.resource.data.fingerprint == null);
+      }
+
+      // AB. micro_recovery/latest - the most recently completed micro-recovery
+      // session, read back into Nova's context so a completed reset is
+      // actually visible to future conversations.
+      match /micro_recovery/latest {
+        allow read, delete: if isOwner(uid);
+        allow create, update: if isOwner(uid)
+            && hasOnly(['duration', 'time', 'description', 'details', 'completedAt'])
+            && isStringWithMax(request.resource.data.description, 300)
+            && request.resource.data.details is list && request.resource.data.details.size() <= 20;
+      }
+
+      // AC. somatic_reset_sessions - completed 60s somatic reset sessions.
+      match /somatic_reset_sessions/{sessionId} {
+        allow read, delete: if isOwner(uid);
+        allow create, update: if isOwner(uid)
+            && hasOnly(['createdAt', 'updatedAt', 'durationSeconds'])
+            && hasAll(['createdAt', 'updatedAt', 'durationSeconds'])
+            && request.resource.data.durationSeconds is number
+            && (request.method == 'create' ? true : checkCreatedAtUnchanged());
+      }
+
     }
 
     // F. public_feature_flags/{featureId}
     match /public_feature_flags/{featureId} {
       allow read: if isSignedIn();
+      allow write: if false;
+    }
+
+    // User-facing audit trail (privacy/consent actions shown back to the
+    // person themselves) - server-write-only so it's a genuine, tamper-
+    // resistant record, not something the client could edit or fabricate.
+    match /audit_logs/{logId} {
+      allow read: if isSignedIn() && resource.data.userId == request.auth.uid;
       allow write: if false;
     }
 

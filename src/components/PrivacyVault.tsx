@@ -176,17 +176,7 @@ export const PrivacyVault = ({
 
   useEffect(() => {
     if (activeTab === 'audit') {
-      const logs = getAuditLogs();
-      if (logs.length > 0) {
-        setAuditLogs(logs);
-      } else {
-        setAuditLogs([
-          { id: '1', userId: 'system', action: "Nova Coach accessed Burnout Profile", timestamp: new Date(Date.now() - 3600000).toISOString(), status: "authorised" },
-          { id: '2', userId: 'system', action: "Mood Pulse data aggregated for Team Climate Dashboard", timestamp: new Date(Date.now() - 172800000).toISOString(), status: "anonymised" },
-          { id: '3', userId: profile.fullName || 'anonymous', action: "User triggered 'Forget' on recent conversation context", timestamp: new Date(Date.now() - 432000000).toISOString(), status: "deleted" },
-          { id: '4', userId: 'system', action: "Energy Budget routine saved locally", timestamp: new Date(Date.now() - 604800000).toISOString(), status: "verified" }
-        ]);
-      }
+      getAuditLogs().then(setAuditLogs);
     }
   }, [activeTab, profile.fullName]);
 
@@ -198,10 +188,10 @@ export const PrivacyVault = ({
       status,
       details: `User explicitly triggered: ${action}`
     });
-    
+
     // Refresh logs if already viewing audit tab
     if (activeTab === 'audit') {
-      const logs = getAuditLogs();
+      const logs = await getAuditLogs();
       setAuditLogs(logs);
     }
   };
@@ -674,6 +664,13 @@ export const PrivacyVault = ({
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-white/[0.02]">
+                    {auditLogs.length === 0 && (
+                      <tr>
+                        <td colSpan={3} className="px-4 py-12 text-center text-sm text-text-muted">
+                          No audit events recorded yet. Actions you take — like updating consent, deleting data, or leaving an organisation — will show up here.
+                        </td>
+                      </tr>
+                    )}
                     {auditLogs.map(log => (
                       <tr key={log.id} className="hover:bg-white/[0.02] transition-colors">
                         <td className="px-4 py-5 text-xs tabular-nums text-text-muted font-medium whitespace-nowrap">

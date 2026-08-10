@@ -55,7 +55,7 @@ import {
 } from "./types.ts";
 import { cn } from "./lib/utils.ts";
 import { auth, db } from "./lib/firebase.ts";
-import { doc, setDoc, onSnapshot } from "firebase/firestore";
+import { doc, setDoc, getDoc, onSnapshot } from "firebase/firestore";
 const DiagnoseView = lazy(() => import("./components/DiagnoseSection.tsx").then(m => ({ default: m.DiagnoseView })));
 const ResultView = lazy(() => import("./components/DiagnoseSection.tsx").then(m => ({ default: m.ResultView })));
 const EnergyBudgetTool = lazy(() => import("./components/EnergyBudget.tsx").then(m => ({ default: m.EnergyBudgetTool })));
@@ -77,7 +77,6 @@ import { DailyCheckIn } from "./components/DailyCheckIn.tsx";
 import { ConnectedDailyCheckIn } from "./components/ConnectedRecoveryModules.tsx";
 const NegotiatorTool = lazy(() => import("./components/NegotiatorTool.tsx").then(m => ({ default: m.NegotiatorTool })));
 import { RelapseRadar } from "./components/RelapseRadar.tsx";
-import { MOCK_DEBTS } from "./constants.ts";
 
 const ResourceLibrary = lazy(() => import("./components/ResourceLibrary.tsx").then(m => ({ default: m.ResourceLibrary })));
 const NervousSystemReset = lazy(() => import("./components/NervousSystemReset.tsx").then(m => ({ default: m.NervousSystemReset })));
@@ -957,6 +956,7 @@ const HomeSection = ({
   onOpenCheckIn,
   pulseHistory,
   onAwardPoints,
+  onIncrementStreak,
   onUpdateOperationalMetrics,
   onUpdatePulseHistory,
   onLogJourney,
@@ -973,6 +973,7 @@ const HomeSection = ({
   onOpenCheckIn: () => void;
   pulseHistory: {date: string, score: number}[];
   onAwardPoints: (amount: number, reason: string) => void;
+  onIncrementStreak: () => void;
   onUpdateOperationalMetrics: (energy: number, risk: string) => void;
   onUpdatePulseHistory: (date: string, score: number) => void;
   onLogJourney: (action: string, details: string) => void;
@@ -1703,14 +1704,11 @@ const HomeSection = ({
             setStreakDays(updated);
             localStorage.setItem("blaze_recovery_streak_days", JSON.stringify(updated));
             onAwardPoints(50, "Energy Budget Maintained Today");
-            // Also increase stats streak!
-            try {
-              const currentStats = JSON.parse(localStorage.getItem("blaze_break_stats") || "{}");
-              if (currentStats) {
-                currentStats.streak = (currentStats.streak || 0) + 1;
-                localStorage.setItem("blaze_break_stats", JSON.stringify(currentStats));
-              }
-            } catch (e) {}
+            // Also increase stats streak - routed through the parent's real
+            // Firestore-backed stats state rather than writing directly to
+            // localStorage, which could be silently overwritten by the
+            // next state-driven save.
+            onIncrementStreak();
           };
 
           const isTodayCommitted = streakDays.includes(todayStr);
@@ -2218,22 +2216,28 @@ export default function App() {
 
   // Gamification State
   const [showSomaticReset, setShowSomaticReset] = useState(false);
-  const [hasClaimedDaily, setHasClaimedDaily] = useState(false);
   const [showRewardNotification, setShowRewardNotification] = useState<{
     points: number;
     reason: string;
   } | null>(null);
   const [stats, setStats] = useState<UserStats>({
-    points: 450,
-    streak: 3,
+    points: 0,
+    streak: 0,
     rehearsalCount: 0,
-    lastEngagementDate: new Date().toISOString().split("T")[0],
-    unlockedBadges: ["first_step"],
+    lastEngagementDate: '',
+    unlockedBadges: [],
     supportCircle: [],
     committedActionIds: [],
-    debts: MOCK_DEBTS.map((d, i) => ({ ...d, id: String(i), cleared: false })),
-    recoveryScore: 29, // force test value
+    debts: [],
   });
+
+  // Derived from the real, persisted lastEngagementDate rather than a
+  // separate resettable boolean - a plain useState(false) here would reset
+  // to false on every page refresh regardless of whether the person had
+  // actually already claimed today, showing the wrong state on reload and
+  // letting the same-day double-claim guard get bypassed by a refresh.
+  const todayStr = new Date().toISOString().split("T")[0];
+  const hasClaimedDaily = stats.lastEngagementDate === todayStr;
 
   // Pulse Alert System
   useEffect(() => {
@@ -2290,6 +2294,8 @@ export default function App() {
   // Track previous flow / auth changes to detect transitions
   const prevUserRef = useRef<any>(null);
   const flowRef = useRef(flow);
+  const statsLoadedRef = useRef(false);
+  const fingerprintLoadedRef = useRef(false);
   flowRef.current = flow;
 
   // Route Protection
@@ -2316,117 +2322,119 @@ export default function App() {
     const email = user?.email || null;
     (window as any).__ACTIVE_USER_EMAIL__ = email;
 
-    const savedStats = localStorage.getItem("blaze_break_stats");
-    const savedFingerprint = localStorage.getItem("blaze_fingerprint");
+    const loadStats = async () => {
+      const savedFingerprint = localStorage.getItem("blaze_fingerprint");
 
-    const defaults: UserStats = email
-      ? {
-          points: 0,
-          streak: 0,
-          rehearsalCount: 0,
-          lastEngagementDate: new Date().toISOString().split("T")[0],
-          unlockedBadges: [],
-          supportCircle: [],
-          committedActionIds: [],
-          debts: [
-            {
-              id: "0",
-              label: "Sleep Debt",
-              value: 0,
-              unit: "h",
-              max: 15,
-              color: "text-primary",
-              impact: "Reduced emotional regulation.",
-              novaNote: "Prefrontal fatigue detected. Unplug now.",
-            },
-            {
-              id: "1",
-              label: "Neural Fatigue",
-              value: 0,
-              unit: "cr",
-              max: 20,
-              color: "text-warning",
-              impact: "Cognitive tunnel vision.",
-              novaNote: "Neural de-escalation is needed. Pause planning.",
-            },
-            {
-              id: "2",
-              label: "Social Overlap",
-              value: 0,
-              unit: "h",
-              max: 10,
-              color: "text-text-main",
-              impact: "Identity erosion from fawning.",
-              novaNote: "Return to your baseline frame.",
-            },
-          ],
-          profile: {
-            fullName: user?.displayName || "",
-            role: "",
-            organization: "",
-            managerEmail: "",
-            authRole: "individual",
+      // A single, honest default for everyone - previously anonymous users
+      // (the vast majority, since anonymous auth signs everyone in
+      // automatically) saw fabricated demo data (450 points, "Test User",
+      // invented debt values) presented as their own real progress, with no
+      // path back to honest data unless they specifically linked an email.
+      const defaults: UserStats = {
+        points: 0,
+        streak: 0,
+        rehearsalCount: 0,
+        lastEngagementDate: '',
+        unlockedBadges: [],
+        supportCircle: [],
+        committedActionIds: [],
+        debts: [
+          {
+            id: "0",
+            label: "Sleep Debt",
+            value: 0,
+            unit: "h",
+            max: 15,
+            color: "text-primary",
+            impact: "Reduced emotional regulation.",
+            novaNote: "Prefrontal fatigue detected. Unplug now.",
           },
+          {
+            id: "1",
+            label: "Neural Fatigue",
+            value: 0,
+            unit: "cr",
+            max: 20,
+            color: "text-warning",
+            impact: "Cognitive tunnel vision.",
+            novaNote: "Neural de-escalation is needed. Pause planning.",
+          },
+          {
+            id: "2",
+            label: "Social Overlap",
+            value: 0,
+            unit: "h",
+            max: 10,
+            color: "text-text-main",
+            impact: "Identity erosion from fawning.",
+            novaNote: "Return to your baseline frame.",
+          },
+        ],
+        profile: {
+          fullName: user?.displayName || "",
+          role: "",
+          organization: "",
+          managerEmail: "",
+          authRole: "individual",
+        },
+      };
+
+      let loadedStats = defaults;
+      let loadedFingerprint: BurnoutFingerprint | null = null;
+      if (user) {
+        try {
+          const snap = await getDoc(doc(db, "users", user.uid, "user_stats", "core"));
+          if (snap.exists()) {
+            const data = snap.data();
+            loadedStats = { ...defaults, ...data } as UserStats;
+            if (data.fingerprint) {
+              loadedFingerprint = data.fingerprint as BurnoutFingerprint;
+            }
+          }
+        } catch (e) {
+          // Leaves the honest defaults in place rather than pretending progress loaded.
         }
-      : {
-          points: 450,
-          streak: 3,
-          rehearsalCount: 0,
-          lastEngagementDate: new Date().toISOString().split("T")[0],
-          unlockedBadges: ["first_step"],
-          supportCircle: [],
-          committedActionIds: [],
-          debts: MOCK_DEBTS.map((d, i) => ({
-            ...d,
-            id: String(i),
-            cleared: false,
-          })),
-          profile: {
-            fullName: "Test User",
-            role: "",
-            organization: "",
-            managerEmail: "",
-            authRole: "individual",
-          },
-        };
-
-    if (savedStats) {
-      try {
-        setStats({ ...defaults, ...JSON.parse(savedStats) });
-      } catch (e) {
-        setStats(defaults);
       }
-    } else {
-      setStats(defaults);
-    }
+      setStats(loadedStats);
+      statsLoadedRef.current = true;
 
-    if (savedFingerprint) {
-      try {
-        setFingerprint(JSON.parse(savedFingerprint));
-      } catch (e) {
+      // Firestore is the real source of truth now. localStorage is only
+      // consulted as a one-time migration path for anyone who took the
+      // assessment before this was persisted server-side - their result
+      // gets picked up here and will save to Firestore on the next
+      // natural save cycle below, rather than being silently lost.
+      if (loadedFingerprint) {
+        setFingerprint(loadedFingerprint);
+      } else if (savedFingerprint) {
+        try {
+          setFingerprint(JSON.parse(savedFingerprint));
+        } catch (e) {
+          setFingerprint(null);
+        }
+      } else {
         setFingerprint(null);
       }
-    } else {
-      setFingerprint(null);
-    }
+      fingerprintLoadedRef.current = true;
 
-    if (user) {
-      if (flowRef.current === "landing") {
-        const parsedStats = savedStats ? JSON.parse(savedStats) : null;
-        if (parsedStats?.profile?.fullName) {
-          setFlow("app");
-        } else {
-          setFlow("onboarding");
+      if (user) {
+        if (flowRef.current === "landing") {
+          if (loadedStats?.profile?.fullName) {
+            setFlow("app");
+          } else {
+            setFlow("onboarding");
+          }
+        }
+      } else {
+        // Return back to landing only if they signed out intentionally
+        if (prevUserRef.current !== null) {
+          setFlow("landing");
         }
       }
-    } else {
-      // Return back to landing only if they signed out intentionally
-      if (prevUserRef.current !== null) {
-        setFlow("landing");
-      }
-    }
 
-    prevUserRef.current = user;
+      prevUserRef.current = user;
+    };
+
+    loadStats();
   }, [user, authLoading]);
 
   const checkBadges = (currentStats: UserStats): string[] => {
@@ -2456,9 +2464,30 @@ export default function App() {
   };
 
   useEffect(() => {
-    if (authLoading) return;
-    localStorage.setItem("blaze_break_stats", JSON.stringify(stats));
+    if (authLoading || !user || !statsLoadedRef.current) return;
+    const t = setTimeout(() => {
+      setDoc(doc(db, "users", user.uid, "user_stats", "core"), {
+        ...stats,
+        updatedAt: new Date().toISOString(),
+      }, { merge: true }).catch(() => {
+        // Non-fatal - the UI still reflects the change locally even if this save fails.
+      });
+    }, 800);
+    return () => clearTimeout(t);
   }, [stats, authLoading, user]);
+
+  useEffect(() => {
+    if (authLoading || !user || !fingerprintLoadedRef.current) return;
+    const t = setTimeout(() => {
+      setDoc(doc(db, "users", user.uid, "user_stats", "core"), {
+        fingerprint: fingerprint || null,
+        updatedAt: new Date().toISOString(),
+      }, { merge: true }).catch(() => {
+        // Non-fatal - the UI still reflects the change locally even if this save fails.
+      });
+    }, 800);
+    return () => clearTimeout(t);
+  }, [fingerprint, authLoading, user]);
 
   const handleCheckInComplete = (data: {
     energy: number;
@@ -2570,8 +2599,6 @@ export default function App() {
 
   const handleClaimDaily = () => {
     if (!hasClaimedDaily) {
-      setHasClaimedDaily(true);
-
       // Update points and streak
       const today = new Date().toISOString().split("T")[0];
       setStats((prev) => {
@@ -2968,6 +2995,7 @@ export default function App() {
                 onOpenCheckIn={() => setShowCheckIn(true)}
                 pulseHistory={pulseHistory}
                 onAwardPoints={awardPoints}
+                onIncrementStreak={() => setStats((prev) => ({ ...prev, streak: (prev.streak || 0) + 1 }))}
                 onUpdateOperationalMetrics={handleUpdateOperationalMetrics}
                 onUpdatePulseHistory={handleUpdatePulseHistory}
                 onLogJourney={logJourney}

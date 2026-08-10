@@ -4248,6 +4248,58 @@ app.post("/api/ally/view/:token/encourage", verifyAppCheck, async (req, res) => 
   }
 });
 
+// ============================================================================
+// User-Facing Audit Trail (genuinely persisted, not localStorage-only)
+// ============================================================================
+// Every handleAuditAction call across PrivacyVault and elsewhere previously
+// only wrote to localStorage - meaning the entire "what happened to my
+// data" trail was fabricated the moment someone switched devices, cleared
+// their browser, or wanted to prove to themselves what they'd actually
+// consented to. This writes it for real, server-side, so it can't be
+// silently edited or lost.
+const AuditLogSchema = z.object({
+  action: z.string().max(200),
+  target: z.string().max(200).optional(),
+  status: z.enum(['authorised', 'denied', 'anonymised', 'deleted', 'verified']),
+  details: z.string().max(500).optional(),
+}).strict();
+
+app.post("/api/audit-log", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const parsed = AuditLogSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: "Invalid audit log entry.", details: (parsed as any).error?.errors || [] });
+    }
+    const user = requireAuth(req);
+    const db = getDb();
+    await db.collection("audit_logs").add({
+      ...parsed.data,
+      userId: user.uid,
+      createdAt: FieldValue.serverTimestamp(),
+    });
+    res.json({ success: true });
+  } catch (err: any) {
+    console.error("[Audit] write error:", err.message);
+    res.status(500).json({ error: "Could not save that audit entry." });
+  }
+});
+
+app.get("/api/audit-log", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const user = requireAuth(req);
+    const db = getDb();
+    const snap = await db.collection("audit_logs")
+      .where("userId", "==", user.uid)
+      .orderBy("createdAt", "desc")
+      .limit(200)
+      .get();
+    const logs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    res.json({ logs });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Anxiety Reset API endpoints
 app.get("/api/anxiety-reset", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
   try {
