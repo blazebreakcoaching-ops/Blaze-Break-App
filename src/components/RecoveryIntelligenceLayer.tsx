@@ -1,4 +1,4 @@
-import { ConnectedMoodPulse, ConnectedBodyCheckIn, ConnectedWinsLog } from './ConnectedRecoveryModules.tsx';
+import { ConnectedMoodPulse, ConnectedBodyCheckIn, ConnectedWinsLog, ConnectedGoals, ConnectedEnergyBudget, ConnectedWeeklyReviews } from './ConnectedRecoveryModules.tsx';
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useAuth } from '../lib/auth';
@@ -17,7 +17,7 @@ import {
   LineChart,
   Mic,
   MicOff,
-HeartPulse, Star, Wind, RefreshCw, TrendingUp, TrendingDown,
+HeartPulse, Star, Wind, RefreshCw, TrendingUp, TrendingDown, Target,
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { updateNovaMemoryBySourceAndType } from '../lib/nova-brain';
@@ -60,7 +60,6 @@ export const RecoveryIntelligenceLayer = ({ onAwardPoints, fingerprint }: Recove
   const [socialBattery, setSocialBattery] = useState<number>(70);
   const [wins, setWins] = useState<WinLogData[]>([]);
   const [bodySymptoms, setBodySymptoms] = useState<string[]>([]);
-  const [weeklyReview, setWeeklyReview] = useState<any>(null);
   const [rtwPhase, setRtwPhase] = useState<number>(1);
   const [meetingLimit, setMeetingLimit] = useState<number>(2);
   const [isFocusShieldActive, setIsFocusShieldActive] = useState<boolean>(false);
@@ -614,36 +613,6 @@ export const RecoveryIntelligenceLayer = ({ onAwardPoints, fingerprint }: Recove
     );
   };
 
-  // 6. Weekly Review
-  const [reviewStep, setReviewStep] = useState(0);
-  const [reviewAnswers, setReviewAnswers] = useState<Record<string, string>>({
-    drain: '',
-    support: '',
-    unloaded: '',
-    boundary: ''
-  });
-
-  const submitWeeklyReview = () => {
-    const summary = {
-      timestamp: new Date().toISOString(),
-      ...reviewAnswers
-    };
-    setWeeklyReview(summary);
-
-    updateNovaMemoryBySourceAndType(
-      'Weekly Review',
-      'state',
-      {
-        content: `Weekly Reflection Completed: Drained by [${reviewAnswers.drain}]. Helpful tools: [${reviewAnswers.support}]. Relinquished baggage: [${reviewAnswers.unloaded}]. Targeted boundary for next cycle: [${reviewAnswers.boundary}].`,
-        canEdit: false,
-        confidence: 'verified'
-      }
-    );
-
-    onAwardPoints(50, 'Weekly Reflection Completed');
-    setReviewStep(0);
-  };
-
   // 7. Return to Work Planner
   const handleRTWPhase = (phase: number) => {
     setRtwPhase(phase);
@@ -782,6 +751,8 @@ export const RecoveryIntelligenceLayer = ({ onAwardPoints, fingerprint }: Recove
             { id: 'trigger', name: 'Trigger Journal', desc: 'Catalog stress spikes', pill: 'Daily' },
             { id: 'social', name: 'Social Battery Tracker', desc: 'Relational load monitor', pill: 'Daily' },
             { id: 'wins', name: 'Wins & Recovery Proof', desc: 'Visible progress ledger', pill: 'Proof' },
+            { id: 'goals', name: 'Personal Goals', desc: 'Sleep, boundaries, workload targets', pill: 'Tracked' },
+            { id: 'energy', name: 'Energy Capacity Log', desc: 'Category-based allocation history', pill: 'Weekly' },
             { id: 'body', name: 'Body Symptom Check-In', desc: 'Somatic distress logs', pill: 'Somatic' },
             { id: 'weekly', name: 'Weekly Review Ritual', desc: 'Recalibrate weekend values', pill: 'Weekly' },
             { id: 'rtw', name: 'Return-to-Work Planner', desc: 'Phased re-entry shields', pill: 'Planner' },
@@ -1317,6 +1288,56 @@ export const RecoveryIntelligenceLayer = ({ onAwardPoints, fingerprint }: Recove
                 </motion.div>
               )}
 
+              {activeRoom === 'goals' && (
+                <motion.div
+                  key="goals"
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -10 }}
+                  className="bg-card border border-border p-6 sm:p-8 rounded-xl"
+                >
+                  <div className="flex items-center gap-3 mb-6">
+                    <div className="w-10 h-10 rounded-xl bg-primary/20 text-primary flex items-center justify-center shrink-0">
+                      <Target className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h3 className="text-2xl font-display font-black text-text-main mt-1">Personal Goals</h3>
+                      <p className="text-xs text-text-muted mt-1">Set and track targets across sleep, boundaries, workload, and recovery.</p>
+                    </div>
+                  </div>
+                  {user ? <ConnectedGoals /> : (
+                    <div className="p-4 bg-surface text-xs text-text-muted rounded-xl flex items-center gap-2">
+                       <Loader2 className="w-3.5 h-3.5 animate-spin" /> Connecting...
+                    </div>
+                  )}
+                </motion.div>
+              )}
+
+              {activeRoom === 'energy' && (
+                <motion.div
+                  key="energy"
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -10 }}
+                  className="bg-card border border-border p-6 sm:p-8 rounded-xl"
+                >
+                  <div className="flex items-center gap-3 mb-6">
+                    <div className="w-10 h-10 rounded-xl bg-success/20 text-success flex items-center justify-center shrink-0">
+                      <Activity className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h3 className="text-2xl font-display font-black text-text-main mt-1">Energy Capacity Log</h3>
+                      <p className="text-xs text-text-muted mt-1">Log daily or weekly capacity across work, family, social, admin, and recovery.</p>
+                    </div>
+                  </div>
+                  {user ? <ConnectedEnergyBudget /> : (
+                    <div className="p-4 bg-surface text-xs text-text-muted rounded-xl flex items-center gap-2">
+                       <Loader2 className="w-3.5 h-3.5 animate-spin" /> Connecting...
+                    </div>
+                  )}
+                </motion.div>
+              )}
+
               {activeRoom === 'body' && (
                 <motion.div
                   key="body"
@@ -1356,94 +1377,9 @@ export const RecoveryIntelligenceLayer = ({ onAwardPoints, fingerprint }: Recove
                   <p className="text-xs text-text-muted mt-1">Consolidate chaotic data streams into clear architectural wisdom.</p>
                 </div>
 
-                {weeklyReview ? (
-                  <div className="space-y-6">
-                    <div className="bg-success/5 border border-success/20 p-6 rounded-2xl">
-                      <h4 className="text-sm font-bold text-text-main">Weekly Review Completed</h4>
-                      <div className="space-y-4 mt-4 text-xs">
-                        <div>
-                          <span className="text-text-muted uppercase font-black text-[11px]">Root Drain Identified:</span>
-                          <p className="font-bold text-text-main mt-0.5">"{weeklyReview.drain}"</p>
-                        </div>
-                        <div>
-                          <span className="text-text-muted uppercase font-black text-[11px]">Protected Boundary:</span>
-                          <p className="font-bold text-primary mt-0.5">"{weeklyReview.boundary}"</p>
-                        </div>
-                      </div>
-                    </div>
-                    <button
-                      onClick={() => setWeeklyReview(null)}
-                      className="w-full py-3 border border-border/30 rounded-xl text-xs font-bold text-text-muted hover:text-text-main cursor-pointer"
-                    >
-                      Start New Reflection Cycle
-                    </button>
-                  </div>
-                ) : (
-                  <div className="space-y-6">
-                    {/* Multistage questionnaire simulated */}
-                    {reviewStep === 0 && (
-                      <div className="space-y-3">
-                        <label className="text-xs font-bold text-text-main">What drained you most this week?</label>
-                        <textarea
-                          value={reviewAnswers.drain}
-                          onChange={e => setReviewAnswers(prev => ({ ...prev, drain: e.target.value }))}
-                          placeholder="Colleague constant slack threads or long client calls..."
-                          rows={3}
-                          className="w-full p-4 bg-white dark:bg-surface border border-border/40 rounded-xl text-xs font-semibold"
-                        />
-                      </div>
-                    )}
-
-                    {reviewStep === 1 && (
-                      <div className="space-y-3">
-                        <label className="text-xs font-bold text-text-main">What boundary should be defended next week?</label>
-                        <textarea
-                          value={reviewAnswers.boundary}
-                          onChange={e => setReviewAnswers(prev => ({ ...prev, boundary: e.target.value }))}
-                          placeholder="Refuse all meetings before 10 AM to secure focus time."
-                          rows={3}
-                          className="w-full p-4 bg-white dark:bg-surface border border-border/40 rounded-xl text-xs font-semibold"
-                        />
-                      </div>
-                    )}
-
-                    {reviewStep === 2 && (
-                      <div className="space-y-3">
-                        <label className="text-xs font-bold text-text-main">What are you carrying that you should drop immediately?</label>
-                        <textarea
-                          value={reviewAnswers.unloaded}
-                          onChange={e => setReviewAnswers(prev => ({ ...prev, unloaded: e.target.value }))}
-                          placeholder="Drop the non-critical report optimization proposal."
-                          rows={3}
-                          className="w-full p-4 bg-white dark:bg-surface border border-border/40 rounded-xl text-xs font-semibold"
-                        />
-                      </div>
-                    )}
-
-                    <div className="flex items-center justify-between pt-4 border-t border-border/20">
-                      <button
-                        onClick={() => setReviewStep(prev => Math.max(0, prev - 1))}
-                        disabled={reviewStep === 0}
-                        className="px-4 py-2 border border-border rounded-xl text-xs font-bold"
-                      >
-                        Back
-                      </button>
-                      {reviewStep < 2 ? (
-                        <button
-                          onClick={() => setReviewStep(prev => prev + 1)}
-                          className="px-6 py-2 bg-primary text-primary-foreground rounded-xl text-xs font-bold flex items-center gap-1 cursor-pointer"
-                        >
-                          Next Step <ChevronRight className="w-3.5 h-3.5" />
-                        </button>
-                      ) : (
-                        <button
-                          onClick={submitWeeklyReview}
-                          className="px-8 py-2 bg-success text-white rounded-xl text-xs font-bold cursor-pointer"
-                        >
-                          Commit Reflection (+50 pts)
-                        </button>
-                      )}
-                    </div>
+                {user ? <ConnectedWeeklyReviews /> : (
+                  <div className="p-4 bg-surface text-xs text-text-muted rounded-xl flex items-center gap-2">
+                     <Loader2 className="w-3.5 h-3.5 animate-spin" /> Connecting...
                   </div>
                 )}
               </motion.div>
