@@ -88,6 +88,22 @@ service cloud.firestore {
             (!('meetingLeadMinutes' in request.resource.data) || (request.resource.data.meetingLeadMinutes is number && request.resource.data.meetingLeadMinutes >= 5 && request.resource.data.meetingLeadMinutes <= 60));
       }
 
+      // Sleep & Wind-Down Builder's ritual state (bedtime target, cutoff
+      // toggles, tomorrow's parking list, free-write) - previously pure
+      // ephemeral React state that reset on every reload.
+      match /preferences/sleep_builder {
+        allow read: if isOwner(uid);
+        allow write: if isOwner(uid) &&
+            request.resource.data.keys().hasOnly([
+              'bedtime', 'caffeineCutoff', 'phoneOff', 'parkingList', 'mentalUnload', 'updatedAt'
+            ]) &&
+            (!('bedtime' in request.resource.data) || isStringWithMax(request.resource.data.bedtime, 5)) &&
+            (!('caffeineCutoff' in request.resource.data) || request.resource.data.caffeineCutoff is bool) &&
+            (!('phoneOff' in request.resource.data) || request.resource.data.phoneOff is bool) &&
+            (!('mentalUnload' in request.resource.data) || isOptionalStringWithMax(request.resource.data, 'mentalUnload', 1000)) &&
+            (!('parkingList' in request.resource.data) || (request.resource.data.parkingList is list && request.resource.data.parkingList.size() <= 30));
+      }
+
       // C3. users/{uid}/preferences/recovery_intelligence - current-state
       // values for the Recovery Intelligence Layer's interactive widgets
       // (social battery, body symptoms, focus shield, return-to-work phase).
