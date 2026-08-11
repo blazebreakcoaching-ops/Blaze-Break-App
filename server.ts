@@ -4314,11 +4314,33 @@ app.get("/api/anxiety-reset", verifyAppCheck, authenticateFirebaseUser, async (r
   }
 });
 
+const AnxietyResetEventSchema = z.object({
+  userId: z.string().optional(), // Client sends this but the server always overrides it with the authenticated uid below - accepted here only so .strict() doesn't reject real requests.
+  mode: z.string().max(50).optional(),
+  triggerType: z.string().max(100).optional(),
+  intensityBefore: z.number().min(0).max(10).optional(),
+  intensityAfter: z.number().min(0).max(10).optional(),
+  selectedTool: z.string().max(100).optional(),
+  completed: z.boolean().optional(),
+  durationSeconds: z.number().max(3600).optional(),
+  userNote: z.string().max(2000).optional(),
+  novaFollowUpShown: z.boolean().optional(),
+  followUpActionId: z.string().max(100).optional(),
+  safetyLevel: z.enum(['normal_support', 'heightened_anxiety', 'panic_level', 'possible_crisis', 'immediate_danger']).optional(),
+  startedAt: z.string().optional(),
+  endedAt: z.string().optional(),
+  createdAt: z.string().optional(), // Same as userId - client sends it, server overrides with a real serverTimestamp below.
+}).strict();
+
 app.post("/api/anxiety-reset", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
   try {
     const verifiedUser = requireAuth(req);
     const uid = verifiedUser?.uid;
-    const eventData = req.body;
+    const parsed = AnxietyResetEventSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: "Invalid anxiety reset event payload.", details: (parsed as any).error?.errors || [] });
+    }
+    const eventData = parsed.data;
     const db = getDb();
     
     const eventRef = db.collection("anxiety_reset_events").doc();
