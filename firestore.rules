@@ -502,6 +502,21 @@ service cloud.firestore {
         allow update: if false;
       }
 
+      // Resentment Tracker's raw venting log + Nova's structured analysis of
+      // it - equally sensitive personal content, same owner-only pattern.
+      match /resentment_logs/{entryId} {
+        allow read, delete: if isOwner(uid);
+        allow create, update: if isOwner(uid)
+            && hasOnly(['createdAt', 'updatedAt', 'log', 'yesMeantNo', 'unclear', 'unappreciated', 'missingBoundary'])
+            && hasAll(['createdAt', 'updatedAt', 'log'])
+            && isStringWithMax(request.resource.data.log, 3000)
+            && (!('yesMeantNo' in request.resource.data) || isStringWithMax(request.resource.data.yesMeantNo, 500))
+            && (!('unclear' in request.resource.data) || isStringWithMax(request.resource.data.unclear, 500))
+            && (!('unappreciated' in request.resource.data) || isStringWithMax(request.resource.data.unappreciated, 500))
+            && (!('missingBoundary' in request.resource.data) || isStringWithMax(request.resource.data.missingBoundary, 300))
+            && (request.method == 'create' ? true : checkCreatedAtUnchanged());
+      }
+
       // V. diagnosis_progress - completed recovery actions, committed
       // boundary scripts, and written reflections, keyed per burnout
       // profile since retaking with a different profile gets its own

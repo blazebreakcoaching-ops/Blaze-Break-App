@@ -4860,6 +4860,57 @@ app.get("/api/recovery/velocity-map", verifyAppCheck, authenticateFirebaseUser, 
 // figure from real data and only generates AI commentary grounded in what's
 // actually there.
 
+// ============================================================================
+// Resentment Tracker: real analysis (previously this was 100% hardcoded -
+// the code's own comment admitted "Simulate AI analysis delay" - the same
+// four-part response was shown to every user regardless of what they
+// actually wrote, after a fake 2-second "thinking" animation).
+// ============================================================================
+
+const ResentmentAnalysisRequestSchema = z.object({
+  log: z.string().min(1).max(3000),
+}).strict();
+
+app.post("/api/nova/resentment-analysis", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const parsed = ResentmentAnalysisRequestSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: "Invalid request.", details: (parsed as any).error?.errors || [] });
+    }
+    const { log } = parsed.data;
+
+    const prompt = `You are Nova, a direct, analytical British high-performance recovery coach. The user has just written raw, unfiltered venting about something that's currently resenting them at work or in life - they were explicitly told "be unprofessional, be petty, just get it out." Read what they actually wrote and extract genuine structural patterns from it. Do not invent specifics not present in their text - if something isn't there, say so honestly rather than filling the gap with a generic-sounding but fabricated observation.
+
+Their raw venting:
+"""
+${log}
+"""
+
+Respond strictly in this JSON format, no markdown, no commentary outside the JSON:
+{
+  "yesMeantNo": "1-2 sentences on where they likely agreed to something when they meant to decline, based specifically on what they wrote. If this pattern isn't evident in their text, say so honestly instead of guessing.",
+  "unclear": "1-2 sentences on where expectations seem vaguely defined, based specifically on what they wrote.",
+  "unappreciated": "1-2 sentences on where their effort seems to be going unrecognized, based specifically on what they wrote.",
+  "missingBoundary": "A short, concrete boundary statement (under 20 words) they could have used, grounded in their actual situation - not a generic template."
+}`;
+
+    const response = await ai.models.generateContent({
+      model: "gemini-3.5-flash",
+      contents: prompt,
+      config: { responseMimeType: "application/json" },
+    });
+
+    const text = response.text;
+    if (!text) throw new Error("Empty response from Gemini model.");
+    const analysis = JSON.parse(text);
+
+    res.json(analysis);
+  } catch (err: any) {
+    console.error("[Nova] resentment analysis error:", err.message);
+    res.status(500).json({ error: "Could not analyze that right now." });
+  }
+});
+
 app.get("/api/signals/executive-report", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
   try {
     const user = requireAuth(req);
