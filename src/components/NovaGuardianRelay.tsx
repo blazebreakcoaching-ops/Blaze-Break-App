@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { CrisisSupportContent } from './CrisisSupport';
+import { secureApiFetch } from '../lib/secure-api';
 import {
   Users, 
   ShieldCheck, 
@@ -29,6 +30,7 @@ interface NovaGuardianRelayProps {
   contacts: SupportContact[];
   onAdd: (contact: Omit<SupportContact, 'id'>) => void;
   onRemove: (id: string) => void;
+  userName?: string;
 }
 
 const GuardianCard = ({ 
@@ -74,7 +76,7 @@ const GuardianCard = ({
       setTimeout(() => {
         setIsRelaying(false);
         onTriggerPrimaryRelay();
-      }, 1000); // Simulate network delay
+      }, 1000); // Brief "relaying" UI transition before the real call fires
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       return;
     }
@@ -114,9 +116,9 @@ const GuardianCard = ({
       <div 
         className={cn(
           "absolute inset-0 border-2 rounded-2xl pointer-events-none transition-all rhythmic-heartbeat opacity-0 group-hover:opacity-100",
-          contact.autoAlertEnabled ? "border-destructive/20" : "border-primary/10"
+          "border-primary/10"
         )}
-        style={{ '--animation-duration': contact.autoAlertEnabled ? '1.5s' : '4s' } as React.CSSProperties}
+        style={{ '--animation-duration': '4s' } as React.CSSProperties}
       />
       
       {/* Real-time status indicator */}
@@ -156,11 +158,6 @@ const GuardianCard = ({
            )}>
              {contact.role.replace('_', ' ')}
            </span>
-           {contact.autoAlertEnabled && (
-             <span className="text-[11px] uppercase font-black tracking-widest text-success bg-success/10 border border-success/20 px-2.5 py-1 rounded-md flex items-center gap-1.5">
-               <Zap className="w-3 h-3" /> Auto-Relay Enabled
-             </span>
-           )}
         </div>
       </div>
 
@@ -216,7 +213,7 @@ const GuardianCard = ({
   );
 };
 
-export const NovaGuardianRelay = ({ contacts, onAdd, onRemove }: NovaGuardianRelayProps) => {
+export const NovaGuardianRelay = ({ contacts, onAdd, onRemove, userName }: NovaGuardianRelayProps) => {
   const [isAdding, setIsAdding] = useState(false);
   const [newContact, setNewContact] = useState<Omit<SupportContact, 'id'>>({
     name: '',
@@ -244,44 +241,86 @@ export const NovaGuardianRelay = ({ contacts, onAdd, onRemove }: NovaGuardianRel
   const sendTestAlertAll = async () => {
     setIsSending(true);
     setSendSuccess(null);
-    try {
-      setSendSuccess("Support messaging is not currently active.");
+    const senderName = userName?.trim() || 'A Blaze Break user';
+    const validContacts = contacts.filter(c => /^\+[1-9]\d{6,14}$/.test(c.contactMethod));
+
+    if (validContacts.length === 0) {
+      setSendSuccess(contacts.length === 0 ? "No guardians configured yet." : "No guardians have a valid phone number on file.");
       setTimeout(() => setSendSuccess(null), 3000);
+      setIsSending(false);
+      return;
+    }
+
+    try {
+      const results = await Promise.all(validContacts.map(c =>
+        secureApiFetch('/api/twilio/send', {
+          method: 'POST',
+          data: {
+            to: c.contactMethod,
+            message: `Nova Test: This is a test of ${senderName}'s Guardian Relay. No action needed - just confirming this contact method works.`,
+            useWhatsapp: c.notificationPreference === 'whatsapp',
+          },
+        }).then(res => res.json()).then(body => body.success === true).catch(() => false)
+      ));
+      const successCount = results.filter(Boolean).length;
+      setSendSuccess(successCount === validContacts.length
+        ? `Test sent to all ${successCount} guardian(s).`
+        : `Test sent to ${successCount} of ${validContacts.length} guardian(s) - check the rest.`);
+      setTimeout(() => setSendSuccess(null), 4000);
     } finally {
       setTimeout(() => setIsSending(false), 800);
     }
   };
 
-  const triggerLiveRelayToPrimary = async () => {
+  const sendRealAlert = async (contact: SupportContact) => {
     setIsSending(true);
+    const senderName = userName?.trim() || 'A Blaze Break user';
+    const message = `Nova Alert: ${senderName} has asked for extra support right now. This message was sent because they manually requested it.`;
+
+    if (!/^\+[1-9]\d{6,14}$/.test(contact.contactMethod)) {
+      setSendSuccess("Couldn't send - this contact's number isn't in a valid format. Edit it and try again.");
+      setTimeout(() => { setSendSuccess(null); setIsSending(false); }, 4000);
+      return;
+    }
+
     try {
-      setTimeout(() => {
-        setSendSuccess("Support messaging is not currently active.");
-        setTimeout(() => {
-          setSendSuccess(null);
-          setActiveSOS(null);
-          setIsSending(false);
-        }, 3000);
-      }, 1500);
+      const res = await secureApiFetch('/api/twilio/send', {
+        method: 'POST',
+        data: {
+          to: contact.contactMethod,
+          message,
+          useWhatsapp: contact.notificationPreference === 'whatsapp',
+        },
+      });
+      const body = await res.json();
+      if (res.ok && body.success) {
+        setSendSuccess(`Alert sent to ${contact.name}.`);
+      } else {
+        setSendSuccess(body.error || "Couldn't send that alert right now.");
+      }
     } catch (e) {
-      setIsSending(false);
+      setSendSuccess("Couldn't reach the messaging service right now.");
+    } finally {
+      setTimeout(() => {
+        setSendSuccess(null);
+        setActiveSOS(null);
+        setIsSending(false);
+      }, 3000);
     }
   };
 
-  const triggerLiveRelay = async (contact: SupportContact) => {
-    setIsSending(true);
-    try {
-      setTimeout(() => {
-        setSendSuccess("Support messaging is not currently active.");
-        setTimeout(() => {
-          setSendSuccess(null);
-          setActiveSOS(null);
-          setIsSending(false);
-        }, 3000);
-      }, 1500);
-    } catch (e) {
-      setIsSending(false);
+  const triggerLiveRelayToPrimary = async () => {
+    const primary = contacts.find(c => c.role === 'primary_guardian') || contacts[0];
+    if (!primary) {
+      setSendSuccess("No guardian is set up yet - add one first.");
+      setTimeout(() => setSendSuccess(null), 3000);
+      return;
     }
+    await sendRealAlert(primary);
+  };
+
+  const triggerLiveRelay = async (contact: SupportContact) => {
+    await sendRealAlert(contact);
   };
 
   return (
@@ -421,8 +460,8 @@ export const NovaGuardianRelay = ({ contacts, onAdd, onRemove }: NovaGuardianRel
                   <p className="text-[11px] leading-relaxed text-text-muted">Your guardians only ever see that you've reached out — never your conversation history, journal entries, or any other private details.</p>
                 </div>
                 <div className="space-y-2.5">
-                  <h5 className="text-xs font-black uppercase tracking-widest text-success">Priority Order</h5>
-                  <p className="text-[11px] leading-relaxed text-text-muted">Upon distress detection, system intervention occurs locally first. External proxy (Auto-Relay) activates only following threshold latency.</p>
+                  <h5 className="text-xs font-black uppercase tracking-widest text-success">How It Works</h5>
+                  <p className="text-[11px] leading-relaxed text-text-muted">This is entirely manual. Nova does not monitor you or decide when to alert anyone - your guardian is only ever contacted when you choose to reach out.</p>
                 </div>
              </div>
           </div>
@@ -482,9 +521,12 @@ export const NovaGuardianRelay = ({ contacts, onAdd, onRemove }: NovaGuardianRel
                         value={newContact.contactMethod}
                         onChange={e => setNewContact({...newContact, contactMethod: e.target.value})}
                         required
-                        placeholder="Phone number"
+                        pattern="^\+[1-9]\d{6,14}$"
+                        title="Include the country code, e.g. +15551234567"
+                        placeholder="+15551234567"
                         className="w-full bg-surface dark:bg-surface border border-border rounded-xl px-4 py-3.5 text-sm font-mono focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30 transition-all"
                       />
+                      <p className="text-[10px] text-text-muted ml-1">Include the country code (e.g. +1 for US/Canada, +44 for UK) so the alert can actually be sent.</p>
                     </div>
 
                     <div className="space-y-2">
@@ -494,8 +536,8 @@ export const NovaGuardianRelay = ({ contacts, onAdd, onRemove }: NovaGuardianRel
                          onChange={e => setNewContact({...newContact, notificationPreference: e.target.value as any})}
                          className="w-full bg-surface dark:bg-surface border border-border rounded-xl px-4 py-3.5 text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30 transition-all"
                        >
-                         <option value="sms">Encrypted SMS</option>
-                         <option value="whatsapp">WhatsApp Business API</option>
+                         <option value="sms">SMS</option>
+                         <option value="whatsapp">WhatsApp</option>
                        </select>
                     </div>
 
@@ -517,30 +559,6 @@ export const NovaGuardianRelay = ({ contacts, onAdd, onRemove }: NovaGuardianRel
                        </p>
                     </div>
                   </div>
-
-                  {newContact.role.includes('guardian') && (
-                    <div className="p-6 bg-destructive/50 dark:bg-destructive/20 border border-destructive dark:border-destructive/30 rounded-2xl space-y-5">
-                       <h5 className="text-xs font-black uppercase tracking-widest text-destructive dark:text-destructive flex items-center gap-2">
-                          <AlertTriangle className="w-4 h-4" /> Automation Parameters
-                       </h5>
-                       
-                       <label className="flex items-start gap-5 cursor-pointer group">
-                         <div className={cn("w-6 h-6 rounded flex items-center justify-center shrink-0 mt-0.5 border-2 transition-all", newContact.autoAlertEnabled ? "bg-destructive border-destructive" : "bg-white dark:bg-card border-border dark:border-border group-hover:border-destructive/50")}>
-                           {newContact.autoAlertEnabled && <CheckCircle2 className="w-4 h-4 text-text-main" />}
-                         </div>
-                         <input 
-                           type="checkbox" 
-                           checked={newContact.autoAlertEnabled}
-                           onChange={e => setNewContact({...newContact, autoAlertEnabled: e.target.checked})}
-                           className="hidden"
-                         />
-                         <div className="space-y-1.5">
-                           <span className={cn("text-sm font-bold block transition-colors", newContact.autoAlertEnabled ? "text-destructive dark:text-destructive" : "text-text-main")}>Enable Automatic Alert</span>
-                           <span className="text-xs text-text-muted block leading-relaxed pr-6 font-medium">Authorizes the Nova engine to autonomously deploy distress beacons to this endpoint upon detecting a critical instability state, bypassing user confirmation.</span>
-                         </div>
-                       </label>
-                    </div>
-                  )}
 
                   <button 
                     type="submit"
@@ -586,7 +604,7 @@ export const NovaGuardianRelay = ({ contacts, onAdd, onRemove }: NovaGuardianRel
                   <div className="p-5 bg-black/40 rounded-xl border border-border/50 shadow-inner">
                     <p className="text-[11px] font-mono leading-relaxed text-text-muted">
                       [PAYLOAD PREVIEW]<br/><br/>
-                      "Nova Alert: [Your Name] has asked for extra support right now. This message was sent because they manually requested it."
+                      "Nova Alert: {userName?.trim() || 'A Blaze Break user'} has asked for extra support right now. This message was sent because they manually requested it."
                     </p>
                   </div>
 

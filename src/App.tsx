@@ -3211,6 +3211,7 @@ export default function App() {
                   contacts={stats.supportCircle || []}
                   onAdd={handleAddContact}
                   onRemove={handleRemoveContact}
+                  userName={stats.profile?.fullName}
                 />
               </div>
             )}
