@@ -4916,6 +4916,128 @@ app.get("/api/recovery/velocity-map", verifyAppCheck, authenticateFirebaseUser, 
   }
 });
 
+// ============ Outcome Tracker (real, not fabricated) ============
+// Previously "Section 21 / Evidence & ROI" was entirely hardcoded: 8 KPIs
+// (+45% recovery improvement, 4.9/5 user rating, etc.) and 3 charts showing
+// a perfectly smooth 6-week improvement curve, identical for every user,
+// with the fingerprint prop received but never even read. This computes
+// genuine weekly aggregates from real collections using the same
+// day-bucketing approach as the velocity map above, and is honest that some
+// of the original claims (a user rating system, sleep-hours tracking,
+// a return-to-work confidence score) have no real data source anywhere in
+// this app rather than inventing plausible-looking substitutes for them.
+
+app.get("/api/user/outcome-tracker", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const user = requireAuth(req);
+    const db = getDb();
+    const sixWeeksAgo = new Date(Date.now() - 42 * 24 * 60 * 60 * 1000).toISOString();
+
+    const [triggersSnap, boundarySnap, winsSnap, moodSnap, budgetsSnap, workloadDoc] = await Promise.all([
+      db.collection("users").doc(user.uid).collection("stress_triggers").where("createdAt", ">=", sixWeeksAgo).get(),
+      db.collection("users").doc(user.uid).collection("boundary_scripts").where("createdAt", ">=", sixWeeksAgo).get(),
+      db.collection("users").doc(user.uid).collection("wins").where("createdAt", ">=", sixWeeksAgo).get(),
+      db.collection("users").doc(user.uid).collection("mood_pulses").where("createdAt", ">=", sixWeeksAgo).get(),
+      db.collection("users").doc(user.uid).collection("energy_budgets").where("createdAt", ">=", sixWeeksAgo).get(),
+      db.collection("users").doc(user.uid).collection("workload_reality_check").doc("state").get(),
+    ]);
+
+    const weekIndex = (iso: string) => Math.floor((Date.now() - new Date(iso).getTime()) / (7 * 24 * 60 * 60 * 1000));
+
+    const triggersByWeek: Record<number, number[]> = {};
+    triggersSnap.docs.forEach(d => {
+      const w = weekIndex(d.data().createdAt);
+      if (w >= 0 && w < 6) (triggersByWeek[w] = triggersByWeek[w] || []).push(d.data().severity || 5);
+    });
+    const boundaryByWeek: Record<number, number> = {};
+    boundarySnap.docs.forEach(d => {
+      const w = weekIndex(d.data().createdAt);
+      if (w >= 0 && w < 6) boundaryByWeek[w] = (boundaryByWeek[w] || 0) + 1;
+    });
+    const recoveryEventsByWeek: Record<number, number> = {};
+    winsSnap.docs.forEach(d => {
+      const w = weekIndex(d.data().createdAt);
+      if (w >= 0 && w < 6) recoveryEventsByWeek[w] = (recoveryEventsByWeek[w] || 0) + 1;
+    });
+    moodSnap.docs.forEach(d => {
+      const w = weekIndex(d.data().createdAt);
+      if (w >= 0 && w < 6) recoveryEventsByWeek[w] = (recoveryEventsByWeek[w] || 0) + 0.5;
+    });
+    const budgetsByWeek: Record<number, number[]> = {};
+    budgetsSnap.docs.forEach(d => {
+      const data = d.data();
+      const w = weekIndex(data.createdAt);
+      const pct = data.totalCapacity > 0 ? (data.allocatedCapacity / data.totalCapacity) * 100 : 0;
+      if (w >= 0 && w < 6) (budgetsByWeek[w] = budgetsByWeek[w] || []).push(pct);
+    });
+
+    const weeks = [];
+    let anyRealData = false;
+    for (let i = 5; i >= 0; i--) {
+      const dayTriggers = triggersByWeek[i];
+      const burnoutRisk = dayTriggers && dayTriggers.length > 0
+        ? Math.min(100, Math.round(dayTriggers.reduce((a, b) => a + b, 0) / dayTriggers.length * 10))
+        : null;
+
+      const recoveryCount = recoveryEventsByWeek[i] || 0;
+      const recoveryFromEvents = recoveryCount > 0 ? Math.min(100, Math.round(recoveryCount * 15)) : null;
+
+      const boundaryCount = boundaryByWeek[i] || 0;
+      const boundary = boundaryCount > 0 ? Math.min(100, Math.round(boundaryCount * 25)) : null;
+
+      const dayBudgets = budgetsByWeek[i];
+      const overcapacity = dayBudgets && dayBudgets.length > 0
+        ? Math.round(dayBudgets.reduce((a, b) => a + b, 0) / dayBudgets.length)
+        : null;
+
+      const hasData = burnoutRisk !== null || recoveryFromEvents !== null || boundary !== null || overcapacity !== null;
+      if (hasData) anyRealData = true;
+
+      weeks.push({
+        week: `W${6 - i}`,
+        recovery: recoveryFromEvents,
+        burnoutRisk,
+        boundary,
+        overcapacity,
+        hasData,
+      });
+    }
+
+    // KPIs: only computed where a real signal genuinely exists. Sleep
+    // consistency, return-to-work confidence, and a user-helpfulness rating
+    // have no real data source anywhere in this app - honestly null rather
+    // than invented.
+    const totalBoundaryScripts = boundarySnap.size;
+    const totalWins = winsSnap.size;
+    const avgTriggerSeverity = triggersSnap.size > 0
+      ? triggersSnap.docs.reduce((sum, d) => sum + (d.data().severity || 5), 0) / triggersSnap.size
+      : null;
+
+    let overcapacityDaysPerWeek: number | null = null;
+    if (workloadDoc.exists) {
+      const tasks = workloadDoc.data()?.tasks || [];
+      const activeDrain = tasks.filter((t: any) => !t.completed).reduce((sum: number, t: any) => sum + (t.energyDrain || 0), 0);
+      overcapacityDaysPerWeek = activeDrain > 300 ? Math.min(7, Math.round((activeDrain - 300) / 60)) : 0;
+    }
+
+    res.json({
+      weeks,
+      hasAnyData: anyRealData,
+      kpis: {
+        boundaryScriptsLogged: totalBoundaryScripts,
+        winsLogged: totalWins,
+        avgTriggerSeverity: avgTriggerSeverity !== null ? Math.round(avgTriggerSeverity * 10) / 10 : null,
+        overcapacityDaysPerWeek,
+        sleepConsistency: null,
+        returnToWorkConfidence: null,
+        userRatedHelpfulness: null,
+      },
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ============ Executive Board Report (real data, not fabricated) ============
 // Previously this report - explicitly meant to be shown to an employer or
 // manager - contained a hardcoded "Nova AI Analysis" quote that was never
