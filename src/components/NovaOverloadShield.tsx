@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { BurnoutFingerprint } from '../types';
+import { secureApiFetch } from '../lib/secure-api';
 
 interface NovaOverloadShieldProps {
   fingerprint: BurnoutFingerprint | null;
@@ -32,7 +33,8 @@ interface Integration {
   icon: any;
   status: 'disconnected' | 'connected';
   description: string;
-  stats?: string;
+  detail: string | null; // Real, computed detail text - null until real data is fetched, never a fabricated placeholder.
+  scoreContribution: number;
 }
 
 const SHIELD_STATES: Record<ShieldState, { label: string; color: string; icon: any; message: string; subtext: string }> = {
@@ -111,27 +113,73 @@ export const NovaOverloadShield = ({ fingerprint, onAwardPoints, onNavigate }: N
   });
 
   const [integrations, setIntegrations] = useState<Integration[]>([
-    { id: 'gcal', name: 'Google Calendar', icon: Calendar, status: 'disconnected', description: 'Reads free/busy & meeting density.', stats: '3 back-to-back meetings, no breaks' },
-    { id: 'outlook', name: 'Outlook Calendar', icon: Calendar, status: 'disconnected', description: 'Reads free/busy & meeting density.', stats: 'No active overload' },
-    { id: 'gmail', name: 'Gmail Metadata', icon: MessageSquare, status: 'disconnected', description: 'Tracks email volume & after-hours sending.', stats: 'High unread load, 12 after-hours sends' },
-    { id: 'slack', name: 'Slack', icon: MessageSquare, status: 'disconnected', description: 'Tracks mentions & interruption frequency.', stats: '14 mentions after 6PM' },
-    { id: 'asana', name: 'Asana / Jira', icon: CheckSquare, status: 'disconnected', description: 'Adds task pressure & deadline load.', stats: '5 overdue tasks, 12 due today' }
+    { id: 'gcal', name: 'Google Calendar', icon: Calendar, status: 'disconnected', description: 'Reads free/busy & meeting density.', detail: null, scoreContribution: 0 },
+    { id: 'gmail', name: 'Gmail Metadata', icon: MessageSquare, status: 'disconnected', description: 'Tracks email volume & after-hours sending.', detail: null, scoreContribution: 0 },
+    { id: 'slack', name: 'Slack', icon: MessageSquare, status: 'disconnected', description: 'Tracks mentions & interruption frequency.', detail: null, scoreContribution: 0 },
+    { id: 'jira', name: 'Jira', icon: CheckSquare, status: 'disconnected', description: 'Adds task pressure & deadline load.', detail: null, scoreContribution: 0 },
+    { id: 'asana', name: 'Asana', icon: CheckSquare, status: 'disconnected', description: 'Adds task pressure & deadline load.', detail: null, scoreContribution: 0 },
   ]);
   const [simulating, setSimulating] = useState(false);
+  const [integrationsLoaded, setIntegrationsLoaded] = useState(false);
 
-  const toggleIntegration = (id: string) => {
-    const target = integrations.find(int => int.id === id);
-    if (target && target.status === 'disconnected' && onAwardPoints) {
-      onAwardPoints(20, `Connected ${target.name}`);
-    }
+  // Fetches genuinely real signal data for each service - previously this
+  // list was five hardcoded entries with fabricated per-service "stats"
+  // text shown identically to every user, and "connecting" just flipped a
+  // local boolean with no real OAuth behind it.
+  useEffect(() => {
+    if (activeTab !== 'integrations' || integrationsLoaded) return;
+    const load = async () => {
+      try {
+        const [calRes, gmailRes, slackRes, jiraRes, asanaRes] = await Promise.all([
+          secureApiFetch('/api/signals/calendar'),
+          secureApiFetch('/api/signals/gmail'),
+          secureApiFetch('/api/signals/slack'),
+          secureApiFetch('/api/signals/jira'),
+          secureApiFetch('/api/signals/asana'),
+        ]);
+        const [cal, gmail, slack, jira, asana] = await Promise.all(
+          [calRes, gmailRes, slackRes, jiraRes, asanaRes].map(r => r.json())
+        );
 
-    setIntegrations(prev => prev.map(int => {
-      if (int.id === id) {
-        return { ...int, status: int.status === 'connected' ? 'disconnected' : 'connected' };
+        setIntegrations([
+          {
+            id: 'gcal', name: 'Google Calendar', icon: Calendar, description: 'Reads free/busy & meeting density.',
+            status: cal.state ? 'connected' : 'disconnected',
+            detail: cal.state ? `${cal.state.backToBackCount} back-to-back meetings, ${cal.state.meetingCount} total this week` : null,
+            scoreContribution: cal.state ? (cal.state.backToBackCount >= 3 ? 2 : cal.state.backToBackCount >= 1 ? 1 : 0) : 0,
+          },
+          {
+            id: 'gmail', name: 'Gmail Metadata', icon: MessageSquare, description: 'Tracks unread inbox load.',
+            status: gmail.state ? 'connected' : 'disconnected',
+            detail: gmail.state ? `${gmail.state.unreadCount} unread, ${gmail.state.totalInboxCount} total in inbox` : null,
+            scoreContribution: gmail.state ? (gmail.state.unreadCount >= 50 ? 2 : gmail.state.unreadCount >= 20 ? 1 : 0) : 0,
+          },
+          {
+            id: 'slack', name: 'Slack', icon: MessageSquare, description: 'Tracks after-hours and weekend message load.',
+            status: slack.state ? 'connected' : 'disconnected',
+            detail: slack.state?.lastCompleted ? `${slack.state.lastCompleted.afterHoursMessages7d} after-hours messages this week` : (slack.state ? 'First scan still in progress' : null),
+            scoreContribution: slack.state?.lastCompleted ? (slack.state.lastCompleted.afterHoursMessages7d >= 10 ? 2 : slack.state.lastCompleted.afterHoursMessages7d >= 3 ? 1 : 0) : 0,
+          },
+          {
+            id: 'jira', name: 'Jira', icon: CheckSquare, description: 'Tracks overdue and open issue load.',
+            status: jira.state ? 'connected' : 'disconnected',
+            detail: jira.state ? `${jira.state.overdueIssues} overdue, ${jira.state.totalOpenIssues} open issues` : null,
+            scoreContribution: jira.state ? (jira.state.overdueIssues >= 3 ? 2 : jira.state.overdueIssues >= 1 ? 1 : 0) : 0,
+          },
+          {
+            id: 'asana', name: 'Asana', icon: CheckSquare, description: 'Tracks overdue and incomplete task load.',
+            status: asana.state ? 'connected' : 'disconnected',
+            detail: asana.state ? `${asana.state.overdueTasks} overdue, ${asana.state.totalIncompleteTasks} incomplete tasks` : null,
+            scoreContribution: asana.state ? (asana.state.overdueTasks >= 3 ? 2 : asana.state.overdueTasks >= 1 ? 1 : 0) : 0,
+          },
+        ]);
+      } catch (e) {
+        // Leaves the honest disconnected defaults in place rather than pretending signals loaded.
       }
-      return int;
-    }));
-  };
+      setIntegrationsLoaded(true);
+    };
+    load();
+  }, [activeTab, integrationsLoaded]);
 
   useEffect(() => {
     let score = 0;
@@ -154,19 +202,7 @@ export const NovaOverloadShield = ({ fingerprint, onAwardPoints, onNavigate }: N
       
       if (manualData.recoveryGaps === 'no') score += 2;
     } else {
-      const connectedCount = integrations.filter(i => i.status === 'connected').length;
-      if (connectedCount === 0) {
-        score = 0;
-      } else {
-        integrations.forEach(int => {
-          if (int.status === 'connected') {
-            if (int.id === 'gcal') score += 2; // 3 back to back meetings
-            if (int.id === 'gmail') score += 2; // High unread load
-            if (int.id === 'slack') score += 2; // 14 mentions
-            if (int.id === 'asana') score += 2; // 5 overdue tasks
-          }
-        });
-      }
+      score = integrations.reduce((sum, int) => sum + (int.status === 'connected' ? int.scoreContribution : 0), 0);
     }
     
     let nextState: ShieldState = 'stable';
@@ -220,7 +256,7 @@ export const NovaOverloadShield = ({ fingerprint, onAwardPoints, onNavigate }: N
               onClick={() => setActiveTab('integrations')}
               className={cn("flex-1 py-2 text-sm font-bold rounded-xl transition-all", activeTab === 'integrations' ? "bg-white dark:bg-surface text-text-main shadow-sm" : "text-text-muted hover:text-text-main")}
             >
-              Integrations (Coming Soon)
+              Live Signals
             </button>
           </div>
 
@@ -347,16 +383,17 @@ export const NovaOverloadShield = ({ fingerprint, onAwardPoints, onNavigate }: N
                         <div>
                           <h5 className="font-bold text-text-main text-sm">{int.name}</h5>
                           <div className="text-xs text-text-muted">{int.description}</div>
-                          {int.status === 'connected' && int.stats && (
+                          {int.status === 'connected' && int.detail && (
                             <div className="mt-2 text-xs font-medium text-warning bg-warning/10 inline-block px-2 py-1 rounded">
-                              Detected: {int.stats}
+                              Detected: {int.detail}
                             </div>
                           )}
                         </div>
                       </div>
                       <button 
-                        onClick={() => toggleIntegration(int.id)}
-                        className={cn("px-3 py-1.5 shrink-0 rounded-lg text-xs font-bold transition-all", int.status === 'connected' ? 'bg-success/10 text-success hover:bg-success/20' : 'bg-border dark:bg-surface text-text-main hover:bg-surface dark:hover:bg-surface')}
+                        onClick={() => int.status === 'disconnected' && onNavigate && onNavigate('privacy')}
+                        disabled={int.status === 'connected'}
+                        className={cn("px-3 py-1.5 shrink-0 rounded-lg text-xs font-bold transition-all", int.status === 'connected' ? 'bg-success/10 text-success cursor-default' : 'bg-border dark:bg-surface text-text-main hover:bg-surface dark:hover:bg-surface')}
                       >
                         {int.status === 'connected' ? 'Connected' : 'Connect'}
                       </button>
