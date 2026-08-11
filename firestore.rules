@@ -287,6 +287,20 @@ service cloud.firestore {
             && request.resource.data.category in ['sleep', 'boundaries', 'workload', 'nutrition_rhythm', 'movement', 'reflection', 'recovery_time']
             && (request.method == 'create' ? true : checkCreatedAtUnchanged());
       }
+
+      // Recovery Fuel Engine's daily physiological check-in - previously
+      // localStorage-only despite the panel being explicitly labeled
+      // "Connected to Nova". Keyed by date so each day naturally has at
+      // most one entry, matching the original per-day localStorage key.
+      match /recovery_fuel_logs/{dateId} {
+        allow read, delete: if isOwner(uid);
+        allow create, update: if isOwner(uid)
+            && hasOnly(['createdAt', 'updatedAt', 'hasEaten', 'skippedBreakfast', 'caffeineCount', 'caffeineTiming', 'caffeineEmptyStomach', 'hydrationGlasses', 'morningLight', 'alcoholLogged', 'shakyIrritable'])
+            && hasAll(['createdAt', 'updatedAt'])
+            && (!('caffeineCount' in request.resource.data) || (request.resource.data.caffeineCount is number && request.resource.data.caffeineCount >= 0 && request.resource.data.caffeineCount <= 20))
+            && (!('hydrationGlasses' in request.resource.data) || (request.resource.data.hydrationGlasses is number && request.resource.data.hydrationGlasses >= 0 && request.resource.data.hydrationGlasses <= 30))
+            && (request.method == 'create' ? true : checkCreatedAtUnchanged());
+      }
       
       // J. nova_permissions/current
       match /nova_permissions/current {

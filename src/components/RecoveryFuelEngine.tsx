@@ -21,7 +21,7 @@ import { cn } from '../lib/utils';
 import { updateNovaMemoryBySourceAndType } from '../lib/nova-brain';
 import { useAuth } from '../lib/auth';
 import { auth, db } from '../lib/firebase';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc, deleteDoc } from 'firebase/firestore';
 
 import { SHIPStage } from '../types';
 
@@ -127,23 +127,29 @@ export const RecoveryFuelEngine = ({
 
   // Load check-in state if saved for today
   useEffect(() => {
-    const today = new Date().toISOString().split('T')[0];
-    const saved = localStorage.getItem(`blaze_fuel_log_${today}`);
-    if (saved) {
+    const loadTodayFuelLog = async () => {
+      if (!auth.currentUser) return;
+      const today = new Date().toISOString().split('T')[0];
       try {
-        const parsed = JSON.parse(saved);
-        setHasEaten(parsed.hasEaten);
-        setSkippedBreakfast(parsed.skippedBreakfast);
-        setCaffeineCount(parsed.caffeineCount);
-        setCaffeineTiming(parsed.caffeineTiming);
-        setCaffeineEmptyStomach(parsed.caffeineEmptyStomach);
-        setHydrationGlasses(parsed.hydrationGlasses);
-        setMorningLight(parsed.morningLight);
-        setAlcoholLogged(parsed.alcoholLogged);
-        setShakyIrritable(parsed.shakyIrritable);
-        setIsCheckInSubmitted(true);
-      } catch (e) {}
-    }
+        const snap = await getDoc(doc(db, 'users', auth.currentUser.uid, 'recovery_fuel_logs', today));
+        if (snap.exists()) {
+          const parsed = snap.data();
+          setHasEaten(parsed.hasEaten);
+          setSkippedBreakfast(parsed.skippedBreakfast);
+          setCaffeineCount(parsed.caffeineCount);
+          setCaffeineTiming(parsed.caffeineTiming);
+          setCaffeineEmptyStomach(parsed.caffeineEmptyStomach);
+          setHydrationGlasses(parsed.hydrationGlasses);
+          setMorningLight(parsed.morningLight);
+          setAlcoholLogged(parsed.alcoholLogged);
+          setShakyIrritable(parsed.shakyIrritable);
+          setIsCheckInSubmitted(true);
+        }
+      } catch (e) {
+        // Leaves the honest empty state in place rather than pretending today's log loaded.
+      }
+    };
+    loadTodayFuelLog();
   }, []);
 
   const handleSaveCheckIn = () => {
@@ -161,7 +167,16 @@ export const RecoveryFuelEngine = ({
       timestamp: new Date().toISOString()
     };
 
-    localStorage.setItem(`blaze_fuel_log_${today}`, JSON.stringify(fuelData));
+    if (auth.currentUser) {
+      const { timestamp, ...fuelDataForFirestore } = fuelData;
+      setDoc(doc(db, 'users', auth.currentUser.uid, 'recovery_fuel_logs', today), {
+        ...fuelDataForFirestore,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      }, { merge: true }).catch(() => {
+        // Non-fatal - the UI still reflects the change locally even if this save fails.
+      });
+    }
     setIsCheckInSubmitted(true);
 
     // Build specific feedback context for Nova memory baseline
@@ -205,7 +220,11 @@ export const RecoveryFuelEngine = ({
 
   const handleResetCheckIn = () => {
     const today = new Date().toISOString().split('T')[0];
-    localStorage.removeItem(`blaze_fuel_log_${today}`);
+    if (auth.currentUser) {
+      deleteDoc(doc(db, 'users', auth.currentUser.uid, 'recovery_fuel_logs', today)).catch(() => {
+        // Non-fatal - the UI still resets locally even if this delete fails.
+      });
+    }
     setHasEaten(null);
     setSkippedBreakfast(null);
     setCaffeineCount(0);
