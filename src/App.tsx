@@ -102,6 +102,7 @@ import { SettingsModal } from "./components/SettingsModal.tsx";
 const FutureSelfSimulator = lazy(() => import("./components/FutureSelfSimulator.tsx").then(m => ({ default: m.FutureSelfSimulator })));
 const AssuranceCentre = lazy(() => import("./components/AssuranceCentre.tsx").then(m => ({ default: m.AssuranceCentre })));
 import { AuthStatusTracker } from "./lib/sync.tsx";
+import { initNovaBrain, clearNovaBrainCache } from "./lib/nova-brain";
 import { useAuth } from "./lib/auth.tsx";
 const IntegrationsDashboard = lazy(() => import("./components/IntegrationsDashboard.tsx").then(m => ({ default: m.IntegrationsDashboard })));
 const AdminDashboard = lazy(() => import("./components/AdminDashboard.tsx").then(m => ({ default: m.AdminDashboard })));
@@ -2324,6 +2325,12 @@ export default function App() {
 
     const loadStats = async () => {
       const savedFingerprint = localStorage.getItem("blaze_fingerprint");
+
+      if (user) {
+        initNovaBrain(user.uid); // Fire-and-forget - populates the cache; callers just see an empty brain until it resolves.
+      } else {
+        clearNovaBrainCache();
+      }
 
       // A single, honest default for everyone - previously anonymous users
       // (the vast majority, since anonymous auth signs everyone in
