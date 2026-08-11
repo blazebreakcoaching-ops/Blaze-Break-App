@@ -1,49 +1,28 @@
-import React from 'react';
-import { ShieldCheck, AlertTriangle, CheckCircle2 } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { ShieldCheck, AlertTriangle, CheckCircle2, Loader2 } from 'lucide-react';
 import { RecommendationLedgerEntry } from '../lib/nova-intelligence.ts';
-
-const MOCK_LEDGER: RecommendationLedgerEntry[] = [
-  {
-    id: '1',
-    userId: 'anonymous-001',
-    timestamp: new Date().toISOString(),
-    type: 'recovery_reminder',
-    content: 'Based on your recent check-ins, your energy has been lower on meeting-heavy days. A protected break tomorrow may be worth trying.',
-    sourcesUsed: ['energy_check_in_x4', 'schedule_metadata'],
-    ruleVersion: '1.2.0',
-    sensitivityLevel: 'medium',
-    status: 'verified',
-    explanation: 'Verified: Supported by 2 user signals.',
-    userHelpful: true
-  },
-  {
-    id: '2',
-    userId: 'anonymous-001',
-    timestamp: new Date().toISOString(),
-    type: 'course_reinforcement',
-    content: 'Today\'s lesson links to your current SHIP focus: Boundaries. Ready for one small action?',
-    sourcesUsed: ['ship_stage_integrate', 'course_progress'],
-    ruleVersion: '1.2.0',
-    sensitivityLevel: 'low',
-    status: 'verified',
-    explanation: 'Verified: Supported by 2 user signals.',
-    userDismissed: true
-  },
-  {
-    id: '3',
-    userId: 'anonymous-001',
-    timestamp: new Date().toISOString(),
-    type: 'overload_warning',
-    content: 'Your burnout risk is red and your anxiety pattern has worsened.',
-    sourcesUsed: ['mood_pulse'],
-    ruleVersion: '1.1.0',
-    sensitivityLevel: 'high',
-    status: 'rejected',
-    explanation: 'Rejected: Recommendation breached non-medical coaching boundary.'
-  }
-];
+import { secureApiFetch } from '../lib/secure-api';
 
 export const RecommendationLedger = () => {
+  const [entries, setEntries] = useState<RecommendationLedgerEntry[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const res = await secureApiFetch('/api/user/recommendation-ledger');
+        if (res.ok) {
+          const data = await res.json();
+          setEntries(data.entries || []);
+        }
+      } catch (e) {
+        // Leaves the honest empty state in place rather than pretending entries loaded.
+      }
+      setLoading(false);
+    };
+    load();
+  }, []);
+
   return (
     <div className="card space-y-6 mt-12 bg-background shadow-lg border border-border">
       <div className="flex items-center gap-4 mb-6">
@@ -56,6 +35,13 @@ export const RecommendationLedger = () => {
         </div>
       </div>
 
+      {loading ? (
+        <div className="flex items-center justify-center py-12">
+          <Loader2 className="w-6 h-6 animate-spin text-text-muted" />
+        </div>
+      ) : entries.length === 0 ? (
+        <p className="text-sm text-text-muted italic text-center py-12">No recommendations logged yet. This fills in as Nova generates and verifies recommendations for you.</p>
+      ) : (
       <div className="overflow-x-auto rounded-xl border border-white/[0.05]">
         <table className="w-full text-left text-sm whitespace-nowrap">
           <thead className="bg-surface border-b border-white/[0.05] text-text-muted">
@@ -69,7 +55,7 @@ export const RecommendationLedger = () => {
             </tr>
           </thead>
           <tbody className="divide-y divide-white/[0.02]">
-            {MOCK_LEDGER.map((entry) => (
+            {entries.map((entry) => (
               <tr key={entry.id} className="hover:bg-white/[0.01] transition-colors">
                 <td className="px-4 py-3 text-text-muted text-xs">{new Date(entry.timestamp).toLocaleTimeString()}</td>
                 <td className="px-4 py-3 text-text-muted text-xs uppercase tracking-wider">{entry.type.replace('_', ' ')}</td>
@@ -104,6 +90,8 @@ export const RecommendationLedger = () => {
           </tbody>
         </table>
       </div>
+      )}
     </div>
   );
 };
+

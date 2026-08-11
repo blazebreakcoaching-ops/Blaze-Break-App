@@ -4700,7 +4700,7 @@ app.get("/api/user/recommendation", verifyAppCheck, authenticateFirebaseUser, as
       .where("status", "==", "active").get();
     const activeLoad = commitmentsSnap.docs.reduce((sum, d) => sum + (d.data().energyDrain || 0), 0);
 
-    let recommendation: { tool: string; tab: string; title: string; message: string; points: number };
+    let recommendation: { tool: string; tab: string; title: string; message: string; points: number; sourcesUsed: string[]; type: string };
 
     if (recentHighSeverity) {
       const snippet = String(recentHighSeverity.text || '').slice(0, 90);
@@ -4712,6 +4712,8 @@ app.get("/api/user/recommendation", verifyAppCheck, authenticateFirebaseUser, as
           ? `You logged "${snippet}" a little while ago as high-intensity. A short reset now could help before it compounds.`
           : "Something you logged recently was high-intensity. A short reset now could help before it compounds.",
         points: 25,
+        sourcesUsed: ['stress_triggers'],
+        type: 'overload_warning',
       };
     } else if (hoursSince(stats.lastCheckIn) > 20 && hoursSince(stats.lastMoodPulse) > 20) {
       recommendation = {
@@ -4720,6 +4722,8 @@ app.get("/api/user/recommendation", verifyAppCheck, authenticateFirebaseUser, as
         title: "Haven't heard from you today",
         message: "You haven't logged a check-in yet today. A quick pulse helps Nova actually track how you're doing, not just guess.",
         points: 15,
+        sourcesUsed: ['derived_stats.lastCheckIn', 'derived_stats.lastMoodPulse'],
+        type: 'recovery_reminder',
       };
     } else if (activeLoad >= 60) {
       recommendation = {
@@ -4728,6 +4732,8 @@ app.get("/api/user/recommendation", verifyAppCheck, authenticateFirebaseUser, as
         title: "Your active load looks heavy",
         message: `You've got ${activeLoad} units of active energy commitments logged right now. Worth reviewing what can be delegated or dropped before it adds up.`,
         points: 20,
+        sourcesUsed: ['energy_commitments'],
+        type: 'recovery_reminder',
       };
     } else if (hoursSince(stats.lastBoundaryRehearsal) > 24 * 7 && activeLoad > 0) {
       recommendation = {
@@ -4736,6 +4742,8 @@ app.get("/api/user/recommendation", verifyAppCheck, authenticateFirebaseUser, as
         title: "Worth rehearsing a script",
         message: "It's been a while since you practiced a boundary script. If something's been sitting on your plate, a few minutes of rehearsal makes it easier to actually say.",
         points: 20,
+        sourcesUsed: ['derived_stats.lastBoundaryRehearsal', 'energy_commitments'],
+        type: 'recovery_reminder',
       };
     } else if (hoursSince(stats.lastNervousSystemReset) > 48) {
       recommendation = {
@@ -4744,6 +4752,8 @@ app.get("/api/user/recommendation", verifyAppCheck, authenticateFirebaseUser, as
         title: "A reset might help",
         message: "It's been a couple of days since your last nervous system reset. Even five minutes of breathing work adds up.",
         points: 15,
+        sourcesUsed: ['derived_stats.lastNervousSystemReset'],
+        type: 'recovery_reminder',
       };
     } else {
       recommendation = {
@@ -4752,10 +4762,65 @@ app.get("/api/user/recommendation", verifyAppCheck, authenticateFirebaseUser, as
         title: "You're on track",
         message: "Nothing urgent flagged right now based on what you've logged. If something's on your mind, Nova's a good place to think it through.",
         points: 10,
+        sourcesUsed: [],
+        type: 'tiny_win',
       };
     }
 
+    // Genuinely verify this recommendation before it reaches the user - the
+    // same guardrail rules previously existed as a fully-built class
+    // (NovaChallengeMode.verifyRecommendation) that nothing in the app ever
+    // actually called, while a "Nova Recommendation Ledger" in the Trust
+    // Centre showed three hardcoded example rows (with an identical
+    // timestamp across all three) as if they were real audit evidence.
+    let verificationStatus: 'verified' | 'rejected' = 'verified';
+    let verificationExplanation = 'Verified: Passed all guardrail checks.';
+    const checkInsSnap = await db.collection("users").doc(user.uid).collection("checkins").limit(3).get();
+    if (checkInsSnap.size < 3 && recommendation.message.toLowerCase().includes('pattern')) {
+      verificationStatus = 'rejected';
+      verificationExplanation = 'Rejected: Attempted to claim a pattern with fewer than 3 check-ins.';
+    } else if (/(depression|anxiety disorder|treatment|clinical)/i.test(recommendation.message)) {
+      verificationStatus = 'rejected';
+      verificationExplanation = 'Rejected: Recommendation breached non-medical coaching boundary.';
+    }
+
+    const ledgerEntry = {
+      type: recommendation.type,
+      content: recommendation.message,
+      sourcesUsed: recommendation.sourcesUsed,
+      ruleVersion: '1.0',
+      status: verificationStatus,
+      explanation: verificationExplanation,
+      timestamp: new Date().toISOString(),
+    };
+    db.collection("users").doc(user.uid).collection("recommendation_ledger").add(ledgerEntry).catch(() => {
+      // Non-fatal - the recommendation still reaches the user even if the ledger write fails.
+    });
+
+    if (verificationStatus === 'rejected') {
+      // A genuinely rejected recommendation doesn't reach the user - fall
+      // back to the honest, always-safe default instead.
+      return res.json({
+        tab: 'nova', title: "You're on track",
+        message: "Nothing urgent flagged right now based on what you've logged. If something's on your mind, Nova's a good place to think it through.",
+        points: 10, tool: 'Nova Coach',
+      });
+    }
+
     res.json(recommendation);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get("/api/user/recommendation-ledger", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const user = requireAuth(req);
+    const db = getDb();
+    const snap = await db.collection("users").doc(user.uid).collection("recommendation_ledger")
+      .orderBy("timestamp", "desc").limit(50).get();
+    const entries = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    res.json({ entries });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }

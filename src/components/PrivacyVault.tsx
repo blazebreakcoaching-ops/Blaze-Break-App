@@ -231,13 +231,6 @@ export const PrivacyVault = ({
       {/* Header */}
       <div className="relative overflow-hidden rounded-xl bg-background border border-border p-8 md:p-12">
         <div className="relative z-10 max-w-3xl">
-          <div className="bg-warning/10 border border-warning/20 text-warning rounded-xl p-4 text-sm font-bold flex gap-2 mb-6">
-            <AlertTriangle className="w-5 h-5 shrink-0" />
-            <div>
-              <p>Prototype notice: This version uses local browser storage for demonstration only.</p>
-              <p className="font-normal text-xs mt-1">Do not enter sensitive personal information until secure account storage, permissions and privacy controls are connected and verified.</p>
-            </div>
-          </div>
           <div className="flex items-center gap-3 mb-6">
             <div className="w-12 h-12 rounded-2xl bg-primary/10 border border-primary/20 text-primary flex items-center justify-center shrink-0 shadow-lg shadow-primary/10">
               <Lock className="w-6 h-6" />

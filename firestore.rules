@@ -351,6 +351,15 @@ service cloud.firestore {
         allow write: if false; // Derived summaries are server-only written
       }
 
+      // Real audit trail for Nova's recommendation guardrail - previously
+      // the Trust Centre's "Recommendation Ledger" showed three hardcoded
+      // example rows as if they were real audit evidence. Server-write-only
+      // so it's a genuine, tamper-resistant record.
+      match /recommendation_ledger/{entryId} {
+        allow read: if isOwner(uid);
+        allow write: if false;
+      }
+
       // L. nova_memories
       match /nova_memories/{memoryId} {
         allow read, write: if isOwner(uid);
