@@ -7,8 +7,6 @@ import {
 } from 'lucide-react';
 import { secureApiFetch } from '../lib/secure-api';
 import { motion, AnimatePresence } from 'motion/react';
-import { db } from '../lib/firebase';
-import { collection, getDocs, query, orderBy, limit } from 'firebase/firestore';
 import { useAuth } from '../lib/auth';
 
 interface AdminUser {
@@ -45,6 +43,8 @@ interface ResetMetrics {
   avgReduction: number;
   mostEffectiveTool: string;
   toolUsage: Record<string, number>;
+  safetyEscalations: number;
+  crisisReferrals: number;
 }
 
 const ROLE_HIERARCHY = [
@@ -204,55 +204,34 @@ export const AdminDashboard = () => {
 
   const fetchSomaticMetrics = async () => {
     try {
-      let events: any[] = [];
-      // Try fetching from Firestore
-      try {
-        const q = query(collection(db, 'anxiety_reset_events'), orderBy('createdAt', 'desc'), limit(150));
-        const snap = await getDocs(q);
-        events = snap.docs.map(doc => doc.data());
-      } catch (firestoreErr) {
-        console.error("Firestore collection load skipped, could not compile local somatic telemetry:", firestoreErr);
+      const res = await secureApiFetch('/api/admin/summary');
+      if (!res.ok) {
+        setLoadError(true);
+        setMetrics(null);
+        return;
       }
-
-      if (events.length === 0) {
+      const data = await res.json();
+      if (!data.totalResets || data.totalResets === 0) {
         setLoadError(true);
         setMetrics(null);
         return;
       }
 
-      let totalStart = 0;
-      let totalEnd = 0;
-      const toolCount: Record<string, number> = {};
-
-      events.forEach(ev => {
-        totalStart += ev.startIntensity || 0;
-        totalEnd += ev.endIntensity || 0;
-        if (ev.toolUsed) {
-          toolCount[ev.toolUsed] = (toolCount[ev.toolUsed] || 0) + 1;
-        }
-      });
-
-      let topTool = 'None';
-      let maxCount = -1;
-      Object.entries(toolCount).forEach(([tool, count]) => {
-        if (count > maxCount) {
-          maxCount = count;
-          topTool = tool;
-        }
-      });
-
-      const count = events.length;
       setMetrics({
-        totalSessions: count,
-        avgStartIntensity: parseFloat((totalStart / count).toFixed(1)),
-        avgEndIntensity: parseFloat((totalEnd / count).toFixed(1)),
-        avgReduction: parseFloat(((totalStart - totalEnd) / count).toFixed(1)),
-        mostEffectiveTool: topTool,
-        toolUsage: toolCount
+        totalSessions: data.totalResets,
+        avgStartIntensity: data.avgIntensityBefore ?? 0,
+        avgEndIntensity: data.avgIntensityAfter ?? 0,
+        avgReduction: data.avgIntensityReduction ?? 0,
+        mostEffectiveTool: data.mostUsedResetTool || 'None',
+        toolUsage: {},
+        safetyEscalations: data.safetyEscalations ?? 0,
+        crisisReferrals: data.crisisReferrals ?? 0,
       });
 
     } catch (err) {
       console.error("Somatic aggregation failed: ", err);
+      setLoadError(true);
+      setMetrics(null);
     }
   };
 
@@ -465,10 +444,8 @@ export const AdminDashboard = () => {
     );
   }
 
-  // Calculate high-arousal safety incident metrics based on somatic de-escalations
-  const safetyEventsCount = (metrics?.totalSessions || 0) > 0 
-    ? Math.round((metrics!.totalSessions) * 0.35 + 3) 
-    : 0;
+  // Real count from server-computed safetyLevel data, not an invented formula
+  const safetyEventsCount = metrics?.safetyEscalations ?? 0;
 
   return (
     <motion.div
@@ -621,8 +598,8 @@ export const AdminDashboard = () => {
             </div>
           </div>
           <div className="pt-2 border-t border-white/5 flex items-center justify-between text-[11px] text-text-muted">
-            <span>Guardian Alerts: <strong className="text-text-main font-semibold">0 Triggered</strong></span>
-            <span>Crisis Referrals: <strong className="text-text-main font-semibold">0 Triggers</strong></span>
+            <span>Guardian Alerts: <strong className="text-text-muted font-semibold">Not yet tracked</strong></span>
+            <span>Crisis Referrals: <strong className="text-text-main font-semibold">{metrics?.crisisReferrals ?? 0} Triggers</strong></span>
           </div>
         </div>
       </div>

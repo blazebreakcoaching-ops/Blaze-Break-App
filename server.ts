@@ -2818,6 +2818,7 @@ app.get("/api/admin/summary", verifyAppCheck, authenticateFirebaseUser, async (r
     let completedCount = 0;
     let totalResets = 0;
     let safetyEscalations = 0;
+    let crisisReferrals = 0;
     const triggerCounts: Record<string, number> = {};
     const toolCounts: Record<string, number> = {};
 
@@ -2846,6 +2847,9 @@ app.get("/api/admin/summary", verifyAppCheck, authenticateFirebaseUser, async (r
         
         if (data.safetyLevel && data.safetyLevel !== 'normal_support') {
           safetyEscalations++;
+        }
+        if (data.safetyLevel === 'possible_crisis' || data.safetyLevel === 'immediate_danger') {
+          crisisReferrals++;
         }
 
         if (data.triggerType) {
@@ -2883,7 +2887,9 @@ app.get("/api/admin/summary", verifyAppCheck, authenticateFirebaseUser, async (r
       mostCommonTrigger,
       mostUsedResetTool,
       completionRate: totalResets > 0 ? Math.round((completedCount / totalResets) * 100) : 100,
-      safetyEscalations
+      totalResets,
+      safetyEscalations,
+      crisisReferrals
     });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
