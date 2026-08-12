@@ -1,22 +1,5 @@
-import React, { useEffect, useRef } from 'react';
+import React from 'react';
 import { useAuth } from './auth';
-import { db } from './firebase';
-import { doc, getDoc, setDoc, serverTimestamp, updateDoc } from 'firebase/firestore';
-import { BurnoutFingerprint, UserStats } from '../types';
-import { Loader2 } from 'lucide-react';
-
-interface SyncEngineProps {
-  stats: UserStats;
-  setStats: React.Dispatch<React.SetStateAction<UserStats>>;
-  fingerprint: BurnoutFingerprint | null;
-  setFingerprint: React.Dispatch<React.SetStateAction<BurnoutFingerprint | null>>;
-}
-
-export const SyncEngine: React.FC<SyncEngineProps> = ({ stats, setStats, fingerprint, setFingerprint }) => {
-  // Phase 1C: Sensitive recovery data syncing is entirely disabled in Secure Account Test Mode.
-  // We do not load or save stats, fingerprints, or local storage partitions to Firestore here.
-  return null;
-};
 
 export const AuthStatusTracker = () => {
   const { user, loading, signIn, logOut } = useAuth();

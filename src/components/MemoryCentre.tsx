@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../lib/auth';
-import { Shield, Lock, Brain, Trash2, Edit2, AlertCircle, RefreshCw } from 'lucide-react';
-import { secureApiFetch } from '../lib/secure-api';
+import { Shield, Brain, Trash2, Edit2, AlertCircle, RefreshCw } from 'lucide-react';
 import { collection, query, getDocs, doc, deleteDoc, updateDoc, writeBatch } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 

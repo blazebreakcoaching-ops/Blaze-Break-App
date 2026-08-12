@@ -1,8 +1,7 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { HeartPulse, Check, Zap } from 'lucide-react';
+import { HeartPulse, Check } from 'lucide-react';
 import { cn } from '../lib/utils';
-import { useAuth } from '../lib/auth';
 
 interface SomaticCheckInCardProps {
   onAwardPoints: (amount: number, reason: string) => void;

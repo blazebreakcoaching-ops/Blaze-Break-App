@@ -1,13 +1,13 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import confetti from 'canvas-confetti';
-import { 
+import { auth, db } from '../lib/firebase';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
+import {
   Target, 
   Clock, 
   ArrowRight, 
   ShieldAlert, 
-  CheckCircle2, 
-  BatteryCharging, 
   ListTodo, 
   Trash2, 
   Brain, 
@@ -50,36 +50,14 @@ const QUESTIONS: Record<QuestionId, { label: string; placeholder: string; icon: 
 };
 
 export const WorkloadRealityCheck = ({ fingerprint, onAwardPoints }: WorkloadRealityCheckProps) => {
-  const [answers, setAnswers] = useState<Record<QuestionId, string>>(() => {
-    const saved = localStorage.getItem('blaze_workload_check');
-    if (saved) {
-      try {
-        return JSON.parse(saved);
-      } catch (e) {
-        // Fallback
-      }
-    }
-    return { must: '', wait: '', delegate: '', pretend: '', future: '' };
-  });
-
+  const [answers, setAnswers] = useState<Record<QuestionId, string>>({ must: '', wait: '', delegate: '', pretend: '', future: '' });
   const [currentStep, setCurrentStep] = useState<number>(0);
   const [isSynthesizing, setIsSynthesizing] = useState(false);
-  const [result, setResult] = useState<boolean>(() => {
-    return localStorage.getItem('blaze_workload_check_completed') === 'true';
-  });
+  const [result, setResult] = useState<boolean>(false);
 
   // Task list states
-  const [tasks, setTasks] = useState<WorkloadTask[]>(() => {
-    const saved = localStorage.getItem('blaze_workload_tasks');
-    if (saved) {
-      try {
-        return JSON.parse(saved);
-      } catch (e) {
-        // Fallback
-      }
-    }
-    return [];
-  });
+  const [tasks, setTasks] = useState<WorkloadTask[]>([]);
+  const [dataLoaded, setDataLoaded] = useState(false);
 
   // Sorting & Filtering state
   const [sortBy, setSortBy] = useState<'drain' | 'priority' | 'date'>('priority');
@@ -129,14 +107,47 @@ export const WorkloadRealityCheck = ({ fingerprint, onAwardPoints }: WorkloadRea
   const fatigueProbability = Math.min(Math.round((weeklyDrain / 300) * 100), 100);
   const showFatigueWarning = fatigueProbability > 85;
 
+  // Load real state from Firestore on mount - previously this was
+  // localStorage only, so a workload reality check done on one device was
+  // invisible everywhere else.
   useEffect(() => {
-    localStorage.setItem('blaze_workload_check', JSON.stringify(answers));
-  }, [answers]);
+    const load = async () => {
+      if (!auth.currentUser) { setDataLoaded(true); return; }
+      try {
+        const snap = await getDoc(doc(db, 'users', auth.currentUser.uid, 'workload_reality_check', 'state'));
+        if (snap.exists()) {
+          const data = snap.data();
+          if (data.answers) setAnswers(data.answers);
+          if (typeof data.completed === 'boolean') setResult(data.completed);
+          if (Array.isArray(data.tasks)) setTasks(data.tasks);
+        }
+      } catch (e) {
+        // Leaves the honest empty state in place rather than pretending progress loaded.
+      }
+      setDataLoaded(true);
+    };
+    load();
+  }, []);
+
+  const saveWorkloadState = (updates: Record<string, any>) => {
+    if (!auth.currentUser) return;
+    setDoc(doc(db, 'users', auth.currentUser.uid, 'workload_reality_check', 'state'), {
+      ...updates,
+      updatedAt: new Date().toISOString(),
+    }, { merge: true }).catch(() => {
+      // Non-fatal - the UI still reflects the change locally even if this save fails.
+    });
+  };
 
   useEffect(() => {
-    localStorage.setItem('blaze_workload_tasks', JSON.stringify(tasks));
-    window.dispatchEvent(new Event('workload_tasks_changed'));
-  }, [tasks]);
+    if (!dataLoaded) return; // Don't overwrite real data with defaults during initial load.
+    saveWorkloadState({ answers });
+  }, [answers, dataLoaded]);
+
+  useEffect(() => {
+    if (!dataLoaded) return;
+    saveWorkloadState({ tasks });
+  }, [tasks, dataLoaded]);
 
   const questionKeys = Object.keys(QUESTIONS) as QuestionId[];
   const activeQuestion = questionKeys[currentStep];
@@ -151,12 +162,11 @@ export const WorkloadRealityCheck = ({ fingerprint, onAwardPoints }: WorkloadRea
 
   const handleComplete = () => {
     setIsSynthesizing(true);
-    localStorage.setItem('blaze_workload_check', JSON.stringify(answers));
-    
+
     setTimeout(() => {
       setIsSynthesizing(false);
       setResult(true);
-      localStorage.setItem('blaze_workload_check_completed', 'true');
+      saveWorkloadState({ completed: true });
 
       // Sync onboarding answers to tasks if tasks is empty
       if (tasks.length === 0) {
@@ -208,12 +218,10 @@ export const WorkloadRealityCheck = ({ fingerprint, onAwardPoints }: WorkloadRea
   const handleReset = () => {
     const cleared = { must: '', wait: '', delegate: '', pretend: '', future: '' };
     setAnswers(cleared);
-    localStorage.setItem('blaze_workload_check', JSON.stringify(cleared));
-    localStorage.removeItem('blaze_workload_check_completed');
-    localStorage.removeItem('blaze_workload_tasks');
     setTasks([]);
     setCurrentStep(0);
     setResult(false);
+    saveWorkloadState({ answers: cleared, tasks: [], completed: false });
   };
 
   // Add Task Function

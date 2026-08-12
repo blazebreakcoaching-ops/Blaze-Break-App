@@ -692,7 +692,26 @@ app.post("/api/nova/chat", verifyAppCheck, authenticateFirebaseUser, async (req,
     const verifiedUser = (req as any).user;
     const uid = verifiedUser?.uid;
 
-    const mergedSystemPrompt = (systemInstruction || NOVA_SYSTEM_PROMPT);
+    // This is the real, consent-gated read of the person's actual recovery
+    // data - mood, energy, boundaries, goals, wins, and more, each only
+    // included if they've explicitly opted in via their own Privacy Centre.
+    // This was previously built in full but never actually called here, so
+    // every response was generated blind regardless of what someone had
+    // consented to share.
+    let contextAddendum = "";
+    let contextMetadata: NovaConsentMetadata = { contextTriggered: false, modulesUsed: [], rationale: "" };
+    if (uid) {
+      try {
+        const db = getDb();
+        const contextResult = await getNovaContextAndMetadata(uid, db);
+        contextAddendum = contextResult.systemInstructionsAddendum;
+        contextMetadata = contextResult.metadata;
+      } catch (e) {
+        console.warn("Nova context build failed - continuing without it.", e);
+      }
+    }
+
+    const mergedSystemPrompt = (systemInstruction || NOVA_SYSTEM_PROMPT) + contextAddendum;
 
     const abortController = new AbortController();
     const timeoutId = setTimeout(() => abortController.abort(), 15000); // 15s timeout
@@ -708,7 +727,7 @@ app.post("/api/nova/chat", verifyAppCheck, authenticateFirebaseUser, async (req,
 
       const result = await chat.sendMessage({ message });
       clearTimeout(timeoutId);
-      res.json({ text: result.text, privacyMetadata: { contextTriggered: false, modulesUsed: [], rationale: "" } });
+      res.json({ text: result.text, privacyMetadata: contextMetadata });
     } catch (modelError: any) {
       clearTimeout(timeoutId);
       if (modelError.name === 'AbortError') {
@@ -719,6 +738,101 @@ app.post("/api/nova/chat", verifyAppCheck, authenticateFirebaseUser, async (req,
   } catch (error: any) {
     console.error("Gemini Chat Error"); // Redacted raw error
     res.status(500).json({ error: `Nova Chat Sync Failure: A safe operational error occurred.` });
+  }
+});
+
+// Real, deterministic recommendation - which tool actually matters most
+// right now, computed from the person's own real activity across the app.
+// This is a rule-based computation over their own data for their own
+// screen, not data sent to an AI model, so it's a different privacy
+// boundary than the consent-gated AI context above and doesn't require the
+// same opt-in.
+app.get("/api/nova/recommendation", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const user = requireAuth(req);
+    const db = getDb();
+    const uid = user.uid;
+
+    const threeDaysAgo = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString();
+    const todayStr = new Date().toISOString().split('T')[0];
+
+    const [moodSnap, bodySnap, commitSnap, boundarySnap, winsSnap, reviewSnap] = await Promise.all([
+      db.collection('users').doc(uid).collection('mood_pulses').where('createdAt', '>=', threeDaysAgo).get(),
+      db.collection('users').doc(uid).collection('body_checkins').where('createdAt', '>=', threeDaysAgo).get(),
+      db.collection('users').doc(uid).collection('energy_commitments').where('status', '==', 'active').get(),
+      db.collection('users').doc(uid).collection('boundary_scripts').orderBy('createdAt', 'desc').limit(1).get(),
+      db.collection('users').doc(uid).collection('wins').orderBy('createdAt', 'desc').limit(1).get(),
+      db.collection('users').doc(uid).collection('weekly_reviews').orderBy('createdAt', 'desc').limit(1).get(),
+    ]);
+
+    // Priority-ordered real signals - the first genuinely true condition
+    // wins, most urgent first.
+    const negativeMoods = moodSnap.docs.filter(d => ['overwhelmed', 'frustrated', 'pressured', 'tired'].includes(d.data().moodLabel));
+    if (negativeMoods.length >= 2) {
+      return res.json({
+        tab: 'reset',
+        title: 'A few tough check-ins recently',
+        message: `You've logged ${negativeMoods.length} stressed or tired mood pulses in the last 3 days. A grounding session might genuinely help right now.`,
+      });
+    }
+
+    const totalActiveDrain = commitSnap.docs.reduce((sum, d) => sum + (d.data().energyDrain || 0), 0);
+    if (totalActiveDrain >= 200) {
+      return res.json({
+        tab: 'recover',
+        title: 'Your energy budget is stretched',
+        message: `You currently have ${commitSnap.size} active commitments totalling ${totalActiveDrain} energy units. Worth reviewing what can be dropped or delegated.`,
+      });
+    }
+
+    const boundaryDoc = boundarySnap.docs[0];
+    const daysSinceBoundary = boundaryDoc ? (Date.now() - new Date(boundaryDoc.data().createdAt).getTime()) / (1000 * 60 * 60 * 24) : Infinity;
+    if (bodySnap.size > 0 && daysSinceBoundary >= 7) {
+      return res.json({
+        tab: 'communicate',
+        title: 'Physical tension, no recent boundary practice',
+        message: "You've logged body tension recently, and it's been over a week since you rehearsed a boundary script. Often the two are connected.",
+      });
+    }
+
+    const hasCheckedInToday = moodSnap.docs.some(d => typeof d.data().createdAt === 'string' && d.data().createdAt.startsWith(todayStr))
+      || bodySnap.docs.some(d => typeof d.data().createdAt === 'string' && d.data().createdAt.startsWith(todayStr));
+    if (!hasCheckedInToday) {
+      return res.json({
+        tab: 'home',
+        title: "You haven't checked in today",
+        message: "A quick mood or body pulse takes seconds, and it's what makes every other recommendation here actually accurate.",
+      });
+    }
+
+    const reviewDoc = reviewSnap.docs[0];
+    const daysSinceReview = reviewDoc ? (Date.now() - new Date(reviewDoc.data().createdAt).getTime()) / (1000 * 60 * 60 * 24) : Infinity;
+    if (daysSinceReview >= 7) {
+      return res.json({
+        tab: 'reflect',
+        title: 'Weekly review is overdue',
+        message: reviewDoc ? "It's been over a week since your last weekly review — worth a few minutes to see what's actually changed." : "You haven't done a weekly review yet — it's a genuinely useful way to see your own patterns.",
+      });
+    }
+
+    const winDoc = winsSnap.docs[0];
+    const daysSinceWin = winDoc ? (Date.now() - new Date(winDoc.data().createdAt).getTime()) / (1000 * 60 * 60 * 24) : Infinity;
+    if (daysSinceWin >= 3) {
+      return res.json({
+        tab: 'communicate',
+        title: 'No wins logged in a few days',
+        message: "It's been a few days since you logged a recovery win. Doesn't have to be big — noticing it is most of the value.",
+      });
+    }
+
+    // Nothing urgent - genuinely say so, rather than inventing a fake concern.
+    res.json({
+      tab: null,
+      title: "You're on a steady rhythm",
+      message: "Recent check-ins, energy load, and boundary practice all look reasonably balanced. Nothing urgent to flag right now.",
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
   }
 });
 
@@ -1009,13 +1123,15 @@ Your job is to:
 2. Identify 1 to 3 key recurring burnout themes or energy leaks from their spoken words.
 3. Provide a direct, slightly provocative coaching analysis (2-3 sentences max) matching Nova's high-performance persona.
 4. Give actionable, firm, custom recovery advice or a boundary script (2 sentences max).
+5. Name the single dominant emotional tone you hear in their voice and words, in 2-4 plain words (e.g. "wired but exhausted", "quietly resentful", "cautiously hopeful").
 
 You MUST respond strictly in the following JSON format. Do not include markdown codeblocks or wrap it in anything. Just return the JSON object:
 {
   "transcription": "A complete, accurate transcription of the user's audio",
   "themes": ["Theme 1", "Theme 2"],
   "analysis": "Nova's direct, slightly provocative coaching feedback in British English",
-  "advice": "Actionable, firm, custom recovery advice or script"
+  "advice": "Actionable, firm, custom recovery advice or script",
+  "emotionalTone": "A short, plain-language description of the dominant emotional tone"
 }`
       };
 
@@ -1030,9 +1146,10 @@ You MUST respond strictly in the following JSON format. Do not include markdown 
               transcription: { type: Type.STRING },
               themes: { type: Type.ARRAY, items: { type: Type.STRING } },
               analysis: { type: Type.STRING },
-              advice: { type: Type.STRING }
+              advice: { type: Type.STRING },
+              emotionalTone: { type: Type.STRING }
             },
-            required: ["transcription", "themes", "analysis", "advice"]
+            required: ["transcription", "themes", "analysis", "advice", "emotionalTone"]
           }
         }
       });
@@ -1601,6 +1718,366 @@ app.get("/api/signals/slack", verifyAppCheck, authenticateFirebaseUser, async (r
   }
 });
 
+// Returns a currently-valid access token for the given service, refreshing
+// it first if it's expired (or close to expiring). Without this, any
+// integration relying on short-lived OAuth tokens (Jira and Asana tokens
+// both expire in roughly an hour) would silently stop working the first
+// time someone used it more than an hour after connecting.
+async function getValidAccessToken(uid: string, service: string): Promise<string | null> {
+  const db = getDb();
+  const tokenRef = db.collection("users").doc(uid).collection("integration_tokens").doc(service);
+  const tokenDoc = await tokenRef.get();
+  if (!tokenDoc.exists) return null;
+  const data = tokenDoc.data()!;
+
+  const expiringSoon = data.expiresAt && new Date(data.expiresAt).getTime() < Date.now() + 60 * 1000;
+  if (!expiringSoon) return data.accessToken || null;
+
+  if (!data.refreshToken) return data.accessToken || null; // Nothing to refresh with - let the caller's API call fail naturally.
+
+  const provider = OAUTH_PROVIDERS[service];
+  const clientId = process.env[provider.clientIdEnv];
+  const clientSecret = process.env[provider.clientSecretEnv];
+  if (!clientId || !clientSecret) return data.accessToken || null;
+
+  try {
+    const refreshParams = {
+      grant_type: "refresh_token",
+      client_id: clientId,
+      client_secret: clientSecret,
+      refresh_token: data.refreshToken,
+    };
+    const tokenResponse = provider.tokenStyle === "json"
+      ? await fetch(provider.tokenUrl, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(refreshParams) })
+      : await fetch(provider.tokenUrl, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: new URLSearchParams(refreshParams).toString() });
+
+    const body = await tokenResponse.json();
+    if (!tokenResponse.ok || body?.error) {
+      console.error(`[Integrations] ${service} token refresh failed:`, body);
+      return data.accessToken || null;
+    }
+    const { accessToken, refreshToken, expiresIn } = provider.extractTokens(body);
+    if (!accessToken) return data.accessToken || null;
+
+    await tokenRef.set({
+      accessToken,
+      refreshToken: refreshToken || data.refreshToken, // Some providers don't rotate the refresh token.
+      expiresAt: expiresIn ? new Date(Date.now() + expiresIn * 1000).toISOString() : null,
+      updatedAt: new Date().toISOString(),
+    }, { merge: true });
+
+    return accessToken;
+  } catch (e) {
+    console.error(`[Integrations] ${service} token refresh error:`, e);
+    return data.accessToken || null;
+  }
+}
+
+// ============================================================================
+// Real Signals: Jira (genuinely fetched, not just an unused stored token)
+// ============================================================================
+
+app.post("/api/signals/jira/refresh", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const uid = requireAuth(req).uid;
+    const accessToken = await getValidAccessToken(uid, "jira");
+    if (!accessToken) {
+      return res.status(404).json({ error: "Jira is not connected." });
+    }
+
+    const resourcesRes = await fetch("https://api.atlassian.com/oauth/token/accessible-resources", {
+      headers: { Authorization: `Bearer ${accessToken}`, Accept: "application/json" },
+    });
+    const resources = await resourcesRes.json();
+    if (!resourcesRes.ok || !Array.isArray(resources) || resources.length === 0) {
+      return res.status(502).json({ error: "Could not find an accessible Jira site for this account." });
+    }
+    const cloudId = resources[0].id;
+    const siteName = resources[0].name || resources[0].url;
+
+    const jql = "assignee = currentUser() AND resolution = Unresolved ORDER BY duedate ASC";
+    const searchRes = await fetch(
+      `https://api.atlassian.com/ex/jira/${cloudId}/rest/api/3/search/jql?jql=${encodeURIComponent(jql)}&maxResults=100&fields=duedate,priority,status`,
+      { headers: { Authorization: `Bearer ${accessToken}`, Accept: "application/json" } }
+    );
+    const searchBody = await searchRes.json();
+    if (!searchRes.ok) {
+      return res.status(502).json({ error: "Could not fetch Jira issues.", detail: searchBody?.errorMessages });
+    }
+
+    const issues = searchBody.issues || [];
+    const todayStr = new Date().toISOString().split("T")[0];
+    const overdueCount = issues.filter((i: any) => i.fields?.duedate && i.fields.duedate < todayStr).length;
+    const highPriorityCount = issues.filter((i: any) =>
+      ["Highest", "High"].includes(i.fields?.priority?.name)
+    ).length;
+
+    const signal = {
+      siteName,
+      totalOpenIssues: issues.length,
+      overdueIssues: overdueCount,
+      highPriorityOpen: highPriorityCount,
+      updatedAt: new Date().toISOString(),
+    };
+
+    const db = getDb();
+    await db.collection("users").doc(uid).collection("live_signals").doc("jira").set(signal);
+
+    res.json({ refreshed: true, state: signal });
+  } catch (err: any) {
+    console.error("[Signals] jira refresh error:", err.message);
+    res.status(500).json({ error: "Could not refresh Jira data." });
+  }
+});
+
+app.get("/api/signals/jira", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const uid = requireAuth(req).uid;
+    const db = getDb();
+    const signalDoc = await db.collection("users").doc(uid).collection("live_signals").doc("jira").get();
+    if (!signalDoc.exists) {
+      return res.json({ state: null });
+    }
+    res.json({ state: signalDoc.data() });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ============================================================================
+// Real Signals: Asana (genuinely fetched, not just an unused stored token)
+// ============================================================================
+
+app.post("/api/signals/asana/refresh", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const uid = requireAuth(req).uid;
+    const accessToken = await getValidAccessToken(uid, "asana");
+    if (!accessToken) {
+      return res.status(404).json({ error: "Asana is not connected." });
+    }
+
+    const meRes = await fetch("https://app.asana.com/api/1.0/users/me?opt_fields=name,workspaces.gid", {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    const meBody = await meRes.json();
+    if (!meRes.ok || !meBody?.data) {
+      return res.status(502).json({ error: "Could not verify Asana identity.", detail: meBody?.errors });
+    }
+    const workspaceGid = meBody.data.workspaces?.[0]?.gid;
+    if (!workspaceGid) {
+      return res.status(502).json({ error: "No accessible Asana workspace found." });
+    }
+
+    const tasksRes = await fetch(
+      `https://app.asana.com/api/1.0/tasks?assignee=me&workspace=${workspaceGid}&completed_since=now&opt_fields=due_on,name&limit=100`,
+      { headers: { Authorization: `Bearer ${accessToken}` } }
+    );
+    const tasksBody = await tasksRes.json();
+    if (!tasksRes.ok) {
+      return res.status(502).json({ error: "Could not fetch Asana tasks.", detail: tasksBody?.errors });
+    }
+
+    const tasks = tasksBody.data || [];
+    const todayStr = new Date().toISOString().split("T")[0];
+    const overdueCount = tasks.filter((t: any) => t.due_on && t.due_on < todayStr).length;
+
+    const signal = {
+      totalIncompleteTasks: tasks.length,
+      overdueTasks: overdueCount,
+      updatedAt: new Date().toISOString(),
+    };
+
+    const db = getDb();
+    await db.collection("users").doc(uid).collection("live_signals").doc("asana").set(signal);
+
+    res.json({ refreshed: true, state: signal });
+  } catch (err: any) {
+    console.error("[Signals] asana refresh error:", err.message);
+    res.status(500).json({ error: "Could not refresh Asana data." });
+  }
+});
+
+app.get("/api/signals/asana", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const uid = requireAuth(req).uid;
+    const db = getDb();
+    const signalDoc = await db.collection("users").doc(uid).collection("live_signals").doc("asana").get();
+    if (!signalDoc.exists) {
+      return res.json({ state: null });
+    }
+    res.json({ state: signalDoc.data() });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ============================================================================
+// Real Signals: Monday.com (genuinely fetched, not just an unused stored token)
+// ============================================================================
+// Monday's GraphQL API doesn't have a single "my open items" concept the way
+// Jira/Asana do, since assignment lives inside per-board "person" columns
+// that vary by board. Rather than guess at column IDs (which would be
+// fragile and board-specific), this counts genuinely real signals that work
+// consistently across any board layout: total active items across accessible
+// boards, and how many have a date-type column value already in the past.
+
+app.post("/api/signals/monday/refresh", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const uid = requireAuth(req).uid;
+    const accessToken = await getValidAccessToken(uid, "monday");
+    if (!accessToken) {
+      return res.status(404).json({ error: "Monday.com is not connected." });
+    }
+
+    const query = `query {
+      boards (limit: 15, order_by: used_at) {
+        id
+        name
+        items_page (limit: 50) {
+          items {
+            id
+            column_values (types: [date]) {
+              text
+            }
+          }
+        }
+      }
+    }`;
+
+    const gqlRes = await fetch("https://api.monday.com/v2", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json", "API-Version": "2024-10" },
+      body: JSON.stringify({ query }),
+    });
+    const gqlBody = await gqlRes.json();
+    if (!gqlRes.ok || gqlBody.errors) {
+      return res.status(502).json({ error: "Could not fetch Monday.com boards.", detail: gqlBody.errors });
+    }
+
+    const boards = gqlBody.data?.boards || [];
+    const todayStr = new Date().toISOString().split("T")[0];
+    let totalItems = 0;
+    let overdueItems = 0;
+    for (const board of boards) {
+      const items = board.items_page?.items || [];
+      totalItems += items.length;
+      for (const item of items) {
+        const hasOverdueDate = (item.column_values || []).some((cv: any) => cv.text && cv.text < todayStr);
+        if (hasOverdueDate) overdueItems++;
+      }
+    }
+
+    const signal = {
+      boardsScanned: boards.length,
+      totalActiveItems: totalItems,
+      overdueItems,
+      updatedAt: new Date().toISOString(),
+    };
+
+    const db = getDb();
+    await db.collection("users").doc(uid).collection("live_signals").doc("monday").set(signal);
+
+    res.json({ refreshed: true, state: signal });
+  } catch (err: any) {
+    console.error("[Signals] monday refresh error:", err.message);
+    res.status(500).json({ error: "Could not refresh Monday.com data." });
+  }
+});
+
+app.get("/api/signals/monday", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const uid = requireAuth(req).uid;
+    const db = getDb();
+    const signalDoc = await db.collection("users").doc(uid).collection("live_signals").doc("monday").get();
+    if (!signalDoc.exists) {
+      return res.json({ state: null });
+    }
+    res.json({ state: signalDoc.data() });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ============================================================================
+// Real Signals: Calendly (genuinely fetched, not just an unused stored token)
+// ============================================================================
+
+app.post("/api/signals/calendly/refresh", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const uid = requireAuth(req).uid;
+    const accessToken = await getValidAccessToken(uid, "calendly");
+    if (!accessToken) {
+      return res.status(404).json({ error: "Calendly is not connected." });
+    }
+
+    const meRes = await fetch("https://api.calendly.com/users/me", {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    const meBody = await meRes.json();
+    if (!meRes.ok || !meBody?.resource?.uri) {
+      return res.status(502).json({ error: "Could not verify Calendly identity.", detail: meBody?.message });
+    }
+    const userUri = meBody.resource.uri;
+
+    const now = new Date();
+    const sevenDaysOut = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+    const eventsUrl = new URL("https://api.calendly.com/scheduled_events");
+    eventsUrl.searchParams.set("user", userUri);
+    eventsUrl.searchParams.set("status", "active");
+    eventsUrl.searchParams.set("min_start_time", now.toISOString());
+    eventsUrl.searchParams.set("max_start_time", sevenDaysOut.toISOString());
+    eventsUrl.searchParams.set("count", "100");
+
+    const eventsRes = await fetch(eventsUrl.toString(), {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    const eventsBody = await eventsRes.json();
+    if (!eventsRes.ok) {
+      return res.status(502).json({ error: "Could not fetch Calendly events.", detail: eventsBody?.message });
+    }
+
+    const events = eventsBody.collection || [];
+    let totalMinutes = 0;
+    let backToBackCount = 0;
+    const starts = events
+      .map((e: any) => ({ start: new Date(e.start_time).getTime(), end: new Date(e.end_time).getTime() }))
+      .sort((a: any, b: any) => a.start - b.start);
+    for (let i = 0; i < starts.length; i++) {
+      totalMinutes += (starts[i].end - starts[i].start) / 60000;
+      if (i > 0 && starts[i].start - starts[i - 1].end <= 5 * 60000) backToBackCount++;
+    }
+
+    const signal = {
+      upcomingBookings7d: events.length,
+      bookedHours7d: Math.round((totalMinutes / 60) * 10) / 10,
+      backToBackCount,
+      updatedAt: new Date().toISOString(),
+    };
+
+    const db = getDb();
+    await db.collection("users").doc(uid).collection("live_signals").doc("calendly").set(signal);
+
+    res.json({ refreshed: true, state: signal });
+  } catch (err: any) {
+    console.error("[Signals] calendly refresh error:", err.message);
+    res.status(500).json({ error: "Could not refresh Calendly data." });
+  }
+});
+
+app.get("/api/signals/calendly", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const uid = requireAuth(req).uid;
+    const db = getDb();
+    const signalDoc = await db.collection("users").doc(uid).collection("live_signals").doc("calendly").get();
+    if (!signalDoc.exists) {
+      return res.json({ state: null });
+    }
+    res.json({ state: signalDoc.data() });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Never expose the Slack user ID or raw conversation ID list to the client -
 // only the aggregate counts and scan progress it actually needs.
 function redactSlackState(state: any) {
@@ -1659,6 +2136,46 @@ app.get("/api/signals/calendar", verifyAppCheck, authenticateFirebaseUser, async
     res.json({ state: doc.exists ? doc.data() : null });
   } catch (err: any) {
     console.error("[Signals] calendar read error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ============================================================================
+// Real Signals: Gmail (genuinely fetched, not the "inbox shielding" claim
+// this used to make - honestly scoped to real inbox-load tracking instead)
+// ============================================================================
+const GmailSignalSchema = z.object({
+  unreadCount: z.number(),
+  totalInboxCount: z.number(),
+}).strict();
+
+app.post("/api/signals/gmail", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const parsed = GmailSignalSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: "Invalid Gmail signal payload.", details: (parsed as any).error?.errors || [] });
+    }
+    const uid = requireAuth(req).uid;
+    const db = getDb();
+    await db.collection("users").doc(uid).collection("live_signals").doc("gmail").set({
+      ...parsed.data,
+      updatedAt: new Date().toISOString(),
+    });
+    res.json({ success: true });
+  } catch (err: any) {
+    console.error("[Signals] gmail write error:", err.message);
+    res.status(500).json({ error: "Could not save Gmail signal." });
+  }
+});
+
+app.get("/api/signals/gmail", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const uid = requireAuth(req).uid;
+    const db = getDb();
+    const doc = await db.collection("users").doc(uid).collection("live_signals").doc("gmail").get();
+    res.json({ state: doc.exists ? doc.data() : null });
+  } catch (err: any) {
+    console.error("[Signals] gmail read error:", err.message);
     res.status(500).json({ error: err.message });
   }
 });
@@ -2301,6 +2818,7 @@ app.get("/api/admin/summary", verifyAppCheck, authenticateFirebaseUser, async (r
     let completedCount = 0;
     let totalResets = 0;
     let safetyEscalations = 0;
+    let crisisReferrals = 0;
     const triggerCounts: Record<string, number> = {};
     const toolCounts: Record<string, number> = {};
 
@@ -2329,6 +2847,9 @@ app.get("/api/admin/summary", verifyAppCheck, authenticateFirebaseUser, async (r
         
         if (data.safetyLevel && data.safetyLevel !== 'normal_support') {
           safetyEscalations++;
+        }
+        if (data.safetyLevel === 'possible_crisis' || data.safetyLevel === 'immediate_danger') {
+          crisisReferrals++;
         }
 
         if (data.triggerType) {
@@ -2366,7 +2887,9 @@ app.get("/api/admin/summary", verifyAppCheck, authenticateFirebaseUser, async (r
       mostCommonTrigger,
       mostUsedResetTool,
       completionRate: totalResets > 0 ? Math.round((completedCount / totalResets) * 100) : 100,
-      safetyEscalations
+      totalResets,
+      safetyEscalations,
+      crisisReferrals
     });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
@@ -2656,16 +3179,1128 @@ app.post("/api/admin/content-library", verifyAppCheck, authenticateFirebaseUser,
 app.post("/api/admin/orgs", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
   try {
     requireAdmin(req);
-    const { orgId, name, privacyThreshold } = req.body;
+    const { orgId, name, privacyThreshold, initialAdminEmail } = req.body;
     const db = getDb();
-    await db.collection("organisations").doc(orgId).set({
+
+    let initialAdminUid: string | null = null;
+    if (initialAdminEmail) {
+      try {
+        const adminUserRecord = await getAuth().getUserByEmail(initialAdminEmail);
+        initialAdminUid = adminUserRecord.uid;
+      } catch (e) {
+        return res.status(400).json({ error: `No existing account found for ${initialAdminEmail}. They need to sign up for Blaze Break first, then be designated as this org's admin.` });
+      }
+    }
+
+    const existingOrgDoc = await db.collection("organisations").doc(orgId).get();
+    // Join code is generated once, on first creation, and kept stable across
+    // updates - regenerating it on every edit would silently invalidate any
+    // invite links already sent out to employees.
+    const joinCode = existingOrgDoc.exists && existingOrgDoc.data()?.joinCode
+      ? existingOrgDoc.data()!.joinCode
+      : Math.random().toString(36).substring(2, 8).toUpperCase();
+
+    const updatePayload: any = {
       name,
       privacyThreshold: privacyThreshold || 5,
-      updatedAt: FieldValue.serverTimestamp()
-    }, { merge: true });
-    
+      joinCode,
+      updatedAt: FieldValue.serverTimestamp(),
+    };
+    if (!existingOrgDoc.exists) {
+      updatePayload.createdAt = FieldValue.serverTimestamp();
+      updatePayload.memberUids = initialAdminUid ? [initialAdminUid] : [];
+      updatePayload.adminUids = initialAdminUid ? [initialAdminUid] : [];
+    } else if (initialAdminUid) {
+      updatePayload.adminUids = FieldValue.arrayUnion(initialAdminUid);
+      updatePayload.memberUids = FieldValue.arrayUnion(initialAdminUid);
+    }
+
+    await db.collection("organisations").doc(orgId).set(updatePayload, { merge: true });
+
+    if (initialAdminUid) {
+      await db.collection("users").doc(initialAdminUid).set({
+        organisationId: orgId,
+        updatedAt: FieldValue.serverTimestamp(),
+      }, { merge: true });
+    }
+
     await logAdminAction(req, "manage_organisation", "", orgId, { name, privacyThreshold });
+    res.json({ success: true, joinCode });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// A member removing themselves from their organisation - the reverse of
+// /api/org/join. Their own wellbeing data is entirely unaffected; this only
+// touches the membership link itself.
+app.post("/api/org/leave", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const user = requireAuth(req);
+    const db = getDb();
+    const userDoc = await db.collection("users").doc(user.uid).get();
+    const orgId = userDoc.exists ? userDoc.data()?.organisationId : null;
+    if (!orgId) {
+      return res.status(400).json({ error: "You're not currently part of an organisation." });
+    }
+
+    await db.collection("users").doc(user.uid).set({
+      organisationId: FieldValue.delete(),
+      shareAnonymizedDataWithOrg: false,
+      updatedAt: FieldValue.serverTimestamp(),
+    }, { merge: true });
+
+    await db.collection("organisations").doc(orgId).update({
+      memberUids: FieldValue.arrayRemove(user.uid),
+      adminUids: FieldValue.arrayRemove(user.uid),
+    });
+
     res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ============ Organisation Membership & Aggregate Dashboard ============
+// Everything below reads/writes the top-level `organisations` collection and
+// other users' `users/{uid}` docs via the Admin SDK, which is why none of it
+// needs (or has) client-facing Firestore rules - a hand-written security rule
+// complex enough to safely express "return an aggregate, never a record" is
+// much harder to get right than an explicit, testable server check. Org
+// admins never get direct Firestore read access to another member's data;
+// they only ever see what these endpoints choose to compute and return.
+
+const requireOrgAdmin = async (req: any, orgId: string) => {
+  const user = requireAuth(req);
+  const db = getDb();
+  const orgDoc = await db.collection("organisations").doc(orgId).get();
+  if (!orgDoc.exists) {
+    throw new Error("Organisation not found.");
+  }
+  const org = orgDoc.data()!;
+  const adminUids: string[] = org.adminUids || [];
+  if (!adminUids.includes(user.uid)) {
+    throw new Error("Forbidden: Organisation admin privileges required for this organisation.");
+  }
+  return { user, org };
+};
+
+// Employee redeems a join code to link themselves to their employer's org.
+// This is the only way `organisationId` ever gets set on a user - the
+// Firestore rules explicitly block clients from setting it directly, so
+// nobody can self-assign into a company they don't actually work for.
+app.post("/api/org/join", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const user = requireAuth(req);
+    const { joinCode } = req.body;
+    if (!joinCode || typeof joinCode !== 'string') {
+      return res.status(400).json({ error: "A join code is required." });
+    }
+    const db = getDb();
+
+    const existingUserDoc = await db.collection("users").doc(user.uid).get();
+    if (existingUserDoc.exists && existingUserDoc.data()?.organisationId) {
+      return res.status(400).json({ error: "You're already part of an organisation. Contact support to switch." });
+    }
+
+    const orgsSnap = await db.collection("organisations").where("joinCode", "==", joinCode.trim().toUpperCase()).limit(1).get();
+    if (orgsSnap.empty) {
+      return res.status(404).json({ error: "That join code doesn't match any organisation. Double-check with your admin." });
+    }
+    const orgDoc = orgsSnap.docs[0];
+
+    await db.collection("users").doc(user.uid).set({
+      organisationId: orgDoc.id,
+      updatedAt: FieldValue.serverTimestamp(),
+    }, { merge: true });
+
+    await db.collection("organisations").doc(orgDoc.id).update({
+      memberUids: FieldValue.arrayUnion(user.uid),
+    });
+
+    // If this person was invited by email, that invite is now resolved -
+    // clean it up so the admin's pending list only shows people still
+    // waiting to join, not everyone who's ever been invited.
+    if (user.email) {
+      try {
+        await db.collection("organisations").doc(orgDoc.id).collection("pending_invites").doc(user.email.toLowerCase()).delete();
+      } catch (e) {
+        // Non-critical - joining itself already succeeded above.
+      }
+    }
+
+    res.json({ success: true, organisationId: orgDoc.id, organisationName: orgDoc.data().name });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// The current user's own org membership status - which org (if any), whether
+// they're that org's admin, and their own consent setting. Drives which UI
+// the frontend shows; carries no information about anyone else.
+app.get("/api/org/me", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const user = requireAuth(req);
+    const db = getDb();
+    const userDoc = await db.collection("users").doc(user.uid).get();
+    const orgId = userDoc.exists ? userDoc.data()?.organisationId : null;
+    if (!orgId) {
+      return res.json({ organisationId: null });
+    }
+    const orgDoc = await db.collection("organisations").doc(orgId).get();
+    if (!orgDoc.exists) {
+      return res.json({ organisationId: null });
+    }
+    const org = orgDoc.data()!;
+    const isOrgAdmin = (org.adminUids || []).includes(user.uid);
+    res.json({
+      organisationId: orgId,
+      organisationName: org.name,
+      isOrgAdmin,
+      joinCode: isOrgAdmin ? org.joinCode : undefined,
+      privacyThreshold: isOrgAdmin ? (org.privacyThreshold || 5) : undefined,
+      shareAnonymizedDataWithOrg: userDoc.data()?.shareAnonymizedDataWithOrg === true,
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// The real, server-side aggregation. This is the only place any individual
+// member's wellbeing data is ever read for org-reporting purposes, and it
+// never returns individual records - only aggregate counts. It refuses to
+// return anything at all below the organisation's configured minimum cohort
+// size, checked against the actual consenting count for this specific
+// request, not the org's total headcount.
+app.get("/api/org/:orgId/dashboard", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const { orgId } = req.params;
+    const { org } = await requireOrgAdmin(req, orgId);
+    const db = getDb();
+
+    const threshold = org.privacyThreshold || 5;
+    const memberUids: string[] = org.memberUids || [];
+
+    // Only members who've explicitly opted in count toward anything below.
+    const consentingUids: string[] = [];
+    await Promise.all(memberUids.map(async (uid) => {
+      const userDoc = await db.collection("users").doc(uid).get();
+      if (userDoc.exists && userDoc.data()?.shareAnonymizedDataWithOrg === true) {
+        consentingUids.push(uid);
+      }
+    }));
+
+    if (consentingUids.length < threshold) {
+      return res.json({ locked: true, cohortSize: consentingUids.length, threshold });
+    }
+
+    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+
+    let moodPositive = 0, moodNegative = 0, moodNeutral = 0, moodIntensitySum = 0, moodCount = 0;
+    let activeMembers = 0;
+    const bodySignalCounts: Record<string, number> = {};
+
+    await Promise.all(consentingUids.map(async (uid) => {
+      let hadActivity = false;
+
+      const moodSnap = await db.collection("users").doc(uid).collection("mood_pulses")
+        .where("createdAt", ">=", sevenDaysAgo).get();
+      moodSnap.forEach(doc => {
+        const d = doc.data();
+        hadActivity = true;
+        moodCount++;
+        moodIntensitySum += d.intensity || 0;
+        if (d.moodLabel === 'calm' || d.moodLabel === 'hopeful' || d.moodLabel === 'focused') moodPositive++;
+        else if (d.moodLabel === 'overwhelmed' || d.moodLabel === 'frustrated' || d.moodLabel === 'pressured' || d.moodLabel === 'tired') moodNegative++;
+        else moodNeutral++;
+      });
+
+      const bodySnap = await db.collection("users").doc(uid).collection("body_checkins")
+        .where("createdAt", ">=", sevenDaysAgo).get();
+      bodySnap.forEach(doc => {
+        hadActivity = true;
+        const signals: string[] = doc.data().signals || [];
+        signals.forEach(s => {
+          if (s === 'calm_settled') return;
+          bodySignalCounts[s] = (bodySignalCounts[s] || 0) + 1;
+        });
+      });
+
+      if (hadActivity) activeMembers++;
+    }));
+
+    const topBodySignals = Object.entries(bodySignalCounts)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5)
+      .map(([signal, count]) => ({ signal, count }));
+
+    res.json({
+      locked: false,
+      cohortSize: consentingUids.length,
+      threshold,
+      windowDays: 7,
+      engagementRate: Math.round((activeMembers / consentingUids.length) * 100),
+      moodDistribution: { positive: moodPositive, negative: moodNegative, neutral: moodNeutral },
+      avgMoodIntensity: moodCount > 0 ? Number((moodIntensitySum / moodCount).toFixed(1)) : null,
+      topBodySignals,
+    });
+  } catch (err: any) {
+    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
+  }
+});
+
+// Team recognition wall. Unlike the aggregate dashboard above, these posts
+// ARE attributed by design - naming who you're thanking is the point of a
+// recognition, not a privacy concern the way individual wellbeing data is.
+app.post("/api/org/:orgId/recognition", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const { orgId } = req.params;
+    const user = requireAuth(req);
+    const db = getDb();
+    const orgDoc = await db.collection("organisations").doc(orgId).get();
+    if (!orgDoc.exists || !(orgDoc.data()?.memberUids || []).includes(user.uid)) {
+      return res.status(403).json({ error: "You're not a member of this organisation." });
+    }
+    const { message, isAnonymous } = req.body;
+    if (!message || typeof message !== 'string' || message.trim().length === 0 || message.length > 300) {
+      return res.status(400).json({ error: "Message must be 1-300 characters." });
+    }
+    const userDoc = await db.collection("users").doc(user.uid).get();
+    const fromName = isAnonymous ? "Anonymous" : (userDoc.data()?.displayName || userDoc.data()?.preferredName || "A teammate");
+
+    const ref = await db.collection("organisations").doc(orgId).collection("recognition_wall").add({
+      from: fromName,
+      message: message.trim(),
+      createdAt: FieldValue.serverTimestamp(),
+    });
+    res.json({ success: true, id: ref.id });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get("/api/org/:orgId/recognition", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const { orgId } = req.params;
+    const user = requireAuth(req);
+    const db = getDb();
+    const orgDoc = await db.collection("organisations").doc(orgId).get();
+    if (!orgDoc.exists || !(orgDoc.data()?.memberUids || []).includes(user.uid)) {
+      return res.status(403).json({ error: "You're not a member of this organisation." });
+    }
+    const snap = await db.collection("organisations").doc(orgId).collection("recognition_wall")
+      .orderBy("createdAt", "desc").limit(20).get();
+    const items = snap.docs.map(d => {
+      const data = d.data();
+      const reactedUids: string[] = data.reactedUids || [];
+      return {
+        id: d.id,
+        from: data.from,
+        message: data.message,
+        createdAt: data.createdAt,
+        reactionCount: reactedUids.length,
+        reacted: reactedUids.includes(user.uid),
+      };
+    });
+    res.json({ items });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/api/org/:orgId/recognition/:recognitionId/react", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const { orgId, recognitionId } = req.params;
+    const user = requireAuth(req);
+    const db = getDb();
+    const orgDoc = await db.collection("organisations").doc(orgId).get();
+    if (!orgDoc.exists || !(orgDoc.data()?.memberUids || []).includes(user.uid)) {
+      return res.status(403).json({ error: "You're not a member of this organisation." });
+    }
+    const ref = db.collection("organisations").doc(orgId).collection("recognition_wall").doc(recognitionId);
+    const doc = await ref.get();
+    if (!doc.exists) {
+      return res.status(404).json({ error: "That post no longer exists." });
+    }
+    const reactedUids: string[] = doc.data()?.reactedUids || [];
+    const alreadyReacted = reactedUids.includes(user.uid);
+    await ref.update({
+      reactedUids: alreadyReacted ? FieldValue.arrayRemove(user.uid) : FieldValue.arrayUnion(user.uid),
+    });
+    res.json({ success: true, reacted: !alreadyReacted });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ============ Anonymous Team Voice ============
+// Genuinely, structurally anonymous - the write itself never includes the
+// submitter's uid, not even transiently, so there's nothing for an org
+// admin (or anyone with database access) to trace back. The endpoint is
+// still authenticated to confirm the submitter is a real member and to
+// apply basic rate/content limits, but that check never touches what
+// actually gets stored.
+app.post("/api/org/:orgId/suggestions", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const { orgId } = req.params;
+    const user = requireAuth(req);
+    const db = getDb();
+    const orgDoc = await db.collection("organisations").doc(orgId).get();
+    if (!orgDoc.exists || !(orgDoc.data()?.memberUids || []).includes(user.uid)) {
+      return res.status(403).json({ error: "You're not a member of this organisation." });
+    }
+    const { message } = req.body;
+    if (!message || typeof message !== 'string' || message.trim().length === 0 || message.length > 500) {
+      return res.status(400).json({ error: "Message must be 1-500 characters." });
+    }
+    await db.collection("organisations").doc(orgId).collection("anonymous_suggestions").add({
+      message: message.trim(),
+      createdAt: FieldValue.serverTimestamp(),
+    });
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get("/api/org/:orgId/suggestions", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const { orgId } = req.params;
+    const user = requireAuth(req);
+    const db = getDb();
+    const orgDoc = await db.collection("organisations").doc(orgId).get();
+    if (!orgDoc.exists || !(orgDoc.data()?.memberUids || []).includes(user.uid)) {
+      return res.status(403).json({ error: "You're not a member of this organisation." });
+    }
+    const snap = await db.collection("organisations").doc(orgId).collection("anonymous_suggestions")
+      .orderBy("createdAt", "desc").limit(30).get();
+    const suggestions = snap.docs.map(d => ({ id: d.id, message: d.data().message, createdAt: d.data().createdAt }));
+    res.json({ suggestions });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// The org admin's own real figures for the cost-of-pressure calculator. This
+// replaces what used to be entirely fabricated example numbers - real
+// figures in, a calculation out, rather than a made-up ROI claim.
+app.post("/api/org/:orgId/cost-inputs", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const { orgId } = req.params;
+    await requireOrgAdmin(req, orgId);
+    const { annualSicknessDays, avgDailyCostPerEmployee, headcount } = req.body;
+    if (
+      typeof annualSicknessDays !== 'number' || annualSicknessDays < 0 ||
+      typeof avgDailyCostPerEmployee !== 'number' || avgDailyCostPerEmployee < 0 ||
+      typeof headcount !== 'number' || headcount < 0
+    ) {
+      return res.status(400).json({ error: "All three figures must be non-negative numbers." });
+    }
+    const db = getDb();
+    const costInputs = { annualSicknessDays, avgDailyCostPerEmployee, headcount };
+    await db.collection("organisations").doc(orgId).update({
+      costInputs,
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+    // Also appended to a real history log, not just overwritten - this is
+    // what makes the "track your trend over months" claim already shown in
+    // the UI an honest one rather than another insinuated-but-missing
+    // capability.
+    await db.collection("organisations").doc(orgId).collection("cost_input_history").add({
+      annualSicknessDays, avgDailyCostPerEmployee, headcount,
+      enteredAt: new Date().toISOString(),
+    });
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
+  }
+});
+
+app.get("/api/org/:orgId/cost-inputs", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const { orgId } = req.params;
+    const user = requireAuth(req);
+    const db = getDb();
+    const orgDoc = await db.collection("organisations").doc(orgId).get();
+    if (!orgDoc.exists || !(orgDoc.data()?.memberUids || []).includes(user.uid)) {
+      return res.status(403).json({ error: "You're not a member of this organisation." });
+    }
+    const historySnap = await db.collection("organisations").doc(orgId).collection("cost_input_history")
+      .orderBy("enteredAt", "asc").limit(24).get();
+    const history = historySnap.docs.map(d => d.data());
+    res.json({ costInputs: orgDoc.data()?.costInputs || null, history });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Platform admin's list of all provisioned customer organisations - powers
+// the onboarding UI so Blaze Break's own team can see what already exists
+// before creating something new or looking up a join code to resend.
+app.get("/api/admin/orgs", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    requireAdmin(req);
+    const db = getDb();
+    const snap = await db.collection("organisations").orderBy("createdAt", "desc").limit(200).get();
+    const orgs = snap.docs.map(d => {
+      const data = d.data();
+      return {
+        id: d.id,
+        name: data.name,
+        joinCode: data.joinCode,
+        privacyThreshold: data.privacyThreshold || 5,
+        memberCount: (data.memberUids || []).length,
+        adminCount: (data.adminUids || []).length,
+        createdAt: data.createdAt,
+      };
+    });
+    res.json({ orgs });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ============ Team Climate Survey (real HSE-aligned aggregation) ============
+// Individual responses live in each member's own climate_survey_responses
+// subcollection (Firestore rules let them write directly, same as
+// mood_pulses). This endpoint is the only place those get read across
+// members, and - exactly like the pulse dashboard - it only ever returns
+// averaged numbers, gated by the same minimum cohort size.
+
+app.get("/api/org/:orgId/climate", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const { orgId } = req.params;
+    const { org } = await requireOrgAdmin(req, orgId);
+    const db = getDb();
+
+    const threshold = org.privacyThreshold || 5;
+    const memberUids: string[] = org.memberUids || [];
+
+    const consentingUids: string[] = [];
+    await Promise.all(memberUids.map(async (uid) => {
+      const userDoc = await db.collection("users").doc(uid).get();
+      if (userDoc.exists && userDoc.data()?.shareAnonymizedDataWithOrg === true) {
+        consentingUids.push(uid);
+      }
+    }));
+
+    if (consentingUids.length < threshold) {
+      return res.json({ locked: true, cohortSize: consentingUids.length, threshold, responseCount: 0 });
+    }
+
+    // Climate surveys are periodic, not daily - a 90-day window catches a
+    // quarter's worth of responses rather than the last-7-days window used
+    // for mood/body signals.
+    const ninetyDaysAgo = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString();
+    const dimensions = ['demands', 'control', 'support', 'relationships', 'role', 'change'] as const;
+    const sums: Record<string, number> = { demands: 0, control: 0, support: 0, relationships: 0, role: 0, change: 0 };
+    let responseCount = 0;
+    const respondedUids = new Set<string>();
+
+    await Promise.all(consentingUids.map(async (uid) => {
+      const snap = await db.collection("users").doc(uid).collection("climate_survey_responses")
+        .where("createdAt", ">=", ninetyDaysAgo).orderBy("createdAt", "desc").limit(1).get();
+      if (!snap.empty) {
+        const d = snap.docs[0].data();
+        dimensions.forEach(dim => { sums[dim] += d[dim] || 0; });
+        responseCount++;
+        respondedUids.add(uid);
+      }
+    }));
+
+    if (responseCount < threshold) {
+      return res.json({ locked: true, cohortSize: responseCount, threshold, responseCount });
+    }
+
+    const averages: Record<string, number> = {};
+    dimensions.forEach(dim => { averages[dim] = Number((sums[dim] / responseCount).toFixed(1)); });
+
+    res.json({
+      locked: false,
+      cohortSize: consentingUids.length,
+      responseCount,
+      threshold,
+      averages,
+      responseRate: Math.round((responseCount / consentingUids.length) * 100),
+    });
+  } catch (err: any) {
+    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
+  }
+});
+
+// ============ Team Challenges (real creation & participation) ============
+
+app.post("/api/org/:orgId/challenges", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const { orgId } = req.params;
+    await requireOrgAdmin(req, orgId);
+    const { title, description } = req.body;
+    if (!title || typeof title !== 'string' || title.trim().length === 0 || title.length > 100) {
+      return res.status(400).json({ error: "Title must be 1-100 characters." });
+    }
+    if (description && (typeof description !== 'string' || description.length > 300)) {
+      return res.status(400).json({ error: "Description must be under 300 characters." });
+    }
+    const db = getDb();
+    const ref = await db.collection("organisations").doc(orgId).collection("challenges").add({
+      title: title.trim(),
+      description: (description || '').trim(),
+      active: true,
+      createdAt: FieldValue.serverTimestamp(),
+      participantUids: [],
+    });
+    res.json({ success: true, id: ref.id });
+  } catch (err: any) {
+    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
+  }
+});
+
+app.get("/api/org/:orgId/challenges", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const { orgId } = req.params;
+    const user = requireAuth(req);
+    const db = getDb();
+    const orgDoc = await db.collection("organisations").doc(orgId).get();
+    if (!orgDoc.exists || !(orgDoc.data()?.memberUids || []).includes(user.uid)) {
+      return res.status(403).json({ error: "You're not a member of this organisation." });
+    }
+    const memberCount = (orgDoc.data()?.memberUids || []).length;
+    const snap = await db.collection("organisations").doc(orgId).collection("challenges")
+      .orderBy("createdAt", "desc").limit(20).get();
+    const challenges = snap.docs.map(d => {
+      const data = d.data();
+      const participantUids: string[] = data.participantUids || [];
+      return {
+        id: d.id,
+        title: data.title,
+        description: data.description,
+        active: data.active,
+        participantCount: participantUids.length,
+        participationRate: memberCount > 0 ? Math.round((participantUids.length / memberCount) * 100) : 0,
+        joined: participantUids.includes(user.uid),
+      };
+    });
+    res.json({ challenges });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/api/org/:orgId/challenges/:challengeId/join", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const { orgId, challengeId } = req.params;
+    const user = requireAuth(req);
+    const db = getDb();
+    const orgDoc = await db.collection("organisations").doc(orgId).get();
+    if (!orgDoc.exists || !(orgDoc.data()?.memberUids || []).includes(user.uid)) {
+      return res.status(403).json({ error: "You're not a member of this organisation." });
+    }
+    await db.collection("organisations").doc(orgId).collection("challenges").doc(challengeId).update({
+      participantUids: FieldValue.arrayUnion(user.uid),
+    });
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/api/org/:orgId/challenges/:challengeId/leave", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const { orgId, challengeId } = req.params;
+    const user = requireAuth(req);
+    const db = getDb();
+    await db.collection("organisations").doc(orgId).collection("challenges").doc(challengeId).update({
+      participantUids: FieldValue.arrayRemove(user.uid),
+    });
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ============ Org Admin: Member Management & Settings ============
+
+app.get("/api/org/:orgId/members", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const { orgId } = req.params;
+    const { org } = await requireOrgAdmin(req, orgId);
+    const memberUids: string[] = org.memberUids || [];
+    const adminUids: string[] = org.adminUids || [];
+
+    const members = await Promise.all(memberUids.map(async (uid) => {
+      try {
+        const authUser = await getAuth().getUser(uid);
+        return {
+          uid,
+          email: authUser.email || null,
+          displayName: authUser.displayName || null,
+          isAdmin: adminUids.includes(uid),
+        };
+      } catch (e) {
+        return { uid, email: null, displayName: null, isAdmin: adminUids.includes(uid) };
+      }
+    }));
+
+    res.json({ members });
+  } catch (err: any) {
+    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
+  }
+});
+
+app.post("/api/org/:orgId/members/:memberUid/remove", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const { orgId, memberUid } = req.params;
+    const { user, org } = await requireOrgAdmin(req, orgId);
+    if (memberUid === user.uid) {
+      return res.status(400).json({ error: "Use 'Leave Organisation' from your own Privacy Centre to remove yourself." });
+    }
+    const db = getDb();
+    await db.collection("users").doc(memberUid).set({
+      organisationId: FieldValue.delete(),
+      shareAnonymizedDataWithOrg: false,
+      updatedAt: FieldValue.serverTimestamp(),
+    }, { merge: true });
+    await db.collection("organisations").doc(orgId).update({
+      memberUids: FieldValue.arrayRemove(memberUid),
+      adminUids: FieldValue.arrayRemove(memberUid),
+    });
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
+  }
+});
+
+app.post("/api/org/:orgId/members/:memberUid/make-admin", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const { orgId, memberUid } = req.params;
+    await requireOrgAdmin(req, orgId);
+    const db = getDb();
+    const orgDoc = await db.collection("organisations").doc(orgId).get();
+    if (!(orgDoc.data()?.memberUids || []).includes(memberUid)) {
+      return res.status(400).json({ error: "That person isn't a member of this organisation." });
+    }
+    await db.collection("organisations").doc(orgId).update({
+      adminUids: FieldValue.arrayUnion(memberUid),
+    });
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
+  }
+});
+
+app.post("/api/org/:orgId/members/:memberUid/revoke-admin", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const { orgId, memberUid } = req.params;
+    const { user, org } = await requireOrgAdmin(req, orgId);
+    if (memberUid === user.uid) {
+      return res.status(400).json({ error: "You can't revoke your own admin access - ask another admin to do it." });
+    }
+    if ((org.adminUids || []).length <= 1) {
+      return res.status(400).json({ error: "This organisation needs at least one admin - promote someone else first." });
+    }
+    const db = getDb();
+    await db.collection("organisations").doc(orgId).update({
+      adminUids: FieldValue.arrayRemove(memberUid),
+    });
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
+  }
+});
+
+app.post("/api/org/:orgId/regenerate-join-code", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const { orgId } = req.params;
+    await requireOrgAdmin(req, orgId);
+    const db = getDb();
+    const newCode = Math.random().toString(36).substring(2, 8).toUpperCase();
+    await db.collection("organisations").doc(orgId).update({
+      joinCode: newCode,
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+    res.json({ success: true, joinCode: newCode });
+  } catch (err: any) {
+    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
+  }
+});
+
+app.post("/api/org/:orgId/settings", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const { orgId } = req.params;
+    await requireOrgAdmin(req, orgId);
+    const { name, privacyThreshold } = req.body;
+    const update: any = { updatedAt: FieldValue.serverTimestamp() };
+    if (name !== undefined) {
+      if (typeof name !== 'string' || name.trim().length === 0 || name.length > 100) {
+        return res.status(400).json({ error: "Name must be 1-100 characters." });
+      }
+      update.name = name.trim();
+    }
+    if (privacyThreshold !== undefined) {
+      if (typeof privacyThreshold !== 'number' || privacyThreshold < 3 || privacyThreshold > 100) {
+        return res.status(400).json({ error: "Minimum cohort size must be between 3 and 100." });
+      }
+      update.privacyThreshold = privacyThreshold;
+    }
+    const db = getDb();
+    await db.collection("organisations").doc(orgId).update(update);
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
+  }
+});
+
+// ============ Email Invites ============
+// Sends real invite emails via the existing Brevo integration and tracks
+// pending invites so an org admin can see who's been asked but hasn't
+// joined yet, without needing to cross-reference anything manually. This is
+// a convenience layer on top of the join code, not a replacement for it -
+// join-by-code still works even if an invite email never arrives.
+
+app.post("/api/org/:orgId/invite", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const { orgId } = req.params;
+    const { org } = await requireOrgAdmin(req, orgId);
+    const { emails } = req.body;
+    const emailList: string[] = Array.isArray(emails) ? emails : (typeof emails === 'string' ? [emails] : []);
+    const cleaned = Array.from(new Set(
+      emailList
+        .map(e => (typeof e === 'string' ? e.trim().toLowerCase() : ''))
+        .filter(e => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e))
+    ));
+
+    if (cleaned.length === 0) {
+      return res.status(400).json({ error: "Provide at least one valid email address." });
+    }
+    if (cleaned.length > 50) {
+      return res.status(400).json({ error: "You can invite up to 50 people at once." });
+    }
+
+    const db = getDb();
+    const results: { email: string; sent: boolean }[] = [];
+
+    for (const email of cleaned) {
+      const sent = await sendBrevoEmail(
+        email,
+        `You're invited to ${org.name} on Blaze Break`,
+        `${org.name} has set up Blaze Break, a burnout recovery tool, for their team.\n\nTo join, sign in to Blaze Break and enter this code in your Privacy Centre under "Organisation Participation":\n\n${org.joinCode}\n\nJoining is entirely optional, and any data sharing with ${org.name} is off by default and fully within your control.`
+      );
+      results.push({ email, sent });
+      await db.collection("organisations").doc(orgId).collection("pending_invites").doc(email).set({
+        email,
+        invitedAt: FieldValue.serverTimestamp(),
+        emailSent: sent,
+      });
+    }
+
+    res.json({ success: true, results });
+  } catch (err: any) {
+    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
+  }
+});
+
+app.get("/api/org/:orgId/invites", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const { orgId } = req.params;
+    await requireOrgAdmin(req, orgId);
+    const db = getDb();
+    const snap = await db.collection("organisations").doc(orgId).collection("pending_invites")
+      .orderBy("invitedAt", "desc").limit(100).get();
+    const invites = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    res.json({ invites });
+  } catch (err: any) {
+    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
+  }
+});
+
+app.post("/api/org/:orgId/invites/:email/cancel", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const { orgId, email } = req.params;
+    await requireOrgAdmin(req, orgId);
+    const db = getDb();
+    await db.collection("organisations").doc(orgId).collection("pending_invites").doc(email).delete();
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
+  }
+});
+
+// ============ Moderation ============
+
+app.post("/api/org/:orgId/recognition/:recognitionId/delete", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const { orgId, recognitionId } = req.params;
+    await requireOrgAdmin(req, orgId);
+    const db = getDb();
+    await db.collection("organisations").doc(orgId).collection("recognition_wall").doc(recognitionId).delete();
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
+  }
+});
+
+app.post("/api/org/:orgId/challenges/:challengeId/toggle-active", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const { orgId, challengeId } = req.params;
+    await requireOrgAdmin(req, orgId);
+    const db = getDb();
+    const challengeDoc = await db.collection("organisations").doc(orgId).collection("challenges").doc(challengeId).get();
+    if (!challengeDoc.exists) {
+      return res.status(404).json({ error: "Challenge not found." });
+    }
+    const newActive = !challengeDoc.data()?.active;
+    await db.collection("organisations").doc(orgId).collection("challenges").doc(challengeId).update({ active: newActive });
+    res.json({ success: true, active: newActive });
+  } catch (err: any) {
+    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
+  }
+});
+
+app.post("/api/org/:orgId/challenges/:challengeId/edit", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const { orgId, challengeId } = req.params;
+    await requireOrgAdmin(req, orgId);
+    const { title, description } = req.body;
+    if (!title || typeof title !== 'string' || title.trim().length === 0 || title.length > 100) {
+      return res.status(400).json({ error: "Title must be 1-100 characters." });
+    }
+    if (description !== undefined && (typeof description !== 'string' || description.length > 300)) {
+      return res.status(400).json({ error: "Description must be under 300 characters." });
+    }
+    const db = getDb();
+    const challengeRef = db.collection("organisations").doc(orgId).collection("challenges").doc(challengeId);
+    const challengeDoc = await challengeRef.get();
+    if (!challengeDoc.exists) {
+      return res.status(404).json({ error: "Challenge not found." });
+    }
+    await challengeRef.update({ title: title.trim(), description: (description || '').trim() });
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
+  }
+});
+
+// Counts consecutive completed days ending today or yesterday - a streak
+// isn't considered broken just because today hasn't happened yet, but two
+// missed days in a row genuinely ends it.
+const computeStreak = (completedDates: string[]): number => {
+  if (!completedDates || completedDates.length === 0) return 0;
+  const dateSet = new Set(completedDates);
+  const today = new Date();
+  let streak = 0;
+  const cursor = new Date(today);
+  const todayStr = today.toISOString().split('T')[0];
+  if (!dateSet.has(todayStr)) {
+    cursor.setDate(cursor.getDate() - 1);
+  }
+  while (dateSet.has(cursor.toISOString().split('T')[0])) {
+    streak++;
+    cursor.setDate(cursor.getDate() - 1);
+  }
+  return streak;
+};
+
+// ============ Recovery Ally (real, two-sided accountability) ============
+// The ally doesn't need their own Blaze Break account - they get a real
+// emailed link to an unauthenticated, token-scoped view of exactly what the
+// person chose to share, and can leave a real encouragement note back. This
+// is what makes "they'll get a link to accept" and "once they send a note
+// it'll appear here" - both already promised in the UI - actually true.
+
+app.post("/api/ally/invite", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const user = requireAuth(req);
+    const { allyEmail } = req.body;
+    if (!allyEmail || typeof allyEmail !== 'string' || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(allyEmail)) {
+      return res.status(400).json({ error: "Please provide a valid email address." });
+    }
+    const db = getDb();
+    const shareToken = crypto.randomBytes(24).toString('hex');
+    const allyName = allyEmail.split('@')[0];
+
+    await db.collection("users").doc(user.uid).collection("recovery_ally").doc("state").set({
+      isInvited: true,
+      allyName,
+      allyEmail: allyEmail.trim().toLowerCase(),
+      permissions: { viewGoals: true, viewMilestones: true, sendPings: true, viewEnergyStats: false },
+      shareToken,
+      invitedAt: new Date().toISOString(),
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+
+    const appBase = (process.env.APP_URL || "").replace(/\/$/, "");
+    const link = `${appBase}/ally/${shareToken}`;
+    const emailSent = await sendBrevoEmail(
+      allyEmail,
+      "You've been invited as a Recovery Ally",
+      `Someone you know is using Blaze Break to work on burnout recovery, and asked you to be their accountability ally.\n\nYou can see what they've chosen to share and leave them an encouraging note here, no account needed:\n\n${link}\n\nThis is just for everyday accountability, not a crisis service.`
+    );
+
+    res.json({ success: true, emailSent, shareToken });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/api/ally/revoke", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const user = requireAuth(req);
+    const db = getDb();
+    await db.collection("users").doc(user.uid).collection("recovery_ally").doc("state").set({
+      isInvited: false,
+      allyName: '',
+      allyEmail: '',
+      shareToken: FieldValue.delete(),
+      updatedAt: FieldValue.serverTimestamp(),
+    }, { merge: true });
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Public - the ally doesn't have an account. Access is entirely gated by
+// possession of an unguessable 48-character token, and the response only
+// ever includes what the owner explicitly toggled on.
+app.get("/api/ally/view/:token", verifyAppCheck, async (req, res) => {
+  try {
+    const { token } = req.params;
+    if (!token || token.length < 20) {
+      return res.status(404).json({ error: "This link isn't valid." });
+    }
+    const db = getDb();
+    const stateSnap = await db.collectionGroup("recovery_ally")
+      .where("shareToken", "==", token).limit(1).get();
+    if (stateSnap.empty) {
+      return res.status(404).json({ error: "This link isn't valid or has been revoked." });
+    }
+    const stateDoc = stateSnap.docs[0];
+    const state = stateDoc.data();
+    const ownerRef = stateDoc.ref.parent.parent;
+    if (!ownerRef) {
+      return res.status(404).json({ error: "This link isn't valid." });
+    }
+    const permissions = state.permissions || {};
+    const response: any = { allyName: state.allyName || 'there' };
+
+    if (permissions.viewGoals) {
+      const goalsSnap = await ownerRef.collection("ally_shared_goals").orderBy("createdAt", "desc").limit(20).get();
+      response.sharedGoals = goalsSnap.docs.map(d => {
+        const data = d.data();
+        const dates: string[] = data.completedDates || [];
+        return {
+          id: d.id,
+          text: data.text,
+          category: data.category,
+          completedToday: dates.includes(new Date().toISOString().split('T')[0]),
+          streak: computeStreak(dates),
+        };
+      });
+    }
+
+    if (permissions.viewMilestones) {
+      const goalsSnap = await ownerRef.collection("ally_shared_goals").get();
+      const longestStreak = goalsSnap.docs.reduce((max, d) => Math.max(max, computeStreak(d.data().completedDates || [])), 0);
+      response.longestStreak = longestStreak;
+    }
+
+    if (permissions.viewEnergyStats) {
+      const moodSnap = await ownerRef.collection("mood_pulses").orderBy("createdAt", "desc").limit(7).get();
+      const intensities = moodSnap.docs.map(d => d.data().intensity).filter((n: any) => typeof n === 'number');
+      response.recentAvgMood = intensities.length > 0
+        ? Number((intensities.reduce((a: number, b: number) => a + b, 0) / intensities.length).toFixed(1))
+        : null;
+    }
+
+    res.json(response);
+  } catch (err: any) {
+    res.status(500).json({ error: "Could not load this page." });
+  }
+});
+
+app.post("/api/ally/view/:token/encourage", verifyAppCheck, async (req, res) => {
+  try {
+    const { token } = req.params;
+    const { message } = req.body;
+    if (!message || typeof message !== 'string' || message.trim().length === 0 || message.length > 300) {
+      return res.status(400).json({ error: "Message must be 1-300 characters." });
+    }
+    if (!token || token.length < 20) {
+      return res.status(404).json({ error: "This link isn't valid." });
+    }
+    const db = getDb();
+    const stateSnap = await db.collectionGroup("recovery_ally")
+      .where("shareToken", "==", token).limit(1).get();
+    if (stateSnap.empty) {
+      return res.status(404).json({ error: "This link isn't valid or has been revoked." });
+    }
+    const stateDoc = stateSnap.docs[0];
+    const state = stateDoc.data();
+    if (state.permissions?.sendPings === false) {
+      return res.status(403).json({ error: "This person has turned off messages for now." });
+    }
+    const ownerRef = stateDoc.ref.parent.parent;
+    if (!ownerRef) {
+      return res.status(404).json({ error: "This link isn't valid." });
+    }
+    await ownerRef.collection("ally_encouragements").add({
+      type: 'personal',
+      message: message.trim(),
+      createdAt: new Date().toISOString(),
+    });
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: "Could not send that." });
+  }
+});
+
+// ============================================================================
+// User-Facing Audit Trail (genuinely persisted, not localStorage-only)
+// ============================================================================
+// Every handleAuditAction call across PrivacyVault and elsewhere previously
+// only wrote to localStorage - meaning the entire "what happened to my
+// data" trail was fabricated the moment someone switched devices, cleared
+// their browser, or wanted to prove to themselves what they'd actually
+// consented to. This writes it for real, server-side, so it can't be
+// silently edited or lost.
+const AuditLogSchema = z.object({
+  action: z.string().max(200),
+  target: z.string().max(200).optional(),
+  status: z.enum(['authorised', 'denied', 'anonymised', 'deleted', 'verified']),
+  details: z.string().max(500).optional(),
+}).strict();
+
+app.post("/api/audit-log", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const parsed = AuditLogSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: "Invalid audit log entry.", details: (parsed as any).error?.errors || [] });
+    }
+    const user = requireAuth(req);
+    const db = getDb();
+    await db.collection("audit_logs").add({
+      ...parsed.data,
+      userId: user.uid,
+      createdAt: FieldValue.serverTimestamp(),
+    });
+    res.json({ success: true });
+  } catch (err: any) {
+    console.error("[Audit] write error:", err.message);
+    res.status(500).json({ error: "Could not save that audit entry." });
+  }
+});
+
+app.get("/api/audit-log", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const user = requireAuth(req);
+    const db = getDb();
+    const snap = await db.collection("audit_logs")
+      .where("userId", "==", user.uid)
+      .orderBy("createdAt", "desc")
+      .limit(200)
+      .get();
+    const logs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    res.json({ logs });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
@@ -2685,11 +4320,33 @@ app.get("/api/anxiety-reset", verifyAppCheck, authenticateFirebaseUser, async (r
   }
 });
 
+const AnxietyResetEventSchema = z.object({
+  userId: z.string().optional(), // Client sends this but the server always overrides it with the authenticated uid below - accepted here only so .strict() doesn't reject real requests.
+  mode: z.string().max(50).optional(),
+  triggerType: z.string().max(100).optional(),
+  intensityBefore: z.number().min(0).max(10).optional(),
+  intensityAfter: z.number().min(0).max(10).optional(),
+  selectedTool: z.string().max(100).optional(),
+  completed: z.boolean().optional(),
+  durationSeconds: z.number().max(3600).optional(),
+  userNote: z.string().max(2000).optional(),
+  novaFollowUpShown: z.boolean().optional(),
+  followUpActionId: z.string().max(100).optional(),
+  safetyLevel: z.enum(['normal_support', 'heightened_anxiety', 'panic_level', 'possible_crisis', 'immediate_danger']).optional(),
+  startedAt: z.string().optional(),
+  endedAt: z.string().optional(),
+  createdAt: z.string().optional(), // Same as userId - client sends it, server overrides with a real serverTimestamp below.
+}).strict();
+
 app.post("/api/anxiety-reset", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
   try {
     const verifiedUser = requireAuth(req);
     const uid = verifiedUser?.uid;
-    const eventData = req.body;
+    const parsed = AnxietyResetEventSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: "Invalid anxiety reset event payload.", details: (parsed as any).error?.errors || [] });
+    }
+    const eventData = parsed.data;
     const db = getDb();
     
     const eventRef = db.collection("anxiety_reset_events").doc();
@@ -2714,9 +4371,10 @@ app.post("/api/anxiety-reset", verifyAppCheck, authenticateFirebaseUser, async (
     await statsRef.set({
       points: currentPoints + 50,
       lastEngagementDate: new Date().toISOString().split('T')[0],
+      lastAnxietyReset: new Date().toISOString(),
       updatedAt: FieldValue.serverTimestamp()
     }, { merge: true });
-    
+
     res.json({ success: true, event: savedEvent });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
@@ -2986,6 +4644,537 @@ app.post("/api/recovery/recalculate", verifyAppCheck, authenticateFirebaseUser, 
   } catch (error: any) {
     console.warn("Calculations Error Observation"); // Redacted raw details
     res.status(500).json({ error: "Calculations Sync Failure: A safe operational error occurred." });
+  }
+});
+
+// ============ Cross-Module Activity & Recommendation Engine ============
+// This is the actual backing for "Nova sees what's happening everywhere" -
+// a single per-user derived/stats document that every module marks when a
+// real session completes, and one endpoint that reads across that plus a
+// couple of live signals to compute what's actually worth suggesting right
+// now, replacing what used to be static, unchanging copy on the home
+// dashboard regardless of anything the person had actually done.
+
+const ACTIVITY_FIELD_MAP: Record<string, string> = {
+  nervousSystemReset: 'lastNervousSystemReset',
+  boundaryRehearsal: 'lastBoundaryRehearsal',
+  checkIn: 'lastCheckIn',
+  moodPulse: 'lastMoodPulse',
+  energyBudgetUpdate: 'lastEnergyBudgetUpdate',
+  recoveryAllyActivity: 'lastRecoveryAllyActivity',
+};
+
+app.post("/api/user/mark-activity", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const user = requireAuth(req);
+    const { activity } = req.body;
+    const fieldName = ACTIVITY_FIELD_MAP[activity];
+    if (!fieldName) {
+      return res.status(400).json({ error: "Unknown activity type." });
+    }
+    const db = getDb();
+    await db.collection("users").doc(user.uid).collection("derived").doc("stats").set({
+      [fieldName]: new Date().toISOString(),
+      updatedAt: FieldValue.serverTimestamp(),
+    }, { merge: true });
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get("/api/user/recommendation", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const user = requireAuth(req);
+    const db = getDb();
+
+    const statsDoc = await db.collection("users").doc(user.uid).collection("derived").doc("stats").get();
+    const stats = statsDoc.exists ? statsDoc.data()! : {};
+    const now = Date.now();
+    const hoursSince = (iso?: string) => iso ? (now - new Date(iso).getTime()) / (1000 * 60 * 60) : Infinity;
+
+    // Real, recent high-severity signals - if something acute happened
+    // recently, that outranks everything else below.
+    const triggersSnap = await db.collection("users").doc(user.uid).collection("stress_triggers")
+      .orderBy("createdAt", "desc").limit(3).get();
+    const recentHighSeverity = triggersSnap.docs
+      .map(d => d.data())
+      .find(d => hoursSince(d.createdAt) < 3 && (d.severity || 0) >= 7);
+
+    // Real current active load, not a guess.
+    const commitmentsSnap = await db.collection("users").doc(user.uid).collection("energy_commitments")
+      .where("status", "==", "active").get();
+    const activeLoad = commitmentsSnap.docs.reduce((sum, d) => sum + (d.data().energyDrain || 0), 0);
+
+    let recommendation: { tool: string; tab: string; title: string; message: string; points: number; sourcesUsed: string[]; type: string };
+
+    if (recentHighSeverity) {
+      const snippet = String(recentHighSeverity.text || '').slice(0, 90);
+      recommendation = {
+        tool: 'Nervous System Reset',
+        tab: 'reset',
+        title: "You flagged something heavy recently",
+        message: snippet
+          ? `You logged "${snippet}" a little while ago as high-intensity. A short reset now could help before it compounds.`
+          : "Something you logged recently was high-intensity. A short reset now could help before it compounds.",
+        points: 25,
+        sourcesUsed: ['stress_triggers'],
+        type: 'overload_warning',
+      };
+    } else if (hoursSince(stats.lastCheckIn) > 20 && hoursSince(stats.lastMoodPulse) > 20) {
+      recommendation = {
+        tool: 'Pulse Check-In',
+        tab: 'home',
+        title: "Haven't heard from you today",
+        message: "You haven't logged a check-in yet today. A quick pulse helps Nova actually track how you're doing, not just guess.",
+        points: 15,
+        sourcesUsed: ['derived_stats.lastCheckIn', 'derived_stats.lastMoodPulse'],
+        type: 'recovery_reminder',
+      };
+    } else if (activeLoad >= 60) {
+      recommendation = {
+        tool: 'Energy Budget',
+        tab: 'recover',
+        title: "Your active load looks heavy",
+        message: `You've got ${activeLoad} units of active energy commitments logged right now. Worth reviewing what can be delegated or dropped before it adds up.`,
+        points: 20,
+        sourcesUsed: ['energy_commitments'],
+        type: 'recovery_reminder',
+      };
+    } else if (hoursSince(stats.lastBoundaryRehearsal) > 24 * 7 && activeLoad > 0) {
+      recommendation = {
+        tool: 'Boundary Rehearsal',
+        tab: 'communicate',
+        title: "Worth rehearsing a script",
+        message: "It's been a while since you practiced a boundary script. If something's been sitting on your plate, a few minutes of rehearsal makes it easier to actually say.",
+        points: 20,
+        sourcesUsed: ['derived_stats.lastBoundaryRehearsal', 'energy_commitments'],
+        type: 'recovery_reminder',
+      };
+    } else if (hoursSince(stats.lastNervousSystemReset) > 48) {
+      recommendation = {
+        tool: 'Nervous System Reset',
+        tab: 'reset',
+        title: "A reset might help",
+        message: "It's been a couple of days since your last nervous system reset. Even five minutes of breathing work adds up.",
+        points: 15,
+        sourcesUsed: ['derived_stats.lastNervousSystemReset'],
+        type: 'recovery_reminder',
+      };
+    } else {
+      recommendation = {
+        tool: 'Nova Coach',
+        tab: 'nova',
+        title: "You're on track",
+        message: "Nothing urgent flagged right now based on what you've logged. If something's on your mind, Nova's a good place to think it through.",
+        points: 10,
+        sourcesUsed: [],
+        type: 'tiny_win',
+      };
+    }
+
+    // Genuinely verify this recommendation before it reaches the user - the
+    // same guardrail rules previously existed as a fully-built class
+    // (NovaChallengeMode.verifyRecommendation) that nothing in the app ever
+    // actually called, while a "Nova Recommendation Ledger" in the Trust
+    // Centre showed three hardcoded example rows (with an identical
+    // timestamp across all three) as if they were real audit evidence.
+    let verificationStatus: 'verified' | 'rejected' = 'verified';
+    let verificationExplanation = 'Verified: Passed all guardrail checks.';
+    const checkInsSnap = await db.collection("users").doc(user.uid).collection("checkins").limit(3).get();
+    if (checkInsSnap.size < 3 && recommendation.message.toLowerCase().includes('pattern')) {
+      verificationStatus = 'rejected';
+      verificationExplanation = 'Rejected: Attempted to claim a pattern with fewer than 3 check-ins.';
+    } else if (/(depression|anxiety disorder|treatment|clinical)/i.test(recommendation.message)) {
+      verificationStatus = 'rejected';
+      verificationExplanation = 'Rejected: Recommendation breached non-medical coaching boundary.';
+    }
+
+    const ledgerEntry = {
+      type: recommendation.type,
+      content: recommendation.message,
+      sourcesUsed: recommendation.sourcesUsed,
+      ruleVersion: '1.0',
+      status: verificationStatus,
+      explanation: verificationExplanation,
+      timestamp: new Date().toISOString(),
+    };
+    db.collection("users").doc(user.uid).collection("recommendation_ledger").add(ledgerEntry).catch(() => {
+      // Non-fatal - the recommendation still reaches the user even if the ledger write fails.
+    });
+
+    if (verificationStatus === 'rejected') {
+      // A genuinely rejected recommendation doesn't reach the user - fall
+      // back to the honest, always-safe default instead.
+      return res.json({
+        tab: 'nova', title: "You're on track",
+        message: "Nothing urgent flagged right now based on what you've logged. If something's on your mind, Nova's a good place to think it through.",
+        points: 10, tool: 'Nova Coach',
+      });
+    }
+
+    res.json(recommendation);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get("/api/user/recommendation-ledger", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const user = requireAuth(req);
+    const db = getDb();
+    const snap = await db.collection("users").doc(user.uid).collection("recommendation_ledger")
+      .orderBy("timestamp", "desc").limit(50).get();
+    const entries = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    res.json({ entries });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ============ Recovery Velocity Map (real 30-day history) ============
+// Replaces what was previously a fully fabricated chart - sine/cosine wave
+// functions plus random noise generating 30 days of "energy output" and
+// "recovery input" data, complete with invented diagnostic annotations,
+// shown on the home dashboard as if it reflected the person's real trend.
+
+app.get("/api/recovery/velocity-map", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const user = requireAuth(req);
+    const db = getDb();
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+
+    const [triggersSnap, budgetsSnap, sessionsSnap, winsSnap, moodSnap] = await Promise.all([
+      db.collection("users").doc(user.uid).collection("stress_triggers").where("createdAt", ">=", thirtyDaysAgo).get(),
+      db.collection("users").doc(user.uid).collection("energy_budgets").where("createdAt", ">=", thirtyDaysAgo).get(),
+      db.collection("users").doc(user.uid).collection("focus_sessions").where("createdAt", ">=", thirtyDaysAgo).get(),
+      db.collection("users").doc(user.uid).collection("wins").where("createdAt", ">=", thirtyDaysAgo).get(),
+      db.collection("users").doc(user.uid).collection("mood_pulses").where("createdAt", ">=", thirtyDaysAgo).get(),
+    ]);
+
+    const dayKey = (iso: string) => new Date(iso).toISOString().split('T')[0];
+
+    const triggersByDay: Record<string, number[]> = {};
+    triggersSnap.docs.forEach(d => {
+      const data = d.data();
+      const key = dayKey(data.createdAt);
+      (triggersByDay[key] = triggersByDay[key] || []).push(data.severity || 5);
+    });
+
+    const budgetsByDay: Record<string, number[]> = {};
+    budgetsSnap.docs.forEach(d => {
+      const data = d.data();
+      const key = dayKey(data.createdAt);
+      const pct = data.totalCapacity > 0 ? (data.allocatedCapacity / data.totalCapacity) * 100 : 0;
+      (budgetsByDay[key] = budgetsByDay[key] || []).push(pct);
+    });
+
+    const recoveryEventsByDay: Record<string, number> = {};
+    sessionsSnap.docs.forEach(d => {
+      if (d.data().completed) {
+        const key = dayKey(d.data().createdAt);
+        recoveryEventsByDay[key] = (recoveryEventsByDay[key] || 0) + 1;
+      }
+    });
+    winsSnap.docs.forEach(d => {
+      const key = dayKey(d.data().createdAt);
+      recoveryEventsByDay[key] = (recoveryEventsByDay[key] || 0) + 1;
+    });
+    moodSnap.docs.forEach(d => {
+      const key = dayKey(d.data().createdAt);
+      recoveryEventsByDay[key] = (recoveryEventsByDay[key] || 0) + 0.5;
+    });
+
+    const days = [];
+    let anyRealData = false;
+    for (let i = 29; i >= 0; i--) {
+      const d = new Date();
+      d.setDate(d.getDate() - i);
+      const key = d.toISOString().split('T')[0];
+      const formattedDate = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+
+      const dayTriggers = triggersByDay[key];
+      const dayBudgets = budgetsByDay[key];
+      let energyOutput: number | null = null;
+      if (dayBudgets && dayBudgets.length > 0) {
+        energyOutput = Math.round(dayBudgets.reduce((a, b) => a + b, 0) / dayBudgets.length);
+      } else if (dayTriggers && dayTriggers.length > 0) {
+        const avgSeverity = dayTriggers.reduce((a, b) => a + b, 0) / dayTriggers.length;
+        energyOutput = Math.min(100, Math.round(dayTriggers.length * 12 + avgSeverity * 4));
+      }
+
+      const recoveryCount = recoveryEventsByDay[key] || 0;
+      const recoveryInput = recoveryCount > 0 ? Math.min(100, Math.round(recoveryCount * 25)) : null;
+
+      if (energyOutput !== null || recoveryInput !== null) anyRealData = true;
+
+      days.push({
+        date: formattedDate,
+        energyOutput,
+        recoveryInput,
+        hasData: energyOutput !== null || recoveryInput !== null,
+      });
+    }
+
+    res.json({ days, hasAnyData: anyRealData });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ============ Outcome Tracker (real, not fabricated) ============
+// Previously "Section 21 / Evidence & ROI" was entirely hardcoded: 8 KPIs
+// (+45% recovery improvement, 4.9/5 user rating, etc.) and 3 charts showing
+// a perfectly smooth 6-week improvement curve, identical for every user,
+// with the fingerprint prop received but never even read. This computes
+// genuine weekly aggregates from real collections using the same
+// day-bucketing approach as the velocity map above, and is honest that some
+// of the original claims (a user rating system, sleep-hours tracking,
+// a return-to-work confidence score) have no real data source anywhere in
+// this app rather than inventing plausible-looking substitutes for them.
+
+app.get("/api/user/outcome-tracker", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const user = requireAuth(req);
+    const db = getDb();
+    const sixWeeksAgo = new Date(Date.now() - 42 * 24 * 60 * 60 * 1000).toISOString();
+
+    const [triggersSnap, boundarySnap, winsSnap, moodSnap, budgetsSnap, workloadDoc] = await Promise.all([
+      db.collection("users").doc(user.uid).collection("stress_triggers").where("createdAt", ">=", sixWeeksAgo).get(),
+      db.collection("users").doc(user.uid).collection("boundary_scripts").where("createdAt", ">=", sixWeeksAgo).get(),
+      db.collection("users").doc(user.uid).collection("wins").where("createdAt", ">=", sixWeeksAgo).get(),
+      db.collection("users").doc(user.uid).collection("mood_pulses").where("createdAt", ">=", sixWeeksAgo).get(),
+      db.collection("users").doc(user.uid).collection("energy_budgets").where("createdAt", ">=", sixWeeksAgo).get(),
+      db.collection("users").doc(user.uid).collection("workload_reality_check").doc("state").get(),
+    ]);
+
+    const weekIndex = (iso: string) => Math.floor((Date.now() - new Date(iso).getTime()) / (7 * 24 * 60 * 60 * 1000));
+
+    const triggersByWeek: Record<number, number[]> = {};
+    triggersSnap.docs.forEach(d => {
+      const w = weekIndex(d.data().createdAt);
+      if (w >= 0 && w < 6) (triggersByWeek[w] = triggersByWeek[w] || []).push(d.data().severity || 5);
+    });
+    const boundaryByWeek: Record<number, number> = {};
+    boundarySnap.docs.forEach(d => {
+      const w = weekIndex(d.data().createdAt);
+      if (w >= 0 && w < 6) boundaryByWeek[w] = (boundaryByWeek[w] || 0) + 1;
+    });
+    const recoveryEventsByWeek: Record<number, number> = {};
+    winsSnap.docs.forEach(d => {
+      const w = weekIndex(d.data().createdAt);
+      if (w >= 0 && w < 6) recoveryEventsByWeek[w] = (recoveryEventsByWeek[w] || 0) + 1;
+    });
+    moodSnap.docs.forEach(d => {
+      const w = weekIndex(d.data().createdAt);
+      if (w >= 0 && w < 6) recoveryEventsByWeek[w] = (recoveryEventsByWeek[w] || 0) + 0.5;
+    });
+    const budgetsByWeek: Record<number, number[]> = {};
+    budgetsSnap.docs.forEach(d => {
+      const data = d.data();
+      const w = weekIndex(data.createdAt);
+      const pct = data.totalCapacity > 0 ? (data.allocatedCapacity / data.totalCapacity) * 100 : 0;
+      if (w >= 0 && w < 6) (budgetsByWeek[w] = budgetsByWeek[w] || []).push(pct);
+    });
+
+    const weeks = [];
+    let anyRealData = false;
+    for (let i = 5; i >= 0; i--) {
+      const dayTriggers = triggersByWeek[i];
+      const burnoutRisk = dayTriggers && dayTriggers.length > 0
+        ? Math.min(100, Math.round(dayTriggers.reduce((a, b) => a + b, 0) / dayTriggers.length * 10))
+        : null;
+
+      const recoveryCount = recoveryEventsByWeek[i] || 0;
+      const recoveryFromEvents = recoveryCount > 0 ? Math.min(100, Math.round(recoveryCount * 15)) : null;
+
+      const boundaryCount = boundaryByWeek[i] || 0;
+      const boundary = boundaryCount > 0 ? Math.min(100, Math.round(boundaryCount * 25)) : null;
+
+      const dayBudgets = budgetsByWeek[i];
+      const overcapacity = dayBudgets && dayBudgets.length > 0
+        ? Math.round(dayBudgets.reduce((a, b) => a + b, 0) / dayBudgets.length)
+        : null;
+
+      const hasData = burnoutRisk !== null || recoveryFromEvents !== null || boundary !== null || overcapacity !== null;
+      if (hasData) anyRealData = true;
+
+      weeks.push({
+        week: `W${6 - i}`,
+        recovery: recoveryFromEvents,
+        burnoutRisk,
+        boundary,
+        overcapacity,
+        hasData,
+      });
+    }
+
+    // KPIs: only computed where a real signal genuinely exists. Sleep
+    // consistency, return-to-work confidence, and a user-helpfulness rating
+    // have no real data source anywhere in this app - honestly null rather
+    // than invented.
+    const totalBoundaryScripts = boundarySnap.size;
+    const totalWins = winsSnap.size;
+    const avgTriggerSeverity = triggersSnap.size > 0
+      ? triggersSnap.docs.reduce((sum, d) => sum + (d.data().severity || 5), 0) / triggersSnap.size
+      : null;
+
+    let overcapacityDaysPerWeek: number | null = null;
+    if (workloadDoc.exists) {
+      const tasks = workloadDoc.data()?.tasks || [];
+      const activeDrain = tasks.filter((t: any) => !t.completed).reduce((sum: number, t: any) => sum + (t.energyDrain || 0), 0);
+      overcapacityDaysPerWeek = activeDrain > 300 ? Math.min(7, Math.round((activeDrain - 300) / 60)) : 0;
+    }
+
+    res.json({
+      weeks,
+      hasAnyData: anyRealData,
+      kpis: {
+        boundaryScriptsLogged: totalBoundaryScripts,
+        winsLogged: totalWins,
+        avgTriggerSeverity: avgTriggerSeverity !== null ? Math.round(avgTriggerSeverity * 10) / 10 : null,
+        overcapacityDaysPerWeek,
+        sleepConsistency: null,
+        returnToWorkConfidence: null,
+        userRatedHelpfulness: null,
+      },
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ============ Executive Board Report (real data, not fabricated) ============
+// Previously this report - explicitly meant to be shown to an employer or
+// manager - contained a hardcoded "Nova AI Analysis" quote that was never
+// generated by any model, plus a static "115%" burn rate, "4 Protected"
+// boundaries, "4.5 hrs" deep work, and "7 Completed" somatic resets, none
+// tied to anything the person actually did. This endpoint computes every
+// figure from real data and only generates AI commentary grounded in what's
+// actually there.
+
+// ============================================================================
+// Resentment Tracker: real analysis (previously this was 100% hardcoded -
+// the code's own comment admitted "Simulate AI analysis delay" - the same
+// four-part response was shown to every user regardless of what they
+// actually wrote, after a fake 2-second "thinking" animation).
+// ============================================================================
+
+const ResentmentAnalysisRequestSchema = z.object({
+  log: z.string().min(1).max(3000),
+}).strict();
+
+app.post("/api/nova/resentment-analysis", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const parsed = ResentmentAnalysisRequestSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: "Invalid request.", details: (parsed as any).error?.errors || [] });
+    }
+    const { log } = parsed.data;
+
+    const prompt = `You are Nova, a direct, analytical British high-performance recovery coach. The user has just written raw, unfiltered venting about something that's currently resenting them at work or in life - they were explicitly told "be unprofessional, be petty, just get it out." Read what they actually wrote and extract genuine structural patterns from it. Do not invent specifics not present in their text - if something isn't there, say so honestly rather than filling the gap with a generic-sounding but fabricated observation.
+
+Their raw venting:
+"""
+${log}
+"""
+
+Respond strictly in this JSON format, no markdown, no commentary outside the JSON:
+{
+  "yesMeantNo": "1-2 sentences on where they likely agreed to something when they meant to decline, based specifically on what they wrote. If this pattern isn't evident in their text, say so honestly instead of guessing.",
+  "unclear": "1-2 sentences on where expectations seem vaguely defined, based specifically on what they wrote.",
+  "unappreciated": "1-2 sentences on where their effort seems to be going unrecognized, based specifically on what they wrote.",
+  "missingBoundary": "A short, concrete boundary statement (under 20 words) they could have used, grounded in their actual situation - not a generic template."
+}`;
+
+    const response = await ai.models.generateContent({
+      model: "gemini-3.5-flash",
+      contents: prompt,
+      config: { responseMimeType: "application/json" },
+    });
+
+    const text = response.text;
+    if (!text) throw new Error("Empty response from Gemini model.");
+    const analysis = JSON.parse(text);
+
+    res.json(analysis);
+  } catch (err: any) {
+    console.error("[Nova] resentment analysis error:", err.message);
+    res.status(500).json({ error: "Could not analyze that right now." });
+  }
+});
+
+app.get("/api/signals/executive-report", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const user = requireAuth(req);
+    const db = getDb();
+    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+
+    const focusSnap = await db.collection("users").doc(user.uid).collection("focus_sessions")
+      .where("createdAt", ">=", sevenDaysAgo).get();
+    const completedFocus = focusSnap.docs.filter(d => d.data().completed === true);
+    const deepWorkMinutes = completedFocus.reduce((sum, d) => sum + (d.data().durationMinutes || 0), 0);
+    const deepWorkHours = deepWorkMinutes > 0 ? Math.round((deepWorkMinutes / 60) * 10) / 10 : 0;
+
+    const boundarySnap = await db.collection("users").doc(user.uid).collection("boundary_scripts")
+      .where("createdAt", ">=", sevenDaysAgo).get();
+    const boundariesProtected = boundarySnap.size;
+
+    // Same formula WorkloadRealityCheck already uses for fatigue probability
+    // - kept consistent rather than inventing a separate "burn rate" concept.
+    let burnRatePercent: number | null = null;
+    const workloadSnap = await db.collection("users").doc(user.uid).collection("workload_reality_check").doc("state").get();
+    if (workloadSnap.exists) {
+      const tasksData = workloadSnap.data()?.tasks || [];
+      const weeklyDrain = tasksData
+        .filter((t: any) => !t.completed)
+        .reduce((sum: number, t: any) => sum + (t.energyDrain || 0), 0);
+      burnRatePercent = Math.min(Math.round((weeklyDrain / 300) * 100), 100);
+    }
+
+    let sleepDebtHours: number | null = null;
+    const statsSnap = await db.collection("users").doc(user.uid).collection("user_stats").doc("core").get();
+    if (statsSnap.exists) {
+      const debts = statsSnap.data()?.debts || [];
+      const sleepEntry = debts.find((d: any) => (d.label || '').toLowerCase().includes('sleep'));
+      if (sleepEntry && typeof sleepEntry.value === 'number' && sleepEntry.value > 0) {
+        sleepDebtHours = sleepEntry.value;
+      }
+    }
+
+    const hasEnoughData = deepWorkHours > 0 || boundariesProtected > 0 || burnRatePercent !== null || sleepDebtHours !== null;
+
+    let aiAnalysis: string | null = null;
+    if (hasEnoughData) {
+      try {
+        const signals: string[] = [];
+        if (deepWorkHours > 0) signals.push(`${deepWorkHours} hours of protected deep work logged this week`);
+        if (boundariesProtected > 0) signals.push(`${boundariesProtected} boundary script(s) practiced this week`);
+        if (burnRatePercent !== null) signals.push(`workload burn rate at ${burnRatePercent}% of weekly capacity`);
+        if (sleepDebtHours !== null) signals.push(`${sleepDebtHours} hours of carried sleep debt`);
+
+        const prompt = `You are Nova, a direct, analytical British high-performance recovery coach writing a short (2-3 sentence) executive summary for a workplace wellbeing report the person may share with their manager. Base this ONLY on these real signals - do not invent any number, event, or day not listed here: ${signals.join('; ')}. Be honest and grounded, not alarmist and not falsely reassuring. Do not mention specific days of the week since none were provided.`;
+
+        const response = await ai.models.generateContent({
+          model: "gemini-3.5-flash",
+          contents: prompt,
+        });
+        aiAnalysis = response.text ? response.text.trim() : null;
+      } catch (e) {
+        // Non-fatal - the report renders without AI commentary if this fails.
+      }
+    }
+
+    res.json({
+      deepWorkHours,
+      boundariesProtected,
+      burnRatePercent,
+      sleepDebtHours,
+      aiAnalysis,
+      hasEnoughData,
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
   }
 });
 

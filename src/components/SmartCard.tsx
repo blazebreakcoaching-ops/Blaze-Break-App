@@ -1,6 +1,6 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useLayoutEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { ChevronDown, MoreHorizontal, FileText, CheckCircle, Share2, Check } from 'lucide-react';
+import { ChevronDown, FileText, CheckCircle, Share2, Check } from 'lucide-react';
 import { cn } from '../lib/utils.ts';
 
 interface SmartCardProps {
@@ -27,10 +27,25 @@ export const SmartCard = ({
   const [isExpanded, setIsExpanded] = useState(true);
   const [showContextMenu, setShowContextMenu] = useState(false);
   const [contextMenuPos, setContextMenuPos] = useState({ x: 0, y: 0 });
+  const [clampedMenuPos, setClampedMenuPos] = useState({ x: 0, y: 0 });
   const [isMicroRecovery, setIsMicroRecovery] = useState(id === 'micro');
   const [isCopied, setIsCopied] = useState(false);
 
   const cardRef = useRef<HTMLDivElement>(null);
+
+  // Reading cardRef.current directly inside the render's JSX (e.g. in a style
+  // object) reads a ref during render, which React's rules disallow - it can
+  // produce stale values if a render is discarded/redone under Concurrent
+  // rendering. Measuring here, in a layout effect that fires right after the
+  // menu's DOM mounts but before the browser paints, is the correct place.
+  useLayoutEffect(() => {
+    if (!showContextMenu || !cardRef.current) return;
+    const rect = cardRef.current;
+    setClampedMenuPos({
+      x: Math.min(contextMenuPos.x, rect.clientWidth - 180),
+      y: Math.min(contextMenuPos.y, rect.clientHeight - 150),
+    });
+  }, [showContextMenu, contextMenuPos]);
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -47,8 +62,8 @@ export const SmartCard = ({
     // Position menu relative to card
     if (cardRef.current) {
       const rect = cardRef.current.getBoundingClientRect();
-      let x = e.clientX - rect.left;
-      let y = e.clientY - rect.top;
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
       
       setContextMenuPos({ x, y });
       setShowContextMenu(true);
@@ -163,9 +178,9 @@ export const SmartCard = ({
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.95 }}
             className="absolute z-50 bg-card border border-border shadow-lg rounded-lg py-1 min-w-[160px]"
-            style={{ 
-              top: `${Math.min(contextMenuPos.y, (cardRef.current?.clientHeight || 500) - 150)}px`, 
-              left: `${Math.min(contextMenuPos.x, (cardRef.current?.clientWidth || 300) - 180)}px` 
+            style={{
+              top: `${clampedMenuPos.y}px`,
+              left: `${clampedMenuPos.x}px`
             }}
           >
             <button className="w-full px-4 py-2 text-left text-xs font-medium text-text-muted hover:bg-card hover:text-text-main flex items-center gap-2">

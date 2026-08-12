@@ -1,5 +1,7 @@
 import { cn } from '../lib/utils';
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { auth, db } from '../lib/firebase';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { motion, AnimatePresence } from "motion/react";
 import {
   ArrowLeft,
@@ -1395,24 +1397,49 @@ export const ResultView = ({
     FINGERPRINT_ENHANCEMENTS[result.profile] ||
     FINGERPRINT_ENHANCEMENTS["High-Functioning Exhausted"];
 
-  // Local state for completed actions, committed scripts and written reflections
-  const [completedActions, setCompletedActions] = useState<string[]>(() => {
-    return JSON.parse(localStorage.getItem("blaze_completed_rec_actions") || "[]");
-  });
-  const [committedBoundaries, setCommittedBoundaries] = useState<string[]>(() => {
-    return JSON.parse(localStorage.getItem("blaze_committed_rec_boundaries") || "[]");
-  });
+  // Local state for completed actions, committed scripts and written reflections -
+  // now genuinely persisted to Firestore rather than trapped in one browser.
+  const [completedActions, setCompletedActions] = useState<string[]>([]);
+  const [committedBoundaries, setCommittedBoundaries] = useState<string[]>([]);
   const [copiedScriptId, setCopiedScriptId] = useState<string | null>(null);
-  const [reflections, setReflections] = useState<Record<string, string>>(() => {
-    return JSON.parse(localStorage.getItem(`blaze_reflections_${result.profile}`) || "{}");
-  });
+  const [reflections, setReflections] = useState<Record<string, string>>({});
+  const [awardedReflections, setAwardedReflections] = useState<string[]>([]);
   const [reflectionStatus, setReflectionStatus] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    const load = async () => {
+      if (!auth.currentUser) return;
+      try {
+        const snap = await getDoc(doc(db, 'users', auth.currentUser.uid, 'diagnosis_progress', result.profile));
+        if (snap.exists()) {
+          const data = snap.data();
+          setCompletedActions(data.completedActions || []);
+          setCommittedBoundaries(data.committedBoundaries || []);
+          setReflections(data.reflections || {});
+          setAwardedReflections(data.awardedReflections || []);
+        }
+      } catch (e) {
+        // Leaves the honest empty state in place rather than pretending progress loaded.
+      }
+    };
+    load();
+  }, [result.profile]);
+
+  const saveProgress = (updates: Record<string, any>) => {
+    if (!auth.currentUser) return;
+    setDoc(doc(db, 'users', auth.currentUser.uid, 'diagnosis_progress', result.profile), {
+      ...updates,
+      updatedAt: new Date().toISOString(),
+    }, { merge: true }).catch(() => {
+      // Non-fatal - the UI still reflects the change locally even if this save fails.
+    });
+  };
 
   const handleToggleAction = (actionId: string, points: number) => {
     if (completedActions.includes(actionId)) return; // No duplicate scoring
     const next = [...completedActions, actionId];
     setCompletedActions(next);
-    localStorage.setItem("blaze_completed_rec_actions", JSON.stringify(next));
+    saveProgress({ completedActions: next });
     if (onAwardPoints) {
       onAwardPoints(points, `Completed Action: ${result.profile}`);
     }
@@ -1422,7 +1449,7 @@ export const ResultView = ({
     if (committedBoundaries.includes(boundaryId)) return;
     const next = [...committedBoundaries, boundaryId];
     setCommittedBoundaries(next);
-    localStorage.setItem("blaze_committed_rec_boundaries", JSON.stringify(next));
+    saveProgress({ committedBoundaries: next });
     if (onAwardPoints) {
       onAwardPoints(25, `Committed Script: ${result.profile}`);
     }
@@ -1440,20 +1467,20 @@ export const ResultView = ({
       setReflectionStatus(prev => ({ ...prev, [promptId]: "Too short (min 10 chars)" }));
       return;
     }
-    
+
     const nextReflections = { ...reflections, [promptId]: text };
     setReflections(nextReflections);
-    localStorage.setItem(`blaze_reflections_${result.profile}`, JSON.stringify(nextReflections));
-    
-    const alreadyAwarded = JSON.parse(localStorage.getItem(`blaze_awarded_reflections_${result.profile}`) || "[]");
-    if (!alreadyAwarded.includes(promptId)) {
-      alreadyAwarded.push(promptId);
-      localStorage.setItem(`blaze_awarded_reflections_${result.profile}`, JSON.stringify(alreadyAwarded));
-      if (onAwardPoints) {
-        onAwardPoints(50, `Completed Reflection Diary: ${result.profile}`);
-      }
+
+    const alreadyAwarded = awardedReflections.includes(promptId);
+    const nextAwarded = alreadyAwarded ? awardedReflections : [...awardedReflections, promptId];
+    if (!alreadyAwarded) setAwardedReflections(nextAwarded);
+
+    saveProgress({ reflections: nextReflections, awardedReflections: nextAwarded });
+
+    if (!alreadyAwarded && onAwardPoints) {
+      onAwardPoints(50, `Completed Reflection Diary: ${result.profile}`);
     }
-    
+
     setReflectionStatus(prev => ({ ...prev, [promptId]: "✓ Saved & Transmitted" }));
     setTimeout(() => {
       setReflectionStatus(prev => {

@@ -1,5 +1,5 @@
 import React from 'react';
-import { ShieldCheck, Lock, Users, Building, Activity, ShieldQuestion } from 'lucide-react';
+import { ShieldCheck, Lock, Users, Building, Activity } from 'lucide-react';
 import { cn } from '../lib/utils';
 
 export const DataZoneVisualizer = () => {

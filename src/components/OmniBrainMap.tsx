@@ -3,7 +3,7 @@ import { motion } from 'motion/react';
 import { 
   Home, MapPin, BatteryFull, Battery, MessageSquare, Book, Sparkles, 
   Zap, ShieldCheck, Wind, Apple, Activity, Shield, Users, Settings, Brain,
-  Search, ArrowRight, Heart, HeartPulse, GitCommit, Compass
+  Search, ArrowRight, HeartPulse, GitCommit, Compass
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 

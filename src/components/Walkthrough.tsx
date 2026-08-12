@@ -5,7 +5,6 @@ import {
   ChevronRight, 
   ChevronLeft, 
   Sparkles, 
-  BookOpen, 
   Activity, 
   Brain, 
   Battery, 
@@ -20,7 +19,6 @@ import {
   ShieldCheck,
   HeartPulse,
   Compass,
-  Check,
   RotateCcw
 } from 'lucide-react';
 import { cn } from '../lib/utils';

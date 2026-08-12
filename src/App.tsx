@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, useRef, lazy, Suspense } from "react";
+import React, { useState, useEffect, useRef, useMemo, lazy, Suspense } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import {
   Home,
@@ -15,17 +15,12 @@ import {
   BatteryFull,
   MessageSquare,
   Book,
-  Library,
   Sparkles,
   Shield,
   Users,
   User,
-  Search,
   ArrowRight,
-  ArrowLeft,
-  CreditCard,
   History,
-  AlertCircle,
   Trophy,
   Gift,
   CheckCircle,
@@ -41,36 +36,26 @@ import {
   ChevronLeft,
   Menu,
   Wind,
-  Clock,
   Activity,
-  DoorOpen,
   ShieldCheck,
   Flame,
-  CheckSquare,
-  MinusCircle,
-  ChefHat,
-  Feather,
-  LineChart,
-  Settings,
   Compass,
-  HelpCircle,
   Apple,
   Brain,
   Lock,
   HeartPulse,
   PencilLine,
-  Check,
-  Calendar,
   AlertTriangle,
 } from "lucide-react";
 
 import {
   BurnoutFingerprint,
   UserStats,
-  BADGES,
   SupportContact,
 } from "./types.ts";
 import { cn } from "./lib/utils.ts";
+import { auth, db } from "./lib/firebase.ts";
+import { doc, setDoc, getDoc, onSnapshot } from "firebase/firestore";
 const DiagnoseView = lazy(() => import("./components/DiagnoseSection.tsx").then(m => ({ default: m.DiagnoseView })));
 const ResultView = lazy(() => import("./components/DiagnoseSection.tsx").then(m => ({ default: m.ResultView })));
 const EnergyBudgetTool = lazy(() => import("./components/EnergyBudget.tsx").then(m => ({ default: m.EnergyBudgetTool })));
@@ -92,7 +77,6 @@ import { DailyCheckIn } from "./components/DailyCheckIn.tsx";
 import { ConnectedDailyCheckIn } from "./components/ConnectedRecoveryModules.tsx";
 const NegotiatorTool = lazy(() => import("./components/NegotiatorTool.tsx").then(m => ({ default: m.NegotiatorTool })));
 import { RelapseRadar } from "./components/RelapseRadar.tsx";
-import { MOCK_DEBTS } from "./constants.ts";
 
 const ResourceLibrary = lazy(() => import("./components/ResourceLibrary.tsx").then(m => ({ default: m.ResourceLibrary })));
 const NervousSystemReset = lazy(() => import("./components/NervousSystemReset.tsx").then(m => ({ default: m.NervousSystemReset })));
@@ -117,7 +101,8 @@ const RuminationFurnace = lazy(() => import("./components/RuminationFurnace.tsx"
 import { SettingsModal } from "./components/SettingsModal.tsx";
 const FutureSelfSimulator = lazy(() => import("./components/FutureSelfSimulator.tsx").then(m => ({ default: m.FutureSelfSimulator })));
 const AssuranceCentre = lazy(() => import("./components/AssuranceCentre.tsx").then(m => ({ default: m.AssuranceCentre })));
-import { SyncEngine, AuthStatusTracker } from "./lib/sync.tsx";
+import { AuthStatusTracker } from "./lib/sync.tsx";
+import { initNovaBrain, clearNovaBrainCache } from "./lib/nova-brain";
 import { useAuth } from "./lib/auth.tsx";
 const IntegrationsDashboard = lazy(() => import("./components/IntegrationsDashboard.tsx").then(m => ({ default: m.IntegrationsDashboard })));
 const AdminDashboard = lazy(() => import("./components/AdminDashboard.tsx").then(m => ({ default: m.AdminDashboard })));
@@ -137,7 +122,7 @@ import { SmartCard } from "./components/SmartCard.tsx";
 import { SomaticCheckInCard } from "./components/SomaticCheckInCard.tsx";
 const RecoveryPlan = lazy(() => import("./components/RecoveryPlan.tsx").then(m => ({ default: m.RecoveryPlan })));
 const FocusZone = lazy(() => import("./components/FocusZone.tsx").then(m => ({ default: m.FocusZone })));
-import { SubscriptionTier, AuthRole } from "./types.ts";
+import { SubscriptionTier } from "./types.ts";
 import { RecoveryVelocityMap } from "./components/RecoveryVelocityMap.tsx";
 const ExecutiveBoardReport = lazy(() => import("./components/ExecutiveBoardReport.tsx").then(m => ({ default: m.ExecutiveBoardReport })));
 const CalendarDefenseView = lazy(() => import("./components/CalendarDefenseView.tsx").then(m => ({ default: m.CalendarDefenseView })));
@@ -466,26 +451,22 @@ const Sidebar = ({
   }, []);
 
   useEffect(() => {
-    const updateTasksCount = () => {
-      try {
-        const stored = localStorage.getItem("blaze_workload_tasks");
-        if (stored) {
-          const tasks = JSON.parse(stored);
-          const pending = tasks.filter((t: any) => !t.completed).length;
+    if (!auth.currentUser) return;
+    const unsubscribe = onSnapshot(
+      doc(db, "users", auth.currentUser.uid, "workload_reality_check", "state"),
+      (snap) => {
+        if (snap.exists()) {
+          const data = snap.data();
+          const tasksList = Array.isArray(data.tasks) ? data.tasks : [];
+          const pending = tasksList.filter((t: any) => !t.completed).length;
           setPendingTasksCount(pending);
         }
-      } catch (e) {
-        console.error(e);
+      },
+      (err) => {
+        console.error(err);
       }
-    };
-
-    updateTasksCount();
-    window.addEventListener("storage", updateTasksCount);
-    window.addEventListener("workload_tasks_changed", updateTasksCount);
-    return () => {
-      window.removeEventListener("storage", updateTasksCount);
-      window.removeEventListener("workload_tasks_changed", updateTasksCount);
-    };
+    );
+    return () => unsubscribe();
   }, []);
 
   const tabs = ALL_TABS.filter((t) => {
@@ -976,6 +957,7 @@ const HomeSection = ({
   onOpenCheckIn,
   pulseHistory,
   onAwardPoints,
+  onIncrementStreak,
   onUpdateOperationalMetrics,
   onUpdatePulseHistory,
   onLogJourney,
@@ -992,6 +974,7 @@ const HomeSection = ({
   onOpenCheckIn: () => void;
   pulseHistory: {date: string, score: number}[];
   onAwardPoints: (amount: number, reason: string) => void;
+  onIncrementStreak: () => void;
   onUpdateOperationalMetrics: (energy: number, risk: string) => void;
   onUpdatePulseHistory: (date: string, score: number) => void;
   onLogJourney: (action: string, details: string) => void;
@@ -1025,6 +1008,32 @@ const HomeSection = ({
   const DEFAULT_HIDDEN = ['stats', 'streakCalendar', 'anxietyResetCard', 'somaticAccelerator', 'velocity', 'gamification', 'daily', 'micro', 'activity', 'quests', 'network', 'radar', 'archetypeBlend'];
   const LAYOUT_STORAGE_KEY = 'blaze_home_dashboard_layout_v2';
 
+  // Real recommendation, computed server-side from actual cross-module
+  // signals (recent stress triggers, active energy load, time since last
+  // reset/rehearsal/check-in) - replaces what used to be static copy shown
+  // identically to everyone regardless of what they'd actually done.
+  const [recommendation, setRecommendation] = useState<{
+    tool: string; tab: string; title: string; message: string; points: number;
+  } | null>(null);
+  const [recommendationLoading, setRecommendationLoading] = useState(true);
+
+  useEffect(() => {
+    const loadRecommendation = async () => {
+      if (!auth.currentUser) { setRecommendationLoading(false); return; }
+      try {
+        const res = await secureApiFetch('/api/user/recommendation');
+        if (res.ok) {
+          setRecommendation(await res.json());
+        }
+      } catch (e) {
+        // Leaves recommendation null - the card below shows a graceful
+        // fallback rather than a broken or fake state.
+      }
+      setRecommendationLoading(false);
+    };
+    loadRecommendation();
+  }, []);
+
   const loadLayout = (): { left: string[]; right: string[]; hidden: string[] } => {
     try {
       const stored = localStorage.getItem(LAYOUT_STORAGE_KEY);
@@ -1046,8 +1055,23 @@ const HomeSection = ({
   const [hiddenWidgets, setHiddenWidgets] = useState<string[]>(initialLayout.hidden);
   const [showAddWidgetMenu, setShowAddWidgetMenu] = useState(false);
   const [homeRefreshKey, setHomeRefreshKey] = useState(0);
+  // Streak calendar state - lives here, not inside the streakCalendar widget's
+  // IIFE below, because calling useState inside a nested function/IIFE is a
+  // Rules of Hooks violation: it would call this hook conditionally on
+  // whatever triggers a re-render of that JSX block, rather than
+  // unconditionally on every render of this component, exactly the pattern
+  // that causes "Rendered fewer hooks than expected" crashes.
+  const [streakDays, setStreakDays] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem("blaze_recovery_streak_days");
+      if (saved) return JSON.parse(saved);
+    } catch (e) {}
+    return [];
+  });
+  const [selectedDay, setSelectedDay] = useState<string | null>(null);
   const [isPullRefreshing, setIsPullRefreshing] = useState(false);
   const [pullDistance, setPullDistance] = useState(0);
+  const [isDragging, setIsDragging] = useState(false);
   const pullStartYRef = useRef<number | null>(null);
   const PULL_TRIGGER_THRESHOLD = 70;
   const PULL_MAX_DISTANCE = 90;
@@ -1061,6 +1085,7 @@ const HomeSection = ({
   const handleHomeTouchStart = (e: React.TouchEvent) => {
     if (window.scrollY <= 0 && !isPullRefreshing) {
       pullStartYRef.current = e.touches[0].clientY;
+      setIsDragging(true);
     }
   };
   const handleHomeTouchMove = (e: React.TouchEvent) => {
@@ -1070,6 +1095,7 @@ const HomeSection = ({
       setPullDistance(Math.min(delta * 0.5, PULL_MAX_DISTANCE));
     } else {
       pullStartYRef.current = null;
+      setIsDragging(false);
       setPullDistance(0);
     }
   };
@@ -1085,6 +1111,7 @@ const HomeSection = ({
       setPullDistance(0);
     }
     pullStartYRef.current = null;
+    setIsDragging(false);
   };
 
   // Persist every change so layout and hide/show choices actually stick.
@@ -1124,22 +1151,22 @@ const HomeSection = ({
   const [quickSeverity, setQuickSeverity] = useState(7);
   const [quickSuccess, setQuickSuccess] = useState(false);
 
-  const handleSaveQuickTrigger = () => {
+  const handleSaveQuickTrigger = async () => {
     if (!quickTriggerText.trim()) return;
-    
-    const saved = localStorage.getItem("blaze_intelligence_triggers") || '[]';
+    const uid = auth.currentUser?.uid;
+    if (!uid) return;
+
     try {
-      const parsed = JSON.parse(saved);
-      parsed.unshift({
-        id: String(Date.now()),
+      await setDoc(doc(db, 'users', uid, 'stress_triggers', Date.now().toString()), {
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
         text: quickTriggerText.trim(),
         date: new Date().toISOString(),
         severity: Number(quickSeverity),
-        energyLevel: Number(energyLevel)
+        energyLevel: Number(energyLevel),
       });
-      localStorage.setItem("blaze_intelligence_triggers", JSON.stringify(parsed));
     } catch (e) {
-      console.warn(e);
+      console.error("Could not save this trigger note:", e);
     }
 
     setQuickSuccess(true);
@@ -1164,7 +1191,7 @@ const HomeSection = ({
     const draggedId = e.dataTransfer.getData('cardId');
     if (!draggedId || draggedId === id) return;
 
-    let sourceColOrder = leftOrder.includes(draggedId) ? leftOrder : (rightOrder.includes(draggedId) ? rightOrder : null);
+    const sourceColOrder = leftOrder.includes(draggedId) ? leftOrder : (rightOrder.includes(draggedId) ? rightOrder : null);
     if (!sourceColOrder) return;
     
     const setSourceCol = leftOrder.includes(draggedId) ? setLeftOrder : setRightOrder;
@@ -1564,20 +1591,44 @@ const HomeSection = ({
               <div className="w-2 h-2 rounded-full bg-primary"></div>
               <h3 className="text-[11px] font-medium uppercase tracking-widest text-text-main">Today's focus</h3>
             </div>
-            <span className="text-[11px] font-mono text-text-muted">+50</span>
+            {recommendation && <span className="text-[11px] font-mono text-text-muted">+{recommendation.points}</span>}
           </div>
-          <div>
-            <p className="text-lg font-serif italic text-text-main leading-snug">
-              "Your single biggest energy leak is unstructured ad-hoc meetings. They account for nearly 45% of your total load this cycle."
-            </p>
-            <div className="mt-6 p-5 bg-surface rounded-lg border border-border">
-              <span className="text-[11px] font-medium text-text-muted uppercase tracking-widest block mb-2">Today's focus</span>
-              <p className="text-sm font-medium text-text-main">Rehearse the "I need to push this" script before the 4 PM sync to start patching this energy leak.</p>
+          {recommendationLoading ? (
+            <div className="flex items-center justify-center py-8">
+              <RefreshCw className="w-5 h-5 animate-spin text-text-muted" />
             </div>
-          </div>
-          <button onClick={onChatRequest} className="w-full btn-primary py-3.5 flex items-center justify-center gap-2 group transition-all">
+          ) : recommendation ? (
+            <div>
+              <p className="text-lg font-serif italic text-text-main leading-snug">
+                "{recommendation.title}"
+              </p>
+              <div className="mt-6 p-5 bg-surface rounded-lg border border-border">
+                <span className="text-[11px] font-medium text-text-muted uppercase tracking-widest block mb-2">{recommendation.tool}</span>
+                <p className="text-sm font-medium text-text-main">{recommendation.message}</p>
+              </div>
+            </div>
+          ) : (
+            <div>
+              <p className="text-lg font-serif italic text-text-main leading-snug">
+                "Nothing specific flagged right now — that's a good sign."
+              </p>
+              <div className="mt-6 p-5 bg-surface rounded-lg border border-border">
+                <p className="text-sm font-medium text-text-main">Complete a check-in or use any recovery tool, and Nova will start noticing patterns to point you toward.</p>
+              </div>
+            </div>
+          )}
+          <button
+            onClick={() => {
+              if (recommendation && recommendation.tab !== 'home') {
+                window.dispatchEvent(new CustomEvent('navigate_tab', { detail: recommendation.tab }));
+              } else {
+                onChatRequest();
+              }
+            }}
+            className="w-full btn-primary py-3.5 flex items-center justify-center gap-2 group transition-all"
+          >
             <MessageSquare className="w-4 h-4" />
-            <span>Connect with Nova</span>
+            <span>{recommendation && recommendation.tab !== 'home' ? `Open ${recommendation.tool}` : 'Connect with Nova'}</span>
             <ArrowRight className="w-4 h-4 opacity-70 group-hover:translate-x-1 transition-transform" />
           </button>
         </div>
@@ -1648,32 +1699,17 @@ const HomeSection = ({
           const currentMonthLabel = today.toLocaleString('default', { month: 'long' });
           const todayDayNum = today.getDate();
 
-          // Initialize streak calendar state or load from localStorage - honest
-          // empty state for new users, no fabricated pre-existing streak.
-          const [streakDays, setStreakDays] = useState<string[]>(() => {
-            try {
-              const saved = localStorage.getItem("blaze_recovery_streak_days");
-              if (saved) return JSON.parse(saved);
-            } catch (e) {}
-            return [];
-          });
-
-          const [selectedDay, setSelectedDay] = useState<string | null>(null);
-
           const handleCommitTodayBudget = () => {
             if (streakDays.includes(todayStr)) return;
             const updated = [todayStr, ...streakDays];
             setStreakDays(updated);
             localStorage.setItem("blaze_recovery_streak_days", JSON.stringify(updated));
             onAwardPoints(50, "Energy Budget Maintained Today");
-            // Also increase stats streak!
-            try {
-              const currentStats = JSON.parse(localStorage.getItem("blaze_break_stats") || "{}");
-              if (currentStats) {
-                currentStats.streak = (currentStats.streak || 0) + 1;
-                localStorage.setItem("blaze_break_stats", JSON.stringify(currentStats));
-              }
-            } catch (e) {}
+            // Also increase stats streak - routed through the parent's real
+            // Firestore-backed stats state rather than writing directly to
+            // localStorage, which could be silently overwritten by the
+            // next state-driven save.
+            onIncrementStreak();
           };
 
           const isTodayCommitted = streakDays.includes(todayStr);
@@ -1687,7 +1723,7 @@ const HomeSection = ({
           // Consecutive-day streak counting backward from today, not a hardcoded range.
           const currentStreakLength = (() => {
             let count = 0;
-            let cursor = new Date(today);
+            const cursor = new Date(today);
             while (streakDays.includes(cursor.toISOString().split('T')[0])) {
               count++;
               cursor.setDate(cursor.getDate() - 1);
@@ -1856,7 +1892,7 @@ const HomeSection = ({
           <RefreshCw className={cn("w-5 h-5", isPullRefreshing && "animate-spin", !isPullRefreshing && pullDistance >= PULL_TRIGGER_THRESHOLD && "scale-110")} />
         </div>
       </div>
-      <div style={{ transform: `translateY(${isPullRefreshing ? 0 : pullDistance}px)`, transition: pullStartYRef.current === null ? "transform 0.2s ease-out" : "none" }}>
+      <div style={{ transform: `translateY(${isPullRefreshing ? 0 : pullDistance}px)`, transition: isDragging ? "none" : "transform 0.2s ease-out" }}>
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-10 pb-20">
       <div
         className="lg:col-span-2 flex flex-col gap-10 min-h-[500px]"
@@ -2060,6 +2096,11 @@ export default function App() {
   const isSuperAdminUser = user?.email === 'teampublication@gmail.com' || (user as any)?.isAdmin === true;
   const effectiveRole = isSuperAdminUser ? 'platform_admin' : appRole;
 
+  // Computed once rather than inline in the animate prop - regenerating these
+  // on every render would make the sparkle burst's trajectories visibly jump
+  // mid-animation if anything causes a re-render while it's looping.
+  const sparkleOffsets = useMemo(() => [...Array(10)].map(() => 50 + Math.random() * 60), []);
+
   // Opportunistically build the real-signal data behind the Explainable
   // Recovery Score / archetype-evolution work. Calendar computes locally from
   // the user's own Google token and posts just the aggregate. Slack advances
@@ -2176,22 +2217,28 @@ export default function App() {
 
   // Gamification State
   const [showSomaticReset, setShowSomaticReset] = useState(false);
-  const [hasClaimedDaily, setHasClaimedDaily] = useState(false);
   const [showRewardNotification, setShowRewardNotification] = useState<{
     points: number;
     reason: string;
   } | null>(null);
   const [stats, setStats] = useState<UserStats>({
-    points: 450,
-    streak: 3,
+    points: 0,
+    streak: 0,
     rehearsalCount: 0,
-    lastEngagementDate: new Date().toISOString().split("T")[0],
-    unlockedBadges: ["first_step"],
+    lastEngagementDate: '',
+    unlockedBadges: [],
     supportCircle: [],
     committedActionIds: [],
-    debts: MOCK_DEBTS.map((d, i) => ({ ...d, id: String(i), cleared: false })),
-    recoveryScore: 29, // force test value
+    debts: [],
   });
+
+  // Derived from the real, persisted lastEngagementDate rather than a
+  // separate resettable boolean - a plain useState(false) here would reset
+  // to false on every page refresh regardless of whether the person had
+  // actually already claimed today, showing the wrong state on reload and
+  // letting the same-day double-claim guard get bypassed by a refresh.
+  const todayStr = new Date().toISOString().split("T")[0];
+  const hasClaimedDaily = stats.lastEngagementDate === todayStr;
 
   // Pulse Alert System
   useEffect(() => {
@@ -2247,6 +2294,10 @@ export default function App() {
 
   // Track previous flow / auth changes to detect transitions
   const prevUserRef = useRef<any>(null);
+  const flowRef = useRef(flow);
+  const statsLoadedRef = useRef(false);
+  const fingerprintLoadedRef = useRef(false);
+  flowRef.current = flow;
 
   // Route Protection
   useEffect(() => {
@@ -2272,117 +2323,125 @@ export default function App() {
     const email = user?.email || null;
     (window as any).__ACTIVE_USER_EMAIL__ = email;
 
-    const savedStats = localStorage.getItem("blaze_break_stats");
-    const savedFingerprint = localStorage.getItem("blaze_fingerprint");
+    const loadStats = async () => {
+      const savedFingerprint = localStorage.getItem("blaze_fingerprint");
 
-    const defaults: UserStats = email
-      ? {
-          points: 0,
-          streak: 0,
-          rehearsalCount: 0,
-          lastEngagementDate: new Date().toISOString().split("T")[0],
-          unlockedBadges: [],
-          supportCircle: [],
-          committedActionIds: [],
-          debts: [
-            {
-              id: "0",
-              label: "Sleep Debt",
-              value: 0,
-              unit: "h",
-              max: 15,
-              color: "text-primary",
-              impact: "Reduced emotional regulation.",
-              novaNote: "Prefrontal fatigue detected. Unplug now.",
-            },
-            {
-              id: "1",
-              label: "Neural Fatigue",
-              value: 0,
-              unit: "cr",
-              max: 20,
-              color: "text-warning",
-              impact: "Cognitive tunnel vision.",
-              novaNote: "Neural de-escalation is needed. Pause planning.",
-            },
-            {
-              id: "2",
-              label: "Social Overlap",
-              value: 0,
-              unit: "h",
-              max: 10,
-              color: "text-text-main",
-              impact: "Identity erosion from fawning.",
-              novaNote: "Return to your baseline frame.",
-            },
-          ],
-          profile: {
-            fullName: user?.displayName || "",
-            role: "",
-            organization: "",
-            managerEmail: "",
-            authRole: "individual",
-          },
-        }
-      : {
-          points: 450,
-          streak: 3,
-          rehearsalCount: 0,
-          lastEngagementDate: new Date().toISOString().split("T")[0],
-          unlockedBadges: ["first_step"],
-          supportCircle: [],
-          committedActionIds: [],
-          debts: MOCK_DEBTS.map((d, i) => ({
-            ...d,
-            id: String(i),
-            cleared: false,
-          })),
-          profile: {
-            fullName: "Test User",
-            role: "",
-            organization: "",
-            managerEmail: "",
-            authRole: "individual",
-          },
-        };
-
-    if (savedStats) {
-      try {
-        setStats({ ...defaults, ...JSON.parse(savedStats) });
-      } catch (e) {
-        setStats(defaults);
+      if (user) {
+        initNovaBrain(user.uid); // Fire-and-forget - populates the cache; callers just see an empty brain until it resolves.
+      } else {
+        clearNovaBrainCache();
       }
-    } else {
-      setStats(defaults);
-    }
 
-    if (savedFingerprint) {
-      try {
-        setFingerprint(JSON.parse(savedFingerprint));
-      } catch (e) {
+      // A single, honest default for everyone - previously anonymous users
+      // (the vast majority, since anonymous auth signs everyone in
+      // automatically) saw fabricated demo data (450 points, "Test User",
+      // invented debt values) presented as their own real progress, with no
+      // path back to honest data unless they specifically linked an email.
+      const defaults: UserStats = {
+        points: 0,
+        streak: 0,
+        rehearsalCount: 0,
+        lastEngagementDate: '',
+        unlockedBadges: [],
+        supportCircle: [],
+        committedActionIds: [],
+        debts: [
+          {
+            id: "0",
+            label: "Sleep Debt",
+            value: 0,
+            unit: "h",
+            max: 15,
+            color: "text-primary",
+            impact: "Reduced emotional regulation.",
+            novaNote: "Prefrontal fatigue detected. Unplug now.",
+          },
+          {
+            id: "1",
+            label: "Neural Fatigue",
+            value: 0,
+            unit: "cr",
+            max: 20,
+            color: "text-warning",
+            impact: "Cognitive tunnel vision.",
+            novaNote: "Neural de-escalation is needed. Pause planning.",
+          },
+          {
+            id: "2",
+            label: "Social Overlap",
+            value: 0,
+            unit: "h",
+            max: 10,
+            color: "text-text-main",
+            impact: "Identity erosion from fawning.",
+            novaNote: "Return to your baseline frame.",
+          },
+        ],
+        profile: {
+          fullName: user?.displayName || "",
+          role: "",
+          organization: "",
+          managerEmail: "",
+          authRole: "individual",
+        },
+      };
+
+      let loadedStats = defaults;
+      let loadedFingerprint: BurnoutFingerprint | null = null;
+      if (user) {
+        try {
+          const snap = await getDoc(doc(db, "users", user.uid, "user_stats", "core"));
+          if (snap.exists()) {
+            const data = snap.data();
+            loadedStats = { ...defaults, ...data } as UserStats;
+            if (data.fingerprint) {
+              loadedFingerprint = data.fingerprint as BurnoutFingerprint;
+            }
+          }
+        } catch (e) {
+          // Leaves the honest defaults in place rather than pretending progress loaded.
+        }
+      }
+      setStats(loadedStats);
+      statsLoadedRef.current = true;
+
+      // Firestore is the real source of truth now. localStorage is only
+      // consulted as a one-time migration path for anyone who took the
+      // assessment before this was persisted server-side - their result
+      // gets picked up here and will save to Firestore on the next
+      // natural save cycle below, rather than being silently lost.
+      if (loadedFingerprint) {
+        setFingerprint(loadedFingerprint);
+      } else if (savedFingerprint) {
+        try {
+          setFingerprint(JSON.parse(savedFingerprint));
+        } catch (e) {
+          setFingerprint(null);
+        }
+      } else {
         setFingerprint(null);
       }
-    } else {
-      setFingerprint(null);
-    }
+      fingerprintLoadedRef.current = true;
 
-    if (user) {
-      if (flow === "landing") {
-        const parsedStats = savedStats ? JSON.parse(savedStats) : null;
-        if (parsedStats?.profile?.fullName) {
-          setFlow("app");
-        } else {
-          setFlow("onboarding");
+      if (user) {
+        if (flowRef.current === "landing") {
+          if (loadedStats?.profile?.fullName) {
+            setFlow("app");
+          } else {
+            setFlow("onboarding");
+          }
+        }
+      } else {
+        // Return back to landing only if they signed out intentionally
+        if (prevUserRef.current !== null) {
+          setFlow("landing");
         }
       }
-    } else {
-      // Return back to landing only if they signed out intentionally
-      if (prevUserRef.current !== null) {
-        setFlow("landing");
-      }
-    }
 
-    prevUserRef.current = user;
+      prevUserRef.current = user;
+    };
+
+    loadStats();
   }, [user, authLoading]);
 
   const checkBadges = (currentStats: UserStats): string[] => {
@@ -2412,9 +2471,30 @@ export default function App() {
   };
 
   useEffect(() => {
-    if (authLoading) return;
-    localStorage.setItem("blaze_break_stats", JSON.stringify(stats));
+    if (authLoading || !user || !statsLoadedRef.current) return;
+    const t = setTimeout(() => {
+      setDoc(doc(db, "users", user.uid, "user_stats", "core"), {
+        ...stats,
+        updatedAt: new Date().toISOString(),
+      }, { merge: true }).catch(() => {
+        // Non-fatal - the UI still reflects the change locally even if this save fails.
+      });
+    }, 800);
+    return () => clearTimeout(t);
   }, [stats, authLoading, user]);
+
+  useEffect(() => {
+    if (authLoading || !user || !fingerprintLoadedRef.current) return;
+    const t = setTimeout(() => {
+      setDoc(doc(db, "users", user.uid, "user_stats", "core"), {
+        fingerprint: fingerprint || null,
+        updatedAt: new Date().toISOString(),
+      }, { merge: true }).catch(() => {
+        // Non-fatal - the UI still reflects the change locally even if this save fails.
+      });
+    }, 800);
+    return () => clearTimeout(t);
+  }, [fingerprint, authLoading, user]);
 
   const handleCheckInComplete = (data: {
     energy: number;
@@ -2423,6 +2503,14 @@ export default function App() {
     blameStage?: string;
   }) => {
     logJourney('Daily Check-In Completed', `Energy: ${data.energy}/100, Risk: ${data.risk}, Stage: ${data.stage}. ${data.blameStage ? `Identified Issue: ${data.blameStage}` : ''}`);
+    if (auth.currentUser) {
+      secureApiFetch('/api/user/mark-activity', {
+        method: 'POST',
+        data: { activity: 'checkIn' },
+      }).catch(() => {
+        // Non-fatal - only affects the home recommendation engine's freshness.
+      });
+    }
     setEnergyLevel(data.energy);
     setBurnoutRisk(data.risk);
     if (data.stage) setShipStage(data.stage);
@@ -2518,8 +2606,6 @@ export default function App() {
 
   const handleClaimDaily = () => {
     if (!hasClaimedDaily) {
-      setHasClaimedDaily(true);
-
       // Update points and streak
       const today = new Date().toISOString().split("T")[0];
       setStats((prev) => {
@@ -2703,7 +2789,7 @@ export default function App() {
       confidence: "verified",
       canEdit: false,
     });
-  }, [stats.profile, shipStage, energyLevel, burnoutRisk, fingerprint]);
+  }, [stats.profile, shipStage, energyLevel, burnoutRisk, fingerprint, stats.debts, stats.supportCircle]);
 
   if (flow === "landing") {
     return (
@@ -2822,12 +2908,12 @@ export default function App() {
                     x: [
                       0,
                       Math.sin((i * 2 * Math.PI) / 10) *
-                        (50 + Math.random() * 60),
+                        sparkleOffsets[i],
                     ],
                     y: [
                       0,
                       Math.cos((i * 2 * Math.PI) / 10) *
-                        (50 + Math.random() * 60),
+                        sparkleOffsets[i],
                     ],
                     opacity: [1, 1, 0],
                   }}
@@ -2871,22 +2957,6 @@ export default function App() {
 
         <SomaticResetOverlay isOpen={showSomaticReset} onClose={() => setShowSomaticReset(false)} onAwardPoints={awardPoints} />
 
-        <SyncEngine
-          stats={stats}
-          setStats={setStats}
-          fingerprint={fingerprint}
-          setFingerprint={setFingerprint}
-        />
-
-        {user && (
-          <div className="max-w-7xl mx-auto px-4 mt-8">
-            <div className="bg-primary-dark/40 border border-primary/30 text-purple-200 px-4 py-3 rounded-xl text-sm font-medium flex flex-col sm:flex-row items-center justify-center gap-2 mb-4 text-center">
-              <span className="font-bold flex items-center gap-1"><Shield className="w-4 h-4"/> Secure Account Test Mode</span>
-              <span className="opacity-80">Personal recovery tracking, Nova memory, notifications, payments, and organisation features are not yet active. Do not enter sensitive info.</span>
-            </div>
-          </div>
-        )}
-
         <AnimatePresence mode="wait">
           <motion.div
             layout
@@ -2916,6 +2986,7 @@ export default function App() {
                 onOpenCheckIn={() => setShowCheckIn(true)}
                 pulseHistory={pulseHistory}
                 onAwardPoints={awardPoints}
+                onIncrementStreak={() => setStats((prev) => ({ ...prev, streak: (prev.streak || 0) + 1 }))}
                 onUpdateOperationalMetrics={handleUpdateOperationalMetrics}
                 onUpdatePulseHistory={handleUpdatePulseHistory}
                 onLogJourney={logJourney}
@@ -3097,7 +3168,7 @@ export default function App() {
                 <RuminationFurnace
                   onCleared={() => awardPoints(20, "Rumination Cleared")}
                 />
-                <NervousSystemReset fingerprint={fingerprint} />
+                <NervousSystemReset fingerprint={fingerprint} onAwardPoints={awardPoints} />
                 <SleepBuilder
                   fingerprint={fingerprint}
                   onAwardPoints={awardPoints}
@@ -3140,6 +3211,7 @@ export default function App() {
                   contacts={stats.supportCircle || []}
                   onAdd={handleAddContact}
                   onRemove={handleRemoveContact}
+                  userName={stats.profile?.fullName}
                 />
               </div>
             )}

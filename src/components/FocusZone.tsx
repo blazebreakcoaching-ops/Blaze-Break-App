@@ -1,20 +1,18 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { 
-  Target, 
-  Clock, 
-  Play, 
-  Square, 
-  Volume2, 
-  VolumeX, 
-  Compass, 
-  Sparkles, 
-  Brain, 
-  CheckCircle, 
-  AlertTriangle, 
-  X,
-  RefreshCw,
-  Heart
+import { auth, db } from '../lib/firebase';
+import { addDoc, collection } from 'firebase/firestore';
+import { addNovaMemory } from '../lib/nova-brain';
+import {
+  Target,
+  Play,
+  Volume2,
+  VolumeX,
+  Sparkles,
+  Brain,
+  CheckCircle,
+  AlertTriangle,
+  X
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 
@@ -296,31 +294,31 @@ export function FocusZone({ onAwardPoints, isFocusActive, setIsFocusActive, curr
       osc.stop(audioCtx.currentTime + 3);
     } catch (e) {}
 
-    // Save success metric to local storage
-    const focusHistory = JSON.parse(localStorage.getItem("blaze_focus_blocks_history") || "[]");
-    focusHistory.unshift({
-      date: new Date().toISOString(),
-      durationMinutes: duration,
-      completed: true,
-      stage: currentShipStage
-    });
-    localStorage.setItem("blaze_focus_blocks_history", JSON.stringify(focusHistory));
+    // Save success metric to Firestore - previously this was localStorage
+    // only, and the "Nova memory" write below went to a completely
+    // different, orphaned key that nothing else in the app ever read.
+    if (auth.currentUser) {
+      addDoc(collection(db, 'users', auth.currentUser.uid, 'focus_sessions'), {
+        durationMinutes: duration,
+        completed: true,
+        stage: currentShipStage,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      }).catch(() => {
+        // Non-fatal - the completion still counts for this session even if the write fails.
+      });
+    }
 
-    // Update Nova's Memory
-    const prevMemory = JSON.parse(localStorage.getItem("blaze_nova_memories") || "[]");
-    const updatedMemory = [
-      {
-        id: "focus-" + Date.now(),
-        source: "Focus Zone Engine",
-        type: "state",
-        content: `User successfully completed a ${duration}-minute deep work block inside the ${currentShipStage} stage, demonstrating deliberate focus protection.`,
-        confidence: "verified",
-        timestamp: new Date().toISOString(),
-        canEdit: false
-      },
-      ...prevMemory
-    ];
-    localStorage.setItem("blaze_nova_memories", JSON.stringify(updatedMemory));
+    // Update Nova's real memory system, so a completed focus block is
+    // actually visible in chat context, not silently written somewhere
+    // nothing reads.
+    addNovaMemory({
+      type: "state",
+      content: `User successfully completed a ${duration}-minute deep work block inside the ${currentShipStage} stage, demonstrating deliberate focus protection.`,
+      source: "Focus Zone Engine",
+      confidence: "verified",
+      canEdit: false
+    });
 
     onAwardPoints(100, `${duration}-Minute Deep Work Focus Zone Complete`);
   };
@@ -335,15 +333,18 @@ export function FocusZone({ onAwardPoints, isFocusActive, setIsFocusActive, curr
     localStorage.removeItem("blaze_lockout_active");
     setQuitInterceptOpen(false);
 
-    // Log the incomplete block
-    const focusHistory = JSON.parse(localStorage.getItem("blaze_focus_blocks_history") || "[]");
-    focusHistory.unshift({
-      date: new Date().toISOString(),
-      durationMinutes: duration,
-      completed: false,
-      stage: currentShipStage
-    });
-    localStorage.setItem("blaze_focus_blocks_history", JSON.stringify(focusHistory));
+    // Log the incomplete block to Firestore
+    if (auth.currentUser) {
+      addDoc(collection(db, 'users', auth.currentUser.uid, 'focus_sessions'), {
+        durationMinutes: duration,
+        completed: false,
+        stage: currentShipStage,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      }).catch(() => {
+        // Non-fatal - this is just a history entry, not core functionality.
+      });
+    }
   };
 
   // Convert seconds to digital display

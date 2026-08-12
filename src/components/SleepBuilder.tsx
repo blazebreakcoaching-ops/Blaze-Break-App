@@ -1,24 +1,16 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Moon, Coffee, Smartphone, Edit3, Bed, ZapOff, CheckCircle2, CloudFog, Sparkles, Activity } from 'lucide-react';
+import { Moon, Coffee, Smartphone, Edit3, Bed, ZapOff, CheckCircle2, Activity } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { BurnoutFingerprint } from '../types';
-import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
+import { auth, db } from '../lib/firebase';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { addNovaMemory } from '../lib/nova-brain';
 
 interface SleepBuilderProps {
   fingerprint: BurnoutFingerprint | null;
   onAwardPoints?: (amount: number, reason: string) => void;
 }
-
-const SLEEP_DEBT_DATA = [
-  { day: 'Mon', debt: 1.5 },
-  { day: 'Tue', debt: 2.0 },
-  { day: 'Wed', debt: 1.8 },
-  { day: 'Thu', debt: 2.5 },
-  { day: 'Fri', debt: 3.0 },
-  { day: 'Sat', debt: 1.0 },
-  { day: 'Sun', debt: 0.5 },
-];
 
 export const SleepBuilder = ({ fingerprint, onAwardPoints }: SleepBuilderProps) => {
   const [bedtime, setBedtime] = useState('22:30');
@@ -28,6 +20,52 @@ export const SleepBuilder = ({ fingerprint, onAwardPoints }: SleepBuilderProps) 
   const [parkingList, setParkingList] = useState<string[]>([]);
   const [mentalUnload, setMentalUnload] = useState('');
   const [windDownStarted, setWindDownStarted] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+
+  // Load the real, persisted ritual state - previously this was pure
+  // ephemeral React state that reset on every reload, meaning a parked
+  // worry or a bedtime target never actually survived leaving the page.
+  useEffect(() => {
+    const load = async () => {
+      if (!auth.currentUser) { setLoaded(true); return; }
+      try {
+        const snap = await getDoc(doc(db, 'users', auth.currentUser.uid, 'preferences', 'sleep_builder'));
+        if (snap.exists()) {
+          const data = snap.data();
+          if (typeof data.bedtime === 'string') setBedtime(data.bedtime);
+          if (typeof data.caffeineCutoff === 'boolean') setCaffeineCutoff(data.caffeineCutoff);
+          if (typeof data.phoneOff === 'boolean') setPhoneOff(data.phoneOff);
+          if (typeof data.mentalUnload === 'string') setMentalUnload(data.mentalUnload);
+          if (Array.isArray(data.parkingList)) setParkingList(data.parkingList);
+        }
+      } catch (e) {
+        // Leaves the honest defaults in place rather than pretending progress loaded.
+      }
+      setLoaded(true);
+    };
+    load();
+  }, []);
+
+  const savePrefs = (updates: Record<string, any>) => {
+    if (!auth.currentUser) return;
+    setDoc(doc(db, 'users', auth.currentUser.uid, 'preferences', 'sleep_builder'), {
+      ...updates,
+      updatedAt: new Date().toISOString(),
+    }, { merge: true }).catch(() => {
+      // Non-fatal - the UI still reflects the change locally even if this save fails.
+    });
+  };
+
+  // Debounced autosave for the ritual settings, mirroring the pattern
+  // already used for Recovery Intelligence Layer's and Recovery Fuel
+  // Engine's preference docs.
+  useEffect(() => {
+    if (!loaded) return;
+    const t = setTimeout(() => {
+      savePrefs({ bedtime, caffeineCutoff, phoneOff, mentalUnload, parkingList });
+    }, 800);
+    return () => clearTimeout(t);
+  }, [bedtime, caffeineCutoff, phoneOff, mentalUnload, parkingList, loaded]);
 
   const handleParkItem = (e: React.FormEvent) => {
     e.preventDefault();
@@ -44,23 +82,13 @@ export const SleepBuilder = ({ fingerprint, onAwardPoints }: SleepBuilderProps) 
   const handleStartWindDown = () => {
     setWindDownStarted(true);
     if (onAwardPoints) onAwardPoints(15, 'Started Wind-Down Routine');
-  };
-
-  const renderTooltip = ({ active, payload, label }: any) => {
-    if (active && payload && payload.length) {
-      return (
-        <div className="bg-card p-3 rounded-xl shadow-md border border-border">
-          <p className="text-xs font-black uppercase tracking-widest text-text-muted mb-1">{label} - Sleep Debt</p>
-          <div className="flex flex-col gap-1">
-            <p className="text-xs font-bold flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-primary" />
-              {payload[0].value} hours
-            </p>
-          </div>
-        </div>
-      );
-    }
-    return null;
+    addNovaMemory({
+      type: 'state',
+      content: `User began their evening wind-down ritual. Bedtime target: ${bedtime}. Caffeine cutoff observed: ${caffeineCutoff}. Screen blackout observed: ${phoneOff}.${parkingList.length > 0 ? ` Parked ${parkingList.length} item(s) for tomorrow rather than solving them tonight.` : ''}`,
+      source: 'Sleep & Wind-Down Builder',
+      confidence: 'verified',
+      canEdit: false,
+    });
   };
 
   return (
@@ -172,22 +200,9 @@ export const SleepBuilder = ({ fingerprint, onAwardPoints }: SleepBuilderProps) 
                 <Activity className="w-4 h-4 text-primary" />
                 <span className="text-xs uppercase tracking-[0.2em] font-black text-text-muted">Sleep Debt Trend</span>
               </div>
-              <div className="flex-1 w-full relative">
-                <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-                  <AreaChart data={SLEEP_DEBT_DATA} margin={{ top: 10, right: 0, left: -20, bottom: 0 }}>
-                    <defs>
-                      <linearGradient id="colorDebt" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#6366f1" stopOpacity={0.3}/>
-                        <stop offset="95%" stopColor="#6366f1" stopOpacity={0}/>
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" opacity={0.2} />
-                    <XAxis dataKey="day" axisLine={false} tickLine={false} tick={{ fontSize: 10, fontWeight: 700, fill: '#94a3b8' }} dy={10} />
-                    <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 10, fontWeight: 700, fill: '#94a3b8' }} />
-                    <Tooltip content={renderTooltip} />
-                    <Area type="monotone" dataKey="debt" name="Sleep Debt (hrs)" stroke="#6366f1" strokeWidth={3} fillOpacity={1} fill="url(#colorDebt)" />
-                  </AreaChart>
-                </ResponsiveContainer>
+              <div className="flex-1 w-full flex flex-col items-center justify-center text-center gap-2 px-2">
+                <Moon className="w-6 h-6 text-text-muted/50" />
+                <p className="text-xs text-text-muted leading-relaxed">Nightly sleep-hours logging isn't built yet, so there's no real trend to show here. This tracks your wind-down ritual instead - bedtime target, cutoffs, and what you park for tomorrow.</p>
               </div>
            </div>
 

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Compass, Heart, Globe, MoonStar, ArrowRight, ShieldCheck, CheckCircle2, Feather, Sun, Star } from 'lucide-react';
+import { Compass, Globe, MoonStar, ArrowRight, ShieldCheck, CheckCircle2, Feather } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { BurnoutFingerprint } from '../types';
 

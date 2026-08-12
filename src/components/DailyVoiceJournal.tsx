@@ -1,8 +1,10 @@
 import React, { useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { Mic, Square, Trash2, Volume2, Sparkles, AlertCircle, RefreshCw, CheckCircle, Brain, Heart, Waves } from "lucide-react";
+import { Mic, Square, Trash2, Volume2, Sparkles, AlertCircle, CheckCircle, Brain, Heart, Waves } from "lucide-react";
+import { collection, doc, setDoc, getDocs, deleteDoc, query, orderBy, limit as fbLimit } from "firebase/firestore";
+import { auth, db } from "../lib/firebase";
 import { secureApiFetch } from "../lib/secure-api";
-import { addNovaMemory, getNovaBrain } from "../lib/nova-brain";
+import { addNovaMemory } from "../lib/nova-brain";
 import { cn } from "../lib/utils";
 
 interface VoiceJournalEntry {
@@ -12,8 +14,7 @@ interface VoiceJournalEntry {
   themes: string[];
   analysis: string;
   advice: string;
-  emotionalEnergy: string; // Metacognitive mimicry attribute
-  mimicryScore: number;     // Alignment score
+  emotionalTone: string;
 }
 
 export const DailyVoiceJournal = ({
@@ -29,25 +30,8 @@ export const DailyVoiceJournal = ({
   
   // Dynamic metacognitive status messages
   const [analysisStatus, setAnalysisStatus] = useState("Awaiting voice feed...");
-  const [entries, setEntries] = useState<VoiceJournalEntry[]>(() => {
-    try {
-      const saved = localStorage.getItem("blaze_voice_journals");
-      return saved ? JSON.parse(saved) : [];
-    } catch {
-      return [];
-    }
-  });
-
-  const [activeEntry, setActiveEntry] = useState<VoiceJournalEntry | null>(() => {
-    try {
-      const saved = localStorage.getItem("blaze_voice_journals");
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        return parsed.length > 0 ? parsed[0] : null;
-      }
-    } catch {}
-    return null;
-  });
+  const [entries, setEntries] = useState<VoiceJournalEntry[]>([]);
+  const [activeEntry, setActiveEntry] = useState<VoiceJournalEntry | null>(null);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
@@ -56,10 +40,24 @@ export const DailyVoiceJournal = ({
   const activeSourceRef = useRef<AudioBufferSourceNode | null>(null);
   const [isPlayingNova, setIsPlayingNova] = useState(false);
 
+  const fetchEntries = async () => {
+    const uid = auth.currentUser?.uid;
+    if (!uid) return;
+    try {
+      const q = query(collection(db, "users", uid, "voice_journal_entries"), orderBy("createdAt", "desc"), fbLimit(30));
+      const snap = await getDocs(q);
+      const loaded = snap.docs.map((d) => ({ id: d.id, ...d.data() } as VoiceJournalEntry));
+      setEntries(loaded);
+      setActiveEntry((prev) => prev ?? loaded[0] ?? null);
+    } catch {
+      // Honest empty state - no fabricated fallback data.
+    }
+  };
+
   // Load saved entries on mount
   useEffect(() => {
-    localStorage.setItem("blaze_voice_journals", JSON.stringify(entries));
-  }, [entries]);
+    fetchEntries();
+  }, []);
 
   // Clean up Web Audio on unmount
   useEffect(() => {
@@ -154,6 +152,8 @@ export const DailyVoiceJournal = ({
 
   const analyzeVoiceJournal = async () => {
     if (!audioBlob) return;
+    const uid = auth.currentUser?.uid;
+    if (!uid) return;
     setIsAnalyzing(true);
     setError(null);
     setAnalysisStatus("Decompressing raw signal feed...");
@@ -192,26 +192,34 @@ export const DailyVoiceJournal = ({
 
       if (result.error) throw new Error(result.error);
 
-      // Metacognitive attributes: emotional mimicry & alignment scores
-      const emotionalVibes = ["cortisol-wired but seeking alignment", "resentfully over-loaded", "fatigued yet biologically receptive", "fawning profile leaning on structure"];
-      const matchedVibe = emotionalVibes[Math.floor(Math.random() * emotionalVibes.length)];
-      const matchedScore = Math.floor(Math.random() * 21) + 80; // 80% to 100% emotional mimicry match
+      const nowIso = new Date().toISOString();
+      const displayDate = new Date().toLocaleDateString("en-GB", {
+        day: "numeric",
+        month: "short",
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+      const docId = `vj_${Date.now()}`;
 
       const newEntry: VoiceJournalEntry = {
-        id: `vj_${Date.now()}`,
-        date: new Date().toLocaleDateString("en-GB", {
-          day: "numeric",
-          month: "short",
-          hour: "2-digit",
-          minute: "2-digit",
-        }),
+        id: docId,
+        date: displayDate,
         transcription: result.transcription,
         themes: result.themes,
         analysis: result.analysis,
         advice: result.advice,
-        emotionalEnergy: matchedVibe,
-        mimicryScore: matchedScore
+        emotionalTone: result.emotionalTone,
       };
+
+      await setDoc(doc(db, "users", uid, "voice_journal_entries", docId), {
+        createdAt: nowIso,
+        date: displayDate,
+        transcription: result.transcription,
+        themes: result.themes,
+        analysis: result.analysis,
+        advice: result.advice,
+        emotionalTone: result.emotionalTone,
+      });
 
       // 4. Nova's Deeper Metacognitive Memory Loop
       // Write memories to Nova's brain based on user's active spoken words
@@ -225,8 +233,8 @@ export const DailyVoiceJournal = ({
 
       addNovaMemory({
         type: "preference",
-        content: `Metacognitive mimicry: User sounded '${matchedVibe}' with Nova alignment at ${matchedScore}%. Insight: ${result.analysis}`,
-        source: `Nova Metacognitive Calibration (${newEntry.date})`,
+        content: `Emotional tone: '${result.emotionalTone}'. Insight: ${result.analysis}`,
+        source: `Nova Voice Journal Analysis (${newEntry.date})`,
         confidence: "verified",
         canEdit: false
       });
@@ -452,7 +460,7 @@ export const DailyVoiceJournal = ({
                     <span className="text-[10px] font-mono font-bold uppercase text-text-muted">{activeEntry.date}</span>
                     <span className="w-1.5 h-1.5 rounded-full bg-border" />
                     <span className="text-[10px] font-mono text-primary bg-primary/10 px-2 py-0.5 rounded border border-primary/20 uppercase">
-                      {activeEntry.mimicryScore}% Vibe Alignment
+                      {activeEntry.emotionalTone}
                     </span>
                   </div>
 

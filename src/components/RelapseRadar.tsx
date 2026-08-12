@@ -1,5 +1,5 @@
 import { motion } from 'motion/react';
-import { AlertCircle, TrendingUp, Sun, Moon, Zap } from 'lucide-react';
+import { AlertCircle, TrendingUp, Sun, Moon } from 'lucide-react';
 import { cn } from '../lib/utils';
 
 export const RelapseRadar = () => {

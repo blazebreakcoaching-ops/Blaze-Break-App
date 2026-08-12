@@ -1,5 +1,5 @@
 import { motion } from 'motion/react';
-import { History, TrendingDown, Clock, AlertTriangle, Sparkles } from 'lucide-react';
+import { History, AlertTriangle, Sparkles } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { Debt } from '../types';
 

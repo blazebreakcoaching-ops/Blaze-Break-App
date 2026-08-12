@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { ShieldAlert, Wind, X, CheckCircle2, AlertOctagon } from 'lucide-react';
+import { Wind, X, CheckCircle2, AlertOctagon } from 'lucide-react';
 import { cn } from '../lib/utils';
 
 interface TacticalOverrideProps {

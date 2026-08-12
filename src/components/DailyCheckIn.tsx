@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { X, Battery, ShieldAlert, Zap, Waves, Sparkles, Check, AlertTriangle } from 'lucide-react';
+import { X, Battery, ShieldAlert, Zap, Waves, Sparkles, Check } from 'lucide-react';
 import { cn } from '../lib/utils';
 
 interface DailyCheckInProps {

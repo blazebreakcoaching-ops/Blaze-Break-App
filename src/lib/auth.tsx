@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { User, signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged } from 'firebase/auth';
+import { User, signInWithPopup, signInAnonymously, linkWithPopup, signInWithCredential, GoogleAuthProvider, signOut, onAuthStateChanged } from 'firebase/auth';
 import { auth, db } from './firebase';
-import { doc, getDoc, setDoc, updateDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { AuthRole } from '../types';
 
 interface AuthContextType {
@@ -45,7 +45,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           
           if (!userDoc.exists()) {
              await setDoc(userDocRef, {
-                displayName: userRecord.displayName,
+                ...(userRecord.displayName ? { displayName: userRecord.displayName } : {}),
                 createdAt: new Date().toISOString(),
                 updatedAt: new Date().toISOString()
              });
@@ -72,8 +72,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             } else if (userRecord.email === 'teampublication@gmail.com' || userRecord.email === 'teampublication@googlemail.com') {
               role = 'platform_owner';
             }
-          } catch(e) {}
-          
+          } catch(e) {
+            console.warn("Could not read custom claims from ID token — defaulting to standard role.", e);
+          }
+
           setAppRole(role);
         } catch (e) {
           console.error("Authorised Access Framework mapping failed:", e);
@@ -83,6 +85,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       } else {
         (window as any).__ACTIVE_USER_EMAIL__ = null;
         setAppRole('individual');
+        // Nobody signed in at all yet (not even anonymously) - this fires
+        // once, right after the app first loads for a brand-new visitor.
+        // Signing in anonymously here means every feature that reads
+        // auth.currentUser gets a real, Firestore-backed identity from the
+        // first moment, instead of a local-only/"demo" fallback.
+        try {
+          await signInAnonymously(auth);
+          // Don't set user/loading below for this invocation - that would
+          // briefly flash a logged-out state. onAuthStateChanged fires again
+          // momentarily with the real anonymous userRecord, and that
+          // invocation sets user/loading correctly instead.
+          return;
+        } catch (e) {
+          console.error("Anonymous sign-in failed - features requiring a signed-in user will be unavailable until the user signs in manually.", e);
+        }
       }
       setUser(userRecord);
       if (!userRecord) {
@@ -96,10 +113,43 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const signIn = async () => {
     const provider = new GoogleAuthProvider();
-    const result = await signInWithPopup(auth, provider);
-    const credential = GoogleAuthProvider.credentialFromResult(result);
-    if (credential?.accessToken) {
-      setAccessToken(credential.accessToken);
+    try {
+      // If the current session is anonymous, link Google to it so the
+      // person keeps the same UID (and therefore all their existing data)
+      // instead of ending up on a brand-new, separate account.
+      if (auth.currentUser?.isAnonymous) {
+        const result = await linkWithPopup(auth.currentUser, provider);
+        const credential = GoogleAuthProvider.credentialFromResult(result);
+        if (credential?.accessToken) {
+          setAccessToken(credential.accessToken);
+        }
+        return;
+      }
+      const result = await signInWithPopup(auth, provider);
+      const credential = GoogleAuthProvider.credentialFromResult(result);
+      if (credential?.accessToken) {
+        setAccessToken(credential.accessToken);
+      }
+    } catch (e: any) {
+      // That Google account already has its own real Firebase account from
+      // a previous session (e.g. they used the app before, then later
+      // browsed anonymously on a different device/browser). Linking can't
+      // merge two separate accounts, so sign them into their real,
+      // pre-existing one instead - the anonymous session's data is
+      // abandoned, but that's correct: it was never really theirs to keep,
+      // just a placeholder until they proved who they are.
+      if (e?.code === 'auth/credential-already-in-use') {
+        const existingCredential = GoogleAuthProvider.credentialFromError(e);
+        if (existingCredential) {
+          const result = await signInWithCredential(auth, existingCredential);
+          const credential = GoogleAuthProvider.credentialFromResult(result);
+          if (credential?.accessToken) {
+            setAccessToken(credential.accessToken);
+          }
+          return;
+        }
+      }
+      throw e;
     }
   };
 
@@ -107,13 +157,39 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const provider = new GoogleAuthProvider();
     provider.addScope('https://www.googleapis.com/auth/calendar.readonly');
     provider.addScope('https://www.googleapis.com/auth/calendar.events');
-    const result = await signInWithPopup(auth, provider);
-    const credential = GoogleAuthProvider.credentialFromResult(result);
-    if (credential?.accessToken) {
-      setAccessToken(credential.accessToken);
-      return credential.accessToken;
+    provider.addScope('https://www.googleapis.com/auth/gmail.readonly');
+    try {
+      if (auth.currentUser?.isAnonymous) {
+        const result = await linkWithPopup(auth.currentUser, provider);
+        const credential = GoogleAuthProvider.credentialFromResult(result);
+        if (credential?.accessToken) {
+          setAccessToken(credential.accessToken);
+          return credential.accessToken;
+        }
+        return null;
+      }
+      const result = await signInWithPopup(auth, provider);
+      const credential = GoogleAuthProvider.credentialFromResult(result);
+      if (credential?.accessToken) {
+        setAccessToken(credential.accessToken);
+        return credential.accessToken;
+      }
+      return null;
+    } catch (e: any) {
+      if (e?.code === 'auth/credential-already-in-use') {
+        const existingCredential = GoogleAuthProvider.credentialFromError(e);
+        if (existingCredential) {
+          const result = await signInWithCredential(auth, existingCredential);
+          const credential = GoogleAuthProvider.credentialFromResult(result);
+          if (credential?.accessToken) {
+            setAccessToken(credential.accessToken);
+            return credential.accessToken;
+          }
+        }
+        return null;
+      }
+      throw e;
     }
-    return null;
   };
 
   const logOut = async () => {

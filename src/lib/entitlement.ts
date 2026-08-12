@@ -1,5 +1,5 @@
-import { SubscriptionTier, AuthRole, AuthScope } from '../types.ts';
-import { FEATURE_REGISTRY, FeatureDefinition } from './feature-registry.ts';
+import { SubscriptionTier, AuthRole } from '../types.ts';
+import { FeatureDefinition } from './feature-registry.ts';
 
 export const COMPAT_MAP: Record<SubscriptionTier, string[]> = {
   free: [

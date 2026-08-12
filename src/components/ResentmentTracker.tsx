@@ -1,8 +1,11 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Flame, Brain, ArrowRight, AlertOctagon, ShieldAlert, CheckCircle2 } from 'lucide-react';
-import { cn } from '../lib/utils';
+import { Flame, Brain, ArrowRight, AlertOctagon, ShieldAlert } from 'lucide-react';
 import { BurnoutFingerprint } from '../types';
+import { secureApiFetch } from '../lib/secure-api';
+import { auth, db } from '../lib/firebase';
+import { collection, addDoc } from 'firebase/firestore';
+import { addNovaMemory } from '../lib/nova-brain';
 
 interface ResentmentTrackerProps {
   fingerprint: BurnoutFingerprint | null;
@@ -20,20 +23,47 @@ export const ResentmentTracker = ({ fingerprint, onAwardPoints, onNavigate }: Re
     missingBoundary: string;
   }>(null);
 
-  const handleAnalyze = () => {
+  const [error, setError] = useState<string | null>(null);
+
+  const handleAnalyze = async () => {
     if (!log.trim()) return;
     setIsAnalyzing(true);
-    
-    // Simulate AI analysis delay
-    setTimeout(() => {
-      setIsAnalyzing(false);
-      setAnalysis({
-        yesMeantNo: "You likely agreed to handle this outside of your core responsibilities because it felt faster than pushing back.",
-        unappreciated: "The effort required remains invisible to the requestor, creating an emotional deficit.",
-        unclear: "The standard operating procedure for this task is vaguely defined, making you the default fail-safe.",
-        missingBoundary: "A clear 'No' or a 'Not right now.'"
+    setError(null);
+
+    try {
+      const res = await secureApiFetch('/api/nova/resentment-analysis', {
+        method: 'POST',
+        data: { log: log.trim() },
       });
-    }, 2000);
+      if (!res.ok) throw new Error('Analysis request failed');
+      const result = await res.json();
+      setAnalysis(result);
+
+      if (auth.currentUser) {
+        addDoc(collection(db, 'users', auth.currentUser.uid, 'resentment_logs'), {
+          log: log.trim(),
+          ...result,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        }).catch(() => {
+          // Non-fatal - the analysis still shows for this session even if the write fails.
+        });
+      }
+
+      addNovaMemory({
+        type: 'trigger',
+        content: `User logged workplace resentment. Missing boundary identified: "${result.missingBoundary}"`,
+        source: 'Resentment Tracker',
+        confidence: 'medium',
+        canEdit: true,
+      });
+
+      if (onAwardPoints) onAwardPoints(30, 'Logged & Analyzed Resentment');
+    } catch (e) {
+      setError("Couldn't reach Nova for analysis right now. Try again in a moment.");
+    } finally {
+      setIsAnalyzing(false);
+    }
   };
 
   const handleReset = () => {
@@ -97,6 +127,10 @@ export const ResentmentTracker = ({ fingerprint, onAwardPoints, onNavigate }: Re
                 )}
                 {isAnalyzing ? "Nova is Analyzing Patterns..." : "Analyze the Resentment"}
               </button>
+            )}
+
+            {error && (
+              <p className="text-sm text-destructive mt-3 text-center">{error}</p>
             )}
             
             {analysis && (

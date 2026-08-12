@@ -1,28 +1,27 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { 
-  Coffee, 
-  Sun, 
-  Droplet, 
-  Apple, 
-  Heart, 
-  Info, 
-  ShieldAlert, 
-  Sparkles, 
-  Clock, 
-  Check, 
-  Loader2, 
+import {
+  Coffee,
+  Sun,
+  Droplet,
+  Apple,
+  Heart,
+  Info,
+  ShieldAlert,
+  Sparkles,
+  Clock,
+  Check,
   Compass,
   ArrowRight,
-  ShieldAlert as AlertIcon,
-  HelpCircle,
   Wine,
-  TrendingDown,
   Activity,
   Lightbulb
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { updateNovaMemoryBySourceAndType } from '../lib/nova-brain';
+import { useAuth } from '../lib/auth';
+import { auth, db } from '../lib/firebase';
+import { doc, getDoc, setDoc, deleteDoc } from 'firebase/firestore';
 
 import { SHIPStage } from '../types';
 
@@ -64,48 +63,93 @@ export const RecoveryFuelEngine = ({
   const [isCheckInSubmitted, setIsCheckInSubmitted] = useState<boolean>(false);
   const [activeTab, setActiveTab] = useState<'tracker' | 'education' | 'insights'>('tracker');
 
-  // Hydration and Meal Timing Reminders & Alerts states
-  const [hydrationReminderEnabled, setHydrationReminderEnabled] = useState<boolean>(() => {
-    const saved = localStorage.getItem('blaze_fuel_hydration_reminder');
-    return saved === 'true';
-  });
-  const [hydrationInterval, setHydrationInterval] = useState<number>(() => {
-    const saved = localStorage.getItem('blaze_fuel_hydration_interval');
-    return saved ? parseInt(saved, 10) : 90;
-  });
-  const [meetingReminderEnabled, setMeetingReminderEnabled] = useState<boolean>(() => {
-    const saved = localStorage.getItem('blaze_fuel_meeting_reminder');
-    return saved !== 'false'; // default true
-  });
-  const [emotionalReminderEnabled, setEmotionalReminderEnabled] = useState<boolean>(() => {
-    const saved = localStorage.getItem('blaze_fuel_emotional_reminder');
-    return saved !== 'false'; // default true
-  });
+  // Hydration and Meal Timing Reminders & Alerts - these are the real,
+  // user-configured setup, persisted to Firestore so they follow the
+  // person across devices rather than being trapped in one browser.
+  const { accessToken, signInWithCalendar } = useAuth();
+  const [hydrationReminderEnabled, setHydrationReminderEnabled] = useState<boolean>(false);
+  const [hydrationInterval, setHydrationInterval] = useState<number>(90);
+  const [meetingReminderEnabled, setMeetingReminderEnabled] = useState<boolean>(false);
+  const [meetingLeadMinutes, setMeetingLeadMinutes] = useState<number>(15);
+  const [emotionalReminderEnabled, setEmotionalReminderEnabled] = useState<boolean>(false);
+  const [emotionalInterval, setEmotionalInterval] = useState<number>(120);
+  const [reminderPrefsLoaded, setReminderPrefsLoaded] = useState(false);
+  const [savingReminderPrefs, setSavingReminderPrefs] = useState(false);
   const [activeNudge, setActiveNudge] = useState<{
     type: 'hydration' | 'meeting' | 'emotional';
     title: string;
     message: string;
   } | null>(null);
 
+  // Fetch real reminder preferences on mount.
+  useEffect(() => {
+    const loadPrefs = async () => {
+      if (!auth.currentUser) { setReminderPrefsLoaded(true); return; }
+      try {
+        const snap = await getDoc(doc(db, 'users', auth.currentUser.uid, 'preferences', 'fuel_reminders'));
+        if (snap.exists()) {
+          const data = snap.data();
+          if (typeof data.hydrationEnabled === 'boolean') setHydrationReminderEnabled(data.hydrationEnabled);
+          if (typeof data.hydrationIntervalMinutes === 'number') setHydrationInterval(data.hydrationIntervalMinutes);
+          if (typeof data.meetingEnabled === 'boolean') setMeetingReminderEnabled(data.meetingEnabled);
+          if (typeof data.meetingLeadMinutes === 'number') setMeetingLeadMinutes(data.meetingLeadMinutes);
+          if (typeof data.emotionalEnabled === 'boolean') setEmotionalReminderEnabled(data.emotionalEnabled);
+          if (typeof data.emotionalIntervalMinutes === 'number') setEmotionalInterval(data.emotionalIntervalMinutes);
+        }
+      } catch (e) {
+        // Leaves the defaults (all off) in place - an honest starting point
+        // rather than silently assuming preferences that were never set.
+      }
+      setReminderPrefsLoaded(true);
+    };
+    loadPrefs();
+  }, []);
+
+  // Persists whichever fields changed. Called explicitly by each handler
+  // below rather than on every render, so a single toggle click is a single
+  // write, not a write-per-keystroke while adjusting a slider.
+  const saveReminderPrefs = async (updates: Record<string, any>) => {
+    if (!auth.currentUser) return;
+    setSavingReminderPrefs(true);
+    try {
+      await setDoc(doc(db, 'users', auth.currentUser.uid, 'preferences', 'fuel_reminders'), {
+        ...updates,
+        updatedAt: new Date().toISOString(),
+      }, { merge: true });
+    } catch (e) {
+      // Non-fatal - the local UI state still reflects the change even if
+      // the persisted write fails; it'll just fall back to the last-saved
+      // value next time this loads.
+    }
+    setSavingReminderPrefs(false);
+  };
+
+
   // Load check-in state if saved for today
   useEffect(() => {
-    const today = new Date().toISOString().split('T')[0];
-    const saved = localStorage.getItem(`blaze_fuel_log_${today}`);
-    if (saved) {
+    const loadTodayFuelLog = async () => {
+      if (!auth.currentUser) return;
+      const today = new Date().toISOString().split('T')[0];
       try {
-        const parsed = JSON.parse(saved);
-        setHasEaten(parsed.hasEaten);
-        setSkippedBreakfast(parsed.skippedBreakfast);
-        setCaffeineCount(parsed.caffeineCount);
-        setCaffeineTiming(parsed.caffeineTiming);
-        setCaffeineEmptyStomach(parsed.caffeineEmptyStomach);
-        setHydrationGlasses(parsed.hydrationGlasses);
-        setMorningLight(parsed.morningLight);
-        setAlcoholLogged(parsed.alcoholLogged);
-        setShakyIrritable(parsed.shakyIrritable);
-        setIsCheckInSubmitted(true);
-      } catch (e) {}
-    }
+        const snap = await getDoc(doc(db, 'users', auth.currentUser.uid, 'recovery_fuel_logs', today));
+        if (snap.exists()) {
+          const parsed = snap.data();
+          setHasEaten(parsed.hasEaten);
+          setSkippedBreakfast(parsed.skippedBreakfast);
+          setCaffeineCount(parsed.caffeineCount);
+          setCaffeineTiming(parsed.caffeineTiming);
+          setCaffeineEmptyStomach(parsed.caffeineEmptyStomach);
+          setHydrationGlasses(parsed.hydrationGlasses);
+          setMorningLight(parsed.morningLight);
+          setAlcoholLogged(parsed.alcoholLogged);
+          setShakyIrritable(parsed.shakyIrritable);
+          setIsCheckInSubmitted(true);
+        }
+      } catch (e) {
+        // Leaves the honest empty state in place rather than pretending today's log loaded.
+      }
+    };
+    loadTodayFuelLog();
   }, []);
 
   const handleSaveCheckIn = () => {
@@ -123,7 +167,16 @@ export const RecoveryFuelEngine = ({
       timestamp: new Date().toISOString()
     };
 
-    localStorage.setItem(`blaze_fuel_log_${today}`, JSON.stringify(fuelData));
+    if (auth.currentUser) {
+      const { timestamp, ...fuelDataForFirestore } = fuelData;
+      setDoc(doc(db, 'users', auth.currentUser.uid, 'recovery_fuel_logs', today), {
+        ...fuelDataForFirestore,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      }, { merge: true }).catch(() => {
+        // Non-fatal - the UI still reflects the change locally even if this save fails.
+      });
+    }
     setIsCheckInSubmitted(true);
 
     // Build specific feedback context for Nova memory baseline
@@ -167,7 +220,11 @@ export const RecoveryFuelEngine = ({
 
   const handleResetCheckIn = () => {
     const today = new Date().toISOString().split('T')[0];
-    localStorage.removeItem(`blaze_fuel_log_${today}`);
+    if (auth.currentUser) {
+      deleteDoc(doc(db, 'users', auth.currentUser.uid, 'recovery_fuel_logs', today)).catch(() => {
+        // Non-fatal - the UI still resets locally even if this delete fails.
+      });
+    }
     setHasEaten(null);
     setSkippedBreakfast(null);
     setCaffeineCount(0);
@@ -182,7 +239,7 @@ export const RecoveryFuelEngine = ({
 
   const handleHydrationToggle = (val: boolean) => {
     setHydrationReminderEnabled(val);
-    localStorage.setItem('blaze_fuel_hydration_reminder', String(val));
+    saveReminderPrefs({ hydrationEnabled: val });
     if (onAwardPoints && val) {
       onAwardPoints(5, "Hydration Schedule Set");
     }
@@ -190,23 +247,33 @@ export const RecoveryFuelEngine = ({
 
   const handleHydrationIntervalChange = (val: number) => {
     setHydrationInterval(val);
-    localStorage.setItem('blaze_fuel_hydration_interval', String(val));
+    saveReminderPrefs({ hydrationIntervalMinutes: val });
   };
 
   const handleMeetingToggle = (val: boolean) => {
     setMeetingReminderEnabled(val);
-    localStorage.setItem('blaze_fuel_meeting_reminder', String(val));
+    saveReminderPrefs({ meetingEnabled: val });
     if (onAwardPoints && val) {
       onAwardPoints(5, "Pre-Meeting Nutrition Shield Enabled");
     }
   };
 
+  const handleMeetingLeadChange = (val: number) => {
+    setMeetingLeadMinutes(val);
+    saveReminderPrefs({ meetingLeadMinutes: val });
+  };
+
   const handleEmotionalToggle = (val: boolean) => {
     setEmotionalReminderEnabled(val);
-    localStorage.setItem('blaze_fuel_emotional_reminder', String(val));
+    saveReminderPrefs({ emotionalEnabled: val });
     if (onAwardPoints && val) {
       onAwardPoints(5, "Emotional Decision Fuel Buffer Activated");
     }
+  };
+
+  const handleEmotionalIntervalChange = (val: number) => {
+    setEmotionalInterval(val);
+    saveReminderPrefs({ emotionalIntervalMinutes: val });
   };
 
   const triggerHydrationTest = () => {
@@ -232,6 +299,104 @@ export const RecoveryFuelEngine = ({
       message: "Nova here — if you're feeling resentful, defensive, or about to send a heavy message, it might be worth pausing. Big decisions are harder on an empty stomach. Worth eating something first."
     });
   };
+
+  // ============ Real Scheduling Engine ============
+  // Everything below actually fires reminders on its own, on the schedule
+  // the person configured - the "Preview" buttons above only show what a
+  // reminder looks like on demand; this is what makes them genuinely happen
+  // without anyone needing to click anything.
+
+  const lastHydrationFiredRef = useRef<number>(Number(localStorage.getItem('blaze_fuel_last_hydration_fired') || 0));
+  const lastEmotionalFiredRef = useRef<number>(Number(localStorage.getItem('blaze_fuel_last_emotional_fired') || 0));
+  const lastCalendarFetchRef = useRef<number>(0);
+  const cachedEventsRef = useRef<{ id: string; summary: string; startMs: number }[]>([]);
+  const remindedMeetingIdsRef = useRef<Set<string>>(new Set(
+    JSON.parse(localStorage.getItem('blaze_fuel_reminded_meetings') || '[]')
+  ));
+
+  useEffect(() => {
+    if (!reminderPrefsLoaded) return;
+
+    const checkSchedule = async () => {
+      if (activeNudge) return; // don't stack reminders on top of one another
+      const now = Date.now();
+
+      if (hydrationReminderEnabled) {
+        const dueAt = lastHydrationFiredRef.current + hydrationInterval * 60000;
+        if (now >= dueAt) {
+          setActiveNudge({
+            type: 'hydration',
+            title: 'Time for water',
+            message: "Nova here — you haven't logged water in a while, and even mild dehydration can feel a lot like fatigue or brain fog. Take a moment for a full glass."
+          });
+          lastHydrationFiredRef.current = now;
+          localStorage.setItem('blaze_fuel_last_hydration_fired', String(now));
+          return;
+        }
+      }
+
+      if (emotionalReminderEnabled) {
+        const dueAt = lastEmotionalFiredRef.current + emotionalInterval * 60000;
+        if (now >= dueAt) {
+          setActiveNudge({
+            type: 'emotional',
+            title: 'A quick check-in',
+            message: "Nova here — worth a quick check: if you're feeling resentful, defensive, or about to send a heavy message right now, big decisions are harder on an empty stomach. Worth eating something first."
+          });
+          lastEmotionalFiredRef.current = now;
+          localStorage.setItem('blaze_fuel_last_emotional_fired', String(now));
+          return;
+        }
+      }
+
+      if (meetingReminderEnabled && accessToken) {
+        // Real calendar data, refetched at most every 5 minutes - the
+        // per-tick check below just re-scans the cached list, so a genuine
+        // API call only happens this rarely.
+        const minutesSinceFetch = (now - lastCalendarFetchRef.current) / 60000;
+        if (lastCalendarFetchRef.current === 0 || minutesSinceFetch >= 5) {
+          lastCalendarFetchRef.current = now;
+          try {
+            const start = new Date();
+            const end = new Date(start.getTime() + 4 * 60 * 60 * 1000); // next 4 hours is plenty for a lead-time check
+            const url = `https://www.googleapis.com/calendar/v3/calendars/primary/events?timeMin=${encodeURIComponent(start.toISOString())}&timeMax=${encodeURIComponent(end.toISOString())}&singleEvents=true&orderBy=startTime`;
+            const res = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
+            if (res.ok) {
+              const data = await res.json();
+              cachedEventsRef.current = (data.items || [])
+                .filter((item: any) => item.start?.dateTime)
+                .map((item: any) => ({
+                  id: item.id,
+                  summary: item.summary || 'Untitled meeting',
+                  startMs: new Date(item.start.dateTime).getTime(),
+                }));
+            }
+          } catch (e) {
+            // Non-fatal - just means no meeting reminder fires this cycle.
+          }
+        }
+
+        const upcoming = cachedEventsRef.current.find(ev => {
+          if (remindedMeetingIdsRef.current.has(ev.id)) return false;
+          const minutesUntil = (ev.startMs - now) / 60000;
+          return minutesUntil > 0 && minutesUntil <= meetingLeadMinutes;
+        });
+        if (upcoming) {
+          setActiveNudge({
+            type: 'meeting',
+            title: 'Before your next meeting',
+            message: `Nova here — "${upcoming.summary}" starts in about ${meetingLeadMinutes} minutes. Going in without eating can spike your stress response. A handful of almonds, an oatcake, or something slow-release now could help.`
+          });
+          remindedMeetingIdsRef.current.add(upcoming.id);
+          localStorage.setItem('blaze_fuel_reminded_meetings', JSON.stringify(Array.from(remindedMeetingIdsRef.current).slice(-50)));
+        }
+      }
+    };
+
+    checkSchedule();
+    const interval = setInterval(checkSchedule, 60000);
+    return () => clearInterval(interval);
+  }, [reminderPrefsLoaded, hydrationReminderEnabled, hydrationInterval, emotionalReminderEnabled, emotionalInterval, meetingReminderEnabled, meetingLeadMinutes, accessToken, activeNudge]);
 
   // Insight generator based on state
   const getDynamicInsights = () => {
@@ -825,12 +990,12 @@ export const RecoveryFuelEngine = ({
                       </div>
                       <div>
                         <h4 className="text-xs uppercase font-black tracking-widest text-primary">Nudges & Reminders Setup</h4>
-                        <p className="text-xs font-bold text-text-main mt-0.5">Automated Bio-Feedback Loops</p>
+                        <p className="text-xs font-bold text-text-main mt-0.5">{savingReminderPrefs ? 'Saving...' : 'Set up once, fires automatically'}</p>
                       </div>
                     </div>
-                    
+
                     <p className="text-xs text-text-muted leading-relaxed">
-                      Configure automated, science-backed nudges to trigger active reminders before your baseline crashes, protecting your physical and cognitive stability.
+                      These actually run in the background while the app is open, on the schedule you set below — not just a preview. Turn any of them on and they'll genuinely remind you, on your own timing.
                     </p>
 
                     {/* Hydration Reminder Subsection */}
@@ -857,7 +1022,7 @@ export const RecoveryFuelEngine = ({
 
                       {hydrationReminderEnabled && (
                         <div className="space-y-2 animate-in slide-in-from-top-1 bg-white/40 dark:bg-card/40 p-3 rounded-xl border border-border/10">
-                          <label className="text-[11px] font-black uppercase text-text-muted tracking-wider block">Reminder Frequency:</label>
+                          <label className="text-[11px] font-black uppercase text-text-muted tracking-wider block">Remind me every:</label>
                           <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                             {[60, 90, 120].map(mins => (
                               <button
@@ -881,7 +1046,7 @@ export const RecoveryFuelEngine = ({
                         onClick={triggerHydrationTest}
                         className="w-full py-2 bg-text-main/5 hover:bg-text-main/10 border border-text-main/10 text-text-main rounded-xl text-[11px] font-black uppercase tracking-widest flex items-center justify-center gap-1.5 transition-all cursor-pointer hover:scale-[1.01] active:scale-95"
                       >
-                        <Droplet className="w-3 h-3" /> Simulate Hydration Nudge
+                        <Droplet className="w-3 h-3" /> Preview This Nudge
                       </button>
                     </div>
 
@@ -896,41 +1061,101 @@ export const RecoveryFuelEngine = ({
 
                       <div className="space-y-3">
                         {/* Toggle 1: Meetings */}
-                        <div className="flex items-center justify-between p-3 rounded-xl bg-white/40 dark:bg-card/40 border border-border/10">
-                          <div className="space-y-0.5 max-w-[70%]">
-                            <span className="text-[11px] font-bold text-text-main block">Pre-Meeting Shield</span>
-                            <p className="text-[11px] text-text-muted leading-relaxed">Nudges to eat before high-pressure calendar meetings</p>
+                        <div className="p-3 rounded-xl bg-white/40 dark:bg-card/40 border border-border/10 space-y-3">
+                          <div className="flex items-center justify-between">
+                            <div className="space-y-0.5 max-w-[70%]">
+                              <span className="text-[11px] font-bold text-text-main block">Pre-Meeting Shield</span>
+                              <p className="text-[11px] text-text-muted leading-relaxed">Nudges to eat before real calendar meetings</p>
+                            </div>
+                            <button
+                              onClick={() => handleMeetingToggle(!meetingReminderEnabled)}
+                              className={cn(
+                                "px-2.5 py-1 rounded-lg text-[11px] font-black uppercase tracking-wider transition-all border cursor-pointer",
+                                meetingReminderEnabled
+                                  ? "bg-warning text-warning-foreground dark:text-text-main border-warning shadow-sm"
+                                  : "bg-transparent text-text-muted border-border/40"
+                              )}
+                            >
+                              {meetingReminderEnabled ? "Active" : "Off"}
+                            </button>
                           </div>
-                          <button
-                            onClick={() => handleMeetingToggle(!meetingReminderEnabled)}
-                            className={cn(
-                              "px-2.5 py-1 rounded-lg text-[11px] font-black uppercase tracking-wider transition-all border cursor-pointer",
-                              meetingReminderEnabled 
-                                ? "bg-warning text-warning-foreground dark:text-text-main border-warning shadow-sm" 
-                                : "bg-transparent text-text-muted border-border/40"
-                            )}
-                          >
-                            {meetingReminderEnabled ? "Active" : "Off"}
-                          </button>
+
+                          {meetingReminderEnabled && !accessToken && (
+                            <div className="p-3 bg-warning/5 border border-warning/20 rounded-lg space-y-2">
+                              <p className="text-[11px] text-text-muted leading-relaxed">This needs your calendar connected to know when meetings actually start — it can't check without it.</p>
+                              <button
+                                onClick={() => signInWithCalendar()}
+                                className="text-[11px] font-black uppercase tracking-widest text-warning hover:opacity-80"
+                              >
+                                Connect Google Calendar
+                              </button>
+                            </div>
+                          )}
+
+                          {meetingReminderEnabled && accessToken && (
+                            <div className="space-y-2">
+                              <label className="text-[11px] font-black uppercase text-text-muted tracking-wider block">Remind me before, by:</label>
+                              <div className="grid grid-cols-3 gap-2">
+                                {[10, 15, 30].map(mins => (
+                                  <button
+                                    key={mins}
+                                    onClick={() => handleMeetingLeadChange(mins)}
+                                    className={cn(
+                                      "py-1.5 rounded-lg text-xs font-mono font-bold border transition-all cursor-pointer",
+                                      meetingLeadMinutes === mins
+                                        ? "bg-warning/10 border-warning/40 text-warning"
+                                        : "bg-transparent border-border/25 text-text-muted"
+                                    )}
+                                  >
+                                    {mins} min
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          )}
                         </div>
 
                         {/* Toggle 2: Emotional Choices */}
-                        <div className="flex items-center justify-between p-3 rounded-xl bg-white/40 dark:bg-card/40 border border-border/10">
-                          <div className="space-y-0.5 max-w-[70%]">
-                            <span className="text-[11px] font-bold text-text-main block">Decision Point Guard</span>
-                            <p className="text-[11px] text-text-muted leading-relaxed">Prioritize eating before making final or heavy emotional decisions</p>
+                        <div className="p-3 rounded-xl bg-white/40 dark:bg-card/40 border border-border/10 space-y-3">
+                          <div className="flex items-center justify-between">
+                            <div className="space-y-0.5 max-w-[70%]">
+                              <span className="text-[11px] font-bold text-text-main block">Decision Point Guard</span>
+                              <p className="text-[11px] text-text-muted leading-relaxed">Periodic check-in before heavy emotional decisions</p>
+                            </div>
+                            <button
+                              onClick={() => handleEmotionalToggle(!emotionalReminderEnabled)}
+                              className={cn(
+                                "px-2.5 py-1 rounded-lg text-[11px] font-black uppercase tracking-wider transition-all border cursor-pointer",
+                                emotionalReminderEnabled
+                                  ? "bg-destructive text-destructive-foreground border-destructive shadow-sm"
+                                  : "bg-transparent text-text-muted border-border/40"
+                              )}
+                            >
+                              {emotionalReminderEnabled ? "Active" : "Off"}
+                            </button>
                           </div>
-                          <button
-                            onClick={() => handleEmotionalToggle(!emotionalReminderEnabled)}
-                            className={cn(
-                              "px-2.5 py-1 rounded-lg text-[11px] font-black uppercase tracking-wider transition-all border cursor-pointer",
-                              emotionalReminderEnabled
-                                ? "bg-destructive text-destructive-foreground border-destructive shadow-sm"
-                                : "bg-transparent text-text-muted border-border/40"
-                            )}
-                          >
-                            {emotionalReminderEnabled ? "Active" : "Off"}
-                          </button>
+
+                          {emotionalReminderEnabled && (
+                            <div className="space-y-2">
+                              <label className="text-[11px] font-black uppercase text-text-muted tracking-wider block">Remind me every:</label>
+                              <div className="grid grid-cols-3 gap-2">
+                                {[60, 120, 180].map(mins => (
+                                  <button
+                                    key={mins}
+                                    onClick={() => handleEmotionalIntervalChange(mins)}
+                                    className={cn(
+                                      "py-1.5 rounded-lg text-xs font-mono font-bold border transition-all cursor-pointer",
+                                      emotionalInterval === mins
+                                        ? "bg-destructive/10 border-destructive/40 text-destructive"
+                                        : "bg-transparent border-border/25 text-text-muted"
+                                    )}
+                                  >
+                                    {mins} min
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          )}
                         </div>
                       </div>
 
@@ -939,15 +1164,16 @@ export const RecoveryFuelEngine = ({
                           onClick={triggerMeetingTest}
                           className="py-2 bg-warning/5 hover:bg-warning/10 border border-warning/15 text-warning rounded-xl text-[11px] font-black uppercase tracking-widest flex items-center justify-center gap-1 transition-all cursor-pointer hover:scale-[1.01] active:scale-95"
                         >
-                          <Clock className="w-3 h-3" /> Meeting Nudge
+                          <Clock className="w-3 h-3" /> Preview
                         </button>
                         <button
                           onClick={triggerEmotionalTest}
                           className="py-2 bg-destructive/5 hover:bg-destructive/10 border border-destructive/15 text-destructive rounded-xl text-[11px] font-black uppercase tracking-widest flex items-center justify-center gap-1 transition-all cursor-pointer hover:scale-[1.01] active:scale-95"
                         >
-                          <ShieldAlert className="w-3 h-3" /> Decision Nudge
+                          <ShieldAlert className="w-3 h-3" /> Preview
                         </button>
                       </div>
+
                     </div>
                   </div>
                 </div>

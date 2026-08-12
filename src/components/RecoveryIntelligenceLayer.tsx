@@ -1,48 +1,27 @@
-import { ConnectedMoodPulse, ConnectedBodyCheckIn, ConnectedWinsLog } from './ConnectedRecoveryModules.tsx';
+import { ConnectedMoodPulse, ConnectedBodyCheckIn, ConnectedWinsLog, ConnectedGoals, ConnectedEnergyBudget, ConnectedWeeklyReviews } from './ConnectedRecoveryModules.tsx';
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useAuth } from '../lib/auth';
 import { db } from '../lib/firebase';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
-import { 
-  Compass,
-  Activity,
-  Heart,
-  Smile,
-  Flame, 
-  Users, 
-  Trophy, 
+import { doc, getDoc, setDoc, addDoc, collection, getDocs, query, orderBy, limit } from 'firebase/firestore';
+import {
+  Activity, 
   Zap, 
-  Calendar, 
-  Coffee, 
   ShieldAlert, 
   Check, 
-  BookOpen, 
-  Plus, 
-  Trash2, 
   Sparkles, 
-  ChevronRight, 
-  ChevronLeft,
-  Briefcase,
-  Sliders,
-  BellRing,
+  ChevronRight,
   Award,
-  CircleCheck,
   Info,
-  Clock,
-  Eye,
-  Send,
   Loader2,
   LineChart,
-  ArrowRight,
   Mic,
   MicOff,
-HeartPulse, Star, Wind, RefreshCw, TrendingUp, TrendingDown,
+HeartPulse, Star, Wind, RefreshCw, TrendingUp, TrendingDown, Target,
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { updateNovaMemoryBySourceAndType } from '../lib/nova-brain';
 import { secureApiFetch } from '../lib/secure-api';
-import { RecoveryVelocityChart } from './RecoveryVelocityChart';
 
 interface RecoveryIntelligenceProps {
   onAwardPoints: (amount: number, reason: string) => void;
@@ -79,12 +58,8 @@ export const RecoveryIntelligenceLayer = ({ onAwardPoints, fingerprint }: Recove
   const [moodLogs, setMoodLogs] = useState<MoodPulseData[]>([]);
   const [triggers, setTriggers] = useState<TriggerData[]>([]);
   const [socialBattery, setSocialBattery] = useState<number>(70);
-  const [wins, setWins] = useState<WinLogData[]>([
-    { id: '1', timestamp: new Date(Date.now() - 86400000).toISOString(), category: 'boundary', description: 'Politely declined a non-urgent Sunday slack thread request.' },
-    { id: '2', timestamp: new Date(Date.now() - 172800000).toISOString(), category: 'rest', description: 'Used the Reset Studio shallow breathing pacer for 5 minutes during a packed sprint.' }
-  ]);
+  const [wins, setWins] = useState<WinLogData[]>([]);
   const [bodySymptoms, setBodySymptoms] = useState<string[]>([]);
-  const [weeklyReview, setWeeklyReview] = useState<any>(null);
   const [rtwPhase, setRtwPhase] = useState<number>(1);
   const [meetingLimit, setMeetingLimit] = useState<number>(2);
   const [isFocusShieldActive, setIsFocusShieldActive] = useState<boolean>(false);
@@ -120,18 +95,76 @@ export const RecoveryIntelligenceLayer = ({ onAwardPoints, fingerprint }: Recove
   const { user } = useAuth();
   const initLoaded = useRef(false);
 
-  useEffect(() => {
-    if (!user) return;
-    // Phase 1C: Sensitive recovery data syncing is entirely disabled in Secure Account Test Mode.
-    // We do not load data from Firestore here.
-    initLoaded.current = true;
-  }, [user]);
+  // Derives a positive/negative category from the mood word using the same
+  // heuristic already used elsewhere in this file for scoring, so a word
+  // logged here reads the same way whether it's being scored locally or
+  // aggregated later from emotional_patterns.
+  const derivedMoodCategory = (word: string): 'positive' | 'negative' => {
+    const positiveWords = ['good', 'great', 'rested', 'aligned', 'steady', 'calm', 'vibrant', 'stable'];
+    return positiveWords.some(w => word.toLowerCase().includes(w)) ? 'positive' : 'negative';
+  };
 
   useEffect(() => {
+    if (!user) return;
+    const loadAll = async () => {
+      try {
+        const [moodSnap, triggerSnap, winsSnap, prefsSnap] = await Promise.all([
+          getDocs(query(collection(db, 'users', user.uid, 'emotional_patterns'), orderBy('createdAt', 'desc'), limit(30))),
+          getDocs(query(collection(db, 'users', user.uid, 'stress_triggers'), orderBy('createdAt', 'desc'), limit(30))),
+          getDocs(query(collection(db, 'users', user.uid, 'wins'), orderBy('createdAt', 'desc'), limit(30))),
+          getDoc(doc(db, 'users', user.uid, 'preferences', 'recovery_intelligence')),
+        ]);
+
+        setMoodLogs(moodSnap.docs.map(d => {
+          const data = d.data();
+          return { timestamp: data.createdAt, emoji: data.category === 'positive' ? '😊' : '😔', color: data.category === 'positive' ? 'bg-success' : 'bg-warning', word: data.word };
+        }));
+
+        setTriggers(triggerSnap.docs.map(d => {
+          const data = d.data();
+          const severityLabel: 'low' | 'medium' | 'high' = data.severity <= 4 ? 'low' : data.severity <= 7 ? 'medium' : 'high';
+          return { id: d.id, timestamp: data.createdAt, source: 'general', notes: data.text, severity: severityLabel };
+        }));
+
+        setWins(winsSnap.docs.map(d => {
+          const data = d.data();
+          return { id: d.id, timestamp: data.createdAt, category: data.category, description: data.content || data.title };
+        }));
+
+        if (prefsSnap.exists()) {
+          const prefs = prefsSnap.data();
+          if (Array.isArray(prefs.bodySymptoms)) setBodySymptoms(prefs.bodySymptoms);
+          if (typeof prefs.socialBattery === 'number') setSocialBattery(prefs.socialBattery);
+          if (typeof prefs.isFocusShieldActive === 'boolean') setIsFocusShieldActive(prefs.isFocusShieldActive);
+          if (typeof prefs.rtwPhase === 'number') setRtwPhase(prefs.rtwPhase);
+          if (typeof prefs.meetingLimit === 'number') setMeetingLimit(prefs.meetingLimit);
+        }
+      } catch (e) {
+        // Leaves the honest empty/default state in place rather than
+        // silently pretending everything loaded.
+      }
+      initLoaded.current = true;
+    };
+    loadAll();
+  }, [user]);
+
+  // Only the current-state preferences autosave here - moods/triggers/wins
+  // are written explicitly at the moment they're submitted, not on every
+  // render, since they're append-only logs rather than a single toggle-able
+  // state.
+  useEffect(() => {
     if (!user || !initLoaded.current) return;
-    // Phase 1C: Sensitive recovery data syncing is entirely disabled.
-    // We do not save to Firestore here.
-  }, [user, moodLogs, triggers, socialBattery, wins, bodySymptoms, weeklyReview, rtwPhase, meetingLimit, isFocusShieldActive]);
+    const t = setTimeout(() => {
+      setDoc(doc(db, 'users', user.uid, 'preferences', 'recovery_intelligence'), {
+        bodySymptoms, socialBattery, isFocusShieldActive, rtwPhase, meetingLimit,
+        updatedAt: new Date().toISOString(),
+      }, { merge: true }).catch(() => {
+        // Non-fatal - the widget still reflects the change locally even if
+        // this particular save fails.
+      });
+    }, 800); // Debounced - sliders/toggles can fire rapidly.
+    return () => clearTimeout(t);
+  }, [user, socialBattery, isFocusShieldActive, rtwPhase, meetingLimit, bodySymptoms]);
 
   const fetchDerivedSummaries = async () => {
     if (!user) return;
@@ -354,17 +387,57 @@ export const RecoveryIntelligenceLayer = ({ onAwardPoints, fingerprint }: Recove
     return () => clearTimeout(timer);
   }, [presetRunning, presetTimeLeft]);
 
-  // Saving helpers
-  const saveMoods = (newLogs: MoodPulseData[]) => {
+  // Saving helpers - these now genuinely persist rather than only updating
+  // local React state.
+  const saveMoods = async (newLogs: MoodPulseData[], latest: MoodPulseData) => {
     setMoodLogs(newLogs);
+    if (!user) return;
+    try {
+      await addDoc(collection(db, 'users', user.uid, 'emotional_patterns'), {
+        word: latest.word,
+        intensity: 5,
+        category: derivedMoodCategory(latest.word),
+        createdAt: latest.timestamp,
+        updatedAt: latest.timestamp,
+      });
+    } catch (e) {
+      // Non-fatal - it still shows in this session's list; a future reload
+      // just won't have it.
+    }
   };
 
-  const saveTriggers = (newTriggers: TriggerData[]) => {
+  const saveTriggers = async (newTriggers: TriggerData[], latest: TriggerData) => {
     setTriggers(newTriggers);
+    if (!user) return;
+    const severityNumber = latest.severity === 'low' ? 3 : latest.severity === 'high' ? 9 : 6;
+    try {
+      await addDoc(collection(db, 'users', user.uid, 'stress_triggers'), {
+        text: latest.notes,
+        date: latest.timestamp,
+        severity: severityNumber,
+        energyLevel: 50,
+        createdAt: latest.timestamp,
+        updatedAt: latest.timestamp,
+      });
+    } catch (e) {
+      // Non-fatal, same reasoning as above.
+    }
   };
 
-  const saveWins = (newWins: WinLogData[]) => {
+  const saveWins = async (newWins: WinLogData[], latest: WinLogData) => {
     setWins(newWins);
+    if (!user) return;
+    try {
+      await addDoc(collection(db, 'users', user.uid, 'wins'), {
+        title: latest.description.slice(0, 80),
+        content: latest.description,
+        category: latest.category,
+        createdAt: latest.timestamp,
+        updatedAt: latest.timestamp,
+      });
+    } catch (e) {
+      // Non-fatal, same reasoning as above.
+    }
   };
 
   // 1. Mood Pulse Temp States
@@ -380,7 +453,7 @@ export const RecoveryIntelligenceLayer = ({ onAwardPoints, fingerprint }: Recove
       word: moodWord.trim() || 'Steady'
     };
     const updated = [newLog, ...moodLogs].slice(0, 30);
-    saveMoods(updated);
+    saveMoods(updated, newLog);
     setMoodWord('');
     
     // Push context to Nova Brain
@@ -449,7 +522,7 @@ export const RecoveryIntelligenceLayer = ({ onAwardPoints, fingerprint }: Recove
       severity: triggerSeverity
     };
     const updated = [newTrigger, ...triggers];
-    saveTriggers(updated);
+    saveTriggers(updated, newTrigger);
     setTriggerNotes('');
 
     // Brain sync
@@ -492,7 +565,7 @@ export const RecoveryIntelligenceLayer = ({ onAwardPoints, fingerprint }: Recove
       description: newWinText.trim()
     };
     const updated = [item, ...wins];
-    saveWins(updated);
+    saveWins(updated, item);
     setNewWinText('');
 
     updateNovaMemoryBySourceAndType(
@@ -538,36 +611,6 @@ export const RecoveryIntelligenceLayer = ({ onAwardPoints, fingerprint }: Recove
         confidence: 'high'
       }
     );
-  };
-
-  // 6. Weekly Review
-  const [reviewStep, setReviewStep] = useState(0);
-  const [reviewAnswers, setReviewAnswers] = useState<Record<string, string>>({
-    drain: '',
-    support: '',
-    unloaded: '',
-    boundary: ''
-  });
-
-  const submitWeeklyReview = () => {
-    const summary = {
-      timestamp: new Date().toISOString(),
-      ...reviewAnswers
-    };
-    setWeeklyReview(summary);
-
-    updateNovaMemoryBySourceAndType(
-      'Weekly Review',
-      'state',
-      {
-        content: `Weekly Reflection Completed: Drained by [${reviewAnswers.drain}]. Helpful tools: [${reviewAnswers.support}]. Relinquished baggage: [${reviewAnswers.unloaded}]. Targeted boundary for next cycle: [${reviewAnswers.boundary}].`,
-        canEdit: false,
-        confidence: 'verified'
-      }
-    );
-
-    onAwardPoints(50, 'Weekly Reflection Completed');
-    setReviewStep(0);
   };
 
   // 7. Return to Work Planner
@@ -708,6 +751,8 @@ export const RecoveryIntelligenceLayer = ({ onAwardPoints, fingerprint }: Recove
             { id: 'trigger', name: 'Trigger Journal', desc: 'Catalog stress spikes', pill: 'Daily' },
             { id: 'social', name: 'Social Battery Tracker', desc: 'Relational load monitor', pill: 'Daily' },
             { id: 'wins', name: 'Wins & Recovery Proof', desc: 'Visible progress ledger', pill: 'Proof' },
+            { id: 'goals', name: 'Personal Goals', desc: 'Sleep, boundaries, workload targets', pill: 'Tracked' },
+            { id: 'energy', name: 'Energy Capacity Log', desc: 'Category-based allocation history', pill: 'Weekly' },
             { id: 'body', name: 'Body Symptom Check-In', desc: 'Somatic distress logs', pill: 'Somatic' },
             { id: 'weekly', name: 'Weekly Review Ritual', desc: 'Recalibrate weekend values', pill: 'Weekly' },
             { id: 'rtw', name: 'Return-to-Work Planner', desc: 'Phased re-entry shields', pill: 'Planner' },
@@ -1019,7 +1064,9 @@ export const RecoveryIntelligenceLayer = ({ onAwardPoints, fingerprint }: Recove
                     </div>
                   </div>
                   {user ? <ConnectedMoodPulse /> : (
-                    <div className="p-4 bg-surface text-xs text-text-muted rounded-xl">Demo mode locked. Authentic users sync securely.</div>
+                    <div className="p-4 bg-surface text-xs text-text-muted rounded-xl flex items-center gap-2">
+                       <Loader2 className="w-3.5 h-3.5 animate-spin" /> Connecting...
+                    </div>
                   )}
                 </motion.div>
               )}
@@ -1234,7 +1281,59 @@ export const RecoveryIntelligenceLayer = ({ onAwardPoints, fingerprint }: Recove
                     </div>
                   </div>
                   {user ? <ConnectedWinsLog /> : (
-                    <div className="p-4 bg-surface text-xs text-text-muted rounded-xl">Demo mode locked. Authentic users sync securely.</div>
+                    <div className="p-4 bg-surface text-xs text-text-muted rounded-xl flex items-center gap-2">
+                       <Loader2 className="w-3.5 h-3.5 animate-spin" /> Connecting...
+                    </div>
+                  )}
+                </motion.div>
+              )}
+
+              {activeRoom === 'goals' && (
+                <motion.div
+                  key="goals"
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -10 }}
+                  className="bg-card border border-border p-6 sm:p-8 rounded-xl"
+                >
+                  <div className="flex items-center gap-3 mb-6">
+                    <div className="w-10 h-10 rounded-xl bg-primary/20 text-primary flex items-center justify-center shrink-0">
+                      <Target className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h3 className="text-2xl font-display font-black text-text-main mt-1">Personal Goals</h3>
+                      <p className="text-xs text-text-muted mt-1">Set and track targets across sleep, boundaries, workload, and recovery.</p>
+                    </div>
+                  </div>
+                  {user ? <ConnectedGoals /> : (
+                    <div className="p-4 bg-surface text-xs text-text-muted rounded-xl flex items-center gap-2">
+                       <Loader2 className="w-3.5 h-3.5 animate-spin" /> Connecting...
+                    </div>
+                  )}
+                </motion.div>
+              )}
+
+              {activeRoom === 'energy' && (
+                <motion.div
+                  key="energy"
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -10 }}
+                  className="bg-card border border-border p-6 sm:p-8 rounded-xl"
+                >
+                  <div className="flex items-center gap-3 mb-6">
+                    <div className="w-10 h-10 rounded-xl bg-success/20 text-success flex items-center justify-center shrink-0">
+                      <Activity className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h3 className="text-2xl font-display font-black text-text-main mt-1">Energy Capacity Log</h3>
+                      <p className="text-xs text-text-muted mt-1">Log daily or weekly capacity across work, family, social, admin, and recovery.</p>
+                    </div>
+                  </div>
+                  {user ? <ConnectedEnergyBudget /> : (
+                    <div className="p-4 bg-surface text-xs text-text-muted rounded-xl flex items-center gap-2">
+                       <Loader2 className="w-3.5 h-3.5 animate-spin" /> Connecting...
+                    </div>
                   )}
                 </motion.div>
               )}
@@ -1257,7 +1356,9 @@ export const RecoveryIntelligenceLayer = ({ onAwardPoints, fingerprint }: Recove
                     </div>
                   </div>
                   {user ? <ConnectedBodyCheckIn /> : (
-                    <div className="p-4 bg-surface text-xs text-text-muted rounded-xl">Demo mode locked. Authentic users sync securely.</div>
+                    <div className="p-4 bg-surface text-xs text-text-muted rounded-xl flex items-center gap-2">
+                       <Loader2 className="w-3.5 h-3.5 animate-spin" /> Connecting...
+                    </div>
                   )}
                 </motion.div>
               )}
@@ -1276,94 +1377,9 @@ export const RecoveryIntelligenceLayer = ({ onAwardPoints, fingerprint }: Recove
                   <p className="text-xs text-text-muted mt-1">Consolidate chaotic data streams into clear architectural wisdom.</p>
                 </div>
 
-                {weeklyReview ? (
-                  <div className="space-y-6">
-                    <div className="bg-success/5 border border-success/20 p-6 rounded-2xl">
-                      <h4 className="text-sm font-bold text-text-main">Weekly Review Completed</h4>
-                      <div className="space-y-4 mt-4 text-xs">
-                        <div>
-                          <span className="text-text-muted uppercase font-black text-[11px]">Root Drain Identified:</span>
-                          <p className="font-bold text-text-main mt-0.5">"{weeklyReview.drain}"</p>
-                        </div>
-                        <div>
-                          <span className="text-text-muted uppercase font-black text-[11px]">Protected Boundary:</span>
-                          <p className="font-bold text-primary mt-0.5">"{weeklyReview.boundary}"</p>
-                        </div>
-                      </div>
-                    </div>
-                    <button
-                      onClick={() => setWeeklyReview(null)}
-                      className="w-full py-3 border border-border/30 rounded-xl text-xs font-bold text-text-muted hover:text-text-main cursor-pointer"
-                    >
-                      Start New Reflection Cycle
-                    </button>
-                  </div>
-                ) : (
-                  <div className="space-y-6">
-                    {/* Multistage questionnaire simulated */}
-                    {reviewStep === 0 && (
-                      <div className="space-y-3">
-                        <label className="text-xs font-bold text-text-main">What drained you most this week?</label>
-                        <textarea
-                          value={reviewAnswers.drain}
-                          onChange={e => setReviewAnswers(prev => ({ ...prev, drain: e.target.value }))}
-                          placeholder="Colleague constant slack threads or long client calls..."
-                          rows={3}
-                          className="w-full p-4 bg-white dark:bg-surface border border-border/40 rounded-xl text-xs font-semibold"
-                        />
-                      </div>
-                    )}
-
-                    {reviewStep === 1 && (
-                      <div className="space-y-3">
-                        <label className="text-xs font-bold text-text-main">What boundary should be defended next week?</label>
-                        <textarea
-                          value={reviewAnswers.boundary}
-                          onChange={e => setReviewAnswers(prev => ({ ...prev, boundary: e.target.value }))}
-                          placeholder="Refuse all meetings before 10 AM to secure focus time."
-                          rows={3}
-                          className="w-full p-4 bg-white dark:bg-surface border border-border/40 rounded-xl text-xs font-semibold"
-                        />
-                      </div>
-                    )}
-
-                    {reviewStep === 2 && (
-                      <div className="space-y-3">
-                        <label className="text-xs font-bold text-text-main">What are you carrying that you should drop immediately?</label>
-                        <textarea
-                          value={reviewAnswers.unloaded}
-                          onChange={e => setReviewAnswers(prev => ({ ...prev, unloaded: e.target.value }))}
-                          placeholder="Drop the non-critical report optimization proposal."
-                          rows={3}
-                          className="w-full p-4 bg-white dark:bg-surface border border-border/40 rounded-xl text-xs font-semibold"
-                        />
-                      </div>
-                    )}
-
-                    <div className="flex items-center justify-between pt-4 border-t border-border/20">
-                      <button
-                        onClick={() => setReviewStep(prev => Math.max(0, prev - 1))}
-                        disabled={reviewStep === 0}
-                        className="px-4 py-2 border border-border rounded-xl text-xs font-bold"
-                      >
-                        Back
-                      </button>
-                      {reviewStep < 2 ? (
-                        <button
-                          onClick={() => setReviewStep(prev => prev + 1)}
-                          className="px-6 py-2 bg-primary text-primary-foreground rounded-xl text-xs font-bold flex items-center gap-1 cursor-pointer"
-                        >
-                          Next Step <ChevronRight className="w-3.5 h-3.5" />
-                        </button>
-                      ) : (
-                        <button
-                          onClick={submitWeeklyReview}
-                          className="px-8 py-2 bg-success text-white rounded-xl text-xs font-bold cursor-pointer"
-                        >
-                          Commit Reflection (+50 pts)
-                        </button>
-                      )}
-                    </div>
+                {user ? <ConnectedWeeklyReviews /> : (
+                  <div className="p-4 bg-surface text-xs text-text-muted rounded-xl flex items-center gap-2">
+                     <Loader2 className="w-3.5 h-3.5 animate-spin" /> Connecting...
                   </div>
                 )}
               </motion.div>

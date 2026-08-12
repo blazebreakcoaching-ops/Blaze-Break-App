@@ -1,23 +1,24 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { HeartPulse, CheckSquare, Target, Mail, Send, Award, Trash2, CheckCircle2, AlertTriangle, ShieldCheck, Activity, Brain, Clock, Plus, ArrowRight, Zap } from 'lucide-react';
+import { HeartPulse, CheckSquare, Target, Mail, Award, Trash2, CheckCircle2, AlertTriangle, ShieldCheck, Activity, Brain, Clock, Plus, ArrowRight, Zap, Loader2, Copy } from 'lucide-react';
 import { cn } from '../lib/utils';
-
-const STORAGE_KEY = 'blaze_recovery_ally_state';
+import { logJourney } from '../lib/nova-brain';
+import { secureApiFetch } from '../lib/secure-api';
+import { auth, db } from '../lib/firebase';
+import { doc, getDoc, setDoc, collection, addDoc, getDocs, deleteDoc, orderBy, query, limit } from 'firebase/firestore';
 
 interface SharedGoal {
-  id: number;
+  id: string;
   text: string;
-  completed: boolean;
   category: string;
-  streak: number;
+  completedDates: string[];
 }
 
 interface Encouragement {
-  id: number;
+  id: string;
   type: 'system' | 'personal';
   message: string;
-  time: string;
+  createdAt: string;
 }
 
 interface AllyPermissions {
@@ -27,100 +28,199 @@ interface AllyPermissions {
   viewEnergyStats: boolean;
 }
 
-interface PersistedAllyState {
-  isInvited: boolean;
-  allyName: string;
-  allyEmail: string;
-  permissions: AllyPermissions;
-  sharedGoals: SharedGoal[];
-  encouragements: Encouragement[];
-}
+const DEFAULT_PERMISSIONS: AllyPermissions = { viewGoals: true, viewMilestones: true, sendPings: true, viewEnergyStats: false };
 
-const DEFAULT_GOALS: SharedGoal[] = [
-  { id: 1, text: "Hard cut-off from communications at 19:00", completed: false, category: "boundary", streak: 0 },
-  { id: 2, text: "Minimum 45min offline macro-break daily", completed: false, category: "recovery", streak: 0 },
-];
-
-const loadAllyState = (): PersistedAllyState => {
-  const fallback: PersistedAllyState = {
-    isInvited: false,
-    allyName: '',
-    allyEmail: '',
-    permissions: { viewGoals: true, viewMilestones: true, sendPings: true, viewEnergyStats: false },
-    sharedGoals: DEFAULT_GOALS,
-    encouragements: [],
-  };
-  try {
-    const stored = localStorage.getItem(STORAGE_KEY);
-    if (stored) {
-      const parsed = JSON.parse(stored);
-      return { ...fallback, ...parsed };
-    }
-  } catch (e) {
-    // Corrupted or inaccessible storage — fall back to defaults rather than crashing.
+// Same logic as the server's computeStreak - counts consecutive completed
+// days ending today or yesterday, so a streak isn't broken just because
+// today hasn't happened yet.
+const computeStreak = (completedDates: string[]): number => {
+  if (!completedDates || completedDates.length === 0) return 0;
+  const dateSet = new Set(completedDates);
+  const today = new Date();
+  let streak = 0;
+  const cursor = new Date(today);
+  const todayStr = today.toISOString().split('T')[0];
+  if (!dateSet.has(todayStr)) {
+    cursor.setDate(cursor.getDate() - 1);
   }
-  return fallback;
+  while (dateSet.has(cursor.toISOString().split('T')[0])) {
+    streak++;
+    cursor.setDate(cursor.getDate() - 1);
+  }
+  return streak;
 };
 
 export const RecoveryAlly = () => {
-  const [state, setState] = useState<PersistedAllyState>(loadAllyState);
-  const { isInvited, allyName, permissions, sharedGoals, encouragements } = state;
+  const [loading, setLoading] = useState(true);
+  const [isInvited, setIsInvited] = useState(false);
+  const [allyName, setAllyName] = useState('');
+  const [allyEmail, setAllyEmail] = useState('');
+  const [shareToken, setShareToken] = useState('');
+  const [permissions, setPermissionsState] = useState<AllyPermissions>(DEFAULT_PERMISSIONS);
+  const [sharedGoals, setSharedGoals] = useState<SharedGoal[]>([]);
+  const [encouragements, setEncouragements] = useState<Encouragement[]>([]);
 
   const [emailDraft, setEmailDraft] = useState('');
+  const [inviting, setInviting] = useState(false);
+  const [revoking, setRevoking] = useState(false);
+  const [error, setError] = useState('');
   const [isAddingGoal, setIsAddingGoal] = useState(false);
   const [newGoalText, setNewGoalText] = useState('');
+  const [linkCopied, setLinkCopied] = useState(false);
 
-  // Persist on every change so a refresh or app restart doesn't wipe the connection.
+  const fetchGoals = async () => {
+    if (!auth.currentUser) return;
+    const snap = await getDocs(query(collection(db, 'users', auth.currentUser.uid, 'ally_shared_goals'), orderBy('createdAt', 'desc')));
+    setSharedGoals(snap.docs.map(d => ({ id: d.id, ...d.data() } as SharedGoal)));
+  };
+
+  const fetchEncouragements = async () => {
+    if (!auth.currentUser) return;
+    const snap = await getDocs(query(collection(db, 'users', auth.currentUser.uid, 'ally_encouragements'), orderBy('createdAt', 'desc'), limit(30)));
+    setEncouragements(snap.docs.map(d => ({ id: d.id, ...d.data() } as Encouragement)));
+  };
+
   useEffect(() => {
+    const load = async () => {
+      if (!auth.currentUser) { setLoading(false); return; }
+      try {
+        const stateSnap = await getDoc(doc(db, 'users', auth.currentUser.uid, 'recovery_ally', 'state'));
+        if (stateSnap.exists()) {
+          const data = stateSnap.data();
+          setIsInvited(!!data.isInvited);
+          setAllyName(data.allyName || '');
+          setAllyEmail(data.allyEmail || '');
+          setShareToken(data.shareToken || '');
+          setPermissionsState({ ...DEFAULT_PERMISSIONS, ...(data.permissions || {}) });
+          if (data.isInvited) {
+            await fetchGoals();
+            await fetchEncouragements();
+          }
+        }
+      } catch (e) {
+        setError('Could not load your Recovery Ally settings.');
+      }
+      setLoading(false);
+    };
+    load();
+  }, []);
+
+  const savePermissions = async (next: AllyPermissions) => {
+    setPermissionsState(next);
+    if (!auth.currentUser) return;
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+      await setDoc(doc(db, 'users', auth.currentUser.uid, 'recovery_ally', 'state'), {
+        permissions: next,
+        updatedAt: new Date().toISOString(),
+      }, { merge: true });
     } catch (e) {
-      // Storage full or unavailable — continue silently rather than breaking the UI.
+      // Non-fatal - the toggle still reflects locally even if the save fails;
+      // it'll revert to the last-saved value next time this loads.
     }
-  }, [state]);
-
-  const setPermissions = (updater: (p: AllyPermissions) => AllyPermissions) => {
-    setState(prev => ({ ...prev, permissions: updater(prev.permissions) }));
   };
 
-  const handleInvite = (e: React.FormEvent) => {
+  const handleInvite = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (emailDraft.trim()) {
-      setState(prev => ({
-        ...prev,
-        isInvited: true,
-        allyEmail: emailDraft.trim(),
-        allyName: emailDraft.split('@')[0],
-        // A genuine invite has no history yet — no fabricated activity from an ally
-        // who hasn't actually done anything.
-        encouragements: [],
-      }));
-      setEmailDraft('');
+    if (!emailDraft.trim()) return;
+    setInviting(true);
+    setError('');
+    try {
+      const res = await secureApiFetch('/api/ally/invite', {
+        method: 'POST',
+        data: { allyEmail: emailDraft.trim() },
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error || 'Could not send that invite.');
+      } else {
+        setIsInvited(true);
+        setAllyEmail(emailDraft.trim().toLowerCase());
+        setAllyName(emailDraft.split('@')[0]);
+        setShareToken(data.shareToken || '');
+        setPermissionsState(DEFAULT_PERMISSIONS);
+        setEmailDraft('');
+        if (!data.emailSent) {
+          setError("Invite created, but the email couldn't be sent - copy the link below and share it directly.");
+        }
+        await fetchGoals();
+      }
+    } catch (e) {
+      setError('Could not send that invite.');
+    }
+    setInviting(false);
+  };
+
+  const handleRevoke = async () => {
+    setRevoking(true);
+    try {
+      await secureApiFetch('/api/ally/revoke', { method: 'POST' });
+      setIsInvited(false);
+      setAllyEmail('');
+      setAllyName('');
+      setShareToken('');
+      setEncouragements([]);
+    } catch (e) {
+      setError('Could not remove your ally. Please try again.');
+    }
+    setRevoking(false);
+  };
+
+  const toggleGoalToday = async (goal: SharedGoal) => {
+    if (!auth.currentUser) return;
+    const todayStr = new Date().toISOString().split('T')[0];
+    const wasCompleted = goal.completedDates.includes(todayStr);
+    const nextDates = wasCompleted
+      ? goal.completedDates.filter(d => d !== todayStr)
+      : [...goal.completedDates, todayStr];
+
+    setSharedGoals(prev => prev.map(g => g.id === goal.id ? { ...g, completedDates: nextDates } : g));
+    try {
+      await setDoc(doc(db, 'users', auth.currentUser.uid, 'ally_shared_goals', goal.id), {
+        completedDates: nextDates,
+        updatedAt: new Date().toISOString(),
+      }, { merge: true });
+    } catch (e) {
+      await fetchGoals(); // Reconcile with what's actually saved if the write failed.
     }
   };
 
-  const handleRevoke = () => {
-    setState(prev => ({ ...prev, isInvited: false, allyEmail: '', allyName: '', encouragements: [] }));
-  };
-
-  const toggleGoal = (id: number) => {
-    setState(prev => ({
-      ...prev,
-      sharedGoals: prev.sharedGoals.map(g => g.id === id ? { ...g, completed: !g.completed } : g),
-    }));
-  };
-
-  const addNewGoal = (e: React.FormEvent) => {
+  const addNewGoal = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (newGoalText.trim()) {
-      setState(prev => ({
-        ...prev,
-        sharedGoals: [{ id: Date.now(), text: newGoalText, completed: false, category: "custom", streak: 0 }, ...prev.sharedGoals],
-      }));
-      setNewGoalText('');
-      setIsAddingGoal(false);
+    if (!newGoalText.trim() || !auth.currentUser) return;
+    const text = newGoalText.trim();
+    setNewGoalText('');
+    setIsAddingGoal(false);
+    try {
+      const ref = await addDoc(collection(db, 'users', auth.currentUser.uid, 'ally_shared_goals'), {
+        text, category: 'custom', completedDates: [],
+        createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+      });
+      setSharedGoals(prev => [{ id: ref.id, text, category: 'custom', completedDates: [] }, ...prev]);
+      logJourney(`Set a boundary goal shared with Recovery Ally`, text);
+    } catch (e) {
+      setError('Could not save that goal.');
     }
   };
+
+  const deleteGoal = async (goalId: string) => {
+    if (!auth.currentUser) return;
+    setSharedGoals(prev => prev.filter(g => g.id !== goalId));
+    try {
+      await deleteDoc(doc(db, 'users', auth.currentUser.uid, 'ally_shared_goals', goalId));
+    } catch (e) {
+      await fetchGoals();
+    }
+  };
+
+  const shareLink = shareToken ? `${window.location.origin}/ally/${shareToken}` : '';
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-24">
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-8 pb-12">
@@ -136,7 +236,7 @@ export const RecoveryAlly = () => {
             </div>
           </div>
           <p className="text-text-muted text-sm leading-relaxed mb-6 max-w-2xl">
-            Invite a trusted friend, mentor, or partner to check in on your recovery — you choose exactly what they can see, and you can turn any of it off at any time.
+            Invite a trusted friend, mentor, or partner to check in on your recovery — you choose exactly what they can see, and you can turn any of it off at any time. They don't need their own account.
           </p>
           <div className="bg-surface border border-destructive/20 p-4 rounded-lg flex gap-3 text-xs text-text-muted max-w-lg">
             <AlertTriangle className="w-5 h-5 text-destructive/80 shrink-0" />
@@ -147,6 +247,10 @@ export const RecoveryAlly = () => {
         </div>
       </div>
 
+      {error && (
+        <div className="p-3 bg-destructive/10 border border-destructive/20 text-destructive text-sm rounded-xl max-w-2xl">{error}</div>
+      )}
+
       {!isInvited ? (
         <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="card max-w-2xl p-8 bg-white dark:bg-card border border-border">
           <div className="flex items-start gap-4 mb-8">
@@ -155,7 +259,7 @@ export const RecoveryAlly = () => {
             </div>
             <div>
               <h3 className="text-lg font-bold text-text-main mb-1">Invite Your Ally</h3>
-              <p className="text-xs text-text-muted leading-relaxed">Send a secure invite. They'll get a link to accept, and only ever see what you choose to share.</p>
+              <p className="text-xs text-text-muted leading-relaxed">A real email goes out with a private link. They'll see what you choose to share and can leave you a note — no sign-up required.</p>
             </div>
           </div>
 
@@ -176,15 +280,17 @@ export const RecoveryAlly = () => {
             </div>
             <button
               type="submit"
-              className="w-full flex items-center justify-center gap-3 px-6 py-4 bg-primary text-primary-foreground hover:opacity-90 rounded-lg text-xs font-medium uppercase tracking-widest transition-all group"
+              disabled={inviting}
+              className="w-full flex items-center justify-center gap-3 px-6 py-4 bg-primary text-primary-foreground hover:opacity-90 rounded-lg text-xs font-medium uppercase tracking-widest transition-all group disabled:opacity-50"
             >
+              {inviting ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
               Send Invite <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
             </button>
           </form>
         </motion.div>
       ) : (
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-          
+
           {/* Active Status & Permissions */}
           <div className="lg:col-span-4 space-y-6">
             <div className="card space-y-6 border border-primary/20 bg-white dark:bg-card">
@@ -198,10 +304,26 @@ export const RecoveryAlly = () => {
                 <div>
                   <h3 className="font-bold text-text-main text-lg tracking-tight">{allyName}</h3>
                   <span className="inline-flex items-center gap-1.5 text-[11px] uppercase font-medium tracking-widest text-success dark:text-success mt-1">
-                    <CheckCircle2 className="w-3 h-3" /> Connected
+                    <CheckCircle2 className="w-3 h-3" /> Invited
                   </span>
                 </div>
               </div>
+
+              {shareLink && (
+                <div className="p-3 bg-surface rounded-lg border border-border space-y-1.5">
+                  <span className="text-[10px] font-black uppercase tracking-widest text-text-muted">Their private link</span>
+                  <div className="flex items-center gap-2">
+                    <code className="text-[11px] text-text-main truncate flex-1">{shareLink}</code>
+                    <button
+                      onClick={() => { navigator.clipboard.writeText(shareLink); setLinkCopied(true); setTimeout(() => setLinkCopied(false), 2000); }}
+                      className="text-text-muted hover:text-primary transition-colors shrink-0"
+                      title="Copy link"
+                    >
+                      {linkCopied ? <CheckCircle2 className="w-3.5 h-3.5 text-success" /> : <Copy className="w-3.5 h-3.5" />}
+                    </button>
+                  </div>
+                </div>
+              )}
 
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
@@ -215,7 +337,7 @@ export const RecoveryAlly = () => {
                       <Target className="w-4 h-4 text-text-muted group-hover:text-primary transition-colors" />
                       <span className="text-xs font-bold text-text-main">Shared Goals</span>
                     </div>
-                    <input type="checkbox" checked={permissions.viewGoals} onChange={() => setPermissions(p => ({ ...p, viewGoals: !p.viewGoals }))} className="w-4 h-4 text-primary rounded border-border focus:ring-primary bg-transparent" />
+                    <input type="checkbox" checked={permissions.viewGoals} onChange={() => savePermissions({ ...permissions, viewGoals: !permissions.viewGoals })} className="w-4 h-4 text-primary rounded border-border focus:ring-primary bg-transparent" />
                   </label>
 
                   <label className="flex items-center justify-between p-3 rounded-lg border border-border hover:border-primary/30 transition-colors cursor-pointer group bg-surface dark:bg-surface/50">
@@ -223,7 +345,7 @@ export const RecoveryAlly = () => {
                       <Award className="w-4 h-4 text-text-muted group-hover:text-primary transition-colors" />
                       <span className="text-xs font-bold text-text-main">Milestone Updates</span>
                     </div>
-                    <input type="checkbox" checked={permissions.viewMilestones} onChange={() => setPermissions(p => ({ ...p, viewMilestones: !p.viewMilestones }))} className="w-4 h-4 text-primary rounded border-border focus:ring-primary bg-transparent" />
+                    <input type="checkbox" checked={permissions.viewMilestones} onChange={() => savePermissions({ ...permissions, viewMilestones: !permissions.viewMilestones })} className="w-4 h-4 text-primary rounded border-border focus:ring-primary bg-transparent" />
                   </label>
 
                   <label className="flex items-center justify-between p-3 rounded-lg border border-border hover:border-primary/30 transition-colors cursor-pointer group bg-surface dark:bg-surface/50">
@@ -231,7 +353,15 @@ export const RecoveryAlly = () => {
                       <Activity className="w-4 h-4 text-text-muted group-hover:text-primary transition-colors" />
                       <span className="text-xs font-bold text-text-main">Energy Levels</span>
                     </div>
-                    <input type="checkbox" checked={permissions.viewEnergyStats} onChange={() => setPermissions(p => ({ ...p, viewEnergyStats: !p.viewEnergyStats }))} className="w-4 h-4 text-primary rounded border-border focus:ring-primary bg-transparent" />
+                    <input type="checkbox" checked={permissions.viewEnergyStats} onChange={() => savePermissions({ ...permissions, viewEnergyStats: !permissions.viewEnergyStats })} className="w-4 h-4 text-primary rounded border-border focus:ring-primary bg-transparent" />
+                  </label>
+
+                  <label className="flex items-center justify-between p-3 rounded-lg border border-border hover:border-primary/30 transition-colors cursor-pointer group bg-surface dark:bg-surface/50">
+                    <div className="flex items-center gap-3">
+                      <Mail className="w-4 h-4 text-text-muted group-hover:text-primary transition-colors" />
+                      <span className="text-xs font-bold text-text-main">Allow Messages</span>
+                    </div>
+                    <input type="checkbox" checked={permissions.sendPings} onChange={() => savePermissions({ ...permissions, sendPings: !permissions.sendPings })} className="w-4 h-4 text-primary rounded border-border focus:ring-primary bg-transparent" />
                   </label>
                 </div>
               </div>
@@ -239,23 +369,24 @@ export const RecoveryAlly = () => {
               <div className="pt-4 mt-6 border-t border-border">
                 <button
                   onClick={handleRevoke}
-                  className="w-full flex items-center justify-center gap-2 py-3 text-destructive bg-destructive/5 hover:bg-destructive/10 rounded-lg text-xs uppercase tracking-widest font-medium transition-colors"
+                  disabled={revoking}
+                  className="w-full flex items-center justify-center gap-2 py-3 text-destructive bg-destructive/5 hover:bg-destructive/10 rounded-lg text-xs uppercase tracking-widest font-medium transition-colors disabled:opacity-50"
                 >
-                  <Trash2 className="w-4 h-4" /> Remove Ally
+                  {revoking ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />} Remove Ally
                 </button>
               </div>
             </div>
           </div>
 
           <div className="lg:col-span-8 space-y-6">
-            {/* Shared Goals / OKRs */}
+            {/* Shared Goals */}
             <div className="card space-y-6">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div>
                   <h3 className="font-bold text-text-main text-lg flex items-center gap-2 tracking-tight">
                     <Target className="w-5 h-5 text-primary" /> Boundary Goals
                   </h3>
-                  <p className="text-xs text-text-muted mt-1 leading-relaxed">Goals you're sharing with {allyName}.</p>
+                  <p className="text-xs text-text-muted mt-1 leading-relaxed">Goals you're sharing with {allyName}. Tap to mark today done.</p>
                 </div>
                 <button
                   onClick={() => setIsAddingGoal(!isAddingGoal)}
@@ -280,6 +411,7 @@ export const RecoveryAlly = () => {
                         value={newGoalText}
                         onChange={(e) => setNewGoalText(e.target.value)}
                         placeholder="e.g. No meetings after 6pm..."
+                        maxLength={200}
                         className="flex-1 bg-transparent border-none focus:ring-0 text-sm font-medium px-3 text-text-main"
                         autoFocus
                       />
@@ -288,34 +420,49 @@ export const RecoveryAlly = () => {
                   </motion.form>
                 )}
               </AnimatePresence>
-              
+
               <div className="space-y-3">
-                {sharedGoals.map(goal => (
-                  <motion.div 
-                    layout
-                    key={goal.id} 
-                    className={cn(
-                      "group flex items-center justify-between p-4 sm:p-5 rounded-2xl border transition-all cursor-pointer relative overflow-hidden",
-                      goal.completed ? "bg-success/5 border-success/20" : "bg-white dark:bg-card border-border hover:border-primary/30 shadow-sm hover:shadow"
-                    )} 
-                    onClick={() => toggleGoal(goal.id)}
-                  >
-                    {goal.completed && <div className="absolute inset-y-0 left-0 w-1 bg-success" />}
-                    
-                    <div className="flex items-center gap-4">
-                      <div className={cn("w-6 h-6 rounded-md flex items-center justify-center shrink-0 border-2 transition-all", goal.completed ? "bg-success border-success text-white" : "border-border dark:border-muted-foreground text-transparent")}>
-                        <CheckSquare className="w-4 h-4" />
-                      </div>
-                      <div>
-                        <span className={cn("text-sm font-bold transition-all block", goal.completed ? "text-text-muted line-through" : "text-text-main")}>{goal.text}</span>
-                        <div className="flex items-center gap-3 mt-1.5 opacity-60 group-hover:opacity-100 transition-opacity">
-                          <span className="text-[11px] font-black uppercase tracking-widest text-text-muted">{goal.category}</span>
-                          {goal.streak > 0 && <span className="text-[11px] font-black uppercase tracking-widest text-warning flex items-center gap-1"><Zap className="w-3 h-3" /> {goal.streak} Day Streak</span>}
+                {sharedGoals.length === 0 ? (
+                  <div className="text-center py-8">
+                    <p className="text-xs text-text-muted font-medium">No goals yet — add one above to start sharing progress.</p>
+                  </div>
+                ) : sharedGoals.map(goal => {
+                  const todayStr = new Date().toISOString().split('T')[0];
+                  const completedToday = goal.completedDates.includes(todayStr);
+                  const streak = computeStreak(goal.completedDates);
+                  return (
+                    <motion.div
+                      layout
+                      key={goal.id}
+                      className={cn(
+                        "group flex items-center justify-between p-4 sm:p-5 rounded-2xl border transition-all relative overflow-hidden",
+                        completedToday ? "bg-success/5 border-success/20" : "bg-white dark:bg-card border-border hover:border-primary/30 shadow-sm hover:shadow"
+                      )}
+                    >
+                      {completedToday && <div className="absolute inset-y-0 left-0 w-1 bg-success" />}
+
+                      <div className="flex items-center gap-4 cursor-pointer flex-1" onClick={() => toggleGoalToday(goal)}>
+                        <div className={cn("w-6 h-6 rounded-md flex items-center justify-center shrink-0 border-2 transition-all", completedToday ? "bg-success border-success text-white" : "border-border dark:border-muted-foreground text-transparent")}>
+                          <CheckSquare className="w-4 h-4" />
+                        </div>
+                        <div>
+                          <span className={cn("text-sm font-bold transition-all block", completedToday ? "text-text-muted line-through" : "text-text-main")}>{goal.text}</span>
+                          <div className="flex items-center gap-3 mt-1.5 opacity-60 group-hover:opacity-100 transition-opacity">
+                            <span className="text-[11px] font-black uppercase tracking-widest text-text-muted">{goal.category}</span>
+                            {streak > 0 && <span className="text-[11px] font-black uppercase tracking-widest text-warning flex items-center gap-1"><Zap className="w-3 h-3" /> {streak} Day Streak</span>}
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  </motion.div>
-                ))}
+                      <button
+                        onClick={() => deleteGoal(goal.id)}
+                        className="text-text-muted hover:text-destructive transition-colors opacity-0 group-hover:opacity-100 shrink-0 ml-2"
+                        title="Remove goal"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </motion.div>
+                  );
+                })}
               </div>
             </div>
 
@@ -325,22 +472,22 @@ export const RecoveryAlly = () => {
                 <h3 className="font-bold text-text-main text-lg flex items-center gap-2 tracking-tight">
                   <Brain className="w-5 h-5 text-primary" /> Encouragement Feed
                 </h3>
-                <p className="text-xs text-text-muted mt-1 leading-relaxed">Incoming diagnostics and structural reinforcement from {allyName || 'your ally'}.</p>
+                <p className="text-xs text-text-muted mt-1 leading-relaxed">Notes from {allyName || 'your ally'}, sent from their private link.</p>
               </div>
 
               <div className="space-y-4">
                 {encouragements.length === 0 ? (
                   <div className="text-center py-8">
                     <p className="text-xs text-text-muted font-medium max-w-xs mx-auto leading-relaxed">
-                      No activity yet. Once {allyName || 'your ally'} reviews your ledger or sends a note, it'll appear here.
+                      No notes yet. Once {allyName || 'your ally'} visits their link and leaves one, it'll appear here.
                     </p>
                   </div>
                 ) : encouragements.map((enc, i) => (
-                  <motion.div 
+                  <motion.div
                     initial={{ opacity: 0, x: -10 }}
                     animate={{ opacity: 1, x: 0 }}
-                    transition={{ delay: i * 0.1 }}
-                    key={enc.id} 
+                    transition={{ delay: i * 0.05 }}
+                    key={enc.id}
                     className="flex gap-4"
                   >
                     <div className="flex flex-col items-center">
@@ -349,24 +496,25 @@ export const RecoveryAlly = () => {
                       </div>
                       {i !== encouragements.length - 1 && <div className="w-px h-full bg-border mt-2" />}
                     </div>
-                    
+
                     <div className="flex-1 pb-6">
                       <div className="bg-white dark:bg-surface border border-border p-4 rounded-2xl rounded-tl-none shadow-sm">
                         <p className={cn("text-sm font-medium leading-relaxed", enc.type === 'system' ? "text-text-muted font-mono text-xs" : "text-text-main")}>
                           {enc.type === 'personal' ? `"${enc.message}"` : enc.message}
                         </p>
                       </div>
-                      <p className="text-[11px] text-text-muted mt-2 uppercase tracking-widest font-black pl-1">{enc.time}</p>
+                      <p className="text-[11px] text-text-muted mt-2 uppercase tracking-widest font-black pl-1">
+                        {new Date(enc.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                      </p>
                     </div>
                   </motion.div>
                 ))}
               </div>
             </div>
-            
+
           </div>
         </motion.div>
       )}
     </div>
   );
 };
-

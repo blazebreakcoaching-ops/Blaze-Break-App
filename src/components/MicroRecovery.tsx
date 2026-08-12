@@ -2,7 +2,6 @@ import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Clock, 
-  Zap, 
   Target, 
   ArrowRight, 
   CheckCircle2, 
@@ -10,12 +9,13 @@ import {
   ShieldAlert, 
   Sparkles, 
   AlertCircle, 
-  RefreshCw, 
-  Settings 
+  RefreshCw 
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { BurnoutFingerprint } from '../types';
 import { useAuth } from '../lib/auth';
+import { auth, db } from '../lib/firebase';
+import { doc, setDoc } from 'firebase/firestore';
 
 interface MicroRecoveryProps {
   fingerprint: BurnoutFingerprint | null;
@@ -108,7 +108,7 @@ export const MicroRecovery = ({ fingerprint, onAwardPoints }: MicroRecoveryProps
   const [completed, setCompleted] = useState(false);
   
   // Google Calendar Integration states
-  const [isDemoMode, setIsDemoMode] = useState(true);
+  const [isDemoMode, setIsDemoMode] = useState(!accessToken);
   const [realEvents, setRealEvents] = useState<CalendarEvent[]>([]);
   const [loadingCalendar, setLoadingCalendar] = useState(false);
   const [calendarError, setCalendarError] = useState<string | null>(null);
@@ -221,7 +221,11 @@ export const MicroRecovery = ({ fingerprint, onAwardPoints }: MicroRecoveryProps
         setRealEvents(formatted);
         setIsDemoMode(false);
       } else {
+        // A successful fetch with zero events (a genuinely light day) is
+        // still real data - it should show the honest "no risks" empty
+        // state, not silently fall back to fake demo meetings.
         setRealEvents([]);
+        setIsDemoMode(false);
       }
     } catch (e: any) {
       console.error(e);
@@ -247,13 +251,18 @@ export const MicroRecovery = ({ fingerprint, onAwardPoints }: MicroRecoveryProps
     setCompleted(true);
     if (selectedDuration) {
       const activeAction = ACTIONS[selectedDuration];
-      localStorage.setItem('blaze_micro_recovery', JSON.stringify({
+      const sessionData = {
         duration: selectedDuration,
         time: activeAction.time,
         description: activeAction.description,
         details: activeAction.details,
         completedAt: new Date().toISOString()
-      }));
+      };
+      if (auth.currentUser) {
+        setDoc(doc(db, 'users', auth.currentUser.uid, 'micro_recovery', 'latest'), sessionData).catch(() => {
+          // Non-fatal - the completion itself still counts even if this save fails.
+        });
+      }
     }
     if (onAwardPoints) onAwardPoints(10, 'Micro-Recovery Completed');
     setTimeout(() => {

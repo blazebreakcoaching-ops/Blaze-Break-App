@@ -40,12 +40,12 @@ service cloud.firestore {
     // A. users/{uid}
     match /users/{uid} {
       allow read: if isOwner(uid);
-      allow create: if isOwner(uid) && 
-                    request.resource.data.keys().hasOnly(['displayName', 'preferredName', 'timezone', 'country', 'locale', 'createdAt', 'updatedAt']) &&
+      allow create: if isOwner(uid) &&
+                    request.resource.data.keys().hasOnly(['displayName', 'preferredName', 'timezone', 'country', 'locale', 'createdAt', 'updatedAt', 'shareAnonymizedDataWithOrg']) &&
                     (!request.resource.data.keys().hasAny(['role', 'isAdmin', 'subscriptionLevel', 'organisationId'])) &&
                     request.resource.data.createdAt is string;
-      allow update: if isOwner(uid) && 
-                    request.resource.data.diff(resource.data).affectedKeys().hasOnly(['displayName', 'preferredName', 'timezone', 'country', 'locale', 'updatedAt']) &&
+      allow update: if isOwner(uid) &&
+                    request.resource.data.diff(resource.data).affectedKeys().hasOnly(['displayName', 'preferredName', 'timezone', 'country', 'locale', 'updatedAt', 'shareAnonymizedDataWithOrg']) &&
                     (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['role', 'isAdmin', 'subscriptionLevel', 'organisationId'])) &&
                     request.resource.data.createdAt == resource.data.createdAt;
       
@@ -69,7 +69,54 @@ service cloud.firestore {
               'allowRecoveryActionNudges', 'privacyMode', 'updatedAt'
             ]);
       }
-      
+
+      // C2. users/{uid}/preferences/fuel_reminders - Recovery Fuel Engine's
+      // own hydration/meeting/emotional reminder setup, distinct from the
+      // general nudge system above since these are genuinely scheduled
+      // (interval timers, real calendar checks) rather than randomly picked.
+      match /preferences/fuel_reminders {
+        allow read: if isOwner(uid);
+        allow write: if isOwner(uid) &&
+            request.resource.data.keys().hasOnly([
+              'hydrationEnabled', 'hydrationIntervalMinutes',
+              'meetingEnabled', 'meetingLeadMinutes',
+              'emotionalEnabled', 'emotionalIntervalMinutes',
+              'updatedAt'
+            ]) &&
+            (!('hydrationIntervalMinutes' in request.resource.data) || (request.resource.data.hydrationIntervalMinutes is number && request.resource.data.hydrationIntervalMinutes >= 30 && request.resource.data.hydrationIntervalMinutes <= 240)) &&
+            (!('emotionalIntervalMinutes' in request.resource.data) || (request.resource.data.emotionalIntervalMinutes is number && request.resource.data.emotionalIntervalMinutes >= 30 && request.resource.data.emotionalIntervalMinutes <= 240)) &&
+            (!('meetingLeadMinutes' in request.resource.data) || (request.resource.data.meetingLeadMinutes is number && request.resource.data.meetingLeadMinutes >= 5 && request.resource.data.meetingLeadMinutes <= 60));
+      }
+
+      // Sleep & Wind-Down Builder's ritual state (bedtime target, cutoff
+      // toggles, tomorrow's parking list, free-write) - previously pure
+      // ephemeral React state that reset on every reload.
+      match /preferences/sleep_builder {
+        allow read: if isOwner(uid);
+        allow write: if isOwner(uid) &&
+            request.resource.data.keys().hasOnly([
+              'bedtime', 'caffeineCutoff', 'phoneOff', 'parkingList', 'mentalUnload', 'updatedAt'
+            ]) &&
+            (!('bedtime' in request.resource.data) || isStringWithMax(request.resource.data.bedtime, 5)) &&
+            (!('caffeineCutoff' in request.resource.data) || request.resource.data.caffeineCutoff is bool) &&
+            (!('phoneOff' in request.resource.data) || request.resource.data.phoneOff is bool) &&
+            (!('mentalUnload' in request.resource.data) || isOptionalStringWithMax(request.resource.data, 'mentalUnload', 1000)) &&
+            (!('parkingList' in request.resource.data) || (request.resource.data.parkingList is list && request.resource.data.parkingList.size() <= 30));
+      }
+
+      // C3. users/{uid}/preferences/recovery_intelligence - current-state
+      // values for the Recovery Intelligence Layer's interactive widgets
+      // (social battery, body symptoms, focus shield, return-to-work phase).
+      match /preferences/recovery_intelligence {
+        allow read: if isOwner(uid);
+        allow write: if isOwner(uid) &&
+            request.resource.data.keys().hasOnly(['bodySymptoms', 'socialBattery', 'isFocusShieldActive', 'rtwPhase', 'meetingLimit', 'updatedAt']) &&
+            (!('bodySymptoms' in request.resource.data) || (request.resource.data.bodySymptoms is list && request.resource.data.bodySymptoms.size() <= 20)) &&
+            (!('socialBattery' in request.resource.data) || (request.resource.data.socialBattery is number && request.resource.data.socialBattery >= 0 && request.resource.data.socialBattery <= 100)) &&
+            (!('rtwPhase' in request.resource.data) || (request.resource.data.rtwPhase is number && request.resource.data.rtwPhase >= 1 && request.resource.data.rtwPhase <= 10)) &&
+            (!('meetingLimit' in request.resource.data) || (request.resource.data.meetingLimit is number && request.resource.data.meetingLimit >= 0 && request.resource.data.meetingLimit <= 50));
+      }
+
       // D. users/{uid}/consents/current
       match /consents/current {
         allow read: if isOwner(uid);
@@ -206,11 +253,12 @@ service cloud.firestore {
         allow read: if isOwner(uid);
         allow delete: if isOwner(uid);
         allow create, update: if isOwner(uid)
-            && hasOnly(['createdAt', 'updatedAt', 'title', 'content', 'category'])
+            && hasOnly(['createdAt', 'updatedAt', 'title', 'content', 'category', 'sharedToWall'])
             && hasAll(['createdAt', 'updatedAt', 'title', 'content', 'category'])
             && isStringWithMax(request.resource.data.title, 80)
             && isStringWithMax(request.resource.data.content, 300)
             && request.resource.data.category in ['boundary', 'rest', 'clarity', 'courage', 'routine', 'connection', 'recovery_action']
+            && (!('sharedToWall' in request.resource.data) || request.resource.data.sharedToWall is bool)
             && (request.method == 'create' ? true : checkCreatedAtUnchanged());
       }
       
@@ -255,6 +303,20 @@ service cloud.firestore {
             && request.resource.data.category in ['sleep', 'boundaries', 'workload', 'nutrition_rhythm', 'movement', 'reflection', 'recovery_time']
             && (request.method == 'create' ? true : checkCreatedAtUnchanged());
       }
+
+      // Recovery Fuel Engine's daily physiological check-in - previously
+      // localStorage-only despite the panel being explicitly labeled
+      // "Connected to Nova". Keyed by date so each day naturally has at
+      // most one entry, matching the original per-day localStorage key.
+      match /recovery_fuel_logs/{dateId} {
+        allow read, delete: if isOwner(uid);
+        allow create, update: if isOwner(uid)
+            && hasOnly(['createdAt', 'updatedAt', 'hasEaten', 'skippedBreakfast', 'caffeineCount', 'caffeineTiming', 'caffeineEmptyStomach', 'hydrationGlasses', 'morningLight', 'alcoholLogged', 'shakyIrritable'])
+            && hasAll(['createdAt', 'updatedAt'])
+            && (!('caffeineCount' in request.resource.data) || (request.resource.data.caffeineCount is number && request.resource.data.caffeineCount >= 0 && request.resource.data.caffeineCount <= 20))
+            && (!('hydrationGlasses' in request.resource.data) || (request.resource.data.hydrationGlasses is number && request.resource.data.hydrationGlasses >= 0 && request.resource.data.hydrationGlasses <= 30))
+            && (request.method == 'create' ? true : checkCreatedAtUnchanged());
+      }
       
       // J. nova_permissions/current
       match /nova_permissions/current {
@@ -289,6 +351,15 @@ service cloud.firestore {
         allow write: if false; // Derived summaries are server-only written
       }
 
+      // Real audit trail for Nova's recommendation guardrail - previously
+      // the Trust Centre's "Recommendation Ledger" showed three hardcoded
+      // example rows as if they were real audit evidence. Server-write-only
+      // so it's a genuine, tamper-resistant record.
+      match /recommendation_ledger/{entryId} {
+        allow read: if isOwner(uid);
+        allow write: if false;
+      }
+
       // L. nova_memories
       match /nova_memories/{memoryId} {
         allow read, write: if isOwner(uid);
@@ -299,17 +370,280 @@ service cloud.firestore {
         allow read: if isOwner(uid);
         allow create, update: if isOwner(uid) &&
             hasOnly(['category', 'message', 'createdAt', 'shownAt', 'dismissedAt', 'actionTakenAt', 'status', 'reasonCategory', 'source', 'expiresAt', 'updatedAt']) &&
-            request.resource.data.category in ['check_in_reminder', 'recovery_action_reminder', 'energy_budget_reflection', 'boundary_practice_reminder', 'weekly_review_reminder', 'memory_review_reminder', 'goal_follow_up'] &&
+            request.resource.data.category in ['check_in_reminder', 'recovery_action_reminder', 'energy_budget_reflection', 'boundary_practice_reminder', 'weekly_review_reminder', 'memory_review_reminder', 'goal_follow_up', 'climate_survey_reminder'] &&
             request.resource.data.source == 'in_app_nova' &&
             request.resource.data.status in ['shown', 'dismissed', 'acted_on'];
       }
 
+      // N. energy_commitments (EnergyBudgetMatrix widget's task list)
+      match /energy_commitments/{commitmentId} {
+        allow read: if isOwner(uid);
+        allow delete: if isOwner(uid);
+        allow create, update: if isOwner(uid)
+            && hasOnly(['createdAt', 'updatedAt', 'name', 'energyDrain', 'type', 'status'])
+            && hasAll(['createdAt', 'updatedAt', 'name', 'energyDrain', 'type', 'status'])
+            && isStringWithMax(request.resource.data.name, 100)
+            && request.resource.data.energyDrain is number && request.resource.data.energyDrain >= 0 && request.resource.data.energyDrain <= 100
+            && request.resource.data.type in ['professional', 'social', 'emotional', 'logistical']
+            && request.resource.data.status in ['active', 'dropped', 'delegated', 'restructured']
+            && (request.method == 'create' ? true : checkCreatedAtUnchanged());
+      }
+
+      // O. energy_credits (EnergyBudgetTool page's task list)
+      match /energy_credits/{creditId} {
+        allow read: if isOwner(uid);
+        allow delete: if isOwner(uid);
+        allow create, update: if isOwner(uid)
+            && hasOnly(['createdAt', 'updatedAt', 'task', 'cost', 'priority', 'type', 'shipStage', 'action'])
+            && hasAll(['createdAt', 'updatedAt', 'task', 'cost', 'priority', 'type'])
+            && isStringWithMax(request.resource.data.task, 100)
+            && request.resource.data.cost is number && request.resource.data.cost >= 0 && request.resource.data.cost <= 100
+            && request.resource.data.priority in ['High', 'Medium', 'Low']
+            && request.resource.data.type in ['Executive', 'Emotional', 'Physical', 'Social']
+            && (!('shipStage' in request.resource.data) || request.resource.data.shipStage in ['Safety', 'Habits', 'Identity', 'Purpose'])
+            && (!('action' in request.resource.data) || request.resource.data.action in ['keep', 'delegate', 'defer'])
+            && (request.method == 'create' ? true : checkCreatedAtUnchanged());
+      }
+
+      // P. energy_credits_settings/current (the daily/total budget number for EnergyBudgetTool)
+      match /energy_credits_settings/current {
+        allow read: if isOwner(uid);
+        allow write: if isOwner(uid)
+            && hasOnly(['budget', 'updatedAt'])
+            && request.resource.data.budget is number && request.resource.data.budget >= 0 && request.resource.data.budget <= 200;
+      }
+
+      // Q. stress_triggers (the "Quick Note" floating trigger logger)
+      match /stress_triggers/{triggerId} {
+        allow read: if isOwner(uid);
+        allow delete: if isOwner(uid);
+        allow create, update: if isOwner(uid)
+            && hasOnly(['createdAt', 'updatedAt', 'text', 'date', 'severity', 'energyLevel'])
+            && hasAll(['createdAt', 'updatedAt', 'text', 'date', 'severity', 'energyLevel'])
+            && isStringWithMax(request.resource.data.text, 300)
+            && request.resource.data.severity is number && request.resource.data.severity >= 1 && request.resource.data.severity <= 10
+            && request.resource.data.energyLevel is number && request.resource.data.energyLevel >= 0 && request.resource.data.energyLevel <= 100
+            && (request.method == 'create' ? true : checkCreatedAtUnchanged());
+      }
+
+      // R. emotional_patterns (free-form word/intensity mood log used by
+      // Reflect's 30-day pattern chart - distinct from mood_pulses' fixed
+      // moodLabel enum, since this tracks arbitrary self-described words for
+      // word-frequency analysis)
+      match /emotional_patterns/{entryId} {
+        allow read: if isOwner(uid);
+        allow delete: if isOwner(uid);
+        allow create, update: if isOwner(uid)
+            && hasOnly(['createdAt', 'updatedAt', 'word', 'intensity', 'category'])
+            && hasAll(['createdAt', 'updatedAt', 'word', 'intensity', 'category'])
+            && isStringWithMax(request.resource.data.word, 40)
+            && request.resource.data.intensity is number && request.resource.data.intensity >= 1 && request.resource.data.intensity <= 10
+            && request.resource.data.category in ['negative', 'positive', 'neutral']
+            && (request.method == 'create' ? true : checkCreatedAtUnchanged());
+      }
+
+      // S. climate_survey_responses (the real HSE-aligned team climate
+      // survey - individual responses, read only by the owner. Aggregation
+      // for org admins happens server-side via the Admin SDK, same as
+      // mood_pulses/body_checkins, never by giving an admin direct read
+      // access to this subcollection.)
+      match /climate_survey_responses/{responseId} {
+        allow read: if isOwner(uid);
+        allow delete: if isOwner(uid);
+        allow create, update: if isOwner(uid)
+            && hasOnly(['createdAt', 'updatedAt', 'demands', 'control', 'support', 'relationships', 'role', 'change'])
+            && hasAll(['createdAt', 'updatedAt', 'demands', 'control', 'support', 'relationships', 'role', 'change'])
+            && request.resource.data.demands is number && request.resource.data.demands >= 1 && request.resource.data.demands <= 5
+            && request.resource.data.control is number && request.resource.data.control >= 1 && request.resource.data.control <= 5
+            && request.resource.data.support is number && request.resource.data.support >= 1 && request.resource.data.support <= 5
+            && request.resource.data.relationships is number && request.resource.data.relationships >= 1 && request.resource.data.relationships <= 5
+            && request.resource.data.role is number && request.resource.data.role >= 1 && request.resource.data.role <= 5
+            && request.resource.data.change is number && request.resource.data.change >= 1 && request.resource.data.change <= 5
+            && (request.method == 'create' ? true : checkCreatedAtUnchanged());
+      }
+
+      // T. Recovery Ally - a real, two-sided accountability system. The
+      // owner manages their own state/goals directly; personal encouragement
+      // messages from the ally themselves are server-only writes (via a
+      // token-based public endpoint using the Admin SDK), so a user can
+      // never fabricate a message and attribute it to their own ally.
+      match /recovery_ally/state {
+        allow read, delete: if isOwner(uid);
+        allow create, update: if isOwner(uid)
+            && request.resource.data.keys().hasOnly(['isInvited', 'allyName', 'allyEmail', 'permissions', 'shareToken', 'invitedAt', 'updatedAt'])
+            && (!('allyEmail' in request.resource.data) || isStringWithMax(request.resource.data.allyEmail, 200))
+            && (!('allyName' in request.resource.data) || isStringWithMax(request.resource.data.allyName, 100));
+      }
+
+      match /ally_shared_goals/{goalId} {
+        allow read, delete: if isOwner(uid);
+        allow create, update: if isOwner(uid)
+            && hasOnly(['createdAt', 'updatedAt', 'text', 'category', 'completedDates'])
+            && hasAll(['createdAt', 'updatedAt', 'text', 'category'])
+            && isStringWithMax(request.resource.data.text, 200)
+            && (request.method == 'create' ? true : checkCreatedAtUnchanged());
+      }
+
+      match /ally_encouragements/{id} {
+        allow read, delete: if isOwner(uid);
+        // Only system-generated (client-computed milestone) messages can be
+        // written by the owner. Personal messages - the actual point of
+        // this feature - only ever arrive via the server endpoint below.
+        allow create: if isOwner(uid)
+            && hasOnly(['createdAt', 'type', 'message'])
+            && request.resource.data.type == 'system'
+            && isStringWithMax(request.resource.data.message, 300);
+        allow update: if false;
+      }
+
+      // U. voice_journal_entries (Daily Voice Journal - Gemini transcribes
+      // and analyzes the memo server-side; the client only ever writes back
+      // the exact response it received, never edits transcription/analysis).
+      match /voice_journal_entries/{entryId} {
+        allow read, delete: if isOwner(uid);
+        allow create: if isOwner(uid)
+            && hasOnly(['createdAt', 'date', 'transcription', 'themes', 'analysis', 'advice', 'emotionalTone'])
+            && hasAll(['createdAt', 'date', 'transcription', 'themes', 'analysis', 'advice', 'emotionalTone'])
+            && isStringWithMax(request.resource.data.transcription, 4000)
+            && isStringWithMax(request.resource.data.analysis, 1000)
+            && isStringWithMax(request.resource.data.advice, 500)
+            && isStringWithMax(request.resource.data.emotionalTone, 100);
+        allow update: if false;
+      }
+
+      // Resentment Tracker's raw venting log + Nova's structured analysis of
+      // it - equally sensitive personal content, same owner-only pattern.
+      match /resentment_logs/{entryId} {
+        allow read, delete: if isOwner(uid);
+        allow create, update: if isOwner(uid)
+            && hasOnly(['createdAt', 'updatedAt', 'log', 'yesMeantNo', 'unclear', 'unappreciated', 'missingBoundary'])
+            && hasAll(['createdAt', 'updatedAt', 'log'])
+            && isStringWithMax(request.resource.data.log, 3000)
+            && (!('yesMeantNo' in request.resource.data) || isStringWithMax(request.resource.data.yesMeantNo, 500))
+            && (!('unclear' in request.resource.data) || isStringWithMax(request.resource.data.unclear, 500))
+            && (!('unappreciated' in request.resource.data) || isStringWithMax(request.resource.data.unappreciated, 500))
+            && (!('missingBoundary' in request.resource.data) || isStringWithMax(request.resource.data.missingBoundary, 300))
+            && (request.method == 'create' ? true : checkCreatedAtUnchanged());
+      }
+
+      // V. diagnosis_progress - completed recovery actions, committed
+      // boundary scripts, and written reflections, keyed per burnout
+      // profile since retaking with a different profile gets its own
+      // tracked progress.
+      match /diagnosis_progress/{profileId} {
+        allow read, delete: if isOwner(uid);
+        allow create, update: if isOwner(uid)
+            && hasOnly(['completedActions', 'committedBoundaries', 'reflections', 'awardedReflections', 'updatedAt'])
+            && (!('completedActions' in request.resource.data) || request.resource.data.completedActions is list)
+            && (!('committedBoundaries' in request.resource.data) || request.resource.data.committedBoundaries is list)
+            && (!('awardedReflections' in request.resource.data) || request.resource.data.awardedReflections is list)
+            && (!('reflections' in request.resource.data) || request.resource.data.reflections is map);
+      }
+
+      // W. recovery_plan_progress/state
+      match /recovery_plan_progress/state {
+        allow read, delete: if isOwner(uid);
+        allow create, update: if isOwner(uid)
+            && hasOnly(['completedIds', 'submittedJournals', 'nickname', 'leaderboardOptIn', 'updatedAt'])
+            && (!('completedIds' in request.resource.data) || request.resource.data.completedIds is list)
+            && (!('submittedJournals' in request.resource.data) || (request.resource.data.submittedJournals is list && request.resource.data.submittedJournals.size() <= 100))
+            && (!('nickname' in request.resource.data) || isStringWithMax(request.resource.data.nickname, 40))
+            && (!('leaderboardOptIn' in request.resource.data) || request.resource.data.leaderboardOptIn is bool);
+      }
+
+      // X. workload_reality_check/state
+      match /workload_reality_check/state {
+        allow read, delete: if isOwner(uid);
+        allow create, update: if isOwner(uid)
+            && hasOnly(['answers', 'completed', 'tasks', 'updatedAt'])
+            && (!('answers' in request.resource.data) || request.resource.data.answers is map)
+            && (!('completed' in request.resource.data) || request.resource.data.completed is bool)
+            && (!('tasks' in request.resource.data) || (request.resource.data.tasks is list && request.resource.data.tasks.size() <= 100));
+      }
+
+      // Y. focus_sessions
+      match /focus_sessions/{sessionId} {
+        allow read, delete: if isOwner(uid);
+        allow create, update: if isOwner(uid)
+            && hasOnly(['createdAt', 'updatedAt', 'durationMinutes', 'completed', 'stage'])
+            && hasAll(['createdAt', 'updatedAt', 'durationMinutes', 'completed'])
+            && request.resource.data.durationMinutes is number
+            && request.resource.data.completed is bool
+            && (request.method == 'create' ? true : checkCreatedAtUnchanged());
+      }
+
+      // Z. support_circle - Guardian contacts. A real, dedicated collection
+      // rather than living only in local component state, since this is
+      // safety-relevant data.
+      match /support_circle/{contactId} {
+        allow read, delete: if isOwner(uid);
+        allow create, update: if isOwner(uid)
+            && hasOnly(['createdAt', 'updatedAt', 'name', 'role', 'isGuardian', 'contactMethod', 'relation', 'notificationPreference', 'autoAlertEnabled'])
+            && hasAll(['createdAt', 'updatedAt', 'name', 'role', 'isGuardian', 'contactMethod'])
+            && isStringWithMax(request.resource.data.name, 100)
+            && isStringWithMax(request.resource.data.contactMethod, 100)
+            && request.resource.data.role in ['primary_guardian', 'backup_guardian', 'coach', 'peer']
+            && request.resource.data.isGuardian is bool
+            && (request.method == 'create' ? true : checkCreatedAtUnchanged());
+      }
+
+      // AA. user_stats/core - points, streak, badges, debts, profile,
+      // support circle, and the burnout fingerprint. Client-writable (unlike
+      // derived/stats, which is server-only) since these are earned/edited
+      // directly through normal app use, not server-computed aggregates.
+      match /user_stats/core {
+        allow read, delete: if isOwner(uid);
+        allow create, update: if isOwner(uid)
+            && request.resource.data.keys().hasOnly([
+              'points', 'streak', 'rehearsalCount', 'lastEngagementDate',
+              'unlockedBadges', 'supportCircle', 'committedActionIds',
+              'weeklyGoalsComplete', 'level', 'profile', 'debts',
+              'recoveryScore', 'fingerprint', 'updatedAt'
+            ])
+            && (!('points' in request.resource.data) || (request.resource.data.points is number && request.resource.data.points >= 0))
+            && (!('streak' in request.resource.data) || (request.resource.data.streak is number && request.resource.data.streak >= 0))
+            && (!('unlockedBadges' in request.resource.data) || (request.resource.data.unlockedBadges is list && request.resource.data.unlockedBadges.size() <= 50))
+            && (!('committedActionIds' in request.resource.data) || (request.resource.data.committedActionIds is list && request.resource.data.committedActionIds.size() <= 500))
+            && (!('supportCircle' in request.resource.data) || (request.resource.data.supportCircle is list && request.resource.data.supportCircle.size() <= 20))
+            && (!('debts' in request.resource.data) || (request.resource.data.debts is list && request.resource.data.debts.size() <= 20))
+            && (!('profile' in request.resource.data) || request.resource.data.profile is map)
+            && (!('fingerprint' in request.resource.data) || request.resource.data.fingerprint is map || request.resource.data.fingerprint == null);
+      }
+
+      // AB. micro_recovery/latest - the most recently completed micro-recovery
+      // session, read back into Nova's context so a completed reset is
+      // actually visible to future conversations.
+      match /micro_recovery/latest {
+        allow read, delete: if isOwner(uid);
+        allow create, update: if isOwner(uid)
+            && hasOnly(['duration', 'time', 'description', 'details', 'completedAt'])
+            && isStringWithMax(request.resource.data.description, 300)
+            && request.resource.data.details is list && request.resource.data.details.size() <= 20;
+      }
+
+      // AC. somatic_reset_sessions - completed 60s somatic reset sessions.
+      match /somatic_reset_sessions/{sessionId} {
+        allow read, delete: if isOwner(uid);
+        allow create, update: if isOwner(uid)
+            && hasOnly(['createdAt', 'updatedAt', 'durationSeconds'])
+            && hasAll(['createdAt', 'updatedAt', 'durationSeconds'])
+            && request.resource.data.durationSeconds is number
+            && (request.method == 'create' ? true : checkCreatedAtUnchanged());
+      }
 
     }
-    
+
     // F. public_feature_flags/{featureId}
     match /public_feature_flags/{featureId} {
       allow read: if isSignedIn();
+      allow write: if false;
+    }
+
+    // User-facing audit trail (privacy/consent actions shown back to the
+    // person themselves) - server-write-only so it's a genuine, tamper-
+    // resistant record, not something the client could edit or fabricate.
+    match /audit_logs/{logId} {
+      allow read: if isSignedIn() && resource.data.userId == request.auth.uid;
       allow write: if false;
     }
 

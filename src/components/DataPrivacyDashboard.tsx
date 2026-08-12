@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Activity, Calendar, Brain, BookOpen, Shield, ChevronDown, Check, Settings } from 'lucide-react';
+import { Activity, Calendar, Brain, BookOpen, ChevronDown, Settings } from 'lucide-react';
 import { UserProfileData } from '../types.ts';
 import { cn } from '../lib/utils.ts';
 import { useFeatureFlags, setFeatureFlag, FeatureFlag } from '../lib/feature-flags.ts';

@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { getFirestore, collection, doc, setDoc, getDocs, updateDoc, deleteDoc, query, orderBy, getDoc } from 'firebase/firestore';
+import { collection, doc, setDoc, getDocs, updateDoc, deleteDoc, query, orderBy, getDoc } from 'firebase/firestore';
 import { auth, db } from '../lib/firebase';
-import { motion, AnimatePresence } from 'motion/react';
-import { Check, X, Sparkles, Activity, Shield, Target, Plus, Trash2, Edit2, AlertCircle, CheckCircle } from 'lucide-react';
+import { X, Sparkles, Shield, Target, Plus, Trash2, Edit2, AlertCircle, CheckCircle } from 'lucide-react';
 import { cn } from '../lib/utils';
+import { secureApiFetch } from '../lib/secure-api';
+import { logJourney } from '../lib/nova-brain';
 
 // Helper for empty states
 const SecureVaultNotice = () => (
@@ -72,6 +73,13 @@ export const ConnectedDailyCheckIn = ({ onClose, onReviewWithNova }: { onClose: 
       } else {
         await setDoc(ref, { createdAt: new Date().toISOString(), ...data });
       }
+      secureApiFetch('/api/user/mark-activity', {
+        method: 'POST',
+        data: { activity: 'checkIn' },
+      }).catch(() => {
+        // Non-fatal - only affects the home recommendation engine's freshness.
+      });
+      logJourney('Daily check-in logged', `Energy ${energyLevel}/10, Focus ${focusLevel}/10, Stress ${stressLoad}/10.`);
       setStep(0);
       setEditingId(null);
       setNote('');

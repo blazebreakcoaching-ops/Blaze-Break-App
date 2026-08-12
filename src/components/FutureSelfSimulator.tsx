@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Sparkles, Calendar, Moon, Battery, Activity, ArrowRight, Shield, Zap, RefreshCw, X, Play, Clock, Heart } from 'lucide-react';
+import { Sparkles, Calendar, Activity, ArrowRight, Shield, Zap, RefreshCw, X, Play, Clock, Heart } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { BurnoutFingerprint } from '../types';
 
@@ -34,7 +34,7 @@ export const FutureSelfSimulator = ({ fingerprint }: FutureSelfSimulatorProps) =
     // Mitigations pull it down.
     
     // baseline risk from 0 to 10
-    let baseRisk = 3 + (inputs.meetings > 20 ? 2 : 0) + (inputs.sleep === 1 ? 2 : 0) + (inputs.pressure === 3 ? 2 : 0);
+    const baseRisk = 3 + (inputs.meetings > 20 ? 2 : 0) + (inputs.sleep === 1 ? 2 : 0) + (inputs.pressure === 3 ? 2 : 0);
     // risk increases each day
     let dailyRisk = baseRisk + (baseDayOffset * 1.5);
     // subtract mitigations

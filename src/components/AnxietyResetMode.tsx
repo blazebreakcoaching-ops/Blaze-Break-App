@@ -1,12 +1,12 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
-  Activity, Wind, Brain, Sparkles, BookOpen, Clock, ArrowRight, ArrowLeft,
-  CheckCircle2, AlertTriangle, ShieldCheck, HeartPulse, Send, Trash2, ShieldAlert
+  Activity, Sparkles, Clock, ArrowRight, ArrowLeft,
+  CheckCircle2, ShieldCheck, HeartPulse, Trash2
 } from 'lucide-react';
 import { useAuth } from '../lib/auth';
-import { db } from '../lib/firebase';
-import { collection, addDoc, serverTimestamp, doc, getDoc, setDoc } from 'firebase/firestore';
+import { secureApiFetch } from '../lib/secure-api';
+import { logJourney } from '../lib/nova-brain';
 
 interface AnxietyResetModeProps {
   onAwardPoints: (amount: number, reason: string) => void;
@@ -190,31 +190,22 @@ export const AnxietyResetMode = ({ onAwardPoints, onNavigate }: AnxietyResetMode
       console.error("Points callback failed:", ptsErr);
     }
 
-    // 3. Persist to Firestore if user is authenticated
+    // 3. Persist via the real backend endpoint - this is the one place
+    // derived/stats actually gets updated correctly, since that document is
+    // server-only writable and a direct client write here would silently
+    // fail against that rule.
     if (user) {
       try {
-        const eventsRef = collection(db, 'anxiety_reset_events');
-        await addDoc(eventsRef, {
-          ...eventPayload,
-          createdAt: serverTimestamp(),
-          updatedAt: serverTimestamp()
+        await secureApiFetch('/api/anxiety-reset', {
+          method: 'POST',
+          data: eventPayload,
         });
-
-        // Update recovery intelligence index in user derived stats
-        const statsRef = doc(db, 'users', user.uid, 'derived', 'stats');
-        const statsSnap = await getDoc(statsRef);
-        let points = 50;
-        if (statsSnap.exists()) {
-          points = (statsSnap.data().points || 0) + 50;
-        }
-        await setDoc(statsRef, {
-          points,
-          lastAnxietyReset: new Date().toISOString(),
-          updatedAt: serverTimestamp()
-        }, { merge: true });
-
+        logJourney(
+          `Completed an anxiety reset (${activeTool.name})`,
+          `Intensity went from ${intensityBefore}/10 to ${intensityAfter}/10.`
+        );
       } catch (err) {
-        console.error("Error saving anxiety reset event to Firestore:", err);
+        console.error("Error saving anxiety reset event:", err);
       }
     }
 

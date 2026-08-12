@@ -1,12 +1,12 @@
-import { auth } from '../lib/firebase';
-import { ConnectedWeeklyReviews } from './ConnectedRecoveryModules.tsx';
+import { auth, db } from '../lib/firebase';
+import { collection, doc, setDoc, getDocs, query, orderBy, limit } from 'firebase/firestore';
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Book, CheckCircle2, ChevronRight, Sparkles, MessageSquare, Zap, Shield, ArrowRight, BookOpen, Activity, LayoutTemplate, Layers, Brain, AlertTriangle, TrendingUp, Compass, Heart, Award, RefreshCw, Star, X, Clock, HelpCircle } from 'lucide-react';
+import { Book, CheckCircle2, ChevronRight, Sparkles, Zap, ArrowRight, BookOpen, Activity, LayoutTemplate, Brain, AlertTriangle, TrendingUp, X, Clock, HelpCircle, Loader2 } from 'lucide-react';
 import { NovaChat } from './NovaChat';
 import { DailyVoiceJournal } from './DailyVoiceJournal.tsx';
 import { cn } from '../lib/utils';
-import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip as RechartsTooltip, CartesianGrid, BarChart, Bar, Cell, LineChart, Line, Legend } from 'recharts';
+import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip as RechartsTooltip, CartesianGrid, BarChart, Bar, Cell, Legend } from 'recharts';
 
 interface Chapter {
   id: string;
@@ -15,51 +15,6 @@ interface Chapter {
   content: string;
   actions: { label: string; text: string; type: 'energy' | 'boundary' | 'mindset' }[];
 }
-
-const SEED_TRIGGERS = [
-  {
-    id: "seed_1",
-    text: "Received unsolicited Slack from Lead Developer at 9:15 PM about 'critical project scope change'",
-    date: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString(),
-    severity: 8,
-    energyLevel: 24
-  },
-  {
-    id: "seed_2",
-    text: "Attended back-to-back status sync meetings (4.5 hours continuous) with zero buffer time",
-    date: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString(),
-    severity: 7,
-    energyLevel: 32
-  },
-  {
-    id: "seed_3",
-    text: "Fawning behavior: Volunteered to build entire ad-hoc slide deck overnight to please Director",
-    date: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString(),
-    severity: 9,
-    energyLevel: 15
-  },
-  {
-    id: "seed_4",
-    text: "Skipped scheduled lunch and afternoon walk to push buggy code release under artificial deadline",
-    date: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(),
-    severity: 8,
-    energyLevel: 20
-  },
-  {
-    id: "seed_5",
-    text: "Unplanned 'quick huddle' turned into an intense 2-hour debate on minor engineering refactoring",
-    date: new Date(Date.now() - 10 * 24 * 60 * 60 * 1000).toISOString(),
-    severity: 6,
-    energyLevel: 45
-  },
-  {
-    id: "seed_6",
-    text: "Maintained baseline hydration & did a 10-minute deep breathing block prior to stakeholder call",
-    date: new Date(Date.now() - 12 * 24 * 60 * 60 * 1000).toISOString(),
-    severity: 3,
-    energyLevel: 68
-  }
-];
 
 const calculateCorrelation = (data: any[]) => {
   if (data.length < 2) return 0;
@@ -163,120 +118,89 @@ export const ReflectSection = ({
   committedActionIds?: string[],
   onCommitAction?: (actionId: string) => void
 }) => {
-  if (auth.currentUser) return <ConnectedWeeklyReviews />;
-
   const [selected, setSelected] = useState<Chapter | null>(null);
   const [view, setView] = useState<'content' | 'action'>('content');
 
   const [showTriggerTimeline, setShowTriggerTimeline] = useState(false);
   const [triggers, setTriggers] = useState<any[]>([]);
+  const [triggersLoading, setTriggersLoading] = useState(true);
 
-  useEffect(() => {
-    const loadTriggers = () => {
-      try {
-        const saved = localStorage.getItem("blaze_intelligence_triggers");
-        let parsed = saved ? JSON.parse(saved) : [];
-        if (parsed.length === 0) {
-          localStorage.setItem("blaze_intelligence_triggers", JSON.stringify(SEED_TRIGGERS));
-          setTriggers(SEED_TRIGGERS);
-          return;
-        }
-        
-        let mutated = false;
-        parsed = parsed.map((t: any) => {
-          if (t.energyLevel === undefined) {
-            mutated = true;
-            const calculatedEnergy = Math.max(12, Math.min(85, 95 - (t.severity * 8) - Math.floor(Math.random() * 8)));
-            return { ...t, energyLevel: calculatedEnergy };
-          }
-          return t;
-        });
-        
-        if (mutated) {
-          localStorage.setItem("blaze_intelligence_triggers", JSON.stringify(parsed));
-        }
-        setTriggers(parsed);
-      } catch (e) {
-        setTriggers(SEED_TRIGGERS);
-      }
-    };
+  const uid = auth.currentUser?.uid;
 
-    loadTriggers();
-  }, [showTriggerTimeline]);
+  const fetchTriggers = async () => {
+    if (!uid) { setTriggersLoading(false); return; }
+    setTriggersLoading(true);
+    try {
+      const q = query(collection(db, 'users', uid, 'stress_triggers'), orderBy('date', 'desc'), limit(30));
+      const snap = await getDocs(q);
+      setTriggers(snap.docs.map(d => ({ id: d.id, ...d.data() } as any)));
+    } catch (e) {
+      // Honest empty state - no fabricated fallback data.
+      setTriggers([]);
+    } finally {
+      setTriggersLoading(false);
+    }
+  };
+
+  useEffect(() => { fetchTriggers(); }, [uid, showTriggerTimeline]);
 
   // 30-Day Emotional Mood Patterns State
-  const [moodLogs, setMoodLogs] = useState<{ date: string; word: string; intensity: number; category: 'negative' | 'positive' | 'neutral' }[]>(() => {
+  const [moodLogs, setMoodLogs] = useState<{ id: string; date: string; word: string; intensity: number; category: 'negative' | 'positive' | 'neutral' }[]>([]);
+  const [moodLogsLoading, setMoodLogsLoading] = useState(true);
+
+  const fetchMoodLogs = async () => {
+    if (!uid) { setMoodLogsLoading(false); return; }
+    setMoodLogsLoading(true);
     try {
-      const saved = localStorage.getItem("blaze_intelligence_moods");
-      if (saved) return JSON.parse(saved);
-    } catch (e) {}
+      const q = query(collection(db, 'users', uid, 'emotional_patterns'), orderBy('createdAt', 'desc'), limit(30));
+      const snap = await getDocs(q);
+      setMoodLogs(snap.docs.map(d => {
+        const data = d.data() as any;
+        return {
+          id: d.id,
+          date: new Date(data.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+          word: data.word,
+          intensity: data.intensity,
+          category: data.category as 'negative' | 'positive' | 'neutral',
+        };
+      }).reverse());
+    } catch (e) {
+      // Honest empty state - no fabricated fallback data.
+      setMoodLogs([]);
+    } finally {
+      setMoodLogsLoading(false);
+    }
+  };
 
-    // Seed 30 days of high-fidelity, varied emotional data
-    const words = [
-      { word: "Overwhelmed", intensity: 8, cat: "negative" },
-      { word: "Resentful", intensity: 7, cat: "negative" },
-      { word: "Rested", intensity: 3, cat: "positive" },
-      { word: "Fawning", intensity: 6, cat: "negative" },
-      { word: "Steady", intensity: 2, cat: "positive" },
-      { word: "Exhausted", intensity: 9, cat: "negative" },
-      { word: "Calm", intensity: 1, cat: "positive" },
-      { word: "Anxious", intensity: 8, cat: "negative" },
-      { word: "Numb", intensity: 7, cat: "negative" },
-      { word: "Aligned", intensity: 2, cat: "positive" }
-    ];
-
-    const seeded = Array.from({ length: 30 }).map((_, i) => {
-      const date = new Date();
-      date.setDate(date.getDate() - (29 - i));
-      const dt = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-      
-      const dayOfWeek = date.getDay();
-      const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
-      let selection;
-      if (isWeekend) {
-        selection = words[Math.floor(Math.random() * 4) + 2]; // Prefer positive/calmer
-      } else {
-        // High cognitive fatigue patterns
-        if (i > 10 && i < 18) {
-          selection = words[i % 2 === 0 ? 0 : 1]; // "Overwhelmed" / "Resentful" heavy cycle
-        } else if (i > 20 && i < 26) {
-          selection = words[i % 2 === 0 ? 3 : 5]; // "Fawning" / "Exhausted" heavy cycle
-        } else {
-          selection = words[Math.floor(Math.random() * words.length)];
-        }
-      }
-
-      return {
-        date: dt,
-        word: selection.word,
-        intensity: selection.intensity,
-        category: selection.cat as 'negative' | 'positive' | 'neutral'
-      };
-    });
-
-    localStorage.setItem("blaze_intelligence_moods", JSON.stringify(seeded));
-    return seeded;
-  });
+  useEffect(() => { fetchMoodLogs(); }, [uid]);
 
   const [moodFilter, setMoodFilter] = useState<'all' | 'negative' | 'positive'>('all');
   const [newMoodWord, setNewMoodWord] = useState('');
   const [newMoodIntensity, setNewMoodIntensity] = useState(5);
   const [newMoodCategory, setNewMoodCategory] = useState<'negative' | 'positive' | 'neutral'>('negative');
 
-  const handleAddMoodLog = () => {
-    if (!newMoodWord.trim()) return;
+  const handleAddMoodLog = async () => {
+    if (!newMoodWord.trim() || !uid) return;
+    const word = newMoodWord.trim().charAt(0).toUpperCase() + newMoodWord.trim().slice(1);
+    const intensity = Number(newMoodIntensity);
+    const category = newMoodCategory;
     const dateStr = new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-    const newLog = {
-      date: dateStr,
-      word: newMoodWord.trim().charAt(0).toUpperCase() + newMoodWord.trim().slice(1),
-      intensity: Number(newMoodIntensity),
-      category: newMoodCategory
-    };
-    const updated = [...moodLogs, newLog].slice(-30); // Keep last 30
-    setMoodLogs(updated);
-    localStorage.setItem("blaze_intelligence_moods", JSON.stringify(updated));
-    setNewMoodWord('');
-    onAwardPoints(40, "Emotional pattern logged to Nova Core");
+
+    try {
+      const id = Date.now().toString();
+      await setDoc(doc(db, 'users', uid, 'emotional_patterns', id), {
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        word,
+        intensity,
+        category,
+      });
+      setMoodLogs(prev => [...prev, { id, date: dateStr, word, intensity, category }].slice(-30));
+      setNewMoodWord('');
+      onAwardPoints(40, "Emotional pattern logged to Nova Core");
+    } catch (e) {
+      console.error("Could not save this mood log:", e);
+    }
   };
 
   const handleSelect = (chapter: Chapter) => {
@@ -373,9 +297,19 @@ export const ReflectSection = ({
               </div>
 
               <div className="h-64 w-full">
+                {moodLogsLoading ? (
+                  <div className="h-full flex items-center justify-center text-text-muted">
+                    <Loader2 className="w-5 h-5 animate-spin" />
+                  </div>
+                ) : moodLogs.length === 0 ? (
+                  <div className="h-full flex flex-col items-center justify-center text-center gap-2 text-text-muted">
+                    <Brain className="w-6 h-6" />
+                    <p className="text-xs font-medium">Nothing logged yet — use the form below to log your first pattern.</p>
+                  </div>
+                ) : (
                 <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart 
-                    data={moodLogs.filter(l => moodFilter === 'all' || l.category === moodFilter)} 
+                  <AreaChart
+                    data={moodLogs.filter(l => moodFilter === 'all' || l.category === moodFilter)}
                     margin={{ top: 10, right: 10, left: -25, bottom: 0 }}
                   >
                     <defs>
@@ -398,17 +332,18 @@ export const ReflectSection = ({
                         'Mood Load'
                       ]}
                     />
-                    <Area 
-                      type="monotone" 
-                      dataKey="intensity" 
-                      stroke={moodFilter === 'positive' ? '#10b981' : '#ef4444'} 
-                      strokeWidth={3} 
-                      fillOpacity={1} 
-                      fill="url(#colorIntensity)" 
-                      activeDot={{ r: 6 }} 
+                    <Area
+                      type="monotone"
+                      dataKey="intensity"
+                      stroke={moodFilter === 'positive' ? '#10b981' : '#ef4444'}
+                      strokeWidth={3}
+                      fillOpacity={1}
+                      fill="url(#colorIntensity)"
+                      activeDot={{ r: 6 }}
                     />
                   </AreaChart>
                 </ResponsiveContainer>
+                )}
               </div>
             </div>
 
@@ -563,7 +498,7 @@ export const ReflectSection = ({
         <div className="lg:col-span-4 space-y-4">
           <div className="flex items-center gap-2 mb-6 px-1">
             <LayoutTemplate className="w-4 h-4 text-text-muted" />
-            <span className="text-xs font-black uppercase tracking-[0.2em] text-text-muted">Curriculum Matrix</span>
+            <span className="text-xs font-black uppercase tracking-[0.2em] text-text-muted">Recovery Curriculum</span>
           </div>
           
           <div className="space-y-3">
@@ -926,7 +861,11 @@ export const ReflectSection = ({
                   </div>
 
                   <div className="h-72 w-full">
-                    {triggers.length === 0 ? (
+                    {triggersLoading ? (
+                      <div className="h-full flex items-center justify-center text-text-muted">
+                        <Loader2 className="w-5 h-5 animate-spin" />
+                      </div>
+                    ) : triggers.length === 0 ? (
                       <div className="h-full flex items-center justify-center text-text-muted text-xs font-medium">
                         No logged incidents available to visualize correlation.
                       </div>
@@ -1011,7 +950,11 @@ export const ReflectSection = ({
                     </span>
                   </div>
 
-                  {triggers.length === 0 ? (
+                  {triggersLoading ? (
+                    <div className="flex items-center justify-center py-12 text-text-muted">
+                      <Loader2 className="w-5 h-5 animate-spin" />
+                    </div>
+                  ) : triggers.length === 0 ? (
                     <div className="text-center py-12 border border-dashed border-border/60 rounded-2xl bg-surface/20">
                       <HelpCircle className="w-8 h-8 text-text-muted mx-auto mb-3" />
                       <p className="text-xs font-bold text-text-main">No logged triggers captured</p>
