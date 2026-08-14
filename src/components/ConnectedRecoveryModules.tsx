@@ -26,7 +26,7 @@ const ErrorMessage = ({ msg }: { msg: string }) => {
 };
 
 // 1. Connected Daily Check-In
-export const ConnectedDailyCheckIn = ({ onClose, onReviewWithNova }: { onClose: () => void, onReviewWithNova?: () => void }) => {
+export const ConnectedDailyCheckIn = ({ onClose, onReviewWithNova, onComplete }: { onClose: () => void, onReviewWithNova?: () => void, onComplete?: (data: { energyLevel: number; focusLevel: number; detachmentLevel: number; stressLoad: number }) => void }) => {
   const [step, setStep] = useState(0);
   const [energyLevel, setEnergy] = useState(5);
   const [focusLevel, setFocus] = useState(5);
@@ -80,6 +80,7 @@ export const ConnectedDailyCheckIn = ({ onClose, onReviewWithNova }: { onClose: 
         // Non-fatal - only affects the home recommendation engine's freshness.
       });
       logJourney('Daily check-in logged', `Energy ${energyLevel}/10, Focus ${focusLevel}/10, Stress ${stressLoad}/10.`);
+      if (onComplete) onComplete({ energyLevel, focusLevel, detachmentLevel, stressLoad });
       setStep(0);
       setEditingId(null);
       setNote('');

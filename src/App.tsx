@@ -73,7 +73,6 @@ import { ArchetypeBlend } from "./components/ArchetypeBlend.tsx";
 import { RecoveryExplanation } from "./components/RecoveryExplanation.tsx";
 import { LandingPage } from "./components/LandingPage.tsx";
 import { SituationalOnboarding } from "./components/SituationalOnboarding.tsx";
-import { DailyCheckIn } from "./components/DailyCheckIn.tsx";
 import { ConnectedDailyCheckIn } from "./components/ConnectedRecoveryModules.tsx";
 const NegotiatorTool = lazy(() => import("./components/NegotiatorTool.tsx").then(m => ({ default: m.NegotiatorTool })));
 import { RelapseRadar } from "./components/RelapseRadar.tsx";
@@ -761,6 +760,8 @@ const Header = ({
   onSomaticReset,
   profile,
   burnoutRisk,
+  supportCircle,
+  userName,
 }: {
   title: string;
   activeTab: string;
@@ -771,16 +772,42 @@ const Header = ({
   onSomaticReset?: () => void;
   profile?: any;
   burnoutRisk?: string;
+  supportCircle?: any[];
+  userName?: string;
 }) => {
   const [guardianPingActive, setGuardianPingActive] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
-  const handleGuardianPing = () => {
-    setGuardianPingActive(!guardianPingActive);
-    if (!guardianPingActive) {
-      setToastMessage("Automated Ping Sent: Support Circle notified of High Stress Flag.");
+  const handleGuardianPing = async () => {
+    if (guardianPingActive) return;
+    const primary = (supportCircle || []).find((c: any) => c.role === 'primary_guardian') || (supportCircle || [])[0];
+    if (!primary) {
+      setToastMessage("No guardian is set up yet - add one in Guardian Protection Network first.");
       setTimeout(() => setToastMessage(null), 4000);
+      return;
     }
+    if (!/^\+[1-9]\d{6,14}$/.test(primary.contactMethod)) {
+      setToastMessage("Couldn't send - your guardian's number isn't in a valid format.");
+      setTimeout(() => setToastMessage(null), 4000);
+      return;
+    }
+    setGuardianPingActive(true);
+    const senderName = userName?.trim() || 'A Blaze Break user';
+    try {
+      const res = await secureApiFetch('/api/twilio/send', {
+        method: 'POST',
+        data: {
+          to: primary.contactMethod,
+          message: `Nova Alert: ${senderName} flagged high stress right now and asked for extra support. This message was sent because they manually requested it.`,
+          useWhatsapp: primary.notificationPreference === 'whatsapp',
+        },
+      });
+      const body = await res.json();
+      setToastMessage(res.ok && body.success ? `Ping sent to ${primary.name}.` : (body.error || "Couldn't send that ping right now."));
+    } catch (e) {
+      setToastMessage("Couldn't reach the messaging service right now.");
+    }
+    setTimeout(() => { setToastMessage(null); setGuardianPingActive(false); }, 4000);
   };
 
   return (
@@ -837,7 +864,13 @@ const Header = ({
       </h2>
       <p className="text-text-muted text-base leading-relaxed  font-medium">
         {activeTab === "home" &&
-          "Protect your baseline. The current energy delta requires immediate focus."}
+          (burnoutRisk === "Elevated"
+            ? "Your recent check-ins point to elevated strain. A protected reset today would help."
+            : burnoutRisk === "Moderate"
+            ? "Things look manageable, but worth keeping an eye on your energy today."
+            : burnoutRisk === "Stable"
+            ? "Your baseline looks steady. Keep doing what's working."
+            : "Log a check-in to get a real read on your baseline today.")}
         {activeTab === "diagnose" &&
           "Root cause identification of cognitive and emotional energy leaks."}
         {activeTab === "recover" &&
@@ -2185,7 +2218,7 @@ export default function App() {
   // Daily Pulse State
   const [shipStage, setShipStage] = useState<SHIPStage>("Safety");
   const [energyLevel, setEnergyLevel] = useState(42);
-  const [burnoutRisk, setBurnoutRisk] = useState("Elevated");
+  const [burnoutRisk, setBurnoutRisk] = useState("Not yet assessed");
   const [showCheckIn, setShowCheckIn] = useState(false);
 
   // 30-Day Recovery Pulse History
@@ -2497,12 +2530,12 @@ export default function App() {
   }, [fingerprint, authLoading, user]);
 
   const handleCheckInComplete = (data: {
-    energy: number;
-    risk: string;
-    stage: SHIPStage;
-    blameStage?: string;
+    energyLevel: number;
+    focusLevel: number;
+    detachmentLevel: number;
+    stressLoad: number;
   }) => {
-    logJourney('Daily Check-In Completed', `Energy: ${data.energy}/100, Risk: ${data.risk}, Stage: ${data.stage}. ${data.blameStage ? `Identified Issue: ${data.blameStage}` : ''}`);
+    logJourney('Daily Check-In Completed', `Energy: ${data.energyLevel}/10, Focus: ${data.focusLevel}/10, Detachment: ${data.detachmentLevel}/10, Stress: ${data.stressLoad}/10.`);
     if (auth.currentUser) {
       secureApiFetch('/api/user/mark-activity', {
         method: 'POST',
@@ -2511,23 +2544,22 @@ export default function App() {
         // Non-fatal - only affects the home recommendation engine's freshness.
       });
     }
-    setEnergyLevel(data.energy);
-    setBurnoutRisk(data.risk);
-    if (data.stage) setShipStage(data.stage);
+    setEnergyLevel(Math.round(data.energyLevel * 10));
+    const risk = (data.stressLoad >= 7 || data.detachmentLevel >= 7) ? 'Elevated'
+      : (data.stressLoad >= 4 || data.detachmentLevel >= 4) ? 'Moderate'
+      : 'Stable';
+    setBurnoutRisk(risk);
     setShowCheckIn(false);
-    
-    if (data.blameStage) {
-      console.log("Recorded BLAME stage:", data.blameStage);
-    }
-    
+
     // Update Pulse History
     const todayStr = new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
     setPulseHistory((prev: any[]) => {
       const newHistory = [...prev];
+      const score = Math.round(data.energyLevel * 10);
       if (newHistory.length > 0 && newHistory[newHistory.length - 1].date === todayStr) {
-        newHistory[newHistory.length - 1] = { ...newHistory[newHistory.length - 1], score: data.energy };
+        newHistory[newHistory.length - 1] = { ...newHistory[newHistory.length - 1], score };
       } else {
-        newHistory.push({ date: todayStr, score: data.energy });
+        newHistory.push({ date: todayStr, score });
         if (newHistory.length > 30) newHistory.shift();
       }
       localStorage.setItem("blaze_break_pulse_history", JSON.stringify(newHistory));
@@ -2953,6 +2985,8 @@ export default function App() {
           onSomaticReset={() => setShowSomaticReset(true)}
           profile={stats.profile}
           burnoutRisk={burnoutRisk}
+          supportCircle={stats.supportCircle}
+          userName={stats.profile?.fullName}
         />
 
         <SomaticResetOverlay isOpen={showSomaticReset} onClose={() => setShowSomaticReset(false)} onAwardPoints={awardPoints} />
@@ -3285,15 +3319,10 @@ export default function App() {
         </AnimatePresence>
 
         <AnimatePresence>
-          {!user && showCheckIn && (
-            <DailyCheckIn
-              onComplete={handleCheckInComplete}
-              onClose={() => setShowCheckIn(false)}
-            />
-          )}
           {user && showCheckIn && (
             <ConnectedDailyCheckIn
               onClose={() => setShowCheckIn(false)}
+              onComplete={handleCheckInComplete}
               onReviewWithNova={() => {
                 setShowCheckIn(false);
                 setActiveTab("nova");
