@@ -66,6 +66,7 @@ const NovaChat = lazy(() => import("./components/NovaChat.tsx").then(m => ({ def
 import { Walkthrough } from "./components/Walkthrough.tsx";
 import { CrisisSupportModal, CrisisSupportButton } from "./components/CrisisSupport.tsx";
 const NovaGuardianRelay = lazy(() => import("./components/NovaGuardianRelay.tsx").then(m => ({ default: m.NovaGuardianRelay })));
+const AllyNudgeScheduler = lazy(() => import("./components/AllyNudgeScheduler.tsx").then(m => ({ default: m.AllyNudgeScheduler })));
 const OrgDashboard = lazy(() => import("./components/OrgDashboard.tsx").then(m => ({ default: m.OrgDashboard })));
 const PrivacyVault = lazy(() => import("./components/PrivacyVault.tsx").then(m => ({ default: m.PrivacyVault })));
 import { GamificationDisplay } from "./components/GamificationDisplay.tsx";
@@ -3247,6 +3248,7 @@ export default function App() {
                   onRemove={handleRemoveContact}
                   userName={stats.profile?.fullName}
                 />
+                <AllyNudgeScheduler contacts={stats.supportCircle || []} />
               </div>
             )}
 

@@ -7,6 +7,7 @@ import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, Type, Modality, LiveServerMessage } from "@google/genai";
 import dotenv from "dotenv";
 import twilio from "twilio";
+import cron from "node-cron";
 import { WebSocketServer } from 'ws';
 import webpush from 'web-push';
 import { NOVA_KNOWLEDGE_BASE } from './server-knowledge';
@@ -298,6 +299,31 @@ const TwilioSendSchema = z.object({
 // (proper E.164 phone format, message length cap), a dedicated strict rate
 // limit given the real cost per message, and an audit log entry so any use
 // going forward is actually traceable to a real, authenticated user.
+// Shared send logic - used by the authenticated route below and by the
+// ally nudge scheduler. Deliberately does NOT bypass auth/rate-limiting for
+// the route; the scheduler calls this directly since it already knows the
+// message is legitimate (it was configured by an authenticated user earlier).
+async function sendTwilioMessage(uid: string, to: string, message: string, useWhatsapp: boolean): Promise<{ success: boolean; sid?: string; error?: string }> {
+  const client = initTwilio();
+  const fromPhone = process.env.TWILIO_PHONE_NUMBER;
+  if (!client || !fromPhone) {
+    return { success: false, error: "Messaging is unavailable because the support messaging system is not configured." };
+  }
+  try {
+    const m = await client.messages.create({
+      body: message,
+      from: useWhatsapp ? `whatsapp:${fromPhone}` : fromPhone,
+      to: useWhatsapp ? `whatsapp:${to}` : to,
+    });
+    await logAutopilotAction(uid, "sms_send", { to, useWhatsapp }, true);
+    return { success: true, sid: m.sid };
+  } catch (error: any) {
+    console.error("Twilio error:", error);
+    await logAutopilotAction(uid, "sms_send", { error: error.message }, false);
+    return { success: false, error: error.message };
+  }
+}
+
 app.post("/api/twilio/send", smsLimiter, verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
   const uid = requireAuth(req).uid;
   try {
@@ -306,27 +332,13 @@ app.post("/api/twilio/send", smsLimiter, verifyAppCheck, authenticateFirebaseUse
       return res.status(400).json({ error: "Invalid request — a valid E.164 phone number and message are required." });
     }
     const { to, message, useWhatsapp } = parsed.data;
-    const client = initTwilio();
-    const fromPhone = process.env.TWILIO_PHONE_NUMBER;
-
-    if (!client || !fromPhone) {
-      return res.status(400).json({
-        success: false,
-        error: "Messaging is unavailable because the support messaging system is not configured."
-      });
+    const result = await sendTwilioMessage(uid, to, message, useWhatsapp);
+    if (!result.success) {
+      return res.status(400).json({ success: false, error: result.error });
     }
-
-    const m = await client.messages.create({
-      body: message,
-      from: useWhatsapp ? `whatsapp:${fromPhone}` : fromPhone,
-      to: useWhatsapp ? `whatsapp:${to}` : to
-    });
-
-    await logAutopilotAction(uid, "sms_send", { to, useWhatsapp }, true);
-    res.json({ success: true, sid: m.sid });
+    res.json({ success: true, sid: result.sid });
   } catch (error: any) {
-    console.error("Twilio error:", error);
-    await logAutopilotAction(uid, "sms_send", { error: error.message }, false);
+    console.error("Twilio route error:", error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -635,7 +647,7 @@ async function getNovaContextAndMetadata(uid: string, firestoreDb: any): Promise
       filteredMemories = filteredMemories.slice(0, 5);
 
       if (filteredMemories.length > 0) {
-        let memTextList = filteredMemories.map((m: any) => `- [${m.memoryType.replace(/_/g, ' ')}] ${m.memoryText} (Source: ${m.sourceType.replace(/_/g, ' ')})`);
+        const memTextList = filteredMemories.map((m: any) => `- [${m.memoryType.replace(/_/g, ' ')}] ${m.memoryText} (Source: ${m.sourceType.replace(/_/g, ' ')})`);
         infoParts.push(`User-approved Nova memories:
 ${memTextList.join('\n')}`);
         used.push("memory");
@@ -869,7 +881,7 @@ app.post("/api/nova/diagnose", verifyAppCheck, authenticateFirebaseUser, async (
     } = dims;
 
     const archScores = computeArchetypeScores(dims);
-    let profile = pickDominantProfile(archScores);
+    const profile = pickDominantProfile(archScores);
 
     let description = '';
     let priorities: string[] = [];
@@ -4158,6 +4170,170 @@ app.post("/api/ally/revoke", verifyAppCheck, authenticateFirebaseUser, async (re
     res.status(500).json({ error: err.message });
   }
 });
+
+// ============================================================================
+// Ally Nudge Schedules: recurring accountability messages sent via real
+// SMS/WhatsApp to a user's chosen support contact, on a schedule the user
+// sets themselves. Deliberately no AI involvement in deciding when to send -
+// the user configures a time, the scheduler below just fires it. This is
+// the low-stakes, human-directed alternative to a medication reminder
+// feature, built for people managing recovery without much in-person
+// support around them.
+// ============================================================================
+
+const NudgeScheduleSchema = z.object({
+  contactId: z.string().min(1).max(100),
+  contactName: z.string().min(1).max(100),
+  contactMethod: z.string().regex(/^\+[1-9]\d{6,14}$/, "Phone number must be in E.164 format, e.g. +15551234567"),
+  notificationPreference: z.enum(['sms', 'whatsapp']).default('sms'),
+  message: z.string().min(1).max(300),
+  frequency: z.enum(['daily', 'weekly']),
+  daysOfWeek: z.array(z.number().int().min(0).max(6)).max(7).optional(),
+  time: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Time must be in 24-hour HH:MM format"),
+  timezone: z.string().min(1).max(60),
+  enabled: z.boolean(),
+  // This can only ever be created as true - the frontend gates this behind
+  // an explicit "I've told them to expect these" confirmation. There is no
+  // way to verify a phone contact's real consent server-side (they don't
+  // have an account), so this is an honest human checkpoint rather than a
+  // fabricated "consent verified" claim.
+  contactAcknowledged: z.literal(true, { message: "Please confirm you've told this contact to expect these messages." }),
+}).strict().refine(
+  (data) => data.frequency !== 'weekly' || (data.daysOfWeek && data.daysOfWeek.length > 0),
+  { message: "Weekly schedules need at least one day selected.", path: ['daysOfWeek'] }
+);
+
+app.post("/api/nudge-schedules", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const user = requireAuth(req);
+    const parsed = NudgeScheduleSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: "Invalid schedule.", details: (parsed as any).error?.errors || [] });
+    }
+    const db = getDb();
+    const existingSnap = await db.collection("users").doc(user.uid).collection("nudge_schedules").get();
+    if (existingSnap.size >= 10) {
+      return res.status(400).json({ error: "You've reached the limit of 10 nudge schedules." });
+    }
+    const now = new Date().toISOString();
+    const ref = db.collection("users").doc(user.uid).collection("nudge_schedules").doc();
+    await ref.set({ ...parsed.data, createdAt: now, updatedAt: now });
+    await logAutopilotAction(user.uid, "nudge_schedule_created", { contactName: parsed.data.contactName }, true);
+    res.json({ success: true, id: ref.id });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get("/api/nudge-schedules", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const user = requireAuth(req);
+    const db = getDb();
+    const snap = await db.collection("users").doc(user.uid).collection("nudge_schedules").orderBy("createdAt", "desc").get();
+    res.json({ schedules: snap.docs.map(d => ({ id: d.id, ...d.data() })) });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+const NudgeScheduleUpdateSchema = NudgeScheduleSchema.partial().extend({
+  contactAcknowledged: z.literal(true).optional(),
+});
+
+app.patch("/api/nudge-schedules/:id", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const user = requireAuth(req);
+    const parsed = NudgeScheduleUpdateSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: "Invalid update.", details: (parsed as any).error?.errors || [] });
+    }
+    const db = getDb();
+    const ref = db.collection("users").doc(user.uid).collection("nudge_schedules").doc(req.params.id);
+    const doc = await ref.get();
+    if (!doc.exists) return res.status(404).json({ error: "Schedule not found." });
+    await ref.update({ ...parsed.data, updatedAt: new Date().toISOString() });
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete("/api/nudge-schedules/:id", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const user = requireAuth(req);
+    const db = getDb();
+    await db.collection("users").doc(user.uid).collection("nudge_schedules").doc(req.params.id).delete();
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Checks every enabled schedule and sends any that are due. Runs every 5
+// minutes, so "due" means the target time falls within the last 5-minute
+// window rather than an exact-second match (which would almost never hit).
+// lastSentPeriod - computed in the schedule's own local date, not the
+// server's UTC date, so someone in a timezone far from UTC doesn't get a
+// duplicate or skipped send near midnight - is the actual guard against
+// double-sends if the window is checked more than once, which matters more
+// here than exact-second precision does.
+async function processNudgeSchedules() {
+  let db;
+  try {
+    db = getDb();
+  } catch (e) {
+    return; // Firestore not configured in this environment - nothing to do.
+  }
+  try {
+    const snap = await db.collectionGroup("nudge_schedules").where("enabled", "==", true).get();
+    const now = new Date();
+
+    for (const doc of snap.docs) {
+      const data = doc.data();
+      const uid = doc.ref.parent.parent?.id;
+      if (!uid || !data.timezone || !data.time || !data.contactMethod || !data.message) continue;
+
+      try {
+        const formatter = new Intl.DateTimeFormat('en-US', {
+          timeZone: data.timezone,
+          hour: '2-digit', minute: '2-digit', hour12: false,
+          weekday: 'short', year: 'numeric', month: '2-digit', day: '2-digit',
+        });
+        const parts = formatter.formatToParts(now);
+        const get = (t: string) => parts.find(p => p.type === t)?.value || '';
+        const currentMinutes = parseInt(get('hour'), 10) * 60 + parseInt(get('minute'), 10);
+        const [targetH, targetM] = String(data.time).split(':').map(Number);
+        const targetMinutes = targetH * 60 + targetM;
+        const diff = currentMinutes - targetMinutes;
+
+        // Only fire within [0, 5) minutes after the target time - never early.
+        if (diff < 0 || diff >= 5) continue;
+
+        if (data.frequency === 'weekly') {
+          const weekdayMap: Record<string, number> = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
+          const currentDow = weekdayMap[get('weekday')];
+          if (!Array.isArray(data.daysOfWeek) || !data.daysOfWeek.includes(currentDow)) continue;
+        }
+
+        const localDateKey = `${get('year')}-${get('month')}-${get('day')}`;
+        if (data.lastSentPeriod === localDateKey) continue; // Already sent for this local day.
+
+        const result = await sendTwilioMessage(uid, data.contactMethod, data.message, data.notificationPreference === 'whatsapp');
+        await doc.ref.update({
+          lastSentAt: new Date().toISOString(),
+          lastSentPeriod: localDateKey,
+          lastSendResult: result.success ? 'sent' : 'failed',
+        });
+      } catch (innerErr: any) {
+        console.error(`[NudgeScheduler] Failed processing schedule ${doc.id}:`, innerErr.message);
+      }
+    }
+  } catch (err: any) {
+    console.error("[NudgeScheduler] Failed to process nudge schedules:", err.message);
+  }
+}
+
+cron.schedule('*/5 * * * *', processNudgeSchedules);
 
 // Public - the ally doesn't have an account. Access is entirely gated by
 // possession of an unguessable 48-character token, and the response only

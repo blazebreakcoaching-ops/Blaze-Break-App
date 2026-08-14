@@ -475,6 +475,26 @@ service cloud.firestore {
             && (!('allyName' in request.resource.data) || isStringWithMax(request.resource.data.allyName, 100));
       }
 
+      // Recurring accountability nudges sent to a user's chosen support
+      // contact via SMS/WhatsApp. lastSentAt is deliberately excluded from
+      // what the client can write - only the server-side scheduler sets it,
+      // so a client can't spoof "already sent" and can't fake a send history.
+      match /nudge_schedules/{scheduleId} {
+        allow read, delete: if isOwner(uid);
+        allow create, update: if isOwner(uid)
+            && request.resource.data.keys().hasOnly(['contactId', 'contactName', 'contactMethod', 'notificationPreference', 'message', 'frequency', 'daysOfWeek', 'time', 'timezone', 'enabled', 'contactAcknowledged', 'createdAt', 'updatedAt'])
+            && request.resource.data.keys().hasAll(['contactId', 'contactMethod', 'message', 'frequency', 'time', 'timezone', 'enabled', 'contactAcknowledged', 'createdAt', 'updatedAt'])
+            && isStringWithMax(request.resource.data.message, 300)
+            && request.resource.data.contactMethod is string && request.resource.data.contactMethod.size() >= 8 && request.resource.data.contactMethod.size() <= 16
+            && request.resource.data.frequency in ['daily', 'weekly']
+            && request.resource.data.time.matches('^([01][0-9]|2[0-3]):[0-5][0-9]$')
+            && isStringWithMax(request.resource.data.timezone, 60)
+            && request.resource.data.enabled is bool
+            && request.resource.data.contactAcknowledged is bool
+            && (!('daysOfWeek' in request.resource.data) || (request.resource.data.daysOfWeek is list && request.resource.data.daysOfWeek.size() <= 7))
+            && (request.method == 'create' ? true : checkCreatedAtUnchanged());
+      }
+
       match /ally_shared_goals/{goalId} {
         allow read, delete: if isOwner(uid);
         allow create, update: if isOwner(uid)
