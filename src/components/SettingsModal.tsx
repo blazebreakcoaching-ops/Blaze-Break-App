@@ -1,10 +1,11 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { X, Upload, CheckCircle2, User, Sliders, Settings2 } from 'lucide-react';
 import { UserProfileData } from '../types';
 import { NotificationSettingsView } from './NotificationSettingsView';
 import { FeatureFlagsView } from './FeatureFlagsView';
 import { cn } from '../lib/utils';
+import { useFocusTrap } from '../lib/useFocusTrap';
 
 interface SettingsModalProps {
   profile: UserProfileData | undefined;
@@ -25,6 +26,13 @@ export const SettingsModal = ({ profile, onSave, onClose, onOpenPrivacyCentre }:
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [saved, setSaved] = useState(false);
   const [errors, setErrors] = useState<{ fullName?: string; email?: string }>({});
+  const dialogRef = useFocusTrap(true);
+
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [onClose]);
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -83,9 +91,14 @@ export const SettingsModal = ({ profile, onSave, onClose, onOpenPrivacyCentre }:
         className="absolute inset-0 bg-card/60 backdrop-blur-sm"
       />
       <motion.div
+        ref={dialogRef as any}
         initial={{ opacity: 0, scale: 0.9, y: 20 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.9, y: 20 }}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Settings"
+        tabIndex={-1}
         className="relative card w-full max-w-2xl p-8 overflow-hidden bg-white dark:bg-card max-h-[90vh] flex flex-col border border-border shadow-lg"
       >
         <AnimatePresence>
@@ -101,8 +114,9 @@ export const SettingsModal = ({ profile, onSave, onClose, onOpenPrivacyCentre }:
           )}
         </AnimatePresence>
 
-        <button 
+        <button
           onClick={onClose}
+          aria-label="Close"
           className="absolute top-4 right-4 p-2 text-text-muted hover:text-text-muted dark:hover:text-text-muted hover:bg-surface dark:bg-card dark:hover:bg-surface rounded-full transition-colors z-10 cursor-pointer"
         >
           <X className="w-5 h-5" />

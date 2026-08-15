@@ -5,6 +5,7 @@ import { auth, db } from '../lib/firebase';
 import { addDoc, collection } from 'firebase/firestore';
 import { secureApiFetch } from '../lib/secure-api';
 import { logJourney } from '../lib/nova-brain';
+import { useFocusTrap } from '../lib/useFocusTrap';
 
 interface SomaticResetOverlayProps {
   isOpen: boolean;
@@ -13,6 +14,7 @@ interface SomaticResetOverlayProps {
 }
 
 export const SomaticResetOverlay = ({ isOpen, onClose, onAwardPoints }: SomaticResetOverlayProps) => {
+  const dialogRef = useFocusTrap(isOpen);
   const [timeLeft, setTimeLeft] = useState(60);
   const [exerciseState, setExerciseState] = useState<'intro' | 'breathing' | 'grounding' | 'complete'>('intro');
   const [breathPhase, setBreathPhase] = useState<'inhale' | 'hold' | 'exhale' | 'rest'>('inhale');
@@ -25,6 +27,13 @@ export const SomaticResetOverlay = ({ isOpen, onClose, onAwardPoints }: SomaticR
     tension: false,
     heartbeat: false,
   });
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const onKeyDown = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [isOpen, onClose]);
 
   // Main 60-second countdown timer
   useEffect(() => {
@@ -151,14 +160,20 @@ export const SomaticResetOverlay = ({ isOpen, onClose, onAwardPoints }: SomaticR
   return (
     <AnimatePresence>
       <motion.div
+        ref={dialogRef as any}
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Nervous System Reset"
+        tabIndex={-1}
         className="fixed inset-0 z-[100] flex items-center justify-center bg-background/95 backdrop-blur-xl"
       >
         {/* Close button */}
         <button 
           onClick={onClose} 
+          aria-label="Close"
           className="absolute top-8 right-8 p-3 text-text-muted hover:text-text-main bg-white/5 rounded-full hover:bg-white/10 transition-all cursor-pointer z-50"
         >
           <X className="w-6 h-6" />
@@ -193,7 +208,7 @@ export const SomaticResetOverlay = ({ isOpen, onClose, onAwardPoints }: SomaticR
 
                 <div className="space-y-3">
                   <div className="flex items-start gap-3 p-4 bg-surface dark:bg-card/50 rounded-2xl border border-border">
-                    <span className="w-6 h-6 rounded-lg bg-primary/10 text-primary text-xs font-bold flex items-center justify-center shrink-0 mt-0.5">1</span>
+                    <span className="w-6 h-6 rounded-lg bg-primary/10 text-[#9a3412] dark:text-primary text-xs font-bold flex items-center justify-center shrink-0 mt-0.5">1</span>
                     <div>
                       <p className="text-xs font-bold text-text-main">Vagus Nerve Stimulation (30s)</p>
                       <p className="text-[10px] text-text-muted font-medium mt-0.5">Box breathing sequence with deep, elongated exhalations.</p>
@@ -201,7 +216,7 @@ export const SomaticResetOverlay = ({ isOpen, onClose, onAwardPoints }: SomaticR
                   </div>
 
                   <div className="flex items-start gap-3 p-4 bg-surface dark:bg-card/50 rounded-2xl border border-border">
-                    <span className="w-6 h-6 rounded-lg bg-primary/10 text-primary text-xs font-bold flex items-center justify-center shrink-0 mt-0.5">2</span>
+                    <span className="w-6 h-6 rounded-lg bg-primary/10 text-[#9a3412] dark:text-primary text-xs font-bold flex items-center justify-center shrink-0 mt-0.5">2</span>
                     <div>
                       <p className="text-xs font-bold text-text-main">Somatic Grounding Checklist (30s)</p>
                       <p className="text-[10px] text-text-muted font-medium mt-0.5">Interactive sensory checks to disengage from virtual workspace noise.</p>
@@ -317,6 +332,8 @@ export const SomaticResetOverlay = ({ isOpen, onClose, onAwardPoints }: SomaticR
                       <button
                         key={item.key}
                         onClick={() => toggleGrounding(item.key as keyof typeof groundingChecks)}
+                        role="checkbox"
+                        aria-checked={checked}
                         className={`w-full p-3.5 rounded-xl border text-left transition-all flex items-start gap-3 cursor-pointer ${
                           checked 
                             ? 'bg-success/10 border-success/30' 
@@ -354,7 +371,7 @@ export const SomaticResetOverlay = ({ isOpen, onClose, onAwardPoints }: SomaticR
                 animate={{ scale: 1, opacity: 1 }}
                 className="space-y-6 text-center w-full"
               >
-                <div className="relative w-24 h-24 bg-success/10 rounded-xl border border-success/30 text-success flex items-center justify-center mx-auto mb-6">
+                <div className="relative w-24 h-24 bg-success/10 rounded-xl border border-success/30 text-success dark:text-[#4ade80] flex items-center justify-center mx-auto mb-6">
                   <div className="absolute inset-0 bg-success/5 rounded-xl animate-ping pointer-events-none" style={{ animationDuration: '3s' }} />
                   <ShieldCheck className="w-12 h-12 stroke-[1.5]" />
                 </div>
@@ -380,7 +397,7 @@ export const SomaticResetOverlay = ({ isOpen, onClose, onAwardPoints }: SomaticR
                   </div>
                   <div className="flex justify-between text-xs items-center">
                     <span className="text-text-muted font-bold">Stability points:</span>
-                    <span className="text-success text-xs font-black uppercase tracking-widest font-mono bg-success/15 px-2 py-0.5 rounded border border-success/20 flex items-center gap-1">
+                    <span className="text-[#166534] dark:text-[#4ade80] text-xs font-black uppercase tracking-widest font-mono bg-success/15 px-2 py-0.5 rounded border border-success/20 flex items-center gap-1">
                       <Award className="w-3.5 h-3.5" /> +75 XP
                     </span>
                   </div>

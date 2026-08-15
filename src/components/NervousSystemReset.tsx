@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { Wind, Brain, Moon, Waves, Play, Pause, Activity, RefreshCw, Eye, Ear, UserCircle, MapPin, Minimize2, Clock, Volume2, VolumeX, Music, CheckCircle2 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { BurnoutFingerprint } from '../types';
+import { useFocusTrap } from '../lib/useFocusTrap';
 import { secureApiFetch } from '../lib/secure-api';
 import { logJourney } from '../lib/nova-brain';
 import { auth } from '../lib/firebase';
@@ -53,6 +54,14 @@ export const NervousSystemReset = ({ fingerprint, onAwardPoints }: NervousSystem
   const [isPlaying, setIsPlaying] = useState(false);
   const [phase, setPhase] = useState<'inhale' | 'hold1' | 'exhale' | 'hold2'>('inhale');
   const [showResetConfirm, setShowResetConfirm] = useState(false);
+  const resetDialogRef = useFocusTrap(showResetConfirm);
+
+  useEffect(() => {
+    if (!showResetConfirm) return;
+    const onKeyDown = (e: KeyboardEvent) => { if (e.key === 'Escape') setShowResetConfirm(false); };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [showResetConfirm]);
 
   // Audio Console States
   const [soundscape, setSoundscape] = useState<'none' | 'solfeggio' | 'wind' | 'waves' | 'cosmic'>('none');
@@ -849,13 +858,18 @@ export const NervousSystemReset = ({ fingerprint, onAwardPoints }: NervousSystem
         {showResetConfirm && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-surface/60 backdrop-blur-sm">
             <motion.div
+              ref={resetDialogRef as any}
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="reset-confirm-title"
+              tabIndex={-1}
               className="bg-white dark:bg-card border border-border rounded-xl p-6 max-w-md w-full shadow-lg space-y-6"
             >
               <div className="space-y-2">
-                <h4 className="text-xl font-display font-medium text-text-main">Reset Studio State?</h4>
+                <h4 id="reset-confirm-title" className="text-xl font-display font-medium text-text-main">Reset Studio State?</h4>
                 <p className="text-sm text-text-muted leading-relaxed">
                   Are you sure you want to clear your active somatic diagnostic choices, ongoing breathwork routines, and grounding toolkit selections? This action will reset your studio work-in-progress state.
                 </p>
@@ -896,7 +910,7 @@ export const NervousSystemReset = ({ fingerprint, onAwardPoints }: NervousSystem
           {(selectedNeed || activeMode || activeGrounding || isPlaying) && (
             <button
               onClick={() => setShowResetConfirm(true)}
-              className="px-4 py-2 text-xs font-black uppercase tracking-widest text-destructive hover:bg-destructive/10 border border-destructive/30 rounded-xl transition-all flex items-center gap-2 shrink-0 cursor-pointer"
+              className="px-4 py-2 text-xs font-black uppercase tracking-widest text-destructive dark:text-[#f87171] hover:bg-destructive/10 border border-destructive/30 rounded-xl transition-all flex items-center gap-2 shrink-0 cursor-pointer"
             >
               <RefreshCw className="w-3.5 h-3.5" /> Reset Studio
             </button>
@@ -1001,6 +1015,7 @@ export const NervousSystemReset = ({ fingerprint, onAwardPoints }: NervousSystem
                     setIsMuted(!isMuted);
                     ensureAudioContext();
                   }}
+                  aria-label={isMuted ? "Unmute ambient sound" : "Mute ambient sound"}
                   className="text-text-muted hover:text-text-main shrink-0"
                 >
                   {isMuted ? <VolumeX className="w-4 h-4 text-destructive pointer-events-auto" /> : <Volume2 className="w-4 h-4 text-primary pointer-events-auto" />}
@@ -1016,6 +1031,8 @@ export const NervousSystemReset = ({ fingerprint, onAwardPoints }: NervousSystem
                     if (isMuted) setIsMuted(false);
                     ensureAudioContext();
                   }}
+                  aria-label="Ambient volume"
+                  aria-valuetext={`${Math.round(ambientVol * 100)} percent`}
                   className="w-full accent-primary bg-border dark:bg-surface h-1.5 rounded-lg appearance-none cursor-pointer"
                 />
               </div>
@@ -1036,6 +1053,7 @@ export const NervousSystemReset = ({ fingerprint, onAwardPoints }: NervousSystem
                       ensureAudioContext();
                       playZenChime();
                     }}
+                    aria-label="Enable pacer sound"
                     className="sr-only peer"
                   />
                   <div className="w-8 h-4 bg-surface dark:bg-surface peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-border after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-primary" />
@@ -1051,6 +1069,8 @@ export const NervousSystemReset = ({ fingerprint, onAwardPoints }: NervousSystem
                     if (!pacerSoundEnabled) setPacerSoundEnabled(true);
                     ensureAudioContext();
                   }}
+                  aria-label="Pacer sound volume"
+                  aria-valuetext={`${Math.round(pacerVol * 100)} percent`}
                   className="w-full accent-primary bg-border dark:bg-surface h-1.5 rounded-lg appearance-none cursor-pointer"
                 />
               </div>
@@ -1082,6 +1102,7 @@ export const NervousSystemReset = ({ fingerprint, onAwardPoints }: NervousSystem
                 <button
                   key={need}
                   onClick={() => handleNeedSelect(need)}
+                  aria-pressed={selectedNeed === need}
                   className={cn(
                     "px-6 py-3 rounded-full text-sm font-medium uppercase tracking-widest transition-all",
                     selectedNeed === need
@@ -1110,6 +1131,7 @@ export const NervousSystemReset = ({ fingerprint, onAwardPoints }: NervousSystem
                   setIsPlaying(false);
                   setSelectedNeed(null);
                 }}
+                aria-pressed={isSelected}
                 className={cn(
                   "w-full text-left p-4 rounded-xl border transition-all flex items-center gap-4",
                   isSelected
@@ -1161,6 +1183,9 @@ export const NervousSystemReset = ({ fingerprint, onAwardPoints }: NervousSystem
                       initial={{ opacity: 0, y: 10 }}
                       animate={{ opacity: 1, y: 0 }}
                       exit={{ opacity: 0, y: -10 }}
+                      role="status"
+                      aria-live="polite"
+                      aria-atomic="true"
                       className="text-text-main font-black uppercase tracking-widest text-lg"
                     >
                       {phase.replace('1', '').replace('2', '')}
@@ -1290,6 +1315,15 @@ export const NervousSystemReset = ({ fingerprint, onAwardPoints }: NervousSystem
                       <motion.div
                         key={idx}
                         onClick={() => handleToggleStep(idx)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            handleToggleStep(idx);
+                          }
+                        }}
+                        role="checkbox"
+                        aria-checked={isCompleted}
+                        tabIndex={0}
                         initial={{ opacity: 0, x: -20 }}
                         animate={{ opacity: 1, x: 0 }}
                         transition={{ delay: idx * 0.12 }}
@@ -1304,7 +1338,7 @@ export const NervousSystemReset = ({ fingerprint, onAwardPoints }: NervousSystem
                           "w-8 h-8 rounded-full font-black flex items-center justify-center shrink-0 transition-colors",
                           isCompleted
                             ? "bg-success text-white"
-                            : "bg-primary/10 text-primary"
+                            : "bg-primary/10 text-[#9a3412] dark:text-primary"
                         )}>
                           {isCompleted ? <CheckCircle2 className="w-5 h-5 text-text-main" /> : idx + 1}
                         </div>

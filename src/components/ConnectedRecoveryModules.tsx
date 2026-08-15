@@ -5,6 +5,7 @@ import { X, Sparkles, Shield, Target, Plus, Trash2, Edit2, AlertCircle, CheckCir
 import { cn } from '../lib/utils';
 import { secureApiFetch } from '../lib/secure-api';
 import { logJourney } from '../lib/nova-brain';
+import { useFocusTrap } from '../lib/useFocusTrap';
 
 // Helper for empty states
 const SecureVaultNotice = () => (
@@ -18,7 +19,7 @@ const SecureVaultNotice = () => (
 const ErrorMessage = ({ msg }: { msg: string }) => {
   if (!msg) return null;
   return (
-    <div className="bg-destructive/10 text-destructive text-xs p-3 rounded-lg border border-destructive/20 mb-4 flex gap-2">
+    <div className="bg-destructive/10 text-destructive dark:text-[#f87171] text-xs p-3 rounded-lg border border-destructive/20 mb-4 flex gap-2">
       <AlertCircle className="w-4 h-4 shrink-0" />
       <span>{msg}</span>
     </div>
@@ -27,6 +28,13 @@ const ErrorMessage = ({ msg }: { msg: string }) => {
 
 // 1. Connected Daily Check-In
 export const ConnectedDailyCheckIn = ({ onClose, onReviewWithNova, onComplete }: { onClose: () => void, onReviewWithNova?: () => void, onComplete?: (data: { energyLevel: number; focusLevel: number; detachmentLevel: number; stressLoad: number }) => void }) => {
+  const dialogRef = useFocusTrap(true);
+
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [onClose]);
   const [step, setStep] = useState(0);
   const [energyLevel, setEnergy] = useState(5);
   const [focusLevel, setFocus] = useState(5);
@@ -113,13 +121,13 @@ export const ConnectedDailyCheckIn = ({ onClose, onReviewWithNova, onComplete }:
   return (
     <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-card/60 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative w-full max-w-md bg-card rounded-xl shadow-lg overflow-hidden max-h-[90vh] flex flex-col">
+      <div ref={dialogRef as any} role="dialog" aria-modal="true" aria-labelledby="daily-checkin-title" tabIndex={-1} className="relative w-full max-w-md bg-card rounded-xl shadow-lg overflow-hidden max-h-[90vh] flex flex-col">
         <div className="p-6 border-b border-border flex items-center justify-between shrink-0">
           <div className="flex items-center gap-2">
             <Sparkles className="w-5 h-5 text-primary" />
-            <h3 className="font-bold text-text-main">Daily Check-In (Secure)</h3>
+            <h3 id="daily-checkin-title" className="font-bold text-text-main">Daily Check-In (Secure)</h3>
           </div>
-          <button onClick={onClose} className="p-2 hover:bg-surface rounded-full text-text-muted"><X className="w-5 h-5" /></button>
+          <button onClick={onClose} aria-label="Close" className="p-2 hover:bg-surface rounded-full text-text-muted"><X className="w-5 h-5" /></button>
         </div>
 
         <div className="p-6 overflow-y-auto flex-1">
@@ -144,7 +152,7 @@ export const ConnectedDailyCheckIn = ({ onClose, onReviewWithNova, onComplete }:
                           <span className="text-xs text-text-muted">{new Date(item.createdAt).toLocaleString()}</span>
                           <div className="flex gap-2">
                             <button onClick={() => handleEdit(item)}><Edit2 className="w-4 h-4 text-text-muted hover:text-primary" /></button>
-                            <button onClick={() => handleDelete(item.id)}><Trash2 className="w-4 h-4 text-text-muted hover:text-destructive" /></button>
+                            <button onClick={() => handleDelete(item.id)} aria-label="Delete"><Trash2 className="w-4 h-4 text-text-muted hover:text-destructive" /></button>
                           </div>
                         </div>
                         <div className="grid grid-cols-2 gap-2 text-xs">
@@ -156,7 +164,7 @@ export const ConnectedDailyCheckIn = ({ onClose, onReviewWithNova, onComplete }:
                       </div>
                     ))}
                     {onReviewWithNova && (
-                      <button onClick={onReviewWithNova} className="w-full mt-4 py-3 bg-primary/10 text-primary border border-primary/20 rounded-xl text-sm font-bold flex items-center justify-center gap-2 transition-colors hover:bg-primary/20">
+                      <button onClick={onReviewWithNova} className="w-full mt-4 py-3 bg-primary/10 text-[#9a3412] dark:text-primary border border-primary/20 rounded-xl text-sm font-bold flex items-center justify-center gap-2 transition-colors hover:bg-primary/20">
                         <Sparkles className="w-4 h-4" /> Review with Nova
                       </button>
                     )}
@@ -176,7 +184,7 @@ export const ConnectedDailyCheckIn = ({ onClose, onReviewWithNova, onComplete }:
               ].map(f => (
                 <div key={f.label} className="space-y-2">
                   <label className="text-xs font-bold text-text-muted">{f.label}</label>
-                  <input type="range" min="1" max="10" value={f.val} onChange={e => f.set(parseInt(e.target.value))} className="w-full" />
+                  <input type="range" min="1" max="10" value={f.val} onChange={e => f.set(parseInt(e.target.value))} aria-label={f.label} aria-valuetext={`${f.val} out of 10`} className="w-full" />
                   <div className="text-center text-sm font-bold text-primary">{f.val}</div>
                 </div>
               ))}
@@ -251,12 +259,12 @@ export const ConnectedMoodPulse = () => {
         <h4 className="font-bold text-sm">Log New Pulse</h4>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
           {MOODS.map(m => (
-            <button key={m} onClick={() => setMood(m)} className={cn("p-2 text-xs rounded-lg border", mood === m ? "bg-primary text-primary-foreground border-primary" : "border-border hover:border-primary/50 text-text-main capitalize")}>{m}</button>
+            <button key={m} onClick={() => setMood(m)} aria-pressed={mood === m} className={cn("p-2 text-xs rounded-lg border", mood === m ? "bg-primary text-primary-foreground border-primary" : "border-border hover:border-primary/50 text-text-main capitalize")}>{m}</button>
           ))}
         </div>
         <div>
           <label className="text-xs text-text-muted font-bold block mb-2">Intensity: {intensity}/10</label>
-          <input type="range" min="1" max="10" value={intensity} onChange={e => setIntensity(parseInt(e.target.value))} className="w-full" />
+          <input type="range" min="1" max="10" value={intensity} onChange={e => setIntensity(parseInt(e.target.value))} aria-label="Mood intensity" aria-valuetext={`${intensity} out of 10`} className="w-full" />
         </div>
         <button onClick={handleSubmit} disabled={loading} className="btn-primary w-full py-2 text-xs">Save Pulse</button>
       </div>
@@ -269,7 +277,7 @@ export const ConnectedMoodPulse = () => {
               <div className="text-sm font-bold capitalize">{item.moodLabel} <span className="text-primary font-normal text-xs">(Int: {item.intensity})</span></div>
               <div className="text-[10px] text-text-muted">{new Date(item.createdAt).toLocaleString()}</div>
             </div>
-            <button onClick={() => handleDelete(item.id)}><Trash2 className="w-4 h-4 text-text-muted hover:text-destructive" /></button>
+            <button onClick={() => handleDelete(item.id)} aria-label="Delete"><Trash2 className="w-4 h-4 text-text-muted hover:text-destructive" /></button>
           </div>
         ))}
       </div>
@@ -347,7 +355,7 @@ export const ConnectedBodyCheckIn = () => {
               <div className="text-xs font-mono">{item.signals.map((s: string) => s.replace('_', ' ')).join(', ')}</div>
               <div className="text-[10px] text-text-muted">{new Date(item.createdAt).toLocaleString()}</div>
             </div>
-            <button onClick={() => handleDelete(item.id)}><Trash2 className="w-4 h-4 text-text-muted hover:text-destructive" /></button>
+            <button onClick={() => handleDelete(item.id)} aria-label="Delete"><Trash2 className="w-4 h-4 text-text-muted hover:text-destructive" /></button>
           </div>
         ))}
       </div>
@@ -417,7 +425,7 @@ export const ConnectedWinsLog = () => {
         <h4 className="text-xs uppercase tracking-widest font-black text-text-muted">Past Wins</h4>
         {history.map(item => (
           <div key={item.id} className="relative bg-card p-4 rounded-lg border border-border">
-            <button onClick={() => handleDelete(item.id)} className="absolute top-2 right-2"><Trash2 className="w-4 h-4 text-text-muted hover:text-destructive" /></button>
+            <button onClick={() => handleDelete(item.id)} aria-label="Delete" className="absolute top-2 right-2"><Trash2 className="w-4 h-4 text-text-muted hover:text-destructive" /></button>
             <div className="text-xs uppercase tracking-widest font-black text-primary mb-1">{item.category}</div>
             <div className="font-bold text-sm">{item.title}</div>
             <div className="text-xs text-text-muted mt-1">{item.content}</div>
@@ -512,7 +520,7 @@ export const ConnectedGoals = () => {
                 <option value="paused">Paused</option>
                 <option value="completed">Completed</option>
               </select>
-              <button onClick={() => handleDelete(item.id)}><Trash2 className="w-4 h-4 text-text-muted hover:text-destructive" /></button>
+              <button onClick={() => handleDelete(item.id)} aria-label="Delete"><Trash2 className="w-4 h-4 text-text-muted hover:text-destructive" /></button>
             </div>
           </div>
         ))}
@@ -683,16 +691,16 @@ export const ConnectedEnergyBudget = () => {
         </select>
         
         <div><label className="text-xs font-bold">Total Capacity (0-100): {totalCapacity}</label>
-        <input type="range" min="0" max="100" value={totalCapacity} onChange={e=>setTotalCapacity(parseInt(e.target.value))} className="w-full" /></div>
+        <input type="range" min="0" max="100" value={totalCapacity} onChange={e=>setTotalCapacity(parseInt(e.target.value))} aria-label="Total capacity" aria-valuetext={`${totalCapacity} out of 100`} className="w-full" /></div>
         
         <div><label className="text-xs font-bold">Allocated Capacity: {allocatedCapacity}</label>
         <input type="range" min="0" max="100" value={allocatedCapacity} onChange={e=>{
            const v = parseInt(e.target.value);
            if (v <= totalCapacity) setAllocatedCapacity(v);
-        }} className="w-full" /></div>
+        }} aria-label="Allocated capacity" aria-valuetext={`${allocatedCapacity} out of 100`} className="w-full" /></div>
         
         <div className="grid grid-cols-2 lg:grid-cols-3 gap-2">
-           {CATS.map(c => <button key={c} onClick={()=>toggle(c)} className={cn("p-2 text-xs rounded-lg border capitalize", categories.includes(c) ? "bg-primary text-primary-foreground border-primary" : "border-border text-text-main")}>{c}</button>)}
+           {CATS.map(c => <button key={c} onClick={()=>toggle(c)} aria-pressed={categories.includes(c)} className={cn("p-2 text-xs rounded-lg border capitalize", categories.includes(c) ? "bg-primary text-primary-foreground border-primary" : "border-border text-text-main")}>{c}</button>)}
         </div>
         
         <textarea maxLength={300} placeholder="Notes..." value={note} onChange={e=>setNote(e.target.value)} className="w-full bg-card p-2 text-xs rounded border border-border" rows={2}></textarea>
@@ -702,7 +710,7 @@ export const ConnectedEnergyBudget = () => {
       <div className="space-y-3">
         {history.map(item => (
           <div key={item.id} className="relative bg-card p-3 rounded-lg border border-border">
-            <button onClick={() => handleDelete(item.id)} className="absolute top-2 right-2"><Trash2 className="w-4 h-4 text-text-muted hover:text-destructive" /></button>
+            <button onClick={() => handleDelete(item.id)} aria-label="Delete" className="absolute top-2 right-2"><Trash2 className="w-4 h-4 text-text-muted hover:text-destructive" /></button>
             <div className="text-xs uppercase tracking-widest font-black text-primary mb-1">{item.periodType}</div>
             <div className="text-xs">Capacity: {item.totalCapacity} | Allocated: {item.allocatedCapacity} | Remaining: {item.remainingCapacity}</div>
             <div className="text-[10px] text-text-muted">{item.categories?.join(', ')}</div>
@@ -782,7 +790,7 @@ export const ConnectedBoundaryScripts = () => {
       <div className="space-y-3">
         {history.map(item => (
           <div key={item.id} className="relative bg-card p-4 rounded-lg border border-border">
-            <button onClick={() => handleDelete(item.id)} className="absolute top-2 right-2"><Trash2 className="w-4 h-4 text-text-muted hover:text-destructive" /></button>
+            <button onClick={() => handleDelete(item.id)} aria-label="Delete" className="absolute top-2 right-2"><Trash2 className="w-4 h-4 text-text-muted hover:text-destructive" /></button>
             <div className="text-[10px] uppercase tracking-widest font-black text-primary mb-1 flex items-center justify-between">
               <span>{item.scenarioType}</span>
               <span className={cn(item.status === 'draft' ? "text-warning" : "text-success")}>{item.status}</span>
@@ -863,7 +871,7 @@ export const ConnectedWeeklyReviews = () => {
         {history.length === 0 && <p className="text-sm text-text-muted italic">Not enough data yet for trends. Recovery trends will become available once secure scoring logic is implemented.</p>}
         {history.map(item => (
           <div key={item.id} className="relative bg-card p-4 rounded-lg border border-border space-y-2">
-            <button onClick={() => handleDelete(item.id)} className="absolute top-2 right-2"><Trash2 className="w-4 h-4 text-text-muted hover:text-destructive" /></button>
+            <button onClick={() => handleDelete(item.id)} aria-label="Delete" className="absolute top-2 right-2"><Trash2 className="w-4 h-4 text-text-muted hover:text-destructive" /></button>
             <div className="text-[10px] text-text-muted">{new Date(item.createdAt).toLocaleDateString()}</div>
             <div className="text-xs"><span className="font-bold text-success">Helped:</span> {item.helped}</div>
             <div className="text-xs"><span className="font-bold text-destructive">Drained:</span> {item.drained}</div>
