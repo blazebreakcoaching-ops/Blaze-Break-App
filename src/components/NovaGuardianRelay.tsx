@@ -185,7 +185,7 @@ const GuardianCard = ({
             <button 
               onClick={handleHealthCheck}
               disabled={isSyncing}
-              className="col-span-1 py-3 text-[11px] font-black uppercase tracking-widest rounded-xl transition-all bg-success/10 text-success dark:text-success hover:bg-success/20 shadow-sm"
+              className="col-span-1 py-3 text-[11px] font-black uppercase tracking-widest rounded-xl transition-all bg-success/10 text-[#166534] dark:text-[#4ade80] hover:bg-success/20 shadow-sm"
             >
               {isHealthChecking ? <Loader2 className="w-3 h-3 animate-spin mx-auto" /> : "Ping Status"}
             </button>
@@ -474,11 +474,11 @@ export const NovaGuardianRelay = ({ contacts, onAdd, onRemove, userName }: NovaG
              
              <div className="relative z-10 space-y-5 pt-2">
                 <div className="space-y-2.5">
-                  <h5 className="text-xs font-black uppercase tracking-widest text-success dark:text-success">Your Privacy, Protected</h5>
+                  <h5 className="text-xs font-black uppercase tracking-widest text-success dark:text-[#4ade80]">Your Privacy, Protected</h5>
                   <p className="text-[11px] leading-relaxed text-text-muted">Your guardians only ever see that you've reached out — never your conversation history, journal entries, or any other private details.</p>
                 </div>
                 <div className="space-y-2.5">
-                  <h5 className="text-xs font-black uppercase tracking-widest text-success">How It Works</h5>
+                  <h5 className="text-xs font-black uppercase tracking-widest text-success dark:text-[#4ade80]">How It Works</h5>
                   <p className="text-[11px] leading-relaxed text-text-muted">This is entirely manual. Nova does not monitor you or decide when to alert anyone - your guardian is only ever contacted when you choose to reach out.</p>
                 </div>
              </div>

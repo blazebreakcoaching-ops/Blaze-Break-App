@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Activity, Sparkles, Clock, ArrowRight, ArrowLeft,
@@ -40,6 +40,32 @@ const TOOLS = [
 export const AnxietyResetMode = ({ onAwardPoints, onNavigate }: AnxietyResetModeProps) => {
   const { user } = useAuth();
   const [step, setStep] = useState<'intro' | 'trigger' | 'intensity_before' | 'tool_selection' | 'active_tool' | 'intensity_after' | 'nova_feedback'>('intro');
+  const stepContainerRef = useRef<HTMLDivElement>(null);
+  const isFirstStepRenderRef = useRef(true);
+
+  // Moves screen-reader focus to the new step's heading whenever the step
+  // changes, so a screen reader user is told a screen transition happened
+  // instead of silently staying wherever they were. Skips the very first
+  // render - stealing focus on initial mount would fight against whatever
+  // navigation the user just deliberately did to get here. Deferred to the
+  // next tick so this runs after AnimatePresence has actually mounted the
+  // new step's content.
+  useEffect(() => {
+    if (isFirstStepRenderRef.current) {
+      isFirstStepRenderRef.current = false;
+      return;
+    }
+    const t = window.setTimeout(() => {
+      const container = stepContainerRef.current;
+      if (!container) return;
+      const heading = container.querySelector<HTMLElement>('h3, h4, h5');
+      if (heading) {
+        if (!heading.hasAttribute('tabindex')) heading.setAttribute('tabindex', '-1');
+        heading.focus();
+      }
+    }, 0);
+    return () => window.clearTimeout(t);
+  }, [step]);
   const [selectedTrigger, setSelectedTrigger] = useState<string | null>(null);
   const [intensityBefore, setIntensityBefore] = useState<number>(5);
   const [recommendedToolId, setRecommendedToolId] = useState<string>('calm_90s');
@@ -213,7 +239,7 @@ export const AnxietyResetMode = ({ onAwardPoints, onNavigate }: AnxietyResetMode
   };
 
   return (
-    <div className="bg-card border border-border rounded-xl p-6 sm:p-10 text-left relative overflow-hidden transition-all max-w-4xl mx-auto">
+    <div ref={stepContainerRef} className="bg-card border border-border rounded-xl p-6 sm:p-10 text-left relative overflow-hidden transition-all max-w-4xl mx-auto">
       
       <AnimatePresence mode="wait">
         
