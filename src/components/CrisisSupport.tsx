@@ -2,6 +2,7 @@ import React, { useEffect } from 'react';
 import { motion, AnimatePresence, useDragControls } from 'motion/react';
 import { X, PhoneCall, MessageCircle, LifeBuoy } from 'lucide-react';
 import { cn } from '../lib/utils';
+import { useFocusTrap } from '../lib/useFocusTrap';
 
 // Single source of truth for crisis resource content. Used both in the
 // standalone global modal (reachable from anywhere) and inline on the
@@ -69,6 +70,7 @@ interface CrisisSupportModalProps {
 // nested inside any tab — see the floating button rendered in App.tsx.
 export const CrisisSupportModal = ({ isOpen, onClose }: CrisisSupportModalProps) => {
   const dragControls = useDragControls();
+  const dialogRef = useFocusTrap(isOpen);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -86,16 +88,18 @@ export const CrisisSupportModal = ({ isOpen, onClose }: CrisisSupportModalProps)
           exit={{ opacity: 0 }}
           className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm"
           onClick={onClose}
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="crisis-support-title"
         >
           <motion.div
+            ref={dialogRef as any}
             initial={{ opacity: 0, y: 12, scale: 0.98 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 12, scale: 0.98 }}
             transition={{ duration: 0.2 }}
             onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="crisis-support-title"
+            tabIndex={-1}
             drag="y"
             dragControls={dragControls}
             dragListener={false}

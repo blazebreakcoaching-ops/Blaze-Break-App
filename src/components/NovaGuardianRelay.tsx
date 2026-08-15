@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { CrisisSupportContent } from './CrisisSupport';
 import { secureApiFetch } from '../lib/secure-api';
+import { useFocusTrap } from '../lib/useFocusTrap';
 import {
   Users, 
   ShieldCheck, 
@@ -228,6 +229,16 @@ export const NovaGuardianRelay = ({ contacts, onAdd, onRemove, userName }: NovaG
   const [activeSOS, setActiveSOS] = useState<string | null>(null);
   const [isSending, setIsSending] = useState(false);
   const [sendSuccess, setSendSuccess] = useState<string | null>(null);
+  const sosDialogRef = useFocusTrap(!!activeSOS);
+
+  useEffect(() => {
+    if (!activeSOS) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !isSending) setActiveSOS(null);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [activeSOS, isSending]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -354,6 +365,13 @@ export const NovaGuardianRelay = ({ contacts, onAdd, onRemove, userName }: NovaG
           </button>
         </div>
       </div>
+
+      {sendSuccess && !activeSOS && (
+        <div role="status" aria-live="polite" className="flex items-center gap-3 p-4 rounded-xl bg-surface border border-border/60 text-sm font-medium text-text-main">
+          <CheckCircle2 className="w-4 h-4 text-success shrink-0" />
+          {sendSuccess}
+        </div>
+      )}
 
       <div className="grid grid-cols-1 xl:grid-cols-12 gap-8">
         {/* Guardian Network List */}
@@ -585,9 +603,14 @@ export const NovaGuardianRelay = ({ contacts, onAdd, onRemove, userName }: NovaG
               className="absolute inset-0 bg-surface/80 backdrop-blur-md"
             />
             <motion.div
+              ref={sosDialogRef as any}
               initial={{ opacity: 0, scale: 0.95, y: 10 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 10 }}
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="sos-dialog-title"
+              tabIndex={-1}
                className="relative card w-full max-w-md p-0 overflow-hidden bg-card border border-destructive/30 text-text-main shadow-lg shadow-destructive/10"
             >
                 <div className="p-8 space-y-6 relative z-10">
@@ -595,7 +618,7 @@ export const NovaGuardianRelay = ({ contacts, onAdd, onRemove, userName }: NovaG
                      <AlertTriangle className="w-10 h-10" />
                   </div>
                   <div className="text-center space-y-3">
-                     <h3 className="text-2xl font-bold font-display line-clamp-1 text-text-main tracking-tight">Manual Dispatch</h3>
+                     <h3 id="sos-dialog-title" className="text-2xl font-bold font-display line-clamp-1 text-text-main tracking-tight">Manual Dispatch</h3>
                      <p className="text-sm text-text-muted px-4 leading-relaxed">
                        Sending an alert to <strong className="text-text-main">"{contacts.find(c => c.id === activeSOS)?.name}"</strong>. They'll be asked to reach out to you as soon as possible.
                      </p>
@@ -609,7 +632,7 @@ export const NovaGuardianRelay = ({ contacts, onAdd, onRemove, userName }: NovaG
                   </div>
 
                   {sendSuccess ? (
-                     <div className="py-6 text-center">
+                     <div className="py-6 text-center" role="status" aria-live="polite">
                         <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} className="w-16 h-16 rounded-full bg-success/20 text-success flex items-center justify-center mx-auto mb-4">
                           <CheckCircle2 className="w-8 h-8" />
                         </motion.div>
@@ -620,7 +643,7 @@ export const NovaGuardianRelay = ({ contacts, onAdd, onRemove, userName }: NovaG
                       <button 
                         onClick={() => setActiveSOS(null)}
                         disabled={isSending}
-                        className="py-4 rounded-xl font-bold text-xs uppercase tracking-widest bg-card text-text-muted hover:bg-surface transition-colors disabled:"
+                        className="py-4 rounded-xl font-bold text-xs uppercase tracking-widest bg-card text-text-muted hover:bg-surface transition-colors disabled:opacity-40"
                       >
                         Abort Sequence
                       </button>

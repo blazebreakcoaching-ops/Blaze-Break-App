@@ -335,6 +335,8 @@ export const AnxietyResetMode = ({ onAwardPoints, onNavigate }: AnxietyResetMode
                 max="10" 
                 value={intensityBefore}
                 onChange={(e) => setIntensityBefore(Number(e.target.value))}
+                aria-label="Current distress level, 1 to 10"
+                aria-valuetext={`${intensityBefore} out of 10, ${intensityBefore <= 3 ? 'Mild Tension' : intensityBefore <= 6 ? 'Moderate Stress or Dread' : intensityBefore <= 8 ? 'High Anxiety or Racing' : 'Acute Overwhelm or Panic'}`}
                 className="w-full accent-destructive cursor-pointer h-2 bg-border rounded-lg appearance-none"
               />
               <div className="flex justify-between text-[10px] text-text-muted font-bold uppercase mt-2">
@@ -627,13 +629,14 @@ export const AnxietyResetMode = ({ onAwardPoints, onNavigate }: AnxietyResetMode
                       }}
                       transition={{ duration: 4, ease: "easeInOut" }}
                       className="absolute w-24 h-24 rounded-full border border-destructive/30 flex items-center justify-center"
+                      aria-hidden="true"
                     />
                     <div className="relative z-10 flex flex-col items-center">
-                      <span className="text-xl font-bold text-text-main capitalize">{breathPhase}</span>
-                      <span className="text-3xl font-mono font-bold text-destructive mt-1">{breathCounter}</span>
+                      <span className="text-xl font-bold text-text-main capitalize" aria-hidden="true">{breathPhase}</span>
+                      <span className="text-3xl font-mono font-bold text-destructive mt-1" aria-hidden="true">{breathCounter}</span>
                     </div>
                   </div>
-                  <div className="text-xs text-text-muted uppercase tracking-widest font-black">
+                  <div className="text-xs text-text-muted uppercase tracking-widest font-black" role="status" aria-live="polite" aria-atomic="true">
                     {breathPhase === 'inhale' ? 'Breathe in, slow and full' : 
                      breathPhase === 'hold' ? 'Hold gently' : 
                      breathPhase === 'exhale' ? 'Let it all the way out' : 
@@ -926,6 +929,8 @@ export const AnxietyResetMode = ({ onAwardPoints, onNavigate }: AnxietyResetMode
                 max="10" 
                 value={intensityAfter}
                 onChange={(e) => setIntensityAfter(Number(e.target.value))}
+                aria-label="Distress level now, 1 to 10"
+                aria-valuetext={`${intensityAfter} out of 10, ${intensityAfter <= 3 ? 'Stabilized' : intensityAfter <= 5 ? 'Manageable Tension' : 'Heightened, consider repeat cycle'}`}
                 className="w-full accent-success cursor-pointer h-2 bg-border rounded-lg appearance-none"
               />
               <div className="flex justify-between text-[10px] text-text-muted font-bold uppercase mt-2">
