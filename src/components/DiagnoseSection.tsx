@@ -1,5 +1,5 @@
 import { cn } from '../lib/utils';
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { auth, db } from '../lib/firebase';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { motion, AnimatePresence } from "motion/react";
@@ -247,6 +247,23 @@ export const DiagnoseView = ({
 }) => {
   const [mode, setMode] = useState<'choice' | 'quick' | 'full'>('choice');
   const [step, setStep] = useState(0);
+  const questionContainerRef = useRef<HTMLDivElement>(null);
+  const isFirstQuestionRenderRef = useRef(true);
+
+  useEffect(() => {
+    if (isFirstQuestionRenderRef.current) {
+      isFirstQuestionRenderRef.current = false;
+      return;
+    }
+    const t = window.setTimeout(() => {
+      const heading = questionContainerRef.current?.querySelector<HTMLElement>('h3');
+      if (heading) {
+        if (!heading.hasAttribute('tabindex')) heading.setAttribute('tabindex', '-1');
+        heading.focus();
+      }
+    }, 0);
+    return () => window.clearTimeout(t);
+  }, [step]);
   const [answers, setAnswers] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -356,9 +373,9 @@ export const DiagnoseView = ({
   }
 
   return (
-    <div className="max-w-2xl mx-auto py-12">
+    <div ref={questionContainerRef} className="max-w-2xl mx-auto py-12">
       <div className="mb-12">
-        <div className="flex justify-between items-end mb-4 text-xs uppercase tracking-widest font-black text-text-muted">
+        <div className="flex justify-between items-end mb-4 text-xs uppercase tracking-widest font-black text-text-muted" role="status" aria-live="polite" aria-atomic="true">
           <span>
             Question {step + 1} of {activeQuestions.length}
           </span>
@@ -1740,9 +1757,18 @@ export const ResultView = ({
                     <div 
                       key={action.id}
                       onClick={() => handleToggleAction(action.id, action.points)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          handleToggleAction(action.id, action.points);
+                        }
+                      }}
+                      role="checkbox"
+                      aria-checked={isDone}
+                      tabIndex={0}
                       className={`flex gap-3 p-3 rounded-xl border cursor-pointer transition-all hover:scale-[1.01] ${
                         isDone 
-                          ? 'bg-success/15 border-success/50 text-success-foreground dark:text-success/20' 
+                          ? 'bg-success/15 border-success/50 text-[#166534] dark:text-[#4ade80]' 
                           : 'bg-card border-border hover:bg-surface text-text-main'
                       }`}
                     >
@@ -1755,7 +1781,7 @@ export const ResultView = ({
                       </div>
                       <div className="space-y-1">
                         <p className={`text-xs font-semibold leading-normal ${isDone ? 'line-through text-text-muted opacity-60' : ''}`}>{action.text}</p>
-                        <span className={`text-[10px] font-black tracking-widest uppercase ${isDone ? 'text-success dark:text-success' : 'text-primary'}`}>
+                        <span className={`text-[10px] font-black tracking-widest uppercase ${isDone ? 'text-success dark:text-[#4ade80]' : 'text-primary'}`}>
                           {isDone ? 'Completed (+XP)' : `+${action.points} XP`}
                         </span>
                       </div>
@@ -1767,7 +1793,7 @@ export const ResultView = ({
 
             {/* Boundary Strategies */}
             <div className="space-y-4 bg-surface dark:bg-surface/30 border border-border p-5 rounded-2xl flex flex-col">
-              <div className="flex items-center gap-2 text-warning dark:text-warning font-bold uppercase tracking-widest text-xs border-b border-border pb-2 mb-2">
+              <div className="flex items-center gap-2 text-[#9a3412] dark:text-warning font-bold uppercase tracking-widest text-xs border-b border-border pb-2 mb-2">
                 <ShieldCheck className="w-4 h-4" /> Boundary Scripts
               </div>
               <p className="text-[11px] text-text-muted italic mb-2">Practice using these highly professional, firm pushback scripts.</p>
@@ -1778,10 +1804,11 @@ export const ResultView = ({
                   return (
                     <div key={scrip.id} className="p-3 bg-card border border-border rounded-xl space-y-2">
                       <div className="flex items-center justify-between">
-                        <span className="text-[10px] uppercase tracking-wider font-extrabold text-warning dark:text-warning leading-tight block truncate max-w-[150px]">{scrip.situation}</span>
+                        <span className="text-[10px] uppercase tracking-wider font-extrabold text-[#9a3412] dark:text-warning leading-tight block truncate max-w-[150px]">{scrip.situation}</span>
                         <div className="flex gap-2">
                           <button
                             onClick={() => handleCopy(scrip.id, scrip.script)}
+                            aria-label={isCopied ? "Copied to clipboard" : "Copy script to clipboard"}
                             className="text-text-muted hover:text-text-main p-1 rounded hover:bg-surface transition-all cursor-pointer"
                             title="Copy script to clipboard"
                           >
@@ -1795,7 +1822,7 @@ export const ResultView = ({
                         disabled={isCommitted}
                         className={`w-full py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all cursor-pointer ${
                           isCommitted 
-                            ? 'bg-success/20 text-success-foreground dark:text-success/40 border border-success/30' 
+                            ? 'bg-success/20 text-[#166534] dark:text-[#4ade80] border border-success/30' 
                             : 'bg-primary hover:bg-primary-dark text-primary-foreground font-black shadow-lg shadow-primary/15'
                         }`}
                       >
@@ -1816,8 +1843,9 @@ export const ResultView = ({
               <div className="space-y-3 flex-grow">
                 {((PERSONALIZED_RECOVERY_PLANS[result.profile] || PERSONALIZED_RECOVERY_PLANS["High-Functioning Exhausted"]).reflectionPrompts).map((prompt) => (
                   <div key={prompt.id} className="p-3 bg-card border border-border rounded-xl space-y-2">
-                    <label className="text-xs font-bold leading-tight block text-text-main">{prompt.question}</label>
+                    <label htmlFor={`reflection-${prompt.id}`} className="text-xs font-bold leading-tight block text-text-main">{prompt.question}</label>
                     <textarea
+                      id={`reflection-${prompt.id}`}
                       placeholder="Type your reflection here (min 10 characters)..."
                       value={reflections[prompt.id] || ""}
                       onChange={(e) => setReflections(prev => ({ ...prev, [prompt.id]: e.target.value }))}
@@ -1825,7 +1853,7 @@ export const ResultView = ({
                       className="w-full bg-surface dark:bg-surface/50 border border-border rounded-lg p-2 text-xs text-text-main placeholder-text-muted/40 focus:outline-none focus:border-primary/50 resize-none font-normal"
                     />
                     <div className="flex items-center justify-between">
-                      <span className="text-[10px] text-text-muted italic font-medium leading-none">
+                      <span className="text-[10px] text-text-muted italic font-medium leading-none" role="status" aria-live="polite">
                         {reflectionStatus[prompt.id] || ""}
                       </span>
                       <button
