@@ -1713,7 +1713,7 @@ export const ResultView = ({
               </div>
               <div>
                 <h3 className="text-2xl font-display font-bold tracking-tight text-text-main">Personalized Recovery Plan</h3>
-                <p className="text-xs text-text-muted uppercase tracking-wider font-extrabold text-primary dark:text-primary-light">Nova Curated • Profile: {result.profile}</p>
+                <p className="text-xs text-text-muted uppercase tracking-wider font-extrabold text-[#9a3412] dark:text-primary-light">Nova Curated • Profile: {result.profile}</p>
               </div>
             </div>
             <div className="text-sm bg-surface dark:bg-surface/50 border border-border px-3 py-1 rounded-full text-text-muted font-bold">

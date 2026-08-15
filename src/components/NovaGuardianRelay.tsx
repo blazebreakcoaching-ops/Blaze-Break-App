@@ -429,7 +429,7 @@ export const NovaGuardianRelay = ({ contacts, onAdd, onRemove, userName }: NovaG
 
             <div className="relative z-10 space-y-5">
               <div className="p-6 bg-primary/10 rounded-2xl border border-primary/20 text-center space-y-6 shadow-inner">
-                <p className="text-sm font-medium leading-relaxed italic text-primary-light">
+                <p className="text-sm font-medium leading-relaxed italic text-[#9a3412] dark:text-primary-light">
                   "Your nervous system is overworked, not broken. The panic you feel is a biological false alarm, attempting to protect you from an invisible threat. We are safe in this exact moment."
                 </p>
                 <div className="pt-2">

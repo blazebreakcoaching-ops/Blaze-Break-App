@@ -314,7 +314,7 @@ export const OmniBrainMap = ({ activeTab, setActiveTab, darkMode, setDarkMode, s
             <h1 className="text-3xl font-display font-black text-text-main tracking-tight leading-tight">
               OmniBrain Integration
             </h1>
-            <p className="text-primary-light/50 font-mono text-xs uppercase tracking-[0.25em] mt-0.5">Central Nervous System Mapping Engine</p>
+            <p className="text-[#9a3412] dark:text-primary-light/50 font-mono text-xs uppercase tracking-[0.25em] mt-0.5">Central Nervous System Mapping Engine</p>
           </div>
         </div>
 
@@ -468,7 +468,7 @@ export const OmniBrainMap = ({ activeTab, setActiveTab, darkMode, setDarkMode, s
               </div>
 
               <div className="pt-2 border-t border-white/5">
-                <p className="text-[11px] text-primary-light/70 italic leading-relaxed text-left">
+                <p className="text-[11px] text-[#9a3412] dark:text-primary-light/70 italic leading-relaxed text-left">
                   "{pathInsight}"
                 </p>
               </div>

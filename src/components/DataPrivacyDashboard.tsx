@@ -175,7 +175,7 @@ export const DataPrivacyDashboard = ({
                       </div>
                       <div className="space-y-1">
                         <p className="text-xs uppercase font-black tracking-widest text-primary">How Nova uses it</p>
-                        <p className="text-xs text-primary-light/70 leading-relaxed font-mono">{point.novaUsage}</p>
+                        <p className="text-xs text-[#9a3412] dark:text-primary-light/70 leading-relaxed font-mono">{point.novaUsage}</p>
                       </div>
                     </div>
                   </motion.div>

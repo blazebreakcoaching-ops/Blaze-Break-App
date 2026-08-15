@@ -123,7 +123,7 @@ export const OneLessThing = ({ fingerprint, onAwardPoints }: OneLessThingProps) 
                   <MinusCircle className="w-12 h-12" />
                 </div>
                 <h3 className="text-3xl font-display font-bold text-center leading-tight mb-2">Help me remove<br/>one thing.</h3>
-                <p className="text-primary-light font-medium text-center">Click to initiate reduction protocol.</p>
+                <p className="font-medium text-center">Click to initiate reduction protocol.</p>
               </button>
             </motion.div>
           )}
