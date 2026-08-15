@@ -711,7 +711,7 @@ export const RecoveryIntelligenceLayer = ({ onAwardPoints, fingerprint }: Recove
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <span className="text-xs font-black uppercase tracking-[0.2em] text-primary px-3 py-1 bg-primary/10 rounded-full border border-primary/15">
+              <span className="text-xs font-black uppercase tracking-[0.2em] text-[#9a3412] dark:text-primary px-3 py-1 bg-primary/10 rounded-full border border-primary/15">
                 Layer 2: Recovery Intelligence Hub
               </span>
               <span className="text-[11px] font-bold text-text-muted flex items-center gap-1">
@@ -761,6 +761,7 @@ export const RecoveryIntelligenceLayer = ({ onAwardPoints, fingerprint }: Recove
             <button
               key={room.id}
               onClick={() => setActiveRoom(room.id)}
+              aria-current={activeRoom === room.id ? 'true' : undefined}
               className={cn(
                 "w-full p-4 rounded-2xl text-left border transition-all flex items-center justify-between group cursor-pointer",
                 activeRoom === room.id 
@@ -824,7 +825,7 @@ export const RecoveryIntelligenceLayer = ({ onAwardPoints, fingerprint }: Recove
                       recalculating
                         ? "bg-text-main/20 text-text-muted/75 cursor-not-allowed"
                         : recalculateSuccess
-                        ? "bg-success/10 text-success border border-success/30"
+                        ? "bg-success/10 text-[#166534] dark:text-[#4ade80] border border-success/30"
                         : "bg-text-main text-surface hover:scale-[1.02] shadow-lg shadow-text-main/5 active:scale-[0.98]"
                     )}
                   >
@@ -844,7 +845,7 @@ export const RecoveryIntelligenceLayer = ({ onAwardPoints, fingerprint }: Recove
                   <div className="bg-destructive/5 border border-destructive/20 p-4 rounded-xl flex items-start gap-3" id="recalculate_error_banner">
                     <ShieldAlert className="w-5 h-5 text-destructive shrink-0 mt-0.5" />
                     <div>
-                      <span className="text-xs font-black uppercase tracking-wider text-destructive block">Couldn't Update</span>
+                      <span className="text-xs font-black uppercase tracking-wider text-destructive dark:text-[#f87171] block">Couldn't Update</span>
                       <p className="text-xs text-text-muted mt-1 leading-relaxed">{recalculateError}</p>
                     </div>
                   </div>
@@ -852,11 +853,11 @@ export const RecoveryIntelligenceLayer = ({ onAwardPoints, fingerprint }: Recove
 
                 {recalculateSuccess && (
                   <div className="bg-success/5 border border-success/20 p-4 rounded-xl flex items-start gap-4" id="recalculate_success_banner">
-                    <div className="w-5 h-5 rounded-full bg-success/10 text-success flex items-center justify-center shrink-0 mt-0.5">
+                    <div className="w-5 h-5 rounded-full bg-success/10 text-success dark:text-[#4ade80] flex items-center justify-center shrink-0 mt-0.5">
                       <Check className="w-3.5 h-3.5" />
                     </div>
                     <div>
-                      <span className="text-xs font-black uppercase tracking-wider text-success block">Updated</span>
+                      <span className="text-xs font-black uppercase tracking-wider text-[#166534] dark:text-[#4ade80] block">Updated</span>
                       <p className="text-xs text-text-muted mt-0.5 leading-relaxed">Your numbers are refreshed — +15 XP for staying on top of it.</p>
                     </div>
                   </div>
@@ -913,9 +914,9 @@ export const RecoveryIntelligenceLayer = ({ onAwardPoints, fingerprint }: Recove
                               <span className={cn(
                                 "text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full border",
                                 data.status === 'available'
-                                  ? "bg-success/10 text-success border-success/20"
+                                  ? "bg-success/10 text-[#166534] dark:text-[#4ade80] border-success/20"
                                   : data.status === 'early_signal'
-                                  ? "bg-warning/10 text-warning border-warning/20"
+                                  ? "bg-warning/10 text-[#9a3412] dark:text-warning border-warning/20"
                                   : "bg-text-main/5 text-text-muted border-border/40"
                               )}>
                                 {data.status === 'available' ? 'Analytical Active' : data.status === 'early_signal' ? 'Early Detection' : 'Data Required'}
@@ -1055,7 +1056,7 @@ export const RecoveryIntelligenceLayer = ({ onAwardPoints, fingerprint }: Recove
                   className="bg-card border border-border p-6 sm:p-8 rounded-xl"
                 >
                   <div className="flex items-center gap-3 mb-6">
-                    <div className="w-10 h-10 rounded-xl bg-primary/20 text-primary flex items-center justify-center shrink-0">
+                    <div className="w-10 h-10 rounded-xl bg-primary/20 text-[#9a3412] dark:text-primary flex items-center justify-center shrink-0">
                       <HeartPulse className="w-5 h-5" />
                     </div>
                     <div>
@@ -1112,7 +1113,7 @@ export const RecoveryIntelligenceLayer = ({ onAwardPoints, fingerprint }: Recove
                             className={cn(
                               "py-2 px-3 rounded-lg text-[11px] font-black uppercase tracking-widest border transition-all cursor-pointer",
                               triggerSeverity === sev 
-                                ? "bg-destructive/10 border-destructive/50 text-destructive" 
+                                ? "bg-destructive/10 border-destructive/50 text-destructive dark:text-[#f87171]" 
                                 : "bg-white dark:bg-surface border-border/20 text-text-muted"
                             )}
                           >
@@ -1131,7 +1132,7 @@ export const RecoveryIntelligenceLayer = ({ onAwardPoints, fingerprint }: Recove
                         className={cn(
                           "flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-black uppercase tracking-wider transition-all",
                           isRecording 
-                            ? "bg-destructive/10 text-destructive border-destructive/30 shadow-[0_0_15px_rgba(244,63,94,0.3)] animate-pulse" 
+                            ? "bg-destructive/10 text-destructive dark:text-[#f87171] border-destructive/30 shadow-[0_0_15px_rgba(244,63,94,0.3)] animate-pulse" 
                             : "bg-surface text-text-muted border-border/40 hover:text-text-main"
                         )}
                       >
@@ -1158,7 +1159,7 @@ export const RecoveryIntelligenceLayer = ({ onAwardPoints, fingerprint }: Recove
                           <p className="text-[11px] font-bold text-text-main leading-relaxed">
                             We detected a <span className="text-primary">{suggestion.situation}</span> pattern. Here is a recommended rehearsal pushback script:
                           </p>
-                          <div className="p-3 bg-card/40 rounded-lg border border-white/5 font-mono text-xs text-primary-light select-all leading-relaxed whitespace-pre-wrap">
+                          <div className="p-3 bg-card/40 rounded-lg border border-white/5 font-mono text-xs text-[#9a3412] dark:text-primary-light select-all leading-relaxed whitespace-pre-wrap">
                             {suggestion.script}
                           </div>
                           <p className="text-[11px] text-text-muted italic">
@@ -1187,15 +1188,15 @@ export const RecoveryIntelligenceLayer = ({ onAwardPoints, fingerprint }: Recove
                           <div key={tr.id} className="p-4 bg-surface/40 rounded-xl border border-border/40 flex flex-col gap-3">
                             <div className="flex items-start justify-between w-full">
                               <div>
-                                <span className="text-[10px] font-black uppercase tracking-widest text-destructive mr-2">{tr.source}</span>
-                                <span className="text-[10px] font-mono font-black border border-destructive/20 px-2 py-0.5 rounded bg-destructive/5 text-destructive uppercase">{tr.severity}</span>
+                                <span className="text-[10px] font-black uppercase tracking-widest text-destructive dark:text-[#f87171] mr-2">{tr.source}</span>
+                                <span className="text-[10px] font-mono font-black border border-destructive/20 px-2 py-0.5 rounded bg-destructive/5 text-destructive dark:text-[#f87171] uppercase">{tr.severity}</span>
                                 <p className="text-xs font-bold text-text-main mt-1.5">"{tr.notes}"</p>
                               </div>
                             </div>
                             {s && (
                               <div className="p-3 bg-primary/5 border border-primary/20 rounded-lg space-y-1.5 text-left w-full">
-                                <span className="text-[10px] font-black uppercase tracking-widest text-primary leading-none">Suggested Boundary Script</span>
-                                <p className="text-xs font-mono text-primary-light bg-card/30 p-2.5 rounded border border-white/5 mt-1 select-all">{s.script}</p>
+                                <span className="text-[10px] font-black uppercase tracking-widest text-[#9a3412] dark:text-primary leading-none">Suggested Boundary Script</span>
+                                <p className="text-xs font-mono text-[#9a3412] dark:text-primary-light bg-card/30 p-2.5 rounded border border-white/5 mt-1 select-all">{s.script}</p>
                               </div>
                             )}
                           </div>
@@ -1233,6 +1234,8 @@ export const RecoveryIntelligenceLayer = ({ onAwardPoints, fingerprint }: Recove
                       max="100"
                       value={socialBattery}
                       onChange={e => adjustSocialBattery(parseInt(e.target.value, 10))}
+                      aria-label="Social battery capacity"
+                      aria-valuetext={`${socialBattery} percent`}
                       className="w-full cursor-pointer accent-primary"
                     />
                   </div>
@@ -1240,13 +1243,13 @@ export const RecoveryIntelligenceLayer = ({ onAwardPoints, fingerprint }: Recove
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <button
                       onClick={() => adjustSocialBattery(socialBattery - 15)}
-                      className="py-3 bg-destructive/5 hover:bg-destructive/10 border border-destructive/20 text-destructive text-xs font-black uppercase rounded-xl transition-all"
+                      className="py-3 bg-destructive/5 hover:bg-destructive/10 border border-destructive/20 text-destructive dark:text-[#f87171] text-xs font-black uppercase rounded-xl transition-all"
                     >
                       Drained by meeting (-15%)
                     </button>
                     <button
                       onClick={() => adjustSocialBattery(socialBattery + 15)}
-                      className="py-3 bg-success/5 hover:bg-success/10 border border-success/20 text-success text-xs font-black uppercase rounded-xl transition-all"
+                      className="py-3 bg-success/5 hover:bg-success/10 border border-success/20 text-[#166534] dark:text-[#4ade80] text-xs font-black uppercase rounded-xl transition-all"
                     >
                       Restoring conversation (+15%)
                     </button>
@@ -1272,7 +1275,7 @@ export const RecoveryIntelligenceLayer = ({ onAwardPoints, fingerprint }: Recove
                   className="bg-card border border-border p-6 sm:p-8 rounded-xl"
                 >
                   <div className="flex items-center gap-3 mb-6">
-                    <div className="w-10 h-10 rounded-xl bg-warning/20 text-warning flex items-center justify-center shrink-0">
+                    <div className="w-10 h-10 rounded-xl bg-warning/20 text-[#9a3412] dark:text-warning flex items-center justify-center shrink-0">
                       <Star className="w-5 h-5" />
                     </div>
                     <div>
@@ -1297,7 +1300,7 @@ export const RecoveryIntelligenceLayer = ({ onAwardPoints, fingerprint }: Recove
                   className="bg-card border border-border p-6 sm:p-8 rounded-xl"
                 >
                   <div className="flex items-center gap-3 mb-6">
-                    <div className="w-10 h-10 rounded-xl bg-primary/20 text-primary flex items-center justify-center shrink-0">
+                    <div className="w-10 h-10 rounded-xl bg-primary/20 text-[#9a3412] dark:text-primary flex items-center justify-center shrink-0">
                       <Target className="w-5 h-5" />
                     </div>
                     <div>
@@ -1322,7 +1325,7 @@ export const RecoveryIntelligenceLayer = ({ onAwardPoints, fingerprint }: Recove
                   className="bg-card border border-border p-6 sm:p-8 rounded-xl"
                 >
                   <div className="flex items-center gap-3 mb-6">
-                    <div className="w-10 h-10 rounded-xl bg-success/20 text-success flex items-center justify-center shrink-0">
+                    <div className="w-10 h-10 rounded-xl bg-success/20 text-success dark:text-[#4ade80] flex items-center justify-center shrink-0">
                       <Activity className="w-5 h-5" />
                     </div>
                     <div>
@@ -1347,7 +1350,7 @@ export const RecoveryIntelligenceLayer = ({ onAwardPoints, fingerprint }: Recove
                   className="bg-card border border-border p-6 sm:p-8 rounded-xl"
                 >
                   <div className="flex items-center gap-3 mb-6">
-                    <div className="w-10 h-10 rounded-xl bg-primary/20 text-primary flex items-center justify-center shrink-0">
+                    <div className="w-10 h-10 rounded-xl bg-primary/20 text-[#9a3412] dark:text-primary flex items-center justify-center shrink-0">
                       <Wind className="w-5 h-5" />
                     </div>
                     <div>
@@ -1412,7 +1415,7 @@ export const RecoveryIntelligenceLayer = ({ onAwardPoints, fingerprint }: Recove
                       className={cn(
                         "p-4 rounded-xl border text-left flex flex-col justify-between space-y-2 cursor-pointer transition-all",
                         rtwPhase === phase.ph 
-                          ? "bg-primary/10 border-primary/50 text-primary scale-[1.01]" 
+                          ? "bg-primary/10 border-primary/50 text-[#9a3412] dark:text-primary scale-[1.01]" 
                           : "bg-white dark:bg-surface border-border/20 text-text-muted"
                       )}
                     >
