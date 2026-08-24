@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { auth, db } from '../lib/firebase';
 import { addDoc, collection } from 'firebase/firestore';
 import { addNovaMemory } from '../lib/nova-brain';
+import { useFocusTrap } from '../lib/useFocusTrap';
 import {
   Target,
   Play,
@@ -180,7 +181,23 @@ export function FocusZone({ onAwardPoints, isFocusActive, setIsFocusActive, curr
   const [soundMode, setSoundMode] = useState<'none' | 'binaural' | 'ocean' | 'drone'>('none');
   const [isMuted, setIsMuted] = useState(false);
   const [sessionCompleted, setSessionCompleted] = useState(false);
+  const victoryDialogRef = useFocusTrap(sessionCompleted);
   const [quitInterceptOpen, setQuitInterceptOpen] = useState(false);
+  const quitDialogRef = useFocusTrap(quitInterceptOpen);
+
+  useEffect(() => {
+    if (!quitInterceptOpen) return;
+    const onKeyDown = (e: KeyboardEvent) => { if (e.key === 'Escape') setQuitInterceptOpen(false); };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [quitInterceptOpen]);
+
+  useEffect(() => {
+    if (!sessionCompleted) return;
+    const onKeyDown = (e: KeyboardEvent) => { if (e.key === 'Escape') setSessionCompleted(false); };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [sessionCompleted]);
 
   // Breathing Box Guide state
   const [breathPhase, setBreathPhase] = useState<'In' | 'Hold1' | 'Out' | 'Hold2'>('In');
@@ -374,7 +391,7 @@ export function FocusZone({ onAwardPoints, isFocusActive, setIsFocusActive, curr
 
           <div className="relative z-10 space-y-6">
             <div className="flex items-center gap-4">
-              <div className="w-12 h-12 rounded-2xl bg-primary/15 border border-primary/25 flex items-center justify-center text-primary shadow-inner">
+              <div className="w-12 h-12 rounded-2xl bg-primary/15 border border-primary/25 flex items-center justify-center text-[#9a3412] dark:text-primary shadow-inner">
                 <Target className="w-6 h-6 animate-pulse" />
               </div>
               <div>
@@ -424,10 +441,11 @@ export function FocusZone({ onAwardPoints, isFocusActive, setIsFocusActive, curr
                     <button
                       key={track.id}
                       onClick={() => setSoundMode(track.id as any)}
+                      aria-pressed={soundMode === track.id}
                       className={cn(
                         "py-2.5 px-2 rounded-xl text-[10px] font-black transition-all cursor-pointer border text-center leading-snug",
                         soundMode === track.id 
-                          ? "bg-primary/10 border-primary/40 text-primary" 
+                          ? "bg-primary/10 border-primary/40 text-[#9a3412] dark:text-primary" 
                           : "bg-surface hover:bg-card border-border/80 text-text-muted"
                       )}
                     >
@@ -480,13 +498,14 @@ export function FocusZone({ onAwardPoints, isFocusActive, setIsFocusActive, curr
               <div className="flex items-center gap-3">
                 <button
                   onClick={() => setIsMuted(!isMuted)}
+                  aria-label={isMuted ? "Unmute ambient sound" : "Mute ambient sound"}
                   className="p-3 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-white transition-all cursor-pointer"
                 >
                   {isMuted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
                 </button>
                 <button
                   onClick={handleCancelRequest}
-                  className="p-3 bg-destructive/10 hover:bg-destructive/20 border border-destructive/25 text-destructive rounded-xl transition-all flex items-center gap-2 text-xs font-black uppercase tracking-widest cursor-pointer"
+                  className="p-3 bg-destructive/10 hover:bg-destructive/20 border border-destructive/25 text-[#f87171] rounded-xl transition-all flex items-center gap-2 text-xs font-black uppercase tracking-widest cursor-pointer"
                 >
                   <X className="w-4 h-4" />
                   Break Focus
@@ -511,7 +530,7 @@ export function FocusZone({ onAwardPoints, isFocusActive, setIsFocusActive, curr
                 />
 
                 <div className="w-44 h-44 rounded-full bg-surface border border-border shadow-md flex flex-col items-center justify-center space-y-1 relative z-10">
-                  <span className="text-4xl font-mono font-black text-white tracking-tight">
+                  <span className="text-4xl font-mono font-black text-text-main tracking-tight">
                     {formatTime(timeLeft)}
                   </span>
                   <span className="text-[9px] uppercase font-black text-text-muted tracking-widest">
@@ -555,9 +574,14 @@ export function FocusZone({ onAwardPoints, isFocusActive, setIsFocusActive, curr
         {quitInterceptOpen && (
           <div className="fixed inset-0 bg-black/80 z-[1000] flex items-center justify-center p-6 backdrop-blur-xl">
             <motion.div
+              ref={quitDialogRef as any}
               initial={{ scale: 0.9, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.9, opacity: 0 }}
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="quit-intercept-title"
+              tabIndex={-1}
               className="max-w-md w-full bg-card border border-border p-8 rounded-xl shadow-lg space-y-6 text-left relative overflow-hidden"
             >
               {/* Caution background */}
@@ -567,7 +591,7 @@ export function FocusZone({ onAwardPoints, isFocusActive, setIsFocusActive, curr
                   <AlertTriangle className="w-5 h-5 animate-bounce" />
                 </div>
                 <div>
-                  <h4 className="text-sm font-black text-text-main uppercase tracking-wider">Nova Coach Check-In</h4>
+                  <h4 id="quit-intercept-title" className="text-sm font-black text-text-main uppercase tracking-wider">Nova Coach Check-In</h4>
                   <p className="text-[10px] text-text-muted font-bold">Unplanned Context Swap Detected</p>
                 </div>
               </div>
@@ -605,20 +629,25 @@ export function FocusZone({ onAwardPoints, isFocusActive, setIsFocusActive, curr
         {sessionCompleted && (
           <div className="fixed inset-0 bg-[#070b13]/95 z-[999] flex items-center justify-center p-6 backdrop-blur-md">
             <motion.div
+              ref={victoryDialogRef as any}
               initial={{ scale: 0.9, opacity: 0, y: 30 }}
               animate={{ scale: 1, opacity: 1, y: 0 }}
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="victory-title"
+              tabIndex={-1}
               className="max-w-md w-full bg-card border border-primary/25 p-8 rounded-xl shadow-lg text-center space-y-6 relative overflow-hidden"
             >
 
               <div className="relative z-10 flex flex-col items-center space-y-4">
-                <div className="w-16 h-16 bg-success/20 border border-success/40 rounded-xl flex items-center justify-center text-success relative">
+                <div className="w-16 h-16 bg-success/20 border border-success/40 rounded-xl flex items-center justify-center text-success dark:text-[#4ade80] relative">
                   <Sparkles className="w-8 h-8 animate-spin" style={{ animationDuration: '4s' }} />
                   <CheckCircle className="w-4 h-4 text-white bg-success rounded-full absolute -bottom-1 -right-1" />
                 </div>
 
                 <div className="space-y-1">
-                  <span className="text-[10px] font-black uppercase tracking-[0.25em] text-success font-mono">Focus Session Complete</span>
-                  <h4 className="text-2xl font-display font-black text-text-main">Fortress Defended</h4>
+                  <span className="text-[10px] font-black uppercase tracking-[0.25em] text-[#166534] dark:text-[#4ade80] font-mono">Focus Session Complete</span>
+                  <h4 id="victory-title" className="text-2xl font-display font-black text-text-main">Fortress Defended</h4>
                 </div>
 
                 <p className="text-xs text-text-muted leading-relaxed font-semibold max-w-sm">
@@ -631,7 +660,7 @@ export function FocusZone({ onAwardPoints, isFocusActive, setIsFocusActive, curr
                     <span className="text-[10px] font-black uppercase tracking-widest text-text-muted block">Gained Reward</span>
                     <span className="text-sm font-bold text-text-main">+100 Recovery Points</span>
                   </div>
-                  <div className="px-3 py-1 bg-success/15 border border-success/25 rounded-lg text-success text-[10px] font-mono font-black uppercase tracking-wider">
+                  <div className="px-3 py-1 bg-success/15 border border-success/25 rounded-lg text-[#166534] dark:text-[#4ade80] text-[10px] font-mono font-black uppercase tracking-wider">
                     Laser Focus Badge
                   </div>
                 </div>
