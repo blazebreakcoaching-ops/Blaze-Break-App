@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { MinusCircle, Brain, Trash2, Clock, Users, Zap, CheckCircle2 } from 'lucide-react';
 import { cn } from '../lib/utils';
@@ -11,8 +11,50 @@ interface OneLessThingProps {
 
 type Step = 'initial' | 'input' | 'analyzing' | 'result';
 
+// The four possible outcomes each carry their own destructive/success/
+// primary/warning color, but that color behaves differently depending on
+// what it sits on. On the solid bgColorClass background, only the
+// matching -foreground token is readable (verified: white works for
+// destructive/success, dark ink works for primary/warning - using one
+// fixed color for all four fails badly on two of them). On a plain card,
+// each color has its own light/dark pass-fail pattern already established
+// elsewhere this session.
+const SOLID_BG_TEXT: Record<string, string> = {
+  'text-destructive': 'text-destructive-foreground',
+  'text-success': 'text-success-foreground',
+  'text-primary': 'text-primary-foreground',
+  'text-warning': 'text-warning-foreground',
+};
+const CARD_TEXT: Record<string, string> = {
+  'text-destructive': 'text-destructive dark:text-[#f87171]',
+  'text-success': 'text-[#166534] dark:text-[#4ade80]',
+  'text-primary': 'text-[#9a3412] dark:text-primary',
+  'text-warning': 'text-[#9a3412] dark:text-warning',
+};
+
 export const OneLessThing = ({ fingerprint, onAwardPoints }: OneLessThingProps) => {
   const [step, setStep] = useState<Step>('initial');
+  const stepContainerRef = useRef<HTMLDivElement>(null);
+  const isFirstStepRenderRef = useRef(true);
+
+  useEffect(() => {
+    if (isFirstStepRenderRef.current) {
+      isFirstStepRenderRef.current = false;
+      return;
+    }
+    // The 'input' step already moves focus itself via the textarea's autoFocus,
+    // so this only needs to handle the transitions that don't have a natural
+    // focus target (processing, result).
+    if (step === 'input') return;
+    const t = window.setTimeout(() => {
+      const heading = stepContainerRef.current?.querySelector<HTMLElement>('h3');
+      if (heading) {
+        if (!heading.hasAttribute('tabindex')) heading.setAttribute('tabindex', '-1');
+        heading.focus();
+      }
+    }, 0);
+    return () => window.clearTimeout(t);
+  }, [step]);
   const [task, setTask] = useState('');
   const [result, setResult] = useState<{
     action: 'Delete' | 'Delay' | 'Delegate' | 'Simplify';
@@ -104,7 +146,7 @@ export const OneLessThing = ({ fingerprint, onAwardPoints }: OneLessThingProps) 
         </div>
       </div>
 
-      <div className="flex justify-center py-8">
+      <div ref={stepContainerRef} className="flex justify-center py-8">
         <AnimatePresence mode="wait">
           
           {step === 'initial' && (
@@ -201,11 +243,11 @@ export const OneLessThing = ({ fingerprint, onAwardPoints }: OneLessThingProps) 
                 <div className={cn("card p-8 md:p-12 relative overflow-hidden border", result.borderClass)}>
                   <div className="relative z-10">
                     <div className="flex items-start gap-6 mb-8">
-                      <div className={cn("w-16 h-16 rounded-xl flex items-center justify-center text-white shrink-0 shadow-lg", result.bgColorClass)}>
+                      <div className={cn("w-16 h-16 rounded-xl flex items-center justify-center shrink-0 shadow-lg", result.bgColorClass, SOLID_BG_TEXT[result.colorClass] || 'text-white')}>
                         <result.icon className="w-8 h-8" />
                       </div>
                       <div>
-                        <span className={cn("text-sm font-black uppercase tracking-widest", result.colorClass)}>Nova's Recommendation</span>
+                        <span className={cn("text-sm font-black uppercase tracking-widest", CARD_TEXT[result.colorClass] || result.colorClass)}>Nova's Recommendation</span>
                         <h3 className="text-4xl font-display font-bold text-text-main mt-1.5">{result.action} It.</h3>
                       </div>
                     </div>
@@ -231,7 +273,7 @@ export const OneLessThing = ({ fingerprint, onAwardPoints }: OneLessThingProps) 
                       <span className="text-sm font-bold text-text-muted flex items-center gap-2">
                          <CheckCircle2 className="w-4 h-4 text-success" /> Nice work, one less thing
                       </span>
-                      <button onClick={handleReset} className={cn("btn-primary", result.bgColorClass, "hover:opacity-90")}>
+                      <button onClick={handleReset} className={cn("rounded-xl px-7 py-3 font-display font-semibold transition-all duration-300 hover:opacity-90", result.bgColorClass, SOLID_BG_TEXT[result.colorClass] || 'text-white')}>
                         Task Removed
                       </button>
                     </div>
