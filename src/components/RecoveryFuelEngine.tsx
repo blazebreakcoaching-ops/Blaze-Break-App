@@ -490,7 +490,7 @@ export const RecoveryFuelEngine = ({
             className={cn(
               "absolute top-6 left-6 right-6 z-50 p-6 rounded-xl border shadow-lg flex flex-col md:flex-row items-start justify-between gap-4 animate-in",
               activeNudge.type === 'hydration' ? "bg-primary/5 border-primary/30 text-text-main" :
-              activeNudge.type === 'meeting' ? "bg-warning/10 border-warning/30 text-warning-foreground dark:text-warning/20" :
+              activeNudge.type === 'meeting' ? "bg-warning/10 border-warning/30 text-warning-foreground dark:text-warning" :
               "bg-destructive/10 border-destructive/30 text-text-main"
             )}
             id="active_nova_fuel_nudge"
@@ -499,7 +499,7 @@ export const RecoveryFuelEngine = ({
               <div className={cn(
                 "w-11 h-11 rounded-lg flex items-center justify-center shrink-0",
                 activeNudge.type === 'hydration' ? "bg-surface text-text-main" :
-                activeNudge.type === 'meeting' ? "bg-warning/20 text-warning" :
+                activeNudge.type === 'meeting' ? "bg-warning/20 text-[#9a3412] dark:text-warning" :
                 "bg-destructive/20 text-destructive"
               )}>
                 {activeNudge.type === 'hydration' ? <Droplet className="w-5 h-5" /> :
@@ -525,7 +525,7 @@ export const RecoveryFuelEngine = ({
                       onAwardPoints(10, "Hydration Reminder Actioned");
                     }
                   }}
-                  className="px-4 py-2 bg-sky-505 hover:bg-text-main text-text-main font-bold text-xs uppercase tracking-wider rounded-xl transition-all shadow-md cursor-pointer"
+                  className="px-4 py-2 bg-sky-500 hover:bg-text-main hover:text-background text-[#1c1917] font-bold text-xs uppercase tracking-wider rounded-xl transition-all shadow-md cursor-pointer"
                 >
                   Drink Glass (+10 pts)
                 </button>
@@ -537,7 +537,7 @@ export const RecoveryFuelEngine = ({
                       onAwardPoints(15, "Adrenaline Checkpoint Safeguarded");
                     }
                   }}
-                  className="px-4 py-2 bg-primary-light5 hover:bg-primary text-text-main dark:text-primary-foreground font-bold text-xs uppercase tracking-wider rounded-xl transition-all shadow-md cursor-pointer"
+                  className="px-4 py-2 bg-primary-light hover:bg-primary text-[#1c1917] dark:text-text-main dark:hover:text-[#1c1917] font-bold text-xs uppercase tracking-wider rounded-xl transition-all shadow-md cursor-pointer"
                 >
                   Fueled Up (+15 pts)
                 </button>
@@ -561,7 +561,7 @@ export const RecoveryFuelEngine = ({
           </div>
           <div>
             <div className="flex items-center gap-3">
-              <span className="text-xs font-black uppercase tracking-[0.25em] text-primary px-3 py-1 bg-primary/10 rounded-full border border-primary/15">
+              <span className="text-xs font-black uppercase tracking-[0.25em] text-[#9a3412] dark:text-primary px-3 py-1 bg-primary/10 rounded-full border border-primary/15">
                 Pillar 3: Habits & Physiological Fuel
               </span>
               <span className="text-[11px] font-bold text-text-muted flex items-center gap-1">
@@ -645,7 +645,7 @@ export const RecoveryFuelEngine = ({
           >
             {isCheckInSubmitted ? (
               <div className="bg-success/5 border border-success/20 p-8 rounded-2xl text-center space-y-4">
-                <div className="w-12 h-12 bg-success/15 text-success rounded-full flex items-center justify-center mx-auto shadow-lg">
+                <div className="w-12 h-12 bg-success/15 text-success dark:text-[#4ade80] rounded-full flex items-center justify-center mx-auto shadow-lg">
                   <Check className="w-6 h-6" />
                 </div>
                 <h3 className="text-xl font-display font-bold text-text-main">
@@ -689,18 +689,20 @@ export const RecoveryFuelEngine = ({
                     <div className="grid grid-cols-2 gap-3">
                       <button
                         onClick={() => { setHasEaten(true); setSkippedBreakfast(false); }}
+                        aria-pressed={hasEaten === true}
                         className={cn(
                           "py-3 rounded-xl text-xs font-bold border transition-all cursor-pointer",
-                          hasEaten === true ? "bg-primary/10 border-primary/45 text-primary" : "bg-white dark:bg-surface border-border/40 text-text-muted hover:border-border"
+                          hasEaten === true ? "bg-primary/10 border-primary/45 text-[#9a3412] dark:text-primary" : "bg-white dark:bg-surface border-border/40 text-text-muted hover:border-border"
                         )}
                       >
                         Yes, regularly
                       </button>
                       <button
                         onClick={() => { setHasEaten(false); }}
+                        aria-pressed={hasEaten === false}
                         className={cn(
                           "py-3 rounded-xl text-xs font-bold border transition-all cursor-pointer",
-                          hasEaten === false ? "bg-destructive/10 border-destructive/40 text-destructive" : "bg-white dark:bg-surface border-border/40 text-text-muted hover:border-border"
+                          hasEaten === false ? "bg-destructive/10 border-destructive/40 text-destructive dark:text-[#f87171]" : "bg-white dark:bg-surface border-border/40 text-text-muted hover:border-border"
                         )}
                       >
                         Skipped or delayed
@@ -715,18 +717,20 @@ export const RecoveryFuelEngine = ({
                       <div className="grid grid-cols-2 gap-3">
                         <button
                           onClick={() => setSkippedBreakfast(true)}
+                          aria-pressed={skippedBreakfast === true}
                           className={cn(
                             "py-3 rounded-xl text-xs font-bold border transition-all cursor-pointer",
-                            skippedBreakfast === true ? "bg-destructive/10 border-destructive/40 text-destructive" : "bg-white dark:bg-surface border-border/40 text-text-muted hover:border-border"
+                            skippedBreakfast === true ? "bg-destructive/10 border-destructive/40 text-destructive dark:text-[#f87171]" : "bg-white dark:bg-surface border-border/40 text-text-muted hover:border-border"
                           )}
                         >
                           Yes, skipped entirely
                         </button>
                         <button
                           onClick={() => setSkippedBreakfast(false)}
+                          aria-pressed={skippedBreakfast === false}
                           className={cn(
                             "py-3 rounded-xl text-xs font-bold border transition-all cursor-pointer",
-                            skippedBreakfast === false ? "bg-primary/10 border-primary/45 text-primary" : "bg-white dark:bg-surface border-border/40 text-text-muted hover:border-border"
+                            skippedBreakfast === false ? "bg-primary/10 border-primary/45 text-[#9a3412] dark:text-primary" : "bg-white dark:bg-surface border-border/40 text-text-muted hover:border-border"
                           )}
                         >
                           No, just late
@@ -750,6 +754,7 @@ export const RecoveryFuelEngine = ({
                             if (cnt === 0) setCaffeineTiming('none');
                             else if (caffeineTiming === 'none') setCaffeineTiming('early');
                           }}
+                          aria-pressed={caffeineCount === cnt}
                           className={cn(
                             "flex-1 py-2.5 rounded-lg text-xs font-mono font-bold border transition-all cursor-pointer",
                             caffeineCount === cnt ? "bg-primary text-primary-foreground border-primary shadow-md" : "bg-white dark:bg-surface border-border/40 hover:border-border text-text-muted"
@@ -769,18 +774,20 @@ export const RecoveryFuelEngine = ({
                         <div className="grid grid-cols-2 gap-3">
                           <button
                             onClick={() => setCaffeineTiming('early')}
+                            aria-pressed={caffeineTiming === 'early'}
                             className={cn(
                               "py-2.5 rounded-xl text-xs font-bold border transition-all cursor-pointer",
-                              caffeineTiming === 'early' ? "bg-primary/10 border-primary/45 text-primary" : "bg-white dark:bg-surface border-border/40 text-text-muted"
+                              caffeineTiming === 'early' ? "bg-primary/10 border-primary/45 text-[#9a3412] dark:text-primary" : "bg-white dark:bg-surface border-border/40 text-text-muted"
                             )}
                           >
                             Early (Before 12 PM)
                           </button>
                           <button
                             onClick={() => setCaffeineTiming('late')}
+                            aria-pressed={caffeineTiming === 'late'}
                             className={cn(
                               "py-2.5 rounded-xl text-xs font-bold border transition-all cursor-pointer",
-                              caffeineTiming === 'late' ? "bg-destructive/10 border-destructive/40 text-destructive" : "bg-white dark:bg-surface border-border/40 text-text-muted"
+                              caffeineTiming === 'late' ? "bg-destructive/10 border-destructive/40 text-destructive dark:text-[#f87171]" : "bg-white dark:bg-surface border-border/40 text-text-muted"
                             )}
                           >
                             Late (After 2 PM)
@@ -793,18 +800,20 @@ export const RecoveryFuelEngine = ({
                         <div className="grid grid-cols-2 gap-3">
                           <button
                             onClick={() => setCaffeineEmptyStomach(true)}
+                            aria-pressed={caffeineEmptyStomach === true}
                             className={cn(
                               "py-2.5 rounded-xl text-xs font-bold border transition-all cursor-pointer",
-                              caffeineEmptyStomach === true ? "bg-destructive/10 border-destructive/40 text-destructive" : "bg-white dark:bg-surface border-border/40 text-text-muted"
+                              caffeineEmptyStomach === true ? "bg-destructive/10 border-destructive/40 text-destructive dark:text-[#f87171]" : "bg-white dark:bg-surface border-border/40 text-text-muted"
                             )}
                           >
                             Yes, empty stomach
                           </button>
                           <button
                             onClick={() => setCaffeineEmptyStomach(false)}
+                            aria-pressed={caffeineEmptyStomach === false}
                             className={cn(
                               "py-2.5 rounded-xl text-xs font-bold border transition-all cursor-pointer",
-                              caffeineEmptyStomach === false ? "bg-primary/10 border-primary/45 text-primary" : "bg-white dark:bg-surface border-border/40 text-text-muted"
+                              caffeineEmptyStomach === false ? "bg-primary/10 border-primary/45 text-[#9a3412] dark:text-primary" : "bg-white dark:bg-surface border-border/40 text-text-muted"
                             )}
                           >
                             No, with or after food
@@ -825,6 +834,8 @@ export const RecoveryFuelEngine = ({
                         <button
                           key={i}
                           onClick={() => setHydrationGlasses(i)}
+                          aria-label={i === 0 ? "Reset hydration to zero glasses" : `Set hydration to ${i} glass${i === 1 ? '' : 'es'}`}
+                          aria-pressed={hydrationGlasses >= i && i > 0}
                           className={cn(
                             "flex-1 h-10 rounded-lg border transition-all flex items-center justify-center cursor-pointer",
                             hydrationGlasses >= i && i > 0 
@@ -844,15 +855,17 @@ export const RecoveryFuelEngine = ({
                     <div className="grid grid-cols-2 gap-3">
                       <button
                         onClick={() => setMorningLight(true)}
+                        aria-pressed={morningLight === true}
                         className={cn(
                           "py-3 rounded-xl text-xs font-bold border transition-all cursor-pointer",
-                          morningLight === true ? "bg-primary/10 border-primary/45 text-primary" : "bg-white dark:bg-surface border-border/40 text-text-muted hover:border-border"
+                          morningLight === true ? "bg-primary/10 border-primary/45 text-[#9a3412] dark:text-primary" : "bg-white dark:bg-surface border-border/40 text-text-muted hover:border-border"
                         )}
                       >
                         Yes, outdoor light
                       </button>
                       <button
                         onClick={() => setMorningLight(false)}
+                        aria-pressed={morningLight === false}
                         className={cn(
                           "py-3 rounded-xl text-xs font-bold border transition-all cursor-pointer",
                           morningLight === false ? "bg-transparent border-border/45 text-text-muted hover:border-border" : "bg-white dark:bg-surface border-border/40 text-text-muted hover:border-border"
@@ -870,18 +883,20 @@ export const RecoveryFuelEngine = ({
                       <div className="grid grid-cols-2 gap-3">
                         <button
                           onClick={() => setAlcoholLogged(true)}
+                          aria-pressed={alcoholLogged === true}
                           className={cn(
                             "py-3 rounded-xl text-xs font-bold border transition-all cursor-pointer",
-                            alcoholLogged === true ? "bg-destructive/10 border-destructive/45 text-destructive" : "bg-white dark:bg-surface border-border/40 text-text-muted hover:border-border"
+                            alcoholLogged === true ? "bg-destructive/10 border-destructive/45 text-destructive dark:text-[#f87171]" : "bg-white dark:bg-surface border-border/40 text-text-muted hover:border-border"
                           )}
                         >
                           Yes, had alcohol
                         </button>
                         <button
                           onClick={() => setAlcoholLogged(false)}
+                          aria-pressed={alcoholLogged === false}
                           className={cn(
                             "py-3 rounded-xl text-xs font-bold border transition-all cursor-pointer",
-                            alcoholLogged === false ? "bg-primary/10 border-primary/45 text-primary" : "bg-white dark:bg-surface border-border/40 text-text-muted hover:border-border"
+                            alcoholLogged === false ? "bg-primary/10 border-primary/45 text-[#9a3412] dark:text-primary" : "bg-white dark:bg-surface border-border/40 text-text-muted hover:border-border"
                           )}
                         >
                           No alcohol consumed
@@ -896,18 +911,20 @@ export const RecoveryFuelEngine = ({
                     <div className="grid grid-cols-2 gap-3">
                       <button
                         onClick={() => setShakyIrritable(true)}
+                        aria-pressed={shakyIrritable === true}
                         className={cn(
                           "py-3 rounded-xl text-xs font-bold border transition-all cursor-pointer",
-                          shakyIrritable === true ? "bg-destructive/10 border-destructive/40 text-destructive bg-gradient-to-br" : "bg-white dark:bg-surface border-border/40 text-text-muted hover:border-border"
+                          shakyIrritable === true ? "bg-destructive/10 border-destructive/40 text-destructive dark:text-[#f87171] bg-gradient-to-br" : "bg-white dark:bg-surface border-border/40 text-text-muted hover:border-border"
                         )}
                       >
                         Yes, shaky / fogged
                       </button>
                       <button
                         onClick={() => setShakyIrritable(false)}
+                        aria-pressed={shakyIrritable === false}
                         className={cn(
                           "py-3 rounded-xl text-xs font-bold border transition-all cursor-pointer",
-                          shakyIrritable === false ? "bg-primary/10 border-primary/45 text-primary" : "bg-white dark:bg-surface border-border/40 text-text-muted hover:border-border"
+                          shakyIrritable === false ? "bg-primary/10 border-primary/45 text-[#9a3412] dark:text-primary" : "bg-white dark:bg-surface border-border/40 text-text-muted hover:border-border"
                         )}
                       >
                         Stable & steady
@@ -950,7 +967,7 @@ export const RecoveryFuelEngine = ({
                   {/* Caffeine Guard Card */}
                   <div className="bg-surface dark:bg-surface p-6 rounded-2xl border border-border/40 space-y-4">
                     <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-xl bg-warning/10 flex items-center justify-center text-warning">
+                      <div className="w-10 h-10 rounded-xl bg-warning/10 flex items-center justify-center text-[#9a3412] dark:text-warning">
                         <Coffee className="w-5 h-5" />
                       </div>
                       <div>
@@ -969,7 +986,7 @@ export const RecoveryFuelEngine = ({
                   {/* Circadian Sunlight card */}
                   <div className="bg-surface dark:bg-surface p-6 rounded-2xl border border-border/40 space-y-4">
                     <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-xl bg-warning/10 flex items-center justify-center text-warning">
+                      <div className="w-10 h-10 rounded-xl bg-warning/10 flex items-center justify-center text-[#9a3412] dark:text-warning">
                         <Sun className="w-5 h-5" />
                       </div>
                       <div>
@@ -1009,6 +1026,8 @@ export const RecoveryFuelEngine = ({
                         </div>
                         <button
                           onClick={() => handleHydrationToggle(!hydrationReminderEnabled)}
+                          role="switch"
+                          aria-checked={hydrationReminderEnabled}
                           className={cn(
                             "px-3 py-1 rounded-lg text-[11px] font-black uppercase tracking-wider transition-all border cursor-pointer",
                             hydrationReminderEnabled 
@@ -1069,10 +1088,12 @@ export const RecoveryFuelEngine = ({
                             </div>
                             <button
                               onClick={() => handleMeetingToggle(!meetingReminderEnabled)}
+                              role="switch"
+                              aria-checked={meetingReminderEnabled}
                               className={cn(
                                 "px-2.5 py-1 rounded-lg text-[11px] font-black uppercase tracking-wider transition-all border cursor-pointer",
                                 meetingReminderEnabled
-                                  ? "bg-warning text-warning-foreground dark:text-text-main border-warning shadow-sm"
+                                  ? "bg-warning text-warning-foreground border-warning shadow-sm"
                                   : "bg-transparent text-text-muted border-border/40"
                               )}
                             >
@@ -1100,10 +1121,11 @@ export const RecoveryFuelEngine = ({
                                   <button
                                     key={mins}
                                     onClick={() => handleMeetingLeadChange(mins)}
+                                    aria-pressed={meetingLeadMinutes === mins}
                                     className={cn(
                                       "py-1.5 rounded-lg text-xs font-mono font-bold border transition-all cursor-pointer",
                                       meetingLeadMinutes === mins
-                                        ? "bg-warning/10 border-warning/40 text-warning"
+                                        ? "bg-warning/10 border-warning/40 text-[#9a3412] dark:text-warning"
                                         : "bg-transparent border-border/25 text-text-muted"
                                     )}
                                   >
@@ -1124,6 +1146,8 @@ export const RecoveryFuelEngine = ({
                             </div>
                             <button
                               onClick={() => handleEmotionalToggle(!emotionalReminderEnabled)}
+                              role="switch"
+                              aria-checked={emotionalReminderEnabled}
                               className={cn(
                                 "px-2.5 py-1 rounded-lg text-[11px] font-black uppercase tracking-wider transition-all border cursor-pointer",
                                 emotionalReminderEnabled
@@ -1146,7 +1170,7 @@ export const RecoveryFuelEngine = ({
                                     className={cn(
                                       "py-1.5 rounded-lg text-xs font-mono font-bold border transition-all cursor-pointer",
                                       emotionalInterval === mins
-                                        ? "bg-destructive/10 border-destructive/40 text-destructive"
+                                        ? "bg-destructive/10 border-destructive/40 text-destructive dark:text-[#f87171]"
                                         : "bg-transparent border-border/25 text-text-muted"
                                     )}
                                   >
@@ -1162,13 +1186,13 @@ export const RecoveryFuelEngine = ({
                       <div className="grid grid-cols-2 gap-2">
                         <button
                           onClick={triggerMeetingTest}
-                          className="py-2 bg-warning/5 hover:bg-warning/10 border border-warning/15 text-warning rounded-xl text-[11px] font-black uppercase tracking-widest flex items-center justify-center gap-1 transition-all cursor-pointer hover:scale-[1.01] active:scale-95"
+                          className="py-2 bg-warning/5 hover:bg-warning/10 border border-warning/15 text-[#9a3412] dark:text-warning rounded-xl text-[11px] font-black uppercase tracking-widest flex items-center justify-center gap-1 transition-all cursor-pointer hover:scale-[1.01] active:scale-95"
                         >
                           <Clock className="w-3 h-3" /> Preview
                         </button>
                         <button
                           onClick={triggerEmotionalTest}
-                          className="py-2 bg-destructive/5 hover:bg-destructive/10 border border-destructive/15 text-destructive rounded-xl text-[11px] font-black uppercase tracking-widest flex items-center justify-center gap-1 transition-all cursor-pointer hover:scale-[1.01] active:scale-95"
+                          className="py-2 bg-destructive/5 hover:bg-destructive/10 border border-destructive/15 text-destructive dark:text-[#f87171] rounded-xl text-[11px] font-black uppercase tracking-widest flex items-center justify-center gap-1 transition-all cursor-pointer hover:scale-[1.01] active:scale-95"
                         >
                           <ShieldAlert className="w-3 h-3" /> Preview
                         </button>
@@ -1195,7 +1219,7 @@ export const RecoveryFuelEngine = ({
             <div className="bg-surface dark:bg-surface p-6 rounded-2xl border border-border/40">
               <h3 className="text-xs uppercase font-black tracking-wider text-text-muted ">Active Coach Overrides</h3>
               <p className="text-xl font-display font-medium text-text-main mt-1">Nova's Nutrition Analysis</p>
-              <div className="text-sm bg-primary/5 text-primary font-bold p-4 rounded-xl mt-4 border border-primary/10 italic">
+              <div className="text-sm bg-primary/5 text-[#9a3412] dark:text-primary font-bold p-4 rounded-xl mt-4 border border-primary/10 italic">
                 “Your emotional resilience might not be failing today. If you skipped lunch, slept poorly, and ran on high caffeine, you are physically unstable. Fuel your body before judging your boundaries.”
               </div>
             </div>
@@ -1287,7 +1311,7 @@ export const RecoveryFuelEngine = ({
               <p className="text-xs text-text-muted leading-relaxed">
                 Micronutrients like magnesium glycinate, Vitamin D, high-dose B vitamins, and omega-3 essential fatty acids participate in normal cellular and nervous system functions. Chronic stress siphons these mineral reserves.
               </p>
-              <div className="bg-warning/5 text-warning dark:text-warning p-4 rounded-xl text-xs font-black uppercase tracking-wider leading-relaxed border border-warning/10">
+              <div className="bg-warning/5 text-[#9a3412] dark:text-warning p-4 rounded-xl text-xs font-black uppercase tracking-wider leading-relaxed border border-warning/10">
                 ⚠️ Safe Recovery Boundary: This app supports behavioral recovery. Do not treat supplement insights as a prescription. Speak to a qualified medical professional if you suspect clinical deficiencies, take prescription medication, are pregnant, or are under 18.
               </div>
             </div>
@@ -1331,7 +1355,7 @@ export const RecoveryFuelEngine = ({
             {/* Blood Sugar Stability Card */}
             <div className="bg-surface dark:bg-surface p-6 rounded-2xl border border-border/40 space-y-4 col-span-1 md:col-span-2">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-warning/10 flex items-center justify-center text-warning">
+                <div className="w-10 h-10 rounded-xl bg-warning/10 flex items-center justify-center text-[#9a3412] dark:text-warning">
                   <Activity className="w-5 h-5" />
                 </div>
                 <div>
