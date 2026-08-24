@@ -106,6 +106,16 @@ export const DataPrivacyDashboard = ({
           return (
             <div 
               key={point.id}
+              role="button"
+              tabIndex={0}
+              aria-expanded={isExpanded}
+              onKeyDown={(e) => {
+                if (e.target !== e.currentTarget) return; // Don't react to a bubbled keydown from a nested control like the toggle button.
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  setExpandedId(isExpanded ? null : point.id);
+                }
+              }}
               className={cn(
                 "rounded-xl border transition-all duration-300 overflow-hidden",
                 isExpanded 
@@ -142,6 +152,9 @@ export const DataPrivacyDashboard = ({
                   {!point.required && (
                     <button 
                       onClick={(e) => handleToggle(point, e)}
+                      role="switch"
+                      aria-checked={isEnabled}
+                      aria-label={`${isEnabled ? 'Disable' : 'Enable'} ${point.label}`}
                       className={cn(
                         "w-12 h-6 rounded-full flex items-center p-1 transition-colors relative",
                         isEnabled ? "bg-success" : "bg-surface"
@@ -174,7 +187,7 @@ export const DataPrivacyDashboard = ({
                         <p className="text-xs text-text-muted leading-relaxed">{point.description}</p>
                       </div>
                       <div className="space-y-1">
-                        <p className="text-xs uppercase font-black tracking-widest text-primary">How Nova uses it</p>
+                        <p className="text-xs uppercase font-black tracking-widest text-[#9a3412] dark:text-primary">How Nova uses it</p>
                         <p className="text-xs text-[#9a3412] dark:text-primary-light/70 leading-relaxed font-mono">{point.novaUsage}</p>
                       </div>
                     </div>
