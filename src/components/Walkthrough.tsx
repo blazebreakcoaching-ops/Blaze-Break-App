@@ -1,5 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
+import { useFocusTrap } from '../lib/useFocusTrap';
 import { 
   X, 
   ChevronRight, 
@@ -43,6 +44,34 @@ export const Walkthrough = ({
 }) => {
   const [activeModule, setActiveModule] = useState<'selection' | 'module_a' | 'module_b' | 'general_tour'>('selection');
   const [currentStep, setCurrentStep] = useState(0);
+  const dialogRef = useFocusTrap(isOpen);
+  const isFirstStepRenderRef = useRef(true);
+
+  useEffect(() => {
+    if (!isOpen) {
+      isFirstStepRenderRef.current = true;
+      return;
+    }
+    if (isFirstStepRenderRef.current) {
+      isFirstStepRenderRef.current = false;
+      return;
+    }
+    const t = window.setTimeout(() => {
+      const heading = (dialogRef.current as HTMLElement | null)?.querySelector<HTMLElement>('h1, h2, h3, h4');
+      if (heading) {
+        if (!heading.hasAttribute('tabindex')) heading.setAttribute('tabindex', '-1');
+        heading.focus();
+      }
+    }, 0);
+    return () => window.clearTimeout(t);
+  }, [isOpen, activeModule, currentStep]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const onKeyDown = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [isOpen, onClose]);
 
   // Module A (Boundary Rehearsal) States
   const [selectedScriptId, setSelectedScriptId] = useState<'creep' | 'meeting' | 'weekend'>('creep');
@@ -205,10 +234,15 @@ export const Walkthrough = ({
         <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md overflow-y-auto">
           {/* Overlay card */}
           <motion.div
+            ref={dialogRef as any}
             initial={{ opacity: 0, scale: 0.95, y: 20 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.95, y: 20 }}
             transition={{ type: "spring", damping: 25, stiffness: 180 }}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Guided walkthrough"
+            tabIndex={-1}
             className="w-full max-w-2xl bg-white dark:bg-card rounded-xl border border-border shadow-lg relative overflow-hidden my-8"
           >
             {/* Header / progress ribbon */}
@@ -230,6 +264,7 @@ export const Walkthrough = ({
             {/* Close trigger */}
             <button
               onClick={onClose}
+              aria-label="Close walkthrough"
               className="absolute top-6 right-6 p-2 rounded-full text-text-muted hover:text-text-main hover:bg-surface dark:hover:bg-neutral-800 transition-colors cursor-pointer z-50"
             >
               <X className="w-5 h-5" />
@@ -267,7 +302,7 @@ export const Walkthrough = ({
                       <div className="p-2.5 bg-primary/10 text-primary rounded-xl">
                         <Zap className="w-5 h-5" />
                       </div>
-                      <span className="text-[10px] uppercase font-black tracking-widest text-primary bg-primary/10 px-2 py-0.5 rounded-full">
+                      <span className="text-[10px] uppercase font-black tracking-widest text-[#9a3412] dark:text-primary bg-primary/10 px-2 py-0.5 rounded-full">
                         Module A
                       </span>
                     </div>
@@ -294,7 +329,7 @@ export const Walkthrough = ({
                       <div className="p-2.5 bg-destructive/10 text-destructive rounded-xl">
                         <HeartPulse className="w-5 h-5 animate-pulse" />
                       </div>
-                      <span className="text-[10px] uppercase font-black tracking-widest text-destructive bg-destructive/10 px-2 py-0.5 rounded-full">
+                      <span className="text-[10px] uppercase font-black tracking-widest text-destructive dark:text-[#f87171] bg-destructive/10 px-2 py-0.5 rounded-full">
                         Module B
                       </span>
                     </div>
@@ -360,6 +395,7 @@ export const Walkthrough = ({
                           setSelectedScriptId(scen.id as any);
                           setRehearsalFeedback(null);
                         }}
+                        aria-pressed={selectedScriptId === scen.id}
                         className={cn(
                           "p-3 rounded-xl border text-left transition-all space-y-1",
                           selectedScriptId === scen.id
@@ -420,16 +456,18 @@ export const Walkthrough = ({
                       initial={{ opacity: 0, y: 10 }}
                       animate={{ opacity: 1, y: 0 }}
                       exit={{ opacity: 0, y: 10 }}
+                      role="status"
+                      aria-live="polite"
                       className="p-5 bg-primary/20 border border-primary/20 rounded-2xl space-y-3"
                     >
-                      <span className="text-[10px] uppercase font-black tracking-widest text-primary block">
+                      <span className="text-[10px] uppercase font-black tracking-widest text-[#9a3412] dark:text-primary block">
                         Boundary Script Feedback
                       </span>
                       <p className="text-xs text-text-muted leading-relaxed whitespace-pre-line">
                         {rehearsalFeedback}
                       </p>
                       <div className="pt-2 border-t border-white/5 flex flex-col sm:flex-row gap-3 justify-between items-center">
-                        <span className="text-[10px] text-success font-semibold flex items-center gap-1">
+                        <span className="text-[10px] text-[#166534] dark:text-[#4ade80] font-semibold flex items-center gap-1">
                           <ShieldCheck className="w-3.5 h-3.5 fill-current" /> Simulated Rehearsal Recorded (+25 pts)
                         </span>
                         <button
@@ -483,6 +521,7 @@ export const Walkthrough = ({
                           setSomaticComplete(false);
                           setIsBreathingActive(false);
                         }}
+                        aria-pressed={selectedTrigger === trig.id}
                         className={cn(
                           "p-3 rounded-xl border text-center transition-all space-y-1",
                           selectedTrigger === trig.id
@@ -531,7 +570,7 @@ export const Walkthrough = ({
                     </div>
                   </div>
 
-                  <div className="space-y-1">
+                  <div className="space-y-1" role="status" aria-live="polite" aria-atomic="true">
                     <p className="text-xs font-bold text-text-main">
                       {!isBreathingActive ? "Ready to test somatic down-regulation?" : `Breath Phase: ${breathPhase}`}
                     </p>
@@ -553,9 +592,10 @@ export const Walkthrough = ({
                     className={cn(
                       "px-5 py-2 rounded-xl text-xs font-bold uppercase tracking-wider transition-all flex items-center gap-1.5",
                       isBreathingActive
-                        ? "bg-destructive/10 border border-destructive/30 text-destructive hover:bg-destructive/20"
+                        ? "bg-destructive/10 border border-destructive/30 text-destructive dark:text-[#f87171] hover:bg-destructive/20"
                         : "bg-destructive hover:opacity-90 text-destructive-foreground"
                     )}
+                    aria-pressed={isBreathingActive}
                   >
                     {isBreathingActive ? (
                       <><RotateCcw className="w-3.5 h-3.5" /> Stop Reset</>
