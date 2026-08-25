@@ -560,6 +560,8 @@ const Sidebar = ({
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
+                aria-label={tab.id === "recover" && pendingTasksCount > 0 ? `${tab.label}, ${pendingTasksCount} pending recovery task${pendingTasksCount === 1 ? '' : 's'}` : tab.label}
+                aria-current={isActive ? 'page' : undefined}
                 className={cn(
                   "nav-item relative group flex items-center w-full transition-all",
                   isActive && "active",
@@ -595,6 +597,7 @@ const Sidebar = ({
                 </div>
                 {tab.id === "recover" && pendingTasksCount > 0 && (
                   <span
+                    aria-hidden="true"
                     className={cn(
                       "bg-destructive text-destructive-foreground text-xs font-black flex items-center justify-center rounded-full shrink-0",
                       isCollapsed
@@ -2214,6 +2217,13 @@ export default function App() {
   const [showCrisisSupport, setShowCrisisSupport] = useState(false);
   const [isMobileNavCollapsed, setIsMobileNavCollapsed] = useState(false);
   const [showMobileToolsSheet, setShowMobileToolsSheet] = useState(false);
+
+  useEffect(() => {
+    if (!showMobileToolsSheet) return;
+    const onKeyDown = (e: KeyboardEvent) => { if (e.key === 'Escape') setShowMobileToolsSheet(false); };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [showMobileToolsSheet]);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
 
   // Daily Pulse State
@@ -3398,6 +3408,7 @@ export default function App() {
                       setActiveTab(tab.id as ActiveTab);
                       setShowMobileToolsSheet(false);
                     }}
+                    aria-current={activeTab === tab.id ? 'page' : undefined}
                     className={`p-2 rounded-xl transition-all flex flex-col items-center gap-1 ${activeTab === tab.id ? "text-primary bg-primary/10" : "text-text-muted hover:text-text-main"}`}
                   >
                     <tab.icon className="w-5 h-5" />
@@ -3434,6 +3445,7 @@ export default function App() {
                     <button
                       key={tab.group}
                       onClick={() => setShowMobileToolsSheet((v) => !v)}
+                      aria-expanded={showMobileToolsSheet}
                       className={`p-2 rounded-lg transition-all flex flex-col items-center gap-1 shrink-0 min-w-[56px] ${isGroupActive || showMobileToolsSheet ? "text-primary" : "text-text-muted hover:text-text-main"}`}
                     >
                       <div
@@ -3449,6 +3461,7 @@ export default function App() {
                   <button
                     key={tab.id}
                     onClick={() => setActiveTab(tab.id as ActiveTab)}
+                    aria-current={activeTab === tab.id ? 'page' : undefined}
                     className={`p-2 rounded-lg transition-all flex flex-col items-center gap-1 shrink-0 min-w-[56px] ${activeTab === tab.id ? "text-primary" : "text-text-muted hover:text-text-main"}`}
                   >
                     <div
