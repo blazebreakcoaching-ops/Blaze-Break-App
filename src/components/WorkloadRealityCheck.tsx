@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import confetti from 'canvas-confetti';
 import { auth, db } from '../lib/firebase';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { useFocusTrap } from '../lib/useFocusTrap';
 import {
   Target, 
   Clock, 
@@ -77,6 +78,14 @@ export const WorkloadRealityCheck = ({ fingerprint, onAwardPoints }: WorkloadRea
 
   // Deletion confirmation state
   const [taskToDelete, setTaskToDelete] = useState<WorkloadTask | null>(null);
+  const deleteDialogRef = useFocusTrap(!!taskToDelete);
+
+  useEffect(() => {
+    if (!taskToDelete) return;
+    const onKeyDown = (e: KeyboardEvent) => { if (e.key === 'Escape') setTaskToDelete(null); };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [taskToDelete]);
 
   // Quick Edit states
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
@@ -283,27 +292,27 @@ export const WorkloadRealityCheck = ({ fingerprint, onAwardPoints }: WorkloadRea
   };
 
   const getDrainTextColor = (drain: number) => {
-    if (drain < 35) return 'text-success dark:text-success';
-    if (drain < 70) return 'text-warning dark:text-warning';
-    return 'text-destructive dark:text-destructive';
+    if (drain < 35) return 'text-success dark:text-[#4ade80]';
+    if (drain < 70) return 'text-[#9a3412] dark:text-warning';
+    return 'text-destructive dark:text-[#f87171]';
   };
 
   const getPriorityBadgeClass = (priority: 'high' | 'medium' | 'low') => {
-    if (priority === 'high') return 'bg-destructive/10 text-destructive border-destructive/20';
-    if (priority === 'medium') return 'bg-warning/10 text-warning border-warning/20';
-    return 'bg-success/10 text-success border-success/20';
+    if (priority === 'high') return 'bg-destructive/10 text-destructive dark:text-[#f87171] border-destructive/20';
+    if (priority === 'medium') return 'bg-warning/10 text-[#9a3412] dark:text-warning border-warning/20';
+    return 'bg-success/10 text-success dark:text-[#4ade80] border-success/20';
   };
 
   const getCategoryTheme = (category: 'must' | 'wait' | 'delegate' | 'future') => {
     switch (category) {
       case 'must':
-        return { label: 'Must Do Today', badge: 'bg-success/10 text-success border-success/20' };
+        return { label: 'Must Do Today', badge: 'bg-success/10 text-success dark:text-[#4ade80] border-success/20' };
       case 'wait':
-        return { label: 'Can Wait', badge: 'bg-primary/10 text-primary border-primary/20' };
+        return { label: 'Can Wait', badge: 'bg-primary/10 text-[#9a3412] dark:text-primary border-primary/20' };
       case 'delegate':
-        return { label: 'Delegate / Defer', badge: 'bg-warning/10 text-warning border-warning/20' };
+        return { label: 'Delegate / Defer', badge: 'bg-warning/10 text-[#9a3412] dark:text-warning border-warning/20' };
       case 'future':
-        return { label: 'Future Guarded', badge: 'bg-primary/10 text-primary border-primary/20' };
+        return { label: 'Future Guarded', badge: 'bg-primary/10 text-[#9a3412] dark:text-primary border-primary/20' };
     }
   };
 
@@ -386,7 +395,7 @@ export const WorkloadRealityCheck = ({ fingerprint, onAwardPoints }: WorkloadRea
                   />
                 ))}
               </div>
-              <span className="text-sm font-black uppercase tracking-widest text-text-muted">
+              <span role="status" aria-live="polite" className="text-sm font-black uppercase tracking-widest text-text-muted">
                 Step {currentStep + 1} of {questionKeys.length}
               </span>
             </div>
@@ -401,7 +410,7 @@ export const WorkloadRealityCheck = ({ fingerprint, onAwardPoints }: WorkloadRea
                     </div>
                   );
                 })()}
-                <h3 className="text-2xl md:text-3xl font-display font-bold text-text-main">
+                <h3 id="workload-question-heading" className="text-2xl md:text-3xl font-display font-bold text-text-main">
                   {QUESTIONS[activeQuestion].label}
                 </h3>
               </div>
@@ -412,6 +421,7 @@ export const WorkloadRealityCheck = ({ fingerprint, onAwardPoints }: WorkloadRea
                 value={answers[activeQuestion]}
                 onChange={(e) => setAnswers({ ...answers, [activeQuestion]: e.target.value })}
                 placeholder={QUESTIONS[activeQuestion].placeholder}
+                aria-labelledby="workload-question-heading"
                 className="w-full h-40 bg-surface dark:bg-surface/50 border border-border/50 rounded-2xl p-6 focus:outline-none focus:border-primary resize-none text-xl text-text-main placeholder-text-muted/60 transition-colors"
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && e.metaKey) {
@@ -585,6 +595,8 @@ export const WorkloadRealityCheck = ({ fingerprint, onAwardPoints }: WorkloadRea
                       step="5"
                       value={newDrain}
                       onChange={(e) => setNewDrain(parseInt(e.target.value, 10))}
+                      aria-label="Assigned physical energy drain percentage"
+                      aria-valuetext={`${newDrain} percent, ${newDrain < 35 ? 'Low Drain' : newDrain < 70 ? 'Moderate Drain' : 'Heavy Crash Trigger'}`}
                       className="w-full accent-primary h-1.5 rounded-full cursor-pointer bg-border dark:bg-surface"
                     />
                   </div>
@@ -623,10 +635,11 @@ export const WorkloadRealityCheck = ({ fingerprint, onAwardPoints }: WorkloadRea
                       <button
                         key={option.key}
                         onClick={() => setSortBy(option.key as any)}
+                        aria-pressed={sortBy === option.key}
                         className={cn(
                           "px-3 py-1.5 rounded-md text-[11px] font-bold uppercase tracking-wider transition-all cursor-pointer",
                           sortBy === option.key 
-                            ? "bg-white dark:bg-surface text-primary shadow-sm border border-border/20" 
+                            ? "bg-white dark:bg-surface text-[#9a3412] dark:text-primary shadow-sm border border-border/20" 
                             : "bg-transparent text-text-muted hover:text-text-main"
                         )}
                       >
@@ -650,10 +663,11 @@ export const WorkloadRealityCheck = ({ fingerprint, onAwardPoints }: WorkloadRea
                       <button
                         key={option.key}
                         onClick={() => setStatusFilter(option.key as any)}
+                        aria-pressed={statusFilter === option.key}
                         className={cn(
                           "px-3 py-1.5 rounded-md text-[11px] font-bold uppercase tracking-wider transition-all cursor-pointer",
                           statusFilter === option.key 
-                            ? "bg-white dark:bg-surface text-primary shadow-sm border border-border/20" 
+                            ? "bg-white dark:bg-surface text-[#9a3412] dark:text-primary shadow-sm border border-border/20" 
                             : "bg-transparent text-text-muted hover:text-text-main"
                         )}
                       >
@@ -675,10 +689,11 @@ export const WorkloadRealityCheck = ({ fingerprint, onAwardPoints }: WorkloadRea
                       <button
                         key={option.key}
                         onClick={() => setDueDateFilter(option.key as any)}
+                        aria-pressed={dueDateFilter === option.key}
                         className={cn(
                           "px-3 py-1.5 rounded-md text-[11px] font-bold uppercase tracking-wider transition-all cursor-pointer",
                           dueDateFilter === option.key 
-                            ? "bg-white dark:bg-surface text-primary shadow-sm border border-border/20" 
+                            ? "bg-white dark:bg-surface text-[#9a3412] dark:text-primary shadow-sm border border-border/20" 
                             : "bg-transparent text-text-muted hover:text-text-main"
                         )}
                       >
@@ -738,6 +753,9 @@ export const WorkloadRealityCheck = ({ fingerprint, onAwardPoints }: WorkloadRea
                                   {/* Checkbox trigger */}
                                   <button
                                     onClick={(e) => handleToggleTask(task.id, e)}
+                                    role="checkbox"
+                                    aria-checked={task.completed}
+                                    aria-label={`Mark "${task.title}" as ${task.completed ? 'not done' : 'done'}`}
                                     className="mt-0.5 w-5 h-5 rounded-md border border-border/50 flex items-center justify-center shrink-0 transition-all hover:border-primary cursor-pointer"
                                   >
                                     {task.completed && (
@@ -804,6 +822,8 @@ export const WorkloadRealityCheck = ({ fingerprint, onAwardPoints }: WorkloadRea
                               step="5"
                               value={editingDrain}
                               onChange={(e) => setEditingDrain(parseInt(e.target.value, 10))}
+                              aria-label="Edit energy drain percentage"
+                              aria-valuetext={`${editingDrain} percent, ${editingDrain < 35 ? 'Low Drain' : editingDrain < 70 ? 'Moderate Drain' : 'Heavy Crash Trigger'}`}
                               className="w-full h-1.5 rounded-full cursor-pointer bg-border dark:bg-surface/80 accent-primary"
                             />
                           ) : (
@@ -823,6 +843,7 @@ export const WorkloadRealityCheck = ({ fingerprint, onAwardPoints }: WorkloadRea
                             <>
                               <button
                                 onClick={() => handleSaveEdit(task.id)}
+                                aria-label="Save calibration"
                                 className="p-2 border border-success/30 rounded-xl text-success hover:text-white hover:bg-success transition-all cursor-pointer shadow-sm"
                                 title="Save calibration"
                               >
@@ -830,6 +851,7 @@ export const WorkloadRealityCheck = ({ fingerprint, onAwardPoints }: WorkloadRea
                               </button>
                               <button
                                 onClick={handleCancelEdit}
+                                aria-label="Cancel edit"
                                 className="p-2 border border-border/20 rounded-xl text-text-muted hover:text-text-main hover:bg-surface/25 transition-all cursor-pointer shadow-sm"
                                 title="Cancel edit"
                               >
@@ -840,14 +862,16 @@ export const WorkloadRealityCheck = ({ fingerprint, onAwardPoints }: WorkloadRea
                             <>
                               <button
                                 onClick={() => handleStartEdit(task)}
-                                className="p-2 border border-border/20 rounded-xl text-text-muted hover:text-primary hover:bg-primary/5 hover:border-primary/15 transition-all cursor-pointer shadow-sm"
+                                aria-label={`Edit ${task.title}`}
+                                className="p-2 border border-border/20 rounded-xl text-text-muted hover:text-[#9a3412] dark:hover:text-primary hover:bg-primary/5 hover:border-primary/15 transition-all cursor-pointer shadow-sm"
                                 title="Quick calibration"
                               >
                                 <Edit2 className="w-4 h-4" />
                               </button>
                               <button
                                 onClick={() => setTaskToDelete(task)}
-                                className="p-2 border border-border/20 rounded-xl text-text-muted hover:text-destructive hover:bg-destructive/5 hover:border-destructive/15 transition-all cursor-pointer shadow-sm"
+                                aria-label={`Delete ${task.title}`}
+                                className="p-2 border border-border/20 rounded-xl text-text-muted hover:text-destructive dark:hover:text-[#f87171] hover:bg-destructive/5 hover:border-destructive/15 transition-all cursor-pointer shadow-sm"
                                 title="Calibrate and delete task"
                               >
                                 <Trash2 className="w-4 h-4" />
@@ -911,9 +935,14 @@ export const WorkloadRealityCheck = ({ fingerprint, onAwardPoints }: WorkloadRea
 
             {/* Modal card layout */}
             <motion.div
+              ref={deleteDialogRef as any}
               initial={{ opacity: 0, scale: 0.95, y: 15 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 15 }}
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="delete-task-title"
+              tabIndex={-1}
               className="bg-white dark:bg-surface border border-border/40 rounded-xl p-6 md:p-8 max-w-md w-full relative z-[110] shadow-lg font-sans"
             >
               <div className="flex gap-4 items-start mb-5">
@@ -921,7 +950,7 @@ export const WorkloadRealityCheck = ({ fingerprint, onAwardPoints }: WorkloadRea
                   <AlertTriangle className="w-6 h-6 animate-pulse" />
                 </div>
                 <div className="space-y-1">
-                  <h4 className="text-base font-bold text-text-main">
+                  <h4 id="delete-task-title" className="text-base font-bold text-text-main">
                     Confirm Task Deletion
                   </h4>
                   <p className="text-xs text-text-muted leading-relaxed">
