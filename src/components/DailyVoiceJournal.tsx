@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { Mic, Square, Trash2, Volume2, Sparkles, AlertCircle, CheckCircle, Brain, Heart, Waves } from "lucide-react";
-import { collection, doc, setDoc, getDocs, deleteDoc, query, orderBy, limit as fbLimit } from "firebase/firestore";
+import { collection, doc, setDoc, getDocs, query, orderBy, limit as fbLimit } from "firebase/firestore";
 import { auth, db } from "../lib/firebase";
 import { secureApiFetch } from "../lib/secure-api";
 import { addNovaMemory } from "../lib/nova-brain";
@@ -328,7 +328,7 @@ export const DailyVoiceJournal = ({
             <div>
               <h3 className="text-xl font-display font-bold text-text-main flex items-center gap-2">
                 Daily Voice Journal
-                <span className="px-2 py-0.5 text-[9px] font-mono tracking-widest text-primary bg-primary/10 border border-primary/25 rounded">60S MEMO</span>
+                <span className="px-2 py-0.5 text-[9px] font-mono tracking-widest text-[#9a3412] dark:text-primary bg-primary/10 border border-primary/25 rounded">60S MEMO</span>
               </h3>
               <p className="text-xs text-text-muted mt-1">Speak freely about your current cognitive loads, stress indicators, and boundaries.</p>
             </div>
@@ -340,10 +340,11 @@ export const DailyVoiceJournal = ({
                 <button
                   key={entry.id}
                   onClick={() => setActiveEntry(entry)}
+                  aria-pressed={activeEntry?.id === entry.id}
                   className={cn(
                     "px-4 py-2 rounded-xl text-xs font-mono border transition-all shrink-0",
                     activeEntry?.id === entry.id
-                      ? "bg-primary/15 border-primary/40 text-primary"
+                      ? "bg-primary/15 border-primary/40 text-[#9a3412] dark:text-primary"
                       : "bg-surface dark:bg-card border-border hover:bg-border/30 text-text-muted"
                   )}
                 >
@@ -387,12 +388,14 @@ export const DailyVoiceJournal = ({
 
                   <button
                     onClick={isRecording ? stopRecording : startRecording}
+                    aria-pressed={isRecording}
+                    aria-label={isRecording ? "Stop recording" : "Start recording voice journal"}
                     className={cn(
                       "w-20 h-20 rounded-full flex items-center justify-center shadow-lg transition-all border duration-300 relative z-10",
                       isRecording
                         ? "bg-destructive hover:opacity-90 border-destructive/90 text-destructive-foreground animate-pulse"
                         : audioBlob
-                          ? "bg-success/20 hover:bg-success/30 border-success/40 text-success"
+                          ? "bg-success/20 hover:bg-success/30 border-success/40 text-success dark:text-[#4ade80]"
                           : "bg-primary/10 hover:bg-primary/15 border-primary/20 text-primary"
                     )}
                   >
@@ -404,13 +407,13 @@ export const DailyVoiceJournal = ({
                   {isRecording ? (
                     <div className="space-y-1">
                       <p className="text-lg font-mono font-bold text-destructive">00:{recordingDuration.toString().padStart(2, "0")}</p>
-                      <span className="text-[10px] font-black uppercase tracking-widest text-destructive/80 flex items-center justify-center gap-1.5">
+                      <span role="status" aria-live="polite" className="text-[10px] font-black uppercase tracking-widest text-destructive/80 dark:text-[#f87171] flex items-center justify-center gap-1.5">
                         <Waves className="w-3.5 h-3.5 animate-bounce" /> Streaming Spoken Feed
                       </span>
                     </div>
                   ) : audioBlob ? (
                     <div className="space-y-3">
-                      <span className="text-[10px] font-black uppercase tracking-widest text-success flex items-center justify-center gap-1.5">
+                      <span role="status" aria-live="polite" className="text-[10px] font-black uppercase tracking-widest text-success dark:text-[#4ade80] flex items-center justify-center gap-1.5">
                         <CheckCircle className="w-4 h-4" /> Memo Captured Successfully
                       </span>
                       <div className="flex items-center justify-center gap-2">
@@ -422,6 +425,7 @@ export const DailyVoiceJournal = ({
                         </button>
                         <button
                           onClick={() => setAudioBlob(null)}
+                          aria-label="Discard recording"
                           className="p-2.5 bg-surface hover:bg-border text-text-muted rounded-xl transition-all border border-border"
                           title="Discard recording"
                         >
@@ -459,17 +463,18 @@ export const DailyVoiceJournal = ({
                   <div className="flex items-center gap-2">
                     <span className="text-[10px] font-mono font-bold uppercase text-text-muted">{activeEntry.date}</span>
                     <span className="w-1.5 h-1.5 rounded-full bg-border" />
-                    <span className="text-[10px] font-mono text-primary bg-primary/10 px-2 py-0.5 rounded border border-primary/20 uppercase">
+                    <span className="text-[10px] font-mono text-[#9a3412] dark:text-primary bg-primary/10 px-2 py-0.5 rounded border border-primary/20 uppercase">
                       {activeEntry.emotionalTone}
                     </span>
                   </div>
 
                   <button
                     onClick={() => playNovaVoice(activeEntry.advice)}
+                    aria-pressed={isPlayingNova}
                     className={cn(
                       "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all border",
                       isPlayingNova
-                        ? "bg-destructive/10 border-destructive/30 text-destructive"
+                        ? "bg-destructive/10 border-destructive/30 text-destructive dark:text-[#f87171]"
                         : "bg-surface hover:bg-border/30 border-border text-text-main"
                     )}
                   >
@@ -493,7 +498,7 @@ export const DailyVoiceJournal = ({
                   <h5 className="text-[11px] font-black uppercase tracking-widest text-text-muted">Detected Burnout Leaks</h5>
                   <div className="flex flex-wrap gap-1.5">
                     {activeEntry.themes.map((theme, i) => (
-                      <span key={i} className="text-[10px] font-mono px-2.5 py-1 bg-warning/10 border border-warning/20 text-warning rounded-lg uppercase">
+                      <span key={i} className="text-[10px] font-mono px-2.5 py-1 bg-warning/10 border border-warning/20 text-[#9a3412] dark:text-warning rounded-lg uppercase">
                         ⚠️ {theme}
                       </span>
                     ))}
