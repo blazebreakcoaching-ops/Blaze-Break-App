@@ -502,7 +502,9 @@ export const AdminDashboard = () => {
             initial={{ opacity: 0, y: -10 }} 
             animate={{ opacity: 1, y: 0 }} 
             exit={{ opacity: 0, y: -10 }}
-            className="p-4 bg-success/10 border border-success/30 text-success rounded-xl text-sm font-bold flex items-center gap-2"
+            role="status"
+            aria-live="polite"
+            className="p-4 bg-success/10 border border-success/30 text-success dark:text-[#4ade80] rounded-xl text-sm font-bold flex items-center gap-2"
           >
             <Check className="w-4 h-4 shrink-0" />
             {successMsg}
@@ -513,7 +515,8 @@ export const AdminDashboard = () => {
             initial={{ opacity: 0, y: -10 }} 
             animate={{ opacity: 1, y: 0 }} 
             exit={{ opacity: 0, y: -10 }}
-            className="p-4 bg-destructive/10 border border-destructive/30 text-destructive rounded-xl text-sm font-bold flex items-center gap-2"
+            role="alert"
+            className="p-4 bg-destructive/10 border border-destructive/30 text-destructive dark:text-[#f87171] rounded-xl text-sm font-bold flex items-center gap-2"
           >
             <AlertCircle className="w-4 h-4 shrink-0" />
             {error}
@@ -524,7 +527,8 @@ export const AdminDashboard = () => {
             initial={{ opacity: 0, y: -10 }} 
             animate={{ opacity: 1, y: 0 }} 
             exit={{ opacity: 0, y: -10 }}
-            className="p-4 bg-destructive/10 border border-destructive/30 text-destructive rounded-xl text-sm font-bold flex items-center justify-between gap-2"
+            role="alert"
+            className="p-4 bg-destructive/10 border border-destructive/30 text-destructive dark:text-[#f87171] rounded-xl text-sm font-bold flex items-center justify-between gap-2"
           >
             <div className="flex items-center gap-2">
               <AlertCircle className="w-4 h-4 shrink-0" />
@@ -546,7 +550,7 @@ export const AdminDashboard = () => {
               <span className="text-[10px] font-black uppercase tracking-widest text-text-muted block">Registered Professionals</span>
               <h4 className="text-3xl font-display font-black text-text-main flex items-baseline gap-2">
                 {users.length}
-                <span className="text-xs text-success font-semibold flex items-center gap-0.5">
+                <span className="text-xs text-success dark:text-[#4ade80] font-semibold flex items-center gap-0.5">
                   <ArrowUpRight className="w-3 h-3" /> +0.0%
                 </span>
               </h4>
@@ -568,7 +572,7 @@ export const AdminDashboard = () => {
               <span className="text-[10px] font-black uppercase tracking-widest text-text-muted block">Subscription Coverage</span>
               <h4 className="text-3xl font-display font-black text-text-main flex items-baseline gap-2">
                 0.0%
-                <span className="text-xs text-success font-semibold flex items-center gap-0.5">
+                <span className="text-xs text-success dark:text-[#4ade80] font-semibold flex items-center gap-0.5">
                   <ArrowUpRight className="w-3 h-3" /> Active
                 </span>
               </h4>
@@ -588,7 +592,7 @@ export const AdminDashboard = () => {
           <div className="flex justify-between items-start">
             <div className="space-y-1">
               <span className="text-[10px] font-black uppercase tracking-widest text-text-muted block">Somatic Safety Alerts</span>
-              <h4 className="text-3xl font-display font-black text-destructive flex items-baseline gap-2">
+              <h4 className="text-3xl font-display font-black text-destructive dark:text-[#f87171] flex items-baseline gap-2">
                 {safetyEventsCount}
                 <span className="text-xs text-text-muted font-normal">Active Resets</span>
               </h4>
@@ -618,6 +622,7 @@ export const AdminDashboard = () => {
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id as any)}
+              aria-current={activeTab === tab.id ? 'page' : undefined}
               className={`flex items-center gap-2.5 pb-4 px-1 text-sm font-bold tracking-tight border-b-2 transition-all shrink-0 cursor-pointer ${
                 activeTab === tab.id 
                   ? 'border-primary text-text-main' 
@@ -675,8 +680,9 @@ export const AdminDashboard = () => {
                       </div>
                     </div>
                     <div>
-                      <label className="block text-xs font-black uppercase tracking-wider text-text-muted mb-2">Select Security Tier</label>
+                      <label htmlFor="admin-security-tier" className="block text-xs font-black uppercase tracking-wider text-text-muted mb-2">Select Security Tier</label>
                       <select
+                        id="admin-security-tier"
                         value={selectedUserRole}
                         onChange={(e) => setSelectedUserRole(e.target.value)}
                         className="w-full p-3 bg-surface border border-border rounded-xl text-sm text-text-main focus:outline-none focus:border-primary"
@@ -718,11 +724,11 @@ export const AdminDashboard = () => {
                   <table className="w-full text-left border-collapse">
                     <thead>
                       <tr className="border-b border-white/5">
-                        <th className="pb-3 text-xs font-black uppercase tracking-widest text-text-muted">User ID</th>
-                        <th className="pb-3 text-xs font-black uppercase tracking-widest text-text-muted">Email Address</th>
-                        <th className="pb-3 text-xs font-black uppercase tracking-widest text-text-muted">Date Joined</th>
-                        <th className="pb-3 text-xs font-black uppercase tracking-widest text-text-muted">Last Active</th>
-                        <th className="pb-3 text-xs font-black uppercase tracking-widest text-text-muted text-right">Actions</th>
+                        <th scope="col" className="pb-3 text-xs font-black uppercase tracking-widest text-text-muted">User ID</th>
+                        <th scope="col" className="pb-3 text-xs font-black uppercase tracking-widest text-text-muted">Email Address</th>
+                        <th scope="col" className="pb-3 text-xs font-black uppercase tracking-widest text-text-muted">Date Joined</th>
+                        <th scope="col" className="pb-3 text-xs font-black uppercase tracking-widest text-text-muted">Last Active</th>
+                        <th scope="col" className="pb-3 text-xs font-black uppercase tracking-widest text-text-muted text-right">Actions</th>
                       </tr>
                     </thead>
                     <tbody className="text-sm">
@@ -738,7 +744,7 @@ export const AdminDashboard = () => {
                                 setSelectedUser(u);
                                 setSelectedUserRole('user'); // Default suggestion
                               }}
-                              className="px-3 py-1.5 bg-primary/10 hover:bg-primary/20 text-primary text-[10px] font-black uppercase tracking-widest rounded-lg transition-all"
+                              className="px-3 py-1.5 bg-primary/10 hover:bg-primary/20 text-[#9a3412] dark:text-primary text-[10px] font-black uppercase tracking-widest rounded-lg transition-all"
                             >
                               Edit Claims
                             </button>
@@ -746,8 +752,8 @@ export const AdminDashboard = () => {
                               onClick={() => handleToggleSuspend(u.uid, u.accessStatus === 'active')}
                               className={`px-3 py-1.5 text-[10px] font-black uppercase tracking-widest rounded-lg transition-all ${
                                 u.accessStatus === 'active'
-                                  ? 'bg-destructive/10 hover:bg-destructive/20 text-destructive'
-                                  : 'bg-success/10 hover:bg-success/20 text-success'
+                                  ? 'bg-destructive/10 hover:bg-destructive/20 text-destructive dark:text-[#f87171]'
+                                  : 'bg-success/10 hover:bg-success/20 text-success dark:text-[#4ade80]'
                               }`}
                             >
                               {u.accessStatus === 'active' ? 'Suspend' : 'Activate'}
@@ -845,9 +851,9 @@ export const AdminDashboard = () => {
                 <table className="w-full text-left border-collapse">
                   <thead>
                     <tr className="border-b border-white/5">
-                      <th className="pb-3 text-xs font-black uppercase tracking-widest text-text-muted">Administrator</th>
-                      <th className="pb-3 text-xs font-black uppercase tracking-widest text-text-muted">Assigned Role</th>
-                      <th className="pb-3 text-xs font-black uppercase tracking-widest text-text-muted text-right">Revoke Privileges</th>
+                      <th scope="col" className="pb-3 text-xs font-black uppercase tracking-widest text-text-muted">Administrator</th>
+                      <th scope="col" className="pb-3 text-xs font-black uppercase tracking-widest text-text-muted">Assigned Role</th>
+                      <th scope="col" className="pb-3 text-xs font-black uppercase tracking-widest text-text-muted text-right">Revoke Privileges</th>
                     </tr>
                   </thead>
                   <tbody className="text-sm">
@@ -860,10 +866,10 @@ export const AdminDashboard = () => {
                         <td className="py-4">
                           <span className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-widest ${
                             adminUser.role === 'platform_owner' 
-                              ? 'bg-destructive/10 text-destructive border border-destructive/20'
+                              ? 'bg-destructive/10 text-destructive dark:text-[#f87171] border border-destructive/20'
                               : adminUser.role === 'platform_admin'
-                              ? 'bg-primary/10 text-primary border border-primary/20'
-                              : 'bg-accent/10 text-accent border border-accent/20'
+                              ? 'bg-primary/10 text-[#9a3412] dark:text-primary border border-primary/20'
+                              : 'bg-accent/10 text-[#9a3412] dark:text-[#fdba74] border border-accent/20'
                           }`}>
                             {adminUser.role.replace('_', ' ')}
                           </span>
@@ -871,6 +877,7 @@ export const AdminDashboard = () => {
                         <td className="py-4 text-right">
                           <button
                             onClick={() => handleRevokeAdmin(adminUser.uid)}
+                            aria-label={`Revoke admin claims for ${adminUser.displayName}`}
                             className="p-2 text-destructive hover:bg-destructive/10 rounded-xl transition-all"
                             title="Revoke Admin claims"
                           >
@@ -904,12 +911,13 @@ export const AdminDashboard = () => {
                 Creates a new customer organisation. If you designate an initial admin, they must already have a Blaze Break account under that email.
               </p>
               {orgFormError && (
-                <div className="p-3 bg-destructive/10 border border-destructive/20 text-destructive text-xs rounded-xl">{orgFormError}</div>
+                <div role="alert" className="p-3 bg-destructive/10 border border-destructive/20 text-destructive dark:text-[#f87171] text-xs rounded-xl">{orgFormError}</div>
               )}
               <div className="space-y-4">
                 <div>
-                  <label className="text-xs font-bold uppercase tracking-widest text-text-muted block mb-1.5">Organisation ID (slug)</label>
+                  <label htmlFor="admin-org-id" className="text-xs font-bold uppercase tracking-widest text-text-muted block mb-1.5">Organisation ID (slug)</label>
                   <input
+                    id="admin-org-id"
                     type="text"
                     value={newOrgId}
                     onChange={(e) => setNewOrgId(e.target.value)}
@@ -918,8 +926,9 @@ export const AdminDashboard = () => {
                   />
                 </div>
                 <div>
-                  <label className="text-xs font-bold uppercase tracking-widest text-text-muted block mb-1.5">Display Name</label>
+                  <label htmlFor="admin-org-name" className="text-xs font-bold uppercase tracking-widest text-text-muted block mb-1.5">Display Name</label>
                   <input
+                    id="admin-org-name"
                     type="text"
                     value={newOrgName}
                     onChange={(e) => setNewOrgName(e.target.value)}
@@ -928,8 +937,9 @@ export const AdminDashboard = () => {
                   />
                 </div>
                 <div>
-                  <label className="text-xs font-bold uppercase tracking-widest text-text-muted block mb-1.5">Minimum Cohort Size</label>
+                  <label htmlFor="admin-org-threshold" className="text-xs font-bold uppercase tracking-widest text-text-muted block mb-1.5">Minimum Cohort Size</label>
                   <input
+                    id="admin-org-threshold"
                     type="number"
                     min="3"
                     max="100"
@@ -940,8 +950,9 @@ export const AdminDashboard = () => {
                   <p className="text-[11px] text-text-muted mt-1">Aggregate dashboards stay locked below this many opted-in members.</p>
                 </div>
                 <div>
-                  <label className="text-xs font-bold uppercase tracking-widest text-text-muted block mb-1.5">Initial Admin Email (optional)</label>
+                  <label htmlFor="admin-org-email" className="text-xs font-bold uppercase tracking-widest text-text-muted block mb-1.5">Initial Admin Email (optional)</label>
                   <input
+                    id="admin-org-email"
                     type="email"
                     value={newOrgAdminEmail}
                     onChange={(e) => setNewOrgAdminEmail(e.target.value)}
@@ -984,9 +995,10 @@ export const AdminDashboard = () => {
                       </div>
                       <div className="mt-3 flex items-center gap-2 pt-3 border-t border-border">
                         <span className="text-[11px] uppercase font-bold tracking-widest text-text-muted">Join Code</span>
-                        <span className="font-mono text-sm font-bold text-primary bg-primary/10 px-3 py-1 rounded-lg tracking-widest">{org.joinCode}</span>
+                        <span className="font-mono text-sm font-bold text-[#9a3412] dark:text-primary bg-primary/10 px-3 py-1 rounded-lg tracking-widest">{org.joinCode}</span>
                         <button
                           onClick={() => { navigator.clipboard.writeText(org.joinCode); showSuccess('Join code copied'); }}
+                          aria-label={`Copy join code for ${org.name}`}
                           className="p-1.5 text-text-muted hover:text-primary transition-colors"
                           title="Copy join code"
                         >
@@ -1022,7 +1034,7 @@ export const AdminDashboard = () => {
                       ? 'bg-destructive/10 text-destructive' 
                       : log.action.includes('role')
                       ? 'bg-primary/10 text-primary'
-                      : 'bg-success/10 text-success'
+                      : 'bg-success/10 text-success dark:text-[#4ade80]'
                   }`}>
                     <Activity className="w-4 h-4" />
                   </div>
