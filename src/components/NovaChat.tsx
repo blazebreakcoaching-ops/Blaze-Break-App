@@ -909,6 +909,8 @@ export const NovaChat = ({
           {voiceFeatureEnabled && (
             <button
               onClick={() => setIsVoiceEnabled(!isVoiceEnabled)}
+              aria-pressed={isVoiceEnabled}
+              aria-label={isVoiceEnabled ? "Turn off voice replies" : "Turn on voice replies"}
               className={cn(
                 "w-9 h-9 rounded-lg flex items-center justify-center transition-colors",
                 isVoiceEnabled
@@ -932,6 +934,7 @@ export const NovaChat = ({
                 localStorage.removeItem("nova_chat_history");
               }
             }}
+            aria-label="Clear conversation"
             className="w-9 h-9 rounded-lg border border-border flex items-center justify-center text-text-muted hover:text-destructive transition-colors"
           >
             <HistoryIcon className="w-4 h-4" />
@@ -994,6 +997,10 @@ export const NovaChat = ({
       ) : (
         <div
           ref={scrollRef}
+          role="log"
+          aria-live="polite"
+          aria-atomic="false"
+          aria-relevant="additions"
           className="flex-1 overflow-y-auto p-8 space-y-8 no-scrollbar"
         >
           {messages.length === 0 && !loading && (
@@ -1074,8 +1081,10 @@ export const NovaChat = ({
                     {msg.role === "model" && (
                       <button
                         onClick={() => speakText(msg.parts[0].text, i)}
+                        aria-label={speakingIndex === i ? "Stop reading message aloud" : "Read message aloud"}
+                        aria-pressed={speakingIndex === i}
                         className={cn(
-                          "absolute -right-12 top-0 w-10 h-10 bg-card border border-border rounded-full flex items-center justify-center transition-all opacity-0 group-hover:opacity-100",
+                          "absolute -right-12 top-0 w-10 h-10 bg-card border border-border rounded-full flex items-center justify-center transition-all opacity-0 group-hover:opacity-100 focus:opacity-100 focus-visible:ring-2 focus-visible:ring-primary",
                           speakingIndex === i
                             ? "opacity-100 text-primary"
                             : "text-text-muted hover:text-primary",
@@ -1157,9 +1166,11 @@ export const NovaChat = ({
                               className={cn(
                                 "p-1.5 rounded-lg transition-all border cursor-pointer",
                                 ratings[i] === "up"
-                                  ? "bg-success/10 text-success border-success/20"
+                                  ? "bg-success/10 text-success dark:text-[#4ade80] border-success/20"
                                   : "bg-surface/30 text-text-muted hover:text-success border-transparent",
                               )}
+                              aria-pressed={ratings[i] === "up"}
+                              aria-label="Helpful advice"
                               title="Helpful advice"
                             >
                               <ThumbsUp className="w-3.5 h-3.5" />
@@ -1185,6 +1196,8 @@ export const NovaChat = ({
                                   ? "bg-destructive/10 text-destructive border-destructive/20"
                                   : "bg-surface/30 text-text-muted hover:text-destructive border-transparent",
                               )}
+                              aria-pressed={ratings[i] === "down"}
+                              aria-label="Unhelpful advice"
                               title="Unhelpful advice"
                             >
                               <ThumbsDown className="w-3.5 h-3.5" />
@@ -1229,6 +1242,7 @@ export const NovaChat = ({
                                         [i]: tag,
                                       }))
                                     }
+                                    aria-pressed={feedbackTag[i] === tag}
                                     className={cn(
                                       "px-2 py-1 rounded-md text-[10px] uppercase font-black tracking-wider border transition-all cursor-pointer",
                                       feedbackTag[i] === tag
@@ -1249,6 +1263,7 @@ export const NovaChat = ({
                                     [i]: e.target.value,
                                   }))
                                 }
+                                aria-label="Refine Nova's context brain (optional)"
                                 placeholder="Refine Nova's context brain (optional)..."
                                 className="w-full bg-white dark:bg-surface border border-border/40 rounded-xl px-3 py-2 text-[11px] font-medium text-text-main placeholder: focus:outline-none focus:border-primary"
                               />
@@ -1315,7 +1330,7 @@ export const NovaChat = ({
                                   );
                                 }
                               }}
-                              className="px-4 py-2 bg-primary/10 hover:bg-primary hover:text-primary-foreground font-medium text-[11px] uppercase tracking-wider rounded-lg transition-colors text-primary border border-primary/25 cursor-pointer"
+                              className="px-4 py-2 bg-primary/10 hover:bg-primary hover:text-primary-foreground font-medium text-[11px] uppercase tracking-wider rounded-lg transition-colors text-[#9a3412] dark:text-primary border border-primary/25 cursor-pointer"
                             >
                               Open Tool
                             </button>
@@ -1431,6 +1446,7 @@ export const NovaChat = ({
             {voiceFeatureEnabled && (
               <button
                 onClick={toggleListening}
+                aria-label="Toggle voice listening"
                 className="w-12 h-12 rounded-xl border border-border flex items-center justify-center relative overflow-hidden group text-text-muted hover:text-primary hover:border-primary/40 transition-colors cursor-pointer"
               >
                 <Mic className="w-5 h-5" />
@@ -1442,6 +1458,7 @@ export const NovaChat = ({
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyPress={(e) => e.key === "Enter" && handleSend()}
+                aria-label="Message Nova"
                 placeholder={
                   isDictating
                     ? "Listening... Speak naturally"
@@ -1459,13 +1476,14 @@ export const NovaChat = ({
               <button
                 type="button"
                 onClick={isDictating ? stopDictation : startDictation}
+                aria-pressed={isDictating}
+                aria-label={isDictating ? "Stop voice dictation" : "Start voice dictation"}
                 className={cn(
                   "absolute left-3 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full flex items-center justify-center transition-all cursor-pointer",
                   isDictating
                     ? "bg-destructive text-destructive-foreground animate-pulse scale-110"
                     : "text-text-muted hover:text-destructive hover:bg-surface/50 hover:scale-105",
                 )}
-                title="Speak to type (voice dictation)"
               >
                 <Mic
                   className={cn("w-4.5 h-4.5", isDictating && "animate-bounce")}
@@ -1475,6 +1493,7 @@ export const NovaChat = ({
               <button
                 onClick={() => handleSend()}
                 disabled={loading || !input.trim()}
+                aria-label="Send message"
                 className="absolute right-2 top-2 w-11 h-11 bg-primary text-primary-foreground rounded-lg flex items-center justify-center hover:opacity-90 active:scale-95 transition-all disabled:opacity-30 cursor-pointer"
               >
                 <Send className="w-4.5 h-4.5" />
