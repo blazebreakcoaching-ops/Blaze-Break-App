@@ -4,6 +4,7 @@ import { cn } from '../lib/utils';
 import { useAuth } from '../lib/auth';
 import { UserStats } from '../types';
 import { secureApiFetch } from '../lib/secure-api';
+import { useFocusTrap } from '../lib/useFocusTrap';
 
 export const ExecutiveBoardReport = ({
   stats: userStats,
@@ -29,6 +30,14 @@ export const ExecutiveBoardReport = ({
 
   // Progressive compiling step outputs
   const [isProcessingProgress, setIsProcessingProgress] = useState(false);
+  const configDialogRef = useFocusTrap(showConfigModal);
+
+  useEffect(() => {
+    if (!showConfigModal) return;
+    const onKeyDown = (e: KeyboardEvent) => { if (e.key === 'Escape' && !isProcessingProgress) setShowConfigModal(false); };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [showConfigModal, isProcessingProgress]);
   const [compilationProgress, setCompilationProgress] = useState(0);
   const [compilationStatusText, setCompilationStatusText] = useState("");
 
@@ -447,13 +456,13 @@ export const ExecutiveBoardReport = ({
             className={cn(
               "px-5 py-2.5 rounded-2xl border text-xs font-bold transition-all duration-300 flex items-center gap-2.5 cursor-pointer relative overflow-hidden",
               isSyncActive 
-                ? "bg-primary/10 border-primary/45 text-primary" 
+                ? "bg-primary/10 border-primary/45 text-[#9a3412] dark:text-primary" 
                 : "bg-surface/60 border-border hover:border-primary/50 text-text-muted hover:text-text-main"
             )}
-            title="Save prototype data locally"
+            title="Save recovery data"
           >
             <RefreshCw className={cn("w-4 h-4 text-primary", isSyncActive && "animate-spin")} />
-            <span>{isSyncActive ? "Saving Locally..." : "Save Locally"}</span>
+            <span role="status" aria-live="polite">{isSyncActive ? "Saving Locally..." : "Save Locally"}</span>
             {isSyncActive && (
               <span className="absolute inset-0 rounded-2xl border border-primary/30 bg-primary/5 animate-pulse" />
             )}
@@ -465,7 +474,7 @@ export const ExecutiveBoardReport = ({
             className="btn-primary flex items-center gap-2 cursor-pointer"
           >
             <Download className={cn("w-4 h-4", isExporting && "animate-bounce")} />
-            {isExporting ? "Preparing Report..." : "Export Report Summary"}
+            <span role="status" aria-live="polite">{isExporting ? "Preparing Report..." : "Export Report Summary"}</span>
           </button>
         </div>
       </div>
@@ -554,16 +563,21 @@ export const ExecutiveBoardReport = ({
           }}
         >
           <div
+            ref={configDialogRef as any}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="config-modal-title"
+            tabIndex={-1}
             className="card bg-background border border-border shadow-lg p-8 max-w-lg w-full relative overflow-hidden"
             onClick={e => e.stopPropagation()}
           >
             <div className="relative z-10 space-y-6 text-left">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-primary/15 border border-primary/20 rounded-lg flex items-center justify-center text-primary">
+                <div className="w-10 h-10 bg-primary/15 border border-primary/20 rounded-lg flex items-center justify-center text-[#9a3412] dark:text-primary">
                   <Layers className="w-5 h-5" />
                 </div>
                 <div>
-                  <h3 className="text-xl font-display font-bold text-text-main">Executive Compile Engine</h3>
+                  <h3 id="config-modal-title" className="text-xl font-display font-bold text-text-main">Executive Compile Engine</h3>
                   <p className="text-xs text-text-muted">Customize reports prior to printing or PDF compilation</p>
                 </div>
               </div>
@@ -574,52 +588,56 @@ export const ExecutiveBoardReport = ({
                   <div className="space-y-4 bg-surface border border-white/[0.04] p-5 rounded-2xl">
                     <div className="flex justify-between items-center">
                       <div>
-                        <p className="text-sm font-bold text-text-main">Nova's Core Commentary Block</p>
+                        <p id="ai-commentary-label" className="text-sm font-bold text-text-main">Nova's Core Commentary Block</p>
                         <p className="text-[11px] text-text-muted">Include the latest qualitative bio-behavioral counseling feedback from Coach Nova</p>
                       </div>
                       <input 
                         type="checkbox"
                         checked={includeAICommentary}
                         onChange={(e) => setIncludeAICommentary(e.target.checked)}
+                        aria-labelledby="ai-commentary-label"
                         className="h-4 w-4 rounded-md accent-primary"
                       />
                     </div>
                     
                     <div className="border-t border-white/[0.02] pt-4 flex justify-between items-center">
                       <div>
-                        <p className="text-sm font-bold text-text-main">Biological Burn Metrics</p>
+                        <p id="burn-rate-label" className="text-sm font-bold text-text-main">Biological Burn Metrics</p>
                         <p className="text-[11px] text-text-muted">Include workload burn rate and boundaries-practiced card</p>
                       </div>
                       <input
                         type="checkbox"
                         checked={includeBurnRate}
                         onChange={(e) => setIncludeBurnRate(e.target.checked)}
+                        aria-labelledby="burn-rate-label"
                         className="h-4 w-4 rounded-md accent-primary"
                       />
                     </div>
 
                     <div className="border-t border-white/[0.02] pt-4 flex justify-between items-center">
                       <div>
-                        <p className="text-sm font-bold text-text-main">Weekly Recovery Metrics</p>
+                        <p id="metrics-grid-label" className="text-sm font-bold text-text-main">Weekly Recovery Metrics</p>
                         <p className="text-[11px] text-text-muted">Generate data grid report with active Sleep Debt, Deep Work duration, and Points ROI</p>
                       </div>
                       <input
                         type="checkbox"
                         checked={includeMetricsGrid}
                         onChange={(e) => setIncludeMetricsGrid(e.target.checked)}
+                        aria-labelledby="metrics-grid-label"
                         className="h-4 w-4 rounded-md accent-primary"
                       />
                     </div>
 
                     <div className="border-t border-white/[0.02] pt-4 flex justify-between items-center">
                       <div>
-                        <p className="text-sm font-bold text-text-main">Legal & Signature Safeguard block</p>
+                        <p id="signature-label" className="text-sm font-bold text-text-main">Legal & Signature Safeguard block</p>
                         <p className="text-[11px] text-text-muted">Append certified counselor signature slot and corporate compliance line</p>
                       </div>
                       <input 
                         type="checkbox"
                         checked={includeCorporateSignature}
                         onChange={(e) => setIncludeCorporateSignature(e.target.checked)}
+                        aria-labelledby="signature-label"
                         className="h-4 w-4 rounded-md accent-primary"
                       />
                     </div>
@@ -645,33 +663,40 @@ export const ExecutiveBoardReport = ({
                   <div className="py-6 flex flex-col items-center justify-center space-y-4">
                     <Loader2 className="w-10 h-10 text-primary animate-spin" />
                     
-                    <div className="w-full bg-surface h-2 rounded-full overflow-hidden border border-border">
+                    <div
+                      role="progressbar"
+                      aria-valuenow={compilationProgress}
+                      aria-valuemin={0}
+                      aria-valuemax={100}
+                      aria-label="Report compilation progress"
+                      className="w-full bg-surface h-2 rounded-full overflow-hidden border border-border"
+                    >
                       <div
                         className="bg-primary h-2 rounded-full transition-all duration-300"
                         style={{ width: `${compilationProgress}%` }}
                       />
                     </div>
 
-                    <p className="text-xs font-medium text-primary font-mono tracking-wider animate-pulse text-center">
+                    <p role="status" aria-live="polite" className="text-xs font-medium text-[#9a3412] dark:text-primary font-mono tracking-wider animate-pulse text-center">
                       {compilationStatusText}
                     </p>
                   </div>
 
                   {/* Progress trace */}
                   <div className="bg-background p-4 rounded-lg border border-border space-y-2 font-mono text-[10px] text-text-muted/70 leading-relaxed text-left max-h-36 overflow-y-auto">
-                    <p className={cn("transition-all duration-300", compilationProgress >= 15 ? "text-primary font-bold" : "text-text-muted/40")}>
+                    <p className={cn("transition-all duration-300", compilationProgress >= 15 ? "text-[#9a3412] dark:text-primary font-bold" : "text-text-muted/40")}>
                       {compilationProgress >= 15 ? "✓ Connected securely" : "○ Connecting..."}
                     </p>
-                    <p className={cn("transition-all duration-300", compilationProgress >= 40 ? "text-primary font-bold" : "text-text-muted/40")}>
+                    <p className={cn("transition-all duration-300", compilationProgress >= 40 ? "text-[#9a3412] dark:text-primary font-bold" : "text-text-muted/40")}>
                       {compilationProgress >= 40 ? `✓ Fetched ${userStats?.profile?.fullName || 'your'} recovery data` : "○ Fetching recovery metrics..."}
                     </p>
-                    <p className={cn("transition-all duration-300", compilationProgress >= 70 ? "text-primary font-bold" : "text-text-muted/40")}>
+                    <p className={cn("transition-all duration-300", compilationProgress >= 70 ? "text-[#9a3412] dark:text-primary font-bold" : "text-text-muted/40")}>
                       {compilationProgress >= 70 ? "✓ Formatted your report" : "○ Formatting report..."}
                     </p>
-                    <p className={cn("transition-all duration-300", compilationProgress >= 90 ? "text-primary font-bold" : "text-text-muted/40")}>
+                    <p className={cn("transition-all duration-300", compilationProgress >= 90 ? "text-[#9a3412] dark:text-primary font-bold" : "text-text-muted/40")}>
                       {compilationProgress >= 90 ? "✓ Reviewed by Nova" : "○ Nova reviewing..."}
                     </p>
-                    <p className={cn("transition-all duration-300", compilationProgress >= 100 ? "text-success font-bold animate-pulse" : "text-text-muted/40")}>
+                    <p className={cn("transition-all duration-300", compilationProgress >= 100 ? "text-[#166534] dark:text-[#4ade80] font-bold animate-pulse" : "text-text-muted/40")}>
                       {compilationProgress >= 100 ? "✓ Report ready — opening print dialog..." : "○ Finishing up..."}
                     </p>
                   </div>
