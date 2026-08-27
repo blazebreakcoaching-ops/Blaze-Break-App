@@ -125,6 +125,7 @@ export const OrgDashboardValue = () => {
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id as any)}
+                aria-current={activeTab === tab.id ? 'page' : undefined}
                 className={cn(
                   "px-4 py-2 rounded-lg text-xs font-bold uppercase tracking-widest transition-all",
                   activeTab === tab.id
@@ -154,7 +155,7 @@ export const OrgDashboardValue = () => {
           {activeTab === 'cost' && (
             <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-8">
               {error && (
-                <div className="p-3 bg-destructive/10 border border-destructive/20 text-destructive text-sm rounded-xl">{error}</div>
+                <div role="alert" className="p-3 bg-destructive/10 border border-destructive/20 text-destructive dark:text-[#f87171] text-sm rounded-xl">{error}</div>
               )}
 
               {!isOrgAdmin && !costInputs ? (
@@ -168,8 +169,9 @@ export const OrgDashboardValue = () => {
                   <p className="text-xs text-text-muted leading-relaxed">These come from your own HR/absence records — Blaze Break doesn't have access to this data itself, so nothing here is estimated or guessed.</p>
                   <div className="space-y-4">
                     <div>
-                      <label className="text-xs font-bold uppercase tracking-widest text-text-muted block mb-1">Annual Sickness Absence Days (total, across the org)</label>
+                      <label htmlFor="org-sickness-days" className="text-xs font-bold uppercase tracking-widest text-text-muted block mb-1">Annual Sickness Absence Days (total, across the org)</label>
                       <input
+                        id="org-sickness-days"
                         type="number"
                         min="0"
                         value={formSicknessDays}
@@ -179,8 +181,9 @@ export const OrgDashboardValue = () => {
                       />
                     </div>
                     <div>
-                      <label className="text-xs font-bold uppercase tracking-widest text-text-muted block mb-1">Average Daily Cost Per Employee (£)</label>
+                      <label htmlFor="org-daily-cost" className="text-xs font-bold uppercase tracking-widest text-text-muted block mb-1">Average Daily Cost Per Employee (£)</label>
                       <input
+                        id="org-daily-cost"
                         type="number"
                         min="0"
                         value={formDailyCost}
@@ -190,8 +193,9 @@ export const OrgDashboardValue = () => {
                       />
                     </div>
                     <div>
-                      <label className="text-xs font-bold uppercase tracking-widest text-text-muted block mb-1">Total Headcount</label>
+                      <label htmlFor="org-headcount" className="text-xs font-bold uppercase tracking-widest text-text-muted block mb-1">Total Headcount</label>
                       <input
+                        id="org-headcount"
                         type="number"
                         min="0"
                         value={formHeadcount}
@@ -256,7 +260,7 @@ export const OrgDashboardValue = () => {
                         <h4 className="font-bold text-text-main">Cost Per Employee Over Time</h4>
                         <p className="text-xs text-text-muted">Every time these figures are updated, it's logged here — a real trend from your own entries, not a projection.</p>
                       </div>
-                      <div className="h-52">
+                      <div className="h-52" role="img" aria-label="Line chart of cost per employee over time, from your organisation's own entered figures. Full values are in the chart's tooltips.">
                         <ResponsiveContainer width="100%" height="100%">
                           <LineChart
                             data={costHistory.map(h => ({
@@ -332,7 +336,7 @@ export const OrgDashboardValue = () => {
                   <div className="relative pl-8 space-y-8 before:absolute before:inset-0 before:ml-[11px] before:-translate-x-px md:before:mx-auto md:before:translate-x-0 before:h-full before:w-0.5 before:bg-gradient-to-b before:from-transparent before:via-border before:to-transparent">
 
                     <div className="relative">
-                      <div className="absolute -left-[35px] top-1 w-6 h-6 rounded-full bg-primary/20 border-2 border-primary flex items-center justify-center font-bold text-xs text-primary">30</div>
+                      <div className="absolute -left-[35px] top-1 w-6 h-6 rounded-full bg-primary/20 border-2 border-primary flex items-center justify-center font-bold text-xs text-[#9a3412] dark:text-primary">30</div>
                       <div className="card relative p-6">
                         <h4 className="font-bold text-text-main mb-4">30-Day Actions</h4>
                         <ul className="text-sm text-text-muted space-y-2 list-disc pl-4">
