@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { secureApiFetch } from '../lib/secure-api';
 import { auth } from '../lib/firebase';
 import { RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, ResponsiveContainer, Tooltip } from 'recharts';
+import { useFocusTrap } from '../lib/useFocusTrap';
 
 
 import {
@@ -86,6 +87,14 @@ export const OrgDashboard = () => {
   const [membersError, setMembersError] = useState('');
   const [memberActionUid, setMemberActionUid] = useState<string | null>(null);
   const [memberToRemove, setMemberToRemove] = useState<{ uid: string; label: string } | null>(null);
+  const removeMemberDialogRef = useFocusTrap(!!memberToRemove);
+
+  useEffect(() => {
+    if (!memberToRemove) return;
+    const onKeyDown = (e: KeyboardEvent) => { if (e.key === 'Escape') setMemberToRemove(null); };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [memberToRemove]);
 
   const [settingsName, setSettingsName] = useState('');
   const [settingsThreshold, setSettingsThreshold] = useState('');
@@ -466,6 +475,7 @@ export const OrgDashboard = () => {
             <button
               key={tab.id}
               onClick={() => setActiveSubTab(tab.id as any)}
+              aria-current={activeSubTab === tab.id ? 'page' : undefined}
               className={cn(
                 "flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all",
                 activeSubTab === tab.id
@@ -577,7 +587,7 @@ export const OrgDashboard = () => {
                 <div className="flex items-center gap-3 mb-4">
                   <div className="tag bg-surface dark:bg-card/10 text-text-main border-white/20">Team Climate Dashboard</div>
                   {climateData && !climateData.locked && (
-                    <div className="flex items-center gap-2 text-xs font-black uppercase tracking-widest text-success bg-success/10 px-3 py-1 rounded-full border border-success/20">
+                    <div className="flex items-center gap-2 text-xs font-black uppercase tracking-widest text-[#166534] dark:text-[#4ade80] bg-success/10 px-3 py-1 rounded-full border border-success/20">
                       <ShieldCheck className="w-3 h-3" /> {climateData.responseCount} responses this quarter
                     </div>
                   )}
@@ -606,7 +616,7 @@ export const OrgDashboard = () => {
                     <h4 className="font-bold text-text-main">Team Climate, Six Dimensions</h4>
                     <p className="text-xs text-text-muted">Average score per dimension (1–5), from real survey responses.</p>
                   </div>
-                  <div className="h-72">
+                  <div className="h-72" role="img" aria-label="Radar chart of team climate across six dimensions - Demands, Control, Support, Relationships, Role, and Change - each scored 1 to 5 from real survey responses. Full values are in the chart's tooltips.">
                     <ResponsiveContainer width="100%" height="100%">
                       <RadarChart
                         cx="50%" cy="50%" outerRadius="75%"
@@ -715,7 +725,7 @@ export const OrgDashboard = () => {
                         <span className="text-[11px] uppercase tracking-widest font-black text-text-muted block mb-1">{action.category}</span>
                         <p className="text-xs font-bold text-text-main mb-3 group-hover:text-primary transition-colors">{action.title}</p>
                         <div className="flex gap-2">
-                          <span className={cn("text-[11px] px-1.5 py-0.5 rounded", action.impact === 'High' ? "bg-success/20 text-success" : "bg-surface text-text-muted")}>Impact: {action.impact}</span>
+                          <span className={cn("text-[11px] px-1.5 py-0.5 rounded", action.impact === 'High' ? "bg-success/20 text-[#166534] dark:text-[#4ade80]" : "bg-surface text-text-muted")}>Impact: {action.impact}</span>
                           <span className={cn("text-[11px] px-1.5 py-0.5 rounded bg-surface text-text-muted")}>Effort: {action.effort}</span>
                         </div>
                       </div>
@@ -743,7 +753,7 @@ export const OrgDashboard = () => {
         {activeSubTab === 'team' && (
           <motion.div key="team" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95 }} className="space-y-8 pb-24">
             {membersError && (
-              <div className="p-3 bg-destructive/10 border border-destructive/20 text-destructive text-sm rounded-xl">{membersError}</div>
+              <div role="alert" className="p-3 bg-destructive/10 border border-destructive/20 text-destructive dark:text-[#f87171] text-sm rounded-xl">{membersError}</div>
             )}
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
@@ -776,6 +786,7 @@ export const OrgDashboard = () => {
                             <button
                               onClick={() => handleRevokeAdmin(member.uid)}
                               disabled={memberActionUid === member.uid}
+                              aria-label={`Revoke admin access for ${member.displayName || member.email || 'this person'}`}
                               className="text-xs font-bold text-primary hover:opacity-70 transition-opacity flex items-center gap-1 disabled:opacity-50"
                               title="Revoke admin access"
                             >
@@ -798,6 +809,7 @@ export const OrgDashboard = () => {
                               disabled={memberActionUid === member.uid}
                               className="text-xs font-bold text-text-muted hover:text-destructive transition-colors flex items-center gap-1 disabled:opacity-50"
                               title="Remove from organisation"
+                              aria-label={`Remove ${member.displayName || member.email || 'this person'} from organisation`}
                             >
                               {memberActionUid === member.uid ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <UserMinus className="w-3.5 h-3.5" />}
                             </button>
@@ -851,6 +863,7 @@ export const OrgDashboard = () => {
                     <div className="font-mono text-lg font-bold text-text-main bg-surface px-3 py-2 rounded-lg border border-border tracking-widest flex-1 text-center">{currentJoinCode}</div>
                     <button
                       onClick={() => { navigator.clipboard.writeText(currentJoinCode); }}
+                      aria-label="Copy join code"
                       className="p-2 text-text-muted hover:text-primary transition-colors"
                       title="Copy join code"
                     >
@@ -887,15 +900,16 @@ export const OrgDashboard = () => {
                   </div>
                   <p className="text-xs text-text-muted">One email per line, or separated by commas. Up to 50 at once.</p>
                   {csvError && (
-                    <div className="p-2.5 bg-destructive/10 border border-destructive/20 text-destructive text-xs rounded-lg">{csvError}</div>
+                    <div role="alert" className="p-2.5 bg-destructive/10 border border-destructive/20 text-destructive dark:text-[#f87171] text-xs rounded-lg">{csvError}</div>
                   )}
                   {inviteResult && (
-                    <div className="p-2.5 bg-primary/5 border border-primary/20 text-primary text-xs rounded-lg">{inviteResult}</div>
+                    <div role="status" aria-live="polite" className="p-2.5 bg-primary/5 border border-primary/20 text-[#9a3412] dark:text-primary text-xs rounded-lg">{inviteResult}</div>
                   )}
                   <textarea
                     value={inviteEmails}
                     onChange={(e) => setInviteEmails(e.target.value)}
                     placeholder="jane@company.com&#10;alex@company.com"
+                    aria-label="Email addresses to invite, one per line or comma-separated"
                     className="w-full h-20 bg-surface border border-border rounded-xl p-3 text-xs text-text-main placeholder:text-text-muted focus:outline-none focus:border-primary resize-none font-mono"
                   />
                   <button
@@ -915,11 +929,12 @@ export const OrgDashboard = () => {
                           <span className="text-text-main truncate">{invite.email}</span>
                           <div className="flex items-center gap-2 shrink-0">
                             {!invite.emailSent && (
-                              <span className="text-[10px] text-warning uppercase font-bold">No email sent</span>
+                              <span className="text-[10px] text-[#9a3412] dark:text-warning uppercase font-bold">No email sent</span>
                             )}
                             <button
                               onClick={() => handleResendInvite(invite.email)}
                               disabled={resendingEmail === invite.email}
+                              aria-label={`Resend invite to ${invite.email}`}
                               className="text-text-muted hover:text-primary transition-colors disabled:opacity-50"
                               title="Resend invite"
                             >
@@ -928,6 +943,7 @@ export const OrgDashboard = () => {
                             <button
                               onClick={() => handleCancelInvite(invite.id)}
                               disabled={cancelingInviteId === invite.id}
+                              aria-label={`Cancel invite to ${invite.email}`}
                               className="text-text-muted hover:text-destructive transition-colors disabled:opacity-50"
                               title="Cancel invite"
                             >
@@ -950,14 +966,19 @@ export const OrgDashboard = () => {
           <div className="fixed inset-0 z-[200] flex items-center justify-center p-4" onClick={() => setMemberToRemove(null)}>
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 bg-black/50" />
             <motion.div
+              ref={removeMemberDialogRef as any}
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
               onClick={(e) => e.stopPropagation()}
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="remove-member-title"
+              tabIndex={-1}
               className="relative card bg-card border border-border shadow-lg p-6 max-w-sm w-full space-y-4"
             >
               <div>
-                <h4 className="text-lg font-bold text-text-main">Remove {memberToRemove.label}?</h4>
+                <h4 id="remove-member-title" className="text-lg font-bold text-text-main">Remove {memberToRemove.label}?</h4>
                 <p className="text-sm text-text-muted mt-2">
                   They'll be unlinked from {orgStatus?.organisationName || 'this organisation'} and their data-sharing consent will be turned off. This doesn't affect their own Blaze Break account or personal data.
                 </p>
