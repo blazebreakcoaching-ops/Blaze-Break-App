@@ -264,8 +264,8 @@ export const IntegrationsDashboard = () => {
         <div className={cn(
           "max-w-3xl p-4 rounded-xl text-sm font-medium flex items-start gap-3 border",
           returnBanner.status === 'connected'
-            ? "bg-success/10 text-success border-success/20"
-            : "bg-destructive dark:bg-destructive/20 text-destructive border-destructive dark:border-destructive/30"
+            ? "bg-success/10 text-[#166534] dark:text-[#4ade80] border-success/20"
+            : "bg-destructive text-destructive-foreground dark:bg-destructive/20 dark:text-[#f87171] border-destructive dark:border-destructive/30"
         )}>
           {returnBanner.status === 'connected' ? <CheckCircle2 className="w-5 h-5 shrink-0 mt-0.5" /> : <AlertTriangle className="w-5 h-5 shrink-0 mt-0.5" />}
           <span>
@@ -291,9 +291,9 @@ export const IntegrationsDashboard = () => {
               </div>
               <div className={cn(
                 "px-3 py-1 rounded-full text-xs font-black uppercase tracking-widest flex items-center gap-1.5",
-                integration.status === 'connected' ? "bg-success/10 text-success" : 
-                integration.status === 'error' ? "bg-destructive/10 text-destructive" :
-                integration.status === 'loading' ? "bg-primary/10 text-primary" :
+                integration.status === 'connected' ? "bg-success/10 text-[#166534] dark:text-[#4ade80]" : 
+                integration.status === 'error' ? "bg-destructive/10 text-destructive dark:text-[#f87171]" :
+                integration.status === 'loading' ? "bg-primary/10 text-[#9a3412] dark:text-primary" :
                 "bg-border dark:bg-surface text-text-muted"
               )}>
                 {integration.status === 'loading' && <RefreshCw className="w-3 h-3 animate-spin" />}
@@ -308,7 +308,7 @@ export const IntegrationsDashboard = () => {
             </div>
             
             {(integration.status === 'error' || integration.status === 'not_configured') && integration.errorMessage && (
-              <div className="p-3 bg-destructive dark:bg-destructive/20 text-destructive outline-destructive rounded-lg text-xs font-medium border border-destructive dark:border-destructive/30 flex items-start gap-2">
+              <div className="p-3 bg-destructive text-destructive-foreground dark:bg-destructive/20 dark:text-[#f87171] outline-destructive rounded-lg text-xs font-medium border border-destructive dark:border-destructive/30 flex items-start gap-2">
                 <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
                 <span className="leading-relaxed">{integration.errorMessage}</span>
               </div>
@@ -320,14 +320,14 @@ export const IntegrationsDashboard = () => {
               className={cn(
                 "w-full py-3 rounded-xl text-xs font-black uppercase tracking-widest transition-all flex justify-center items-center gap-2",
                 integration.status === 'connected' 
-                  ? "bg-surface dark:bg-surface text-text-muted hover:bg-destructive hover:text-destructive cursor-pointer"
+                  ? "bg-surface dark:bg-surface text-text-muted hover:bg-destructive hover:text-destructive-foreground cursor-pointer"
                   : integration.status === 'loading'
                   ? "bg-surface dark:bg-surface text-text-muted cursor-not-allowed opacity-70"
                   : integration.status === 'error'
                   ? "bg-destructive text-destructive-foreground hover:bg-destructive cursor-pointer"
                   : integration.status === 'not_configured'
                   ? "bg-surface dark:bg-surface text-text-muted cursor-not-allowed opacity-50"
-                  : "bg-primary/10 text-primary hover:bg-primary hover:text-primary-foreground cursor-pointer"
+                  : "bg-primary/10 text-[#9a3412] dark:text-primary hover:bg-primary hover:text-primary-foreground cursor-pointer"
               )}
             >
               {integration.status === 'connected' ? 'Disconnect' : 
