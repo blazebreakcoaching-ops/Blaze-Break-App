@@ -258,7 +258,7 @@ export const AnxietyResetMode = ({ onAwardPoints, onNavigate }: AnxietyResetMode
               </div>
               <div>
                 <h3 className="font-display text-2xl font-semibold text-text-main tracking-tight">Anxiety & Overwhelm Reset</h3>
-                <span className="text-xs uppercase tracking-widest text-destructive font-bold">Grounded in clinical anxiety-support techniques</span>
+                <span className="text-xs uppercase tracking-widest text-destructive dark:text-[#f87171] font-bold">Grounded in clinical anxiety-support techniques</span>
               </div>
             </div>
 
@@ -442,7 +442,7 @@ export const AnxietyResetMode = ({ onAwardPoints, onNavigate }: AnxietyResetMode
                     className="p-4 text-left rounded-xl bg-surface/40 border border-white/[0.04] hover:border-destructive/30 transition-all flex justify-between items-center group"
                   >
                     <div>
-                      <div className="text-sm font-bold text-text-main group-hover:text-destructive transition-colors">{t.name}</div>
+                      <div className="text-sm font-bold text-text-main group-hover:text-destructive dark:group-hover:text-[#f87171] transition-colors">{t.name}</div>
                       <div className="text-[11px] text-text-muted line-clamp-1">{t.description}</div>
                     </div>
                     <ArrowRight className="w-4 h-4 text-text-muted group-hover:text-destructive shrink-0 ml-2" />
@@ -523,7 +523,7 @@ export const AnxietyResetMode = ({ onAwardPoints, onNavigate }: AnxietyResetMode
                   <div className="space-y-4 max-w-lg mx-auto">
                     {groundingStep === 1 && (
                       <div className="text-center space-y-4">
-                        <span className="text-3xl font-bold text-destructive block">5</span>
+                        <span className="text-3xl font-bold text-destructive dark:text-[#f87171] block">5</span>
                         <h5 className="font-bold text-text-main text-base">Things you can SEE in your immediate environment</h5>
                         <p className="text-xs text-text-muted">Acknowledge them silently or list them here to focus your sight.</p>
                         <input 
@@ -542,7 +542,7 @@ export const AnxietyResetMode = ({ onAwardPoints, onNavigate }: AnxietyResetMode
 
                     {groundingStep === 2 && (
                       <div className="text-center space-y-4">
-                        <span className="text-3xl font-bold text-destructive block">4</span>
+                        <span className="text-3xl font-bold text-destructive dark:text-[#f87171] block">4</span>
                         <h5 className="font-bold text-text-main text-base">Things you can physically FEEL</h5>
                         <p className="text-xs text-text-muted">Feet flat on floor, texture of your desk, weight of your body, air temperature.</p>
                         <input 
@@ -561,7 +561,7 @@ export const AnxietyResetMode = ({ onAwardPoints, onNavigate }: AnxietyResetMode
 
                     {groundingStep === 3 && (
                       <div className="text-center space-y-4">
-                        <span className="text-3xl font-bold text-destructive block">3</span>
+                        <span className="text-3xl font-bold text-destructive dark:text-[#f87171] block">3</span>
                         <h5 className="font-bold text-text-main text-base">Things you can HEAR</h5>
                         <p className="text-xs text-text-muted">Traffic, computer fan hum, distant voices, wind outside.</p>
                         <input 
@@ -580,7 +580,7 @@ export const AnxietyResetMode = ({ onAwardPoints, onNavigate }: AnxietyResetMode
 
                     {groundingStep === 4 && (
                       <div className="text-center space-y-4">
-                        <span className="text-3xl font-bold text-destructive block">2</span>
+                        <span className="text-3xl font-bold text-destructive dark:text-[#f87171] block">2</span>
                         <h5 className="font-bold text-text-main text-base">Things you can SMELL</h5>
                         <p className="text-xs text-text-muted">Coffee, clean laundry, woody notes, fresh air.</p>
                         <input 
@@ -599,7 +599,7 @@ export const AnxietyResetMode = ({ onAwardPoints, onNavigate }: AnxietyResetMode
 
                     {groundingStep === 5 && (
                       <div className="text-center space-y-4">
-                        <span className="text-3xl font-bold text-destructive block">1</span>
+                        <span className="text-3xl font-bold text-destructive dark:text-[#f87171] block">1</span>
                         <h5 className="font-bold text-text-main text-base">Thing you can TASTE</h5>
                         <p className="text-xs text-text-muted">Toothpaste, glass of water, faint coffee, mint.</p>
                         <input 
@@ -659,7 +659,7 @@ export const AnxietyResetMode = ({ onAwardPoints, onNavigate }: AnxietyResetMode
                     />
                     <div className="relative z-10 flex flex-col items-center">
                       <span className="text-xl font-bold text-text-main capitalize" aria-hidden="true">{breathPhase}</span>
-                      <span className="text-3xl font-mono font-bold text-destructive mt-1" aria-hidden="true">{breathCounter}</span>
+                      <span className="text-3xl font-mono font-bold text-destructive dark:text-[#f87171] mt-1" aria-hidden="true">{breathCounter}</span>
                     </div>
                   </div>
                   <div className="text-xs text-text-muted uppercase tracking-widest font-black" role="status" aria-live="polite" aria-atomic="true">
@@ -705,7 +705,7 @@ export const AnxietyResetMode = ({ onAwardPoints, onNavigate }: AnxietyResetMode
                         animate={{ opacity: 1, scale: 1 }}
                         className="text-center py-8 space-y-4 bg-success/5 border border-success/20 p-6 rounded-2xl"
                       >
-                        <CheckCircle2 className="w-10 h-10 text-success mx-auto" />
+                        <CheckCircle2 className="w-10 h-10 text-success dark:text-[#4ade80] mx-auto" />
                         <h6 className="font-bold text-text-main text-base">Anxious energy dumped into negative space</h6>
                         <p className="text-xs text-text-muted max-w-md mx-auto">
                           It is off your shoulders. We do not have to carry or fix any of this right now. You have done enough.
@@ -732,7 +732,7 @@ export const AnxietyResetMode = ({ onAwardPoints, onNavigate }: AnxietyResetMode
                     {fearsList.map((f, idx) => (
                       <div key={idx} className="grid grid-cols-1 sm:grid-cols-2 gap-3 border-b border-white/[0.03] pb-3">
                         <div className="space-y-1">
-                          <label className="text-[10px] text-destructive font-bold uppercase tracking-wider">The Fear Loop</label>
+                          <label className="text-[10px] text-destructive dark:text-[#f87171] font-bold uppercase tracking-wider">The Fear Loop</label>
                           <input 
                             type="text"
                             value={f.fear}
@@ -746,7 +746,7 @@ export const AnxietyResetMode = ({ onAwardPoints, onNavigate }: AnxietyResetMode
                           />
                         </div>
                         <div className="space-y-1">
-                          <label className="text-[10px] text-success font-bold uppercase tracking-wider">The Factual Reality</label>
+                          <label className="text-[10px] text-success dark:text-[#4ade80] font-bold uppercase tracking-wider">The Factual Reality</label>
                           <input 
                             type="text"
                             value={f.fact}
@@ -997,17 +997,17 @@ export const AnxietyResetMode = ({ onAwardPoints, onNavigate }: AnxietyResetMode
             className="space-y-6"
           >
             <div className="flex items-center gap-3">
-              <div className="w-12 h-12 bg-success/10 border border-success/20 text-success rounded-2xl flex items-center justify-center">
+              <div className="w-12 h-12 bg-success/10 border border-success/20 text-success dark:text-[#4ade80] rounded-2xl flex items-center justify-center">
                 <Sparkles className="w-6 h-6" />
               </div>
               <div>
                 <h3 className="font-display text-xl font-semibold text-text-main tracking-tight">De-escalation Stabilized</h3>
-                <span className="text-xs uppercase tracking-widest text-success font-bold">Secure baseline restored (+50 points earned)</span>
+                <span className="text-xs uppercase tracking-widest text-success dark:text-[#4ade80] font-bold">Secure baseline restored (+50 points earned)</span>
               </div>
             </div>
 
             <div className="p-5 bg-surface rounded-2xl border border-white/[0.04] space-y-3">
-              <strong className="text-xs uppercase tracking-widest text-destructive font-bold block">Nova's Strategic Aftercare Action</strong>
+              <strong className="text-xs uppercase tracking-widest text-destructive dark:text-[#f87171] font-bold block">Nova's Strategic Aftercare Action</strong>
               <p className="text-sm text-text-main leading-relaxed italic">
                 "Excellent. You reduced your intensity from {intensityBefore}/10 to {intensityAfter}/10. 
                 That is measurable autonomic work. Your thoughts did not define reality; you intervened and patched the leak."
