@@ -1225,7 +1225,7 @@ export const NervousSystemReset = ({ fingerprint, onAwardPoints }: NervousSystem
                   </>
                 ) : (
                   <>
-                    <Play className="w-5 h-5 text-primary" /> Begin Reset Sequence
+                    <Play className="w-5 h-5" /> Begin Reset Sequence
                   </>
                 )}
               </button>

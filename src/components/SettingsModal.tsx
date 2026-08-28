@@ -233,7 +233,7 @@ export const SettingsModal = ({ profile, onSave, onClose, onOpenPrivacyCentre }:
 
                 <div className="space-y-4">
                   <div className="space-y-1.5">
-                    <label htmlFor="settings-fullname" className="text-xs font-black uppercase tracking-widest text-text-muted px-1">Full Name <span className="text-destructive">*</span></label>
+                    <label htmlFor="settings-fullname" className="text-xs font-black uppercase tracking-widest text-text-muted px-1">Full Name <span className="text-destructive dark:text-[#f87171]">*</span></label>
                     <input
                       id="settings-fullname"
                       type="text"

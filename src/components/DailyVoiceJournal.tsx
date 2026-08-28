@@ -406,7 +406,7 @@ export const DailyVoiceJournal = ({
                 <div className="space-y-2">
                   {isRecording ? (
                     <div className="space-y-1">
-                      <p className="text-lg font-mono font-bold text-destructive">00:{recordingDuration.toString().padStart(2, "0")}</p>
+                      <p className="text-lg font-mono font-bold text-destructive dark:text-[#f87171]">00:{recordingDuration.toString().padStart(2, "0")}</p>
                       <span role="status" aria-live="polite" className="text-[10px] font-black uppercase tracking-widest text-destructive/80 dark:text-[#f87171] flex items-center justify-center gap-1.5">
                         <Waves className="w-3.5 h-3.5 animate-bounce" /> Streaming Spoken Feed
                       </span>

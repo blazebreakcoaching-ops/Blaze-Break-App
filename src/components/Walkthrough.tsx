@@ -676,7 +676,7 @@ export const Walkthrough = ({
                     <Award className="w-5 h-5" />
                   </div>
                   <div>
-                    <h4 className="text-xs uppercase font-black tracking-widest text-primary">Recovery Contribution</h4>
+                    <h4 className="text-xs uppercase font-black tracking-widest text-[#9a3412] dark:text-primary">Recovery Contribution</h4>
                     <p className="text-xs text-text-muted font-bold font-display mt-1 leading-relaxed">
                       "{active.recoveryInference}"
                     </p>
