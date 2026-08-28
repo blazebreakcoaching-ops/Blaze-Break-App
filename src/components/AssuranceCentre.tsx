@@ -41,10 +41,11 @@ export const AssuranceCentre = () => {
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id)}
+            aria-current={activeTab === tab.id ? 'page' : undefined}
             className={cn(
               "flex items-center gap-2 px-4 py-3 rounded-2xl font-medium tracking-wide transition-all whitespace-nowrap border",
               activeTab === tab.id 
-                ? "bg-primary/10 border-primary/20 text-primary shadow-inner" 
+                ? "bg-primary/10 border-primary/20 text-[#9a3412] dark:text-primary shadow-inner" 
                 : "bg-surface/40 border-white/[0.04] text-text-muted hover:text-text-main hover:bg-surface/80"
             )}
           >
@@ -62,7 +63,7 @@ export const AssuranceCentre = () => {
               <p className="text-sm text-text-muted max-w-3xl leading-relaxed">
                 <strong className="text-text-main">Intended Purpose:</strong> Blaze Break is a non-clinical burnout recovery, wellbeing education and sustainable-performance support platform. It helps users reflect on pressure patterns, build recovery routines, communicate boundaries and access chosen human support. 
                 <br /><br />
-                <strong className="text-destructive">Exclusions:</strong> It does not diagnose, treat or replace medical or emergency services. It is not an MHRA medical device.
+                <strong className="text-destructive dark:text-[#f87171]">Exclusions:</strong> It does not diagnose, treat or replace medical or emergency services. It is not an MHRA medical device.
               </p>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -76,8 +77,8 @@ export const AssuranceCentre = () => {
                 </ul>
               </div>
               <div className="p-4 rounded-2xl bg-destructive/10 border border-destructive/20">
-                <h3 className="font-semibold text-destructive mb-1">Banned Claims</h3>
-                <ul className="text-xs text-rose-300/80 space-y-1 list-disc list-inside">
+                <h3 className="font-semibold text-destructive dark:text-[#f87171] mb-1">Banned Claims</h3>
+                <ul className="text-xs text-[#9f1239] dark:text-rose-300/80 space-y-1 list-disc list-inside">
                   <li>Detect burnout</li>
                   <li>Prevent burnout</li>
                   <li>Emergency detection</li>
@@ -102,21 +103,21 @@ export const AssuranceCentre = () => {
                   <h3 className="font-semibold text-text-main text-sm">Action Permission Centre</h3>
                   <p className="text-xs text-text-muted mt-1">Rule: Nova may only execute approved non-destructive actions.</p>
                 </div>
-                <div className="text-xs font-mono text-success bg-success/10 px-2 py-1 rounded-md">ENFORCED</div>
+                <div className="text-xs font-mono text-[#166534] dark:text-[#4ade80] bg-success/10 px-2 py-1 rounded-md">ENFORCED</div>
               </div>
               <div className="flex items-center justify-between p-4 bg-surface/40 border border-white/[0.04] rounded-2xl">
                 <div>
                   <h3 className="font-semibold text-text-main text-sm">Medical Claim Ban</h3>
                   <p className="text-xs text-text-muted mt-1">Rule: Nova fallback enforced if medical terminology or crisis identified.</p>
                 </div>
-                <div className="text-xs font-mono text-success bg-success/10 px-2 py-1 rounded-md">ACTIVE</div>
+                <div className="text-xs font-mono text-[#166534] dark:text-[#4ade80] bg-success/10 px-2 py-1 rounded-md">ACTIVE</div>
               </div>
               <div className="flex items-center justify-between p-4 bg-surface/40 border border-white/[0.04] rounded-2xl">
                 <div>
                   <h3 className="font-semibold text-text-main text-sm">Memory Centre Access</h3>
                   <p className="text-xs text-text-muted mt-1">Rule: User controls AI read/write context. Erase allowed.</p>
                 </div>
-                <div className="text-xs font-mono text-warning bg-warning/10 px-2 py-1 rounded-md">PENDING UX</div>
+                <div className="text-xs font-mono text-[#9a3412] dark:text-warning bg-warning/10 px-2 py-1 rounded-md">PENDING UX</div>
               </div>
             </div>
           </div>
@@ -132,26 +133,26 @@ export const AssuranceCentre = () => {
             </div>
             <div className="grid gap-4">
               <div className="p-5 rounded-2xl bg-surface/50 border border-white/[0.04] space-y-2">
-                <h3 className="font-semibold text-primary text-sm">Personal vs. Organization Separation</h3>
+                <h3 className="font-semibold text-[#9a3412] dark:text-primary text-sm">Personal vs. Organization Separation</h3>
                 <p className="text-xs text-text-muted">
                   Strict context boundary. Employer-sponsored users exist in a 'Participation Space' for anonymous trends. Private 'Recovery Vault' history is never accessible to employers.
                 </p>
               </div>
               <div className="p-5 rounded-2xl bg-surface/50 border border-white/[0.04] space-y-2">
-                <h3 className="font-semibold text-primary text-sm">Anonymity Thresholds</h3>
+                <h3 className="font-semibold text-[#9a3412] dark:text-primary text-sm">Anonymity Thresholds</h3>
                 <p className="text-xs text-text-muted">
                   Minimum N=10 rule applied to all employer dashboards before any grouped wellbeing trends or survey data is visible. Individual indicators (Recovery Velocity, Mood Pulse) are suppressed.
                 </p>
               </div>
               <div className="p-5 rounded-2xl bg-surface/50 border border-white/[0.04] space-y-2">
-                <h3 className="font-semibold text-primary text-sm">Data Inventory Map</h3>
+                <h3 className="font-semibold text-[#9a3412] dark:text-primary text-sm">Data Inventory Map</h3>
                 <div className="overflow-x-auto mt-2">
                   <table className="w-full text-left border-collapse text-xs">
                     <thead>
                       <tr className="border-b border-white/[0.04] text-text-muted">
-                        <th className="py-2 pr-4 font-normal">Data Item</th>
-                        <th className="py-2 pr-4 font-normal">Who Sees It</th>
-                        <th className="py-2 font-normal">Org Visibility</th>
+                        <th scope="col" className="py-2 pr-4 font-normal">Data Item</th>
+                        <th scope="col" className="py-2 pr-4 font-normal">Who Sees It</th>
+                        <th scope="col" className="py-2 font-normal">Org Visibility</th>
                       </tr>
                     </thead>
                     <tbody className="text-text-muted">
@@ -187,10 +188,10 @@ export const AssuranceCentre = () => {
               </p>
             </div>
             <div className="p-6 bg-warning/10 border border-warning/20 rounded-2xl border-dashed">
-              <h3 className="text-warning font-bold mb-2 flex items-center gap-2">
+              <h3 className="text-[#9a3412] dark:text-warning font-bold mb-2 flex items-center gap-2">
                 <AlertTriangle className="w-4 h-4" /> Safety Measures
               </h3>
-              <ul className="text-sm text-warning space-y-2 list-none">
+              <ul className="text-sm text-[#9a3412] dark:text-warning space-y-2 list-none">
                 <li>• No AI auto-triggering without explicit user confirmation step.</li>
                 <li>• Clear indication that messages may fail or be delayed.</li>
                 <li>• Fallback static signposting to crisis helplines always visible.</li>
@@ -223,9 +224,9 @@ export const AssuranceCentre = () => {
                    <span className="text-sm text-text-muted font-medium">{item.label}</span>
                    <span className={cn(
                      "text-xs uppercase tracking-wider font-bold mt-2",
-                     item.status === 'Active' ? "text-success" : 
-                     item.status === 'Pending' ? "text-warning" : 
-                     item.status === 'Partial' ? "text-primary" : "text-text-muted"
+                     item.status === 'Active' ? "text-success dark:text-[#4ade80]" : 
+                     item.status === 'Pending' ? "text-[#9a3412] dark:text-warning" : 
+                     item.status === 'Partial' ? "text-[#9a3412] dark:text-primary" : "text-text-muted"
                    )}>{item.status}</span>
                  </div>
                ))}
@@ -242,7 +243,7 @@ export const AssuranceCentre = () => {
               </p>
             </div>
             
-            <div className="bg-warning/10 border border-warning/20 p-4 rounded-xl flex gap-3 text-warning">
+            <div className="bg-warning/10 border border-warning/20 p-4 rounded-xl flex gap-3 text-[#9a3412] dark:text-warning">
               <ShieldAlert className="w-5 h-5 shrink-0" />
               <div>
                 <h4 className="font-bold text-sm">Production Readiness Warning</h4>
@@ -280,7 +281,7 @@ export const AssuranceCentre = () => {
                   </div>
                 </div>
                 <div className="flex items-center gap-4">
-                  <div className="w-8 h-8 rounded-full bg-card flex items-center justify-center text-primary text-xs font-bold ring-1 ring-primary/30">3</div>
+                  <div className="w-8 h-8 rounded-full bg-card flex items-center justify-center text-[#9a3412] dark:text-primary text-xs font-bold ring-1 ring-primary/30">3</div>
                   <div>
                     <h4 className="text-sm font-medium text-text-muted">ROI Calculation</h4>
                     <p className="text-xs text-text-muted">Absenteeism cost reduction claims must explicitly carry "Estimated" labels until proven by 90-day pilot validation.</p>
