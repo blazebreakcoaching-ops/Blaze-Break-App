@@ -376,7 +376,7 @@ export function FocusZone({ onAwardPoints, isFocusActive, setIsFocusActive, curr
     switch (breathPhase) {
       case 'In': return { title: 'Breathe In', scale: 1.4, color: 'text-primary' };
       case 'Hold1': return { title: 'Hold Breath', scale: 1.4, color: 'text-warning' };
-      case 'Out': return { title: 'Breathe Out', scale: 1.0, color: 'text-success' };
+      case 'Out': return { title: 'Breathe Out', scale: 1.0, color: 'text-[#4ade80]' };
       case 'Hold2': return { title: 'Hold Breath', scale: 1.0, color: 'text-warning' };
     }
   };
@@ -614,7 +614,7 @@ export function FocusZone({ onAwardPoints, isFocusActive, setIsFocusActive, curr
                 </button>
                 <button
                   onClick={confirmQuit}
-                  className="py-3 bg-surface hover:bg-card border border-border text-destructive rounded-xl text-xs font-black uppercase tracking-widest text-center cursor-pointer"
+                  className="py-3 bg-surface hover:bg-card border border-border text-destructive dark:text-[#f87171] rounded-xl text-xs font-black uppercase tracking-widest text-center cursor-pointer"
                 >
                   Abandon Block
                 </button>

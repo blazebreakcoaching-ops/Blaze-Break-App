@@ -110,7 +110,7 @@ const GuardianCard = ({
       className={cn(
         "guardian-network-card p-6 rounded-2xl border transition-all overflow-hidden relative shadow-lg group",
         contact.role.includes('guardian')
-          ? "bg-card border-destructive/30 text-destructive shadow-destructive/10"
+          ? "bg-card border-destructive/30 text-destructive dark:text-[#f87171] shadow-destructive/10"
           : "bg-white dark:bg-card border-border"
       )}
     >
@@ -168,7 +168,7 @@ const GuardianCard = ({
            <p className={cn("text-xs font-mono flex items-center gap-2", contact.role.includes('guardian') ? "text-text-muted" : "text-text-muted")}>
              <Phone className="w-3.5 h-3.5" /> {contact.contactMethod}
            </p>
-           <div className="group/time relative flex items-center justify-end cursor-help text-text-muted hover:text-success transition-colors">
+           <div className="group/time relative flex items-center justify-end cursor-help text-text-muted hover:text-success dark:hover:text-[#4ade80] transition-colors">
              <span className="absolute right-full mr-2 opacity-0 group-hover/time:opacity-100 transition-opacity text-[11px] uppercase tracking-widest font-black whitespace-nowrap pointer-events-none bg-card text-text-main px-2 py-1 rounded">
                {lastHealthCheck ? `Verified: ${lastHealthCheck.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : 'Unverified'}
              </span>
@@ -348,7 +348,7 @@ export const NovaGuardianRelay = ({ contacts, onAdd, onRemove, userName }: NovaG
             </div>
             <div>
                <h2 className="text-3xl lg:text-4xl font-display font-bold text-text-main tracking-tight">Guardian Relay</h2>
-               <p className="text-destructive text-xs font-black uppercase tracking-widest mt-2 flex items-center gap-2"><Activity className="w-3 h-3" /> Priority Access Subsystem</p>
+               <p className="text-destructive dark:text-[#f87171] text-xs font-black uppercase tracking-widest mt-2 flex items-center gap-2"><Activity className="w-3 h-3" /> Priority Access Subsystem</p>
             </div>
           </div>
           <p className="text-xl leading-relaxed text-text-muted font-medium italic border-l-2 border-destructive/50 pl-6 py-2">
@@ -369,7 +369,7 @@ export const NovaGuardianRelay = ({ contacts, onAdd, onRemove, userName }: NovaG
 
       {sendSuccess && !activeSOS && (
         <div role="status" aria-live="polite" className="flex items-center gap-3 p-4 rounded-xl bg-surface border border-border/60 text-sm font-medium text-text-main">
-          <CheckCircle2 className="w-4 h-4 text-success shrink-0" />
+          <CheckCircle2 className="w-4 h-4 text-success dark:text-[#4ade80] shrink-0" />
           {sendSuccess}
         </div>
       )}
@@ -446,8 +446,8 @@ export const NovaGuardianRelay = ({ contacts, onAdd, onRemove, userName }: NovaG
                      />
                      <HeartPulse className="w-6 h-6 relative z-10" />
                    </motion.div>
-                   <p className="text-xs uppercase tracking-[0.2em] font-black text-primary mt-6">Respiratory sync pattern</p>
-                   <p className="text-[11px] font-mono text-primary mt-1">4.0s INHALATION // 4.0s EXHALATION</p>
+                   <p className="text-xs uppercase tracking-[0.2em] font-black text-[#9a3412] dark:text-primary mt-6">Respiratory sync pattern</p>
+                   <p className="text-[11px] font-mono text-[#9a3412] dark:text-primary mt-1">4.0s INHALATION // 4.0s EXHALATION</p>
                 </div>
               </div>
             </div>

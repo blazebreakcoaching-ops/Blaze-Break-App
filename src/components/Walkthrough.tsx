@@ -93,7 +93,7 @@ export const Walkthrough = ({
       description: "Blaze Break is a structured burnout recovery system designed to help ambitious high-achievers transition safely from chronic fatigue back to elite, sustainable performance. We align nervous system regulation with action.",
       recoveryInference: "Recovery isn't just relaxation—it is a cognitive structural upgrade. Let's review the core engines of your workspace.",
       icon: Crown,
-      themeColor: "from-amber-500/10 to-orange-500/10 text-warning border-warning/20"
+      themeColor: "from-amber-500/10 to-orange-500/10 text-[#9a3412] dark:text-warning border-warning/20"
     },
     {
       title: "The Burnout Diagnostic & Fingerprint",
@@ -101,7 +101,7 @@ export const Walkthrough = ({
       description: "Take the assessment to find your burnout archetype — 12 real patterns, from Founder on Fire to The Impostor to Crisis Sprinter — plus your actual blend, not just one label. Spotting the pattern is what prevents it from repeating.",
       recoveryInference: "Helps you surface where your energy is actually leaking, before it turns into full burnout.",
       icon: ShieldAlert,
-      themeColor: "from-destructive/10 to-destructive/5 text-destructive border-destructive/20"
+      themeColor: "from-destructive/10 to-destructive/5 text-destructive dark:text-[#f87171] border-destructive/20"
     },
     {
       title: "Your Recovery Score & Dashboard",
@@ -109,7 +109,7 @@ export const Walkthrough = ({
       description: "Track your Recovery Score in real time. Completing recovery actions and staying consistent moves the number — a clear, honest read on where you actually stand.",
       recoveryInference: "Consistency is what actually moves the score. Streaks aren't just gamification — they're the pattern that prevents relapse.",
       icon: Activity,
-      themeColor: "from-emerald-500/10 to-teal-500/10 text-success border-success/20"
+      themeColor: "from-emerald-500/10 to-teal-500/10 text-[#0f766e] dark:text-[#4ade80] border-success/20"
     },
     {
       title: "Energy Budget",
@@ -117,7 +117,7 @@ export const Walkthrough = ({
       description: "Don't take on tasks blindly. Set a weekly energy budget, assign your SHIP recovery stage to each task, and see clearly what you can actually handle right now.",
       recoveryInference: "Tasks that match your current SHIP stage are flagged as 'Phase Anchors' — the ones worth prioritizing while you recover.",
       icon: Battery,
-      themeColor: "from-primary/10 to-primary/5 text-primary border-primary/20"
+      themeColor: "from-primary/10 to-primary/5 text-[#9a3412] dark:text-primary border-primary/20"
     },
     {
       title: "Boundary Rehearsal Workroom",
@@ -125,7 +125,7 @@ export const Walkthrough = ({
       description: "Practice saying no before you actually have to. Rehearse real scripts against a tough roleplay partner (the pushy boss, the demanding client) and build the confidence to hold the line.",
       recoveryInference: "Saying 'no' gets easier with practice — this builds the muscle before you need it in the moment.",
       icon: Zap,
-      themeColor: "from-primary/15 to-primary/5 text-primary border-primary/25"
+      themeColor: "from-primary/15 to-primary/5 text-[#9a3412] dark:text-primary border-primary/25"
     },
     {
       title: "Nova AI – Strategic Recovery Coach",
@@ -133,7 +133,7 @@ export const Walkthrough = ({
       description: "Nova is your direct, honest recovery coach. She checks in on your patterns, remembers your history, and helps you actually work through what's going on — not generic advice.",
       recoveryInference: "Direct and specific, not therapist platitudes — practical guidance that actually accounts for your situation.",
       icon: Brain,
-      themeColor: "from-primary/10 to-primary/10 text-primary border-primary/20"
+      themeColor: "from-primary/10 to-primary/10 text-[#9a3412] dark:text-primary border-primary/20"
     },
     {
       title: "Settings & Controls",
@@ -307,7 +307,7 @@ export const Walkthrough = ({
                       </span>
                     </div>
                     <div className="space-y-1">
-                      <h4 className="font-bold text-sm text-text-main flex items-center gap-1 group-hover:text-primary transition-colors">
+                      <h4 className="font-bold text-sm text-text-main flex items-center gap-1 group-hover:text-[#9a3412] dark:group-hover:text-primary transition-colors">
                         Boundary Rehearsal
                       </h4>
                       <p className="text-xs text-text-muted leading-relaxed">
@@ -334,7 +334,7 @@ export const Walkthrough = ({
                       </span>
                     </div>
                     <div className="space-y-1">
-                      <h4 className="font-bold text-sm text-text-main flex items-center gap-1 group-hover:text-destructive transition-colors">
+                      <h4 className="font-bold text-sm text-text-main flex items-center gap-1 group-hover:text-destructive dark:group-hover:text-[#f87171] transition-colors">
                         Somatic Anxiety Reset
                       </h4>
                       <p className="text-xs text-text-muted leading-relaxed">
@@ -412,7 +412,7 @@ export const Walkthrough = ({
 
                 {/* Script Display */}
                 <div className="p-4 bg-surface rounded-xl border border-border space-y-2">
-                  <span className="text-[10px] font-black uppercase tracking-widest text-primary block">
+                  <span className="text-[10px] font-black uppercase tracking-widest text-[#9a3412] dark:text-primary block">
                     Nova Approved Coping Script:
                   </span>
                   <p className="text-xs italic font-serif text-text-main leading-relaxed">
@@ -559,7 +559,7 @@ export const Walkthrough = ({
                       />
                     </AnimatePresence>
                     <div className="w-24 h-24 rounded-full border-2 border-dashed border-destructive/40 flex flex-col items-center justify-center z-10 bg-card">
-                      <span className="text-xs font-black uppercase text-destructive tracking-wider">
+                      <span className="text-xs font-black uppercase text-destructive dark:text-[#f87171] tracking-wider">
                         {isBreathingActive ? breathPhase : 'Standby'}
                       </span>
                       {isBreathingActive && (
@@ -613,14 +613,14 @@ export const Walkthrough = ({
                       animate={{ opacity: 1, y: 0 }}
                       className="p-5 bg-destructive/20 border border-destructive/20 rounded-2xl space-y-2.5"
                     >
-                      <span className="text-[10px] uppercase font-black tracking-widest text-destructive block">
+                      <span className="text-[10px] uppercase font-black tracking-widest text-destructive dark:text-[#f87171] block">
                         Biometric Down-Regulation Profile
                       </span>
                       <p className="text-xs text-text-muted leading-relaxed">
                         <strong>Test Succeeded.</strong> By matching the parasympathetic ratio (4s Inhale, 3s Hold, 5s Exhale), you triggered an instantaneous vagus nerve dampening. Heart rate variability (HRV) increased, and neural fatigue has begun to stabilize.
                       </p>
                       <div className="pt-2 border-t border-white/5 flex flex-col sm:flex-row gap-3 justify-between items-center">
-                        <span className="text-[10px] text-success font-semibold flex items-center gap-1">
+                        <span className="text-[10px] text-[#166534] dark:text-[#4ade80] font-semibold flex items-center gap-1">
                           <ShieldCheck className="w-3.5 h-3.5 fill-current" /> De-escalation Log Saved (+25 pts)
                         </span>
                         <button
