@@ -486,7 +486,7 @@ export const ExecutiveBoardReport = ({
             <FileText className="w-48 h-48" />
           </div>
           <div className="relative z-10">
-            <h3 className="text-xs font-black uppercase tracking-[0.2em] text-primary mb-4 flex items-center gap-2">
+            <h3 className="text-xs font-black uppercase tracking-[0.2em] text-[#9a3412] dark:text-primary mb-4 flex items-center gap-2">
               <Activity className="w-4 h-4" /> Nova AI Analysis
             </h3>
             <p className="text-lg leading-relaxed text-text-main font-serif">
@@ -522,7 +522,7 @@ export const ExecutiveBoardReport = ({
             <p className="text-xs text-text-muted uppercase tracking-widest font-bold mb-2">Boundaries Held</p>
             <div className="flex items-end gap-3">
               <span className="text-4xl font-black text-text-main tracking-tighter">{reportData?.boundariesProtected ?? 0}</span>
-              <span className="text-success text-sm flex items-center font-bold mb-1">
+              <span className="text-success dark:text-[#4ade80] text-sm flex items-center font-bold mb-1">
                 <ShieldAlert className="w-4 h-4 mr-1" /> Practiced
               </span>
             </div>

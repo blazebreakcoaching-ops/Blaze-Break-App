@@ -276,7 +276,7 @@ export const SomaticResetOverlay = ({ isOpen, onClose, onAwardPoints }: SomaticR
                 </div>
 
                 <div className="space-y-2 max-w-xs text-center">
-                  <span className="text-[10px] font-black uppercase tracking-widest text-primary font-mono block">
+                  <span className="text-[10px] font-black uppercase tracking-widest text-[#9a3412] dark:text-primary font-mono block">
                     Vagoveral Stimulation v1.0
                   </span>
                   <h3 className="text-3xl font-display font-extrabold text-text-main tracking-tight uppercase">
@@ -308,7 +308,7 @@ export const SomaticResetOverlay = ({ isOpen, onClose, onAwardPoints }: SomaticR
                 className="space-y-6 text-left w-full"
               >
                 <div className="text-center space-y-1 mb-4">
-                  <span className="text-[10px] font-black uppercase tracking-widest text-warning font-mono block">
+                  <span className="text-[10px] font-black uppercase tracking-widest text-[#9a3412] dark:text-warning font-mono block">
                     Sensory Anchoring Phase
                   </span>
                   <h3 className="text-2xl font-display font-bold text-text-main tracking-tight">Interactive Grounding</h3>
@@ -377,7 +377,7 @@ export const SomaticResetOverlay = ({ isOpen, onClose, onAwardPoints }: SomaticR
                 </div>
 
                 <div className="space-y-2">
-                  <span className="text-[10px] font-black uppercase tracking-widest text-success font-mono block">
+                  <span className="text-[10px] font-black uppercase tracking-widest text-success dark:text-[#4ade80] font-mono block">
                     Stability Locked
                   </span>
                   <h3 className="text-3xl font-display font-black text-text-main tracking-tight">Baseline Restored</h3>
@@ -393,7 +393,7 @@ export const SomaticResetOverlay = ({ isOpen, onClose, onAwardPoints }: SomaticR
                   </div>
                   <div className="flex justify-between text-xs">
                     <span className="text-text-muted font-bold">Nervous System Shift:</span>
-                    <span className="font-mono text-success font-bold">Normalized</span>
+                    <span className="font-mono text-success dark:text-[#4ade80] font-bold">Normalized</span>
                   </div>
                   <div className="flex justify-between text-xs items-center">
                     <span className="text-text-muted font-bold">Stability points:</span>
