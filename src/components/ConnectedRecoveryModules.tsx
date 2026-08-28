@@ -185,7 +185,7 @@ export const ConnectedDailyCheckIn = ({ onClose, onReviewWithNova, onComplete }:
                 <div key={f.label} className="space-y-2">
                   <label className="text-xs font-bold text-text-muted">{f.label}</label>
                   <input type="range" min="1" max="10" value={f.val} onChange={e => f.set(parseInt(e.target.value))} aria-label={f.label} aria-valuetext={`${f.val} out of 10`} className="w-full" />
-                  <div className="text-center text-sm font-bold text-primary">{f.val}</div>
+                  <div className="text-center text-sm font-bold text-[#9a3412] dark:text-primary">{f.val}</div>
                 </div>
               ))}
               <div className="space-y-2">
@@ -274,7 +274,7 @@ export const ConnectedMoodPulse = () => {
         {history.map(item => (
           <div key={item.id} className="flex justify-between items-center bg-card p-3 rounded-lg border border-border">
             <div>
-              <div className="text-sm font-bold capitalize">{item.moodLabel} <span className="text-primary font-normal text-xs">(Int: {item.intensity})</span></div>
+              <div className="text-sm font-bold capitalize">{item.moodLabel} <span className="text-[#9a3412] dark:text-primary font-normal text-xs">(Int: {item.intensity})</span></div>
               <div className="text-[10px] text-text-muted">{new Date(item.createdAt).toLocaleString()}</div>
             </div>
             <button onClick={() => handleDelete(item.id)} aria-label="Delete"><Trash2 className="w-4 h-4 text-text-muted hover:text-destructive" /></button>
@@ -341,7 +341,7 @@ export const ConnectedBodyCheckIn = () => {
         <h4 className="font-bold text-sm">Select Active Signals</h4>
         <div className="grid grid-cols-2 gap-2">
           {SIGNALS.map(s => (
-            <button key={s} onClick={() => toggle(s)} className={cn("p-2 text-xs rounded-lg border", signals.includes(s) ? "bg-primary text-primary-foreground border-primary" : "border-border hover:border-primary/50 text-text-main capitalize")}>{s.replace('_', ' ')}</button>
+            <button key={s} onClick={() => toggle(s)} aria-pressed={signals.includes(s)} className={cn("p-2 text-xs rounded-lg border", signals.includes(s) ? "bg-primary text-primary-foreground border-primary" : "border-border hover:border-primary/50 text-text-main capitalize")}>{s.replace('_', ' ')}</button>
           ))}
         </div>
         <button onClick={handleSubmit} disabled={loading || signals.length === 0} className="btn-primary w-full py-2 text-xs">Save Body Scan</button>
@@ -426,7 +426,7 @@ export const ConnectedWinsLog = () => {
         {history.map(item => (
           <div key={item.id} className="relative bg-card p-4 rounded-lg border border-border">
             <button onClick={() => handleDelete(item.id)} aria-label="Delete" className="absolute top-2 right-2"><Trash2 className="w-4 h-4 text-text-muted hover:text-destructive" /></button>
-            <div className="text-xs uppercase tracking-widest font-black text-primary mb-1">{item.category}</div>
+            <div className="text-xs uppercase tracking-widest font-black text-[#9a3412] dark:text-primary mb-1">{item.category}</div>
             <div className="font-bold text-sm">{item.title}</div>
             <div className="text-xs text-text-muted mt-1">{item.content}</div>
           </div>
@@ -711,7 +711,7 @@ export const ConnectedEnergyBudget = () => {
         {history.map(item => (
           <div key={item.id} className="relative bg-card p-3 rounded-lg border border-border">
             <button onClick={() => handleDelete(item.id)} aria-label="Delete" className="absolute top-2 right-2"><Trash2 className="w-4 h-4 text-text-muted hover:text-destructive" /></button>
-            <div className="text-xs uppercase tracking-widest font-black text-primary mb-1">{item.periodType}</div>
+            <div className="text-xs uppercase tracking-widest font-black text-[#9a3412] dark:text-primary mb-1">{item.periodType}</div>
             <div className="text-xs">Capacity: {item.totalCapacity} | Allocated: {item.allocatedCapacity} | Remaining: {item.remainingCapacity}</div>
             <div className="text-[10px] text-text-muted">{item.categories?.join(', ')}</div>
             {item.note && <div className="text-xs mt-1 text-text-muted border-t border-border pt-1">{item.note}</div>}
@@ -791,9 +791,9 @@ export const ConnectedBoundaryScripts = () => {
         {history.map(item => (
           <div key={item.id} className="relative bg-card p-4 rounded-lg border border-border">
             <button onClick={() => handleDelete(item.id)} aria-label="Delete" className="absolute top-2 right-2"><Trash2 className="w-4 h-4 text-text-muted hover:text-destructive" /></button>
-            <div className="text-[10px] uppercase tracking-widest font-black text-primary mb-1 flex items-center justify-between">
+            <div className="text-[10px] uppercase tracking-widest font-black text-[#9a3412] dark:text-primary mb-1 flex items-center justify-between">
               <span>{item.scenarioType}</span>
-              <span className={cn(item.status === 'draft' ? "text-warning" : "text-success")}>{item.status}</span>
+              <span className={cn(item.status === 'draft' ? "text-[#9a3412] dark:text-warning" : "text-success dark:text-[#4ade80]")}>{item.status}</span>
             </div>
             <div className="font-bold text-sm mb-2">{item.title}</div>
             <div className="text-xs whitespace-pre-wrap text-text-muted italic bg-surface p-2 rounded border border-border">"{item.scriptText}"</div>
@@ -873,9 +873,9 @@ export const ConnectedWeeklyReviews = () => {
           <div key={item.id} className="relative bg-card p-4 rounded-lg border border-border space-y-2">
             <button onClick={() => handleDelete(item.id)} aria-label="Delete" className="absolute top-2 right-2"><Trash2 className="w-4 h-4 text-text-muted hover:text-destructive" /></button>
             <div className="text-[10px] text-text-muted">{new Date(item.createdAt).toLocaleDateString()}</div>
-            <div className="text-xs"><span className="font-bold text-success">Helped:</span> {item.helped}</div>
-            <div className="text-xs"><span className="font-bold text-destructive">Drained:</span> {item.drained}</div>
-            <div className="text-xs"><span className="font-bold text-primary">Next Step:</span> {item.nextSmallStep}</div>
+            <div className="text-xs"><span className="font-bold text-success dark:text-[#4ade80]">Helped:</span> {item.helped}</div>
+            <div className="text-xs"><span className="font-bold text-destructive dark:text-[#f87171]">Drained:</span> {item.drained}</div>
+            <div className="text-xs"><span className="font-bold text-[#9a3412] dark:text-primary">Next Step:</span> {item.nextSmallStep}</div>
             {item.gratitude && <div className="text-xs italic text-text-muted pt-2 border-t border-border mt-2">{item.gratitude}</div>}
           </div>
         ))}
