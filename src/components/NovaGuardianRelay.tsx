@@ -144,18 +144,19 @@ const GuardianCard = ({
         </div>
         <button 
           onClick={() => onRemove(contact.id)}
-          className="p-2 text-text-muted hover:text-destructive hover:bg-destructive/10 rounded-lg transition-colors opacity-0 group-hover:opacity-100 mt-8 mr-2"
+          aria-label={`Remove ${contact.name} from support contacts`}
+          className="p-2 text-text-muted hover:text-destructive hover:bg-destructive/10 rounded-lg transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100 focus-visible:ring-2 focus-visible:ring-destructive mt-8 mr-2"
         >
           <Trash2 className="w-4 h-4" />
         </button>
       </div>
       
       <div className="space-y-1.5 relative z-10 mb-6">
-        <h4 className={cn("font-bold text-lg tracking-tight", contact.role.includes('guardian') ? "text-destructive" : "text-text-main")}>{contact.name}</h4>
+        <h4 className={cn("font-bold text-lg tracking-tight", contact.role.includes('guardian') ? "text-destructive dark:text-[#f87171]" : "text-text-main")}>{contact.name}</h4>
         <div className="flex items-center gap-2 flex-wrap">
            <span className={cn(
              "text-[11px] uppercase font-black tracking-widest px-2.5 py-1 rounded-md",
-             contact.role === 'primary_guardian' ? "bg-destructive/20 text-destructive" : "bg-border dark:bg-surface text-text-muted"
+             contact.role === 'primary_guardian' ? "bg-destructive/20 text-destructive dark:text-[#f87171]" : "bg-border dark:bg-surface text-text-muted"
            )}>
              {contact.role.replace('_', ' ')}
            </span>
@@ -205,7 +206,7 @@ const GuardianCard = ({
               ) : isRelaying ? (
                 <><Loader2 className="w-4 h-4 animate-spin" /> Transmitting...</>
               ) : (
-                <><Zap className="w-4 h-4 text-warning" /> One-Touch Alert</>
+                <><Zap className="w-4 h-4" /> One-Touch Alert</>
               )}
             </button>
          </div>
@@ -419,8 +420,8 @@ export const NovaGuardianRelay = ({ contacts, onAdd, onRemove, userName }: NovaG
             
             <div className="relative z-10 flex items-center justify-between">
               <div className="flex items-center gap-3">
-                <Sparkles className="w-5 h-5 text-primary" />
-                <h4 className="font-bold uppercase tracking-widest text-xs tracking-[0.2em] text-primary">
+                <Sparkles className="w-5 h-5 text-[#9a3412] dark:text-primary" />
+                <h4 className="font-bold uppercase tracking-widest text-xs tracking-[0.2em] text-[#9a3412] dark:text-primary">
                   Nova's Anchor
                 </h4>
               </div>

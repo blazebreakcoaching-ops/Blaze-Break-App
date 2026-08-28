@@ -298,7 +298,7 @@ export const AnxietyResetMode = ({ onAwardPoints, onNavigate }: AnxietyResetMode
             className="space-y-6"
           >
             <div>
-              <span className="text-[10px] font-black uppercase tracking-[0.2em] text-destructive">Step 1 of 5</span>
+              <span className="text-[10px] font-black uppercase tracking-[0.2em] text-destructive dark:text-[#f87171]">Step 1 of 5</span>
               <h4 className="font-display text-xl font-medium text-text-main mt-1">What's happening in your body or mind right now?</h4>
               <p className="text-xs text-text-muted mt-1">Naming the trigger helps disarm the amygdala's automatic panic cycle.</p>
             </div>
@@ -341,7 +341,7 @@ export const AnxietyResetMode = ({ onAwardPoints, onNavigate }: AnxietyResetMode
             className="space-y-6 text-center py-4"
           >
             <div className="text-left">
-              <span className="text-[10px] font-black uppercase tracking-[0.2em] text-destructive">Step 2 of 5</span>
+              <span className="text-[10px] font-black uppercase tracking-[0.2em] text-destructive dark:text-[#f87171]">Step 2 of 5</span>
               <h4 className="font-display text-xl font-medium text-text-main mt-1">Rate the current distress level</h4>
               <p className="text-xs text-text-muted mt-1">A simple scale to anchor where your nervous system is baseline.</p>
             </div>
@@ -349,7 +349,7 @@ export const AnxietyResetMode = ({ onAwardPoints, onNavigate }: AnxietyResetMode
             <div className="py-6">
               <span className="text-6xl font-light text-text-main">{intensityBefore}</span>
               <span className="text-text-muted text-lg">/10</span>
-              <div className="mt-2 text-xs uppercase tracking-widest font-bold text-destructive">
+              <div className="mt-2 text-xs uppercase tracking-widest font-bold text-destructive dark:text-[#f87171]">
                 {intensityBefore <= 3 ? 'Mild Tension' : intensityBefore <= 6 ? 'Moderate Stress / Dread' : intensityBefore <= 8 ? 'High Anxiety / Racing' : 'Acute Overwhelm / Panic'}
               </div>
             </div>
@@ -399,7 +399,7 @@ export const AnxietyResetMode = ({ onAwardPoints, onNavigate }: AnxietyResetMode
             className="space-y-6"
           >
             <div>
-              <span className="text-[10px] font-black uppercase tracking-[0.2em] text-destructive">Step 3 of 5</span>
+              <span className="text-[10px] font-black uppercase tracking-[0.2em] text-destructive dark:text-[#f87171]">Step 3 of 5</span>
               <h4 className="font-display text-xl font-medium text-text-main mt-1">Select your de-escalation tool</h4>
               <p className="text-xs text-text-muted mt-1">We matched tools to counter your current physiological trigger.</p>
             </div>
@@ -475,7 +475,7 @@ export const AnxietyResetMode = ({ onAwardPoints, onNavigate }: AnxietyResetMode
                 <p className="text-xs text-text-muted">Stay here until the arousal spikes begin to taper.</p>
               </div>
               <div className="text-right">
-                <span className="text-sm font-mono font-bold text-destructive">
+                <span className="text-sm font-mono font-bold text-destructive dark:text-[#f87171]">
                   {Math.floor(timerSeconds / 60)}:{(timerSeconds % 60).toString().padStart(2, '0')}
                 </span>
                 <span className="text-[10px] text-text-muted block font-bold uppercase tracking-widest">Est. time remaining</span>
@@ -851,28 +851,28 @@ export const AnxietyResetMode = ({ onAwardPoints, onNavigate }: AnxietyResetMode
                   <div className="bg-surface p-6 rounded-2xl border border-white/[0.03] space-y-4">
                     {tensionGroup === 0 && (
                       <div className="text-center space-y-2">
-                        <span className="text-[10px] uppercase font-bold text-destructive">Muscle Group 1 of 4</span>
+                        <span className="text-[10px] uppercase font-bold text-destructive dark:text-[#f87171]">Muscle Group 1 of 4</span>
                         <h6 className="font-bold text-text-main text-sm">Squeeze your fists & arms</h6>
                         <p className="text-xs text-text-muted">Tighten your fists, squeeze your biceps, clamp your forearms. Hold for 5 seconds... Now release completely.</p>
                       </div>
                     )}
                     {tensionGroup === 1 && (
                       <div className="text-center space-y-2">
-                        <span className="text-[10px] uppercase font-bold text-destructive">Muscle Group 2 of 4</span>
+                        <span className="text-[10px] uppercase font-bold text-destructive dark:text-[#f87171]">Muscle Group 2 of 4</span>
                         <h6 className="font-bold text-text-main text-sm">Shoulders & Neck</h6>
                         <p className="text-xs text-text-muted">Pull your shoulders all the way up to your ears. Clamp down. Hold... Now drop them completely. Let them sink.</p>
                       </div>
                     )}
                     {tensionGroup === 2 && (
                       <div className="text-center space-y-2">
-                        <span className="text-[10px] uppercase font-bold text-destructive">Muscle Group 3 of 4</span>
+                        <span className="text-[10px] uppercase font-bold text-destructive dark:text-[#f87171]">Muscle Group 3 of 4</span>
                         <h6 className="font-bold text-text-main text-sm">Jaw & Face</h6>
                         <p className="text-xs text-text-muted">Clench your jaw, scrunch your nose, squeeze your eyes shut. Hold tight... Now release, letting your mouth drop slightly open.</p>
                       </div>
                     )}
                     {tensionGroup === 3 && (
                       <div className="text-center space-y-2">
-                        <span className="text-[10px] uppercase font-bold text-destructive">Muscle Group 4 of 4</span>
+                        <span className="text-[10px] uppercase font-bold text-destructive dark:text-[#f87171]">Muscle Group 4 of 4</span>
                         <h6 className="font-bold text-text-main text-sm">Feet & Legs</h6>
                         <p className="text-xs text-text-muted">Curl your toes, tighten your calves, squeeze your thighs. Press flat down. Hold... Release and let everything dissolve into the floor.</p>
                       </div>
@@ -935,7 +935,7 @@ export const AnxietyResetMode = ({ onAwardPoints, onNavigate }: AnxietyResetMode
             className="space-y-6 text-center py-4"
           >
             <div className="text-left">
-              <span className="text-[10px] font-black uppercase tracking-[0.2em] text-destructive">Step 4 of 5</span>
+              <span className="text-[10px] font-black uppercase tracking-[0.2em] text-destructive dark:text-[#f87171]">Step 4 of 5</span>
               <h4 className="font-display text-xl font-medium text-text-main mt-1">Rate your intensity now</h4>
               <p className="text-xs text-text-muted mt-1">Check back in. Has your heart rate or mental spinning shifted at all?</p>
             </div>
@@ -943,7 +943,7 @@ export const AnxietyResetMode = ({ onAwardPoints, onNavigate }: AnxietyResetMode
             <div className="py-6">
               <span className="text-6xl font-light text-text-main">{intensityAfter}</span>
               <span className="text-text-muted text-lg">/10</span>
-              <div className="mt-2 text-xs uppercase tracking-widest font-bold text-success">
+              <div className="mt-2 text-xs uppercase tracking-widest font-bold text-success dark:text-[#4ade80]">
                 {intensityAfter <= 3 ? 'Stabilized' : intensityAfter <= 5 ? 'Manageable Tension' : 'Heightened (Consider repeat cycle)'}
               </div>
             </div>

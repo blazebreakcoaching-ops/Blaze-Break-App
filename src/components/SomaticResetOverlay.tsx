@@ -184,9 +184,9 @@ export const SomaticResetOverlay = ({ isOpen, onClose, onAwardPoints }: SomaticR
         <div className="max-w-md w-full p-8 text-center flex flex-col items-center justify-center relative z-10">
           
           {/* HEADER STATUS */}
-          <div className="flex items-center gap-3 mb-8 text-primary">
+          <div className="flex items-center gap-3 mb-8 text-[#9a3412] dark:text-primary">
             <HeartPulse className="w-6 h-6 animate-pulse" />
-            <span className="text-xs font-black uppercase tracking-[0.2em] text-primary">Nervous System Reset</span>
+            <span className="text-xs font-black uppercase tracking-[0.2em] text-[#9a3412] dark:text-primary">Nervous System Reset</span>
           </div>
 
           <AnimatePresence mode="wait">
@@ -291,7 +291,7 @@ export const SomaticResetOverlay = ({ isOpen, onClose, onAwardPoints }: SomaticR
                     {breathPhase === 'exhale' && 'Let go with a slow, calming hum or sigh.'}
                     {breathPhase === 'rest' && 'Feel the temporary stillness of empty lungs.'}
                   </p>
-                  <div className="pt-2 text-sm font-mono font-bold text-primary">
+                  <div className="pt-2 text-sm font-mono font-bold text-[#9a3412] dark:text-primary">
                     {breathTimer}s
                   </div>
                 </div>
@@ -358,7 +358,7 @@ export const SomaticResetOverlay = ({ isOpen, onClose, onAwardPoints }: SomaticR
 
                 <div className="text-center font-mono text-xs text-text-muted pt-2 flex items-center justify-between">
                   <span>Grounding Timer:</span>
-                  <span className="font-bold text-warning">{timeLeft}s remaining</span>
+                  <span className="font-bold text-[#9a3412] dark:text-warning">{timeLeft}s remaining</span>
                 </div>
               </motion.div>
             )}
