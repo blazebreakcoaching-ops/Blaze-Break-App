@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Sparkles, ArrowRight, ShieldCheck, BatteryLow, MessageSquareText, LogIn, ArrowLeft, Loader2 } from 'lucide-react';
 import { useAuth } from '../lib/auth';
+import { useFocusTrap } from '../lib/useFocusTrap';
 
 interface LandingPageProps {
   onStart: () => void;
@@ -11,6 +12,14 @@ interface LandingPageProps {
 export const LandingPage = ({ onStart, onOpenTrustCentre }: LandingPageProps) => {
   const { user, signIn } = useAuth();
   const [showAuthModal, setShowAuthModal] = useState(false);
+  const authDialogRef = useFocusTrap(showAuthModal);
+
+  useEffect(() => {
+    if (!showAuthModal) return;
+    const onKeyDown = (e: KeyboardEvent) => { if (e.key === 'Escape') setShowAuthModal(false); };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [showAuthModal]);
   const [signingIn, setSigningIn] = useState(false);
 
   const handleStartRequest = () => {
@@ -35,7 +44,7 @@ export const LandingPage = ({ onStart, onOpenTrustCentre }: LandingPageProps) =>
   };
 
   return (
-    <div className="min-h-screen bg-background selection:bg-primary/20 selection:text-primary relative overflow-hidden text-text-main">
+    <div className="min-h-screen bg-background selection:bg-primary/20 selection:text-[#9a3412] dark:selection:text-primary relative overflow-hidden text-text-main">
       {/* Premium Glow Aura Backdrops */}
       <div className="absolute top-0 left-1/4 w-[500px] h-[500px] bg-primary/5 rounded-full blur-[140px] pointer-events-none" />
       <div className="absolute bottom-10 right-1/4 w-[600px] h-[600px] bg-teal-500/3 rounded-full blur-[160px] pointer-events-none" />
@@ -50,7 +59,7 @@ export const LandingPage = ({ onStart, onOpenTrustCentre }: LandingPageProps) =>
           </div>
           <div className="flex flex-col">
             <h1 className="font-serif font-black text-lg tracking-tight text-text-main leading-none">Blaze Break</h1>
-            <span className="text-[10px] font-black uppercase tracking-[0.2em] text-primary mt-1">Recovery Companion</span>
+            <span className="text-[10px] font-black uppercase tracking-[0.2em] text-[#9a3412] dark:text-primary mt-1">Recovery Companion</span>
           </div>
         </div>
         <div className="flex items-center gap-4">
@@ -77,7 +86,7 @@ export const LandingPage = ({ onStart, onOpenTrustCentre }: LandingPageProps) =>
           transition={{ duration: 1, ease: [0.16, 1, 0.3, 1] }}
           className="space-y-8"
         >
-          <span className="inline-block px-4 py-1.5 bg-primary/10 border border-primary/20 text-primary rounded-full text-xs uppercase tracking-[0.2em] font-black">
+          <span className="inline-block px-4 py-1.5 bg-primary/10 border border-primary/20 text-[#9a3412] dark:text-primary rounded-full text-xs uppercase tracking-[0.2em] font-black">
             A Recovery Method for High Performers
           </span>
           <h2 className="text-5xl md:text-8xl font-light tracking-tight text-text-main leading-[1.05] max-w-5xl mx-auto">
@@ -102,7 +111,7 @@ export const LandingPage = ({ onStart, onOpenTrustCentre }: LandingPageProps) =>
       {/* Value Prop Grid */}
       <section className="py-16 px-6 max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-3 gap-8 relative z-10">
         <div className="bg-surface/60 border border-white/[0.04] p-8 rounded-2xl hover:border-accent/20 transition-all duration-500 space-y-4 shadow-lg">
-          <div className="w-12 h-12 bg-accent/10 border border-accent/20 rounded-xl flex items-center justify-center text-accent">
+          <div className="w-12 h-12 bg-accent/10 border border-accent/20 rounded-xl flex items-center justify-center text-[#9a3412] dark:text-accent">
             <BatteryLow className="w-6 h-6" />
           </div>
           <h3 className="text-lg font-bold text-text-main tracking-wide">Dynamic Energy Credits</h3>
@@ -111,7 +120,7 @@ export const LandingPage = ({ onStart, onOpenTrustCentre }: LandingPageProps) =>
           </p>
         </div>
         <div className="bg-surface/60 border border-white/[0.04] p-8 rounded-2xl hover:border-accent/20 transition-all duration-500 space-y-4 shadow-lg">
-          <div className="w-12 h-12 bg-accent/10 border border-accent/20 rounded-xl flex items-center justify-center text-accent">
+          <div className="w-12 h-12 bg-accent/10 border border-accent/20 rounded-xl flex items-center justify-center text-[#9a3412] dark:text-accent">
             <MessageSquareText className="w-6 h-6" />
           </div>
           <h3 className="text-lg font-bold text-text-main tracking-wide">Nova Recovery Coach</h3>
@@ -120,7 +129,7 @@ export const LandingPage = ({ onStart, onOpenTrustCentre }: LandingPageProps) =>
           </p>
         </div>
         <div className="bg-surface/60 border border-white/[0.04] p-8 rounded-2xl hover:border-accent/20 transition-all duration-500 space-y-4 shadow-lg">
-          <div className="w-12 h-12 bg-accent/10 border border-accent/20 rounded-xl flex items-center justify-center text-accent">
+          <div className="w-12 h-12 bg-accent/10 border border-accent/20 rounded-xl flex items-center justify-center text-[#9a3412] dark:text-accent">
             <ShieldCheck className="w-6 h-6" />
           </div>
           <h3 className="text-lg font-bold text-text-main tracking-wide">Autonomous Guardian System</h3>
@@ -133,10 +142,10 @@ export const LandingPage = ({ onStart, onOpenTrustCentre }: LandingPageProps) =>
       {/* Footer */}
       <footer className="py-16 border-t border-white/[0.03] mt-20 text-center opacity-70">
         <div className="flex items-center justify-center gap-3 mb-4">
-          <div className="w-8 h-8 bg-accent/20 rounded-xl flex items-center justify-center text-accent">
+          <div className="w-8 h-8 bg-accent/20 rounded-xl flex items-center justify-center text-[#9a3412] dark:text-accent">
             <Sparkles className="w-4 h-4" />
           </div>
-          <h1 className="font-bold text-sm tracking-tight text-text-main">Blaze Break</h1>
+          <p className="font-bold text-sm tracking-tight text-text-main">Blaze Break</p>
         </div>
         <p className="text-[11px] uppercase tracking-[0.3em] font-black text-text-muted">
           Blaze Break — Burnout Recovery, Built Right
@@ -158,10 +167,15 @@ export const LandingPage = ({ onStart, onOpenTrustCentre }: LandingPageProps) =>
 
             {/* Modal Card */}
             <motion.div
+              ref={authDialogRef as any}
               initial={{ scale: 0.95, y: 15, opacity: 0 }}
               animate={{ scale: 1, y: 0, opacity: 1 }}
               exit={{ scale: 0.95, y: 15, opacity: 0 }}
               transition={{ type: 'spring', damping: 25, stiffness: 350 }}
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="auth-modal-title"
+              tabIndex={-1}
               className="bg-surface border border-border rounded-xl p-8 max-w-md w-full shadow-lg relative z-10 flex flex-col space-y-6"
             >
               <button 
@@ -175,7 +189,7 @@ export const LandingPage = ({ onStart, onOpenTrustCentre }: LandingPageProps) =>
                 <div className="w-12 h-12 bg-primary/10 rounded-2xl flex items-center justify-center text-primary mb-4">
                   <Sparkles className="w-6 h-6" />
                 </div>
-                <h3 className="text-2xl font-bold text-text-main tracking-tight">Access Account</h3>
+                <h3 id="auth-modal-title" className="text-2xl font-bold text-text-main tracking-tight">Access Account</h3>
                 <p className="text-text-muted text-sm mt-1 leading-relaxed">
                   Register or login. Blaze Break is in controlled early access. Features may evolve. Data tools are for coaching support, not medical diagnosis. Optional Nova AI is a recovery coach, not a therapist.
                 </p>
@@ -192,7 +206,7 @@ export const LandingPage = ({ onStart, onOpenTrustCentre }: LandingPageProps) =>
                   ) : (
                     <LogIn className="w-4 h-4" />
                   )}
-                  {signingIn ? 'Initializing...' : 'Continue with Google'}
+                  <span role="status" aria-live="polite">{signingIn ? 'Initializing...' : 'Continue with Google'}</span>
                 </button>
               </div>
 
