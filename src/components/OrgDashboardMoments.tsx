@@ -303,6 +303,7 @@ export const OrgDashboardMoments = () => {
                 <button
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id as any)}
+                  aria-current={activeTab === tab.id ? 'page' : undefined}
                   className={cn(
                     "flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all",
                     activeTab === tab.id
@@ -328,6 +329,7 @@ export const OrgDashboardMoments = () => {
                 value={newMessage}
                 onChange={(e) => setNewMessage(e.target.value)}
                 placeholder="Thank a teammate, or call out something great someone did this week..."
+                aria-label="Appreciation message"
                 maxLength={300}
                 className="w-full h-20 bg-surface dark:bg-surface/50 border border-border rounded-xl p-3 text-sm text-text-main placeholder:text-text-muted focus:outline-none focus:border-warning resize-none"
               />
@@ -348,7 +350,7 @@ export const OrgDashboardMoments = () => {
             </div>
 
             {wallError && (
-              <div className="p-3 bg-destructive/10 border border-destructive/20 text-destructive text-xs rounded-xl">{wallError}</div>
+              <div role="alert" className="p-3 bg-destructive/10 border border-destructive/20 text-destructive dark:text-[#f87171] text-xs rounded-xl">{wallError}</div>
             )}
 
             {wallLoading ? (
@@ -372,6 +374,7 @@ export const OrgDashboardMoments = () => {
                           <button
                             onClick={() => handleDeleteRecognition(item.id)}
                             disabled={deletingRecognitionId === item.id}
+                            aria-label={`Confirm removal of recognition from ${item.from}`}
                             className="text-destructive hover:opacity-70 transition-opacity disabled:opacity-50"
                             title="Confirm removal"
                           >
@@ -379,6 +382,7 @@ export const OrgDashboardMoments = () => {
                           </button>
                           <button
                             onClick={() => setConfirmDeleteId(null)}
+                            aria-label="Cancel removal"
                             className="text-text-muted hover:text-text-main transition-colors"
                             title="Cancel"
                           >
@@ -388,7 +392,8 @@ export const OrgDashboardMoments = () => {
                       ) : (
                         <button
                           onClick={() => setConfirmDeleteId(item.id)}
-                          className="absolute top-3 right-3 text-text-muted hover:text-destructive transition-colors opacity-0 group-hover:opacity-100"
+                          aria-label={`Remove recognition from ${item.from}`}
+                          className="absolute top-3 right-3 text-text-muted hover:text-destructive transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100 focus-visible:ring-2 focus-visible:ring-destructive rounded"
                           title="Remove this post"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
@@ -396,7 +401,7 @@ export const OrgDashboardMoments = () => {
                       )
                     )}
                     <div className="flex items-center gap-3 mb-4">
-                      <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 bg-warning/20 text-warning">
+                      <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 bg-warning/20 text-[#9a3412] dark:text-warning">
                         <Heart className="w-4 h-4" />
                       </div>
                       <div>
@@ -407,9 +412,11 @@ export const OrgDashboardMoments = () => {
                     <p className="text-sm font-medium text-text-main leading-relaxed italic">"{item.message}"</p>
                     <button
                       onClick={() => handleReact(item.id)}
+                      aria-pressed={item.reacted}
+                      aria-label={`${item.reacted ? 'Remove reaction from' : 'React to'} recognition from ${item.from}`}
                       className={cn(
                         "mt-4 flex items-center gap-1.5 text-xs font-bold transition-colors",
-                        item.reacted ? "text-warning" : "text-text-muted hover:text-warning"
+                        item.reacted ? "text-[#9a3412] dark:text-warning" : "text-text-muted hover:text-warning"
                       )}
                     >
                       <ThumbsUp className={cn("w-3.5 h-3.5", item.reacted && "fill-current")} />
@@ -438,13 +445,14 @@ export const OrgDashboardMoments = () => {
               <div className="card space-y-4">
                 <h4 className="font-bold text-text-main flex items-center gap-2"><Target className="w-4 h-4 text-primary" /> Start a Challenge</h4>
                 {challengesError && (
-                  <div className="p-3 bg-destructive/10 border border-destructive/20 text-destructive text-xs rounded-xl">{challengesError}</div>
+                  <div role="alert" className="p-3 bg-destructive/10 border border-destructive/20 text-destructive dark:text-[#f87171] text-xs rounded-xl">{challengesError}</div>
                 )}
                 <input
                   type="text"
                   value={newChallengeTitle}
                   onChange={(e) => setNewChallengeTitle(e.target.value)}
                   placeholder="e.g. Protect the Break Week"
+                  aria-label="Challenge title"
                   maxLength={100}
                   className="w-full bg-surface border border-border rounded-xl px-4 py-2.5 text-sm text-text-main placeholder:text-text-muted focus:outline-none focus:border-primary"
                 />
@@ -452,6 +460,7 @@ export const OrgDashboardMoments = () => {
                   value={newChallengeDesc}
                   onChange={(e) => setNewChallengeDesc(e.target.value)}
                   placeholder="What's the goal, and how does someone take part?"
+                  aria-label="Challenge description"
                   maxLength={300}
                   className="w-full h-16 bg-surface border border-border rounded-xl p-3 text-sm text-text-main placeholder:text-text-muted focus:outline-none focus:border-primary resize-none"
                 />
@@ -467,7 +476,7 @@ export const OrgDashboardMoments = () => {
             )}
 
             {!isOrgAdmin && challengesError && (
-              <div className="p-3 bg-destructive/10 border border-destructive/20 text-destructive text-xs rounded-xl">{challengesError}</div>
+              <div role="alert" className="p-3 bg-destructive/10 border border-destructive/20 text-destructive dark:text-[#f87171] text-xs rounded-xl">{challengesError}</div>
             )}
 
             {challengesLoading ? (
@@ -490,12 +499,14 @@ export const OrgDashboardMoments = () => {
                           type="text"
                           value={editTitle}
                           onChange={(e) => setEditTitle(e.target.value)}
+                          aria-label="Edit challenge title"
                           maxLength={100}
                           className="w-full bg-surface border border-border rounded-lg px-3 py-2 text-sm font-bold text-text-main focus:outline-none focus:border-primary"
                         />
                         <textarea
                           value={editDesc}
                           onChange={(e) => setEditDesc(e.target.value)}
+                          aria-label="Edit challenge description"
                           maxLength={300}
                           className="w-full h-16 bg-surface border border-border rounded-lg p-3 text-xs text-text-main focus:outline-none focus:border-primary resize-none"
                         />
@@ -529,7 +540,7 @@ export const OrgDashboardMoments = () => {
                             )}
                             <span className={cn(
                               "text-xs font-bold uppercase tracking-widest px-2 py-1 rounded",
-                              challenge.joined ? "text-success bg-success/10" : "text-text-muted bg-surface"
+                              challenge.joined ? "text-[#166534] dark:text-[#4ade80] bg-success/10" : "text-text-muted bg-surface"
                             )}>
                               {challenge.joined ? 'Joined' : 'Not Joined'}
                             </span>
@@ -548,6 +559,7 @@ export const OrgDashboardMoments = () => {
                               <>
                                 <button
                                   onClick={() => openEditChallenge(challenge)}
+                                  aria-label={`Edit ${challenge.title}`}
                                   className="text-xs font-bold px-3 py-1.5 rounded-lg border border-border text-text-muted hover:text-text-main transition-colors flex items-center gap-1.5"
                                   title="Edit this challenge"
                                 >
@@ -556,6 +568,7 @@ export const OrgDashboardMoments = () => {
                                 <button
                                   onClick={() => handleToggleChallengeActive(challenge.id)}
                                   disabled={togglingChallengeId === challenge.id}
+                                  aria-label={challenge.active ? `End ${challenge.title}` : `Reactivate ${challenge.title}`}
                                   className="text-xs font-bold px-3 py-1.5 rounded-lg border border-border text-text-muted hover:text-text-main transition-colors disabled:opacity-50 flex items-center gap-1.5"
                                   title={challenge.active ? 'End this challenge' : 'Reactivate this challenge'}
                                 >
@@ -566,6 +579,7 @@ export const OrgDashboardMoments = () => {
                             <button
                               onClick={() => handleToggleChallenge(challenge.id, challenge.joined)}
                               disabled={joiningId === challenge.id || !challenge.active}
+                              aria-pressed={challenge.joined}
                               className={cn(
                                 "text-xs font-bold px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50 flex items-center gap-1.5",
                                 challenge.joined
@@ -611,9 +625,9 @@ export const OrgDashboardMoments = () => {
                          <CheckCircle2 className="w-5 h-5 text-success shrink-0" />
                          <span className="text-sm font-medium text-text-main truncate">{win.title || win.content}</span>
                        </div>
-                       <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+                       <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity shrink-0">
                          {win.sharedToWall ? (
-                           <span className="text-xs text-success font-bold px-2 py-1 flex items-center gap-1">
+                           <span className="text-xs text-success dark:text-[#4ade80] font-bold px-2 py-1 flex items-center gap-1">
                              <CheckCircle2 className="w-3.5 h-3.5" /> Shared
                            </span>
                          ) : (
@@ -634,7 +648,7 @@ export const OrgDashboardMoments = () => {
                                }
                              }}
                              disabled={!orgId}
-                             className="text-xs text-warning bg-warning/10 dark:bg-warning/10 px-2 py-1 rounded border border-warning/30 dark:border-warning/20 font-bold hover:bg-warning/20 dark:hover:bg-warning/20 disabled:opacity-40"
+                             className="text-xs text-[#9a3412] dark:text-warning bg-warning/10 dark:bg-warning/10 px-2 py-1 rounded border border-warning/30 dark:border-warning/20 font-bold hover:bg-warning/20 dark:hover:bg-warning/20 disabled:opacity-40"
                            >
                              Share to Wall
                            </button>
