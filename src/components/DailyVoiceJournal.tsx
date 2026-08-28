@@ -445,7 +445,7 @@ export const DailyVoiceJournal = ({
                   {error && (
                     <div className="mt-3 p-3 bg-destructive/10 border border-destructive/20 rounded-xl flex items-start gap-2 max-w-[280px]">
                       <AlertCircle className="w-4 h-4 text-destructive shrink-0 mt-0.5" />
-                      <p className="text-[11px] text-destructive text-left">{error}</p>
+                      <p className="text-[11px] text-destructive dark:text-[#f87171] text-left">{error}</p>
                     </div>
                   )}
                 </div>
@@ -507,7 +507,7 @@ export const DailyVoiceJournal = ({
 
                 {/* Nova Analysis */}
                 <div className="space-y-1.5 border-t border-border/20 pt-4">
-                  <h5 className="text-[11px] font-black uppercase tracking-widest text-primary flex items-center gap-1.5">
+                  <h5 className="text-[11px] font-black uppercase tracking-widest text-[#9a3412] dark:text-primary flex items-center gap-1.5">
                     <Sparkles className="w-3.5 h-3.5" /> Metacognitive Analysis
                   </h5>
                   <p className="text-xs text-text-main leading-relaxed">
@@ -517,7 +517,7 @@ export const DailyVoiceJournal = ({
 
                 {/* advice */}
                 <div className="p-4 bg-primary/5 border border-primary/10 rounded-xl mt-auto space-y-1">
-                  <h6 className="text-[11px] font-bold text-primary flex items-center gap-1">
+                  <h6 className="text-[11px] font-bold text-[#9a3412] dark:text-primary flex items-center gap-1">
                     <Heart className="w-3.5 h-3.5" /> Nova's Stability Practice
                   </h6>
                   <p className="text-xs text-text-main font-medium leading-relaxed">

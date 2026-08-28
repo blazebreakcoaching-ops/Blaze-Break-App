@@ -249,7 +249,7 @@ export const SettingsModal = ({ profile, onSave, onClose, onOpenPrivacyCentre }:
                           : "border-border dark:border-border focus:border-primary dark:focus:border-primary focus:ring-2 focus:ring-primary/20"
                       )}
                     />
-                    {errors.fullName && <p role="alert" className="text-xs text-destructive px-1 font-medium">{errors.fullName}</p>}
+                    {errors.fullName && <p role="alert" className="text-xs text-destructive dark:text-[#f87171] px-1 font-medium">{errors.fullName}</p>}
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -294,7 +294,7 @@ export const SettingsModal = ({ profile, onSave, onClose, onOpenPrivacyCentre }:
                       )}
                     />
                     {errors.email ? (
-                      <p role="alert" className="text-xs text-destructive px-1 font-medium">{errors.email}</p>
+                      <p role="alert" className="text-xs text-destructive dark:text-[#f87171] px-1 font-medium">{errors.email}</p>
                     ) : (
                       <p className="text-[11px] text-text-muted italic px-1 pt-1">
                         We use this ONLY to send aggregated load warnings (predictive sick-leave) when nervous system debt is critical. Personal chat logs and medical fingerprint data are never exposed. Secrecy remains intact.
@@ -332,7 +332,7 @@ export const SettingsModal = ({ profile, onSave, onClose, onOpenPrivacyCentre }:
                   <button
                     type="button"
                     onClick={onOpenPrivacyCentre}
-                    className="text-xs font-bold text-primary hover:underline"
+                    className="text-xs font-bold text-[#9a3412] dark:text-primary hover:underline"
                   >
                     Open full Privacy Centre &rarr;
                   </button>

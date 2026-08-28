@@ -921,7 +921,7 @@ export const NervousSystemReset = ({ fingerprint, onAwardPoints }: NervousSystem
       {/* Acute Overwhelm / Panic shortcut */}
       <div className="mt-8 p-6 rounded-xl border border-destructive/20 bg-destructive/5 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 relative overflow-hidden">
         <div className="space-y-1 relative z-10 text-left">
-          <div className="flex items-center gap-2 text-destructive font-medium uppercase tracking-wider text-[10px]">
+          <div className="flex items-center gap-2 text-destructive dark:text-[#f87171] font-medium uppercase tracking-wider text-[10px]">
             <span className="w-2 h-2 rounded-full bg-destructive animate-pulse" />
             Feeling Overwhelmed Right Now?
           </div>
@@ -1041,7 +1041,7 @@ export const NervousSystemReset = ({ fingerprint, onAwardPoints }: NervousSystem
             <div className="flex flex-col gap-1.5 w-36">
               <div className="flex justify-between items-center text-xs uppercase tracking-wider font-black text-text-muted">
                 <span>Pacer Sound</span>
-                <span className="text-[11px] text-primary font-bold">{pacerSoundEnabled ? "Active" : "Disabled"}</span>
+                <span className="text-[11px] text-[#9a3412] dark:text-primary font-bold">{pacerSoundEnabled ? "Active" : "Disabled"}</span>
               </div>
               <div className="flex items-center gap-3">
                 <label className="relative inline-flex items-center cursor-pointer select-none">
