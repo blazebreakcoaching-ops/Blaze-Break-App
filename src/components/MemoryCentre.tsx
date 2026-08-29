@@ -99,7 +99,7 @@ export function MemoryCentre() {
       </div>
 
       {error && (
-        <div className="mb-4 p-3 bg-destructive/10 text-destructive text-sm rounded flex items-center gap-2">
+        <div role="alert" className="mb-4 p-3 bg-destructive/10 text-destructive dark:text-[#f87171] text-sm rounded flex items-center gap-2">
           <AlertCircle className="w-4 h-4 shrink-0" />
           {error}
         </div>
@@ -116,7 +116,7 @@ export function MemoryCentre() {
           <div className="flex justify-end">
             <button 
               onClick={handlePurge}
-              className="text-xs text-destructive hover:text-destructive/80 font-medium flex items-center gap-1 transition-colors"
+              className="text-xs text-destructive dark:text-[#f87171] hover:text-destructive/80 font-medium flex items-center gap-1 transition-colors"
             >
               <Trash2 className="w-3 h-3" />
               Forget all Nova memories
@@ -126,17 +126,17 @@ export function MemoryCentre() {
           {memories.map(m => (
             <div key={m.id} className="p-4 bg-background border border-border/10 rounded-xl relative group">
               <div className="flex justify-between items-start mb-2">
-                <span className="text-xs font-mono px-2 py-0.5 rounded-full bg-primary/10 text-primary uppercase tracking-wider">
+                <span className="text-xs font-mono px-2 py-0.5 rounded-full bg-primary/10 text-[#9a3412] dark:text-primary uppercase tracking-wider">
                   {m.memoryType.replace(/_/g, ' ')}
                 </span>
                 
-                <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-2 z-10 relative">
+                <div className="opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity flex items-center gap-2 z-10 relative">
                   {(editingId !== m.id) && (
-                     <button onClick={() => startEdit(m)} className="p-1 text-text-muted hover:text-primary transition-colors" title="Edit">
+                     <button onClick={() => startEdit(m)} aria-label={`Edit memory: ${m.memoryType.replace(/_/g, ' ')}`} className="p-1 text-text-muted hover:text-primary transition-colors" title="Edit">
                        <Edit2 className="w-3.5 h-3.5" />
                      </button>
                   )}
-                  <button onClick={() => handleDelete(m.id)} className="p-1 text-text-muted hover:text-destructive transition-colors" title="Forget this">
+                  <button onClick={() => handleDelete(m.id)} aria-label={`Forget memory: ${m.memoryType.replace(/_/g, ' ')}`} className="p-1 text-text-muted hover:text-destructive transition-colors" title="Forget this">
                     <Trash2 className="w-3.5 h-3.5" />
                   </button>
                 </div>
@@ -153,7 +153,7 @@ export function MemoryCentre() {
                   />
                   <div className="flex justify-end gap-2">
                     <button onClick={() => setEditingId(null)} className="text-xs px-3 py-1.5 text-text-muted hover:text-text transition-colors">Cancel</button>
-                    <button onClick={() => saveEdit(m)} className="text-xs px-3 py-1.5 bg-primary text-background rounded hover:bg-primary/90 transition-colors">Save</button>
+                    <button onClick={() => saveEdit(m)} className="text-xs px-3 py-1.5 bg-primary text-primary-foreground rounded hover:bg-primary/90 transition-colors">Save</button>
                   </div>
                 </div>
               ) : (
