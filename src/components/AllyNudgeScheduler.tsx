@@ -204,7 +204,7 @@ export const AllyNudgeScheduler = ({ contacts }: AllyNudgeSchedulerProps) => {
             <div className="p-6 bg-surface/50 border border-border rounded-2xl space-y-5">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-black uppercase tracking-widest text-text-muted">New Schedule</span>
-                <button onClick={() => { setIsAdding(false); resetForm(); }} className="text-text-muted hover:text-text-main cursor-pointer">
+                <button onClick={() => { setIsAdding(false); resetForm(); }} aria-label="Cancel new schedule" className="text-text-muted hover:text-text-main cursor-pointer">
                   <X className="w-4 h-4" />
                 </button>
               </div>
@@ -255,12 +255,14 @@ export const AllyNudgeScheduler = ({ contacts }: AllyNudgeSchedulerProps) => {
                       <div className="flex gap-2">
                         <button
                           onClick={() => setFrequency('daily')}
+                          aria-pressed={frequency === 'daily'}
                           className={cn("flex-1 py-2.5 rounded-xl text-xs font-bold cursor-pointer transition-all", frequency === 'daily' ? 'bg-primary text-primary-foreground' : 'bg-white dark:bg-surface border border-border text-text-muted')}
                         >
                           Daily
                         </button>
                         <button
                           onClick={() => setFrequency('weekly')}
+                          aria-pressed={frequency === 'weekly'}
                           className={cn("flex-1 py-2.5 rounded-xl text-xs font-bold cursor-pointer transition-all", frequency === 'weekly' ? 'bg-primary text-primary-foreground' : 'bg-white dark:bg-surface border border-border text-text-muted')}
                         >
                           Specific days
@@ -284,6 +286,7 @@ export const AllyNudgeScheduler = ({ contacts }: AllyNudgeSchedulerProps) => {
                         <button
                           key={i}
                           onClick={() => toggleDay(i)}
+                          aria-pressed={daysOfWeek.includes(i)}
                           className={cn("w-10 h-10 rounded-xl text-[11px] font-bold cursor-pointer transition-all", daysOfWeek.includes(i) ? 'bg-primary text-primary-foreground' : 'bg-white dark:bg-surface border border-border text-text-muted')}
                         >
                           {label}
@@ -303,7 +306,7 @@ export const AllyNudgeScheduler = ({ contacts }: AllyNudgeSchedulerProps) => {
                   </label>
 
                   {error && (
-                    <div className="flex items-start gap-2 text-xs text-destructive bg-destructive/10 p-3 rounded-xl">
+                    <div role="alert" className="flex items-start gap-2 text-xs text-destructive dark:text-[#f87171] bg-destructive/10 p-3 rounded-xl">
                       <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
                       {error}
                     </div>
@@ -346,11 +349,14 @@ export const AllyNudgeScheduler = ({ contacts }: AllyNudgeSchedulerProps) => {
               <div className="flex items-center gap-2 shrink-0 ml-3">
                 <button
                   onClick={() => handleToggle(s)}
+                  role="switch"
+                  aria-checked={s.enabled}
+                  aria-label={`${s.enabled ? 'Disable' : 'Enable'} nudge schedule for ${s.contactName}`}
                   className={cn("w-11 h-6 rounded-full flex items-center p-1 cursor-pointer transition-colors", s.enabled ? "bg-success" : "bg-border")}
                 >
                   <span className={cn("w-4 h-4 rounded-full bg-white transition-transform", s.enabled ? "translate-x-5" : "translate-x-0")} />
                 </button>
-                <button onClick={() => handleDelete(s.id)} className="text-text-muted hover:text-destructive cursor-pointer p-1">
+                <button onClick={() => handleDelete(s.id)} aria-label={`Delete nudge schedule for ${s.contactName}`} className="text-text-muted hover:text-destructive cursor-pointer p-1">
                   <Trash2 className="w-4 h-4" />
                 </button>
               </div>
