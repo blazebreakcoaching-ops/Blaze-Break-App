@@ -178,7 +178,7 @@ const CATEGORY_STYLES = {
     color: 'blue',
     border: 'border-primary/30 hover:border-primary/70',
     bg: 'bg-primary-dark/40 hover:bg-primary-dark/70',
-    text: 'text-primary',
+    text: 'text-[#1c1917] dark:text-[#f5f5f4]',
     glow: 'shadow-[rgba(234,88,12,0.25)_0px_0px_20px]',
     dotClass: 'bg-primary',
     label: 'Executive & Diagnosis'
@@ -187,7 +187,7 @@ const CATEGORY_STYLES = {
     color: 'rose',
     border: 'border-destructive/30 hover:border-destructive/70',
     bg: 'bg-destructive/10 hover:bg-destructive/20',
-    text: 'text-destructive',
+    text: 'text-destructive dark:text-[#f87171]',
     glow: 'shadow-[rgba(220,38,38,0.25)_0px_0px_20px]',
     dotClass: 'bg-destructive',
     label: 'Boundaries & Priorities'
@@ -196,7 +196,7 @@ const CATEGORY_STYLES = {
     color: 'emerald',
     border: 'border-success/30 hover:border-success/70',
     bg: 'bg-success/10 hover:bg-success/20',
-    text: 'text-success',
+    text: 'text-success dark:text-[#4ade80]',
     glow: 'shadow-[rgba(16,185,129,0.25)_0px_0px_20px]',
     dotClass: 'bg-success',
     label: 'Somatic Restoration'
@@ -205,7 +205,7 @@ const CATEGORY_STYLES = {
     color: 'amber',
     border: 'border-warning/30 hover:border-warning/70',
     bg: 'bg-warning/10 hover:bg-warning/20',
-    text: 'text-warning',
+    text: 'text-[#9a3412] dark:text-warning',
     glow: 'shadow-[rgba(245,158,11,0.25)_0px_0px_20px]',
     dotClass: 'bg-warning',
     label: 'Biometrics & Takeaways'
@@ -324,7 +324,7 @@ export const OmniBrainMap = ({ activeTab, setActiveTab, darkMode, setDarkMode, s
             <motion.div 
               animate={{ scale: [1, 1.25, 1] }}
               transition={{ duration: currentPreset.duration, repeat: Infinity, ease: "easeInOut" }}
-              className="w-10 h-10 rounded-full border border-success/50 bg-success/10 flex items-center justify-center text-success/40"
+              className="w-10 h-10 rounded-full border border-success/50 bg-success/10 flex items-center justify-center text-success dark:text-[#4ade80]"
             >
               <HeartPulse className="w-5 h-5 animate-pulse" />
             </motion.div>
@@ -334,8 +334,8 @@ export const OmniBrainMap = ({ activeTab, setActiveTab, darkMode, setDarkMode, s
           </div>
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2">
-              <span className="text-xs font-black uppercase tracking-wider text-success font-mono">Synced Breathing</span>
-              <span className="px-1.5 py-0.5 bg-success-foreground text-success/40 rounded text-[11px] font-bold uppercase">{currentPreset.label}</span>
+              <span className="text-xs font-black uppercase tracking-wider text-success dark:text-[#4ade80] font-mono">Synced Breathing</span>
+              <span className="px-1.5 py-0.5 bg-success-foreground text-[#166534] rounded text-[11px] font-bold uppercase">{currentPreset.label}</span>
             </div>
             <p className="text-[11px] text-text-muted mt-1 leading-normal line-clamp-1">
               Active Stage: <strong className="text-text-main font-semibold">{shipStage}</strong> · {currentPreset.pacing}
@@ -394,7 +394,7 @@ export const OmniBrainMap = ({ activeTab, setActiveTab, darkMode, setDarkMode, s
                           <p className="text-xs text-text-muted truncate max-w-[180px]">{node.description}</p>
                         </div>
                       </div>
-                      <span className="text-[11px] uppercase tracking-widest text-primary opacity-0 group-hover:opacity-100 transition-opacity">Select Dest</span>
+                      <span className="text-[11px] uppercase tracking-widest text-[#9a3412] dark:text-primary opacity-0 group-hover:opacity-100 transition-opacity">Select Dest</span>
                     </button>
                   ))
                 ) : (
@@ -446,7 +446,7 @@ export const OmniBrainMap = ({ activeTab, setActiveTab, darkMode, setDarkMode, s
 
             {/* Render Calculated Pathway */}
             <div className="p-4 bg-card/50 rounded-xl border border-white/5 space-y-3">
-              <p className="text-[11px] font-black uppercase tracking-wider text-primary font-mono">Calculated Shortest Path</p>
+              <p className="text-[11px] font-black uppercase tracking-wider text-[#9a3412] dark:text-primary font-mono">Calculated Shortest Path</p>
               
               <div className="flex flex-wrap items-center gap-2">
                 {shortestPath.map((nodeId, idx) => {
@@ -457,7 +457,7 @@ export const OmniBrainMap = ({ activeTab, setActiveTab, darkMode, setDarkMode, s
                       <span className={cn(
                         "px-2.5 py-1 rounded-lg text-xs font-bold border",
                         nodeId === 'nova' 
-                          ? "bg-card border-primary text-primary"
+                          ? "bg-card border-primary text-[#9a3412] dark:text-primary"
                           : "bg-surface border-white/10 text-text-main"
                       )}>
                         {nodeObj.label}
@@ -604,7 +604,7 @@ export const OmniBrainMap = ({ activeTab, setActiveTab, darkMode, setDarkMode, s
               )}
             >
               <Sparkles className="w-8 h-8 text-primary group-hover:text-text-main transition-colors" />
-              <span className="text-[11px] font-black uppercase tracking-wider text-primary">Nova Core</span>
+              <span className="text-[11px] font-black uppercase tracking-wider text-[#9a3412] dark:text-primary">Nova Core</span>
               
               <div className="absolute inset-0 border-2 border-primary/20 rounded-full animate-ping" style={{ animationDuration: `${currentPreset.duration}s` }} />
             </motion.button>
@@ -691,7 +691,7 @@ export const OmniBrainMap = ({ activeTab, setActiveTab, darkMode, setDarkMode, s
                       <span className="text-xs text-text-muted">· {style.label}</span>
                     </div>
                     {isGroupFocus && (
-                      <span className="px-1.5 py-0.5 rounded bg-success-foreground/60 border border-success-foreground/40 text-success text-[10px] font-black uppercase tracking-wider scale-90">
+                      <span className="px-1.5 py-0.5 rounded bg-success-foreground/60 border border-success-foreground/40 text-[#166534] text-[10px] font-black uppercase tracking-wider scale-90">
                         Active Phase
                       </span>
                     )}
