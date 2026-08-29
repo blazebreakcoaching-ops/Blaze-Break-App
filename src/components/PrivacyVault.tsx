@@ -274,11 +274,11 @@ export const PrivacyVault = ({
                   Trust & Privacy Centre
                 </h2>
                 <div className="absolute left-0 top-full mt-4 p-4 w-72 bg-card text-text-main text-sm font-medium rounded-xl border border-border shadow-lg opacity-0 invisible group-hover/tooltip:opacity-100 group-hover/tooltip:visible transition-all z-50 pointer-events-none">
-                  <div className="text-xs uppercase font-black tracking-widest text-primary mb-2">Welcome to the Vault</div>
+                  <div className="text-xs uppercase font-black tracking-widest text-[#9a3412] dark:text-primary mb-2">Welcome to the Vault</div>
                   Manage your data boundaries, review AI governance polices, and control what Nova remembers about your burnout baseline.
                 </div>
               </div>
-              <p className="text-xs uppercase font-black tracking-[0.2em] text-primary mt-2">Blaze Break Assurance Layer</p>
+              <p className="text-xs uppercase font-black tracking-[0.2em] text-[#9a3412] dark:text-primary mt-2">Blaze Break Assurance Layer</p>
             </div>
           </div>
           <p className="text-text-muted text-sm md:text-base leading-relaxed mb-8 font-light">
@@ -351,7 +351,7 @@ export const PrivacyVault = ({
               <DataZoneVisualizer />
 
               <div className="card bg-destructive/5 border-destructive/20">
-                <h3 className="font-bold text-destructive flex items-center gap-2 mb-4">
+                <h3 className="font-bold text-destructive dark:text-[#f87171] flex items-center gap-2 mb-4">
                   <AlertTriangle className="w-5 h-5" /> Our Privacy Promise
                 </h3>
                 <p className="text-sm text-text-muted leading-relaxed font-light">
@@ -376,7 +376,7 @@ export const PrivacyVault = ({
               <div className="card space-y-6 bg-gradient-to-r from-[#080c14]/80 to-[#101420]/80">
                 <div>
                   <h3 className="font-bold text-text-main text-xl flex items-center gap-2 mb-2">
-                    <Building className="w-5 h-5 text-primary" /> Organisation Participation
+                    <Building className="w-5 h-5 text-orange-300" /> Organisation Participation
                   </h3>
                   <p className="text-sm text-text-muted max-w-3xl leading-relaxed">
                     Your employer can fund your support without compromising your privacy. Here is the strict separation between your Personal Space and your Organisation Space.
@@ -385,35 +385,35 @@ export const PrivacyVault = ({
                 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                    <div className="space-y-4">
-                     <h4 className="text-xs font-black uppercase tracking-[0.2em] text-success">What they CAN see</h4>
+                     <h4 className="text-xs font-black uppercase tracking-[0.2em] text-green-300">What they CAN see</h4>
                      <ul className="space-y-3 text-sm text-text-muted">
                        <li className="flex items-start gap-2">
-                         <Network className="w-4 h-4 text-success mt-0.5 shrink-0" />
+                         <Network className="w-4 h-4 text-green-300 mt-0.5 shrink-0" />
                          <span>Grouped trends (e.g., team mood distribution) — only if you opt in below</span>
                        </li>
                        <li className="flex items-start gap-2">
-                         <Network className="w-4 h-4 text-success mt-0.5 shrink-0" />
+                         <Network className="w-4 h-4 text-green-300 mt-0.5 shrink-0" />
                          <span>Voluntary participation in company challenges</span>
                        </li>
                        <li className="flex items-start gap-2">
-                         <Network className="w-4 h-4 text-success mt-0.5 shrink-0" />
+                         <Network className="w-4 h-4 text-green-300 mt-0.5 shrink-0" />
                          <span>Anonymous team aggregates (never shown below your org's configured minimum group size)</span>
                        </li>
                      </ul>
                    </div>
                    <div className="space-y-4">
-                     <h4 className="text-xs font-black uppercase tracking-[0.2em] text-destructive">What they CANNOT see</h4>
+                     <h4 className="text-xs font-black uppercase tracking-[0.2em] text-rose-300">What they CANNOT see</h4>
                      <ul className="space-y-3 text-sm text-text-muted ">
                        <li className="flex items-start gap-2">
-                         <EyeOff className="w-4 h-4 text-destructive mt-0.5 shrink-0" />
+                         <EyeOff className="w-4 h-4 text-rose-300 mt-0.5 shrink-0" />
                          <span>Named employee risk labels or mood</span>
                        </li>
                        <li className="flex items-start gap-2">
-                         <EyeOff className="w-4 h-4 text-destructive mt-0.5 shrink-0" />
+                         <EyeOff className="w-4 h-4 text-rose-300 mt-0.5 shrink-0" />
                          <span>Private journal entries or Nova chat history</span>
                        </li>
                        <li className="flex items-start gap-2">
-                         <EyeOff className="w-4 h-4 text-destructive mt-0.5 shrink-0" />
+                         <EyeOff className="w-4 h-4 text-rose-300 mt-0.5 shrink-0" />
                          <span>Your personal Recovery Score</span>
                        </li>
                      </ul>
@@ -479,7 +479,7 @@ export const PrivacyVault = ({
 
                     {orgStatus.isOrgAdmin && orgStatus.joinCode && (
                       <div className="p-4 rounded-2xl bg-primary/5 border border-primary/20 space-y-2">
-                        <h4 className="text-xs font-black uppercase tracking-widest text-primary">Your Team's Join Code</h4>
+                        <h4 className="text-xs font-black uppercase tracking-widest text-[#9a3412] dark:text-primary">Your Team's Join Code</h4>
                         <p className="text-xs text-text-muted">Share this with employees so they can link their own account to {orgStatus.organisationName}.</p>
                         <div className="font-mono text-lg font-bold text-text-main bg-background px-4 py-2 rounded-lg border border-border w-fit tracking-widest">{orgStatus.joinCode}</div>
                       </div>
@@ -724,9 +724,9 @@ export const PrivacyVault = ({
                         <td className="px-4 py-5">
                           <span className={cn(
                             "inline-flex items-center px-2 py-1 rounded bg-background border border-white/[0.05] text-[11px] uppercase tracking-widest font-black shadow-inner",
-                            log.status === 'authorised' ? 'text-success border-success/20' :
-                            log.status === 'anonymised' ? 'text-primary border-primary/20' :
-                            log.status === 'deleted' ? 'text-destructive border-destructive/20' :
+                            log.status === 'authorised' ? 'text-success dark:text-[#4ade80] border-success/20' :
+                            log.status === 'anonymised' ? 'text-[#9a3412] dark:text-primary border-primary/20' :
+                            log.status === 'deleted' ? 'text-destructive dark:text-[#f87171] border-destructive/20' :
                             'text-text-muted'
                           )}>
                             {log.status}
@@ -743,7 +743,7 @@ export const PrivacyVault = ({
         </motion.div>
       </AnimatePresence>
       <div className="flex justify-center mt-8">
-        <a href="#" className="flex items-center gap-2 text-xs uppercase font-black tracking-[0.2em] text-text-muted hover:text-primary transition-colors">
+        <a href="#" className="flex items-center gap-2 text-xs uppercase font-black tracking-[0.2em] text-text-muted hover:text-[#9a3412] dark:hover:text-primary transition-colors">
            <FileText className="w-4 h-4" /> View Trust Centre Documents & DPIA Summaries
         </a>
       </div>
@@ -958,16 +958,16 @@ export const PrivacyVault = ({
                 ) : (
                   <div className="space-y-4">
                     <div className="flex flex-col items-center justify-center py-6 space-y-3">
-                      <Loader2 className="w-8 h-8 text-destructive animate-spin" />
-                      <p className="text-xs font-bold text-destructive font-mono tracking-widest uppercase animate-pulse">
+                      <Loader2 className="w-8 h-8 text-destructive dark:text-[#f87171] animate-spin" />
+                      <p className="text-xs font-bold text-destructive dark:text-[#f87171] font-mono tracking-widest uppercase animate-pulse">
                         Wiping Diagnostic Logs...
                       </p>
                     </div>
                     <div className="space-y-1 text-xs text-text-muted font-mono leading-relaxed bg-background p-3 rounded-lg border border-white/[0.02]">
-                      <p className="text-destructive">● [1/4] Overwriting Zone A-C metadata...</p>
-                      <p className="text-destructive">● [2/4] Destroying audit ledger traces...</p>
-                      <p className="text-destructive">● [3/4] Purging offline local storage namespaces...</p>
-                      <p className="text-destructive">● [4/4] Finalizing cryptographic shredding...</p>
+                      <p className="text-destructive dark:text-[#f87171]">● [1/4] Overwriting Zone A-C metadata...</p>
+                      <p className="text-destructive dark:text-[#f87171]">● [2/4] Destroying audit ledger traces...</p>
+                      <p className="text-destructive dark:text-[#f87171]">● [3/4] Purging offline local storage namespaces...</p>
+                      <p className="text-destructive dark:text-[#f87171]">● [4/4] Finalizing cryptographic shredding...</p>
                     </div>
                   </div>
                 )}
