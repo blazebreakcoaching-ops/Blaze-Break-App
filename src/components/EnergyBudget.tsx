@@ -277,7 +277,7 @@ export const EnergyBudgetTool = ({
             Energy & Capacity
           </h3>
           <div className="absolute left-0 top-full mt-4 p-4 w-80 bg-card text-text-main text-sm font-medium rounded-lg border border-border shadow-lg opacity-0 invisible group-hover/tooltip:opacity-100 group-hover/tooltip:visible transition-all z-50 pointer-events-none">
-            <div className="text-xs uppercase font-medium tracking-widest text-primary mb-2">What this shows</div>
+            <div className="text-xs uppercase font-medium tracking-widest text-[#9a3412] dark:text-primary mb-2">What this shows</div>
             See where your energy actually goes. Add daily tasks below to see how they draw down your total capacity.
           </div>
         </div>
@@ -302,7 +302,7 @@ export const EnergyBudgetTool = ({
                 <p className="text-xs uppercase font-medium tracking-[0.25em] text-text-muted mt-1">By category, over the last 7 days</p>
               </div>
               <div className="flex items-center gap-4 text-xs">
-                <div className="flex items-center gap-1.5 font-medium text-destructive">
+                <div className="flex items-center gap-1.5 font-medium text-destructive dark:text-[#f87171]">
                   <div className="w-2.5 h-2.5 rounded-full bg-destructive" />
                   Overload Threshold
                 </div>
@@ -360,16 +360,16 @@ export const EnergyBudgetTool = ({
               <div className="flex items-center gap-3 p-3 bg-destructive/5 dark:bg-destructive/10 rounded-xl border border-destructive/15">
                 <AlertCircle className="w-5 h-5 text-destructive" />
                 <div className="text-xs leading-tight text-text-muted font-sans font-bold">
-                  <span className="text-destructive font-extrabold uppercase tracking-wide">System warning:</span>{' '}
+                  <span className="text-destructive dark:text-[#f87171] font-extrabold uppercase tracking-wide">System warning:</span>{' '}
                   {overloadDays.length > 0
                     ? <>{overloadDays.map(d => d.day).join(' & ')} active strain exceeded baseline capacitance. Autocortex recovery protocols activated.</>
                     : 'No days this week exceeded baseline capacitance.'}
                 </div>
               </div>
               <div className="flex items-center gap-3 p-3 bg-success/5 dark:bg-success/10 rounded-xl border border-success/15">
-                <CheckCircle2 className="w-5 h-5 text-success" />
+                <CheckCircle2 className="w-5 h-5 text-success dark:text-[#4ade80]" />
                 <div className="text-xs leading-tight text-text-muted font-sans font-bold">
-                  <span className="text-success font-extrabold uppercase tracking-wide">Weekend buffer check:</span>{' '}
+                  <span className="text-success dark:text-[#4ade80] font-extrabold uppercase tracking-wide">Weekend buffer check:</span>{' '}
                   {safeDays.length > 0
                     ? <>{safeDays.map(d => d.day).join(' & ')} load maintained safely under budget. High recharge score synchronized.</>
                     : 'No load logged yet this week.'}
@@ -416,7 +416,7 @@ export const EnergyBudgetTool = ({
               <div className="flex justify-between items-end">
                 <div className="space-y-1">
                    <p className="text-xs uppercase font-black tracking-[0.25e] text-text-muted">Total Resource Load</p>
-                   <p className={cn("text-3xl font-display font-bold", isOverBudget ? 'text-destructive' : 'text-primary')}>
+                   <p className={cn("text-3xl font-display font-bold", isOverBudget ? 'text-destructive dark:text-[#f87171]' : 'text-[#9a3412] dark:text-primary')}>
                       {totalSpent} <span className="text-base text-text-muted font-medium tracking-normal">/ {budget} credits</span>
                    </p>
                 </div>
@@ -498,7 +498,7 @@ export const EnergyBudgetTool = ({
                       </div>
                       <div className="flex-1 relative z-10">
                         <div className="flex flex-wrap items-center gap-3">
-                          <p className="text-xl font-display font-bold text-text-main tracking-tight group-hover:text-primary transition-colors">{task.task}</p>
+                          <p className="text-xl font-display font-bold text-text-main tracking-tight group-hover:text-[#9a3412] dark:group-hover:text-primary transition-colors">{task.task}</p>
                           <span className={cn(
                             "text-[10px] px-3 py-1 rounded-full font-black uppercase tracking-[0.2em] shadow-sm",
                             task.priority === 'High' ? "bg-destructive text-destructive-foreground" :
@@ -554,7 +554,7 @@ export const EnergyBudgetTool = ({
 
         <div className="lg:col-span-4 space-y-10">
           <div className="card p-6 border border-warning/20 bg-warning/5">
-            <h4 className="text-sm font-medium uppercase tracking-widest text-warning mb-2 flex items-center gap-2">
+            <h4 className="text-sm font-medium uppercase tracking-widest text-[#9a3412] dark:text-warning mb-2 flex items-center gap-2">
               <Zap className="w-4 h-4" /> Tracking Active
             </h4>
             <p className="text-text-main font-medium text-xs leading-relaxed">
@@ -659,7 +659,7 @@ export const EnergyBudgetTool = ({
                 <div className="space-y-6 pt-4">
                   <div className="flex justify-between items-end px-2">
                     <p className="text-xs uppercase font-black tracking-widest text-text-muted ">Capacitance Cost</p>
-                    <p className="font-display font-black text-2xl text-primary">{newCost} <span className="text-xs font-black">CR</span></p>
+                    <p className="font-display font-black text-2xl text-[#9a3412] dark:text-primary">{newCost} <span className="text-xs font-black">CR</span></p>
                   </div>
                   <input 
                     type="range" 
