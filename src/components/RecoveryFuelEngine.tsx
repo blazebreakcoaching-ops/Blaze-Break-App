@@ -623,7 +623,7 @@ export const RecoveryFuelEngine = ({
             className={cn(
               "flex-1 py-2.5 px-3 rounded-xl text-xs uppercase font-black tracking-widest transition-all flex items-center justify-center gap-2 cursor-pointer",
               activeTab === tab.id 
-                ? "bg-white dark:bg-card text-primary shadow-md shadow-primary/5 border border-border/30" 
+                ? "bg-white dark:bg-card text-[#9a3412] dark:text-primary shadow-md shadow-primary/5 border border-border/30" 
                 : "text-text-muted hover:text-text-main bg-transparent border-transparent"
             )}
           >
@@ -683,7 +683,7 @@ export const RecoveryFuelEngine = ({
                     <label className="text-xs font-bold text-text-main flex items-center justify-between">
                       <span>Have you eaten meals regularly today?</span>
                       {hasEaten !== null && (
-                        <span className="text-[11px] font-black uppercase text-success">Filled</span>
+                        <span className="text-[11px] font-black uppercase text-success dark:text-[#4ade80]">Filled</span>
                       )}
                     </label>
                     <div className="grid grid-cols-2 gap-3">
@@ -952,7 +952,7 @@ export const RecoveryFuelEngine = ({
                         <Apple className="w-5 h-5" />
                       </div>
                       <div>
-                        <h4 className="text-xs uppercase font-black tracking-widest text-primary">Meal Rhythm Nudge</h4>
+                        <h4 className="text-xs uppercase font-black tracking-widest text-[#9a3412] dark:text-primary">Meal Rhythm Nudge</h4>
                         <p className="text-xs font-bold text-text-main mt-0.5">Keep Blood Glucose Flat</p>
                       </div>
                     </div>
@@ -971,7 +971,7 @@ export const RecoveryFuelEngine = ({
                         <Coffee className="w-5 h-5" />
                       </div>
                       <div>
-                        <h4 className="text-xs uppercase font-black tracking-widest text-warning">Caffeine Recovery Guard</h4>
+                        <h4 className="text-xs uppercase font-black tracking-widest text-[#9a3412] dark:text-warning">Caffeine Recovery Guard</h4>
                         <p className="text-xs font-bold text-text-main mt-0.5">Prevent Adenosine Masquerades</p>
                       </div>
                     </div>
@@ -990,7 +990,7 @@ export const RecoveryFuelEngine = ({
                         <Sun className="w-5 h-5" />
                       </div>
                       <div>
-                        <h4 className="text-xs uppercase font-black tracking-widest text-warning">Circadian Sunlight Nudge</h4>
+                        <h4 className="text-xs uppercase font-black tracking-widest text-[#9a3412] dark:text-warning">Circadian Sunlight Nudge</h4>
                         <p className="text-xs font-bold text-text-main mt-0.5">Calibrate Your Body Clock</p>
                       </div>
                     </div>
@@ -1006,7 +1006,7 @@ export const RecoveryFuelEngine = ({
                         <Sparkles className="w-5 h-5" />
                       </div>
                       <div>
-                        <h4 className="text-xs uppercase font-black tracking-widest text-primary">Nudges & Reminders Setup</h4>
+                        <h4 className="text-xs uppercase font-black tracking-widest text-[#9a3412] dark:text-primary">Nudges & Reminders Setup</h4>
                         <p className="text-xs font-bold text-text-main mt-0.5">{savingReminderPrefs ? 'Saving...' : 'Set up once, fires automatically'}</p>
                       </div>
                     </div>
@@ -1106,7 +1106,7 @@ export const RecoveryFuelEngine = ({
                               <p className="text-[11px] text-text-muted leading-relaxed">This needs your calendar connected to know when meetings actually start — it can't check without it.</p>
                               <button
                                 onClick={() => signInWithCalendar()}
-                                className="text-[11px] font-black uppercase tracking-widest text-warning hover:opacity-80"
+                                className="text-[11px] font-black uppercase tracking-widest text-[#9a3412] dark:text-warning hover:opacity-80"
                               >
                                 Connect Google Calendar
                               </button>
@@ -1257,7 +1257,7 @@ export const RecoveryFuelEngine = ({
                   <div className="bg-white/40 dark:bg-card/40 p-4 rounded-xl border border-border/10 space-y-1">
                     <div className="flex items-center gap-1.5">
                       <Sparkles className="w-3.5 h-3.5 text-primary" />
-                      <span className="text-[11px] uppercase font-black tracking-wider text-primary">Nova Recovery Direct</span>
+                      <span className="text-[11px] uppercase font-black tracking-wider text-[#9a3412] dark:text-primary">Nova Recovery Direct</span>
                     </div>
                     <p className="text-[11px] font-medium leading-normal text-text-muted dark:text-text-muted italic">
                       "{insight.coaching}"
@@ -1285,7 +1285,7 @@ export const RecoveryFuelEngine = ({
                   <Heart className="w-5 h-5" />
                 </div>
                 <div>
-                  <h4 className="text-xs uppercase font-medium tracking-widest text-primary">Gut-Brain Connection</h4>
+                  <h4 className="text-xs uppercase font-medium tracking-widest text-[#9a3412] dark:text-primary">Gut-Brain Connection</h4>
                   <p className="text-xs font-bold text-text-main mt-0.5">How they affect each other</p>
                 </div>
               </div>
@@ -1293,7 +1293,7 @@ export const RecoveryFuelEngine = ({
                 The digestive system communicates directly with your brain via the vagus nerve. Inflammatory pathways, microbiome changes, or severe meal skipping directly manifest as cognitive fog and defensive cynicism.
               </p>
               <div className="bg-white/40 dark:bg-card/30 p-4 rounded-xl text-[11px] text-text-muted font-bold leading-normal">
-                💡 <span className="text-primary">Fact:</span> Poor meal timing, late screen exposure, high caffeine, and chronic workplace stress all cooperate to lock the autonomic nervous system into a defense cycle, prolonging neurological fatigue. This is educational support, not medical treatment.
+                💡 <span className="text-[#9a3412] dark:text-primary">Fact:</span> Poor meal timing, late screen exposure, high caffeine, and chronic workplace stress all cooperate to lock the autonomic nervous system into a defense cycle, prolonging neurological fatigue. This is educational support, not medical treatment.
               </div>
             </div>
 
@@ -1339,7 +1339,7 @@ export const RecoveryFuelEngine = ({
                   <Wine className="w-5 h-5" />
                 </div>
                 <div>
-                  <h4 className="text-xs uppercase font-black tracking-widest text-destructive">Alcohol Recovery Awareness</h4>
+                  <h4 className="text-xs uppercase font-black tracking-widest text-destructive dark:text-[#f87171]">Alcohol Recovery Awareness</h4>
                   <p className="text-xs font-bold text-text-main mt-0.5">Disarming the Sleep Sedative</p>
                 </div>
               </div>
@@ -1359,7 +1359,7 @@ export const RecoveryFuelEngine = ({
                   <Activity className="w-5 h-5" />
                 </div>
                 <div>
-                  <h4 className="text-xs uppercase font-medium tracking-widest text-warning">Blood Sugar Stability</h4>
+                  <h4 className="text-xs uppercase font-medium tracking-widest text-[#9a3412] dark:text-warning">Blood Sugar Stability</h4>
                   <p className="text-xs font-bold text-text-main mt-0.5">Slow-Release Energy Foods for Calm Resiliency</p>
                 </div>
               </div>
