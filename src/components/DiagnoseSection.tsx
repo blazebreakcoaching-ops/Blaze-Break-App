@@ -322,14 +322,14 @@ export const DiagnoseView = ({
             onClick={() => setMode('quick')}
             className="p-6 rounded-2xl border border-border bg-card hover:border-primary transition-all text-left space-y-2"
           >
-            <span className="text-xs font-black uppercase tracking-widest text-primary">Quick Check — ~90 seconds</span>
+            <span className="text-xs font-black uppercase tracking-widest text-[#9a3412] dark:text-primary">Quick Check — ~90 seconds</span>
             <p className="text-sm text-text-muted leading-relaxed">7 questions. Covers the 5 core burnout patterns — Founder on Fire, Over-Giver, Silent Resenter, Manager in the Middle, High-Functioning Exhausted.</p>
           </button>
           <button
             onClick={() => setMode('full')}
             className="p-6 rounded-2xl border border-primary bg-primary/5 hover:bg-primary/10 transition-all text-left space-y-2"
           >
-            <span className="text-xs font-black uppercase tracking-widest text-primary">Full Assessment — ~3-4 minutes</span>
+            <span className="text-xs font-black uppercase tracking-widest text-[#9a3412] dark:text-primary">Full Assessment — ~3-4 minutes</span>
             <p className="text-sm text-text-muted leading-relaxed">14 questions. Also checks for Impostor Syndrome, Perfectionism, Crisis Dependency, and 4 more patterns — plus your full blend, not just one label.</p>
           </button>
         </div>
@@ -344,7 +344,7 @@ export const DiagnoseView = ({
           animate={{ rotate: 360 }}
           transition={{ repeat: Infinity, duration: 2, ease: "linear" }}
         >
-          <RefreshCcw className="w-12 h-12 text-primary opacity-40" />
+          <RefreshCcw className="w-12 h-12 text-primary" />
         </motion.div>
         <p className="text-xl text-text-muted text-center italic">
           Nova is analyzing your burnout fingerprint...
@@ -398,7 +398,7 @@ export const DiagnoseView = ({
           exit={{ opacity: 0, x: -20 }}
           className="space-y-8"
         >
-          <span className="text-xs uppercase tracking-widest text-primary font-bold">
+          <span className="text-xs uppercase tracking-widest text-[#9a3412] dark:text-primary font-bold">
             Leak Category: {activeQuestions[step].id.toUpperCase()}
           </span>
           <h3 className="text-3xl font-light text-text-main leading-tight">
@@ -495,7 +495,7 @@ const getLeakDetails = (key: string, score: number) => {
         desc: "Working within sustainable physiological bounds.",
         color: "bg-success",
         bg: "bg-success/10",
-        text: "text-success-foreground",
+        text: "text-[#166534] dark:text-[#4ade80]",
         width: "25%",
       },
       2: {
@@ -503,7 +503,7 @@ const getLeakDetails = (key: string, score: number) => {
         desc: "Working hard; needing consistent pacing to recover.",
         color: "bg-warning",
         bg: "bg-warning/10",
-        text: "text-warning-foreground",
+        text: "text-[#9a3412] dark:text-warning",
         width: "50%",
       },
       3: {
@@ -511,7 +511,7 @@ const getLeakDetails = (key: string, score: number) => {
         desc: "Sustained cognitive load exhausting somatic reserves.",
         color: "bg-primary",
         bg: "bg-primary-light",
-        text: "text-primary-dark",
+        text: "text-primary-dark dark:text-orange-300",
         width: "75%",
       },
       4: {
@@ -519,7 +519,7 @@ const getLeakDetails = (key: string, score: number) => {
         desc: "Critical depletion. Unviable work parameters.",
         color: "bg-destructive",
         bg: "bg-destructive/10",
-        text: "text-destructive-foreground",
+        text: "text-destructive dark:text-[#f87171]",
         width: "100%",
       },
     },
@@ -529,7 +529,7 @@ const getLeakDetails = (key: string, score: number) => {
         desc: "Politely and firmly protecting schedules with absolute clarity.",
         color: "bg-success",
         bg: "bg-success/10",
-        text: "text-success-foreground",
+        text: "text-[#166534] dark:text-[#4ade80]",
         width: "25%",
       },
       2: {
@@ -537,7 +537,7 @@ const getLeakDetails = (key: string, score: number) => {
         desc: "Protecting some space, but saying yes under sudden social strain.",
         color: "bg-warning",
         bg: "bg-warning/10",
-        text: "text-warning-foreground",
+        text: "text-[#9a3412] dark:text-warning",
         width: "50%",
       },
       3: {
@@ -545,7 +545,7 @@ const getLeakDetails = (key: string, score: number) => {
         desc: "Saying yes grudgingly. Quiet irritation accumulating internally.",
         color: "bg-primary",
         bg: "bg-primary-light",
-        text: "text-primary-dark",
+        text: "text-primary-dark dark:text-orange-300",
         width: "75%",
       },
       4: {
@@ -553,7 +553,7 @@ const getLeakDetails = (key: string, score: number) => {
         desc: "Zero sovereignty. Operating as a shock absorber for other people's urgency.",
         color: "bg-destructive",
         bg: "bg-destructive/10",
-        text: "text-destructive-foreground",
+        text: "text-destructive dark:text-[#f87171]",
         width: "100%",
       },
     },
@@ -563,7 +563,7 @@ const getLeakDetails = (key: string, score: number) => {
         desc: "Motivated by standards, standards-anchored decisions.",
         color: "bg-success",
         bg: "bg-success/10",
-        text: "text-success-foreground",
+        text: "text-[#166534] dark:text-[#4ade80]",
         width: "25%",
       },
       2: {
@@ -571,7 +571,7 @@ const getLeakDetails = (key: string, score: number) => {
         desc: "Accommodating non-essential favors to suppress relational friction.",
         color: "bg-warning",
         bg: "bg-warning/10",
-        text: "text-warning-foreground",
+        text: "text-[#9a3412] dark:text-warning",
         width: "50%",
       },
       3: {
@@ -579,7 +579,7 @@ const getLeakDetails = (key: string, score: number) => {
         desc: "Trading energy and values for immediate feedback of approval.",
         color: "bg-primary",
         bg: "bg-primary-light",
-        text: "text-primary-dark",
+        text: "text-primary-dark dark:text-orange-300",
         width: "75%",
       },
       4: {
@@ -587,7 +587,7 @@ const getLeakDetails = (key: string, score: number) => {
         desc: "Nervous system relies completely on being helpful to feel safe.",
         color: "bg-destructive",
         bg: "bg-destructive/10",
-        text: "text-destructive-foreground",
+        text: "text-destructive dark:text-[#f87171]",
         width: "100%",
       },
     },
@@ -597,7 +597,7 @@ const getLeakDetails = (key: string, score: number) => {
         desc: "Embracing absolute recovery as essential biological maintenance.",
         color: "bg-success",
         bg: "bg-success/10",
-        text: "text-success-foreground",
+        text: "text-[#166534] dark:text-[#4ade80]",
         width: "25%",
       },
       2: {
@@ -605,7 +605,7 @@ const getLeakDetails = (key: string, score: number) => {
         desc: "Mild mental calculations of pending tasks contaminating rest.",
         color: "bg-warning",
         bg: "bg-warning/10",
-        text: "text-warning-foreground",
+        text: "text-[#9a3412] dark:text-warning",
         width: "50%",
       },
       3: {
@@ -613,7 +613,7 @@ const getLeakDetails = (key: string, score: number) => {
         desc: "Rest feels like laziness or failure; feeling a constant compulsion to act.",
         color: "bg-primary",
         bg: "bg-primary-light",
-        text: "text-primary-dark",
+        text: "text-primary-dark dark:text-orange-300",
         width: "75%",
       },
       4: {
@@ -621,7 +621,7 @@ const getLeakDetails = (key: string, score: number) => {
         desc: "Sitting still triggers direct, visceral threats to your neural baseline.",
         color: "bg-destructive",
         bg: "bg-destructive/10",
-        text: "text-destructive-foreground",
+        text: "text-destructive dark:text-[#f87171]",
         width: "100%",
       },
     },
@@ -631,7 +631,7 @@ const getLeakDetails = (key: string, score: number) => {
         desc: "Deep acoustic sleep. Waking with stable morning baseline.",
         color: "bg-success",
         bg: "bg-success/10",
-        text: "text-success-foreground",
+        text: "text-[#166534] dark:text-[#4ade80]",
         width: "25%",
       },
       2: {
@@ -639,7 +639,7 @@ const getLeakDetails = (key: string, score: number) => {
         desc: "Falling asleep tired but waking early with active work calculations.",
         color: "bg-warning",
         bg: "bg-warning/10",
-        text: "text-warning-foreground",
+        text: "text-[#9a3412] dark:text-warning",
         width: "50%",
       },
       3: {
@@ -647,7 +647,7 @@ const getLeakDetails = (key: string, score: number) => {
         desc: "Drifting off requires sleep aids or heavy decompression efforts.",
         color: "bg-primary",
         bg: "bg-primary-light",
-        text: "text-primary-dark",
+        text: "text-primary-dark dark:text-orange-300",
         width: "75%",
       },
       4: {
@@ -655,7 +655,7 @@ const getLeakDetails = (key: string, score: number) => {
         desc: "Permanent state of neural hyperarousal. Exhausted but alert.",
         color: "bg-destructive",
         bg: "bg-destructive/10",
-        text: "text-destructive-foreground",
+        text: "text-destructive dark:text-[#f87171]",
         width: "100%",
       },
     },
@@ -665,7 +665,7 @@ const getLeakDetails = (key: string, score: number) => {
         desc: "High visceral awareness and capacity to cycle through emotions.",
         color: "bg-success",
         bg: "bg-success/10",
-        text: "text-success-foreground",
+        text: "text-[#166534] dark:text-[#4ade80]",
         width: "25%",
       },
       2: {
@@ -673,7 +673,7 @@ const getLeakDetails = (key: string, score: number) => {
         desc: "Transient feelings of intense frustration and mild cynicism.",
         color: "bg-warning",
         bg: "bg-warning/10",
-        text: "text-warning-foreground",
+        text: "text-[#9a3412] dark:text-warning",
         width: "50%",
       },
       3: {
@@ -681,7 +681,7 @@ const getLeakDetails = (key: string, score: number) => {
         desc: "Substantial irritability, holding an aggressive defensive guard.",
         color: "bg-primary",
         bg: "bg-primary-light",
-        text: "text-primary-dark",
+        text: "text-primary-dark dark:text-orange-300",
         width: "75%",
       },
       4: {
@@ -689,7 +689,7 @@ const getLeakDetails = (key: string, score: number) => {
         desc: "Checked out. Living as a cold, disconnected, task-completing machine.",
         color: "bg-destructive",
         bg: "bg-destructive/10",
-        text: "text-destructive-foreground",
+        text: "text-destructive dark:text-[#f87171]",
         width: "100%",
       },
     },
@@ -699,7 +699,7 @@ const getLeakDetails = (key: string, score: number) => {
         desc: "Deep alignment between day-to-day work and core internal values.",
         color: "bg-success",
         bg: "bg-success/10",
-        text: "text-success-foreground",
+        text: "text-[#166534] dark:text-[#4ade80]",
         width: "25%",
       },
       2: {
@@ -707,7 +707,7 @@ const getLeakDetails = (key: string, score: number) => {
         desc: 'Administrative overhead and noise is burying your authentic "why".',
         color: "bg-warning",
         bg: "bg-warning/10",
-        text: "text-warning-foreground",
+        text: "text-[#9a3412] dark:text-warning",
         width: "50%",
       },
       3: {
@@ -715,7 +715,7 @@ const getLeakDetails = (key: string, score: number) => {
         desc: "Work represents survival and obligations only. Vision is gone.",
         color: "bg-primary",
         bg: "bg-primary-light",
-        text: "text-primary-dark",
+        text: "text-primary-dark dark:text-orange-300",
         width: "75%",
       },
       4: {
@@ -723,7 +723,7 @@ const getLeakDetails = (key: string, score: number) => {
         desc: "Total existential vacuum. Unable to identify any meaningful activity.",
         color: "bg-destructive",
         bg: "bg-destructive/10",
-        text: "text-destructive-foreground",
+        text: "text-destructive dark:text-[#f87171]",
         width: "100%",
       },
     },
@@ -733,7 +733,7 @@ const getLeakDetails = (key: string, score: number) => {
         desc: "Wins are owned without needing to re-earn them.",
         color: "bg-success",
         bg: "bg-success/10",
-        text: "text-success-foreground",
+        text: "text-[#166534] dark:text-[#4ade80]",
         width: "25%",
       },
       2: {
@@ -741,7 +741,7 @@ const getLeakDetails = (key: string, score: number) => {
         desc: "Success lands, but a quiet doubt follows close behind.",
         color: "bg-warning",
         bg: "bg-warning/10",
-        text: "text-warning-foreground",
+        text: "text-[#9a3412] dark:text-warning",
         width: "50%",
       },
       3: {
@@ -749,7 +749,7 @@ const getLeakDetails = (key: string, score: number) => {
         desc: "Achievements are mentally minimised almost as soon as they happen.",
         color: "bg-primary",
         bg: "bg-primary-light",
-        text: "text-primary-dark",
+        text: "text-primary-dark dark:text-orange-300",
         width: "75%",
       },
       4: {
@@ -757,7 +757,7 @@ const getLeakDetails = (key: string, score: number) => {
         desc: "No win counts for long enough to actually rest on it.",
         color: "bg-destructive",
         bg: "bg-destructive/10",
-        text: "text-destructive-foreground",
+        text: "text-destructive dark:text-[#f87171]",
         width: "100%",
       },
     },
@@ -767,7 +767,7 @@ const getLeakDetails = (key: string, score: number) => {
         desc: "Good enough is genuinely good enough for low-stakes work.",
         color: "bg-success",
         bg: "bg-success/10",
-        text: "text-success-foreground",
+        text: "text-[#166534] dark:text-[#4ade80]",
         width: "25%",
       },
       2: {
@@ -775,7 +775,7 @@ const getLeakDetails = (key: string, score: number) => {
         desc: "Handing off work is possible, but not comfortable.",
         color: "bg-warning",
         bg: "bg-warning/10",
-        text: "text-warning-foreground",
+        text: "text-[#9a3412] dark:text-warning",
         width: "50%",
       },
       3: {
@@ -783,7 +783,7 @@ const getLeakDetails = (key: string, score: number) => {
         desc: "Work gets redone privately rather than handed off honestly.",
         color: "bg-primary",
         bg: "bg-primary-light",
-        text: "text-primary-dark",
+        text: "text-primary-dark dark:text-orange-300",
         width: "75%",
       },
       4: {
@@ -791,7 +791,7 @@ const getLeakDetails = (key: string, score: number) => {
         desc: "Tasks are pulled back entirely rather than risk imperfection.",
         color: "bg-destructive",
         bg: "bg-destructive/10",
-        text: "text-destructive-foreground",
+        text: "text-destructive dark:text-[#f87171]",
         width: "100%",
       },
     },
@@ -801,7 +801,7 @@ const getLeakDetails = (key: string, score: number) => {
         desc: "Little energy spent managing how you come across.",
         color: "bg-success",
         bg: "bg-success/10",
-        text: "text-success-foreground",
+        text: "text-[#166534] dark:text-[#4ade80]",
         width: "25%",
       },
       2: {
@@ -809,7 +809,7 @@ const getLeakDetails = (key: string, score: number) => {
         desc: "Some conscious adjustment depending on the room.",
         color: "bg-warning",
         bg: "bg-warning/10",
-        text: "text-warning-foreground",
+        text: "text-[#9a3412] dark:text-warning",
         width: "50%",
       },
       3: {
@@ -817,7 +817,7 @@ const getLeakDetails = (key: string, score: number) => {
         desc: "Ongoing, effortful self-monitoring throughout the day.",
         color: "bg-primary",
         bg: "bg-primary-light",
-        text: "text-primary-dark",
+        text: "text-primary-dark dark:text-orange-300",
         width: "75%",
       },
       4: {
@@ -825,7 +825,7 @@ const getLeakDetails = (key: string, score: number) => {
         desc: "Managing perception consumes the energy the actual work needs.",
         color: "bg-destructive",
         bg: "bg-destructive/10",
-        text: "text-destructive-foreground",
+        text: "text-destructive dark:text-[#f87171]",
         width: "100%",
       },
     },
@@ -835,7 +835,7 @@ const getLeakDetails = (key: string, score: number) => {
         desc: "No outside caregiving demands on recovery time right now.",
         color: "bg-success",
         bg: "bg-success/10",
-        text: "text-success-foreground",
+        text: "text-[#166534] dark:text-[#4ade80]",
         width: "25%",
       },
       2: {
@@ -843,7 +843,7 @@ const getLeakDetails = (key: string, score: number) => {
         desc: "Caregiving takes a bit of downtime most weeks.",
         color: "bg-warning",
         bg: "bg-warning/10",
-        text: "text-warning-foreground",
+        text: "text-[#9a3412] dark:text-warning",
         width: "50%",
       },
       3: {
@@ -851,7 +851,7 @@ const getLeakDetails = (key: string, score: number) => {
         desc: "Recovery time is routinely given up to caregiving.",
         color: "bg-primary",
         bg: "bg-primary-light",
-        text: "text-primary-dark",
+        text: "text-primary-dark dark:text-orange-300",
         width: "75%",
       },
       4: {
@@ -859,7 +859,7 @@ const getLeakDetails = (key: string, score: number) => {
         desc: "Caregiving fills every gap that recovery would otherwise use.",
         color: "bg-destructive",
         bg: "bg-destructive/10",
-        text: "text-destructive-foreground",
+        text: "text-destructive dark:text-[#f87171]",
         width: "100%",
       },
     },
@@ -869,7 +869,7 @@ const getLeakDetails = (key: string, score: number) => {
         desc: "Calm stretches are genuinely used to recharge.",
         color: "bg-success",
         bg: "bg-success/10",
-        text: "text-success-foreground",
+        text: "text-[#166534] dark:text-[#4ade80]",
         width: "25%",
       },
       2: {
@@ -877,7 +877,7 @@ const getLeakDetails = (key: string, score: number) => {
         desc: "Some discomfort with quiet, but it settles.",
         color: "bg-warning",
         bg: "bg-warning/10",
-        text: "text-warning-foreground",
+        text: "text-[#9a3412] dark:text-warning",
         width: "50%",
       },
       3: {
@@ -885,7 +885,7 @@ const getLeakDetails = (key: string, score: number) => {
         desc: "Calm periods get filled with manufactured pressure.",
         color: "bg-primary",
         bg: "bg-primary-light",
-        text: "text-primary-dark",
+        text: "text-primary-dark dark:text-orange-300",
         width: "75%",
       },
       4: {
@@ -893,7 +893,7 @@ const getLeakDetails = (key: string, score: number) => {
         desc: "Stillness reads as danger; urgency feels like the only safe state.",
         color: "bg-destructive",
         bg: "bg-destructive/10",
-        text: "text-destructive-foreground",
+        text: "text-destructive dark:text-[#f87171]",
         width: "100%",
       },
     },
@@ -903,7 +903,7 @@ const getLeakDetails = (key: string, score: number) => {
         desc: "What you feel and what shows are closely aligned.",
         color: "bg-success",
         bg: "bg-success/10",
-        text: "text-success-foreground",
+        text: "text-[#166534] dark:text-[#4ade80]",
         width: "25%",
       },
       2: {
@@ -911,7 +911,7 @@ const getLeakDetails = (key: string, score: number) => {
         desc: "A composed front is kept up regardless of internal state.",
         color: "bg-warning",
         bg: "bg-warning/10",
-        text: "text-warning-foreground",
+        text: "text-[#9a3412] dark:text-warning",
         width: "50%",
       },
       3: {
@@ -919,7 +919,7 @@ const getLeakDetails = (key: string, score: number) => {
         desc: "Enthusiasm or ease is performed even when it isn't felt.",
         color: "bg-primary",
         bg: "bg-primary-light",
-        text: "text-primary-dark",
+        text: "text-primary-dark dark:text-orange-300",
         width: "75%",
       },
       4: {
@@ -927,7 +927,7 @@ const getLeakDetails = (key: string, score: number) => {
         desc: "Contact with what's actually felt underneath has been lost.",
         color: "bg-destructive",
         bg: "bg-destructive/10",
-        text: "text-destructive-foreground",
+        text: "text-destructive dark:text-[#f87171]",
         width: "100%",
       },
     },
@@ -937,7 +937,7 @@ const getLeakDetails = (key: string, score: number) => {
         desc: "Ownership stays with whoever it actually belongs to.",
         color: "bg-success",
         bg: "bg-success/10",
-        text: "text-success-foreground",
+        text: "text-[#166534] dark:text-[#4ade80]",
         width: "25%",
       },
       2: {
@@ -945,7 +945,7 @@ const getLeakDetails = (key: string, score: number) => {
         desc: "The urge to step in shows up but is usually resisted.",
         color: "bg-warning",
         bg: "bg-warning/10",
-        text: "text-warning-foreground",
+        text: "text-[#9a3412] dark:text-warning",
         width: "50%",
       },
       3: {
@@ -953,7 +953,7 @@ const getLeakDetails = (key: string, score: number) => {
         desc: "Other people's problems get taken on out of habit.",
         color: "bg-primary",
         bg: "bg-primary-light",
-        text: "text-primary-dark",
+        text: "text-primary-dark dark:text-orange-300",
         width: "75%",
       },
       4: {
@@ -961,7 +961,7 @@ const getLeakDetails = (key: string, score: number) => {
         desc: "Nearly everything nearby becomes your responsibility to fix.",
         color: "bg-destructive",
         bg: "bg-destructive/10",
-        text: "text-destructive-foreground",
+        text: "text-destructive dark:text-[#f87171]",
         width: "100%",
       },
     },
@@ -1512,7 +1512,7 @@ export const ResultView = ({
     <div className="max-w-5xl mx-auto space-y-12 py-12 px-4">
       {/* Archetype Card */}
       <div className="text-center space-y-6 bg-card p-8 rounded-xl border border-border">
-        <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-primary-light text-primary rounded-lg text-xs uppercase tracking-widest font-medium">
+        <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-primary-light text-[#9a3412] dark:text-primary rounded-lg text-xs uppercase tracking-widest font-medium">
           <User className="w-3 h-3" /> Your burnout fingerprint
         </span>
         <h1 className="text-5xl font-light text-text-main tracking-tight">
@@ -1531,7 +1531,7 @@ export const ResultView = ({
                 <div key={b.profile} className="flex items-center gap-3">
                   <span className={cn(
                     "text-xs font-bold w-10 text-right shrink-0",
-                    i === 0 ? "text-primary" : "text-text-muted"
+                    i === 0 ? "text-[#9a3412] dark:text-primary" : "text-text-muted"
                   )}>
                     {b.percentage}%
                   </span>
@@ -1570,7 +1570,7 @@ export const ResultView = ({
             <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center text-primary-foreground">
               <Sparkles className="w-4 h-4" />
             </div>
-            <span className="text-xs uppercase tracking-widest font-medium text-primary">
+            <span className="text-xs uppercase tracking-widest font-medium text-[#9a3412] dark:text-primary">
               Nova's analysis
             </span>
           </div>
@@ -1666,7 +1666,7 @@ export const ResultView = ({
         <div className="grid grid-cols-1 md:grid-cols-3 gap-8 pt-4">
           {/* Insights */}
           <div className="space-y-4">
-            <div className="flex items-center gap-2 text-primary font-bold uppercase tracking-widest text-xs">
+            <div className="flex items-center gap-2 text-[#9a3412] dark:text-primary font-bold uppercase tracking-widest text-xs">
               <Activity className="w-4 h-4" /> Root Causes
             </div>
             <ul className="space-y-3">
@@ -1684,7 +1684,7 @@ export const ResultView = ({
 
           {/* Recovery Strategies */}
           <div className="space-y-4">
-            <div className="flex items-center gap-2 text-success font-bold uppercase tracking-widest text-xs">
+            <div className="flex items-center gap-2 text-success dark:text-[#4ade80] font-bold uppercase tracking-widest text-xs">
               <Moon className="w-4 h-4" /> Recovery Tactics
             </div>
             <ul className="space-y-3">
@@ -1702,7 +1702,7 @@ export const ResultView = ({
 
           {/* Boundary Strategies */}
           <div className="space-y-4">
-            <div className="flex items-center gap-2 text-warning font-bold uppercase tracking-widest text-xs">
+            <div className="flex items-center gap-2 text-[#9a3412] dark:text-warning font-bold uppercase tracking-widest text-xs">
               <ShieldCheck className="w-4 h-4" /> Boundary Scripts
             </div>
             <ul className="space-y-3">
@@ -1812,7 +1812,7 @@ export const ResultView = ({
                             className="text-text-muted hover:text-text-main p-1 rounded hover:bg-surface transition-all cursor-pointer"
                             title="Copy script to clipboard"
                           >
-                            {isCopied ? <Check className="w-3.5 h-3.5 text-success" /> : <Copy className="w-3.5 h-3.5" />}
+                            {isCopied ? <Check className="w-3.5 h-3.5 text-success dark:text-[#4ade80]" /> : <Copy className="w-3.5 h-3.5" />}
                           </button>
                         </div>
                       </div>
