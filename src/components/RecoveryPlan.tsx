@@ -548,7 +548,7 @@ export const RecoveryPlan = ({
               <Unlock className="w-4 h-4" />
             </div>
             <div>
-              <span className="text-[11px] uppercase tracking-widest font-medium text-primary">Your recovery plan</span>
+              <span className="text-[11px] uppercase tracking-widest font-medium text-[#9a3412] dark:text-primary">Your recovery plan</span>
               <h2 className="text-xl font-display font-medium text-text-main tracking-tight">Personalized Recovery Plan</h2>
             </div>
           </div>
@@ -578,7 +578,7 @@ export const RecoveryPlan = ({
               <span className="text-[10px] font-medium uppercase tracking-widest text-text-muted block">Recovery signals</span>
               <div className="flex justify-between items-center text-xs">
                 <span className="font-medium text-text-main">{highestDebt.label} Load</span>
-                <span className="font-mono font-bold text-destructive">{Math.round(highestDebtRatio * 100)}%</span>
+                <span className="font-mono font-bold text-destructive dark:text-[#f87171]">{Math.round(highestDebtRatio * 100)}%</span>
               </div>
               <div className="h-1.5 w-full bg-border rounded-full overflow-hidden">
                 <div
@@ -656,7 +656,7 @@ export const RecoveryPlan = ({
                   </div>
 
                   <div className="text-right shrink-0">
-                    <span className={cn("text-xs font-black tracking-tight", isDone ? "text-success" : "text-primary")}>
+                    <span className={cn("text-xs font-black tracking-tight", isDone ? "text-success dark:text-[#4ade80]" : "text-[#9a3412] dark:text-primary")}>
                       {isDone ? 'Claimed' : `+${act.points} XP`}
                     </span>
                   </div>
@@ -667,7 +667,7 @@ export const RecoveryPlan = ({
 
           {/* Practice Boundary Console */}
           <div className="card space-y-6 border border-border">
-            <div className="flex items-center gap-2 text-warning font-bold uppercase tracking-widest text-xs border-b border-border pb-3">
+            <div className="flex items-center gap-2 text-[#9a3412] dark:text-warning font-bold uppercase tracking-widest text-xs border-b border-border pb-3">
               <MessageSquare className="w-4 h-4" /> Communicate Lab: Boundary Rehearsal Room
             </div>
             
@@ -736,11 +736,11 @@ export const RecoveryPlan = ({
                 <div className="w-8 h-8 rounded-full bg-success text-white flex items-center justify-center mx-auto">
                   <Check className="w-4 h-4 stroke-[3px]" />
                 </div>
-                <h4 className="text-xs font-bold text-success uppercase tracking-wider">Boundary Rehearsal Complete</h4>
+                <h4 className="text-xs font-bold text-success dark:text-[#4ade80] uppercase tracking-wider">Boundary Rehearsal Complete</h4>
                 <p className="text-[11px] text-text-muted font-medium">Your nerve system memory has been upgraded. Consistent practice turns pushback into default habits.</p>
                 <button 
                   onClick={() => setRehearsalStep(1)}
-                  className="text-xs text-primary hover:underline font-bold"
+                  className="text-xs text-[#9a3412] dark:text-primary hover:underline font-bold"
                 >
                   Practice Again
                 </button>
@@ -796,7 +796,7 @@ export const RecoveryPlan = ({
           {/* Community Sync (currently: your own standing only) */}
           <div className="card space-y-6 border border-border">
             <div className="flex flex-col space-y-1 text-left border-b border-border pb-3">
-              <div className="flex items-center gap-2 text-primary font-bold uppercase tracking-widest text-xs">
+              <div className="flex items-center gap-2 text-[#9a3412] dark:text-primary font-bold uppercase tracking-widest text-xs">
                 <Users className="w-4 h-4" /> Your Progress
               </div>
               <span className="text-[10px] text-text-muted font-semibold">A real community leaderboard isn't built yet — this shows your own standing for now</span>
@@ -859,7 +859,7 @@ export const RecoveryPlan = ({
                     <span className="w-5 h-5 rounded-md flex items-center justify-center text-[10px] font-black bg-card text-text-muted">
                       1
                     </span>
-                    <span className="truncate max-w-[120px] font-mono text-primary">
+                    <span className="truncate max-w-[120px] font-mono text-[#9a3412] dark:text-primary">
                       {userEntry.name}
                     </span>
                   </div>

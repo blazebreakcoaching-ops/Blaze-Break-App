@@ -238,10 +238,10 @@ export const OrgDashboardValue = () => {
                     <div className="card border-primary/20 shadow-xl shadow-primary/5 bg-primary/5">
                       <div className="flex items-center gap-2 mb-2">
                         <Building className="w-4 h-4 text-primary" />
-                        <span className="text-xs uppercase tracking-widest font-bold text-primary">Total Annual Cost</span>
+                        <span className="text-xs uppercase tracking-widest font-bold text-[#9a3412] dark:text-primary">Total Annual Cost</span>
                       </div>
-                      <p className="text-2xl font-display font-bold text-primary mb-1">{estimatedAnnualCost != null ? `£${estimatedAnnualCost.toLocaleString()}` : '—'}</p>
-                      <p className="text-xs text-primary/80 leading-relaxed hidden sm:block">Sickness days × your entered daily cost per employee.</p>
+                      <p className="text-2xl font-display font-bold text-[#9a3412] dark:text-primary mb-1">{estimatedAnnualCost != null ? `£${estimatedAnnualCost.toLocaleString()}` : '—'}</p>
+                      <p className="text-xs text-[#9a3412] dark:text-primary leading-relaxed hidden sm:block">Sickness days × your entered daily cost per employee.</p>
                     </div>
                   </div>
 
@@ -290,7 +290,7 @@ export const OrgDashboardValue = () => {
                       These practices are generally associated with lower stress-related absence — not a promise specific to your numbers above, since we don't have enough data to model your organisation's specific response.
                     </p>
                     <div className="bg-primary/5 border border-primary/20 p-4 rounded-xl">
-                      <p className="text-xs text-primary font-medium leading-relaxed">
+                      <p className="text-xs text-[#9a3412] dark:text-primary font-medium leading-relaxed">
                         Reduce unnecessary meeting load, introduce weekly appreciation rituals, and protect uninterrupted recovery breaks. Update your figures above periodically — the chart tracks whether the cost per employee actually moves for your team.
                       </p>
                     </div>
@@ -305,8 +305,8 @@ export const OrgDashboardValue = () => {
               <div className="flex flex-col md:flex-row gap-8">
                 <div className="w-full md:w-1/3 space-y-4">
                   <div className="card border-primary/20 bg-primary/5">
-                    <h4 className="font-bold text-primary mb-2">Management Savings Planner</h4>
-                    <p className="text-xs text-primary/80 mb-6 leading-relaxed">
+                    <h4 className="font-bold text-[#9a3412] dark:text-primary mb-2">Management Savings Planner</h4>
+                    <p className="text-xs text-[#9a3412] dark:text-primary mb-6 leading-relaxed">
                       A general 30/60/90-day framework for addressing common pressure signals — a starting structure, not one generated from your specific data.
                     </p>
                     <div className="space-y-2">

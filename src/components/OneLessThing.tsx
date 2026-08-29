@@ -271,7 +271,7 @@ export const OneLessThing = ({ fingerprint, onAwardPoints }: OneLessThingProps) 
 
                     <div className="pt-10 flex flex-col sm:flex-row gap-4 items-center justify-between border-t border-border mt-10">
                       <span className="text-sm font-bold text-text-muted flex items-center gap-2">
-                         <CheckCircle2 className="w-4 h-4 text-success" /> Nice work, one less thing
+                         <CheckCircle2 className="w-4 h-4 text-success dark:text-[#4ade80]" /> Nice work, one less thing
                       </span>
                       <button onClick={handleReset} className={cn("rounded-xl px-7 py-3 font-display font-semibold transition-all duration-300 hover:opacity-90", result.bgColorClass, SOLID_BG_TEXT[result.colorClass] || 'text-white')}>
                         Task Removed
