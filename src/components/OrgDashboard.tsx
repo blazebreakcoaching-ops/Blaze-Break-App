@@ -511,24 +511,24 @@ export const OrgDashboard = () => {
                 <div className="flex flex-col sm:flex-row gap-4">
                    <div className="p-4 bg-destructive/10 border border-destructive/20 rounded-2xl flex-1 backdrop-blur-md">
                     <div className="flex items-center justify-between mb-1">
-                      <span className="text-xs uppercase font-bold tracking-widest text-destructive">Negative Mood Logs</span>
-                      <AlertTriangle className="w-4 h-4 text-destructive" />
+                      <span className="text-xs uppercase font-bold tracking-widest text-destructive dark:text-[#f87171]">Negative Mood Logs</span>
+                      <AlertTriangle className="w-4 h-4 text-destructive dark:text-[#f87171]" />
                     </div>
-                    <p className="text-3xl font-display font-bold text-text-main">{dashboardData.moodDistribution?.negative ?? 0} <span className="text-sm font-normal text-destructive">logs</span></p>
+                    <p className="text-3xl font-display font-bold text-text-main">{dashboardData.moodDistribution?.negative ?? 0} <span className="text-sm font-normal text-destructive dark:text-[#f87171]">logs</span></p>
                   </div>
                   <div className="p-4 bg-warning/10 border border-warning/20 rounded-2xl flex-1 backdrop-blur-md">
                     <div className="flex items-center justify-between mb-1">
-                      <span className="text-xs uppercase font-bold tracking-widest text-warning">Neutral Mood Logs</span>
-                      <TrendingUp className="w-4 h-4 text-warning" />
+                      <span className="text-xs uppercase font-bold tracking-widest text-[#9a3412] dark:text-warning">Neutral Mood Logs</span>
+                      <TrendingUp className="w-4 h-4 text-[#9a3412] dark:text-warning" />
                     </div>
-                    <p className="text-3xl font-display font-bold text-text-main">{dashboardData.moodDistribution?.neutral ?? 0} <span className="text-sm font-normal text-warning">logs</span></p>
+                    <p className="text-3xl font-display font-bold text-text-main">{dashboardData.moodDistribution?.neutral ?? 0} <span className="text-sm font-normal text-[#9a3412] dark:text-warning">logs</span></p>
                   </div>
                   <div className="p-4 bg-success/10 border border-success/20 rounded-2xl flex-1 backdrop-blur-md">
                     <div className="flex items-center justify-between mb-1">
-                      <span className="text-xs uppercase font-bold tracking-widest text-success">Positive Mood Logs</span>
-                      <ShieldCheck className="w-4 h-4 text-success" />
+                      <span className="text-xs uppercase font-bold tracking-widest text-[#166534] dark:text-[#4ade80]">Positive Mood Logs</span>
+                      <ShieldCheck className="w-4 h-4 text-[#166534] dark:text-[#4ade80]" />
                     </div>
-                    <p className="text-3xl font-display font-bold text-text-main">{dashboardData.moodDistribution?.positive ?? 0} <span className="text-sm font-normal text-success">logs</span></p>
+                    <p className="text-3xl font-display font-bold text-text-main">{dashboardData.moodDistribution?.positive ?? 0} <span className="text-sm font-normal text-[#166534] dark:text-[#4ade80]">logs</span></p>
                   </div>
                 </div>
 
@@ -703,7 +703,7 @@ export const OrgDashboard = () => {
                               <Lightbulb className="w-4 h-4" />
                             </div>
                             <div>
-                              <span className="text-xs font-black uppercase tracking-widest text-primary block mb-1">{s.theme}</span>
+                              <span className="text-xs font-black uppercase tracking-widest text-[#9a3412] dark:text-primary block mb-1">{s.theme}</span>
                               <p className="text-sm font-medium text-text-main">"{s.text}"</p>
                             </div>
                           </div>
@@ -723,7 +723,7 @@ export const OrgDashboard = () => {
                     {ACTIONS.map(action => (
                       <div key={action.id} className="p-4 rounded-xl bg-card/50 hover:bg-card border border-border transition-colors cursor-pointer group">
                         <span className="text-[11px] uppercase tracking-widest font-black text-text-muted block mb-1">{action.category}</span>
-                        <p className="text-xs font-bold text-text-main mb-3 group-hover:text-primary transition-colors">{action.title}</p>
+                        <p className="text-xs font-bold text-text-main mb-3 group-hover:text-[#9a3412] dark:group-hover:text-primary transition-colors">{action.title}</p>
                         <div className="flex gap-2">
                           <span className={cn("text-[11px] px-1.5 py-0.5 rounded", action.impact === 'High' ? "bg-success/20 text-[#166534] dark:text-[#4ade80]" : "bg-surface text-text-muted")}>Impact: {action.impact}</span>
                           <span className={cn("text-[11px] px-1.5 py-0.5 rounded bg-surface text-text-muted")}>Effort: {action.effort}</span>
@@ -787,7 +787,7 @@ export const OrgDashboard = () => {
                               onClick={() => handleRevokeAdmin(member.uid)}
                               disabled={memberActionUid === member.uid}
                               aria-label={`Revoke admin access for ${member.displayName || member.email || 'this person'}`}
-                              className="text-xs font-bold text-primary hover:opacity-70 transition-opacity flex items-center gap-1 disabled:opacity-50"
+                              className="text-xs font-bold text-[#9a3412] dark:text-primary hover:opacity-70 transition-opacity flex items-center gap-1 disabled:opacity-50"
                               title="Revoke admin access"
                             >
                               {memberActionUid === member.uid ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
@@ -797,7 +797,7 @@ export const OrgDashboard = () => {
                             <button
                               onClick={() => handleMakeAdmin(member.uid)}
                               disabled={memberActionUid === member.uid}
-                              className="text-xs font-bold text-text-muted hover:text-primary transition-colors flex items-center gap-1 disabled:opacity-50"
+                              className="text-xs font-bold text-text-muted hover:text-[#9a3412] dark:hover:text-primary transition-colors flex items-center gap-1 disabled:opacity-50"
                               title="Make organisation admin"
                             >
                               <ShieldPlus className="w-3.5 h-3.5" /> Make Admin
@@ -807,7 +807,7 @@ export const OrgDashboard = () => {
                             <button
                               onClick={() => setMemberToRemove({ uid: member.uid, label: member.displayName || member.email || 'this person' })}
                               disabled={memberActionUid === member.uid}
-                              className="text-xs font-bold text-text-muted hover:text-destructive transition-colors flex items-center gap-1 disabled:opacity-50"
+                              className="text-xs font-bold text-text-muted hover:text-destructive dark:hover:text-[#f87171] transition-colors flex items-center gap-1 disabled:opacity-50"
                               title="Remove from organisation"
                               aria-label={`Remove ${member.displayName || member.email || 'this person'} from organisation`}
                             >
@@ -884,7 +884,7 @@ export const OrgDashboard = () => {
                 <div className="card space-y-3">
                   <div className="flex items-center justify-between">
                     <h4 className="font-bold text-text-main text-sm flex items-center gap-2"><Mail className="w-4 h-4 text-primary" /> Invite by Email</h4>
-                    <label className="text-[11px] font-bold uppercase tracking-widest text-primary hover:opacity-80 transition-opacity cursor-pointer flex items-center gap-1">
+                    <label className="text-[11px] font-bold uppercase tracking-widest text-[#9a3412] dark:text-primary hover:opacity-80 transition-opacity cursor-pointer flex items-center gap-1">
                       <Upload className="w-3.5 h-3.5" /> Upload CSV
                       <input
                         type="file"
