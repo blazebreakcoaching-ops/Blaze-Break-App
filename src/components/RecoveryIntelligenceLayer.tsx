@@ -731,7 +731,7 @@ export const RecoveryIntelligenceLayer = ({ onAwardPoints, fingerprint }: Recove
         <div className="bg-surface/30 px-5 py-4 rounded-2xl border border-border/40 flex items-center gap-4">
           <Award className="w-6 h-6 text-primary" />
           <div>
-            <span className="text-[10px] font-black uppercase tracking-wider text-primary block">Recommended Focus</span>
+            <span className="text-[10px] font-black uppercase tracking-wider text-[#9a3412] dark:text-primary block">Recommended Focus</span>
             <span className="text-xs font-bold text-text-main">{getNextAction()}</span>
           </div>
         </div>
@@ -958,12 +958,12 @@ export const RecoveryIntelligenceLayer = ({ onAwardPoints, fingerprint }: Recove
                             <div className="flex flex-col items-end text-right">
                               <div className="flex items-center gap-1.5 font-black text-xs uppercase tracking-wider">
                                 {data.direction === 'rising' && (
-                                  <span className="text-primary flex items-center gap-1">
+                                  <span className="text-[#9a3412] dark:text-primary flex items-center gap-1">
                                     <TrendingUp className="w-4 h-4" /> Rising
                                   </span>
                                 )}
                                 {data.direction === 'falling' && (
-                                  <span className="text-warning flex items-center gap-1">
+                                  <span className="text-[#9a3412] dark:text-warning flex items-center gap-1">
                                     <TrendingDown className="w-4 h-4" /> Falling
                                   </span>
                                 )}
@@ -1012,7 +1012,7 @@ export const RecoveryIntelligenceLayer = ({ onAwardPoints, fingerprint }: Recove
                           <div className="pt-2">
                             <button
                               onClick={() => setExpandedFormula(isExpanded ? null : card.id)}
-                              className="text-[10px] font-black uppercase tracking-wider text-primary hover:opacity-80 flex items-center gap-1 cursor-pointer"
+                              className="text-[10px] font-black uppercase tracking-wider text-[#9a3412] dark:text-primary hover:opacity-80 flex items-center gap-1 cursor-pointer"
                             >
                               <Info className="w-3.5 h-3.5" />
                               {isExpanded ? "Hide calculation model" : "How is this calculated?"}
@@ -1081,7 +1081,7 @@ export const RecoveryIntelligenceLayer = ({ onAwardPoints, fingerprint }: Recove
                 className="bg-surface/10 p-8 rounded-[3.5rem] border border-border/40 space-y-8"
               >
                 <div>
-                  <span className="text-xs font-black uppercase tracking-widest text-primary">Relapse analysis log</span>
+                  <span className="text-xs font-black uppercase tracking-widest text-[#9a3412] dark:text-primary">Relapse analysis log</span>
                   <h3 className="text-2xl font-display font-black text-text-main mt-1">Stress Trigger Journal</h3>
                   <p className="text-xs text-text-muted mt-1">Identify visual/verbal/structural vectors setting off defense cycles.</p>
                 </div>
@@ -1153,11 +1153,11 @@ export const RecoveryIntelligenceLayer = ({ onAwardPoints, fingerprint }: Recove
                       if (!suggestion) return null;
                       return (
                         <div className="mt-2 p-3.5 bg-primary/10 border border-primary/20 rounded-xl space-y-2 text-left">
-                          <div className="flex items-center gap-1.5 text-[11px] uppercase font-black tracking-widest text-primary">
+                          <div className="flex items-center gap-1.5 text-[11px] uppercase font-black tracking-widest text-[#9a3412] dark:text-primary">
                             <Sparkles className="w-3.5 h-3.5" /> Nova Coaching: Pattern Recognized
                           </div>
                           <p className="text-[11px] font-bold text-text-main leading-relaxed">
-                            We detected a <span className="text-primary">{suggestion.situation}</span> pattern. Here is a recommended rehearsal pushback script:
+                            We detected a <span className="text-[#9a3412] dark:text-primary">{suggestion.situation}</span> pattern. Here is a recommended rehearsal pushback script:
                           </p>
                           <div className="p-3 bg-card/40 rounded-lg border border-white/5 font-mono text-xs text-[#9a3412] dark:text-primary-light select-all leading-relaxed whitespace-pre-wrap">
                             {suggestion.script}
@@ -1218,13 +1218,13 @@ export const RecoveryIntelligenceLayer = ({ onAwardPoints, fingerprint }: Recove
                 className="bg-surface/10 p-8 rounded-[3.5rem] border border-border/40 space-y-8"
               >
                 <div>
-                  <span className="text-xs font-black uppercase tracking-widest text-primary">Relational energy manager</span>
+                  <span className="text-xs font-black uppercase tracking-widest text-[#9a3412] dark:text-primary">Relational energy manager</span>
                   <h3 className="text-2xl font-display font-black text-text-main mt-1">Social Battery Tracker</h3>
                   <p className="text-xs text-text-muted mt-1">Dismantle relational burnout. Identify people overload and map recovery gaps.</p>
                 </div>
 
                 <div className="bg-surface dark:bg-surface p-6 rounded-2xl border border-border/40 text-center space-y-6">
-                  <div className="text-6xl font-display font-black text-primary">{socialBattery}%</div>
+                  <div className="text-6xl font-display font-black text-[#9a3412] dark:text-primary">{socialBattery}%</div>
                   
                   <div className="space-y-2">
                     <span className="text-[11px] font-black uppercase tracking-widest text-text-muted">Manually calibrating capacity scale:</span>
@@ -1259,7 +1259,7 @@ export const RecoveryIntelligenceLayer = ({ onAwardPoints, fingerprint }: Recove
                 <div className="p-4 bg-primary/5 border border-primary/10 rounded-2xl flex items-start gap-3">
                   <Info className="w-5 h-5 text-primary shrink-0 mt-0.5" />
                   <p className="text-xs text-text-muted leading-relaxed">
-                    Social battery drops below 40% activate warning boundaries. Nova automatically marks incoming group sync invites as <span className="text-primary font-bold">low priority</span> in your active load list.
+                    Social battery drops below 40% activate warning boundaries. Nova automatically marks incoming group sync invites as <span className="text-[#9a3412] dark:text-primary font-bold">low priority</span> in your active load list.
                   </p>
                 </div>
               </motion.div>
@@ -1375,7 +1375,7 @@ export const RecoveryIntelligenceLayer = ({ onAwardPoints, fingerprint }: Recove
                 className="bg-surface/10 p-8 rounded-[3.5rem] border border-border/40 space-y-8"
               >
                 <div>
-                  <span className="text-xs font-black uppercase tracking-widest text-primary">Rhythm calibration ritual</span>
+                  <span className="text-xs font-black uppercase tracking-widest text-[#9a3412] dark:text-primary">Rhythm calibration ritual</span>
                   <h3 className="text-2xl font-display font-black text-text-main mt-1">Weekly Review Ritual</h3>
                   <p className="text-xs text-text-muted mt-1">Consolidate chaotic data streams into clear architectural wisdom.</p>
                 </div>
@@ -1398,7 +1398,7 @@ export const RecoveryIntelligenceLayer = ({ onAwardPoints, fingerprint }: Recove
                 className="bg-surface/10 p-8 rounded-[3.5rem] border border-border/40 space-y-8"
               >
                 <div>
-                  <span className="text-xs font-black uppercase tracking-widest text-primary">Professional re-entry protective layout</span>
+                  <span className="text-xs font-black uppercase tracking-widest text-[#9a3412] dark:text-primary">Professional re-entry protective layout</span>
                   <h3 className="text-2xl font-display font-black text-text-main mt-1">Return-to-Work Planner</h3>
                   <p className="text-xs text-text-muted mt-1">Configure phased boundaries when returning from leave or high stress absence.</p>
                 </div>
@@ -1449,7 +1449,7 @@ export const RecoveryIntelligenceLayer = ({ onAwardPoints, fingerprint }: Recove
                 className="bg-surface/10 p-8 rounded-[3.5rem] border border-border/40 space-y-8"
               >
                 <div>
-                  <span className="text-xs font-black uppercase tracking-widest text-primary">Workspace deep block protector</span>
+                  <span className="text-xs font-black uppercase tracking-widest text-[#9a3412] dark:text-primary">Workspace deep block protector</span>
                   <h3 className="text-2xl font-display font-black text-text-main mt-1">Focus Shield Isolation</h3>
                   <p className="text-xs text-text-muted mt-1">Mute notification siphons during work hours to protect reserves.</p>
                 </div>
