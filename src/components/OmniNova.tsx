@@ -262,6 +262,8 @@ export const OmniNova = ({ activeTab, fingerprint, stats }: OmniNovaProps) => {
         whileHover={{ scale: 1.05 }}
         whileTap={{ scale: 0.95 }}
         onClick={() => setIsOpen(!isOpen)}
+        aria-label={isOpen ? "Close Nova Over-watch panel" : "Open Nova Over-watch panel"}
+        aria-expanded={isOpen}
         className="fixed bottom-20 md:bottom-6 right-6 z-50 w-14 h-14 rounded-xl bg-card border border-border shadow-lg flex items-center justify-center text-text-main hover:bg-card transition-colors group"
       >
         <Sparkles className="w-6 h-6 text-primary group-hover:rotate-12 transition-transform" />
@@ -277,14 +279,16 @@ export const OmniNova = ({ activeTab, fingerprint, stats }: OmniNovaProps) => {
               "fixed bottom-36 md:bottom-24 right-6 z-50 flex flex-col bg-card border border-border shadow-lg rounded-xl overflow-hidden transition-all duration-300",
               isExpanded ? "w-[calc(100vw-3rem)] md:w-[450px] h-[75vh]" : "w-[calc(100vw-3rem)] md:w-[350px] h-[500px]"
             )}
+            role="dialog"
+            aria-labelledby="omninova-panel-title"
           >
             <div className="flex items-center justify-between p-4 bg-card border-b border-border">
               <div className="flex items-center gap-3">
                 <div className="w-8 h-8 rounded-lg bg-primary/20 flex items-center justify-center">
-                  <Sparkles className="w-4 h-4 text-primary" />
+                  <Sparkles className="w-4 h-4 text-[#9a3412] dark:text-primary" />
                 </div>
                 <div>
-                  <h4 className="text-sm font-bold text-text-main leading-none">Nova Over-watch</h4>
+                  <h4 id="omninova-panel-title" className="text-sm font-bold text-text-main leading-none">Nova Over-watch</h4>
                   <p className="text-xs text-text-muted mt-1 uppercase tracking-widest flex items-center gap-1">
                     <span className="w-1.5 h-1.5 rounded-full bg-success animate-pulse" />
                     NLP ACTIVE | {activeTab}
@@ -294,6 +298,7 @@ export const OmniNova = ({ activeTab, fingerprint, stats }: OmniNovaProps) => {
               <div className="flex items-center gap-1">
                 <button 
                   onClick={toggleVoiceMode}
+                  aria-label={isVoiceActive ? "Turn off live voice copilot" : "Turn on live voice copilot"}
                   className={cn("p-2 rounded-lg transition-colors border", isVoiceActive ? "bg-destructive/20 border-destructive text-destructive animate-pulse" : "border-transparent text-text-muted hover:bg-surface")}
                   title="Toggle Live Voice Copilot"
                 >
@@ -301,12 +306,14 @@ export const OmniNova = ({ activeTab, fingerprint, stats }: OmniNovaProps) => {
                 </button>
                 <button 
                   onClick={() => setIsExpanded(!isExpanded)}
+                  aria-label={isExpanded ? "Minimize panel" : "Expand panel"}
                   className="p-2 rounded-lg hover:bg-card text-text-muted transition-colors"
                 >
                   {isExpanded ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
                 </button>
                 <button 
                   onClick={() => setIsOpen(false)}
+                  aria-label="Close Nova Over-watch panel"
                   className="p-2 rounded-lg hover:bg-card text-text-muted transition-colors"
                 >
                   <X className="w-4 h-4" />
@@ -341,7 +348,7 @@ export const OmniNova = ({ activeTab, fingerprint, stats }: OmniNovaProps) => {
                 <div className="absolute inset-x-0 bottom-0 top-1/2 bg-gradient-to-t from-destructive/5 to-transparent pointer-events-none" />
               </div>
             ) : (
-              <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-surface">
+              <div role="log" aria-live="polite" aria-relevant="additions" className="flex-1 overflow-y-auto p-4 space-y-4 bg-surface">
                 {messages.map((msg, i) => (
                   <div key={i} className={cn("flex", msg.role === 'user' ? 'justify-end' : 'justify-start')}>
                     <div className={cn(
@@ -356,7 +363,7 @@ export const OmniNova = ({ activeTab, fingerprint, stats }: OmniNovaProps) => {
                         <div className="markdown-body text-text-main font-medium leading-relaxed prose-sm relative group">
                           <ReactMarkdown>{msg.text}</ReactMarkdown>
                           {msg.privacyMetadata && (
-                            <div className="mt-2.5 pt-2 border-t border-border/10 text-[11px] text-text-muted flex items-start gap-1 cursor-help group-hover:text-primary transition-colors" title={msg.privacyMetadata.rationale}>
+                            <div className="mt-2.5 pt-2 border-t border-border/10 text-[11px] text-text-muted flex items-start gap-1 cursor-help group-hover:text-[#9a3412] dark:group-hover:text-primary transition-colors" title={msg.privacyMetadata.rationale}>
                               <span className="shrink-0 text-success" aria-label="Privacy Shield">🛡️</span>
                               <span>Permissioned context used: Uses {msg.privacyMetadata.modulesUsed?.length > 0 ? "compact " + msg.privacyMetadata.modulesUsed.map((m: string) => m.replace(/_|-/g, ' ')).join(', ') + " summary" : "no personalized context"}. No raw notes shared (completely hidden).</span>
                             </div>
@@ -391,6 +398,7 @@ export const OmniNova = ({ activeTab, fingerprint, stats }: OmniNovaProps) => {
                 <button
                   onClick={handleSend}
                   disabled={!input.trim() || isTyping || isVoiceActive}
+                  aria-label="Send message to Nova"
                   className="w-12 h-12 flex items-center justify-center bg-primary text-primary-foreground rounded-xl disabled:opacity-50 hover:bg-primary-dark transition-colors shrink-0"
                 >
                   <Send className="w-4 h-4" />
