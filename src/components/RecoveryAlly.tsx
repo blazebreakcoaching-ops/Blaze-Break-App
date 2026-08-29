@@ -239,9 +239,9 @@ export const RecoveryAlly = () => {
             Invite a trusted friend, mentor, or partner to check in on your recovery — you choose exactly what they can see, and you can turn any of it off at any time. They don't need their own account.
           </p>
           <div className="bg-surface border border-destructive/20 p-4 rounded-lg flex gap-3 text-xs text-text-muted max-w-lg">
-            <AlertTriangle className="w-5 h-5 text-destructive/80 shrink-0" />
+            <AlertTriangle className="w-5 h-5 text-destructive/80 dark:text-[#f87171] shrink-0" />
             <div>
-              <strong className="text-destructive">This isn't for crises.</strong> It's for everyday accountability. If you're in crisis or need immediate support, use <em className="text-text-muted">Guardian Relay</em> instead.
+              <strong className="text-destructive dark:text-[#f87171]">This isn't for crises.</strong> It's for everyday accountability. If you're in crisis or need immediate support, use <em className="text-text-muted">Guardian Relay</em> instead.
             </div>
           </div>
         </div>
@@ -303,7 +303,7 @@ export const RecoveryAlly = () => {
                 </div>
                 <div>
                   <h3 className="font-bold text-text-main text-lg tracking-tight">{allyName}</h3>
-                  <span className="inline-flex items-center gap-1.5 text-[11px] uppercase font-medium tracking-widest text-success dark:text-success mt-1">
+                  <span className="inline-flex items-center gap-1.5 text-[11px] uppercase font-medium tracking-widest text-success dark:text-[#4ade80] mt-1">
                     <CheckCircle2 className="w-3 h-3" /> Invited
                   </span>
                 </div>
@@ -316,10 +316,11 @@ export const RecoveryAlly = () => {
                     <code className="text-[11px] text-text-main truncate flex-1">{shareLink}</code>
                     <button
                       onClick={() => { navigator.clipboard.writeText(shareLink); setLinkCopied(true); setTimeout(() => setLinkCopied(false), 2000); }}
+                      aria-label={linkCopied ? "Link copied" : "Copy private link to clipboard"}
                       className="text-text-muted hover:text-primary transition-colors shrink-0"
                       title="Copy link"
                     >
-                      {linkCopied ? <CheckCircle2 className="w-3.5 h-3.5 text-success" /> : <Copy className="w-3.5 h-3.5" />}
+                      {linkCopied ? <CheckCircle2 className="w-3.5 h-3.5 text-success dark:text-[#4ade80]" /> : <Copy className="w-3.5 h-3.5" />}
                     </button>
                   </div>
                 </div>
@@ -441,7 +442,15 @@ export const RecoveryAlly = () => {
                     >
                       {completedToday && <div className="absolute inset-y-0 left-0 w-1 bg-success" />}
 
-                      <div className="flex items-center gap-4 cursor-pointer flex-1" onClick={() => toggleGoalToday(goal)}>
+                      <div
+                        className="flex items-center gap-4 cursor-pointer flex-1"
+                        onClick={() => toggleGoalToday(goal)}
+                        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleGoalToday(goal); } }}
+                        role="checkbox"
+                        aria-checked={completedToday}
+                        aria-label={`Mark "${goal.text}" as ${completedToday ? 'not done' : 'done'} for today`}
+                        tabIndex={0}
+                      >
                         <div className={cn("w-6 h-6 rounded-md flex items-center justify-center shrink-0 border-2 transition-all", completedToday ? "bg-success border-success text-white" : "border-border dark:border-muted-foreground text-transparent")}>
                           <CheckSquare className="w-4 h-4" />
                         </div>
@@ -449,13 +458,14 @@ export const RecoveryAlly = () => {
                           <span className={cn("text-sm font-bold transition-all block", completedToday ? "text-text-muted line-through" : "text-text-main")}>{goal.text}</span>
                           <div className="flex items-center gap-3 mt-1.5 opacity-60 group-hover:opacity-100 transition-opacity">
                             <span className="text-[11px] font-black uppercase tracking-widest text-text-muted">{goal.category}</span>
-                            {streak > 0 && <span className="text-[11px] font-black uppercase tracking-widest text-warning flex items-center gap-1"><Zap className="w-3 h-3" /> {streak} Day Streak</span>}
+                            {streak > 0 && <span className="text-[11px] font-black uppercase tracking-widest text-[#9a3412] dark:text-warning flex items-center gap-1"><Zap className="w-3 h-3" /> {streak} Day Streak</span>}
                           </div>
                         </div>
                       </div>
                       <button
                         onClick={() => deleteGoal(goal.id)}
-                        className="text-text-muted hover:text-destructive transition-colors opacity-0 group-hover:opacity-100 shrink-0 ml-2"
+                        aria-label={`Remove goal: ${goal.text}`}
+                        className="text-text-muted hover:text-destructive transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100 focus-visible:ring-2 focus-visible:ring-destructive rounded shrink-0 ml-2"
                         title="Remove goal"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
@@ -491,7 +501,7 @@ export const RecoveryAlly = () => {
                     className="flex gap-4"
                   >
                     <div className="flex flex-col items-center">
-                      <div className={cn("w-8 h-8 rounded-full flex items-center justify-center shrink-0 border-2 text-xs", enc.type === 'system' ? "bg-border dark:bg-surface border-border text-text-muted" : "bg-primary-light dark:bg-primary/20 border-primary-light dark:border-primary/30 text-primary dark:text-primary")}>
+                      <div className={cn("w-8 h-8 rounded-full flex items-center justify-center shrink-0 border-2 text-xs", enc.type === 'system' ? "bg-border dark:bg-surface border-border text-text-muted" : "bg-primary-light dark:bg-primary/20 border-primary-light dark:border-primary/30 text-[#9a3412] dark:text-primary")}>
                         {enc.type === 'system' ? <Clock className="w-3.5 h-3.5" /> : allyName.charAt(0)}
                       </div>
                       {i !== encouragements.length - 1 && <div className="w-px h-full bg-border mt-2" />}
