@@ -331,7 +331,7 @@ export const BoundaryRehearsal = ({ onAwardPoints, onRehearsalComplete }: { onAw
                 <div>
                   <h2 className="text-2xl lg:text-3xl font-display font-medium text-text-main tracking-tight">Boundary Rehearsal</h2>
                   <div className="flex items-center gap-3 mt-2">
-                    <span className="text-xs font-medium uppercase tracking-widest text-primary flex items-center gap-1.5"><Network className="w-3 h-3" /> Core Pillar: Practice</span>
+                    <span className="text-xs font-medium uppercase tracking-widest text-[#9a3412] dark:text-primary flex items-center gap-1.5"><Network className="w-3 h-3" /> Core Pillar: Practice</span>
                   </div>
                 </div>
                 <div className="mt-4 md:mt-0 flex bg-surface border border-border rounded-lg p-1">
@@ -460,7 +460,7 @@ export const BoundaryRehearsal = ({ onAwardPoints, onRehearsalComplete }: { onAw
                   <ReactMarkdown
                     components={{
                       h3: ({node, ...props}) => (
-                        <h3 className="text-success font-bold text-xs uppercase tracking-widest mt-6 mb-3 border-b border-border pb-2" {...props} />
+                        <h3 className="text-success dark:text-[#4ade80] font-bold text-xs uppercase tracking-widest mt-6 mb-3 border-b border-border pb-2" {...props} />
                       ),
                       p: ({node, ...props}) => (
                         <div className="relative group mb-6">
@@ -471,7 +471,7 @@ export const BoundaryRehearsal = ({ onAwardPoints, onRehearsalComplete }: { onAw
                               if (text) copyToClipboard(text);
                             }}
                             aria-label="Copy script to clipboard"
-                            className="absolute right-4 top-4 p-2 bg-card rounded-lg border border-border text-text-muted hover:text-success opacity-0 group-hover:opacity-100 focus:opacity-100 focus-visible:ring-2 focus-visible:ring-primary transition-all"
+                            className="absolute right-4 top-4 p-2 bg-card rounded-lg border border-border text-text-muted hover:text-success dark:hover:text-[#4ade80] opacity-0 group-hover:opacity-100 focus:opacity-100 focus-visible:ring-2 focus-visible:ring-primary transition-all"
                             title="Copy script"
                           >
                             <Copy className="w-4 h-4" />
@@ -579,8 +579,8 @@ export const BoundaryRehearsal = ({ onAwardPoints, onRehearsalComplete }: { onAw
                       <Shield className="w-4 h-4 text-primary" />
                     </div>
                     <div>
-                       <span className="text-[11px] font-medium uppercase tracking-widest block text-primary mb-1">Nova's Suggestion</span>
-                       <span className="text-xs text-primary font-medium leading-relaxed">{selected?.advice}</span>
+                       <span className="text-[11px] font-medium uppercase tracking-widest block text-[#9a3412] dark:text-primary mb-1">Nova's Suggestion</span>
+                       <span className="text-xs text-[#9a3412] dark:text-primary font-medium leading-relaxed">{selected?.advice}</span>
                     </div>
                   </div>
                 </div>
@@ -648,7 +648,7 @@ export const BoundaryRehearsal = ({ onAwardPoints, onRehearsalComplete }: { onAw
                       </div>
                       <div>
                         <h4 className="text-xl font-bold text-text-main tracking-tight">Your Feedback</h4>
-                        <span className="text-[11px] uppercase font-medium tracking-widest text-primary">Nova Insight</span>
+                        <span className="text-[11px] uppercase font-medium tracking-widest text-[#9a3412] dark:text-primary">Nova Insight</span>
                       </div>
                     </div>
                   </div>
@@ -673,7 +673,7 @@ export const BoundaryRehearsal = ({ onAwardPoints, onRehearsalComplete }: { onAw
                           className="p-8 bg-surface rounded-xl border border-border space-y-6"
                         >
                           <div className="flex items-center gap-3 border-b border-border pb-4">
-                             <Zap className="w-5 h-5 text-success" />
+                             <Zap className="w-5 h-5 text-success dark:text-[#4ade80]" />
                              <span className="text-xs font-medium uppercase tracking-widest text-[#166534] dark:text-[#4ade80]">A closer look</span>
                           </div>
                           <div className="prose dark:prose-invert max-w-none text-text-muted leading-relaxed font-mono text-sm">
@@ -698,7 +698,7 @@ export const BoundaryRehearsal = ({ onAwardPoints, onRehearsalComplete }: { onAw
                       
                       <div className="p-6 bg-success/10 rounded-2xl border border-success/20 space-y-3">
                          <div className="flex items-center gap-3">
-                           <Trophy className="w-5 h-5 text-success" />
+                           <Trophy className="w-5 h-5 text-success dark:text-[#4ade80]" />
                            <span className="text-xs font-black uppercase tracking-widest text-[#166534] dark:text-[#4ade80]">Parameter Locked</span>
                          </div>
                          <p className="text-sm text-[#166534] dark:text-[#4ade80] font-medium">"You’ve successfully identified the leak in this interaction. Consistency is your next move."</p>
