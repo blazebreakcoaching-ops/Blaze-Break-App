@@ -433,7 +433,7 @@ export const OrgDashboardMoments = () => {
           <motion.div key="challenges" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95 }} className="space-y-6">
             <div className="card border-dashed border-border bg-surface dark:bg-surface/20">
               <div className="flex items-center gap-2 mb-2">
-                <AlertTriangle className="w-4 h-4 text-warning" />
+                <AlertTriangle className="w-4 h-4 text-[#9a3412] dark:text-warning" />
                 <span className="text-xs font-bold text-text-main">No leaderboards. No humiliation.</span>
               </div>
               <p className="text-sm text-text-muted">
@@ -622,7 +622,7 @@ export const OrgDashboardMoments = () => {
                    {wins.map(win => (
                      <div key={win.id} className="p-4 border border-border bg-surface rounded-xl flex items-center justify-between group">
                        <div className="flex items-center gap-3 min-w-0">
-                         <CheckCircle2 className="w-5 h-5 text-success shrink-0" />
+                         <CheckCircle2 className="w-5 h-5 text-success dark:text-[#4ade80] shrink-0" />
                          <span className="text-sm font-medium text-text-main truncate">{win.title || win.content}</span>
                        </div>
                        <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity shrink-0">
