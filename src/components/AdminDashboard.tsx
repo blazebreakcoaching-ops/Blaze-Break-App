@@ -406,7 +406,7 @@ export const AdminDashboard = () => {
             Required: Platform Admin Role
           </p>
           <p className="text-sm text-text-muted leading-relaxed">
-            Your current account role (<span className="text-primary font-bold font-mono">{appRole}</span>) is unauthorized to read platform security custom claims or audit logs.
+            Your current account role (<span className="text-[#9a3412] dark:text-primary font-bold font-mono">{appRole}</span>) is unauthorized to read platform security custom claims or audit logs.
           </p>
         </div>
 
@@ -1070,24 +1070,24 @@ export const AdminDashboard = () => {
               <div className="p-5 bg-surface dark:bg-card border border-border rounded-2xl space-y-1">
                 <span className="text-xs font-black uppercase tracking-wider text-text-muted block">Total De-escalations</span>
                 <h3 className="text-3xl font-display font-bold text-text-main">{metrics.totalSessions}</h3>
-                <span className="text-[10px] text-success font-semibold flex items-center gap-1">
+                <span className="text-[10px] text-success dark:text-[#4ade80] font-semibold flex items-center gap-1">
                   <Heart className="w-3 h-3 fill-current" /> Active Somatic Handrails
                 </span>
               </div>
               <div className="p-5 bg-surface dark:bg-card border border-border rounded-2xl space-y-1">
                 <span className="text-xs font-black uppercase tracking-wider text-text-muted block">Average Entry Intensity</span>
-                <h3 className="text-3xl font-display font-bold text-destructive">{metrics.avgStartIntensity} <span className="text-xs text-text-muted">/10</span></h3>
+                <h3 className="text-3xl font-display font-bold text-destructive dark:text-[#f87171]">{metrics.avgStartIntensity} <span className="text-xs text-text-muted">/10</span></h3>
                 <span className="text-[10px] text-text-muted">Subjective GAD Stress Baseline</span>
               </div>
               <div className="p-5 bg-surface dark:bg-card border border-border rounded-2xl space-y-1">
                 <span className="text-xs font-black uppercase tracking-wider text-text-muted block">Average Exit Intensity</span>
-                <h3 className="text-3xl font-display font-bold text-success">{metrics.avgEndIntensity} <span className="text-xs text-text-muted">/10</span></h3>
+                <h3 className="text-3xl font-display font-bold text-success dark:text-[#4ade80]">{metrics.avgEndIntensity} <span className="text-xs text-text-muted">/10</span></h3>
                 <span className="text-[10px] text-text-muted">Post-Somatic Stabilization State</span>
               </div>
               <div className="p-5 bg-surface dark:bg-card border border-border rounded-2xl space-y-1">
                 <span className="text-xs font-black uppercase tracking-wider text-text-muted block">System Effectiveness</span>
-                <h3 className="text-3xl font-display font-bold text-primary">-{metrics.avgReduction} <span className="text-xs text-text-muted">CR</span></h3>
-                <span className="text-[10px] text-success font-semibold">Average Arousal Drop</span>
+                <h3 className="text-3xl font-display font-bold text-[#9a3412] dark:text-primary">-{metrics.avgReduction} <span className="text-xs text-text-muted">CR</span></h3>
+                <span className="text-[10px] text-success dark:text-[#4ade80] font-semibold">Average Arousal Drop</span>
               </div>
             </div>
 
@@ -1149,7 +1149,7 @@ export const AdminDashboard = () => {
       <div className="bg-primary/5 border border-primary/20 p-5 rounded-2xl text-xs text-text-muted flex gap-3">
         <ShieldCheck className="w-5 h-5 text-primary shrink-0 mt-0.5" />
         <div>
-          <strong className="text-primary block mb-1">Privacy & Role Hierarchy Guideline</strong> 
+          <strong className="text-[#9a3412] dark:text-primary block mb-1">Privacy & Role Hierarchy Guideline</strong> 
           Every administrative claim promotion (e.g. `platform_owner`, `platform_admin`, etc.) overrides the token claims in Firebase. Under GDPR, NICE, and standard professional guidelines, this board enforces complete isolation of clinical records—no clinical diagnosis data of Generalised Anxiety Disorder (GAD) is ever logged or exposed to organization-level dashboards.
         </div>
       </div>
