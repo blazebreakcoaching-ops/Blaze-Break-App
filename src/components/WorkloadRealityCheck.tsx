@@ -478,7 +478,7 @@ export const WorkloadRealityCheck = ({ fingerprint, onAwardPoints }: WorkloadRea
                   </div>
                   <div>
                     <h3 className="text-sm font-display font-bold text-text-main tracking-tight">Nova's Take</h3>
-                    <p className="text-[11px] uppercase tracking-[0.2em] font-black text-primary">Cutting Through the Urgency</p>
+                    <p className="text-[11px] uppercase tracking-[0.2em] font-black text-[#9a3412] dark:text-primary">Cutting Through the Urgency</p>
                   </div>
                 </div>
                 <p className="text-sm text-text-main font-serif italic leading-relaxed">
@@ -498,8 +498,8 @@ export const WorkloadRealityCheck = ({ fingerprint, onAwardPoints }: WorkloadRea
                   <ShieldAlert className="w-5 h-5 animate-pulse" />
                 </div>
                 <div>
-                  <h4 className="text-sm font-bold text-destructive">Critical: Fatigue Probability is {fatigueProbability}%</h4>
-                  <p className="text-xs text-destructive/80 mt-1 leading-relaxed">
+                  <h4 className="text-sm font-bold text-destructive dark:text-[#f87171]">Critical: Fatigue Probability is {fatigueProbability}%</h4>
+                  <p className="text-xs text-destructive/80 dark:text-[#f87171] mt-1 leading-relaxed">
                     You are severely over-scheduled. The accumulated cognitive load of this pending task list exceeds your baseline recovery velocity. You must delegate or delete tasks before the week begins to avoid a systemic crash.
                   </p>
                 </div>
@@ -511,7 +511,7 @@ export const WorkloadRealityCheck = ({ fingerprint, onAwardPoints }: WorkloadRea
                   <Plus className="w-5 h-5" />
                 </div>
                 <div>
-                  <h4 className="text-xs font-black uppercase tracking-wider text-primary">Task Calibration</h4>
+                  <h4 className="text-xs font-black uppercase tracking-wider text-[#9a3412] dark:text-primary">Task Calibration</h4>
                   <p className="text-[11px] text-text-muted mt-0.5">Define a task with its specific energetic toll, prioritization node, and deadline.</p>
                 </div>
               </div>
@@ -844,7 +844,7 @@ export const WorkloadRealityCheck = ({ fingerprint, onAwardPoints }: WorkloadRea
                               <button
                                 onClick={() => handleSaveEdit(task.id)}
                                 aria-label="Save calibration"
-                                className="p-2 border border-success/30 rounded-xl text-success hover:text-white hover:bg-success transition-all cursor-pointer shadow-sm"
+                                className="p-2 border border-success/30 rounded-xl text-success dark:text-[#4ade80] hover:text-white hover:bg-success transition-all cursor-pointer shadow-sm"
                                 title="Save calibration"
                               >
                                 <Check className="w-4 h-4" />
@@ -892,7 +892,7 @@ export const WorkloadRealityCheck = ({ fingerprint, onAwardPoints }: WorkloadRea
 
             {/* Clear Next Step action instruction block */}
             <div className="bg-gradient-to-r from-primary/5 via-primary/5 to-surface/20 border border-border/40 p-6 rounded-2xl space-y-4">
-              <span className="text-xs font-black uppercase tracking-widest text-primary flex items-center gap-1">
+              <span className="text-xs font-black uppercase tracking-widest text-[#9a3412] dark:text-primary flex items-center gap-1">
                 <Sparkles className="w-3.5 h-3.5 animate-bounce" /> Your Prescribed Recovery Action Plan Step
               </span>
               <p className="text-xs text-text-muted leading-relaxed">

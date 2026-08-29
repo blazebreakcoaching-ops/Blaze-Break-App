@@ -22,7 +22,7 @@ export const CrisisSupportContent = () => (
             <span className="text-sm font-bold text-[#9a3412] dark:text-warning block">Samaritans</span>
             <span className="text-[11px] font-black uppercase tracking-widest text-[#9a3412] dark:text-warning font-mono">Call 116 123 &middot; free &middot; 24/7</span>
           </div>
-          <PhoneCall className="w-5 h-5 text-warning group-hover:scale-110 transition-transform shrink-0" />
+          <PhoneCall className="w-5 h-5 text-[#9a3412] dark:text-warning group-hover:scale-110 transition-transform shrink-0" />
         </a>
         <a href="sms:85258?body=SHOUT" className="flex items-center justify-between p-4 rounded-xl border border-primary-light dark:border-primary-dark/30 bg-primary-light dark:bg-primary-dark/20 hover:bg-primary-light dark:hover:bg-primary-dark/40 transition-colors group">
           <div className="space-y-1.5">

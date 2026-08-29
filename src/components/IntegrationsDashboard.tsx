@@ -581,7 +581,7 @@ export const IntegrationsDashboard = () => {
       </div>
 
       <div className="card p-8 bg-card border-border text-text-main space-y-6">
-        <div className="flex items-center gap-3 text-primary group/tooltip relative">
+        <div className="flex items-center gap-3 text-[#9a3412] dark:text-primary group/tooltip relative">
           <Key className="w-6 h-6" />
           <h4 className="font-bold uppercase tracking-widest flex items-center gap-2">
             API Configuration
