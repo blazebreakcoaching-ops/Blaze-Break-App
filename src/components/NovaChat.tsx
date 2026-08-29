@@ -1036,7 +1036,7 @@ export const NovaChat = ({
                   <button
                     key={i}
                     onClick={() => handleSend(s.prompt)}
-                    className="p-4 text-sm font-medium text-text-muted border border-border hover:border-primary/40 hover:text-primary transition-colors rounded-lg"
+                    className="p-4 text-sm font-medium text-text-muted border border-border hover:border-primary/40 hover:text-[#9a3412] dark:hover:text-primary transition-colors rounded-lg"
                   >
                     {s.label}
                   </button>
@@ -1167,7 +1167,7 @@ export const NovaChat = ({
                                 "p-1.5 rounded-lg transition-all border cursor-pointer",
                                 ratings[i] === "up"
                                   ? "bg-success/10 text-success dark:text-[#4ade80] border-success/20"
-                                  : "bg-surface/30 text-text-muted hover:text-success border-transparent",
+                                  : "bg-surface/30 text-text-muted hover:text-success dark:hover:text-[#4ade80] border-transparent",
                               )}
                               aria-pressed={ratings[i] === "up"}
                               aria-label="Helpful advice"
@@ -1281,7 +1281,7 @@ export const NovaChat = ({
                             <motion.div
                               initial={{ opacity: 0, y: 5 }}
                               animate={{ opacity: 1, y: 0 }}
-                              className="text-[11px] text-success font-extrabold uppercase tracking-widest flex items-center gap-1 animate-pulse"
+                              className="text-[11px] text-success dark:text-[#4ade80] font-extrabold uppercase tracking-widest flex items-center gap-1 animate-pulse"
                             >
                               <Check className="w-3 h-3 shrink-0" />{" "}
                               Recalibrated. Feedback added to Nova memory
@@ -1306,8 +1306,8 @@ export const NovaChat = ({
                             <Target className="w-4 h-4" />
                           </div>
                           <div className="space-y-0.5">
-                            <span className="text-[11px] font-medium uppercase tracking-widest text-primary flex items-center gap-1">
-                              <Sparkles className="w-3 h-3 text-primary" />{" "}
+                            <span className="text-[11px] font-medium uppercase tracking-widest text-[#9a3412] dark:text-primary flex items-center gap-1">
+                              <Sparkles className="w-3 h-3 text-[#9a3412] dark:text-primary" />{" "}
                               Suggested for you
                             </span>
                             <h5 className="text-xs font-bold text-text-main">
@@ -1367,7 +1367,7 @@ export const NovaChat = ({
             >
               <div className="flex gap-4 max-w-[80%] items-start">
                 <div className="w-9 h-9 rounded-[1rem] bg-primary flex items-center justify-center shrink-0 shadow-lg relative overflow-hidden">
-                  <Sparkles className="w-4 h-4 text-text-main relative z-10" />
+                  <Sparkles className="w-4 h-4 text-primary-foreground relative z-10" />
                   <motion.div
                     animate={{
                       rotate: 360,
@@ -1383,7 +1383,7 @@ export const NovaChat = ({
                 </div>
                 <div className="space-y-4 pt-1">
                   <div className="flex items-center gap-3">
-                    <span className="text-xs font-black uppercase tracking-[0.25em] text-primary animate-pulse">
+                    <span className="text-xs font-black uppercase tracking-[0.25em] text-[#9a3412] dark:text-primary animate-pulse">
                       Nova Synthesis
                     </span>
                     <div className="flex gap-1.5">
