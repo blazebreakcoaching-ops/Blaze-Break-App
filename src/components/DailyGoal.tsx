@@ -113,8 +113,8 @@ export const DailyGoal = ({ shipStage }: { shipStage: SHIPStage }) => {
       ) : (
         <div className="mt-4 p-4 rounded-xl bg-success/10 border border-success/20 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <CheckCircle className="w-5 h-5 text-success shrink-0" />
-            <span className="font-semibold text-success-foreground dark:text-success">{goal}</span>
+            <CheckCircle className="w-5 h-5 text-success dark:text-[#4ade80] shrink-0" />
+            <span className="font-semibold text-[#166534] dark:text-[#4ade80]">{goal}</span>
           </div>
           <button
             onClick={() => {
@@ -122,7 +122,7 @@ export const DailyGoal = ({ shipStage }: { shipStage: SHIPStage }) => {
               setGoal('');
               setTodaysGoalId(null);
             }}
-            className="text-xs font-black uppercase tracking-widest text-success hover:text-success-foreground  hover:opacity-100"
+            className="text-xs font-black uppercase tracking-widest text-[#166534] dark:text-[#4ade80] hover:opacity-70"
           >
             Reset
           </button>
