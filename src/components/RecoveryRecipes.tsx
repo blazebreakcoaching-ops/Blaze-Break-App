@@ -24,6 +24,7 @@ interface Recipe {
   borderClass: string;
   bgTintClass: string;
   bgColorClass: string;
+  fgClass: string;
 }
 
 const RECIPES: Record<RecipeId, Recipe> = {
@@ -38,6 +39,7 @@ const RECIPES: Record<RecipeId, Recipe> = {
     icon: Moon,
     colorClass: 'text-primary',
     bgColorClass: 'bg-primary',
+    fgClass: 'text-primary-foreground',
     borderClass: 'border-l-primary',
     bgTintClass: 'bg-primary/5'
   },
@@ -50,8 +52,9 @@ const RECIPES: Record<RecipeId, Recipe> = {
     action: 'Do not reply to any follow-up emails for at least 30 minutes. Let the physiological spike pass.',
     boundary: 'If asked to jump on another call: "I need 15 minutes to process the last meeting before pivoting."',
     icon: Zap,
-    colorClass: 'text-warning',
+    colorClass: 'text-[#9a3412] dark:text-warning',
     bgColorClass: 'bg-warning',
+    fgClass: 'text-warning-foreground',
     borderClass: 'border-l-warning',
     bgTintClass: 'bg-warning/5'
   },
@@ -64,8 +67,9 @@ const RECIPES: Record<RecipeId, Recipe> = {
     action: 'Do a zero-output activity for 10 minutes (watch a video, read fiction). Do not optimize it.',
     boundary: 'Put your phone in Do Not Disturb Mode for the next hour.',
     icon: Shield,
-    colorClass: 'text-success',
+    colorClass: 'text-[#166534] dark:text-[#4ade80]',
     bgColorClass: 'bg-success',
+    fgClass: 'text-success-foreground',
     borderClass: 'border-l-success',
     bgTintClass: 'bg-success/5'
   },
@@ -80,6 +84,7 @@ const RECIPES: Record<RecipeId, Recipe> = {
     icon: Flame,
     colorClass: 'text-destructive',
     bgColorClass: 'bg-destructive',
+    fgClass: 'text-destructive-foreground',
     borderClass: 'border-l-destructive',
     bgTintClass: 'bg-destructive/5'
   },
@@ -94,6 +99,7 @@ const RECIPES: Record<RecipeId, Recipe> = {
     icon: CloudFog,
     colorClass: 'text-text-muted',
     bgColorClass: 'bg-surface',
+    fgClass: 'text-text-main',
     borderClass: 'border-l-border',
     bgTintClass: 'bg-surface'
   },
@@ -108,6 +114,7 @@ const RECIPES: Record<RecipeId, Recipe> = {
     icon: Crosshair,
     colorClass: 'text-primary',
     bgColorClass: 'bg-primary',
+    fgClass: 'text-primary-foreground',
     borderClass: 'border-l-primary',
     bgTintClass: 'bg-primary/5'
   },
@@ -122,6 +129,7 @@ const RECIPES: Record<RecipeId, Recipe> = {
     icon: Power,
     colorClass: 'text-primary',
     bgColorClass: 'bg-primary',
+    fgClass: 'text-primary-foreground',
     borderClass: 'border-l-primary',
     bgTintClass: 'bg-primary/5'
   },
@@ -136,6 +144,7 @@ const RECIPES: Record<RecipeId, Recipe> = {
     icon: AlertTriangle,
     colorClass: 'text-destructive',
     bgColorClass: 'bg-destructive',
+    fgClass: 'text-destructive-foreground',
     borderClass: 'border-l-destructive',
     bgTintClass: 'bg-destructive/5'
   }
@@ -173,6 +182,7 @@ export const RecoveryRecipes = ({ fingerprint, onAwardPoints }: RecoveryRecipesP
           <button
             key={r.id}
             onClick={() => handleSelectRecipe(r.id)}
+            aria-pressed={activeRecipe === r.id}
             className={cn(
                "p-6 rounded-2xl border text-left transition-all group flex flex-col items-center sm:items-start text-center sm:text-left h-full",
                activeRecipe === r.id
@@ -180,7 +190,7 @@ export const RecoveryRecipes = ({ fingerprint, onAwardPoints }: RecoveryRecipesP
                  : "border border-transparent hover:border-primary/30 hover:bg-surface dark:hover:bg-surface"
             )}
           >
-             <div className={cn("w-12 h-12 rounded-full flex items-center justify-center mb-4 transition-colors", activeRecipe === r.id ? r.bgColorClass + " text-white" : `bg-surface dark:bg-surface ${r.colorClass}`)}>
+             <div className={cn("w-12 h-12 rounded-full flex items-center justify-center mb-4 transition-colors", activeRecipe === r.id ? r.bgColorClass + " " + r.fgClass : `bg-surface dark:bg-surface ${r.colorClass}`)}>
                 <r.icon className="w-6 h-6" />
              </div>
              <span className="font-display font-bold text-lg text-text-main leading-tight">{r.trigger}</span>
@@ -198,7 +208,7 @@ export const RecoveryRecipes = ({ fingerprint, onAwardPoints }: RecoveryRecipesP
             className={cn("card border-l-4 p-8 md:p-12 mt-8", recipe.borderClass, activeRecipe ? recipe.bgTintClass : '')}
           >
             <div className="flex items-center gap-4 mb-10">
-              <div className={cn("w-16 h-16 rounded-xl flex items-center justify-center text-white shadow-lg", recipe.bgColorClass)}>
+              <div className={cn("w-16 h-16 rounded-xl flex items-center justify-center shadow-lg", recipe.bgColorClass, recipe.fgClass)}>
                 <recipe.icon className="w-8 h-8" />
               </div>
               <div>
@@ -212,7 +222,7 @@ export const RecoveryRecipes = ({ fingerprint, onAwardPoints }: RecoveryRecipesP
                   {/* Breathwork */}
                   <div className="space-y-3 relative group">
                     <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-full bg-primary/10 text-primary flex items-center justify-center">
+                      <div className="w-8 h-8 rounded-full bg-primary/10 text-[#9a3412] dark:text-primary flex items-center justify-center">
                         <Wind className="w-4 h-4" />
                       </div>
                       <h4 className="font-bold text-text-main uppercase tracking-widest text-sm">One Breathwork Reset</h4>
@@ -225,7 +235,7 @@ export const RecoveryRecipes = ({ fingerprint, onAwardPoints }: RecoveryRecipesP
                   {/* Body Reset */}
                   <div className="space-y-3 relative group">
                     <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-full bg-success/10 text-success flex items-center justify-center">
+                      <div className="w-8 h-8 rounded-full bg-success/10 text-[#166534] dark:text-[#4ade80] flex items-center justify-center">
                         <Activity className="w-4 h-4" />
                       </div>
                       <h4 className="font-bold text-text-main uppercase tracking-widest text-sm">One Body Reset</h4>
@@ -240,7 +250,7 @@ export const RecoveryRecipes = ({ fingerprint, onAwardPoints }: RecoveryRecipesP
                    {/* Thought Reset */}
                   <div className="space-y-3 relative group">
                     <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-full bg-primary/10 text-primary flex items-center justify-center">
+                      <div className="w-8 h-8 rounded-full bg-primary/10 text-[#9a3412] dark:text-primary flex items-center justify-center">
                         <Brain className="w-4 h-4" />
                       </div>
                       <h4 className="font-bold text-text-main uppercase tracking-widest text-sm">One Thought Reset</h4>
@@ -253,7 +263,7 @@ export const RecoveryRecipes = ({ fingerprint, onAwardPoints }: RecoveryRecipesP
                   {/* Action */}
                   <div className="space-y-3 relative group">
                     <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-full bg-warning/10 text-warning flex items-center justify-center">
+                      <div className="w-8 h-8 rounded-full bg-warning/10 text-[#9a3412] dark:text-warning flex items-center justify-center">
                         <ArrowRight className="w-4 h-4" />
                       </div>
                       <h4 className="font-bold text-text-main uppercase tracking-widest text-sm">One Action</h4>
@@ -283,7 +293,7 @@ export const RecoveryRecipes = ({ fingerprint, onAwardPoints }: RecoveryRecipesP
             <div className="flex justify-end mt-8">
                <button 
                  onMouseEnter={() => {}}
-                 className={cn("btn-primary", recipe.bgColorClass)}
+                 className={cn("btn-primary", recipe.bgColorClass, recipe.fgClass)}
                  onClick={() => {
                    if (onAwardPoints) onAwardPoints(15, `Completed Recipe: ${recipe.trigger}`);
                    setActiveRecipe(null);
