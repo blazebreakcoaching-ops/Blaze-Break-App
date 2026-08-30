@@ -113,6 +113,7 @@ export const MovementSnacks = ({ fingerprint, onAwardPoints }: MovementSnacksPro
                  setInProgress(false);
                  setCompleted(false);
                }}
+               aria-pressed={isSelected}
                className={cn(
                  "p-6 rounded-2xl border transition-all text-left group relative overflow-hidden",
                  isSelected
@@ -123,7 +124,7 @@ export const MovementSnacks = ({ fingerprint, onAwardPoints }: MovementSnacksPro
                <div className="flex items-center justify-between mb-4 relative z-10">
                  <div className={cn(
                    "w-10 h-10 rounded-full flex items-center justify-center transition-colors",
-                   isSelected ? "bg-white/20 text-white" : "bg-success/10 text-success"
+                   isSelected ? "bg-white/20 text-white" : "bg-success/10 text-success dark:text-[#4ade80]"
                  )}>
                    <Icon className="w-5 h-5" />
                  </div>
@@ -137,7 +138,7 @@ export const MovementSnacks = ({ fingerprint, onAwardPoints }: MovementSnacksPro
                
                <div className="relative z-10 space-y-1">
                  <h4 className={cn("text-xl font-display font-bold", isSelected ? "text-white" : "text-text-main")}>{snack.name}</h4>
-                 <p className={cn("text-sm font-medium", isSelected ? "text-success/10" : "text-text-muted")}>{snack.description}</p>
+                 <p className={cn("text-sm font-medium", isSelected ? "text-white" : "text-text-muted")}>{snack.description}</p>
                </div>
 
                {isSelected && (
@@ -176,7 +177,7 @@ export const MovementSnacks = ({ fingerprint, onAwardPoints }: MovementSnacksPro
                     transition={{ delay: idx * 0.1 }}
                     className="flex items-start gap-4 bg-white/50 dark:bg-surface/50 p-4 rounded-xl border border-border/50"
                   >
-                    <div className="w-8 h-8 rounded-full bg-success/20 text-success dark:text-success flex items-center justify-center shrink-0 font-black">
+                    <div className="w-8 h-8 rounded-full bg-success/20 text-[#166534] dark:text-[#4ade80] flex items-center justify-center shrink-0 font-black">
                       {idx + 1}
                     </div>
                     <span className="text-text-main font-bold text-lg leading-tight mt-0.5">{step}</span>
@@ -206,6 +207,8 @@ export const MovementSnacks = ({ fingerprint, onAwardPoints }: MovementSnacksPro
             key="success"
             initial={{ opacity: 0, scale: 0.9 }}
             animate={{ opacity: 1, scale: 1 }}
+            role="status"
+            aria-live="polite"
             className="card border border-success/20 bg-success/5 p-6 sm:p-8 md:p-10 flex flex-col items-center justify-center text-center py-20 mt-8"
           >
              <div className="w-20 h-20 bg-success rounded-full flex items-center justify-center text-white mb-6 shadow-xl shadow-success/20">
