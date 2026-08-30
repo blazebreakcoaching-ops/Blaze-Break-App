@@ -29,7 +29,7 @@ export const MicroInterventions = ({ shipStage, id = "micro", onDragStart, onDra
       duration: '1 min',
       icon: Brain,
       description: 'Look at the horizon or widen your gaze to reduce narrow-focus stress.',
-      color: 'text-primary',
+      color: 'text-[#9a3412] dark:text-primary',
       bg: 'bg-primary/10'
     },
     {
@@ -38,7 +38,7 @@ export const MicroInterventions = ({ shipStage, id = "micro", onDragStart, onDra
       duration: '3 min',
       icon: BatteryCharging,
       description: 'Two quick inhales through the nose, one long exhale through the mouth.',
-      color: 'text-warning',
+      color: 'text-[#9a3412] dark:text-warning',
       bg: 'bg-warning/10'
     }
   ];
@@ -71,6 +71,11 @@ export const MicroInterventions = ({ shipStage, id = "micro", onDragStart, onDra
             <div 
               key={inter.id} 
               onClick={() => setActiveId(isActive ? null : inter.id)}
+              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setActiveId(isActive ? null : inter.id); } }}
+              role="button"
+              tabIndex={0}
+              aria-pressed={isActive}
+              aria-label={`${isActive ? 'Stop' : 'Start'} ${inter.title}, ${inter.duration}`}
               className={cn(
                 "p-4 rounded-2xl border transition-all cursor-pointer group relative overflow-hidden",
                 isActive ? "border-primary bg-primary/5 shadow-md shadow-primary/10" : "border-border bg-surface dark:bg-surface/50 hover:bg-white dark:hover:bg-surface/80 hover:border-border dark:hover:border-border"
@@ -82,7 +87,7 @@ export const MicroInterventions = ({ shipStage, id = "micro", onDragStart, onDra
               
               <div className="flex items-start justify-between mb-3 relative z-10">
                 <div className={cn("p-2 rounded-lg flex items-center justify-center transition-transform", inter.bg, inter.color, isActive && "scale-110")}>
-                  <inter.icon className="w-4 h-4" />
+                  <inter.icon className="w-4 h-4" aria-hidden="true" />
                 </div>
                 
                 <div className="flex items-center gap-2">
@@ -92,19 +97,20 @@ export const MicroInterventions = ({ shipStage, id = "micro", onDragStart, onDra
                   )}>
                     {inter.duration}
                   </span>
-                  <button 
+                  <span 
+                    aria-hidden="true"
                     className={cn(
                       "w-7 h-7 rounded-full flex items-center justify-center transition-all",
-                      isActive ? "bg-primary/20 text-primary" : "bg-border dark:bg-surface text-text-muted hover:bg-primary/10 hover:text-primary group-hover:scale-110"
+                      isActive ? "bg-primary/20 text-[#9a3412] dark:text-primary" : "bg-border dark:bg-surface text-text-muted group-hover:bg-primary/10 group-hover:text-primary group-hover:scale-110"
                     )}
                   >
                     {isActive ? <Square className="w-3 h-3 fill-current" /> : <Play className="w-3 h-3 fill-current ml-0.5" />}
-                  </button>
+                  </span>
                 </div>
               </div>
               
               <div className="relative z-10">
-                <h4 className={cn("font-bold text-sm mb-1 transition-colors", isActive ? "text-primary" : "text-text-main group-hover:text-primary")}>
+                <h4 className={cn("font-bold text-sm mb-1 transition-colors", isActive ? "text-[#9a3412] dark:text-primary" : "text-text-main group-hover:text-primary")}>
                   {inter.title}
                 </h4>
                 <p className={cn("text-xs leading-relaxed transition-colors", isActive ? "text-text-main font-medium" : "text-text-muted")}>
