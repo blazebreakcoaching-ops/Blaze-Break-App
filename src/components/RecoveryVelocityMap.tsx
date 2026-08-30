@@ -64,16 +64,16 @@ const CustomTooltip = ({ active, payload }: any) => {
             <span className="text-text-muted flex items-center gap-1">
               <Activity className="w-3 h-3 text-primary" /> Energy Output
             </span>
-            <span className="font-mono font-black text-primary">
+            <span className="font-mono font-black text-[#9a3412] dark:text-primary">
               {dataPoint.energyOutput}%
             </span>
           </div>
 
           <div className="flex justify-between items-center gap-6">
             <span className="text-text-muted flex items-center gap-1">
-              <Heart className="w-3 h-3 text-success" /> Recovery Input
+              <Heart className="w-3 h-3 text-success dark:text-[#4ade80]" /> Recovery Input
             </span>
-            <span className="font-mono font-black text-success">
+            <span className="font-mono font-black text-success dark:text-[#4ade80]">
               {dataPoint.recoveryInput}%
             </span>
           </div>
@@ -88,8 +88,8 @@ const CustomTooltip = ({ active, payload }: any) => {
           <span className={cn(
             "font-mono font-black px-1.5 py-0.5 rounded",
             isDeficit
-              ? "bg-destructive/10 text-destructive"
-              : "bg-success/10 text-success"
+              ? "bg-destructive/10 text-destructive dark:text-[#f87171]"
+              : "bg-success/10 text-success dark:text-[#4ade80]"
           )}>
             {isDeficit ? "" : "+"}{dataPoint.balance}% {isDeficit ? "Deficit" : "Surplus"}
           </span>
@@ -190,6 +190,7 @@ export const RecoveryVelocityMap = () => {
         <div className="flex items-center bg-surface/50 dark:bg-card/40 border border-border/80 rounded-xl p-1 gap-1 self-start md:self-center">
           <button
             onClick={() => setViewMode('all')}
+            aria-pressed={viewMode === 'all'}
             className={cn(
               "px-3 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer",
               viewMode === 'all' 
@@ -201,22 +202,24 @@ export const RecoveryVelocityMap = () => {
           </button>
           <button
             onClick={() => setViewMode('recovery')}
+            aria-pressed={viewMode === 'recovery'}
             className={cn(
               "px-3 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer",
               viewMode === 'recovery' 
                 ? "bg-success text-white shadow" 
-                : "text-text-muted hover:text-success hover:bg-success/5"
+                : "text-text-muted hover:text-success dark:hover:text-[#4ade80] hover:bg-success/5"
             )}
           >
             Recovery Input
           </button>
           <button
             onClick={() => setViewMode('energy')}
+            aria-pressed={viewMode === 'energy'}
             className={cn(
               "px-3 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer",
               viewMode === 'energy' 
                 ? "bg-primary text-primary-foreground shadow" 
-                : "text-text-muted hover:text-primary hover:bg-primary/5"
+                : "text-text-muted hover:text-[#9a3412] dark:hover:text-primary hover:bg-primary/5"
             )}
           >
             Energy Output
@@ -242,7 +245,7 @@ export const RecoveryVelocityMap = () => {
             Average Energy Output
           </span>
           <div className="flex items-baseline gap-1.5">
-            <span className="text-2xl font-black text-primary font-mono">
+            <span className="text-2xl font-black text-[#9a3412] dark:text-primary font-mono">
               {averageEnergy}%
             </span>
             <span className="text-[10px] text-text-muted">Load</span>
@@ -254,7 +257,7 @@ export const RecoveryVelocityMap = () => {
             Average Recovery Input
           </span>
           <div className="flex items-baseline gap-1.5">
-            <span className="text-2xl font-black text-success font-mono">
+            <span className="text-2xl font-black text-success dark:text-[#4ade80] font-mono">
               {averageRecovery}%
             </span>
             <span className="text-[10px] text-text-muted">Reset</span>
@@ -268,7 +271,7 @@ export const RecoveryVelocityMap = () => {
           <div className="flex items-baseline gap-1.5">
             <span className={cn(
               "text-2xl font-black font-mono",
-              deficitDays > 10 ? "text-destructive" : "text-warning"
+              deficitDays > 10 ? "text-destructive dark:text-[#f87171]" : "text-[#9a3412] dark:text-warning"
             )}>
               {deficitDays}
             </span>
@@ -283,7 +286,7 @@ export const RecoveryVelocityMap = () => {
           <div className="flex items-baseline gap-1.5">
             <span className={cn(
               "text-2xl font-black font-mono",
-              netVelocityBalance >= 0 ? "text-success" : "text-destructive"
+              netVelocityBalance >= 0 ? "text-success dark:text-[#4ade80]" : "text-destructive dark:text-[#f87171]"
             )}>
               {netVelocityBalance >= 0 ? "+" : ""}{netVelocityBalance}%
             </span>
@@ -380,8 +383,8 @@ export const RecoveryVelocityMap = () => {
         <div className={cn(
           "w-10 h-10 rounded-xl flex items-center justify-center shrink-0 border",
           novaCommentary.alert 
-            ? "bg-warning/10 text-warning border-warning/10 animate-pulse" 
-            : "bg-success/10 text-success border-success/10"
+            ? "bg-warning/10 text-[#9a3412] dark:text-warning border-warning/10 animate-pulse" 
+            : "bg-success/10 text-success dark:text-[#4ade80] border-success/10"
         )}>
           {novaCommentary.alert ? (
             <AlertTriangle className="w-5 h-5" />
@@ -395,7 +398,7 @@ export const RecoveryVelocityMap = () => {
               Nova Coaching Diagnostics
             </span>
             <span className="h-1.5 w-1.5 rounded-full bg-primary/40" />
-            <span className="text-[10px] font-black uppercase font-mono text-primary tracking-widest">
+            <span className="text-[10px] font-black uppercase font-mono text-[#9a3412] dark:text-primary tracking-widest">
               Realtime Neural Feed
             </span>
           </div>
@@ -403,7 +406,7 @@ export const RecoveryVelocityMap = () => {
             "{novaCommentary.text}"
           </p>
           <div className="flex items-center gap-2 pt-1">
-            <Info className="w-3.5 h-3.5 text-primary shrink-0" />
+            <Info className="w-3.5 h-3.5 text-[#9a3412] dark:text-primary shrink-0" />
             <span className="text-xs font-bold text-text-main">
               Recommended Next Step: {novaCommentary.action}
             </span>
