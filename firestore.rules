@@ -651,6 +651,19 @@ service cloud.firestore {
             && (request.method == 'create' ? true : checkCreatedAtUnchanged());
       }
 
+      // AD. nova_feedback - star rating + optional text from the weekly
+      // Nova Coach Pulse modal. Write-once from the client; no update since
+      // submitted feedback isn't meant to be edited after the fact.
+      match /nova_feedback/{feedbackId} {
+        allow read, delete: if isOwner(uid);
+        allow create: if isOwner(uid)
+            && hasOnly(['rating', 'feedbackText', 'createdAt'])
+            && hasAll(['rating', 'createdAt'])
+            && request.resource.data.rating is number
+            && request.resource.data.rating >= 1 && request.resource.data.rating <= 5
+            && (!('feedbackText' in request.resource.data) || request.resource.data.feedbackText == null || isStringWithMax(request.resource.data.feedbackText, 1000));
+      }
+
     }
 
     // F. public_feature_flags/{featureId}
