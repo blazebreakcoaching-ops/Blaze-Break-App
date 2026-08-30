@@ -82,28 +82,34 @@ export const PrivacyPolicyAccordion = () => {
             <div 
               key={policy.id} 
               className={cn(
-                "rounded-xl border transition-all duration-500 overflow-hidden cursor-pointer",
+                "rounded-xl border transition-all duration-500 overflow-hidden",
                 isActive 
                   ? "bg-surface border-primary/50 shadow-[0_0_20px_rgba(234,88,12,0.15)]"
                   : "bg-background/40 border-white/[0.04] hover:bg-surface/60"
               )}
-              onClick={() => setActiveSection(isActive ? null : policy.id)}
             >
-              <div className="p-5 flex items-center justify-between">
+              <button
+                onClick={() => setActiveSection(isActive ? null : policy.id)}
+                aria-expanded={isActive}
+                aria-controls={`policy-panel-${policy.id}`}
+                className="w-full p-5 flex items-center justify-between text-left cursor-pointer"
+              >
                 <h4 className={cn(
                   "font-bold transition-colors duration-300",
-                  isActive ? "text-primary" : "text-text-main"
+                  isActive ? "text-[#9a3412] dark:text-primary" : "text-text-main"
                 )}>
                   {policy.title}
                 </h4>
                 <ChevronDown className={cn(
-                  "w-5 h-5 transition-transform duration-500 ease-in-out",
-                  isActive ? "rotate-180 text-primary" : "text-text-muted"
+                  "w-5 h-5 transition-transform duration-500 ease-in-out shrink-0",
+                  isActive ? "rotate-180 text-[#9a3412] dark:text-primary" : "text-text-muted"
                 )} />
-              </div>
+              </button>
               <AnimatePresence>
                 {isActive && (
                   <motion.div
+                    id={`policy-panel-${policy.id}`}
+                    role="region"
                     initial={{ height: 0, opacity: 0 }}
                     animate={{ height: "auto", opacity: 1 }}
                     exit={{ height: 0, opacity: 0 }}
