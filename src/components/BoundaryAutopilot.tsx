@@ -154,14 +154,16 @@ export const BoundaryAutopilot = () => {
         </p>
       </div>
 
-      <div className="flex gap-2 overflow-x-auto pb-1">
+      <div className="flex gap-2 overflow-x-auto pb-1" role="tablist">
         {tabs.map((t) => (
           <button
             key={t.id}
+            role="tab"
+            aria-selected={activeTab === t.id}
             onClick={() => { setActiveTab(t.id); setStatus(null); setPendingConfirm(false); }}
             className={cn(
               "flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-colors shrink-0",
-              activeTab === t.id ? "bg-primary/10 text-primary" : "text-text-muted hover:bg-surface"
+              activeTab === t.id ? "bg-primary/10 text-[#9a3412] dark:text-primary" : "text-text-muted hover:bg-surface"
             )}
           >
             <t.icon className="w-4 h-4" /> {t.label}
@@ -214,9 +216,10 @@ export const BoundaryAutopilot = () => {
                   <button
                     key={m}
                     onClick={() => setDndMinutes(m)}
+                    aria-pressed={dndMinutes === m}
                     className={cn(
                       "flex-1 py-3 rounded-xl text-xs font-bold border transition-colors",
-                      dndMinutes === m ? "bg-primary/10 border-primary text-primary" : "border-border text-text-muted hover:bg-surface"
+                      dndMinutes === m ? "bg-primary/10 border-primary text-[#9a3412] dark:text-primary" : "border-border text-text-muted hover:bg-surface"
                     )}
                   >
                     {m < 60 ? `${m}m` : `${m / 60}h`}
@@ -330,7 +333,7 @@ export const BoundaryAutopilot = () => {
                     )}
                   >
                     <div className="mt-0.5 shrink-0">
-                      {a.success ? <Check className="w-4 h-4 text-success" /> : <AlertTriangle className="w-4 h-4 text-destructive" />}
+                      {a.success ? <Check className="w-4 h-4 text-success dark:text-[#4ade80]" /> : <AlertTriangle className="w-4 h-4 text-destructive" />}
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className="text-text-main font-medium">{describeAutopilotAction(a)}</p>
@@ -347,9 +350,9 @@ export const BoundaryAutopilot = () => {
       </AnimatePresence>
 
       {status && (
-        <div className={cn(
+        <div role="status" aria-live="polite" className={cn(
           "p-3 rounded-xl text-xs font-medium flex items-start gap-2",
-          status.type === 'success' ? "bg-success/10 text-success" : "bg-destructive/10 text-destructive"
+          status.type === 'success' ? "bg-success/10 text-success dark:text-[#4ade80]" : "bg-destructive/10 text-destructive dark:text-[#f87171]"
         )}>
           {status.type === 'success' ? <Check className="w-4 h-4 shrink-0 mt-0.5" /> : <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />}
           <span>{status.message}</span>
