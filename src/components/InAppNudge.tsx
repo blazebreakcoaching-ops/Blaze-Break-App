@@ -302,6 +302,8 @@ export const InAppNudge = () => {
           initial={{ opacity: 0, y: 50, scale: 0.9 }}
           animate={{ opacity: 1, y: 0, scale: 1 }}
           exit={{ opacity: 0, y: 20, scale: 0.9 }}
+          role="status"
+          aria-live="polite"
           className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[100] w-[90%] max-w-sm"
         >
           <div className="bg-card border border-primary/20 shadow-lg rounded-xl overflow-hidden">
@@ -312,6 +314,7 @@ export const InAppNudge = () => {
               </div>
               <button 
                 onClick={() => dismiss("not_now")}
+                aria-label="Dismiss nudge"
                 className="p-1 text-text-muted hover:text-text-main hover:bg-border rounded transition-colors"
                 title="Dismiss"
               >
@@ -332,7 +335,7 @@ export const InAppNudge = () => {
                     }
                     dismiss("action_taken");
                   }}
-                  className="flex-1 px-3 py-2 bg-primary/10 hover:bg-primary/20 text-primary rounded-xl text-xs font-bold uppercase tracking-wider transition-colors flex items-center justify-center gap-1"
+                  className="flex-1 px-3 py-2 bg-primary/10 hover:bg-primary/20 text-[#9a3412] dark:text-primary rounded-xl text-xs font-bold uppercase tracking-wider transition-colors flex items-center justify-center gap-1"
                 >
                   {currentNudge.category === 'climate_survey_reminder' ? 'Take Survey' : 'Action'} <ChevronRight className="w-3 h-3" />
                 </button>
