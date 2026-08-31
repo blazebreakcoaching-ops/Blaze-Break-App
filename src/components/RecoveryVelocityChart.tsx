@@ -173,7 +173,31 @@ export const RecoveryVelocityChart = ({ data }: { data: { day: string, score: nu
 
   return (
     <div className="w-full relative">
-       <div ref={d3Container} className="w-full h-full min-h-[180px]" />
+       <div
+         ref={d3Container}
+         role="img"
+         aria-label={`Recovery velocity and meeting count chart across ${data.length} days`}
+         className="w-full h-full min-h-[180px]"
+       />
+       <table className="sr-only">
+         <caption>Recovery velocity and meeting count by day</caption>
+         <thead>
+           <tr>
+             <th scope="col">Day</th>
+             <th scope="col">Recovery Velocity Score</th>
+             <th scope="col">Meetings</th>
+           </tr>
+         </thead>
+         <tbody>
+           {data.map((d) => (
+             <tr key={d.day}>
+               <td>{d.day}</td>
+               <td>{d.score}</td>
+               <td>{d.meetings}</td>
+             </tr>
+           ))}
+         </tbody>
+       </table>
        <div className="absolute top-0 right-0 flex items-center gap-4 text-xs font-black uppercase text-text-muted">
          <div className="flex items-center gap-1.5"><div className="w-3 h-3 bg-primary rounded-full"></div> Recovery Velocity</div>
          <div className="flex items-center gap-1.5"><div className="w-3 h-3 bg-muted-foreground rounded-sm"></div> Meetings Count</div>
