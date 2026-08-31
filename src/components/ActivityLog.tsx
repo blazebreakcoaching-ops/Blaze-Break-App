@@ -42,6 +42,7 @@ export const ActivityLog = ({
     <div
       id="activity"
       draggable
+      tabIndex={0}
       onDragStart={(e) => onDragStart?.(e, 'activity')}
       onDragOver={(e) => {
         e.preventDefault();
@@ -57,7 +58,7 @@ export const ActivityLog = ({
         <h3 className="text-sm font-black uppercase tracking-widest text-text-main">Recovery Actions Log</h3>
       </div>
       
-      <div className="space-y-4">
+      <div className="space-y-4" role="log" aria-live="polite">
         {logs.length > 0 ? (
           <AnimatePresence>
             {logs.map((log) => (
