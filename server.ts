@@ -20,6 +20,7 @@ import { getAppCheck } from 'firebase-admin/app-check';
 import cors from 'cors';
 import rateLimit from 'express-rate-limit';
 import { z } from 'zod';
+import { memoryToolIsAllowed, allowedMemoryCategories, searchMemories, NovaMemoryDoc } from './nova-tools';
 
 dotenv.config();
 
@@ -689,6 +690,55 @@ const ChatRequestSchema = z.object({
   systemInstruction: z.string().max(3000).optional()
 }).strict();
 
+// Nova tool use, phase 1: read-only tools only. Nothing here writes,
+// sends a message, or triggers any side effect - every real-action
+// feature in this app (BoundaryAutopilot, calendar declines) explicitly
+// requires the user to confirm before anything happens, and giving the
+// model direct, unconfirmed access to those same endpoints would break
+// that guarantee. A tool that proposes an action for the UI to render as
+// a confirmable card is a reasonable future addition; a tool that
+// executes one directly is not, for now.
+const NOVA_TOOLS: any[] = [
+  {
+    name: "search_nova_memories",
+    description: "Search the user's own saved Nova memories (coaching preferences, recovery patterns, goals) by keyword. Use this when the user references something they've told Nova before that isn't already in the current context, or asks what Nova remembers about a specific topic. Respects the same consent settings as passive context - if the user hasn't enabled memory use, this returns no results rather than bypassing that choice.",
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        query: { type: Type.STRING, description: "A keyword or short phrase to search for within the user's saved memories." },
+      },
+      required: ["query"],
+    },
+  },
+];
+
+// Mirrors the exact permission check and category filtering already
+// established in getNovaContextAndMetadata for nova_memories, so this
+// tool can't see anything the passive context injection wouldn't also
+// be allowed to see.
+async function executeSearchNovaMemories(uid: string, firestoreDb: any, query: string): Promise<{ results: string[] }> {
+  const permDoc = await firestoreDb.collection('users').doc(uid).collection('nova_permissions').doc('current').get();
+  const perms = permDoc.exists ? (permDoc.data() || {}) : {};
+  if (!memoryToolIsAllowed(perms)) return { results: [] };
+  if (allowedMemoryCategories(perms).length === 0) return { results: [] };
+
+  const memRef = firestoreDb.collection('users').doc(uid).collection('nova_memories');
+  const memSnap = await memRef.where('revoked', '!=', true).get();
+  const memories: NovaMemoryDoc[] = memSnap.docs.map((d: any) => d.data());
+
+  return { results: searchMemories(perms, memories, query) };
+}
+
+async function executeNovaTool(name: string, args: Record<string, unknown>, uid: string | undefined, firestoreDb: any): Promise<Record<string, unknown>> {
+  if (!uid) return { error: "No authenticated user for this tool call." };
+  switch (name) {
+    case "search_nova_memories":
+      return executeSearchNovaMemories(uid, firestoreDb, String(args.query || ""));
+    default:
+      return { error: `Unknown tool: ${name}` };
+  }
+}
+
 app.post("/api/nova/chat", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
   try {
     const parsedParams = ChatRequestSchema.safeParse(req.body);
@@ -726,18 +776,37 @@ app.post("/api/nova/chat", verifyAppCheck, authenticateFirebaseUser, async (req,
     const mergedSystemPrompt = (systemInstruction || NOVA_SYSTEM_PROMPT) + contextAddendum;
 
     const abortController = new AbortController();
-    const timeoutId = setTimeout(() => abortController.abort(), 15000); // 15s timeout
+    const timeoutId = setTimeout(() => abortController.abort(), 25000); // 25s timeout - raised from 15s to accommodate one or more tool-call round-trips
 
     try {
       const chat = ai.chats.create({
         model: "gemini-3.5-flash",
         config: {
           systemInstruction: mergedSystemPrompt,
+          tools: [{ functionDeclarations: NOVA_TOOLS }],
         },
         history: history || [],
       });
 
-      const result = await chat.sendMessage({ message });
+      let result = await chat.sendMessage({ message });
+
+      // Bounded loop: execute any requested tool calls, send results back,
+      // and let the model continue - capped so a misbehaving model can't
+      // hold this request open indefinitely.
+      let toolCallRounds = 0;
+      const MAX_TOOL_CALL_ROUNDS = 5;
+      while (result.functionCalls && result.functionCalls.length > 0 && toolCallRounds < MAX_TOOL_CALL_ROUNDS) {
+        toolCallRounds++;
+        const db = getDb();
+        const responseParts = await Promise.all(
+          result.functionCalls.map(async (call) => {
+            const output = await executeNovaTool(call.name || "", call.args || {}, uid, db);
+            return { functionResponse: { name: call.name, response: output } };
+          })
+        );
+        result = await chat.sendMessage({ message: responseParts });
+      }
+
       clearTimeout(timeoutId);
       res.json({ text: result.text, privacyMetadata: contextMetadata });
     } catch (modelError: any) {
