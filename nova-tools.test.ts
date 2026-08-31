@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { memoryToolIsAllowed, allowedMemoryCategories, searchMemories, NovaMemoryDoc, NovaPermissions } from './nova-tools';
+import { memoryToolIsAllowed, allowedMemoryCategories, searchMemories, isValidRecoveryDuration, NovaMemoryDoc, NovaPermissions } from './nova-tools';
 
 // This tool reads the same sensitive, permission-gated data
 // (users/{uid}/nova_memories) that the app's own passive context
@@ -154,5 +154,33 @@ describe('searchMemories: the actual tool result the model sees', () => {
 
   it('handles undefined perms without throwing', () => {
     expect(searchMemories(undefined, [baseMemory()], 'Friday')).toEqual([]);
+  });
+});
+
+describe('isValidRecoveryDuration: guards against a hallucinated duration reaching the UI as if it were real', () => {
+  it('accepts every value actually present in the app catalog', () => {
+    expect(isValidRecoveryDuration('30s')).toBe(true);
+    expect(isValidRecoveryDuration('2m')).toBe(true);
+    expect(isValidRecoveryDuration('5m')).toBe(true);
+    expect(isValidRecoveryDuration('10m')).toBe(true);
+    expect(isValidRecoveryDuration('20m')).toBe(true);
+  });
+
+  it('rejects a plausible-looking but nonexistent duration', () => {
+    expect(isValidRecoveryDuration('15m')).toBe(false);
+    expect(isValidRecoveryDuration('1m')).toBe(false);
+    expect(isValidRecoveryDuration('30m')).toBe(false);
+  });
+
+  it('rejects non-string input rather than throwing', () => {
+    expect(isValidRecoveryDuration(30)).toBe(false);
+    expect(isValidRecoveryDuration(null)).toBe(false);
+    expect(isValidRecoveryDuration(undefined)).toBe(false);
+    expect(isValidRecoveryDuration({})).toBe(false);
+  });
+
+  it('is case-sensitive - the catalog keys are lowercase, so a differently-cased value is not a real key', () => {
+    expect(isValidRecoveryDuration('2M')).toBe(false);
+    expect(isValidRecoveryDuration('20M')).toBe(false);
   });
 });

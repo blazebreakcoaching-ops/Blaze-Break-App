@@ -20,7 +20,7 @@ import { getAppCheck } from 'firebase-admin/app-check';
 import cors from 'cors';
 import rateLimit from 'express-rate-limit';
 import { z } from 'zod';
-import { memoryToolIsAllowed, allowedMemoryCategories, searchMemories, NovaMemoryDoc } from './nova-tools';
+import { memoryToolIsAllowed, allowedMemoryCategories, searchMemories, isValidRecoveryDuration, NovaMemoryDoc } from './nova-tools';
 
 dotenv.config();
 
@@ -710,6 +710,18 @@ const NOVA_TOOLS: any[] = [
       required: ["query"],
     },
   },
+  {
+    name: "propose_recovery_action",
+    description: "Propose one specific micro-recovery protocol from the app's real catalog, with a short reason tailored to what the user has described. This does not start or complete anything - it returns a suggestion for the user interface to show the user, who decides whether to act on it. The five real durations, and what each protocol actually is: 30s (rapid physiological interrupt - stand up, unclench jaw, one deep breath, look at something 20 feet away), 2m (a quick reset - stand up, drink water, remove one thing from today's list, send a boundary message), 5m (nervous system downshift - step away from the desk, 5 rounds of box breathing, stretch, review top 3 priorities), 10m (cognitive reset - walk outside, no phone, name 5 things you see, return and focus on one action), 20m (deep somatic rest). Pick the one that actually fits how much time and capacity the user has described, not always the shortest or longest option.",
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        duration: { type: Type.STRING, description: "One of: 30s, 2m, 5m, 10m, 20m - must match a real catalog entry exactly." },
+        reason: { type: Type.STRING, description: "A short, specific reason this duration fits the user's stated situation right now." },
+      },
+      required: ["duration", "reason"],
+    },
+  },
 ];
 
 // Mirrors the exact permission check and category filtering already
@@ -729,11 +741,29 @@ async function executeSearchNovaMemories(uid: string, firestoreDb: any, query: s
   return { results: searchMemories(perms, memories, query) };
 }
 
+// No Firestore I/O needed here - this tool doesn't read or write anything,
+// it only validates the model's proposed duration against the real catalog
+// (isValidRecoveryDuration) so a hallucinated value like "15m" can't reach
+// the UI dressed up as a real, executable protocol. The suggestion itself
+// is not persisted or executed here; the frontend decides what to do with
+// it, matching the confirm-before-anything-happens pattern used everywhere
+// else real actions exist in this app.
+function executeProposeRecoveryAction(args: Record<string, unknown>): { proposed: boolean; duration?: string; reason?: string; error?: string } {
+  const duration = args.duration;
+  const reason = typeof args.reason === "string" ? args.reason : "";
+  if (!isValidRecoveryDuration(duration)) {
+    return { proposed: false, error: `"${duration}" is not a real duration in the app's catalog. Valid options are 30s, 2m, 5m, 10m, 20m.` };
+  }
+  return { proposed: true, duration, reason };
+}
+
 async function executeNovaTool(name: string, args: Record<string, unknown>, uid: string | undefined, firestoreDb: any): Promise<Record<string, unknown>> {
   if (!uid) return { error: "No authenticated user for this tool call." };
   switch (name) {
     case "search_nova_memories":
       return executeSearchNovaMemories(uid, firestoreDb, String(args.query || ""));
+    case "propose_recovery_action":
+      return executeProposeRecoveryAction(args);
     default:
       return { error: `Unknown tool: ${name}` };
   }
@@ -792,15 +822,22 @@ app.post("/api/nova/chat", verifyAppCheck, authenticateFirebaseUser, async (req,
 
       // Bounded loop: execute any requested tool calls, send results back,
       // and let the model continue - capped so a misbehaving model can't
-      // hold this request open indefinitely.
+      // hold this request open indefinitely. planTrace is a transparent,
+      // inspectable record of what actually happened this turn (which
+      // tools were called, with what arguments, and what came back) -
+      // returned to the caller rather than only living in server logs, so
+      // it's available for a future "how Nova got to this answer" view
+      // and for privacy/audit purposes, not just debugging.
       let toolCallRounds = 0;
       const MAX_TOOL_CALL_ROUNDS = 5;
+      const planTrace: { tool: string; args: Record<string, unknown>; result: Record<string, unknown> }[] = [];
       while (result.functionCalls && result.functionCalls.length > 0 && toolCallRounds < MAX_TOOL_CALL_ROUNDS) {
         toolCallRounds++;
         const db = getDb();
         const responseParts = await Promise.all(
           result.functionCalls.map(async (call) => {
             const output = await executeNovaTool(call.name || "", call.args || {}, uid, db);
+            planTrace.push({ tool: call.name || "unknown", args: call.args || {}, result: output });
             return { functionResponse: { name: call.name, response: output } };
           })
         );
@@ -808,7 +845,7 @@ app.post("/api/nova/chat", verifyAppCheck, authenticateFirebaseUser, async (req,
       }
 
       clearTimeout(timeoutId);
-      res.json({ text: result.text, privacyMetadata: contextMetadata });
+      res.json({ text: result.text, privacyMetadata: contextMetadata, planTrace });
     } catch (modelError: any) {
       clearTimeout(timeoutId);
       if (modelError.name === 'AbortError') {

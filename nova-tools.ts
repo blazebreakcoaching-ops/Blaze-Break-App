@@ -75,3 +75,19 @@ export const searchMemories = (
     .slice(0, limit)
     .map((mem) => `[${mem.memoryType.replace(/_/g, ' ')}] ${mem.memoryText}`);
 };
+
+// Mirrors the exact Duration type already established in MicroRecovery.tsx.
+// Kept as a literal list here rather than imported, since importing a .tsx
+// file into this Node-side module would pull in React/JSX tooling this
+// file has no other reason to depend on - the five values are a stable,
+// intentional contract between the two files, not something that changes
+// often enough to justify that coupling.
+export const VALID_RECOVERY_DURATIONS = ['30s', '2m', '5m', '10m', '20m'] as const;
+export type RecoveryDuration = typeof VALID_RECOVERY_DURATIONS[number];
+
+// A model can propose a duration that doesn't actually exist in the app's
+// catalog (a hallucinated value like "15m"). This is the one thing standing
+// between "Nova suggested something" and "Nova suggested something that
+// actually corresponds to a real, executable recovery protocol."
+export const isValidRecoveryDuration = (duration: unknown): duration is RecoveryDuration =>
+  typeof duration === 'string' && (VALID_RECOVERY_DURATIONS as readonly string[]).includes(duration);
