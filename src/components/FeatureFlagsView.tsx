@@ -18,7 +18,10 @@ export const FeatureFlagsView = () => {
       if (savedFlags) {
         setFlags(prev => ({ ...prev, ...JSON.parse(savedFlags) }));
       }
-    } catch (e) {}
+    } catch (e) {
+      // Non-fatal - if localStorage is unavailable or the saved value is
+      // corrupted, the flags just fall back to their in-memory defaults.
+    }
   }, []);
 
   const toggleFlag = (key: string) => {
@@ -44,12 +47,19 @@ export const FeatureFlagsView = () => {
         {/* Overload Shield */}
         <div className="bg-surface dark:bg-surface/50 border border-border dark:border-border rounded-xl p-5 flex gap-4 items-start transition-all hover:border-primary/30">
           <div className="bg-primary/10 p-2 rounded-lg shrink-0 mt-0.5">
-            <ShieldAlert className="w-5 h-5 text-primary" />
+            <ShieldAlert className="w-5 h-5 text-[#9a3412] dark:text-primary" />
           </div>
           <div className="flex-1 space-y-1">
-            <div className="flex justify-between items-center group cursor-pointer" onClick={() => toggleFlag('enable_overload_shield')}>
+            <div className="flex justify-between items-center group">
               <h4 className="font-bold text-sm text-text-main">Nova Overload Shield</h4>
-              <button type="button" className="text-primary transition-transform active:scale-95">
+              <button
+                type="button"
+                onClick={() => toggleFlag('enable_overload_shield')}
+                role="switch"
+                aria-checked={flags.enable_overload_shield}
+                aria-label="Nova Overload Shield"
+                className="text-primary transition-transform active:scale-95 cursor-pointer"
+              >
                 {flags.enable_overload_shield ? <ToggleRight className="w-6 h-6" /> : <ToggleLeft className="w-6 h-6 text-text-muted" />}
               </button>
             </div>
@@ -62,12 +72,19 @@ export const FeatureFlagsView = () => {
         {/* Guardian Protocol */}
         <div className="bg-surface dark:bg-surface/50 border border-border dark:border-border rounded-xl p-5 flex gap-4 items-start transition-all hover:border-primary/30">
           <div className="bg-primary/10 p-2 rounded-lg shrink-0 mt-0.5">
-            <Cpu className="w-5 h-5 text-primary" />
+            <Cpu className="w-5 h-5 text-[#9a3412] dark:text-primary" />
           </div>
           <div className="flex-1 space-y-1">
-            <div className="flex justify-between items-center group cursor-pointer" onClick={() => toggleFlag('enable_guardian_protocol')}>
+            <div className="flex justify-between items-center group">
               <h4 className="font-bold text-sm text-text-main">Guardian Alert Auto-Escalation</h4>
-              <button type="button" className="text-primary transition-transform active:scale-95">
+              <button
+                type="button"
+                onClick={() => toggleFlag('enable_guardian_protocol')}
+                role="switch"
+                aria-checked={flags.enable_guardian_protocol}
+                aria-label="Guardian Alert Auto-Escalation"
+                className="text-primary transition-transform active:scale-95 cursor-pointer"
+              >
                 {flags.enable_guardian_protocol ? <ToggleRight className="w-6 h-6" /> : <ToggleLeft className="w-6 h-6 text-text-muted" />}
               </button>
             </div>
@@ -80,12 +97,19 @@ export const FeatureFlagsView = () => {
         {/* Nova Voice */}
         <div className="bg-surface dark:bg-surface/50 border border-border dark:border-border rounded-xl p-5 flex gap-4 items-start transition-all hover:border-primary/30">
           <div className="bg-primary/10 p-2 rounded-lg shrink-0 mt-0.5">
-            <Cpu className="w-5 h-5 text-primary" />
+            <Cpu className="w-5 h-5 text-[#9a3412] dark:text-primary" />
           </div>
           <div className="flex-1 space-y-1">
-            <div className="flex justify-between items-center group cursor-pointer" onClick={() => toggleFlag('enable_nova_voice')}>
+            <div className="flex justify-between items-center group">
               <h4 className="font-bold text-sm text-text-main">Nova Voice Mode</h4>
-              <button type="button" className="text-primary transition-transform active:scale-95">
+              <button
+                type="button"
+                onClick={() => toggleFlag('enable_nova_voice')}
+                role="switch"
+                aria-checked={flags.enable_nova_voice}
+                aria-label="Nova Voice Mode"
+                className="text-primary transition-transform active:scale-95 cursor-pointer"
+              >
                 {flags.enable_nova_voice ? <ToggleRight className="w-6 h-6" /> : <ToggleLeft className="w-6 h-6 text-text-muted" />}
               </button>
             </div>
