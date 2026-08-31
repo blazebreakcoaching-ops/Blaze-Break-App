@@ -20,7 +20,7 @@ import { getAppCheck } from 'firebase-admin/app-check';
 import cors from 'cors';
 import rateLimit from 'express-rate-limit';
 import { z } from 'zod';
-import { memoryToolIsAllowed, allowedMemoryCategories, searchMemories, isValidRecoveryDuration, NovaMemoryDoc } from './nova-tools';
+import { memoryToolIsAllowed, searchMemories, isValidRecoveryDuration, isValidMemoryType, NovaMemoryDoc } from './nova-tools';
 
 dotenv.config();
 
@@ -627,29 +627,21 @@ async function getNovaContextAndMetadata(uid: string, firestoreDb: any): Promise
     // Memory Usage
     if (perms.allowNovaMemory && perms.allowNovaUseSavedMemories) {
       const memRef = firestoreDb.collection('users').doc(uid).collection('nova_memories');
-      const memSnap = await memRef.where('revoked', '!=', true).get();
-      
-      const activeMemories = memSnap.docs.map((d: any) => d.data())
-        .filter((mem: any) => 
-          mem.userApproved === true && 
-          mem.reviewStatus === 'active' && 
-          (!mem.expiresAt || new Date(mem.expiresAt) > new Date())
-        );
+      const memSnap = await memRef.get();
+      const memories = memSnap.docs.map((d: any) => d.data());
 
-      let filteredMemories: any[] = [];
-      const allowedCategories = [];
-      if (perms.allowNovaRememberCoachingPreferences) allowedCategories.push('coaching_preference', 'module_preference', 'privacy_preference');
-      if (perms.allowNovaRememberRecoveryPatterns) allowedCategories.push('recovery_preference', 'recurring_pattern');
-      if (perms.allowNovaRememberGoals) allowedCategories.push('user_goal');
+      // Most recently updated first, capped at 5 - matches the same
+      // "top 5" limit this passive injection always had, now against
+      // real documents instead of ones that could never actually match
+      // the old filter criteria.
+      const recentMemories = memories
+        .filter((mem: any) => mem && typeof mem.content === 'string')
+        .sort((a: any, b: any) => new Date(b.updatedAt || 0).getTime() - new Date(a.updatedAt || 0).getTime())
+        .slice(0, 5);
 
-      filteredMemories = activeMemories.filter((mem: any) => allowedCategories.includes(mem.memoryType));
-      
-      // Limit to 5
-      filteredMemories = filteredMemories.slice(0, 5);
-
-      if (filteredMemories.length > 0) {
-        const memTextList = filteredMemories.map((m: any) => `- [${m.memoryType.replace(/_/g, ' ')}] ${m.memoryText} (Source: ${m.sourceType.replace(/_/g, ' ')})`);
-        infoParts.push(`User-approved Nova memories:
+      if (recentMemories.length > 0) {
+        const memTextList = recentMemories.map((m: any) => `- [${m.type}] ${m.content}${m.source ? ` (Source: ${m.source})` : ''}`);
+        infoParts.push(`Nova's saved memories about this user:
 ${memTextList.join('\n')}`);
         used.push("memory");
       }
@@ -701,7 +693,7 @@ const ChatRequestSchema = z.object({
 const NOVA_TOOLS: any[] = [
   {
     name: "search_nova_memories",
-    description: "Search the user's own saved Nova memories (coaching preferences, recovery patterns, goals) by keyword. Use this when the user references something they've told Nova before that isn't already in the current context, or asks what Nova remembers about a specific topic. Respects the same consent settings as passive context - if the user hasn't enabled memory use, this returns no results rather than bypassing that choice.",
+    description: "Search the user's own saved Nova memories (things Nova has noted about their profile, triggers, current state, coaching rules, and preferences) by keyword. Use this when the user references something they've told Nova before that isn't already in the current context, or asks what Nova remembers about a specific topic. Respects the user's memory consent setting - if the user hasn't enabled it, this returns no results rather than bypassing that choice.",
     parameters: {
       type: Type.OBJECT,
       properties: {
@@ -732,10 +724,9 @@ async function executeSearchNovaMemories(uid: string, firestoreDb: any, query: s
   const permDoc = await firestoreDb.collection('users').doc(uid).collection('nova_permissions').doc('current').get();
   const perms = permDoc.exists ? (permDoc.data() || {}) : {};
   if (!memoryToolIsAllowed(perms)) return { results: [] };
-  if (allowedMemoryCategories(perms).length === 0) return { results: [] };
 
   const memRef = firestoreDb.collection('users').doc(uid).collection('nova_memories');
-  const memSnap = await memRef.where('revoked', '!=', true).get();
+  const memSnap = await memRef.get();
   const memories: NovaMemoryDoc[] = memSnap.docs.map((d: any) => d.data());
 
   return { results: searchMemories(perms, memories, query) };

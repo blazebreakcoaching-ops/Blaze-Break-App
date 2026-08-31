@@ -545,7 +545,9 @@ export const ConnectedNovaPermissions = () => {
     allowRecoveryDebt: false,
     allowRecoveryVelocity: false,
     allowEnergyTrend: false,
-    allowMoodTrend: false
+    allowMoodTrend: false,
+    allowNovaMemory: false,
+    allowNovaUseSavedMemories: false // shadow field, kept in sync with allowNovaMemory - see toggle()
   });
   
   
@@ -563,7 +565,8 @@ export const ConnectedNovaPermissions = () => {
     allowRecoveryDebt: "Let Nova use my Recovery Debt summary",
     allowRecoveryVelocity: "Let Nova use my Recovery Velocity summary",
     allowEnergyTrend: "Let Nova use my Energy Trend",
-    allowMoodTrend: "Let Nova use my Mood Trend"
+    allowMoodTrend: "Let Nova use my Mood Trend",
+    allowNovaMemory: "Let Nova remember things about me across conversations"
   };
 
   const fetchPerms = async () => {
@@ -584,7 +587,17 @@ export const ConnectedNovaPermissions = () => {
   const toggle = async (key: keyof typeof perms) => {
     if (!uid) return;
     setLoading(true); setError('');
-    const newPerms = { ...perms, [key]: !perms[key], updatedAt: new Date().toISOString() };
+    const newValue = !perms[key];
+    const newPerms = {
+      ...perms,
+      [key]: newValue,
+      // allowNovaUseSavedMemories mirrors allowNovaMemory - the backend
+      // requires both to be true (an AND gate), and exposing them as two
+      // separate toggles would just be confusing since there's no real
+      // scenario where a user would want one on and the other off.
+      ...(key === 'allowNovaMemory' ? { allowNovaUseSavedMemories: newValue } : {}),
+      updatedAt: new Date().toISOString()
+    };
     setPerms(newPerms);
     try {
       await setDoc(doc(db, 'users', uid, 'nova_permissions', 'current'), newPerms);
@@ -600,12 +613,12 @@ export const ConnectedNovaPermissions = () => {
       </div>
       <div className="bg-primary/5 text-primary text-xs p-3 rounded-lg border border-primary/20 mb-4 font-bold flex gap-2">
         <Sparkles className="w-4 h-4 shrink-0" />
-        <span>Nova personalisation is limited to permitted compact summaries. Raw text remains excluded; memory remains disabled.</span>
+        <span>Nova personalisation is limited to permitted compact summaries. Raw text remains excluded. Memory is off by default and only used for categories you turn on below.</span>
       </div>
       <ErrorMessage msg={error} />
       
       <div className="bg-surface p-4 rounded-xl border border-border space-y-2">
-        {Object.entries(perms).filter(([k]) => k !== 'updatedAt').map(([k, v]) => (
+        {Object.entries(perms).filter(([k]) => k !== 'updatedAt' && k !== 'allowNovaUseSavedMemories').map(([k, v]) => (
           <div key={k} className="flex justify-between items-center p-2.5 hover:bg-card rounded-lg transition-colors border-b border-border/5 last:border-b-0">
             <div>
               <span className="text-sm font-bold text-text-main block">{permissionsLabels[k] || k}</span>
