@@ -5,6 +5,7 @@ import fs from "fs";
 import crypto from "crypto";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, Type, Modality, LiveServerMessage } from "@google/genai";
+import Anthropic from "@anthropic-ai/sdk";
 import dotenv from "dotenv";
 import twilio from "twilio";
 import cron from "node-cron";
@@ -21,6 +22,7 @@ import cors from 'cors';
 import rateLimit from 'express-rate-limit';
 import { z } from 'zod';
 import { memoryToolIsAllowed, searchMemories, isValidRecoveryDuration, validateMemoryWrite, NovaMemoryDoc } from './nova-tools';
+import { toClaudeTools, GeminiStyleToolDeclaration } from './nova-claude-tools';
 
 dotenv.config();
 
@@ -359,6 +361,17 @@ const ai = new GoogleGenAI({
     }
   }
 });
+
+// Anthropic (Claude) Initialization
+// This provider is optional and feature-flagged (NOVA_CHAT_PROVIDER env
+// var) - the app must keep working on Gemini alone if this key is never
+// set, since Gemini is the existing, proven path every real user is
+// currently on. See callClaudeNovaChat for where this is actually used.
+const anthropicApiKey = process.env.ANTHROPIC_API_KEY;
+if (!anthropicApiKey) {
+  console.warn("Note: ANTHROPIC_API_KEY is not set. Nova chat will continue running on Gemini; set NOVA_CHAT_PROVIDER=claude and this key together to enable Claude for Nova chat.");
+}
+const anthropic = anthropicApiKey ? new Anthropic({ apiKey: anthropicApiKey }) : null;
 
 const VAPID_PUBLIC_KEY = process.env.VAPID_PUBLIC_KEY || "";
 const VAPID_PRIVATE_KEY = process.env.VAPID_PRIVATE_KEY || "";
@@ -812,6 +825,115 @@ async function executeNovaTool(name: string, args: Record<string, unknown>, uid:
   }
 }
 
+// Claude conversation loop for Nova chat, kept in exact behavioral parity
+// with the Gemini loop below it: same MAX_TOOL_CALL_ROUNDS, same
+// MAX_MEMORY_WRITES_PER_TURN checked synchronously before the async
+// dispatch, same executeNovaTool dispatcher (the tools themselves don't
+// know or care which provider is calling them), same planTrace shape
+// returned to the caller. The only real difference is mechanical: Claude
+// uses a growing messages array with tool_use/tool_result content blocks
+// rather than Gemini's stateful chat object with functionCall/
+// functionResponse parts.
+//
+// Feature-flagged via NOVA_CHAT_PROVIDER and gated on the anthropic
+// client actually being configured - callers must check both before
+// calling this, since it throws rather than silently falling back if
+// invoked without a real API key.
+async function callClaudeNovaChat(
+  systemPrompt: string,
+  history: any[],
+  message: string,
+  uid: string | undefined,
+  firestoreDb: any,
+  signal: AbortSignal
+): Promise<{ text: string; planTrace: { tool: string; args: Record<string, unknown>; result: Record<string, unknown> }[] }> {
+  if (!anthropic) {
+    throw new Error("NOVA_CHAT_PROVIDER is set to claude but ANTHROPIC_API_KEY is not configured.");
+  }
+
+  const claudeTools = toClaudeTools(NOVA_TOOLS as GeminiStyleToolDeclaration[]);
+
+  // The incoming history matches Gemini's expected shape
+  // ({ role: 'user' | 'model', parts: [{ text }] }), since that's what the
+  // frontend has always sent for the existing Gemini-only endpoint.
+  // Converted defensively - ChatRequestSchema validates history only as
+  // z.array(z.any()), so a malformed entry shouldn't throw here, just
+  // resolve to empty text.
+  const claudeMessages: Anthropic.MessageParam[] = (history || []).map((h: any) => ({
+    role: h?.role === 'model' ? 'assistant' : 'user',
+    content: Array.isArray(h?.parts) ? h.parts.map((p: any) => (typeof p?.text === 'string' ? p.text : '')).join('') : '',
+  }));
+  claudeMessages.push({ role: 'user', content: message });
+
+  const MODEL = "claude-sonnet-5";
+  const MAX_TOKENS = 2048;
+
+  let response = await anthropic.messages.create({
+    model: MODEL,
+    max_tokens: MAX_TOKENS,
+    system: systemPrompt,
+    tools: claudeTools,
+    messages: claudeMessages,
+  }, { signal });
+
+  let toolCallRounds = 0;
+  const MAX_TOOL_CALL_ROUNDS = 5;
+  const MAX_MEMORY_WRITES_PER_TURN = 2;
+  let memoryWriteCount = 0;
+  const planTrace: { tool: string; args: Record<string, unknown>; result: Record<string, unknown> }[] = [];
+
+  while (response.stop_reason === 'tool_use' && toolCallRounds < MAX_TOOL_CALL_ROUNDS) {
+    toolCallRounds++;
+
+    const toolUseBlocks = response.content.filter(
+      (block): block is Anthropic.ToolUseBlock => block.type === 'tool_use'
+    );
+
+    // Echo the model's own turn back exactly as received (text + tool_use
+    // blocks together) before appending the tool results - Claude's API
+    // requires the full prior assistant turn to stay in the transcript.
+    claudeMessages.push({ role: 'assistant', content: response.content });
+
+    const toolResults: Anthropic.ToolResultBlockParam[] = await Promise.all(
+      toolUseBlocks.map(async (block): Promise<Anthropic.ToolResultBlockParam> => {
+        const args = (block.input && typeof block.input === 'object' ? block.input : {}) as Record<string, unknown>;
+        let output: Record<string, unknown>;
+        if (block.name === "remember_about_user") {
+          // Checked and incremented synchronously, before the await below,
+          // matching the same race-safety reasoning as the Gemini loop.
+          if (memoryWriteCount >= MAX_MEMORY_WRITES_PER_TURN) {
+            output = { saved: false, error: `Already saved ${MAX_MEMORY_WRITES_PER_TURN} memories this turn - that's enough for one conversation. Wait for a future message if there's more worth remembering.` };
+          } else {
+            memoryWriteCount++;
+            output = await executeNovaTool(block.name, args, uid, firestoreDb);
+          }
+        } else {
+          output = await executeNovaTool(block.name, args, uid, firestoreDb);
+        }
+        planTrace.push({ tool: block.name, args, result: output });
+        return { type: 'tool_result', tool_use_id: block.id, content: JSON.stringify(output) };
+      })
+    );
+
+    claudeMessages.push({ role: 'user', content: toolResults });
+
+    response = await anthropic.messages.create({
+      model: MODEL,
+      max_tokens: MAX_TOKENS,
+      system: systemPrompt,
+      tools: claudeTools,
+      messages: claudeMessages,
+    }, { signal });
+  }
+
+  const textBlocks = response.content.filter(
+    (block): block is Anthropic.TextBlock => block.type === 'text'
+  );
+  const text = textBlocks.map((block) => block.text).join('');
+
+  return { text, planTrace };
+}
+
 app.post("/api/nova/chat", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
   try {
     const parsedParams = ChatRequestSchema.safeParse(req.body);
@@ -819,8 +941,16 @@ app.post("/api/nova/chat", verifyAppCheck, authenticateFirebaseUser, async (req,
       return res.status(400).json({ error: "Invalid request payload or forbidden fields detected.", details: (parsedParams as any).error?.errors || [] });
     }
     const { message, history, systemInstruction } = parsedParams.data;
-    
-    if (!process.env.GEMINI_API_KEY || process.env.GEMINI_API_KEY === "MY_GEMINI_API_KEY") {
+
+    // Provider selection: Gemini remains the default, proven path every
+    // real user is currently on. Claude only activates when both the
+    // environment explicitly requests it AND a real client was
+    // successfully initialized - if either condition fails, this falls
+    // straight through to the existing Gemini path rather than erroring,
+    // so a misconfiguration here can't take Nova chat down entirely.
+    const useClaudeForThisChat = process.env.NOVA_CHAT_PROVIDER === 'claude' && anthropic !== null;
+
+    if (!useClaudeForThisChat && (!process.env.GEMINI_API_KEY || process.env.GEMINI_API_KEY === "MY_GEMINI_API_KEY")) {
       return res.status(401).json({ error: "Gemini API key not configured. Please add your key in the app settings secrets." });
     }
 
@@ -850,6 +980,20 @@ app.post("/api/nova/chat", verifyAppCheck, authenticateFirebaseUser, async (req,
 
     const abortController = new AbortController();
     const timeoutId = setTimeout(() => abortController.abort(), 25000); // 25s timeout - raised from 15s to accommodate one or more tool-call round-trips
+
+    if (useClaudeForThisChat) {
+      try {
+        const claudeResult = await callClaudeNovaChat(mergedSystemPrompt, history || [], message, uid, getDb(), abortController.signal);
+        clearTimeout(timeoutId);
+        return res.json({ text: claudeResult.text, privacyMetadata: contextMetadata, planTrace: claudeResult.planTrace });
+      } catch (modelError: any) {
+        clearTimeout(timeoutId);
+        if (modelError.name === 'AbortError') {
+          return res.status(504).json({ error: "Request timed out." });
+        }
+        throw modelError;
+      }
+    }
 
     try {
       const chat = ai.chats.create({
