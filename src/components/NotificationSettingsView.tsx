@@ -101,6 +101,7 @@ export const NotificationSettingsView = ({ onSaveSuccess }: { onSaveSuccess?: ()
               type="checkbox" 
               checked={prefs.notificationsEnabled}
               onChange={e => setPrefs(p => ({ ...p, notificationsEnabled: e.target.checked }))}
+              aria-label="Turn on in-app nudges"
               className="sr-only peer"
             />
             <div className="w-9 h-5 bg-border rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary"></div>
@@ -116,8 +117,9 @@ export const NotificationSettingsView = ({ onSaveSuccess }: { onSaveSuccess?: ()
           <p className="text-xs text-text-muted">Nova will never nudge you during these hours.</p>
           <div className="flex items-center gap-4">
             <div className="space-y-1">
-              <label className="text-[10px] uppercase font-bold text-text-muted">Start</label>
+              <label htmlFor="quiet-hours-start" className="text-[10px] uppercase font-bold text-text-muted">Start</label>
               <input 
+                id="quiet-hours-start"
                 type="time" 
                 value={prefs.quietHoursStart}
                 onChange={e => setPrefs(p => ({ ...p, quietHoursStart: e.target.value }))}
@@ -125,8 +127,9 @@ export const NotificationSettingsView = ({ onSaveSuccess }: { onSaveSuccess?: ()
               />
             </div>
             <div className="space-y-1">
-              <label className="text-[10px] uppercase font-bold text-text-muted">End</label>
+              <label htmlFor="quiet-hours-end" className="text-[10px] uppercase font-bold text-text-muted">End</label>
               <input 
+                id="quiet-hours-end"
                 type="time" 
                 value={prefs.quietHoursEnd}
                 onChange={e => setPrefs(p => ({ ...p, quietHoursEnd: e.target.value }))}
@@ -157,6 +160,7 @@ export const NotificationSettingsView = ({ onSaveSuccess }: { onSaveSuccess?: ()
                     type="checkbox" 
                     checked={prefs.allowedNudgeCategories.includes(cat.id)}
                     onChange={() => toggleCategory(cat.id)}
+                    aria-label={cat.label}
                     className="rounded text-primary border-border focus:ring-0"
                   />
                 </div>
@@ -174,6 +178,7 @@ export const NotificationSettingsView = ({ onSaveSuccess }: { onSaveSuccess?: ()
               <button
                 key={freq}
                 onClick={() => setPrefs(p => ({ ...p, nudgeFrequency: freq }))}
+                aria-pressed={prefs.nudgeFrequency === freq}
                 className={cn(
                   "p-2 text-xs font-bold uppercase rounded-lg border text-center transition-colors",
                   prefs.nudgeFrequency === freq ? "bg-primary text-primary-foreground border-primary" : "bg-background border-border text-text-muted hover:border-primary/50"
