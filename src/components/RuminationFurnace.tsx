@@ -30,6 +30,8 @@ export const RuminationFurnace = ({ onCleared }: { onCleared?: () => void }) => 
       <motion.div 
         initial={{ opacity: 0, scale: 0.95, y: 10 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
+        role="status"
+        aria-live="polite"
         className="card bg-background border border-border p-8 sm:p-12 md:p-16 text-center flex flex-col items-center justify-center space-y-8 relative overflow-hidden"
       >
 
@@ -104,6 +106,7 @@ export const RuminationFurnace = ({ onCleared }: { onCleared?: () => void }) => 
               onChange={(e) => setInput(e.target.value)}
               disabled={isBurning}
               placeholder="Write down what's stuck in your head. e.g., 'I am furious that my Saturday boundary was crossed again...'"
+              aria-label="What's stuck in your head"
               className={cn(
                 "w-full h-56 bg-transparent p-6 text-lg lg:text-xl font-medium placeholder:text-text-muted focus:outline-none resize-none transition-all duration-700 relative z-10",
                 isBurning ? "text-warning grayscale opacity-30" : "text-text-main"
@@ -119,6 +122,8 @@ export const RuminationFurnace = ({ onCleared }: { onCleared?: () => void }) => 
                     initial={{ opacity: 0, scale: 0.5 }}
                     animate={{ opacity: 1, scale: [1, 1.2, 1] }}
                     transition={{ duration: 0.8, repeat: Infinity }}
+                    role="status"
+                    aria-live="polite"
                     className="absolute inset-0 flex flex-col items-center justify-center z-30"
                   >
                     <Flame className="w-20 h-20 text-text-main animate-pulse" />
