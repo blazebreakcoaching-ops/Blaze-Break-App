@@ -6,7 +6,7 @@ export const RetentionSchedule = () => {
     { category: 'Private Nova Chat History', retention: '30 Days', action: 'Auto-Purge', icon: Clock, color: 'text-destructive' },
     { category: 'Mood Logs & Triggers', retention: '12 Months', action: 'Anonymise', icon: Server, color: 'text-primary' },
     { category: 'Account Metadata', retention: 'Duration of Account', action: 'Retain', icon: History, color: 'text-text-muted' },
-    { category: 'Organization Aggregates', retention: '24 Months', action: 'Retain (Anonymized)', icon: EyeOff, color: 'text-success' }
+    { category: 'Organization Aggregates', retention: '24 Months', action: 'Retain (Anonymized)', icon: EyeOff, color: 'text-success dark:text-[#4ade80]' }
   ];
 
   return (
@@ -25,9 +25,9 @@ export const RetentionSchedule = () => {
         <table className="w-full text-left text-sm whitespace-nowrap">
           <thead className="bg-surface border-b border-white/[0.05] text-text-muted">
             <tr>
-              <th className="px-4 py-3 font-medium">Data Category</th>
-              <th className="px-4 py-3 font-medium">Retention Period</th>
-              <th className="px-4 py-3 font-medium">End of Life Action</th>
+              <th scope="col" className="px-4 py-3 font-medium">Data Category</th>
+              <th scope="col" className="px-4 py-3 font-medium">Retention Period</th>
+              <th scope="col" className="px-4 py-3 font-medium">End of Life Action</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-white/[0.02]">
@@ -49,7 +49,7 @@ export const RetentionSchedule = () => {
       </div>
       
       <div className="bg-destructive/5 border border-destructive/10 p-4 rounded-xl mt-4">
-         <p className="text-xs text-rose-300/80 leading-relaxed font-light">
+         <p className="text-xs text-[#b91c1c] dark:text-rose-300/80 leading-relaxed font-light">
            <strong>Notice:</strong> When data is purged, it is cryptographically shredded and cannot be recovered by Blaze Break admins or Nova.
          </p>
       </div>
