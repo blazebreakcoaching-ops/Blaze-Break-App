@@ -12,6 +12,7 @@ export const NegotiatorTool = () => {
     project: ''
   });
   const [generatedScript, setGeneratedScript] = useState('');
+  const [scriptCopied, setScriptCopied] = useState(false);
 
   const types = ['Extension', 'Delegation', 'Scope Reduction', 'Meeting Opt-out'];
   const reasons = ['Executive Fatigue', 'Capacity Overflow', 'Strategic Realignment', 'Health Priority'];
@@ -52,6 +53,7 @@ export const NegotiatorTool = () => {
                   <button 
                     key={t}
                     onClick={() => setRequest({ ...request, type: t })}
+                    aria-pressed={request.type === t}
                     className={cn(
                       "p-4 rounded-xl border text-xs font-bold text-left transition-all",
                       request.type === t ? "bg-primary text-primary-foreground border-primary shadow-lg" : "bg-card text-text-muted border-border hover:border-primary"
@@ -75,6 +77,7 @@ export const NegotiatorTool = () => {
                   <button 
                     key={r}
                     onClick={() => setRequest({ ...request, reason: r })}
+                    aria-pressed={request.reason === r}
                     className={cn(
                       "p-4 rounded-xl border text-xs font-bold text-left transition-all",
                       request.reason === r ? "bg-primary text-primary-foreground border-primary shadow-lg" : "bg-card text-text-muted border-border hover:border-primary"
@@ -93,6 +96,7 @@ export const NegotiatorTool = () => {
                   <button 
                     key={i}
                     onClick={() => setRequest({ ...request, intensity: i })}
+                    aria-pressed={request.intensity === i}
                     className={cn(
                       "flex-1 p-3 rounded-lg border text-xs font-black uppercase tracking-widest transition-all",
                       request.intensity === i ? "bg-primary text-primary-foreground border-primary shadow-md" : "bg-card text-text-muted border-border hover:border-border"
@@ -119,10 +123,13 @@ export const NegotiatorTool = () => {
                 <button 
                   onClick={() => {
                     navigator.clipboard.writeText(generatedScript);
+                    setScriptCopied(true);
+                    setTimeout(() => setScriptCopied(false), 2000);
                   }}
+                  aria-label={scriptCopied ? "Script copied to clipboard" : "Copy script to clipboard"}
                   className="flex-1 bg-black/5 hover:bg-black/10 dark:bg-white/10 dark:hover:bg-white/20 py-3 rounded-xl flex items-center justify-center gap-2 text-xs font-black uppercase tracking-widest transition-all"
                 >
-                  <Copy className="w-4 h-4" /> Copy Script
+                  <Copy className="w-4 h-4" /> {scriptCopied ? 'Copied' : 'Copy Script'}
                 </button>
                 <button 
                    onClick={() => setStep(0)}
@@ -137,8 +144,8 @@ export const NegotiatorTool = () => {
             </div>
 
             <div className="p-4 bg-warning/10 border border-warning/20 rounded-xl flex gap-3 text-left">
-              <AlertTriangle className="w-5 h-5 text-warning shrink-0" />
-              <p className="text-xs text-warning-foreground uppercase font-black leading-tight tracking-wide">
+              <AlertTriangle className="w-5 h-5 text-[#9a3412] dark:text-warning shrink-0" />
+              <p className="text-xs text-[#9a3412] dark:text-warning uppercase font-black leading-tight tracking-wide">
                 NEGOTIATION TIP: If they push back, immediately pivot to a "priority swap" question. Do not apologize for the budget.
               </p>
             </div>
