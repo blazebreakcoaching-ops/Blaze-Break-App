@@ -1,5 +1,5 @@
 import { motion } from 'motion/react';
-import { ShieldAlert, Battery, Waves, Zap, ChevronRight, CheckCircle2 } from 'lucide-react';
+import { ShieldAlert, Battery, Waves, Zap, CheckCircle2 } from 'lucide-react';
 import { cn } from '../lib/utils';
 
 interface SHIPStage {
@@ -59,7 +59,7 @@ export const ShipJourney = ({ currentStage }: { currentStage: SHIPStage['id'] })
             amber: 'bg-warning',
             rose: 'bg-destructive',
             sky: 'bg-info',
-            teal: 'bg-teal-500'
+            teal: 'bg-teal-700'
           }[s.color as 'amber' | 'rose' | 'sky' | 'teal'];
 
           return (
@@ -102,7 +102,7 @@ export const ShipJourney = ({ currentStage }: { currentStage: SHIPStage['id'] })
               amber: 'bg-warning',
               rose: 'bg-destructive',
               sky: 'bg-info',
-              teal: 'bg-teal-500'
+              teal: 'bg-teal-700'
             }[STAGES[currentIndex].color as 'amber' | 'rose' | 'sky' | 'teal']
           )}>
             {(() => {
@@ -119,12 +119,9 @@ export const ShipJourney = ({ currentStage }: { currentStage: SHIPStage['id'] })
         <div className="space-y-3">
           <h4 className="text-xs uppercase tracking-widest font-black text-text-muted">Current Recovery Quests</h4>
           {STAGES[currentIndex].tasks.map((task, i) => (
-            <div key={i} className="flex items-center gap-4 p-4 bg-card border border-border rounded-xl hover:border-primary/20 transition-all cursor-pointer group">
-              <div className="w-6 h-6 rounded-full border-2 border-border flex items-center justify-center group-hover:border-primary transition-colors">
-                <div className="w-2 h-2 rounded-full bg-primary opacity-0 group-hover:opacity-100 transition-opacity" />
-              </div>
+            <div key={i} className="flex items-center gap-4 p-4 bg-card border border-border rounded-xl">
+              <div className="w-6 h-6 rounded-full border-2 border-border flex items-center justify-center shrink-0" />
               <span className="text-sm font-medium text-text-muted">{task}</span>
-              <ChevronRight className="w-4 h-4 text-text-muted ml-auto" />
             </div>
           ))}
         </div>
