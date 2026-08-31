@@ -88,3 +88,44 @@ export const VALID_MEMORY_TYPES = ['profile', 'trigger', 'state', 'rule', 'prefe
 
 export const isValidMemoryType = (type: unknown): type is NovaMemoryType =>
   typeof type === 'string' && (VALID_MEMORY_TYPES as readonly string[]).includes(type);
+
+// A model proposing its own confidence in a memory it wants to write.
+// Deliberately excludes 'verified' even though nova-brain.ts's
+// ConfidenceLevel type allows it elsewhere (e.g. the Safety Engine's
+// deterministic rule-based writes) - a probabilistic inference from a
+// conversation is never "verified" in the sense that word is used for a
+// hard computation, and letting the model claim that level would be a
+// false claim of certainty reaching the user's own memory record.
+export const VALID_WRITABLE_CONFIDENCE_LEVELS = ['low', 'medium', 'high'] as const;
+export type WritableConfidenceLevel = typeof VALID_WRITABLE_CONFIDENCE_LEVELS[number];
+
+export const isValidWritableConfidence = (confidence: unknown): confidence is WritableConfidenceLevel =>
+  typeof confidence === 'string' && (VALID_WRITABLE_CONFIDENCE_LEVELS as readonly string[]).includes(confidence);
+
+// Keeps a single, hallucinated-but-plausible-looking memory entry from
+// becoming an unbounded wall of text in someone's permanent record.
+export const MAX_MEMORY_CONTENT_LENGTH = 300;
+
+export interface MemoryWriteValidationResult {
+  valid: boolean;
+  error?: string;
+}
+
+// Pure validation for a proposed memory write, independent of the actual
+// Firestore write server.ts performs afterward - every reason a write
+// could be rejected lives in one place, testable without any I/O.
+export const validateMemoryWrite = (args: { type?: unknown; content?: unknown; confidence?: unknown }): MemoryWriteValidationResult => {
+  if (!isValidMemoryType(args.type)) {
+    return { valid: false, error: `"${args.type}" is not a real memory type. Valid options are profile, trigger, state, rule, preference.` };
+  }
+  if (typeof args.content !== 'string' || args.content.trim().length === 0) {
+    return { valid: false, error: 'Memory content must be non-empty text.' };
+  }
+  if (args.content.length > MAX_MEMORY_CONTENT_LENGTH) {
+    return { valid: false, error: `Memory content must be ${MAX_MEMORY_CONTENT_LENGTH} characters or fewer - keep it concise and specific.` };
+  }
+  if (!isValidWritableConfidence(args.confidence)) {
+    return { valid: false, error: `"${args.confidence}" is not a valid confidence level for a conversation-derived memory. Valid options are low, medium, high.` };
+  }
+  return { valid: true };
+};

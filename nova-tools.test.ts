@@ -4,6 +4,9 @@ import {
   searchMemories,
   isValidRecoveryDuration,
   isValidMemoryType,
+  isValidWritableConfidence,
+  validateMemoryWrite,
+  MAX_MEMORY_CONTENT_LENGTH,
   NovaMemoryDoc,
   NovaPermissions,
 } from './nova-tools';
@@ -151,5 +154,76 @@ describe('isValidMemoryType: guards against a hallucinated memory category being
     expect(isValidMemoryType(1)).toBe(false);
     expect(isValidMemoryType(null)).toBe(false);
     expect(isValidMemoryType(undefined)).toBe(false);
+  });
+});
+
+describe('isValidWritableConfidence: the model can propose low/medium/high, never verified', () => {
+  it('accepts low, medium, and high', () => {
+    expect(isValidWritableConfidence('low')).toBe(true);
+    expect(isValidWritableConfidence('medium')).toBe(true);
+    expect(isValidWritableConfidence('high')).toBe(true);
+  });
+
+  it('rejects verified, even though it is a real ConfidenceLevel value elsewhere in the app - it is reserved for deterministic system computations, not a probabilistic conversational inference', () => {
+    expect(isValidWritableConfidence('verified')).toBe(false);
+  });
+
+  it('rejects non-string and nonsense input', () => {
+    expect(isValidWritableConfidence(1)).toBe(false);
+    expect(isValidWritableConfidence(null)).toBe(false);
+    expect(isValidWritableConfidence('certain')).toBe(false);
+  });
+});
+
+describe('validateMemoryWrite: the single gate every proposed memory write must pass', () => {
+  const validArgs = { type: 'preference', content: 'Prefers ending meetings 5 minutes early', confidence: 'medium' };
+
+  it('accepts a fully valid write', () => {
+    expect(validateMemoryWrite(validArgs)).toEqual({ valid: true });
+  });
+
+  it('rejects an invalid or hallucinated memory type', () => {
+    const result = validateMemoryWrite({ ...validArgs, type: 'goal' });
+    expect(result.valid).toBe(false);
+    expect(result.error).toMatch(/not a real memory type/);
+  });
+
+  it('rejects empty content', () => {
+    expect(validateMemoryWrite({ ...validArgs, content: '' }).valid).toBe(false);
+  });
+
+  it('rejects whitespace-only content', () => {
+    expect(validateMemoryWrite({ ...validArgs, content: '   ' }).valid).toBe(false);
+  });
+
+  it('rejects non-string content', () => {
+    expect(validateMemoryWrite({ ...validArgs, content: 12345 }).valid).toBe(false);
+  });
+
+  it('rejects content over the length cap', () => {
+    const tooLong = 'a'.repeat(MAX_MEMORY_CONTENT_LENGTH + 1);
+    const result = validateMemoryWrite({ ...validArgs, content: tooLong });
+    expect(result.valid).toBe(false);
+    expect(result.error).toMatch(/300 characters or fewer/);
+  });
+
+  it('accepts content exactly at the length cap', () => {
+    const exactLength = 'a'.repeat(MAX_MEMORY_CONTENT_LENGTH);
+    expect(validateMemoryWrite({ ...validArgs, content: exactLength }).valid).toBe(true);
+  });
+
+  it('rejects a proposed "verified" confidence specifically - the safety-critical case', () => {
+    const result = validateMemoryWrite({ ...validArgs, confidence: 'verified' });
+    expect(result.valid).toBe(false);
+    expect(result.error).toMatch(/not a valid confidence level/);
+  });
+
+  it('rejects missing confidence', () => {
+    expect(validateMemoryWrite({ type: 'preference', content: 'Something' }).valid).toBe(false);
+  });
+
+  it('checks type before content, so the first error surfaced is always type when both are invalid', () => {
+    const result = validateMemoryWrite({ type: 'nonsense', content: '', confidence: 'verified' });
+    expect(result.error).toMatch(/not a real memory type/);
   });
 });

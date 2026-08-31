@@ -20,7 +20,7 @@ import { getAppCheck } from 'firebase-admin/app-check';
 import cors from 'cors';
 import rateLimit from 'express-rate-limit';
 import { z } from 'zod';
-import { memoryToolIsAllowed, searchMemories, isValidRecoveryDuration, isValidMemoryType, NovaMemoryDoc } from './nova-tools';
+import { memoryToolIsAllowed, searchMemories, isValidRecoveryDuration, validateMemoryWrite, NovaMemoryDoc } from './nova-tools';
 
 dotenv.config();
 
@@ -714,6 +714,19 @@ const NOVA_TOOLS: any[] = [
       required: ["duration", "reason"],
     },
   },
+  {
+    name: "remember_about_user",
+    description: "Save something durable and specific you've noticed about this user to Nova's long-term memory, for use in future conversations. Only use this for things worth remembering weeks from now: a pattern that has come up more than once, an explicitly stated preference or boundary, a recurring trigger, or a genuinely significant single disclosure like a stated goal. Do NOT use this for a single passing mention, small talk, or anything you're inferring without the user having actually said or clearly shown it - a one-off detail is not memory material. The user can review, edit, or delete anything saved here at any time, and nothing here overrides their own explicit statements if they ever conflict. Set confidence honestly: 'high' only if the user stated this directly and clearly; 'medium' if it's a reasonable inference from what they said; 'low' if you're genuinely uncertain but think it's still worth noting for a human to review.",
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        type: { type: Type.STRING, description: "One of: profile (a stable fact about who they are or their situation), trigger (something that reliably provokes a stress/overload response), state (a notable current-state observation), rule (a coaching rule or boundary they've set for how Nova should behave), preference (a stated preference about their recovery, schedule, or communication style)." },
+        content: { type: Type.STRING, description: "The memory itself: concise, specific, third-person, under 300 characters. E.g. 'Prefers ending meetings 5 minutes early to transition between calls.'" },
+        confidence: { type: Type.STRING, description: "One of: low, medium, high - how directly the user stated this versus how much you're inferring." },
+      },
+      required: ["type", "content", "confidence"],
+    },
+  },
 ];
 
 // Mirrors the exact permission check and category filtering already
@@ -748,6 +761,43 @@ function executeProposeRecoveryAction(args: Record<string, unknown>): { proposed
   return { proposed: true, duration, reason };
 }
 
+// The one place a Nova conversation can actually write to a user's
+// permanent memory record. Every safeguard here matters: memoryToolIsAllowed
+// is the same consent gate the read tool respects (a user who hasn't
+// enabled memory can't have Nova write to it either), validateMemoryWrite
+// rejects a hallucinated type, empty/oversized content, or a proposed
+// 'verified' confidence a conversational inference has no right to claim,
+// and canEdit is hardcoded true regardless of what the model sends - the
+// user must always retain the ability to correct or delete anything Nova
+// infers about them, full stop, not something a tool argument gets to
+// override.
+async function executeRememberAboutUser(uid: string, firestoreDb: any, args: Record<string, unknown>): Promise<{ saved: boolean; error?: string }> {
+  const permDoc = await firestoreDb.collection('users').doc(uid).collection('nova_permissions').doc('current').get();
+  const perms = permDoc.exists ? (permDoc.data() || {}) : {};
+  if (!memoryToolIsAllowed(perms)) {
+    return { saved: false, error: "The user hasn't enabled Nova memory, so nothing was saved." };
+  }
+
+  const validation = validateMemoryWrite(args);
+  if (!validation.valid) {
+    return { saved: false, error: validation.error };
+  }
+
+  const memRef = firestoreDb.collection('users').doc(uid).collection('nova_memories').doc();
+  const now = new Date().toISOString();
+  await memRef.set({
+    type: args.type,
+    content: args.content,
+    source: "Nova Conversation",
+    confidence: args.confidence,
+    createdAt: now,
+    updatedAt: now,
+    canEdit: true,
+  });
+
+  return { saved: true };
+}
+
 async function executeNovaTool(name: string, args: Record<string, unknown>, uid: string | undefined, firestoreDb: any): Promise<Record<string, unknown>> {
   if (!uid) return { error: "No authenticated user for this tool call." };
   switch (name) {
@@ -755,6 +805,8 @@ async function executeNovaTool(name: string, args: Record<string, unknown>, uid:
       return executeSearchNovaMemories(uid, firestoreDb, String(args.query || ""));
     case "propose_recovery_action":
       return executeProposeRecoveryAction(args);
+    case "remember_about_user":
+      return executeRememberAboutUser(uid, firestoreDb, args);
     default:
       return { error: `Unknown tool: ${name}` };
   }
@@ -821,13 +873,28 @@ app.post("/api/nova/chat", verifyAppCheck, authenticateFirebaseUser, async (req,
       // and for privacy/audit purposes, not just debugging.
       let toolCallRounds = 0;
       const MAX_TOOL_CALL_ROUNDS = 5;
+      const MAX_MEMORY_WRITES_PER_TURN = 2;
+      let memoryWriteCount = 0;
       const planTrace: { tool: string; args: Record<string, unknown>; result: Record<string, unknown> }[] = [];
       while (result.functionCalls && result.functionCalls.length > 0 && toolCallRounds < MAX_TOOL_CALL_ROUNDS) {
         toolCallRounds++;
         const db = getDb();
         const responseParts = await Promise.all(
           result.functionCalls.map(async (call) => {
-            const output = await executeNovaTool(call.name || "", call.args || {}, uid, db);
+            let output: Record<string, unknown>;
+            if (call.name === "remember_about_user") {
+              // Checked and incremented synchronously, before the await below,
+              // so this stays correct even with multiple writes requested in
+              // the same round via Promise.all.
+              if (memoryWriteCount >= MAX_MEMORY_WRITES_PER_TURN) {
+                output = { saved: false, error: `Already saved ${MAX_MEMORY_WRITES_PER_TURN} memories this turn - that's enough for one conversation. Wait for a future message if there's more worth remembering.` };
+              } else {
+                memoryWriteCount++;
+                output = await executeNovaTool(call.name || "", call.args || {}, uid, db);
+              }
+            } else {
+              output = await executeNovaTool(call.name || "", call.args || {}, uid, db);
+            }
             planTrace.push({ tool: call.name || "unknown", args: call.args || {}, result: output });
             return { functionResponse: { name: call.name, response: output } };
           })

@@ -12,19 +12,11 @@ export function MemoryCentre() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editVal, setEditVal] = useState('');
 
-  // Example permission toggles
-  const [allowNovaMemory, setAllowNovaMemory] = useState(false);
-
   useEffect(() => {
     if (user) {
       loadMemories();
-      loadPermissions();
     }
   }, [user]);
-
-  const loadPermissions = async () => {
-    setAllowNovaMemory(true); // default true for test purposes
-  };
 
   const getMemoriesRef = () => collection(db, 'users', user!.uid, 'nova_memories');
 
@@ -66,13 +58,14 @@ export function MemoryCentre() {
 
   const startEdit = (m: any) => {
     setEditingId(m.id);
-    setEditVal(m.memoryText);
+    setEditVal(m.content);
   };
 
   const saveEdit = async (m: any) => {
     try {
-      await updateDoc(doc(getMemoriesRef(), m.id), { memoryText: editVal });
-      setMemories(mems => mems.map(me => me.id === m.id ? { ...me, memoryText: editVal } : me));
+      const now = new Date().toISOString();
+      await updateDoc(doc(getMemoriesRef(), m.id), { content: editVal, updatedAt: now });
+      setMemories(mems => mems.map(me => me.id === m.id ? { ...me, content: editVal, updatedAt: now } : me));
       setEditingId(null);
     } catch (e: any) {
       setError(e.message);
@@ -127,16 +120,16 @@ export function MemoryCentre() {
             <div key={m.id} className="p-4 bg-background border border-border/10 rounded-xl relative group">
               <div className="flex justify-between items-start mb-2">
                 <span className="text-xs font-mono px-2 py-0.5 rounded-full bg-primary/10 text-[#9a3412] dark:text-primary uppercase tracking-wider">
-                  {m.memoryType.replace(/_/g, ' ')}
+                  {m.type.replace(/_/g, ' ')}
                 </span>
                 
                 <div className="opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity flex items-center gap-2 z-10 relative">
                   {(editingId !== m.id) && (
-                     <button onClick={() => startEdit(m)} aria-label={`Edit memory: ${m.memoryType.replace(/_/g, ' ')}`} className="p-1 text-text-muted hover:text-primary transition-colors" title="Edit">
+                     <button onClick={() => startEdit(m)} aria-label={`Edit memory: ${m.type.replace(/_/g, ' ')}`} className="p-1 text-text-muted hover:text-primary transition-colors" title="Edit">
                        <Edit2 className="w-3.5 h-3.5" />
                      </button>
                   )}
-                  <button onClick={() => handleDelete(m.id)} aria-label={`Forget memory: ${m.memoryType.replace(/_/g, ' ')}`} className="p-1 text-text-muted hover:text-destructive transition-colors" title="Forget this">
+                  <button onClick={() => handleDelete(m.id)} aria-label={`Forget memory: ${m.type.replace(/_/g, ' ')}`} className="p-1 text-text-muted hover:text-destructive transition-colors" title="Forget this">
                     <Trash2 className="w-3.5 h-3.5" />
                   </button>
                 </div>
@@ -148,7 +141,7 @@ export function MemoryCentre() {
                     type="text" 
                     value={editVal} 
                     onChange={e => setEditVal(e.target.value)} 
-                    maxLength={240}
+                    maxLength={300}
                     className="w-full bg-card border border-border/20 rounded px-3 py-2 text-sm focus:outline-none focus:border-primary/50" 
                   />
                   <div className="flex justify-end gap-2">
@@ -157,12 +150,14 @@ export function MemoryCentre() {
                   </div>
                 </div>
               ) : (
-                <p className="text-sm font-medium pr-12 relative z-10">{m.memoryText}</p>
+                <p className="text-sm font-medium pr-12 relative z-10">{m.content}</p>
               )}
               
-              {m.explanation && (
+              {(m.source || m.confidence) && (
                 <p className="text-xs text-text-muted mt-2 border-t border-border/5 pt-2 relative z-10">
-                  <span className="font-semibold px-1">Why:</span> {m.explanation}
+                  {m.source && <span>{m.source}</span>}
+                  {m.source && m.confidence && <span> · </span>}
+                  {m.confidence && <span className="capitalize">{m.confidence} confidence</span>}
                 </p>
               )}
             </div>
