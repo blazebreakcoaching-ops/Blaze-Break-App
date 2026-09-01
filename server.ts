@@ -6,6 +6,7 @@ import crypto from "crypto";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, Type, Modality, LiveServerMessage } from "@google/genai";
 import Anthropic from "@anthropic-ai/sdk";
+import OpenAI from "openai";
 import dotenv from "dotenv";
 import twilio from "twilio";
 import cron from "node-cron";
@@ -372,6 +373,22 @@ if (!anthropicApiKey) {
   console.warn("Note: ANTHROPIC_API_KEY is not set. Nova chat will continue running on Gemini; set NOVA_CHAT_PROVIDER=claude and this key together to enable Claude for Nova chat.");
 }
 const anthropic = anthropicApiKey ? new Anthropic({ apiKey: anthropicApiKey }) : null;
+
+// OpenAI Initialization
+// Nothing in this codebase calls this client yet - it's plumbing only,
+// added ahead of a specific feature (originally planned as DeepSeek's
+// role - cheap bulk summarization - reassigned to OpenAI given DeepSeek's
+// unresolved China data-transfer problem under UK GDPR). Deliberately not
+// building the actual summarization feature until a real consumer for it
+// exists in the app, matching the same reasoning that kept DeepSeek and
+// Perplexity out of the multi-LLM routing work: integrating a provider
+// with nothing to call it is the same premature-architecture mistake
+// regardless of which provider it is.
+const openaiApiKey = process.env.OPENAI_API_KEY;
+if (!openaiApiKey) {
+  console.warn("Note: OPENAI_API_KEY is not set. No feature currently depends on this - it's unused until a real consumer is built.");
+}
+const openai = openaiApiKey ? new OpenAI({ apiKey: openaiApiKey }) : null;
 
 const VAPID_PUBLIC_KEY = process.env.VAPID_PUBLIC_KEY || "";
 const VAPID_PRIVATE_KEY = process.env.VAPID_PRIVATE_KEY || "";
