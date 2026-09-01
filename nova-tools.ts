@@ -102,6 +102,14 @@ export type WritableConfidenceLevel = typeof VALID_WRITABLE_CONFIDENCE_LEVELS[nu
 export const isValidWritableConfidence = (confidence: unknown): confidence is WritableConfidenceLevel =>
   typeof confidence === 'string' && (VALID_WRITABLE_CONFIDENCE_LEVELS as readonly string[]).includes(confidence);
 
+// Independent kill switch for tool use, separate from provider selection.
+// Defaults to enabled, matching every provider's existing behavior before
+// this switch existed - unset, empty, or any unexpected env value all
+// keep tools on, so adding this can't itself cause a silent regression.
+// Deliberately disabling them for incident response is still a one-line
+// change: set the env var to exactly 'false'.
+export const toolsAreEnabled = (envValue: string | undefined): boolean => envValue !== 'false';
+
 // Keeps a single, hallucinated-but-plausible-looking memory entry from
 // becoming an unbounded wall of text in someone's permanent record.
 export const MAX_MEMORY_CONTENT_LENGTH = 300;

@@ -22,7 +22,7 @@ import { getAppCheck } from 'firebase-admin/app-check';
 import cors from 'cors';
 import rateLimit from 'express-rate-limit';
 import { z } from 'zod';
-import { memoryToolIsAllowed, searchMemories, isValidRecoveryDuration, validateMemoryWrite, NovaMemoryDoc } from './nova-tools';
+import { memoryToolIsAllowed, searchMemories, isValidRecoveryDuration, validateMemoryWrite, toolsAreEnabled, NovaMemoryDoc } from './nova-tools';
 import { toClaudeTools, GeminiStyleToolDeclaration } from './nova-claude-tools';
 
 dotenv.config();
@@ -749,6 +749,16 @@ const ChatRequestSchema = z.object({
 // that guarantee. A tool that proposes an action for the UI to render as
 // a confirmable card is a reasonable future addition; a tool that
 // executes one directly is not, for now.
+
+// Independent kill switch for tool use, separate from which provider
+// handles chat. If something goes wrong with a specific tool in
+// production - most importantly remember_about_user, since that's the
+// one capability that writes to a permanent user record - this can be
+// set to 'false' to fall back to plain conversation (no function
+// calling at all) across every provider, without needing to also change
+// NOVA_CHAT_PROVIDER or take Nova chat down entirely.
+const NOVA_TOOLS_ENABLED = toolsAreEnabled(process.env.NOVA_TOOLS_ENABLED);
+
 const NOVA_TOOLS: any[] = [
   {
     name: "search_nova_memories",
@@ -897,7 +907,7 @@ async function callClaudeNovaChat(
     throw new Error("NOVA_CHAT_PROVIDER is set to claude but ANTHROPIC_API_KEY is not configured.");
   }
 
-  const claudeTools = toClaudeTools(NOVA_TOOLS as GeminiStyleToolDeclaration[]);
+  const claudeTools = NOVA_TOOLS_ENABLED ? toClaudeTools(NOVA_TOOLS as GeminiStyleToolDeclaration[]) : undefined;
 
   // The incoming history matches Gemini's expected shape
   // ({ role: 'user' | 'model', parts: [{ text }] }), since that's what the
@@ -1054,7 +1064,7 @@ app.post("/api/nova/chat", verifyAppCheck, authenticateFirebaseUser, async (req,
         model: "gemini-3.5-flash",
         config: {
           systemInstruction: mergedSystemPrompt,
-          tools: [{ functionDeclarations: NOVA_TOOLS }],
+          tools: NOVA_TOOLS_ENABLED ? [{ functionDeclarations: NOVA_TOOLS }] : undefined,
         },
         history: history || [],
       });

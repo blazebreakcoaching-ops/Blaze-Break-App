@@ -6,6 +6,7 @@ import {
   isValidMemoryType,
   isValidWritableConfidence,
   validateMemoryWrite,
+  toolsAreEnabled,
   MAX_MEMORY_CONTENT_LENGTH,
   NovaMemoryDoc,
   NovaPermissions,
@@ -225,5 +226,26 @@ describe('validateMemoryWrite: the single gate every proposed memory write must 
   it('checks type before content, so the first error surfaced is always type when both are invalid', () => {
     const result = validateMemoryWrite({ type: 'nonsense', content: '', confidence: 'verified' });
     expect(result.error).toMatch(/not a real memory type/);
+  });
+});
+
+describe('toolsAreEnabled: the kill switch for Nova tool use, independent of provider selection', () => {
+  it('defaults to enabled when the env var is unset', () => {
+    expect(toolsAreEnabled(undefined)).toBe(true);
+  });
+
+  it('defaults to enabled for an empty string', () => {
+    expect(toolsAreEnabled('')).toBe(true);
+  });
+
+  it('disables only on the exact string "false"', () => {
+    expect(toolsAreEnabled('false')).toBe(false);
+  });
+
+  it('does not disable on unexpected or malformed values, so a typo cannot silently turn tools off', () => {
+    expect(toolsAreEnabled('False')).toBe(true);
+    expect(toolsAreEnabled('0')).toBe(true);
+    expect(toolsAreEnabled('no')).toBe(true);
+    expect(toolsAreEnabled('disabled')).toBe(true);
   });
 });
