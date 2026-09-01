@@ -363,6 +363,35 @@ const ai = new GoogleGenAI({
   }
 });
 
+// Vertex AI Initialization (same Gemini models, different access path)
+// Reuses the GCP project this app already runs on via Firebase
+// (firebaseConfigProject) rather than requiring a separate project to be
+// created - every Firebase project is a GCP project underneath. No API
+// key needed here: Vertex AI authenticates via Application Default
+// Credentials (the standard google-auth-library flow), which the SDK
+// picks up automatically when vertexai is true and no apiKey is passed.
+// This "just works" if the server is deployed on Google Cloud
+// infrastructure with the right IAM role on its runtime service account;
+// if it's deployed elsewhere, it needs GOOGLE_APPLICATION_CREDENTIALS
+// pointing at a service account key - something I can't verify from this
+// sandbox, so this path fails at call time with a caught, clear error
+// rather than assuming it works.
+const VERTEX_LOCATION = process.env.VERTEX_LOCATION || "europe-west2"; // London
+let aiVertex: GoogleGenAI | null = null;
+if (firebaseConfigProject) {
+  try {
+    aiVertex = new GoogleGenAI({
+      vertexai: true,
+      project: firebaseConfigProject,
+      location: VERTEX_LOCATION,
+    });
+  } catch (e) {
+    console.warn("Note: Vertex AI client failed to initialize. Nova chat will continue running on the Gemini Developer API unless NOVA_CHAT_PROVIDER=vertex is unset.", e);
+  }
+} else {
+  console.warn("Note: firebaseConfigProject is not set, so the Vertex AI client was not initialized. Set NOVA_CHAT_PROVIDER=vertex only once this resolves.");
+}
+
 // Anthropic (Claude) Initialization
 // This provider is optional and feature-flagged (NOVA_CHAT_PROVIDER env
 // var) - the app must keep working on Gemini alone if this key is never
@@ -959,15 +988,17 @@ app.post("/api/nova/chat", verifyAppCheck, authenticateFirebaseUser, async (req,
     }
     const { message, history, systemInstruction } = parsedParams.data;
 
-    // Provider selection: Gemini remains the default, proven path every
-    // real user is currently on. Claude only activates when both the
-    // environment explicitly requests it AND a real client was
-    // successfully initialized - if either condition fails, this falls
-    // straight through to the existing Gemini path rather than erroring,
-    // so a misconfiguration here can't take Nova chat down entirely.
+    // Provider selection: Gemini's Developer API remains the default,
+    // proven path every real user is currently on. Claude and Vertex each
+    // only activate when both the environment explicitly requests them
+    // AND their respective client was successfully initialized - if
+    // either condition fails for either provider, this falls straight
+    // through to the existing Gemini Developer API path rather than
+    // erroring, so a misconfiguration can't take Nova chat down entirely.
     const useClaudeForThisChat = process.env.NOVA_CHAT_PROVIDER === 'claude' && anthropic !== null;
+    const useVertexForThisChat = process.env.NOVA_CHAT_PROVIDER === 'vertex' && aiVertex !== null;
 
-    if (!useClaudeForThisChat && (!process.env.GEMINI_API_KEY || process.env.GEMINI_API_KEY === "MY_GEMINI_API_KEY")) {
+    if (!useClaudeForThisChat && !useVertexForThisChat && (!process.env.GEMINI_API_KEY || process.env.GEMINI_API_KEY === "MY_GEMINI_API_KEY")) {
       return res.status(401).json({ error: "Gemini API key not configured. Please add your key in the app settings secrets." });
     }
 
@@ -1012,8 +1043,14 @@ app.post("/api/nova/chat", verifyAppCheck, authenticateFirebaseUser, async (req,
       }
     }
 
+    // Vertex AI uses the exact same chats.create/sendMessage shape as the
+    // Developer API client (same SDK, same method calls) - no separate
+    // loop needed here the way Claude required, just a different client
+    // instance to call it on.
+    const geminiClient = useVertexForThisChat && aiVertex ? aiVertex : ai;
+
     try {
-      const chat = ai.chats.create({
+      const chat = geminiClient.chats.create({
         model: "gemini-3.5-flash",
         config: {
           systemInstruction: mergedSystemPrompt,
