@@ -76,20 +76,20 @@ export const FeatureFlagsView = () => {
           </div>
           <div className="flex-1 space-y-1">
             <div className="flex justify-between items-center group">
-              <h4 className="font-bold text-sm text-text-main">Guardian Alert Auto-Escalation</h4>
+              <h4 className="font-bold text-sm text-text-main">Guardian Check-In Suggestions</h4>
               <button
                 type="button"
                 onClick={() => toggleFlag('enable_guardian_protocol')}
                 role="switch"
                 aria-checked={flags.enable_guardian_protocol}
-                aria-label="Guardian Alert Auto-Escalation"
+                aria-label="Guardian Check-In Suggestions"
                 className="text-primary transition-transform active:scale-95 cursor-pointer"
               >
                 {flags.enable_guardian_protocol ? <ToggleRight className="w-6 h-6" /> : <ToggleLeft className="w-6 h-6 text-text-muted" />}
               </button>
             </div>
             <p className="text-xs text-text-muted max-w-[90%] leading-relaxed">
-              Authorizes Nova to actively notify designated Trusted Contacts if you enter a "Safety" failure state and stop responding to regular communication nudges.
+              When enabled, Nova may suggest reaching out to a Trusted Contact during a difficult conversation. Nova cannot send anything on its own - you'd still choose to send the alert yourself from Guardian Relay.
             </p>
           </div>
         </div>

@@ -2828,7 +2828,7 @@ export default function App() {
       stats.supportCircle?.filter((c: any) => c.isGuardian).length || 0;
 
     updateNovaMemoryBySourceAndType("Safety Engine", "rule", {
-      content: `Guardian Alerts are ${guardianEnabled ? "ENABLED" : "DISABLED"} with ${trustedContactsCount} active trusted contacts. Nova ${guardianEnabled ? "may" : "may not"} escalate to trusted contacts during severe overload.`,
+      content: `Guardian Check-In Suggestions are ${guardianEnabled ? "ENABLED" : "DISABLED"} with ${trustedContactsCount} active trusted contacts. Nova ${guardianEnabled ? "may suggest" : "should not suggest"} reaching out to a trusted contact during severe overload - Nova has no ability to contact anyone directly; the user must send any alert themselves from Guardian Relay.`,
       confidence: "verified",
       canEdit: false,
     });
