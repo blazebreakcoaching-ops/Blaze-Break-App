@@ -21,7 +21,7 @@ export const RetentionSchedule = () => {
         </div>
       </div>
 
-      <div className="overflow-hidden rounded-xl border border-white/[0.05]">
+      <div className="overflow-x-auto rounded-xl border border-white/[0.05]">
         <table className="w-full text-left text-sm whitespace-nowrap">
           <thead className="bg-surface border-b border-white/[0.05] text-text-muted">
             <tr>
