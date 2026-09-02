@@ -869,15 +869,27 @@ async function executeRememberAboutUser(uid: string, firestoreDb: any, args: Rec
 
 async function executeNovaTool(name: string, args: Record<string, unknown>, uid: string | undefined, firestoreDb: any): Promise<Record<string, unknown>> {
   if (!uid) return { error: "No authenticated user for this tool call." };
-  switch (name) {
-    case "search_nova_memories":
-      return executeSearchNovaMemories(uid, firestoreDb, String(args.query || ""));
-    case "propose_recovery_action":
-      return executeProposeRecoveryAction(args);
-    case "remember_about_user":
-      return executeRememberAboutUser(uid, firestoreDb, args);
-    default:
-      return { error: `Unknown tool: ${name}` };
+  try {
+    switch (name) {
+      case "search_nova_memories":
+        return await executeSearchNovaMemories(uid, firestoreDb, String(args.query || ""));
+      case "propose_recovery_action":
+        return executeProposeRecoveryAction(args);
+      case "remember_about_user":
+        return await executeRememberAboutUser(uid, firestoreDb, args);
+      default:
+        return { error: `Unknown tool: ${name}` };
+    }
+  } catch (err) {
+    // An unexpected failure inside a tool handler (a Firestore hiccup,
+    // a network blip - anything the handler's own validation didn't
+    // already anticipate) degrades to the same error-shaped result the
+    // model already knows how to work with, rather than propagating up
+    // and failing the entire conversation turn over one tool's transient
+    // problem. Logged server-side for real visibility; the model only
+    // sees a generic message, not internal error details.
+    console.error(`Nova tool "${name}" threw unexpectedly:`, err);
+    return { error: `The ${name} tool is temporarily unavailable. Continue without it if possible, or let the user know this specific capability isn't working right now.` };
   }
 }
 
