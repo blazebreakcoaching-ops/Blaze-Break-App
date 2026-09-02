@@ -253,6 +253,69 @@ async function runTests() {
   await assertFails(budgetRef.set({ createdAt: '2025', updatedAt: '2025', periodType: 'day', totalCapacity: 101, allocatedCapacity: 50, remainingCapacity: 50, categories: ['work'] })); // over 100
   await assertFails(fingerprintRef.set({ archetype: 'Crisis Sprinter', identifiedAt: '2025', version: '1.0', source: 'user' })); // Parked archetype
 
+  // nova_memories - was previously "allow read, write: if isOwner(uid)"
+  // with no field validation at all. These cover the tightened rule,
+  // matching the exact 7-field shape nova-brain.ts's persistMemory
+  // always writes.
+  const novaMemRef = userA.firestore().collection('users').doc('userA').collection('nova_memories').doc('m1');
+
+  // * user A writes a valid memory
+  await assertSucceeds(novaMemRef.set({
+    type: 'preference',
+    content: 'Prefers ending meetings 5 minutes early',
+    source: 'Nova Conversation',
+    confidence: 'medium',
+    createdAt: '2026-06-01',
+    updatedAt: '2026-06-01',
+    canEdit: true
+  }));
+
+  // * user A writes a memory with an extra, unexpected field
+  await assertFails(novaMemRef.set({
+    type: 'preference', content: 'x', source: 'x', confidence: 'medium',
+    createdAt: '2026-06-01', updatedAt: '2026-06-01', canEdit: true,
+    unexpectedField: 'should not be allowed'
+  }));
+
+  // * user A writes a memory missing a required field (no source)
+  await assertFails(novaMemRef.set({
+    type: 'preference', content: 'x', confidence: 'medium',
+    createdAt: '2026-06-01', updatedAt: '2026-06-01', canEdit: true
+  }));
+
+  // * user A writes a memory with a hallucinated/invalid type
+  await assertFails(novaMemRef.set({
+    type: 'goal', content: 'x', source: 'x', confidence: 'medium',
+    createdAt: '2026-06-01', updatedAt: '2026-06-01', canEdit: true
+  }));
+
+  // * user A writes a memory with content over the 1000-char cap
+  await assertFails(novaMemRef.set({
+    type: 'preference', content: 'x'.repeat(1001), source: 'x', confidence: 'medium',
+    createdAt: '2026-06-01', updatedAt: '2026-06-01', canEdit: true
+  }));
+
+  // * user A writes a memory with an invalid confidence value
+  await assertFails(novaMemRef.set({
+    type: 'preference', content: 'x', source: 'x', confidence: 'certain',
+    createdAt: '2026-06-01', updatedAt: '2026-06-01', canEdit: true
+  }));
+
+  // * user A writes a memory with canEdit as a non-boolean
+  await assertFails(novaMemRef.set({
+    type: 'preference', content: 'x', source: 'x', confidence: 'medium',
+    createdAt: '2026-06-01', updatedAt: '2026-06-01', canEdit: 'true'
+  }));
+
+  // * user A cannot read user B's nova_memories
+  await assertFails(userA.firestore().collection('users').doc('userB').collection('nova_memories').doc('m1').get());
+
+  // * user A cannot write to user B's nova_memories
+  await assertFails(userA.firestore().collection('users').doc('userB').collection('nova_memories').doc('m1').set({
+    type: 'preference', content: 'x', source: 'x', confidence: 'medium',
+    createdAt: '2026-06-01', updatedAt: '2026-06-01', canEdit: true
+  }));
+
   console.log("All rule tests passed successfully!");
   await testEnv.cleanup();
 }

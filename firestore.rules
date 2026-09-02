@@ -361,8 +361,31 @@ service cloud.firestore {
       }
 
       // L. nova_memories
+      // Was previously "allow read, write: if isOwner(uid)" with no field
+      // validation at all - any owner could write any fields, any values,
+      // no size limit, to the one collection that feeds directly into
+      // Nova's AI context and the search/write tools. Tightened to match
+      // the exact, real schema nova-brain.ts's persistMemory always
+      // writes (verified directly against that function - it sends
+      // exactly these 7 fields, every time, no conditional variation).
+      // 'verified' remains a valid confidence level here even though the
+      // server-side remember_about_user tool refuses to write it - this
+      // collection also holds genuinely deterministic writes (e.g. the
+      // Safety Engine's rule-based memories), which legitimately can
+      // claim that level; the tool-specific restriction lives in
+      // application code, not here, since it's about what one particular
+      // caller is allowed to claim, not what the collection can hold.
       match /nova_memories/{memoryId} {
-        allow read, write: if isOwner(uid);
+        allow read: if isOwner(uid);
+        allow delete: if isOwner(uid);
+        allow create, update: if isOwner(uid)
+            && hasOnly(['type', 'content', 'source', 'confidence', 'createdAt', 'updatedAt', 'canEdit'])
+            && hasAll(['type', 'content', 'source', 'confidence', 'createdAt', 'updatedAt', 'canEdit'])
+            && request.resource.data.type in ['profile', 'trigger', 'state', 'rule', 'preference']
+            && isStringWithMax(request.resource.data.content, 1000)
+            && isStringWithMax(request.resource.data.source, 200)
+            && request.resource.data.confidence in ['low', 'medium', 'high', 'verified']
+            && request.resource.data.canEdit is bool;
       }
 
       // M. nudge_history
