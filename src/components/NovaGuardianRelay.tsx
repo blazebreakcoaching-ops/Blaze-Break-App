@@ -37,14 +37,14 @@ interface NovaGuardianRelayProps {
 const GuardianCard = ({ 
   contact, 
   onRemove, 
-  onSendTestAll, 
-  onTriggerPrimaryRelay,
+  onSendTest, 
+  onTriggerRelay,
   onActivateSOS
 }: { 
   contact: SupportContact; 
   onRemove: (id: string) => void;
-  onSendTestAll: () => void;
-  onTriggerPrimaryRelay: () => void;
+  onSendTest: () => Promise<boolean>;
+  onTriggerRelay: () => void;
   onActivateSOS: (id: string) => void;
 }) => {
   const [countdown, setCountdown] = useState<number | null>(null);
@@ -76,7 +76,7 @@ const GuardianCard = ({
       setIsRelaying(true);
       setTimeout(() => {
         setIsRelaying(false);
-        onTriggerPrimaryRelay();
+        onTriggerRelay();
       }, 1000); // Brief "relaying" UI transition before the real call fires
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       return;
@@ -90,15 +90,13 @@ const GuardianCard = ({
       clearTimeout(timer);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
-  }, [countdown, onTriggerPrimaryRelay]);
+  }, [countdown, onTriggerRelay]);
 
-  const handleHealthCheck = () => {
+  const handleHealthCheck = async () => {
     setIsHealthChecking(true);
-    setTimeout(() => {
-      setIsHealthChecking(false);
-      setLastHealthCheck(new Date());
-      onSendTestAll();
-    }, 1500);
+    const success = await onSendTest();
+    setIsHealthChecking(false);
+    if (success) setLastHealthCheck(new Date());
   };
 
   return (
@@ -250,37 +248,36 @@ export const NovaGuardianRelay = ({ contacts, onAdd, onRemove, userName }: NovaG
     }
   };
 
-  const sendTestAlertAll = async () => {
-    setIsSending(true);
-    setSendSuccess(null);
-    const senderName = userName?.trim() || 'A Blaze Break user';
-    const validContacts = contacts.filter(c => /^\+[1-9]\d{6,14}$/.test(c.contactMethod));
-
-    if (validContacts.length === 0) {
-      setSendSuccess(contacts.length === 0 ? "No guardians configured yet." : "No guardians have a valid phone number on file.");
-      setTimeout(() => setSendSuccess(null), 3000);
-      setIsSending(false);
-      return;
-    }
-
-    try {
-      const results = await Promise.all(validContacts.map(c =>
-        secureApiFetch('/api/twilio/send', {
-          method: 'POST',
-          data: {
-            to: c.contactMethod,
-            message: `Nova Test: This is a test of ${senderName}'s Guardian Relay. No action needed - just confirming this contact method works.`,
-            useWhatsapp: c.notificationPreference === 'whatsapp',
-          },
-        }).then(res => res.json()).then(body => body.success === true).catch(() => false)
-      ));
-      const successCount = results.filter(Boolean).length;
-      setSendSuccess(successCount === validContacts.length
-        ? `Test sent to all ${successCount} guardian(s).`
-        : `Test sent to ${successCount} of ${validContacts.length} guardian(s) - check the rest.`);
+  // Tests exactly one contact - each card's own "Ping Status" button uses
+  // this, scoped to that card's contact only. Returns whether the send
+  // succeeded so the calling card can update its own "last verified"
+  // state honestly, rather than assuming success or updating a timestamp
+  // unrelated to what actually happened.
+  const sendTestAlert = async (contact: SupportContact): Promise<boolean> => {
+    if (!/^\+[1-9]\d{6,14}$/.test(contact.contactMethod)) {
+      setSendSuccess(`${contact.name}'s number isn't in a valid format - edit it and try again.`);
       setTimeout(() => setSendSuccess(null), 4000);
-    } finally {
-      setTimeout(() => setIsSending(false), 800);
+      return false;
+    }
+    const senderName = userName?.trim() || 'A Blaze Break user';
+    try {
+      const res = await secureApiFetch('/api/twilio/send', {
+        method: 'POST',
+        data: {
+          to: contact.contactMethod,
+          message: `Nova Test: This is a test of ${senderName}'s Guardian Relay. No action needed - just confirming this contact method works.`,
+          useWhatsapp: contact.notificationPreference === 'whatsapp',
+        },
+      });
+      const body = await res.json();
+      const success = res.ok && body.success === true;
+      setSendSuccess(success ? `Test sent to ${contact.name}.` : (body.error || `Couldn't reach ${contact.name} right now.`));
+      setTimeout(() => setSendSuccess(null), 4000);
+      return success;
+    } catch (e) {
+      setSendSuccess(`Couldn't reach the messaging service right now.`);
+      setTimeout(() => setSendSuccess(null), 4000);
+      return false;
     }
   };
 
@@ -319,16 +316,6 @@ export const NovaGuardianRelay = ({ contacts, onAdd, onRemove, userName }: NovaG
         setIsSending(false);
       }, 3000);
     }
-  };
-
-  const triggerLiveRelayToPrimary = async () => {
-    const primary = contacts.find(c => c.role === 'primary_guardian') || contacts[0];
-    if (!primary) {
-      setSendSuccess("No guardian is set up yet - add one first.");
-      setTimeout(() => setSendSuccess(null), 3000);
-      return;
-    }
-    await sendRealAlert(primary);
   };
 
   const triggerLiveRelay = async (contact: SupportContact) => {
@@ -389,8 +376,8 @@ export const NovaGuardianRelay = ({ contacts, onAdd, onRemove, userName }: NovaG
                   key={contact.id} 
                   contact={contact} 
                   onRemove={onRemove}
-                  onSendTestAll={sendTestAlertAll}
-                  onTriggerPrimaryRelay={triggerLiveRelayToPrimary}
+                  onSendTest={() => sendTestAlert(contact)}
+                  onTriggerRelay={() => triggerLiveRelay(contact)}
                   onActivateSOS={setActiveSOS}
                 />
               ))}
