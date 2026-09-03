@@ -79,6 +79,16 @@ export const OrgDashboard = () => {
     responseRate?: number;
     averages?: Record<string, number>;
   } | null>(null);
+  const [riskTrendData, setRiskTrendData] = useState<{
+    locked: boolean;
+    cohortSize: number;
+    threshold: number;
+    moodConcern?: number | null;
+    climateConcern?: number | null;
+    overallConcern?: number | null;
+    trend?: { direction: 'improving' | 'worsening' | 'stable' | 'unknown'; delta: number | null };
+    comparedAgainst?: string | null;
+  } | null>(null);
 
   const [suggestions, setSuggestions] = useState<{ id: string; message: string }[]>([]);
 
@@ -142,6 +152,14 @@ export const OrgDashboard = () => {
             if (climateRes.ok) setClimateData(climate);
           } catch (e) {
             // Non-fatal - the pulse dashboard above still works even if this fails.
+          }
+
+          try {
+            const riskRes = await secureApiFetch(`/api/org/${me.organisationId}/risk-trend`);
+            const risk = await riskRes.json();
+            if (riskRes.ok) setRiskTrendData(risk);
+          } catch (e) {
+            // Non-fatal - same reasoning as the climate fetch above.
           }
 
           fetchMembers(me.organisationId);
@@ -573,6 +591,49 @@ export const OrgDashboard = () => {
                 <p className="text-sm text-text-muted py-8 text-center">No body check-ins logged by your team this week yet.</p>
               )}
             </div>
+
+            {riskTrendData && !riskTrendData.locked && (
+              <div className="card space-y-6">
+                <div>
+                  <h4 className="font-bold text-text-main flex items-center gap-2"><TrendingUp className="w-5 h-5 text-primary" /> Wellbeing Concern Trend</h4>
+                  <p className="text-xs text-text-muted max-w-2xl leading-relaxed">
+                    A transparent indicator built from the same real, consented mood and climate-survey data above - not a prediction. It shows whether things are trending better or worse and by how much; it does not estimate absence risk or any figure this app has no real basis to produce.
+                  </p>
+                </div>
+                {riskTrendData.overallConcern == null ? (
+                  <p className="text-sm text-text-muted py-8 text-center">Not enough mood or climate survey data yet to show a trend.</p>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="p-5 bg-surface dark:bg-card/40 border border-border rounded-xl">
+                      <span className="text-xs uppercase font-bold tracking-widest text-text-muted block mb-1">Current Concern Level</span>
+                      <p className="text-3xl font-display font-bold text-text-main">{riskTrendData.overallConcern}<span className="text-sm font-normal text-text-muted">/100</span></p>
+                      <p className="text-xs text-text-muted mt-1">Combines mood pulses and, where available, the climate survey. Lower is better.</p>
+                    </div>
+                    <div className="p-5 bg-surface dark:bg-card/40 border border-border rounded-xl">
+                      <span className="text-xs uppercase font-bold tracking-widest text-text-muted block mb-1">Trend vs. ~4 Weeks Ago</span>
+                      {riskTrendData.trend?.direction === 'unknown' ? (
+                        <>
+                          <p className="text-3xl font-display font-bold text-text-main">—</p>
+                          <p className="text-xs text-text-muted mt-1">No snapshot from a month ago yet - check back as data accumulates.</p>
+                        </>
+                      ) : (
+                        <>
+                          <p className={cn(
+                            "text-3xl font-display font-bold",
+                            riskTrendData.trend?.direction === 'worsening' ? "text-destructive dark:text-[#f87171]" :
+                            riskTrendData.trend?.direction === 'improving' ? "text-[#166534] dark:text-[#4ade80]" :
+                            "text-text-main"
+                          )}>
+                            {riskTrendData.trend?.direction === 'stable' ? 'Stable' : `${(riskTrendData.trend?.delta ?? 0) > 0 ? '+' : ''}${riskTrendData.trend?.delta} pts`}
+                          </p>
+                          <p className="text-xs text-text-muted mt-1 capitalize">{riskTrendData.trend?.direction}{riskTrendData.trend?.direction !== 'stable' ? ' since the last comparable snapshot' : ''}.</p>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
           </motion.div>
         )}
 

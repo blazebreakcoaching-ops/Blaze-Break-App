@@ -24,6 +24,7 @@ import rateLimit from 'express-rate-limit';
 import { z } from 'zod';
 import { memoryToolIsAllowed, searchMemories, isValidRecoveryDuration, validateMemoryWrite, toolsAreEnabled, NovaMemoryDoc } from './nova-tools';
 import { toClaudeTools, GeminiStyleToolDeclaration } from './nova-claude-tools';
+import { computeClimateConcern, computeMoodConcern, computeOverallConcern, computeTrend } from './org-risk-trend';
 
 dotenv.config();
 
@@ -3681,6 +3682,23 @@ const requireOrgAdmin = async (req: any, orgId: string) => {
   return { user, org };
 };
 
+// Shared by every endpoint that aggregates member wellbeing data
+// (dashboard, climate, risk-trend below) - a member only counts if they've
+// explicitly opted in via shareAnonymizedDataWithOrg, and the caller is
+// responsible for checking the returned list against org.privacyThreshold
+// before using any of it, the same k-anonymity gate every one of these
+// endpoints already enforces.
+const getConsentingMemberUids = async (db: any, memberUids: string[]): Promise<string[]> => {
+  const consentingUids: string[] = [];
+  await Promise.all(memberUids.map(async (uid) => {
+    const userDoc = await db.collection("users").doc(uid).get();
+    if (userDoc.exists && userDoc.data()?.shareAnonymizedDataWithOrg === true) {
+      consentingUids.push(uid);
+    }
+  }));
+  return consentingUids;
+};
+
 // Employee redeems a join code to link themselves to their employer's org.
 // This is the only way `organisationId` ever gets set on a user - the
 // Firestore rules explicitly block clients from setting it directly, so
@@ -3778,13 +3796,7 @@ app.get("/api/org/:orgId/dashboard", verifyAppCheck, authenticateFirebaseUser, a
     const memberUids: string[] = org.memberUids || [];
 
     // Only members who've explicitly opted in count toward anything below.
-    const consentingUids: string[] = [];
-    await Promise.all(memberUids.map(async (uid) => {
-      const userDoc = await db.collection("users").doc(uid).get();
-      if (userDoc.exists && userDoc.data()?.shareAnonymizedDataWithOrg === true) {
-        consentingUids.push(uid);
-      }
-    }));
+    const consentingUids = await getConsentingMemberUids(db, memberUids);
 
     if (consentingUids.length < threshold) {
       return res.json({ locked: true, cohortSize: consentingUids.length, threshold });
@@ -4072,13 +4084,7 @@ app.get("/api/org/:orgId/climate", verifyAppCheck, authenticateFirebaseUser, asy
     const threshold = org.privacyThreshold || 5;
     const memberUids: string[] = org.memberUids || [];
 
-    const consentingUids: string[] = [];
-    await Promise.all(memberUids.map(async (uid) => {
-      const userDoc = await db.collection("users").doc(uid).get();
-      if (userDoc.exists && userDoc.data()?.shareAnonymizedDataWithOrg === true) {
-        consentingUids.push(uid);
-      }
-    }));
+    const consentingUids = await getConsentingMemberUids(db, memberUids);
 
     if (consentingUids.length < threshold) {
       return res.json({ locked: true, cohortSize: consentingUids.length, threshold, responseCount: 0 });
@@ -4118,6 +4124,119 @@ app.get("/api/org/:orgId/climate", verifyAppCheck, authenticateFirebaseUser, asy
       threshold,
       averages,
       responseRate: Math.round((responseCount / consentingUids.length) * 100),
+    });
+  } catch (err: any) {
+    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
+  }
+});
+
+// ============ Wellbeing Risk Trend (real, from existing aggregates - not a trained model) ============
+// Deliberately not a predictive model: this is a transparent trend
+// indicator built entirely from the same real, consented, k-anonymous
+// aggregates the dashboard and climate endpoints already compute (mood
+// pulses, the HSE-aligned climate survey). It tells an admin whether
+// things are trending better or worse and by how much - it does not
+// claim a probability of absenteeism or any other number this app has
+// no real, validated basis to produce. See org-risk-trend.ts for the
+// actual calculation and why each choice was made.
+app.get("/api/org/:orgId/risk-trend", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const { orgId } = req.params;
+    const { org } = await requireOrgAdmin(req, orgId);
+    const db = getDb();
+
+    const threshold = org.privacyThreshold || 5;
+    const memberUids: string[] = org.memberUids || [];
+    const consentingUids = await getConsentingMemberUids(db, memberUids);
+
+    if (consentingUids.length < threshold) {
+      return res.json({ locked: true, cohortSize: consentingUids.length, threshold });
+    }
+
+    // Mood concern: same 7-day window as the dashboard endpoint, fetched
+    // independently here rather than sharing that endpoint's combined
+    // mood+body loop, to avoid touching an existing, working endpoint for
+    // a change unrelated to what it already does.
+    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+    let moodPositive = 0, moodNegative = 0, moodNeutral = 0;
+    await Promise.all(consentingUids.map(async (uid) => {
+      const moodSnap = await db.collection("users").doc(uid).collection("mood_pulses")
+        .where("createdAt", ">=", sevenDaysAgo).get();
+      moodSnap.forEach(doc => {
+        const label = doc.data().moodLabel;
+        if (label === 'calm' || label === 'hopeful' || label === 'focused') moodPositive++;
+        else if (label === 'overwhelmed' || label === 'frustrated' || label === 'pressured' || label === 'tired') moodNegative++;
+        else moodNeutral++;
+      });
+    }));
+    const moodConcern = computeMoodConcern(moodPositive, moodNegative, moodNeutral);
+
+    // Climate concern: same 90-day window and "most recent response per
+    // member" logic as the climate endpoint.
+    const ninetyDaysAgo = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString();
+    const climateDims = ['demands', 'control', 'support', 'relationships', 'role', 'change'] as const;
+    const climateSums: Record<string, number> = { demands: 0, control: 0, support: 0, relationships: 0, role: 0, change: 0 };
+    let climateResponseCount = 0;
+    await Promise.all(consentingUids.map(async (uid) => {
+      const snap = await db.collection("users").doc(uid).collection("climate_survey_responses")
+        .where("createdAt", ">=", ninetyDaysAgo).orderBy("createdAt", "desc").limit(1).get();
+      if (!snap.empty) {
+        const d = snap.docs[0].data();
+        climateDims.forEach(dim => { climateSums[dim] += d[dim] || 0; });
+        climateResponseCount++;
+      }
+    }));
+    const climateAverages = climateResponseCount > 0
+      ? {
+          demands: climateSums.demands / climateResponseCount,
+          control: climateSums.control / climateResponseCount,
+          support: climateSums.support / climateResponseCount,
+          relationships: climateSums.relationships / climateResponseCount,
+          role: climateSums.role / climateResponseCount,
+          change: climateSums.change / climateResponseCount,
+        }
+      : null;
+    const climateConcern = computeClimateConcern(climateAverages);
+
+    const overallConcern = computeOverallConcern(climateConcern, moodConcern);
+
+    // Snapshot handling: read the history first so today's write (if any)
+    // doesn't contaminate the "previous" comparison, and only ever write
+    // once per UTC day regardless of how many times this is loaded.
+    const historySnap = await db.collection("organisations").doc(orgId).collection("risk_trend_history")
+      .orderBy("recordedAt", "desc").limit(60).get();
+    const history = historySnap.docs.map(d => d.data() as { recordedAt: string; overallConcern: number | null });
+
+    const todayUtc = new Date().toISOString().slice(0, 10);
+    const alreadySnapshottedToday = history.some(h => h.recordedAt.slice(0, 10) === todayUtc);
+    if (!alreadySnapshottedToday && overallConcern !== null) {
+      await db.collection("organisations").doc(orgId).collection("risk_trend_history").add({
+        recordedAt: new Date().toISOString(),
+        overallConcern,
+        moodConcern,
+        climateConcern,
+      });
+    }
+
+    // Compare against whichever snapshot sits closest to ~28 days back -
+    // a genuine month-over-month read, not noisy day-to-day movement in
+    // a signal built on overlapping 7-day windows.
+    const twentyEightDaysAgo = Date.now() - 28 * 24 * 60 * 60 * 1000;
+    const priorSnapshot = history
+      .filter(h => new Date(h.recordedAt).getTime() <= twentyEightDaysAgo)
+      .sort((a, b) => Math.abs(new Date(a.recordedAt).getTime() - twentyEightDaysAgo) - Math.abs(new Date(b.recordedAt).getTime() - twentyEightDaysAgo))[0];
+
+    const trend = computeTrend(overallConcern, priorSnapshot?.overallConcern ?? null);
+
+    res.json({
+      locked: false,
+      cohortSize: consentingUids.length,
+      threshold,
+      moodConcern,
+      climateConcern,
+      overallConcern,
+      trend,
+      comparedAgainst: priorSnapshot?.recordedAt || null,
     });
   } catch (err: any) {
     res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
