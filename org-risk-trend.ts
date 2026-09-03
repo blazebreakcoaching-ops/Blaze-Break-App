@@ -46,6 +46,28 @@ export const computeClimateConcern = (averages: ClimateAverages | null): number 
   return Math.round(((CLIMATE_SCALE_MAX - clamped) / (CLIMATE_SCALE_MAX - CLIMATE_SCALE_MIN)) * 100);
 };
 
+// The same 1-5-to-0-100 concern conversion as computeClimateConcern, but
+// applied to each dimension individually rather than the blended average -
+// so "demands: 78 concern, support: 15 concern" tells an admin which
+// specific lever to pull, which a single combined number necessarily
+// hides. Uses the exact same clamp/scale logic as the blended version so
+// the two stay directly comparable.
+export const computeClimateConcernByDimension = (averages: ClimateAverages | null): Record<keyof ClimateAverages, number> | null => {
+  if (!averages) return null;
+  const toConcern = (value: number): number => {
+    const clamped = Math.max(CLIMATE_SCALE_MIN, Math.min(CLIMATE_SCALE_MAX, value));
+    return Math.round(((CLIMATE_SCALE_MAX - clamped) / (CLIMATE_SCALE_MAX - CLIMATE_SCALE_MIN)) * 100);
+  };
+  return {
+    demands: toConcern(averages.demands),
+    control: toConcern(averages.control),
+    support: toConcern(averages.support),
+    relationships: toConcern(averages.relationships),
+    role: toConcern(averages.role),
+    change: toConcern(averages.change),
+  };
+};
+
 // The dashboard endpoint already buckets mood pulses into positive/
 // negative/neutral. This is just the negative share as a percentage -
 // already a natural 0-100 concern score with no inversion needed.

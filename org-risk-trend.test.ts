@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { computeClimateConcern, computeMoodConcern, computeOverallConcern, computeTrend, ClimateAverages } from './org-risk-trend';
+import { computeClimateConcern, computeClimateConcernByDimension, computeMoodConcern, computeOverallConcern, computeTrend, ClimateAverages } from './org-risk-trend';
 
 describe('computeClimateConcern: the direction is the whole point - getting this backwards would flip good and bad', () => {
   const allBest: ClimateAverages = { demands: 5, control: 5, support: 5, relationships: 5, role: 5, change: 5 };
@@ -34,6 +34,39 @@ describe('computeClimateConcern: the direction is the whole point - getting this
     const concern = computeClimateConcern(outOfRange);
     expect(concern).toBeGreaterThanOrEqual(0);
     expect(concern).toBeLessThanOrEqual(100);
+  });
+});
+
+describe('computeClimateConcernByDimension: the whole point is telling demands apart from support', () => {
+  it('a single weak dimension shows up clearly as its own high number, not hidden in an average', () => {
+    const oneWeakDimension: ClimateAverages = { demands: 1, control: 5, support: 5, relationships: 5, role: 5, change: 5 };
+    const byDim = computeClimateConcernByDimension(oneWeakDimension);
+    expect(byDim?.demands).toBe(100);
+    expect(byDim?.control).toBe(0);
+    expect(byDim?.support).toBe(0);
+    expect(byDim?.relationships).toBe(0);
+    expect(byDim?.role).toBe(0);
+    expect(byDim?.change).toBe(0);
+  });
+
+  it('two different weak dimensions are both visible independently', () => {
+    const twoWeak: ClimateAverages = { demands: 1, control: 5, support: 1, relationships: 5, role: 5, change: 5 };
+    const byDim = computeClimateConcernByDimension(twoWeak);
+    expect(byDim?.demands).toBe(100);
+    expect(byDim?.support).toBe(100);
+    expect(byDim?.control).toBe(0);
+  });
+
+  it('the blended score and the per-dimension scores agree when every dimension is equal', () => {
+    const uniform: ClimateAverages = { demands: 2, control: 2, support: 2, relationships: 2, role: 2, change: 2 };
+    const blended = computeClimateConcern(uniform);
+    const byDim = computeClimateConcernByDimension(uniform);
+    expect(byDim?.demands).toBe(blended);
+    expect(byDim?.control).toBe(blended);
+  });
+
+  it('returns null for null input rather than a fake zero', () => {
+    expect(computeClimateConcernByDimension(null)).toBeNull();
   });
 });
 

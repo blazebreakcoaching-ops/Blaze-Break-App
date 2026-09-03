@@ -24,7 +24,7 @@ import rateLimit from 'express-rate-limit';
 import { z } from 'zod';
 import { memoryToolIsAllowed, searchMemories, isValidRecoveryDuration, validateMemoryWrite, toolsAreEnabled, NovaMemoryDoc } from './nova-tools';
 import { toClaudeTools, GeminiStyleToolDeclaration } from './nova-claude-tools';
-import { computeClimateConcern, computeMoodConcern, computeOverallConcern, computeTrend } from './org-risk-trend';
+import { computeClimateConcern, computeClimateConcernByDimension, computeMoodConcern, computeOverallConcern, computeTrend } from './org-risk-trend';
 
 dotenv.config();
 
@@ -4139,6 +4139,69 @@ app.get("/api/org/:orgId/climate", verifyAppCheck, authenticateFirebaseUser, asy
 // claim a probability of absenteeism or any other number this app has
 // no real, validated basis to produce. See org-risk-trend.ts for the
 // actual calculation and why each choice was made.
+
+interface ConcernSnapshot {
+  cohortSize: number;
+  moodConcern: number | null;
+  climateConcern: number | null;
+  climateConcernByDimension: Record<string, number> | null;
+  overallConcern: number | null;
+}
+
+// Computes the full concern snapshot for one set of member uids - called
+// once for the whole org and once per team below, so a team's number is
+// calculated exactly the same way the org-wide one is, not a different
+// or lighter-weight version.
+const computeConcernSnapshotForCohort = async (db: any, uids: string[]): Promise<ConcernSnapshot> => {
+  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+  let moodPositive = 0, moodNegative = 0, moodNeutral = 0;
+  await Promise.all(uids.map(async (uid) => {
+    const moodSnap = await db.collection("users").doc(uid).collection("mood_pulses")
+      .where("createdAt", ">=", sevenDaysAgo).get();
+    moodSnap.forEach((doc: any) => {
+      const label = doc.data().moodLabel;
+      if (label === 'calm' || label === 'hopeful' || label === 'focused') moodPositive++;
+      else if (label === 'overwhelmed' || label === 'frustrated' || label === 'pressured' || label === 'tired') moodNegative++;
+      else moodNeutral++;
+    });
+  }));
+  const moodConcern = computeMoodConcern(moodPositive, moodNegative, moodNeutral);
+
+  const ninetyDaysAgo = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString();
+  const climateDims = ['demands', 'control', 'support', 'relationships', 'role', 'change'] as const;
+  const climateSums: Record<string, number> = { demands: 0, control: 0, support: 0, relationships: 0, role: 0, change: 0 };
+  let climateResponseCount = 0;
+  await Promise.all(uids.map(async (uid) => {
+    const snap = await db.collection("users").doc(uid).collection("climate_survey_responses")
+      .where("createdAt", ">=", ninetyDaysAgo).orderBy("createdAt", "desc").limit(1).get();
+    if (!snap.empty) {
+      const d = snap.docs[0].data();
+      climateDims.forEach(dim => { climateSums[dim] += d[dim] || 0; });
+      climateResponseCount++;
+    }
+  }));
+  const climateAverages = climateResponseCount > 0
+    ? {
+        demands: climateSums.demands / climateResponseCount,
+        control: climateSums.control / climateResponseCount,
+        support: climateSums.support / climateResponseCount,
+        relationships: climateSums.relationships / climateResponseCount,
+        role: climateSums.role / climateResponseCount,
+        change: climateSums.change / climateResponseCount,
+      }
+    : null;
+  const climateConcern = computeClimateConcern(climateAverages);
+  const climateConcernByDimension = computeClimateConcernByDimension(climateAverages);
+
+  return {
+    cohortSize: uids.length,
+    moodConcern,
+    climateConcern,
+    climateConcernByDimension,
+    overallConcern: computeOverallConcern(climateConcern, moodConcern),
+  };
+};
+
 app.get("/api/org/:orgId/risk-trend", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
   try {
     const { orgId } = req.params;
@@ -4147,74 +4210,60 @@ app.get("/api/org/:orgId/risk-trend", verifyAppCheck, authenticateFirebaseUser, 
 
     const threshold = org.privacyThreshold || 5;
     const memberUids: string[] = org.memberUids || [];
+    const memberTeams: Record<string, string> = org.memberTeams || {};
     const consentingUids = await getConsentingMemberUids(db, memberUids);
 
     if (consentingUids.length < threshold) {
       return res.json({ locked: true, cohortSize: consentingUids.length, threshold });
     }
 
-    // Mood concern: same 7-day window as the dashboard endpoint, fetched
-    // independently here rather than sharing that endpoint's combined
-    // mood+body loop, to avoid touching an existing, working endpoint for
-    // a change unrelated to what it already does.
-    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
-    let moodPositive = 0, moodNegative = 0, moodNeutral = 0;
-    await Promise.all(consentingUids.map(async (uid) => {
-      const moodSnap = await db.collection("users").doc(uid).collection("mood_pulses")
-        .where("createdAt", ">=", sevenDaysAgo).get();
-      moodSnap.forEach(doc => {
-        const label = doc.data().moodLabel;
-        if (label === 'calm' || label === 'hopeful' || label === 'focused') moodPositive++;
-        else if (label === 'overwhelmed' || label === 'frustrated' || label === 'pressured' || label === 'tired') moodNegative++;
-        else moodNeutral++;
-      });
-    }));
-    const moodConcern = computeMoodConcern(moodPositive, moodNegative, moodNeutral);
+    const orgSnapshot = await computeConcernSnapshotForCohort(db, consentingUids);
 
-    // Climate concern: same 90-day window and "most recent response per
-    // member" logic as the climate endpoint.
-    const ninetyDaysAgo = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString();
-    const climateDims = ['demands', 'control', 'support', 'relationships', 'role', 'change'] as const;
-    const climateSums: Record<string, number> = { demands: 0, control: 0, support: 0, relationships: 0, role: 0, change: 0 };
-    let climateResponseCount = 0;
-    await Promise.all(consentingUids.map(async (uid) => {
-      const snap = await db.collection("users").doc(uid).collection("climate_survey_responses")
-        .where("createdAt", ">=", ninetyDaysAgo).orderBy("createdAt", "desc").limit(1).get();
-      if (!snap.empty) {
-        const d = snap.docs[0].data();
-        climateDims.forEach(dim => { climateSums[dim] += d[dim] || 0; });
-        climateResponseCount++;
+    // Team breakdown: group consenting members by their assigned team,
+    // then only compute (and only ever expose) a snapshot for teams that
+    // independently clear the same k-anonymity threshold as the org as a
+    // whole. A team with too few consenting members just doesn't appear
+    // in teamBreakdown at all - not shown as "locked", simply absent,
+    // since listing a locked team by name would itself say more about a
+    // small team's participation than this feature should ever reveal.
+    const teamGroups: Record<string, string[]> = {};
+    consentingUids.forEach((uid) => {
+      const team = memberTeams[uid];
+      if (team) {
+        if (!teamGroups[team]) teamGroups[team] = [];
+        teamGroups[team].push(uid);
       }
+    });
+    const qualifyingTeams = Object.entries(teamGroups).filter(([, uids]) => uids.length >= threshold);
+    const teamSnapshots: Record<string, ConcernSnapshot> = {};
+    await Promise.all(qualifyingTeams.map(async ([team, uids]) => {
+      teamSnapshots[team] = await computeConcernSnapshotForCohort(db, uids);
     }));
-    const climateAverages = climateResponseCount > 0
-      ? {
-          demands: climateSums.demands / climateResponseCount,
-          control: climateSums.control / climateResponseCount,
-          support: climateSums.support / climateResponseCount,
-          relationships: climateSums.relationships / climateResponseCount,
-          role: climateSums.role / climateResponseCount,
-          change: climateSums.change / climateResponseCount,
-        }
-      : null;
-    const climateConcern = computeClimateConcern(climateAverages);
 
-    const overallConcern = computeOverallConcern(climateConcern, moodConcern);
-
-    // Snapshot handling: read the history first so today's write (if any)
+    // Snapshot handling: read history first so today's write (if any)
     // doesn't contaminate the "previous" comparison, and only ever write
     // once per UTC day regardless of how many times this is loaded.
     const historySnap = await db.collection("organisations").doc(orgId).collection("risk_trend_history")
-      .orderBy("recordedAt", "desc").limit(60).get();
-    const history = historySnap.docs.map(d => d.data() as { recordedAt: string; overallConcern: number | null });
+      .orderBy("recordedAt", "desc").limit(90).get();
+    const history = historySnap.docs.map((d: any) => d.data() as {
+      recordedAt: string;
+      overallConcern: number | null;
+      moodConcern: number | null;
+      climateConcern: number | null;
+      teamConcerns?: Record<string, number | null>;
+    });
 
     const todayUtc = new Date().toISOString().slice(0, 10);
-    const alreadySnapshottedToday = history.some(h => h.recordedAt.slice(0, 10) === todayUtc);
-    if (!alreadySnapshottedToday && overallConcern !== null) {
+    const alreadySnapshottedToday = history.some((h: any) => h.recordedAt.slice(0, 10) === todayUtc);
+    if (!alreadySnapshottedToday && orgSnapshot.overallConcern !== null) {
+      const teamConcerns: Record<string, number | null> = {};
+      Object.entries(teamSnapshots).forEach(([team, snap]) => { teamConcerns[team] = snap.overallConcern; });
       await db.collection("organisations").doc(orgId).collection("risk_trend_history").add({
         recordedAt: new Date().toISOString(),
-        overallConcern,
-        moodConcern,
-        climateConcern,
+        overallConcern: orgSnapshot.overallConcern,
+        moodConcern: orgSnapshot.moodConcern,
+        climateConcern: orgSnapshot.climateConcern,
+        teamConcerns,
       });
     }
 
@@ -4222,21 +4271,31 @@ app.get("/api/org/:orgId/risk-trend", verifyAppCheck, authenticateFirebaseUser, 
     // a genuine month-over-month read, not noisy day-to-day movement in
     // a signal built on overlapping 7-day windows.
     const twentyEightDaysAgo = Date.now() - 28 * 24 * 60 * 60 * 1000;
-    const priorSnapshot = history
-      .filter(h => new Date(h.recordedAt).getTime() <= twentyEightDaysAgo)
-      .sort((a, b) => Math.abs(new Date(a.recordedAt).getTime() - twentyEightDaysAgo) - Math.abs(new Date(b.recordedAt).getTime() - twentyEightDaysAgo))[0];
+    const findClosestPrior = (getValue: (h: any) => number | null | undefined) => history
+      .filter((h: any) => new Date(h.recordedAt).getTime() <= twentyEightDaysAgo && getValue(h) != null)
+      .sort((a: any, b: any) => Math.abs(new Date(a.recordedAt).getTime() - twentyEightDaysAgo) - Math.abs(new Date(b.recordedAt).getTime() - twentyEightDaysAgo))[0];
 
-    const trend = computeTrend(overallConcern, priorSnapshot?.overallConcern ?? null);
+    const priorOrgSnapshot = findClosestPrior((h: any) => h.overallConcern);
+    const orgTrend = computeTrend(orgSnapshot.overallConcern, priorOrgSnapshot?.overallConcern ?? null);
+
+    const teamBreakdown: Record<string, ConcernSnapshot & { trend: ReturnType<typeof computeTrend> }> = {};
+    Object.entries(teamSnapshots).forEach(([team, snap]) => {
+      const priorTeamSnapshot = findClosestPrior((h: any) => h.teamConcerns?.[team]);
+      teamBreakdown[team] = { ...snap, trend: computeTrend(snap.overallConcern, priorTeamSnapshot?.teamConcerns?.[team] ?? null) };
+    });
 
     res.json({
       locked: false,
       cohortSize: consentingUids.length,
       threshold,
-      moodConcern,
-      climateConcern,
-      overallConcern,
-      trend,
-      comparedAgainst: priorSnapshot?.recordedAt || null,
+      moodConcern: orgSnapshot.moodConcern,
+      climateConcern: orgSnapshot.climateConcern,
+      climateConcernByDimension: orgSnapshot.climateConcernByDimension,
+      overallConcern: orgSnapshot.overallConcern,
+      trend: orgTrend,
+      comparedAgainst: priorOrgSnapshot?.recordedAt || null,
+      history: history.slice().reverse().map((h: any) => ({ recordedAt: h.recordedAt, overallConcern: h.overallConcern })),
+      teamBreakdown,
     });
   } catch (err: any) {
     res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
@@ -4341,6 +4400,7 @@ app.get("/api/org/:orgId/members", verifyAppCheck, authenticateFirebaseUser, asy
     const { org } = await requireOrgAdmin(req, orgId);
     const memberUids: string[] = org.memberUids || [];
     const adminUids: string[] = org.adminUids || [];
+    const memberTeams: Record<string, string> = org.memberTeams || {};
 
     const members = await Promise.all(memberUids.map(async (uid) => {
       try {
@@ -4350,9 +4410,10 @@ app.get("/api/org/:orgId/members", verifyAppCheck, authenticateFirebaseUser, asy
           email: authUser.email || null,
           displayName: authUser.displayName || null,
           isAdmin: adminUids.includes(uid),
+          team: memberTeams[uid] || null,
         };
       } catch (e) {
-        return { uid, email: null, displayName: null, isAdmin: adminUids.includes(uid) };
+        return { uid, email: null, displayName: null, isAdmin: adminUids.includes(uid), team: memberTeams[uid] || null };
       }
     }));
 
@@ -4378,6 +4439,39 @@ app.post("/api/org/:orgId/members/:memberUid/remove", verifyAppCheck, authentica
     await db.collection("organisations").doc(orgId).update({
       memberUids: FieldValue.arrayRemove(memberUid),
       adminUids: FieldValue.arrayRemove(memberUid),
+    });
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
+  }
+});
+
+// Team assignment - a freeform label an admin sets per member, stored on
+// the org document itself (memberTeams: { [uid]: teamName }) rather than
+// on the member's own user document, matching the same admin-managed-
+// metadata pattern costInputs already uses. This is the only place
+// "team" exists anywhere in this app - there's no separate team entity,
+// no team-creation flow; a team is simply whichever members share the
+// same label. Powers the per-team risk-trend breakdown below, gated by
+// the exact same k-anonymity threshold as every other aggregate in this
+// app - a team with too few consenting members to clear it just doesn't
+// appear, the same way the org-wide dashboard locks below threshold.
+app.post("/api/org/:orgId/members/:memberUid/team", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const { orgId, memberUid } = req.params;
+    const { org } = await requireOrgAdmin(req, orgId);
+    if (!(org.memberUids || []).includes(memberUid)) {
+      return res.status(400).json({ error: "That person isn't a member of this organisation." });
+    }
+    const { team } = req.body;
+    if (team !== null && (typeof team !== 'string' || team.length > 60)) {
+      return res.status(400).json({ error: "Team name must be text under 60 characters, or null to clear it." });
+    }
+    const trimmed = typeof team === 'string' ? team.trim() : null;
+    const db = getDb();
+    const fieldPath = `memberTeams.${memberUid}`;
+    await db.collection("organisations").doc(orgId).update({
+      [fieldPath]: trimmed && trimmed.length > 0 ? trimmed : FieldValue.delete(),
     });
     res.json({ success: true });
   } catch (err: any) {

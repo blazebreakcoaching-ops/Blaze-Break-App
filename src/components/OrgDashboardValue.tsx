@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
-import { Building, AlertTriangle, ArrowRight, Target, Brain, CheckCircle2, Loader2, Lock, Save } from 'lucide-react';
+import { Building, AlertTriangle, ArrowRight, Target, Brain, CheckCircle2, Loader2, Lock, Save, TrendingUp } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { secureApiFetch } from '../lib/secure-api';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
@@ -11,7 +11,7 @@ interface CostInputs {
   headcount: number;
 }
 
-export const OrgDashboardValue = () => {
+export const OrgDashboardValue = ({ onNavigateToTrend }: { onNavigateToTrend?: () => void } = {}) => {
   const [activeTab, setActiveTab] = useState<'cost' | 'planner' | 'predictor'>('cost');
 
   const [orgId, setOrgId] = useState<string | null>(null);
@@ -282,6 +282,21 @@ export const OrgDashboardValue = () => {
                         </ResponsiveContainer>
                       </div>
                     </div>
+                  )}
+
+                  {onNavigateToTrend && (
+                    <button
+                      onClick={onNavigateToTrend}
+                      className="card w-full text-left flex items-center justify-between gap-4 hover:border-primary/30 transition-colors max-w-2xl"
+                    >
+                      <div>
+                        <h4 className="font-bold text-text-main flex items-center gap-2"><TrendingUp className="w-4 h-4 text-primary" /> See the Wellbeing Concern Trend</h4>
+                        <p className="text-xs text-text-muted leading-relaxed mt-1">
+                          The cost figures above are what your organisation actually reported. The Resilience Pulse tab shows a separate, real trend from your team's own mood and climate-survey data - both are real, shown side by side, with no formula connecting one to the other.
+                        </p>
+                      </div>
+                      <ArrowRight className="w-4 h-4 text-text-muted shrink-0" />
+                    </button>
                   )}
 
                   <div className="card space-y-6 border-border dark:border-border max-w-2xl">

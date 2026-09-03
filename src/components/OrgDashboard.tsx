@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { secureApiFetch } from '../lib/secure-api';
 import { auth } from '../lib/firebase';
-import { RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, ResponsiveContainer, Tooltip } from 'recharts';
+import { RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, ResponsiveContainer, Tooltip, LineChart, Line, XAxis, YAxis, CartesianGrid } from 'recharts';
 import { useFocusTrap } from '../lib/useFocusTrap';
 
 
@@ -85,14 +85,26 @@ export const OrgDashboard = () => {
     threshold: number;
     moodConcern?: number | null;
     climateConcern?: number | null;
+    climateConcernByDimension?: Record<string, number> | null;
     overallConcern?: number | null;
     trend?: { direction: 'improving' | 'worsening' | 'stable' | 'unknown'; delta: number | null };
     comparedAgainst?: string | null;
+    history?: { recordedAt: string; overallConcern: number | null }[];
+    teamBreakdown?: Record<string, {
+      cohortSize: number;
+      overallConcern: number | null;
+      moodConcern: number | null;
+      climateConcern: number | null;
+      trend: { direction: 'improving' | 'worsening' | 'stable' | 'unknown'; delta: number | null };
+    }>;
   } | null>(null);
 
   const [suggestions, setSuggestions] = useState<{ id: string; message: string }[]>([]);
 
-  const [members, setMembers] = useState<{ uid: string; email: string | null; displayName: string | null; isAdmin: boolean }[]>([]);
+  const [members, setMembers] = useState<{ uid: string; email: string | null; displayName: string | null; isAdmin: boolean; team: string | null }[]>([]);
+  const [editingTeamUid, setEditingTeamUid] = useState<string | null>(null);
+  const [teamInputValue, setTeamInputValue] = useState('');
+  const [savingTeamUid, setSavingTeamUid] = useState<string | null>(null);
   const [membersLoading, setMembersLoading] = useState(false);
   const [membersError, setMembersError] = useState('');
   const [memberActionUid, setMemberActionUid] = useState<string | null>(null);
@@ -244,6 +256,28 @@ export const OrgDashboard = () => {
       setMembersError('Could not revoke that admin access.');
     }
     setMemberActionUid(null);
+  };
+
+  const handleSetTeam = async (memberUid: string, team: string | null) => {
+    if (!orgStatus?.organisationId) return;
+    setSavingTeamUid(memberUid);
+    setMembersError('');
+    try {
+      const res = await secureApiFetch(`/api/org/${orgStatus.organisationId}/members/${memberUid}/team`, {
+        method: 'POST',
+        data: { team },
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setMembersError(data.error || "Could not save that person's team.");
+      } else {
+        setMembers(prev => prev.map(m => m.uid === memberUid ? { ...m, team } : m));
+        setEditingTeamUid(null);
+      }
+    } catch (e) {
+      setMembersError("Could not save that person's team.");
+    }
+    setSavingTeamUid(null);
   };
 
   const handleSaveSettings = async () => {
@@ -603,35 +637,116 @@ export const OrgDashboard = () => {
                 {riskTrendData.overallConcern == null ? (
                   <p className="text-sm text-text-muted py-8 text-center">Not enough mood or climate survey data yet to show a trend.</p>
                 ) : (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div className="p-5 bg-surface dark:bg-card/40 border border-border rounded-xl">
-                      <span className="text-xs uppercase font-bold tracking-widest text-text-muted block mb-1">Current Concern Level</span>
-                      <p className="text-3xl font-display font-bold text-text-main">{riskTrendData.overallConcern}<span className="text-sm font-normal text-text-muted">/100</span></p>
-                      <p className="text-xs text-text-muted mt-1">Combines mood pulses and, where available, the climate survey. Lower is better.</p>
+                  <>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div className="p-5 bg-surface dark:bg-card/40 border border-border rounded-xl">
+                        <span className="text-xs uppercase font-bold tracking-widest text-text-muted block mb-1">Current Concern Level</span>
+                        <p className="text-3xl font-display font-bold text-text-main">{riskTrendData.overallConcern}<span className="text-sm font-normal text-text-muted">/100</span></p>
+                        <p className="text-xs text-text-muted mt-1">Combines mood pulses and, where available, the climate survey. Lower is better.</p>
+                      </div>
+                      <div className="p-5 bg-surface dark:bg-card/40 border border-border rounded-xl">
+                        <span className="text-xs uppercase font-bold tracking-widest text-text-muted block mb-1">Trend vs. ~4 Weeks Ago</span>
+                        {riskTrendData.trend?.direction === 'unknown' ? (
+                          <>
+                            <p className="text-3xl font-display font-bold text-text-main">—</p>
+                            <p className="text-xs text-text-muted mt-1">No snapshot from a month ago yet - check back as data accumulates.</p>
+                          </>
+                        ) : (
+                          <>
+                            <p className={cn(
+                              "text-3xl font-display font-bold",
+                              riskTrendData.trend?.direction === 'worsening' ? "text-destructive dark:text-[#f87171]" :
+                              riskTrendData.trend?.direction === 'improving' ? "text-[#166534] dark:text-[#4ade80]" :
+                              "text-text-main"
+                            )}>
+                              {riskTrendData.trend?.direction === 'stable' ? 'Stable' : `${(riskTrendData.trend?.delta ?? 0) > 0 ? '+' : ''}${riskTrendData.trend?.delta} pts`}
+                            </p>
+                            <p className="text-xs text-text-muted mt-1 capitalize">{riskTrendData.trend?.direction}{riskTrendData.trend?.direction !== 'stable' ? ' since the last comparable snapshot' : ''}.</p>
+                          </>
+                        )}
+                      </div>
                     </div>
-                    <div className="p-5 bg-surface dark:bg-card/40 border border-border rounded-xl">
-                      <span className="text-xs uppercase font-bold tracking-widest text-text-muted block mb-1">Trend vs. ~4 Weeks Ago</span>
-                      {riskTrendData.trend?.direction === 'unknown' ? (
-                        <>
-                          <p className="text-3xl font-display font-bold text-text-main">—</p>
-                          <p className="text-xs text-text-muted mt-1">No snapshot from a month ago yet - check back as data accumulates.</p>
-                        </>
-                      ) : (
-                        <>
-                          <p className={cn(
-                            "text-3xl font-display font-bold",
-                            riskTrendData.trend?.direction === 'worsening' ? "text-destructive dark:text-[#f87171]" :
-                            riskTrendData.trend?.direction === 'improving' ? "text-[#166534] dark:text-[#4ade80]" :
-                            "text-text-main"
-                          )}>
-                            {riskTrendData.trend?.direction === 'stable' ? 'Stable' : `${(riskTrendData.trend?.delta ?? 0) > 0 ? '+' : ''}${riskTrendData.trend?.delta} pts`}
-                          </p>
-                          <p className="text-xs text-text-muted mt-1 capitalize">{riskTrendData.trend?.direction}{riskTrendData.trend?.direction !== 'stable' ? ' since the last comparable snapshot' : ''}.</p>
-                        </>
-                      )}
-                    </div>
-                  </div>
+
+                    {riskTrendData.history && riskTrendData.history.length >= 2 && (
+                      <div>
+                        <span className="text-xs uppercase font-bold tracking-widest text-text-muted block mb-3">Concern Level Over Time</span>
+                        <div className="h-52 w-full">
+                          <ResponsiveContainer width="100%" height="100%">
+                            <LineChart data={riskTrendData.history.map(h => ({ date: new Date(h.recordedAt).toLocaleDateString([], { month: 'short', day: 'numeric' }), value: h.overallConcern }))}>
+                              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#78716c" strokeOpacity={0.2} />
+                              <XAxis dataKey="date" tick={{ fontSize: 11 }} stroke="#78716c" />
+                              <YAxis domain={[0, 100]} tick={{ fontSize: 11 }} stroke="#78716c" />
+                              <Tooltip
+                                contentStyle={{ backgroundColor: '#1c1917', border: '1px solid #3a3532', borderRadius: '8px' }}
+                                itemStyle={{ color: '#fff', fontSize: '12px' }}
+                                formatter={(value: any) => [`${value}/100`, 'Concern']}
+                              />
+                              <Line type="monotone" dataKey="value" stroke="#ea580c" strokeWidth={2} dot={{ r: 3, fill: '#ea580c' }} connectNulls />
+                            </LineChart>
+                          </ResponsiveContainer>
+                        </div>
+                      </div>
+                    )}
+
+                    {riskTrendData.climateConcernByDimension && (
+                      <div>
+                        <span className="text-xs uppercase font-bold tracking-widest text-text-muted block mb-3">What's Driving It (Climate Survey Dimensions)</span>
+                        <div className="space-y-2">
+                          {Object.entries(riskTrendData.climateConcernByDimension).map(([dim, concern]) => (
+                            <div key={dim} className="flex items-center gap-3">
+                              <span className="text-xs font-bold text-text-main w-28 shrink-0 capitalize">{dim}</span>
+                              <div className="h-2 flex-1 bg-surface dark:bg-surface rounded-full overflow-hidden">
+                                <div className={cn("h-full", concern >= 60 ? "bg-destructive" : concern >= 35 ? "bg-warning" : "bg-success")} style={{ width: `${Math.max(4, concern)}%` }} />
+                              </div>
+                              <span className="text-xs font-mono text-text-muted w-10 text-right">{concern}</span>
+                            </div>
+                          ))}
+                        </div>
+                        <p className="text-xs text-text-muted mt-3">Higher means more concerning. From the same climate survey averages shown in the Team Climate tab.</p>
+                      </div>
+                    )}
+                  </>
                 )}
+              </div>
+            )}
+
+            {riskTrendData?.teamBreakdown && Object.keys(riskTrendData.teamBreakdown).length > 0 && (
+              <div className="card space-y-6">
+                <div>
+                  <h4 className="font-bold text-text-main flex items-center gap-2"><TrendingUp className="w-5 h-5 text-primary" /> By Team</h4>
+                  <p className="text-xs text-text-muted max-w-2xl leading-relaxed">
+                    Only teams with enough consenting members to clear the same anonymity threshold as the org-wide numbers above appear here - a team with too few people simply isn't shown, the same protection as everywhere else in this dashboard. Nobody is ever named.
+                  </p>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {Object.entries(riskTrendData.teamBreakdown).map(([team, snap]) => (
+                    <div key={team} className="p-5 bg-surface dark:bg-card/40 border border-border rounded-xl">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-sm font-bold text-text-main truncate">{team}</span>
+                        <span className="text-xs text-text-muted shrink-0">{snap.cohortSize} people</span>
+                      </div>
+                      <div className="flex items-end justify-between">
+                        <div>
+                          <p className="text-2xl font-display font-bold text-text-main">{snap.overallConcern ?? '—'}<span className="text-xs font-normal text-text-muted">/100</span></p>
+                        </div>
+                        <div className="text-right">
+                          {snap.trend.direction === 'unknown' ? (
+                            <span className="text-xs text-text-muted">No trend yet</span>
+                          ) : (
+                            <span className={cn(
+                              "text-sm font-bold capitalize",
+                              snap.trend.direction === 'worsening' ? "text-destructive dark:text-[#f87171]" :
+                              snap.trend.direction === 'improving' ? "text-[#166534] dark:text-[#4ade80]" :
+                              "text-text-muted"
+                            )}>
+                              {snap.trend.direction}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
           </motion.div>
@@ -801,7 +916,7 @@ export const OrgDashboard = () => {
 
         {activeSubTab === 'value' && (
           <motion.div key="value" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95 }}>
-            <OrgDashboardValue />
+            <OrgDashboardValue onNavigateToTrend={() => setActiveSubTab('pulse')} />
           </motion.div>
         )}
 
@@ -820,6 +935,11 @@ export const OrgDashboard = () => {
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
               <div className="lg:col-span-2 space-y-4">
                 <h4 className="font-bold text-text-main flex items-center gap-2"><Users className="w-5 h-5 text-primary" /> Team Roster ({members.length})</h4>
+                <datalist id="org-team-names">
+                  {Array.from(new Set(members.map(m => m.team).filter((t): t is string => !!t))).map(team => (
+                    <option key={team} value={team} />
+                  ))}
+                </datalist>
                 {membersLoading ? (
                   <div className="flex items-center justify-center py-16">
                     <Loader2 className="w-6 h-6 animate-spin text-primary" />
@@ -838,6 +958,44 @@ export const OrgDashboard = () => {
                           <p className="text-sm font-bold text-text-main truncate">{member.displayName || member.email || member.uid}</p>
                           {member.email && member.displayName && (
                             <p className="text-xs text-text-muted truncate">{member.email}</p>
+                          )}
+                          {editingTeamUid === member.uid ? (
+                            <div className="flex items-center gap-1.5 mt-1.5">
+                              <input
+                                type="text"
+                                value={teamInputValue}
+                                onChange={(e) => setTeamInputValue(e.target.value)}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') handleSetTeam(member.uid, teamInputValue.trim() || null);
+                                  if (e.key === 'Escape') setEditingTeamUid(null);
+                                }}
+                                list="org-team-names"
+                                placeholder="Team name"
+                                aria-label={`Team for ${member.displayName || member.email || 'this person'}`}
+                                autoFocus
+                                maxLength={60}
+                                className="text-xs bg-surface border border-border rounded-lg px-2 py-1 w-32 focus:outline-none focus:border-primary/50"
+                              />
+                              <button
+                                onClick={() => handleSetTeam(member.uid, teamInputValue.trim() || null)}
+                                disabled={savingTeamUid === member.uid}
+                                aria-label="Save team"
+                                className="text-xs font-bold text-[#9a3412] dark:text-primary hover:opacity-70 disabled:opacity-50"
+                              >
+                                {savingTeamUid === member.uid ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Save'}
+                              </button>
+                              <button onClick={() => setEditingTeamUid(null)} aria-label="Cancel editing team" className="text-xs text-text-muted hover:text-text-main">
+                                Cancel
+                              </button>
+                            </div>
+                          ) : (
+                            <button
+                              onClick={() => { setEditingTeamUid(member.uid); setTeamInputValue(member.team || ''); }}
+                              className="text-xs text-text-muted hover:text-[#9a3412] dark:hover:text-primary mt-1 transition-colors"
+                              aria-label={member.team ? `Edit team for ${member.displayName || member.email || 'this person'}: ${member.team}` : `Add a team for ${member.displayName || member.email || 'this person'}`}
+                            >
+                              {member.team ? `Team: ${member.team}` : '+ Add team'}
+                            </button>
                           )}
                         </div>
                         <div className="flex items-center gap-2 shrink-0">
