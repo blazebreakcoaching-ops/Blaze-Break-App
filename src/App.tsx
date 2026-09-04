@@ -59,6 +59,7 @@ import {
   UserProfileData,
 } from "./types.ts";
 import { cn } from "./lib/utils.ts";
+import { useFocusTrap } from "./lib/useFocusTrap";
 import { auth, db } from "./lib/firebase.ts";
 import { doc, setDoc, getDoc, onSnapshot } from "firebase/firestore";
 const DiagnoseView = lazy(() => import("./components/DiagnoseSection.tsx").then(m => ({ default: m.DiagnoseView })));
@@ -2228,6 +2229,13 @@ export default function App() {
   const [showWalkthrough, setShowWalkthrough] = useState(false);
   const [showCrisisSupport, setShowCrisisSupport] = useState(false);
   const [postOnboardingProfile, setPostOnboardingProfile] = useState<UserProfileData | null>(null);
+  const welcomeModalRef = useFocusTrap(!!postOnboardingProfile);
+  useEffect(() => {
+    if (!postOnboardingProfile) return;
+    const onKeyDown = (e: KeyboardEvent) => { if (e.key === 'Escape') setPostOnboardingProfile(null); };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [postOnboardingProfile]);
   const [isMobileNavCollapsed, setIsMobileNavCollapsed] = useState(false);
   const [showMobileToolsSheet, setShowMobileToolsSheet] = useState(false);
 
@@ -2989,6 +2997,8 @@ export default function App() {
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, scale: 0.9, y: -20 }}
               className="fixed top-8 left-1/2 -translate-x-1/2 z-[100] bg-card text-text-main px-6 py-4 rounded-2xl shadow-2xl flex items-center gap-4 border border-border overflow-visible relative"
+              role="status"
+              aria-live="polite"
             >
               {/* Floating Sparkle Particles Burst */}
               {[...Array(10)].map((_, i) => (
@@ -3040,6 +3050,8 @@ export default function App() {
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, scale: 0.9, y: -20 }}
               className="fixed top-8 left-1/2 -translate-x-1/2 z-[100] bg-card text-text-main px-6 py-4 rounded-2xl shadow-2xl flex items-center gap-4 border border-primary/30"
+              role="status"
+              aria-live="polite"
             >
               <div className="w-10 h-10 bg-primary/20 rounded-xl flex items-center justify-center text-primary shrink-0">
                 <Award className="w-6 h-6" />
@@ -3597,13 +3609,18 @@ export default function App() {
               <motion.div
                 initial={{ opacity: 0, y: 20, scale: 0.97 }}
                 animate={{ opacity: 1, y: 0, scale: 1 }}
+                ref={welcomeModalRef as any}
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="welcome-modal-heading"
+                tabIndex={-1}
                 className="card max-w-md w-full space-y-6 text-center"
               >
                 <div className="w-14 h-14 mx-auto rounded-2xl bg-primary/10 flex items-center justify-center text-primary">
                   <Sparkles className="w-7 h-7" />
                 </div>
                 <div className="space-y-2">
-                  <h2 className="text-xl font-display font-bold text-text-main">
+                  <h2 id="welcome-modal-heading" className="text-xl font-display font-bold text-text-main">
                     {postOnboardingProfile.fullName ? `Welcome, ${postOnboardingProfile.fullName.split(" ")[0]}.` : "Welcome."}
                   </h2>
                   <p className="text-sm text-text-muted leading-relaxed">
