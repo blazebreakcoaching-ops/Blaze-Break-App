@@ -40,7 +40,11 @@ try {
   // Force the Google Cloud Project to the one in the config so Firebase Auth accepts the tokens
   process.env.GOOGLE_CLOUD_PROJECT = firebaseConfigProject;
   process.env.GCLOUD_PROJECT = firebaseConfigProject;
-} catch(e) {}
+} catch (e) {
+  // firebase-applet-config.json is optional - if it's missing or invalid,
+  // firebaseConfigProject/firebaseConfigDatabaseId just stay undefined and
+  // initializeApp() below falls back to Application Default Credentials.
+}
 
 if (!getApps().length) {
   initializeApp({
@@ -3190,21 +3194,31 @@ app.get("/api/admin/summary", verifyAppCheck, authenticateFirebaseUser, async (r
     try {
       const fingerprintsSnap = await db.collectionGroup("fingerprint").get();
       diagnosticCompletions = fingerprintsSnap.size;
-    } catch (e) {}
+    } catch (e) {
+      // This admin-stats endpoint reports several independent metrics;
+      // one query failing shouldn't take the others down, so this one
+      // just stays at its 0 default.
+    }
 
     // Active Feature Flags
     let activeFeatureFlags = 0;
     try {
       const flagsSnap = await db.collection("public_feature_flags").where("enabled", "==", true).get();
       activeFeatureFlags = flagsSnap.size;
-    } catch (e) {}
+    } catch (e) {
+      // Same reasoning as the diagnosticCompletions query above - degrade
+      // to the 0 default rather than failing the whole stats response.
+    }
 
     // B2B Orgs
     let orgsCount = 0;
     try {
       const orgsSnap = await db.collection("organisations").get();
       orgsCount = orgsSnap.size;
-    } catch (e) {}
+    } catch (e) {
+      // Same reasoning as the diagnosticCompletions query above - degrade
+      // to the 0 default rather than failing the whole stats response.
+    }
 
     // Anxiety Reset Event Metrics
     let resetsToday = 0;
@@ -3257,7 +3271,11 @@ app.get("/api/admin/summary", verifyAppCheck, authenticateFirebaseUser, async (r
           toolCounts[data.selectedTool] = (toolCounts[data.selectedTool] || 0) + 1;
         }
       });
-    } catch (e) {}
+    } catch (e) {
+      // Same reasoning as the other stats queries in this endpoint -
+      // degrade to the defaults declared above rather than failing
+      // the whole response over one metrics query.
+    }
 
     const mostCommonTrigger = Object.keys(triggerCounts).reduce((a, b) => triggerCounts[a] > triggerCounts[b] ? a : b, 'None');
     const mostUsedResetTool = Object.keys(toolCounts).reduce((a, b) => toolCounts[a] > toolCounts[b] ? a : b, 'None');
@@ -6043,6 +6061,11 @@ if (process.env.TEST_MODE !== 'true') {
       // generous for a coaching check-in without leaving a session open
       // indefinitely if a client never explicitly closes it.
       const MAX_SESSION_MS = 15 * 60 * 1000;
+      // sessionTimeout is assigned exactly once, but only after endSession
+      // (which reads it via closure) is declared below; TS requires const
+      // to initialize immediately, so this can't be a const without
+      // restructuring the timer setup.
+      // eslint-disable-next-line prefer-const
       let sessionTimeout: NodeJS.Timeout;
       let liveSession: any = null;
       let sessionEnded = false;
@@ -6051,11 +6074,17 @@ if (process.env.TEST_MODE !== 'true') {
         if (sessionEnded) return;
         sessionEnded = true;
         clearTimeout(sessionTimeout);
-        try { liveSession?.close(); } catch (e) {}
+        try {
+          liveSession?.close();
+        } catch (e) {
+          // Best-effort - the session may already be closed.
+        }
         try {
           if (reason) clientWs.send(JSON.stringify({ error: reason }));
           clientWs.close();
-        } catch (e) {}
+        } catch (e) {
+          // Best-effort - the socket may already be closed.
+        }
       };
 
       try {
