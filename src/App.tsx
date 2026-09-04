@@ -56,6 +56,7 @@ import {
   SupportContact,
   Badge,
   BADGES,
+  UserProfileData,
 } from "./types.ts";
 import { cn } from "./lib/utils.ts";
 import { auth, db } from "./lib/firebase.ts";
@@ -2226,6 +2227,7 @@ export default function App() {
   const [showSettings, setShowSettings] = useState(false);
   const [showWalkthrough, setShowWalkthrough] = useState(false);
   const [showCrisisSupport, setShowCrisisSupport] = useState(false);
+  const [postOnboardingProfile, setPostOnboardingProfile] = useState<UserProfileData | null>(null);
   const [isMobileNavCollapsed, setIsMobileNavCollapsed] = useState(false);
   const [showMobileToolsSheet, setShowMobileToolsSheet] = useState(false);
 
@@ -2930,6 +2932,7 @@ export default function App() {
             localStorage.setItem("blaze_profile", JSON.stringify(profile));
             setFlow("app");
             setActiveTab("home");
+            setPostOnboardingProfile(profile);
 
             updateNovaMemoryBySourceAndType("Onboarding Telemetry", "profile", {
               content: `Onboarding complete. Goal: ${profile.purpose || "N/A"}. Main drain: ${profile.primaryDrain || "N/A"}. Preferred tone: ${profile.novaTone || "N/A"}.`,
@@ -3567,6 +3570,75 @@ export default function App() {
 
       <CrisisSupportModal isOpen={showCrisisSupport} onClose={() => setShowCrisisSupport(false)} />
       <InAppNudge />
+
+      <AnimatePresence>
+        {postOnboardingProfile && (() => {
+          // Maps the real, actual options from the onboarding questionnaire
+          // (SituationalOnboarding.tsx's "What's draining you the most
+          // right now?" question) to one genuinely relevant feature - one
+          // recommendation, not a tour through all 17, matching the same
+          // "one clear next step" philosophy the home screen's default
+          // widget set already uses.
+          const drainToFeature: Record<string, { tab: ActiveTab; label: string }> = {
+            "Workload and deadlines": { tab: "recover", label: "Recover" },
+            "People and expectations": { tab: "communicate", label: "Communicate" },
+            "Constant notifications and interruptions": { tab: "reset", label: "Nervous System" },
+            "The pressure of leading others": { tab: "plan", label: "Recovery Plan" },
+          };
+          const rec = postOnboardingProfile.primaryDrain ? drainToFeature[postOnboardingProfile.primaryDrain] : null;
+          const dismiss = () => setPostOnboardingProfile(null);
+          return (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-[110] bg-background/95 backdrop-blur-sm flex items-center justify-center p-6"
+            >
+              <motion.div
+                initial={{ opacity: 0, y: 20, scale: 0.97 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                className="card max-w-md w-full space-y-6 text-center"
+              >
+                <div className="w-14 h-14 mx-auto rounded-2xl bg-primary/10 flex items-center justify-center text-primary">
+                  <Sparkles className="w-7 h-7" />
+                </div>
+                <div className="space-y-2">
+                  <h2 className="text-xl font-display font-bold text-text-main">
+                    {postOnboardingProfile.fullName ? `Welcome, ${postOnboardingProfile.fullName.split(" ")[0]}.` : "Welcome."}
+                  </h2>
+                  <p className="text-sm text-text-muted leading-relaxed">
+                    You'll earn points and unlock badges as you go - check your progress anytime from the home screen. Not sure where to start? Just ask Nova; it can point you to the right tool.
+                  </p>
+                </div>
+                {rec && (
+                  <div className="p-4 bg-surface dark:bg-card/40 border border-border rounded-xl text-left">
+                    <p className="text-[11px] uppercase font-bold tracking-widest text-primary mb-1">Based on what you told us</p>
+                    <p className="text-sm text-text-main">
+                      <span className="font-bold">{rec.label}</span> is a good place to start.
+                    </p>
+                  </div>
+                )}
+                <div className="flex flex-col gap-2">
+                  {rec && (
+                    <button
+                      onClick={() => { setActiveTab(rec.tab); dismiss(); }}
+                      className="w-full py-3 bg-primary text-primary-foreground font-bold text-sm rounded-xl hover:opacity-90 transition-opacity"
+                    >
+                      Take me there
+                    </button>
+                  )}
+                  <button
+                    onClick={dismiss}
+                    className="w-full py-3 text-text-muted hover:text-text-main font-medium text-sm transition-colors"
+                  >
+                    I'll explore on my own
+                  </button>
+                </div>
+              </motion.div>
+            </motion.div>
+          );
+        })()}
+      </AnimatePresence>
     </div>
   );
 }
