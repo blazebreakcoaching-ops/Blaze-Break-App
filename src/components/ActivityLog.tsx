@@ -1,16 +1,24 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Activity, Clock } from 'lucide-react';
+import { Activity, Clock, ChevronDown } from 'lucide-react';
 import { NovaMemory, getNovaBrain } from '../lib/nova-brain';
 
 export const ActivityLog = ({ 
   onDragStart, 
   onDragOver, 
-  onDrop 
+  onDrop,
+  onMoveUp,
+  onMoveDown,
+  isFirst,
+  isLast,
 }: {
   onDragStart?: (e: React.DragEvent, id: string) => void,
   onDragOver?: (e: React.DragEvent, id: string) => void,
-  onDrop?: (e: React.DragEvent, id: string) => void
+  onDrop?: (e: React.DragEvent, id: string) => void,
+  onMoveUp?: (id: string) => void,
+  onMoveDown?: (id: string) => void,
+  isFirst?: boolean,
+  isLast?: boolean,
 }) => {
   const [logs, setLogs] = useState<NovaMemory[]>([]);
 
@@ -51,11 +59,33 @@ export const ActivityLog = ({
       onDrop={(e) => onDrop?.(e, 'activity')}
       className="card p-6 bg-card border border-border shadow-md space-y-6 cursor-grab active:cursor-grabbing hover:shadow-lg transition-all"
     >
-      <div className="flex items-center gap-3">
-        <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center text-primary shrink-0">
-          <Activity className="w-4 h-4" />
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center text-primary shrink-0">
+            <Activity className="w-4 h-4" />
+          </div>
+          <h3 className="text-sm font-black uppercase tracking-widest text-text-main">Recovery Actions Log</h3>
         </div>
-        <h3 className="text-sm font-black uppercase tracking-widest text-text-main">Recovery Actions Log</h3>
+        {(onMoveUp || onMoveDown) && (
+          <div className="flex gap-1 shrink-0">
+            <button
+              onClick={(e) => { e.stopPropagation(); onMoveUp?.('activity'); }}
+              disabled={!onMoveUp || isFirst}
+              aria-label="Move card up"
+              className="p-1 rounded-md hover:bg-surface dark:bg-card/10 text-text-muted hover:text-text-main transition-colors disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+            >
+              <ChevronDown className="w-4 h-4 rotate-180" />
+            </button>
+            <button
+              onClick={(e) => { e.stopPropagation(); onMoveDown?.('activity'); }}
+              disabled={!onMoveDown || isLast}
+              aria-label="Move card down"
+              className="p-1 rounded-md hover:bg-surface dark:bg-card/10 text-text-muted hover:text-text-main transition-colors disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+            >
+              <ChevronDown className="w-4 h-4" />
+            </button>
+          </div>
+        )}
       </div>
       
       <div className="space-y-4" role="log" aria-live="polite">

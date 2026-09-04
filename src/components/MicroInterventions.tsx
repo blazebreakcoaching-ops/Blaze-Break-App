@@ -4,12 +4,16 @@ import { cn } from '../lib/utils';
 import { SHIPStage } from '../types';
 import { SmartCard } from './SmartCard';
 
-export const MicroInterventions = ({ shipStage, id = "micro", onDragStart, onDragOver, onDrop }: { 
+export const MicroInterventions = ({ shipStage, id = "micro", onDragStart, onDragOver, onDrop, onMoveUp, onMoveDown, isFirst, isLast }: { 
   shipStage: SHIPStage, 
   id?: string,
   onDragStart?: any,
   onDragOver?: any,
-  onDrop?: any
+  onDrop?: any,
+  onMoveUp?: (id: string) => void,
+  onMoveDown?: (id: string) => void,
+  isFirst?: boolean,
+  isLast?: boolean,
 }) => {
   const [activeId, setActiveId] = useState<string | null>(null);
 
@@ -58,6 +62,10 @@ export const MicroInterventions = ({ shipStage, id = "micro", onDragStart, onDra
       onDragStart={onDragStart}
       onDragOver={onDragOver}
       onDrop={onDrop}
+      onMoveUp={onMoveUp}
+      onMoveDown={onMoveDown}
+      isFirst={isFirst}
+      isLast={isLast}
       className="space-y-6 flex flex-col p-6"
     >
       <div className="mb-2">

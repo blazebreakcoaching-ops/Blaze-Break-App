@@ -1660,7 +1660,7 @@ const HomeSection = ({
       />
     ),
     daily: <DailyGoal key="daily" shipStage={shipStage} />,
-    micro: <MicroInterventions key="micro" shipStage={shipStage} id="micro" onDragStart={handleDragStart} onDragOver={handleDragOver} onDrop={(e, id) => handleDrop(e, id, 'left')} />,
+    micro: <MicroInterventions key="micro" shipStage={shipStage} id="micro" onDragStart={handleDragStart} onDragOver={handleDragOver} onDrop={(e, id) => handleDrop(e, id, 'left')} onMoveUp={handleMoveUp} onMoveDown={handleMoveDown} isFirst={isFirstInCol('micro')} isLast={isLastInCol('micro')} />,
     directive: (
       <SmartCard id="directive" key="directive" title="Nova's Suggestion" energyDrain="high" onDragStart={handleDragStart} onDragOver={handleDragOver} onDrop={(e, id) => handleDrop(e, id, 'right')} onMoveUp={handleMoveUp} onMoveDown={handleMoveDown} isFirst={isFirstInCol('directive')} isLast={isLastInCol('directive')} className="rounded-xl border border-border p-6">
         <div className="relative z-10 space-y-6">
@@ -1955,6 +1955,10 @@ const HomeSection = ({
         onDragStart={handleDragStart} 
         onDragOver={handleDragOver} 
         onDrop={(e, id) => handleDrop(e, id, 'left')} 
+        onMoveUp={handleMoveUp}
+        onMoveDown={handleMoveDown}
+        isFirst={isFirstInCol('activity')}
+        isLast={isLastInCol('activity')}
       />
     )
   };
