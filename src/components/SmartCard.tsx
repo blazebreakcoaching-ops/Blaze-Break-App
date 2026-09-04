@@ -10,6 +10,10 @@ interface SmartCardProps {
   onDragStart?: (e: React.DragEvent, id: string) => void;
   onDragOver?: (e: React.DragEvent, id: string) => void;
   onDrop?: (e: React.DragEvent, id: string) => void;
+  onMoveUp?: (id: string) => void;
+  onMoveDown?: (id: string) => void;
+  isFirst?: boolean;
+  isLast?: boolean;
   title?: React.ReactNode;
   energyDrain?: 'low' | 'medium' | 'high';
 }
@@ -21,6 +25,10 @@ export const SmartCard = ({
   onDragStart,
   onDragOver,
   onDrop,
+  onMoveUp,
+  onMoveDown,
+  isFirst,
+  isLast,
   title,
   energyDrain
 }: SmartCardProps) => {
@@ -130,7 +138,7 @@ export const SmartCard = ({
       }}
       onContextMenu={handleContextMenu}
     >
-      <div className="absolute top-4 right-4 z-20 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity items-center">
+      <div className="absolute top-4 right-4 z-20 flex gap-2 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity items-center">
         {energyDrain && (
           <div className="relative group/drain flex items-center justify-center">
             <div 
@@ -146,6 +154,26 @@ export const SmartCard = ({
                Energy Drain: <span className="capitalize">{energyDrain}</span>
             </div>
           </div>
+        )}
+        {(onMoveUp || onMoveDown) && (
+          <>
+            <button
+              onClick={(e) => { e.stopPropagation(); onMoveUp?.(id); }}
+              disabled={!onMoveUp || isFirst}
+              aria-label="Move card up"
+              className="p-1 rounded-md hover:bg-surface dark:bg-card/10 text-text-muted hover:text-text-main transition-colors disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+            >
+              <ChevronDown className="w-4 h-4 rotate-180" />
+            </button>
+            <button
+              onClick={(e) => { e.stopPropagation(); onMoveDown?.(id); }}
+              disabled={!onMoveDown || isLast}
+              aria-label="Move card down"
+              className="p-1 rounded-md hover:bg-surface dark:bg-card/10 text-text-muted hover:text-text-main transition-colors disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+            >
+              <ChevronDown className="w-4 h-4" />
+            </button>
+          </>
         )}
         <button 
           onClick={(e) => { e.stopPropagation(); setIsExpanded(!isExpanded); }}

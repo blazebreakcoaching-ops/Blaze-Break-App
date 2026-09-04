@@ -1279,6 +1279,26 @@ const HomeSection = ({
     }
   };
 
+  // The keyboard-operable equivalent of dragging a card to reorder it -
+  // finds which column the card is actually in (rather than assuming),
+  // then swaps it with its immediate neighbor in that column.
+  const moveWidget = (id: string, direction: 'up' | 'down') => {
+    const isLeft = leftOrder.includes(id);
+    const order = isLeft ? leftOrder : rightOrder;
+    const setOrder = isLeft ? setLeftOrder : setRightOrder;
+    const idx = order.indexOf(id);
+    if (idx === -1) return;
+    const targetIdx = direction === 'up' ? idx - 1 : idx + 1;
+    if (targetIdx < 0 || targetIdx >= order.length) return;
+    const newOrder = [...order];
+    [newOrder[idx], newOrder[targetIdx]] = [newOrder[targetIdx], newOrder[idx]];
+    setOrder(newOrder);
+  };
+  const handleMoveUp = (id: string) => moveWidget(id, 'up');
+  const handleMoveDown = (id: string) => moveWidget(id, 'down');
+  const isFirstInCol = (id: string) => leftOrder[0] === id || rightOrder[0] === id;
+  const isLastInCol = (id: string) => leftOrder[leftOrder.length - 1] === id || rightOrder[rightOrder.length - 1] === id;
+
   const StageIcon =
     {
       Safety: ShieldAlert,
@@ -1395,6 +1415,10 @@ const HomeSection = ({
         onDragStart={handleDragStart}
         onDragOver={handleDragOver}
         onDrop={(e, id) => handleDrop(e, id, 'left')}
+        onMoveUp={handleMoveUp}
+        onMoveDown={handleMoveDown}
+        isFirst={isFirstInCol('hero')}
+        isLast={isLastInCol('hero')}
         className="p-6 sm:p-8 md:p-10 min-h-[380px] bg-card rounded-xl border border-border flex flex-col justify-between"
       >
         <div className="space-y-6">
@@ -1509,7 +1533,7 @@ const HomeSection = ({
           { label: "Energy Cap", value: `${energyLevel}%`, subLabel: "Energy available today", color: "text-primary", bg: "bg-primary/10" },
         ].map((item, i) => (
           <motion.div key={i} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.1 }}>
-            <SmartCard id={`stat_${i}`} title={item.label} energyDrain={i === 1 ? 'high' : 'low'} onDragStart={handleDragStart} onDragOver={handleDragOver} onDrop={(e, id) => handleDrop(e, id, 'left')}>
+            <SmartCard id={`stat_${i}`} title={item.label} energyDrain={i === 1 ? 'high' : 'low'} onDragStart={handleDragStart} onDragOver={handleDragOver} onDrop={(e, id) => handleDrop(e, id, 'left')} onMoveUp={handleMoveUp} onMoveDown={handleMoveDown} isFirst={isFirstInCol(`stat_${i}`)} isLast={isLastInCol(`stat_${i}`)}>
               <div className="flex flex-col gap-4">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-black uppercase tracking-widest text-text-muted">{item.label}</span>
@@ -1528,7 +1552,7 @@ const HomeSection = ({
       </div>
     ),
     trends: (
-      <SmartCard id="trends" key="trends" title="Recovery Trends" energyDrain="medium" onDragStart={handleDragStart} onDragOver={handleDragOver} onDrop={(e, id) => handleDrop(e, id, 'left')} className="p-6 rounded-xl border border-border">
+      <SmartCard id="trends" key="trends" title="Recovery Trends" energyDrain="medium" onDragStart={handleDragStart} onDragOver={handleDragOver} onDrop={(e, id) => handleDrop(e, id, 'left')} onMoveUp={handleMoveUp} onMoveDown={handleMoveDown} isFirst={isFirstInCol('trends')} isLast={isLastInCol('trends')} className="p-6 rounded-xl border border-border">
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6 pb-5 border-b border-border">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center text-primary">
@@ -1572,6 +1596,10 @@ const HomeSection = ({
         onDragStart={handleDragStart} 
         onDragOver={handleDragOver} 
         onDrop={(e, id) => handleDrop(e, id, 'left')}
+        onMoveUp={handleMoveUp}
+        onMoveDown={handleMoveDown}
+        isFirst={isFirstInCol('anxietyResetCard')}
+        isLast={isLastInCol('anxietyResetCard')}
         className="p-6 bg-red-950/20 border border-red-500/20 hover:border-red-500/40 rounded-2xl relative overflow-hidden transition-all duration-300"
       >
         <div className="absolute top-0 right-0 w-32 h-32 bg-red-500/10 rounded-full blur-[40px] pointer-events-none" />
@@ -1595,12 +1623,12 @@ const HomeSection = ({
       </SmartCard>
     ),
     velocity: (
-      <SmartCard id="velocity" key="velocity" title="Recovery Velocity Map" energyDrain="low" onDragStart={handleDragStart} onDragOver={handleDragOver} onDrop={(e, id) => handleDrop(e, id, 'left')} className="p-6">
+      <SmartCard id="velocity" key="velocity" title="Recovery Velocity Map" energyDrain="low" onDragStart={handleDragStart} onDragOver={handleDragOver} onDrop={(e, id) => handleDrop(e, id, 'left')} onMoveUp={handleMoveUp} onMoveDown={handleMoveDown} isFirst={isFirstInCol('velocity')} isLast={isLastInCol('velocity')} className="p-6">
         <RecoveryVelocityMap />
       </SmartCard>
     ),
     hub: (
-      <SmartCard id="hub" key="hub" title="Recovery Hub" energyDrain="medium" onDragStart={handleDragStart} onDragOver={handleDragOver} onDrop={(e, id) => handleDrop(e, id, 'left')} className="cursor-pointer rounded-xl border border-border p-6">
+      <SmartCard id="hub" key="hub" title="Recovery Hub" energyDrain="medium" onDragStart={handleDragStart} onDragOver={handleDragOver} onDrop={(e, id) => handleDrop(e, id, 'left')} onMoveUp={handleMoveUp} onMoveDown={handleMoveDown} isFirst={isFirstInCol('hub')} isLast={isLastInCol('hub')} className="cursor-pointer rounded-xl border border-border p-6">
         <div className="flex items-center gap-6 sm:gap-10" onClick={onEnergyRequest}>
           <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-xl bg-primary/10 flex items-center justify-center text-primary shrink-0">
             <StageIcon className="w-8 h-8" />
@@ -1634,7 +1662,7 @@ const HomeSection = ({
     daily: <DailyGoal key="daily" shipStage={shipStage} />,
     micro: <MicroInterventions key="micro" shipStage={shipStage} id="micro" onDragStart={handleDragStart} onDragOver={handleDragOver} onDrop={(e, id) => handleDrop(e, id, 'left')} />,
     directive: (
-      <SmartCard id="directive" key="directive" title="Nova's Suggestion" energyDrain="high" onDragStart={handleDragStart} onDragOver={handleDragOver} onDrop={(e, id) => handleDrop(e, id, 'right')} className="rounded-xl border border-border p-6">
+      <SmartCard id="directive" key="directive" title="Nova's Suggestion" energyDrain="high" onDragStart={handleDragStart} onDragOver={handleDragOver} onDrop={(e, id) => handleDrop(e, id, 'right')} onMoveUp={handleMoveUp} onMoveDown={handleMoveDown} isFirst={isFirstInCol('directive')} isLast={isLastInCol('directive')} className="rounded-xl border border-border p-6">
         <div className="relative z-10 space-y-6">
           <div className="flex items-center justify-between pb-5 border-b border-border">
             <div className="flex items-center gap-3">
@@ -1685,7 +1713,7 @@ const HomeSection = ({
       </SmartCard>
     ),
     quests: (
-      <SmartCard id="quests" key="quests" title="Milestones" energyDrain="medium" onDragStart={handleDragStart} onDragOver={handleDragOver} onDrop={(e, id) => handleDrop(e, id, 'right')} className="space-y-6 p-6">
+      <SmartCard id="quests" key="quests" title="Milestones" energyDrain="medium" onDragStart={handleDragStart} onDragOver={handleDragOver} onDrop={(e, id) => handleDrop(e, id, 'right')} onMoveUp={handleMoveUp} onMoveDown={handleMoveDown} isFirst={isFirstInCol('quests')} isLast={isLastInCol('quests')} className="space-y-6 p-6">
         <h3 className="text-xs font-black uppercase tracking-widest text-text-main flex items-center gap-3">
           <Gift className="w-5 h-5 text-primary" /> Milestones
         </h3>
@@ -1709,7 +1737,7 @@ const HomeSection = ({
       </SmartCard>
     ),
     network: (
-      <SmartCard id="network" key="network" title="Guardian Network" energyDrain="low" onDragStart={handleDragStart} onDragOver={handleDragOver} onDrop={(e, id) => handleDrop(e, id, 'right')} className="p-6">
+      <SmartCard id="network" key="network" title="Guardian Network" energyDrain="low" onDragStart={handleDragStart} onDragOver={handleDragOver} onDrop={(e, id) => handleDrop(e, id, 'right')} onMoveUp={handleMoveUp} onMoveDown={handleMoveDown} isFirst={isFirstInCol('network')} isLast={isLastInCol('network')} className="p-6">
         <h3 className="text-xs font-black text-text-muted uppercase tracking-widest mb-6 px-1">Guardian Network</h3>
         <div className="flex items-center gap-4">
           <div className="flex -space-x-3">
@@ -1739,6 +1767,10 @@ const HomeSection = ({
         onDragStart={handleDragStart} 
         onDragOver={handleDragOver} 
         onDrop={(e, id) => handleDrop(e, id, 'left')}
+        onMoveUp={handleMoveUp}
+        onMoveDown={handleMoveDown}
+        isFirst={isFirstInCol('streakCalendar')}
+        isLast={isLastInCol('streakCalendar')}
         className="p-6 bg-card border border-border rounded-2xl shadow-xl space-y-6"
       >
         {(() => {
