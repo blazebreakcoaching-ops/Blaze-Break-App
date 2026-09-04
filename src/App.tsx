@@ -5,6 +5,7 @@
 
 import React, { useState, useEffect, useRef, useMemo, lazy, Suspense } from "react";
 import { motion, AnimatePresence } from "motion/react";
+import confetti from "canvas-confetti";
 import {
   Home,
   LifeBuoy,
@@ -22,6 +23,7 @@ import {
   ArrowRight,
   History,
   Trophy,
+  Award,
   Gift,
   CheckCircle,
   Zap,
@@ -52,6 +54,8 @@ import {
   BurnoutFingerprint,
   UserStats,
   SupportContact,
+  Badge,
+  BADGES,
 } from "./types.ts";
 import { cn } from "./lib/utils.ts";
 import { auth, db } from "./lib/firebase.ts";
@@ -2275,6 +2279,9 @@ export default function App() {
     points: number;
     reason: string;
   } | null>(null);
+  const [showBadgeUnlocked, setShowBadgeUnlocked] = useState<Badge | null>(null);
+  const prevUnlockedBadgesRef = useRef<string[]>([]);
+  const hasSetInitialBadgesRef = useRef(false);
   const [stats, setStats] = useState<UserStats>({
     points: 0,
     streak: 0,
@@ -2526,6 +2533,28 @@ export default function App() {
 
   useEffect(() => {
     if (authLoading || !user || !statsLoadedRef.current) return;
+    if (!hasSetInitialBadgesRef.current) {
+      // First run after the real, loaded stats are in - this establishes
+      // the baseline to compare against, not a celebration moment. Badges
+      // already unlocked in a previous session should never trigger this.
+      prevUnlockedBadgesRef.current = stats.unlockedBadges;
+      hasSetInitialBadgesRef.current = true;
+      return;
+    }
+    const newlyUnlocked = stats.unlockedBadges.filter(id => !prevUnlockedBadgesRef.current.includes(id));
+    prevUnlockedBadgesRef.current = stats.unlockedBadges;
+    if (newlyUnlocked.length > 0) {
+      const badge = BADGES.find(b => b.id === newlyUnlocked[0]);
+      if (badge) {
+        setShowBadgeUnlocked(badge);
+        confetti({ particleCount: 140, spread: 80, origin: { y: 0.6 } });
+        setTimeout(() => setShowBadgeUnlocked(null), 5000);
+      }
+    }
+  }, [stats.unlockedBadges, authLoading, user]);
+
+  useEffect(() => {
+    if (authLoading || !user || !statsLoadedRef.current) return;
     const t = setTimeout(() => {
       setDoc(doc(db, "users", user.uid, "user_stats", "core"), {
         ...stats,
@@ -2678,6 +2707,7 @@ export default function App() {
 
       setShowRewardNotification({ points: 100, reason: "Daily Pulse Reward" });
       setTimeout(() => setShowRewardNotification(null), 4000);
+      confetti({ particleCount: 100, spread: 65, origin: { y: 0.6 } });
     }
   };
 
@@ -2997,6 +3027,26 @@ export default function App() {
                   +{showRewardNotification.points} for{" "}
                   {showRewardNotification.reason}
                 </p>
+              </div>
+            </motion.div>
+          )}
+
+          {showBadgeUnlocked && (
+            <motion.div
+              initial={{ opacity: 0, y: -50, scale: 0.9 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.9, y: -20 }}
+              className="fixed top-8 left-1/2 -translate-x-1/2 z-[100] bg-card text-text-main px-6 py-4 rounded-2xl shadow-2xl flex items-center gap-4 border border-primary/30"
+            >
+              <div className="w-10 h-10 bg-primary/20 rounded-xl flex items-center justify-center text-primary shrink-0">
+                <Award className="w-6 h-6" />
+              </div>
+              <div>
+                <p className="text-[11px] font-black uppercase tracking-[0.2em] text-primary">
+                  Badge Unlocked
+                </p>
+                <p className="text-sm font-bold">{showBadgeUnlocked.name}</p>
+                <p className="text-xs text-text-muted">{showBadgeUnlocked.description}</p>
               </div>
             </motion.div>
           )}
