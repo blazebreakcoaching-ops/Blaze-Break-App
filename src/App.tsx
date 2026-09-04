@@ -1102,7 +1102,9 @@ const HomeSection = ({
     try {
       const saved = localStorage.getItem("blaze_recovery_streak_days");
       if (saved) return JSON.parse(saved);
-    } catch (e) {}
+    } catch (e) {
+      // Non-fatal - falls through to the empty-array default below.
+    }
     return [];
   });
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
@@ -1180,7 +1182,6 @@ const HomeSection = ({
     if (newlyIntroduced.length > 0) {
       setHiddenWidgets((prev) => [...prev, ...newlyIntroduced]);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const [quickNoteOpen, setQuickNoteOpen] = useState(false);
@@ -2237,7 +2238,10 @@ export default function App() {
     try {
       const saved = localStorage.getItem("blaze_break_pulse_history");
       if (saved) return JSON.parse(saved);
-    } catch(e) {}
+    } catch(e) {
+      // Non-fatal - falls through to generating the default 30-day
+      // history below.
+    }
     
     return Array.from({length: 30}).map((_, i) => {
       const date = new Date();
@@ -2763,8 +2767,8 @@ export default function App() {
         canEdit: false,
       });
 
-      let triggers = "";
-      let tone = "";
+      let triggers: string;
+      let tone: string;
       if (fingerprint.profile === "Founder on Fire") {
         triggers =
           "Existential threats, idle time, taking client feedback personally.";
@@ -2814,7 +2818,10 @@ export default function App() {
           canEdit: true,
         });
       }
-    } catch (e) {}
+    } catch (e) {
+      // Non-fatal - one memory-sync block among several here; a failure
+      // doesn't need to block the Guardian Protocol sync right below it.
+    }
 
     // Sync Guardian Protocol
     const flags = localStorage.getItem("blaze_feature_flags");
@@ -2822,7 +2829,10 @@ export default function App() {
     if (flags) {
       try {
         guardianEnabled = JSON.parse(flags).enable_guardian_protocol;
-      } catch (e) {}
+      } catch (e) {
+        // Non-fatal - guardianEnabled just stays false if this is
+        // missing or corrupted.
+      }
     }
     const trustedContactsCount =
       stats.supportCircle?.filter((c: any) => c.isGuardian).length || 0;

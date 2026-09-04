@@ -53,7 +53,9 @@ export const OmniNova = ({ activeTab, fingerprint, stats }: OmniNovaProps) => {
         if (latestState) {
           recentContextPhrase = ` I've logged your recent action: "${latestState.content}".`;
         }
-      } catch(e) {}
+      } catch(e) {
+        // Non-fatal - the greeting still shows without this detail.
+      }
       
       setMessages([
         { role: 'model', text: `Nova online. I see you're currently in the **${activeTab.toUpperCase()}** module.${recentContextPhrase} Building context integration... How can I assist you with your recovery architecture right now?` }
@@ -164,7 +166,9 @@ export const OmniNova = ({ activeTab, fingerprint, stats }: OmniNovaProps) => {
           if (brain.length > 0) {
             brainContext = '\nNova Personal Brain Context:\n' + brain.map(mem => `[${mem.type}]: ${mem.content}`).join('\n') + '\n';
           }
-        } catch(e) {}
+        } catch(e) {
+          // Non-fatal - proceeds without this piece of context.
+        }
         
         ws.send(JSON.stringify({
           initialPrompt: `User Burnout Fingerprint: ${JSON.stringify(fingerprint || 'Not taken yet')}. Active Context Tab: ${activeTab}. Voice over-watch mode initiated. ${brainContext}Be extremely brief.`
@@ -215,7 +219,9 @@ export const OmniNova = ({ activeTab, fingerprint, stats }: OmniNovaProps) => {
       if (brain.length > 0) {
         brainContext = '\n--- Nova Personal Context Brain ---\n' + brain.map(mem => `[${mem.type.toUpperCase()}]: ${mem.content}`).join('\n') + '\n-----------------------------------\n';
       }
-    } catch(e) {}
+    } catch(e) {
+      // Non-fatal - proceeds without this piece of context.
+    }
 
     const contextContext = `
       You are Nova, an AI recovery coach helping someone through burnout recovery.

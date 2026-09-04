@@ -1,0 +1,62 @@
+name: CI
+
+# Runs the exact same checks that have been run manually, by hand,
+# before every single commit made to this branch this session:
+# type-check, lint, a real production build (frontend + backend), and
+# the full test suite. Nothing here is new verification - it's the
+# same bar already being held, now enforced automatically on every
+# push and pull request instead of depending on whoever's committing
+# to remember to run it themselves.
+on:
+  push:
+    branches: ['**']
+  pull_request:
+    branches: ['**']
+
+jobs:
+  verify:
+    name: Type-check, lint, build, and test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      # This project has at least one dependency (@anthropic-ai/sdk,
+      # added this session) that needs --legacy-peer-deps to resolve
+      # cleanly against the rest of the dependency tree - confirmed
+      # directly, not assumed, when it was first installed.
+      - name: Install dependencies
+        run: npm install --legacy-peer-deps
+
+      # tsc --noEmit, wired up as "lint" in package.json already -
+      # kept as its own named step here (rather than folded into a
+      # single "npm run lint" line) so a failure here is immediately
+      # legible as a type error, not lumped in with anything else.
+      - name: Type-check (tsc)
+        run: npm run lint
+
+      # The actual eslint config used throughout this session
+      # (eslint.cleanup.config.js) isn't wired into any package.json
+      # script - run directly here instead of assuming a script exists
+      # for it.
+      # The app/ directory is a separate set of utility scripts, already
+      # excluded from TypeScript checking in tsconfig.json - matched
+      # here rather than holding this pipeline to a directory that was
+      # never part of the deployed application's own standard.
+      - name: Lint (eslint)
+        run: npx eslint . --config eslint.cleanup.config.js --ignore-pattern app/
+
+      # Real build, not a syntax-only check - runs the same vite build
+      # + esbuild backend bundle every commit this session was
+      # verified against before landing.
+      - name: Build (frontend + backend)
+        run: npm run build
+
+      - name: Test
+        run: npm run test

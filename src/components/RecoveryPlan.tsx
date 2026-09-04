@@ -99,7 +99,7 @@ export const RecoveryPlan = ({
   const getNovaSynthesis = () => {
     const archetype = fingerprint?.profile || 'High-Functioning Exhausted';
     
-    let feedback = '';
+    let feedback: string;
     if (archetype === 'Founder on Fire') {
       feedback = "Your identity is completely fused with the survival of your venture. Right now, your " + highestDebt.label + " is at " + Math.round(highestDebtRatio * 100) + "%. This is not an operational metric to optimize; it is a biological warning. Cease the fawning performance narratives and rest.";
     } else if (archetype === 'Over-Giver') {

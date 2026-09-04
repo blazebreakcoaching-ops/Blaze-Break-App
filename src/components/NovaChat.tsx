@@ -67,7 +67,10 @@ export const NovaChat = ({
         if (savedFlags) {
           setFlags(JSON.parse(savedFlags));
         }
-      } catch (e) {}
+      } catch (e) {
+        // Non-fatal - if the saved flags are missing or corrupted,
+        // this just keeps whatever flags were already in state.
+      }
     };
     loadFlags();
     window.addEventListener("storage", loadFlags);
@@ -255,7 +258,10 @@ export const NovaChat = ({
     if (dictationRecognitionRef.current) {
       try {
         dictationRecognitionRef.current.stop();
-      } catch (e) {}
+      } catch (e) {
+        // Non-fatal - stop() throws if recognition has already ended;
+        // the UI state below still needs to update either way.
+      }
     }
     setIsDictating(false);
   };
@@ -310,7 +316,9 @@ export const NovaChat = ({
       let profileData: any = null;
       try {
         if (profileStr) profileData = JSON.parse(profileStr);
-      } catch (e) {}
+      } catch (e) {
+        // Non-fatal - profileData just stays null if this is corrupted.
+      }
 
       if (!initialMessage && (fingerprint || profileData)) {
         const username = profileData?.useNameInGreetings
@@ -463,7 +471,9 @@ export const NovaChat = ({
               brain.map((mem) => `[${mem.type}]: ${mem.content}`).join("\n") +
               "\n";
           }
-        } catch (e) {}
+        } catch (e) {
+          // Non-fatal - proceeds without this piece of context.
+        }
 
         ws.send(
           JSON.stringify({
@@ -773,7 +783,11 @@ export const NovaChat = ({
         });
         contextStr += `-----------------------------------\n`;
       }
-    } catch (e) {}
+    } catch (e) {
+      // Non-fatal - one context source among several here; a failure
+      // reading Nova's memory brain shouldn't block the rest of these
+      // from still contributing to the context string.
+    }
 
     try {
       if (auth.currentUser) {
@@ -797,7 +811,9 @@ export const NovaChat = ({
           }
         }
       }
-    } catch (e) {}
+    } catch (e) {
+      // Non-fatal - same reasoning as the other context sources above.
+    }
 
     try {
       if (auth.currentUser) {
@@ -811,7 +827,9 @@ export const NovaChat = ({
           contextStr += `- Completed at: ${recovery.completedAt || "N/A"}\n`;
         }
       }
-    } catch (e) {}
+    } catch (e) {
+      // Non-fatal - same reasoning as the other context sources above.
+    }
     return contextStr;
   };
 

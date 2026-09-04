@@ -75,8 +75,8 @@ export const SomaticResetOverlay = ({ isOpen, onClose, onAwardPoints }: SomaticR
       setBreathTimer(prev => {
         if (prev <= 1) {
           // Move to next phase in the Box Breathing cycle
-          let nextPhase: 'inhale' | 'hold' | 'exhale' | 'rest' = 'inhale';
-          let nextDuration = 4;
+          let nextPhase: 'inhale' | 'hold' | 'exhale' | 'rest';
+          let nextDuration: number;
 
           if (breathPhase === 'inhale') {
             nextPhase = 'hold';

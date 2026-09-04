@@ -198,8 +198,8 @@ export const Walkthrough = ({
     if (!practiceInput.trim()) return;
     setFeedbackLoading(true);
     setTimeout(() => {
-      let score = 0;
-      let critiqueText = '';
+      let score: number;
+      let critiqueText: string;
       const lowercase = practiceInput.toLowerCase();
 
       // Check for performance identity & fawning patterns

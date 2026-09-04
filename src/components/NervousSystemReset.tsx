@@ -251,11 +251,14 @@ export const NervousSystemReset = ({ fingerprint, onAwardPoints }: NervousSystem
 
   // Stop current active background loops
   const stopSoundscape = () => {
+    // Non-fatal - the Web Audio API throws if .stop() is called on a
+    // node that's already stopped, which can legitimately happen here
+    // depending on playback state; nothing further needs to happen if so.
     audioEngineRef.current.oscillators.forEach(osc => {
-      try { osc.stop(); } catch (e) {}
+      try { osc.stop(); } catch (e) { /* already stopped */ }
     });
     audioEngineRef.current.noiseSources.forEach(src => {
-      try { src.stop(); } catch (e) {}
+      try { src.stop(); } catch (e) { /* already stopped */ }
     });
     audioEngineRef.current.oscillators = [];
     audioEngineRef.current.noiseSources = [];
@@ -568,9 +571,11 @@ export const NervousSystemReset = ({ fingerprint, onAwardPoints }: NervousSystem
   const stopPacerSynth = () => {
     if (pacerNodesRef.current) {
       const p = pacerNodesRef.current;
-      try { p.osc.stop(); } catch (e) {}
-      try { p.oscChime.stop(); } catch (e) {}
-      try { p.windSrc.stop(); } catch (e) {}
+      // Non-fatal - same reasoning as stopSoundscape above: .stop() on an
+      // already-stopped node throws, and there's nothing further to do.
+      try { p.osc.stop(); } catch (e) { /* already stopped */ }
+      try { p.oscChime.stop(); } catch (e) { /* already stopped */ }
+      try { p.windSrc.stop(); } catch (e) { /* already stopped */ }
       pacerNodesRef.current = null;
     }
   };

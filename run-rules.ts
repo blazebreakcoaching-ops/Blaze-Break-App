@@ -1,5 +1,4 @@
 import fs from 'fs';
-import * as njre from 'njre';
 import { execSync } from 'child_process';
 import path from 'path';
 

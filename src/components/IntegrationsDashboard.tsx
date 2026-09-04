@@ -192,7 +192,6 @@ export const IntegrationsDashboard = () => {
       url.searchParams.delete('reason');
       window.history.replaceState({}, '', url.toString());
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const toggleIntegration = async (id: string) => {

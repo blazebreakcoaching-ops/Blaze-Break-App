@@ -309,7 +309,11 @@ export function FocusZone({ onAwardPoints, isFocusActive, setIsFocusActive, curr
       osc.connect(gain).connect(audioCtx.destination);
       osc.start();
       osc.stop(audioCtx.currentTime + 3);
-    } catch (e) {}
+    } catch (e) {
+      // Non-fatal - if the Web Audio API isn't available or playback
+      // fails, the rest of this action (saving the completion, awarding
+      // the metric) should still proceed without the sound cue.
+    }
 
     // Save success metric to Firestore - previously this was localStorage
     // only, and the "Nova memory" write below went to a completely
