@@ -22,7 +22,7 @@ import { getAppCheck } from 'firebase-admin/app-check';
 import cors from 'cors';
 import rateLimit from 'express-rate-limit';
 import { z } from 'zod';
-import { memoryToolIsAllowed, searchMemories, isValidRecoveryDuration, validateMemoryWrite, toolsAreEnabled, NovaMemoryDoc } from './nova-tools';
+import { memoryToolIsAllowed, searchMemories, isValidRecoveryDuration, validateMemoryWrite, validateFeatureSuggestion, SUGGESTABLE_FEATURES, toolsAreEnabled, NovaMemoryDoc } from './nova-tools';
 import { toClaudeTools, GeminiStyleToolDeclaration } from './nova-claude-tools';
 import { computeClimateConcern, computeClimateConcernByDimension, computeMoodConcern, computeOverallConcern, computeTrend } from './org-risk-trend';
 
@@ -801,6 +801,18 @@ const NOVA_TOOLS: any[] = [
       required: ["type", "content", "confidence"],
     },
   },
+  {
+    name: "suggest_feature",
+    description: `When the conversation makes clear a specific other part of the app would genuinely help right now, suggest it - this renders as a real, tappable link the user can act on immediately, not just a name mentioned in text. Only suggest something the conversation actually calls for; do not use this reflexively or more than once in a normal exchange. The real, valid options and what each is for: plan (Recovery Plan - a personalized coaching plan for their current archetype and highest energy debt), diagnose (Diagnose - a structured burnout assessment), recover (Recover - energy budget tracking and recovery debt), fuel (Nutrition - nutrition's effect on recovery), reset (Nervous System - breathing and nervous-system regulation tools), anxiety_reset (Anxiety Reset - in-the-moment anxiety de-escalation), communicate (Communicate - scripted help for a specific hard conversation or boundary), reflect (Reflect - weekly reflection and journaling), ally (Recovery Ally - trusted contacts and support network). Never suggest anything not in this exact list - if nothing here genuinely fits, don't call this tool.`,
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        featureId: { type: Type.STRING, description: "One of: plan, diagnose, recover, fuel, reset, anxiety_reset, communicate, reflect, ally - must match exactly." },
+        reason: { type: Type.STRING, description: "A short, specific reason tied to what the user just said - under 200 characters, not generic." },
+      },
+      required: ["featureId", "reason"],
+    },
+  },
 ];
 
 // Mirrors the exact permission check and category filtering already
@@ -833,6 +845,18 @@ function executeProposeRecoveryAction(args: Record<string, unknown>): { proposed
     return { proposed: false, error: `"${duration}" is not a real duration in the app's catalog. Valid options are 30s, 2m, 5m, 10m, 20m.` };
   }
   return { proposed: true, duration, reason };
+}
+
+// Pure, no I/O - validates against the same real, curated feature list
+// the tool description itself lists, so a hallucinated or role-gated
+// featureId is rejected here rather than reaching the UI as a dead link.
+function executeSuggestFeature(args: Record<string, unknown>): { suggested: boolean; featureId?: string; label?: string; reason?: string; error?: string } {
+  const validation = validateFeatureSuggestion(args);
+  if (!validation.valid) {
+    return { suggested: false, error: validation.error };
+  }
+  const featureId = args.featureId as string;
+  return { suggested: true, featureId, label: SUGGESTABLE_FEATURES[featureId], reason: args.reason as string };
 }
 
 // The one place a Nova conversation can actually write to a user's
@@ -880,6 +904,8 @@ async function executeNovaTool(name: string, args: Record<string, unknown>, uid:
         return await executeSearchNovaMemories(uid, firestoreDb, String(args.query || ""));
       case "propose_recovery_action":
         return executeProposeRecoveryAction(args);
+      case "suggest_feature":
+        return executeSuggestFeature(args);
       case "remember_about_user":
         return await executeRememberAboutUser(uid, firestoreDb, args);
       default:

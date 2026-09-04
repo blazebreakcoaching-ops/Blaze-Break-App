@@ -6,6 +6,7 @@ import {
   isValidMemoryType,
   isValidWritableConfidence,
   validateMemoryWrite,
+  validateFeatureSuggestion,
   toolsAreEnabled,
   MAX_MEMORY_CONTENT_LENGTH,
   NovaMemoryDoc,
@@ -247,5 +248,50 @@ describe('toolsAreEnabled: the kill switch for Nova tool use, independent of pro
     expect(toolsAreEnabled('0')).toBe(true);
     expect(toolsAreEnabled('no')).toBe(true);
     expect(toolsAreEnabled('disabled')).toBe(true);
+  });
+});
+
+describe('validateFeatureSuggestion: the feature-discovery tool - only real, reachable features with a real reason', () => {
+  it('accepts a real featureId with a real reason', () => {
+    const result = validateFeatureSuggestion({ featureId: 'reset', reason: 'You mentioned racing thoughts before bed - this is a short nervous-system downshift.' });
+    expect(result.valid).toBe(true);
+  });
+
+  it('rejects a featureId that is not in the real, curated list', () => {
+    const result = validateFeatureSuggestion({ featureId: 'admin', reason: 'Some reason' });
+    expect(result.valid).toBe(false);
+    expect(result.error).toMatch(/not a real, suggestable feature/);
+  });
+
+  it('rejects Home even though it is a real tab elsewhere in the app, since suggesting the default landing tab is not discovery', () => {
+    const result = validateFeatureSuggestion({ featureId: 'home', reason: 'Some reason' });
+    expect(result.valid).toBe(false);
+  });
+
+  it('rejects a hallucinated featureId that merely sounds plausible', () => {
+    const result = validateFeatureSuggestion({ featureId: 'meditation_room', reason: 'Some reason' });
+    expect(result.valid).toBe(false);
+  });
+
+  it('rejects an empty reason', () => {
+    const result = validateFeatureSuggestion({ featureId: 'reflect', reason: '' });
+    expect(result.valid).toBe(false);
+    expect(result.error).toMatch(/real, specific reason/);
+  });
+
+  it('rejects a missing reason', () => {
+    const result = validateFeatureSuggestion({ featureId: 'reflect' });
+    expect(result.valid).toBe(false);
+  });
+
+  it('rejects a reason over 200 characters', () => {
+    const result = validateFeatureSuggestion({ featureId: 'reflect', reason: 'x'.repeat(201) });
+    expect(result.valid).toBe(false);
+    expect(result.error).toMatch(/under 200 characters/);
+  });
+
+  it('accepts a reason at exactly the 200-character boundary', () => {
+    const result = validateFeatureSuggestion({ featureId: 'reflect', reason: 'x'.repeat(200) });
+    expect(result.valid).toBe(true);
   });
 });

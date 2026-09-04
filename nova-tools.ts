@@ -137,3 +137,44 @@ export const validateMemoryWrite = (args: { type?: unknown; content?: unknown; c
   }
   return { valid: true };
 };
+
+// Deliberately narrow: only features every regular individual/employee
+// user can actually reach (excludes org/admin/executive/evolution/
+// intelligence, which are role-gated and would be a suggestion to
+// nowhere for almost everyone Nova talks to), and excludes Home (already
+// the default landing tab - suggesting it isn't discovery) and Nova
+// itself (the user is already here talking to it). Label text matches
+// ALL_TABS in App.tsx exactly, since this becomes the button text a
+// person actually taps.
+export const SUGGESTABLE_FEATURES: Record<string, string> = {
+  plan: 'Recovery Plan',
+  diagnose: 'Diagnose',
+  recover: 'Recover',
+  fuel: 'Nutrition',
+  reset: 'Nervous System',
+  anxiety_reset: 'Anxiety Reset',
+  communicate: 'Communicate',
+  reflect: 'Reflect',
+  ally: 'Recovery Ally',
+};
+
+export interface FeatureSuggestionValidationResult {
+  valid: boolean;
+  error?: string;
+}
+
+// Pure validation for a proposed feature suggestion - checks the featureId
+// is one of the real, reachable options above and the reason is real,
+// non-empty text within a sane length, independent of any rendering.
+export const validateFeatureSuggestion = (args: { featureId?: unknown; reason?: unknown }): FeatureSuggestionValidationResult => {
+  if (typeof args.featureId !== 'string' || !(args.featureId in SUGGESTABLE_FEATURES)) {
+    return { valid: false, error: `"${args.featureId}" is not a real, suggestable feature. Valid options are: ${Object.keys(SUGGESTABLE_FEATURES).join(', ')}.` };
+  }
+  if (typeof args.reason !== 'string' || args.reason.trim().length === 0) {
+    return { valid: false, error: 'A suggestion needs a real, specific reason tied to what the user just said - not a generic one.' };
+  }
+  if (args.reason.length > 200) {
+    return { valid: false, error: 'Keep the reason under 200 characters - specific and short, not a paragraph.' };
+  }
+  return { valid: true };
+};

@@ -1038,11 +1038,17 @@ const HomeSection = ({
   };
 
   // A small, focused set by default: your score, one clear next step, one
-  // progress view, and a way to find tools. Everything else is one tap away
-  // via "Add widget" instead of all 16 competing for attention at once.
+  // progress view, one motivational view, and a way to find tools.
+  // Everything else is one tap away via "Add widget" instead of all 16
+  // competing for attention at once. gamification was added deliberately,
+  // not as an afterthought - trends is diagnostic ("how am I doing"),
+  // gamification is motivational ("what have I earned, what's next"), and
+  // without it, a new user's very first view of this app had literally no
+  // points, levels, or rewards visible anywhere, despite that system
+  // being fully built.
   const DEFAULT_LEFT = ['hero', 'trends', 'hub'];
-  const DEFAULT_RIGHT = ['directive'];
-  const DEFAULT_HIDDEN = ['stats', 'streakCalendar', 'anxietyResetCard', 'somaticAccelerator', 'velocity', 'gamification', 'daily', 'micro', 'activity', 'quests', 'network', 'radar', 'archetypeBlend'];
+  const DEFAULT_RIGHT = ['directive', 'gamification'];
+  const DEFAULT_HIDDEN = ['stats', 'streakCalendar', 'anxietyResetCard', 'somaticAccelerator', 'velocity', 'daily', 'micro', 'activity', 'quests', 'network', 'radar', 'archetypeBlend'];
   const LAYOUT_STORAGE_KEY = 'blaze_home_dashboard_layout_v2';
 
   // Real recommendation, computed server-side from actual cross-module

@@ -30,6 +30,11 @@ interface Message {
     modulesUsed: string[];
     rationale: string;
   };
+  featureSuggestion?: {
+    featureId: string;
+    label: string;
+    reason: string;
+  };
 }
 
 export const NovaChat = ({
@@ -233,7 +238,6 @@ export const NovaChat = ({
         const text = event.results[0][0].transcript;
         if (text) {
           setInput((prev) => prev + (prev ? " " : "") + text);
-          analyzeInputForTools(text);
         }
       };
 
@@ -617,156 +621,6 @@ export const NovaChat = ({
     }
   };
 
-  const analyzeInputForTools = (text: string) => {
-    const t = text.toLowerCase();
-
-    if (
-      t.includes("budget") ||
-      t.includes("energy") ||
-      t.includes("matrix") ||
-      t.includes("cost") ||
-      t.includes("tasks")
-    ) {
-      setActiveToolSuggestion({
-        name: "Energy Budget",
-        tab: "budget",
-        description:
-          "Track and analyze daily energetic spending, tasks, and core metabolic balance indices.",
-      });
-    } else if (
-      t.includes("boundary") ||
-      t.includes("boundaries") ||
-      t.includes("say no") ||
-      t.includes("negotiator") ||
-      t.includes("rehearsal") ||
-      t.includes("script") ||
-      t.includes("client")
-    ) {
-      setActiveToolSuggestion({
-        name: "Boundary Rehearsal",
-        tab: "boundaries",
-        description:
-          "Practice asserting personal bounds and setting limits in customized stressful roleplay nodes.",
-      });
-    } else if (
-      t.includes("debt") ||
-      t.includes("fatigue") ||
-      t.includes("exhaustion") ||
-      t.includes("inventory")
-    ) {
-      setActiveToolSuggestion({
-        name: "Debt Tracker",
-        tab: "debt",
-        description:
-          "Audit and payoff chronic physical, circadian, and sensory exhaustion balances.",
-      });
-    } else if (
-      t.includes("fuel") ||
-      t.includes("hydration") ||
-      t.includes("water") ||
-      t.includes("sugar") ||
-      t.includes("eat") ||
-      t.includes("food") ||
-      t.includes("meal")
-    ) {
-      setActiveToolSuggestion({
-        name: "Recovery Fuel Engine",
-        tab: "fuel",
-        description:
-          "Verify slow-release energy anchors, nutrition stability patterns, and hydration targets.",
-      });
-    } else if (
-      t.includes("sleep") ||
-      t.includes("rest") ||
-      t.includes("light") ||
-      t.includes("circadian") ||
-      t.includes("wake")
-    ) {
-      setActiveToolSuggestion({
-        name: "Sleep Builder",
-        tab: "sleep",
-        description:
-          "Leverage circadian science, custom slow-wave rest setups, and optimal morning lux thresholds.",
-      });
-    } else if (
-      t.includes("movement") ||
-      t.includes("snack") ||
-      t.includes("stretch") ||
-      t.includes("exercise") ||
-      t.includes("walk")
-    ) {
-      setActiveToolSuggestion({
-        name: "Movement Snacks",
-        tab: "movement",
-        description:
-          "Use targeted desk-friendly movements to clear deep neural fatigue and physically reset.",
-      });
-    } else if (
-      t.includes("doorway") ||
-      t.includes("decompression") ||
-      t.includes("disconnect") ||
-      t.includes("shutdown")
-    ) {
-      setActiveToolSuggestion({
-        name: "Decompression Doorway",
-        tab: "doorway",
-        description:
-          "Perform cognitive shutdown protocols to fully sever work mode from recovery.",
-      });
-    } else if (
-      t.includes("guardian") ||
-      t.includes("circle") ||
-      t.includes("social") ||
-      t.includes("safety")
-    ) {
-      setActiveToolSuggestion({
-        name: "Guardian Relay",
-        tab: "safety",
-        description:
-          "Connect with trusted people who can support you when things feel like too much.",
-      });
-    } else if (
-      t.includes("org") ||
-      t.includes("pulse") ||
-      t.includes("team") ||
-      t.includes("company")
-    ) {
-      setActiveToolSuggestion({
-        name: "Organization Pulse",
-        tab: "org",
-        description:
-          "Review systemic pressure indicators, company-wide capacity tracking, and alignment scorecards.",
-      });
-    } else if (
-      t.includes("signal") ||
-      t.includes("trigger") ||
-      t.includes("mood") ||
-      t.includes("log")
-    ) {
-      setActiveToolSuggestion({
-        name: "Recovery Signals",
-        tab: "signals",
-        description:
-          "Log triggers, record mood signals, and monitor system-wide recovery velocity factors.",
-      });
-    } else if (
-      t.includes("diagnose") ||
-      t.includes("fingerprint") ||
-      t.includes("archetype") ||
-      t.includes("assessment") ||
-      t.includes("test")
-    ) {
-      setActiveToolSuggestion({
-        name: "Burnout Diagnostic",
-        tab: "diagnose",
-        description:
-          "Recheck your chronic exhaustion archetype, burnout triggers, and baseline profiles.",
-      });
-    } else {
-      setActiveToolSuggestion(null);
-    }
-  };
-
   const getDynamicContext = async () => {
     let contextStr = "";
 
@@ -837,8 +691,6 @@ export const NovaChat = ({
     const messageText = overrideInput || input;
     if (!messageText.trim() || loading) return;
 
-    analyzeInputForTools(messageText);
-
     const userMsg: Message = { role: "user", parts: [{ text: messageText }] };
     setMessages((prev) => [...prev, userMsg]);
     setInput("");
@@ -874,11 +726,25 @@ export const NovaChat = ({
 
       if (data.error) throw new Error(data.error);
 
+      const suggestFeatureCall = (data.planTrace || []).find((t: any) => t.tool === 'suggest_feature' && t.result?.suggested);
       const botMessage: Message = {
         role: "model",
         parts: [{ text: data.text }],
-        privacyMetadata: data.privacyMetadata
+        privacyMetadata: data.privacyMetadata,
+        featureSuggestion: suggestFeatureCall
+          ? { featureId: suggestFeatureCall.result.featureId, label: suggestFeatureCall.result.label, reason: suggestFeatureCall.result.reason }
+          : undefined,
       };
+
+      if (suggestFeatureCall) {
+        setActiveToolSuggestion({
+          name: suggestFeatureCall.result.label,
+          tab: suggestFeatureCall.result.featureId,
+          description: suggestFeatureCall.result.reason,
+        });
+      } else {
+        setActiveToolSuggestion(null);
+      }
 
       const newMessages = [...messages, userMsg, botMessage];
       setMessages(newMessages);
