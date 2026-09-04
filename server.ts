@@ -4439,6 +4439,7 @@ app.post("/api/org/:orgId/members/:memberUid/remove", verifyAppCheck, authentica
     await db.collection("organisations").doc(orgId).update({
       memberUids: FieldValue.arrayRemove(memberUid),
       adminUids: FieldValue.arrayRemove(memberUid),
+      [`memberTeams.${memberUid}`]: FieldValue.delete(),
     });
     res.json({ success: true });
   } catch (err: any) {
