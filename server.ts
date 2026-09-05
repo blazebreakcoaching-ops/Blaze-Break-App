@@ -5507,6 +5507,17 @@ app.get("/api/user/export", verifyAppCheck, authenticateFirebaseUser, async (req
       data[col.id] = snap.docs.map(d => ({ id: d.id, ...d.data() }));
     }));
 
+    // Top-level collections keyed by userId rather than nested under the
+    // user document - listCollections() above cannot see these, so they
+    // have to be fetched explicitly or they'd be silently missing from a
+    // record that claims to be complete. Same list as the deletion
+    // endpoint below; keep the two in sync.
+    const strayCollections = ["anxiety_reset_events"];
+    await Promise.all(strayCollections.map(async (colName) => {
+      const snap = await db.collection(colName).where("userId", "==", user.uid).get();
+      data[colName] = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    }));
+
     res.json({
       exportedAt: new Date().toISOString(),
       uid: user.uid,
@@ -5549,6 +5560,17 @@ app.post("/api/user/delete-account", verifyAppCheck, authenticateFirebaseUser, a
     // beneath it, at any depth - the actual erasure the Privacy Vault's
     // copy promises.
     await db.recursiveDelete(userRef);
+
+    // Top-level collections keyed by userId rather than nested under the
+    // user document - recursiveDelete above cannot reach these, so they
+    // have to be handled explicitly or the data survives a deletion that
+    // claims to remove everything. Checked the whole codebase for this
+    // pattern; anxiety_reset_events is currently the only one.
+    const strayCollections = ["anxiety_reset_events"];
+    for (const colName of strayCollections) {
+      const snap = await db.collection(colName).where("userId", "==", user.uid).get();
+      await Promise.all(snap.docs.map(d => d.ref.delete()));
+    }
 
     // Delete the auth account itself last. If this fails, the personal
     // data is already gone, which is the part that actually matters for
