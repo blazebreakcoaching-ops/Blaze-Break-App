@@ -30,6 +30,7 @@ import { PrivacyPolicyAccordion } from './PrivacyPolicyAccordion.tsx';
 
 import { ConnectedNovaPermissions } from './ConnectedRecoveryModules.tsx';
 import { auth, db } from '../lib/firebase';
+import { signOut } from 'firebase/auth';
 import { doc, setDoc } from 'firebase/firestore';
 import { secureApiFetch } from '../lib/secure-api.ts';
 import { TeamClimateSurvey } from './TeamClimateSurvey.tsx';
@@ -146,6 +147,8 @@ export const PrivacyVault = ({
     setShowLeaveConfirm(false);
   };
   const [showDeleteConfirmModal, setShowDeleteConfirmModal] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const deleteDialogRef = useFocusTrap(showDeleteConfirmModal);
   const [typedFullName, setTypedFullName] = useState("");
   const [isDeleting, setIsDeleting] = useState(false);
@@ -242,21 +245,24 @@ export const PrivacyVault = ({
   const processDownload = async () => {
     setShowDownloadConfirm(false);
     await handleAuditAction('Request Data Export', undefined, 'verified');
-    const data = {
-      profile,
-      auditLogs,
-      flags,
-      exportTimestamp: new Date().toISOString()
-    };
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `blazebreak_export_${new Date().getTime()}.json`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    try {
+      const res = await secureApiFetch('/api/user/export');
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Export failed');
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `blazebreak_export_${new Date().getTime()}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (e: any) {
+      console.error('Export failed:', e);
+      setExportError(e?.message || 'Could not build your export right now. Please try again.');
+      setTimeout(() => setExportError(null), 6000);
+    }
   };
 
   return (
@@ -586,6 +592,9 @@ export const PrivacyVault = ({
                   >
                     Request Data Export
                   </button>
+                  {exportError && (
+                    <p role="alert" className="text-xs text-destructive dark:text-[#f87171] mt-2">{exportError}</p>
+                  )}
                 </div>
 
                 <div className="card space-y-4 hover:border-destructive/20 transition-colors">
@@ -924,36 +933,35 @@ export const PrivacyVault = ({
                         }
                         onClick={async () => {
                           setIsDeleting(true);
-                          await new Promise(r => setTimeout(r, 1000));
-                          await handleAuditAction('Initiate Demolition Sequence', 'Core Databases', 'deleted');
-                          await new Promise(r => setTimeout(r, 1200));
-                          await handleAuditAction('Erase Diagnostic Logs', 'Zone A Local DB', 'deleted');
-                          await new Promise(r => setTimeout(r, 1000));
-                          
-                          onProfileUpdate({
-                            fullName: '',
-                            role: '',
-                            organization: '',
-                            managerEmail: ''
-                          });
-                          
-                          localStorage.clear();
-                          
-                          await handleAuditAction('Data Deletion Completed', 'All Data Stores', 'deleted');
-                          setIsDeleting(false);
-                          setShowDeleteConfirmModal(false);
-                          setTypedFullName("");
-                          setAcknowledgedLoss(false);
-                          setAcknowledgedUnlink(false);
-                          setAcknowledgedNoRecovery(false);
-                          
-                          window.location.reload();
+                          setDeleteError(null);
+                          try {
+                            const res = await secureApiFetch('/api/user/delete-account', { method: 'POST' });
+                            const data = await res.json();
+                            if (!res.ok || !data.success) {
+                              throw new Error(data.error || 'The deletion did not complete.');
+                            }
+                            await handleAuditAction('Data Deletion Completed', 'All Data Stores', 'deleted');
+                            localStorage.clear();
+                            await signOut(auth).catch(() => {
+                              // Non-fatal - the account and its data are already
+                              // gone server-side; a failed local sign-out just
+                              // means the reload below clears the session anyway.
+                            });
+                            window.location.reload();
+                          } catch (e: any) {
+                            console.error('Account deletion failed:', e);
+                            setDeleteError(e?.message || 'Could not complete the deletion. Please try again.');
+                            setIsDeleting(false);
+                          }
                         }}
                         className="flex-1 px-4 py-3 bg-destructive hover:bg-destructive-foreground disabled:bg-destructive-foreground/40 disabled:text-destructive-foreground disabled:border-transparent cursor-pointer text-white border border-destructive/30 rounded-xl font-bold transition text-xs"
                       >
                         Purge All Data
                       </button>
                     </div>
+                    {deleteError && (
+                      <p role="alert" className="text-xs text-destructive dark:text-[#f87171] mt-3 text-center">{deleteError}</p>
+                    )}
                   </div>
                 ) : (
                   <div className="space-y-4">

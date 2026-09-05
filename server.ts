@@ -5482,6 +5482,92 @@ const ACTIVITY_FIELD_MAP: Record<string, string> = {
   recoveryAllyActivity: 'lastRecoveryAllyActivity',
 };
 
+// ============ Real data portability & erasure (GDPR Art. 15/17/20) ============
+// Both endpoints enumerate the user's subcollections dynamically via
+// listCollections() rather than against a hardcoded list. That matters:
+// this app writes to 40+ distinct per-user collections across client and
+// server code, and a hardcoded list would silently go stale the first
+// time a new feature adds one - producing either an incomplete export
+// (a portability failure the user can't detect) or data surviving a
+// deletion (an erasure failure that contradicts what the UI promises).
+// Dynamic enumeration means new collections are covered automatically.
+
+app.get("/api/user/export", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const user = requireAuth(req);
+    const db = getDb();
+    const userRef = db.collection("users").doc(user.uid);
+
+    const rootSnap = await userRef.get();
+    const collections = await userRef.listCollections();
+
+    const data: Record<string, unknown> = {};
+    await Promise.all(collections.map(async (col) => {
+      const snap = await col.get();
+      data[col.id] = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    }));
+
+    res.json({
+      exportedAt: new Date().toISOString(),
+      uid: user.uid,
+      email: user.email || null,
+      profile: rootSnap.exists ? rootSnap.data() : null,
+      collections: data,
+    });
+  } catch (err: any) {
+    console.error("[Export] failed:", err?.message || err);
+    res.status(500).json({ error: "Could not build your data export right now. Please try again." });
+  }
+});
+
+app.post("/api/user/delete-account", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const user = requireAuth(req);
+    const db = getDb();
+    const userRef = db.collection("users").doc(user.uid);
+
+    // Remove this user from any organisation they belong to first, so a
+    // deleted account can't linger in an org's memberUids/adminUids and
+    // count toward its aggregate dashboards after the person is gone.
+    try {
+      const rootSnap = await userRef.get();
+      const orgId = rootSnap.exists ? (rootSnap.data() as any)?.organisationId : null;
+      if (orgId) {
+        await db.collection("organisations").doc(orgId).update({
+          memberUids: FieldValue.arrayRemove(user.uid),
+          adminUids: FieldValue.arrayRemove(user.uid),
+          [`memberTeams.${user.uid}`]: FieldValue.delete(),
+        });
+      }
+    } catch (e) {
+      // Non-fatal - if the org record is already gone or malformed, the
+      // user's own data should still be deleted below rather than the
+      // whole request failing over org bookkeeping.
+    }
+
+    // recursiveDelete removes the user document and every subcollection
+    // beneath it, at any depth - the actual erasure the Privacy Vault's
+    // copy promises.
+    await db.recursiveDelete(userRef);
+
+    // Delete the auth account itself last. If this fails, the personal
+    // data is already gone, which is the part that actually matters for
+    // erasure - but report it honestly rather than claiming full success.
+    let authDeleted = true;
+    try {
+      await getAuth().deleteUser(user.uid);
+    } catch (e: any) {
+      authDeleted = false;
+      console.error("[Delete] auth account deletion failed:", e?.message || e);
+    }
+
+    res.json({ success: true, authDeleted });
+  } catch (err: any) {
+    console.error("[Delete] failed:", err?.message || err);
+    res.status(500).json({ error: "The deletion did not complete. Some data may have been removed already - please try again, and contact support if this keeps happening." });
+  }
+});
+
 app.post("/api/user/mark-activity", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
   try {
     const user = requireAuth(req);
