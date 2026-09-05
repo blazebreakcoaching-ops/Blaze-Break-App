@@ -1,6 +1,6 @@
 import { auth, db } from '../lib/firebase';
 import { collection, doc, setDoc, getDocs, query, orderBy, limit } from 'firebase/firestore';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { motion } from 'motion/react';
 import ReactMarkdown from 'react-markdown';
 import { secureApiFetch } from '../lib/secure-api';
@@ -22,7 +22,8 @@ import {
   Wand2,
   Copy,
   Users,
-  Network
+  Network,
+  Volume2
 } from 'lucide-react';
 import { NovaChat } from './NovaChat';
 import { cn } from '../lib/utils';
@@ -147,6 +148,10 @@ export const BoundaryRehearsal = ({ onAwardPoints, onRehearsalComplete }: { onAw
   const [generatorInput, setGeneratorInput] = useState('');
   const [generatingScripts, setGeneratingScripts] = useState(false);
   const [generatedResult, setGeneratedResult] = useState<string | null>(null);
+  const [isSpeakingScript, setIsSpeakingScript] = useState(false);
+  const [scriptAudioLoading, setScriptAudioLoading] = useState(false);
+  const ttsAudioCtxRef = useRef<AudioContext | null>(null);
+  const ttsSourceRef = useRef<AudioBufferSourceNode | null>(null);
   const [selectedTone, setSelectedTone] = useState<'polite' | 'data' | 'direct'>('polite');
 
   const [showCritique, setShowCritique] = useState(false);
@@ -176,6 +181,81 @@ export const BoundaryRehearsal = ({ onAwardPoints, onRehearsalComplete }: { onAw
     const script = parts[1]?.trim() || generatedResult;
     const advice = parts[2]?.trim() || "Nova recommends holding this line high and matching with visual boundaries.";
     return { script, advice };
+  };
+
+  const stopScriptAudio = () => {
+    if (ttsSourceRef.current) {
+      ttsSourceRef.current.stop();
+      ttsSourceRef.current.disconnect();
+      ttsSourceRef.current = null;
+    }
+  };
+
+  const playScriptPcmAudio = async (base64Audio: string) => {
+    if (!ttsAudioCtxRef.current) {
+      ttsAudioCtxRef.current = new window.AudioContext({ sampleRate: 24000 });
+    }
+    const audioCtx = ttsAudioCtxRef.current;
+    if (audioCtx.state === "suspended") {
+      await audioCtx.resume();
+    }
+    stopScriptAudio();
+
+    const binaryString = window.atob(base64Audio);
+    const len = binaryString.length;
+    const bytes = new Uint8Array(len);
+    for (let i = 0; i < len; i++) {
+      bytes[i] = binaryString.charCodeAt(i);
+    }
+    const numSamples = bytes.length / 2;
+    const audioBuffer = audioCtx.createBuffer(1, numSamples, 24000);
+    const channelData = audioBuffer.getChannelData(0);
+    const dataView = new DataView(bytes.buffer);
+    for (let i = 0; i < numSamples; i++) {
+      channelData[i] = dataView.getInt16(i * 2, true) / 32768;
+    }
+
+    const source = audioCtx.createBufferSource();
+    source.buffer = audioBuffer;
+    source.connect(audioCtx.destination);
+    source.onended = () => setIsSpeakingScript(false);
+    source.start(0);
+    ttsSourceRef.current = source;
+  };
+
+  // Reads just the isolated script text, not the full generatedResult -
+  // this is a "practice saying this out loud" feature, so hearing the
+  // behavioral-strategy explanation read aloud too would be noise, not
+  // the model of the actual delivery the person is meant to rehearse.
+  const playScriptAloud = async () => {
+    if (isSpeakingScript) {
+      stopScriptAudio();
+      setIsSpeakingScript(false);
+      setScriptAudioLoading(false);
+      return;
+    }
+    const { script } = getParsedCustomScript();
+    if (!script) return;
+    try {
+      setIsSpeakingScript(true);
+      setScriptAudioLoading(true);
+      const response = await secureApiFetch("/api/nova/speech", {
+        method: "POST",
+        data: { text: script.replace(/[#*]/g, "") },
+      });
+      const data = await response.json();
+      setScriptAudioLoading(false);
+      if (data.error) throw new Error(data.error);
+      if (data.audio) {
+        await playScriptPcmAudio(data.audio);
+      } else {
+        setIsSpeakingScript(false);
+      }
+    } catch (error: any) {
+      console.error("Playback error:", error);
+      setScriptAudioLoading(false);
+      setIsSpeakingScript(false);
+    }
   };
 
   const handleGenerateScrips = async () => {
@@ -483,7 +563,23 @@ export const BoundaryRehearsal = ({ onAwardPoints, onRehearsalComplete }: { onAw
                     {generatedResult || ''}
                   </ReactMarkdown>
 
-                  <div className="mt-8 pt-6 border-t border-border flex justify-end">
+                  <div className="mt-8 pt-6 border-t border-border flex items-center justify-between gap-4">
+                    <button
+                      onClick={playScriptAloud}
+                      aria-label={isSpeakingScript ? "Stop reading script aloud" : "Play script aloud"}
+                      aria-pressed={isSpeakingScript}
+                      className={cn(
+                        "py-3.5 px-6 rounded-xl text-xs font-black uppercase tracking-widest flex items-center justify-center gap-2.5 transition-colors border",
+                        isSpeakingScript ? "bg-primary/10 border-primary/30 text-primary" : "bg-surface border-border text-text-muted hover:text-primary hover:border-primary/30"
+                      )}
+                    >
+                      {isSpeakingScript && scriptAudioLoading ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <Volume2 className="w-4 h-4" />
+                      )}
+                      {isSpeakingScript ? "Stop" : "Hear It Said"}
+                    </button>
                     <button
                       onClick={startCustomRehearsal}
                       className="bg-primary hover:bg-primary text-primary-foreground py-3.5 px-8 rounded-xl text-xs font-black uppercase tracking-widest flex items-center justify-center gap-3 transition-colors shadow-lg"

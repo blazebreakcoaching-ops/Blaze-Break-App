@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Sparkles, X, Send, Loader2, Maximize2, Minimize2, Mic, MicOff } from 'lucide-react';
+import { Sparkles, X, Send, Loader2, Maximize2, Minimize2, Mic, MicOff, Volume2 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import ReactMarkdown from 'react-markdown';
 import { getNovaBrain } from '../lib/nova-brain';
@@ -35,6 +35,15 @@ export const OmniNova = ({ activeTab, fingerprint, stats }: OmniNovaProps) => {
   const processorRef = useRef<ScriptProcessorNode | null>(null);
   const sourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
   const nextStartTimeRef = useRef<number>(0);
+  // Dedicated to the speak-aloud TTS feature - kept separate from
+  // audioCtxRef above, which is the live-voice pipeline's microphone/
+  // streaming context at a different sample rate (16000Hz vs the 24000Hz
+  // TTS needs). Sharing one context between the two risked real conflicts
+  // if someone triggers speak-aloud while a live session is active.
+  const ttsAudioCtxRef = useRef<AudioContext | null>(null);
+  const ttsSourceRef = useRef<AudioBufferSourceNode | null>(null);
+  const [speakingIndex, setSpeakingIndex] = useState<number | null>(null);
+  const [audioLoading, setAudioLoading] = useState(false);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -101,6 +110,75 @@ export const OmniNova = ({ activeTab, fingerprint, stats }: OmniNovaProps) => {
     }
     source.start(nextStartTimeRef.current);
     nextStartTimeRef.current += audioBuffer.duration;
+  };
+
+  const stopTtsAudio = () => {
+    if (ttsSourceRef.current) {
+      ttsSourceRef.current.stop();
+      ttsSourceRef.current.disconnect();
+      ttsSourceRef.current = null;
+    }
+  };
+
+  const playTtsPcmAudio = async (base64Audio: string) => {
+    if (!ttsAudioCtxRef.current) {
+      ttsAudioCtxRef.current = new window.AudioContext({ sampleRate: 24000 });
+    }
+    const audioCtx = ttsAudioCtxRef.current;
+    if (audioCtx.state === "suspended") {
+      await audioCtx.resume();
+    }
+    stopTtsAudio();
+
+    const binaryString = window.atob(base64Audio);
+    const len = binaryString.length;
+    const bytes = new Uint8Array(len);
+    for (let i = 0; i < len; i++) {
+      bytes[i] = binaryString.charCodeAt(i);
+    }
+    const numSamples = bytes.length / 2;
+    const audioBuffer = audioCtx.createBuffer(1, numSamples, 24000);
+    const channelData = audioBuffer.getChannelData(0);
+    const dataView = new DataView(bytes.buffer);
+    for (let i = 0; i < numSamples; i++) {
+      channelData[i] = dataView.getInt16(i * 2, true) / 32768;
+    }
+
+    const source = audioCtx.createBufferSource();
+    source.buffer = audioBuffer;
+    source.connect(audioCtx.destination);
+    source.onended = () => setSpeakingIndex(null);
+    source.start(0);
+    ttsSourceRef.current = source;
+  };
+
+  const speakText = async (text: string, index: number) => {
+    if (speakingIndex === index) {
+      stopTtsAudio();
+      setSpeakingIndex(null);
+      setAudioLoading(false);
+      return;
+    }
+    try {
+      setSpeakingIndex(index);
+      setAudioLoading(true);
+      const response = await secureApiFetch("/api/nova/speech", {
+        method: "POST",
+        data: { text: text.replace(/[#*]/g, "") },
+      });
+      const data = await response.json();
+      setAudioLoading(false);
+      if (data.error) throw new Error(data.error);
+      if (data.audio) {
+        await playTtsPcmAudio(data.audio);
+      } else {
+        setSpeakingIndex(null);
+      }
+    } catch (error: any) {
+      console.error("Playback error:", error);
+      setAudioLoading(false);
+      setSpeakingIndex(null);
+    }
   };
 
   const stopVoiceProcess = () => {
@@ -367,7 +445,25 @@ export const OmniNova = ({ activeTab, fingerprint, stats }: OmniNovaProps) => {
                         msg.text
                       ) : (
                         <div className="markdown-body text-text-main font-medium leading-relaxed prose-sm relative group">
-                          <ReactMarkdown>{msg.text}</ReactMarkdown>
+                          <div className="flex items-start justify-between gap-2">
+                            <ReactMarkdown>{msg.text}</ReactMarkdown>
+                            <button
+                              onClick={() => speakText(msg.text, i)}
+                              disabled={isVoiceActive}
+                              aria-label={speakingIndex === i ? "Stop reading message aloud" : "Read message aloud"}
+                              aria-pressed={speakingIndex === i}
+                              className={cn(
+                                "shrink-0 w-7 h-7 rounded-full flex items-center justify-center transition-colors mt-0.5 disabled:opacity-30 disabled:cursor-not-allowed",
+                                speakingIndex === i ? "bg-primary/10 text-primary" : "text-text-muted hover:text-primary hover:bg-surface"
+                              )}
+                            >
+                              {speakingIndex === i && audioLoading ? (
+                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                              ) : (
+                                <Volume2 className="w-3.5 h-3.5" />
+                              )}
+                            </button>
+                          </div>
                           {msg.privacyMetadata && (
                             <div className="mt-2.5 pt-2 border-t border-border/10 text-[11px] text-text-muted flex items-start gap-1 cursor-help group-hover:text-[#9a3412] dark:group-hover:text-primary transition-colors" title={msg.privacyMetadata.rationale}>
                               <span className="shrink-0 text-success" aria-label="Privacy Shield">🛡️</span>
