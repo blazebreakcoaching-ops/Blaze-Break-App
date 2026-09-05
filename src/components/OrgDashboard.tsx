@@ -670,7 +670,7 @@ export const OrgDashboard = () => {
                     {riskTrendData.history && riskTrendData.history.length >= 2 && (
                       <div>
                         <span className="text-xs uppercase font-bold tracking-widest text-text-muted block mb-3">Concern Level Over Time</span>
-                        <div className="h-52 w-full">
+                        <div className="h-52 w-full" aria-hidden="true">
                           <ResponsiveContainer width="100%" height="100%">
                             <LineChart data={riskTrendData.history.map(h => ({ date: new Date(h.recordedAt).toLocaleDateString([], { month: 'short', day: 'numeric' }), value: h.overallConcern }))}>
                               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#78716c" strokeOpacity={0.2} />
@@ -685,6 +685,20 @@ export const OrgDashboard = () => {
                             </LineChart>
                           </ResponsiveContainer>
                         </div>
+                        <table className="sr-only">
+                          <caption>Concern level over time, 0 to 100, lower is better</caption>
+                          <thead>
+                            <tr><th scope="col">Date</th><th scope="col">Concern Level</th></tr>
+                          </thead>
+                          <tbody>
+                            {riskTrendData.history.filter(h => h.overallConcern != null).map(h => (
+                              <tr key={h.recordedAt}>
+                                <td>{new Date(h.recordedAt).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })}</td>
+                                <td>{h.overallConcern}/100</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
                       </div>
                     )}
 
