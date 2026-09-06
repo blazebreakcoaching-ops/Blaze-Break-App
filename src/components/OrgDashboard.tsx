@@ -629,7 +629,7 @@ export const OrgDashboard = () => {
             {riskTrendData && !riskTrendData.locked && (
               <div className="card space-y-6">
                 <div>
-                  <h4 className="font-bold text-text-main flex items-center gap-2"><TrendingUp className="w-5 h-5 text-primary" /> Wellbeing Concern Trend</h4>
+                  <h4 className="font-bold text-text-main flex items-center gap-2"><TrendingUp className="w-5 h-5 text-primary" /> Team Climate Trend</h4>
                   <p className="text-xs text-text-muted max-w-2xl leading-relaxed">
                     A transparent indicator built from the same real, consented mood and climate-survey data above - not a prediction. It shows whether things are trending better or worse and by how much; it does not estimate absence risk or any figure this app has no real basis to produce.
                   </p>
@@ -640,7 +640,7 @@ export const OrgDashboard = () => {
                   <>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <div className="p-5 bg-surface dark:bg-card/40 border border-border rounded-xl">
-                        <span className="text-xs uppercase font-bold tracking-widest text-text-muted block mb-1">Current Concern Level</span>
+                        <span className="text-xs uppercase font-bold tracking-widest text-text-muted block mb-1">Current Strain Level</span>
                         <p className="text-3xl font-display font-bold text-text-main">{riskTrendData.overallConcern}<span className="text-sm font-normal text-text-muted">/100</span></p>
                         <p className="text-xs text-text-muted mt-1">Combines mood pulses and, where available, the climate survey. Lower is better.</p>
                       </div>
@@ -669,7 +669,7 @@ export const OrgDashboard = () => {
 
                     {riskTrendData.history && riskTrendData.history.length >= 2 && (
                       <div>
-                        <span className="text-xs uppercase font-bold tracking-widest text-text-muted block mb-3">Concern Level Over Time</span>
+                        <span className="text-xs uppercase font-bold tracking-widest text-text-muted block mb-3">Strain Level Over Time</span>
                         <div className="h-52 w-full" aria-hidden="true">
                           <ResponsiveContainer width="100%" height="100%">
                             <LineChart data={riskTrendData.history.map(h => ({ date: new Date(h.recordedAt).toLocaleDateString([], { month: 'short', day: 'numeric' }), value: h.overallConcern }))}>
@@ -679,16 +679,16 @@ export const OrgDashboard = () => {
                               <Tooltip
                                 contentStyle={{ backgroundColor: '#1c1917', border: '1px solid #3a3532', borderRadius: '8px' }}
                                 itemStyle={{ color: '#fff', fontSize: '12px' }}
-                                formatter={(value: any) => [`${value}/100`, 'Concern']}
+                                formatter={(value: any) => [`${value}/100`, 'Strain']}
                               />
                               <Line type="monotone" dataKey="value" stroke="#ea580c" strokeWidth={2} dot={{ r: 3, fill: '#ea580c' }} connectNulls />
                             </LineChart>
                           </ResponsiveContainer>
                         </div>
                         <table className="sr-only">
-                          <caption>Concern level over time, 0 to 100, lower is better</caption>
+                          <caption>Strain level over time, 0 to 100, lower is better</caption>
                           <thead>
-                            <tr><th scope="col">Date</th><th scope="col">Concern Level</th></tr>
+                            <tr><th scope="col">Date</th><th scope="col">Strain Level</th></tr>
                           </thead>
                           <tbody>
                             {riskTrendData.history.filter(h => h.overallConcern != null).map(h => (
@@ -706,17 +706,17 @@ export const OrgDashboard = () => {
                       <div>
                         <span className="text-xs uppercase font-bold tracking-widest text-text-muted block mb-3">What's Driving It (Climate Survey Dimensions)</span>
                         <div className="space-y-2">
-                          {Object.entries(riskTrendData.climateConcernByDimension).map(([dim, concern]) => (
+                          {Object.entries(riskTrendData.climateConcernByDimension).map(([dim, dimStrain]) => (
                             <div key={dim} className="flex items-center gap-3">
                               <span className="text-xs font-bold text-text-main w-28 shrink-0 capitalize">{dim}</span>
                               <div className="h-2 flex-1 bg-surface dark:bg-surface rounded-full overflow-hidden">
-                                <div className={cn("h-full", concern >= 60 ? "bg-destructive" : concern >= 35 ? "bg-warning" : "bg-success")} style={{ width: `${Math.max(4, concern)}%` }} />
+                                <div className={cn("h-full", dimStrain >= 60 ? "bg-destructive" : dimStrain >= 35 ? "bg-warning" : "bg-success")} style={{ width: `${Math.max(4, dimStrain)}%` }} />
                               </div>
-                              <span className="text-xs font-mono text-text-muted w-10 text-right">{concern}</span>
+                              <span className="text-xs font-mono text-text-muted w-10 text-right">{dimStrain}</span>
                             </div>
                           ))}
                         </div>
-                        <p className="text-xs text-text-muted mt-3">Higher means more concerning. From the same climate survey averages shown in the Team Climate tab.</p>
+                        <p className="text-xs text-text-muted mt-3">Higher means more strain. From the same climate survey averages shown in the Team Climate tab.</p>
                       </div>
                     )}
                   </>

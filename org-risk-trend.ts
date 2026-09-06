@@ -1,4 +1,4 @@
-// Pure calculation logic for the org-level wellbeing risk trend, kept
+// Pure calculation logic for the org-level wellbeing climate trend, kept
 // separate from server.ts so it's genuinely unit-testable without a live
 // Firestore instance - same reasoning as nova-tools.ts.
 //
@@ -12,6 +12,16 @@
 // signals so they're honestly comparable - the actual judgment about
 // what that means for cost or staffing stays with the person reading it,
 // not fabricated by a formula with invented coefficients.
+//
+// Naming: per docs/GUARDIAN_SUPPORT_SPEC.md Appendix B, this module
+// deliberately avoids "concern" - that's the exact vocabulary §0.1's
+// no-risk-scoring constraint names, even though this feature itself is
+// aggregate, k-anonymous, and non-triggering (see the route handler in
+// server.ts for the boundary that keeps it that way). "Strain" is used
+// instead, matching the HSE Management Standards' own term for this
+// outcome measure. The public API/Firestore field names in server.ts
+// still say "Concern" for wire/schema compatibility with already-stored
+// history documents - only the computation layer and the UI were renamed.
 
 export interface ClimateAverages {
   demands: number;
@@ -31,12 +41,12 @@ export interface ClimateAverages {
 const CLIMATE_SCALE_MIN = 1;
 const CLIMATE_SCALE_MAX = 5;
 
-// Converts the 1-5 "how good is this" average into a 0-100 "how
-// concerning is this" score, so it's on the same scale and same
-// direction as the mood-based concern score below. A perfect 5 average
-// (everyone strongly agrees things are fine) becomes 0 concern; the
-// worst possible 1 average becomes 100 concern.
-export const computeClimateConcern = (averages: ClimateAverages | null): number | null => {
+// Converts the 1-5 "how good is this" average into a 0-100 "how much
+// strain is this" score, so it's on the same scale and same direction as
+// the mood-based strain score below. A perfect 5 average (everyone
+// strongly agrees things are fine) becomes 0 strain; the worst possible
+// 1 average becomes 100 strain.
+export const computeClimateStrain = (averages: ClimateAverages | null): number | null => {
   if (!averages) return null;
   const dims = [averages.demands, averages.control, averages.support, averages.relationships, averages.role, averages.change];
   const validDims = dims.filter((d) => typeof d === 'number' && !Number.isNaN(d));
@@ -46,38 +56,38 @@ export const computeClimateConcern = (averages: ClimateAverages | null): number 
   return Math.round(((CLIMATE_SCALE_MAX - clamped) / (CLIMATE_SCALE_MAX - CLIMATE_SCALE_MIN)) * 100);
 };
 
-// The same 1-5-to-0-100 concern conversion as computeClimateConcern, but
+// The same 1-5-to-0-100 strain conversion as computeClimateStrain, but
 // applied to each dimension individually rather than the blended average -
-// so "demands: 78 concern, support: 15 concern" tells an admin which
+// so "demands: 78 strain, support: 15 strain" tells an admin which
 // specific lever to pull, which a single combined number necessarily
 // hides. Uses the exact same clamp/scale logic as the blended version so
 // the two stay directly comparable.
-export const computeClimateConcernByDimension = (averages: ClimateAverages | null): Record<keyof ClimateAverages, number> | null => {
+export const computeClimateStrainByDimension = (averages: ClimateAverages | null): Record<keyof ClimateAverages, number> | null => {
   if (!averages) return null;
-  const toConcern = (value: number): number => {
+  const toStrain = (value: number): number => {
     const clamped = Math.max(CLIMATE_SCALE_MIN, Math.min(CLIMATE_SCALE_MAX, value));
     return Math.round(((CLIMATE_SCALE_MAX - clamped) / (CLIMATE_SCALE_MAX - CLIMATE_SCALE_MIN)) * 100);
   };
   return {
-    demands: toConcern(averages.demands),
-    control: toConcern(averages.control),
-    support: toConcern(averages.support),
-    relationships: toConcern(averages.relationships),
-    role: toConcern(averages.role),
-    change: toConcern(averages.change),
+    demands: toStrain(averages.demands),
+    control: toStrain(averages.control),
+    support: toStrain(averages.support),
+    relationships: toStrain(averages.relationships),
+    role: toStrain(averages.role),
+    change: toStrain(averages.change),
   };
 };
 
 // The dashboard endpoint already buckets mood pulses into positive/
 // negative/neutral. This is just the negative share as a percentage -
-// already a natural 0-100 concern score with no inversion needed.
-export const computeMoodConcern = (positive: number, negative: number, neutral: number): number | null => {
+// already a natural 0-100 strain score with no inversion needed.
+export const computeMoodStrain = (positive: number, negative: number, neutral: number): number | null => {
   const total = positive + negative + neutral;
   if (total <= 0) return null;
   return Math.round((negative / total) * 100);
 };
 
-// Combines whichever concern signals are actually available into one
+// Combines whichever strain signals are actually available into one
 // overall score. A simple, equal-weighted average of whatever exists -
 // not a weighted formula with invented coefficients for how much more
 // one signal should count than another, since nothing here validates
@@ -85,8 +95,8 @@ export const computeMoodConcern = (positive: number, negative: number, neutral: 
 // (e.g. a brand new org with no climate survey responses and no mood
 // pulses at all), which the caller should treat as "not enough data",
 // not as a risk score of zero.
-export const computeOverallConcern = (climateConcern: number | null, moodConcern: number | null): number | null => {
-  const values = [climateConcern, moodConcern].filter((v): v is number => v !== null);
+export const computeOverallStrain = (climateStrain: number | null, moodStrain: number | null): number | null => {
+  const values = [climateStrain, moodStrain].filter((v): v is number => v !== null);
   if (values.length === 0) return null;
   return Math.round(values.reduce((sum, v) => sum + v, 0) / values.length);
 };
@@ -98,7 +108,7 @@ export interface TrendResult {
   delta: number | null;
 }
 
-// Compares a current concern score against a prior snapshot. A change of
+// Compares a current strain score against a prior snapshot. A change of
 // fewer than 3 points either way is called "stable" rather than
 // improving/worsening - real aggregate wellbeing signals move slowly,
 // and treating every small fluctuation as a meaningful trend would be

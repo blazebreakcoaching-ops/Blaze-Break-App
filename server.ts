@@ -24,7 +24,7 @@ import rateLimit from 'express-rate-limit';
 import { z } from 'zod';
 import { memoryToolIsAllowed, searchMemories, isValidRecoveryDuration, validateMemoryWrite, validateFeatureSuggestion, SUGGESTABLE_FEATURES, toolsAreEnabled, NovaMemoryDoc } from './nova-tools';
 import { toClaudeTools, GeminiStyleToolDeclaration } from './nova-claude-tools';
-import { computeClimateConcern, computeClimateConcernByDimension, computeMoodConcern, computeOverallConcern, computeTrend } from './org-risk-trend';
+import { computeClimateStrain, computeClimateStrainByDimension, computeMoodStrain, computeOverallStrain, computeTrend } from './org-risk-trend';
 import { isRealGuardian, isValidGuardianPhone, buildGuardianCallRequestMessage, extractFirstName } from './guardian-alert';
 
 dotenv.config();
@@ -4364,7 +4364,16 @@ app.get("/api/org/:orgId/climate", verifyAppCheck, authenticateFirebaseUser, asy
 // no real, validated basis to produce. See org-risk-trend.ts for the
 // actual calculation and why each choice was made.
 
-interface ConcernSnapshot {
+// Field names below (moodConcern, climateConcern, etc.) are the actual
+// Firestore/API wire format, kept as-is even though the computation layer
+// (org-risk-trend.ts) and the UI (OrgDashboard.tsx) were renamed away from
+// "Concern" per docs/GUARDIAN_SUPPORT_SPEC.md Appendix B. Renaming these
+// persisted field names would silently break trend continuity for any
+// organisation with existing risk_trend_history documents written under
+// the old names - a real data-compatibility cost the vocabulary change
+// doesn't need to pay. If a full schema rename is ever wanted, it needs
+// an explicit migration, not a find-and-replace.
+interface OrgStrainSnapshot {
   cohortSize: number;
   moodConcern: number | null;
   climateConcern: number | null;
@@ -4372,11 +4381,18 @@ interface ConcernSnapshot {
   overallConcern: number | null;
 }
 
-// Computes the full concern snapshot for one set of member uids - called
+// Architectural boundary (docs/GUARDIAN_SUPPORT_SPEC.md Appendix B): this
+// snapshot is aggregate-only and must never be computed or exposed for an
+// individual. The k-anonymity gate in the route handler below (dropping
+// any cohort - org or team - under the configured threshold before this
+// is ever called) IS that boundary. Do not add a per-member field here,
+// and do not call this with a uids list that could resolve to one person.
+//
+// Computes the full strain snapshot for one set of member uids - called
 // once for the whole org and once per team below, so a team's number is
 // calculated exactly the same way the org-wide one is, not a different
 // or lighter-weight version.
-const computeConcernSnapshotForCohort = async (db: any, uids: string[]): Promise<ConcernSnapshot> => {
+const computeStrainSnapshotForCohort = async (db: any, uids: string[]): Promise<OrgStrainSnapshot> => {
   const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
   let moodPositive = 0, moodNegative = 0, moodNeutral = 0;
   await Promise.all(uids.map(async (uid) => {
@@ -4389,7 +4405,7 @@ const computeConcernSnapshotForCohort = async (db: any, uids: string[]): Promise
       else moodNeutral++;
     });
   }));
-  const moodConcern = computeMoodConcern(moodPositive, moodNegative, moodNeutral);
+  const moodConcern = computeMoodStrain(moodPositive, moodNegative, moodNeutral);
 
   const ninetyDaysAgo = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString();
   const climateDims = ['demands', 'control', 'support', 'relationships', 'role', 'change'] as const;
@@ -4414,15 +4430,15 @@ const computeConcernSnapshotForCohort = async (db: any, uids: string[]): Promise
         change: climateSums.change / climateResponseCount,
       }
     : null;
-  const climateConcern = computeClimateConcern(climateAverages);
-  const climateConcernByDimension = computeClimateConcernByDimension(climateAverages);
+  const climateConcern = computeClimateStrain(climateAverages);
+  const climateConcernByDimension = computeClimateStrainByDimension(climateAverages);
 
   return {
     cohortSize: uids.length,
     moodConcern,
     climateConcern,
     climateConcernByDimension,
-    overallConcern: computeOverallConcern(climateConcern, moodConcern),
+    overallConcern: computeOverallStrain(climateConcern, moodConcern),
   };
 };
 
@@ -4441,7 +4457,7 @@ app.get("/api/org/:orgId/risk-trend", verifyAppCheck, authenticateFirebaseUser, 
       return res.json({ locked: true, cohortSize: consentingUids.length, threshold });
     }
 
-    const orgSnapshot = await computeConcernSnapshotForCohort(db, consentingUids);
+    const orgSnapshot = await computeStrainSnapshotForCohort(db, consentingUids);
 
     // Team breakdown: group consenting members by their assigned team,
     // then only compute (and only ever expose) a snapshot for teams that
@@ -4459,9 +4475,9 @@ app.get("/api/org/:orgId/risk-trend", verifyAppCheck, authenticateFirebaseUser, 
       }
     });
     const qualifyingTeams = Object.entries(teamGroups).filter(([, uids]) => uids.length >= threshold);
-    const teamSnapshots: Record<string, ConcernSnapshot> = {};
+    const teamSnapshots: Record<string, OrgStrainSnapshot> = {};
     await Promise.all(qualifyingTeams.map(async ([team, uids]) => {
-      teamSnapshots[team] = await computeConcernSnapshotForCohort(db, uids);
+      teamSnapshots[team] = await computeStrainSnapshotForCohort(db, uids);
     }));
 
     // Snapshot handling: read history first so today's write (if any)
@@ -4502,7 +4518,7 @@ app.get("/api/org/:orgId/risk-trend", verifyAppCheck, authenticateFirebaseUser, 
     const priorOrgSnapshot = findClosestPrior((h: any) => h.overallConcern);
     const orgTrend = computeTrend(orgSnapshot.overallConcern, priorOrgSnapshot?.overallConcern ?? null);
 
-    const teamBreakdown: Record<string, ConcernSnapshot & { trend: ReturnType<typeof computeTrend> }> = {};
+    const teamBreakdown: Record<string, OrgStrainSnapshot & { trend: ReturnType<typeof computeTrend> }> = {};
     Object.entries(teamSnapshots).forEach(([team, snap]) => {
       const priorTeamSnapshot = findClosestPrior((h: any) => h.teamConcerns?.[team]);
       teamBreakdown[team] = { ...snap, trend: computeTrend(snap.overallConcern, priorTeamSnapshot?.teamConcerns?.[team] ?? null) };
@@ -5690,9 +5706,10 @@ app.get("/api/user/export", verifyAppCheck, authenticateFirebaseUser, async (req
     // Top-level collections keyed by userId rather than nested under the
     // user document - listCollections() above cannot see these, so they
     // have to be fetched explicitly or they'd be silently missing from a
-    // record that claims to be complete. Same list as the deletion
-    // endpoint below; keep the two in sync.
-    const strayCollections = ["anxiety_reset_events"];
+    // record that claims to be complete. audit_logs is included here (export
+    // is a portability right) but deliberately excluded from the deletion
+    // endpoint below - see the comment there for why the two lists differ.
+    const strayCollections = ["anxiety_reset_events", "audit_logs"];
     await Promise.all(strayCollections.map(async (colName) => {
       const snap = await db.collection(colName).where("userId", "==", user.uid).get();
       data[colName] = snap.docs.map(d => ({ id: d.id, ...d.data() }));
@@ -5744,8 +5761,14 @@ app.post("/api/user/delete-account", verifyAppCheck, authenticateFirebaseUser, a
     // Top-level collections keyed by userId rather than nested under the
     // user document - recursiveDelete above cannot reach these, so they
     // have to be handled explicitly or the data survives a deletion that
-    // claims to remove everything. Checked the whole codebase for this
-    // pattern; anxiety_reset_events is currently the only one.
+    // claims to remove everything.
+    //
+    // audit_logs is deliberately NOT in this list, unlike its counterpart
+    // in /api/user/export above. It's a compliance trail (records events
+    // like "deletion completed"), and erasing it as part of the very
+    // deletion it would record defeats its purpose - it needs to survive
+    // the account it describes to serve as proof the deletion happened.
+    // This is a product/legal decision, not an oversight.
     const strayCollections = ["anxiety_reset_events"];
     for (const colName of strayCollections) {
       const snap = await db.collection(colName).where("userId", "==", user.uid).get();
