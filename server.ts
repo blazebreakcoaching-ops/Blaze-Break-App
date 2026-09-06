@@ -25,6 +25,7 @@ import { z } from 'zod';
 import { memoryToolIsAllowed, searchMemories, isValidRecoveryDuration, validateMemoryWrite, validateFeatureSuggestion, SUGGESTABLE_FEATURES, toolsAreEnabled, NovaMemoryDoc } from './nova-tools';
 import { toClaudeTools, GeminiStyleToolDeclaration } from './nova-claude-tools';
 import { computeClimateConcern, computeClimateConcernByDimension, computeMoodConcern, computeOverallConcern, computeTrend } from './org-risk-trend';
+import { isRealGuardian, isValidGuardianPhone, buildGuardianCallRequestMessage, extractFirstName } from './guardian-alert';
 
 dotenv.config();
 
@@ -144,6 +145,22 @@ const smsLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 10, // SMS costs real money per message and could enable harassment if abused — stricter than any other endpoint.
   message: { error: 'Too many messaging requests, please try again later.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+  validate: { xForwardedForHeader: false, default: true }
+});
+
+// Guardian alerts specifically: the Guardian Support spec (docs/GUARDIAN_SUPPORT_SPEC.md
+// §D.3) sets 5/hour and 15/day per user as engineering placeholders pending
+// safeguarding review, not a clinical judgement about how often someone in
+// genuine crisis should be able to ask for help. This limiter enforces the
+// hourly figure; the daily figure is enforced in-handler alongside the
+// per-contact cooldown, since express-rate-limit doesn't support two windows
+// on one route cleanly.
+const guardianAlertLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 5,
+  message: { error: "That's a lot of alerts in a short time. Please wait a little before sending another." },
   standardHeaders: true,
   legacyHeaders: false,
   validate: { xForwardedForHeader: false, default: true }
@@ -348,6 +365,169 @@ app.post("/api/twilio/send", smsLimiter, verifyAppCheck, authenticateFirebaseUse
     res.json({ success: true, sid: result.sid });
   } catch (error: any) {
     console.error("Twilio route error:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ============ Guardian Support — Tier 1: one-tap guardian call request ============
+// Per docs/GUARDIAN_SUPPORT_SPEC.md. Deterministic dispatch only: no LLM is
+// anywhere in this path, so §D.8's "an LLM may prepare but never dispatch"
+// rule is trivially satisfied here - this endpoint exists purely for a
+// direct user tap. Tier 2 (conversational, LLM-prepared, still
+// human-confirmed) is a separate later piece, not this one.
+type GuardianAlertState = "queued" | "provider_accepted" | "failed";
+const GUARDIAN_STATE_COPY: Record<GuardianAlertState, string> = {
+  queued: "Sending…",
+  provider_accepted: "I've sent it — I can't confirm it's arrived yet.",
+  failed: "I couldn't get that message through. That's a problem on this end, not yours.",
+};
+
+app.post("/api/guardian/alert", guardianAlertLimiter, verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  const uid = requireAuth(req).uid; // uid from the verified token only - never from req.body
+  try {
+    const { contactId, idempotencyKey } = req.body || {};
+    if (typeof contactId !== "string" || !contactId) {
+      return res.status(400).json({ error: "Missing contactId." });
+    }
+    if (typeof idempotencyKey !== "string" || idempotencyKey.length < 8) {
+      return res.status(400).json({ error: "Missing or invalid idempotencyKey." });
+    }
+
+    const db = getDb();
+    const alertsRef = db.collection("users").doc(uid).collection("guardian_alerts");
+
+    // Idempotency: the key is the document ID, so a retry or double-tap with
+    // the same key can never create a second send - it just returns
+    // whatever the first attempt already produced.
+    const existingRef = alertsRef.doc(idempotencyKey);
+    const existingSnap = await existingRef.get();
+    if (existingSnap.exists) {
+      const existing = existingSnap.data()!;
+      return res.json({
+        alertId: idempotencyKey,
+        state: existing.state,
+        userMessage: GUARDIAN_STATE_COPY[existing.state as GuardianAlertState] || "Already handled.",
+        contactDisplayName: existing.contactName,
+      });
+    }
+
+    // Load the user's own guardian list server-side and look the contact up
+    // in it - the phone number is never taken from the request body. A
+    // caller can only ever message a contact that is genuinely their own,
+    // genuinely marked as a guardian.
+    const statsSnap = await db.collection("users").doc(uid).collection("user_stats").doc("core").get();
+    const supportCircle: any[] = statsSnap.exists ? (statsSnap.data()?.supportCircle || []) : [];
+    const contact = supportCircle.find(c => c?.id === contactId);
+    if (!isRealGuardian(contact)) {
+      return res.status(403).json({
+        error: "not_a_guardian",
+        userMessage: "I don't have that person set up as a guardian. You can add one in the Ally tab.",
+      });
+    }
+    if (!isValidGuardianPhone(contact.contactMethod)) {
+      return res.status(400).json({
+        error: "invalid_number",
+        userMessage: `${contact.name}'s number isn't in a valid format. Edit it and try again.`,
+      });
+    }
+
+    // Cooldown: prevents accidental repeat sends to the same person, while
+    // still letting a genuinely escalating situation try again immediately -
+    // the client is expected to surface that choice rather than being
+    // silently blocked (spec §D.3).
+    const cooldownMs = 10 * 60 * 1000; // engineering placeholder, [REVIEW] per spec
+    const cooldownSince = new Date(Date.now() - cooldownMs).toISOString();
+    const recentToSameContact = await alertsRef
+      .where("contactId", "==", contactId)
+      .where("createdAt", ">=", cooldownSince)
+      .limit(1)
+      .get();
+    if (!recentToSameContact.empty && req.body?.cooldownOverride !== true) {
+      return res.status(429).json({
+        error: "cooldown",
+        userMessage: `You already asked ${contact.name} to call you a few minutes ago. Send it again if you still need to.`,
+        canOverride: true,
+      });
+    }
+
+    // Daily cap, enforced here since express-rate-limit only covers the
+    // hourly window on this route (spec §D.3's second figure).
+    const dayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    const todaysAlerts = await alertsRef.where("createdAt", ">=", dayAgo).get();
+    if (todaysAlerts.size >= 15) {
+      return res.status(429).json({
+        error: "daily_limit",
+        userMessage: "You've reached today's limit for guardian alerts. Please try calling a crisis line if you need support right now.",
+      });
+    }
+
+    // Persist as 'queued' before the provider call, so a crash between here
+    // and the send is visible in history rather than silently lost.
+    const userStats = statsSnap.exists ? statsSnap.data() : null;
+    const message = buildGuardianCallRequestMessage(extractFirstName(userStats?.profile?.fullName));
+
+    await existingRef.set({
+      contactId,
+      contactName: contact.name,
+      triggerSource: "manual_button",
+      state: "queued" as GuardianAlertState,
+      createdAt: new Date().toISOString(),
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+
+    const result = await sendTwilioMessage(uid, contact.contactMethod, message, contact.notificationPreference === "whatsapp");
+    const finalState: GuardianAlertState = result.success ? "provider_accepted" : "failed";
+
+    await existingRef.update({
+      state: finalState,
+      providerMessageId: result.sid || null,
+      providerError: result.error || null,
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+
+    if (!result.success) {
+      return res.status(502).json({
+        alertId: idempotencyKey,
+        state: finalState,
+        error: result.error,
+        userMessage: GUARDIAN_STATE_COPY.failed,
+      });
+    }
+
+    res.json({
+      alertId: idempotencyKey,
+      state: finalState,
+      userMessage: GUARDIAN_STATE_COPY.provider_accepted,
+      contactDisplayName: contact.name,
+    });
+  } catch (error: any) {
+    console.error("[Guardian alert] error:", error?.message || error);
+    res.status(500).json({ error: error.message, userMessage: GUARDIAN_STATE_COPY.failed });
+  }
+});
+
+// Real, honest guardian alert history - deliberately excludes any
+// conversation content (spec §D.7); this collection only ever stores
+// alert metadata, never what the user said beforehand.
+app.get("/api/guardian/alerts", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const uid = requireAuth(req).uid;
+    const db = getDb();
+    const snap = await db.collection("users").doc(uid).collection("guardian_alerts")
+      .orderBy("createdAt", "desc").limit(20).get();
+    res.json({
+      alerts: snap.docs.map(d => {
+        const data = d.data();
+        return {
+          id: d.id,
+          contactName: data.contactName,
+          state: data.state,
+          userMessage: GUARDIAN_STATE_COPY[data.state as GuardianAlertState] || null,
+          createdAt: data.createdAt,
+        };
+      }),
+    });
+  } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
 });

@@ -1602,7 +1602,7 @@ export default function App() {
           <LifeBuoy className="w-4 h-4 shrink-0" />
           <span>Need support now?</span>
         </button>
-        <CrisisSupportModal isOpen={showCrisisSupport} onClose={() => setShowCrisisSupport(false)} />
+        <CrisisSupportModal isOpen={showCrisisSupport} onClose={() => setShowCrisisSupport(false)} guardians={stats.supportCircle || []} />
       </>
     );
   }
@@ -1624,7 +1624,7 @@ export default function App() {
           <LifeBuoy className="w-4 h-4 shrink-0" />
           <span>Need support now?</span>
         </button>
-        <CrisisSupportModal isOpen={showCrisisSupport} onClose={() => setShowCrisisSupport(false)} />
+        <CrisisSupportModal isOpen={showCrisisSupport} onClose={() => setShowCrisisSupport(false)} guardians={stats.supportCircle || []} />
       </>
     );
   }
@@ -1654,7 +1654,7 @@ export default function App() {
           <LifeBuoy className="w-4 h-4 shrink-0" />
           <span>Need support now?</span>
         </button>
-        <CrisisSupportModal isOpen={showCrisisSupport} onClose={() => setShowCrisisSupport(false)} />
+        <CrisisSupportModal isOpen={showCrisisSupport} onClose={() => setShowCrisisSupport(false)} guardians={stats.supportCircle || []} />
       </>
     );
   }
@@ -2278,7 +2278,7 @@ export default function App() {
         />
       </AnimatePresence>
 
-      <CrisisSupportModal isOpen={showCrisisSupport} onClose={() => setShowCrisisSupport(false)} />
+      <CrisisSupportModal isOpen={showCrisisSupport} onClose={() => setShowCrisisSupport(false)} guardians={stats.supportCircle || []} />
       <InAppNudge />
 
       <AnimatePresence>

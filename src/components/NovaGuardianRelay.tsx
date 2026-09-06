@@ -451,7 +451,7 @@ export const NovaGuardianRelay = ({ contacts, onAdd, onRemove, userName }: NovaG
                </div>
              </div>
              <div className="relative z-10 pt-2">
-                <CrisisSupportContent />
+                <CrisisSupportContent guardians={contacts} />
              </div>
           </div>
           <div className="card p-8 border border-border bg-card text-text-main relative overflow-hidden space-y-6 shadow-lg">
