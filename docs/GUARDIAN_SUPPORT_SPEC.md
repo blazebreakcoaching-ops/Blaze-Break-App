@@ -1,0 +1,830 @@
+# Guardian Support — Product, Safeguarding, Privacy & Technical Specification
+
+**Status:** Draft for clinical, safeguarding, and legal review
+**Scope:** Blaze Break / Nova — Guardian Support capability
+**Supersedes:** the "Guardian Alert Auto-Escalation" feature flag (removed; see §E.8 Migration)
+
+---
+
+## Label key
+
+Every requirement in this document carries one of four labels. They are not decorative — nothing labelled **[REVIEW]** may ship without a named, qualified sign-off recorded against it.
+
+| Label | Meaning |
+|---|---|
+| **[CONFIRMED]** | Agreed requirement. Buildable now. |
+| **[ASSUMPTION]** | Stated so it can be challenged. Must be validated before it hardens into a requirement. |
+| **[REVIEW]** | Requires qualified review — clinical safety, safeguarding, privacy/legal, or crisis-service expertise. Not an engineering decision. |
+| **[OUT OF SCOPE]** | Explicitly excluded from this specification. |
+
+---
+
+## 0. Purpose, and the problem being solved
+
+Guardian Support exists to reduce the friction between *"I need a real person"* and *a pre-chosen trusted person knowing to call.*
+
+It is not an emergency service, not a crisis line, not clinical assessment, and not a monitoring system. It does not decide whether someone is at risk. It makes an action the user already wants to take faster, calmer, and reachable with one tap at the moment it is hardest to do anything at all.
+
+**The design constraint that governs everything below:** the system must never claim a capability it does not have, and must never claim an outcome it has not verified. A user who believes they have a safety net they do not have is worse off than a user who knows exactly what the product does.
+
+---
+
+## A. Product decision — three tiers
+
+### Recommendation summary
+
+| Tier | Capability | Verdict |
+|---|---|---|
+| **Tier 1** | One-tap, user-initiated guardian call request | **Build now. This is the MVP.** |
+| **Tier 2** | Conversational request → explicit confirmation → send | **Build now, immediately after Tier 1.** |
+| **Tier 3** | Automatic / inferred escalation from language or inactivity | **Do not build yet. Research and governance plan only.** |
+
+### Tier 1 — One-tap user-initiated Guardian Call Request **[CONFIRMED]**
+
+The user taps a persistent, clearly-labelled action. Nova sends a pre-approved message to their chosen guardian. No inference, no judgement, no detection.
+
+**Default message template (user-previewable and editable at setup):**
+
+> "[First name] has asked you to call them as soon as you can. This is a support request sent from their Blaze Break app. Please try to contact them directly."
+
+**Why this is the MVP — and why it delivers most of the actual value:**
+
+1. **It solves the stated problem completely.** The lived-experience insight driving this feature is the gap between needing a person and reaching one. Hold music, queues, explaining yourself to a stranger. One tap that makes a trusted person's phone ring closes that gap entirely — without any risk model in between.
+2. **It requires no clinical judgement.** The user *is* the risk assessment. Nothing is inferred, so nothing can be inferred wrongly. This removes the entire class of false-positive and false-negative harms that make Tier 3 hard.
+3. **It is honest by construction.** The user knows exactly what they did and exactly what was sent. Nova makes no claim about anything it hasn't done.
+4. **It is testable, reversible, and observable.** Real delivery states, real audit trail, real failure UX — the foundations Tier 3 would need anyway, proven under real usage first.
+5. **Most of the infrastructure already exists** (see §E.9): a working Twilio integration with rate limiting, App Check, Firebase auth, phone validation, and a `SupportContact` model with a guardian role.
+
+**What Tier 1 deliberately does not do:** it does not monitor, infer, watch, score, or decide. It is a button.
+
+### Tier 2 — Conversational confirmation flow **[CONFIRMED]**
+
+Nova recognises an **explicit, direct request** — "tell my guardian to call me", "can you message Sam", "I need Priya now" — and prepares the alert, showing exactly what will be sent and to whom, then requires one explicit confirmation.
+
+**The hard rule:** Nova may *recognise a request* and *prepare* an alert. It may never send one because of emotional content, distress, sadness, or any inference about the user's state. Recognition is of an **instruction**, not a **condition**.
+
+Rationale: someone in distress may be talking to Nova rather than navigating UI. Meeting them where they are is worth building — but the send is still a deliberate act by the user, one tap away, never a surprise.
+
+### Tier 3 — Automatic escalation **[REVIEW — do not build]**
+
+Automatic or semi-automatic escalation based on inferred state (language, sentiment, inactivity, or any combination) is **out of scope for MVP** and must not be shipped until every item in §F.9 is complete and signed off.
+
+This is not permanent refusal. It is a statement that the decision belongs to qualified clinicians and safeguarding leads, not to engineering, and not to a language model.
+
+**No detection thresholds, keyword lists, risk scores, or classifier designs appear anywhere in this document by deliberate choice.** Inventing them would be the exact failure this specification exists to prevent.
+
+**§A.3.1 Research and validation plan for Tier 3 [REVIEW]**
+
+Required before *designing* any trigger rule — not merely before shipping one:
+
+| # | Workstream | Owner | Output |
+|---|---|---|---|
+| 1 | Clinical evidence review: is language-based risk inference supported by evidence in a non-clinical, unsupervised consumer product? | Clinical safety lead | Written position, with citations, on whether any automated trigger is defensible at all |
+| 2 | Crisis-service practitioner consultation (e.g. crisis-line clinicians, liaison psychiatry, occupational health psychology) | Clinical safety lead | What signals, if any, practitioners consider actionable — and what they consider harmful to act on |
+| 3 | Lived-experience research with people who have used crisis services, incl. those who have experienced unwanted escalation | Product + research | What users want to happen, what they fear happening, what would make them stop being honest with the app |
+| 4 | False-positive harm modelling: what happens to trust, disclosure honesty, and relationships when the system is wrong | Clinical + product | Documented harm model with severity |
+| 5 | False-negative harm modelling and explicit acceptance of residual risk | Clinical + legal | Signed residual-risk acceptance |
+| 6 | UK GDPR Art. 22 analysis: is any trigger "automated decision-making with legal or similarly significant effects"? | Privacy/legal counsel | Written determination; DPIA addendum |
+| 7 | Abuse and adversarial testing: coerced setup, malicious triggering, retaliation risk | Safeguarding lead + security | Red-team report |
+| 8 | Prospective shadow-mode evaluation — trigger logic runs and logs, sends nothing, reviewed by clinicians | Clinical + engineering | Precision/recall evidence against clinician judgement, over a defined period |
+| 9 | Independent clinical safety case (DCB0129-aligned) and hazard log | Clinical safety officer | Approved safety case |
+| 10 | Regulatory positioning: does inferred-risk escalation move the product toward a medical device classification (UK MHRA)? | Legal counsel | Written determination |
+
+**[ASSUMPTION]** Shadow mode (item 8) can be run without additional consent because nothing is sent. **[REVIEW]** — this assumption is likely wrong and must be tested with privacy counsel; running risk inference over mental-health disclosures is itself processing of special-category data.
+
+---
+
+## B. Consent and setup design
+
+### B.1 Setup flow **[CONFIRMED]**
+
+| Step | Screen | Requirement |
+|---|---|---|
+| 1 | **What this is** | Plain-language explanation of exactly what Guardian Support does and does not do, before any data is entered. Includes explicitly: "This is not an emergency service. Nova cannot guarantee your guardian will see the message or respond." |
+| 2 | **Safe contact check** | Shown *before* contact entry, not after. See §B.2. |
+| 3 | **Add contact** | Full name; mobile number (E.164, validated); relationship; preferred language; optional backup contact. |
+| 4 | **Verify contact** | See §B.3. |
+| 5 | **Choose what you authorise** | Three separate, independently-toggled permissions. See §B.4. |
+| 6 | **Preview and personalise message** | User sees the exact message text that will be sent, and may edit within constraints (§B.5). |
+| 7 | **Confirm consent** | Explicit, unbundled, affirmative action. Records consent version + timestamp (§B.7). |
+
+### B.2 Safe contact check **[CONFIRMED]**
+
+Displayed prominently before contact entry, not buried:
+
+> **Choose someone who is safe for you.**
+> Only add a person you trust to respond with care. Please don't add someone who might react badly, put you at risk, or use this against you if they learn you're struggling.
+> You can change or remove your guardian at any time, and they will not be told if you do.
+
+That final sentence is a deliberate safeguarding provision: a user in a coercive or controlling relationship must be able to remove a contact without the removal itself becoming a disclosure event. **[CONFIRMED]** No notification is ever sent to a guardian on removal, pause, or edit.
+
+### B.3 Guardian verification and notification **[REVIEW]**
+
+Three options, with a recommendation but a genuine open decision:
+
+| Option | Description | Trade-off |
+|---|---|---|
+| **A. No prior contact** | Guardian learns of their role only when the first alert arrives. | Maximum user privacy and safety in coercive situations. Guardian is unprepared; may ignore an unexpected SMS from an unknown number. |
+| **B. Verification code** | User must enter a code sent to the guardian's phone to confirm the number works. | Proves the number is reachable and correct. Requires the user to have contact with the guardian at setup, which may be impossible or unsafe. |
+| **C. Guardian opt-in** | Guardian receives an invitation and must accept. | Guardian is prepared and knows what to expect. Creates a disclosure the user may not want, and a failure mode where a non-responding guardian blocks setup entirely. |
+
+**Recommendation [ASSUMPTION]:** Option B as default (verifies reachability, the most common real-world failure), with an explicit "skip verification" path for users who cannot safely complete it, falling back to Option A. Option C offered but never required.
+
+**[REVIEW]** — Safeguarding lead must decide whether an unverified, unnotified guardian is acceptable, and whether a guardian has any right to be informed they have been designated. There may also be a lawful-basis question in messaging a third party who has not consented to processing (§F.10).
+
+### B.4 Authorised actions — three independent permissions **[CONFIRMED]**
+
+Presented as three separate toggles, never bundled into one "I agree":
+
+1. **"I can send a request for my guardian to call me."** — Tier 1. Default: **on** once a guardian is configured.
+2. **"Nova can prepare a request during a conversation, but must ask me to confirm before sending."** — Tier 2. Default: **off**. Opt-in.
+3. **"Nova can contact my guardian automatically if it detects I'm in crisis."** — Tier 3. **Rendered visibly disabled**, with the text: *"Not available. This would need review by qualified clinicians before we'd offer it, and we won't pretend otherwise."*
+
+**[CONFIRMED]** Option 3's control must be *present and visibly unavailable* rather than hidden. Hiding it invites the assumption that it exists silently; showing it disabled makes the product's limits legible. It must not be enable-able by feature flag alone (§E.7).
+
+### B.5 Message templates **[CONFIRMED]**
+
+- User previews the exact outgoing text at setup and may personalise a bounded portion.
+- **Constraints:** the message must always contain (a) the user's first name or chosen identifier, (b) an explicit request to call, (c) the disclosure that it was sent from Blaze Break. These cannot be edited away.
+- Templates are **versioned**. The version used is recorded on every alert (§D.7).
+- **[REVIEW]** — final default wording, and whether the message may indicate urgency level, requires clinical and safeguarding sign-off. Wording that implies emergency may cause a guardian to call 999 on the user's behalf, which is a significant consequence the user did not choose.
+
+### B.6 Control, withdrawal, and portability **[CONFIRMED]**
+
+| Control | Requirement |
+|---|---|
+| Edit contact | Immediate, no confirmation delay, no guardian notification |
+| Pause | Temporarily disables all sending without deleting configuration |
+| Replace | Swap contact without losing alert history |
+| Disable entirely | One action, immediate |
+| Delete | Removes contact and consent record; alert history retained per §D.9 retention rules with contact details redacted |
+| Export | Guardian configuration and alert history included in the existing `/api/user/export` endpoint |
+
+**[CONFIRMED]** All of the above must be reachable within two taps from the Privacy Vault and from the Guardian setup screen.
+
+### B.7 Consent record **[CONFIRMED]**
+
+Every consent action writes an immutable record:
+
+```
+consentVersion, consentTextHash, timestamp, userId,
+authorisedActions[], contactIds[], templateVersion,
+ipCountry (coarse), userAgentClass, withdrawalTimestamp?
+```
+
+Stored append-only. A withdrawal creates a new record; it never mutates the original.
+
+### B.8 Re-consent cadence **[REVIEW]**
+
+**[ASSUMPTION]** — Recommendation: re-confirm on **material change** rather than on a fixed calendar interval, plus a lightweight annual review prompt.
+
+Material changes triggering re-confirmation: template wording change, new authorised action added, contact unreachable for N consecutive attempts, or 12 months elapsed.
+
+Rationale: arbitrary short intervals (e.g. 90 days) train users to dismiss consent dialogs, actively degrading consent quality. But a configuration that silently persists for years after the relationship has changed is equally unsafe. **[REVIEW]** — privacy counsel and safeguarding lead should set the final cadence; this is a genuine judgement call between consent freshness and consent fatigue.
+
+---
+
+## C. Crisis conversation UX — exact copy
+
+**Governing rules for all copy below [CONFIRMED]:**
+
+- Never say "I will keep you safe" or any variant.
+- Never say "your guardian has been told" before confirmed dispatch.
+- Never claim or imply risk assessment ("I can see you're in danger").
+- Never use guilt, urgency pressure, or coercion.
+- Never present emergency services as the only path.
+- Short sentences. Warm. Calm. No exclamation marks.
+- The guardian action, where configured, is always one tap and always visible.
+
+---
+
+### C.1 User explicitly asks Nova to message their guardian
+
+> I can send that now.
+>
+> **To:** Priya (Sister) · +44 7700 900123
+> **Message:** "Tourae has asked you to call them as soon as you can. This is a support request sent from their Blaze Break app. Please try to contact them directly."
+>
+> `[ Send it now ]`  `[ Change something ]`  `[ Not right now ]`
+
+After sending — **only after the provider accepts** (see §D.6 state mapping):
+
+> Sent. Priya has it now.
+>
+> I can't tell whether she's seen it or when she'll call. If you don't hear back soon, you can send it again or try someone else.
+>
+> `[ Send again ]`  `[ Other ways to get support ]`
+
+---
+
+### C.2 User says they are overwhelmed, but has not asked for contact
+
+No alert is prepared. No confirmation is pre-loaded. The action is offered, not pushed.
+
+> That sounds really heavy. I'm here.
+>
+> Do you want to talk it through, or would it help to have someone call you?
+>
+> `[ Ask Priya to call me ]`  `[ Just talk ]`
+
+**[CONFIRMED]** The guardian button is present but never pre-selected, never emphasised over "just talk", and never re-offered more than once in a conversation unless the user raises it.
+
+---
+
+### C.3 User says they may harm themselves, or are in immediate danger
+
+This is the most carefully constrained copy in the product. Nova offers routes; it does not assess, and it does not act alone.
+
+> I'm really glad you told me.
+>
+> I'm an app, so I can't be with you the way a person can — but I can help you reach someone right now.
+>
+> `[ Ask Priya to call me now ]`
+> `[ Show me urgent support options ]`
+>
+> If you're in immediate danger, please call **999**. For urgent mental health support in the UK you can call **NHS 111 and choose option 2**, or **Samaritans on 116 123**, free, any time.
+>
+> You don't have to do this alone.
+
+**[CONFIRMED]** Even here, the guardian message is not sent without the user's tap.
+**[REVIEW]** — this exact wording, the ordering of options, and the resource list require clinical safety and crisis-practitioner sign-off before release. The resource list must also be locale-aware; the numbers above are UK-specific.
+
+---
+
+### C.4 User stops replying after Nova offered guardian contact
+
+**[CONFIRMED]** Silence triggers nothing. No message. No escalation. No timer. No "are you still there?" pressure.
+
+The conversation simply remains open, with the action still available. On return:
+
+> I'm still here whenever you want to pick this up.
+>
+> `[ Ask Priya to call me ]`
+
+Nova does **not** say "I was worried", "you disappeared", or anything implying it was monitoring. It was not.
+
+---
+
+### C.5 User has not set up a guardian
+
+> I don't have anyone set up to contact for you yet.
+>
+> If you'd like, you can add someone you trust — then reaching them is one tap, any time.
+>
+> `[ Set up a trusted contact ]`
+>
+> Right now, if you need to talk to someone, **Samaritans** are free on **116 123**, any time. If you're in immediate danger, please call **999**.
+
+**[CONFIRMED]** Setup must never be forced mid-crisis. The offer is made once; the crisis resources are given regardless.
+
+---
+
+### C.6 Alert attempt fails
+
+Honesty over reassurance. The user must know the message did **not** go.
+
+> I couldn't get that message through to Priya. That's a problem on my side, not yours.
+>
+> `[ Try again ]`  `[ Try someone else ]`  `[ Other support options ]`
+>
+> If you need someone now and this isn't working, please call **Samaritans on 116 123**, or **999** if you're in immediate danger.
+
+**[CONFIRMED]** The word "sent" must not appear anywhere in a failure state.
+
+---
+
+### C.7 Message sent, no response confirmed
+
+> The message reached Priya's phone. I can't tell whether she's read it or when she'll get back to you.
+>
+> `[ Send again ]`  `[ Try someone else ]`  `[ Other support options ]`
+
+**[CONFIRMED]** "Reached her phone" only if the provider returned `delivered`. If the status is `provider_accepted` but not confirmed delivered, the wording is *"I've sent it — I can't confirm it's arrived yet."* The distinction is not pedantic; it is the difference between a true and a false statement to someone deciding whether to keep waiting.
+
+---
+
+## D. Message delivery specification
+
+### D.1 Endpoint **[CONFIRMED]**
+
+```
+POST /api/guardian/alert
+```
+
+Middleware chain, matching the existing hardened pattern used by `/api/twilio/send`:
+
+```
+guardianAlertLimiter → verifyAppCheck → authenticateFirebaseUser → handler
+```
+
+**[CONFIRMED]** The user ID is taken **exclusively** from the verified auth token (`requireAuth(req).uid`). It is never read from the request body, params, or query. A caller may only ever trigger an alert for their own account.
+
+### D.2 Pre-send validation gate **[CONFIRMED]**
+
+Every one of these must pass before anything is queued. Any failure returns a specific, non-generic error:
+
+1. Authenticated user resolves to a real, non-deleted account.
+2. An active `GuardianConsent` record exists, not withdrawn, not paused.
+3. The consent record authorises the specific trigger source used (`manual_button`, `conversational_confirmed`).
+4. The `contactId` belongs to this user and is active.
+5. The phone number normalises to valid E.164 (reuse the existing `^\+[1-9]\d{6,14}$` validation).
+6. The message template ID and version exist and are approved.
+7. Rate limit, cooldown, and deduplication checks pass (§D.3).
+8. `guardian_alerts_enabled` feature flag is on for this user (§E.7).
+
+### D.3 Rate limiting, idempotency, cooldown **[CONFIRMED]**
+
+| Control | Value | Rationale |
+|---|---|---|
+| Idempotency key | Client-generated UUID, required, unique-indexed | Double-tap, retry, or network replay cannot send twice |
+| Per-contact cooldown | **[ASSUMPTION]** 10 minutes | Prevents accidental repeat flooding of a guardian |
+| Per-user rate limit | **[ASSUMPTION]** 5 alerts / hour, 15 / day | Prevents runaway loops and abuse |
+| Cooldown override | User-visible "send again" is permitted during cooldown, with explicit confirmation showing the last send time | A genuine escalating crisis must not be blocked by a cooldown |
+
+**[REVIEW]** — all numeric values above are engineering placeholders, not clinical judgements. A safeguarding lead should set them. The override behaviour in particular is a safety trade-off: too rigid and we block someone who genuinely needs to try again; too loose and we enable harassment of a guardian.
+
+### D.4 Queue and worker **[CONFIRMED]**
+
+- Alert is persisted **before** any provider call. A crash between accept and send must never lose an alert silently.
+- Durable job queue; background worker performs the provider call.
+- Retry: exponential backoff, max 3 attempts, on transient provider errors only. Never retry on invalid-number or opt-out errors.
+- Every attempt writes an `AlertAttempt` row.
+- **Dead-letter:** exhausted alerts transition to `failed` and must surface in the user's history and in operational alerting (§D.10).
+
+### D.5 Provider abstraction **[CONFIRMED]**
+
+```ts
+interface MessagingProvider {
+  send(to: E164, body: string, opts): Promise<ProviderAcceptance>;
+  parseStatusWebhook(payload: unknown): DeliveryEvent | null;
+  readonly id: 'twilio' | string;
+}
+```
+
+Twilio is the initial implementation (already integrated, with UK IDTA + SCCs + DPF in place per prior processor review). The abstraction exists so a provider outage or a data-residency requirement does not require rewriting the pipeline.
+
+### D.6 State machine and honest language mapping **[CONFIRMED]**
+
+| State | Meaning | Permitted user-facing language |
+|---|---|---|
+| `draft` | Prepared, not confirmed | "Ready to send" |
+| `confirmation_required` | Awaiting explicit user confirm | "Tap to send" |
+| `user_confirmed` | User confirmed, not yet queued | "Sending…" |
+| `queued` | Persisted, awaiting worker | "Sending…" |
+| `provider_accepted` | Provider accepted for delivery | "I've sent it — I can't confirm it's arrived yet" |
+| `delivered` | Provider confirmed handset delivery | "The message reached their phone" |
+| `delivery_unknown` | Accepted, no receipt within window | "I've sent it — I can't confirm it arrived" |
+| `failed` | Terminal failure | "I couldn't get that message through" |
+| `cancelled` | User cancelled | "Cancelled — nothing was sent" |
+| `expired` | Unconfirmed draft aged out | (silent; no claim made) |
+
+**[CONFIRMED]** This mapping is the single source of truth for what Nova may say. It is enforced in code, not left to prompt instructions (§E.6).
+
+### D.7 Audit log **[CONFIRMED]**
+
+Append-only, tamper-evident (hash-chained), containing per alert:
+
+```
+alertId, userId, contactId (reference, not raw number),
+consentVersion, templateId + templateVersion,
+triggerSource, userConfirmedAt, confirmationMethod,
+providerId, providerMessageId, providerResponseCode,
+stateTransitions[] with timestamps, finalState
+```
+
+**[CONFIRMED]** The audit log records **that** an alert was sent and under what authority. It must **never** contain the conversation content that preceded it.
+
+### D.8 The deterministic-dispatch rule **[CONFIRMED]**
+
+> **An LLM may recommend or prepare a guardian alert. An LLM may never dispatch one.**
+
+Implementation: Nova's tool surface exposes only `prepare_guardian_alert`, which returns a draft for UI rendering. It has no send capability. Dispatch occurs solely via `POST /api/guardian/alert`, which requires a `userConfirmationToken` issued by the UI when the user taps a real confirmation control. Model output cannot mint that token.
+
+This is the architectural guarantee that no hallucination, prompt injection, or misclassification can cause a message to be sent.
+
+### D.9 Data protection **[CONFIRMED]**
+
+- TLS in transit; encryption at rest.
+- Guardian phone numbers encrypted at rest with a separate key; never written to application logs.
+- All logging of alert flows redacts message bodies and phone numbers (last 4 digits only where needed for support).
+- Secrets in a managed secret store; least-privilege service accounts.
+- **Retention [REVIEW]:** alert metadata retained for audit; conversation content never retained as part of an alert record. Final retention period requires privacy counsel — audit/defence needs must be balanced against data minimisation for special-category data.
+
+### D.10 Observability **[CONFIRMED]**
+
+- Metrics: send success rate, provider latency, delivery-confirmation rate, failure rate by cause, cooldown-block rate.
+- **Paging alert** on failure-rate breach — a broken guardian pipeline is a safety incident, not a routine bug.
+- Synthetic canary send to a test number on a schedule, verifying the whole path end to end.
+- User-visible fallback whenever the pipeline is degraded: crisis resources shown, no false "sent" claim.
+
+---
+
+## E. Architecture
+
+### E.1 Components
+
+```
+Mobile-first web client
+  ├── GuardianSetup            (consent, contacts, templates)
+  ├── GuardianQuickAction      (persistent one-tap; crisis UI + Nova surface)
+  ├── GuardianConfirmSheet     (renders draft, mints confirmation token)
+  └── GuardianHistory          (honest status per §D.6)
+
+Node/TypeScript server
+  ├── /api/guardian/*          (consent, contacts, alert, history)
+  ├── guardian-policy.ts       (PURE, unit-tested: eligibility, cooldown, state)
+  ├── guardian-dispatch.ts     (queue producer; the only send path)
+  ├── guardian-worker.ts       (queue consumer; provider calls; retries)
+  ├── providers/twilio.ts      (MessagingProvider impl)
+  └── /api/webhooks/messaging  (delivery receipts → state transitions)
+
+Nova (LLM)
+  └── prepare_guardian_alert   (READ/DRAFT ONLY — cannot dispatch)
+
+Firestore + durable queue + append-only audit store
+```
+
+**[CONFIRMED]** `guardian-policy.ts` contains no I/O, following the existing `nova-tools.ts` / `org-risk-trend.ts` pattern in this repo, so every eligibility, cooldown, and state-transition rule is unit-testable without a live Firestore.
+
+### E.2 Data model
+
+```ts
+interface TrustedContact {
+  id: string;
+  userId: string;
+  name: string;
+  phoneE164: string;            // encrypted at rest
+  relationship: string;
+  preferredLanguage: string;
+  isPrimary: boolean;
+  verificationStatus: 'unverified' | 'code_sent' | 'verified' | 'skipped_by_user';
+  status: 'active' | 'paused' | 'removed';
+  createdAt: string; updatedAt: string;
+}
+
+interface GuardianConsent {
+  id: string;
+  userId: string;
+  consentVersion: string;
+  consentTextHash: string;
+  authorisedActions: ('manual_send' | 'conversational_confirmed')[];
+  contactIds: string[];
+  templateVersion: string;
+  grantedAt: string;
+  withdrawnAt?: string;
+  supersededBy?: string;        // append-only chain
+}
+
+interface GuardianAlert {
+  id: string;
+  userId: string;
+  contactId: string;
+  idempotencyKey: string;       // unique index
+  state: AlertState;            // see §D.6
+  triggerSource: 'manual_button' | 'conversational_confirmed';
+  templateId: string; templateVersion: string;
+  consentVersionAtSend: string;
+  userConfirmedAt: string;
+  createdAt: string; updatedAt: string;
+}
+
+interface AlertAttempt {
+  id: string; alertId: string; attemptNumber: number;
+  providerId: string; providerMessageId?: string;
+  responseCode?: string; errorClass?: 'transient' | 'permanent';
+  attemptedAt: string;
+}
+
+interface AlertDeliveryEvent {
+  id: string; alertId: string; providerMessageId: string;
+  eventType: 'accepted' | 'delivered' | 'undelivered' | 'failed';
+  providerTimestamp: string; receivedAt: string;
+}
+
+interface SafetyPlan {                        // [REVIEW] — clinical design required
+  id: string; userId: string;
+  ownWords?: string;                          // user-authored only
+  contactIds: string[];
+  updatedAt: string;
+}
+
+interface MessageTemplate {
+  id: string; version: string; locale: string;
+  body: string;                               // with {{firstName}} token
+  requiredTokens: string[];
+  approvedBy: string; approvedAt: string;     // clinical sign-off recorded
+  status: 'draft' | 'approved' | 'retired';
+}
+
+interface AuditEvent {
+  id: string; userId: string;
+  eventType: string; subjectId: string;
+  payloadHash: string; previousHash: string;  // hash chain
+  occurredAt: string;
+}
+
+interface FeatureFlag {
+  key: string;
+  enabled: boolean;
+  requiresCapability: string[];               // see §E.7
+  copyKey: string;                            // copy bound to flag state
+}
+```
+
+**Note on `SafetyPlan`:** included in the model for completeness because it was requested, but its content and clinical role is **[REVIEW]**. A safety plan is a recognised clinical instrument; implementing one without clinical design would be exactly the kind of unearned authority this specification rejects. Recommend: MVP stores only user-authored free text and their chosen contacts, with no structure implying clinical validity.
+
+### E.3 API endpoints
+
+```
+POST /api/guardian/contacts            → create contact
+PATCH /api/guardian/contacts/:id       → edit / pause / remove
+POST /api/guardian/contacts/:id/verify → send + check verification code
+GET  /api/guardian/consent             → current consent state
+POST /api/guardian/consent             → grant / update (append-only)
+DELETE /api/guardian/consent           → withdraw
+POST /api/guardian/alert               → dispatch (the only send path)
+GET  /api/guardian/alerts              → history with honest status
+POST /api/webhooks/messaging           → provider delivery receipts
+```
+
+**Example — dispatch request:**
+
+```json
+POST /api/guardian/alert
+{
+  "contactId": "tc_8f2a",
+  "idempotencyKey": "b3d1c0e4-...",
+  "triggerSource": "conversational_confirmed",
+  "userConfirmationToken": "uct_9d1f...",
+  "templateId": "call_request",
+  "templateVersion": "1.2"
+}
+```
+
+**Success (202):**
+
+```json
+{
+  "alertId": "ga_44b1",
+  "state": "queued",
+  "userMessage": "Sending…",
+  "contactDisplayName": "Priya",
+  "canRetryAfter": "2026-09-05T19:10:00Z"
+}
+```
+
+**Blocked by consent (403):**
+
+```json
+{
+  "error": "consent_not_authorised",
+  "userMessage": "I don't have permission to message Priya yet. You can turn that on in Guardian settings.",
+  "action": { "label": "Open Guardian settings", "route": "/privacy/guardian" }
+}
+```
+
+**[CONFIRMED]** Every error response carries a `userMessage` written to the §C rules. Nova renders that string; it does not compose its own status language.
+
+### E.4 State machine
+
+```
+draft ──► confirmation_required ──► user_confirmed ──► queued
+                    │                                    │
+                    └──► cancelled                        ▼
+                    └──► expired                  provider_accepted
+                                                    │      │
+                                       ┌────────────┘      └────────────┐
+                                       ▼                                ▼
+                                  delivered                    delivery_unknown
+                                                                        │
+                              (any attempt path exhausted) ──────►   failed
+```
+
+Terminal: `delivered`, `delivery_unknown`, `failed`, `cancelled`, `expired`.
+**[CONFIRMED]** Transitions are enforced in `guardian-policy.ts` as a pure function; illegal transitions throw rather than silently coercing state.
+
+### E.5 Dispatch pipeline pseudocode
+
+```
+POST /api/guardian/alert:
+  uid = requireAuth(req).uid                    # token only, never body
+  assertFeatureEnabled('guardian_alerts', uid)
+  assertValidConfirmationToken(body.userConfirmationToken, uid)
+
+  existing = findByIdempotencyKey(body.idempotencyKey, uid)
+  if existing: return existing                  # replay-safe, no second send
+
+  consent   = loadActiveConsent(uid)
+  contact   = loadContact(body.contactId, uid)
+  template  = loadApprovedTemplate(body.templateId, body.templateVersion)
+
+  decision = guardianPolicy.evaluate({          # PURE, unit-tested
+    consent, contact, template,
+    triggerSource: body.triggerSource,
+    recentAlerts: loadRecentAlerts(uid),
+    now
+  })
+  if not decision.allowed:
+    return error(decision.code, decision.userMessage)
+
+  alert = persistAlert(state='queued', ...)     # persist BEFORE provider call
+  writeAudit('guardian_alert_queued', alert)
+  enqueue(alert.id)
+  return { alertId, state: 'queued', userMessage: 'Sending…' }
+
+worker(alertId):
+  alert = load(alertId)
+  body  = render(template, { firstName: user.firstName })
+  try:
+    acceptance = provider.send(contact.phoneE164, body)
+    transition(alert, 'provider_accepted', acceptance.providerMessageId)
+  catch e:
+    if e.class == 'transient' and attempts < 3: scheduleRetry(backoff)
+    else: transition(alert, 'failed', e.code); notifyUserOfFailure(alert)
+  finally:
+    writeAttempt(alert, ...)
+```
+
+### E.6 Conversational routing pseudocode
+
+```
+onUserMessage(text, ctx):
+  # Nova NEVER classifies risk. It detects an explicit instruction only.
+  intent = novaToolCall()      # may return prepare_guardian_alert
+
+  if intent == 'prepare_guardian_alert':
+     if not ctx.consent.authorises('conversational_confirmed'):
+        return copy('C5_no_guardian_or_not_authorised')
+     draft = buildDraft(ctx.user, ctx.contact, approvedTemplate)
+     return renderConfirmSheet(draft)          # UI mints confirmation token
+                                               # NOTHING IS SENT HERE
+
+  # All other paths: Nova responds conversationally and MAY surface the
+  # one-tap action. It may not prepare, queue, or claim any send.
+  return novaResponse(text) + maybeOfferGuardianAction(ctx)
+
+# Status language is NEVER model-generated:
+statusLine(alert) = STATE_COPY_MAP[alert.state]      # §D.6, enforced in code
+```
+
+### E.7 Feature flag strategy **[CONFIRMED]**
+
+The previous failure — copy promising a capability the code did not have — must be structurally impossible, not merely avoided by care.
+
+1. **Copy is bound to flag state.** Each flag declares a `copyKey`; the UI cannot render capability-claiming copy that is not owned by an enabled flag.
+2. **Capability preconditions.** A flag declares `requiresCapability: ['guardian_dispatch_pipeline']`. The server refuses to report a flag as enabled if the named capability is not registered at boot. A flag cannot be switched on for a feature that does not exist.
+3. **Tier 3 cannot be flag-enabled.** Automatic escalation requires both a flag *and* a signed clinical-approval record present in configuration. Absent that record, the code path is unreachable regardless of flag state.
+4. **CI check.** A test asserts that every user-facing string claiming an action ("we will contact", "automatically notify") is reachable only under a flag whose capability is registered. This test fails the build otherwise.
+
+### E.8 Migration from "Guardian Check-In Suggestions"
+
+| Step | Action | Label |
+|---|---|---|
+| 1 | Ship Tier 1 behind `guardian_alerts` flag, default off | **[CONFIRMED]** |
+| 2 | Internal + canary testing with real numbers, non-production accounts | **[CONFIRMED]** |
+| 3 | Enable Tier 1; update Guardian settings copy to describe the real capability | **[CONFIRMED]** |
+| 4 | Ship Tier 2 behind `guardian_conversational` flag, default off, opt-in per user | **[CONFIRMED]** |
+| 5 | Retire the "Check-In Suggestions" framing once Tier 1+2 are live; the Nova memory note is rewritten to describe real capability | **[CONFIRMED]** |
+| 6 | Tier 3 gate remains visibly disabled with honest copy until §F.9 is complete | **[CONFIRMED]** |
+
+**[CONFIRMED]** At no point may the Tier 3 toggle become enable-able as a side effect of steps 1–5.
+
+### E.9 What already exists in this codebase
+
+Genuinely reusable, verified present:
+
+| Asset | Location | Reuse |
+|---|---|---|
+| Twilio send integration | `server.ts` `/api/twilio/send` | Basis for `providers/twilio.ts` |
+| SMS rate limiter | `server.ts` `smsLimiter` | Pattern for `guardianAlertLimiter` |
+| App Check + Firebase auth chain | `verifyAppCheck`, `authenticateFirebaseUser` | Applied unchanged |
+| Guardian contact model | `SupportContact` in `types.ts` | Extend → `TrustedContact` |
+| E.164 validation | `NovaGuardianRelay.tsx` | Move to `guardian-policy.ts` |
+| Manual per-contact alert send | `NovaGuardianRelay.tsx` `sendRealAlert` | Foundation for Tier 1 |
+| Pure-logic + unit-test pattern | `nova-tools.ts`, `org-risk-trend.ts` | Model for `guardian-policy.ts` |
+| Field-validated Firestore rules | `firestore.rules` | Model for new collections |
+| CI enforcement | `.github/workflows/ci.yml` | Hosts the §E.7 copy-safety test |
+
+**[CONFIRMED]** The `autoAlertEnabled` field currently present on `SupportContact` is vestigial — always written `false`, never read. It must be **removed**, not repurposed, so no future reader mistakes it for a live automatic-escalation switch.
+
+### E.10 Test plan
+
+| Layer | Coverage |
+|---|---|
+| **Unit** | `guardian-policy.ts`: consent gating, cooldown, rate limits, every legal and illegal state transition, template token enforcement |
+| **Integration** | Full dispatch path with mocked provider: accept, transient failure + retry, permanent failure, webhook state transitions, idempotency replay |
+| **End-to-end** | Setup → consent → one-tap send → status display; conversational request → confirm → send; cancel path; failure path |
+| **Accessibility** | Quick action reachable by keyboard and screen reader; confirm sheet has focus trap, `role="dialog"`, Escape; status changes announced via `aria-live`; targets ≥44px; usable one-handed and at 200% zoom |
+| **Load** | Provider latency/outage under concurrent sends; queue drain behaviour |
+| **Security** | Cannot send for another `uid`; confirmation token cannot be forged or replayed; webhook signature verification; rate-limit bypass attempts |
+| **Privacy** | No message body or phone number in logs; export includes guardian data; deletion removes contacts and consent; audit contains no conversation content |
+| **Failure-mode** | Provider down, queue down, DB write fails post-accept, webhook never arrives, crash between persist and send |
+| **Red-team** | Prompt injection attempting dispatch; model asked to claim a send it did not make; compromised session triggering alerts; coerced setup; alert flooding |
+
+**[CONFIRMED]** The red-team suite must include an explicit adversarial test that Nova cannot be induced to state "I've contacted your guardian" when no alert exists in a sent state.
+
+---
+
+## F. Clinical and safeguarding governance checklist
+
+Every item requires a **named owner** and a **recorded decision** before launch.
+
+| # | Decision | Owner | Label |
+|---|---|---|---|
+| 1 | Intended user population; minimum age; exclusion criteria | Clinical safety lead | **[REVIEW]** |
+| 2 | Under-18 policy: permitted, blocked, or different flow with parental considerations | Safeguarding + legal | **[REVIEW]** |
+| 3 | Explicit "what this does / does not do" statement for terms, onboarding, and consent screen | Clinical + legal | **[REVIEW]** |
+| 4 | Guardian suitability guidance and relationship-risk framing (§B.2 wording) | Safeguarding lead | **[REVIEW]** |
+| 5 | Whether guardians must consent to receiving alerts; lawful basis for messaging them | Privacy counsel | **[REVIEW]** |
+| 6 | Capacity and consent-quality: is consent given during distress valid, and does setup need to be blocked mid-crisis? | Clinical + legal | **[REVIEW]** |
+| 7 | Final crisis copy (§C.1–C.7) and resource list, locale-aware | Clinical + crisis practitioner | **[REVIEW]** |
+| 8 | Guardian message wording and its disclaimer | Clinical + legal | **[REVIEW]** |
+| 9 | Escalation boundary: what Nova does when a user indicates immediate danger | Clinical safety lead | **[REVIEW]** |
+| 10 | Adverse-event process: definition, reporting route, timeline, review | Clinical safety officer | **[REVIEW]** |
+| 11 | Support and complaints pathway for users **and guardians** | Product + support | **[REVIEW]** |
+| 12 | Clinical safety case and hazard log (DCB0129-aligned) | Clinical safety officer | **[REVIEW]** |
+| 13 | Human-factors review: distressed, dissociated, impaired, offline, low battery, unable to type | Clinical + design | **[REVIEW]** |
+| 14 | UK GDPR: lawful basis, Art. 9 condition, explicit-consent requirement, Art. 22 analysis, DPIA | Privacy counsel | **[REVIEW]** |
+| 15 | Cross-border transfer position for messaging provider | Privacy counsel | **[REVIEW]** |
+| 16 | Retention periods for alerts, audit, and consent records | Privacy counsel | **[REVIEW]** |
+| 17 | Sign-off that Tier 3 remains disabled and unreachable | Eng lead + clinical lead | **[CONFIRMED]** |
+
+### F.9 Tier 3 release gate **[REVIEW]**
+
+Tier 3 may not ship until **all** of: §A.3.1 items 1–10 complete; hazard log closed with residual risk accepted in writing; DPIA addendum approved; independent clinical safety case signed; red-team report closed; lived-experience panel review completed; and a documented, tested kill-switch with defined activation criteria.
+
+### F.10 Standing recommendation **[CONFIRMED]**
+
+Obtain qualified UK legal advice and named clinical-safety supervision **before** enabling any automated escalation, and **before** messaging guardians who have not themselves consented to processing. This is not a formality; both are live legal questions, not engineering ones.
+
+### F.11 Human-factors requirements **[CONFIRMED]**
+
+- The one-tap action must work with **no typing**.
+- It must be reachable in **one tap from the crisis UI** and one tap from Nova.
+- It must render and function on a **slow or intermittent connection**, queueing locally and syncing.
+- It must be **legible and operable one-handed**, at large text sizes, in dark mode.
+- A user who is dissociated or cognitively impaired must not be required to read a long screen to act.
+
+---
+
+## G. Hazard analysis
+
+Severity: 1 (negligible) – 5 (catastrophic). Likelihood: 1 (remote) – 5 (frequent). Both are **[ASSUMPTION]** pending clinical review.
+
+| # | Hazard | Who is harmed | Failure mode | Sev | Lik | Mitigation | Residual | Owner | Evidence needed |
+|---|---|---|---|---|---|---|---|---|---|
+| 1 | False-positive guardian contact | User; guardian; relationship | Alert sent when user did not want it | 4 | 1 (MVP) | No inferred sends in MVP; explicit confirmation required; deterministic dispatch (§D.8) | Low in MVP; **high if Tier 3 ships** | Clinical lead | Tier 3 shadow-mode precision data |
+| 2 | False negative — no alert in genuine crisis | User | User unable to act; nothing sent | 5 | 3 | Product does not claim to detect; crisis resources always shown; one-tap kept maximally reachable | **Accepted, documented** | Clinical lead | Written residual-risk acceptance |
+| 3 | Guardian is abusive, coercive, or unsafe | User | Alert discloses distress to a dangerous person | 5 | 2 | Safe-contact check before entry (§B.2); silent removal; no guardian notification on change | Medium | Safeguarding lead | Safeguarding review of setup flow |
+| 4 | Guardian unavailable or ignores message | User | No human response; user believes help is coming | 4 | 4 | Honest status copy (§C.7); backup contact; alternative resources always offered | Medium | Product | Copy validated with users |
+| 5 | Wrong or mistyped number | Uninvolved third party; user | Distress disclosed to a stranger; no help arrives | 4 | 3 | E.164 validation; verification code (§B.3); preview before first send | Medium | Eng lead | Verification completion-rate data |
+| 6 | Shared or compromised guardian phone | User | Unintended disclosure | 4 | 2 | Minimal-content message; no clinical detail in SMS | Medium | Safeguarding lead | Message-content review |
+| 7 | Delivery failure | User | User believes help was requested when it wasn't | 5 | 2 | Explicit `failed` state; failure copy never says "sent" (§C.6); paging alert (§D.10) | Low | Eng lead | Failure-path E2E test evidence |
+| 8 | LLM hallucinates alert status | User | User told help is coming when it isn't | 5 | 3 | Status strings code-owned, never model-generated (§D.6, §E.6); red-team test | Low | Eng lead | Passing red-team suite |
+| 9 | Duplicate / repeated alerts | Guardian; user | Guardian flooded; relationship damaged | 3 | 3 | Idempotency key; per-contact cooldown; per-user rate limit (§D.3) | Low | Eng lead | Integration test evidence |
+| 10 | User changes their mind mid-flow | User | Unwanted send | 3 | 3 | Cancel available until `queued`; `cancelled` state; no send without confirmation token | Low | Product | E2E cancel-path test |
+| 11 | Data breach of mental-health disclosures | User | Severe privacy harm; potential real-world consequences | 5 | 2 | Encryption at rest/in transit; separate key for numbers; log redaction; least privilege; audit excludes conversation content | Medium | Security + privacy | Pen-test report; DPIA |
+| 12 | Under-18 use | Minor; guardians | Consent validity; safeguarding duties unmet | 5 | 3 | Age policy required before launch | **Unresolved** | Safeguarding + legal | Item F.2 decision |
+| 13 | Cross-border messaging / data transfer | User | Unlawful transfer of special-category data | 3 | 2 | Twilio UK IDTA + SCCs + DPF confirmed; provider abstraction allows regional change | Low | Privacy counsel | Transfer assessment on file |
+| 14 | Over-reliance on Nova instead of emergency care | User | Delay in accessing appropriate care | 5 | 3 | Explicit non-emergency framing at setup and in crisis copy; emergency options always present | Medium | Clinical lead | Copy comprehension testing |
+| 15 | Inactivity misread as crisis | User | Unwanted contact; user stops using app honestly | 4 | 1 (MVP) | **No inactivity monitoring in MVP** (§C.4) | None in MVP | Product | N/A unless Tier 3 proceeds |
+| 16 | Malicious actor triggers alerts from compromised account | User; guardian | Harassment; false alarm; loss of trust | 4 | 2 | Auth from token only; App Check; rate limits; full audit; visible user history | Medium | Security | Security test evidence |
+| 17 | Alert sent after consent withdrawn | User | Consent violation | 4 | 2 | Consent re-validated at dispatch time, not cached (§D.2) | Low | Eng lead | Integration test evidence |
+| 18 | Guardian receives alert with no context and calls 999 | User | Unwanted emergency response; loss of autonomy | 4 | 3 | Message wording avoids emergency framing **[REVIEW]** | Medium | Clinical lead | Item F.8 decision |
+
+---
+
+## H. MVP recommendation
+
+**Build Tier 1 and Tier 2. Do not build Tier 3.**
+
+| Decision | Recommendation |
+|---|---|
+| One-tap user-initiated guardian call request | **Ship.** Prominent in the crisis UI and directly inside Nova conversations. |
+| Conversational request with explicit confirmation | **Ship**, immediately after Tier 1, opt-in per user. |
+| Silent, automatic, language-based guardian alerts | **Do not ship.** No detection logic in the MVP. |
+| Inactivity or silence as a trigger | **Do not ship.** Not in the MVP, and not without separate clinical, legal, privacy, and user-research approval. |
+| Tier 3 generally | Gate visibly disabled with honest copy until §F.9 is fully satisfied. |
+
+**Why this is the right shape, not a hedge:** the value in the story that motivated this feature is not that a system detected something. It is that a trusted person called. Tier 1 delivers that in one tap, today, with no possibility of the system being wrong about someone's state — because it never guesses. Tier 2 makes the same action reachable from inside a conversation, for a person who is talking rather than tapping.
+
+What Tier 3 would add is the case where the user cannot act at all. That is a real and important gap, and it deserves to be closed properly — with clinicians, evidence, and a safety case — rather than approximated with a language model reading someone's words and deciding something it is not qualified to decide.
+
+**Out of scope for this specification [OUT OF SCOPE]:** clinical risk assessment; any suicide- or self-harm-detection model; automated contact with emergency services; location sharing; guardian-side application; passive sensing of any kind (device usage, movement, sleep, typing); and any inactivity-based monitoring.
+
+---
+
+## Appendix — open decisions requiring qualified review
+
+| Ref | Decision | Required reviewer |
+|---|---|---|
+| §B.3 | Guardian verification and whether guardians must be notified or consent | Safeguarding lead + privacy counsel |
+| §B.5 | Final default message wording and urgency framing | Clinical safety lead |
+| §B.8 | Re-consent cadence | Privacy counsel + safeguarding lead |
+| §C.3 | Immediate-danger copy, option ordering, resource list | Clinical safety lead + crisis practitioner |
+| §D.3 | Cooldown, rate limits, and override behaviour | Safeguarding lead |
+| §D.9 | Retention periods for alert, audit, and consent data | Privacy counsel |
+| §E.2 | `SafetyPlan` clinical design, or decision to exclude | Clinical safety lead |
+| §F.2 | Under-18 policy | Safeguarding lead + legal |
+| §F.14 | Lawful basis, Art. 9 condition, Art. 22 analysis, DPIA | Privacy counsel |
+| §A.3 / §F.9 | Whether Tier 3 is defensible at all | Clinical safety officer (independent) |
