@@ -29,6 +29,44 @@ It is not an emergency service, not a crisis line, not clinical assessment, and 
 
 ---
 
+## 0.1 Non-negotiable safety constraint — no risk scoring **[CONFIRMED]**
+
+This constraint overrides every other section of this document. Where anything below appears to conflict with it, this section wins.
+
+**Nova must not propose, design, infer, display, store, calculate, or rely on any risk score, risk level, risk band, risk probability, confidence score, severity score, danger rating, safety state, or model-derived classification of a user's mental state.**
+
+This covers numeric, categorical, implicit, and proxy forms alike:
+
+- low / medium / high risk; safe / unsafe; green / amber / red
+- concern score, distress threshold, crisis confidence
+- likelihood of self-harm, suicide probability
+- automated "safety failure state"
+- model confidence above a defined percentage
+- keyword count, sentiment score, or behavioural score used as a trigger
+- **inactivity duration used as evidence that a person is in danger**
+
+Nova must not make, imply, or operationalise a clinical or quasi-clinical judgement about a user from their language, silence, behaviour, sentiment, history, or interaction pattern.
+
+**Guardian outreach may be triggered only through deterministic, user-authorised pathways:**
+
+| # | Pathway | Status |
+|---|---|---|
+| 1 | User taps "Ask my guardian to call me" or equivalent | **Tier 1 — build now** |
+| 2 | User explicitly instructs Nova to contact their guardian; Nova shows recipient and message and requires final confirmation | **Tier 2 — build now** |
+| 3 | Pre-authorised, user-configured scheduled check-in arrangement | **Tier 3 — research only, out of scope** |
+
+**What Nova may still do.** Responding to what a person actually says is not classification. Nova may offer choices:
+
+- "Would it help to ask someone you trust to call you?"
+- "Your Guardian Call Request is ready if you want to send it."
+- "Would you like to contact emergency help, a crisis service, or someone you trust?"
+
+**What Nova may never do.** Claim it has detected risk, determined danger, identified intent, or concluded that escalation is required. The system preserves user agency, avoids covert monitoring, and never converts a private disclosure into third-party contact on the basis of an AI judgement.
+
+**Why this is stronger than a review gate.** An earlier draft of this document proposed shadow-mode evaluation of trigger logic with precision/recall measured against clinician judgement. That was wrong and has been removed. A validated classifier is still a classifier: it still converts private disclosure into third-party contact on an inference, and validation changes only how confident we are while being wrong. The constraint is not "get approval before inferring" — it is "do not infer."
+
+---
+
 ## A. Product decision — three tiers
 
 ### Recommendation summary
@@ -37,7 +75,7 @@ It is not an emergency service, not a crisis line, not clinical assessment, and 
 |---|---|---|
 | **Tier 1** | One-tap, user-initiated guardian call request | **Build now. This is the MVP.** |
 | **Tier 2** | Conversational request → explicit confirmation → send | **Build now, immediately after Tier 1.** |
-| **Tier 3** | Automatic / inferred escalation from language or inactivity | **Do not build yet. Research and governance plan only.** |
+| **Tier 3** | Pre-authorised, user-configured scheduled check-in support | **Out of scope. Research only. Not crisis detection.** |
 
 ### Tier 1 — One-tap user-initiated Guardian Call Request **[CONFIRMED]**
 
@@ -50,9 +88,9 @@ The user taps a persistent, clearly-labelled action. Nova sends a pre-approved m
 **Why this is the MVP — and why it delivers most of the actual value:**
 
 1. **It solves the stated problem completely.** The lived-experience insight driving this feature is the gap between needing a person and reaching one. Hold music, queues, explaining yourself to a stranger. One tap that makes a trusted person's phone ring closes that gap entirely — without any risk model in between.
-2. **It requires no clinical judgement.** The user *is* the risk assessment. Nothing is inferred, so nothing can be inferred wrongly. This removes the entire class of false-positive and false-negative harms that make Tier 3 hard.
+2. **It requires no clinical judgement.** The user's own decision is the only input. Nothing is inferred, so nothing can be inferred wrongly. This removes the entire class of false-positive and false-negative harms that inference-based designs create.
 3. **It is honest by construction.** The user knows exactly what they did and exactly what was sent. Nova makes no claim about anything it hasn't done.
-4. **It is testable, reversible, and observable.** Real delivery states, real audit trail, real failure UX — the foundations Tier 3 would need anyway, proven under real usage first.
+4. **It is testable, reversible, and observable.** Real delivery states, real audit trail, real failure UX — the foundations any later capability would need anyway, proven under real usage first.
 5. **Most of the infrastructure already exists** (see §E.9): a working Twilio integration with rate limiting, App Check, Firebase auth, phone validation, and a `SupportContact` model with a guardian role.
 
 **What Tier 1 deliberately does not do:** it does not monitor, infer, watch, score, or decide. It is a button.
@@ -65,32 +103,47 @@ Nova recognises an **explicit, direct request** — "tell my guardian to call me
 
 Rationale: someone in distress may be talking to Nova rather than navigating UI. Meeting them where they are is worth building — but the send is still a deliberate act by the user, one tap away, never a surprise.
 
-### Tier 3 — Automatic escalation **[REVIEW — do not build]**
+### Tier 3 — Pre-authorised scheduled check-in support **[REVIEW — research only, do not build]**
 
-Automatic or semi-automatic escalation based on inferred state (language, sentiment, inactivity, or any combination) is **out of scope for MVP** and must not be shipped until every item in §F.9 is complete and signed off.
+**This is not crisis detection, and must never be described or implemented as such.**
 
-This is not permanent refusal. It is a statement that the decision belongs to qualified clinicians and safeguarding leads, not to engineering, and not to a language model.
+Automatic or inferred escalation — from language, sentiment, self-harm detection, inactivity classification, or any model judgement about wellbeing — is **permanently out of scope** under §0.1. It is not deferred pending approval. It is excluded.
 
-**No detection thresholds, keyword lists, risk scores, or classifier designs appear anywhere in this document by deliberate choice.** Inventing them would be the exact failure this specification exists to prevent.
+What may be explored later is something categorically different: a **planned communication arrangement** the user configures in advance, in full knowledge of exactly what will happen.
 
-**§A.3.1 Research and validation plan for Tier 3 [REVIEW]**
+**If the organisation later explores this, it may only take this shape [REVIEW]:**
 
-Required before *designing* any trigger rule — not merely before shipping one:
+| Requirement | Detail |
+|---|---|
+| User-chosen schedule | The user picks the check-in cadence. The system does not propose one based on anything it has observed. |
+| User-chosen guardian and message | Both selected and previewed in advance, at configuration time. |
+| User-chosen consequence | The user decides whether a missed check-in produces an in-app reminder only, an optional prompt, or a pre-authorised guardian message. |
+| Full advance transparency | Before enabling, the user is shown exactly when check-ins are due, what happens if they do not respond, who is contacted, and the exact message text. |
+| Revocable at any time | Pause, change, or revoke without friction and without notifying the guardian. |
+
+**Hard limits on any such feature [CONFIRMED]:**
+
+- A missed check-in is **a missed check-in**. It must never be represented — in copy, data model, logs, or guardian message — as proof of danger, a mental-health emergency, self-harm intent, or a "safety failure."
+- The guardian message must reflect the arrangement the user set up, not an inferred state. For example: *"[Name] set up a check-in with me and hasn't responded to it. They asked me to let you know if that happened."*
+- No wellbeing inference of any kind may inform whether, when, or how the message is sent.
+- Missed-check-in status must not be stored or displayed as a risk indicator, band, or score.
+
+**§A.3.1 Review required before any Tier 3 work begins [REVIEW]**
 
 | # | Workstream | Owner | Output |
 |---|---|---|---|
-| 1 | Clinical evidence review: is language-based risk inference supported by evidence in a non-clinical, unsupervised consumer product? | Clinical safety lead | Written position, with citations, on whether any automated trigger is defensible at all |
-| 2 | Crisis-service practitioner consultation (e.g. crisis-line clinicians, liaison psychiatry, occupational health psychology) | Clinical safety lead | What signals, if any, practitioners consider actionable — and what they consider harmful to act on |
-| 3 | Lived-experience research with people who have used crisis services, incl. those who have experienced unwanted escalation | Product + research | What users want to happen, what they fear happening, what would make them stop being honest with the app |
-| 4 | False-positive harm modelling: what happens to trust, disclosure honesty, and relationships when the system is wrong | Clinical + product | Documented harm model with severity |
-| 5 | False-negative harm modelling and explicit acceptance of residual risk | Clinical + legal | Signed residual-risk acceptance |
-| 6 | UK GDPR Art. 22 analysis: is any trigger "automated decision-making with legal or similarly significant effects"? | Privacy/legal counsel | Written determination; DPIA addendum |
-| 7 | Abuse and adversarial testing: coerced setup, malicious triggering, retaliation risk | Safeguarding lead + security | Red-team report |
-| 8 | Prospective shadow-mode evaluation — trigger logic runs and logs, sends nothing, reviewed by clinicians | Clinical + engineering | Precision/recall evidence against clinician judgement, over a defined period |
-| 9 | Independent clinical safety case (DCB0129-aligned) and hazard log | Clinical safety officer | Approved safety case |
-| 10 | Regulatory positioning: does inferred-risk escalation move the product toward a medical device classification (UK MHRA)? | Legal counsel | Written determination |
+| 1 | Is a scheduled check-in arrangement clinically appropriate in a non-clinical consumer product at all? | Clinical safety lead | Written position |
+| 2 | Crisis-service practitioner consultation on planned check-ins (not detection) | Clinical safety lead | Practitioner guidance on cadence, wording, and consequence design |
+| 3 | Lived-experience research, including people who have experienced unwanted escalation | Product + research | What users want, fear, and would find intrusive |
+| 4 | Harm modelling for a missed check-in that was benign (holiday, phone lost, simply busy) | Clinical + product | Documented harm model |
+| 5 | Harm modelling for a check-in arrangement that gives false reassurance | Clinical + legal | Signed residual-risk acceptance |
+| 6 | UK GDPR analysis: lawful basis, Art. 9 condition, and whether a scheduled arrangement engages Art. 22 | Privacy counsel | Written determination; DPIA addendum |
+| 7 | Abuse and adversarial testing: coerced setup, surveillance-by-proxy, retaliation risk | Safeguarding + security | Red-team report |
+| 8 | Guardian-side burden and consent: what it means to be on the receiving end of a standing arrangement | Safeguarding lead | Guardian consent position |
+| 9 | Independent clinical safety case and hazard log | Clinical safety officer | Approved safety case |
+| 10 | Regulatory positioning under UK MHRA | Legal counsel | Written determination |
 
-**[ASSUMPTION]** Shadow mode (item 8) can be run without additional consent because nothing is sent. **[REVIEW]** — this assumption is likely wrong and must be tested with privacy counsel; running risk inference over mental-health disclosures is itself processing of special-category data.
+**[CONFIRMED]** No item above involves building, evaluating, or shadow-testing a classifier, because no classifier may exist. Any proposal that reintroduces inference — however well governed — falls under §0.1 and is rejected without further review.
 
 ---
 
@@ -138,7 +191,9 @@ Presented as three separate toggles, never bundled into one "I agree":
 
 1. **"I can send a request for my guardian to call me."** — Tier 1. Default: **on** once a guardian is configured.
 2. **"Nova can prepare a request during a conversation, but must ask me to confirm before sending."** — Tier 2. Default: **off**. Opt-in.
-3. **"Nova can contact my guardian automatically if it detects I'm in crisis."** — Tier 3. **Rendered visibly disabled**, with the text: *"Not available. This would need review by qualified clinicians before we'd offer it, and we won't pretend otherwise."*
+3. **"Set up a scheduled check-in with my guardian."** — Tier 3. **Rendered visibly disabled**, with the text: *"Not available yet. This would be a check-in schedule you set up yourself — Nova will never decide on its own that you need help, or contact anyone based on what it thinks about how you're doing."*
+
+**[CONFIRMED]** No option offering automatic, inferred, or detection-based contact may appear in this list in any state — not enabled, not disabled, not "coming soon." Offering it as a future possibility implies the product intends to build it.
 
 **[CONFIRMED]** Option 3's control must be *present and visibly unavailable* rather than hidden. Hiding it invites the assumption that it exists silently; showing it disabled makes the product's limits legible. It must not be enable-able by feature flag alone (§E.7).
 
@@ -673,7 +728,7 @@ The previous failure — copy promising a capability the code did not have — m
 
 1. **Copy is bound to flag state.** Each flag declares a `copyKey`; the UI cannot render capability-claiming copy that is not owned by an enabled flag.
 2. **Capability preconditions.** A flag declares `requiresCapability: ['guardian_dispatch_pipeline']`. The server refuses to report a flag as enabled if the named capability is not registered at boot. A flag cannot be switched on for a feature that does not exist.
-3. **Tier 3 cannot be flag-enabled.** Automatic escalation requires both a flag *and* a signed clinical-approval record present in configuration. Absent that record, the code path is unreachable regardless of flag state.
+3. **No inference path can be flag-enabled, because none exists.** There is no classifier, scorer, or detector in the codebase to gate. The CI check in item 4 additionally fails the build if any module imports or defines wellbeing-classification logic in the guardian path.
 4. **CI check.** A test asserts that every user-facing string claiming an action ("we will contact", "automatically notify") is reachable only under a flag whose capability is registered. This test fails the build otherwise.
 
 ### E.8 Migration from "Guardian Check-In Suggestions"
@@ -685,9 +740,9 @@ The previous failure — copy promising a capability the code did not have — m
 | 3 | Enable Tier 1; update Guardian settings copy to describe the real capability | **[CONFIRMED]** |
 | 4 | Ship Tier 2 behind `guardian_conversational` flag, default off, opt-in per user | **[CONFIRMED]** |
 | 5 | Retire the "Check-In Suggestions" framing once Tier 1+2 are live; the Nova memory note is rewritten to describe real capability | **[CONFIRMED]** |
-| 6 | Tier 3 gate remains visibly disabled with honest copy until §F.9 is complete | **[CONFIRMED]** |
+| 6 | Tier 3 (scheduled check-in) remains visibly disabled with honest copy; no inference capability is built at any point | **[CONFIRMED]** |
 
-**[CONFIRMED]** At no point may the Tier 3 toggle become enable-able as a side effect of steps 1–5.
+**[CONFIRMED]** At no point may the Tier 3 toggle become enable-able as a side effect of steps 1–5, and at no point may any step introduce wellbeing classification.
 
 ### E.9 What already exists in this codebase
 
@@ -747,11 +802,13 @@ Every item requires a **named owner** and a **recorded decision** before launch.
 | 14 | UK GDPR: lawful basis, Art. 9 condition, explicit-consent requirement, Art. 22 analysis, DPIA | Privacy counsel | **[REVIEW]** |
 | 15 | Cross-border transfer position for messaging provider | Privacy counsel | **[REVIEW]** |
 | 16 | Retention periods for alerts, audit, and consent records | Privacy counsel | **[REVIEW]** |
-| 17 | Sign-off that Tier 3 remains disabled and unreachable | Eng lead + clinical lead | **[CONFIRMED]** |
+| 17 | Sign-off that no risk scoring, classification, or inferred safety state exists anywhere in the guardian path (§0.1) | Eng lead + clinical lead | **[CONFIRMED]** |
 
 ### F.9 Tier 3 release gate **[REVIEW]**
 
-Tier 3 may not ship until **all** of: §A.3.1 items 1–10 complete; hazard log closed with residual risk accepted in writing; DPIA addendum approved; independent clinical safety case signed; red-team report closed; lived-experience panel review completed; and a documented, tested kill-switch with defined activation criteria.
+Tier 3 (scheduled check-in support only — never inference) may not ship until **all** of: §A.3.1 items 1–10 complete; hazard log closed with residual risk accepted in writing; DPIA addendum approved; independent clinical safety case signed; red-team report closed; lived-experience panel review completed; and a documented, tested kill-switch with defined activation criteria.
+
+**[CONFIRMED]** This gate does not apply to inference-based escalation, which has no gate because it is excluded outright under §0.1.
 
 ### F.10 Standing recommendation **[CONFIRMED]**
 
@@ -773,7 +830,7 @@ Severity: 1 (negligible) – 5 (catastrophic). Likelihood: 1 (remote) – 5 (fre
 
 | # | Hazard | Who is harmed | Failure mode | Sev | Lik | Mitigation | Residual | Owner | Evidence needed |
 |---|---|---|---|---|---|---|---|---|---|
-| 1 | False-positive guardian contact | User; guardian; relationship | Alert sent when user did not want it | 4 | 1 (MVP) | No inferred sends in MVP; explicit confirmation required; deterministic dispatch (§D.8) | Low in MVP; **high if Tier 3 ships** | Clinical lead | Tier 3 shadow-mode precision data |
+| 1 | False-positive guardian contact | User; guardian; relationship | Alert sent when user did not want it | 4 | 1 | No inferred sends anywhere in the product (§0.1); explicit confirmation required; deterministic dispatch (§D.8) | Low — the inference class of this hazard is designed out, not mitigated | Clinical lead | Confirmation-path E2E evidence |
 | 2 | False negative — no alert in genuine crisis | User | User unable to act; nothing sent | 5 | 3 | Product does not claim to detect; crisis resources always shown; one-tap kept maximally reachable | **Accepted, documented** | Clinical lead | Written residual-risk acceptance |
 | 3 | Guardian is abusive, coercive, or unsafe | User | Alert discloses distress to a dangerous person | 5 | 2 | Safe-contact check before entry (§B.2); silent removal; no guardian notification on change | Medium | Safeguarding lead | Safeguarding review of setup flow |
 | 4 | Guardian unavailable or ignores message | User | No human response; user believes help is coming | 4 | 4 | Honest status copy (§C.7); backup contact; alternative resources always offered | Medium | Product | Copy validated with users |
@@ -787,7 +844,7 @@ Severity: 1 (negligible) – 5 (catastrophic). Likelihood: 1 (remote) – 5 (fre
 | 12 | Under-18 use | Minor; guardians | Consent validity; safeguarding duties unmet | 5 | 3 | Age policy required before launch | **Unresolved** | Safeguarding + legal | Item F.2 decision |
 | 13 | Cross-border messaging / data transfer | User | Unlawful transfer of special-category data | 3 | 2 | Twilio UK IDTA + SCCs + DPF confirmed; provider abstraction allows regional change | Low | Privacy counsel | Transfer assessment on file |
 | 14 | Over-reliance on Nova instead of emergency care | User | Delay in accessing appropriate care | 5 | 3 | Explicit non-emergency framing at setup and in crisis copy; emergency options always present | Medium | Clinical lead | Copy comprehension testing |
-| 15 | Inactivity misread as crisis | User | Unwanted contact; user stops using app honestly | 4 | 1 (MVP) | **No inactivity monitoring in MVP** (§C.4) | None in MVP | Product | N/A unless Tier 3 proceeds |
+| 15 | Inactivity treated as evidence of danger | User | Unwanted contact; user stops using the app honestly | 4 | 1 | **Prohibited outright** (§0.1). No inactivity monitoring exists. Any future check-in feature treats a missed check-in as a missed check-in only, never as proof of danger | None | Product | §0.1 compliance sign-off |
 | 16 | Malicious actor triggers alerts from compromised account | User; guardian | Harassment; false alarm; loss of trust | 4 | 2 | Auth from token only; App Check; rate limits; full audit; visible user history | Medium | Security | Security test evidence |
 | 17 | Alert sent after consent withdrawn | User | Consent violation | 4 | 2 | Consent re-validated at dispatch time, not cached (§D.2) | Low | Eng lead | Integration test evidence |
 | 18 | Guardian receives alert with no context and calls 999 | User | Unwanted emergency response; loss of autonomy | 4 | 3 | Message wording avoids emergency framing **[REVIEW]** | Medium | Clinical lead | Item F.8 decision |
@@ -796,21 +853,26 @@ Severity: 1 (negligible) – 5 (catastrophic). Likelihood: 1 (remote) – 5 (fre
 
 ## H. MVP recommendation
 
-**Build Tier 1 and Tier 2. Do not build Tier 3.**
+**Build Tier 1 and Tier 2. Do not build any form of inferred escalation, ever.**
 
 | Decision | Recommendation |
 |---|---|
 | One-tap user-initiated guardian call request | **Ship.** Prominent in the crisis UI and directly inside Nova conversations. |
 | Conversational request with explicit confirmation | **Ship**, immediately after Tier 1, opt-in per user. |
-| Silent, automatic, language-based guardian alerts | **Do not ship.** No detection logic in the MVP. |
-| Inactivity or silence as a trigger | **Do not ship.** Not in the MVP, and not without separate clinical, legal, privacy, and user-research approval. |
-| Tier 3 generally | Gate visibly disabled with honest copy until §F.9 is fully satisfied. |
+| Silent, automatic, or language-based guardian alerts | **Excluded permanently** under §0.1. Not deferred — there is no approval path that makes this acceptable. |
+| Inactivity or silence as evidence of danger | **Excluded permanently** under §0.1. |
+| Any risk score, band, safety state, or wellbeing classification | **Excluded permanently** under §0.1, in numeric, categorical, implicit, and proxy forms alike. |
+| Tier 3 (user-configured scheduled check-in) | Research only. Gate visibly disabled until §F.9 is satisfied. This is a planned communication arrangement, not detection. |
 
 **Why this is the right shape, not a hedge:** the value in the story that motivated this feature is not that a system detected something. It is that a trusted person called. Tier 1 delivers that in one tap, today, with no possibility of the system being wrong about someone's state — because it never guesses. Tier 2 makes the same action reachable from inside a conversation, for a person who is talking rather than tapping.
 
-What Tier 3 would add is the case where the user cannot act at all. That is a real and important gap, and it deserves to be closed properly — with clinicians, evidence, and a safety case — rather than approximated with a language model reading someone's words and deciding something it is not qualified to decide.
+There is a real remaining gap: the case where a user cannot act at all. It would be dishonest to pretend Tier 1 and Tier 2 close it.
 
-**Out of scope for this specification [OUT OF SCOPE]:** clinical risk assessment; any suicide- or self-harm-detection model; automated contact with emergency services; location sharing; guardian-side application; passive sensing of any kind (device usage, movement, sleep, typing); and any inactivity-based monitoring.
+But the answer to that gap is not a model guessing. A scheduled check-in the user sets up themselves — knowing exactly when it is due, what happens if they miss it, who gets contacted, and what the message says — closes part of that gap **without any inference at all**, because the user authorised the specific outcome in advance rather than an algorithm deciding it applies to them. That is the only shape worth researching, and it is still subject to full clinical, safeguarding, legal, privacy, security, and lived-experience review before anyone builds it.
+
+**Out of scope for this specification [OUT OF SCOPE]:** clinical risk assessment; any risk score, risk band, danger rating, safety state, or wellbeing classification in any form; any suicide- or self-harm-detection model; sentiment or keyword scoring used as a trigger; inactivity treated as evidence of danger; automated contact with emergency services; location sharing; guardian-side application; and passive sensing of any kind (device usage, movement, sleep, typing).
+
+These are excluded by §0.1, not deferred. No review, approval, or governance process reinstates them.
 
 ---
 
@@ -827,4 +889,35 @@ What Tier 3 would add is the case where the user cannot act at all. That is a re
 | §E.2 | `SafetyPlan` clinical design, or decision to exclude | Clinical safety lead |
 | §F.2 | Under-18 policy | Safeguarding lead + legal |
 | §F.14 | Lawful basis, Art. 9 condition, Art. 22 analysis, DPIA | Privacy counsel |
-| §A.3 / §F.9 | Whether Tier 3 is defensible at all | Clinical safety officer (independent) |
+| §A.3 / §F.9 | Whether a user-configured scheduled check-in is defensible at all | Clinical safety officer (independent) |
+
+---
+
+## Appendix B — Open question: does §0.1 extend to the org wellbeing trend? **[REVIEW]**
+
+Raised for the product owner's decision rather than resolved unilaterally, because the answer is genuinely not mine to assume.
+
+The organisation dashboard contains a feature built separately from Guardian Support: an aggregate **"Wellbeing Concern Trend"**, producing a 0–100 `overallConcern` figure per team, derived from the HSE-aligned climate survey and mood-pulse aggregates.
+
+**The case that §0.1 does not apply:**
+
+- It is **aggregate and k-anonymous**. It never describes an individual, and is suppressed entirely below the org's configured minimum cohort size.
+- It **triggers nothing**. No contact, no outreach, no escalation, no intervention. It is a management-information display.
+- It is **not a model judgement**. It is transparent arithmetic over answers people voluntarily gave to a survey — no inference about anyone's state from their language, silence, or behaviour.
+- It makes **no clinical claim** and is explicitly labelled in the UI as not a prediction.
+
+**The case that it deserves scrutiny anyway:**
+
+- The literal term **"concern score" appears in §0.1's prohibited list.** Even if the underlying mechanism is different in kind, the vocabulary is the one the constraint names.
+- Aggregate today does not guarantee aggregate tomorrow. A future request to "drill into which team members are driving this" would convert it into exactly the thing §0.1 forbids, and the existing scaffolding would make that easy.
+- Language shapes what gets built next. A product that already displays a "concern level" has normalised the concept.
+
+**Recommendation [ASSUMPTION], for the product owner to accept or reject:**
+
+Keep the feature — it is aggregate, consented, non-triggering, and genuinely useful for the structural staffing decisions it was built for — but:
+
+1. **Rename it** away from "concern" toward what it actually measures, e.g. *"Team Climate Trend"* or *"Working Conditions Trend"*, removing the vocabulary §0.1 prohibits.
+2. **Record an explicit architectural decision** that it must never be drilled down to individuals, and that individual-level derivation is prohibited by the same constraint governing Guardian Support.
+3. **Add a CI or code-review check** that the org aggregation path never joins to individual identity.
+
+**[REVIEW]** — this is the product owner's call. It is documented here rather than acted on unilaterally, because the constraint is theirs to interpret and the feature was built to a brief that predates it.
