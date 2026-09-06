@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Download, TrendingUp, Clock, ShieldAlert, Activity, FileText, RefreshCw, Loader2, Layers } from 'lucide-react';
+import { Download, TrendingUp, Clock, ShieldAlert, Activity, FileText, RefreshCw, Loader2, Layers, Sparkles } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { useAuth } from '../lib/auth';
 import { UserStats } from '../types';
@@ -498,7 +498,14 @@ export const ExecutiveBoardReport = ({
             </p>
           </div>
           <div className="relative z-10 flex items-center gap-4 border-t border-border pt-6 mt-6">
-            <img src={user?.photoURL || "https://i.pravatar.cc/150?u=nova_exec"} alt="Nova" className="w-10 h-10 rounded-full border border-border grayscale" />
+            {/* Nova is an AI, so it gets an icon rather than a face. This
+                previously rendered user?.photoURL - the reader's own photo -
+                next to "Coach Nova", attributing the AI's analysis to them,
+                and fell back to a stranger's photo from an external avatar
+                service when they had none. */}
+            <div className="w-10 h-10 rounded-full border border-border bg-primary/10 text-[#9a3412] dark:text-primary flex items-center justify-center shrink-0" aria-hidden="true">
+              <Sparkles className="w-5 h-5" />
+            </div>
             <div>
               <p className="text-sm font-bold text-text-main">Coach Nova</p>
               <p className="text-xs text-text-muted uppercase tracking-widest mt-0.5">Lead Recovery Architect</p>

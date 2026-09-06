@@ -918,22 +918,65 @@ export const HomeSection = ({
     network: (
       <SmartCard id="network" key="network" title="Guardian Network" energyDrain="low" onDragStart={handleDragStart} onDragOver={handleDragOver} onDrop={(e, id) => handleDrop(e, id, 'right')} onMoveUp={handleMoveUp} onMoveDown={handleMoveDown} isFirst={isFirstInCol('network')} isLast={isLastInCol('network')} className="p-6">
         <h3 className="text-xs font-black text-text-muted uppercase tracking-widest mb-6 px-1">Guardian Network</h3>
-        <div className="flex items-center gap-4">
-          <div className="flex -space-x-3">
-            {[1, 2, 3].map((i) => (
-              <div key={i} className="w-12 h-12 rounded-2xl border-4 border-surface dark:border-surface bg-border overflow-hidden shadow-xl hover:scale-110 hover:z-20 transition-all duration-300 cursor-pointer">
-                <img src={`https://i.pravatar.cc/100?u=${i + 10}`} alt="Guardian" className="w-full h-full object-cover" />
+        {(() => {
+          // Real guardians from the user's own support circle. This widget
+          // previously rendered three photos of strangers from an external
+          // placeholder avatar service and hardcoded "3 Synchronized",
+          // without ever reading supportCircle - so it showed a full
+          // guardian network to someone who had configured none. In an app
+          // people open when they are struggling, that is a false safety
+          // net on the home screen, which is worse than showing nothing.
+          const guardians = (stats.supportCircle || []).filter(
+            c => c.isGuardian || c.role === 'primary_guardian' || c.role === 'backup_guardian'
+          );
+          const initials = (name: string) =>
+            name.trim().split(/\s+/).map(w => w[0]).slice(0, 2).join('').toUpperCase() || '?';
+
+          if (guardians.length === 0) {
+            return (
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 rounded-2xl bg-surface dark:bg-card border border-border flex items-center justify-center text-text-muted shrink-0">
+                  <Plus className="w-5 h-5" />
+                </div>
+                <div className="flex-1">
+                  <span className="text-xs font-black text-text-muted uppercase tracking-[0.2em] block">No guardians yet</span>
+                  <p className="text-xs text-text-muted font-medium">Add someone you trust in the Ally tab.</p>
+                </div>
               </div>
-            ))}
-            <div className="w-12 h-12 rounded-2xl border-4 border-surface dark:border-surface bg-surface dark:bg-card flex items-center justify-center text-text-muted text-xs font-black shadow-xl hover:bg-primary/5 hover:text-primary transition-all cursor-pointer">
-              +
+            );
+          }
+
+          return (
+            <div className="flex items-center gap-4">
+              <div className="flex -space-x-3">
+                {guardians.slice(0, 3).map((g) => (
+                  <div
+                    key={g.id}
+                    title={g.name}
+                    aria-label={g.relation ? `${g.name} (${g.relation})` : g.name}
+                    className="w-12 h-12 rounded-2xl border-4 border-surface dark:border-surface bg-primary/10 text-[#9a3412] dark:text-primary flex items-center justify-center text-xs font-black shadow-xl"
+                  >
+                    {initials(g.name)}
+                  </div>
+                ))}
+                {guardians.length > 3 && (
+                  <div className="w-12 h-12 rounded-2xl border-4 border-surface dark:border-surface bg-surface dark:bg-card flex items-center justify-center text-text-muted text-xs font-black shadow-xl">
+                    +{guardians.length - 3}
+                  </div>
+                )}
+              </div>
+              <div className="flex-1 ml-2">
+                <span className="text-xs font-black text-primary uppercase tracking-[0.2em] block">
+                  {guardians.length === 1 ? 'Active Guardian' : 'Active Guardians'}
+                </span>
+                <p className="text-xs text-text-muted font-medium truncate">
+                  {guardians.slice(0, 3).map(g => g.name.split(/\s+/)[0]).join(', ')}
+                  {guardians.length > 3 ? ` +${guardians.length - 3} more` : ''}
+                </p>
+              </div>
             </div>
-          </div>
-          <div className="flex-1 ml-2">
-            <span className="text-xs font-black text-primary uppercase tracking-[0.2em] block">Active Guardians</span>
-            <p className="text-xs text-text-muted font-medium">3 Synchronized</p>
-          </div>
-        </div>
+          );
+        })()}
       </SmartCard>
     ),
     radar: <RelapseRadar key="radar" />,
