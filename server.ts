@@ -5020,7 +5020,13 @@ app.post("/api/ally/revoke", verifyAppCheck, authenticateFirebaseUser, async (re
 // support around them.
 // ============================================================================
 
-const NudgeScheduleSchema = z.object({
+// Base object schema WITHOUT the cross-field refinement. Kept separate so
+// the update schema below can call .partial() on it - zod v4 throws if
+// .partial() is called on a schema that already carries a .refine()
+// ("cannot be used on object schemas containing refinements"), which would
+// crash the whole server at module load. The refinement is re-applied to
+// each concrete schema instead.
+const NudgeScheduleBase = z.object({
   contactId: z.string().min(1).max(100),
   contactName: z.string().min(1).max(100),
   contactMethod: z.string().regex(/^\+[1-9]\d{6,14}$/, "Phone number must be in E.164 format, e.g. +15551234567"),
@@ -5037,10 +5043,15 @@ const NudgeScheduleSchema = z.object({
   // have an account), so this is an honest human checkpoint rather than a
   // fabricated "consent verified" claim.
   contactAcknowledged: z.literal(true, { message: "Please confirm you've told this contact to expect these messages." }),
-}).strict().refine(
-  (data) => data.frequency !== 'weekly' || (data.daysOfWeek && data.daysOfWeek.length > 0),
-  { message: "Weekly schedules need at least one day selected.", path: ['daysOfWeek'] }
-);
+}).strict();
+
+// A weekly schedule must name at least one day. When frequency is absent
+// (as it can be in a partial update) there is nothing to check, so it passes.
+const weeklyNeedsDays = (data: { frequency?: 'daily' | 'weekly'; daysOfWeek?: number[] }) =>
+  data.frequency !== 'weekly' || (!!data.daysOfWeek && data.daysOfWeek.length > 0);
+const weeklyNeedsDaysError = { message: "Weekly schedules need at least one day selected.", path: ['daysOfWeek'] };
+
+const NudgeScheduleSchema = NudgeScheduleBase.refine(weeklyNeedsDays, weeklyNeedsDaysError);
 
 app.post("/api/nudge-schedules", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
   try {
@@ -5075,9 +5086,11 @@ app.get("/api/nudge-schedules", verifyAppCheck, authenticateFirebaseUser, async 
   }
 });
 
-const NudgeScheduleUpdateSchema = NudgeScheduleSchema.partial().extend({
+// Built from the un-refined base so .partial() is legal, then the same
+// weekly-days refinement is re-applied.
+const NudgeScheduleUpdateSchema = NudgeScheduleBase.partial().extend({
   contactAcknowledged: z.literal(true).optional(),
-});
+}).refine(weeklyNeedsDays, weeklyNeedsDaysError);
 
 app.patch("/api/nudge-schedules/:id", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
   try {
