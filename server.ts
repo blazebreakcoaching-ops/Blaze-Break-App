@@ -27,6 +27,7 @@ import { toClaudeTools, GeminiStyleToolDeclaration } from './nova-claude-tools';
 import { computeClimateStrain, computeClimateStrainByDimension, computeMoodStrain, computeOverallStrain, computeTrend } from './org-risk-trend';
 import { isRealGuardian, isValidGuardianPhone, buildGuardianCallRequestMessage, extractFirstName } from './guardian-alert';
 import { collectionsForExport, collectionsForErasure } from './user-data-collections';
+import { isValidGad7Answers, scoreGad7, interpretGad7 } from './gad7';
 
 dotenv.config();
 
@@ -585,6 +586,63 @@ app.get("/api/nova/voice-sessions", verifyAppCheck, authenticateFirebaseUser, as
       sessions: snap.docs.map(d => {
         const data = d.data();
         return { endedAt: data.endedAt, durationMs: data.durationMs, turnCount: data.turnCount };
+      }),
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ============ Personal wellbeing tracking — GAD-7 ============
+// A validated self-report anxiety screener the user completes about
+// themselves. Two hard rules, enforced here:
+//   1. STRICTLY PRIVATE to the individual. Stored under the user document and
+//      there is deliberately NO org/aggregate endpoint for it - a person's
+//      GAD-7 result must never reach an employer dashboard.
+//   2. Self-report, not diagnosis, not inference. The user rates themselves;
+//      the server just validates, scores with the standard published bands
+//      (see gad7.ts), and stores the history so they can see their own trend.
+// Nested under the user, so the GDPR export/delete endpoints cover it
+// automatically (it is health data and must be erasable).
+const Gad7Schema = z.object({
+  answers: z.array(z.number().int().min(0).max(3)).length(7),
+  impairment: z.number().int().min(0).max(3).nullable().optional(),
+}).strict();
+
+app.post("/api/wellbeing/gad7", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const uid = requireAuth(req).uid;
+    const parsed = Gad7Schema.safeParse(req.body);
+    if (!parsed.success || !isValidGad7Answers(parsed.data.answers)) {
+      return res.status(400).json({ error: "Invalid GAD-7 submission." });
+    }
+    const score = scoreGad7(parsed.data.answers);
+    const result = interpretGad7(score);
+    const db = getDb();
+    await db.collection("users").doc(uid).collection("gad7_assessments").add({
+      answers: parsed.data.answers,
+      impairment: parsed.data.impairment ?? null,
+      score,
+      severity: result.severity,
+      createdAt: new Date().toISOString(),
+      serverCreatedAt: FieldValue.serverTimestamp(),
+    });
+    res.json({ score, severity: result.severity, severityLabel: result.severityLabel, summary: result.summary, suggestsSupport: result.suggestsSupport });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get("/api/wellbeing/gad7", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const uid = requireAuth(req).uid;
+    const db = getDb();
+    const snap = await db.collection("users").doc(uid).collection("gad7_assessments")
+      .orderBy("createdAt", "desc").limit(60).get();
+    res.json({
+      assessments: snap.docs.map(d => {
+        const data = d.data();
+        return { id: d.id, score: data.score, severity: data.severity, createdAt: data.createdAt };
       }),
     });
   } catch (error: any) {

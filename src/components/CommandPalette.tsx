@@ -31,6 +31,7 @@ const KEYWORDS: Record<string, string[]> = {
   fuel: ['nutrition', 'food', 'eat', 'caffeine', 'hydration', 'gut'],
   reset: ['breathe', 'breathing', 'calm', 'panic', 'overwhelmed', 'ground', 'somatic', 'nervous system'],
   anxiety_reset: ['anxious', 'anxiety', 'panic', 'racing thoughts', 'spiralling', 'worry'],
+  wellbeing: ['gad-7', 'gad7', 'anxiety check', 'anxiety score', 'track anxiety', 'questionnaire', 'assessment', 'screening', 'how am i doing', 'symptoms'],
   communicate: ['boundary', 'boundaries', 'say no', 'script', 'message', 'email', 'assert'],
   reflect: ['journal', 'reflect', 'write', 'thoughts', 'rumination'],
   nova: ['chat', 'talk', 'coach', 'ai', 'nova', 'ask'],

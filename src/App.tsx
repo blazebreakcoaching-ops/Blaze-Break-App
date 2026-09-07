@@ -72,6 +72,7 @@ const NegotiatorTool = lazy(() => import("./components/NegotiatorTool.tsx").then
 const ResourceLibrary = lazy(() => import("./components/ResourceLibrary.tsx").then(m => ({ default: m.ResourceLibrary })));
 const NervousSystemReset = lazy(() => import("./components/NervousSystemReset.tsx").then(m => ({ default: m.NervousSystemReset })));
 const AnxietyResetMode = lazy(() => import("./components/AnxietyResetMode.tsx").then(m => ({ default: m.AnxietyResetMode })));
+const Gad7Check = lazy(() => import("./components/Gad7Check.tsx").then(m => ({ default: m.Gad7Check })));
 
 const MicroRecovery = lazy(() => import("./components/MicroRecovery.tsx").then(m => ({ default: m.MicroRecovery })));
 const SleepBuilder = lazy(() => import("./components/SleepBuilder.tsx").then(m => ({ default: m.SleepBuilder })));
@@ -126,6 +127,7 @@ type ActiveTab =
   | "fuel"
   | "reset"
   | "anxiety_reset"
+  | "wellbeing"
   | "communicate"
   | "reflect"
   | "nova"
@@ -197,6 +199,13 @@ export const ALL_TABS: {
     id: "anxiety_reset",
     icon: HeartPulse,
     label: "Anxiety Reset",
+    roles: ["individual", "employee", "executive"],
+    group: "recovery_tools",
+  },
+  {
+    id: "wellbeing",
+    icon: Activity,
+    label: "Anxiety Check-in",
     roles: ["individual", "employee", "executive"],
     group: "recovery_tools",
   },
@@ -732,6 +741,7 @@ const Header = ({
           {activeTab === "fuel" && "Recovery Fuel"}
           {activeTab === "reset" && "Nervous System Reset Studio"}
           {activeTab === "anxiety_reset" && "Anxiety Reset"}
+          {activeTab === "wellbeing" && "Anxiety Check-in"}
           {activeTab === "communicate" && "Boundary Architect v2.1"}
           {activeTab === "reflect" && "Behavioral Repatterning"}
           {activeTab === "nova" && "AI Recovery Interface"}
@@ -764,6 +774,8 @@ const Header = ({
           "Fast tools when you are overwhelmed, tense, scattered, panicky, angry, flat, or mentally fried."}
         {activeTab === "anxiety_reset" &&
           "A secure somatic handrail to de-escalate nervous system arousal, racing thoughts, and panic loops."}
+        {activeTab === "wellbeing" &&
+          "A short, private, well-established self-check for anxiety — track how you're doing over time. Not a diagnosis; only you ever see it."}
         {activeTab === "communicate" &&
           "Precision scripting to prevent energy siphoning at the source."}
         {activeTab === "reflect" &&
@@ -2050,6 +2062,10 @@ export default function App() {
                   onNavigate={setActiveTab as any}
                 />
               </div>
+            )}
+
+            {activeTab === "wellbeing" && (
+              <Gad7Check onNeedSupport={() => setShowCrisisSupport(true)} />
             )}
 
             {activeTab === "reset" && (
