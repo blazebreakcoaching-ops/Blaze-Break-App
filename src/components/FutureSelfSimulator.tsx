@@ -30,9 +30,11 @@ export const FutureSelfSimulator = ({ fingerprint }: FutureSelfSimulatorProps) =
   };
 
   const getDayRiskStatus = (baseDayOffset: number, mitigatingFactorsCount: number) => {
-    // A simple mock curve: baseline keeps going up (worse) over 7 days.
-    // Mitigations pull it down.
-    
+    // A simple, transparent heuristic (NOT a trained model or a real
+    // forecast): risk drifts upward across the week from the user's own
+    // inputs, and each mitigation the user applies pulls it back down. The
+    // UI is careful to present this as a "what-if sketch", never a prediction.
+
     // baseline risk from 0 to 10
     const baseRisk = 3 + (inputs.meetings > 20 ? 2 : 0) + (inputs.sleep === 1 ? 2 : 0) + (inputs.pressure === 3 ? 2 : 0);
     // risk increases each day
@@ -77,7 +79,7 @@ export const FutureSelfSimulator = ({ fingerprint }: FutureSelfSimulatorProps) =
           Nova Future-Self Simulator
         </h2>
         <p className="text-text-muted text-lg max-w-2xl font-medium leading-relaxed">
-          See where your week is heading before burnout gets there first. Nova forecasts your systemic load and simulates alternative timelines.
+          A what-if sketch of your week from the numbers you enter below — a simple model to think with, not a prediction. Toggle changes like protecting lunch or moving a meeting and watch how the shape shifts.
         </p>
       </div>
 
@@ -227,8 +229,8 @@ export const FutureSelfSimulator = ({ fingerprint }: FutureSelfSimulatorProps) =
                    
                    <p className="text-xl leading-relaxed text-text-muted font-medium italic">
                      {isMitigated 
-                       ? `"With these changes, your overload risk drops from critical red to manageable amber. Structural failure averted."`
-                       : `"If you continue this week exactly as planned, your overload risk rises to critical by Thursday."`
+                       ? `"In this sketch, those changes pull the week from red toward a more manageable amber. Small structural moves add up."`
+                       : `"In this sketch, a week like the one you described tends to build toward overload by mid-week. It's a model to think with, not a certainty."`
                      }
                    </p>
 
@@ -244,7 +246,7 @@ export const FutureSelfSimulator = ({ fingerprint }: FutureSelfSimulatorProps) =
 
              {/* 7-Day Forecast */}
              <div className="space-y-4">
-               <h4 className="text-sm font-black uppercase tracking-widest text-text-main">7-Day Burnout Forecast</h4>
+               <h4 className="text-sm font-black uppercase tracking-widest text-text-main">7-Day What-If Sketch</h4>
                <div className="grid grid-cols-2 lg:grid-cols-7 gap-3">
                  {days.map((day, i) => {
                    const risk = getDayRiskStatus(i, appliedScenarios.length);
@@ -282,7 +284,7 @@ export const FutureSelfSimulator = ({ fingerprint }: FutureSelfSimulatorProps) =
                <div className="flex items-center justify-between">
                  <div>
                    <h4 className="text-xl font-bold font-display text-text-main">Scenario Testing</h4>
-                   <p className="text-sm text-text-muted mt-1">Tap actions to apply proactive mitigation and watch the forecast update.</p>
+                   <p className="text-sm text-text-muted mt-1">Tap actions to apply changes and watch the sketch update.</p>
                  </div>
                  {appliedScenarios.length > 0 && (
                    <button onClick={() => setAppliedScenarios([])} className="text-xs font-bold text-text-muted hover:text-[#9a3412] dark:hover:text-primary transition-colors flex items-center gap-2">

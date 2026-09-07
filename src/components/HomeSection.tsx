@@ -681,7 +681,7 @@ export const HomeSection = ({
           </div>
           <p className="text-text-muted text-lg max-w-lg leading-relaxed font-display">
             {stats.streak < 3
-              ? "Your nervous system requires consistent tracking. Complete your daily pulses to unlock predictive recovery forecasting."
+              ? "Your nervous system responds to consistent tracking. Complete a few daily pulses and your recovery trend over time will start to show here."
               : '"Your nervous system is carrying recovery debt. '}
             {stats.streak >= 3 && (
               <span className="text-text-main font-serif italic">

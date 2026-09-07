@@ -41,7 +41,7 @@ export const DataPrivacyDashboard = ({
       label: 'Calendar Sync (Metadata)',
       category: 'Workload Tracking',
       description: 'Accesses meeting counts, durations, and back-to-back blocks (no meeting contents).',
-      novaUsage: 'Nova predicts fatigue spikes and automatically suggests tactical breaks before overload occurs.',
+      novaUsage: 'Nova surfaces heavy meeting days and back-to-back stretches so you can spot overload and plan a break around it. It does not predict the future or act on your calendar for you.',
       icon: Calendar,
       required: false,
       flagId: 'enable_calendar_sync' as FeatureFlag
