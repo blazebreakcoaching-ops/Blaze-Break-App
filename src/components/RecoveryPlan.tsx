@@ -418,6 +418,12 @@ export const RecoveryPlan = ({
     isUser: true
   };
 
+  // Whether the user has actually logged real recovery-debt data - this used
+  // to be hardcoded to always show "Active" on the locked screen regardless
+  // of whether stats.debts held anything. Checked here for real so the
+  // prerequisite row honestly reflects what's actually been logged.
+  const hasDebtData = (stats.debts || []).length > 0;
+
   // LOCKED STATE RENDER
   if (!fingerprint) {
     return (
@@ -464,17 +470,29 @@ export const RecoveryPlan = ({
 
             <div className="flex items-center justify-between p-3 bg-card border border-border rounded-lg">
               <div className="flex items-center gap-3">
-                <div className="w-6 h-6 rounded-lg bg-success/10 text-[#166534] dark:text-[#4ade80] flex items-center justify-center text-xs font-bold">
-                  ✓
+                <div className={cn(
+                  "w-6 h-6 rounded-lg flex items-center justify-center text-xs font-bold",
+                  hasDebtData ? "bg-success/10 text-[#166534] dark:text-[#4ade80]" : "bg-destructive/10 text-destructive dark:text-[#f87171]"
+                )}>
+                  {hasDebtData ? "✓" : "!"}
                 </div>
                 <div>
                   <p className="text-xs font-bold text-text-main">Recovery Debt tracker</p>
                   <p className="text-[10px] text-text-muted font-semibold">Physiological Audit Matrix</p>
                 </div>
               </div>
-              <span className="text-[10px] text-[#166534] dark:text-[#4ade80] font-black uppercase tracking-widest bg-success/15 border border-success/20 px-2 py-1 rounded-md">
-                Active
-              </span>
+              {hasDebtData ? (
+                <span className="text-[10px] text-[#166534] dark:text-[#4ade80] font-black uppercase tracking-widest bg-success/15 border border-success/20 px-2 py-1 rounded-md">
+                  Active
+                </span>
+              ) : (
+                <button
+                  onClick={() => onNavigateTab('recover')}
+                  className="btn-primary py-1.5 px-4 text-[10px] font-medium uppercase tracking-widest rounded-lg flex items-center gap-1.5"
+                >
+                  Log Debt <ChevronRight className="w-3.5 h-3.5" />
+                </button>
+              )}
             </div>
           </div>
         </motion.div>
