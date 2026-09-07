@@ -4598,6 +4598,17 @@ app.get("/api/org/:orgId/risk-trend", verifyAppCheck, authenticateFirebaseUser, 
     const priorOrgSnapshot = findClosestPrior((h: any) => h.overallConcern);
     const orgTrend = computeTrend(orgSnapshot.overallConcern, priorOrgSnapshot?.overallConcern ?? null);
 
+    // Per-signal direction of travel, for the leading-indicators view. Mood
+    // and climate move at different speeds (mood is the faster, more
+    // volatile early signal), so showing each one's trend separately is the
+    // point - "mood is worsening while climate holds steady" is exactly the
+    // kind of early, structural read this view exists to surface. Aggregate
+    // only; never per person.
+    const priorMood = findClosestPrior((h: any) => h.moodConcern);
+    const moodTrend = computeTrend(orgSnapshot.moodConcern, priorMood?.moodConcern ?? null);
+    const priorClimate = findClosestPrior((h: any) => h.climateConcern);
+    const climateTrend = computeTrend(orgSnapshot.climateConcern, priorClimate?.climateConcern ?? null);
+
     const teamBreakdown: Record<string, OrgStrainSnapshot & { trend: ReturnType<typeof computeTrend> }> = {};
     Object.entries(teamSnapshots).forEach(([team, snap]) => {
       const priorTeamSnapshot = findClosestPrior((h: any) => h.teamConcerns?.[team]);
@@ -4613,6 +4624,8 @@ app.get("/api/org/:orgId/risk-trend", verifyAppCheck, authenticateFirebaseUser, 
       climateConcernByDimension: orgSnapshot.climateConcernByDimension,
       overallConcern: orgSnapshot.overallConcern,
       trend: orgTrend,
+      moodTrend,
+      climateTrend,
       comparedAgainst: priorOrgSnapshot?.recordedAt || null,
       history: history.slice().reverse().map((h: any) => ({ recordedAt: h.recordedAt, overallConcern: h.overallConcern })),
       teamBreakdown,

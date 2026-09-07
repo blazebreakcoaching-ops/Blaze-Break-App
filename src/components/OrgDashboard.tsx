@@ -27,8 +27,12 @@ import {
   Send,
   X,
   Upload,
-  RotateCw
+  RotateCw,
+  ArrowUp,
+  ArrowDown,
+  Minus
 } from 'lucide-react';
+import { buildPrimaryIndicators, buildDimensionIndicators, sortByAttention, LeadingIndicator } from '../../org-leading-indicators';
 import { cn } from '../lib/utils';
 import { OrgDashboardValue } from './OrgDashboardValue';
 import { OrgDashboardMoments } from './OrgDashboardMoments';
@@ -88,6 +92,8 @@ export const OrgDashboard = () => {
     climateConcernByDimension?: Record<string, number> | null;
     overallConcern?: number | null;
     trend?: { direction: 'improving' | 'worsening' | 'stable' | 'unknown'; delta: number | null };
+    moodTrend?: { direction: 'improving' | 'worsening' | 'stable' | 'unknown'; delta: number | null };
+    climateTrend?: { direction: 'improving' | 'worsening' | 'stable' | 'unknown'; delta: number | null };
     comparedAgainst?: string | null;
     history?: { recordedAt: string; overallConcern: number | null }[];
     teamBreakdown?: Record<string, {
@@ -723,6 +729,71 @@ export const OrgDashboard = () => {
                 )}
               </div>
             )}
+
+            {riskTrendData && !riskTrendData.locked && riskTrendData.overallConcern != null && (() => {
+              const indicators = sortByAttention([
+                ...buildPrimaryIndicators({
+                  overall: riskTrendData.overallConcern ?? null,
+                  mood: riskTrendData.moodConcern ?? null,
+                  climate: riskTrendData.climateConcern ?? null,
+                  overallTrend: riskTrendData.trend,
+                  moodTrend: riskTrendData.moodTrend,
+                  climateTrend: riskTrendData.climateTrend,
+                }),
+                ...buildDimensionIndicators(riskTrendData.climateConcernByDimension),
+              ]);
+              const dirIcon = (d: LeadingIndicator['direction']) =>
+                d === 'worsening' ? <ArrowUp className="w-3.5 h-3.5" aria-hidden="true" />
+                : d === 'improving' ? <ArrowDown className="w-3.5 h-3.5" aria-hidden="true" />
+                : <Minus className="w-3.5 h-3.5" aria-hidden="true" />;
+              const sevClasses: Record<string, string> = {
+                elevated: 'bg-destructive/10 text-destructive dark:text-[#f87171] border-destructive/20',
+                moderate: 'bg-warning/10 text-[#9a3412] dark:text-warning border-warning/20',
+                low: 'bg-success/10 text-[#166534] dark:text-[#4ade80] border-success/20',
+              };
+              // Higher strain = worse, so "worsening" (strain rising) is not-good
+              // and "improving" (strain falling) is good.
+              const dirClasses: Record<string, string> = {
+                worsening: 'text-destructive dark:text-[#f87171]',
+                improving: 'text-[#166534] dark:text-[#4ade80]',
+                stable: 'text-text-muted',
+                unknown: 'text-text-muted',
+              };
+              return (
+                <div className="card space-y-6">
+                  <div>
+                    <h4 className="font-bold text-text-main flex items-center gap-2"><LineChartIcon className="w-5 h-5 text-primary" /> Leading Indicators</h4>
+                    <p className="text-xs text-text-muted max-w-2xl leading-relaxed">
+                      Early, structural signals of working conditions — each one's current level and which way it's moving over the last ~4 weeks. Leading indicators shift <em>before</em> hard outcomes, so this is a prompt to look at workload and support, not a prediction of anything. Every figure is aggregate and anonymised across consenting members; nothing here is ever shown per person, and this is not a forecast of absence or any individual outcome.
+                    </p>
+                  </div>
+                  <ul className="space-y-2.5">
+                    {indicators.map((ind) => (
+                      <li key={ind.key} className="flex items-center gap-4 p-4 rounded-xl border border-border bg-surface/60 dark:bg-card/40">
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-bold text-text-main truncate">{ind.label}</p>
+                          <p className={cn('text-xs flex items-center gap-1 mt-0.5', dirClasses[ind.direction])}>
+                            {ind.direction !== 'unknown' && dirIcon(ind.direction)}
+                            <span className="text-text-muted">{ind.note}</span>
+                          </p>
+                        </div>
+                        {ind.severity ? (
+                          <span className={cn('shrink-0 text-[11px] font-black uppercase tracking-widest px-2.5 py-1 rounded-full border', sevClasses[ind.severity])}>
+                            {ind.severity}
+                          </span>
+                        ) : (
+                          <span className="shrink-0 text-[11px] text-text-muted">no data yet</span>
+                        )}
+                        <span className="shrink-0 w-12 text-right font-mono text-sm text-text-main tabular-nums">
+                          {ind.level == null ? '—' : `${ind.level}`}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                  <p className="text-[11px] text-text-muted">Scale 0–100, higher means more strain. Levels: 0–34 low · 35–59 moderate · 60+ elevated. Per-dimension direction isn't shown because the dashboard doesn't retain per-dimension history — we won't infer a trend we can't back up.</p>
+                </div>
+              );
+            })()}
 
             {riskTrendData?.teamBreakdown && Object.keys(riskTrendData.teamBreakdown).length > 0 && (
               <div className="card space-y-6">

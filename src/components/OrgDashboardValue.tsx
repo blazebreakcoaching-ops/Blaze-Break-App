@@ -402,7 +402,10 @@ export const OrgDashboardValue = ({ onNavigateToTrend }: { onNavigateToTrend?: (
                   <h4 className="font-bold text-text-main text-lg">Absence Prediction — Not Yet Available</h4>
                 </div>
                 <p className="text-sm text-text-muted leading-relaxed max-w-2xl">
-                  A genuine version of per-team absence prediction would need actual historical absence records broken down by team, and a real statistical model built and validated against that history — not a plausible-sounding guess. Neither exists yet, so rather than show invented department names and made-up risk percentages, this space stays honestly empty. The <strong className="text-text-main">Resilience Pulse</strong> tab reflects real, currently-available aggregate data instead.
+                  A genuine version of per-team absence prediction would need actual historical absence records broken down by team, and a real statistical model built and validated against that history — not a plausible-sounding guess. Neither exists yet, so rather than show invented department names and made-up risk percentages, this space stays honestly empty.
+                </p>
+                <p className="text-sm text-text-muted leading-relaxed max-w-2xl">
+                  What we <strong className="text-text-main">do</strong> show is the honest, defensible alternative: the <strong className="text-text-main">Leading Indicators</strong> on the main dashboard. These are aggregate, anonymised, team-level signals of working conditions — each with its current level and which way it's moving — that tend to shift <em>before</em> hard outcomes. They're a prompt to look at workload and support early, not a prediction of who will be absent, and they're never shown per person.
                 </p>
               </div>
             </motion.div>
