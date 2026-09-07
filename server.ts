@@ -26,6 +26,7 @@ import { memoryToolIsAllowed, searchMemories, isValidRecoveryDuration, validateM
 import { toClaudeTools, GeminiStyleToolDeclaration } from './nova-claude-tools';
 import { computeClimateStrain, computeClimateStrainByDimension, computeMoodStrain, computeOverallStrain, computeTrend } from './org-risk-trend';
 import { isRealGuardian, isValidGuardianPhone, buildGuardianCallRequestMessage, extractFirstName } from './guardian-alert';
+import { collectionsForExport, collectionsForErasure } from './user-data-collections';
 
 dotenv.config();
 
@@ -5706,10 +5707,10 @@ app.get("/api/user/export", verifyAppCheck, authenticateFirebaseUser, async (req
     // Top-level collections keyed by userId rather than nested under the
     // user document - listCollections() above cannot see these, so they
     // have to be fetched explicitly or they'd be silently missing from a
-    // record that claims to be complete. audit_logs is included here (export
-    // is a portability right) but deliberately excluded from the deletion
-    // endpoint below - see the comment there for why the two lists differ.
-    const strayCollections = ["anxiety_reset_events", "audit_logs"];
+    // record that claims to be complete. The list is the single source of
+    // truth in user-data-collections.ts, guarded by a test that fails if a
+    // new such collection is added to server.ts without being classified.
+    const strayCollections = collectionsForExport();
     await Promise.all(strayCollections.map(async (colName) => {
       const snap = await db.collection(colName).where("userId", "==", user.uid).get();
       data[colName] = snap.docs.map(d => ({ id: d.id, ...d.data() }));
@@ -5761,15 +5762,13 @@ app.post("/api/user/delete-account", verifyAppCheck, authenticateFirebaseUser, a
     // Top-level collections keyed by userId rather than nested under the
     // user document - recursiveDelete above cannot reach these, so they
     // have to be handled explicitly or the data survives a deletion that
-    // claims to remove everything.
-    //
-    // audit_logs is deliberately NOT in this list, unlike its counterpart
-    // in /api/user/export above. It's a compliance trail (records events
-    // like "deletion completed"), and erasing it as part of the very
-    // deletion it would record defeats its purpose - it needs to survive
-    // the account it describes to serve as proof the deletion happened.
-    // This is a product/legal decision, not an oversight.
-    const strayCollections = ["anxiety_reset_events"];
+    // claims to remove everything. Single source of truth in
+    // user-data-collections.ts. Note this list is deliberately a subset of
+    // the export list: audit_logs is exported but NOT erased, because a
+    // compliance trail must outlive the account it records (see the reason
+    // field there). The classification lives in one place, guarded by a
+    // test, rather than as two hand-maintained arrays that can drift.
+    const strayCollections = collectionsForErasure();
     for (const colName of strayCollections) {
       const snap = await db.collection(colName).where("userId", "==", user.uid).get();
       await Promise.all(snap.docs.map(d => d.ref.delete()));

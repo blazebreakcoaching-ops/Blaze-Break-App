@@ -57,6 +57,7 @@ const ReflectSection = lazy(() => import("./components/ReflectSection.tsx").then
 const NovaChat = lazy(() => import("./components/NovaChat.tsx").then(m => ({ default: m.NovaChat })));
 import { Walkthrough } from "./components/Walkthrough.tsx";
 import { CrisisSupportModal, CrisisSupportButton } from "./components/CrisisSupport.tsx";
+import { ErrorBoundary } from "./components/ErrorBoundary.tsx";
 const NovaGuardianRelay = lazy(() => import("./components/NovaGuardianRelay.tsx").then(m => ({ default: m.NovaGuardianRelay })));
 const AllyNudgeScheduler = lazy(() => import("./components/AllyNudgeScheduler.tsx").then(m => ({ default: m.AllyNudgeScheduler })));
 const OrgDashboard = lazy(() => import("./components/OrgDashboard.tsx").then(m => ({ default: m.OrgDashboard })));
@@ -1795,6 +1796,11 @@ export default function App() {
                 <Loader2 className="w-8 h-8 text-primary animate-spin" />
               </div>
             }>
+            {/* Keyed by activeTab so navigating to another section clears a
+                crashed one - a failure in a single view drops to a compact
+                retry panel instead of taking down the whole app, and the
+                persistent crisis-support button in the chrome stays alive. */}
+            <ErrorBoundary level="section" sectionName={activeTab} key={activeTab}>
             <>
             {activeTab === "home" && (
               <HomeSection
@@ -2105,6 +2111,7 @@ export default function App() {
               </div>
             )}
             </>
+            </ErrorBoundary>
             </Suspense>
           </motion.div>
         </AnimatePresence>
