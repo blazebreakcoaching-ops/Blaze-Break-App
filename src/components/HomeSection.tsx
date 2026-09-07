@@ -52,6 +52,7 @@ const GamificationDisplay = lazy(() => import("./GamificationDisplay.tsx").then(
 import { ArchetypeBlend } from "./ArchetypeBlend.tsx";
 import { RecoveryExplanation } from "./RecoveryExplanation.tsx";
 import { RelapseRadar } from "./RelapseRadar.tsx";
+import { NovaCheckinNudge } from "./NovaCheckinNudge.tsx";
 
 const NovaVoiceGuidance = ({ stage }: { stage: SHIPStage }) => {
   const [isPlaying, setIsPlaying] = useState(false);
@@ -1201,6 +1202,9 @@ export const HomeSection = ({
         </div>
       </div>
       <div style={{ transform: `translateY(${isPullRefreshing ? 0 : pullDistance}px)`, transition: isDragging ? "none" : "transform 0.2s ease-out" }}>
+        <div className="pb-6">
+          <NovaCheckinNudge onTalk={onChatRequest} />
+        </div>
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-10 pb-20">
       <div
         className="lg:col-span-2 flex flex-col gap-10 min-h-[500px]"

@@ -533,6 +533,55 @@ app.get("/api/guardian/alerts", verifyAppCheck, authenticateFirebaseUser, async 
   }
 });
 
+// ============ Nova voice-call continuity ============
+// Records only METADATA about a voice call - when it ended, how long it ran,
+// how many turns - never the transcript or anything that was said. This lets
+// the next call greet the person as someone Nova knows without storing the
+// contents of an intimate conversation. Nested under the user document, so
+// the GDPR export/delete endpoints cover it automatically. See
+// voice-continuity.ts for the pure logic that turns this into a greeting.
+const VoiceSessionSchema = z.object({
+  durationMs: z.number().int().min(0).max(24 * 60 * 60 * 1000),
+  turnCount: z.number().int().min(0).max(100000),
+}).strict();
+
+app.post("/api/nova/voice-sessions", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const uid = requireAuth(req).uid;
+    const parsed = VoiceSessionSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: "Invalid voice session record." });
+    }
+    const db = getDb();
+    await db.collection("users").doc(uid).collection("nova_voice_sessions").add({
+      endedAt: new Date().toISOString(),
+      durationMs: parsed.data.durationMs,
+      turnCount: parsed.data.turnCount,
+      createdAt: FieldValue.serverTimestamp(),
+    });
+    res.json({ success: true });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get("/api/nova/voice-sessions", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const uid = requireAuth(req).uid;
+    const db = getDb();
+    const snap = await db.collection("users").doc(uid).collection("nova_voice_sessions")
+      .orderBy("endedAt", "desc").limit(50).get();
+    res.json({
+      sessions: snap.docs.map(d => {
+        const data = d.data();
+        return { endedAt: data.endedAt, durationMs: data.durationMs, turnCount: data.turnCount };
+      }),
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Gemini Initialization
 const apiKey = process.env.GEMINI_API_KEY;
 

@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { auth, getAppCheckToken } from './firebase';
+import { secureApiFetch } from './secure-api';
+import { buildContinuityPreamble, VoiceSessionRecord } from '../../voice-continuity';
 
 // One shared home for the real-time voice-coach client logic, used by every
 // surface that talks to Nova by voice (the full-screen call, the NovaChat
@@ -61,6 +63,12 @@ export function useNovaLiveVoice(options: UseNovaLiveVoiceOptions = {}) {
   const elapsedTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const mutedRef = useRef(false);
   const endedByUserRef = useRef(false);
+  // Continuity: count Nova's turns for the session record, and remember
+  // whether a call actually connected so we only record real calls once.
+  const turnCountRef = useRef(0);
+  const connectedRef = useRef(false);
+  const recordedRef = useRef(false);
+  const continuityPreambleRef = useRef('');
   // The role of the last transcript fragment, so incremental fragments extend
   // the current line and a change of speaker starts a new one.
   const lastTranscriptRoleRef = useRef<'user' | 'nova' | null>(null);
@@ -77,15 +85,29 @@ export function useNovaLiveVoice(options: UseNovaLiveVoiceOptions = {}) {
     if (audioCtxRef.current) { try { audioCtxRef.current.close(); } catch { /* noop */ } audioCtxRef.current = null; }
   }, []);
 
+  // Records METADATA only (duration + turn count), once, and only for a call
+  // that actually connected - never transcript content. Fire-and-forget: a
+  // failed record must never disrupt ending a call.
+  const recordSession = useCallback(() => {
+    if (!connectedRef.current || recordedRef.current) return;
+    recordedRef.current = true;
+    const durationMs = startedAtRef.current ? Date.now() - startedAtRef.current : 0;
+    void secureApiFetch('/api/nova/voice-sessions', {
+      method: 'POST',
+      data: { durationMs, turnCount: turnCountRef.current },
+    }).catch(() => { /* continuity is best-effort */ });
+  }, []);
+
   const stop = useCallback(() => {
     endedByUserRef.current = true;
+    recordSession();
     if (wsRef.current) { try { wsRef.current.close(); } catch { /* noop */ } wsRef.current = null; }
     cleanupAudio();
     setIsNovaSpeaking(false);
     setStatus('idle');
     setElapsedMs(0);
     onEnded?.();
-  }, [cleanupAudio, onEnded]);
+  }, [cleanupAudio, onEnded, recordSession]);
 
   const appendTranscript = useCallback((role: 'user' | 'nova', text: string) => {
     setTranscript((prev) => {
@@ -143,6 +165,9 @@ export function useNovaLiveVoice(options: UseNovaLiveVoiceOptions = {}) {
   const start = useCallback(async () => {
     if (status === 'connecting' || status === 'live') return;
     endedByUserRef.current = false;
+    connectedRef.current = false;
+    recordedRef.current = false;
+    turnCountRef.current = 0;
     setError(null);
     setTranscript([]);
     lastTranscriptRoleRef.current = null;
@@ -153,6 +178,17 @@ export function useNovaLiveVoice(options: UseNovaLiveVoiceOptions = {}) {
       const idToken = await auth.currentUser.getIdToken();
       let appCheckToken = '';
       try { appCheckToken = await getAppCheckToken(); } catch { /* dev bypass allowed server-side */ }
+
+      // Fetch past-call metadata so Nova can open as someone who knows this
+      // person. Best-effort: continuity is a nicety, never a blocker.
+      continuityPreambleRef.current = '';
+      try {
+        const res = await secureApiFetch('/api/nova/voice-sessions', { method: 'GET' });
+        if (res.ok) {
+          const data = await res.json();
+          continuityPreambleRef.current = buildContinuityPreamble((data.sessions || []) as VoiceSessionRecord[], Date.now());
+        }
+      } catch { /* proceed without continuity */ }
 
       const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
       const wsUrl = `${proto}://${window.location.host}/api/nova/live?token=${encodeURIComponent(idToken)}&appCheckToken=${encodeURIComponent(appCheckToken)}`;
@@ -209,10 +245,12 @@ export function useNovaLiveVoice(options: UseNovaLiveVoiceOptions = {}) {
 
       ws.onopen = () => {
         setStatus('live');
+        connectedRef.current = true;
         startedAtRef.current = Date.now();
         setElapsedMs(0);
         elapsedTimerRef.current = setInterval(() => setElapsedMs(Date.now() - startedAtRef.current), 1000);
-        const initial = buildInitialPrompt?.();
+        // Continuity preamble (if any) leads, then the caller's own context.
+        const initial = [continuityPreambleRef.current, buildInitialPrompt?.() || ''].filter(Boolean).join('\n\n');
         if (initial) ws.send(JSON.stringify({ initialPrompt: initial }));
       };
 
@@ -223,7 +261,7 @@ export function useNovaLiveVoice(options: UseNovaLiveVoiceOptions = {}) {
           if (msg.interrupted) handleInterrupt();
           if (msg.userTranscript) appendTranscript('user', msg.userTranscript);
           if (msg.novaTranscript) appendTranscript('nova', msg.novaTranscript);
-          if (msg.turnComplete) lastTranscriptRoleRef.current = null;
+          if (msg.turnComplete) { lastTranscriptRoleRef.current = null; turnCountRef.current += 1; }
           if (msg.error) {
             setError(msg.error);
             setStatus('error');
@@ -244,6 +282,7 @@ export function useNovaLiveVoice(options: UseNovaLiveVoiceOptions = {}) {
       };
 
       ws.onclose = () => {
+        recordSession(); // covers server-ended calls too; idempotent
         cleanupAudio();
         if (!endedByUserRef.current && status !== 'error') {
           setError('The voice session ended unexpectedly. You can reconnect when you’re ready.');
@@ -264,7 +303,7 @@ export function useNovaLiveVoice(options: UseNovaLiveVoiceOptions = {}) {
       }
       setStatus('error');
     }
-  }, [status, buildInitialPrompt, playChunk, handleInterrupt, appendTranscript, cleanupAudio]);
+  }, [status, buildInitialPrompt, playChunk, handleInterrupt, appendTranscript, cleanupAudio, recordSession]);
 
   const toggleMute = useCallback(() => {
     mutedRef.current = !mutedRef.current;
@@ -274,9 +313,10 @@ export function useNovaLiveVoice(options: UseNovaLiveVoiceOptions = {}) {
   // Tear everything down if the host component unmounts mid-call.
   useEffect(() => () => {
     endedByUserRef.current = true;
+    recordSession();
     if (wsRef.current) { try { wsRef.current.close(); } catch { /* noop */ } wsRef.current = null; }
     cleanupAudio();
-  }, [cleanupAudio]);
+  }, [cleanupAudio, recordSession]);
 
   return { status, error, isNovaSpeaking, isMuted, transcript, elapsedMs, start, stop, toggleMute };
 }
