@@ -549,6 +549,36 @@ const ai = new GoogleGenAI({
   }
 });
 
+// The coaching persona for Nova's real-time voice sessions. This is the
+// single biggest lever on whether Nova "sounds like a warm human coach": the
+// Gemini Live model already produces expressive native audio, so this steers
+// HOW it uses that - pacing, warmth, brevity, and the hard safety lines. Kept
+// as a named constant so the voice persona is reviewable in one place rather
+// than buried inline in the socket handler.
+//
+// Safety is deliberately explicit and non-negotiable here, matching the rest
+// of this app: Nova is a coach, not a clinician, and in a real crisis the
+// only right move is to hand off to real human help, not to counsel.
+const NOVA_LIVE_VOICE_PERSONA = `You are Nova, a warm, human-sounding burnout-recovery coach at Blaze Break. You are having a live, spoken conversation - not writing a message.
+
+How you sound:
+- Speak like a real person who genuinely cares, not a script. Warm, grounded, unhurried.
+- Keep turns SHORT - usually one or two sentences. This is a conversation; leave room for the person to talk. Never monologue.
+- Use natural spoken language and light, genuine affirmations ("mm", "that makes sense", "yeah") - but sparingly, the way a good listener does, not as filler.
+- Vary your rhythm. Slow down for something hard. It's fine to pause.
+- Never read lists, headings, markdown, or URLs aloud. If you'd normally format something, just say it plainly.
+- Ask one gentle, open question at a time rather than stacking questions.
+
+How you coach:
+- Listen first. Reflect back what you heard before offering anything.
+- Favour one small, doable next step over a plan. Recovery is built from tiny, real actions.
+- Draw on what you know about this person (their burnout fingerprint, recent history, and your memory of them) when it's given to you, but don't recite it at them.
+- You are a coach and a steadying presence, not a therapist or doctor. Don't diagnose, and don't claim to treat anything.
+
+Safety - this overrides everything above:
+- If the person expresses thoughts of suicide, self-harm, harming someone else, or being in immediate danger, gently and directly encourage them to contact real human help right now - emergency services, or a crisis line like Samaritans on 116 123 in the UK and Ireland, or 988 in the US and Canada. Stay warm, take it seriously, and don't try to counsel them through a crisis yourself.
+- Never fabricate clinical facts or promise outcomes you can't know.`;
+
 // Vertex AI Initialization (same Gemini models, different access path)
 // Reuses the GCP project this app already runs on via Firebase
 // (firebaseConfigProject) rather than requiring a separate project to be
@@ -6444,7 +6474,14 @@ if (process.env.TEST_MODE !== 'true') {
             speechConfig: {
               voiceConfig: { prebuiltVoiceConfig: { voiceName: "Aoede" } }, // Same voice as the existing single-shot TTS endpoint, so Nova sounds consistent everywhere.
             },
-            systemInstruction: "You are Nova, a calm, warm burnout-recovery coach at Blaze Break. Speak conversationally and concisely — this is a live voice conversation, not a written message, so keep responses short and natural to say aloud.",
+            // Native transcription of both sides of the call, relayed to the
+            // client so the voice-call UI can show a live, accessible
+            // transcript (and so a deaf/hard-of-hearing user isn't locked out
+            // of a voice-only feature). This is text ABOUT the audio, not a
+            // second response - the spoken audio remains the real reply.
+            inputAudioTranscription: {},
+            outputAudioTranscription: {},
+            systemInstruction: NOVA_LIVE_VOICE_PERSONA,
           },
           callbacks: {
             onopen: () => {
@@ -6456,8 +6493,24 @@ if (process.env.TEST_MODE !== 'true') {
                 if (message.serverContent?.interrupted) {
                   clientWs.send(JSON.stringify({ interrupted: true }));
                 }
+                // Relay transcript fragments so the client can build a live
+                // caption. These arrive incrementally, so the client appends.
+                const userText = message.serverContent?.inputTranscription?.text;
+                if (userText) {
+                  clientWs.send(JSON.stringify({ userTranscript: userText }));
+                }
+                const novaText = message.serverContent?.outputTranscription?.text;
+                if (novaText) {
+                  clientWs.send(JSON.stringify({ novaTranscript: novaText }));
+                }
                 if (message.data) {
                   clientWs.send(JSON.stringify({ audio: message.data }));
+                }
+                // Marks the end of one of Nova's spoken turns, so the client
+                // can settle its "Nova is speaking" indicator honestly rather
+                // than guessing from audio timing alone.
+                if (message.serverContent?.turnComplete) {
+                  clientWs.send(JSON.stringify({ turnComplete: true }));
                 }
               } catch (e) {
                 console.error("[Nova Live] relay-to-client error:", e);

@@ -1,10 +1,11 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Sparkles, X, Send, Loader2, Maximize2, Minimize2, Mic, MicOff, Volume2 } from 'lucide-react';
+import { Sparkles, X, Send, Loader2, Maximize2, Minimize2, Mic, Volume2 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import ReactMarkdown from 'react-markdown';
 import { getNovaBrain } from '../lib/nova-brain';
 import { secureApiFetch } from '../lib/secure-api';
+import { NovaVoiceCall } from './NovaVoiceCall';
 
 interface OmniNovaProps {
   activeTab: string;
@@ -16,30 +17,22 @@ export const OmniNova = ({ activeTab, fingerprint, stats }: OmniNovaProps) => {
   // Computed once rather than inline in the animate prop - regenerating
   // these on every render would make the waveform's rhythm visibly jump if
   // anything causes this component to re-render while it's showing.
-  const waveformBars = useMemo(() => [...Array(4)].map(() => ({
-    peakHeight: 15 + Math.random() * 20,
-    duration: 0.6 + Math.random() * 0.4,
-  })), []);
   const [isOpen, setIsOpen] = useState(false);
   const [messages, setMessages] = useState<{role: 'user' | 'model', text: string, privacyMetadata?: { contextTriggered: boolean, modulesUsed: string[], rationale: string }}[]>([]);
   const [input, setInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
-  const [isVoiceActive, setIsVoiceActive] = useState(false);
+  // Live voice is a dedicated full-screen call (NovaVoiceCall) driven by the
+  // shared useNovaLiveVoice hook. This component used to run its own inline
+  // WebSocket/audio pipeline that connected WITHOUT the auth token the server
+  // requires - so its live voice was broken in every environment. Routing to
+  // the shared, authenticated call fixes that and gives it the same
+  // AudioWorklet capture, live transcript, and barge-in as everywhere else.
+  const [showVoiceCall, setShowVoiceCall] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  // Live API Refs
-  const wsRef = useRef<WebSocket | null>(null);
-  const audioCtxRef = useRef<AudioContext | null>(null);
-  const streamRef = useRef<MediaStream | null>(null);
-  const processorRef = useRef<ScriptProcessorNode | null>(null);
-  const sourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
-  const nextStartTimeRef = useRef<number>(0);
-  // Dedicated to the speak-aloud TTS feature - kept separate from
-  // audioCtxRef above, which is the live-voice pipeline's microphone/
-  // streaming context at a different sample rate (16000Hz vs the 24000Hz
-  // TTS needs). Sharing one context between the two risked real conflicts
-  // if someone triggers speak-aloud while a live session is active.
+  // Dedicated to the speak-aloud TTS feature (reading a written reply out
+  // loud) - unrelated to the live call above.
   const ttsAudioCtxRef = useRef<AudioContext | null>(null);
   const ttsSourceRef = useRef<AudioBufferSourceNode | null>(null);
   const [speakingIndex, setSpeakingIndex] = useState<number | null>(null);
@@ -71,46 +64,6 @@ export const OmniNova = ({ activeTab, fingerprint, stats }: OmniNovaProps) => {
       ]);
     }
   }, [isOpen, activeTab]);
-
-  const pcmToBase64 = (pcmData: Float32Array) => {
-    const buffer = new ArrayBuffer(pcmData.length * 2);
-    const view = new DataView(buffer);
-    for (let i = 0; i < pcmData.length; i++) {
-      const s = Math.max(-1, Math.min(1, pcmData[i]));
-      view.setInt16(i * 2, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
-    }
-    let binary = '';
-    const bytes = new Uint8Array(buffer);
-    for (let i = 0; i < bytes.byteLength; i++) {
-      binary += String.fromCharCode(bytes[i]);
-    }
-    return window.btoa(binary);
-  };
-
-  const playLiveAudioChunk = (audioCtx: AudioContext, base64: string) => {
-    const binaryString = window.atob(base64);
-    const len = binaryString.length;
-    const bytes = new Uint8Array(len);
-    for (let i = 0; i < len; i++) {
-      bytes[i] = binaryString.charCodeAt(i);
-    }
-    const numSamples = bytes.length / 2;
-    const audioBuffer = audioCtx.createBuffer(1, numSamples, 24000);
-    const channelData = audioBuffer.getChannelData(0);
-    const dataView = new DataView(bytes.buffer);
-    for (let i = 0; i < numSamples; i++) {
-      channelData[i] = dataView.getInt16(i * 2, true) / 32768;
-    }
-    const source = audioCtx.createBufferSource();
-    source.buffer = audioBuffer;
-    source.connect(audioCtx.destination);
-    
-    if (nextStartTimeRef.current < audioCtx.currentTime) {
-      nextStartTimeRef.current = audioCtx.currentTime;
-    }
-    source.start(nextStartTimeRef.current);
-    nextStartTimeRef.current += audioBuffer.duration;
-  };
 
   const stopTtsAudio = () => {
     if (ttsSourceRef.current) {
@@ -181,107 +134,20 @@ export const OmniNova = ({ activeTab, fingerprint, stats }: OmniNovaProps) => {
     }
   };
 
-  const stopVoiceProcess = () => {
-    if (wsRef.current) {
-      wsRef.current.close();
-      wsRef.current = null;
-    }
-    if (processorRef.current) {
-      processorRef.current.disconnect();
-      processorRef.current = null;
-    }
-    if (sourceRef.current) {
-      sourceRef.current.disconnect();
-      sourceRef.current = null;
-    }
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach(t => t.stop());
-      streamRef.current = null;
-    }
-    setIsVoiceActive(false);
-  };
-
-  const toggleVoiceMode = async () => {
-    if (isVoiceActive) {
-      stopVoiceProcess();
-      return;
-    }
-
+  // Context the live call is primed with, mirroring what the old inline path
+  // sent (fingerprint, active tab, Nova's memory).
+  const buildVoiceContext = () => {
+    let brainContext = '';
     try {
-      setIsVoiceActive(true);
-      const wsUrl = `ws${window.location.protocol === 'https:' ? 's' : ''}://${window.location.host}/api/nova/live`;
-      const ws = new WebSocket(wsUrl);
-      wsRef.current = ws;
-
-      const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 });
-      audioCtxRef.current = audioCtx;
-      if (audioCtx.state === 'suspended') await audioCtx.resume();
-      nextStartTimeRef.current = audioCtx.currentTime;
-
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      streamRef.current = stream;
-
-      const source = audioCtx.createMediaStreamSource(stream);
-      sourceRef.current = source;
-      
-      const processor = audioCtx.createScriptProcessor(4096, 1, 1);
-      processorRef.current = processor;
-      
-      source.connect(processor);
-      processor.connect(audioCtx.destination);
-
-      processor.onaudioprocess = (e) => {
-        if (ws.readyState === WebSocket.OPEN) {
-          const base64 = pcmToBase64(e.inputBuffer.getChannelData(0));
-          ws.send(JSON.stringify({ audio: base64 }));
-        }
-      };
-
-      ws.onopen = () => {
-        let brainContext = '';
-        try {
-          const brain = getNovaBrain();
-          if (brain.length > 0) {
-            brainContext = '\nNova Personal Brain Context:\n' + brain.map(mem => `[${mem.type}]: ${mem.content}`).join('\n') + '\n';
-          }
-        } catch(e) {
-          // Non-fatal - proceeds without this piece of context.
-        }
-        
-        ws.send(JSON.stringify({
-          initialPrompt: `User Burnout Fingerprint: ${JSON.stringify(fingerprint || 'Not taken yet')}. Active Context Tab: ${activeTab}. Voice over-watch mode initiated. ${brainContext}Be extremely brief.`
-        }));
-      };
-
-      ws.onmessage = (event) => {
-        try {
-          const msg = JSON.parse(event.data);
-          if (msg.audio) {
-            playLiveAudioChunk(audioCtx, msg.audio);
-          }
-          if (msg.interrupted) {
-            nextStartTimeRef.current = audioCtx.currentTime;
-          }
-        } catch (err) {
-          console.error("Audio msg decode error", err);
-        }
-      };
-
-      ws.onclose = () => {
-        stopVoiceProcess();
-      };
-    } catch (err) {
-      console.error(err);
-      alert("Voice access denied or system error.");
-      stopVoiceProcess();
+      const brain = getNovaBrain();
+      if (brain.length > 0) {
+        brainContext = '\nNova Personal Brain Context:\n' + brain.map(mem => `[${mem.type}]: ${mem.content}`).join('\n') + '\n';
+      }
+    } catch (e) {
+      // Non-fatal - proceeds without this piece of context.
     }
+    return `User Burnout Fingerprint: ${JSON.stringify(fingerprint || 'Not taken yet')}. Active Context Tab: ${activeTab}. ${brainContext}This is a live voice check-in - keep it warm and brief.`;
   };
-
-  useEffect(() => {
-    return () => {
-      stopVoiceProcess();
-    };
-  }, []);
 
   const handleSend = async () => {
     if (!input.trim()) return;
@@ -380,13 +246,13 @@ export const OmniNova = ({ activeTab, fingerprint, stats }: OmniNovaProps) => {
                 </div>
               </div>
               <div className="flex items-center gap-1">
-                <button 
-                  onClick={toggleVoiceMode}
-                  aria-label={isVoiceActive ? "Turn off live voice copilot" : "Turn on live voice copilot"}
-                  className={cn("p-2 rounded-lg transition-colors border", isVoiceActive ? "bg-destructive/20 border-destructive text-destructive animate-pulse" : "border-transparent text-text-muted hover:bg-surface")}
-                  title="Toggle Live Voice Copilot"
+                <button
+                  onClick={() => setShowVoiceCall(true)}
+                  aria-label="Start a live voice call with Nova"
+                  className="p-2 rounded-lg transition-colors border border-transparent text-text-muted hover:bg-surface hover:text-primary"
+                  title="Talk with Nova"
                 >
-                  {isVoiceActive ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
+                  <Mic className="w-4 h-4" />
                 </button>
                 <button 
                   onClick={() => setIsExpanded(!isExpanded)}
@@ -405,33 +271,7 @@ export const OmniNova = ({ activeTab, fingerprint, stats }: OmniNovaProps) => {
               </div>
             </div>
 
-            {isVoiceActive ? (
-              <div className="flex-1 flex flex-col items-center justify-center p-6 bg-surface relative">
-                <div className="w-24 h-24 rounded-full bg-destructive/10 flex items-center justify-center relative shadow-lg shadow-destructive/10">
-                  <motion.div 
-                     animate={{ scale: [1, 1.3, 1], opacity: [0.5, 0.8, 0.5] }}
-                     transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
-                     className="absolute inset-0 bg-destructive/20 rounded-full blur-xl"
-                  />
-                  <Mic className="w-10 h-10 text-destructive relative z-10" />
-                </div>
-                <div className="text-center mt-6 z-10">
-                  <h3 className="text-xl font-display font-bold text-text-main">Live Comm Link Active</h3>
-                  <p className="text-sm text-text-muted mt-2">Speaking with Nova directly.</p>
-                </div>
-                <div className="flex gap-1.5 mt-8 z-10">
-                   {waveformBars.map((bar, i) => (
-                     <motion.div
-                       key={i}
-                       animate={{ height: ["8px", `${bar.peakHeight}px`, "8px"] }}
-                       transition={{ duration: bar.duration, repeat: Infinity, ease: "easeInOut" }}
-                       className="w-1.5 bg-destructive rounded-full"
-                     />
-                   ))}
-                </div>
-                <div className="absolute inset-x-0 bottom-0 top-1/2 bg-gradient-to-t from-destructive/5 to-transparent pointer-events-none" />
-              </div>
-            ) : (
+            {(
               <div role="log" aria-live="polite" aria-relevant="additions" className="flex-1 overflow-y-auto p-4 space-y-4 bg-surface">
                 {messages.map((msg, i) => (
                   <div key={i} className={cn("flex", msg.role === 'user' ? 'justify-end' : 'justify-start')}>
@@ -449,7 +289,7 @@ export const OmniNova = ({ activeTab, fingerprint, stats }: OmniNovaProps) => {
                             <ReactMarkdown>{msg.text}</ReactMarkdown>
                             <button
                               onClick={() => speakText(msg.text, i)}
-                              disabled={isVoiceActive}
+                              disabled={showVoiceCall}
                               aria-label={speakingIndex === i ? "Stop reading message aloud" : "Read message aloud"}
                               aria-pressed={speakingIndex === i}
                               className={cn(
@@ -493,13 +333,13 @@ export const OmniNova = ({ activeTab, fingerprint, stats }: OmniNovaProps) => {
                   value={input}
                   onChange={e => setInput(e.target.value)}
                   onKeyDown={e => e.key === 'Enter' && handleSend()}
-                  disabled={isVoiceActive}
-                  placeholder={isVoiceActive ? "Voice mode enabled..." : "Ask Nova for tactical support..."}
+                  disabled={showVoiceCall}
+                  placeholder={showVoiceCall ? "On a voice call..." : "Ask Nova for tactical support..."}
                   className="flex-1 bg-card border border-border rounded-xl px-4 py-3 text-sm text-text-main placeholder-slate-500 focus:outline-none focus:border-primary transition-colors disabled:"
                 />
                 <button
                   onClick={handleSend}
-                  disabled={!input.trim() || isTyping || isVoiceActive}
+                  disabled={!input.trim() || isTyping || showVoiceCall}
                   aria-label="Send message to Nova"
                   className="w-12 h-12 flex items-center justify-center bg-primary text-primary-foreground rounded-xl disabled:opacity-50 hover:bg-primary-dark transition-colors shrink-0"
                 >
@@ -510,6 +350,12 @@ export const OmniNova = ({ activeTab, fingerprint, stats }: OmniNovaProps) => {
           </motion.div>
         )}
       </AnimatePresence>
+
+      <NovaVoiceCall
+        isOpen={showVoiceCall}
+        onClose={() => setShowVoiceCall(false)}
+        buildInitialPrompt={buildVoiceContext}
+      />
     </>
   );
 };

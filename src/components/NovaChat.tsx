@@ -7,7 +7,6 @@ import {
   Loader2,
   Volume2,
   Mic,
-  MicOff,
   VolumeX,
   Target,
   History as HistoryIcon,
@@ -19,8 +18,9 @@ import ReactMarkdown from "react-markdown";
 import { cn } from "../lib/utils";
 import { getNovaBrain, addNovaMemory } from "../lib/nova-brain";
 import { secureApiFetch } from "../lib/secure-api";
-import { auth, db, getAppCheckToken } from "../lib/firebase";
+import { auth, db } from "../lib/firebase";
 import { doc, getDoc } from "firebase/firestore";
+import { NovaVoiceCall } from "./NovaVoiceCall";
 
 interface Message {
   role: "user" | "model";
@@ -177,7 +177,7 @@ export const NovaChat = ({
     const saved = localStorage.getItem("nova_voice_enabled");
     return saved !== null ? saved === "true" : true;
   });
-  const [isListening, setIsListening] = useState(false);
+  const [showVoiceCall, setShowVoiceCall] = useState(false);
   const [speakingIndex, setSpeakingIndex] = useState<number | null>(null);
   const [audioLoading, setAudioLoading] = useState(false);
   const [activeToolSuggestion, setActiveToolSuggestion] = useState<{
@@ -347,182 +347,38 @@ export const NovaChat = ({
     });
   }, [messages, loading]);
 
-  // Live Audio Setup
-  const wsRef = useRef<WebSocket | null>(null);
-  const liveAudioCtxRef = useRef<AudioContext | null>(null);
-  const streamRef = useRef<MediaStream | null>(null);
-  const processorRef = useRef<ScriptProcessorNode | null>(null);
-  const sourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
-  const nextStartTimeRef = useRef<number>(0);
-
-  const pcmToBase64 = (pcmData: Float32Array) => {
-    const buffer = new ArrayBuffer(pcmData.length * 2);
-    const view = new DataView(buffer);
-    for (let i = 0; i < pcmData.length; i++) {
-      const s = Math.max(-1, Math.min(1, pcmData[i]));
-      view.setInt16(i * 2, s < 0 ? s * 0x8000 : s * 0x7fff, true);
-    }
-    let binary = "";
-    const bytes = new Uint8Array(buffer);
-    for (let i = 0; i < bytes.byteLength; i++) {
-      binary += String.fromCharCode(bytes[i]);
-    }
-    return window.btoa(binary);
-  };
-
-  const playLiveAudioChunk = (audioCtx: AudioContext, base64: string) => {
-    const binaryString = window.atob(base64);
-    const len = binaryString.length;
-    const bytes = new Uint8Array(len);
-    for (let i = 0; i < len; i++) {
-      bytes[i] = binaryString.charCodeAt(i);
-    }
-    const numSamples = bytes.length / 2;
-    const audioBuffer = audioCtx.createBuffer(1, numSamples, 24000);
-    const channelData = audioBuffer.getChannelData(0);
-    const dataView = new DataView(bytes.buffer);
-    for (let i = 0; i < numSamples; i++) {
-      channelData[i] = dataView.getInt16(i * 2, true) / 32768;
-    }
-    const source = audioCtx.createBufferSource();
-    source.buffer = audioBuffer;
-    source.connect(audioCtx.destination);
-
-    if (nextStartTimeRef.current < audioCtx.currentTime) {
-      nextStartTimeRef.current = audioCtx.currentTime;
-    }
-    source.start(nextStartTimeRef.current);
-    nextStartTimeRef.current += audioBuffer.duration;
-  };
-
-  const stopListening = () => {
-    if (wsRef.current) {
-      wsRef.current.close();
-      wsRef.current = null;
-    }
-    if (processorRef.current) {
-      processorRef.current.disconnect();
-      processorRef.current = null;
-    }
-    if (sourceRef.current) {
-      sourceRef.current.disconnect();
-      sourceRef.current = null;
-    }
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach((t) => t.stop());
-      streamRef.current = null;
-    }
-    setIsListening(false);
-  };
-
-  const toggleListening = async () => {
-    if (isListening) {
-      stopListening();
-      return;
-    }
-
+  // Live voice is now a dedicated full-screen call (NovaVoiceCall) driven by
+  // the shared useNovaLiveVoice hook: AudioWorklet capture, streamed playback,
+  // barge-in, a live transcript, mute, and calm in-UI errors (no more browser
+  // alert()). Opening the call is just a flag; all the real-time logic lives
+  // in one place instead of being duplicated here. This builds the context
+  // the call is primed with, unchanged from what the old inline path sent.
+  const buildVoiceContext = () => {
+    let brainContext = "";
     try {
-      setIsListening(true);
-
-      if (!auth.currentUser) {
-        throw new Error("You need to be signed in to use live voice mode.");
+      const brain = getNovaBrain();
+      if (brain.length > 0) {
+        brainContext =
+          "\nNova Personal Brain Context:\n" +
+          brain.map((mem) => `[${mem.type}]: ${mem.content}`).join("\n") +
+          "\n";
       }
-      const idToken = await auth.currentUser.getIdToken();
-      let appCheckToken = "";
-      try {
-        appCheckToken = await getAppCheckToken();
-      } catch (e) {
-        // App Check may not be configured in dev — the server allows a dev bypass in that case.
-      }
-
-      const wsUrl = `ws${window.location.protocol === "https:" ? "s" : ""}://${window.location.host}/api/nova/live?token=${encodeURIComponent(idToken)}&appCheckToken=${encodeURIComponent(appCheckToken)}`;
-      const ws = new WebSocket(wsUrl);
-      wsRef.current = ws;
-
-      const audioCtx = new (
-        window.AudioContext || (window as any).webkitAudioContext
-      )({ sampleRate: 16000 });
-      liveAudioCtxRef.current = audioCtx;
-      if (audioCtx.state === "suspended") await audioCtx.resume();
-      nextStartTimeRef.current = audioCtx.currentTime;
-
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      streamRef.current = stream;
-
-      const source = audioCtx.createMediaStreamSource(stream);
-      sourceRef.current = source;
-
-      const processor = audioCtx.createScriptProcessor(4096, 1, 1);
-      processorRef.current = processor;
-
-      source.connect(processor);
-      processor.connect(audioCtx.destination);
-
-      processor.onaudioprocess = (e) => {
-        if (ws.readyState === WebSocket.OPEN) {
-          const base64 = pcmToBase64(e.inputBuffer.getChannelData(0));
-          ws.send(JSON.stringify({ audio: base64 }));
-        }
-      };
-
-      ws.onopen = () => {
-        let brainContext = "";
-        try {
-          const brain = getNovaBrain();
-          if (brain.length > 0) {
-            brainContext =
-              "\nNova Personal Brain Context:\n" +
-              brain.map((mem) => `[${mem.type}]: ${mem.content}`).join("\n") +
-              "\n";
-          }
-        } catch (e) {
-          // Non-fatal - proceeds without this piece of context.
-        }
-
-        ws.send(
-          JSON.stringify({
-            initialPrompt: `User Burnout Fingerprint: ${JSON.stringify(fingerprint || "Not taken yet")}.
-          Recent chat history: ${messages
-            .slice(-5)
-            .map((m) => m.role + ": " + m.parts[0].text)
-            .join("\n")}.
-          ${brainContext}
-          We are now in real-time voice mode. Be concise and conversational, you don't need to use markdown.`,
-          }),
-        );
-      };
-
-      ws.onmessage = (event) => {
-        try {
-          const msg = JSON.parse(event.data);
-          if (msg.audio) {
-            playLiveAudioChunk(audioCtx, msg.audio);
-          }
-          if (msg.interrupted) {
-            nextStartTimeRef.current = audioCtx.currentTime;
-          }
-          if (msg.error) {
-            console.error("Live session error:", msg.error);
-            stopListening();
-          }
-        } catch (err) {
-          console.error("Audio msg decode error", err);
-        }
-      };
-
-      ws.onclose = () => {
-        stopListening();
-      };
-    } catch (e: any) {
-      console.error("Detailed voice setup error:", e);
-      alert(`Voice mode unavailable: ${e.message}`);
-      stopListening();
+    } catch (e) {
+      // Non-fatal - proceeds without this piece of context.
     }
+    return `User Burnout Fingerprint: ${JSON.stringify(fingerprint || "Not taken yet")}.
+Recent chat history: ${messages
+      .slice(-5)
+      .map((m) => m.role + ": " + m.parts[0].text)
+      .join("\n")}.
+${brainContext}
+We are now in real-time voice mode. Be concise and conversational, you don't need to use markdown.`;
   };
+
+  const openVoiceCall = () => setShowVoiceCall(true);
 
   useEffect(() => {
     return () => {
-      stopListening();
       stopAudio();
     };
   }, []);
@@ -826,59 +682,7 @@ export const NovaChat = ({
         </div>
       </div>
 
-      {isListening ? (
-        <div className="flex-1 flex flex-col items-center justify-center p-8 space-y-12 relative overflow-hidden">
-          <motion.div
-            animate={{ scale: [1, 1.05, 1], rotate: [0, 5, -5, 0] }}
-            transition={{ duration: 6, repeat: Infinity, ease: "easeInOut" }}
-            className="absolute inset-0 bg-gradient-to-tr from-destructive/5 via-transparent to-primary/5 opacity-50"
-          />
-          <div className="space-y-6 text-center relative z-10">
-            <div className="w-32 h-32 mx-auto rounded-full bg-destructive/10 flex items-center justify-center relative shadow-lg shadow-destructive/20">
-              <motion.div
-                animate={{ scale: [1, 1.2, 1], opacity: [0.5, 0.8, 0.5] }}
-                transition={{
-                  duration: 2,
-                  repeat: Infinity,
-                  ease: "easeInOut",
-                }}
-                className="absolute inset-0 bg-destructive/20 rounded-full blur-xl"
-              />
-              <Mic className="w-12 h-12 text-destructive relative z-10" />
-            </div>
-            <div className="space-y-2">
-              <h2 className="text-3xl font-display font-bold text-text-main tracking-tight">
-                Voice Session Active
-              </h2>
-              <p className="text-text-muted font-medium ">
-                Speak naturally. Nova is listening.
-              </p>
-            </div>
-            <div className="flex items-center justify-center gap-2 pt-4">
-              {[...Array(5)].map((_, i) => (
-                <motion.div
-                  key={i}
-                  animate={{
-                    height: ["10px", `${20 + Math.random() * 30}px`, "10px"],
-                  }}
-                  transition={{
-                    duration: 0.8 + Math.random() * 0.5,
-                    repeat: Infinity,
-                    ease: "easeInOut",
-                  }}
-                  className="w-1.5 bg-destructive rounded-full"
-                />
-              ))}
-            </div>
-          </div>
-          <button
-            onClick={toggleListening}
-            className="px-8 py-4 bg-primary text-primary-foreground rounded-full font-bold shadow-xl hover:scale-105 active:scale-95 transition-all relative z-10 flex items-center gap-2"
-          >
-            <MicOff className="w-5 h-5" /> End Conversation
-          </button>
-        </div>
-      ) : (
+      {(
         <div
           ref={scrollRef}
           role="log"
@@ -1324,13 +1128,14 @@ export const NovaChat = ({
       )}
 
       {/* Hide the text input bar during voice session to enforce clean experience */}
-      {!isListening && (
+      {(
         <div className="p-6 border-t border-border font-sans">
           <div className="flex items-center gap-3">
             {voiceFeatureEnabled && (
               <button
-                onClick={toggleListening}
-                aria-label="Toggle voice listening"
+                onClick={openVoiceCall}
+                aria-label="Start a live voice call with Nova"
+                title="Talk with Nova"
                 className="w-12 h-12 rounded-xl border border-border flex items-center justify-center relative overflow-hidden group text-text-muted hover:text-primary hover:border-primary/40 transition-colors cursor-pointer"
               >
                 <Mic className="w-5 h-5" />
@@ -1386,6 +1191,12 @@ export const NovaChat = ({
           </div>
         </div>
       )}
+
+      <NovaVoiceCall
+        isOpen={showVoiceCall}
+        onClose={() => setShowVoiceCall(false)}
+        buildInitialPrompt={buildVoiceContext}
+      />
     </div>
   );
 };
