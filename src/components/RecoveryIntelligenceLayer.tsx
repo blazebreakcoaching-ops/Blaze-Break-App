@@ -1,4 +1,4 @@
-import { ConnectedMoodPulse, ConnectedBodyCheckIn, ConnectedWinsLog, ConnectedGoals, ConnectedEnergyBudget, ConnectedWeeklyReviews } from './ConnectedRecoveryModules.tsx';
+import { ConnectedMoodPulse, ConnectedBodyCheckIn, ConnectedWinsLog, ConnectedGoals, ConnectedEnergyBudget, ConnectedWeeklyReviews, ConnectedBoundaryScripts } from './ConnectedRecoveryModules.tsx';
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useAuth } from '../lib/auth';
@@ -17,7 +17,7 @@ import {
   LineChart,
   Mic,
   MicOff,
-HeartPulse, Star, Wind, RefreshCw, TrendingUp, TrendingDown, Target,
+HeartPulse, Star, Wind, RefreshCw, TrendingUp, TrendingDown, Target, FileText,
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { updateNovaMemoryBySourceAndType } from '../lib/nova-brain';
@@ -752,6 +752,7 @@ export const RecoveryIntelligenceLayer = ({ onAwardPoints, fingerprint }: Recove
             { id: 'social', name: 'Social Battery Tracker', desc: 'Relational load monitor', pill: 'Daily' },
             { id: 'wins', name: 'Wins & Recovery Proof', desc: 'Visible progress ledger', pill: 'Proof' },
             { id: 'goals', name: 'Personal Goals', desc: 'Sleep, boundaries, workload targets', pill: 'Tracked' },
+            { id: 'boundary', name: 'Boundary Scripts', desc: 'Save and reuse pushback scripts', pill: 'Scripts' },
             { id: 'energy', name: 'Energy Capacity Log', desc: 'Category-based allocation history', pill: 'Weekly' },
             { id: 'body', name: 'Body Symptom Check-In', desc: 'Somatic distress logs', pill: 'Somatic' },
             { id: 'weekly', name: 'Weekly Review Ritual', desc: 'Recalibrate weekend values', pill: 'Weekly' },
@@ -1309,6 +1310,31 @@ export const RecoveryIntelligenceLayer = ({ onAwardPoints, fingerprint }: Recove
                     </div>
                   </div>
                   {user ? <ConnectedGoals /> : (
+                    <div className="p-4 bg-surface text-xs text-text-muted rounded-xl flex items-center gap-2">
+                       <Loader2 className="w-3.5 h-3.5 animate-spin" /> Connecting...
+                    </div>
+                  )}
+                </motion.div>
+              )}
+
+              {activeRoom === 'boundary' && (
+                <motion.div
+                  key="boundary"
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -10 }}
+                  className="bg-card border border-border p-6 sm:p-8 rounded-xl"
+                >
+                  <div className="flex items-center gap-3 mb-6">
+                    <div className="w-10 h-10 rounded-xl bg-primary/20 text-[#9a3412] dark:text-primary flex items-center justify-center shrink-0">
+                      <FileText className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h3 className="text-2xl font-display font-black text-text-main mt-1">Boundary Scripts</h3>
+                      <p className="text-xs text-text-muted mt-1">Draft, save, and reuse pushback scripts by scenario - workload, family, client, manager, friend, or personal.</p>
+                    </div>
+                  </div>
+                  {user ? <ConnectedBoundaryScripts /> : (
                     <div className="p-4 bg-surface text-xs text-text-muted rounded-xl flex items-center gap-2">
                        <Loader2 className="w-3.5 h-3.5 animate-spin" /> Connecting...
                     </div>
