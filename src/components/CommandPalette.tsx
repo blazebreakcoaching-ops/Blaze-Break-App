@@ -27,7 +27,7 @@ const KEYWORDS: Record<string, string[]> = {
   home: ['pulse', 'dashboard', 'today', 'overview', 'score'],
   plan: ['recovery plan', 'roadmap', 'steps', 'what to do'],
   diagnose: ['burnout', 'assessment', 'test', 'fingerprint', 'where am i'],
-  recover: ['energy', 'battery', 'budget', 'tired', 'drained', 'rest'],
+  recover: ['energy', 'battery', 'budget', 'tired', 'drained', 'rest', 'habit', 'habits', 'weekly goals', 'recovery hub', 'habit os'],
   fuel: ['nutrition', 'food', 'eat', 'caffeine', 'hydration', 'gut'],
   reset: ['breathe', 'breathing', 'calm', 'panic', 'overwhelmed', 'ground', 'somatic', 'nervous system'],
   anxiety_reset: ['anxious', 'anxiety', 'panic', 'racing thoughts', 'spiralling', 'worry'],

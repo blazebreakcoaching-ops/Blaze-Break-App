@@ -89,6 +89,7 @@ const FaithValuesMode = lazy(() => import("./components/FaithValuesMode.tsx").th
 const OutcomeTracker = lazy(() => import("./components/OutcomeTracker.tsx").then(m => ({ default: m.OutcomeTracker })));
 import { OmniNova } from "./components/OmniNova.tsx";
 const EnergyBudgetMatrix = lazy(() => import("./components/EnergyBudgetMatrix.tsx").then(m => ({ default: m.EnergyBudgetMatrix })));
+const WeeklyGoalTracker = lazy(() => import("./components/WeeklyGoalTracker.tsx").then(m => ({ default: m.WeeklyGoalTracker })));
 const RuminationFurnace = lazy(() => import("./components/RuminationFurnace.tsx").then(m => ({ default: m.RuminationFurnace })));
 import { SettingsModal } from "./components/SettingsModal.tsx";
 const FutureSelfSimulator = lazy(() => import("./components/FutureSelfSimulator.tsx").then(m => ({ default: m.FutureSelfSimulator })));
@@ -1922,6 +1923,7 @@ export default function App() {
 
             {activeTab === "recover" && (
               <div className="space-y-32">
+                <WeeklyGoalTracker onAwardPoints={awardPoints} />
                 <EnergyBudgetMatrix onPointsEarned={awardPoints} />
                 <FocusZone
                   onAwardPoints={awardPoints}
