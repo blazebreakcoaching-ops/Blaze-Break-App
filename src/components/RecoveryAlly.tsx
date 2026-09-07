@@ -179,6 +179,16 @@ export const RecoveryAlly = () => {
         completedDates: nextDates,
         updatedAt: new Date().toISOString(),
       }, { merge: true });
+      if (!wasCompleted) {
+        // Only the act of completing counts as real engagement - toggling
+        // it back off isn't "activity" worth marking fresh.
+        secureApiFetch('/api/user/mark-activity', {
+          method: 'POST',
+          data: { activity: 'recoveryAllyActivity' },
+        }).catch(() => {
+          // Non-fatal - only affects the home recommendation engine's freshness.
+        });
+      }
     } catch (e) {
       await fetchGoals(); // Reconcile with what's actually saved if the write failed.
     }

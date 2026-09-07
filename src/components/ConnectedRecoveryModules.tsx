@@ -240,6 +240,12 @@ export const ConnectedMoodPulse = () => {
         intensity,
         source: 'user'
       });
+      secureApiFetch('/api/user/mark-activity', {
+        method: 'POST',
+        data: { activity: 'moodPulse' },
+      }).catch(() => {
+        // Non-fatal - only affects the home recommendation engine's freshness.
+      });
       fetchHistory();
     } catch(e) { setError('This entry could not be saved.'); }
     setLoading(false);
@@ -676,6 +682,12 @@ export const ConnectedEnergyBudget = () => {
         remainingCapacity,
         categories,
         note
+      });
+      secureApiFetch('/api/user/mark-activity', {
+        method: 'POST',
+        data: { activity: 'energyBudgetUpdate' },
+      }).catch(() => {
+        // Non-fatal - only affects the home recommendation engine's freshness.
       });
       setCategories([]); setNote(''); setAllocatedCapacity(0); setRemainingCapacity(totalCapacity);
       fetchHistory();

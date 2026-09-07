@@ -1223,6 +1223,8 @@ We are now in real-time voice mode. Be concise and conversational, you don't nee
         isOpen={showVoiceCall}
         onClose={() => setShowVoiceCall(false)}
         buildInitialPrompt={buildVoiceContext}
+        onNavigate={onNavigate}
+        onAwardPoints={onAwardPoints}
       />
     </div>
   );

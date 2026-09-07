@@ -6114,6 +6114,16 @@ app.get("/api/user/recommendation", verifyAppCheck, authenticateFirebaseUser, as
       .where("status", "==", "active").get();
     const activeLoad = commitmentsSnap.docs.reduce((sum, d) => sum + (d.data().energyDrain || 0), 0);
 
+    // Whether the user has ever actually used Energy Budget / Recovery Ally
+    // before - without this, a person who has never touched either feature
+    // would show as permanently "stale" (lastEnergyBudgetUpdate/
+    // lastRecoveryAllyActivity undefined -> hoursSince Infinity) and get
+    // nagged toward a tool they've never opened, every single time nothing
+    // else matches. Gating on real prior engagement keeps the reminder
+    // meaningful instead of a blind default.
+    const hasEnergyBudgetHistory = !(await db.collection("users").doc(user.uid).collection("energy_budgets").limit(1).get()).empty;
+    const hasAllyHistory = !(await db.collection("users").doc(user.uid).collection("ally_shared_goals").limit(1).get()).empty;
+
     let recommendation: { tool: string; tab: string; title: string; message: string; points: number; sourcesUsed: string[]; type: string };
 
     if (recentHighSeverity) {
@@ -6167,6 +6177,26 @@ app.get("/api/user/recommendation", verifyAppCheck, authenticateFirebaseUser, as
         message: "It's been a couple of days since your last nervous system reset. Even five minutes of breathing work adds up.",
         points: 15,
         sourcesUsed: ['derived_stats.lastNervousSystemReset'],
+        type: 'recovery_reminder',
+      };
+    } else if (hasEnergyBudgetHistory && hoursSince(stats.lastEnergyBudgetUpdate) > 24 * 10) {
+      recommendation = {
+        tool: 'Energy Budget',
+        tab: 'recover',
+        title: "Your energy budget is out of date",
+        message: "It's been over a week since you last logged an energy budget. A fresh one keeps Nova's read on your capacity honest instead of stale.",
+        points: 15,
+        sourcesUsed: ['derived_stats.lastEnergyBudgetUpdate', 'energy_budgets'],
+        type: 'recovery_reminder',
+      };
+    } else if (hasAllyHistory && hoursSince(stats.lastRecoveryAllyActivity) > 24 * 10) {
+      recommendation = {
+        tool: 'Recovery Ally',
+        tab: 'ally',
+        title: "Your support circle hasn't heard from you",
+        message: "It's been over a week since you checked in on a shared recovery goal. A quick update keeps the people supporting you actually in the loop.",
+        points: 15,
+        sourcesUsed: ['derived_stats.lastRecoveryAllyActivity', 'ally_shared_goals'],
         type: 'recovery_reminder',
       };
     } else {
@@ -6672,11 +6702,28 @@ if (process.env.TEST_MODE !== 'true') {
         return clientWs.close();
       }
 
+      const db = getDb();
+
+      // Same cross-feature awareness packet the text chat endpoint injects
+      // (getNovaContextAndMetadata) - without this, voice-Nova was blind to
+      // everything text-Nova could see: consented check-ins, energy budgets,
+      // mood pulses, derived recovery trends, saved memories. Best-effort by
+      // design (the function itself already degrades to "" on any failure),
+      // so a Firestore hiccup here never blocks the call from starting.
+      const contextResult = await getNovaContextAndMetadata(uid, db);
+      const liveSystemInstruction = NOVA_LIVE_VOICE_PERSONA + contextResult.systemInstructionsAddendum;
+
       // Real per-second cost here (audio in + audio out), so a hard ceiling
       // matters even for a legitimate, authenticated user — 15 minutes is
       // generous for a coaching check-in without leaving a session open
       // indefinitely if a client never explicitly closes it.
       const MAX_SESSION_MS = 15 * 60 * 1000;
+      // A live call has no discrete "turn" boundary the way a single chat
+      // request does, so the per-turn memory-write cap becomes a per-session
+      // one instead - generous enough for a real 15-minute conversation,
+      // still a hard ceiling against a runaway loop of writes.
+      const MAX_VOICE_MEMORY_WRITES = 5;
+      let voiceMemoryWriteCount = 0;
       // sessionTimeout is assigned exactly once, but only after endSession
       // (which reads it via closure) is declared below; TS requires const
       // to initialize immediately, so this can't be a const without
@@ -6718,7 +6765,12 @@ if (process.env.TEST_MODE !== 'true') {
             // second response - the spoken audio remains the real reply.
             inputAudioTranscription: {},
             outputAudioTranscription: {},
-            systemInstruction: NOVA_LIVE_VOICE_PERSONA,
+            systemInstruction: liveSystemInstruction,
+            // Same tool set text chat uses (search_nova_memories,
+            // propose_recovery_action, remember_about_user, suggest_feature),
+            // dispatched through the same executeNovaTool so voice can never
+            // do anything text chat couldn't already do.
+            tools: NOVA_TOOLS_ENABLED ? [{ functionDeclarations: NOVA_TOOLS }] : undefined,
           },
           callbacks: {
             onopen: () => {
@@ -6748,6 +6800,54 @@ if (process.env.TEST_MODE !== 'true') {
                 // than guessing from audio timing alone.
                 if (message.serverContent?.turnComplete) {
                   clientWs.send(JSON.stringify({ turnComplete: true }));
+                }
+                // Function calls from the Live API arrive as a distinct
+                // message shape (message.toolCall), not inline with
+                // serverContent - handled async since dispatching a tool can
+                // mean a Firestore read/write, but onmessage itself stays
+                // synchronous so the audio/transcript relay above is never
+                // delayed by a slow tool call.
+                const functionCalls = message.toolCall?.functionCalls;
+                if (functionCalls && functionCalls.length > 0) {
+                  void (async () => {
+                    const functionResponses = await Promise.all(functionCalls.map(async (call) => {
+                      const name = call.name || "";
+                      const args = (call.args || {}) as Record<string, unknown>;
+                      let output: Record<string, unknown>;
+                      if (name === "remember_about_user") {
+                        // Checked and incremented synchronously before the
+                        // await inside executeNovaTool, same race-safety
+                        // reasoning as the chat loops' per-turn cap.
+                        if (voiceMemoryWriteCount >= MAX_VOICE_MEMORY_WRITES) {
+                          output = { saved: false, error: `Already saved ${MAX_VOICE_MEMORY_WRITES} memories this call - that's enough for one conversation.` };
+                        } else {
+                          voiceMemoryWriteCount++;
+                          output = await executeNovaTool(name, args, uid, db);
+                        }
+                      } else {
+                        output = await executeNovaTool(name, args, uid, db);
+                      }
+                      // Relay a successful feature suggestion to the client the
+                      // same way the text-chat endpoint's planTrace does, so the
+                      // voice call UI can render the same real, validated
+                      // "go there" link - never silent navigation.
+                      if (name === "suggest_feature" && output.suggested) {
+                        try {
+                          clientWs.send(JSON.stringify({
+                            featureSuggestion: { featureId: output.featureId, label: output.label, reason: output.reason },
+                          }));
+                        } catch (e) {
+                          // Best-effort - the call continues even if this relay fails.
+                        }
+                      }
+                      return { id: call.id, name, response: output };
+                    }));
+                    try {
+                      liveSession?.sendToolResponse({ functionResponses });
+                    } catch (e) {
+                      console.error("[Nova Live] failed to send tool response:", e);
+                    }
+                  })();
                 }
               } catch (e) {
                 console.error("[Nova Live] relay-to-client error:", e);

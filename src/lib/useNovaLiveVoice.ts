@@ -19,6 +19,12 @@ export interface TranscriptLine {
   text: string;
 }
 
+export interface VoiceFeatureSuggestion {
+  featureId: string;
+  label: string;
+  reason: string;
+}
+
 export interface UseNovaLiveVoiceOptions {
   // Optional context to prime the session with before the person speaks
   // (burnout fingerprint, recent chat, Nova's memory of them). Returned as a
@@ -49,6 +55,7 @@ export function useNovaLiveVoice(options: UseNovaLiveVoiceOptions = {}) {
   const [isMuted, setIsMuted] = useState(false);
   const [transcript, setTranscript] = useState<TranscriptLine[]>([]);
   const [elapsedMs, setElapsedMs] = useState(0);
+  const [featureSuggestion, setFeatureSuggestion] = useState<VoiceFeatureSuggestion | null>(null);
 
   const wsRef = useRef<WebSocket | null>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
@@ -170,6 +177,7 @@ export function useNovaLiveVoice(options: UseNovaLiveVoiceOptions = {}) {
     turnCountRef.current = 0;
     setError(null);
     setTranscript([]);
+    setFeatureSuggestion(null);
     lastTranscriptRoleRef.current = null;
     setStatus('connecting');
 
@@ -261,6 +269,7 @@ export function useNovaLiveVoice(options: UseNovaLiveVoiceOptions = {}) {
           if (msg.interrupted) handleInterrupt();
           if (msg.userTranscript) appendTranscript('user', msg.userTranscript);
           if (msg.novaTranscript) appendTranscript('nova', msg.novaTranscript);
+          if (msg.featureSuggestion) setFeatureSuggestion(msg.featureSuggestion);
           if (msg.turnComplete) { lastTranscriptRoleRef.current = null; turnCountRef.current += 1; }
           if (msg.error) {
             setError(msg.error);
@@ -310,6 +319,8 @@ export function useNovaLiveVoice(options: UseNovaLiveVoiceOptions = {}) {
     setIsMuted(mutedRef.current);
   }, []);
 
+  const dismissFeatureSuggestion = useCallback(() => setFeatureSuggestion(null), []);
+
   // Tear everything down if the host component unmounts mid-call.
   useEffect(() => () => {
     endedByUserRef.current = true;
@@ -318,5 +329,5 @@ export function useNovaLiveVoice(options: UseNovaLiveVoiceOptions = {}) {
     cleanupAudio();
   }, [cleanupAudio, recordSession]);
 
-  return { status, error, isNovaSpeaking, isMuted, transcript, elapsedMs, start, stop, toggleMute };
+  return { status, error, isNovaSpeaking, isMuted, transcript, elapsedMs, featureSuggestion, dismissFeatureSuggestion, start, stop, toggleMute };
 }
