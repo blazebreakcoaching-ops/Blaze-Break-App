@@ -1,8 +1,18 @@
 import { motion } from 'motion/react';
-import { Trophy, Zap, Star, Award, Sparkles } from 'lucide-react';
+import { Trophy, Zap, Star, Award, Sparkles, Check, Flag, Waves, Target, Shield, ShieldAlert, ShieldCheck, Moon, Battery, type LucideIcon } from 'lucide-react';
 import { UserStats, BADGES, BurnoutFingerprint } from '../types';
-import * as LucideIcons from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, BarChart, Bar } from 'recharts';
+
+// Badge icons are referenced by string name in BADGES (types.ts) and
+// resolved through this explicit map. This used to be `import * as
+// LucideIcons from 'lucide-react'` with a dynamic LucideIcons[name] lookup,
+// which defeated tree-shaking and pulled the ENTIRE ~1500-icon library into
+// the bundle - roughly 600kB, and the single biggest reason the home screen
+// was heavy. Only the icons actually used by badges are imported now. A new
+// badge icon must be added here as well, or it falls back to the Star icon.
+const BADGE_ICONS: Record<string, LucideIcon> = {
+  Award, Flag, Waves, Target, Shield, ShieldAlert, ShieldCheck, Moon, Zap, Battery,
+};
 
 interface GamificationDisplayProps {
   stats: UserStats;
@@ -13,8 +23,8 @@ interface GamificationDisplayProps {
 
 export const GamificationDisplay = ({ stats, fingerprint, shipStage = 'Safety', pulseHistory = [] }: GamificationDisplayProps) => {
   const Icon = (name: string) => {
-    const LucideIcon = (LucideIcons as any)[name];
-    return LucideIcon ? <LucideIcon className="w-4 h-4" /> : <Star className="w-4 h-4" />;
+    const BadgeIcon = BADGE_ICONS[name];
+    return BadgeIcon ? <BadgeIcon className="w-4 h-4" /> : <Star className="w-4 h-4" />;
   };
 
   const lastSeven = (pulseHistory || []).slice(-7);
@@ -165,7 +175,7 @@ export const GamificationDisplay = ({ stats, fingerprint, shipStage = 'Safety', 
                           : 'bg-surface dark:bg-surface text-text-muted'
                     }`}>
                       {isCompleted ? (
-                        <LucideIcons.Check className="w-3 h-3 stroke-[3px]" />
+                        <Check className="w-3 h-3 stroke-[3px]" />
                       ) : (
                         Icon(stageItem.icon)
                       )}
@@ -327,7 +337,7 @@ export const GamificationDisplay = ({ stats, fingerprint, shipStage = 'Safety', 
                     className="absolute -top-1 -right-1"
                   >
                     <div className="bg-teal-500 text-[#1c1917] p-1 rounded-full shadow-lg">
-                      <LucideIcons.Check className="w-2 h-2 stroke-[4px]" />
+                      <Check className="w-2 h-2 stroke-[4px]" />
                     </div>
                   </motion.div>
                 )}

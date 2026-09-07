@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, lazy, Suspense } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import {
   X,
@@ -22,7 +22,16 @@ import {
   Battery,
   Waves,
 } from "lucide-react";
-import { AreaChart, Area, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, XAxis, YAxis } from "recharts";
+// recharts is heavy (pulls in d3); loaded lazily via RecoveryHistoryChart
+// so it stays out of the home-screen bundle until the history card renders.
+const RecoveryHistoryChart = lazy(() => import("./RecoveryHistoryChart.tsx").then(m => ({ default: m.RecoveryHistoryChart })));
+
+// Shared fallback for lazily-loaded chart cards - a quiet placeholder that
+// occupies roughly the chart's height so the card doesn't jump when the
+// real chart arrives.
+const ChartCardFallback = () => (
+  <div className="h-40 w-full flex items-center justify-center text-xs text-text-muted">Loading…</div>
+);
 import { BurnoutFingerprint, UserStats, SHIPStage } from "../types.ts";
 import { cn } from "../lib/utils.ts";
 import { auth, db } from "../lib/firebase";
@@ -33,8 +42,13 @@ import { SmartCard } from "./SmartCard.tsx";
 import { DailyGoal } from "./DailyGoal.tsx";
 import { MicroInterventions } from "./MicroInterventions.tsx";
 import { SomaticCheckInCard } from "./SomaticCheckInCard.tsx";
-import { RecoveryVelocityMap } from "./RecoveryVelocityMap.tsx";
-import { GamificationDisplay } from "./GamificationDisplay.tsx";
+// Both of these render recharts charts (recharts is a large, d3-backed
+// dependency). They're the only two default home-screen cards that pull it
+// in, so loading them lazily keeps recharts out of the initial home-screen
+// bundle - the card frame still paints instantly, only the chart area fills
+// in a moment later behind its own Suspense boundary.
+const RecoveryVelocityMap = lazy(() => import("./RecoveryVelocityMap.tsx").then(m => ({ default: m.RecoveryVelocityMap })));
+const GamificationDisplay = lazy(() => import("./GamificationDisplay.tsx").then(m => ({ default: m.GamificationDisplay })));
 import { ArchetypeBlend } from "./ArchetypeBlend.tsx";
 import { RecoveryExplanation } from "./RecoveryExplanation.tsx";
 import { RelapseRadar } from "./RelapseRadar.tsx";
@@ -744,25 +758,9 @@ export const HomeSection = ({
           </div>
         </div>
         <div className="h-64 w-full">
-          <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={pulseHistory} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-              <defs>
-                <linearGradient id="colorScore" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#ea580c" stopOpacity={0.25}/>
-                  <stop offset="95%" stopColor="#ea580c" stopOpacity={0}/>
-                </linearGradient>
-              </defs>
-              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#a8a29e" opacity={0.25} />
-              <XAxis dataKey="date" tick={{ fill: '#a8a29e', fontSize: 10 }} axisLine={false} tickLine={false} minTickGap={30} />
-              <YAxis tick={{ fill: '#a8a29e', fontSize: 10 }} axisLine={false} tickLine={false} domain={[0, 100]} />
-              <RechartsTooltip
-                contentStyle={{ backgroundColor: '#1c1917', border: '1px solid #3a3532', borderRadius: '8px' }}
-                itemStyle={{ color: '#fff', fontSize: '12px', fontWeight: 500 }}
-                formatter={(value: number) => [`${value}`, 'Score']}
-              />
-              <Area type="monotone" dataKey="score" stroke="#ea580c" strokeWidth={2} fillOpacity={1} fill="url(#colorScore)" activeDot={{ r: 5 }} />
-            </AreaChart>
-          </ResponsiveContainer>
+          <Suspense fallback={<div className="h-full w-full flex items-center justify-center text-xs text-text-muted">Loading chart…</div>}>
+            <RecoveryHistoryChart data={pulseHistory} />
+          </Suspense>
         </div>
       </SmartCard>
     ),
@@ -803,7 +801,9 @@ export const HomeSection = ({
     ),
     velocity: (
       <SmartCard id="velocity" key="velocity" title="Recovery Velocity Map" energyDrain="low" onDragStart={handleDragStart} onDragOver={handleDragOver} onDrop={(e, id) => handleDrop(e, id, 'left')} onMoveUp={handleMoveUp} onMoveDown={handleMoveDown} isFirst={isFirstInCol('velocity')} isLast={isLastInCol('velocity')} className="p-6">
-        <RecoveryVelocityMap />
+        <Suspense fallback={<ChartCardFallback />}>
+          <RecoveryVelocityMap />
+        </Suspense>
       </SmartCard>
     ),
     hub: (
@@ -827,7 +827,7 @@ export const HomeSection = ({
         </div>
       </SmartCard>
     ),
-    gamification: <GamificationDisplay key="gamification" stats={stats} fingerprint={fingerprint} shipStage={shipStage} pulseHistory={pulseHistory} />,
+    gamification: <Suspense key="gamification" fallback={<ChartCardFallback />}><GamificationDisplay stats={stats} fingerprint={fingerprint} shipStage={shipStage} pulseHistory={pulseHistory} /></Suspense>,
     archetypeBlend: <ArchetypeBlend key={`archetypeBlend-${homeRefreshKey}`} />,
     somaticAccelerator: (
       <SomaticCheckInCard

@@ -921,3 +921,15 @@ Keep the feature — it is aggregate, consented, non-triggering, and genuinely u
 3. **Add a CI or code-review check** that the org aggregation path never joins to individual identity.
 
 **[REVIEW]** — this is the product owner's call. It is documented here rather than acted on unilaterally, because the constraint is theirs to interpret and the feature was built to a brief that predates it.
+
+---
+
+### Resolution (product owner: accepted, keep-and-rename)
+
+The recommendation above was accepted. As implemented:
+
+1. **Renamed (done).** The UI now reads *"Team Climate Trend"* and *"Strain Level"* everywhere a person sees it (`OrgDashboard.tsx`), and the computation layer uses `Strain` throughout (`org-risk-trend.ts` and its tests: `computeClimateStrain`, `computeMoodStrain`, `computeOverallStrain`). The word "concern" no longer appears in any user-facing string or in the calculation code.
+
+2. **One deliberate exception — the wire format.** The persisted Firestore field names and the JSON API keys still say `moodConcern` / `climateConcern` / `overallConcern` / `teamConcerns`. This is intentional, **not** an incomplete rename: those names are the on-disk schema of every `risk_trend_history` document already written for any org using the dashboard. Renaming them in place would silently break trend continuity (the month-over-month comparison reads prior snapshots by those keys). **Unifying the wire format to "strain" therefore requires a data migration, not a find-and-replace, and is deliberately deferred until someone chooses to do that migration.** Until then: display and compute say *strain*; storage and API say *concern*. Both `server.ts` and `org-risk-trend.ts` carry inline comments stating this so the split is not mistaken for an oversight.
+
+3. **Architectural decision recorded (done).** `computeStrainSnapshotForCohort` in `server.ts` carries an explicit comment that the snapshot is aggregate-only and must never be computed or exposed for an individual, naming the k-anonymity gate in the route handler (which drops any org or team cohort below the configured threshold before a snapshot is ever computed) as the boundary that enforces it. Recommendation 3 (an automated check that the aggregation path never joins to individual identity) is **not yet implemented** and remains open.

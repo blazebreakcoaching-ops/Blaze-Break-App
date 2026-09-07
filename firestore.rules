@@ -2,7 +2,14 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Phase 1B: Deny all by default
+    // NOTE: this wildcard does NOT create a deny-by-default safety net.
+    // Firestore evaluates rules with OR semantics - access is granted if
+    // ANY matching rule allows it, so an `if false` match can never
+    // override the more specific `allow` rules below it; it is inert. The
+    // real deny-by-default is Firestore's own behaviour: a path that no
+    // rule allows is denied. This block is kept only as an explicit
+    // statement of intent - do not rely on it to lock down a collection,
+    // and do not assume it catches paths the specific rules below miss.
     match /{document=**} {
       allow read, write: if false;
     }
