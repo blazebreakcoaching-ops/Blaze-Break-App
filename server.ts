@@ -56,17 +56,27 @@ if (!getApps().length) {
 
 const app = express();
 app.set('trust proxy', 1);
-const PORT = 3000;
+// Read the port from the environment (Cloud Run and most hosts inject PORT,
+// commonly 8080, and require the app to listen on it), falling back to 3000
+// for local dev so nothing changes when running `npm run dev`.
+const PORT = Number(process.env.PORT) || 3000;
 
 // Set up CORS
 const allowedOrigins = [
   "https://ais-dev-j3n2iqpfdg7zbjgfq4ixfo-398142886217.europe-west2.run.app",
   "https://ais-pre-j3n2iqpfdg7zbjgfq4ixfo-398142886217.europe-west2.run.app",
-  "http://localhost:3000",
-  "http://localhost:5173",
-  "http://127.0.0.1:3000",
-  "http://127.0.0.1:8081"
 ];
+// Local dev origins are only trusted OUTSIDE production. Allowing localhost in
+// a production deployment would let a page served from a developer's machine
+// make cross-origin calls against the live API, so it's gated behind NODE_ENV.
+if (process.env.NODE_ENV !== "production") {
+  allowedOrigins.push(
+    "http://localhost:3000",
+    "http://localhost:5173",
+    "http://127.0.0.1:3000",
+    "http://127.0.0.1:8081",
+  );
+}
 if (process.env.APP_CHECK_DOMAIN) {
   allowedOrigins.push(`https://${process.env.APP_CHECK_DOMAIN}`);
 }
