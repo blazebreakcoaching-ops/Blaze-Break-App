@@ -144,6 +144,15 @@ const apiLimiter = rateLimit({
   validate: { xForwardedForHeader: false, default: true }
 });
 
+const oneLessThingLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 30,
+  message: { error: 'Too many requests, please try again shortly.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+  validate: { xForwardedForHeader: false, default: true }
+});
+
 const speechLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 20, // stricter for speech
@@ -1927,6 +1936,104 @@ You MUST respond strictly in the following JSON format. Do not include markdown 
   } catch (error: any) {
     console.error("Voice Journal API error:", error);
     res.status(500).json({ error: "Voice Journal analysis failed. Please try speaking clearly." });
+  }
+});
+
+// ============ One Less Thing: real Nova analysis ============
+// The "One Less Thing" emergency-relief button used to label a fixed,
+// client-side keyword match (if the task mentions "meeting", suggest
+// Delete; etc.) as "Nova's Recommendation" / "Nova is processing" - real
+// UI copy claiming real-time AI reasoning that was never actually
+// happening. This endpoint makes that claim true: an actual Gemini call
+// reads the task and picks the action. The four possible actions and their
+// meanings are unchanged from the original heuristic; only the reasoning
+// behind the pick is now real. The client keeps its original heuristic as
+// an honestly-labelled fallback if this call fails - never presented as
+// live analysis when it isn't.
+const OneLessThingRequestSchema = z.object({
+  task: z.string().trim().min(1).max(300),
+}).strict();
+
+const ONE_LESS_THING_ACTIONS = ['Delete', 'Delay', 'Delegate', 'Simplify'] as const;
+
+app.post("/api/nova/one-less-thing", oneLessThingLimiter, verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const parsed = OneLessThingRequestSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: "Invalid request." });
+    }
+    const { task } = parsed.data;
+
+    if (!process.env.GEMINI_API_KEY || process.env.GEMINI_API_KEY === "MY_GEMINI_API_KEY") {
+      return res.status(401).json({ error: "Nova analysis is not configured on this server." });
+    }
+
+    const abortController = new AbortController();
+    const timeoutId = setTimeout(() => abortController.abort(), 15000);
+
+    try {
+      const response = await ai.models.generateContent({
+        model: "gemini-3.5-flash",
+        contents: {
+          parts: [{
+            text: `You are Nova, a direct, warm burnout-recovery coach. The user is overloaded right now and has named ONE thing weighing on them. Your job is triage: pick the single fastest way to genuinely take it off their plate today.
+
+The thing on their plate: "${task}"
+
+Choose exactly ONE action:
+- Delete: it doesn't need to happen at all, or not today. Cancel it or make it optional.
+- Delay: it's not actually urgent - move it to a specific later time without guilt.
+- Delegate: someone else can genuinely do this, even imperfectly.
+- Simplify: it must happen, but at far lower effort/fidelity than they're planning.
+
+Then write:
+1. advice: 2 sentences, direct and specific to what they described, in Nova's voice - not generic.
+2. template: a real, ready-to-send message they could copy and paste right now to actually make this happen (e.g. to cancel, delegate, or push back). It must be complete and usable exactly as written - never include a bracket placeholder like "[Tuesday]" or "[name]" that still needs filling in; if you need a day or person, invent a concrete, generic one that reads naturally (e.g. "early next week", "whoever's free").
+
+Respond strictly as JSON, no markdown:
+{"action": "Delete" | "Delay" | "Delegate" | "Simplify", "advice": "...", "template": "..."}`,
+          }],
+        },
+        config: {
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              action: { type: Type.STRING },
+              advice: { type: Type.STRING },
+              template: { type: Type.STRING },
+            },
+            required: ["action", "advice", "template"],
+          },
+        },
+      });
+      clearTimeout(timeoutId);
+
+      const text = response.text;
+      if (!text) throw new Error("Empty response from Gemini model.");
+      const parsedModel = JSON.parse(text);
+
+      // Never trust the model's own claim about its output shape - validate
+      // for real, same as every other tool/model-output path in this app.
+      if (!ONE_LESS_THING_ACTIONS.includes(parsedModel.action) || typeof parsedModel.advice !== "string" || typeof parsedModel.template !== "string") {
+        throw new Error("Model returned an unexpected shape.");
+      }
+
+      res.json({
+        action: parsedModel.action,
+        advice: parsedModel.advice.slice(0, 500),
+        template: parsedModel.template.slice(0, 500),
+      });
+    } catch (modelError: any) {
+      clearTimeout(timeoutId);
+      if (modelError.name === "AbortError") {
+        return res.status(504).json({ error: "Nova's analysis timed out." });
+      }
+      throw modelError;
+    }
+  } catch (error: any) {
+    console.error("One Less Thing API error:", error);
+    res.status(500).json({ error: "Could not reach Nova for analysis right now." });
   }
 });
 
