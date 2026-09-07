@@ -2024,7 +2024,7 @@ export default function App() {
                   User's current stats: Points: ${stats.points}.
                   Recovery Debt Profile: ${JSON.stringify(stats.debts || [])}.
                   Use this data to provide surgical advice. If Sleep Debt is high, recommend rest. If Neural Fatigue is high, recommend deep work blocks or blackout.
-                  Be direct and analytical. Use the user's Burnout Fingerprint archetypes if available.`}
+                  Match the user's preferred communication tone when it's provided in the context below; if the tone ever seems to be landing wrong, it's fine to gently offer to adjust it. Use the user's Burnout Fingerprint archetypes if available.`}
                   initialMessage={
                     fingerprint
                       ? `Hey! As a "${fingerprint.profile}", today's recovery is critical. How can I help you set boundaries?`
@@ -2032,6 +2032,13 @@ export default function App() {
                   }
                   onAwardPoints={awardPoints}
                   onNavigate={setActiveTab as any}
+                  onToneChange={(tone) =>
+                    setStats((prev) =>
+                      prev.profile
+                        ? { ...prev, profile: { ...prev.profile, novaTone: tone } }
+                        : prev,
+                    )
+                  }
                 />
               </div>
             )}
