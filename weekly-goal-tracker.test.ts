@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   DEFAULT_HABIT_GOALS,
   GOAL_COMPLETION_XP,
+  HABIT_CATEGORIES,
   buildDefaultGoals,
   getIsoWeekId,
   clampProgress,
@@ -10,6 +11,17 @@ import {
   computeConsistencyIndex,
   HabitGoal,
 } from './weekly-goal-tracker';
+
+describe('HABIT_CATEGORIES: the five real pillars, matching the defaults exactly', () => {
+  it('every default goal uses a category from the shared list', () => {
+    for (const g of DEFAULT_HABIT_GOALS) {
+      expect(HABIT_CATEGORIES).toContain(g.category);
+    }
+  });
+  it('has exactly the five pillars, no invented sixth "custom" bucket', () => {
+    expect(HABIT_CATEGORIES).toEqual(['Focus', 'Boundaries', 'Energy', 'Somatic', 'Sleep']);
+  });
+});
 
 describe('buildDefaultGoals: honest starting state, not fabricated progress', () => {
   it('has the five default categories with the prototype\'s original targets', () => {
@@ -77,7 +89,7 @@ describe('shouldAwardXp: exactly once, exactly at the moment of completion', () 
 
 describe('countGoalsMet + computeConsistencyIndex: real numbers, not invented ones', () => {
   const goal = (progress: number, target: number): HabitGoal =>
-    ({ id: 'x', category: 'X', label: 'x', target, progress, xpAwarded: false });
+    ({ id: 'x', category: 'Focus', label: 'x', target, progress, xpAwarded: false });
 
   it('counts only goals that have reached their target', () => {
     const goals = [goal(3, 3), goal(1, 3), goal(0, 5), goal(5, 5)];

@@ -2,10 +2,12 @@ import React, { useEffect, useState } from 'react';
 import { motion } from 'motion/react';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { auth, db } from '../lib/firebase';
-import { Target, Shield, Zap, Wind, Moon, Plus, RefreshCw, Minus, Trophy, Loader2 } from 'lucide-react';
+import { Target, Shield, Zap, Wind, Moon, Plus, RefreshCw, Minus, Trophy, Loader2, Trash2 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import {
   HabitGoal,
+  HabitCategory,
+  HABIT_CATEGORIES,
   buildDefaultGoals,
   getIsoWeekId,
   clampProgress,
@@ -27,12 +29,28 @@ interface WeeklyGoalTrackerProps {
   onAwardPoints: (amount: number, reason: string) => void;
 }
 
-const CATEGORY_ICON: Record<string, React.ElementType> = {
+const CATEGORY_ICON: Record<HabitCategory, React.ElementType> = {
   Focus: Target,
   Boundaries: Shield,
   Energy: Zap,
   Somatic: Wind,
   Sleep: Moon,
+};
+
+// Matches the original prototype's per-category color identity (each
+// pillar gets its own accent so the list stays scannable at a glance),
+// re-expressed with this app's real design tokens and its established
+// light/dark pairing convention instead of the original's raw, single-mode
+// Tailwind classes. Indigo is used for Sleep the same way this app already
+// pairs an indigo accent elsewhere (SomaticCheckInCard.tsx) - there's no
+// dedicated "sleep" token, so this borrows the nearest existing precedent
+// rather than inventing an unpaired one-off color.
+const CATEGORY_COLOR: Record<HabitCategory, string> = {
+  Focus: 'text-[#9a3412] dark:text-primary bg-primary/10 border-primary/20',
+  Boundaries: 'text-[#9a3412] dark:text-warning bg-warning/10 border-warning/20',
+  Energy: 'text-[#166534] dark:text-[#4ade80] bg-success/10 border-success/20',
+  Somatic: 'text-info dark:text-info bg-info/10 border-info/20',
+  Sleep: 'text-indigo-700 dark:text-indigo-400 bg-indigo-500/10 border-indigo-500/20',
 };
 
 const cycleRef = (uid: string, weekId: string) => doc(db, 'users', uid, 'weekly_habit_cycles', weekId);
@@ -47,6 +65,12 @@ export const WeeklyGoalTracker = ({ onAwardPoints }: WeeklyGoalTrackerProps) => 
   const [showAddGoal, setShowAddGoal] = useState(false);
   const [newGoalLabel, setNewGoalLabel] = useState('');
   const [newGoalTarget, setNewGoalTarget] = useState(3);
+  const [newGoalCategory, setNewGoalCategory] = useState<HabitCategory>('Focus');
+  // "New Week" discards the current week's real progress with no undo, so it
+  // needs a real confirmation step - an in-app one, not a native
+  // window.confirm(), matching this app's established move away from raw
+  // browser dialogs elsewhere.
+  const [confirmingNewWeek, setConfirmingNewWeek] = useState(false);
 
   const loadCycle = async () => {
     if (!uid) { setLoading(false); return; }
@@ -86,6 +110,7 @@ export const WeeklyGoalTracker = ({ onAwardPoints }: WeeklyGoalTrackerProps) => 
   const startWeek = async () => {
     const fresh = buildDefaultGoals();
     setGoals(fresh);
+    setConfirmingNewWeek(false);
     await persist(fresh);
   };
 
@@ -109,7 +134,7 @@ export const WeeklyGoalTracker = ({ onAwardPoints }: WeeklyGoalTrackerProps) => 
     if (!goals || !newGoalLabel.trim() || newGoalTarget < 1) return;
     const goal: HabitGoal = {
       id: `custom_${Date.now()}`,
-      category: 'Custom',
+      category: newGoalCategory,
       label: newGoalLabel.trim().slice(0, 120),
       target: newGoalTarget,
       progress: 0,
@@ -120,7 +145,17 @@ export const WeeklyGoalTracker = ({ onAwardPoints }: WeeklyGoalTrackerProps) => 
     await persist(next);
     setNewGoalLabel('');
     setNewGoalTarget(3);
+    setNewGoalCategory('Focus');
     setShowAddGoal(false);
+  };
+
+  // Matches the original: any goal can be removed, including a default one -
+  // no artificial distinction between the starter set and a custom addition.
+  const deleteGoal = async (goalId: string) => {
+    if (!goals) return;
+    const next = goals.filter((g) => g.id !== goalId);
+    setGoals(next);
+    await persist(next);
   };
 
   if (loading) {
@@ -144,12 +179,24 @@ export const WeeklyGoalTracker = ({ onAwardPoints }: WeeklyGoalTrackerProps) => 
           </p>
         </div>
         {goals && (
-          <button
-            onClick={startWeek}
-            className="inline-flex items-center gap-1.5 rounded-full border border-border px-3 py-1.5 text-xs font-bold text-text-muted hover:text-primary hover:border-primary/40 transition-colors shrink-0"
-          >
-            <RefreshCw className="w-3.5 h-3.5" aria-hidden="true" /> New Week
-          </button>
+          confirmingNewWeek ? (
+            <div className="flex items-center gap-2 shrink-0">
+              <span className="text-xs font-bold text-text-muted">Reset this week's progress?</span>
+              <button onClick={startWeek} className="rounded-full bg-destructive text-destructive-foreground px-3 py-1.5 text-xs font-bold hover:opacity-90 transition-opacity">
+                Yes, start fresh
+              </button>
+              <button onClick={() => setConfirmingNewWeek(false)} className="text-xs font-bold text-text-muted hover:text-text-main">
+                Cancel
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={() => setConfirmingNewWeek(true)}
+              className="inline-flex items-center gap-1.5 rounded-full border border-border px-3 py-1.5 text-xs font-bold text-text-muted hover:text-primary hover:border-primary/40 transition-colors shrink-0"
+            >
+              <RefreshCw className="w-3.5 h-3.5" aria-hidden="true" /> New Week
+            </button>
+          )
         )}
       </div>
 
@@ -184,20 +231,31 @@ export const WeeklyGoalTracker = ({ onAwardPoints }: WeeklyGoalTrackerProps) => 
                 <div key={g.id} className="rounded-xl border border-border p-4 space-y-3">
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex items-start gap-3 min-w-0">
-                      <div className={cn('w-8 h-8 rounded-lg flex items-center justify-center shrink-0', met ? 'bg-success/10 text-[#166534] dark:text-[#4ade80]' : 'bg-primary/10 text-primary')}>
+                      <div className={cn('w-8 h-8 rounded-lg flex items-center justify-center shrink-0 border', CATEGORY_COLOR[g.category] || 'bg-primary/10 text-primary border-primary/20')}>
                         <Icon className="w-4 h-4" aria-hidden="true" />
                       </div>
                       <div className="min-w-0">
-                        <p className="text-[10px] font-black uppercase tracking-widest text-text-muted">{g.category}</p>
-                        <p className="text-sm font-bold text-text-main">{g.label}</p>
+                        <span className={cn('inline-block text-[10px] font-black uppercase tracking-widest px-2 py-0.5 rounded-md border', CATEGORY_COLOR[g.category])}>
+                          {g.category}
+                        </span>
+                        <p className="text-sm font-bold text-text-main mt-1">{g.label}</p>
                         <p className="text-xs text-text-muted mt-1">Progress this week: {g.progress} / {g.target} ({pct}%)</p>
                       </div>
                     </div>
-                    {met && (
-                      <span className="shrink-0 inline-flex items-center gap-1 text-[10px] font-black uppercase tracking-widest text-[#166534] dark:text-[#4ade80] bg-success/10 border border-success/20 px-2 py-1 rounded-full">
-                        <Trophy className="w-3 h-3" aria-hidden="true" /> +{GOAL_COMPLETION_XP} XP
-                      </span>
-                    )}
+                    <div className="flex items-center gap-2 shrink-0">
+                      {met && (
+                        <span className="inline-flex items-center gap-1 text-[10px] font-black uppercase tracking-widest text-[#166534] dark:text-[#4ade80] bg-success/10 border border-success/20 px-2 py-1 rounded-full">
+                          <Trophy className="w-3 h-3" aria-hidden="true" /> +{GOAL_COMPLETION_XP} XP
+                        </span>
+                      )}
+                      <button
+                        onClick={() => deleteGoal(g.id)}
+                        aria-label={`Remove ${g.label}`}
+                        className="w-7 h-7 rounded-lg flex items-center justify-center text-text-muted hover:text-destructive hover:bg-destructive/10 transition-colors"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" aria-hidden="true" />
+                      </button>
+                    </div>
                   </div>
                   <div className="h-1.5 rounded-full bg-surface dark:bg-surface overflow-hidden">
                     <motion.div
@@ -232,15 +290,29 @@ export const WeeklyGoalTracker = ({ onAwardPoints }: WeeklyGoalTrackerProps) => 
 
           {showAddGoal ? (
             <div className="rounded-xl border border-dashed border-border p-4 space-y-3">
-              <input
-                type="text"
-                value={newGoalLabel}
-                onChange={(e) => setNewGoalLabel(e.target.value)}
-                placeholder="e.g. Take a walk without my phone"
-                maxLength={120}
-                aria-label="New habit goal"
-                className="w-full bg-surface border border-border rounded-lg px-3 py-2 text-sm text-text-main placeholder:text-text-muted focus:outline-none focus:border-primary"
-              />
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <label className="text-xs font-bold text-text-muted block sm:col-span-1">
+                  Pillar
+                  <select
+                    value={newGoalCategory}
+                    onChange={(e) => setNewGoalCategory(e.target.value as HabitCategory)}
+                    className="mt-1 w-full bg-surface border border-border rounded-lg px-2.5 py-2 text-sm text-text-main focus:outline-none focus:border-primary"
+                  >
+                    {HABIT_CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                </label>
+                <label className="text-xs font-bold text-text-muted block sm:col-span-2">
+                  Goal description
+                  <input
+                    type="text"
+                    value={newGoalLabel}
+                    onChange={(e) => setNewGoalLabel(e.target.value)}
+                    placeholder="e.g. Take a walk without my phone"
+                    maxLength={120}
+                    className="mt-1 w-full bg-surface border border-border rounded-lg px-3 py-2 text-sm text-text-main placeholder:text-text-muted focus:outline-none focus:border-primary"
+                  />
+                </label>
+              </div>
               <div className="flex items-center gap-3">
                 <label className="text-xs font-bold text-text-muted flex items-center gap-2">
                   Times per week

@@ -13,9 +13,15 @@
 // computed from what the user has actually logged - a brand new user
 // genuinely starts at 0%, not a fabricated mid-progress figure.
 
+// The five real pillars a habit goal can belong to - both a default goal
+// and a user-added custom one. Matches the original prototype exactly
+// (it offered the same five as a dropdown, no separate "custom" bucket).
+export const HABIT_CATEGORIES = ['Focus', 'Boundaries', 'Energy', 'Somatic', 'Sleep'] as const;
+export type HabitCategory = (typeof HABIT_CATEGORIES)[number];
+
 export interface HabitGoal {
   id: string;
-  category: string; // e.g. "Focus", "Boundaries" - a short display label
+  category: HabitCategory;
   label: string; // the actual goal text, e.g. "Complete 3 Deep Work Focus Zone Blocks"
   target: number; // how many times per week this needs doing
   progress: number; // how many times logged so far this week, 0..target
