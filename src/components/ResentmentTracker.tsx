@@ -108,6 +108,7 @@ export const ResentmentTracker = ({ fingerprint, onAwardPoints, onNavigate }: Re
               value={log}
               onChange={(e) => setLog(e.target.value)}
               placeholder="I feel annoyed because..."
+              aria-label="Log the friction: what is currently annoying you"
               className="w-full h-48 bg-surface dark:bg-surface/50 border border-border/50 rounded-2xl p-6 focus:outline-none focus:border-destructive resize-none text-lg text-text-main placeholder-text-muted/60 mb-6 transition-colors"
               disabled={isAnalyzing || analysis !== null}
             />
@@ -130,7 +131,7 @@ export const ResentmentTracker = ({ fingerprint, onAwardPoints, onNavigate }: Re
             )}
 
             {error && (
-              <p className="text-sm text-destructive mt-3 text-center">{error}</p>
+              <p role="alert" className="text-sm text-destructive mt-3 text-center">{error}</p>
             )}
             
             {analysis && (
@@ -165,6 +166,8 @@ export const ResentmentTracker = ({ fingerprint, onAwardPoints, onNavigate }: Re
                  key="analysis"
                  initial={{ opacity: 0, scale: 0.95 }}
                  animate={{ opacity: 1, scale: 1 }}
+                 role="status"
+                 aria-live="polite"
                  className="card border border-primary/20 bg-primary/5 p-8 relative overflow-hidden h-full"
                >
                  <div className="relative z-10 space-y-8">
@@ -174,14 +177,14 @@ export const ResentmentTracker = ({ fingerprint, onAwardPoints, onNavigate }: Re
                      </div>
                      <div>
                        <h3 className="text-sm font-display font-bold text-text-main tracking-tight">Nova's Diagnosis</h3>
-                       <p className="text-[11px] uppercase tracking-[0.2em] font-black text-primary">Root Cause Extraction</p>
+                       <p className="text-[11px] uppercase tracking-[0.2em] font-black text-[#9a3412] dark:text-primary">Root Cause Extraction</p>
                      </div>
                    </div>
 
                    <div className="space-y-6">
                      <div className="space-y-2">
                        <h4 className="text-xs font-black uppercase tracking-widest text-text-muted flex items-center gap-2">
-                         <span className="w-1.5 h-1.5 rounded-full bg-destructive" />
+                         <span aria-hidden="true" className="w-1.5 h-1.5 rounded-full bg-destructive" />
                          Where you said yes but meant no
                        </h4>
                        <p className="text-text-main font-medium">{analysis.yesMeantNo}</p>
@@ -189,7 +192,7 @@ export const ResentmentTracker = ({ fingerprint, onAwardPoints, onNavigate }: Re
 
                      <div className="space-y-2">
                        <h4 className="text-xs font-black uppercase tracking-widest text-text-muted flex items-center gap-2">
-                         <span className="w-1.5 h-1.5 rounded-full bg-warning" />
+                         <span aria-hidden="true" className="w-1.5 h-1.5 rounded-full bg-warning" />
                          Where expectations are unclear
                        </h4>
                        <p className="text-text-main font-medium">{analysis.unclear}</p>
@@ -197,14 +200,14 @@ export const ResentmentTracker = ({ fingerprint, onAwardPoints, onNavigate }: Re
 
                      <div className="space-y-2">
                        <h4 className="text-xs font-black uppercase tracking-widest text-text-muted flex items-center gap-2">
-                         <span className="w-1.5 h-1.5 rounded-full bg-primary" />
+                         <span aria-hidden="true" className="w-1.5 h-1.5 rounded-full bg-primary" />
                          Feeling unappreciated
                        </h4>
                        <p className="text-text-main font-medium">{analysis.unappreciated}</p>
                      </div>
 
                      <div className="space-y-2 p-4 bg-primary/10 border border-primary/20 rounded-xl">
-                       <h4 className="text-xs font-black uppercase tracking-widest text-primary flex items-center gap-2 mb-2">
+                       <h4 className="text-xs font-black uppercase tracking-widest text-[#9a3412] dark:text-primary flex items-center gap-2 mb-2">
                          <ShieldAlert className="w-4 h-4" />
                          The Missing Boundary
                        </h4>

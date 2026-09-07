@@ -40,7 +40,7 @@ export const EvolutionEngine = () => {
       </div>
 
       {/* Tabs */}
-      <div className="flex items-center gap-2 border-b border-border/40 pb-px">
+      <div className="flex items-center gap-2 border-b border-border/40 pb-px" role="tablist">
         {[
           { id: 'registry', label: 'Feature Registry & Flags', icon: Database },
           { id: 'scanner', label: 'Change Impact Scanner', icon: Search },
@@ -49,6 +49,8 @@ export const EvolutionEngine = () => {
         ].map(tab => (
           <button
             key={tab.id}
+            role="tab"
+            aria-selected={activeTab === tab.id}
             onClick={() => setActiveTab(tab.id as any)}
             className={cn(
               "px-5 py-3 text-sm font-bold flex items-center gap-2 transition-all relative",
@@ -93,8 +95,8 @@ export const EvolutionEngine = () => {
                    <h4 className="font-bold text-lg text-text-main">{feature.name}</h4>
                    <span className={cn(
                      "text-xs uppercase font-black tracking-widest px-2 py-0.5 rounded-full",
-                     feature.status === 'active' ? "bg-success/10 text-success" :
-                     feature.status === 'planned' ? "bg-primary/10 text-primary" :
+                     feature.status === 'active' ? "bg-success/10 text-success dark:text-[#4ade80]" :
+                     feature.status === 'planned' ? "bg-primary/10 text-[#9a3412] dark:text-primary" :
                      "bg-surface/50 text-text-muted"
                    )}>{feature.status}</span>
                  </div>
@@ -108,7 +110,7 @@ export const EvolutionEngine = () => {
                     {feature.data_zone && (
                       <div className="flex items-center justify-between text-xs font-medium text-text-muted bg-surface/30 p-2 rounded-lg">
                         <span>Data Zone:</span>
-                        <span className="text-xs uppercase font-black text-primary tracking-wider">
+                        <span className="text-xs uppercase font-black text-[#9a3412] dark:text-primary tracking-wider">
                           {feature.data_zone.replace(/_/g, ' ')}
                         </span>
                       </div>
@@ -117,8 +119,8 @@ export const EvolutionEngine = () => {
                       <span>Risk Level:</span>
                       <span className={cn(
                         "uppercase font-black tracking-wider text-xs",
-                        feature.riskLevel === 'high' ? 'text-destructive' :
-                        feature.riskLevel === 'medium' ? 'text-warning' : 'text-success'
+                        feature.riskLevel === 'high' ? 'text-destructive dark:text-[#f87171]' :
+                        feature.riskLevel === 'medium' ? 'text-[#9a3412] dark:text-warning' : 'text-[#166534] dark:text-[#4ade80]'
                       )}>{feature.riskLevel}</span>
                     </div>
                  </div>
@@ -132,6 +134,7 @@ export const EvolutionEngine = () => {
                     {feature.status === 'active' && (
                       <button 
                         onClick={() => handleToggleFlag(feature.featureFlagName as FeatureFlag, flags[feature.featureFlagName as FeatureFlag] || false)}
+                        aria-pressed={flags[feature.featureFlagName as FeatureFlag] || false}
                         className={cn(
                           "text-xs font-bold px-3 py-1.5 rounded-lg border flex items-center gap-1.5 transition-all text-text-muted hover:text-text-main border-border/40 cursor-pointer"
                         )}
@@ -178,15 +181,15 @@ export const EvolutionEngine = () => {
                      </span>
                      <span className={cn(
                        "text-xs font-black uppercase tracking-widest text-text-muted flex items-center gap-1",
-                       mem.confidence === 'verified' && "text-success",
-                       mem.confidence === 'high' && "text-primary"
+                       mem.confidence === 'verified' && "text-success dark:text-[#4ade80]",
+                       mem.confidence === 'high' && "text-[#9a3412] dark:text-primary"
                      )}>
                        {mem.confidence === 'verified' ? <CheckCircle2 className="w-3 h-3" /> : null}
                        {mem.confidence} Match
                      </span>
                    </div>
                    {mem.canEdit && (
-                     <button onClick={() => deleteNovaMemory(mem.id)} className="text-xs text-destructive hover:opacity-80 font-medium cursor-pointer">Forget</button>
+                     <button onClick={() => deleteNovaMemory(mem.id)} className="text-xs text-destructive dark:text-[#f87171] hover:opacity-80 font-medium cursor-pointer">Forget</button>
                    )}
                  </div>
                  <p className="text-sm font-medium text-text-main leading-relaxed font-mono">
@@ -217,7 +220,7 @@ export const EvolutionEngine = () => {
                    <span className="text-text-main font-bold">Nova Overload Shield</span>
                  </div>
                  <div className="space-y-2">
-                   <div className="text-xs text-primary uppercase font-black tracking-widest">AFFECTED ROOMS</div>
+                   <div className="text-xs text-[#9a3412] dark:text-primary uppercase font-black tracking-widest">AFFECTED ROOMS</div>
                    <div className="flex gap-2 font-mono text-xs">
                      <span className="px-2 py-1 bg-surface rounded text-text-main border border-border/10">Home</span>
                      <span className="px-2 py-1 bg-surface rounded text-text-main border border-border/10">Energy Budget</span>
@@ -225,7 +228,7 @@ export const EvolutionEngine = () => {
                    </div>
                  </div>
                  <div className="space-y-2">
-                   <div className="text-xs text-success uppercase font-black tracking-widest">PROTECTED CORE (DO NOT TOUCH)</div>
+                   <div className="text-xs text-[#166534] dark:text-[#4ade80] uppercase font-black tracking-widest">PROTECTED CORE (DO NOT TOUCH)</div>
                    <div className="flex gap-2 font-mono text-xs">
                      <span className="px-2 py-1 bg-card border border-border/40 rounded text-text-muted line-through">Guardian Protocol</span>
                      <span className="px-2 py-1 bg-card border border-border/40 rounded text-text-muted line-through">SHIP Logic</span>
@@ -234,9 +237,9 @@ export const EvolutionEngine = () => {
                  <div className="pt-4 mt-4 border-t border-border/20 flex justify-between items-center">
                     <div className="flex items-center gap-2">
                       <AlertTriangle className="w-4 h-4 text-warning" />
-                      <span className="text-xs font-bold text-warning">Risk: MEDIUM</span>
+                      <span className="text-xs font-bold text-[#9a3412] dark:text-warning">Risk: MEDIUM</span>
                     </div>
-                    <span className="text-xs font-mono bg-primary/20 text-primary px-2 py-1 rounded">Flag: enable_overload_shield</span>
+                    <span className="text-xs font-mono bg-primary/20 text-[#9a3412] dark:text-primary px-2 py-1 rounded">Flag: enable_overload_shield</span>
                  </div>
                </div>
              </div>
@@ -254,15 +257,15 @@ export const EvolutionEngine = () => {
             
             <div className="mt-8 grid grid-cols-1 md:grid-cols-3 gap-4 text-left">
                <div className="bg-card p-4 rounded-xl shadow-sm border border-border/40">
-                 <div className="text-xs font-black uppercase text-primary mb-2">Calendar Scanner</div>
+                 <div className="text-xs font-black uppercase text-[#9a3412] dark:text-primary mb-2">Calendar Scanner</div>
                  <p className="text-sm text-text-main">"User has 7 meetings today."</p>
                </div>
                <div className="bg-card p-4 rounded-xl shadow-sm border border-border/40 border-x-4 border-l-primary/0 border-r-primary/0 md:border-y-0 md:border-x">
-                 <div className="text-xs font-black uppercase text-destructive mb-2">Energy Budget</div>
+                 <div className="text-xs font-black uppercase text-destructive dark:text-[#f87171] mb-2">Energy Budget</div>
                  <p className="text-sm text-text-main">"That costs 90 energy credits. Overload risk threshold passed."</p>
                </div>
                <div className="bg-card p-4 rounded-xl shadow-sm border border-border/40">
-                 <div className="text-xs font-black uppercase text-success mb-2">Nova Change Interpreter</div>
+                 <div className="text-xs font-black uppercase text-[#166534] dark:text-[#4ade80] mb-2">Nova Change Interpreter</div>
                  <p className="text-sm text-text-main">"Suggesting Recovery Mode protocol."</p>
                </div>
             </div>

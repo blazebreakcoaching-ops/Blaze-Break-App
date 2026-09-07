@@ -2,7 +2,14 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Phase 1B: Deny all by default
+    // NOTE: this wildcard does NOT create a deny-by-default safety net.
+    // Firestore evaluates rules with OR semantics - access is granted if
+    // ANY matching rule allows it, so an `if false` match can never
+    // override the more specific `allow` rules below it; it is inert. The
+    // real deny-by-default is Firestore's own behaviour: a path that no
+    // rule allows is denied. This block is kept only as an explicit
+    // statement of intent - do not rely on it to lock down a collection,
+    // and do not assume it catches paths the specific rules below miss.
     match /{document=**} {
       allow read, write: if false;
     }
@@ -361,8 +368,31 @@ service cloud.firestore {
       }
 
       // L. nova_memories
+      // Was previously "allow read, write: if isOwner(uid)" with no field
+      // validation at all - any owner could write any fields, any values,
+      // no size limit, to the one collection that feeds directly into
+      // Nova's AI context and the search/write tools. Tightened to match
+      // the exact, real schema nova-brain.ts's persistMemory always
+      // writes (verified directly against that function - it sends
+      // exactly these 7 fields, every time, no conditional variation).
+      // 'verified' remains a valid confidence level here even though the
+      // server-side remember_about_user tool refuses to write it - this
+      // collection also holds genuinely deterministic writes (e.g. the
+      // Safety Engine's rule-based memories), which legitimately can
+      // claim that level; the tool-specific restriction lives in
+      // application code, not here, since it's about what one particular
+      // caller is allowed to claim, not what the collection can hold.
       match /nova_memories/{memoryId} {
-        allow read, write: if isOwner(uid);
+        allow read: if isOwner(uid);
+        allow delete: if isOwner(uid);
+        allow create, update: if isOwner(uid)
+            && hasOnly(['type', 'content', 'source', 'confidence', 'createdAt', 'updatedAt', 'canEdit'])
+            && hasAll(['type', 'content', 'source', 'confidence', 'createdAt', 'updatedAt', 'canEdit'])
+            && request.resource.data.type in ['profile', 'trigger', 'state', 'rule', 'preference']
+            && isStringWithMax(request.resource.data.content, 1000)
+            && isStringWithMax(request.resource.data.source, 200)
+            && request.resource.data.confidence in ['low', 'medium', 'high', 'verified']
+            && request.resource.data.canEdit is bool;
       }
 
       // M. nudge_history
@@ -473,6 +503,26 @@ service cloud.firestore {
             && request.resource.data.keys().hasOnly(['isInvited', 'allyName', 'allyEmail', 'permissions', 'shareToken', 'invitedAt', 'updatedAt'])
             && (!('allyEmail' in request.resource.data) || isStringWithMax(request.resource.data.allyEmail, 200))
             && (!('allyName' in request.resource.data) || isStringWithMax(request.resource.data.allyName, 100));
+      }
+
+      // Recurring accountability nudges sent to a user's chosen support
+      // contact via SMS/WhatsApp. lastSentAt is deliberately excluded from
+      // what the client can write - only the server-side scheduler sets it,
+      // so a client can't spoof "already sent" and can't fake a send history.
+      match /nudge_schedules/{scheduleId} {
+        allow read, delete: if isOwner(uid);
+        allow create, update: if isOwner(uid)
+            && request.resource.data.keys().hasOnly(['contactId', 'contactName', 'contactMethod', 'notificationPreference', 'message', 'frequency', 'daysOfWeek', 'time', 'timezone', 'enabled', 'contactAcknowledged', 'createdAt', 'updatedAt'])
+            && request.resource.data.keys().hasAll(['contactId', 'contactMethod', 'message', 'frequency', 'time', 'timezone', 'enabled', 'contactAcknowledged', 'createdAt', 'updatedAt'])
+            && isStringWithMax(request.resource.data.message, 300)
+            && request.resource.data.contactMethod is string && request.resource.data.contactMethod.size() >= 8 && request.resource.data.contactMethod.size() <= 16
+            && request.resource.data.frequency in ['daily', 'weekly']
+            && request.resource.data.time.matches('^([01][0-9]|2[0-3]):[0-5][0-9]$')
+            && isStringWithMax(request.resource.data.timezone, 60)
+            && request.resource.data.enabled is bool
+            && request.resource.data.contactAcknowledged is bool
+            && (!('daysOfWeek' in request.resource.data) || (request.resource.data.daysOfWeek is list && request.resource.data.daysOfWeek.size() <= 7))
+            && (request.method == 'create' ? true : checkCreatedAtUnchanged());
       }
 
       match /ally_shared_goals/{goalId} {
@@ -629,6 +679,19 @@ service cloud.firestore {
             && hasAll(['createdAt', 'updatedAt', 'durationSeconds'])
             && request.resource.data.durationSeconds is number
             && (request.method == 'create' ? true : checkCreatedAtUnchanged());
+      }
+
+      // AD. nova_feedback - star rating + optional text from the weekly
+      // Nova Coach Pulse modal. Write-once from the client; no update since
+      // submitted feedback isn't meant to be edited after the fact.
+      match /nova_feedback/{feedbackId} {
+        allow read, delete: if isOwner(uid);
+        allow create: if isOwner(uid)
+            && hasOnly(['rating', 'feedbackText', 'createdAt'])
+            && hasAll(['rating', 'createdAt'])
+            && request.resource.data.rating is number
+            && request.resource.data.rating >= 1 && request.resource.data.rating <= 5
+            && (!('feedbackText' in request.resource.data) || request.resource.data.feedbackText == null || isStringWithMax(request.resource.data.feedbackText, 1000));
       }
 
     }

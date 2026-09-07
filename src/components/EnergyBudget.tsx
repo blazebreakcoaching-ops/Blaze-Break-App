@@ -3,6 +3,7 @@ import { collection, doc, setDoc, getDoc, getDocs, updateDoc, deleteDoc, deleteF
 import { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Plus, Minus, BatteryFull, Zap, Waves, Users, X, AlertCircle, History, CheckCircle2, PieChart, Loader2 } from 'lucide-react';
+import { useFocusTrap } from '../lib/useFocusTrap';
 import {
   BarChart,
   Bar,
@@ -50,6 +51,14 @@ export const EnergyBudgetTool = ({
   const [newCost, setNewCost] = useState(10);
   const [hasCommitted, setHasCommitted] = useState(false);
   const [taskToDelete, setTaskToDelete] = useState<string | null>(null);
+  const deleteDialogRef = useFocusTrap(!!taskToDelete);
+
+  useEffect(() => {
+    if (!taskToDelete) return;
+    const onKeyDown = (e: KeyboardEvent) => { if (e.key === 'Escape') setTaskToDelete(null); };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [taskToDelete]);
   const [filterAction, setFilterAction] = useState<undefined | 'keep' | 'delegate' | 'defer'>();
 
   const uid = auth.currentUser?.uid;
@@ -256,7 +265,7 @@ export const EnergyBudgetTool = ({
   return (
     <div className="space-y-12 pb-24">
       {error && (
-        <div className="bg-destructive/10 border border-destructive/20 text-destructive text-sm p-4 rounded-xl">{error}</div>
+        <div className="bg-destructive/10 border border-destructive/20 text-destructive dark:text-[#f87171] text-sm p-4 rounded-xl">{error}</div>
       )}
       <div className="max-w-4xl">
         <div className="flex items-center gap-4 mb-4">
@@ -268,7 +277,7 @@ export const EnergyBudgetTool = ({
             Energy & Capacity
           </h3>
           <div className="absolute left-0 top-full mt-4 p-4 w-80 bg-card text-text-main text-sm font-medium rounded-lg border border-border shadow-lg opacity-0 invisible group-hover/tooltip:opacity-100 group-hover/tooltip:visible transition-all z-50 pointer-events-none">
-            <div className="text-xs uppercase font-medium tracking-widest text-primary mb-2">What this shows</div>
+            <div className="text-xs uppercase font-medium tracking-widest text-[#9a3412] dark:text-primary mb-2">What this shows</div>
             See where your energy actually goes. Add daily tasks below to see how they draw down your total capacity.
           </div>
         </div>
@@ -293,7 +302,7 @@ export const EnergyBudgetTool = ({
                 <p className="text-xs uppercase font-medium tracking-[0.25em] text-text-muted mt-1">By category, over the last 7 days</p>
               </div>
               <div className="flex items-center gap-4 text-xs">
-                <div className="flex items-center gap-1.5 font-medium text-destructive">
+                <div className="flex items-center gap-1.5 font-medium text-destructive dark:text-[#f87171]">
                   <div className="w-2.5 h-2.5 rounded-full bg-destructive" />
                   Overload Threshold
                 </div>
@@ -351,16 +360,16 @@ export const EnergyBudgetTool = ({
               <div className="flex items-center gap-3 p-3 bg-destructive/5 dark:bg-destructive/10 rounded-xl border border-destructive/15">
                 <AlertCircle className="w-5 h-5 text-destructive" />
                 <div className="text-xs leading-tight text-text-muted font-sans font-bold">
-                  <span className="text-destructive font-extrabold uppercase tracking-wide">System warning:</span>{' '}
+                  <span className="text-destructive dark:text-[#f87171] font-extrabold uppercase tracking-wide">System warning:</span>{' '}
                   {overloadDays.length > 0
                     ? <>{overloadDays.map(d => d.day).join(' & ')} active strain exceeded baseline capacitance. Autocortex recovery protocols activated.</>
                     : 'No days this week exceeded baseline capacitance.'}
                 </div>
               </div>
               <div className="flex items-center gap-3 p-3 bg-success/5 dark:bg-success/10 rounded-xl border border-success/15">
-                <CheckCircle2 className="w-5 h-5 text-success" />
+                <CheckCircle2 className="w-5 h-5 text-success dark:text-[#4ade80]" />
                 <div className="text-xs leading-tight text-text-muted font-sans font-bold">
-                  <span className="text-success font-extrabold uppercase tracking-wide">Weekend buffer check:</span>{' '}
+                  <span className="text-success dark:text-[#4ade80] font-extrabold uppercase tracking-wide">Weekend buffer check:</span>{' '}
                   {safeDays.length > 0
                     ? <>{safeDays.map(d => d.day).join(' & ')} load maintained safely under budget. High recharge score synchronized.</>
                     : 'No load logged yet this week.'}
@@ -378,11 +387,12 @@ export const EnergyBudgetTool = ({
               <div className="flex items-center gap-6 p-1 bg-surface rounded-full border border-border">
                 <button
                   onClick={() => setBudget(Math.max(20, budget - 10))}
+                  aria-label="Decrease daily credit budget by 10"
                   className="w-12 h-12 flex items-center justify-center rounded-full hover:bg-white dark:hover:bg-card transition-all text-text-muted hover:text-primary active:scale-90"
                 >
                   <Minus className="w-5 h-5" />
                 </button>
-                <div className="flex flex-col items-center min-w-[100px]">
+                <div className="flex flex-col items-center min-w-[100px]" role="status" aria-live="polite" aria-atomic="true">
                   <motion.span 
                     key={budget}
                     initial={{ scale: 0.8, opacity: 0 }}
@@ -394,6 +404,7 @@ export const EnergyBudgetTool = ({
                 </div>
                 <button 
                   onClick={() => setBudget(budget + 10)}
+                  aria-label="Increase daily credit budget by 10"
                   className="w-12 h-12 flex items-center justify-center rounded-full hover:bg-white dark:hover:bg-card transition-all text-text-muted hover:text-primary active:scale-90"
                 >
                   <Plus className="w-5 h-5" />
@@ -405,7 +416,7 @@ export const EnergyBudgetTool = ({
               <div className="flex justify-between items-end">
                 <div className="space-y-1">
                    <p className="text-xs uppercase font-black tracking-[0.25e] text-text-muted">Total Resource Load</p>
-                   <p className={cn("text-3xl font-display font-bold", isOverBudget ? 'text-destructive' : 'text-primary')}>
+                   <p className={cn("text-3xl font-display font-bold", isOverBudget ? 'text-destructive dark:text-[#f87171]' : 'text-[#9a3412] dark:text-primary')}>
                       {totalSpent} <span className="text-base text-text-muted font-medium tracking-normal">/ {budget} credits</span>
                    </p>
                 </div>
@@ -413,7 +424,7 @@ export const EnergyBudgetTool = ({
                   <motion.div 
                     initial={{ x: 20, opacity: 0 }}
                     animate={{ x: 0, opacity: 1 }}
-                    className="flex items-center gap-3 px-4 py-2 bg-destructive/10 border border-destructive/20 rounded-xl text-destructive text-xs font-black uppercase tracking-widest"
+                    className="flex items-center gap-3 px-4 py-2 bg-destructive/10 border border-destructive/20 rounded-xl text-destructive dark:text-[#f87171] text-xs font-black uppercase tracking-widest"
                   >
                      <AlertCircle className="w-4 h-4" /> System Overload Detected
                   </motion.div>
@@ -456,10 +467,10 @@ export const EnergyBudgetTool = ({
               </div>
             </div>
             <div className="flex gap-2">
-              <button onClick={() => setFilterAction(undefined)} className={cn("px-3 py-1.5 rounded-full text-xs font-bold uppercase tracking-widest transition-all", !filterAction ? "bg-primary text-primary-foreground dark:bg-border dark:text-text-main" : "bg-surface text-text-muted hover:bg-border dark:bg-white/5 dark:hover:bg-white/10 dark:text-text-muted")}>All Load</button>
-              <button onClick={() => setFilterAction('keep')} className={cn("px-3 py-1.5 rounded-full text-xs font-bold uppercase tracking-widest transition-all", filterAction === 'keep' ? "bg-success text-white shadow-md shadow-success/20" : "bg-surface text-text-muted hover:bg-border dark:bg-white/5 dark:hover:bg-white/10 dark:text-text-muted")}>Keep</button>
-              <button onClick={() => setFilterAction('delegate')} className={cn("px-3 py-1.5 rounded-full text-xs font-bold uppercase tracking-widest transition-all", filterAction === 'delegate' ? "bg-warning text-warning-foreground shadow-md shadow-warning/20" : "bg-surface text-text-muted hover:bg-border dark:bg-white/5 dark:hover:bg-white/10 dark:text-text-muted")}>Delegate</button>
-              <button onClick={() => setFilterAction('defer')} className={cn("px-3 py-1.5 rounded-full text-xs font-bold uppercase tracking-widest transition-all", filterAction === 'defer' ? "bg-destructive text-destructive-foreground shadow-md shadow-destructive/20" : "bg-surface text-text-muted hover:bg-border dark:bg-white/5 dark:hover:bg-white/10 dark:text-text-muted")}>Defer</button>
+              <button onClick={() => setFilterAction(undefined)} aria-pressed={!filterAction} className={cn("px-3 py-1.5 rounded-full text-xs font-bold uppercase tracking-widest transition-all", !filterAction ? "bg-primary text-primary-foreground dark:bg-border dark:text-text-main" : "bg-surface text-text-muted hover:bg-border dark:bg-white/5 dark:hover:bg-white/10 dark:text-text-muted")}>All Load</button>
+              <button onClick={() => setFilterAction('keep')} aria-pressed={filterAction === 'keep'} className={cn("px-3 py-1.5 rounded-full text-xs font-bold uppercase tracking-widest transition-all", filterAction === 'keep' ? "bg-success text-white shadow-md shadow-success/20" : "bg-surface text-text-muted hover:bg-border dark:bg-white/5 dark:hover:bg-white/10 dark:text-text-muted")}>Keep</button>
+              <button onClick={() => setFilterAction('delegate')} aria-pressed={filterAction === 'delegate'} className={cn("px-3 py-1.5 rounded-full text-xs font-bold uppercase tracking-widest transition-all", filterAction === 'delegate' ? "bg-warning text-warning-foreground shadow-md shadow-warning/20" : "bg-surface text-text-muted hover:bg-border dark:bg-white/5 dark:hover:bg-white/10 dark:text-text-muted")}>Delegate</button>
+              <button onClick={() => setFilterAction('defer')} aria-pressed={filterAction === 'defer'} className={cn("px-3 py-1.5 rounded-full text-xs font-bold uppercase tracking-widest transition-all", filterAction === 'defer' ? "bg-destructive text-destructive-foreground shadow-md shadow-destructive/20" : "bg-surface text-text-muted hover:bg-border dark:bg-white/5 dark:hover:bg-white/10 dark:text-text-muted")}>Defer</button>
             </div>
             <div className="grid grid-cols-1 gap-4">
               <AnimatePresence mode="popLayout">
@@ -487,7 +498,7 @@ export const EnergyBudgetTool = ({
                       </div>
                       <div className="flex-1 relative z-10">
                         <div className="flex flex-wrap items-center gap-3">
-                          <p className="text-xl font-display font-bold text-text-main tracking-tight group-hover:text-primary transition-colors">{task.task}</p>
+                          <p className="text-xl font-display font-bold text-text-main tracking-tight group-hover:text-[#9a3412] dark:group-hover:text-primary transition-colors">{task.task}</p>
                           <span className={cn(
                             "text-[10px] px-3 py-1 rounded-full font-black uppercase tracking-[0.2em] shadow-sm",
                             task.priority === 'High' ? "bg-destructive text-destructive-foreground" :
@@ -497,7 +508,7 @@ export const EnergyBudgetTool = ({
                             {task.priority}
                           </span>
                           {task.shipStage && (
-                            <span className="text-[10px] px-3 py-1 rounded-full font-black uppercase tracking-[0.2em] bg-primary/10 text-primary border border-primary/25">
+                            <span className="text-[10px] px-3 py-1 rounded-full font-black uppercase tracking-[0.2em] bg-primary/10 text-[#9a3412] dark:text-primary border border-primary/25">
                               {task.shipStage}
                             </span>
                           )}
@@ -514,13 +525,14 @@ export const EnergyBudgetTool = ({
                         <span className="text-[10px] font-black uppercase tracking-widest text-text-muted ">CR</span>
                       </div>
                       <div className="flex flex-col gap-1 relative z-10 border-l border-border/40 pl-6 mr-2">
-                         <button onClick={() => toggleTaskAction(task.id, 'keep')} className={cn("text-[11px] font-black uppercase tracking-widest px-2 py-1 rounded transition-all w-20 text-center", task.action === 'keep' ? "bg-success text-white shadow-md shadow-success/20" : "text-success/50 hover:bg-success/10")}>Keep</button>
-                         <button onClick={() => toggleTaskAction(task.id, 'delegate')} className={cn("text-[11px] font-black uppercase tracking-widest px-2 py-1 rounded transition-all w-20 text-center", task.action === 'delegate' ? "bg-warning text-warning-foreground shadow-md shadow-warning/20" : "text-warning/50 hover:bg-warning/10")}>Delegate</button>
-                         <button onClick={() => toggleTaskAction(task.id, 'defer')} className={cn("text-[11px] font-black uppercase tracking-widest px-2 py-1 rounded transition-all w-20 text-center", task.action === 'defer' ? "bg-destructive text-destructive-foreground shadow-md shadow-destructive/20" : "text-destructive/50 hover:bg-destructive/10")}>Defer</button>
+                         <button onClick={() => toggleTaskAction(task.id, 'keep')} aria-pressed={task.action === 'keep'} className={cn("text-[11px] font-black uppercase tracking-widest px-2 py-1 rounded transition-all w-20 text-center", task.action === 'keep' ? "bg-success text-white shadow-md shadow-success/20" : "text-[#166534] dark:text-[#4ade80] hover:bg-success/10")}>Keep</button>
+                         <button onClick={() => toggleTaskAction(task.id, 'delegate')} aria-pressed={task.action === 'delegate'} className={cn("text-[11px] font-black uppercase tracking-widest px-2 py-1 rounded transition-all w-20 text-center", task.action === 'delegate' ? "bg-warning text-warning-foreground shadow-md shadow-warning/20" : "text-[#9a3412] dark:text-warning hover:bg-warning/10")}>Delegate</button>
+                         <button onClick={() => toggleTaskAction(task.id, 'defer')} aria-pressed={task.action === 'defer'} className={cn("text-[11px] font-black uppercase tracking-widest px-2 py-1 rounded transition-all w-20 text-center", task.action === 'defer' ? "bg-destructive text-destructive-foreground shadow-md shadow-destructive/20" : "text-destructive dark:text-[#f87171] hover:bg-destructive/10")}>Defer</button>
                       </div>
                       <button 
                         onClick={() => removeTask(task.id)} 
-                        className="p-4 text-text-muted hover:text-destructive hover:bg-destructive/5 rounded-full transition-all relative z-10 group-hover:opacity-100 opacity-0"
+                        aria-label={`Remove ${task.type} task`}
+                        className="p-4 text-text-muted hover:text-destructive dark:hover:text-[#f87171] hover:bg-destructive/5 rounded-full transition-all relative z-10 group-hover:opacity-100 opacity-0"
                       >
                         <X className="w-5 h-5" />
                       </button>
@@ -542,7 +554,7 @@ export const EnergyBudgetTool = ({
 
         <div className="lg:col-span-4 space-y-10">
           <div className="card p-6 border border-warning/20 bg-warning/5">
-            <h4 className="text-sm font-medium uppercase tracking-widest text-warning mb-2 flex items-center gap-2">
+            <h4 className="text-sm font-medium uppercase tracking-widest text-[#9a3412] dark:text-warning mb-2 flex items-center gap-2">
               <Zap className="w-4 h-4" /> Tracking Active
             </h4>
             <p className="text-text-main font-medium text-xs leading-relaxed">
@@ -579,6 +591,7 @@ export const EnergyBudgetTool = ({
                       <button
                         key={type}
                         onClick={() => setNewType(type as any)}
+                        aria-pressed={newType === type}
                         className={cn(
                           "py-4 rounded-2xl border text-xs font-black uppercase tracking-widest transition-all",
                           newType === type 
@@ -599,6 +612,7 @@ export const EnergyBudgetTool = ({
                       <button
                         key={p}
                         onClick={() => setNewPriority(p)}
+                        aria-pressed={newPriority === p}
                         className={cn(
                           "py-3 rounded-xl border text-[11px] font-black uppercase tracking-widest transition-all",
                           newPriority === p 
@@ -622,6 +636,8 @@ export const EnergyBudgetTool = ({
                         <button
                           key={stage}
                           onClick={() => setNewShipStage(stage)}
+                          aria-pressed={newShipStage === stage}
+                          aria-label={isMatched ? `${stage} (your active Recovery phase)` : stage}
                           className={cn(
                             "py-3 rounded-xl border text-[11px] font-black uppercase tracking-widest transition-all relative overflow-hidden",
                             newShipStage === stage
@@ -631,7 +647,7 @@ export const EnergyBudgetTool = ({
                         >
                           <span className="relative z-10">{stage}</span>
                           {isMatched && (
-                            <span className="absolute bottom-0.5 left-1/2 -translate-x-1/2 w-1.5 h-1.5 bg-success rounded-full" title="Active Recovery Phase" />
+                            <span aria-hidden="true" className="absolute bottom-0.5 left-1/2 -translate-x-1/2 w-1.5 h-1.5 bg-success rounded-full" title="Active Recovery Phase" />
                           )}
                         </button>
                       );
@@ -643,7 +659,7 @@ export const EnergyBudgetTool = ({
                 <div className="space-y-6 pt-4">
                   <div className="flex justify-between items-end px-2">
                     <p className="text-xs uppercase font-black tracking-widest text-text-muted ">Capacitance Cost</p>
-                    <p className="font-display font-black text-2xl text-primary">{newCost} <span className="text-xs font-black">CR</span></p>
+                    <p className="font-display font-black text-2xl text-[#9a3412] dark:text-primary">{newCost} <span className="text-xs font-black">CR</span></p>
                   </div>
                   <input 
                     type="range" 
@@ -652,6 +668,8 @@ export const EnergyBudgetTool = ({
                     step="5"
                     value={newCost}
                     onChange={e => setNewCost(parseInt(e.target.value))}
+                    aria-label="Capacitance cost"
+                    aria-valuetext={`${newCost} credits`}
                     className="w-full h-1.5 bg-surface/50 rounded-full appearance-none cursor-pointer accent-primary border border-border"
                   />
                 </div>
@@ -703,9 +721,14 @@ export const EnergyBudgetTool = ({
             onClick={() => setTaskToDelete(null)}
           >
             <motion.div
+              ref={deleteDialogRef as any}
               initial={{ scale: 0.95 }}
               animate={{ scale: 1 }}
               exit={{ scale: 0.95 }}
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="delete-task-title"
+              tabIndex={-1}
               className="card bg-card border border-border shadow-lg p-8 max-w-sm w-full relative overflow-hidden"
               onClick={e => e.stopPropagation()}
             >
@@ -714,7 +737,7 @@ export const EnergyBudgetTool = ({
                   <PieChart className="w-5 h-5" />
                 </div>
                 <div>
-                  <h3 className="text-xl font-display font-medium text-text-main mb-2">Delete Task?</h3>
+                  <h3 id="delete-task-title" className="text-xl font-display font-medium text-text-main mb-2">Delete Task?</h3>
                   <p className="text-text-muted text-sm">
                     This removes it from your energy budget for good. Are you sure?
                   </p>

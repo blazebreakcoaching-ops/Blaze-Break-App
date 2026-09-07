@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Wind, X, CheckCircle2, AlertOctagon } from 'lucide-react';
 import { cn } from '../lib/utils';
+import { useFocusTrap } from '../lib/useFocusTrap';
 
 interface TacticalOverrideProps {
   onComplete?: () => void;
@@ -15,6 +16,7 @@ export const TacticalOverride = ({ onComplete }: TacticalOverrideProps) => {
   const [isPressing, setIsPressing] = useState(false);
   
   const pressTimer = useRef<NodeJS.Timeout | null>(null);
+  const dialogRef = useFocusTrap(isOpen);
 
   // Esc key closes it
   useEffect(() => {
@@ -98,9 +100,14 @@ export const TacticalOverride = ({ onComplete }: TacticalOverrideProps) => {
       <AnimatePresence>
         {isOpen && (
           <motion.div
+            ref={dialogRef as any}
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Emergency Override"
+            tabIndex={-1}
             className="fixed inset-0 z-[100] bg-surface flex flex-col items-center justify-center p-6 text-text-main"
             onPointerDown={handlePointerDown}
             onPointerUp={handlePointerUp}
@@ -108,6 +115,7 @@ export const TacticalOverride = ({ onComplete }: TacticalOverrideProps) => {
           >
             <button 
               onClick={() => setIsOpen(false)}
+              aria-label="Close emergency override"
               className="absolute top-8 right-8 p-3 rounded-full hover:bg-white/10 transition-colors"
             >
               <X className="w-6 h-6 text-text-muted" />
@@ -143,7 +151,7 @@ export const TacticalOverride = ({ onComplete }: TacticalOverrideProps) => {
                 exit={{ opacity: 0 }}
                 className="flex flex-col items-center justify-center h-full w-full max-w-lg"
               >
-                <h2 className="text-xl font-bold text-text-muted uppercase tracking-widest mb-16 text-center h-8">
+                <h2 role="status" aria-live="polite" className="text-xl font-bold text-text-muted uppercase tracking-widest mb-16 text-center h-8">
                   {breathPhase === 'inhale' && 'Inhale...'}
                   {breathPhase === 'hold1' && 'Hold...'}
                   {breathPhase === 'exhale' && 'Exhale...'}
@@ -193,7 +201,7 @@ export const TacticalOverride = ({ onComplete }: TacticalOverrideProps) => {
                 className="max-w-md w-full text-center space-y-8"
               >
                 <div className="w-20 h-20 bg-success/20 rounded-full flex items-center justify-center mx-auto mb-6">
-                  <CheckCircle2 className="w-10 h-10 text-success" />
+                  <CheckCircle2 className="w-10 h-10 text-success dark:text-[#4ade80]" />
                 </div>
                 <h1 className="text-3xl font-black uppercase tracking-widest text-text-main">Nervous System Stabilized</h1>
                 <div className="space-y-4 text-left bg-card border border-border p-6 rounded-2xl">

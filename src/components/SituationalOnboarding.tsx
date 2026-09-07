@@ -127,6 +127,9 @@ export const SituationalOnboarding = ({ onComplete }: OnboardingProps) => {
                     useNameInGreetings: !p.useNameInGreetings,
                   }))
                 }
+                role="switch"
+                aria-checked={profile.useNameInGreetings !== false}
+                aria-label="Personalized Greetings: allow Nova to use your preferred name"
                 className={cn(
                   "w-10 h-6 shrink-0 rounded-full transition-colors relative",
                   profile.useNameInGreetings !== false
@@ -156,6 +159,9 @@ export const SituationalOnboarding = ({ onComplete }: OnboardingProps) => {
                 onClick={() =>
                   setProfile((p) => ({ ...p, letNovaLearn: !p.letNovaLearn }))
                 }
+                role="switch"
+                aria-checked={profile.letNovaLearn !== false}
+                aria-label="Personalized learning: let Nova adjust its suggestions based on your check-ins"
                 className={cn(
                   "w-10 h-6 shrink-0 rounded-full transition-colors relative",
                   profile.letNovaLearn !== false
@@ -188,6 +194,9 @@ export const SituationalOnboarding = ({ onComplete }: OnboardingProps) => {
                     sendNovaNudges: !p.sendNovaNudges,
                   }))
                 }
+                role="switch"
+                aria-checked={profile.sendNovaNudges !== false}
+                aria-label="Gentle reminders: get occasional check-in prompts when it might help"
                 className={cn(
                   "w-10 h-6 shrink-0 rounded-full transition-colors relative",
                   profile.sendNovaNudges !== false
@@ -337,10 +346,11 @@ export const SituationalOnboarding = ({ onComplete }: OnboardingProps) => {
                           onClick={() =>
                             handleSelect(steps[step].field!, opt.label)
                           }
+                          aria-pressed={isSelected}
                           className={cn(
                             "w-full text-left p-6 sm:px-8 rounded-2xl border transition-all duration-300 flex items-center gap-6 group relative overflow-hidden",
                             isSelected
-                              ? "bg-primary/10 border-primary/30 text-primary-foreground shadow-inner scale-[1.02]"
+                              ? "bg-primary/10 border-primary/30 text-primary shadow-inner scale-[1.02]"
                               : "bg-background border-white/[0.05] hover:border-primary/30 hover:bg-surface text-text-muted hover:text-text-main hover:scale-[1.01]",
                           )}
                         >

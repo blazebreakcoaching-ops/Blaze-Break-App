@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from 'react';
-import { motion, AnimatePresence } from 'motion/react';
 import { Compass, CheckCircle2, Loader2 } from 'lucide-react';
 import { auth, db } from '../lib/firebase';
 import { collection, doc, setDoc, getDocs, query, orderBy, limit } from 'firebase/firestore';
@@ -84,8 +83,8 @@ export const TeamClimateSurvey = ({ organisationName }: { organisationName?: str
 
   if (justSubmitted || alreadyRespondedRecently) {
     return (
-      <div className="p-6 rounded-xl bg-success/5 border border-success/20 flex items-start gap-3">
-        <CheckCircle2 className="w-5 h-5 text-success shrink-0 mt-0.5" />
+      <div role="status" aria-live="polite" className="p-6 rounded-xl bg-success/5 border border-success/20 flex items-start gap-3">
+        <CheckCircle2 className="w-5 h-5 text-success dark:text-[#4ade80] shrink-0 mt-0.5" />
         <div>
           <h4 className="text-sm font-bold text-text-main">
             {justSubmitted ? 'Thanks for responding' : "You're up to date"}
@@ -115,7 +114,7 @@ export const TeamClimateSurvey = ({ organisationName }: { organisationName?: str
       </div>
 
       {error && (
-        <div className="p-3 bg-destructive/10 border border-destructive/20 text-destructive text-xs rounded-xl">{error}</div>
+        <div role="alert" className="p-3 bg-destructive/10 border border-destructive/20 text-destructive dark:text-[#f87171] text-xs rounded-xl">{error}</div>
       )}
 
       <div className="space-y-5">
@@ -130,6 +129,8 @@ export const TeamClimateSurvey = ({ organisationName }: { organisationName?: str
                 <button
                   key={score}
                   onClick={() => setAnswers(prev => ({ ...prev, [dim.key]: score }))}
+                  aria-pressed={answers[dim.key] === score}
+                  aria-label={`${dim.label}: rate ${score} out of 5`}
                   className={`flex-1 py-2.5 rounded-lg text-xs font-mono font-bold transition-colors border ${
                     answers[dim.key] === score
                       ? 'bg-primary text-primary-foreground border-primary'

@@ -10,6 +10,10 @@ interface SmartCardProps {
   onDragStart?: (e: React.DragEvent, id: string) => void;
   onDragOver?: (e: React.DragEvent, id: string) => void;
   onDrop?: (e: React.DragEvent, id: string) => void;
+  onMoveUp?: (id: string) => void;
+  onMoveDown?: (id: string) => void;
+  isFirst?: boolean;
+  isLast?: boolean;
   title?: React.ReactNode;
   energyDrain?: 'low' | 'medium' | 'high';
 }
@@ -21,6 +25,10 @@ export const SmartCard = ({
   onDragStart,
   onDragOver,
   onDrop,
+  onMoveUp,
+  onMoveDown,
+  isFirst,
+  isLast,
   title,
   energyDrain
 }: SmartCardProps) => {
@@ -53,6 +61,13 @@ export const SmartCard = ({
     };
     window.addEventListener('click', handleClickOutside);
     return () => window.removeEventListener('click', handleClickOutside);
+  }, [showContextMenu]);
+
+  useEffect(() => {
+    if (!showContextMenu) return;
+    const onKeyDown = (e: KeyboardEvent) => { if (e.key === 'Escape') setShowContextMenu(false); };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
   }, [showContextMenu]);
 
   const handleContextMenu = (e: React.MouseEvent) => {
@@ -105,6 +120,7 @@ export const SmartCard = ({
         className
       )}
       draggable
+      tabIndex={0}
       onDragStart={(e: any) => {
         if (onDragStart) onDragStart(e, id);
         if (e.dataTransfer) {
@@ -122,23 +138,47 @@ export const SmartCard = ({
       }}
       onContextMenu={handleContextMenu}
     >
-      <div className="absolute top-4 right-4 z-20 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity items-center">
+      <div className="absolute top-4 right-4 z-20 flex gap-2 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity items-center">
         {energyDrain && (
           <div className="relative group/drain flex items-center justify-center">
             <div 
+              tabIndex={0}
+              aria-label={`Energy Drain: ${energyDrain}`}
               className={cn(
                 "w-2 h-2 rounded-full cursor-help",
                 energyDrain === 'high' ? 'bg-destructive animate-pulse' : 
                 energyDrain === 'medium' ? 'bg-warning' : 'bg-success'
               )}
             />
-            <div className="absolute top-full mt-2 right-0 bg-card text-xs font-bold text-text-main px-3 py-1.5 rounded-md shadow-lg opacity-0 group-hover/drain:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-50 border border-white/5">
+            <div className="absolute top-full mt-2 right-0 bg-card text-xs font-bold text-text-main px-3 py-1.5 rounded-md shadow-lg opacity-0 group-hover/drain:opacity-100 group-focus-within/drain:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-50 border border-white/5">
                Energy Drain: <span className="capitalize">{energyDrain}</span>
             </div>
           </div>
         )}
+        {(onMoveUp || onMoveDown) && (
+          <>
+            <button
+              onClick={(e) => { e.stopPropagation(); onMoveUp?.(id); }}
+              disabled={!onMoveUp || isFirst}
+              aria-label="Move card up"
+              className="p-1 rounded-md hover:bg-surface dark:bg-card/10 text-text-muted hover:text-text-main transition-colors disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+            >
+              <ChevronDown className="w-4 h-4 rotate-180" />
+            </button>
+            <button
+              onClick={(e) => { e.stopPropagation(); onMoveDown?.(id); }}
+              disabled={!onMoveDown || isLast}
+              aria-label="Move card down"
+              className="p-1 rounded-md hover:bg-surface dark:bg-card/10 text-text-muted hover:text-text-main transition-colors disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+            >
+              <ChevronDown className="w-4 h-4" />
+            </button>
+          </>
+        )}
         <button 
           onClick={(e) => { e.stopPropagation(); setIsExpanded(!isExpanded); }}
+          aria-label={isExpanded ? "Collapse card" : "Expand card"}
+          aria-expanded={isExpanded}
           className="p-1 rounded-md hover:bg-surface dark:bg-card/10 text-text-muted hover:text-text-main transition-colors"
         >
           <ChevronDown className={cn("w-4 h-4 transition-transform duration-300", isExpanded ? "rotate-180" : "")} />
@@ -183,15 +223,15 @@ export const SmartCard = ({
               left: `${clampedMenuPos.x}px`
             }}
           >
-            <button className="w-full px-4 py-2 text-left text-xs font-medium text-text-muted hover:bg-card hover:text-text-main flex items-center gap-2">
+            <button disabled aria-disabled="true" title="Not available yet" className="w-full px-4 py-2 text-left text-xs font-medium text-text-muted/50 flex items-center gap-2 cursor-not-allowed">
               <FileText className="w-3.5 h-3.5" /> Quick Note
             </button>
-            <button className="w-full px-4 py-2 text-left text-xs font-medium text-text-muted hover:bg-card hover:text-text-main flex items-center gap-2">
+            <button disabled aria-disabled="true" title="Not available yet" className="w-full px-4 py-2 text-left text-xs font-medium text-text-muted/50 flex items-center gap-2 cursor-not-allowed">
               <CheckCircle className="w-3.5 h-3.5" /> Toggle Status
             </button>
             <button 
               onClick={handleShare}
-              className="w-full px-4 py-2 text-left text-xs font-medium text-primary hover:bg-card hover:text-blue-300 flex items-center gap-2"
+              className="w-full px-4 py-2 text-left text-xs font-medium text-[#9a3412] dark:text-primary hover:bg-card hover:opacity-80 flex items-center gap-2"
             >
               {isCopied ? <Check className="w-3.5 h-3.5" /> : <Share2 className="w-3.5 h-3.5" />}
               {isCopied ? "Copied format!" : "Share Summary"}
@@ -202,7 +242,8 @@ export const SmartCard = ({
                 setIsMicroRecovery(!isMicroRecovery);
                 setShowContextMenu(false);
               }}
-              className="w-full px-4 py-2 text-left text-xs font-medium text-warning hover:bg-card hover:text-warning/40 flex items-center gap-2"
+              aria-pressed={isMicroRecovery}
+              className="w-full px-4 py-2 text-left text-xs font-medium text-[#9a3412] dark:text-warning hover:bg-card hover:opacity-80 flex items-center gap-2"
             >
               <div className={cn("w-2 h-2 rounded-full", isMicroRecovery ? "bg-warning animate-pulse" : "bg-surface")} />
               {isMicroRecovery ? "End Micro-Recovery" : "Micro-Recovery Mode"}

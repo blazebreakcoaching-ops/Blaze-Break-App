@@ -94,11 +94,11 @@ export const OutcomeTracker = ({ fingerprint }: OutcomeTrackerProps) => {
             className={`card p-6 border relative overflow-hidden group ${kpi.tracked ? 'border-success/20' : 'border-border'}`}
           >
              <div className="flex items-center justify-between mb-4 relative z-10">
-               <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${kpi.tracked ? 'bg-success/10 text-success' : 'bg-surface text-text-muted'}`}>
+               <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${kpi.tracked ? 'bg-success/10 text-success dark:text-[#4ade80]' : 'bg-surface text-text-muted'}`}>
                  <kpi.icon className="w-5 h-5" />
                </div>
                {kpi.tracked && (
-                 <div className="px-2 py-1 rounded bg-success/10 text-success text-xs font-bold flex items-center gap-1">
+                 <div className="px-2 py-1 rounded bg-success/10 text-[#166534] dark:text-[#4ade80] text-xs font-bold flex items-center gap-1">
                    <ArrowUpRight className="w-3 h-3" />
                    {kpi.value}
                  </div>
@@ -130,7 +130,7 @@ export const OutcomeTracker = ({ fingerprint }: OutcomeTrackerProps) => {
               </div>
            </div>
            
-           <div className="h-72 w-full">
+           <div className="h-72 w-full" role="img" aria-label="Line chart comparing weekly recovery activity and burnout risk over the last 6 weeks. Full values are in the chart's legend and tooltips.">
              <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                <AreaChart data={data?.weeks || []} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                  <defs>
@@ -165,12 +165,12 @@ export const OutcomeTracker = ({ fingerprint }: OutcomeTrackerProps) => {
                 <h3 className="text-xl font-display font-bold text-text-main">Boundary Activity</h3>
                 <p className="text-sm text-text-muted mt-1 uppercase tracking-widest font-bold">6-Week Trajectory</p>
               </div>
-              <div className="w-10 h-10 rounded-xl bg-warning/10 text-warning flex items-center justify-center">
+              <div className="w-10 h-10 rounded-xl bg-warning/10 text-[#9a3412] dark:text-warning flex items-center justify-center">
                 <Shield className="w-5 h-5" />
               </div>
            </div>
            
-           <div className="h-72 w-full">
+           <div className="h-72 w-full" role="img" aria-label="Line chart of boundary scripts logged per week over the last 6 weeks. Full values are in the chart's tooltips.">
              <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                <LineChart data={data?.weeks || []} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                  <CartesianGrid strokeDasharray="3 3" stroke="currentColor" strokeOpacity={0.1} vertical={false} />
@@ -198,7 +198,7 @@ export const OutcomeTracker = ({ fingerprint }: OutcomeTrackerProps) => {
               </div>
            </div>
 
-           <div className="h-64 w-full">
+           <div className="h-64 w-full" role="img" aria-label="Bar chart of weekly capacity allocated as a percentage, over the last 6 weeks. Full values are in the chart's tooltips.">
              <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                <BarChart data={data?.weeks || []} margin={{ top: 10, right: 10, left: -20, bottom: 0 }} barGap={8}>
                  <CartesianGrid strokeDasharray="3 3" stroke="currentColor" strokeOpacity={0.1} vertical={false} />

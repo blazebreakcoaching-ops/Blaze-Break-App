@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
-import { Building, AlertTriangle, ArrowRight, Target, Brain, CheckCircle2, Loader2, Lock, Save } from 'lucide-react';
+import { Building, AlertTriangle, ArrowRight, Target, Brain, CheckCircle2, Loader2, Lock, Save, TrendingUp } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { secureApiFetch } from '../lib/secure-api';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
@@ -11,7 +11,7 @@ interface CostInputs {
   headcount: number;
 }
 
-export const OrgDashboardValue = () => {
+export const OrgDashboardValue = ({ onNavigateToTrend }: { onNavigateToTrend?: () => void } = {}) => {
   const [activeTab, setActiveTab] = useState<'cost' | 'planner' | 'predictor'>('cost');
 
   const [orgId, setOrgId] = useState<string | null>(null);
@@ -125,6 +125,7 @@ export const OrgDashboardValue = () => {
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id as any)}
+                aria-current={activeTab === tab.id ? 'page' : undefined}
                 className={cn(
                   "px-4 py-2 rounded-lg text-xs font-bold uppercase tracking-widest transition-all",
                   activeTab === tab.id
@@ -154,7 +155,7 @@ export const OrgDashboardValue = () => {
           {activeTab === 'cost' && (
             <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-8">
               {error && (
-                <div className="p-3 bg-destructive/10 border border-destructive/20 text-destructive text-sm rounded-xl">{error}</div>
+                <div role="alert" className="p-3 bg-destructive/10 border border-destructive/20 text-destructive dark:text-[#f87171] text-sm rounded-xl">{error}</div>
               )}
 
               {!isOrgAdmin && !costInputs ? (
@@ -168,8 +169,9 @@ export const OrgDashboardValue = () => {
                   <p className="text-xs text-text-muted leading-relaxed">These come from your own HR/absence records — Blaze Break doesn't have access to this data itself, so nothing here is estimated or guessed.</p>
                   <div className="space-y-4">
                     <div>
-                      <label className="text-xs font-bold uppercase tracking-widest text-text-muted block mb-1">Annual Sickness Absence Days (total, across the org)</label>
+                      <label htmlFor="org-sickness-days" className="text-xs font-bold uppercase tracking-widest text-text-muted block mb-1">Annual Sickness Absence Days (total, across the org)</label>
                       <input
+                        id="org-sickness-days"
                         type="number"
                         min="0"
                         value={formSicknessDays}
@@ -179,8 +181,9 @@ export const OrgDashboardValue = () => {
                       />
                     </div>
                     <div>
-                      <label className="text-xs font-bold uppercase tracking-widest text-text-muted block mb-1">Average Daily Cost Per Employee (£)</label>
+                      <label htmlFor="org-daily-cost" className="text-xs font-bold uppercase tracking-widest text-text-muted block mb-1">Average Daily Cost Per Employee (£)</label>
                       <input
+                        id="org-daily-cost"
                         type="number"
                         min="0"
                         value={formDailyCost}
@@ -190,8 +193,9 @@ export const OrgDashboardValue = () => {
                       />
                     </div>
                     <div>
-                      <label className="text-xs font-bold uppercase tracking-widest text-text-muted block mb-1">Total Headcount</label>
+                      <label htmlFor="org-headcount" className="text-xs font-bold uppercase tracking-widest text-text-muted block mb-1">Total Headcount</label>
                       <input
+                        id="org-headcount"
                         type="number"
                         min="0"
                         value={formHeadcount}
@@ -234,10 +238,10 @@ export const OrgDashboardValue = () => {
                     <div className="card border-primary/20 shadow-xl shadow-primary/5 bg-primary/5">
                       <div className="flex items-center gap-2 mb-2">
                         <Building className="w-4 h-4 text-primary" />
-                        <span className="text-xs uppercase tracking-widest font-bold text-primary">Total Annual Cost</span>
+                        <span className="text-xs uppercase tracking-widest font-bold text-[#9a3412] dark:text-primary">Total Annual Cost</span>
                       </div>
-                      <p className="text-2xl font-display font-bold text-primary mb-1">{estimatedAnnualCost != null ? `£${estimatedAnnualCost.toLocaleString()}` : '—'}</p>
-                      <p className="text-xs text-primary/80 leading-relaxed hidden sm:block">Sickness days × your entered daily cost per employee.</p>
+                      <p className="text-2xl font-display font-bold text-[#9a3412] dark:text-primary mb-1">{estimatedAnnualCost != null ? `£${estimatedAnnualCost.toLocaleString()}` : '—'}</p>
+                      <p className="text-xs text-[#9a3412] dark:text-primary leading-relaxed hidden sm:block">Sickness days × your entered daily cost per employee.</p>
                     </div>
                   </div>
 
@@ -256,7 +260,7 @@ export const OrgDashboardValue = () => {
                         <h4 className="font-bold text-text-main">Cost Per Employee Over Time</h4>
                         <p className="text-xs text-text-muted">Every time these figures are updated, it's logged here — a real trend from your own entries, not a projection.</p>
                       </div>
-                      <div className="h-52">
+                      <div className="h-52" role="img" aria-label="Line chart of cost per employee over time, from your organisation's own entered figures. Full values are in the chart's tooltips.">
                         <ResponsiveContainer width="100%" height="100%">
                           <LineChart
                             data={costHistory.map(h => ({
@@ -280,13 +284,28 @@ export const OrgDashboardValue = () => {
                     </div>
                   )}
 
+                  {onNavigateToTrend && (
+                    <button
+                      onClick={onNavigateToTrend}
+                      className="card w-full text-left flex items-center justify-between gap-4 hover:border-primary/30 transition-colors max-w-2xl"
+                    >
+                      <div>
+                        <h4 className="font-bold text-text-main flex items-center gap-2"><TrendingUp className="w-4 h-4 text-primary" /> See the Wellbeing Concern Trend</h4>
+                        <p className="text-xs text-text-muted leading-relaxed mt-1">
+                          The cost figures above are what your organisation actually reported. The Resilience Pulse tab shows a separate, real trend from your team's own mood and climate-survey data - both are real, shown side by side, with no formula connecting one to the other.
+                        </p>
+                      </div>
+                      <ArrowRight className="w-4 h-4 text-text-muted shrink-0" />
+                    </button>
+                  )}
+
                   <div className="card space-y-6 border-border dark:border-border max-w-2xl">
                     <h4 className="font-bold text-text-main flex items-center gap-2"><Brain className="w-5 h-5 text-primary" /> General Strategy</h4>
                     <p className="text-sm text-text-muted leading-relaxed">
                       These practices are generally associated with lower stress-related absence — not a promise specific to your numbers above, since we don't have enough data to model your organisation's specific response.
                     </p>
                     <div className="bg-primary/5 border border-primary/20 p-4 rounded-xl">
-                      <p className="text-xs text-primary font-medium leading-relaxed">
+                      <p className="text-xs text-[#9a3412] dark:text-primary font-medium leading-relaxed">
                         Reduce unnecessary meeting load, introduce weekly appreciation rituals, and protect uninterrupted recovery breaks. Update your figures above periodically — the chart tracks whether the cost per employee actually moves for your team.
                       </p>
                     </div>
@@ -301,8 +320,8 @@ export const OrgDashboardValue = () => {
               <div className="flex flex-col md:flex-row gap-8">
                 <div className="w-full md:w-1/3 space-y-4">
                   <div className="card border-primary/20 bg-primary/5">
-                    <h4 className="font-bold text-primary mb-2">Management Savings Planner</h4>
-                    <p className="text-xs text-primary/80 mb-6 leading-relaxed">
+                    <h4 className="font-bold text-[#9a3412] dark:text-primary mb-2">Management Savings Planner</h4>
+                    <p className="text-xs text-[#9a3412] dark:text-primary mb-6 leading-relaxed">
                       A general 30/60/90-day framework for addressing common pressure signals — a starting structure, not one generated from your specific data.
                     </p>
                     <div className="space-y-2">
@@ -332,7 +351,7 @@ export const OrgDashboardValue = () => {
                   <div className="relative pl-8 space-y-8 before:absolute before:inset-0 before:ml-[11px] before:-translate-x-px md:before:mx-auto md:before:translate-x-0 before:h-full before:w-0.5 before:bg-gradient-to-b before:from-transparent before:via-border before:to-transparent">
 
                     <div className="relative">
-                      <div className="absolute -left-[35px] top-1 w-6 h-6 rounded-full bg-primary/20 border-2 border-primary flex items-center justify-center font-bold text-xs text-primary">30</div>
+                      <div className="absolute -left-[35px] top-1 w-6 h-6 rounded-full bg-primary/20 border-2 border-primary flex items-center justify-center font-bold text-xs text-[#9a3412] dark:text-primary">30</div>
                       <div className="card relative p-6">
                         <h4 className="font-bold text-text-main mb-4">30-Day Actions</h4>
                         <ul className="text-sm text-text-muted space-y-2 list-disc pl-4">
@@ -383,7 +402,10 @@ export const OrgDashboardValue = () => {
                   <h4 className="font-bold text-text-main text-lg">Absence Prediction — Not Yet Available</h4>
                 </div>
                 <p className="text-sm text-text-muted leading-relaxed max-w-2xl">
-                  A genuine version of per-team absence prediction would need actual historical absence records broken down by team, and a real statistical model built and validated against that history — not a plausible-sounding guess. Neither exists yet, so rather than show invented department names and made-up risk percentages, this space stays honestly empty. The <strong className="text-text-main">Resilience Pulse</strong> tab reflects real, currently-available aggregate data instead.
+                  A genuine version of per-team absence prediction would need actual historical absence records broken down by team, and a real statistical model built and validated against that history — not a plausible-sounding guess. Neither exists yet, so rather than show invented department names and made-up risk percentages, this space stays honestly empty.
+                </p>
+                <p className="text-sm text-text-muted leading-relaxed max-w-2xl">
+                  What we <strong className="text-text-main">do</strong> show is the honest, defensible alternative: the <strong className="text-text-main">Leading Indicators</strong> on the main dashboard. These are aggregate, anonymised, team-level signals of working conditions — each with its current level and which way it's moving — that tend to shift <em>before</em> hard outcomes. They're a prompt to look at workload and support early, not a prediction of who will be absent, and they're never shown per person.
                 </p>
               </div>
             </motion.div>

@@ -124,12 +124,12 @@ export const RecoveryExplanation = ({
                 <div key={i} className="flex items-center gap-3 text-xs">
                   <span className={cn(
                     "px-2 py-0.5 rounded-full font-bold uppercase tracking-wider shrink-0 w-16 text-center",
-                    f.source === 'self-report' ? "bg-primary/10 text-primary" : "bg-info/10 text-info"
+                    f.source === 'self-report' ? "bg-primary/10 text-[#9a3412] dark:text-primary" : "bg-info/10 text-info dark:text-sky-400"
                   )}>
                     {SOURCE_LABEL[f.source]}
                   </span>
                   <span className="text-text-main flex-1">{f.label}</span>
-                  <span className={cn("font-bold", f.delta > 0 ? "text-success" : f.delta < 0 ? "text-destructive" : "text-text-muted")}>
+                  <span className={cn("font-bold", f.delta > 0 ? "text-success dark:text-[#4ade80]" : f.delta < 0 ? "text-destructive dark:text-[#f87171]" : "text-text-muted")}>
                     {f.delta > 0 ? '+' : ''}{f.delta}
                   </span>
                 </div>

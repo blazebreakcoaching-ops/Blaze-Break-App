@@ -18,6 +18,7 @@ export const DigitalBoundaryShield = ({ fingerprint, onAwardPoints }: DigitalBou
   });
   
   const [urgentLoudMsg, setUrgentLoudMsg] = useState('');
+  const [templateCopied, setTemplateCopied] = useState(false);
   const [filterResult, setFilterResult] = useState<'urgent' | 'loud' | null>(null);
 
   const handleAuditToggle = (key: string) => {
@@ -71,7 +72,7 @@ export const DigitalBoundaryShield = ({ fingerprint, onAwardPoints }: DigitalBou
                 </div>
                 <div>
                   <h3 className="text-sm font-display font-bold text-text-main tracking-tight">Nova's Filter: Urgent or Loud?</h3>
-                  <p className="text-[11px] uppercase tracking-[0.2em] font-black text-primary">Urgency Check</p>
+                  <p className="text-[11px] uppercase tracking-[0.2em] font-black text-[#9a3412] dark:text-primary">Urgency Check</p>
                 </div>
               </div>
               
@@ -103,7 +104,7 @@ export const DigitalBoundaryShield = ({ fingerprint, onAwardPoints }: DigitalBou
                         "p-6 rounded-2xl border flex gap-4 mt-4",
                         filterResult === 'loud' 
                           ? "bg-warning/10 border-warning/30 text-warning-foreground dark:text-warning"
-                          : "bg-destructive/10 border-destructive/30 text-destructive-foreground dark:text-destructive"
+                          : "bg-destructive/10 border-destructive/30 text-destructive dark:text-[#f87171]"
                       )}
                     >
                       <AlertTriangle className="w-6 h-6 shrink-0" />
@@ -160,6 +161,9 @@ export const DigitalBoundaryShield = ({ fingerprint, onAwardPoints }: DigitalBou
                   setWeekendMode(!weekendMode);
                   if (!weekendMode && onAwardPoints) onAwardPoints(20, 'Weekend Protection Mode Activated');
                 }}
+                role="switch"
+                aria-checked={weekendMode}
+                aria-label={weekendMode ? "Disable weekend protection mode" : "Enable weekend protection mode"}
                 className={cn(
                   "w-12 h-6 rounded-full transition-colors relative", 
                   weekendMode ? "bg-primary" : "bg-border dark:bg-surface"
@@ -174,7 +178,7 @@ export const DigitalBoundaryShield = ({ fingerprint, onAwardPoints }: DigitalBou
                 Blocks out "quick checks" and silences after-hours anxiety loops.
               </p>
               {weekendMode && (
-                <div className="bg-primary/10 border border-primary/20 rounded-lg p-3 text-sm font-bold text-primary dark:text-primary flex items-center gap-2">
+                <div className="bg-primary/10 border border-primary/20 rounded-lg p-3 text-sm font-bold text-[#9a3412] dark:text-primary flex items-center gap-2">
                   <Shield className="w-4 h-4" /> Active until Monday 8AM
                 </div>
               )}
@@ -202,9 +206,10 @@ export const DigitalBoundaryShield = ({ fingerprint, onAwardPoints }: DigitalBou
                  <button
                    key={item.id}
                    onClick={() => handleAuditToggle(item.id)}
+                   aria-pressed={auditChecks[item.id]}
                    className={cn(
                      "w-full flex items-center justify-between p-3 rounded-lg border text-sm transition-all",
-                     auditChecks[item.id] ? "bg-success/10 border-success/30 text-success-foreground dark:text-success font-bold" : "bg-transparent border-border/50 text-text-main"
+                     auditChecks[item.id] ? "bg-success/10 border-success/30 text-success dark:text-[#4ade80] font-bold" : "bg-transparent border-border/50 text-text-main"
                    )}
                  >
                    {item.label}
@@ -222,8 +227,17 @@ export const DigitalBoundaryShield = ({ fingerprint, onAwardPoints }: DigitalBou
              <p className="text-sm font-medium text-text-main italic mb-3">
                "Received. I am currently focused on another priority but will review this and respond by [Tomorrow 10 AM]."
              </p>
-             <button className="text-xs font-bold text-primary hover:text-primary transition-colors">
-               Copy Template
+             <button
+               onClick={() => {
+                 navigator.clipboard.writeText("Received. I am currently focused on another priority but will review this and respond by [Tomorrow 10 AM].");
+                 setTemplateCopied(true);
+                 setTimeout(() => setTemplateCopied(false), 2000);
+               }}
+               aria-label={templateCopied ? "Template copied to clipboard" : "Copy response template to clipboard"}
+               className="text-xs font-bold text-[#9a3412] dark:text-primary hover:opacity-80 transition-opacity flex items-center gap-1.5"
+             >
+               {templateCopied ? <CheckCircle2 className="w-3.5 h-3.5 text-success dark:text-[#4ade80]" /> : null}
+               {templateCopied ? 'Copied' : 'Copy Template'}
              </button>
           </div>
 

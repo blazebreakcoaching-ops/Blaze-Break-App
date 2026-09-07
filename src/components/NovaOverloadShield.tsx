@@ -77,7 +77,7 @@ const SHIELD_COLOR_CLASSES: Record<string, {
     cardBg: 'bg-success/5',
     iconBg: 'bg-success',
     iconShadow: 'shadow-success/30',
-    heading: 'text-success dark:text-success',
+    heading: 'text-success dark:text-[#4ade80]',
     glow: 'bg-success/20',
   },
   amber: {
@@ -85,7 +85,7 @@ const SHIELD_COLOR_CLASSES: Record<string, {
     cardBg: 'bg-warning/5',
     iconBg: 'bg-warning',
     iconShadow: 'shadow-warning/30',
-    heading: 'text-warning dark:text-warning',
+    heading: 'text-[#9a3412] dark:text-warning',
     glow: 'bg-warning/20',
   },
   rose: {
@@ -93,7 +93,7 @@ const SHIELD_COLOR_CLASSES: Record<string, {
     cardBg: 'bg-destructive/5',
     iconBg: 'bg-destructive',
     iconShadow: 'shadow-destructive/30',
-    heading: 'text-destructive dark:text-destructive',
+    heading: 'text-destructive dark:text-[#f87171]',
     glow: 'bg-destructive/20',
   },
 };
@@ -248,12 +248,14 @@ export const NovaOverloadShield = ({ fingerprint, onAwardPoints, onNavigate }: N
           <div className="card p-2 flex bg-surface border border-border">
             <button 
               onClick={() => setActiveTab('manual')}
+              aria-pressed={activeTab === 'manual'}
               className={cn("flex-1 py-2 text-sm font-bold rounded-xl transition-all", activeTab === 'manual' ? "bg-white dark:bg-surface text-text-main shadow-sm" : "text-text-muted hover:text-text-main")}
             >
               Phase 1: Manual Scan
             </button>
             <button 
               onClick={() => setActiveTab('integrations')}
+              aria-pressed={activeTab === 'integrations'}
               className={cn("flex-1 py-2 text-sm font-bold rounded-xl transition-all", activeTab === 'integrations' ? "bg-white dark:bg-surface text-text-main shadow-sm" : "text-text-muted hover:text-text-main")}
             >
               Live Signals
@@ -313,8 +315,9 @@ export const NovaOverloadShield = ({ fingerprint, onAwardPoints, onNavigate }: N
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div className="space-y-2">
-                      <label className="text-xs font-bold text-text-muted uppercase tracking-wider">Energy Level</label>
+                      <label htmlFor="ows-energy-level" className="text-xs font-bold text-text-muted uppercase tracking-wider">Energy Level</label>
                       <select 
+                        id="ows-energy-level"
                         value={manualData.energyLevel}
                         onChange={(e) => setManualData({...manualData, energyLevel: e.target.value})}
                         className="w-full bg-surface border border-border/50 rounded-xl p-3 text-text-main font-medium focus:ring-2 focus:ring-primary/50 outline-none transition-all"
@@ -325,8 +328,9 @@ export const NovaOverloadShield = ({ fingerprint, onAwardPoints, onNavigate }: N
                       </select>
                     </div>
                     <div className="space-y-2">
-                      <label className="text-xs font-bold text-text-muted uppercase tracking-wider">Sleep Quality</label>
+                      <label htmlFor="ows-sleep-quality" className="text-xs font-bold text-text-muted uppercase tracking-wider">Sleep Quality</label>
                       <select 
+                        id="ows-sleep-quality"
                         value={manualData.sleepQuality}
                         onChange={(e) => setManualData({...manualData, sleepQuality: e.target.value})}
                         className="w-full bg-surface border border-border/50 rounded-xl p-3 text-text-main font-medium focus:ring-2 focus:ring-primary/50 outline-none transition-all"
@@ -343,13 +347,15 @@ export const NovaOverloadShield = ({ fingerprint, onAwardPoints, onNavigate }: N
                     <div className="flex gap-2">
                       <button 
                         onClick={() => setManualData({...manualData, recoveryGaps: 'yes'})}
-                        className={cn("flex-1 p-3 rounded-xl font-bold transition-all text-center", manualData.recoveryGaps === 'yes' ? 'bg-success/10 text-success border border-success/30' : 'bg-surface border border-border/50 text-text-muted hover:border-text-muted/30')}
+                        aria-pressed={manualData.recoveryGaps === 'yes'}
+                        className={cn("flex-1 p-3 rounded-xl font-bold transition-all text-center", manualData.recoveryGaps === 'yes' ? 'bg-success/10 text-success dark:text-[#4ade80] border border-success/30' : 'bg-surface border border-border/50 text-text-muted hover:border-text-muted/30')}
                       >
                         Yes
                       </button>
                       <button 
                         onClick={() => setManualData({...manualData, recoveryGaps: 'no'})}
-                        className={cn("flex-1 p-3 rounded-xl font-bold transition-all text-center", manualData.recoveryGaps === 'no' ? 'bg-destructive/10 text-destructive border border-destructive/30' : 'bg-surface border border-border/50 text-text-muted hover:border-text-muted/30')}
+                        aria-pressed={manualData.recoveryGaps === 'no'}
+                        className={cn("flex-1 p-3 rounded-xl font-bold transition-all text-center", manualData.recoveryGaps === 'no' ? 'bg-destructive/10 text-destructive dark:text-[#f87171] border border-destructive/30' : 'bg-surface border border-border/50 text-text-muted hover:border-text-muted/30')}
                       >
                         No
                       </button>
@@ -384,7 +390,7 @@ export const NovaOverloadShield = ({ fingerprint, onAwardPoints, onNavigate }: N
                           <h5 className="font-bold text-text-main text-sm">{int.name}</h5>
                           <div className="text-xs text-text-muted">{int.description}</div>
                           {int.status === 'connected' && int.detail && (
-                            <div className="mt-2 text-xs font-medium text-warning bg-warning/10 inline-block px-2 py-1 rounded">
+                            <div className="mt-2 text-xs font-medium text-[#9a3412] dark:text-warning bg-warning/10 inline-block px-2 py-1 rounded">
                               Detected: {int.detail}
                             </div>
                           )}
@@ -393,7 +399,7 @@ export const NovaOverloadShield = ({ fingerprint, onAwardPoints, onNavigate }: N
                       <button 
                         onClick={() => int.status === 'disconnected' && onNavigate && onNavigate('privacy')}
                         disabled={int.status === 'connected'}
-                        className={cn("px-3 py-1.5 shrink-0 rounded-lg text-xs font-bold transition-all", int.status === 'connected' ? 'bg-success/10 text-success cursor-default' : 'bg-border dark:bg-surface text-text-main hover:bg-surface dark:hover:bg-surface')}
+                        className={cn("px-3 py-1.5 shrink-0 rounded-lg text-xs font-bold transition-all", int.status === 'connected' ? 'bg-success/10 text-success dark:text-[#4ade80] cursor-default' : 'bg-border dark:bg-surface text-text-main hover:bg-surface dark:hover:bg-surface')}
                       >
                         {int.status === 'connected' ? 'Connected' : 'Connect'}
                       </button>
@@ -434,7 +440,7 @@ export const NovaOverloadShield = ({ fingerprint, onAwardPoints, onNavigate }: N
                  <div className={cn("w-16 h-16 rounded-2xl flex items-center justify-center text-white shadow-xl transition-all duration-500", stateColors.iconBg, stateColors.iconShadow)}>
                    {simulating ? <Zap className="w-8 h-8 animate-pulse" /> : <activeState.icon className="w-8 h-8" />}
                  </div>
-                 <div>
+                 <div role="status" aria-live="polite">
                    <h3 className="text-xs font-black uppercase tracking-widest text-text-muted mb-1">Current Status</h3>
                    <h2 className={cn("text-3xl font-display font-bold transition-colors", stateColors.heading)}>
                      {simulating ? 'Scanning...' : activeState.label}

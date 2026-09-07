@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
+import { useFocusTrap } from '../lib/useFocusTrap';
 import { 
   ShieldCheck, 
   Lock, 
@@ -29,6 +30,7 @@ import { PrivacyPolicyAccordion } from './PrivacyPolicyAccordion.tsx';
 
 import { ConnectedNovaPermissions } from './ConnectedRecoveryModules.tsx';
 import { auth, db } from '../lib/firebase';
+import { signOut } from 'firebase/auth';
 import { doc, setDoc } from 'firebase/firestore';
 import { secureApiFetch } from '../lib/secure-api.ts';
 import { TeamClimateSurvey } from './TeamClimateSurvey.tsx';
@@ -66,6 +68,14 @@ export const PrivacyVault = ({
   const [consentSaving, setConsentSaving] = useState(false);
   const [leaving, setLeaving] = useState(false);
   const [showLeaveConfirm, setShowLeaveConfirm] = useState(false);
+  const leaveDialogRef = useFocusTrap(showLeaveConfirm);
+
+  useEffect(() => {
+    if (!showLeaveConfirm) return;
+    const onKeyDown = (e: KeyboardEvent) => { if (e.key === 'Escape') setShowLeaveConfirm(false); };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [showLeaveConfirm]);
 
   const fetchOrgStatus = async () => {
     if (!auth.currentUser) return;
@@ -137,8 +147,26 @@ export const PrivacyVault = ({
     setShowLeaveConfirm(false);
   };
   const [showDeleteConfirmModal, setShowDeleteConfirmModal] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const deleteDialogRef = useFocusTrap(showDeleteConfirmModal);
   const [typedFullName, setTypedFullName] = useState("");
   const [isDeleting, setIsDeleting] = useState(false);
+
+  useEffect(() => {
+    if (!showDeleteConfirmModal) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !isDeleting) {
+        setShowDeleteConfirmModal(false);
+        setTypedFullName("");
+        setAcknowledgedLoss(false);
+        setAcknowledgedUnlink(false);
+        setAcknowledgedNoRecovery(false);
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [showDeleteConfirmModal, isDeleting]);
 
   // Safety checkboxes for Erasure Protocol
   const [acknowledgedLoss, setAcknowledgedLoss] = useState(false);
@@ -205,25 +233,36 @@ export const PrivacyVault = ({
   };
 
   const [showDownloadConfirm, setShowDownloadConfirm] = useState(false);
+  const downloadDialogRef = useFocusTrap(showDownloadConfirm);
+
+  useEffect(() => {
+    if (!showDownloadConfirm) return;
+    const onKeyDown = (e: KeyboardEvent) => { if (e.key === 'Escape') setShowDownloadConfirm(false); };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [showDownloadConfirm]);
 
   const processDownload = async () => {
     setShowDownloadConfirm(false);
     await handleAuditAction('Request Data Export', undefined, 'verified');
-    const data = {
-      profile,
-      auditLogs,
-      flags,
-      exportTimestamp: new Date().toISOString()
-    };
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `blazebreak_export_${new Date().getTime()}.json`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    try {
+      const res = await secureApiFetch('/api/user/export');
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Export failed');
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `blazebreak_export_${new Date().getTime()}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (e: any) {
+      console.error('Export failed:', e);
+      setExportError(e?.message || 'Could not build your export right now. Please try again.');
+      setTimeout(() => setExportError(null), 6000);
+    }
   };
 
   return (
@@ -241,11 +280,11 @@ export const PrivacyVault = ({
                   Trust & Privacy Centre
                 </h2>
                 <div className="absolute left-0 top-full mt-4 p-4 w-72 bg-card text-text-main text-sm font-medium rounded-xl border border-border shadow-lg opacity-0 invisible group-hover/tooltip:opacity-100 group-hover/tooltip:visible transition-all z-50 pointer-events-none">
-                  <div className="text-xs uppercase font-black tracking-widest text-primary mb-2">Welcome to the Vault</div>
+                  <div className="text-xs uppercase font-black tracking-widest text-[#9a3412] dark:text-primary mb-2">Welcome to the Vault</div>
                   Manage your data boundaries, review AI governance polices, and control what Nova remembers about your burnout baseline.
                 </div>
               </div>
-              <p className="text-xs uppercase font-black tracking-[0.2em] text-primary mt-2">Blaze Break Assurance Layer</p>
+              <p className="text-xs uppercase font-black tracking-[0.2em] text-[#9a3412] dark:text-primary mt-2">Blaze Break Assurance Layer</p>
             </div>
           </div>
           <p className="text-text-muted text-sm md:text-base leading-relaxed mb-8 font-light">
@@ -268,10 +307,11 @@ export const PrivacyVault = ({
                   <button
                     key={tab.id}
                     onClick={() => setActiveTab(tab.id as any)}
+                    aria-current={activeTab === tab.id ? 'page' : undefined}
                     className={cn(
                       "flex items-center gap-2 px-5 py-2.5 rounded-xl border transition-all duration-300 font-medium text-xs tracking-wide cursor-pointer",
                       activeTab === tab.id 
-                        ? "bg-primary/10 border-primary/30 text-primary shadow-inner" 
+                        ? "bg-primary/10 border-primary/30 text-[#9a3412] dark:text-primary shadow-inner" 
                         : "bg-surface/50 border-white/[0.04] text-text-muted hover:text-text-main"
                     )}
                   >
@@ -289,12 +329,12 @@ export const PrivacyVault = ({
               className={cn(
                 "flex items-center gap-2 px-4 py-2.5 rounded-xl border transition-all duration-300 font-bold text-xs cursor-pointer relative overflow-hidden self-start lg:self-center",
                 isSyncActive 
-                  ? "bg-primary/10 border-primary/40 text-primary" 
+                  ? "bg-primary/10 border-primary/40 text-[#9a3412] dark:text-primary" 
                   : "bg-surface/50 dark:bg-card/40 border-white/[0.04] text-text-muted hover:text-text-main"
               )}
             >
               <RefreshCw className={cn("w-3.5 h-3.5", isSyncActive && "animate-spin text-primary")} />
-              <span>{isSyncActive ? "Saving Locally..." : "Save Locally"}</span>
+              <span role="status" aria-live="polite">{isSyncActive ? "Saving Locally..." : "Save Locally"}</span>
               {isSyncActive && (
                 <span className="absolute inset-0 border border-primary/30 rounded-xl animate-pulse pointer-events-none bg-primary/5" />
               )}
@@ -317,7 +357,7 @@ export const PrivacyVault = ({
               <DataZoneVisualizer />
 
               <div className="card bg-destructive/5 border-destructive/20">
-                <h3 className="font-bold text-destructive flex items-center gap-2 mb-4">
+                <h3 className="font-bold text-destructive dark:text-[#f87171] flex items-center gap-2 mb-4">
                   <AlertTriangle className="w-5 h-5" /> Our Privacy Promise
                 </h3>
                 <p className="text-sm text-text-muted leading-relaxed font-light">
@@ -342,7 +382,7 @@ export const PrivacyVault = ({
               <div className="card space-y-6 bg-gradient-to-r from-[#080c14]/80 to-[#101420]/80">
                 <div>
                   <h3 className="font-bold text-text-main text-xl flex items-center gap-2 mb-2">
-                    <Building className="w-5 h-5 text-primary" /> Organisation Participation
+                    <Building className="w-5 h-5 text-orange-300" /> Organisation Participation
                   </h3>
                   <p className="text-sm text-text-muted max-w-3xl leading-relaxed">
                     Your employer can fund your support without compromising your privacy. Here is the strict separation between your Personal Space and your Organisation Space.
@@ -351,35 +391,35 @@ export const PrivacyVault = ({
                 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                    <div className="space-y-4">
-                     <h4 className="text-xs font-black uppercase tracking-[0.2em] text-success">What they CAN see</h4>
+                     <h4 className="text-xs font-black uppercase tracking-[0.2em] text-green-300">What they CAN see</h4>
                      <ul className="space-y-3 text-sm text-text-muted">
                        <li className="flex items-start gap-2">
-                         <Network className="w-4 h-4 text-success mt-0.5 shrink-0" />
+                         <Network className="w-4 h-4 text-green-300 mt-0.5 shrink-0" />
                          <span>Grouped trends (e.g., team mood distribution) — only if you opt in below</span>
                        </li>
                        <li className="flex items-start gap-2">
-                         <Network className="w-4 h-4 text-success mt-0.5 shrink-0" />
+                         <Network className="w-4 h-4 text-green-300 mt-0.5 shrink-0" />
                          <span>Voluntary participation in company challenges</span>
                        </li>
                        <li className="flex items-start gap-2">
-                         <Network className="w-4 h-4 text-success mt-0.5 shrink-0" />
+                         <Network className="w-4 h-4 text-green-300 mt-0.5 shrink-0" />
                          <span>Anonymous team aggregates (never shown below your org's configured minimum group size)</span>
                        </li>
                      </ul>
                    </div>
                    <div className="space-y-4">
-                     <h4 className="text-xs font-black uppercase tracking-[0.2em] text-destructive">What they CANNOT see</h4>
+                     <h4 className="text-xs font-black uppercase tracking-[0.2em] text-rose-300">What they CANNOT see</h4>
                      <ul className="space-y-3 text-sm text-text-muted ">
                        <li className="flex items-start gap-2">
-                         <EyeOff className="w-4 h-4 text-destructive mt-0.5 shrink-0" />
+                         <EyeOff className="w-4 h-4 text-rose-300 mt-0.5 shrink-0" />
                          <span>Named employee risk labels or mood</span>
                        </li>
                        <li className="flex items-start gap-2">
-                         <EyeOff className="w-4 h-4 text-destructive mt-0.5 shrink-0" />
+                         <EyeOff className="w-4 h-4 text-rose-300 mt-0.5 shrink-0" />
                          <span>Private journal entries or Nova chat history</span>
                        </li>
                        <li className="flex items-start gap-2">
-                         <EyeOff className="w-4 h-4 text-destructive mt-0.5 shrink-0" />
+                         <EyeOff className="w-4 h-4 text-rose-300 mt-0.5 shrink-0" />
                          <span>Your personal Recovery Score</span>
                        </li>
                      </ul>
@@ -387,7 +427,7 @@ export const PrivacyVault = ({
                 </div>
 
                 {orgError && (
-                  <div className="p-3 bg-destructive/10 border border-destructive/20 text-destructive text-xs rounded-xl">{orgError}</div>
+                  <div role="alert" className="p-3 bg-destructive/10 border border-destructive/20 text-destructive dark:text-[#f87171] text-xs rounded-xl">{orgError}</div>
                 )}
 
                 {orgLoading ? (
@@ -445,7 +485,7 @@ export const PrivacyVault = ({
 
                     {orgStatus.isOrgAdmin && orgStatus.joinCode && (
                       <div className="p-4 rounded-2xl bg-primary/5 border border-primary/20 space-y-2">
-                        <h4 className="text-xs font-black uppercase tracking-widest text-primary">Your Team's Join Code</h4>
+                        <h4 className="text-xs font-black uppercase tracking-widest text-[#9a3412] dark:text-primary">Your Team's Join Code</h4>
                         <p className="text-xs text-text-muted">Share this with employees so they can link their own account to {orgStatus.organisationName}.</p>
                         <div className="font-mono text-lg font-bold text-text-main bg-background px-4 py-2 rounded-lg border border-border w-fit tracking-widest">{orgStatus.joinCode}</div>
                       </div>
@@ -494,7 +534,7 @@ export const PrivacyVault = ({
                   <div className="flex items-center justify-between p-3 rounded-xl bg-background/50 border border-white/[0.02]">
                     <div>
                       <p className="text-sm font-bold text-text-main flex items-center gap-2">
-                        Recovery Personalisation <span className="px-1.5 py-0.5 bg-primary/20 text-primary border border-primary/30 text-[10px] uppercase tracking-wider rounded-full">Zone A</span>
+                        Recovery Personalisation <span className="px-1.5 py-0.5 bg-primary/20 text-[#9a3412] dark:text-primary border border-primary/30 text-[10px] uppercase tracking-wider rounded-full">Zone A</span>
                       </p>
                       <p className="text-xs text-text-muted mt-0.5">Required for core Nova logic.</p>
                     </div>
@@ -521,7 +561,7 @@ export const PrivacyVault = ({
                   <div className="flex items-center justify-between p-3 rounded-xl bg-background/50 border border-white/[0.02]">
                     <div>
                       <p className="text-sm font-bold text-text-main flex items-center gap-2">
-                        Recovery Ally <span className="px-1.5 py-0.5 bg-success/20 text-success/40 border border-success/30 text-[10px] uppercase tracking-wider rounded-full">Zone B</span>
+                        Recovery Ally <span className="px-1.5 py-0.5 bg-success/20 text-[#166534] dark:text-[#4ade80] border border-success/30 text-[10px] uppercase tracking-wider rounded-full">Zone B</span>
                       </p>
                       <p className="text-xs text-text-muted mt-0.5">Share selected goals/wins with preferred contacts.</p>
                     </div>
@@ -552,6 +592,9 @@ export const PrivacyVault = ({
                   >
                     Request Data Export
                   </button>
+                  {exportError && (
+                    <p role="alert" className="text-xs text-destructive dark:text-[#f87171] mt-2">{exportError}</p>
+                  )}
                 </div>
 
                 <div className="card space-y-4 hover:border-destructive/20 transition-colors">
@@ -569,7 +612,7 @@ export const PrivacyVault = ({
                       setTypedFullName("");
                       setShowDeleteConfirmModal(true);
                     }}
-                    className="w-full py-3 rounded-xl bg-destructive/10 border border-destructive/20 text-destructive text-xs font-bold hover:bg-destructive/20 transition-colors cursor-pointer"
+                    className="w-full py-3 rounded-xl bg-destructive/10 border border-destructive/20 text-destructive dark:text-[#f87171] text-xs font-bold hover:bg-destructive/20 transition-colors cursor-pointer"
                   >
                     Delete My Account
                   </button>
@@ -602,8 +645,8 @@ export const PrivacyVault = ({
                   <h4 className="font-bold text-text-main mb-2">A. Recommendation Transparency</h4>
                   <p className="text-sm text-text-muted mb-3 font-light">When Nova advises you, the logic path is exposed. No "black box" guidance.</p>
                   <div className="bg-background/60 border border-white/[0.02] p-4 rounded-xl text-xs space-y-3 font-mono">
-                    <p className="flex items-center gap-2 text-text-muted"><span className="text-success tracking-wider font-bold bg-success/10 px-2 py-0.5 rounded">ALLOWED</span> "I suggested a block because you logged 4 back-to-back meetings."</p>
-                    <p className="flex items-center gap-2 text-text-muted"><span className="text-destructive tracking-wider font-bold bg-destructive/10 px-2 py-0.5 rounded">BLOCKED</span> "Trust me, your risk is high."</p>
+                    <p className="flex items-center gap-2 text-text-muted"><span className="text-[#166534] dark:text-[#4ade80] tracking-wider font-bold bg-success/10 px-2 py-0.5 rounded">ALLOWED</span> "I suggested a block because you logged 4 back-to-back meetings."</p>
+                    <p className="flex items-center gap-2 text-text-muted"><span className="text-destructive dark:text-[#f87171] tracking-wider font-bold bg-destructive/10 px-2 py-0.5 rounded">BLOCKED</span> "Trust me, your risk is high."</p>
                   </div>
                 </div>
 
@@ -618,11 +661,11 @@ export const PrivacyVault = ({
                        <div className="flex items-center justify-between">
                          <p className="text-xs text-text-muted uppercase tracking-widest flex items-center gap-4">
                            <span>Source: Trigger Journal</span> 
-                           <span className="flex items-center gap-1 font-bold text-primary bg-primary/10 border border-primary/30 px-1.5 py-0.5 rounded-full"><Lock className="w-3 h-3" /> Zone A</span>
+                           <span className="flex items-center gap-1 font-bold text-[#9a3412] dark:text-primary bg-primary/10 border border-primary/30 px-1.5 py-0.5 rounded-full"><Lock className="w-3 h-3" /> Zone A</span>
                          </p>
                          <button 
                            onClick={() => handleAuditAction('Forget Context', 'AI Memory', 'deleted')}
-                           className="text-xs px-3 py-1.5 rounded-lg bg-destructive/10 text-destructive font-bold hover:bg-destructive/20 transition-colors uppercase tracking-widest"
+                           className="text-xs px-3 py-1.5 rounded-lg bg-destructive/10 text-destructive dark:text-[#f87171] font-bold hover:bg-destructive/20 transition-colors uppercase tracking-widest"
                          >
                            Forget
                          </button>
@@ -642,7 +685,21 @@ export const PrivacyVault = ({
                   <h3 className="font-bold text-text-main text-lg mb-1">AI Action Audit Log</h3>
                   <p className="text-xs text-text-muted">A verifiable ledger of every sensitive action Nova takes with your data.</p>
                 </div>
-                <button className="flex items-center gap-2 px-4 py-2.5 text-xs font-bold text-primary bg-primary/10 border border-primary/20 rounded-xl hover:bg-primary/20 transition-colors">
+                <button
+                  onClick={() => {
+                    const blob = new Blob([JSON.stringify(auditLogs, null, 2)], { type: 'application/json' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `blaze-break-audit-ledger-${new Date().toISOString().slice(0, 10)}.json`;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    URL.revokeObjectURL(url);
+                  }}
+                  disabled={auditLogs.length === 0}
+                  className="flex items-center gap-2 px-4 py-2.5 text-xs font-bold text-[#9a3412] dark:text-primary bg-primary/10 border border-primary/20 rounded-xl hover:bg-primary/20 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                >
                   <Download className="w-4 h-4" /> Export Ledger
                 </button>
               </div>
@@ -676,9 +733,9 @@ export const PrivacyVault = ({
                         <td className="px-4 py-5">
                           <span className={cn(
                             "inline-flex items-center px-2 py-1 rounded bg-background border border-white/[0.05] text-[11px] uppercase tracking-widest font-black shadow-inner",
-                            log.status === 'authorised' ? 'text-success border-success/20' :
-                            log.status === 'anonymised' ? 'text-primary border-primary/20' :
-                            log.status === 'deleted' ? 'text-destructive border-destructive/20' :
+                            log.status === 'authorised' ? 'text-success dark:text-[#4ade80] border-success/20' :
+                            log.status === 'anonymised' ? 'text-[#9a3412] dark:text-primary border-primary/20' :
+                            log.status === 'deleted' ? 'text-destructive dark:text-[#f87171] border-destructive/20' :
                             'text-text-muted'
                           )}>
                             {log.status}
@@ -695,7 +752,7 @@ export const PrivacyVault = ({
         </motion.div>
       </AnimatePresence>
       <div className="flex justify-center mt-8">
-        <a href="#" className="flex items-center gap-2 text-xs uppercase font-black tracking-[0.2em] text-text-muted hover:text-primary transition-colors">
+        <a href="#" className="flex items-center gap-2 text-xs uppercase font-black tracking-[0.2em] text-text-muted hover:text-[#9a3412] dark:hover:text-primary transition-colors">
            <FileText className="w-4 h-4" /> View Trust Centre Documents & DPIA Summaries
         </a>
       </div>
@@ -710,18 +767,23 @@ export const PrivacyVault = ({
             onClick={() => setShowDownloadConfirm(false)}
           >
             <motion.div
+              ref={downloadDialogRef as any}
               initial={{ scale: 0.95 }}
               animate={{ scale: 1 }}
               exit={{ scale: 0.95 }}
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="download-confirm-title"
+              tabIndex={-1}
               className="card bg-card border border-border shadow-lg p-8 max-w-sm w-full relative overflow-hidden"
               onClick={e => e.stopPropagation()}
             >
               <div className="relative z-10 space-y-6">
-                <div className="w-12 h-12 bg-primary/20 rounded-lg flex items-center justify-center text-primary">
+                <div className="w-12 h-12 bg-primary/20 rounded-lg flex items-center justify-center text-[#9a3412] dark:text-primary">
                   <Download className="w-6 h-6" />
                 </div>
                 <div>
-                  <h3 className="text-xl font-display font-bold text-text-main mb-2">Confirm Data Export</h3>
+                  <h3 id="download-confirm-title" className="text-xl font-display font-bold text-text-main mb-2">Confirm Data Export</h3>
                   <p className="text-text-muted text-sm">
                     This will download a JSON archive of all your personal recovery entries, including your profile, active flags, and anonymous logs (approx. 45KB). Ensure you are downloading this on a secure, private device.
                   </p>
@@ -762,9 +824,14 @@ export const PrivacyVault = ({
             }}
           >
             <motion.div
+              ref={deleteDialogRef as any}
               initial={{ scale: 0.95 }}
               animate={{ scale: 1 }}
               exit={{ scale: 0.95 }}
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="delete-confirm-title"
+              tabIndex={-1}
               className="card bg-background border border-destructive/30 shadow-[0_0_50px_rgba(220,38,38,0.2)] p-8 max-w-md w-full relative overflow-hidden"
               onClick={e => e.stopPropagation()}
             >
@@ -774,7 +841,7 @@ export const PrivacyVault = ({
                 </div>
                 
                 <div>
-                  <h3 className="text-xl font-display font-bold text-text-main mb-2">Confirm Permanent Deletion</h3>
+                  <h3 id="delete-confirm-title" className="text-xl font-display font-bold text-text-main mb-2">Confirm Permanent Deletion</h3>
                   <p className="text-text-muted text-sm leading-relaxed font-light">
                     This is a destructive, irreversible action. Executing this will permanently erase your diagnostic metrics, somatic logs, Nova interaction baseline, and sync connection.
                   </p>
@@ -815,7 +882,7 @@ export const PrivacyVault = ({
 
                     <p className="text-xs text-text-muted">
                       To authorize deletion, please type your full name matches the profile below:
-                      <strong className="block text-primary mt-1 select-all font-mono">
+                      <strong className="block text-[#9a3412] dark:text-primary mt-1 select-all font-mono">
                         {profile.fullName || "CONFIRM DELETION"}
                       </strong>
                     </p>
@@ -823,17 +890,18 @@ export const PrivacyVault = ({
                     <div className="space-y-1">
                       <input
                         type="text"
+                        aria-label="Type your full name to authorize deletion"
                         className="w-full bg-surface border border-white/[0.08] focus:border-destructive/50 rounded-xl px-4 py-3 text-sm font-medium text-text-main placeholder:text-text-muted/40 outline-none transition-all font-mono"
                         placeholder="Type your full name exactly"
                         value={typedFullName}
                         onChange={e => setTypedFullName(e.target.value)}
                       />
                       {typedFullName.length > 0 && (
-                        <p className={cn(
+                        <p role="status" aria-live="polite" className={cn(
                           "text-[11px] font-medium font-mono pl-1",
                           typedFullName.trim().toLowerCase() === (profile.fullName || "CONFIRM DELETION").trim().toLowerCase()
-                            ? "text-success" 
-                            : "text-destructive/80"
+                            ? "text-success dark:text-[#4ade80]" 
+                            : "text-destructive/80 dark:text-[#f87171]"
                         )}>
                           {typedFullName.trim().toLowerCase() === (profile.fullName || "CONFIRM DELETION").trim().toLowerCase()
                             ? "✓ Full name authorized" 
@@ -865,50 +933,49 @@ export const PrivacyVault = ({
                         }
                         onClick={async () => {
                           setIsDeleting(true);
-                          await new Promise(r => setTimeout(r, 1000));
-                          await handleAuditAction('Initiate Demolition Sequence', 'Core Databases', 'deleted');
-                          await new Promise(r => setTimeout(r, 1200));
-                          await handleAuditAction('Erase Diagnostic Logs', 'Zone A Local DB', 'deleted');
-                          await new Promise(r => setTimeout(r, 1000));
-                          
-                          onProfileUpdate({
-                            fullName: '',
-                            role: '',
-                            organization: '',
-                            managerEmail: ''
-                          });
-                          
-                          localStorage.clear();
-                          
-                          await handleAuditAction('Data Deletion Completed', 'All Data Stores', 'deleted');
-                          setIsDeleting(false);
-                          setShowDeleteConfirmModal(false);
-                          setTypedFullName("");
-                          setAcknowledgedLoss(false);
-                          setAcknowledgedUnlink(false);
-                          setAcknowledgedNoRecovery(false);
-                          
-                          window.location.reload();
+                          setDeleteError(null);
+                          try {
+                            const res = await secureApiFetch('/api/user/delete-account', { method: 'POST' });
+                            const data = await res.json();
+                            if (!res.ok || !data.success) {
+                              throw new Error(data.error || 'The deletion did not complete.');
+                            }
+                            await handleAuditAction('Data Deletion Completed', 'All Data Stores', 'deleted');
+                            localStorage.clear();
+                            await signOut(auth).catch(() => {
+                              // Non-fatal - the account and its data are already
+                              // gone server-side; a failed local sign-out just
+                              // means the reload below clears the session anyway.
+                            });
+                            window.location.reload();
+                          } catch (e: any) {
+                            console.error('Account deletion failed:', e);
+                            setDeleteError(e?.message || 'Could not complete the deletion. Please try again.');
+                            setIsDeleting(false);
+                          }
                         }}
                         className="flex-1 px-4 py-3 bg-destructive hover:bg-destructive-foreground disabled:bg-destructive-foreground/40 disabled:text-destructive-foreground disabled:border-transparent cursor-pointer text-white border border-destructive/30 rounded-xl font-bold transition text-xs"
                       >
                         Purge All Data
                       </button>
                     </div>
+                    {deleteError && (
+                      <p role="alert" className="text-xs text-destructive dark:text-[#f87171] mt-3 text-center">{deleteError}</p>
+                    )}
                   </div>
                 ) : (
                   <div className="space-y-4">
                     <div className="flex flex-col items-center justify-center py-6 space-y-3">
-                      <Loader2 className="w-8 h-8 text-destructive animate-spin" />
-                      <p className="text-xs font-bold text-destructive font-mono tracking-widest uppercase animate-pulse">
+                      <Loader2 className="w-8 h-8 text-destructive dark:text-[#f87171] animate-spin" />
+                      <p className="text-xs font-bold text-destructive dark:text-[#f87171] font-mono tracking-widest uppercase animate-pulse">
                         Wiping Diagnostic Logs...
                       </p>
                     </div>
                     <div className="space-y-1 text-xs text-text-muted font-mono leading-relaxed bg-background p-3 rounded-lg border border-white/[0.02]">
-                      <p className="text-destructive">● [1/4] Overwriting Zone A-C metadata...</p>
-                      <p className="text-destructive">● [2/4] Destroying audit ledger traces...</p>
-                      <p className="text-destructive">● [3/4] Purging offline local storage namespaces...</p>
-                      <p className="text-destructive">● [4/4] Finalizing cryptographic shredding...</p>
+                      <p className="text-destructive dark:text-[#f87171]">● [1/4] Overwriting Zone A-C metadata...</p>
+                      <p className="text-destructive dark:text-[#f87171]">● [2/4] Destroying audit ledger traces...</p>
+                      <p className="text-destructive dark:text-[#f87171]">● [3/4] Purging offline local storage namespaces...</p>
+                      <p className="text-destructive dark:text-[#f87171]">● [4/4] Finalizing cryptographic shredding...</p>
                     </div>
                   </div>
                 )}
@@ -923,14 +990,19 @@ export const PrivacyVault = ({
           <div className="fixed inset-0 z-[200] flex items-center justify-center p-4" onClick={() => setShowLeaveConfirm(false)}>
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 bg-black/50" />
             <motion.div
+              ref={leaveDialogRef as any}
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
               onClick={(e) => e.stopPropagation()}
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="leave-org-title"
+              tabIndex={-1}
               className="relative card bg-card border border-border shadow-lg p-6 max-w-sm w-full space-y-4"
             >
               <div>
-                <h4 className="text-lg font-bold text-text-main">Leave {orgStatus?.organisationName || 'this organisation'}?</h4>
+                <h4 id="leave-org-title" className="text-lg font-bold text-text-main">Leave {orgStatus?.organisationName || 'this organisation'}?</h4>
                 <p className="text-sm text-text-muted mt-2">
                   You'll lose access to your team's climate survey, recognition wall, and challenges, and your data-sharing consent will be turned off. Your own recovery data is entirely unaffected — you can rejoin later with a join code if you change your mind.
                 </p>

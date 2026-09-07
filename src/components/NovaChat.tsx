@@ -7,7 +7,6 @@ import {
   Loader2,
   Volume2,
   Mic,
-  MicOff,
   VolumeX,
   Target,
   History as HistoryIcon,
@@ -19,8 +18,9 @@ import ReactMarkdown from "react-markdown";
 import { cn } from "../lib/utils";
 import { getNovaBrain, addNovaMemory } from "../lib/nova-brain";
 import { secureApiFetch } from "../lib/secure-api";
-import { auth, db, getAppCheckToken } from "../lib/firebase";
+import { auth, db } from "../lib/firebase";
 import { doc, getDoc } from "firebase/firestore";
+import { NovaVoiceCall } from "./NovaVoiceCall";
 
 interface Message {
   role: "user" | "model";
@@ -29,6 +29,11 @@ interface Message {
     contextTriggered: boolean;
     modulesUsed: string[];
     rationale: string;
+  };
+  featureSuggestion?: {
+    featureId: string;
+    label: string;
+    reason: string;
   };
 }
 
@@ -67,7 +72,10 @@ export const NovaChat = ({
         if (savedFlags) {
           setFlags(JSON.parse(savedFlags));
         }
-      } catch (e) {}
+      } catch (e) {
+        // Non-fatal - if the saved flags are missing or corrupted,
+        // this just keeps whatever flags were already in state.
+      }
     };
     loadFlags();
     window.addEventListener("storage", loadFlags);
@@ -169,7 +177,7 @@ export const NovaChat = ({
     const saved = localStorage.getItem("nova_voice_enabled");
     return saved !== null ? saved === "true" : true;
   });
-  const [isListening, setIsListening] = useState(false);
+  const [showVoiceCall, setShowVoiceCall] = useState(false);
   const [speakingIndex, setSpeakingIndex] = useState<number | null>(null);
   const [audioLoading, setAudioLoading] = useState(false);
   const [activeToolSuggestion, setActiveToolSuggestion] = useState<{
@@ -230,7 +238,6 @@ export const NovaChat = ({
         const text = event.results[0][0].transcript;
         if (text) {
           setInput((prev) => prev + (prev ? " " : "") + text);
-          analyzeInputForTools(text);
         }
       };
 
@@ -255,7 +262,10 @@ export const NovaChat = ({
     if (dictationRecognitionRef.current) {
       try {
         dictationRecognitionRef.current.stop();
-      } catch (e) {}
+      } catch (e) {
+        // Non-fatal - stop() throws if recognition has already ended;
+        // the UI state below still needs to update either way.
+      }
     }
     setIsDictating(false);
   };
@@ -310,7 +320,9 @@ export const NovaChat = ({
       let profileData: any = null;
       try {
         if (profileStr) profileData = JSON.parse(profileStr);
-      } catch (e) {}
+      } catch (e) {
+        // Non-fatal - profileData just stays null if this is corrupted.
+      }
 
       if (!initialMessage && (fingerprint || profileData)) {
         const username = profileData?.useNameInGreetings
@@ -335,180 +347,38 @@ export const NovaChat = ({
     });
   }, [messages, loading]);
 
-  // Live Audio Setup
-  const wsRef = useRef<WebSocket | null>(null);
-  const liveAudioCtxRef = useRef<AudioContext | null>(null);
-  const streamRef = useRef<MediaStream | null>(null);
-  const processorRef = useRef<ScriptProcessorNode | null>(null);
-  const sourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
-  const nextStartTimeRef = useRef<number>(0);
-
-  const pcmToBase64 = (pcmData: Float32Array) => {
-    const buffer = new ArrayBuffer(pcmData.length * 2);
-    const view = new DataView(buffer);
-    for (let i = 0; i < pcmData.length; i++) {
-      const s = Math.max(-1, Math.min(1, pcmData[i]));
-      view.setInt16(i * 2, s < 0 ? s * 0x8000 : s * 0x7fff, true);
-    }
-    let binary = "";
-    const bytes = new Uint8Array(buffer);
-    for (let i = 0; i < bytes.byteLength; i++) {
-      binary += String.fromCharCode(bytes[i]);
-    }
-    return window.btoa(binary);
-  };
-
-  const playLiveAudioChunk = (audioCtx: AudioContext, base64: string) => {
-    const binaryString = window.atob(base64);
-    const len = binaryString.length;
-    const bytes = new Uint8Array(len);
-    for (let i = 0; i < len; i++) {
-      bytes[i] = binaryString.charCodeAt(i);
-    }
-    const numSamples = bytes.length / 2;
-    const audioBuffer = audioCtx.createBuffer(1, numSamples, 24000);
-    const channelData = audioBuffer.getChannelData(0);
-    const dataView = new DataView(bytes.buffer);
-    for (let i = 0; i < numSamples; i++) {
-      channelData[i] = dataView.getInt16(i * 2, true) / 32768;
-    }
-    const source = audioCtx.createBufferSource();
-    source.buffer = audioBuffer;
-    source.connect(audioCtx.destination);
-
-    if (nextStartTimeRef.current < audioCtx.currentTime) {
-      nextStartTimeRef.current = audioCtx.currentTime;
-    }
-    source.start(nextStartTimeRef.current);
-    nextStartTimeRef.current += audioBuffer.duration;
-  };
-
-  const stopListening = () => {
-    if (wsRef.current) {
-      wsRef.current.close();
-      wsRef.current = null;
-    }
-    if (processorRef.current) {
-      processorRef.current.disconnect();
-      processorRef.current = null;
-    }
-    if (sourceRef.current) {
-      sourceRef.current.disconnect();
-      sourceRef.current = null;
-    }
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach((t) => t.stop());
-      streamRef.current = null;
-    }
-    setIsListening(false);
-  };
-
-  const toggleListening = async () => {
-    if (isListening) {
-      stopListening();
-      return;
-    }
-
+  // Live voice is now a dedicated full-screen call (NovaVoiceCall) driven by
+  // the shared useNovaLiveVoice hook: AudioWorklet capture, streamed playback,
+  // barge-in, a live transcript, mute, and calm in-UI errors (no more browser
+  // alert()). Opening the call is just a flag; all the real-time logic lives
+  // in one place instead of being duplicated here. This builds the context
+  // the call is primed with, unchanged from what the old inline path sent.
+  const buildVoiceContext = () => {
+    let brainContext = "";
     try {
-      setIsListening(true);
-
-      if (!auth.currentUser) {
-        throw new Error("You need to be signed in to use live voice mode.");
+      const brain = getNovaBrain();
+      if (brain.length > 0) {
+        brainContext =
+          "\nNova Personal Brain Context:\n" +
+          brain.map((mem) => `[${mem.type}]: ${mem.content}`).join("\n") +
+          "\n";
       }
-      const idToken = await auth.currentUser.getIdToken();
-      let appCheckToken = "";
-      try {
-        appCheckToken = await getAppCheckToken();
-      } catch (e) {
-        // App Check may not be configured in dev — the server allows a dev bypass in that case.
-      }
-
-      const wsUrl = `ws${window.location.protocol === "https:" ? "s" : ""}://${window.location.host}/api/nova/live?token=${encodeURIComponent(idToken)}&appCheckToken=${encodeURIComponent(appCheckToken)}`;
-      const ws = new WebSocket(wsUrl);
-      wsRef.current = ws;
-
-      const audioCtx = new (
-        window.AudioContext || (window as any).webkitAudioContext
-      )({ sampleRate: 16000 });
-      liveAudioCtxRef.current = audioCtx;
-      if (audioCtx.state === "suspended") await audioCtx.resume();
-      nextStartTimeRef.current = audioCtx.currentTime;
-
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      streamRef.current = stream;
-
-      const source = audioCtx.createMediaStreamSource(stream);
-      sourceRef.current = source;
-
-      const processor = audioCtx.createScriptProcessor(4096, 1, 1);
-      processorRef.current = processor;
-
-      source.connect(processor);
-      processor.connect(audioCtx.destination);
-
-      processor.onaudioprocess = (e) => {
-        if (ws.readyState === WebSocket.OPEN) {
-          const base64 = pcmToBase64(e.inputBuffer.getChannelData(0));
-          ws.send(JSON.stringify({ audio: base64 }));
-        }
-      };
-
-      ws.onopen = () => {
-        let brainContext = "";
-        try {
-          const brain = getNovaBrain();
-          if (brain.length > 0) {
-            brainContext =
-              "\nNova Personal Brain Context:\n" +
-              brain.map((mem) => `[${mem.type}]: ${mem.content}`).join("\n") +
-              "\n";
-          }
-        } catch (e) {}
-
-        ws.send(
-          JSON.stringify({
-            initialPrompt: `User Burnout Fingerprint: ${JSON.stringify(fingerprint || "Not taken yet")}.
-          Recent chat history: ${messages
-            .slice(-5)
-            .map((m) => m.role + ": " + m.parts[0].text)
-            .join("\n")}.
-          ${brainContext}
-          We are now in real-time voice mode. Be concise and conversational, you don't need to use markdown.`,
-          }),
-        );
-      };
-
-      ws.onmessage = (event) => {
-        try {
-          const msg = JSON.parse(event.data);
-          if (msg.audio) {
-            playLiveAudioChunk(audioCtx, msg.audio);
-          }
-          if (msg.interrupted) {
-            nextStartTimeRef.current = audioCtx.currentTime;
-          }
-          if (msg.error) {
-            console.error("Live session error:", msg.error);
-            stopListening();
-          }
-        } catch (err) {
-          console.error("Audio msg decode error", err);
-        }
-      };
-
-      ws.onclose = () => {
-        stopListening();
-      };
-    } catch (e: any) {
-      console.error("Detailed voice setup error:", e);
-      alert(`Voice mode unavailable: ${e.message}`);
-      stopListening();
+    } catch (e) {
+      // Non-fatal - proceeds without this piece of context.
     }
+    return `User Burnout Fingerprint: ${JSON.stringify(fingerprint || "Not taken yet")}.
+Recent chat history: ${messages
+      .slice(-5)
+      .map((m) => m.role + ": " + m.parts[0].text)
+      .join("\n")}.
+${brainContext}
+We are now in real-time voice mode. Be concise and conversational, you don't need to use markdown.`;
   };
+
+  const openVoiceCall = () => setShowVoiceCall(true);
 
   useEffect(() => {
     return () => {
-      stopListening();
       stopAudio();
     };
   }, []);
@@ -607,156 +477,6 @@ export const NovaChat = ({
     }
   };
 
-  const analyzeInputForTools = (text: string) => {
-    const t = text.toLowerCase();
-
-    if (
-      t.includes("budget") ||
-      t.includes("energy") ||
-      t.includes("matrix") ||
-      t.includes("cost") ||
-      t.includes("tasks")
-    ) {
-      setActiveToolSuggestion({
-        name: "Energy Budget",
-        tab: "budget",
-        description:
-          "Track and analyze daily energetic spending, tasks, and core metabolic balance indices.",
-      });
-    } else if (
-      t.includes("boundary") ||
-      t.includes("boundaries") ||
-      t.includes("say no") ||
-      t.includes("negotiator") ||
-      t.includes("rehearsal") ||
-      t.includes("script") ||
-      t.includes("client")
-    ) {
-      setActiveToolSuggestion({
-        name: "Boundary Rehearsal",
-        tab: "boundaries",
-        description:
-          "Practice asserting personal bounds and setting limits in customized stressful roleplay nodes.",
-      });
-    } else if (
-      t.includes("debt") ||
-      t.includes("fatigue") ||
-      t.includes("exhaustion") ||
-      t.includes("inventory")
-    ) {
-      setActiveToolSuggestion({
-        name: "Debt Tracker",
-        tab: "debt",
-        description:
-          "Audit and payoff chronic physical, circadian, and sensory exhaustion balances.",
-      });
-    } else if (
-      t.includes("fuel") ||
-      t.includes("hydration") ||
-      t.includes("water") ||
-      t.includes("sugar") ||
-      t.includes("eat") ||
-      t.includes("food") ||
-      t.includes("meal")
-    ) {
-      setActiveToolSuggestion({
-        name: "Recovery Fuel Engine",
-        tab: "fuel",
-        description:
-          "Verify slow-release energy anchors, nutrition stability patterns, and hydration targets.",
-      });
-    } else if (
-      t.includes("sleep") ||
-      t.includes("rest") ||
-      t.includes("light") ||
-      t.includes("circadian") ||
-      t.includes("wake")
-    ) {
-      setActiveToolSuggestion({
-        name: "Sleep Builder",
-        tab: "sleep",
-        description:
-          "Leverage circadian science, custom slow-wave rest setups, and optimal morning lux thresholds.",
-      });
-    } else if (
-      t.includes("movement") ||
-      t.includes("snack") ||
-      t.includes("stretch") ||
-      t.includes("exercise") ||
-      t.includes("walk")
-    ) {
-      setActiveToolSuggestion({
-        name: "Movement Snacks",
-        tab: "movement",
-        description:
-          "Use targeted desk-friendly movements to clear deep neural fatigue and physically reset.",
-      });
-    } else if (
-      t.includes("doorway") ||
-      t.includes("decompression") ||
-      t.includes("disconnect") ||
-      t.includes("shutdown")
-    ) {
-      setActiveToolSuggestion({
-        name: "Decompression Doorway",
-        tab: "doorway",
-        description:
-          "Perform cognitive shutdown protocols to fully sever work mode from recovery.",
-      });
-    } else if (
-      t.includes("guardian") ||
-      t.includes("circle") ||
-      t.includes("social") ||
-      t.includes("safety")
-    ) {
-      setActiveToolSuggestion({
-        name: "Guardian Relay",
-        tab: "safety",
-        description:
-          "Connect with trusted people who can support you when things feel like too much.",
-      });
-    } else if (
-      t.includes("org") ||
-      t.includes("pulse") ||
-      t.includes("team") ||
-      t.includes("company")
-    ) {
-      setActiveToolSuggestion({
-        name: "Organization Pulse",
-        tab: "org",
-        description:
-          "Review systemic pressure indicators, company-wide capacity tracking, and alignment scorecards.",
-      });
-    } else if (
-      t.includes("signal") ||
-      t.includes("trigger") ||
-      t.includes("mood") ||
-      t.includes("log")
-    ) {
-      setActiveToolSuggestion({
-        name: "Recovery Signals",
-        tab: "signals",
-        description:
-          "Log triggers, record mood signals, and monitor system-wide recovery velocity factors.",
-      });
-    } else if (
-      t.includes("diagnose") ||
-      t.includes("fingerprint") ||
-      t.includes("archetype") ||
-      t.includes("assessment") ||
-      t.includes("test")
-    ) {
-      setActiveToolSuggestion({
-        name: "Burnout Diagnostic",
-        tab: "diagnose",
-        description:
-          "Recheck your chronic exhaustion archetype, burnout triggers, and baseline profiles.",
-      });
-    } else {
-      setActiveToolSuggestion(null);
-    }
-  };
-
   const getDynamicContext = async () => {
     let contextStr = "";
 
@@ -773,7 +493,11 @@ export const NovaChat = ({
         });
         contextStr += `-----------------------------------\n`;
       }
-    } catch (e) {}
+    } catch (e) {
+      // Non-fatal - one context source among several here; a failure
+      // reading Nova's memory brain shouldn't block the rest of these
+      // from still contributing to the context string.
+    }
 
     try {
       if (auth.currentUser) {
@@ -797,7 +521,9 @@ export const NovaChat = ({
           }
         }
       }
-    } catch (e) {}
+    } catch (e) {
+      // Non-fatal - same reasoning as the other context sources above.
+    }
 
     try {
       if (auth.currentUser) {
@@ -811,15 +537,15 @@ export const NovaChat = ({
           contextStr += `- Completed at: ${recovery.completedAt || "N/A"}\n`;
         }
       }
-    } catch (e) {}
+    } catch (e) {
+      // Non-fatal - same reasoning as the other context sources above.
+    }
     return contextStr;
   };
 
   const handleSend = async (overrideInput?: string) => {
     const messageText = overrideInput || input;
     if (!messageText.trim() || loading) return;
-
-    analyzeInputForTools(messageText);
 
     const userMsg: Message = { role: "user", parts: [{ text: messageText }] };
     setMessages((prev) => [...prev, userMsg]);
@@ -856,11 +582,25 @@ export const NovaChat = ({
 
       if (data.error) throw new Error(data.error);
 
+      const suggestFeatureCall = (data.planTrace || []).find((t: any) => t.tool === 'suggest_feature' && t.result?.suggested);
       const botMessage: Message = {
         role: "model",
         parts: [{ text: data.text }],
-        privacyMetadata: data.privacyMetadata
+        privacyMetadata: data.privacyMetadata,
+        featureSuggestion: suggestFeatureCall
+          ? { featureId: suggestFeatureCall.result.featureId, label: suggestFeatureCall.result.label, reason: suggestFeatureCall.result.reason }
+          : undefined,
       };
+
+      if (suggestFeatureCall) {
+        setActiveToolSuggestion({
+          name: suggestFeatureCall.result.label,
+          tab: suggestFeatureCall.result.featureId,
+          description: suggestFeatureCall.result.reason,
+        });
+      } else {
+        setActiveToolSuggestion(null);
+      }
 
       const newMessages = [...messages, userMsg, botMessage];
       setMessages(newMessages);
@@ -909,6 +649,8 @@ export const NovaChat = ({
           {voiceFeatureEnabled && (
             <button
               onClick={() => setIsVoiceEnabled(!isVoiceEnabled)}
+              aria-pressed={isVoiceEnabled}
+              aria-label={isVoiceEnabled ? "Turn off voice replies" : "Turn on voice replies"}
               className={cn(
                 "w-9 h-9 rounded-lg flex items-center justify-center transition-colors",
                 isVoiceEnabled
@@ -932,6 +674,7 @@ export const NovaChat = ({
                 localStorage.removeItem("nova_chat_history");
               }
             }}
+            aria-label="Clear conversation"
             className="w-9 h-9 rounded-lg border border-border flex items-center justify-center text-text-muted hover:text-destructive transition-colors"
           >
             <HistoryIcon className="w-4 h-4" />
@@ -939,61 +682,13 @@ export const NovaChat = ({
         </div>
       </div>
 
-      {isListening ? (
-        <div className="flex-1 flex flex-col items-center justify-center p-8 space-y-12 relative overflow-hidden">
-          <motion.div
-            animate={{ scale: [1, 1.05, 1], rotate: [0, 5, -5, 0] }}
-            transition={{ duration: 6, repeat: Infinity, ease: "easeInOut" }}
-            className="absolute inset-0 bg-gradient-to-tr from-destructive/5 via-transparent to-primary/5 opacity-50"
-          />
-          <div className="space-y-6 text-center relative z-10">
-            <div className="w-32 h-32 mx-auto rounded-full bg-destructive/10 flex items-center justify-center relative shadow-lg shadow-destructive/20">
-              <motion.div
-                animate={{ scale: [1, 1.2, 1], opacity: [0.5, 0.8, 0.5] }}
-                transition={{
-                  duration: 2,
-                  repeat: Infinity,
-                  ease: "easeInOut",
-                }}
-                className="absolute inset-0 bg-destructive/20 rounded-full blur-xl"
-              />
-              <Mic className="w-12 h-12 text-destructive relative z-10" />
-            </div>
-            <div className="space-y-2">
-              <h2 className="text-3xl font-display font-bold text-text-main tracking-tight">
-                Voice Session Active
-              </h2>
-              <p className="text-text-muted font-medium ">
-                Speak naturally. Nova is listening.
-              </p>
-            </div>
-            <div className="flex items-center justify-center gap-2 pt-4">
-              {[...Array(5)].map((_, i) => (
-                <motion.div
-                  key={i}
-                  animate={{
-                    height: ["10px", `${20 + Math.random() * 30}px`, "10px"],
-                  }}
-                  transition={{
-                    duration: 0.8 + Math.random() * 0.5,
-                    repeat: Infinity,
-                    ease: "easeInOut",
-                  }}
-                  className="w-1.5 bg-destructive rounded-full"
-                />
-              ))}
-            </div>
-          </div>
-          <button
-            onClick={toggleListening}
-            className="px-8 py-4 bg-primary text-primary-foreground rounded-full font-bold shadow-xl hover:scale-105 active:scale-95 transition-all relative z-10 flex items-center gap-2"
-          >
-            <MicOff className="w-5 h-5" /> End Conversation
-          </button>
-        </div>
-      ) : (
+      {(
         <div
           ref={scrollRef}
+          role="log"
+          aria-live="polite"
+          aria-atomic="false"
+          aria-relevant="additions"
           className="flex-1 overflow-y-auto p-8 space-y-8 no-scrollbar"
         >
           {messages.length === 0 && !loading && (
@@ -1029,7 +724,7 @@ export const NovaChat = ({
                   <button
                     key={i}
                     onClick={() => handleSend(s.prompt)}
-                    className="p-4 text-sm font-medium text-text-muted border border-border hover:border-primary/40 hover:text-primary transition-colors rounded-lg"
+                    className="p-4 text-sm font-medium text-text-muted border border-border hover:border-primary/40 hover:text-[#9a3412] dark:hover:text-primary transition-colors rounded-lg"
                   >
                     {s.label}
                   </button>
@@ -1074,8 +769,10 @@ export const NovaChat = ({
                     {msg.role === "model" && (
                       <button
                         onClick={() => speakText(msg.parts[0].text, i)}
+                        aria-label={speakingIndex === i ? "Stop reading message aloud" : "Read message aloud"}
+                        aria-pressed={speakingIndex === i}
                         className={cn(
-                          "absolute -right-12 top-0 w-10 h-10 bg-card border border-border rounded-full flex items-center justify-center transition-all opacity-0 group-hover:opacity-100",
+                          "absolute -right-12 top-0 w-10 h-10 bg-card border border-border rounded-full flex items-center justify-center transition-all opacity-0 group-hover:opacity-100 focus:opacity-100 focus-visible:ring-2 focus-visible:ring-primary",
                           speakingIndex === i
                             ? "opacity-100 text-primary"
                             : "text-text-muted hover:text-primary",
@@ -1157,9 +854,11 @@ export const NovaChat = ({
                               className={cn(
                                 "p-1.5 rounded-lg transition-all border cursor-pointer",
                                 ratings[i] === "up"
-                                  ? "bg-success/10 text-success border-success/20"
-                                  : "bg-surface/30 text-text-muted hover:text-success border-transparent",
+                                  ? "bg-success/10 text-success dark:text-[#4ade80] border-success/20"
+                                  : "bg-surface/30 text-text-muted hover:text-success dark:hover:text-[#4ade80] border-transparent",
                               )}
+                              aria-pressed={ratings[i] === "up"}
+                              aria-label="Helpful advice"
                               title="Helpful advice"
                             >
                               <ThumbsUp className="w-3.5 h-3.5" />
@@ -1185,6 +884,8 @@ export const NovaChat = ({
                                   ? "bg-destructive/10 text-destructive border-destructive/20"
                                   : "bg-surface/30 text-text-muted hover:text-destructive border-transparent",
                               )}
+                              aria-pressed={ratings[i] === "down"}
+                              aria-label="Unhelpful advice"
                               title="Unhelpful advice"
                             >
                               <ThumbsDown className="w-3.5 h-3.5" />
@@ -1229,6 +930,7 @@ export const NovaChat = ({
                                         [i]: tag,
                                       }))
                                     }
+                                    aria-pressed={feedbackTag[i] === tag}
                                     className={cn(
                                       "px-2 py-1 rounded-md text-[10px] uppercase font-black tracking-wider border transition-all cursor-pointer",
                                       feedbackTag[i] === tag
@@ -1249,6 +951,7 @@ export const NovaChat = ({
                                     [i]: e.target.value,
                                   }))
                                 }
+                                aria-label="Refine Nova's context brain (optional)"
                                 placeholder="Refine Nova's context brain (optional)..."
                                 className="w-full bg-white dark:bg-surface border border-border/40 rounded-xl px-3 py-2 text-[11px] font-medium text-text-main placeholder: focus:outline-none focus:border-primary"
                               />
@@ -1266,7 +969,7 @@ export const NovaChat = ({
                             <motion.div
                               initial={{ opacity: 0, y: 5 }}
                               animate={{ opacity: 1, y: 0 }}
-                              className="text-[11px] text-success font-extrabold uppercase tracking-widest flex items-center gap-1 animate-pulse"
+                              className="text-[11px] text-success dark:text-[#4ade80] font-extrabold uppercase tracking-widest flex items-center gap-1 animate-pulse"
                             >
                               <Check className="w-3 h-3 shrink-0" />{" "}
                               Recalibrated. Feedback added to Nova memory
@@ -1291,8 +994,8 @@ export const NovaChat = ({
                             <Target className="w-4 h-4" />
                           </div>
                           <div className="space-y-0.5">
-                            <span className="text-[11px] font-medium uppercase tracking-widest text-primary flex items-center gap-1">
-                              <Sparkles className="w-3 h-3 text-primary" />{" "}
+                            <span className="text-[11px] font-medium uppercase tracking-widest text-[#9a3412] dark:text-primary flex items-center gap-1">
+                              <Sparkles className="w-3 h-3 text-[#9a3412] dark:text-primary" />{" "}
                               Suggested for you
                             </span>
                             <h5 className="text-xs font-bold text-text-main">
@@ -1315,7 +1018,7 @@ export const NovaChat = ({
                                   );
                                 }
                               }}
-                              className="px-4 py-2 bg-primary/10 hover:bg-primary hover:text-primary-foreground font-medium text-[11px] uppercase tracking-wider rounded-lg transition-colors text-primary border border-primary/25 cursor-pointer"
+                              className="px-4 py-2 bg-primary/10 hover:bg-primary hover:text-primary-foreground font-medium text-[11px] uppercase tracking-wider rounded-lg transition-colors text-[#9a3412] dark:text-primary border border-primary/25 cursor-pointer"
                             >
                               Open Tool
                             </button>
@@ -1352,7 +1055,7 @@ export const NovaChat = ({
             >
               <div className="flex gap-4 max-w-[80%] items-start">
                 <div className="w-9 h-9 rounded-[1rem] bg-primary flex items-center justify-center shrink-0 shadow-lg relative overflow-hidden">
-                  <Sparkles className="w-4 h-4 text-text-main relative z-10" />
+                  <Sparkles className="w-4 h-4 text-primary-foreground relative z-10" />
                   <motion.div
                     animate={{
                       rotate: 360,
@@ -1368,7 +1071,7 @@ export const NovaChat = ({
                 </div>
                 <div className="space-y-4 pt-1">
                   <div className="flex items-center gap-3">
-                    <span className="text-xs font-black uppercase tracking-[0.25em] text-primary animate-pulse">
+                    <span className="text-xs font-black uppercase tracking-[0.25em] text-[#9a3412] dark:text-primary animate-pulse">
                       Nova Synthesis
                     </span>
                     <div className="flex gap-1.5">
@@ -1425,12 +1128,14 @@ export const NovaChat = ({
       )}
 
       {/* Hide the text input bar during voice session to enforce clean experience */}
-      {!isListening && (
+      {(
         <div className="p-6 border-t border-border font-sans">
           <div className="flex items-center gap-3">
             {voiceFeatureEnabled && (
               <button
-                onClick={toggleListening}
+                onClick={openVoiceCall}
+                aria-label="Start a live voice call with Nova"
+                title="Talk with Nova"
                 className="w-12 h-12 rounded-xl border border-border flex items-center justify-center relative overflow-hidden group text-text-muted hover:text-primary hover:border-primary/40 transition-colors cursor-pointer"
               >
                 <Mic className="w-5 h-5" />
@@ -1442,6 +1147,7 @@ export const NovaChat = ({
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyPress={(e) => e.key === "Enter" && handleSend()}
+                aria-label="Message Nova"
                 placeholder={
                   isDictating
                     ? "Listening... Speak naturally"
@@ -1459,13 +1165,14 @@ export const NovaChat = ({
               <button
                 type="button"
                 onClick={isDictating ? stopDictation : startDictation}
+                aria-pressed={isDictating}
+                aria-label={isDictating ? "Stop voice dictation" : "Start voice dictation"}
                 className={cn(
                   "absolute left-3 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full flex items-center justify-center transition-all cursor-pointer",
                   isDictating
                     ? "bg-destructive text-destructive-foreground animate-pulse scale-110"
                     : "text-text-muted hover:text-destructive hover:bg-surface/50 hover:scale-105",
                 )}
-                title="Speak to type (voice dictation)"
               >
                 <Mic
                   className={cn("w-4.5 h-4.5", isDictating && "animate-bounce")}
@@ -1475,6 +1182,7 @@ export const NovaChat = ({
               <button
                 onClick={() => handleSend()}
                 disabled={loading || !input.trim()}
+                aria-label="Send message"
                 className="absolute right-2 top-2 w-11 h-11 bg-primary text-primary-foreground rounded-lg flex items-center justify-center hover:opacity-90 active:scale-95 transition-all disabled:opacity-30 cursor-pointer"
               >
                 <Send className="w-4.5 h-4.5" />
@@ -1483,6 +1191,12 @@ export const NovaChat = ({
           </div>
         </div>
       )}
+
+      <NovaVoiceCall
+        isOpen={showVoiceCall}
+        onClose={() => setShowVoiceCall(false)}
+        buildInitialPrompt={buildVoiceContext}
+      />
     </div>
   );
 };

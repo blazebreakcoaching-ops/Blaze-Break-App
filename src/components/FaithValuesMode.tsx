@@ -86,7 +86,7 @@ export const FaithValuesMode = ({ fingerprint, onAwardPoints }: FaithValuesModeP
                  <Icon className="w-5 h-5" />
                </div>
                <h4 className="font-display font-bold text-lg mb-1">{MODES[mode].label}</h4>
-               <p className={cn("text-xs font-medium leading-relaxed", isSelected ? "text-primary-light" : "text-text-muted")}>
+               <p className={cn("text-xs font-medium leading-relaxed", isSelected ? "text-primary-foreground" : "text-text-muted")}>
                  {MODES[mode].description}
                </p>
              </button>

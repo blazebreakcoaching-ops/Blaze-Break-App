@@ -115,11 +115,11 @@ export const AllyView = ({ token }: { token: string }) => {
                 {data.sharedGoals.map(goal => (
                   <div key={goal.id} className={`flex items-center justify-between p-3 rounded-xl border ${goal.completedToday ? 'bg-success/5 border-success/20' : 'bg-surface border-border'}`}>
                     <div className="flex items-center gap-3">
-                      <CheckCircle2 className={`w-4 h-4 ${goal.completedToday ? 'text-success' : 'text-text-muted'}`} />
+                      <CheckCircle2 className={`w-4 h-4 ${goal.completedToday ? 'text-success dark:text-[#4ade80]' : 'text-text-muted'}`} />
                       <span className="text-sm font-medium text-text-main">{goal.text}</span>
                     </div>
                     {goal.streak > 0 && (
-                      <span className="text-[11px] font-black uppercase tracking-widest text-warning flex items-center gap-1 shrink-0">
+                      <span className="text-[11px] font-black uppercase tracking-widest text-[#9a3412] dark:text-warning flex items-center gap-1 shrink-0">
                         <Zap className="w-3 h-3" /> {goal.streak} day{goal.streak === 1 ? '' : 's'}
                       </span>
                     )}
@@ -158,13 +158,13 @@ export const AllyView = ({ token }: { token: string }) => {
           <h2 className="font-bold text-text-main">Leave Them a Note</h2>
           <AnimatePresence mode="wait">
             {sent ? (
-              <motion.div key="sent" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="p-4 bg-success/5 border border-success/20 rounded-xl flex items-center gap-2 text-sm text-success">
+              <motion.div key="sent" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="p-4 bg-success/5 border border-success/20 rounded-xl flex items-center gap-2 text-sm text-success dark:text-[#4ade80]">
                 <CheckCircle2 className="w-4 h-4" /> Sent — it'll show up in their encouragement feed.
               </motion.div>
             ) : (
               <motion.div key="form" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-3">
                 {sendError && (
-                  <div className="p-3 bg-destructive/10 border border-destructive/20 text-destructive text-xs rounded-xl">{sendError}</div>
+                  <div role="alert" className="p-3 bg-destructive/10 border border-destructive/20 text-destructive dark:text-[#f87171] text-xs rounded-xl">{sendError}</div>
                 )}
                 <textarea
                   value={message}

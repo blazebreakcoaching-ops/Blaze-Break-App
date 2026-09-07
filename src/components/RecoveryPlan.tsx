@@ -99,7 +99,7 @@ export const RecoveryPlan = ({
   const getNovaSynthesis = () => {
     const archetype = fingerprint?.profile || 'High-Functioning Exhausted';
     
-    let feedback = '';
+    let feedback: string;
     if (archetype === 'Founder on Fire') {
       feedback = "Your identity is completely fused with the survival of your venture. Right now, your " + highestDebt.label + " is at " + Math.round(highestDebtRatio * 100) + "%. This is not an operational metric to optimize; it is a biological warning. Cease the fawning performance narratives and rest.";
     } else if (archetype === 'Over-Giver') {
@@ -446,7 +446,7 @@ export const RecoveryPlan = ({
 
             <div className="flex items-center justify-between p-3 bg-card border border-border rounded-lg">
               <div className="flex items-center gap-3">
-                <div className="w-6 h-6 rounded-lg bg-destructive/10 text-destructive flex items-center justify-center text-xs font-bold">
+                <div className="w-6 h-6 rounded-lg bg-destructive/10 text-destructive dark:text-[#f87171] flex items-center justify-center text-xs font-bold">
                   !
                 </div>
                 <div>
@@ -464,7 +464,7 @@ export const RecoveryPlan = ({
 
             <div className="flex items-center justify-between p-3 bg-card border border-border rounded-lg">
               <div className="flex items-center gap-3">
-                <div className="w-6 h-6 rounded-lg bg-success/10 text-success flex items-center justify-center text-xs font-bold">
+                <div className="w-6 h-6 rounded-lg bg-success/10 text-[#166534] dark:text-[#4ade80] flex items-center justify-center text-xs font-bold">
                   ✓
                 </div>
                 <div>
@@ -472,7 +472,7 @@ export const RecoveryPlan = ({
                   <p className="text-[10px] text-text-muted font-semibold">Physiological Audit Matrix</p>
                 </div>
               </div>
-              <span className="text-[10px] text-success font-black uppercase tracking-widest bg-success/15 border border-success/20 px-2 py-1 rounded-md">
+              <span className="text-[10px] text-[#166534] dark:text-[#4ade80] font-black uppercase tracking-widest bg-success/15 border border-success/20 px-2 py-1 rounded-md">
                 Active
               </span>
             </div>
@@ -548,12 +548,12 @@ export const RecoveryPlan = ({
               <Unlock className="w-4 h-4" />
             </div>
             <div>
-              <span className="text-[11px] uppercase tracking-widest font-medium text-primary">Your recovery plan</span>
+              <span className="text-[11px] uppercase tracking-widest font-medium text-[#9a3412] dark:text-primary">Your recovery plan</span>
               <h2 className="text-xl font-display font-medium text-text-main tracking-tight">Personalized Recovery Plan</h2>
             </div>
           </div>
           <div className="flex flex-col items-end shrink-0">
-            <span className="tag text-xs bg-primary/10 border border-primary/20 text-primary font-medium uppercase tracking-wider">
+            <span className="tag text-xs bg-primary/10 border border-primary/20 text-[#9a3412] dark:text-primary font-medium uppercase tracking-wider">
               Profile: {archetype}
             </span>
             <span className="text-[10px] text-text-muted mt-1 font-medium">
@@ -578,7 +578,7 @@ export const RecoveryPlan = ({
               <span className="text-[10px] font-medium uppercase tracking-widest text-text-muted block">Recovery signals</span>
               <div className="flex justify-between items-center text-xs">
                 <span className="font-medium text-text-main">{highestDebt.label} Load</span>
-                <span className="font-mono font-bold text-destructive">{Math.round(highestDebtRatio * 100)}%</span>
+                <span className="font-mono font-bold text-destructive dark:text-[#f87171]">{Math.round(highestDebtRatio * 100)}%</span>
               </div>
               <div className="h-1.5 w-full bg-border rounded-full overflow-hidden">
                 <div
@@ -601,7 +601,7 @@ export const RecoveryPlan = ({
         <div className="lg:col-span-2 space-y-6">
           <div className="flex items-center justify-between">
             <h3 className="text-sm font-semibold text-text-muted uppercase tracking-wider">Daily Recovery Rhythm Checklist</h3>
-            <span className="text-xs font-bold text-primary tracking-widest bg-primary/10 px-2 py-0.5 rounded">
+            <span className="text-xs font-bold text-[#9a3412] dark:text-primary tracking-widest bg-primary/10 px-2 py-0.5 rounded">
               {actions.filter(a => a.completed).length} / {actions.length} Completed
             </span>
           </div>
@@ -610,9 +610,9 @@ export const RecoveryPlan = ({
             {actions.map((act) => {
               const isDone = act.completed;
               const sectionColors = {
-                Recover: 'text-rose-500 bg-rose-500/10 border-rose-500/25',
-                Communicate: 'text-warning bg-warning/10 border-warning/25',
-                Reflect: 'text-teal-500 bg-teal-500/10 border-teal-500/25'
+                Recover: 'text-[#9f1239] dark:text-[#fda4af] bg-rose-500/10 border-rose-500/25',
+                Communicate: 'text-[#9a3412] dark:text-warning bg-warning/10 border-warning/25',
+                Reflect: 'text-[#115e59] dark:text-[#5eead4] bg-teal-500/10 border-teal-500/25'
               }[act.section];
 
               return (
@@ -628,6 +628,9 @@ export const RecoveryPlan = ({
                 >
                   <button
                     onClick={() => handleToggleCheck(act.id, act.points)}
+                    role="checkbox"
+                    aria-checked={isDone}
+                    aria-label={`Mark "${act.text || act.tag}" as ${isDone ? 'not done' : 'done'}`}
                     className={cn(
                       "w-6 h-6 rounded-lg border flex items-center justify-center shrink-0 transition-all cursor-pointer mt-0.5",
                       isDone 
@@ -653,7 +656,7 @@ export const RecoveryPlan = ({
                   </div>
 
                   <div className="text-right shrink-0">
-                    <span className={cn("text-xs font-black tracking-tight", isDone ? "text-success" : "text-primary")}>
+                    <span className={cn("text-xs font-black tracking-tight", isDone ? "text-success dark:text-[#4ade80]" : "text-[#9a3412] dark:text-primary")}>
                       {isDone ? 'Claimed' : `+${act.points} XP`}
                     </span>
                   </div>
@@ -664,7 +667,7 @@ export const RecoveryPlan = ({
 
           {/* Practice Boundary Console */}
           <div className="card space-y-6 border border-border">
-            <div className="flex items-center gap-2 text-warning font-bold uppercase tracking-widest text-xs border-b border-border pb-3">
+            <div className="flex items-center gap-2 text-[#9a3412] dark:text-warning font-bold uppercase tracking-widest text-xs border-b border-border pb-3">
               <MessageSquare className="w-4 h-4" /> Communicate Lab: Boundary Rehearsal Room
             </div>
             
@@ -691,8 +694,9 @@ export const RecoveryPlan = ({
                 className="space-y-4"
               >
                 <div className="space-y-1 text-left">
-                  <label className="text-xs text-text-muted italic">Type your highly professional, firm boundary script:</label>
+                  <label htmlFor="rehearsal-script" className="text-xs text-text-muted italic">Type your highly professional, firm boundary script:</label>
                   <textarea
+                    id="rehearsal-script"
                     placeholder="E.g. I will address this first thing during normal capacity..."
                     value={rehearsalText}
                     onChange={(e) => setRehearsalText(e.target.value)}
@@ -732,11 +736,11 @@ export const RecoveryPlan = ({
                 <div className="w-8 h-8 rounded-full bg-success text-white flex items-center justify-center mx-auto">
                   <Check className="w-4 h-4 stroke-[3px]" />
                 </div>
-                <h4 className="text-xs font-bold text-success uppercase tracking-wider">Boundary Rehearsal Complete</h4>
+                <h4 className="text-xs font-bold text-success dark:text-[#4ade80] uppercase tracking-wider">Boundary Rehearsal Complete</h4>
                 <p className="text-[11px] text-text-muted font-medium">Your nerve system memory has been upgraded. Consistent practice turns pushback into default habits.</p>
                 <button 
                   onClick={() => setRehearsalStep(1)}
-                  className="text-xs text-primary hover:underline font-bold"
+                  className="text-xs text-[#9a3412] dark:text-primary hover:underline font-bold"
                 >
                   Practice Again
                 </button>
@@ -760,6 +764,7 @@ export const RecoveryPlan = ({
 
             <textarea
               placeholder="What triggered a people-pleasing moment today? How did your physical body feel?..."
+              aria-label="Journal entry: what triggered a people-pleasing moment today"
               value={journalText}
               onChange={(e) => setJournalText(e.target.value)}
               rows={3}
@@ -791,7 +796,7 @@ export const RecoveryPlan = ({
           {/* Community Sync (currently: your own standing only) */}
           <div className="card space-y-6 border border-border">
             <div className="flex flex-col space-y-1 text-left border-b border-border pb-3">
-              <div className="flex items-center gap-2 text-primary font-bold uppercase tracking-widest text-xs">
+              <div className="flex items-center gap-2 text-[#9a3412] dark:text-primary font-bold uppercase tracking-widest text-xs">
                 <Users className="w-4 h-4" /> Your Progress
               </div>
               <span className="text-[10px] text-text-muted font-semibold">A real community leaderboard isn't built yet — this shows your own standing for now</span>
@@ -800,8 +805,9 @@ export const RecoveryPlan = ({
             {/* Nickname setting & Opt-in */}
             <div className="p-4 bg-surface dark:bg-surface/50 rounded-2xl border border-border space-y-4 text-left">
               <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-text-main">Notify me when community sync launches</span>
+                <label htmlFor="leaderboard-optin" className="text-xs font-bold text-text-main cursor-pointer">Notify me when community sync launches</label>
                 <input 
+                  id="leaderboard-optin"
                   type="checkbox"
                   checked={optInLeaderboard}
                   onChange={(e) => handleToggleLeaderboard(e.target.checked)}
@@ -811,10 +817,11 @@ export const RecoveryPlan = ({
 
               {optInLeaderboard && (
                 <div className="space-y-1.5">
-                  <label className="text-[10px] text-text-muted font-bold uppercase tracking-widest">Your Nickname</label>
+                  <label htmlFor="nickname-input" className="text-[10px] text-text-muted font-bold uppercase tracking-widest">Your Nickname</label>
                   {isEditingNickname ? (
                     <div className="flex gap-2">
                       <input 
+                        id="nickname-input"
                         type="text"
                         maxLength={20}
                         value={nickname}
@@ -830,7 +837,7 @@ export const RecoveryPlan = ({
                     </div>
                   ) : (
                     <div className="flex items-center justify-between bg-card p-2 rounded border border-border">
-                      <span className="text-xs font-bold text-primary font-mono">{nickname}</span>
+                      <span className="text-xs font-bold text-[#9a3412] dark:text-primary font-mono">{nickname}</span>
                       <button 
                         onClick={() => setIsEditingNickname(true)}
                         className="text-[10px] text-text-muted hover:text-text-main underline cursor-pointer"
@@ -852,7 +859,7 @@ export const RecoveryPlan = ({
                     <span className="w-5 h-5 rounded-md flex items-center justify-center text-[10px] font-black bg-card text-text-muted">
                       1
                     </span>
-                    <span className="truncate max-w-[120px] font-mono text-primary">
+                    <span className="truncate max-w-[120px] font-mono text-[#9a3412] dark:text-primary">
                       {userEntry.name}
                     </span>
                   </div>

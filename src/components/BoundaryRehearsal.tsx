@@ -1,6 +1,6 @@
 import { auth, db } from '../lib/firebase';
 import { collection, doc, setDoc, getDocs, query, orderBy, limit } from 'firebase/firestore';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { motion } from 'motion/react';
 import ReactMarkdown from 'react-markdown';
 import { secureApiFetch } from '../lib/secure-api';
@@ -22,7 +22,8 @@ import {
   Wand2,
   Copy,
   Users,
-  Network
+  Network,
+  Volume2
 } from 'lucide-react';
 import { NovaChat } from './NovaChat';
 import { cn } from '../lib/utils';
@@ -147,6 +148,10 @@ export const BoundaryRehearsal = ({ onAwardPoints, onRehearsalComplete }: { onAw
   const [generatorInput, setGeneratorInput] = useState('');
   const [generatingScripts, setGeneratingScripts] = useState(false);
   const [generatedResult, setGeneratedResult] = useState<string | null>(null);
+  const [isSpeakingScript, setIsSpeakingScript] = useState(false);
+  const [scriptAudioLoading, setScriptAudioLoading] = useState(false);
+  const ttsAudioCtxRef = useRef<AudioContext | null>(null);
+  const ttsSourceRef = useRef<AudioBufferSourceNode | null>(null);
   const [selectedTone, setSelectedTone] = useState<'polite' | 'data' | 'direct'>('polite');
 
   const [showCritique, setShowCritique] = useState(false);
@@ -176,6 +181,81 @@ export const BoundaryRehearsal = ({ onAwardPoints, onRehearsalComplete }: { onAw
     const script = parts[1]?.trim() || generatedResult;
     const advice = parts[2]?.trim() || "Nova recommends holding this line high and matching with visual boundaries.";
     return { script, advice };
+  };
+
+  const stopScriptAudio = () => {
+    if (ttsSourceRef.current) {
+      ttsSourceRef.current.stop();
+      ttsSourceRef.current.disconnect();
+      ttsSourceRef.current = null;
+    }
+  };
+
+  const playScriptPcmAudio = async (base64Audio: string) => {
+    if (!ttsAudioCtxRef.current) {
+      ttsAudioCtxRef.current = new window.AudioContext({ sampleRate: 24000 });
+    }
+    const audioCtx = ttsAudioCtxRef.current;
+    if (audioCtx.state === "suspended") {
+      await audioCtx.resume();
+    }
+    stopScriptAudio();
+
+    const binaryString = window.atob(base64Audio);
+    const len = binaryString.length;
+    const bytes = new Uint8Array(len);
+    for (let i = 0; i < len; i++) {
+      bytes[i] = binaryString.charCodeAt(i);
+    }
+    const numSamples = bytes.length / 2;
+    const audioBuffer = audioCtx.createBuffer(1, numSamples, 24000);
+    const channelData = audioBuffer.getChannelData(0);
+    const dataView = new DataView(bytes.buffer);
+    for (let i = 0; i < numSamples; i++) {
+      channelData[i] = dataView.getInt16(i * 2, true) / 32768;
+    }
+
+    const source = audioCtx.createBufferSource();
+    source.buffer = audioBuffer;
+    source.connect(audioCtx.destination);
+    source.onended = () => setIsSpeakingScript(false);
+    source.start(0);
+    ttsSourceRef.current = source;
+  };
+
+  // Reads just the isolated script text, not the full generatedResult -
+  // this is a "practice saying this out loud" feature, so hearing the
+  // behavioral-strategy explanation read aloud too would be noise, not
+  // the model of the actual delivery the person is meant to rehearse.
+  const playScriptAloud = async () => {
+    if (isSpeakingScript) {
+      stopScriptAudio();
+      setIsSpeakingScript(false);
+      setScriptAudioLoading(false);
+      return;
+    }
+    const { script } = getParsedCustomScript();
+    if (!script) return;
+    try {
+      setIsSpeakingScript(true);
+      setScriptAudioLoading(true);
+      const response = await secureApiFetch("/api/nova/speech", {
+        method: "POST",
+        data: { text: script.replace(/[#*]/g, "") },
+      });
+      const data = await response.json();
+      setScriptAudioLoading(false);
+      if (data.error) throw new Error(data.error);
+      if (data.audio) {
+        await playScriptPcmAudio(data.audio);
+      } else {
+        setIsSpeakingScript(false);
+      }
+    } catch (error: any) {
+      console.error("Playback error:", error);
+      setScriptAudioLoading(false);
+      setIsSpeakingScript(false);
+    }
   };
 
   const handleGenerateScrips = async () => {
@@ -331,18 +411,20 @@ export const BoundaryRehearsal = ({ onAwardPoints, onRehearsalComplete }: { onAw
                 <div>
                   <h2 className="text-2xl lg:text-3xl font-display font-medium text-text-main tracking-tight">Boundary Rehearsal</h2>
                   <div className="flex items-center gap-3 mt-2">
-                    <span className="text-xs font-medium uppercase tracking-widest text-primary flex items-center gap-1.5"><Network className="w-3 h-3" /> Core Pillar: Practice</span>
+                    <span className="text-xs font-medium uppercase tracking-widest text-[#9a3412] dark:text-primary flex items-center gap-1.5"><Network className="w-3 h-3" /> Core Pillar: Practice</span>
                   </div>
                 </div>
                 <div className="mt-4 md:mt-0 flex bg-surface border border-border rounded-lg p-1">
                   <button
                     onClick={() => setMode('library')}
+                    aria-pressed={mode === 'library'}
                     className={cn("px-5 py-2.5 rounded-md text-xs font-medium uppercase tracking-widest transition-colors", mode === 'library' ? "bg-card text-text-main" : "text-text-muted hover:text-text-main")}
                   >
                     Library
                   </button>
                   <button
                     onClick={() => setMode('generator')}
+                    aria-pressed={mode === 'generator'}
                     className={cn("px-5 py-2.5 rounded-md text-xs font-medium uppercase tracking-widest transition-colors", mode === 'generator' ? "bg-card text-text-main" : "text-text-muted hover:text-text-main")}
                   >
                     Custom Generator
@@ -371,8 +453,9 @@ export const BoundaryRehearsal = ({ onAwardPoints, onRehearsalComplete }: { onAw
 
               <div className="relative z-10 space-y-5">
                 <div>
-                  <label className="text-[11px] font-medium uppercase tracking-widest text-text-muted ml-1 mb-2 block">The Incoming Demand</label>
+                  <label htmlFor="incoming-demand" className="text-[11px] font-medium uppercase tracking-widest text-text-muted ml-1 mb-2 block">The Incoming Demand</label>
                   <textarea
+                    id="incoming-demand"
                     value={generatorInput}
                     onChange={(e) => setGeneratorInput(e.target.value)}
                     placeholder='e.g. "Can you quickly throw together a 10-slide deck for the board meeting tomorrow morning?"'
@@ -391,10 +474,11 @@ export const BoundaryRehearsal = ({ onAwardPoints, onRehearsalComplete }: { onAw
                       <button
                         key={tone.id}
                         onClick={() => setSelectedTone(tone.id as any)}
+                        aria-pressed={selectedTone === tone.id}
                         className={cn(
                           "py-3 px-4 text-left rounded-xl text-xs font-black uppercase tracking-wider border transition-all cursor-pointer",
                           selectedTone === tone.id
-                            ? "border-primary bg-primary/10 text-primary shadow-inner"
+                            ? "border-primary bg-primary/10 text-[#9a3412] dark:text-primary shadow-inner"
                             : "border-border bg-background text-text-muted hover:border-muted-foreground hover:text-text-muted"
                         )}
                       >
@@ -442,7 +526,7 @@ export const BoundaryRehearsal = ({ onAwardPoints, onRehearsalComplete }: { onAw
                 <p className="text-xs font-medium max-w-sm">Scripts will populate here. Choose the tone that matches the political capital you want to spend.</p>
               </div>
             ) : generatingScripts ? (
-              <div className="h-[400px] rounded-xl border border-primary/20 bg-primary/5 flex flex-col items-center justify-center text-primary relative overflow-hidden">
+              <div role="status" aria-live="polite" className="h-[400px] rounded-xl border border-primary/20 bg-primary/5 flex flex-col items-center justify-center text-[#9a3412] dark:text-primary relative overflow-hidden">
                 <Loader2 className="w-8 h-8 animate-spin mb-4" />
                 <p className="text-xs font-medium uppercase tracking-widest">Nova is drafting your script...</p>
               </div>
@@ -456,7 +540,7 @@ export const BoundaryRehearsal = ({ onAwardPoints, onRehearsalComplete }: { onAw
                   <ReactMarkdown
                     components={{
                       h3: ({node, ...props}) => (
-                        <h3 className="text-success font-bold text-xs uppercase tracking-widest mt-6 mb-3 border-b border-border pb-2" {...props} />
+                        <h3 className="text-success dark:text-[#4ade80] font-bold text-xs uppercase tracking-widest mt-6 mb-3 border-b border-border pb-2" {...props} />
                       ),
                       p: ({node, ...props}) => (
                         <div className="relative group mb-6">
@@ -466,7 +550,8 @@ export const BoundaryRehearsal = ({ onAwardPoints, onRehearsalComplete }: { onAw
                               const text = (e.currentTarget.previousElementSibling as HTMLElement)?.innerText;
                               if (text) copyToClipboard(text);
                             }}
-                            className="absolute right-4 top-4 p-2 bg-card rounded-lg border border-border text-text-muted hover:text-success opacity-0 group-hover:opacity-100 transition-all focus:outline-none"
+                            aria-label="Copy script to clipboard"
+                            className="absolute right-4 top-4 p-2 bg-card rounded-lg border border-border text-text-muted hover:text-success dark:hover:text-[#4ade80] opacity-0 group-hover:opacity-100 focus:opacity-100 focus-visible:ring-2 focus-visible:ring-primary transition-all"
                             title="Copy script"
                           >
                             <Copy className="w-4 h-4" />
@@ -478,7 +563,23 @@ export const BoundaryRehearsal = ({ onAwardPoints, onRehearsalComplete }: { onAw
                     {generatedResult || ''}
                   </ReactMarkdown>
 
-                  <div className="mt-8 pt-6 border-t border-border flex justify-end">
+                  <div className="mt-8 pt-6 border-t border-border flex items-center justify-between gap-4">
+                    <button
+                      onClick={playScriptAloud}
+                      aria-label={isSpeakingScript ? "Stop reading script aloud" : "Play script aloud"}
+                      aria-pressed={isSpeakingScript}
+                      className={cn(
+                        "py-3.5 px-6 rounded-xl text-xs font-black uppercase tracking-widest flex items-center justify-center gap-2.5 transition-colors border",
+                        isSpeakingScript ? "bg-primary/10 border-primary/30 text-primary" : "bg-surface border-border text-text-muted hover:text-primary hover:border-primary/30"
+                      )}
+                    >
+                      {isSpeakingScript && scriptAudioLoading ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <Volume2 className="w-4 h-4" />
+                      )}
+                      {isSpeakingScript ? "Stop" : "Hear It Said"}
+                    </button>
                     <button
                       onClick={startCustomRehearsal}
                       className="bg-primary hover:bg-primary text-primary-foreground py-3.5 px-8 rounded-xl text-xs font-black uppercase tracking-widest flex items-center justify-center gap-3 transition-colors shadow-lg"
@@ -499,6 +600,7 @@ export const BoundaryRehearsal = ({ onAwardPoints, onRehearsalComplete }: { onAw
               <button
                 key={group.category}
                 onClick={() => setActiveCategory(group.category)}
+                aria-pressed={activeCategory === group.category}
                 className={cn(
                   "flex items-center gap-2 px-5 py-3 rounded-xl text-xs font-black uppercase tracking-widest transition-all",
                   activeCategory === group.category ? "bg-primary text-primary-foreground shadow-md border border-primary" : "text-text-muted hover:text-text-muted hover:bg-white/[0.02]"
@@ -558,7 +660,7 @@ export const BoundaryRehearsal = ({ onAwardPoints, onRehearsalComplete }: { onAw
 
             <div className="bg-card p-8 rounded-xl space-y-8 border border-border relative overflow-hidden">
               <div className="space-y-4 border-b border-border pb-6 relative z-10">
-                <span className="inline-flex items-center gap-2 px-3 py-1 rounded bg-primary/10 border border-primary/20 text-[11px] font-medium uppercase tracking-widest text-primary">
+                <span className="inline-flex items-center gap-2 px-3 py-1 rounded bg-primary/10 border border-primary/20 text-[11px] font-medium uppercase tracking-widest text-[#9a3412] dark:text-primary">
                   <Zap className="w-3 h-3" /> Live Blueprint
                 </span>
                 <h3 className="text-2xl font-display font-medium text-text-main tracking-tight">{selected?.title}</h3>
@@ -573,8 +675,8 @@ export const BoundaryRehearsal = ({ onAwardPoints, onRehearsalComplete }: { onAw
                       <Shield className="w-4 h-4 text-primary" />
                     </div>
                     <div>
-                       <span className="text-[11px] font-medium uppercase tracking-widest block text-primary mb-1">Nova's Suggestion</span>
-                       <span className="text-xs text-primary font-medium leading-relaxed">{selected?.advice}</span>
+                       <span className="text-[11px] font-medium uppercase tracking-widest block text-[#9a3412] dark:text-primary mb-1">Nova's Suggestion</span>
+                       <span className="text-xs text-[#9a3412] dark:text-primary font-medium leading-relaxed">{selected?.advice}</span>
                     </div>
                   </div>
                 </div>
@@ -642,7 +744,7 @@ export const BoundaryRehearsal = ({ onAwardPoints, onRehearsalComplete }: { onAw
                       </div>
                       <div>
                         <h4 className="text-xl font-bold text-text-main tracking-tight">Your Feedback</h4>
-                        <span className="text-[11px] uppercase font-medium tracking-widest text-primary">Nova Insight</span>
+                        <span className="text-[11px] uppercase font-medium tracking-widest text-[#9a3412] dark:text-primary">Nova Insight</span>
                       </div>
                     </div>
                   </div>
@@ -667,8 +769,8 @@ export const BoundaryRehearsal = ({ onAwardPoints, onRehearsalComplete }: { onAw
                           className="p-8 bg-surface rounded-xl border border-border space-y-6"
                         >
                           <div className="flex items-center gap-3 border-b border-border pb-4">
-                             <Zap className="w-5 h-5 text-success" />
-                             <span className="text-xs font-medium uppercase tracking-widest text-success/80">A closer look</span>
+                             <Zap className="w-5 h-5 text-success dark:text-[#4ade80]" />
+                             <span className="text-xs font-medium uppercase tracking-widest text-[#166534] dark:text-[#4ade80]">A closer look</span>
                           </div>
                           <div className="prose dark:prose-invert max-w-none text-text-muted leading-relaxed font-mono text-sm">
                              <ReactMarkdown>{detailedFeedback}</ReactMarkdown>
@@ -692,10 +794,10 @@ export const BoundaryRehearsal = ({ onAwardPoints, onRehearsalComplete }: { onAw
                       
                       <div className="p-6 bg-success/10 rounded-2xl border border-success/20 space-y-3">
                          <div className="flex items-center gap-3">
-                           <Trophy className="w-5 h-5 text-success" />
-                           <span className="text-xs font-black uppercase tracking-widest text-success">Parameter Locked</span>
+                           <Trophy className="w-5 h-5 text-success dark:text-[#4ade80]" />
+                           <span className="text-xs font-black uppercase tracking-widest text-[#166534] dark:text-[#4ade80]">Parameter Locked</span>
                          </div>
-                         <p className="text-sm text-success font-medium">"You’ve successfully identified the leak in this interaction. Consistency is your next move."</p>
+                         <p className="text-sm text-[#166534] dark:text-[#4ade80] font-medium">"You’ve successfully identified the leak in this interaction. Consistency is your next move."</p>
                       </div>
                     </div>
                   )}

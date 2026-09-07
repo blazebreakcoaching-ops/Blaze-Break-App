@@ -89,7 +89,10 @@ export const getFeatureFlags = (): Record<FeatureFlag, boolean> => {
     if (stored) {
       return { ...DEFAULT_FLAGS, ...JSON.parse(stored) };
     }
-  } catch (e) {}
+  } catch (e) {
+    // Non-fatal - if localStorage is unavailable or the saved value is
+    // corrupted, the flags just fall back to their in-memory defaults.
+  }
   return DEFAULT_FLAGS;
 };
 

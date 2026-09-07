@@ -127,8 +127,8 @@ export const DecompressionDoorway = ({ fingerprint, onAwardPoints }: Decompressi
                         <ArrowRight className="w-5 h-5 text-primary group-hover:translate-x-1 transition-transform" />
                       </div>
                       <div className="flex-1 text-left">
-                        <span className="text-sm font-black uppercase tracking-widest text-primary">Entering Into</span>
-                        <p className="text-xl font-bold text-primary dark:text-primary">{role.enter}</p>
+                        <span className="text-sm font-black uppercase tracking-widest text-[#9a3412] dark:text-primary">Entering Into</span>
+                        <p className="text-xl font-bold text-[#9a3412] dark:text-primary">{role.enter}</p>
                       </div>
                     </div>
                   </button>
@@ -192,10 +192,11 @@ export const DecompressionDoorway = ({ fingerprint, onAwardPoints }: Decompressi
                    <button
                      key={idx}
                      onClick={() => setSelectedNeed(need)}
+                     aria-pressed={selectedNeed === need}
                      className={cn(
                        "w-full text-left p-4 rounded-xl border transition-all font-bold text-lg",
                        selectedNeed === need 
-                         ? "bg-success/10 border-success text-success dark:text-success scale-[1.01]"
+                         ? "bg-success/10 border-success text-success dark:text-[#4ade80] scale-[1.01]"
                          : "bg-surface border border-transparent hover:border-success/50 text-text-main"
                      )}
                    >
@@ -207,7 +208,7 @@ export const DecompressionDoorway = ({ fingerprint, onAwardPoints }: Decompressi
                <button
                   onClick={() => setStep('breath')}
                   disabled={!selectedNeed}
-                  className="w-full btn-primary bg-success hover:bg-success border-success py-4 text-lg disabled:opacity-50 mt-4"
+                  className="w-full btn-primary bg-success hover:bg-success border-success text-success-foreground py-4 text-lg disabled:opacity-50 mt-4"
                 >
                   Proceed to Reset <ArrowRight className="w-5 h-5 ml-2" />
                 </button>
@@ -243,13 +244,13 @@ export const DecompressionDoorway = ({ fingerprint, onAwardPoints }: Decompressi
                      }}
                      transition={{ duration: breathPhase === 'exhale' ? 6 : 4, ease: 'easeInOut' }}
                    >
-                     <Wind className="w-6 h-6 text-text-main" />
+                     <Wind className="w-6 h-6 text-primary-foreground" />
                    </motion.div>
                    <div className="absolute inset-0 border border-primary/20 rounded-full scale-[1.5]" />
                    <div className="absolute inset-0 border border-primary/10 rounded-full scale-[2]" />
                    
                    <div className="absolute -bottom-16 w-full text-center">
-                      <span className="text-2xl font-black uppercase tracking-[0.2em] text-primary">
+                      <span role="status" aria-live="polite" className="text-2xl font-black uppercase tracking-[0.2em] text-[#9a3412] dark:text-primary">
                         {breathPhase === 'inhale' && "Inhale"}
                         {breathPhase === 'hold' && "Hold"}
                         {breathPhase === 'exhale' && "Exhale"}
@@ -278,7 +279,7 @@ export const DecompressionDoorway = ({ fingerprint, onAwardPoints }: Decompressi
 
               <div className="space-y-6">
                 <div className="p-6 bg-primary/10 border border-primary/20 rounded-2xl">
-                  <p className="text-lg font-medium text-primary dark:text-primary italic">
+                  <p className="text-lg font-medium text-[#9a3412] dark:text-primary italic">
                     "I am leaving {selectedRole?.leave} behind. I am stepping into {selectedRole?.enter}."
                   </p>
                 </div>
@@ -308,6 +309,8 @@ export const DecompressionDoorway = ({ fingerprint, onAwardPoints }: Decompressi
              key="complete"
              initial={{ opacity: 0, scale: 0.9 }}
              animate={{ opacity: 1, scale: 1 }}
+             role="status"
+             aria-live="polite"
              className="w-full flex justify-center py-20"
             >
               <div className="text-center p-6 sm:p-8 md:p-12 border border-success/20 bg-success/5 rounded-xl">
@@ -316,7 +319,7 @@ export const DecompressionDoorway = ({ fingerprint, onAwardPoints }: Decompressi
                 </div>
                 <h4 className="text-4xl font-display font-bold text-text-main mb-4">Threshold Crossed</h4>
                 <p className="text-xl text-text-muted font-medium mb-2">You are now in {selectedRole?.enter}.</p>
-                <p className="text-success dark:text-success font-bold uppercase tracking-widest text-sm mt-8">Complete</p>
+                <p className="text-success dark:text-[#4ade80] font-bold uppercase tracking-widest text-sm mt-8">Complete</p>
               </div>
             </motion.div>
           )}

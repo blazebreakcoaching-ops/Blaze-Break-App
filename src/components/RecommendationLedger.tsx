@@ -26,7 +26,7 @@ export const RecommendationLedger = () => {
   return (
     <div className="card space-y-6 mt-12 bg-background shadow-lg border border-border">
       <div className="flex items-center gap-4 mb-6">
-        <div className="w-12 h-12 bg-success/10 border border-success/20 rounded-xl flex items-center justify-center text-success">
+        <div className="w-12 h-12 bg-success/10 border border-success/20 rounded-xl flex items-center justify-center text-success dark:text-[#4ade80]">
           <ShieldCheck className="w-6 h-6" />
         </div>
         <div>
@@ -46,12 +46,12 @@ export const RecommendationLedger = () => {
         <table className="w-full text-left text-sm whitespace-nowrap">
           <thead className="bg-surface border-b border-white/[0.05] text-text-muted">
             <tr>
-              <th className="px-4 py-3 font-medium">Timestamp</th>
-              <th className="px-4 py-3 font-medium">Type</th>
-              <th className="px-4 py-3 font-medium">Decision</th>
-              <th className="px-4 py-3 font-medium">Content / Draft</th>
-              <th className="px-4 py-3 font-medium">Sources Evaluated</th>
-              <th className="px-4 py-3 font-medium">Outcome</th>
+              <th scope="col" className="px-4 py-3 font-medium">Timestamp</th>
+              <th scope="col" className="px-4 py-3 font-medium">Type</th>
+              <th scope="col" className="px-4 py-3 font-medium">Decision</th>
+              <th scope="col" className="px-4 py-3 font-medium">Content / Draft</th>
+              <th scope="col" className="px-4 py-3 font-medium">Sources Evaluated</th>
+              <th scope="col" className="px-4 py-3 font-medium">Outcome</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-white/[0.02]">
@@ -61,9 +61,9 @@ export const RecommendationLedger = () => {
                 <td className="px-4 py-3 text-text-muted text-xs uppercase tracking-wider">{entry.type.replace('_', ' ')}</td>
                 <td className="px-4 py-3">
                    {entry.status === 'verified' ? (
-                     <span className="flex items-center gap-1 text-xs font-bold uppercase tracking-wider text-success bg-success/10 px-2 py-1 rounded w-fit"><CheckCircle2 className="w-3 h-3"/> Verified</span>
+                     <span className="flex items-center gap-1 text-xs font-bold uppercase tracking-wider text-success dark:text-[#4ade80] bg-success/10 px-2 py-1 rounded w-fit"><CheckCircle2 className="w-3 h-3"/> Verified</span>
                    ) : (
-                     <span className="flex items-center gap-1 text-xs font-bold uppercase tracking-wider text-destructive bg-destructive/10 px-2 py-1 rounded w-fit"><AlertTriangle className="w-3 h-3"/> Rejected</span>
+                     <span className="flex items-center gap-1 text-xs font-bold uppercase tracking-wider text-destructive dark:text-[#f87171] bg-destructive/10 px-2 py-1 rounded w-fit"><AlertTriangle className="w-3 h-3"/> Rejected</span>
                    )}
                 </td>
                 <td className="px-4 py-3 text-text-muted max-w-sm truncate" title={entry.content}>{entry.content}</td>
@@ -76,9 +76,9 @@ export const RecommendationLedger = () => {
                 </td>
                 <td className="px-4 py-3 text-xs text-text-muted">
                    {entry.status === 'rejected' ? (
-                      <span className="text-destructive/80">{entry.explanation}</span>
+                      <span className="text-destructive dark:text-[#f87171]">{entry.explanation}</span>
                    ) : entry.userHelpful ? (
-                      <span className="text-success/80 cursor-default" title="User marked this as helpful">♥ Helpful</span>
+                      <span className="text-success dark:text-[#4ade80] cursor-default" title="User marked this as helpful">♥ Helpful</span>
                    ) : entry.userDismissed ? (
                       <span className="text-text-muted cursor-default" title="User dismissed this notification">Dismissed</span>
                    ) : (

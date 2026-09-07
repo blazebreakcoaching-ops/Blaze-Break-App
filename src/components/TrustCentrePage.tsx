@@ -8,7 +8,7 @@ interface TrustCentrePageProps {
 
 export const TrustCentrePage = ({ onBack }: TrustCentrePageProps) => {
   return (
-    <div className="min-h-screen bg-background selection:bg-primary/20 selection:text-primary relative overflow-hidden text-text-main pb-32">
+    <div className="min-h-screen bg-background selection:bg-primary/20 selection:text-[#9a3412] dark:selection:text-primary relative overflow-hidden text-text-main pb-32">
       {/* Premium Glow Aura Backdrops */}
       <div className="absolute top-0 left-1/4 w-[500px] h-[500px] bg-primary/5 rounded-full blur-[140px] pointer-events-none" />
       <div className="absolute inset-0 bg-[linear-gradient(to_right,#161f30_1px,transparent_1px),linear-gradient(to_bottom,#161f30_1px,transparent_1px)] bg-[size:4rem_4rem] [mask-image:radial-gradient(ellipse_60%_50%_at_50%_0%,#000_70%,transparent_100%)] opacity-25" />
@@ -16,12 +16,12 @@ export const TrustCentrePage = ({ onBack }: TrustCentrePageProps) => {
       {/* Navigation */}
       <nav className="fixed top-0 w-full z-50 px-8 py-6 flex justify-between items-center backdrop-blur-xl bg-background/70 border-b border-primary/10">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 bg-gradient-to-tr from-primary to-primary/70 rounded-xl flex items-center justify-center text-text-main shadow-lg shadow-primary/20">
+          <div className="w-10 h-10 bg-gradient-to-tr from-primary to-primary/70 rounded-xl flex items-center justify-center text-primary-foreground shadow-lg shadow-primary/20">
             <ShieldCheck className="w-5 h-5" />
           </div>
           <div className="flex flex-col">
             <h1 className="font-display font-black text-lg tracking-tight text-text-main leading-none">Blaze Break</h1>
-            <span className="text-[10px] font-black uppercase tracking-[0.2em] text-primary mt-1">Trust Centre</span>
+            <span className="text-[10px] font-black uppercase tracking-[0.2em] text-[#9a3412] dark:text-primary mt-1">Trust Centre</span>
           </div>
         </div>
         <button 
@@ -61,7 +61,7 @@ export const TrustCentrePage = ({ onBack }: TrustCentrePageProps) => {
             </div>
             
             <div className="p-6 rounded-2xl bg-surface border border-success/10">
-              <h4 className="font-bold text-text-main mb-2 flex items-center gap-2"><Users className="w-4 h-4 text-success" /> Zone B: Shared Recovery Ally Space</h4>
+              <h4 className="font-bold text-text-main mb-2 flex items-center gap-2"><Users className="w-4 h-4 text-success dark:text-[#4ade80]" /> Zone B: Shared Recovery Ally Space</h4>
               <p className="text-sm text-text-muted leading-relaxed font-light">Visible only when the user actively chooses to share something specific. Contains only curated items like "I completed my weekly recovery goal".</p>
             </div>
             
@@ -101,7 +101,7 @@ export const TrustCentrePage = ({ onBack }: TrustCentrePageProps) => {
         {/* Policies */}
         <section className="grid grid-cols-1 md:grid-cols-2 gap-6 pb-20">
            <div className="p-6 rounded-2xl bg-white/[0.02] hover:bg-white/[0.04] transition-colors cursor-pointer border border-white/[0.05] flex items-center gap-4 group">
-             <div className="p-3 bg-primary/20 text-primary rounded-xl group-hover:scale-110 transition-transform"><FileText className="w-5 h-5"/></div>
+             <div className="p-3 bg-primary/20 text-[#9a3412] dark:text-primary rounded-xl group-hover:scale-110 transition-transform"><FileText className="w-5 h-5"/></div>
              <div>
                <h4 className="text-text-main font-bold text-sm tracking-wide">Privacy Notice</h4>
                <p className="text-xs text-text-muted mt-1">How we process your personal data.</p>
@@ -109,7 +109,7 @@ export const TrustCentrePage = ({ onBack }: TrustCentrePageProps) => {
            </div>
            
            <div className="p-6 rounded-2xl bg-white/[0.02] hover:bg-white/[0.04] transition-colors cursor-pointer border border-white/[0.05] flex items-center gap-4 group">
-             <div className="p-3 bg-primary/20 text-primary rounded-xl group-hover:scale-110 transition-transform"><Server className="w-5 h-5"/></div>
+             <div className="p-3 bg-primary/20 text-[#9a3412] dark:text-primary rounded-xl group-hover:scale-110 transition-transform"><Server className="w-5 h-5"/></div>
              <div>
                <h4 className="text-text-main font-bold text-sm tracking-wide">Security Assessment</h4>
                <p className="text-xs text-text-muted mt-1">Our technical protection measures.</p>
@@ -117,7 +117,7 @@ export const TrustCentrePage = ({ onBack }: TrustCentrePageProps) => {
            </div>
            
            <div className="p-6 rounded-2xl bg-white/[0.02] hover:bg-white/[0.04] transition-colors cursor-pointer border border-white/[0.05] flex items-center gap-4 group">
-             <div className="p-3 bg-primary/20 text-primary rounded-xl group-hover:scale-110 transition-transform"><FileText className="w-5 h-5"/></div>
+             <div className="p-3 bg-primary/20 text-[#9a3412] dark:text-primary rounded-xl group-hover:scale-110 transition-transform"><FileText className="w-5 h-5"/></div>
              <div>
                <h4 className="text-text-main font-bold text-sm tracking-wide">Terms of Use</h4>
                <p className="text-xs text-text-muted mt-1">Rules and boundaries for the platform.</p>
@@ -125,7 +125,7 @@ export const TrustCentrePage = ({ onBack }: TrustCentrePageProps) => {
            </div>
            
            <div className="p-6 rounded-2xl bg-white/[0.02] hover:bg-white/[0.04] transition-colors cursor-pointer border border-white/[0.05] flex items-center gap-4 group">
-             <div className="p-3 bg-primary/20 text-primary rounded-xl group-hover:scale-110 transition-transform"><Building className="w-5 h-5"/></div>
+             <div className="p-3 bg-primary/20 text-[#9a3412] dark:text-primary rounded-xl group-hover:scale-110 transition-transform"><Building className="w-5 h-5"/></div>
              <div>
                <h4 className="text-text-main font-bold text-sm tracking-wide">Organisation Ethics</h4>
                <p className="text-xs text-text-muted mt-1">Agreement for sponsoring employers.</p>

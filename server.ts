@@ -5,8 +5,11 @@ import fs from "fs";
 import crypto from "crypto";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, Type, Modality, LiveServerMessage } from "@google/genai";
+import Anthropic from "@anthropic-ai/sdk";
+import OpenAI from "openai";
 import dotenv from "dotenv";
 import twilio from "twilio";
+import cron from "node-cron";
 import { WebSocketServer } from 'ws';
 import webpush from 'web-push';
 import { NOVA_KNOWLEDGE_BASE } from './server-knowledge';
@@ -19,6 +22,11 @@ import { getAppCheck } from 'firebase-admin/app-check';
 import cors from 'cors';
 import rateLimit from 'express-rate-limit';
 import { z } from 'zod';
+import { memoryToolIsAllowed, searchMemories, isValidRecoveryDuration, validateMemoryWrite, validateFeatureSuggestion, SUGGESTABLE_FEATURES, toolsAreEnabled, NovaMemoryDoc } from './nova-tools';
+import { toClaudeTools, GeminiStyleToolDeclaration } from './nova-claude-tools';
+import { computeClimateStrain, computeClimateStrainByDimension, computeMoodStrain, computeOverallStrain, computeTrend } from './org-risk-trend';
+import { isRealGuardian, isValidGuardianPhone, buildGuardianCallRequestMessage, extractFirstName } from './guardian-alert';
+import { collectionsForExport, collectionsForErasure } from './user-data-collections';
 
 dotenv.config();
 
@@ -34,7 +42,11 @@ try {
   // Force the Google Cloud Project to the one in the config so Firebase Auth accepts the tokens
   process.env.GOOGLE_CLOUD_PROJECT = firebaseConfigProject;
   process.env.GCLOUD_PROJECT = firebaseConfigProject;
-} catch(e) {}
+} catch (e) {
+  // firebase-applet-config.json is optional - if it's missing or invalid,
+  // firebaseConfigProject/firebaseConfigDatabaseId just stay undefined and
+  // initializeApp() below falls back to Application Default Credentials.
+}
 
 if (!getApps().length) {
   initializeApp({
@@ -134,6 +146,22 @@ const smsLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 10, // SMS costs real money per message and could enable harassment if abused — stricter than any other endpoint.
   message: { error: 'Too many messaging requests, please try again later.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+  validate: { xForwardedForHeader: false, default: true }
+});
+
+// Guardian alerts specifically: the Guardian Support spec (docs/GUARDIAN_SUPPORT_SPEC.md
+// §D.3) sets 5/hour and 15/day per user as engineering placeholders pending
+// safeguarding review, not a clinical judgement about how often someone in
+// genuine crisis should be able to ask for help. This limiter enforces the
+// hourly figure; the daily figure is enforced in-handler alongside the
+// per-contact cooldown, since express-rate-limit doesn't support two windows
+// on one route cleanly.
+const guardianAlertLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 5,
+  message: { error: "That's a lot of alerts in a short time. Please wait a little before sending another." },
   standardHeaders: true,
   legacyHeaders: false,
   validate: { xForwardedForHeader: false, default: true }
@@ -298,6 +326,31 @@ const TwilioSendSchema = z.object({
 // (proper E.164 phone format, message length cap), a dedicated strict rate
 // limit given the real cost per message, and an audit log entry so any use
 // going forward is actually traceable to a real, authenticated user.
+// Shared send logic - used by the authenticated route below and by the
+// ally nudge scheduler. Deliberately does NOT bypass auth/rate-limiting for
+// the route; the scheduler calls this directly since it already knows the
+// message is legitimate (it was configured by an authenticated user earlier).
+async function sendTwilioMessage(uid: string, to: string, message: string, useWhatsapp: boolean): Promise<{ success: boolean; sid?: string; error?: string }> {
+  const client = initTwilio();
+  const fromPhone = process.env.TWILIO_PHONE_NUMBER;
+  if (!client || !fromPhone) {
+    return { success: false, error: "Messaging is unavailable because the support messaging system is not configured." };
+  }
+  try {
+    const m = await client.messages.create({
+      body: message,
+      from: useWhatsapp ? `whatsapp:${fromPhone}` : fromPhone,
+      to: useWhatsapp ? `whatsapp:${to}` : to,
+    });
+    await logAutopilotAction(uid, "sms_send", { to, useWhatsapp }, true);
+    return { success: true, sid: m.sid };
+  } catch (error: any) {
+    console.error("Twilio error:", error);
+    await logAutopilotAction(uid, "sms_send", { error: error.message }, false);
+    return { success: false, error: error.message };
+  }
+}
+
 app.post("/api/twilio/send", smsLimiter, verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
   const uid = requireAuth(req).uid;
   try {
@@ -306,27 +359,225 @@ app.post("/api/twilio/send", smsLimiter, verifyAppCheck, authenticateFirebaseUse
       return res.status(400).json({ error: "Invalid request — a valid E.164 phone number and message are required." });
     }
     const { to, message, useWhatsapp } = parsed.data;
-    const client = initTwilio();
-    const fromPhone = process.env.TWILIO_PHONE_NUMBER;
+    const result = await sendTwilioMessage(uid, to, message, useWhatsapp);
+    if (!result.success) {
+      return res.status(400).json({ success: false, error: result.error });
+    }
+    res.json({ success: true, sid: result.sid });
+  } catch (error: any) {
+    console.error("Twilio route error:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
 
-    if (!client || !fromPhone) {
-      return res.status(400).json({
-        success: false,
-        error: "Messaging is unavailable because the support messaging system is not configured."
+// ============ Guardian Support — Tier 1: one-tap guardian call request ============
+// Per docs/GUARDIAN_SUPPORT_SPEC.md. Deterministic dispatch only: no LLM is
+// anywhere in this path, so §D.8's "an LLM may prepare but never dispatch"
+// rule is trivially satisfied here - this endpoint exists purely for a
+// direct user tap. Tier 2 (conversational, LLM-prepared, still
+// human-confirmed) is a separate later piece, not this one.
+type GuardianAlertState = "queued" | "provider_accepted" | "failed";
+const GUARDIAN_STATE_COPY: Record<GuardianAlertState, string> = {
+  queued: "Sending…",
+  provider_accepted: "I've sent it — I can't confirm it's arrived yet.",
+  failed: "I couldn't get that message through. That's a problem on this end, not yours.",
+};
+
+app.post("/api/guardian/alert", guardianAlertLimiter, verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  const uid = requireAuth(req).uid; // uid from the verified token only - never from req.body
+  try {
+    const { contactId, idempotencyKey } = req.body || {};
+    if (typeof contactId !== "string" || !contactId) {
+      return res.status(400).json({ error: "Missing contactId." });
+    }
+    if (typeof idempotencyKey !== "string" || idempotencyKey.length < 8) {
+      return res.status(400).json({ error: "Missing or invalid idempotencyKey." });
+    }
+
+    const db = getDb();
+    const alertsRef = db.collection("users").doc(uid).collection("guardian_alerts");
+
+    // Idempotency: the key is the document ID, so a retry or double-tap with
+    // the same key can never create a second send - it just returns
+    // whatever the first attempt already produced.
+    const existingRef = alertsRef.doc(idempotencyKey);
+    const existingSnap = await existingRef.get();
+    if (existingSnap.exists) {
+      const existing = existingSnap.data()!;
+      return res.json({
+        alertId: idempotencyKey,
+        state: existing.state,
+        userMessage: GUARDIAN_STATE_COPY[existing.state as GuardianAlertState] || "Already handled.",
+        contactDisplayName: existing.contactName,
       });
     }
 
-    const m = await client.messages.create({
-      body: message,
-      from: useWhatsapp ? `whatsapp:${fromPhone}` : fromPhone,
-      to: useWhatsapp ? `whatsapp:${to}` : to
+    // Load the user's own guardian list server-side and look the contact up
+    // in it - the phone number is never taken from the request body. A
+    // caller can only ever message a contact that is genuinely their own,
+    // genuinely marked as a guardian.
+    const statsSnap = await db.collection("users").doc(uid).collection("user_stats").doc("core").get();
+    const supportCircle: any[] = statsSnap.exists ? (statsSnap.data()?.supportCircle || []) : [];
+    const contact = supportCircle.find(c => c?.id === contactId);
+    if (!isRealGuardian(contact)) {
+      return res.status(403).json({
+        error: "not_a_guardian",
+        userMessage: "I don't have that person set up as a guardian. You can add one in the Ally tab.",
+      });
+    }
+    if (!isValidGuardianPhone(contact.contactMethod)) {
+      return res.status(400).json({
+        error: "invalid_number",
+        userMessage: `${contact.name}'s number isn't in a valid format. Edit it and try again.`,
+      });
+    }
+
+    // Cooldown: prevents accidental repeat sends to the same person, while
+    // still letting a genuinely escalating situation try again immediately -
+    // the client is expected to surface that choice rather than being
+    // silently blocked (spec §D.3).
+    const cooldownMs = 10 * 60 * 1000; // engineering placeholder, [REVIEW] per spec
+    const cooldownSince = new Date(Date.now() - cooldownMs).toISOString();
+    const recentToSameContact = await alertsRef
+      .where("contactId", "==", contactId)
+      .where("createdAt", ">=", cooldownSince)
+      .limit(1)
+      .get();
+    if (!recentToSameContact.empty && req.body?.cooldownOverride !== true) {
+      return res.status(429).json({
+        error: "cooldown",
+        userMessage: `You already asked ${contact.name} to call you a few minutes ago. Send it again if you still need to.`,
+        canOverride: true,
+      });
+    }
+
+    // Daily cap, enforced here since express-rate-limit only covers the
+    // hourly window on this route (spec §D.3's second figure).
+    const dayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    const todaysAlerts = await alertsRef.where("createdAt", ">=", dayAgo).get();
+    if (todaysAlerts.size >= 15) {
+      return res.status(429).json({
+        error: "daily_limit",
+        userMessage: "You've reached today's limit for guardian alerts. Please try calling a crisis line if you need support right now.",
+      });
+    }
+
+    // Persist as 'queued' before the provider call, so a crash between here
+    // and the send is visible in history rather than silently lost.
+    const userStats = statsSnap.exists ? statsSnap.data() : null;
+    const message = buildGuardianCallRequestMessage(extractFirstName(userStats?.profile?.fullName));
+
+    await existingRef.set({
+      contactId,
+      contactName: contact.name,
+      triggerSource: "manual_button",
+      state: "queued" as GuardianAlertState,
+      createdAt: new Date().toISOString(),
+      updatedAt: FieldValue.serverTimestamp(),
     });
 
-    await logAutopilotAction(uid, "sms_send", { to, useWhatsapp }, true);
-    res.json({ success: true, sid: m.sid });
+    const result = await sendTwilioMessage(uid, contact.contactMethod, message, contact.notificationPreference === "whatsapp");
+    const finalState: GuardianAlertState = result.success ? "provider_accepted" : "failed";
+
+    await existingRef.update({
+      state: finalState,
+      providerMessageId: result.sid || null,
+      providerError: result.error || null,
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+
+    if (!result.success) {
+      return res.status(502).json({
+        alertId: idempotencyKey,
+        state: finalState,
+        error: result.error,
+        userMessage: GUARDIAN_STATE_COPY.failed,
+      });
+    }
+
+    res.json({
+      alertId: idempotencyKey,
+      state: finalState,
+      userMessage: GUARDIAN_STATE_COPY.provider_accepted,
+      contactDisplayName: contact.name,
+    });
   } catch (error: any) {
-    console.error("Twilio error:", error);
-    await logAutopilotAction(uid, "sms_send", { error: error.message }, false);
+    console.error("[Guardian alert] error:", error?.message || error);
+    res.status(500).json({ error: error.message, userMessage: GUARDIAN_STATE_COPY.failed });
+  }
+});
+
+// Real, honest guardian alert history - deliberately excludes any
+// conversation content (spec §D.7); this collection only ever stores
+// alert metadata, never what the user said beforehand.
+app.get("/api/guardian/alerts", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const uid = requireAuth(req).uid;
+    const db = getDb();
+    const snap = await db.collection("users").doc(uid).collection("guardian_alerts")
+      .orderBy("createdAt", "desc").limit(20).get();
+    res.json({
+      alerts: snap.docs.map(d => {
+        const data = d.data();
+        return {
+          id: d.id,
+          contactName: data.contactName,
+          state: data.state,
+          userMessage: GUARDIAN_STATE_COPY[data.state as GuardianAlertState] || null,
+          createdAt: data.createdAt,
+        };
+      }),
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ============ Nova voice-call continuity ============
+// Records only METADATA about a voice call - when it ended, how long it ran,
+// how many turns - never the transcript or anything that was said. This lets
+// the next call greet the person as someone Nova knows without storing the
+// contents of an intimate conversation. Nested under the user document, so
+// the GDPR export/delete endpoints cover it automatically. See
+// voice-continuity.ts for the pure logic that turns this into a greeting.
+const VoiceSessionSchema = z.object({
+  durationMs: z.number().int().min(0).max(24 * 60 * 60 * 1000),
+  turnCount: z.number().int().min(0).max(100000),
+}).strict();
+
+app.post("/api/nova/voice-sessions", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const uid = requireAuth(req).uid;
+    const parsed = VoiceSessionSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: "Invalid voice session record." });
+    }
+    const db = getDb();
+    await db.collection("users").doc(uid).collection("nova_voice_sessions").add({
+      endedAt: new Date().toISOString(),
+      durationMs: parsed.data.durationMs,
+      turnCount: parsed.data.turnCount,
+      createdAt: FieldValue.serverTimestamp(),
+    });
+    res.json({ success: true });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get("/api/nova/voice-sessions", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const uid = requireAuth(req).uid;
+    const db = getDb();
+    const snap = await db.collection("users").doc(uid).collection("nova_voice_sessions")
+      .orderBy("endedAt", "desc").limit(50).get();
+    res.json({
+      sessions: snap.docs.map(d => {
+        const data = d.data();
+        return { endedAt: data.endedAt, durationMs: data.durationMs, turnCount: data.turnCount };
+      }),
+    });
+  } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
 });
@@ -346,6 +597,92 @@ const ai = new GoogleGenAI({
     }
   }
 });
+
+// The coaching persona for Nova's real-time voice sessions. This is the
+// single biggest lever on whether Nova "sounds like a warm human coach": the
+// Gemini Live model already produces expressive native audio, so this steers
+// HOW it uses that - pacing, warmth, brevity, and the hard safety lines. Kept
+// as a named constant so the voice persona is reviewable in one place rather
+// than buried inline in the socket handler.
+//
+// Safety is deliberately explicit and non-negotiable here, matching the rest
+// of this app: Nova is a coach, not a clinician, and in a real crisis the
+// only right move is to hand off to real human help, not to counsel.
+const NOVA_LIVE_VOICE_PERSONA = `You are Nova, a warm, human-sounding burnout-recovery coach at Blaze Break. You are having a live, spoken conversation - not writing a message.
+
+How you sound:
+- Speak like a real person who genuinely cares, not a script. Warm, grounded, unhurried.
+- Keep turns SHORT - usually one or two sentences. This is a conversation; leave room for the person to talk. Never monologue.
+- Use natural spoken language and light, genuine affirmations ("mm", "that makes sense", "yeah") - but sparingly, the way a good listener does, not as filler.
+- Vary your rhythm. Slow down for something hard. It's fine to pause.
+- Never read lists, headings, markdown, or URLs aloud. If you'd normally format something, just say it plainly.
+- Ask one gentle, open question at a time rather than stacking questions.
+
+How you coach:
+- Listen first. Reflect back what you heard before offering anything.
+- Favour one small, doable next step over a plan. Recovery is built from tiny, real actions.
+- Draw on what you know about this person (their burnout fingerprint, recent history, and your memory of them) when it's given to you, but don't recite it at them.
+- You are a coach and a steadying presence, not a therapist or doctor. Don't diagnose, and don't claim to treat anything.
+
+Safety - this overrides everything above:
+- If the person expresses thoughts of suicide, self-harm, harming someone else, or being in immediate danger, gently and directly encourage them to contact real human help right now - emergency services, or a crisis line like Samaritans on 116 123 in the UK and Ireland, or 988 in the US and Canada. Stay warm, take it seriously, and don't try to counsel them through a crisis yourself.
+- Never fabricate clinical facts or promise outcomes you can't know.`;
+
+// Vertex AI Initialization (same Gemini models, different access path)
+// Reuses the GCP project this app already runs on via Firebase
+// (firebaseConfigProject) rather than requiring a separate project to be
+// created - every Firebase project is a GCP project underneath. No API
+// key needed here: Vertex AI authenticates via Application Default
+// Credentials (the standard google-auth-library flow), which the SDK
+// picks up automatically when vertexai is true and no apiKey is passed.
+// This "just works" if the server is deployed on Google Cloud
+// infrastructure with the right IAM role on its runtime service account;
+// if it's deployed elsewhere, it needs GOOGLE_APPLICATION_CREDENTIALS
+// pointing at a service account key - something I can't verify from this
+// sandbox, so this path fails at call time with a caught, clear error
+// rather than assuming it works.
+const VERTEX_LOCATION = process.env.VERTEX_LOCATION || "europe-west2"; // London
+let aiVertex: GoogleGenAI | null = null;
+if (firebaseConfigProject) {
+  try {
+    aiVertex = new GoogleGenAI({
+      vertexai: true,
+      project: firebaseConfigProject,
+      location: VERTEX_LOCATION,
+    });
+  } catch (e) {
+    console.warn("Note: Vertex AI client failed to initialize. Nova chat will continue running on the Gemini Developer API unless NOVA_CHAT_PROVIDER=vertex is unset.", e);
+  }
+} else {
+  console.warn("Note: firebaseConfigProject is not set, so the Vertex AI client was not initialized. Set NOVA_CHAT_PROVIDER=vertex only once this resolves.");
+}
+
+// Anthropic (Claude) Initialization
+// This provider is optional and feature-flagged (NOVA_CHAT_PROVIDER env
+// var) - the app must keep working on Gemini alone if this key is never
+// set, since Gemini is the existing, proven path every real user is
+// currently on. See callClaudeNovaChat for where this is actually used.
+const anthropicApiKey = process.env.ANTHROPIC_API_KEY;
+if (!anthropicApiKey) {
+  console.warn("Note: ANTHROPIC_API_KEY is not set. Nova chat will continue running on Gemini; set NOVA_CHAT_PROVIDER=claude and this key together to enable Claude for Nova chat.");
+}
+const anthropic = anthropicApiKey ? new Anthropic({ apiKey: anthropicApiKey }) : null;
+
+// OpenAI Initialization
+// Nothing in this codebase calls this client yet - it's plumbing only,
+// added ahead of a specific feature (originally planned as DeepSeek's
+// role - cheap bulk summarization - reassigned to OpenAI given DeepSeek's
+// unresolved China data-transfer problem under UK GDPR). Deliberately not
+// building the actual summarization feature until a real consumer for it
+// exists in the app, matching the same reasoning that kept DeepSeek and
+// Perplexity out of the multi-LLM routing work: integrating a provider
+// with nothing to call it is the same premature-architecture mistake
+// regardless of which provider it is.
+const openaiApiKey = process.env.OPENAI_API_KEY;
+if (!openaiApiKey) {
+  console.warn("Note: OPENAI_API_KEY is not set. No feature currently depends on this - it's unused until a real consumer is built.");
+}
+const openai = openaiApiKey ? new OpenAI({ apiKey: openaiApiKey }) : null;
 
 const VAPID_PUBLIC_KEY = process.env.VAPID_PUBLIC_KEY || "";
 const VAPID_PRIVATE_KEY = process.env.VAPID_PRIVATE_KEY || "";
@@ -614,29 +951,21 @@ async function getNovaContextAndMetadata(uid: string, firestoreDb: any): Promise
     // Memory Usage
     if (perms.allowNovaMemory && perms.allowNovaUseSavedMemories) {
       const memRef = firestoreDb.collection('users').doc(uid).collection('nova_memories');
-      const memSnap = await memRef.where('revoked', '!=', true).get();
-      
-      const activeMemories = memSnap.docs.map((d: any) => d.data())
-        .filter((mem: any) => 
-          mem.userApproved === true && 
-          mem.reviewStatus === 'active' && 
-          (!mem.expiresAt || new Date(mem.expiresAt) > new Date())
-        );
+      const memSnap = await memRef.get();
+      const memories = memSnap.docs.map((d: any) => d.data());
 
-      let filteredMemories: any[] = [];
-      const allowedCategories = [];
-      if (perms.allowNovaRememberCoachingPreferences) allowedCategories.push('coaching_preference', 'module_preference', 'privacy_preference');
-      if (perms.allowNovaRememberRecoveryPatterns) allowedCategories.push('recovery_preference', 'recurring_pattern');
-      if (perms.allowNovaRememberGoals) allowedCategories.push('user_goal');
+      // Most recently updated first, capped at 5 - matches the same
+      // "top 5" limit this passive injection always had, now against
+      // real documents instead of ones that could never actually match
+      // the old filter criteria.
+      const recentMemories = memories
+        .filter((mem: any) => mem && typeof mem.content === 'string')
+        .sort((a: any, b: any) => new Date(b.updatedAt || 0).getTime() - new Date(a.updatedAt || 0).getTime())
+        .slice(0, 5);
 
-      filteredMemories = activeMemories.filter((mem: any) => allowedCategories.includes(mem.memoryType));
-      
-      // Limit to 5
-      filteredMemories = filteredMemories.slice(0, 5);
-
-      if (filteredMemories.length > 0) {
-        let memTextList = filteredMemories.map((m: any) => `- [${m.memoryType.replace(/_/g, ' ')}] ${m.memoryText} (Source: ${m.sourceType.replace(/_/g, ' ')})`);
-        infoParts.push(`User-approved Nova memories:
+      if (recentMemories.length > 0) {
+        const memTextList = recentMemories.map((m: any) => `- [${m.type}] ${m.content}${m.source ? ` (Source: ${m.source})` : ''}`);
+        infoParts.push(`Nova's saved memories about this user:
 ${memTextList.join('\n')}`);
         used.push("memory");
       }
@@ -677,6 +1006,293 @@ const ChatRequestSchema = z.object({
   systemInstruction: z.string().max(3000).optional()
 }).strict();
 
+// Nova tool use, phase 1: read-only tools only. Nothing here writes,
+// sends a message, or triggers any side effect - every real-action
+// feature in this app (BoundaryAutopilot, calendar declines) explicitly
+// requires the user to confirm before anything happens, and giving the
+// model direct, unconfirmed access to those same endpoints would break
+// that guarantee. A tool that proposes an action for the UI to render as
+// a confirmable card is a reasonable future addition; a tool that
+// executes one directly is not, for now.
+
+// Independent kill switch for tool use, separate from which provider
+// handles chat. If something goes wrong with a specific tool in
+// production - most importantly remember_about_user, since that's the
+// one capability that writes to a permanent user record - this can be
+// set to 'false' to fall back to plain conversation (no function
+// calling at all) across every provider, without needing to also change
+// NOVA_CHAT_PROVIDER or take Nova chat down entirely.
+const NOVA_TOOLS_ENABLED = toolsAreEnabled(process.env.NOVA_TOOLS_ENABLED);
+
+const NOVA_TOOLS: any[] = [
+  {
+    name: "search_nova_memories",
+    description: "Search the user's own saved Nova memories (things Nova has noted about their profile, triggers, current state, coaching rules, and preferences) by keyword. Use this when the user references something they've told Nova before that isn't already in the current context, or asks what Nova remembers about a specific topic. Respects the user's memory consent setting - if the user hasn't enabled it, this returns no results rather than bypassing that choice.",
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        query: { type: Type.STRING, description: "A keyword or short phrase to search for within the user's saved memories." },
+      },
+      required: ["query"],
+    },
+  },
+  {
+    name: "propose_recovery_action",
+    description: "Propose one specific micro-recovery protocol from the app's real catalog, with a short reason tailored to what the user has described. This does not start or complete anything - it returns a suggestion for the user interface to show the user, who decides whether to act on it. The five real durations, and what each protocol actually is: 30s (rapid physiological interrupt - stand up, unclench jaw, one deep breath, look at something 20 feet away), 2m (a quick reset - stand up, drink water, remove one thing from today's list, send a boundary message), 5m (nervous system downshift - step away from the desk, 5 rounds of box breathing, stretch, review top 3 priorities), 10m (cognitive reset - walk outside, no phone, name 5 things you see, return and focus on one action), 20m (deep somatic rest). Pick the one that actually fits how much time and capacity the user has described, not always the shortest or longest option.",
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        duration: { type: Type.STRING, description: "One of: 30s, 2m, 5m, 10m, 20m - must match a real catalog entry exactly." },
+        reason: { type: Type.STRING, description: "A short, specific reason this duration fits the user's stated situation right now." },
+      },
+      required: ["duration", "reason"],
+    },
+  },
+  {
+    name: "remember_about_user",
+    description: "Save something durable and specific you've noticed about this user to Nova's long-term memory, for use in future conversations. Only use this for things worth remembering weeks from now: a pattern that has come up more than once, an explicitly stated preference or boundary, a recurring trigger, or a genuinely significant single disclosure like a stated goal. Do NOT use this for a single passing mention, small talk, or anything you're inferring without the user having actually said or clearly shown it - a one-off detail is not memory material. The user can review, edit, or delete anything saved here at any time, and nothing here overrides their own explicit statements if they ever conflict. Set confidence honestly: 'high' only if the user stated this directly and clearly; 'medium' if it's a reasonable inference from what they said; 'low' if you're genuinely uncertain but think it's still worth noting for a human to review.",
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        type: { type: Type.STRING, description: "One of: profile (a stable fact about who they are or their situation), trigger (something that reliably provokes a stress/overload response), state (a notable current-state observation), rule (a coaching rule or boundary they've set for how Nova should behave), preference (a stated preference about their recovery, schedule, or communication style)." },
+        content: { type: Type.STRING, description: "The memory itself: concise, specific, third-person, under 300 characters. E.g. 'Prefers ending meetings 5 minutes early to transition between calls.'" },
+        confidence: { type: Type.STRING, description: "One of: low, medium, high - how directly the user stated this versus how much you're inferring." },
+      },
+      required: ["type", "content", "confidence"],
+    },
+  },
+  {
+    name: "suggest_feature",
+    description: `When the conversation makes clear a specific other part of the app would genuinely help right now, suggest it - this renders as a real, tappable link the user can act on immediately, not just a name mentioned in text. Only suggest something the conversation actually calls for; do not use this reflexively or more than once in a normal exchange. The real, valid options and what each is for: plan (Recovery Plan - a personalized coaching plan for their current archetype and highest energy debt), diagnose (Diagnose - a structured burnout assessment), recover (Recover - energy budget tracking and recovery debt), fuel (Nutrition - nutrition's effect on recovery), reset (Nervous System - breathing and nervous-system regulation tools), anxiety_reset (Anxiety Reset - in-the-moment anxiety de-escalation), communicate (Communicate - scripted help for a specific hard conversation or boundary), reflect (Reflect - weekly reflection and journaling), ally (Recovery Ally - trusted contacts and support network). Never suggest anything not in this exact list - if nothing here genuinely fits, don't call this tool.`,
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        featureId: { type: Type.STRING, description: "One of: plan, diagnose, recover, fuel, reset, anxiety_reset, communicate, reflect, ally - must match exactly." },
+        reason: { type: Type.STRING, description: "A short, specific reason tied to what the user just said - under 200 characters, not generic." },
+      },
+      required: ["featureId", "reason"],
+    },
+  },
+];
+
+// Mirrors the exact permission check and category filtering already
+// established in getNovaContextAndMetadata for nova_memories, so this
+// tool can't see anything the passive context injection wouldn't also
+// be allowed to see.
+async function executeSearchNovaMemories(uid: string, firestoreDb: any, query: string): Promise<{ results: string[] }> {
+  const permDoc = await firestoreDb.collection('users').doc(uid).collection('nova_permissions').doc('current').get();
+  const perms = permDoc.exists ? (permDoc.data() || {}) : {};
+  if (!memoryToolIsAllowed(perms)) return { results: [] };
+
+  const memRef = firestoreDb.collection('users').doc(uid).collection('nova_memories');
+  const memSnap = await memRef.get();
+  const memories: NovaMemoryDoc[] = memSnap.docs.map((d: any) => d.data());
+
+  return { results: searchMemories(perms, memories, query) };
+}
+
+// No Firestore I/O needed here - this tool doesn't read or write anything,
+// it only validates the model's proposed duration against the real catalog
+// (isValidRecoveryDuration) so a hallucinated value like "15m" can't reach
+// the UI dressed up as a real, executable protocol. The suggestion itself
+// is not persisted or executed here; the frontend decides what to do with
+// it, matching the confirm-before-anything-happens pattern used everywhere
+// else real actions exist in this app.
+function executeProposeRecoveryAction(args: Record<string, unknown>): { proposed: boolean; duration?: string; reason?: string; error?: string } {
+  const duration = args.duration;
+  const reason = typeof args.reason === "string" ? args.reason : "";
+  if (!isValidRecoveryDuration(duration)) {
+    return { proposed: false, error: `"${duration}" is not a real duration in the app's catalog. Valid options are 30s, 2m, 5m, 10m, 20m.` };
+  }
+  return { proposed: true, duration, reason };
+}
+
+// Pure, no I/O - validates against the same real, curated feature list
+// the tool description itself lists, so a hallucinated or role-gated
+// featureId is rejected here rather than reaching the UI as a dead link.
+function executeSuggestFeature(args: Record<string, unknown>): { suggested: boolean; featureId?: string; label?: string; reason?: string; error?: string } {
+  const validation = validateFeatureSuggestion(args);
+  if (!validation.valid) {
+    return { suggested: false, error: validation.error };
+  }
+  const featureId = args.featureId as string;
+  return { suggested: true, featureId, label: SUGGESTABLE_FEATURES[featureId], reason: args.reason as string };
+}
+
+// The one place a Nova conversation can actually write to a user's
+// permanent memory record. Every safeguard here matters: memoryToolIsAllowed
+// is the same consent gate the read tool respects (a user who hasn't
+// enabled memory can't have Nova write to it either), validateMemoryWrite
+// rejects a hallucinated type, empty/oversized content, or a proposed
+// 'verified' confidence a conversational inference has no right to claim,
+// and canEdit is hardcoded true regardless of what the model sends - the
+// user must always retain the ability to correct or delete anything Nova
+// infers about them, full stop, not something a tool argument gets to
+// override.
+async function executeRememberAboutUser(uid: string, firestoreDb: any, args: Record<string, unknown>): Promise<{ saved: boolean; error?: string }> {
+  const permDoc = await firestoreDb.collection('users').doc(uid).collection('nova_permissions').doc('current').get();
+  const perms = permDoc.exists ? (permDoc.data() || {}) : {};
+  if (!memoryToolIsAllowed(perms)) {
+    return { saved: false, error: "The user hasn't enabled Nova memory, so nothing was saved." };
+  }
+
+  const validation = validateMemoryWrite(args);
+  if (!validation.valid) {
+    return { saved: false, error: validation.error };
+  }
+
+  const memRef = firestoreDb.collection('users').doc(uid).collection('nova_memories').doc();
+  const now = new Date().toISOString();
+  await memRef.set({
+    type: args.type,
+    content: args.content,
+    source: "Nova Conversation",
+    confidence: args.confidence,
+    createdAt: now,
+    updatedAt: now,
+    canEdit: true,
+  });
+
+  return { saved: true };
+}
+
+async function executeNovaTool(name: string, args: Record<string, unknown>, uid: string | undefined, firestoreDb: any): Promise<Record<string, unknown>> {
+  if (!uid) return { error: "No authenticated user for this tool call." };
+  try {
+    switch (name) {
+      case "search_nova_memories":
+        return await executeSearchNovaMemories(uid, firestoreDb, String(args.query || ""));
+      case "propose_recovery_action":
+        return executeProposeRecoveryAction(args);
+      case "suggest_feature":
+        return executeSuggestFeature(args);
+      case "remember_about_user":
+        return await executeRememberAboutUser(uid, firestoreDb, args);
+      default:
+        return { error: `Unknown tool: ${name}` };
+    }
+  } catch (err) {
+    // An unexpected failure inside a tool handler (a Firestore hiccup,
+    // a network blip - anything the handler's own validation didn't
+    // already anticipate) degrades to the same error-shaped result the
+    // model already knows how to work with, rather than propagating up
+    // and failing the entire conversation turn over one tool's transient
+    // problem. Logged server-side for real visibility; the model only
+    // sees a generic message, not internal error details.
+    console.error(`Nova tool "${name}" threw unexpectedly:`, err);
+    return { error: `The ${name} tool is temporarily unavailable. Continue without it if possible, or let the user know this specific capability isn't working right now.` };
+  }
+}
+
+// Claude conversation loop for Nova chat, kept in exact behavioral parity
+// with the Gemini loop below it: same MAX_TOOL_CALL_ROUNDS, same
+// MAX_MEMORY_WRITES_PER_TURN checked synchronously before the async
+// dispatch, same executeNovaTool dispatcher (the tools themselves don't
+// know or care which provider is calling them), same planTrace shape
+// returned to the caller. The only real difference is mechanical: Claude
+// uses a growing messages array with tool_use/tool_result content blocks
+// rather than Gemini's stateful chat object with functionCall/
+// functionResponse parts.
+//
+// Feature-flagged via NOVA_CHAT_PROVIDER and gated on the anthropic
+// client actually being configured - callers must check both before
+// calling this, since it throws rather than silently falling back if
+// invoked without a real API key.
+async function callClaudeNovaChat(
+  systemPrompt: string,
+  history: any[],
+  message: string,
+  uid: string | undefined,
+  firestoreDb: any,
+  signal: AbortSignal
+): Promise<{ text: string; planTrace: { tool: string; args: Record<string, unknown>; result: Record<string, unknown> }[] }> {
+  if (!anthropic) {
+    throw new Error("NOVA_CHAT_PROVIDER is set to claude but ANTHROPIC_API_KEY is not configured.");
+  }
+
+  const claudeTools = NOVA_TOOLS_ENABLED ? toClaudeTools(NOVA_TOOLS as GeminiStyleToolDeclaration[]) : undefined;
+
+  // The incoming history matches Gemini's expected shape
+  // ({ role: 'user' | 'model', parts: [{ text }] }), since that's what the
+  // frontend has always sent for the existing Gemini-only endpoint.
+  // Converted defensively - ChatRequestSchema validates history only as
+  // z.array(z.any()), so a malformed entry shouldn't throw here, just
+  // resolve to empty text.
+  const claudeMessages: Anthropic.MessageParam[] = (history || []).map((h: any) => ({
+    role: h?.role === 'model' ? 'assistant' : 'user',
+    content: Array.isArray(h?.parts) ? h.parts.map((p: any) => (typeof p?.text === 'string' ? p.text : '')).join('') : '',
+  }));
+  claudeMessages.push({ role: 'user', content: message });
+
+  const MODEL = "claude-sonnet-5";
+  const MAX_TOKENS = 2048;
+
+  let response = await anthropic.messages.create({
+    model: MODEL,
+    max_tokens: MAX_TOKENS,
+    system: systemPrompt,
+    tools: claudeTools,
+    messages: claudeMessages,
+  }, { signal });
+
+  let toolCallRounds = 0;
+  const MAX_TOOL_CALL_ROUNDS = 5;
+  const MAX_MEMORY_WRITES_PER_TURN = 2;
+  let memoryWriteCount = 0;
+  const planTrace: { tool: string; args: Record<string, unknown>; result: Record<string, unknown> }[] = [];
+
+  while (response.stop_reason === 'tool_use' && toolCallRounds < MAX_TOOL_CALL_ROUNDS) {
+    toolCallRounds++;
+
+    const toolUseBlocks = response.content.filter(
+      (block): block is Anthropic.ToolUseBlock => block.type === 'tool_use'
+    );
+
+    // Echo the model's own turn back exactly as received (text + tool_use
+    // blocks together) before appending the tool results - Claude's API
+    // requires the full prior assistant turn to stay in the transcript.
+    claudeMessages.push({ role: 'assistant', content: response.content });
+
+    const toolResults: Anthropic.ToolResultBlockParam[] = await Promise.all(
+      toolUseBlocks.map(async (block): Promise<Anthropic.ToolResultBlockParam> => {
+        const args = (block.input && typeof block.input === 'object' ? block.input : {}) as Record<string, unknown>;
+        let output: Record<string, unknown>;
+        if (block.name === "remember_about_user") {
+          // Checked and incremented synchronously, before the await below,
+          // matching the same race-safety reasoning as the Gemini loop.
+          if (memoryWriteCount >= MAX_MEMORY_WRITES_PER_TURN) {
+            output = { saved: false, error: `Already saved ${MAX_MEMORY_WRITES_PER_TURN} memories this turn - that's enough for one conversation. Wait for a future message if there's more worth remembering.` };
+          } else {
+            memoryWriteCount++;
+            output = await executeNovaTool(block.name, args, uid, firestoreDb);
+          }
+        } else {
+          output = await executeNovaTool(block.name, args, uid, firestoreDb);
+        }
+        planTrace.push({ tool: block.name, args, result: output });
+        return { type: 'tool_result', tool_use_id: block.id, content: JSON.stringify(output) };
+      })
+    );
+
+    claudeMessages.push({ role: 'user', content: toolResults });
+
+    response = await anthropic.messages.create({
+      model: MODEL,
+      max_tokens: MAX_TOKENS,
+      system: systemPrompt,
+      tools: claudeTools,
+      messages: claudeMessages,
+    }, { signal });
+  }
+
+  const textBlocks = response.content.filter(
+    (block): block is Anthropic.TextBlock => block.type === 'text'
+  );
+  const text = textBlocks.map((block) => block.text).join('');
+
+  return { text, planTrace };
+}
+
 app.post("/api/nova/chat", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
   try {
     const parsedParams = ChatRequestSchema.safeParse(req.body);
@@ -684,8 +1300,18 @@ app.post("/api/nova/chat", verifyAppCheck, authenticateFirebaseUser, async (req,
       return res.status(400).json({ error: "Invalid request payload or forbidden fields detected.", details: (parsedParams as any).error?.errors || [] });
     }
     const { message, history, systemInstruction } = parsedParams.data;
-    
-    if (!process.env.GEMINI_API_KEY || process.env.GEMINI_API_KEY === "MY_GEMINI_API_KEY") {
+
+    // Provider selection: Gemini's Developer API remains the default,
+    // proven path every real user is currently on. Claude and Vertex each
+    // only activate when both the environment explicitly requests them
+    // AND their respective client was successfully initialized - if
+    // either condition fails for either provider, this falls straight
+    // through to the existing Gemini Developer API path rather than
+    // erroring, so a misconfiguration can't take Nova chat down entirely.
+    const useClaudeForThisChat = process.env.NOVA_CHAT_PROVIDER === 'claude' && anthropic !== null;
+    const useVertexForThisChat = process.env.NOVA_CHAT_PROVIDER === 'vertex' && aiVertex !== null;
+
+    if (!useClaudeForThisChat && !useVertexForThisChat && (!process.env.GEMINI_API_KEY || process.env.GEMINI_API_KEY === "MY_GEMINI_API_KEY")) {
       return res.status(401).json({ error: "Gemini API key not configured. Please add your key in the app settings secrets." });
     }
 
@@ -714,20 +1340,81 @@ app.post("/api/nova/chat", verifyAppCheck, authenticateFirebaseUser, async (req,
     const mergedSystemPrompt = (systemInstruction || NOVA_SYSTEM_PROMPT) + contextAddendum;
 
     const abortController = new AbortController();
-    const timeoutId = setTimeout(() => abortController.abort(), 15000); // 15s timeout
+    const timeoutId = setTimeout(() => abortController.abort(), 25000); // 25s timeout - raised from 15s to accommodate one or more tool-call round-trips
+
+    if (useClaudeForThisChat) {
+      try {
+        const claudeResult = await callClaudeNovaChat(mergedSystemPrompt, history || [], message, uid, getDb(), abortController.signal);
+        clearTimeout(timeoutId);
+        return res.json({ text: claudeResult.text, privacyMetadata: contextMetadata, planTrace: claudeResult.planTrace });
+      } catch (modelError: any) {
+        clearTimeout(timeoutId);
+        if (modelError.name === 'AbortError') {
+          return res.status(504).json({ error: "Request timed out." });
+        }
+        throw modelError;
+      }
+    }
+
+    // Vertex AI uses the exact same chats.create/sendMessage shape as the
+    // Developer API client (same SDK, same method calls) - no separate
+    // loop needed here the way Claude required, just a different client
+    // instance to call it on.
+    const geminiClient = useVertexForThisChat && aiVertex ? aiVertex : ai;
 
     try {
-      const chat = ai.chats.create({
+      const chat = geminiClient.chats.create({
         model: "gemini-3.5-flash",
         config: {
           systemInstruction: mergedSystemPrompt,
+          tools: NOVA_TOOLS_ENABLED ? [{ functionDeclarations: NOVA_TOOLS }] : undefined,
         },
         history: history || [],
       });
 
-      const result = await chat.sendMessage({ message });
+      let result = await chat.sendMessage({ message });
+
+      // Bounded loop: execute any requested tool calls, send results back,
+      // and let the model continue - capped so a misbehaving model can't
+      // hold this request open indefinitely. planTrace is a transparent,
+      // inspectable record of what actually happened this turn (which
+      // tools were called, with what arguments, and what came back) -
+      // returned to the caller rather than only living in server logs, so
+      // it's available for a future "how Nova got to this answer" view
+      // and for privacy/audit purposes, not just debugging.
+      let toolCallRounds = 0;
+      const MAX_TOOL_CALL_ROUNDS = 5;
+      const MAX_MEMORY_WRITES_PER_TURN = 2;
+      let memoryWriteCount = 0;
+      const planTrace: { tool: string; args: Record<string, unknown>; result: Record<string, unknown> }[] = [];
+      while (result.functionCalls && result.functionCalls.length > 0 && toolCallRounds < MAX_TOOL_CALL_ROUNDS) {
+        toolCallRounds++;
+        const db = getDb();
+        const responseParts = await Promise.all(
+          result.functionCalls.map(async (call) => {
+            let output: Record<string, unknown>;
+            if (call.name === "remember_about_user") {
+              // Checked and incremented synchronously, before the await below,
+              // so this stays correct even with multiple writes requested in
+              // the same round via Promise.all.
+              if (memoryWriteCount >= MAX_MEMORY_WRITES_PER_TURN) {
+                output = { saved: false, error: `Already saved ${MAX_MEMORY_WRITES_PER_TURN} memories this turn - that's enough for one conversation. Wait for a future message if there's more worth remembering.` };
+              } else {
+                memoryWriteCount++;
+                output = await executeNovaTool(call.name || "", call.args || {}, uid, db);
+              }
+            } else {
+              output = await executeNovaTool(call.name || "", call.args || {}, uid, db);
+            }
+            planTrace.push({ tool: call.name || "unknown", args: call.args || {}, result: output });
+            return { functionResponse: { name: call.name, response: output } };
+          })
+        );
+        result = await chat.sendMessage({ message: responseParts });
+      }
+
       clearTimeout(timeoutId);
-      res.json({ text: result.text, privacyMetadata: contextMetadata });
+      res.json({ text: result.text, privacyMetadata: contextMetadata, planTrace });
     } catch (modelError: any) {
       clearTimeout(timeoutId);
       if (modelError.name === 'AbortError') {
@@ -869,7 +1556,7 @@ app.post("/api/nova/diagnose", verifyAppCheck, authenticateFirebaseUser, async (
     } = dims;
 
     const archScores = computeArchetypeScores(dims);
-    let profile = pickDominantProfile(archScores);
+    const profile = pickDominantProfile(archScores);
 
     let description = '';
     let priorities: string[] = [];
@@ -2793,21 +3480,31 @@ app.get("/api/admin/summary", verifyAppCheck, authenticateFirebaseUser, async (r
     try {
       const fingerprintsSnap = await db.collectionGroup("fingerprint").get();
       diagnosticCompletions = fingerprintsSnap.size;
-    } catch (e) {}
+    } catch (e) {
+      // This admin-stats endpoint reports several independent metrics;
+      // one query failing shouldn't take the others down, so this one
+      // just stays at its 0 default.
+    }
 
     // Active Feature Flags
     let activeFeatureFlags = 0;
     try {
       const flagsSnap = await db.collection("public_feature_flags").where("enabled", "==", true).get();
       activeFeatureFlags = flagsSnap.size;
-    } catch (e) {}
+    } catch (e) {
+      // Same reasoning as the diagnosticCompletions query above - degrade
+      // to the 0 default rather than failing the whole stats response.
+    }
 
     // B2B Orgs
     let orgsCount = 0;
     try {
       const orgsSnap = await db.collection("organisations").get();
       orgsCount = orgsSnap.size;
-    } catch (e) {}
+    } catch (e) {
+      // Same reasoning as the diagnosticCompletions query above - degrade
+      // to the 0 default rather than failing the whole stats response.
+    }
 
     // Anxiety Reset Event Metrics
     let resetsToday = 0;
@@ -2860,7 +3557,11 @@ app.get("/api/admin/summary", verifyAppCheck, authenticateFirebaseUser, async (r
           toolCounts[data.selectedTool] = (toolCounts[data.selectedTool] || 0) + 1;
         }
       });
-    } catch (e) {}
+    } catch (e) {
+      // Same reasoning as the other stats queries in this endpoint -
+      // degrade to the defaults declared above rather than failing
+      // the whole response over one metrics query.
+    }
 
     const mostCommonTrigger = Object.keys(triggerCounts).reduce((a, b) => triggerCounts[a] > triggerCounts[b] ? a : b, 'None');
     const mostUsedResetTool = Object.keys(toolCounts).reduce((a, b) => toolCounts[a] > toolCounts[b] ? a : b, 'None');
@@ -3285,6 +3986,23 @@ const requireOrgAdmin = async (req: any, orgId: string) => {
   return { user, org };
 };
 
+// Shared by every endpoint that aggregates member wellbeing data
+// (dashboard, climate, risk-trend below) - a member only counts if they've
+// explicitly opted in via shareAnonymizedDataWithOrg, and the caller is
+// responsible for checking the returned list against org.privacyThreshold
+// before using any of it, the same k-anonymity gate every one of these
+// endpoints already enforces.
+const getConsentingMemberUids = async (db: any, memberUids: string[]): Promise<string[]> => {
+  const consentingUids: string[] = [];
+  await Promise.all(memberUids.map(async (uid) => {
+    const userDoc = await db.collection("users").doc(uid).get();
+    if (userDoc.exists && userDoc.data()?.shareAnonymizedDataWithOrg === true) {
+      consentingUids.push(uid);
+    }
+  }));
+  return consentingUids;
+};
+
 // Employee redeems a join code to link themselves to their employer's org.
 // This is the only way `organisationId` ever gets set on a user - the
 // Firestore rules explicitly block clients from setting it directly, so
@@ -3382,13 +4100,7 @@ app.get("/api/org/:orgId/dashboard", verifyAppCheck, authenticateFirebaseUser, a
     const memberUids: string[] = org.memberUids || [];
 
     // Only members who've explicitly opted in count toward anything below.
-    const consentingUids: string[] = [];
-    await Promise.all(memberUids.map(async (uid) => {
-      const userDoc = await db.collection("users").doc(uid).get();
-      if (userDoc.exists && userDoc.data()?.shareAnonymizedDataWithOrg === true) {
-        consentingUids.push(uid);
-      }
-    }));
+    const consentingUids = await getConsentingMemberUids(db, memberUids);
 
     if (consentingUids.length < threshold) {
       return res.json({ locked: true, cohortSize: consentingUids.length, threshold });
@@ -3676,13 +4388,7 @@ app.get("/api/org/:orgId/climate", verifyAppCheck, authenticateFirebaseUser, asy
     const threshold = org.privacyThreshold || 5;
     const memberUids: string[] = org.memberUids || [];
 
-    const consentingUids: string[] = [];
-    await Promise.all(memberUids.map(async (uid) => {
-      const userDoc = await db.collection("users").doc(uid).get();
-      if (userDoc.exists && userDoc.data()?.shareAnonymizedDataWithOrg === true) {
-        consentingUids.push(uid);
-      }
-    }));
+    const consentingUids = await getConsentingMemberUids(db, memberUids);
 
     if (consentingUids.length < threshold) {
       return res.json({ locked: true, cohortSize: consentingUids.length, threshold, responseCount: 0 });
@@ -3722,6 +4428,207 @@ app.get("/api/org/:orgId/climate", verifyAppCheck, authenticateFirebaseUser, asy
       threshold,
       averages,
       responseRate: Math.round((responseCount / consentingUids.length) * 100),
+    });
+  } catch (err: any) {
+    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
+  }
+});
+
+// ============ Wellbeing Risk Trend (real, from existing aggregates - not a trained model) ============
+// Deliberately not a predictive model: this is a transparent trend
+// indicator built entirely from the same real, consented, k-anonymous
+// aggregates the dashboard and climate endpoints already compute (mood
+// pulses, the HSE-aligned climate survey). It tells an admin whether
+// things are trending better or worse and by how much - it does not
+// claim a probability of absenteeism or any other number this app has
+// no real, validated basis to produce. See org-risk-trend.ts for the
+// actual calculation and why each choice was made.
+
+// Field names below (moodConcern, climateConcern, etc.) are the actual
+// Firestore/API wire format, kept as-is even though the computation layer
+// (org-risk-trend.ts) and the UI (OrgDashboard.tsx) were renamed away from
+// "Concern" per docs/GUARDIAN_SUPPORT_SPEC.md Appendix B. Renaming these
+// persisted field names would silently break trend continuity for any
+// organisation with existing risk_trend_history documents written under
+// the old names - a real data-compatibility cost the vocabulary change
+// doesn't need to pay. If a full schema rename is ever wanted, it needs
+// an explicit migration, not a find-and-replace.
+interface OrgStrainSnapshot {
+  cohortSize: number;
+  moodConcern: number | null;
+  climateConcern: number | null;
+  climateConcernByDimension: Record<string, number> | null;
+  overallConcern: number | null;
+}
+
+// Architectural boundary (docs/GUARDIAN_SUPPORT_SPEC.md Appendix B): this
+// snapshot is aggregate-only and must never be computed or exposed for an
+// individual. The k-anonymity gate in the route handler below (dropping
+// any cohort - org or team - under the configured threshold before this
+// is ever called) IS that boundary. Do not add a per-member field here,
+// and do not call this with a uids list that could resolve to one person.
+//
+// Computes the full strain snapshot for one set of member uids - called
+// once for the whole org and once per team below, so a team's number is
+// calculated exactly the same way the org-wide one is, not a different
+// or lighter-weight version.
+const computeStrainSnapshotForCohort = async (db: any, uids: string[]): Promise<OrgStrainSnapshot> => {
+  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+  let moodPositive = 0, moodNegative = 0, moodNeutral = 0;
+  await Promise.all(uids.map(async (uid) => {
+    const moodSnap = await db.collection("users").doc(uid).collection("mood_pulses")
+      .where("createdAt", ">=", sevenDaysAgo).get();
+    moodSnap.forEach((doc: any) => {
+      const label = doc.data().moodLabel;
+      if (label === 'calm' || label === 'hopeful' || label === 'focused') moodPositive++;
+      else if (label === 'overwhelmed' || label === 'frustrated' || label === 'pressured' || label === 'tired') moodNegative++;
+      else moodNeutral++;
+    });
+  }));
+  const moodConcern = computeMoodStrain(moodPositive, moodNegative, moodNeutral);
+
+  const ninetyDaysAgo = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString();
+  const climateDims = ['demands', 'control', 'support', 'relationships', 'role', 'change'] as const;
+  const climateSums: Record<string, number> = { demands: 0, control: 0, support: 0, relationships: 0, role: 0, change: 0 };
+  let climateResponseCount = 0;
+  await Promise.all(uids.map(async (uid) => {
+    const snap = await db.collection("users").doc(uid).collection("climate_survey_responses")
+      .where("createdAt", ">=", ninetyDaysAgo).orderBy("createdAt", "desc").limit(1).get();
+    if (!snap.empty) {
+      const d = snap.docs[0].data();
+      climateDims.forEach(dim => { climateSums[dim] += d[dim] || 0; });
+      climateResponseCount++;
+    }
+  }));
+  const climateAverages = climateResponseCount > 0
+    ? {
+        demands: climateSums.demands / climateResponseCount,
+        control: climateSums.control / climateResponseCount,
+        support: climateSums.support / climateResponseCount,
+        relationships: climateSums.relationships / climateResponseCount,
+        role: climateSums.role / climateResponseCount,
+        change: climateSums.change / climateResponseCount,
+      }
+    : null;
+  const climateConcern = computeClimateStrain(climateAverages);
+  const climateConcernByDimension = computeClimateStrainByDimension(climateAverages);
+
+  return {
+    cohortSize: uids.length,
+    moodConcern,
+    climateConcern,
+    climateConcernByDimension,
+    overallConcern: computeOverallStrain(climateConcern, moodConcern),
+  };
+};
+
+app.get("/api/org/:orgId/risk-trend", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const { orgId } = req.params;
+    const { org } = await requireOrgAdmin(req, orgId);
+    const db = getDb();
+
+    const threshold = org.privacyThreshold || 5;
+    const memberUids: string[] = org.memberUids || [];
+    const memberTeams: Record<string, string> = org.memberTeams || {};
+    const consentingUids = await getConsentingMemberUids(db, memberUids);
+
+    if (consentingUids.length < threshold) {
+      return res.json({ locked: true, cohortSize: consentingUids.length, threshold });
+    }
+
+    const orgSnapshot = await computeStrainSnapshotForCohort(db, consentingUids);
+
+    // Team breakdown: group consenting members by their assigned team,
+    // then only compute (and only ever expose) a snapshot for teams that
+    // independently clear the same k-anonymity threshold as the org as a
+    // whole. A team with too few consenting members just doesn't appear
+    // in teamBreakdown at all - not shown as "locked", simply absent,
+    // since listing a locked team by name would itself say more about a
+    // small team's participation than this feature should ever reveal.
+    const teamGroups: Record<string, string[]> = {};
+    consentingUids.forEach((uid) => {
+      const team = memberTeams[uid];
+      if (team) {
+        if (!teamGroups[team]) teamGroups[team] = [];
+        teamGroups[team].push(uid);
+      }
+    });
+    const qualifyingTeams = Object.entries(teamGroups).filter(([, uids]) => uids.length >= threshold);
+    const teamSnapshots: Record<string, OrgStrainSnapshot> = {};
+    await Promise.all(qualifyingTeams.map(async ([team, uids]) => {
+      teamSnapshots[team] = await computeStrainSnapshotForCohort(db, uids);
+    }));
+
+    // Snapshot handling: read history first so today's write (if any)
+    // doesn't contaminate the "previous" comparison, and only ever write
+    // once per UTC day regardless of how many times this is loaded.
+    const historySnap = await db.collection("organisations").doc(orgId).collection("risk_trend_history")
+      .orderBy("recordedAt", "desc").limit(90).get();
+    const history = historySnap.docs.map((d: any) => d.data() as {
+      recordedAt: string;
+      overallConcern: number | null;
+      moodConcern: number | null;
+      climateConcern: number | null;
+      teamConcerns?: Record<string, number | null>;
+    });
+
+    const todayUtc = new Date().toISOString().slice(0, 10);
+    const alreadySnapshottedToday = history.some((h: any) => h.recordedAt.slice(0, 10) === todayUtc);
+    if (!alreadySnapshottedToday && orgSnapshot.overallConcern !== null) {
+      const teamConcerns: Record<string, number | null> = {};
+      Object.entries(teamSnapshots).forEach(([team, snap]) => { teamConcerns[team] = snap.overallConcern; });
+      await db.collection("organisations").doc(orgId).collection("risk_trend_history").add({
+        recordedAt: new Date().toISOString(),
+        overallConcern: orgSnapshot.overallConcern,
+        moodConcern: orgSnapshot.moodConcern,
+        climateConcern: orgSnapshot.climateConcern,
+        teamConcerns,
+      });
+    }
+
+    // Compare against whichever snapshot sits closest to ~28 days back -
+    // a genuine month-over-month read, not noisy day-to-day movement in
+    // a signal built on overlapping 7-day windows.
+    const twentyEightDaysAgo = Date.now() - 28 * 24 * 60 * 60 * 1000;
+    const findClosestPrior = (getValue: (h: any) => number | null | undefined) => history
+      .filter((h: any) => new Date(h.recordedAt).getTime() <= twentyEightDaysAgo && getValue(h) != null)
+      .sort((a: any, b: any) => Math.abs(new Date(a.recordedAt).getTime() - twentyEightDaysAgo) - Math.abs(new Date(b.recordedAt).getTime() - twentyEightDaysAgo))[0];
+
+    const priorOrgSnapshot = findClosestPrior((h: any) => h.overallConcern);
+    const orgTrend = computeTrend(orgSnapshot.overallConcern, priorOrgSnapshot?.overallConcern ?? null);
+
+    // Per-signal direction of travel, for the leading-indicators view. Mood
+    // and climate move at different speeds (mood is the faster, more
+    // volatile early signal), so showing each one's trend separately is the
+    // point - "mood is worsening while climate holds steady" is exactly the
+    // kind of early, structural read this view exists to surface. Aggregate
+    // only; never per person.
+    const priorMood = findClosestPrior((h: any) => h.moodConcern);
+    const moodTrend = computeTrend(orgSnapshot.moodConcern, priorMood?.moodConcern ?? null);
+    const priorClimate = findClosestPrior((h: any) => h.climateConcern);
+    const climateTrend = computeTrend(orgSnapshot.climateConcern, priorClimate?.climateConcern ?? null);
+
+    const teamBreakdown: Record<string, OrgStrainSnapshot & { trend: ReturnType<typeof computeTrend> }> = {};
+    Object.entries(teamSnapshots).forEach(([team, snap]) => {
+      const priorTeamSnapshot = findClosestPrior((h: any) => h.teamConcerns?.[team]);
+      teamBreakdown[team] = { ...snap, trend: computeTrend(snap.overallConcern, priorTeamSnapshot?.teamConcerns?.[team] ?? null) };
+    });
+
+    res.json({
+      locked: false,
+      cohortSize: consentingUids.length,
+      threshold,
+      moodConcern: orgSnapshot.moodConcern,
+      climateConcern: orgSnapshot.climateConcern,
+      climateConcernByDimension: orgSnapshot.climateConcernByDimension,
+      overallConcern: orgSnapshot.overallConcern,
+      trend: orgTrend,
+      moodTrend,
+      climateTrend,
+      comparedAgainst: priorOrgSnapshot?.recordedAt || null,
+      history: history.slice().reverse().map((h: any) => ({ recordedAt: h.recordedAt, overallConcern: h.overallConcern })),
+      teamBreakdown,
     });
   } catch (err: any) {
     res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
@@ -3826,6 +4733,7 @@ app.get("/api/org/:orgId/members", verifyAppCheck, authenticateFirebaseUser, asy
     const { org } = await requireOrgAdmin(req, orgId);
     const memberUids: string[] = org.memberUids || [];
     const adminUids: string[] = org.adminUids || [];
+    const memberTeams: Record<string, string> = org.memberTeams || {};
 
     const members = await Promise.all(memberUids.map(async (uid) => {
       try {
@@ -3835,9 +4743,10 @@ app.get("/api/org/:orgId/members", verifyAppCheck, authenticateFirebaseUser, asy
           email: authUser.email || null,
           displayName: authUser.displayName || null,
           isAdmin: adminUids.includes(uid),
+          team: memberTeams[uid] || null,
         };
       } catch (e) {
-        return { uid, email: null, displayName: null, isAdmin: adminUids.includes(uid) };
+        return { uid, email: null, displayName: null, isAdmin: adminUids.includes(uid), team: memberTeams[uid] || null };
       }
     }));
 
@@ -3863,6 +4772,40 @@ app.post("/api/org/:orgId/members/:memberUid/remove", verifyAppCheck, authentica
     await db.collection("organisations").doc(orgId).update({
       memberUids: FieldValue.arrayRemove(memberUid),
       adminUids: FieldValue.arrayRemove(memberUid),
+      [`memberTeams.${memberUid}`]: FieldValue.delete(),
+    });
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
+  }
+});
+
+// Team assignment - a freeform label an admin sets per member, stored on
+// the org document itself (memberTeams: { [uid]: teamName }) rather than
+// on the member's own user document, matching the same admin-managed-
+// metadata pattern costInputs already uses. This is the only place
+// "team" exists anywhere in this app - there's no separate team entity,
+// no team-creation flow; a team is simply whichever members share the
+// same label. Powers the per-team risk-trend breakdown below, gated by
+// the exact same k-anonymity threshold as every other aggregate in this
+// app - a team with too few consenting members to clear it just doesn't
+// appear, the same way the org-wide dashboard locks below threshold.
+app.post("/api/org/:orgId/members/:memberUid/team", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const { orgId, memberUid } = req.params;
+    const { org } = await requireOrgAdmin(req, orgId);
+    if (!(org.memberUids || []).includes(memberUid)) {
+      return res.status(400).json({ error: "That person isn't a member of this organisation." });
+    }
+    const { team } = req.body;
+    if (team !== null && (typeof team !== 'string' || team.length > 60)) {
+      return res.status(400).json({ error: "Team name must be text under 60 characters, or null to clear it." });
+    }
+    const trimmed = typeof team === 'string' ? team.trim() : null;
+    const db = getDb();
+    const fieldPath = `memberTeams.${memberUid}`;
+    await db.collection("organisations").doc(orgId).update({
+      [fieldPath]: trimmed && trimmed.length > 0 ? trimmed : FieldValue.delete(),
     });
     res.json({ success: true });
   } catch (err: any) {
@@ -4158,6 +5101,183 @@ app.post("/api/ally/revoke", verifyAppCheck, authenticateFirebaseUser, async (re
     res.status(500).json({ error: err.message });
   }
 });
+
+// ============================================================================
+// Ally Nudge Schedules: recurring accountability messages sent via real
+// SMS/WhatsApp to a user's chosen support contact, on a schedule the user
+// sets themselves. Deliberately no AI involvement in deciding when to send -
+// the user configures a time, the scheduler below just fires it. This is
+// the low-stakes, human-directed alternative to a medication reminder
+// feature, built for people managing recovery without much in-person
+// support around them.
+// ============================================================================
+
+// Base object schema WITHOUT the cross-field refinement. Kept separate so
+// the update schema below can call .partial() on it - zod v4 throws if
+// .partial() is called on a schema that already carries a .refine()
+// ("cannot be used on object schemas containing refinements"), which would
+// crash the whole server at module load. The refinement is re-applied to
+// each concrete schema instead.
+const NudgeScheduleBase = z.object({
+  contactId: z.string().min(1).max(100),
+  contactName: z.string().min(1).max(100),
+  contactMethod: z.string().regex(/^\+[1-9]\d{6,14}$/, "Phone number must be in E.164 format, e.g. +15551234567"),
+  notificationPreference: z.enum(['sms', 'whatsapp']).default('sms'),
+  message: z.string().min(1).max(300),
+  frequency: z.enum(['daily', 'weekly']),
+  daysOfWeek: z.array(z.number().int().min(0).max(6)).max(7).optional(),
+  time: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Time must be in 24-hour HH:MM format"),
+  timezone: z.string().min(1).max(60),
+  enabled: z.boolean(),
+  // This can only ever be created as true - the frontend gates this behind
+  // an explicit "I've told them to expect these" confirmation. There is no
+  // way to verify a phone contact's real consent server-side (they don't
+  // have an account), so this is an honest human checkpoint rather than a
+  // fabricated "consent verified" claim.
+  contactAcknowledged: z.literal(true, { message: "Please confirm you've told this contact to expect these messages." }),
+}).strict();
+
+// A weekly schedule must name at least one day. When frequency is absent
+// (as it can be in a partial update) there is nothing to check, so it passes.
+const weeklyNeedsDays = (data: { frequency?: 'daily' | 'weekly'; daysOfWeek?: number[] }) =>
+  data.frequency !== 'weekly' || (!!data.daysOfWeek && data.daysOfWeek.length > 0);
+const weeklyNeedsDaysError = { message: "Weekly schedules need at least one day selected.", path: ['daysOfWeek'] };
+
+const NudgeScheduleSchema = NudgeScheduleBase.refine(weeklyNeedsDays, weeklyNeedsDaysError);
+
+app.post("/api/nudge-schedules", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const user = requireAuth(req);
+    const parsed = NudgeScheduleSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: "Invalid schedule.", details: (parsed as any).error?.errors || [] });
+    }
+    const db = getDb();
+    const existingSnap = await db.collection("users").doc(user.uid).collection("nudge_schedules").get();
+    if (existingSnap.size >= 10) {
+      return res.status(400).json({ error: "You've reached the limit of 10 nudge schedules." });
+    }
+    const now = new Date().toISOString();
+    const ref = db.collection("users").doc(user.uid).collection("nudge_schedules").doc();
+    await ref.set({ ...parsed.data, createdAt: now, updatedAt: now });
+    await logAutopilotAction(user.uid, "nudge_schedule_created", { contactName: parsed.data.contactName }, true);
+    res.json({ success: true, id: ref.id });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get("/api/nudge-schedules", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const user = requireAuth(req);
+    const db = getDb();
+    const snap = await db.collection("users").doc(user.uid).collection("nudge_schedules").orderBy("createdAt", "desc").get();
+    res.json({ schedules: snap.docs.map(d => ({ id: d.id, ...d.data() })) });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Built from the un-refined base so .partial() is legal, then the same
+// weekly-days refinement is re-applied.
+const NudgeScheduleUpdateSchema = NudgeScheduleBase.partial().extend({
+  contactAcknowledged: z.literal(true).optional(),
+}).refine(weeklyNeedsDays, weeklyNeedsDaysError);
+
+app.patch("/api/nudge-schedules/:id", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const user = requireAuth(req);
+    const parsed = NudgeScheduleUpdateSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: "Invalid update.", details: (parsed as any).error?.errors || [] });
+    }
+    const db = getDb();
+    const ref = db.collection("users").doc(user.uid).collection("nudge_schedules").doc(req.params.id);
+    const doc = await ref.get();
+    if (!doc.exists) return res.status(404).json({ error: "Schedule not found." });
+    await ref.update({ ...parsed.data, updatedAt: new Date().toISOString() });
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete("/api/nudge-schedules/:id", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const user = requireAuth(req);
+    const db = getDb();
+    await db.collection("users").doc(user.uid).collection("nudge_schedules").doc(req.params.id).delete();
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Checks every enabled schedule and sends any that are due. Runs every 5
+// minutes, so "due" means the target time falls within the last 5-minute
+// window rather than an exact-second match (which would almost never hit).
+// lastSentPeriod - computed in the schedule's own local date, not the
+// server's UTC date, so someone in a timezone far from UTC doesn't get a
+// duplicate or skipped send near midnight - is the actual guard against
+// double-sends if the window is checked more than once, which matters more
+// here than exact-second precision does.
+async function processNudgeSchedules() {
+  let db;
+  try {
+    db = getDb();
+  } catch (e) {
+    return; // Firestore not configured in this environment - nothing to do.
+  }
+  try {
+    const snap = await db.collectionGroup("nudge_schedules").where("enabled", "==", true).get();
+    const now = new Date();
+
+    for (const doc of snap.docs) {
+      const data = doc.data();
+      const uid = doc.ref.parent.parent?.id;
+      if (!uid || !data.timezone || !data.time || !data.contactMethod || !data.message) continue;
+
+      try {
+        const formatter = new Intl.DateTimeFormat('en-US', {
+          timeZone: data.timezone,
+          hour: '2-digit', minute: '2-digit', hour12: false,
+          weekday: 'short', year: 'numeric', month: '2-digit', day: '2-digit',
+        });
+        const parts = formatter.formatToParts(now);
+        const get = (t: string) => parts.find(p => p.type === t)?.value || '';
+        const currentMinutes = parseInt(get('hour'), 10) * 60 + parseInt(get('minute'), 10);
+        const [targetH, targetM] = String(data.time).split(':').map(Number);
+        const targetMinutes = targetH * 60 + targetM;
+        const diff = currentMinutes - targetMinutes;
+
+        // Only fire within [0, 5) minutes after the target time - never early.
+        if (diff < 0 || diff >= 5) continue;
+
+        if (data.frequency === 'weekly') {
+          const weekdayMap: Record<string, number> = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
+          const currentDow = weekdayMap[get('weekday')];
+          if (!Array.isArray(data.daysOfWeek) || !data.daysOfWeek.includes(currentDow)) continue;
+        }
+
+        const localDateKey = `${get('year')}-${get('month')}-${get('day')}`;
+        if (data.lastSentPeriod === localDateKey) continue; // Already sent for this local day.
+
+        const result = await sendTwilioMessage(uid, data.contactMethod, data.message, data.notificationPreference === 'whatsapp');
+        await doc.ref.update({
+          lastSentAt: new Date().toISOString(),
+          lastSentPeriod: localDateKey,
+          lastSendResult: result.success ? 'sent' : 'failed',
+        });
+      } catch (innerErr: any) {
+        console.error(`[NudgeScheduler] Failed processing schedule ${doc.id}:`, innerErr.message);
+      }
+    }
+  } catch (err: any) {
+    console.error("[NudgeScheduler] Failed to process nudge schedules:", err.message);
+  }
+}
+
+cron.schedule('*/5 * * * *', processNudgeSchedules);
 
 // Public - the ally doesn't have an account. Access is entirely gated by
 // possession of an unguessable 48-character token, and the response only
@@ -4663,6 +5783,119 @@ const ACTIVITY_FIELD_MAP: Record<string, string> = {
   energyBudgetUpdate: 'lastEnergyBudgetUpdate',
   recoveryAllyActivity: 'lastRecoveryAllyActivity',
 };
+
+// ============ Real data portability & erasure (GDPR Art. 15/17/20) ============
+// Both endpoints enumerate the user's subcollections dynamically via
+// listCollections() rather than against a hardcoded list. That matters:
+// this app writes to 40+ distinct per-user collections across client and
+// server code, and a hardcoded list would silently go stale the first
+// time a new feature adds one - producing either an incomplete export
+// (a portability failure the user can't detect) or data surviving a
+// deletion (an erasure failure that contradicts what the UI promises).
+// Dynamic enumeration means new collections are covered automatically.
+
+app.get("/api/user/export", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const user = requireAuth(req);
+    const db = getDb();
+    const userRef = db.collection("users").doc(user.uid);
+
+    const rootSnap = await userRef.get();
+    const collections = await userRef.listCollections();
+
+    const data: Record<string, unknown> = {};
+    await Promise.all(collections.map(async (col) => {
+      const snap = await col.get();
+      data[col.id] = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    }));
+
+    // Top-level collections keyed by userId rather than nested under the
+    // user document - listCollections() above cannot see these, so they
+    // have to be fetched explicitly or they'd be silently missing from a
+    // record that claims to be complete. The list is the single source of
+    // truth in user-data-collections.ts, guarded by a test that fails if a
+    // new such collection is added to server.ts without being classified.
+    const strayCollections = collectionsForExport();
+    await Promise.all(strayCollections.map(async (colName) => {
+      const snap = await db.collection(colName).where("userId", "==", user.uid).get();
+      data[colName] = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    }));
+
+    res.json({
+      exportedAt: new Date().toISOString(),
+      uid: user.uid,
+      email: user.email || null,
+      profile: rootSnap.exists ? rootSnap.data() : null,
+      collections: data,
+    });
+  } catch (err: any) {
+    console.error("[Export] failed:", err?.message || err);
+    res.status(500).json({ error: "Could not build your data export right now. Please try again." });
+  }
+});
+
+app.post("/api/user/delete-account", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const user = requireAuth(req);
+    const db = getDb();
+    const userRef = db.collection("users").doc(user.uid);
+
+    // Remove this user from any organisation they belong to first, so a
+    // deleted account can't linger in an org's memberUids/adminUids and
+    // count toward its aggregate dashboards after the person is gone.
+    try {
+      const rootSnap = await userRef.get();
+      const orgId = rootSnap.exists ? (rootSnap.data() as any)?.organisationId : null;
+      if (orgId) {
+        await db.collection("organisations").doc(orgId).update({
+          memberUids: FieldValue.arrayRemove(user.uid),
+          adminUids: FieldValue.arrayRemove(user.uid),
+          [`memberTeams.${user.uid}`]: FieldValue.delete(),
+        });
+      }
+    } catch (e) {
+      // Non-fatal - if the org record is already gone or malformed, the
+      // user's own data should still be deleted below rather than the
+      // whole request failing over org bookkeeping.
+    }
+
+    // recursiveDelete removes the user document and every subcollection
+    // beneath it, at any depth - the actual erasure the Privacy Vault's
+    // copy promises.
+    await db.recursiveDelete(userRef);
+
+    // Top-level collections keyed by userId rather than nested under the
+    // user document - recursiveDelete above cannot reach these, so they
+    // have to be handled explicitly or the data survives a deletion that
+    // claims to remove everything. Single source of truth in
+    // user-data-collections.ts. Note this list is deliberately a subset of
+    // the export list: audit_logs is exported but NOT erased, because a
+    // compliance trail must outlive the account it records (see the reason
+    // field there). The classification lives in one place, guarded by a
+    // test, rather than as two hand-maintained arrays that can drift.
+    const strayCollections = collectionsForErasure();
+    for (const colName of strayCollections) {
+      const snap = await db.collection(colName).where("userId", "==", user.uid).get();
+      await Promise.all(snap.docs.map(d => d.ref.delete()));
+    }
+
+    // Delete the auth account itself last. If this fails, the personal
+    // data is already gone, which is the part that actually matters for
+    // erasure - but report it honestly rather than claiming full success.
+    let authDeleted = true;
+    try {
+      await getAuth().deleteUser(user.uid);
+    } catch (e: any) {
+      authDeleted = false;
+      console.error("[Delete] auth account deletion failed:", e?.message || e);
+    }
+
+    res.json({ success: true, authDeleted });
+  } catch (err: any) {
+    console.error("[Delete] failed:", err?.message || err);
+    res.status(500).json({ error: "The deletion did not complete. Some data may have been removed already - please try again, and contact support if this keeps happening." });
+  }
+});
 
 app.post("/api/user/mark-activity", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
   try {
@@ -5269,6 +6502,11 @@ if (process.env.TEST_MODE !== 'true') {
       // generous for a coaching check-in without leaving a session open
       // indefinitely if a client never explicitly closes it.
       const MAX_SESSION_MS = 15 * 60 * 1000;
+      // sessionTimeout is assigned exactly once, but only after endSession
+      // (which reads it via closure) is declared below; TS requires const
+      // to initialize immediately, so this can't be a const without
+      // restructuring the timer setup.
+      // eslint-disable-next-line prefer-const
       let sessionTimeout: NodeJS.Timeout;
       let liveSession: any = null;
       let sessionEnded = false;
@@ -5277,11 +6515,17 @@ if (process.env.TEST_MODE !== 'true') {
         if (sessionEnded) return;
         sessionEnded = true;
         clearTimeout(sessionTimeout);
-        try { liveSession?.close(); } catch (e) {}
+        try {
+          liveSession?.close();
+        } catch (e) {
+          // Best-effort - the session may already be closed.
+        }
         try {
           if (reason) clientWs.send(JSON.stringify({ error: reason }));
           clientWs.close();
-        } catch (e) {}
+        } catch (e) {
+          // Best-effort - the socket may already be closed.
+        }
       };
 
       try {
@@ -5292,7 +6536,14 @@ if (process.env.TEST_MODE !== 'true') {
             speechConfig: {
               voiceConfig: { prebuiltVoiceConfig: { voiceName: "Aoede" } }, // Same voice as the existing single-shot TTS endpoint, so Nova sounds consistent everywhere.
             },
-            systemInstruction: "You are Nova, a calm, warm burnout-recovery coach at Blaze Break. Speak conversationally and concisely — this is a live voice conversation, not a written message, so keep responses short and natural to say aloud.",
+            // Native transcription of both sides of the call, relayed to the
+            // client so the voice-call UI can show a live, accessible
+            // transcript (and so a deaf/hard-of-hearing user isn't locked out
+            // of a voice-only feature). This is text ABOUT the audio, not a
+            // second response - the spoken audio remains the real reply.
+            inputAudioTranscription: {},
+            outputAudioTranscription: {},
+            systemInstruction: NOVA_LIVE_VOICE_PERSONA,
           },
           callbacks: {
             onopen: () => {
@@ -5304,8 +6555,24 @@ if (process.env.TEST_MODE !== 'true') {
                 if (message.serverContent?.interrupted) {
                   clientWs.send(JSON.stringify({ interrupted: true }));
                 }
+                // Relay transcript fragments so the client can build a live
+                // caption. These arrive incrementally, so the client appends.
+                const userText = message.serverContent?.inputTranscription?.text;
+                if (userText) {
+                  clientWs.send(JSON.stringify({ userTranscript: userText }));
+                }
+                const novaText = message.serverContent?.outputTranscription?.text;
+                if (novaText) {
+                  clientWs.send(JSON.stringify({ novaTranscript: novaText }));
+                }
                 if (message.data) {
                   clientWs.send(JSON.stringify({ audio: message.data }));
+                }
+                // Marks the end of one of Nova's spoken turns, so the client
+                // can settle its "Nova is speaking" indicator honestly rather
+                // than guessing from audio timing alone.
+                if (message.serverContent?.turnComplete) {
+                  clientWs.send(JSON.stringify({ turnComplete: true }));
                 }
               } catch (e) {
                 console.error("[Nova Live] relay-to-client error:", e);

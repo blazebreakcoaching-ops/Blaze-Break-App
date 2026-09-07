@@ -96,7 +96,7 @@ export const SomaticCheckInCard: React.FC<SomaticCheckInCardProps> = ({
               className="space-y-4"
             >
               {lastCheckIn && (
-                 <div className="bg-surface border border-white/[0.03] p-3 rounded-xl flex items-center justify-between text-[10px] uppercase font-bold tracking-widest text-[#6366f1]">
+                 <div className="bg-surface border border-white/[0.03] p-3 rounded-xl flex items-center justify-between text-[10px] uppercase font-bold tracking-widest text-indigo-700 dark:text-indigo-400">
                     <span>Last Recorded ({lastCheckIn.timestamp})</span>
                     <span className="text-text-muted">Saved locally</span>
                  </div>
@@ -109,10 +109,11 @@ export const SomaticCheckInCard: React.FC<SomaticCheckInCardProps> = ({
                     <button
                       key={opt}
                       onClick={() => toggleOption(opt)}
+                      aria-pressed={isSelected}
                       className={cn(
                         "text-[11px] px-3 py-1.5 rounded-full border transition-colors cursor-pointer",
                          isSelected 
-                          ? "bg-primary/20 border-primary/40 text-primary font-medium" 
+                          ? "bg-primary/20 border-primary/40 text-[#9a3412] dark:text-primary font-medium" 
                           : "bg-surface border-white/[0.05] text-text-muted hover:text-text-main"
                       )}
                     >

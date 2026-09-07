@@ -6,6 +6,7 @@ import { Book, CheckCircle2, ChevronRight, Sparkles, Zap, ArrowRight, BookOpen, 
 import { NovaChat } from './NovaChat';
 import { DailyVoiceJournal } from './DailyVoiceJournal.tsx';
 import { cn } from '../lib/utils';
+import { useFocusTrap } from '../lib/useFocusTrap';
 import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip as RechartsTooltip, CartesianGrid, BarChart, Bar, Cell, Legend } from 'recharts';
 
 interface Chapter {
@@ -122,6 +123,14 @@ export const ReflectSection = ({
   const [view, setView] = useState<'content' | 'action'>('content');
 
   const [showTriggerTimeline, setShowTriggerTimeline] = useState(false);
+  const triggerModalRef = useFocusTrap(showTriggerTimeline);
+
+  useEffect(() => {
+    if (!showTriggerTimeline) return;
+    const onKeyDown = (e: KeyboardEvent) => { if (e.key === 'Escape') setShowTriggerTimeline(false); };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [showTriggerTimeline]);
   const [triggers, setTriggers] = useState<any[]>([]);
   const [triggersLoading, setTriggersLoading] = useState(true);
 
@@ -229,7 +238,7 @@ export const ReflectSection = ({
              <div>
                 <h2 className="text-2xl lg:text-3xl font-display font-medium text-text-main tracking-tight">Reflect</h2>
                 <div className="flex items-center gap-3 mt-2">
-                  <span className="text-xs font-medium uppercase tracking-widest text-primary flex items-center gap-1.5"><Activity className="w-3 h-3" /> Recovery Insights</span>
+                  <span className="text-xs font-medium uppercase tracking-widest text-[#9a3412] dark:text-primary flex items-center gap-1.5"><Activity className="w-3 h-3" /> Recovery Insights</span>
                 </div>
              </div>
           </div>
@@ -256,7 +265,7 @@ export const ReflectSection = ({
             <div className="flex flex-wrap items-center gap-3 self-start md:self-auto">
               <button
                 onClick={() => setShowTriggerTimeline(true)}
-                className="flex items-center gap-2 px-4 py-2.5 bg-primary/10 hover:bg-primary/20 border border-primary/20 hover:border-primary/35 text-primary text-xs font-medium uppercase tracking-wider rounded-lg transition-colors cursor-pointer"
+                className="flex items-center gap-2 px-4 py-2.5 bg-primary/10 hover:bg-primary/20 border border-primary/20 hover:border-primary/35 text-[#9a3412] dark:text-primary text-xs font-medium uppercase tracking-wider rounded-lg transition-colors cursor-pointer"
               >
                 <TrendingUp className="w-4 h-4" /> Trigger Timeline
               </button>
@@ -271,6 +280,7 @@ export const ReflectSection = ({
                 <button
                   key={opt.id}
                   onClick={() => setMoodFilter(opt.id as any)}
+                  aria-pressed={moodFilter === opt.id}
                   className={cn(
                     "px-4 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-all cursor-pointer",
                     moodFilter === opt.id 
@@ -421,7 +431,7 @@ export const ReflectSection = ({
                 <Sparkles className="w-5 h-5 animate-spin" style={{ animationDuration: '6s' }} />
               </div>
               <div className="space-y-2">
-                <span className="text-[10px] font-medium uppercase tracking-widest text-primary font-mono block">Nova's read on your patterns</span>
+                <span className="text-[10px] font-medium uppercase tracking-widest text-[#9a3412] dark:text-primary font-mono block">Nova's read on your patterns</span>
                 <p className="text-sm font-medium text-text-main tracking-tight leading-snug font-serif italic">
                   {(() => {
                     const negCount = moodLogs.filter(l => l.category === 'negative').length;
@@ -475,7 +485,7 @@ export const ReflectSection = ({
                     onChange={(e) => setNewMoodIntensity(Number(e.target.value))}
                     className="w-full accent-primary cursor-pointer h-1.5 rounded bg-border"
                   />
-                  <span className="text-xs font-mono font-bold text-primary shrink-0 w-4">{newMoodIntensity}</span>
+                  <span className="text-xs font-mono font-bold text-[#9a3412] dark:text-primary shrink-0 w-4">{newMoodIntensity}</span>
                 </div>
 
                 <button
@@ -506,6 +516,7 @@ export const ReflectSection = ({
               <button
                 key={c.id}
                 onClick={() => handleSelect(c)}
+                aria-pressed={selected?.id === c.id}
                 className={cn(
                   "w-full text-left p-5 rounded-2xl transition-all duration-300 relative group overflow-hidden border",
                   selected?.id === c.id
@@ -516,12 +527,12 @@ export const ReflectSection = ({
                 <div className="flex items-center gap-5 relative z-10">
                   <div className={cn(
                     "w-12 h-12 rounded-xl flex items-center justify-center shrink-0 border transition-all duration-500",
-                    selected?.id === c.id ? "bg-primary/10 border-primary/20 text-primary shadow-inner" : "bg-surface dark:bg-surface border-border dark:border-border text-text-muted"
+                    selected?.id === c.id ? "bg-primary/10 border-primary/20 text-[#9a3412] dark:text-primary shadow-inner" : "bg-surface dark:bg-surface border-border dark:border-border text-text-muted"
                   )}>
                     <span className="font-mono font-bold text-sm">{c.id.padStart(2, '0')}</span>
                   </div>
                   <div className="flex-1">
-                    <h4 className={cn("font-bold text-sm tracking-tight transition-colors", selected?.id === c.id ? "text-primary" : "text-text-main group-hover:text-primary")}>{c.title}</h4>
+                    <h4 className={cn("font-bold text-sm tracking-tight transition-colors", selected?.id === c.id ? "text-[#9a3412] dark:text-primary" : "text-text-main group-hover:text-primary")}>{c.title}</h4>
                     <p className="text-[11px] text-text-muted font-mono mt-1.5  line-clamp-1">{c.snippet}</p>
                   </div>
                 </div>
@@ -540,11 +551,11 @@ export const ReflectSection = ({
                <Zap className="w-16 h-16 text-warning" />
              </div>
              <div className="flex items-center gap-2 mb-3 relative z-10">
-                <Zap className="w-4 h-4 text-warning" />
+                <Zap className="w-4 h-4 text-[#9a3412] dark:text-warning" />
                 <span className="text-xs font-black uppercase tracking-widest text-text-muted">Implementation Rewards</span>
              </div>
              <p className="text-xs font-medium text-text-muted leading-relaxed relative z-10">
-               Each protocol committed to the OS unlocks <strong className="text-warning">+250 Stability Points</strong>. Consistency is the only metric that matters.
+               Each protocol committed to the OS unlocks <strong className="text-[#9a3412] dark:text-warning">+250 Stability Points</strong>. Consistency is the only metric that matters.
              </p>
           </div>
         </div>
@@ -579,7 +590,7 @@ export const ReflectSection = ({
                     <div className="p-10 lg:p-12 relative z-10 flex flex-col h-full space-y-12">
                       <div className="flex items-center justify-between border-b border-primary/20 pb-6">
                         <div className="flex items-center gap-3">
-                          <span className="px-3 py-1 bg-primary/20 text-primary text-[11px] uppercase font-medium tracking-widest rounded-md border border-primary/30">Pattern {selected.id}</span>
+                          <span className="px-3 py-1 bg-primary/20 text-[#9a3412] dark:text-primary text-[11px] uppercase font-medium tracking-widest rounded-md border border-primary/30">Pattern {selected.id}</span>
                         </div>
                         <span className="text-xs font-mono text-text-muted bg-surface px-3 py-1 rounded border border-border">~3 min read</span>
                       </div>
@@ -622,8 +633,8 @@ export const ReflectSection = ({
                         <div className="absolute inset-0 bg-primary/5 pointer-events-none" />
                         <div className="relative z-10 flex items-center justify-between border-b border-border pb-4">
                            <div className="flex items-center gap-3">
-                             <Sparkles className="w-5 h-5 text-success" />
-                             <span className="text-xs font-black uppercase tracking-[0.25em] text-success/80">Key Takeaways</span>
+                             <Sparkles className="w-5 h-5 text-success dark:text-[#4ade80]" />
+                             <span className="text-xs font-black uppercase tracking-[0.25em] text-success/80 dark:text-[#4ade80]">Key Takeaways</span>
                            </div>
                         </div>
                         
@@ -739,20 +750,25 @@ export const ReflectSection = ({
 
             {/* Modal Box */}
             <motion.div
+              ref={triggerModalRef as any}
               initial={{ opacity: 0, scale: 0.95, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 20 }}
               transition={{ type: "spring", duration: 0.5 }}
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="trigger-timeline-title"
+              tabIndex={-1}
               className="relative w-full max-w-5xl bg-card border border-border rounded-xl p-6 md:p-8 shadow-lg flex flex-col max-h-[90vh] overflow-hidden z-10"
             >
               {/* Header */}
               <div className="flex items-center justify-between border-b border-border pb-5 mb-6">
                 <div className="flex items-center gap-3">
-                  <div className="w-11 h-11 rounded-xl bg-primary/15 border border-primary/25 text-primary flex items-center justify-center shrink-0 shadow-inner">
+                  <div className="w-11 h-11 rounded-xl bg-primary/15 border border-primary/25 text-[#9a3412] dark:text-primary flex items-center justify-center shrink-0 shadow-inner">
                     <TrendingUp className="w-5 h-5" />
                   </div>
                   <div className="text-left">
-                    <h3 className="text-xl md:text-2xl font-display font-black text-text-main tracking-tight">
+                    <h3 id="trigger-timeline-title" className="text-xl md:text-2xl font-display font-black text-text-main tracking-tight">
                       Trigger Log & Energy Correlation
                     </h3>
                     <p className="text-[10px] font-black uppercase tracking-[0.2em] text-text-muted mt-0.5">
@@ -762,6 +778,7 @@ export const ReflectSection = ({
                 </div>
                 <button
                   onClick={() => setShowTriggerTimeline(false)}
+                  aria-label="Close trigger timeline"
                   className="p-2.5 rounded-xl bg-surface hover:bg-border/50 text-text-muted hover:text-text-main transition-all cursor-pointer border border-border/40"
                 >
                   <X className="w-4 h-4" />
@@ -776,7 +793,7 @@ export const ReflectSection = ({
                     <Sparkles className="w-4 h-4" />
                   </div>
                   <div>
-                    <h5 className="text-xs font-black uppercase tracking-wider text-primary">Nova Intercept Report</h5>
+                    <h5 className="text-xs font-black uppercase tracking-wider text-[#9a3412] dark:text-primary">Nova Intercept Report</h5>
                     <p className="text-xs text-text-muted leading-relaxed mt-1 font-medium">
                       Every logged "Quick Note" from your dashboard is recorded chronologically with severe drains mapped against your energy baseline. Tracking these crossovers allows you to notice patterns of critical capacity collapse before they lead to relapse.
                     </p>
@@ -789,8 +806,8 @@ export const ReflectSection = ({
                   <div className={cn(
                     "p-5 rounded-2xl border text-left flex flex-col justify-between space-y-3 shadow-inner",
                     calculateCorrelation(triggers) <= -0.5
-                      ? "bg-destructive/5 border-destructive/20 text-destructive"
-                      : "bg-primary/5 border-primary/10 text-primary"
+                      ? "bg-destructive/5 border-destructive/20 text-destructive dark:text-[#f87171]"
+                      : "bg-primary/5 border-primary/10 text-[#9a3412] dark:text-primary"
                   )}>
                     <div className="flex items-center justify-between">
                       <span className="text-[10px] font-black uppercase tracking-widest text-text-muted">Correlation Matrix</span>
@@ -899,7 +916,7 @@ export const ReflectSection = ({
                             formatter={(value: any, name: any, props: any) => {
                               if (name === "severityPercent") {
                                 return [
-                                  <span key="val-sev" className="text-destructive font-bold">{props.payload.severity}/10</span>,
+                                  <span key="val-sev" className="text-[#f87171] font-bold">{props.payload.severity}/10</span>,
                                   "Severity Burden"
                                 ];
                               }
@@ -996,12 +1013,12 @@ export const ReflectSection = ({
                                   <span className={cn(
                                     "px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider border",
                                     isHighSeverity
-                                      ? "bg-destructive/10 text-destructive border-destructive/20"
-                                      : "bg-warning/10 text-warning border-warning/20"
+                                      ? "bg-destructive/10 text-destructive dark:text-[#f87171] border-destructive/20"
+                                      : "bg-warning/10 text-[#9a3412] dark:text-warning border-warning/20"
                                   )}>
                                     Severity {trigger.severity}/10
                                   </span>
-                                  <span className="px-2 py-0.5 bg-primary/10 text-primary border border-primary/20 rounded text-[10px] font-black uppercase tracking-wider">
+                                  <span className="px-2 py-0.5 bg-primary/10 text-[#9a3412] dark:text-primary border border-primary/20 rounded text-[10px] font-black uppercase tracking-wider">
                                     Energy {trigger.energyLevel}%
                                   </span>
                                 </div>
@@ -1017,7 +1034,7 @@ export const ReflectSection = ({
                                   <Sparkles className="w-3.5 h-3.5 animate-spin" style={{ animationDuration: '8s' }} />
                                 </div>
                                 <div className="space-y-1">
-                                  <span className="text-[9px] font-black uppercase tracking-widest text-primary font-mono block">Nova's Pattern Detection</span>
+                                  <span className="text-[9px] font-black uppercase tracking-widest text-[#9a3412] dark:text-primary font-mono block">Nova's Pattern Detection</span>
                                   <p className="text-xs font-medium text-text-muted leading-relaxed">
                                     {getNovaAssessment(trigger.text, trigger.severity)}
                                   </p>

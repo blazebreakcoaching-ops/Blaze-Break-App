@@ -2,7 +2,9 @@ import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { X, Star, MessageSquare } from 'lucide-react';
 import { cn } from '../lib/utils';
-import { auth } from '../lib/firebase';
+import { useFocusTrap } from '../lib/useFocusTrap';
+import { auth, db } from '../lib/firebase';
+import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 
 export const NovaFeedbackModal = () => {
   const [isOpen, setIsOpen] = useState(false);
@@ -10,6 +12,14 @@ export const NovaFeedbackModal = () => {
   const [feedbackText, setFeedbackText] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSubmitted, setIsSubmitted] = useState(false);
+  const modalRef = useFocusTrap(isOpen);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const onKeyDown = (e: KeyboardEvent) => { if (e.key === 'Escape') handleClose(); };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [isOpen]);
 
   useEffect(() => {
     // Check if the modal should be shown
@@ -47,9 +57,13 @@ export const NovaFeedbackModal = () => {
     setIsSubmitting(true);
     try {
       if (auth.currentUser) {
-        console.log("Nova feedback storage is not yet available in secure account mode.", { rating, feedbackText });
+        await addDoc(collection(db, 'users', auth.currentUser.uid, 'nova_feedback'), {
+          rating,
+          feedbackText: feedbackText.trim() || null,
+          createdAt: serverTimestamp(),
+        });
       } else {
-        console.log("Mock saved to intelligence (Firebase not available/auth missing)", { rating, feedbackText });
+        console.log("Feedback not saved: no signed-in user to associate it with.", { rating, feedbackText });
       }
       setIsSubmitted(true);
       setTimeout(() => {
@@ -76,9 +90,14 @@ export const NovaFeedbackModal = () => {
             onClick={handleClose}
           />
           <motion.div
+            ref={modalRef as any}
             initial={{ opacity: 0, scale: 0.95, y: 10 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.95, y: 10 }}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="nova-feedback-title"
+            tabIndex={-1}
             className="bg-card w-full max-w-md rounded-2xl shadow-xl border border-border relative z-10 overflow-hidden"
           >
             {isSubmitted ? (
@@ -87,7 +106,7 @@ export const NovaFeedbackModal = () => {
                   <Star className="w-8 h-8 fill-primary" />
                 </div>
                 <div className="space-y-2">
-                  <h3 className="text-xl font-bold font-display text-text-main">Thank You</h3>
+                  <h3 id="nova-feedback-title" className="text-xl font-bold font-display text-text-main">Thank You</h3>
                   <p className="text-text-muted text-sm leading-relaxed">
                     Nova uses your feedback to get better at supporting you over time. Thanks for taking the time to share it.
                   </p>
@@ -97,6 +116,7 @@ export const NovaFeedbackModal = () => {
               <div className="p-6 md:p-8 space-y-6">
                 <button
                   onClick={handleClose}
+                  aria-label="Close feedback dialog"
                   className="absolute top-4 right-4 p-2 rounded-xl text-text-muted hover:text-text-main hover:bg-surface dark:hover:bg-white/5 transition-colors cursor-pointer"
                 >
                   <X className="w-4 h-4" />
@@ -106,7 +126,7 @@ export const NovaFeedbackModal = () => {
                     <MessageSquare className="w-5 h-5" />
                   </div>
                   <div>
-                    <h3 className="text-lg font-bold text-text-main">Nova Coach Pulse</h3>
+                    <h3 id="nova-feedback-title" className="text-lg font-bold text-text-main">Nova Coach Pulse</h3>
                     <p className="text-xs uppercase font-black tracking-widest text-text-muted">Weekly Calibration</p>
                   </div>
                 </div>
@@ -118,9 +138,11 @@ export const NovaFeedbackModal = () => {
                       <button
                         key={star}
                         onClick={() => setRating(star)}
+                        aria-label={`Rate ${star} star${star === 1 ? '' : 's'}`}
+                        aria-pressed={rating >= star}
                         className={cn(
                           "p-2 rounded-lg transition-all",
-                          rating >= star ? "text-warning" : "text-text-muted hover:text-warning/50"
+                          rating >= star ? "text-[#9a3412] dark:text-warning" : "text-text-muted hover:text-warning/50"
                         )}
                       >
                         <Star className={cn("w-6 h-6", rating >= star && "fill-current")} />

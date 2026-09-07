@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { secureApiFetch } from '../lib/secure-api';
 import { auth } from '../lib/firebase';
-import { RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, ResponsiveContainer, Tooltip } from 'recharts';
+import { RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, ResponsiveContainer, Tooltip, LineChart, Line, XAxis, YAxis, CartesianGrid } from 'recharts';
+import { useFocusTrap } from '../lib/useFocusTrap';
 
 
 import {
@@ -26,8 +27,12 @@ import {
   Send,
   X,
   Upload,
-  RotateCw
+  RotateCw,
+  ArrowUp,
+  ArrowDown,
+  Minus
 } from 'lucide-react';
+import { buildPrimaryIndicators, buildDimensionIndicators, sortByAttention, LeadingIndicator } from '../../org-leading-indicators';
 import { cn } from '../lib/utils';
 import { OrgDashboardValue } from './OrgDashboardValue';
 import { OrgDashboardMoments } from './OrgDashboardMoments';
@@ -78,14 +83,46 @@ export const OrgDashboard = () => {
     responseRate?: number;
     averages?: Record<string, number>;
   } | null>(null);
+  const [riskTrendData, setRiskTrendData] = useState<{
+    locked: boolean;
+    cohortSize: number;
+    threshold: number;
+    moodConcern?: number | null;
+    climateConcern?: number | null;
+    climateConcernByDimension?: Record<string, number> | null;
+    overallConcern?: number | null;
+    trend?: { direction: 'improving' | 'worsening' | 'stable' | 'unknown'; delta: number | null };
+    moodTrend?: { direction: 'improving' | 'worsening' | 'stable' | 'unknown'; delta: number | null };
+    climateTrend?: { direction: 'improving' | 'worsening' | 'stable' | 'unknown'; delta: number | null };
+    comparedAgainst?: string | null;
+    history?: { recordedAt: string; overallConcern: number | null }[];
+    teamBreakdown?: Record<string, {
+      cohortSize: number;
+      overallConcern: number | null;
+      moodConcern: number | null;
+      climateConcern: number | null;
+      trend: { direction: 'improving' | 'worsening' | 'stable' | 'unknown'; delta: number | null };
+    }>;
+  } | null>(null);
 
   const [suggestions, setSuggestions] = useState<{ id: string; message: string }[]>([]);
 
-  const [members, setMembers] = useState<{ uid: string; email: string | null; displayName: string | null; isAdmin: boolean }[]>([]);
+  const [members, setMembers] = useState<{ uid: string; email: string | null; displayName: string | null; isAdmin: boolean; team: string | null }[]>([]);
+  const [editingTeamUid, setEditingTeamUid] = useState<string | null>(null);
+  const [teamInputValue, setTeamInputValue] = useState('');
+  const [savingTeamUid, setSavingTeamUid] = useState<string | null>(null);
   const [membersLoading, setMembersLoading] = useState(false);
   const [membersError, setMembersError] = useState('');
   const [memberActionUid, setMemberActionUid] = useState<string | null>(null);
   const [memberToRemove, setMemberToRemove] = useState<{ uid: string; label: string } | null>(null);
+  const removeMemberDialogRef = useFocusTrap(!!memberToRemove);
+
+  useEffect(() => {
+    if (!memberToRemove) return;
+    const onKeyDown = (e: KeyboardEvent) => { if (e.key === 'Escape') setMemberToRemove(null); };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [memberToRemove]);
 
   const [settingsName, setSettingsName] = useState('');
   const [settingsThreshold, setSettingsThreshold] = useState('');
@@ -133,6 +170,14 @@ export const OrgDashboard = () => {
             if (climateRes.ok) setClimateData(climate);
           } catch (e) {
             // Non-fatal - the pulse dashboard above still works even if this fails.
+          }
+
+          try {
+            const riskRes = await secureApiFetch(`/api/org/${me.organisationId}/risk-trend`);
+            const risk = await riskRes.json();
+            if (riskRes.ok) setRiskTrendData(risk);
+          } catch (e) {
+            // Non-fatal - same reasoning as the climate fetch above.
           }
 
           fetchMembers(me.organisationId);
@@ -217,6 +262,28 @@ export const OrgDashboard = () => {
       setMembersError('Could not revoke that admin access.');
     }
     setMemberActionUid(null);
+  };
+
+  const handleSetTeam = async (memberUid: string, team: string | null) => {
+    if (!orgStatus?.organisationId) return;
+    setSavingTeamUid(memberUid);
+    setMembersError('');
+    try {
+      const res = await secureApiFetch(`/api/org/${orgStatus.organisationId}/members/${memberUid}/team`, {
+        method: 'POST',
+        data: { team },
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setMembersError(data.error || "Could not save that person's team.");
+      } else {
+        setMembers(prev => prev.map(m => m.uid === memberUid ? { ...m, team } : m));
+        setEditingTeamUid(null);
+      }
+    } catch (e) {
+      setMembersError("Could not save that person's team.");
+    }
+    setSavingTeamUid(null);
   };
 
   const handleSaveSettings = async () => {
@@ -466,6 +533,7 @@ export const OrgDashboard = () => {
             <button
               key={tab.id}
               onClick={() => setActiveSubTab(tab.id as any)}
+              aria-current={activeSubTab === tab.id ? 'page' : undefined}
               className={cn(
                 "flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all",
                 activeSubTab === tab.id
@@ -501,24 +569,24 @@ export const OrgDashboard = () => {
                 <div className="flex flex-col sm:flex-row gap-4">
                    <div className="p-4 bg-destructive/10 border border-destructive/20 rounded-2xl flex-1 backdrop-blur-md">
                     <div className="flex items-center justify-between mb-1">
-                      <span className="text-xs uppercase font-bold tracking-widest text-destructive">Negative Mood Logs</span>
-                      <AlertTriangle className="w-4 h-4 text-destructive" />
+                      <span className="text-xs uppercase font-bold tracking-widest text-destructive dark:text-[#f87171]">Negative Mood Logs</span>
+                      <AlertTriangle className="w-4 h-4 text-destructive dark:text-[#f87171]" />
                     </div>
-                    <p className="text-3xl font-display font-bold text-text-main">{dashboardData.moodDistribution?.negative ?? 0} <span className="text-sm font-normal text-destructive">logs</span></p>
+                    <p className="text-3xl font-display font-bold text-text-main">{dashboardData.moodDistribution?.negative ?? 0} <span className="text-sm font-normal text-destructive dark:text-[#f87171]">logs</span></p>
                   </div>
                   <div className="p-4 bg-warning/10 border border-warning/20 rounded-2xl flex-1 backdrop-blur-md">
                     <div className="flex items-center justify-between mb-1">
-                      <span className="text-xs uppercase font-bold tracking-widest text-warning">Neutral Mood Logs</span>
-                      <TrendingUp className="w-4 h-4 text-warning" />
+                      <span className="text-xs uppercase font-bold tracking-widest text-[#9a3412] dark:text-warning">Neutral Mood Logs</span>
+                      <TrendingUp className="w-4 h-4 text-[#9a3412] dark:text-warning" />
                     </div>
-                    <p className="text-3xl font-display font-bold text-text-main">{dashboardData.moodDistribution?.neutral ?? 0} <span className="text-sm font-normal text-warning">logs</span></p>
+                    <p className="text-3xl font-display font-bold text-text-main">{dashboardData.moodDistribution?.neutral ?? 0} <span className="text-sm font-normal text-[#9a3412] dark:text-warning">logs</span></p>
                   </div>
                   <div className="p-4 bg-success/10 border border-success/20 rounded-2xl flex-1 backdrop-blur-md">
                     <div className="flex items-center justify-between mb-1">
-                      <span className="text-xs uppercase font-bold tracking-widest text-success">Positive Mood Logs</span>
-                      <ShieldCheck className="w-4 h-4 text-success" />
+                      <span className="text-xs uppercase font-bold tracking-widest text-[#166534] dark:text-[#4ade80]">Positive Mood Logs</span>
+                      <ShieldCheck className="w-4 h-4 text-[#166534] dark:text-[#4ade80]" />
                     </div>
-                    <p className="text-3xl font-display font-bold text-text-main">{dashboardData.moodDistribution?.positive ?? 0} <span className="text-sm font-normal text-success">logs</span></p>
+                    <p className="text-3xl font-display font-bold text-text-main">{dashboardData.moodDistribution?.positive ?? 0} <span className="text-sm font-normal text-[#166534] dark:text-[#4ade80]">logs</span></p>
                   </div>
                 </div>
 
@@ -563,6 +631,209 @@ export const OrgDashboard = () => {
                 <p className="text-sm text-text-muted py-8 text-center">No body check-ins logged by your team this week yet.</p>
               )}
             </div>
+
+            {riskTrendData && !riskTrendData.locked && (
+              <div className="card space-y-6">
+                <div>
+                  <h4 className="font-bold text-text-main flex items-center gap-2"><TrendingUp className="w-5 h-5 text-primary" /> Team Climate Trend</h4>
+                  <p className="text-xs text-text-muted max-w-2xl leading-relaxed">
+                    A transparent indicator built from the same real, consented mood and climate-survey data above - not a prediction. It shows whether things are trending better or worse and by how much; it does not estimate absence risk or any figure this app has no real basis to produce.
+                  </p>
+                </div>
+                {riskTrendData.overallConcern == null ? (
+                  <p className="text-sm text-text-muted py-8 text-center">Not enough mood or climate survey data yet to show a trend.</p>
+                ) : (
+                  <>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div className="p-5 bg-surface dark:bg-card/40 border border-border rounded-xl">
+                        <span className="text-xs uppercase font-bold tracking-widest text-text-muted block mb-1">Current Strain Level</span>
+                        <p className="text-3xl font-display font-bold text-text-main">{riskTrendData.overallConcern}<span className="text-sm font-normal text-text-muted">/100</span></p>
+                        <p className="text-xs text-text-muted mt-1">Combines mood pulses and, where available, the climate survey. Lower is better.</p>
+                      </div>
+                      <div className="p-5 bg-surface dark:bg-card/40 border border-border rounded-xl">
+                        <span className="text-xs uppercase font-bold tracking-widest text-text-muted block mb-1">Trend vs. ~4 Weeks Ago</span>
+                        {riskTrendData.trend?.direction === 'unknown' ? (
+                          <>
+                            <p className="text-3xl font-display font-bold text-text-main">—</p>
+                            <p className="text-xs text-text-muted mt-1">No snapshot from a month ago yet - check back as data accumulates.</p>
+                          </>
+                        ) : (
+                          <>
+                            <p className={cn(
+                              "text-3xl font-display font-bold",
+                              riskTrendData.trend?.direction === 'worsening' ? "text-destructive dark:text-[#f87171]" :
+                              riskTrendData.trend?.direction === 'improving' ? "text-[#166534] dark:text-[#4ade80]" :
+                              "text-text-main"
+                            )}>
+                              {riskTrendData.trend?.direction === 'stable' ? 'Stable' : `${(riskTrendData.trend?.delta ?? 0) > 0 ? '+' : ''}${riskTrendData.trend?.delta} pts`}
+                            </p>
+                            <p className="text-xs text-text-muted mt-1 capitalize">{riskTrendData.trend?.direction}{riskTrendData.trend?.direction !== 'stable' ? ' since the last comparable snapshot' : ''}.</p>
+                          </>
+                        )}
+                      </div>
+                    </div>
+
+                    {riskTrendData.history && riskTrendData.history.length >= 2 && (
+                      <div>
+                        <span className="text-xs uppercase font-bold tracking-widest text-text-muted block mb-3">Strain Level Over Time</span>
+                        <div className="h-52 w-full" aria-hidden="true">
+                          <ResponsiveContainer width="100%" height="100%">
+                            <LineChart data={riskTrendData.history.map(h => ({ date: new Date(h.recordedAt).toLocaleDateString([], { month: 'short', day: 'numeric' }), value: h.overallConcern }))}>
+                              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#78716c" strokeOpacity={0.2} />
+                              <XAxis dataKey="date" tick={{ fontSize: 11 }} stroke="#78716c" />
+                              <YAxis domain={[0, 100]} tick={{ fontSize: 11 }} stroke="#78716c" />
+                              <Tooltip
+                                contentStyle={{ backgroundColor: '#1c1917', border: '1px solid #3a3532', borderRadius: '8px' }}
+                                itemStyle={{ color: '#fff', fontSize: '12px' }}
+                                formatter={(value: any) => [`${value}/100`, 'Strain']}
+                              />
+                              <Line type="monotone" dataKey="value" stroke="#ea580c" strokeWidth={2} dot={{ r: 3, fill: '#ea580c' }} connectNulls />
+                            </LineChart>
+                          </ResponsiveContainer>
+                        </div>
+                        <table className="sr-only">
+                          <caption>Strain level over time, 0 to 100, lower is better</caption>
+                          <thead>
+                            <tr><th scope="col">Date</th><th scope="col">Strain Level</th></tr>
+                          </thead>
+                          <tbody>
+                            {riskTrendData.history.filter(h => h.overallConcern != null).map(h => (
+                              <tr key={h.recordedAt}>
+                                <td>{new Date(h.recordedAt).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })}</td>
+                                <td>{h.overallConcern}/100</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+
+                    {riskTrendData.climateConcernByDimension && (
+                      <div>
+                        <span className="text-xs uppercase font-bold tracking-widest text-text-muted block mb-3">What's Driving It (Climate Survey Dimensions)</span>
+                        <div className="space-y-2">
+                          {Object.entries(riskTrendData.climateConcernByDimension).map(([dim, dimStrain]) => (
+                            <div key={dim} className="flex items-center gap-3">
+                              <span className="text-xs font-bold text-text-main w-28 shrink-0 capitalize">{dim}</span>
+                              <div className="h-2 flex-1 bg-surface dark:bg-surface rounded-full overflow-hidden">
+                                <div className={cn("h-full", dimStrain >= 60 ? "bg-destructive" : dimStrain >= 35 ? "bg-warning" : "bg-success")} style={{ width: `${Math.max(4, dimStrain)}%` }} />
+                              </div>
+                              <span className="text-xs font-mono text-text-muted w-10 text-right">{dimStrain}</span>
+                            </div>
+                          ))}
+                        </div>
+                        <p className="text-xs text-text-muted mt-3">Higher means more strain. From the same climate survey averages shown in the Team Climate tab.</p>
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            )}
+
+            {riskTrendData && !riskTrendData.locked && riskTrendData.overallConcern != null && (() => {
+              const indicators = sortByAttention([
+                ...buildPrimaryIndicators({
+                  overall: riskTrendData.overallConcern ?? null,
+                  mood: riskTrendData.moodConcern ?? null,
+                  climate: riskTrendData.climateConcern ?? null,
+                  overallTrend: riskTrendData.trend,
+                  moodTrend: riskTrendData.moodTrend,
+                  climateTrend: riskTrendData.climateTrend,
+                }),
+                ...buildDimensionIndicators(riskTrendData.climateConcernByDimension),
+              ]);
+              const dirIcon = (d: LeadingIndicator['direction']) =>
+                d === 'worsening' ? <ArrowUp className="w-3.5 h-3.5" aria-hidden="true" />
+                : d === 'improving' ? <ArrowDown className="w-3.5 h-3.5" aria-hidden="true" />
+                : <Minus className="w-3.5 h-3.5" aria-hidden="true" />;
+              const sevClasses: Record<string, string> = {
+                elevated: 'bg-destructive/10 text-destructive dark:text-[#f87171] border-destructive/20',
+                moderate: 'bg-warning/10 text-[#9a3412] dark:text-warning border-warning/20',
+                low: 'bg-success/10 text-[#166534] dark:text-[#4ade80] border-success/20',
+              };
+              // Higher strain = worse, so "worsening" (strain rising) is not-good
+              // and "improving" (strain falling) is good.
+              const dirClasses: Record<string, string> = {
+                worsening: 'text-destructive dark:text-[#f87171]',
+                improving: 'text-[#166534] dark:text-[#4ade80]',
+                stable: 'text-text-muted',
+                unknown: 'text-text-muted',
+              };
+              return (
+                <div className="card space-y-6">
+                  <div>
+                    <h4 className="font-bold text-text-main flex items-center gap-2"><LineChartIcon className="w-5 h-5 text-primary" /> Leading Indicators</h4>
+                    <p className="text-xs text-text-muted max-w-2xl leading-relaxed">
+                      Early, structural signals of working conditions — each one's current level and which way it's moving over the last ~4 weeks. Leading indicators shift <em>before</em> hard outcomes, so this is a prompt to look at workload and support, not a prediction of anything. Every figure is aggregate and anonymised across consenting members; nothing here is ever shown per person, and this is not a forecast of absence or any individual outcome.
+                    </p>
+                  </div>
+                  <ul className="space-y-2.5">
+                    {indicators.map((ind) => (
+                      <li key={ind.key} className="flex items-center gap-4 p-4 rounded-xl border border-border bg-surface/60 dark:bg-card/40">
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-bold text-text-main truncate">{ind.label}</p>
+                          <p className={cn('text-xs flex items-center gap-1 mt-0.5', dirClasses[ind.direction])}>
+                            {ind.direction !== 'unknown' && dirIcon(ind.direction)}
+                            <span className="text-text-muted">{ind.note}</span>
+                          </p>
+                        </div>
+                        {ind.severity ? (
+                          <span className={cn('shrink-0 text-[11px] font-black uppercase tracking-widest px-2.5 py-1 rounded-full border', sevClasses[ind.severity])}>
+                            {ind.severity}
+                          </span>
+                        ) : (
+                          <span className="shrink-0 text-[11px] text-text-muted">no data yet</span>
+                        )}
+                        <span className="shrink-0 w-12 text-right font-mono text-sm text-text-main tabular-nums">
+                          {ind.level == null ? '—' : `${ind.level}`}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                  <p className="text-[11px] text-text-muted">Scale 0–100, higher means more strain. Levels: 0–34 low · 35–59 moderate · 60+ elevated. Per-dimension direction isn't shown because the dashboard doesn't retain per-dimension history — we won't infer a trend we can't back up.</p>
+                </div>
+              );
+            })()}
+
+            {riskTrendData?.teamBreakdown && Object.keys(riskTrendData.teamBreakdown).length > 0 && (
+              <div className="card space-y-6">
+                <div>
+                  <h4 className="font-bold text-text-main flex items-center gap-2"><TrendingUp className="w-5 h-5 text-primary" /> By Team</h4>
+                  <p className="text-xs text-text-muted max-w-2xl leading-relaxed">
+                    Only teams with enough consenting members to clear the same anonymity threshold as the org-wide numbers above appear here - a team with too few people simply isn't shown, the same protection as everywhere else in this dashboard. Nobody is ever named.
+                  </p>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {Object.entries(riskTrendData.teamBreakdown).map(([team, snap]) => (
+                    <div key={team} className="p-5 bg-surface dark:bg-card/40 border border-border rounded-xl">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-sm font-bold text-text-main truncate">{team}</span>
+                        <span className="text-xs text-text-muted shrink-0">{snap.cohortSize} people</span>
+                      </div>
+                      <div className="flex items-end justify-between">
+                        <div>
+                          <p className="text-2xl font-display font-bold text-text-main">{snap.overallConcern ?? '—'}<span className="text-xs font-normal text-text-muted">/100</span></p>
+                        </div>
+                        <div className="text-right">
+                          {snap.trend.direction === 'unknown' ? (
+                            <span className="text-xs text-text-muted">No trend yet</span>
+                          ) : (
+                            <span className={cn(
+                              "text-sm font-bold capitalize",
+                              snap.trend.direction === 'worsening' ? "text-destructive dark:text-[#f87171]" :
+                              snap.trend.direction === 'improving' ? "text-[#166534] dark:text-[#4ade80]" :
+                              "text-text-muted"
+                            )}>
+                              {snap.trend.direction}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </motion.div>
         )}
 
@@ -577,7 +848,7 @@ export const OrgDashboard = () => {
                 <div className="flex items-center gap-3 mb-4">
                   <div className="tag bg-surface dark:bg-card/10 text-text-main border-white/20">Team Climate Dashboard</div>
                   {climateData && !climateData.locked && (
-                    <div className="flex items-center gap-2 text-xs font-black uppercase tracking-widest text-success bg-success/10 px-3 py-1 rounded-full border border-success/20">
+                    <div className="flex items-center gap-2 text-xs font-black uppercase tracking-widest text-[#166534] dark:text-[#4ade80] bg-success/10 px-3 py-1 rounded-full border border-success/20">
                       <ShieldCheck className="w-3 h-3" /> {climateData.responseCount} responses this quarter
                     </div>
                   )}
@@ -606,7 +877,7 @@ export const OrgDashboard = () => {
                     <h4 className="font-bold text-text-main">Team Climate, Six Dimensions</h4>
                     <p className="text-xs text-text-muted">Average score per dimension (1–5), from real survey responses.</p>
                   </div>
-                  <div className="h-72">
+                  <div className="h-72" role="img" aria-label="Radar chart of team climate across six dimensions - Demands, Control, Support, Relationships, Role, and Change - each scored 1 to 5 from real survey responses. Full values are in the chart's tooltips.">
                     <ResponsiveContainer width="100%" height="100%">
                       <RadarChart
                         cx="50%" cy="50%" outerRadius="75%"
@@ -693,7 +964,7 @@ export const OrgDashboard = () => {
                               <Lightbulb className="w-4 h-4" />
                             </div>
                             <div>
-                              <span className="text-xs font-black uppercase tracking-widest text-primary block mb-1">{s.theme}</span>
+                              <span className="text-xs font-black uppercase tracking-widest text-[#9a3412] dark:text-primary block mb-1">{s.theme}</span>
                               <p className="text-sm font-medium text-text-main">"{s.text}"</p>
                             </div>
                           </div>
@@ -713,9 +984,9 @@ export const OrgDashboard = () => {
                     {ACTIONS.map(action => (
                       <div key={action.id} className="p-4 rounded-xl bg-card/50 hover:bg-card border border-border transition-colors cursor-pointer group">
                         <span className="text-[11px] uppercase tracking-widest font-black text-text-muted block mb-1">{action.category}</span>
-                        <p className="text-xs font-bold text-text-main mb-3 group-hover:text-primary transition-colors">{action.title}</p>
+                        <p className="text-xs font-bold text-text-main mb-3 group-hover:text-[#9a3412] dark:group-hover:text-primary transition-colors">{action.title}</p>
                         <div className="flex gap-2">
-                          <span className={cn("text-[11px] px-1.5 py-0.5 rounded", action.impact === 'High' ? "bg-success/20 text-success" : "bg-surface text-text-muted")}>Impact: {action.impact}</span>
+                          <span className={cn("text-[11px] px-1.5 py-0.5 rounded", action.impact === 'High' ? "bg-success/20 text-[#166534] dark:text-[#4ade80]" : "bg-surface text-text-muted")}>Impact: {action.impact}</span>
                           <span className={cn("text-[11px] px-1.5 py-0.5 rounded bg-surface text-text-muted")}>Effort: {action.effort}</span>
                         </div>
                       </div>
@@ -730,7 +1001,7 @@ export const OrgDashboard = () => {
 
         {activeSubTab === 'value' && (
           <motion.div key="value" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95 }}>
-            <OrgDashboardValue />
+            <OrgDashboardValue onNavigateToTrend={() => setActiveSubTab('pulse')} />
           </motion.div>
         )}
 
@@ -743,12 +1014,17 @@ export const OrgDashboard = () => {
         {activeSubTab === 'team' && (
           <motion.div key="team" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95 }} className="space-y-8 pb-24">
             {membersError && (
-              <div className="p-3 bg-destructive/10 border border-destructive/20 text-destructive text-sm rounded-xl">{membersError}</div>
+              <div role="alert" className="p-3 bg-destructive/10 border border-destructive/20 text-destructive dark:text-[#f87171] text-sm rounded-xl">{membersError}</div>
             )}
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
               <div className="lg:col-span-2 space-y-4">
                 <h4 className="font-bold text-text-main flex items-center gap-2"><Users className="w-5 h-5 text-primary" /> Team Roster ({members.length})</h4>
+                <datalist id="org-team-names">
+                  {Array.from(new Set(members.map(m => m.team).filter((t): t is string => !!t))).map(team => (
+                    <option key={team} value={team} />
+                  ))}
+                </datalist>
                 {membersLoading ? (
                   <div className="flex items-center justify-center py-16">
                     <Loader2 className="w-6 h-6 animate-spin text-primary" />
@@ -768,6 +1044,44 @@ export const OrgDashboard = () => {
                           {member.email && member.displayName && (
                             <p className="text-xs text-text-muted truncate">{member.email}</p>
                           )}
+                          {editingTeamUid === member.uid ? (
+                            <div className="flex items-center gap-1.5 mt-1.5">
+                              <input
+                                type="text"
+                                value={teamInputValue}
+                                onChange={(e) => setTeamInputValue(e.target.value)}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') handleSetTeam(member.uid, teamInputValue.trim() || null);
+                                  if (e.key === 'Escape') setEditingTeamUid(null);
+                                }}
+                                list="org-team-names"
+                                placeholder="Team name"
+                                aria-label={`Team for ${member.displayName || member.email || 'this person'}`}
+                                autoFocus
+                                maxLength={60}
+                                className="text-xs bg-surface border border-border rounded-lg px-2 py-1 w-32 focus:outline-none focus:border-primary/50"
+                              />
+                              <button
+                                onClick={() => handleSetTeam(member.uid, teamInputValue.trim() || null)}
+                                disabled={savingTeamUid === member.uid}
+                                aria-label="Save team"
+                                className="text-xs font-bold text-[#9a3412] dark:text-primary hover:opacity-70 disabled:opacity-50"
+                              >
+                                {savingTeamUid === member.uid ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Save'}
+                              </button>
+                              <button onClick={() => setEditingTeamUid(null)} aria-label="Cancel editing team" className="text-xs text-text-muted hover:text-text-main">
+                                Cancel
+                              </button>
+                            </div>
+                          ) : (
+                            <button
+                              onClick={() => { setEditingTeamUid(member.uid); setTeamInputValue(member.team || ''); }}
+                              className="text-xs text-text-muted hover:text-[#9a3412] dark:hover:text-primary mt-1 transition-colors"
+                              aria-label={member.team ? `Edit team for ${member.displayName || member.email || 'this person'}: ${member.team}` : `Add a team for ${member.displayName || member.email || 'this person'}`}
+                            >
+                              {member.team ? `Team: ${member.team}` : '+ Add team'}
+                            </button>
+                          )}
                         </div>
                         <div className="flex items-center gap-2 shrink-0">
                           {isSelf ? (
@@ -776,7 +1090,8 @@ export const OrgDashboard = () => {
                             <button
                               onClick={() => handleRevokeAdmin(member.uid)}
                               disabled={memberActionUid === member.uid}
-                              className="text-xs font-bold text-primary hover:opacity-70 transition-opacity flex items-center gap-1 disabled:opacity-50"
+                              aria-label={`Revoke admin access for ${member.displayName || member.email || 'this person'}`}
+                              className="text-xs font-bold text-[#9a3412] dark:text-primary hover:opacity-70 transition-opacity flex items-center gap-1 disabled:opacity-50"
                               title="Revoke admin access"
                             >
                               {memberActionUid === member.uid ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
@@ -786,7 +1101,7 @@ export const OrgDashboard = () => {
                             <button
                               onClick={() => handleMakeAdmin(member.uid)}
                               disabled={memberActionUid === member.uid}
-                              className="text-xs font-bold text-text-muted hover:text-primary transition-colors flex items-center gap-1 disabled:opacity-50"
+                              className="text-xs font-bold text-text-muted hover:text-[#9a3412] dark:hover:text-primary transition-colors flex items-center gap-1 disabled:opacity-50"
                               title="Make organisation admin"
                             >
                               <ShieldPlus className="w-3.5 h-3.5" /> Make Admin
@@ -796,8 +1111,9 @@ export const OrgDashboard = () => {
                             <button
                               onClick={() => setMemberToRemove({ uid: member.uid, label: member.displayName || member.email || 'this person' })}
                               disabled={memberActionUid === member.uid}
-                              className="text-xs font-bold text-text-muted hover:text-destructive transition-colors flex items-center gap-1 disabled:opacity-50"
+                              className="text-xs font-bold text-text-muted hover:text-destructive dark:hover:text-[#f87171] transition-colors flex items-center gap-1 disabled:opacity-50"
                               title="Remove from organisation"
+                              aria-label={`Remove ${member.displayName || member.email || 'this person'} from organisation`}
                             >
                               {memberActionUid === member.uid ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <UserMinus className="w-3.5 h-3.5" />}
                             </button>
@@ -851,6 +1167,7 @@ export const OrgDashboard = () => {
                     <div className="font-mono text-lg font-bold text-text-main bg-surface px-3 py-2 rounded-lg border border-border tracking-widest flex-1 text-center">{currentJoinCode}</div>
                     <button
                       onClick={() => { navigator.clipboard.writeText(currentJoinCode); }}
+                      aria-label="Copy join code"
                       className="p-2 text-text-muted hover:text-primary transition-colors"
                       title="Copy join code"
                     >
@@ -871,7 +1188,7 @@ export const OrgDashboard = () => {
                 <div className="card space-y-3">
                   <div className="flex items-center justify-between">
                     <h4 className="font-bold text-text-main text-sm flex items-center gap-2"><Mail className="w-4 h-4 text-primary" /> Invite by Email</h4>
-                    <label className="text-[11px] font-bold uppercase tracking-widest text-primary hover:opacity-80 transition-opacity cursor-pointer flex items-center gap-1">
+                    <label className="text-[11px] font-bold uppercase tracking-widest text-[#9a3412] dark:text-primary hover:opacity-80 transition-opacity cursor-pointer flex items-center gap-1">
                       <Upload className="w-3.5 h-3.5" /> Upload CSV
                       <input
                         type="file"
@@ -887,15 +1204,16 @@ export const OrgDashboard = () => {
                   </div>
                   <p className="text-xs text-text-muted">One email per line, or separated by commas. Up to 50 at once.</p>
                   {csvError && (
-                    <div className="p-2.5 bg-destructive/10 border border-destructive/20 text-destructive text-xs rounded-lg">{csvError}</div>
+                    <div role="alert" className="p-2.5 bg-destructive/10 border border-destructive/20 text-destructive dark:text-[#f87171] text-xs rounded-lg">{csvError}</div>
                   )}
                   {inviteResult && (
-                    <div className="p-2.5 bg-primary/5 border border-primary/20 text-primary text-xs rounded-lg">{inviteResult}</div>
+                    <div role="status" aria-live="polite" className="p-2.5 bg-primary/5 border border-primary/20 text-[#9a3412] dark:text-primary text-xs rounded-lg">{inviteResult}</div>
                   )}
                   <textarea
                     value={inviteEmails}
                     onChange={(e) => setInviteEmails(e.target.value)}
                     placeholder="jane@company.com&#10;alex@company.com"
+                    aria-label="Email addresses to invite, one per line or comma-separated"
                     className="w-full h-20 bg-surface border border-border rounded-xl p-3 text-xs text-text-main placeholder:text-text-muted focus:outline-none focus:border-primary resize-none font-mono"
                   />
                   <button
@@ -915,11 +1233,12 @@ export const OrgDashboard = () => {
                           <span className="text-text-main truncate">{invite.email}</span>
                           <div className="flex items-center gap-2 shrink-0">
                             {!invite.emailSent && (
-                              <span className="text-[10px] text-warning uppercase font-bold">No email sent</span>
+                              <span className="text-[10px] text-[#9a3412] dark:text-warning uppercase font-bold">No email sent</span>
                             )}
                             <button
                               onClick={() => handleResendInvite(invite.email)}
                               disabled={resendingEmail === invite.email}
+                              aria-label={`Resend invite to ${invite.email}`}
                               className="text-text-muted hover:text-primary transition-colors disabled:opacity-50"
                               title="Resend invite"
                             >
@@ -928,6 +1247,7 @@ export const OrgDashboard = () => {
                             <button
                               onClick={() => handleCancelInvite(invite.id)}
                               disabled={cancelingInviteId === invite.id}
+                              aria-label={`Cancel invite to ${invite.email}`}
                               className="text-text-muted hover:text-destructive transition-colors disabled:opacity-50"
                               title="Cancel invite"
                             >
@@ -950,14 +1270,19 @@ export const OrgDashboard = () => {
           <div className="fixed inset-0 z-[200] flex items-center justify-center p-4" onClick={() => setMemberToRemove(null)}>
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 bg-black/50" />
             <motion.div
+              ref={removeMemberDialogRef as any}
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
               onClick={(e) => e.stopPropagation()}
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="remove-member-title"
+              tabIndex={-1}
               className="relative card bg-card border border-border shadow-lg p-6 max-w-sm w-full space-y-4"
             >
               <div>
-                <h4 className="text-lg font-bold text-text-main">Remove {memberToRemove.label}?</h4>
+                <h4 id="remove-member-title" className="text-lg font-bold text-text-main">Remove {memberToRemove.label}?</h4>
                 <p className="text-sm text-text-muted mt-2">
                   They'll be unlinked from {orgStatus?.organisationName || 'this organisation'} and their data-sharing consent will be turned off. This doesn't affect their own Blaze Break account or personal data.
                 </p>

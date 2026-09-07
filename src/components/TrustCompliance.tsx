@@ -47,7 +47,7 @@ export const TrustCompliance = () => {
             <div className="flex items-start justify-between">
               <h4 className="text-sm font-bold text-text-muted">{standard.name}</h4>
               {standard.active ? (
-                <CheckCircle2 className="w-4 h-4 text-success shrink-0" />
+                <CheckCircle2 className="w-4 h-4 text-success dark:text-[#4ade80] shrink-0" />
               ) : (
                 <div className="px-1.5 py-0.5 rounded bg-card text-[10px] uppercase tracking-wider font-bold text-text-muted">Pending</div>
               )}
@@ -59,10 +59,16 @@ export const TrustCompliance = () => {
         ))}
       </div>
       
-      <div className="flex justify-center mt-4">
-         <button className="flex items-center gap-2 text-xs uppercase font-black tracking-[0.2em] text-text-muted hover:text-primary transition-colors">
+      <div className="flex flex-col items-center gap-1.5 mt-4">
+         <button
+           disabled
+           aria-disabled="true"
+           title="Available once at least one certification is independently verified"
+           className="flex items-center gap-2 text-xs uppercase font-black tracking-[0.2em] text-text-muted/50 cursor-not-allowed"
+         >
             <FileText className="w-4 h-4" /> Download Certificate Packet
          </button>
+         <p className="text-[10px] text-text-muted">Not yet available — no certifications have been independently verified.</p>
       </div>
     </div>
   );

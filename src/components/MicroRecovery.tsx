@@ -296,9 +296,9 @@ export const MicroRecovery = ({ fingerprint, onAwardPoints }: MicroRecoveryProps
               <Calendar className="w-5 h-5 text-primary" />
               Google Calendar Break Advisor
               {isDemoMode ? (
-                <span className="text-[11px] px-2 py-0.5 bg-primary/10 text-primary font-black uppercase tracking-widest rounded-full">Demo Simulation</span>
+                <span className="text-[11px] px-2 py-0.5 bg-primary/10 text-[#9a3412] dark:text-primary font-black uppercase tracking-widest rounded-full">Demo Simulation</span>
               ) : (
-                <span className="text-[11px] px-2 py-0.5 bg-success/10 text-success font-black uppercase tracking-widest rounded-full">Live Connected</span>
+                <span className="text-[11px] px-2 py-0.5 bg-success/10 text-success dark:text-[#4ade80] font-black uppercase tracking-widest rounded-full">Live Connected</span>
               )}
             </h4>
             <p className="text-xs text-text-muted max-w-xl">
@@ -336,7 +336,7 @@ export const MicroRecovery = ({ fingerprint, onAwardPoints }: MicroRecoveryProps
         </div>
 
         {calendarError && (
-          <div className="p-3 bg-destructive dark:bg-destructive/20 rounded-xl border border-destructive/50 text-xs text-destructive dark:text-destructive flex items-start gap-2">
+          <div role="alert" className="p-3 bg-destructive dark:bg-destructive/20 rounded-xl border border-destructive/50 text-xs text-destructive-foreground dark:text-[#f87171] flex items-start gap-2">
             <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
             <span>{calendarError}</span>
           </div>
@@ -362,7 +362,7 @@ export const MicroRecovery = ({ fingerprint, onAwardPoints }: MicroRecoveryProps
                 >
                   <div className="space-y-1.5">
                     <div className="flex items-center justify-between">
-                      <span className="text-[10px] font-black uppercase tracking-widest px-2 py-0.5 bg-warning/10 text-warning dark:text-warning rounded-full">
+                      <span className="text-[10px] font-black uppercase tracking-widest px-2 py-0.5 bg-warning/10 text-[#9a3412] dark:text-warning rounded-full">
                         {s.sourceType === 'back_to_back' ? 'Back-to-Back Gap Risk' : 'Prolonged Focus Strain'}
                       </span>
                       <span className="text-xs font-mono text-text-muted">{s.timeLabel}</span>
@@ -383,7 +383,7 @@ export const MicroRecovery = ({ fingerprint, onAwardPoints }: MicroRecoveryProps
                         document.getElementById('recovery-protocol-anchor')?.scrollIntoView({ behavior: 'smooth' });
                       }, 100);
                     }}
-                    className="w-full py-2 bg-primary/10 hover:bg-primary hover:text-primary-foreground text-primary text-[11px] font-black uppercase tracking-widest rounded-lg transition-all cursor-pointer flex items-center justify-center gap-1.5"
+                    className="w-full py-2 bg-primary/10 hover:bg-primary hover:text-primary-foreground text-[#9a3412] dark:text-primary text-[11px] font-black uppercase tracking-widest rounded-lg transition-all cursor-pointer flex items-center justify-center gap-1.5"
                   >
                     <Sparkles className="w-3.5 h-3.5" />
                     Apply Suggested Break ({ACTIONS[s.recommendedDuration].time})
@@ -404,6 +404,7 @@ export const MicroRecovery = ({ fingerprint, onAwardPoints }: MicroRecoveryProps
                setInProgress(false);
                setCompleted(false);
              }}
+             aria-pressed={selectedDuration === duration}
              className={cn(
                "p-6 rounded-2xl border transition-all text-left group relative overflow-hidden",
                selectedDuration === duration
@@ -412,7 +413,7 @@ export const MicroRecovery = ({ fingerprint, onAwardPoints }: MicroRecoveryProps
              )}
            >
              <div className="flex flex-col gap-2 relative z-10">
-               <Clock className={cn("w-6 h-6", selectedDuration === duration ? "text-white" : "text-primary")} />
+               <Clock className={cn("w-6 h-6", selectedDuration === duration ? "text-primary-foreground" : "text-primary")} />
                <span className="text-2xl font-display font-black">{ACTIONS[duration].time}</span>
              </div>
              {selectedDuration === duration && (
@@ -453,7 +454,7 @@ export const MicroRecovery = ({ fingerprint, onAwardPoints }: MicroRecoveryProps
                     transition={{ delay: idx * 0.1 }}
                     className="flex items-start gap-4 bg-white/50 dark:bg-surface/50 p-4 rounded-xl border border-border/50"
                   >
-                    <div className="w-6 h-6 rounded-full bg-primary/20 text-primary flex items-center justify-center shrink-0 mt-0.5">
+                    <div className="w-6 h-6 rounded-full bg-primary/20 text-[#9a3412] dark:text-primary flex items-center justify-center shrink-0 mt-0.5">
                       <ArrowRight className="w-3 h-3 font-black" />
                     </div>
                     <span className="text-text-main font-bold text-lg">{detail}</span>
@@ -483,6 +484,8 @@ export const MicroRecovery = ({ fingerprint, onAwardPoints }: MicroRecoveryProps
             key="success"
             initial={{ opacity: 0, scale: 0.9 }}
             animate={{ opacity: 1, scale: 1 }}
+            role="status"
+            aria-live="polite"
             className="card border border-success/20 bg-success/5 p-6 sm:p-8 md:p-10 flex flex-col items-center justify-center text-center py-20"
           >
              <div className="w-20 h-20 bg-success rounded-full flex items-center justify-center text-white mb-6 shadow-xl shadow-success/20">

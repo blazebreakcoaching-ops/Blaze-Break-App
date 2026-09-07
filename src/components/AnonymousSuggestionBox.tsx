@@ -46,11 +46,11 @@ export const AnonymousSuggestionBox = ({ orgId, organisationName }: { orgId: str
       </div>
 
       {error && (
-        <div className="p-2.5 bg-destructive/10 border border-destructive/20 text-destructive text-xs rounded-lg">{error}</div>
+        <div role="alert" className="p-2.5 bg-destructive/10 border border-destructive/20 text-destructive dark:text-[#f87171] text-xs rounded-lg">{error}</div>
       )}
 
       {justSubmitted ? (
-        <div className="p-4 bg-success/5 border border-success/20 rounded-xl flex items-center gap-2 text-sm text-success">
+        <div role="status" aria-live="polite" className="p-4 bg-success/5 border border-success/20 rounded-xl flex items-center gap-2 text-sm text-success dark:text-[#4ade80]">
           <CheckCircle2 className="w-4 h-4" /> Sent — thanks for sharing this.
         </div>
       ) : (
@@ -59,6 +59,7 @@ export const AnonymousSuggestionBox = ({ orgId, organisationName }: { orgId: str
             value={message}
             onChange={(e) => setMessage(e.target.value)}
             placeholder="What's one thing that would genuinely make things better?"
+            aria-label="Anonymous suggestion"
             maxLength={500}
             className="w-full h-20 bg-surface border border-border rounded-xl p-3 text-sm text-text-main placeholder:text-text-muted focus:outline-none focus:border-primary resize-none"
           />

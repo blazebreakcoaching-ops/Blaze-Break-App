@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Activity, Sparkles, Clock, ArrowRight, ArrowLeft,
@@ -40,6 +40,32 @@ const TOOLS = [
 export const AnxietyResetMode = ({ onAwardPoints, onNavigate }: AnxietyResetModeProps) => {
   const { user } = useAuth();
   const [step, setStep] = useState<'intro' | 'trigger' | 'intensity_before' | 'tool_selection' | 'active_tool' | 'intensity_after' | 'nova_feedback'>('intro');
+  const stepContainerRef = useRef<HTMLDivElement>(null);
+  const isFirstStepRenderRef = useRef(true);
+
+  // Moves screen-reader focus to the new step's heading whenever the step
+  // changes, so a screen reader user is told a screen transition happened
+  // instead of silently staying wherever they were. Skips the very first
+  // render - stealing focus on initial mount would fight against whatever
+  // navigation the user just deliberately did to get here. Deferred to the
+  // next tick so this runs after AnimatePresence has actually mounted the
+  // new step's content.
+  useEffect(() => {
+    if (isFirstStepRenderRef.current) {
+      isFirstStepRenderRef.current = false;
+      return;
+    }
+    const t = window.setTimeout(() => {
+      const container = stepContainerRef.current;
+      if (!container) return;
+      const heading = container.querySelector<HTMLElement>('h3, h4, h5');
+      if (heading) {
+        if (!heading.hasAttribute('tabindex')) heading.setAttribute('tabindex', '-1');
+        heading.focus();
+      }
+    }, 0);
+    return () => window.clearTimeout(t);
+  }, [step]);
   const [selectedTrigger, setSelectedTrigger] = useState<string | null>(null);
   const [intensityBefore, setIntensityBefore] = useState<number>(5);
   const [recommendedToolId, setRecommendedToolId] = useState<string>('calm_90s');
@@ -213,7 +239,7 @@ export const AnxietyResetMode = ({ onAwardPoints, onNavigate }: AnxietyResetMode
   };
 
   return (
-    <div className="bg-card border border-border rounded-xl p-6 sm:p-10 text-left relative overflow-hidden transition-all max-w-4xl mx-auto">
+    <div ref={stepContainerRef} className="bg-card border border-border rounded-xl p-6 sm:p-10 text-left relative overflow-hidden transition-all max-w-4xl mx-auto">
       
       <AnimatePresence mode="wait">
         
@@ -232,7 +258,7 @@ export const AnxietyResetMode = ({ onAwardPoints, onNavigate }: AnxietyResetMode
               </div>
               <div>
                 <h3 className="font-display text-2xl font-semibold text-text-main tracking-tight">Anxiety & Overwhelm Reset</h3>
-                <span className="text-xs uppercase tracking-widest text-destructive font-bold">Grounded in clinical anxiety-support techniques</span>
+                <span className="text-xs uppercase tracking-widest text-destructive dark:text-[#f87171] font-bold">Grounded in clinical anxiety-support techniques</span>
               </div>
             </div>
 
@@ -272,7 +298,7 @@ export const AnxietyResetMode = ({ onAwardPoints, onNavigate }: AnxietyResetMode
             className="space-y-6"
           >
             <div>
-              <span className="text-[10px] font-black uppercase tracking-[0.2em] text-destructive">Step 1 of 5</span>
+              <span className="text-[10px] font-black uppercase tracking-[0.2em] text-destructive dark:text-[#f87171]">Step 1 of 5</span>
               <h4 className="font-display text-xl font-medium text-text-main mt-1">What's happening in your body or mind right now?</h4>
               <p className="text-xs text-text-muted mt-1">Naming the trigger helps disarm the amygdala's automatic panic cycle.</p>
             </div>
@@ -315,7 +341,7 @@ export const AnxietyResetMode = ({ onAwardPoints, onNavigate }: AnxietyResetMode
             className="space-y-6 text-center py-4"
           >
             <div className="text-left">
-              <span className="text-[10px] font-black uppercase tracking-[0.2em] text-destructive">Step 2 of 5</span>
+              <span className="text-[10px] font-black uppercase tracking-[0.2em] text-destructive dark:text-[#f87171]">Step 2 of 5</span>
               <h4 className="font-display text-xl font-medium text-text-main mt-1">Rate the current distress level</h4>
               <p className="text-xs text-text-muted mt-1">A simple scale to anchor where your nervous system is baseline.</p>
             </div>
@@ -323,7 +349,7 @@ export const AnxietyResetMode = ({ onAwardPoints, onNavigate }: AnxietyResetMode
             <div className="py-6">
               <span className="text-6xl font-light text-text-main">{intensityBefore}</span>
               <span className="text-text-muted text-lg">/10</span>
-              <div className="mt-2 text-xs uppercase tracking-widest font-bold text-destructive">
+              <div className="mt-2 text-xs uppercase tracking-widest font-bold text-destructive dark:text-[#f87171]">
                 {intensityBefore <= 3 ? 'Mild Tension' : intensityBefore <= 6 ? 'Moderate Stress / Dread' : intensityBefore <= 8 ? 'High Anxiety / Racing' : 'Acute Overwhelm / Panic'}
               </div>
             </div>
@@ -335,6 +361,8 @@ export const AnxietyResetMode = ({ onAwardPoints, onNavigate }: AnxietyResetMode
                 max="10" 
                 value={intensityBefore}
                 onChange={(e) => setIntensityBefore(Number(e.target.value))}
+                aria-label="Current distress level, 1 to 10"
+                aria-valuetext={`${intensityBefore} out of 10, ${intensityBefore <= 3 ? 'Mild Tension' : intensityBefore <= 6 ? 'Moderate Stress or Dread' : intensityBefore <= 8 ? 'High Anxiety or Racing' : 'Acute Overwhelm or Panic'}`}
                 className="w-full accent-destructive cursor-pointer h-2 bg-border rounded-lg appearance-none"
               />
               <div className="flex justify-between text-[10px] text-text-muted font-bold uppercase mt-2">
@@ -371,7 +399,7 @@ export const AnxietyResetMode = ({ onAwardPoints, onNavigate }: AnxietyResetMode
             className="space-y-6"
           >
             <div>
-              <span className="text-[10px] font-black uppercase tracking-[0.2em] text-destructive">Step 3 of 5</span>
+              <span className="text-[10px] font-black uppercase tracking-[0.2em] text-destructive dark:text-[#f87171]">Step 3 of 5</span>
               <h4 className="font-display text-xl font-medium text-text-main mt-1">Select your de-escalation tool</h4>
               <p className="text-xs text-text-muted mt-1">We matched tools to counter your current physiological trigger.</p>
             </div>
@@ -414,7 +442,7 @@ export const AnxietyResetMode = ({ onAwardPoints, onNavigate }: AnxietyResetMode
                     className="p-4 text-left rounded-xl bg-surface/40 border border-white/[0.04] hover:border-destructive/30 transition-all flex justify-between items-center group"
                   >
                     <div>
-                      <div className="text-sm font-bold text-text-main group-hover:text-destructive transition-colors">{t.name}</div>
+                      <div className="text-sm font-bold text-text-main group-hover:text-destructive dark:group-hover:text-[#f87171] transition-colors">{t.name}</div>
                       <div className="text-[11px] text-text-muted line-clamp-1">{t.description}</div>
                     </div>
                     <ArrowRight className="w-4 h-4 text-text-muted group-hover:text-destructive shrink-0 ml-2" />
@@ -447,7 +475,7 @@ export const AnxietyResetMode = ({ onAwardPoints, onNavigate }: AnxietyResetMode
                 <p className="text-xs text-text-muted">Stay here until the arousal spikes begin to taper.</p>
               </div>
               <div className="text-right">
-                <span className="text-sm font-mono font-bold text-destructive">
+                <span className="text-sm font-mono font-bold text-destructive dark:text-[#f87171]">
                   {Math.floor(timerSeconds / 60)}:{(timerSeconds % 60).toString().padStart(2, '0')}
                 </span>
                 <span className="text-[10px] text-text-muted block font-bold uppercase tracking-widest">Est. time remaining</span>
@@ -495,7 +523,7 @@ export const AnxietyResetMode = ({ onAwardPoints, onNavigate }: AnxietyResetMode
                   <div className="space-y-4 max-w-lg mx-auto">
                     {groundingStep === 1 && (
                       <div className="text-center space-y-4">
-                        <span className="text-3xl font-bold text-destructive block">5</span>
+                        <span className="text-3xl font-bold text-destructive dark:text-[#f87171] block">5</span>
                         <h5 className="font-bold text-text-main text-base">Things you can SEE in your immediate environment</h5>
                         <p className="text-xs text-text-muted">Acknowledge them silently or list them here to focus your sight.</p>
                         <input 
@@ -514,7 +542,7 @@ export const AnxietyResetMode = ({ onAwardPoints, onNavigate }: AnxietyResetMode
 
                     {groundingStep === 2 && (
                       <div className="text-center space-y-4">
-                        <span className="text-3xl font-bold text-destructive block">4</span>
+                        <span className="text-3xl font-bold text-destructive dark:text-[#f87171] block">4</span>
                         <h5 className="font-bold text-text-main text-base">Things you can physically FEEL</h5>
                         <p className="text-xs text-text-muted">Feet flat on floor, texture of your desk, weight of your body, air temperature.</p>
                         <input 
@@ -533,7 +561,7 @@ export const AnxietyResetMode = ({ onAwardPoints, onNavigate }: AnxietyResetMode
 
                     {groundingStep === 3 && (
                       <div className="text-center space-y-4">
-                        <span className="text-3xl font-bold text-destructive block">3</span>
+                        <span className="text-3xl font-bold text-destructive dark:text-[#f87171] block">3</span>
                         <h5 className="font-bold text-text-main text-base">Things you can HEAR</h5>
                         <p className="text-xs text-text-muted">Traffic, computer fan hum, distant voices, wind outside.</p>
                         <input 
@@ -552,7 +580,7 @@ export const AnxietyResetMode = ({ onAwardPoints, onNavigate }: AnxietyResetMode
 
                     {groundingStep === 4 && (
                       <div className="text-center space-y-4">
-                        <span className="text-3xl font-bold text-destructive block">2</span>
+                        <span className="text-3xl font-bold text-destructive dark:text-[#f87171] block">2</span>
                         <h5 className="font-bold text-text-main text-base">Things you can SMELL</h5>
                         <p className="text-xs text-text-muted">Coffee, clean laundry, woody notes, fresh air.</p>
                         <input 
@@ -571,7 +599,7 @@ export const AnxietyResetMode = ({ onAwardPoints, onNavigate }: AnxietyResetMode
 
                     {groundingStep === 5 && (
                       <div className="text-center space-y-4">
-                        <span className="text-3xl font-bold text-destructive block">1</span>
+                        <span className="text-3xl font-bold text-destructive dark:text-[#f87171] block">1</span>
                         <h5 className="font-bold text-text-main text-base">Thing you can TASTE</h5>
                         <p className="text-xs text-text-muted">Toothpaste, glass of water, faint coffee, mint.</p>
                         <input 
@@ -627,13 +655,14 @@ export const AnxietyResetMode = ({ onAwardPoints, onNavigate }: AnxietyResetMode
                       }}
                       transition={{ duration: 4, ease: "easeInOut" }}
                       className="absolute w-24 h-24 rounded-full border border-destructive/30 flex items-center justify-center"
+                      aria-hidden="true"
                     />
                     <div className="relative z-10 flex flex-col items-center">
-                      <span className="text-xl font-bold text-text-main capitalize">{breathPhase}</span>
-                      <span className="text-3xl font-mono font-bold text-destructive mt-1">{breathCounter}</span>
+                      <span className="text-xl font-bold text-text-main capitalize" aria-hidden="true">{breathPhase}</span>
+                      <span className="text-3xl font-mono font-bold text-destructive dark:text-[#f87171] mt-1" aria-hidden="true">{breathCounter}</span>
                     </div>
                   </div>
-                  <div className="text-xs text-text-muted uppercase tracking-widest font-black">
+                  <div className="text-xs text-text-muted uppercase tracking-widest font-black" role="status" aria-live="polite" aria-atomic="true">
                     {breathPhase === 'inhale' ? 'Breathe in, slow and full' : 
                      breathPhase === 'hold' ? 'Hold gently' : 
                      breathPhase === 'exhale' ? 'Let it all the way out' : 
@@ -676,7 +705,7 @@ export const AnxietyResetMode = ({ onAwardPoints, onNavigate }: AnxietyResetMode
                         animate={{ opacity: 1, scale: 1 }}
                         className="text-center py-8 space-y-4 bg-success/5 border border-success/20 p-6 rounded-2xl"
                       >
-                        <CheckCircle2 className="w-10 h-10 text-success mx-auto" />
+                        <CheckCircle2 className="w-10 h-10 text-success dark:text-[#4ade80] mx-auto" />
                         <h6 className="font-bold text-text-main text-base">Anxious energy dumped into negative space</h6>
                         <p className="text-xs text-text-muted max-w-md mx-auto">
                           It is off your shoulders. We do not have to carry or fix any of this right now. You have done enough.
@@ -703,7 +732,7 @@ export const AnxietyResetMode = ({ onAwardPoints, onNavigate }: AnxietyResetMode
                     {fearsList.map((f, idx) => (
                       <div key={idx} className="grid grid-cols-1 sm:grid-cols-2 gap-3 border-b border-white/[0.03] pb-3">
                         <div className="space-y-1">
-                          <label className="text-[10px] text-destructive font-bold uppercase tracking-wider">The Fear Loop</label>
+                          <label className="text-[10px] text-destructive dark:text-[#f87171] font-bold uppercase tracking-wider">The Fear Loop</label>
                           <input 
                             type="text"
                             value={f.fear}
@@ -717,7 +746,7 @@ export const AnxietyResetMode = ({ onAwardPoints, onNavigate }: AnxietyResetMode
                           />
                         </div>
                         <div className="space-y-1">
-                          <label className="text-[10px] text-success font-bold uppercase tracking-wider">The Factual Reality</label>
+                          <label className="text-[10px] text-success dark:text-[#4ade80] font-bold uppercase tracking-wider">The Factual Reality</label>
                           <input 
                             type="text"
                             value={f.fact}
@@ -822,28 +851,28 @@ export const AnxietyResetMode = ({ onAwardPoints, onNavigate }: AnxietyResetMode
                   <div className="bg-surface p-6 rounded-2xl border border-white/[0.03] space-y-4">
                     {tensionGroup === 0 && (
                       <div className="text-center space-y-2">
-                        <span className="text-[10px] uppercase font-bold text-destructive">Muscle Group 1 of 4</span>
+                        <span className="text-[10px] uppercase font-bold text-destructive dark:text-[#f87171]">Muscle Group 1 of 4</span>
                         <h6 className="font-bold text-text-main text-sm">Squeeze your fists & arms</h6>
                         <p className="text-xs text-text-muted">Tighten your fists, squeeze your biceps, clamp your forearms. Hold for 5 seconds... Now release completely.</p>
                       </div>
                     )}
                     {tensionGroup === 1 && (
                       <div className="text-center space-y-2">
-                        <span className="text-[10px] uppercase font-bold text-destructive">Muscle Group 2 of 4</span>
+                        <span className="text-[10px] uppercase font-bold text-destructive dark:text-[#f87171]">Muscle Group 2 of 4</span>
                         <h6 className="font-bold text-text-main text-sm">Shoulders & Neck</h6>
                         <p className="text-xs text-text-muted">Pull your shoulders all the way up to your ears. Clamp down. Hold... Now drop them completely. Let them sink.</p>
                       </div>
                     )}
                     {tensionGroup === 2 && (
                       <div className="text-center space-y-2">
-                        <span className="text-[10px] uppercase font-bold text-destructive">Muscle Group 3 of 4</span>
+                        <span className="text-[10px] uppercase font-bold text-destructive dark:text-[#f87171]">Muscle Group 3 of 4</span>
                         <h6 className="font-bold text-text-main text-sm">Jaw & Face</h6>
                         <p className="text-xs text-text-muted">Clench your jaw, scrunch your nose, squeeze your eyes shut. Hold tight... Now release, letting your mouth drop slightly open.</p>
                       </div>
                     )}
                     {tensionGroup === 3 && (
                       <div className="text-center space-y-2">
-                        <span className="text-[10px] uppercase font-bold text-destructive">Muscle Group 4 of 4</span>
+                        <span className="text-[10px] uppercase font-bold text-destructive dark:text-[#f87171]">Muscle Group 4 of 4</span>
                         <h6 className="font-bold text-text-main text-sm">Feet & Legs</h6>
                         <p className="text-xs text-text-muted">Curl your toes, tighten your calves, squeeze your thighs. Press flat down. Hold... Release and let everything dissolve into the floor.</p>
                       </div>
@@ -906,7 +935,7 @@ export const AnxietyResetMode = ({ onAwardPoints, onNavigate }: AnxietyResetMode
             className="space-y-6 text-center py-4"
           >
             <div className="text-left">
-              <span className="text-[10px] font-black uppercase tracking-[0.2em] text-destructive">Step 4 of 5</span>
+              <span className="text-[10px] font-black uppercase tracking-[0.2em] text-destructive dark:text-[#f87171]">Step 4 of 5</span>
               <h4 className="font-display text-xl font-medium text-text-main mt-1">Rate your intensity now</h4>
               <p className="text-xs text-text-muted mt-1">Check back in. Has your heart rate or mental spinning shifted at all?</p>
             </div>
@@ -914,7 +943,7 @@ export const AnxietyResetMode = ({ onAwardPoints, onNavigate }: AnxietyResetMode
             <div className="py-6">
               <span className="text-6xl font-light text-text-main">{intensityAfter}</span>
               <span className="text-text-muted text-lg">/10</span>
-              <div className="mt-2 text-xs uppercase tracking-widest font-bold text-success">
+              <div className="mt-2 text-xs uppercase tracking-widest font-bold text-success dark:text-[#4ade80]">
                 {intensityAfter <= 3 ? 'Stabilized' : intensityAfter <= 5 ? 'Manageable Tension' : 'Heightened (Consider repeat cycle)'}
               </div>
             </div>
@@ -926,6 +955,8 @@ export const AnxietyResetMode = ({ onAwardPoints, onNavigate }: AnxietyResetMode
                 max="10" 
                 value={intensityAfter}
                 onChange={(e) => setIntensityAfter(Number(e.target.value))}
+                aria-label="Distress level now, 1 to 10"
+                aria-valuetext={`${intensityAfter} out of 10, ${intensityAfter <= 3 ? 'Stabilized' : intensityAfter <= 5 ? 'Manageable Tension' : 'Heightened, consider repeat cycle'}`}
                 className="w-full accent-success cursor-pointer h-2 bg-border rounded-lg appearance-none"
               />
               <div className="flex justify-between text-[10px] text-text-muted font-bold uppercase mt-2">
@@ -966,17 +997,17 @@ export const AnxietyResetMode = ({ onAwardPoints, onNavigate }: AnxietyResetMode
             className="space-y-6"
           >
             <div className="flex items-center gap-3">
-              <div className="w-12 h-12 bg-success/10 border border-success/20 text-success rounded-2xl flex items-center justify-center">
+              <div className="w-12 h-12 bg-success/10 border border-success/20 text-success dark:text-[#4ade80] rounded-2xl flex items-center justify-center">
                 <Sparkles className="w-6 h-6" />
               </div>
               <div>
                 <h3 className="font-display text-xl font-semibold text-text-main tracking-tight">De-escalation Stabilized</h3>
-                <span className="text-xs uppercase tracking-widest text-success font-bold">Secure baseline restored (+50 points earned)</span>
+                <span className="text-xs uppercase tracking-widest text-success dark:text-[#4ade80] font-bold">Secure baseline restored (+50 points earned)</span>
               </div>
             </div>
 
             <div className="p-5 bg-surface rounded-2xl border border-white/[0.04] space-y-3">
-              <strong className="text-xs uppercase tracking-widest text-destructive font-bold block">Nova's Strategic Aftercare Action</strong>
+              <strong className="text-xs uppercase tracking-widest text-destructive dark:text-[#f87171] font-bold block">Nova's Strategic Aftercare Action</strong>
               <p className="text-sm text-text-main leading-relaxed italic">
                 "Excellent. You reduced your intensity from {intensityBefore}/10 to {intensityAfter}/10. 
                 That is measurable autonomic work. Your thoughts did not define reality; you intervened and patched the leak."

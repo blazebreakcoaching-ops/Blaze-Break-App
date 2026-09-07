@@ -52,9 +52,10 @@ export const ArchetypeBlend = () => {
         </div>
         <button
           onClick={() => { setLoading(true); fetchBlend(); }}
+          aria-label={loading ? "Refreshing your blend" : "Refresh your blend"}
           className="p-2 rounded-full text-text-muted hover:text-primary hover:bg-surface transition-colors"
         >
-          <RefreshCw className={cn("w-4 h-4", loading && "animate-spin")} />
+          <RefreshCw className={cn("w-4 h-4", loading && "animate-spin")} aria-hidden="true" />
         </button>
       </div>
 
@@ -69,7 +70,7 @@ export const ArchetypeBlend = () => {
         </p>
       ) : (
         <>
-          <div className="space-y-2.5">
+          <div className="space-y-2.5" role="status" aria-live="polite" aria-atomic="true">
             {(data.blend || []).map((b, i) => (
               <motion.div
                 key={b.profile}
@@ -80,7 +81,7 @@ export const ArchetypeBlend = () => {
               >
                 <span className={cn(
                   "text-xs font-bold w-10 text-right shrink-0",
-                  i === 0 ? "text-primary" : "text-text-muted"
+                  i === 0 ? "text-[#9a3412] dark:text-primary" : "text-text-muted"
                 )}>
                   {b.percentage}%
                 </span>

@@ -1,8 +1,18 @@
 import { motion } from 'motion/react';
-import { Trophy, Zap, Star, Award, Sparkles } from 'lucide-react';
+import { Trophy, Zap, Star, Award, Sparkles, Check, Flag, Waves, Target, Shield, ShieldAlert, ShieldCheck, Moon, Battery, type LucideIcon } from 'lucide-react';
 import { UserStats, BADGES, BurnoutFingerprint } from '../types';
-import * as LucideIcons from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, BarChart, Bar } from 'recharts';
+
+// Badge icons are referenced by string name in BADGES (types.ts) and
+// resolved through this explicit map. This used to be `import * as
+// LucideIcons from 'lucide-react'` with a dynamic LucideIcons[name] lookup,
+// which defeated tree-shaking and pulled the ENTIRE ~1500-icon library into
+// the bundle - roughly 600kB, and the single biggest reason the home screen
+// was heavy. Only the icons actually used by badges are imported now. A new
+// badge icon must be added here as well, or it falls back to the Star icon.
+const BADGE_ICONS: Record<string, LucideIcon> = {
+  Award, Flag, Waves, Target, Shield, ShieldAlert, ShieldCheck, Moon, Zap, Battery,
+};
 
 interface GamificationDisplayProps {
   stats: UserStats;
@@ -13,8 +23,8 @@ interface GamificationDisplayProps {
 
 export const GamificationDisplay = ({ stats, fingerprint, shipStage = 'Safety', pulseHistory = [] }: GamificationDisplayProps) => {
   const Icon = (name: string) => {
-    const LucideIcon = (LucideIcons as any)[name];
-    return LucideIcon ? <LucideIcon className="w-4 h-4" /> : <Star className="w-4 h-4" />;
+    const BadgeIcon = BADGE_ICONS[name];
+    return BadgeIcon ? <BadgeIcon className="w-4 h-4" /> : <Star className="w-4 h-4" />;
   };
 
   const lastSeven = (pulseHistory || []).slice(-7);
@@ -64,7 +74,7 @@ export const GamificationDisplay = ({ stats, fingerprint, shipStage = 'Safety', 
             </div>
             <div>
               <h3 className="text-sm font-display font-bold text-text-main tracking-tight">Nova's Weekly Summary</h3>
-              <p className="text-[11px] uppercase tracking-[0.2em] font-black text-primary">Biometric & Behavioral Review</p>
+              <p className="text-[11px] uppercase tracking-[0.2em] font-black text-[#9a3412] dark:text-primary">Biometric & Behavioral Review</p>
             </div>
           </div>
           <div className="tag text-[11px] bg-white/5 border border-white/10 text-text-muted shrink-0 w-fit">
@@ -93,7 +103,7 @@ export const GamificationDisplay = ({ stats, fingerprint, shipStage = 'Safety', 
         <div className="bg-white dark:bg-card/40 border border-border/80 rounded-2xl p-5 space-y-3">
           <div className="flex justify-between items-center">
             <div className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center font-black text-sm">
+              <div className="w-8 h-8 rounded-lg bg-primary/10 text-[#9a3412] dark:text-primary flex items-center justify-center font-black text-sm">
                 Lvl {Math.floor(stats.points / 500) + 1}
               </div>
               <div>
@@ -150,9 +160,9 @@ export const GamificationDisplay = ({ stats, fingerprint, shipStage = 'Safety', 
                   <div className="flex items-center justify-between mb-2">
                     <span className={`text-[10px] uppercase tracking-widest font-black ${
                       isActive 
-                        ? 'text-primary' 
+                        ? 'text-[#9a3412] dark:text-primary' 
                         : isCompleted 
-                          ? 'text-success' 
+                          ? 'text-success dark:text-[#4ade80]' 
                           : 'text-text-muted'
                     }`}>
                       {stageItem.label}
@@ -165,7 +175,7 @@ export const GamificationDisplay = ({ stats, fingerprint, shipStage = 'Safety', 
                           : 'bg-surface dark:bg-surface text-text-muted'
                     }`}>
                       {isCompleted ? (
-                        <LucideIcons.Check className="w-3 h-3 stroke-[3px]" />
+                        <Check className="w-3 h-3 stroke-[3px]" />
                       ) : (
                         Icon(stageItem.icon)
                       )}
@@ -190,7 +200,7 @@ export const GamificationDisplay = ({ stats, fingerprint, shipStage = 'Safety', 
         {/* Points History Chart */}
         <div className="card border-border dark:border-border bg-surface dark:bg-card/50 p-6 flex flex-col justify-between min-h-[340px]">
           <div className="flex items-center gap-3 mb-4">
-            <div className="w-10 h-10 bg-warning/10 text-warning rounded-xl flex items-center justify-center">
+            <div className="w-10 h-10 bg-warning/10 text-[#9a3412] dark:text-warning rounded-xl flex items-center justify-center">
               <Trophy className="w-5 h-5" />
             </div>
             <div className="text-left">
@@ -262,7 +272,7 @@ export const GamificationDisplay = ({ stats, fingerprint, shipStage = 'Safety', 
       <div className="card">
         <div className="flex items-center justify-between mb-6">
           <h3 className="text-sm font-semibold text-text-muted uppercase tracking-wider">Milestones & Badges</h3>
-          <span className="text-xs font-bold text-primary uppercase tracking-widest bg-primary/5 px-2 py-0.5 rounded">
+          <span className="text-xs font-bold text-[#9a3412] dark:text-primary uppercase tracking-widest bg-primary/5 px-2 py-0.5 rounded">
             {stats.unlockedBadges.length} / {BADGES.length} Unlocked
           </span>
         </div>
@@ -326,8 +336,8 @@ export const GamificationDisplay = ({ stats, fingerprint, shipStage = 'Safety', 
                     animate={{ scale: 1 }}
                     className="absolute -top-1 -right-1"
                   >
-                    <div className="bg-teal-500 text-text-main p-1 rounded-full shadow-lg">
-                      <LucideIcons.Check className="w-2 h-2 stroke-[4px]" />
+                    <div className="bg-teal-500 text-[#1c1917] p-1 rounded-full shadow-lg">
+                      <Check className="w-2 h-2 stroke-[4px]" />
                     </div>
                   </motion.div>
                 )}

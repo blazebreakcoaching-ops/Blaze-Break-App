@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { Wind, Brain, Moon, Waves, Play, Pause, Activity, RefreshCw, Eye, Ear, UserCircle, MapPin, Minimize2, Clock, Volume2, VolumeX, Music, CheckCircle2 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { BurnoutFingerprint } from '../types';
+import { useFocusTrap } from '../lib/useFocusTrap';
 import { secureApiFetch } from '../lib/secure-api';
 import { logJourney } from '../lib/nova-brain';
 import { auth } from '../lib/firebase';
@@ -53,6 +54,14 @@ export const NervousSystemReset = ({ fingerprint, onAwardPoints }: NervousSystem
   const [isPlaying, setIsPlaying] = useState(false);
   const [phase, setPhase] = useState<'inhale' | 'hold1' | 'exhale' | 'hold2'>('inhale');
   const [showResetConfirm, setShowResetConfirm] = useState(false);
+  const resetDialogRef = useFocusTrap(showResetConfirm);
+
+  useEffect(() => {
+    if (!showResetConfirm) return;
+    const onKeyDown = (e: KeyboardEvent) => { if (e.key === 'Escape') setShowResetConfirm(false); };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [showResetConfirm]);
 
   // Audio Console States
   const [soundscape, setSoundscape] = useState<'none' | 'solfeggio' | 'wind' | 'waves' | 'cosmic'>('none');
@@ -242,11 +251,14 @@ export const NervousSystemReset = ({ fingerprint, onAwardPoints }: NervousSystem
 
   // Stop current active background loops
   const stopSoundscape = () => {
+    // Non-fatal - the Web Audio API throws if .stop() is called on a
+    // node that's already stopped, which can legitimately happen here
+    // depending on playback state; nothing further needs to happen if so.
     audioEngineRef.current.oscillators.forEach(osc => {
-      try { osc.stop(); } catch (e) {}
+      try { osc.stop(); } catch (e) { /* already stopped */ }
     });
     audioEngineRef.current.noiseSources.forEach(src => {
-      try { src.stop(); } catch (e) {}
+      try { src.stop(); } catch (e) { /* already stopped */ }
     });
     audioEngineRef.current.oscillators = [];
     audioEngineRef.current.noiseSources = [];
@@ -559,9 +571,11 @@ export const NervousSystemReset = ({ fingerprint, onAwardPoints }: NervousSystem
   const stopPacerSynth = () => {
     if (pacerNodesRef.current) {
       const p = pacerNodesRef.current;
-      try { p.osc.stop(); } catch (e) {}
-      try { p.oscChime.stop(); } catch (e) {}
-      try { p.windSrc.stop(); } catch (e) {}
+      // Non-fatal - same reasoning as stopSoundscape above: .stop() on an
+      // already-stopped node throws, and there's nothing further to do.
+      try { p.osc.stop(); } catch (e) { /* already stopped */ }
+      try { p.oscChime.stop(); } catch (e) { /* already stopped */ }
+      try { p.windSrc.stop(); } catch (e) { /* already stopped */ }
       pacerNodesRef.current = null;
     }
   };
@@ -849,13 +863,18 @@ export const NervousSystemReset = ({ fingerprint, onAwardPoints }: NervousSystem
         {showResetConfirm && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-surface/60 backdrop-blur-sm">
             <motion.div
+              ref={resetDialogRef as any}
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="reset-confirm-title"
+              tabIndex={-1}
               className="bg-white dark:bg-card border border-border rounded-xl p-6 max-w-md w-full shadow-lg space-y-6"
             >
               <div className="space-y-2">
-                <h4 className="text-xl font-display font-medium text-text-main">Reset Studio State?</h4>
+                <h4 id="reset-confirm-title" className="text-xl font-display font-medium text-text-main">Reset Studio State?</h4>
                 <p className="text-sm text-text-muted leading-relaxed">
                   Are you sure you want to clear your active somatic diagnostic choices, ongoing breathwork routines, and grounding toolkit selections? This action will reset your studio work-in-progress state.
                 </p>
@@ -896,7 +915,7 @@ export const NervousSystemReset = ({ fingerprint, onAwardPoints }: NervousSystem
           {(selectedNeed || activeMode || activeGrounding || isPlaying) && (
             <button
               onClick={() => setShowResetConfirm(true)}
-              className="px-4 py-2 text-xs font-black uppercase tracking-widest text-destructive hover:bg-destructive/10 border border-destructive/30 rounded-xl transition-all flex items-center gap-2 shrink-0 cursor-pointer"
+              className="px-4 py-2 text-xs font-black uppercase tracking-widest text-destructive dark:text-[#f87171] hover:bg-destructive/10 border border-destructive/30 rounded-xl transition-all flex items-center gap-2 shrink-0 cursor-pointer"
             >
               <RefreshCw className="w-3.5 h-3.5" /> Reset Studio
             </button>
@@ -907,7 +926,7 @@ export const NervousSystemReset = ({ fingerprint, onAwardPoints }: NervousSystem
       {/* Acute Overwhelm / Panic shortcut */}
       <div className="mt-8 p-6 rounded-xl border border-destructive/20 bg-destructive/5 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 relative overflow-hidden">
         <div className="space-y-1 relative z-10 text-left">
-          <div className="flex items-center gap-2 text-destructive font-medium uppercase tracking-wider text-[10px]">
+          <div className="flex items-center gap-2 text-destructive dark:text-[#f87171] font-medium uppercase tracking-wider text-[10px]">
             <span className="w-2 h-2 rounded-full bg-destructive animate-pulse" />
             Feeling Overwhelmed Right Now?
           </div>
@@ -1001,6 +1020,7 @@ export const NervousSystemReset = ({ fingerprint, onAwardPoints }: NervousSystem
                     setIsMuted(!isMuted);
                     ensureAudioContext();
                   }}
+                  aria-label={isMuted ? "Unmute ambient sound" : "Mute ambient sound"}
                   className="text-text-muted hover:text-text-main shrink-0"
                 >
                   {isMuted ? <VolumeX className="w-4 h-4 text-destructive pointer-events-auto" /> : <Volume2 className="w-4 h-4 text-primary pointer-events-auto" />}
@@ -1016,6 +1036,8 @@ export const NervousSystemReset = ({ fingerprint, onAwardPoints }: NervousSystem
                     if (isMuted) setIsMuted(false);
                     ensureAudioContext();
                   }}
+                  aria-label="Ambient volume"
+                  aria-valuetext={`${Math.round(ambientVol * 100)} percent`}
                   className="w-full accent-primary bg-border dark:bg-surface h-1.5 rounded-lg appearance-none cursor-pointer"
                 />
               </div>
@@ -1024,7 +1046,7 @@ export const NervousSystemReset = ({ fingerprint, onAwardPoints }: NervousSystem
             <div className="flex flex-col gap-1.5 w-36">
               <div className="flex justify-between items-center text-xs uppercase tracking-wider font-black text-text-muted">
                 <span>Pacer Sound</span>
-                <span className="text-[11px] text-primary font-bold">{pacerSoundEnabled ? "Active" : "Disabled"}</span>
+                <span className="text-[11px] text-[#9a3412] dark:text-primary font-bold">{pacerSoundEnabled ? "Active" : "Disabled"}</span>
               </div>
               <div className="flex items-center gap-3">
                 <label className="relative inline-flex items-center cursor-pointer select-none">
@@ -1036,6 +1058,7 @@ export const NervousSystemReset = ({ fingerprint, onAwardPoints }: NervousSystem
                       ensureAudioContext();
                       playZenChime();
                     }}
+                    aria-label="Enable pacer sound"
                     className="sr-only peer"
                   />
                   <div className="w-8 h-4 bg-surface dark:bg-surface peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-border after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-primary" />
@@ -1051,6 +1074,8 @@ export const NervousSystemReset = ({ fingerprint, onAwardPoints }: NervousSystem
                     if (!pacerSoundEnabled) setPacerSoundEnabled(true);
                     ensureAudioContext();
                   }}
+                  aria-label="Pacer sound volume"
+                  aria-valuetext={`${Math.round(pacerVol * 100)} percent`}
                   className="w-full accent-primary bg-border dark:bg-surface h-1.5 rounded-lg appearance-none cursor-pointer"
                 />
               </div>
@@ -1082,6 +1107,7 @@ export const NervousSystemReset = ({ fingerprint, onAwardPoints }: NervousSystem
                 <button
                   key={need}
                   onClick={() => handleNeedSelect(need)}
+                  aria-pressed={selectedNeed === need}
                   className={cn(
                     "px-6 py-3 rounded-full text-sm font-medium uppercase tracking-widest transition-all",
                     selectedNeed === need
@@ -1110,6 +1136,7 @@ export const NervousSystemReset = ({ fingerprint, onAwardPoints }: NervousSystem
                   setIsPlaying(false);
                   setSelectedNeed(null);
                 }}
+                aria-pressed={isSelected}
                 className={cn(
                   "w-full text-left p-4 rounded-xl border transition-all flex items-center gap-4",
                   isSelected
@@ -1161,6 +1188,9 @@ export const NervousSystemReset = ({ fingerprint, onAwardPoints }: NervousSystem
                       initial={{ opacity: 0, y: 10 }}
                       animate={{ opacity: 1, y: 0 }}
                       exit={{ opacity: 0, y: -10 }}
+                      role="status"
+                      aria-live="polite"
+                      aria-atomic="true"
                       className="text-text-main font-black uppercase tracking-widest text-lg"
                     >
                       {phase.replace('1', '').replace('2', '')}
@@ -1200,7 +1230,7 @@ export const NervousSystemReset = ({ fingerprint, onAwardPoints }: NervousSystem
                   </>
                 ) : (
                   <>
-                    <Play className="w-5 h-5 text-primary" /> Begin Reset Sequence
+                    <Play className="w-5 h-5" /> Begin Reset Sequence
                   </>
                 )}
               </button>
@@ -1290,6 +1320,15 @@ export const NervousSystemReset = ({ fingerprint, onAwardPoints }: NervousSystem
                       <motion.div
                         key={idx}
                         onClick={() => handleToggleStep(idx)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            handleToggleStep(idx);
+                          }
+                        }}
+                        role="checkbox"
+                        aria-checked={isCompleted}
+                        tabIndex={0}
                         initial={{ opacity: 0, x: -20 }}
                         animate={{ opacity: 1, x: 0 }}
                         transition={{ delay: idx * 0.12 }}
@@ -1304,7 +1343,7 @@ export const NervousSystemReset = ({ fingerprint, onAwardPoints }: NervousSystem
                           "w-8 h-8 rounded-full font-black flex items-center justify-center shrink-0 transition-colors",
                           isCompleted
                             ? "bg-success text-white"
-                            : "bg-primary/10 text-primary"
+                            : "bg-primary/10 text-[#9a3412] dark:text-primary"
                         )}>
                           {isCompleted ? <CheckCircle2 className="w-5 h-5 text-text-main" /> : idx + 1}
                         </div>

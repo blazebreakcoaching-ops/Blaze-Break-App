@@ -23,7 +23,11 @@ try {
   const firebaseConfigFile = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'firebase-applet-config.json'), 'utf8'));
   firebaseConfigProject = firebaseConfigFile.projectId;
   firebaseConfigDatabaseId = firebaseConfigFile.firestoreDatabaseId;
-} catch(e) {}
+} catch(e) {
+  // Non-fatal - falls through to whatever GOOGLE_CLOUD_PROJECT/
+  // GCLOUD_PROJECT are already set in the environment if the config
+  // file is missing or malformed.
+}
 
 if (!getApps().length) {
   initializeApp({

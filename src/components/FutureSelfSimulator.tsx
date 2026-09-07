@@ -30,9 +30,11 @@ export const FutureSelfSimulator = ({ fingerprint }: FutureSelfSimulatorProps) =
   };
 
   const getDayRiskStatus = (baseDayOffset: number, mitigatingFactorsCount: number) => {
-    // A simple mock curve: baseline keeps going up (worse) over 7 days.
-    // Mitigations pull it down.
-    
+    // A simple, transparent heuristic (NOT a trained model or a real
+    // forecast): risk drifts upward across the week from the user's own
+    // inputs, and each mitigation the user applies pulls it back down. The
+    // UI is careful to present this as a "what-if sketch", never a prediction.
+
     // baseline risk from 0 to 10
     const baseRisk = 3 + (inputs.meetings > 20 ? 2 : 0) + (inputs.sleep === 1 ? 2 : 0) + (inputs.pressure === 3 ? 2 : 0);
     // risk increases each day
@@ -77,7 +79,7 @@ export const FutureSelfSimulator = ({ fingerprint }: FutureSelfSimulatorProps) =
           Nova Future-Self Simulator
         </h2>
         <p className="text-text-muted text-lg max-w-2xl font-medium leading-relaxed">
-          See where your week is heading before burnout gets there first. Nova forecasts your systemic load and simulates alternative timelines.
+          A what-if sketch of your week from the numbers you enter below — a simple model to think with, not a prediction. Toggle changes like protecting lunch or moving a meeting and watch how the shape shifts.
         </p>
       </div>
 
@@ -105,7 +107,7 @@ export const FutureSelfSimulator = ({ fingerprint }: FutureSelfSimulatorProps) =
                         <label>Expected Meetings</label>
                         <span>{inputs.meetings}</span>
                      </div>
-                     <input type="range" min="0" max="40" value={inputs.meetings} onChange={(e) => setInputs({...inputs, meetings: parseInt(e.target.value)})} className="w-full accent-primary" />
+                     <input type="range" min="0" max="40" value={inputs.meetings} onChange={(e) => setInputs({...inputs, meetings: parseInt(e.target.value)})} aria-label="Expected Meetings" className="w-full accent-primary" />
                   </div>
                   
                   <div className="space-y-2">
@@ -113,7 +115,7 @@ export const FutureSelfSimulator = ({ fingerprint }: FutureSelfSimulatorProps) =
                         <label>Current Energy Battery</label>
                         <span>{inputs.energy}%</span>
                      </div>
-                     <input type="range" min="1" max="100" value={inputs.energy} onChange={(e) => setInputs({...inputs, energy: parseInt(e.target.value)})} className="w-full accent-primary" />
+                     <input type="range" min="1" max="100" value={inputs.energy} onChange={(e) => setInputs({...inputs, energy: parseInt(e.target.value)})} aria-label="Current Energy Battery" aria-valuetext={`${inputs.energy}%`} className="w-full accent-primary" />
                   </div>
 
                   <div className="space-y-2">
@@ -121,7 +123,7 @@ export const FutureSelfSimulator = ({ fingerprint }: FutureSelfSimulatorProps) =
                         <label>Daily Recovery Time Available</label>
                         <span>{inputs.recoveryTime} min</span>
                      </div>
-                     <input type="range" min="0" max="120" step="5" value={inputs.recoveryTime} onChange={(e) => setInputs({...inputs, recoveryTime: parseInt(e.target.value)})} className="w-full accent-primary" />
+                     <input type="range" min="0" max="120" step="5" value={inputs.recoveryTime} onChange={(e) => setInputs({...inputs, recoveryTime: parseInt(e.target.value)})} aria-label="Daily Recovery Time Available" aria-valuetext={`${inputs.recoveryTime} minutes`} className="w-full accent-primary" />
                   </div>
                 </div>
               </div>
@@ -140,6 +142,7 @@ export const FutureSelfSimulator = ({ fingerprint }: FutureSelfSimulatorProps) =
                          <button 
                            key={label}
                            onClick={() => setInputs({...inputs, sleep: i + 1})}
+                           aria-pressed={inputs.sleep === i + 1}
                            className={cn("py-2 text-xs font-bold rounded-lg border transition-all", inputs.sleep === i + 1 ? "bg-primary border-primary text-primary-foreground" : "border-border text-text-muted hover:border-primary/30")}
                          >
                            {label}
@@ -155,6 +158,7 @@ export const FutureSelfSimulator = ({ fingerprint }: FutureSelfSimulatorProps) =
                          <button 
                            key={label}
                            onClick={() => setInputs({...inputs, pressure: i + 1})}
+                           aria-pressed={inputs.pressure === i + 1}
                            className={cn("py-2 text-xs font-bold rounded-lg border transition-all", inputs.pressure === i + 1 ? "bg-warning border-warning text-warning-foreground" : "border-border text-text-muted hover:border-warning/30")}
                          >
                            {label}
@@ -170,6 +174,7 @@ export const FutureSelfSimulator = ({ fingerprint }: FutureSelfSimulatorProps) =
                          <button 
                            key={label}
                            onClick={() => setInputs({...inputs, emotional: i + 1})}
+                           aria-pressed={inputs.emotional === i + 1}
                            className={cn("py-2 text-xs font-bold rounded-lg border transition-all", inputs.emotional === i + 1 ? "bg-destructive border-destructive text-destructive-foreground" : "border-border text-text-muted hover:border-destructive/30")}
                          >
                            {label}
@@ -224,13 +229,13 @@ export const FutureSelfSimulator = ({ fingerprint }: FutureSelfSimulatorProps) =
                    
                    <p className="text-xl leading-relaxed text-text-muted font-medium italic">
                      {isMitigated 
-                       ? `"With these changes, your overload risk drops from critical red to manageable amber. Structural failure averted."`
-                       : `"If you continue this week exactly as planned, your overload risk rises to critical by Thursday."`
+                       ? `"In this sketch, those changes pull the week from red toward a more manageable amber. Small structural moves add up."`
+                       : `"In this sketch, a week like the one you described tends to build toward overload by mid-week. It's a model to think with, not a certainty."`
                      }
                    </p>
 
                    <div className="flex items-center gap-4 text-sm font-bold text-text-muted p-4 bg-black/20 rounded-xl">
-                      <Shield className="w-5 h-5 text-warning" />
+                      <Shield className="w-5 h-5 text-[#9a3412] dark:text-warning" />
                       <span>{isMitigated 
                         ? 'Root causes addressed: you closed the gap and set a real boundary.'
                         : 'Root causes building: Too many meetings, low baseline energy, insufficient recovery windows.'}
@@ -241,7 +246,7 @@ export const FutureSelfSimulator = ({ fingerprint }: FutureSelfSimulatorProps) =
 
              {/* 7-Day Forecast */}
              <div className="space-y-4">
-               <h4 className="text-sm font-black uppercase tracking-widest text-text-main">7-Day Burnout Forecast</h4>
+               <h4 className="text-sm font-black uppercase tracking-widest text-text-main">7-Day What-If Sketch</h4>
                <div className="grid grid-cols-2 lg:grid-cols-7 gap-3">
                  {days.map((day, i) => {
                    const risk = getDayRiskStatus(i, appliedScenarios.length);
@@ -256,9 +261,9 @@ export const FutureSelfSimulator = ({ fingerprint }: FutureSelfSimulatorProps) =
                         <div className="space-y-1">
                           <span className={cn(
                             "text-xs font-black uppercase tracking-widest",
-                            risk === 'red' ? "text-rose-600 dark:text-destructive" :
-                            risk === 'amber' ? "text-warning dark:text-warning" :
-                            "text-success dark:text-success"
+                            risk === 'red' ? "text-rose-600 dark:text-[#f87171]" :
+                            risk === 'amber' ? "text-[#9a3412] dark:text-warning" :
+                            "text-success dark:text-[#4ade80]"
                           )}>
                             {risk === 'red' ? 'Overload' : risk === 'amber' ? 'Pressure' : 'Manageable'}
                           </span>
@@ -279,10 +284,10 @@ export const FutureSelfSimulator = ({ fingerprint }: FutureSelfSimulatorProps) =
                <div className="flex items-center justify-between">
                  <div>
                    <h4 className="text-xl font-bold font-display text-text-main">Scenario Testing</h4>
-                   <p className="text-sm text-text-muted mt-1">Tap actions to apply proactive mitigation and watch the forecast update.</p>
+                   <p className="text-sm text-text-muted mt-1">Tap actions to apply changes and watch the sketch update.</p>
                  </div>
                  {appliedScenarios.length > 0 && (
-                   <button onClick={() => setAppliedScenarios([])} className="text-xs font-bold text-text-muted hover:text-primary transition-colors flex items-center gap-2">
+                   <button onClick={() => setAppliedScenarios([])} className="text-xs font-bold text-text-muted hover:text-[#9a3412] dark:hover:text-primary transition-colors flex items-center gap-2">
                      <RefreshCw className="w-3 h-3" /> Reset Scenarios
                    </button>
                  )}
@@ -295,6 +300,7 @@ export const FutureSelfSimulator = ({ fingerprint }: FutureSelfSimulatorProps) =
                      <button
                        key={scenario.id}
                        onClick={() => handleToggleScenario(scenario.id)}
+                       aria-pressed={isActive}
                        className={cn(
                          "group p-4 rounded-xl border text-left transition-all duration-300 flex items-start gap-4",
                          isActive 
@@ -302,12 +308,12 @@ export const FutureSelfSimulator = ({ fingerprint }: FutureSelfSimulatorProps) =
                            : "bg-white dark:bg-surface border-border hover:border-primary/40"
                        )}
                      >
-                       <div className={cn("w-10 h-10 rounded-full flex items-center justify-center shrink-0 transition-colors", isActive ? "bg-white/20" : "bg-surface dark:bg-surface text-primary")}>
+                       <div className={cn("w-10 h-10 rounded-full flex items-center justify-center shrink-0 transition-colors", isActive ? "bg-white/20 text-primary-foreground" : "bg-surface dark:bg-surface text-primary")}>
                          <scenario.icon className="w-5 h-5" />
                        </div>
                        <div>
                          <h5 className={cn("text-sm font-bold", isActive ? "text-primary-foreground" : "text-text-main")}>{scenario.label}</h5>
-                         <p className={cn("text-xs mt-1 font-medium", isActive ? "text-primary-foreground/80" : "text-text-muted")}>{scenario.effect}</p>
+                         <p className={cn("text-xs mt-1 font-medium", isActive ? "text-primary-foreground" : "text-text-muted")}>{scenario.effect}</p>
                        </div>
                        {isActive && <div className="ml-auto flex items-center justify-center w-6 h-6 bg-white rounded-full text-primary"><X className="w-4 h-4" /></div>}
                      </button>
@@ -325,32 +331,32 @@ export const FutureSelfSimulator = ({ fingerprint }: FutureSelfSimulatorProps) =
                    className="space-y-8 pt-8 overflow-hidden"
                  >
                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                      <div className="card p-8 border-success/20 bg-success/10 dark:bg-success-foreground/10 relative overflow-hidden">
-                        <h4 className="text-sm font-black uppercase tracking-widest text-success dark:text-success mb-6 flex items-center gap-2">
+                      <div className="card p-8 border-success/20 bg-success/10 dark:bg-success/10 relative overflow-hidden">
+                        <h4 className="text-sm font-black uppercase tracking-widest text-success dark:text-[#4ade80] mb-6 flex items-center gap-2">
                           <Activity className="w-5 h-5" /> Protected Week Plan
                         </h4>
                         <ul className="space-y-4">
                           <li className="flex gap-3">
-                            <span className="text-success font-bold w-16 shrink-0 uppercase tracking-wider text-xs mt-1">Keep</span>
+                            <span className="text-success dark:text-[#4ade80] font-bold w-16 shrink-0 uppercase tracking-wider text-xs mt-1">Keep</span>
                             <span className="text-sm text-text-main font-medium">Your non-negotiable strategic blocks.</span>
                           </li>
                           <li className="flex gap-3">
-                            <span className="text-success font-bold w-16 shrink-0 uppercase tracking-wider text-xs mt-1">Move</span>
+                            <span className="text-success dark:text-[#4ade80] font-bold w-16 shrink-0 uppercase tracking-wider text-xs mt-1">Move</span>
                             <span className="text-sm text-text-main font-medium">One status update meeting to async.</span>
                           </li>
                           <li className="flex gap-3">
-                            <span className="text-success font-bold w-16 shrink-0 uppercase tracking-wider text-xs mt-1">Recover</span>
+                            <span className="text-success dark:text-[#4ade80] font-bold w-16 shrink-0 uppercase tracking-wider text-xs mt-1">Recover</span>
                             <span className="text-sm text-text-main font-medium">Add 30m hard-stop decompression cycle at 5:30 PM.</span>
                           </li>
                           <li className="flex gap-3">
-                            <span className="text-success font-bold w-16 shrink-0 uppercase tracking-wider text-xs mt-1">Say</span>
+                            <span className="text-success dark:text-[#4ade80] font-bold w-16 shrink-0 uppercase tracking-wider text-xs mt-1">Say</span>
                             <span className="text-sm text-text-main font-medium italic">"I’m capturing this for Monday’s triage to protect my focus block today."</span>
                           </li>
                         </ul>
                       </div>
 
                       <div className="card p-8 bg-card border-none text-text-main flex flex-col justify-center">
-                         <h4 className="text-sm font-black uppercase tracking-widest text-primary mb-6 flex items-center gap-2 mb-auto">
+                         <h4 className="text-sm font-black uppercase tracking-widest text-[#9a3412] dark:text-primary mb-6 flex items-center gap-2 mb-auto">
                           <Sparkles className="w-5 h-5" /> From Future You
                         </h4>
                         <p className="text-xl md:text-2xl font-serif italic text-text-muted leading-relaxed max-w-sm ml-4 border-l-2 border-primary pl-6 py-2">
@@ -359,7 +365,7 @@ export const FutureSelfSimulator = ({ fingerprint }: FutureSelfSimulatorProps) =
                       </div>
                    </div>
 
-                   <button onClick={() => setStep('input')} className="text-sm font-bold text-text-muted hover:text-primary transition-colors flex items-center gap-2 mx-auto">
+                   <button onClick={() => setStep('input')} className="text-sm font-bold text-text-muted hover:text-[#9a3412] dark:hover:text-primary transition-colors flex items-center gap-2 mx-auto">
                      <ArrowRight className="w-4 h-4 rotate-180" /> Run another simulation
                    </button>
                  </motion.div>

@@ -72,13 +72,20 @@ export const ResourceLibrary = ({ fingerprint }: ResourceLibraryProps) => {
           <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
             <div className="space-y-2">
               <div className="flex items-center gap-2 mb-2">
-                <Star className="w-4 h-4 text-accent" fill="currentColor" />
-                <span className="text-xs font-black uppercase tracking-widest text-accent">Nova Recommendation</span>
+                <Star className="w-4 h-4 text-[#9a3412] dark:text-accent" fill="currentColor" />
+                <span className="text-xs font-black uppercase tracking-widest text-[#9a3412] dark:text-accent">Nova Recommendation</span>
               </div>
               <h4 className="text-2xl font-display font-bold text-text-main">Curated for "{fingerprint.profile || 'High Achiever'}"</h4>
               <p className="text-sm font-medium text-text-muted">Based on your latest fingerprint, Nova suggests starting with the Performance Identity Decoupling workshop.</p>
             </div>
-            <button className="btn-primary hover:bg-accent hover:border-accent">Access Workshop</button>
+            <button
+              disabled
+              aria-disabled="true"
+              title="Workshop content isn't available yet"
+              className="btn-primary opacity-50 cursor-not-allowed"
+            >
+              Access Workshop
+            </button>
           </div>
                   </div>
       )}
@@ -90,10 +97,10 @@ export const ResourceLibrary = ({ fingerprint }: ResourceLibraryProps) => {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: i * 0.1 }}
-            className="card border border-border p-8 group hover:-translate-y-1 transition-all cursor-pointer relative overflow-hidden"
+            className="card border border-border p-8 relative overflow-hidden"
           >
             <div className="flex items-start justify-between mb-8">
-              <div className="w-14 h-14 bg-white/50 dark:bg-surface rounded-2xl border border-border/40 shadow-inner flex items-center justify-center text-text-main group-hover:bg-primary group-hover:text-primary-foreground group-hover:border-primary transition-all">
+              <div className="w-14 h-14 bg-white/50 dark:bg-surface rounded-2xl border border-border/40 shadow-inner flex items-center justify-center text-text-main">
                 <resource.icon className="w-6 h-6" />
               </div>
               <div className="flex flex-col items-end gap-2">
@@ -102,7 +109,7 @@ export const ResourceLibrary = ({ fingerprint }: ResourceLibraryProps) => {
               </div>
             </div>
             <div className="space-y-3 relative z-10">
-              <h4 className="text-xl font-display font-bold text-text-main group-hover:text-primary transition-colors">{resource.title}</h4>
+              <h4 className="text-xl font-display font-bold text-text-main transition-colors">{resource.title}</h4>
               <p className="text-sm text-text-muted font-medium leading-relaxed ">{resource.description}</p>
             </div>
           </motion.div>

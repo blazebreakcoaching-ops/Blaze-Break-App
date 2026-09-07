@@ -51,16 +51,16 @@ export const ConsentMatrix = ({ profile, onUpdate }: { profile: UserProfileData,
           return (
             <div key={point.id} className={cn("p-5 rounded-2xl border flex flex-col md:flex-row md:items-center justify-between gap-4 transition-all duration-300", isEnabled ? "bg-primary/10 border-primary/30 shadow-inner" : "bg-surface/50 border-white/[0.05]")}>
               <div className="flex items-start gap-4">
-                <div className={cn("w-10 h-10 rounded-xl flex items-center justify-center shrink-0 border", isEnabled ? "bg-primary/20 text-primary border-primary/30" : "bg-surface text-text-muted border-border")}>
+                <div className={cn("w-10 h-10 rounded-xl flex items-center justify-center shrink-0 border", isEnabled ? "bg-primary/20 text-[#9a3412] dark:text-primary border-primary/30" : "bg-surface text-text-muted border-border")}>
                   <point.icon className="w-5 h-5" />
                 </div>
                 <div>
                   <div className="flex items-center gap-2">
-                    <h4 className={cn("text-sm font-bold tracking-tight", isEnabled ? "text-primary" : "text-text-muted")}>{point.label}</h4>
+                    <h4 className={cn("text-sm font-bold tracking-tight", isEnabled ? "text-[#9a3412] dark:text-primary" : "text-text-muted")}>{point.label}</h4>
                     {point.zone && (
                       <span className={cn(
                         "px-1.5 py-0.5 text-[10px] uppercase tracking-wider rounded-full font-bold border",
-                        point.zoneColor === 'primary' && "bg-primary/20 text-primary border-primary/30"
+                        point.zoneColor === 'primary' && "bg-primary/20 text-[#9a3412] dark:text-primary border-primary/30"
                       )}>
                         {point.zone}
                       </span>
@@ -76,6 +76,9 @@ export const ConsentMatrix = ({ profile, onUpdate }: { profile: UserProfileData,
                 <button 
                   disabled={point.required}
                   onClick={() => toggleConsent(point.id, isEnabled)}
+                  role="switch"
+                  aria-checked={isEnabled}
+                  aria-label={`${isEnabled ? 'Revoke' : 'Grant'} consent for ${point.label}${point.required ? ' (required, cannot be changed)' : ''}`}
                   className={cn("w-12 h-6 rounded-full transition-all duration-300 relative flex-shrink-0 focus:outline-none focus:ring-2 focus:ring-primary/50", isEnabled ? "bg-success" : "bg-surface", point.required && "opacity-50 cursor-not-allowed")}
                 >
                   <div className={cn("w-4 h-4 rounded-full bg-white absolute top-1 transition-transform duration-300 shadow-sm", isEnabled ? "left-7" : "left-1")} />
