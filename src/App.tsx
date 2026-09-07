@@ -9,6 +9,7 @@ import confetti from "canvas-confetti";
 import {
   Home,
   LifeBuoy,
+  Search,
   MapPin,
   BatteryFull,
   MessageSquare,
@@ -58,6 +59,7 @@ const NovaChat = lazy(() => import("./components/NovaChat.tsx").then(m => ({ def
 import { Walkthrough } from "./components/Walkthrough.tsx";
 import { CrisisSupportModal, CrisisSupportButton } from "./components/CrisisSupport.tsx";
 import { ErrorBoundary } from "./components/ErrorBoundary.tsx";
+import { CommandPalette } from "./components/CommandPalette.tsx";
 const NovaGuardianRelay = lazy(() => import("./components/NovaGuardianRelay.tsx").then(m => ({ default: m.NovaGuardianRelay })));
 const AllyNudgeScheduler = lazy(() => import("./components/AllyNudgeScheduler.tsx").then(m => ({ default: m.AllyNudgeScheduler })));
 const OrgDashboard = lazy(() => import("./components/OrgDashboard.tsx").then(m => ({ default: m.OrgDashboard })));
@@ -280,6 +282,7 @@ const Sidebar = ({
   isCollapsed,
   setIsCollapsed,
   onOpenCrisisSupport,
+  onOpenLauncher,
 }: {
   activeTab: string;
   setActiveTab: (t: string) => void;
@@ -290,6 +293,7 @@ const Sidebar = ({
   isCollapsed: boolean;
   setIsCollapsed: (v: boolean | ((prev: boolean) => boolean)) => void;
   onOpenCrisisSupport: () => void;
+  onOpenLauncher: () => void;
 }) => {
   const [pendingTasksCount, setPendingTasksCount] = useState(0);
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
@@ -403,6 +407,24 @@ const Sidebar = ({
           <LifeBuoy className="w-5 h-5" />
         </button>
       )}
+
+      <button
+        onClick={onOpenLauncher}
+        title="Quick find (Ctrl/Cmd + K)"
+        aria-label="Quick find a tool"
+        className={cn(
+          "shrink-0 flex items-center rounded-2xl border border-border bg-surface text-text-muted hover:text-primary hover:border-primary/40 transition-colors",
+          isCollapsed ? "justify-center p-3" : "gap-2.5 px-3 py-2.5",
+        )}
+      >
+        <Search className="w-4 h-4 shrink-0" />
+        {!isCollapsed && (
+          <>
+            <span className="text-sm font-medium flex-1 text-left">Quick find</span>
+            <kbd className="text-[10px] font-mono border border-border rounded px-1.5 py-0.5">⌘K</kbd>
+          </>
+        )}
+      </button>
 
       <nav
         className={cn(
@@ -927,6 +949,21 @@ export default function App() {
   const [showSettings, setShowSettings] = useState(false);
   const [showWalkthrough, setShowWalkthrough] = useState(false);
   const [showCrisisSupport, setShowCrisisSupport] = useState(false);
+  const [showLauncher, setShowLauncher] = useState(false);
+
+  // Quick-find (command palette): open with Cmd/Ctrl+K from anywhere. Cuts
+  // through the app's breadth so someone can jump straight to the tool they
+  // need - or pick a feeling and be routed there - instead of hunting the nav.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && (e.key === 'k' || e.key === 'K')) {
+        e.preventDefault();
+        setShowLauncher((v) => !v);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
   const [postOnboardingProfile, setPostOnboardingProfile] = useState<UserProfileData | null>(null);
   const welcomeModalRef = useFocusTrap(!!postOnboardingProfile);
   useEffect(() => {
@@ -1001,6 +1038,20 @@ export default function App() {
     committedActionIds: [],
     debts: [],
   });
+
+  // The tools this user can actually open - same predicate the sidebar uses,
+  // so the quick-find launcher never offers a tab that isn't really available.
+  const launcherTabs = useMemo(
+    () =>
+      ALL_TABS.filter((t) => {
+        if (t.id === "privacy") return false;
+        if (effectiveRole === "platform_admin") return true;
+        if (!t.roles.includes(effectiveRole)) return false;
+        if (t.featureId && !hasSubscriptionEntitlement(stats.profile?.subscription || "recovery", t.featureId)) return false;
+        return true;
+      }).map((t) => ({ id: t.id, label: t.label, icon: t.icon, group: t.group })),
+    [effectiveRole, stats.profile?.subscription],
+  );
 
   // Derived from the real, persisted lastEngagementDate rather than a
   // separate resettable boolean - a plain useState(false) here would reset
@@ -1677,6 +1728,7 @@ export default function App() {
         isCollapsed={isSidebarCollapsed}
         setIsCollapsed={setIsSidebarCollapsed}
         onOpenCrisisSupport={() => setShowCrisisSupport(true)}
+        onOpenLauncher={() => setShowLauncher(true)}
       />
 
       <motion.main
@@ -2286,6 +2338,14 @@ export default function App() {
       </AnimatePresence>
 
       <CrisisSupportModal isOpen={showCrisisSupport} onClose={() => setShowCrisisSupport(false)} guardians={stats.supportCircle || []} />
+      <CommandPalette
+        isOpen={showLauncher}
+        onClose={() => setShowLauncher(false)}
+        tabs={launcherTabs}
+        onNavigate={(id) => setActiveTab(id as ActiveTab)}
+        onTalkToNova={() => setActiveTab("nova")}
+        onCrisis={() => setShowCrisisSupport(true)}
+      />
       <InAppNudge />
 
       <AnimatePresence>
