@@ -220,7 +220,7 @@ export const WorkloadRealityCheck = ({ fingerprint, onAwardPoints }: WorkloadRea
         setTasks(seeded);
       }
 
-      if (onAwardPoints) onAwardPoints(15, 'Completed Workload Reality Check');
+      if (onAwardPoints) onAwardPoints(75, 'Completed Workload Reality Check');
     }, 2000);
   };
 

@@ -67,7 +67,9 @@ export const EnergyBudgetMatrix = ({ onPointsEarned }: { onPointsEarned: (pts: n
     } catch (e) {
       setError('This entry could not be saved.');
       setCommitments(prev => prev.filter(c => c.id !== id));
+      return;
     }
+    onPointsEarned(50, `Logged into Energy Audit: ${newCommitment.name}`);
   };
 
   const handleAction = async (id: string, action: Commitment['status']) => {

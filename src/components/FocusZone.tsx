@@ -386,7 +386,7 @@ export function FocusZone({ onAwardPoints, isFocusActive, setIsFocusActive, curr
       canEdit: false
     });
 
-    onAwardPoints(100, `${duration}-Minute Deep Work Focus Zone Complete`);
+    onAwardPoints(150, `${duration}-Minute Deep Work Focus Zone Complete`);
   };
 
   const handleCancelRequest = () => {

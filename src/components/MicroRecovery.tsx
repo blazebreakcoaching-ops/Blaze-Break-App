@@ -106,6 +106,12 @@ export const MicroRecovery = ({ fingerprint, onAwardPoints }: MicroRecoveryProps
   const [selectedDuration, setSelectedDuration] = useState<Duration | null>(null);
   const [inProgress, setInProgress] = useState(false);
   const [completed, setCompleted] = useState(false);
+  // Whether the active break was launched from an "Apply Suggested Break"
+  // card (a real, calendar-detected fatigue risk) versus picked directly
+  // from the duration menu - the two are worth different XP, matching the
+  // original prototype's split (suggested breaks are worth more since
+  // they're acting on a detected risk, not just a routine reset).
+  const [fromSuggestion, setFromSuggestion] = useState(false);
   
   // Google Calendar Integration states
   const [isDemoMode, setIsDemoMode] = useState(!accessToken);
@@ -264,10 +270,16 @@ export const MicroRecovery = ({ fingerprint, onAwardPoints }: MicroRecoveryProps
         });
       }
     }
-    if (onAwardPoints) onAwardPoints(10, 'Micro-Recovery Completed');
+    if (onAwardPoints) {
+      onAwardPoints(
+        fromSuggestion ? 30 : 20,
+        fromSuggestion ? 'Applied Suggested Break' : 'Micro-Recovery Completed'
+      );
+    }
     setTimeout(() => {
       setSelectedDuration(null);
       setCompleted(false);
+      setFromSuggestion(false);
     }, 3000);
   };
 
@@ -377,7 +389,8 @@ export const MicroRecovery = ({ fingerprint, onAwardPoints }: MicroRecoveryProps
                       setSelectedDuration(s.recommendedDuration);
                       setInProgress(false);
                       setCompleted(false);
-                      
+                      setFromSuggestion(true);
+
                       // Smooth scroll down to intervention card
                       setTimeout(() => {
                         document.getElementById('recovery-protocol-anchor')?.scrollIntoView({ behavior: 'smooth' });
@@ -403,6 +416,7 @@ export const MicroRecovery = ({ fingerprint, onAwardPoints }: MicroRecoveryProps
                setSelectedDuration(duration);
                setInProgress(false);
                setCompleted(false);
+               setFromSuggestion(false);
              }}
              aria-pressed={selectedDuration === duration}
              className={cn(
