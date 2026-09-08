@@ -29,6 +29,7 @@ import { DataPrivacyDashboard } from './DataPrivacyDashboard.tsx';
 import { PrivacyPolicyAccordion } from './PrivacyPolicyAccordion.tsx';
 
 import { ConnectedNovaPermissions } from './ConnectedRecoveryModules.tsx';
+import { MemoryCentre } from './MemoryCentre.tsx';
 import { auth, db } from '../lib/firebase';
 import { signOut } from 'firebase/auth';
 import { doc, setDoc } from 'firebase/firestore';
@@ -654,24 +655,11 @@ export const PrivacyVault = ({
                   <div className="absolute -left-[21px] top-1 w-3 h-3 rounded-full bg-primary shadow-[0_0_10px_rgba(234,88,12,0.5)]" />
                   <h4 className="font-bold text-text-main mb-2">B. Edit AI Context</h4>
                   <p className="text-sm text-text-muted mb-3 font-light">View and delete any pattern Nova has memorised about your symptoms.</p>
-                  <div className="flex items-start gap-4 bg-background/60 border border-white/[0.02] p-4 rounded-xl text-sm">
-                     <Brain className="w-5 h-5 text-primary mt-0.5 shrink-0" />
-                     <div className="space-y-3 w-full">
-                       <p className="font-medium text-text-muted">Memory: "Energy consistently drops after morning standups."</p>
-                       <div className="flex items-center justify-between">
-                         <p className="text-xs text-text-muted uppercase tracking-widest flex items-center gap-4">
-                           <span>Source: Trigger Journal</span> 
-                           <span className="flex items-center gap-1 font-bold text-[#9a3412] dark:text-primary bg-primary/10 border border-primary/30 px-1.5 py-0.5 rounded-full"><Lock className="w-3 h-3" /> Zone A</span>
-                         </p>
-                         <button 
-                           onClick={() => handleAuditAction('Forget Context', 'AI Memory', 'deleted')}
-                           className="text-xs px-3 py-1.5 rounded-lg bg-destructive/10 text-destructive dark:text-[#f87171] font-bold hover:bg-destructive/20 transition-colors uppercase tracking-widest"
-                         >
-                           Forget
-                         </button>
-                       </div>
-                     </div>
-                  </div>
+                  {auth.currentUser ? <MemoryCentre /> : (
+                    <div className="p-4 bg-surface text-xs text-text-muted rounded-xl flex items-center gap-2">
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" /> Connecting...
+                    </div>
+                  )}
                 </div>
               </div>
               <RetentionSchedule />
