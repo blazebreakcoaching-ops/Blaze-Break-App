@@ -3,7 +3,7 @@ import {
   ShieldCheck, Search, Loader2, RefreshCw, 
   UserPlus, Key, Activity, Heart, ShieldAlert, Check,
   AlertCircle, UserMinus, Lock, Users, CreditCard,
-  ArrowUpRight, HeartPulse, Building2, Copy, Plus
+  HeartPulse, Building2, Copy, Plus
 } from 'lucide-react';
 import { secureApiFetch } from '../lib/secure-api';
 import { motion, AnimatePresence } from 'motion/react';
@@ -550,9 +550,6 @@ export const AdminDashboard = () => {
               <span className="text-[10px] font-black uppercase tracking-widest text-text-muted block">Registered Professionals</span>
               <h4 className="text-3xl font-display font-black text-text-main flex items-baseline gap-2">
                 {users.length}
-                <span className="text-xs text-success dark:text-[#4ade80] font-semibold flex items-center gap-0.5">
-                  <ArrowUpRight className="w-3 h-3" /> +0.0%
-                </span>
               </h4>
             </div>
             <div className="p-3 bg-primary/10 text-primary rounded-xl">
@@ -560,21 +557,20 @@ export const AdminDashboard = () => {
             </div>
           </div>
           <div className="pt-2 border-t border-white/5 flex items-center justify-between text-[11px] text-text-muted">
-            <span>Corporate Seats: <strong className="text-text-main font-semibold">0</strong></span>
-            <span>Individual Plans: <strong className="text-text-main font-semibold">0</strong></span>
+            <span>Corporate seats / individual plans: <strong className="text-text-muted font-semibold">Not yet tracked</strong></span>
           </div>
         </div>
 
-        {/* Card 2: Active Subscriptions */}
+        {/* Card 2: Active Subscriptions - no billing system exists yet, so
+            this honestly says so rather than showing numbers that would look
+            like real, currently-zero metrics but are actually just
+            hardcoded and could never change. */}
         <div className="p-6 bg-surface dark:bg-card border border-border rounded-2xl space-y-4 shadow-sm relative overflow-hidden hover:border-primary/40 transition-all duration-300">
           <div className="flex justify-between items-start">
             <div className="space-y-1">
               <span className="text-[10px] font-black uppercase tracking-widest text-text-muted block">Subscription Coverage</span>
-              <h4 className="text-3xl font-display font-black text-text-main flex items-baseline gap-2">
-                0.0%
-                <span className="text-xs text-success dark:text-[#4ade80] font-semibold flex items-center gap-0.5">
-                  <ArrowUpRight className="w-3 h-3" /> Active
-                </span>
+              <h4 className="text-xl font-display font-black text-text-muted">
+                Not yet tracked
               </h4>
             </div>
             <div className="p-3 bg-primary/10 text-primary rounded-xl">
@@ -582,8 +578,7 @@ export const AdminDashboard = () => {
             </div>
           </div>
           <div className="pt-2 border-t border-white/5 flex items-center justify-between text-[11px] text-text-muted">
-            <span>Paid Tiers: <strong className="text-text-main font-semibold">0</strong></span>
-            <span>ARR Baseline: <strong className="text-text-main font-semibold">$0</strong></span>
+            <span>Paid tiers / ARR: <strong className="text-text-muted font-semibold">No billing system connected yet</strong></span>
           </div>
         </div>
 
