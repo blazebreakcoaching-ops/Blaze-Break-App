@@ -22,6 +22,7 @@ import { auth, db } from "../lib/firebase";
 import { doc, getDoc } from "firebase/firestore";
 import { NovaVoiceCall } from "./NovaVoiceCall";
 import { NovaToneControl } from "./NovaToneControl";
+import { ConfirmDialog } from "./ConfirmDialog";
 
 interface Message {
   role: "user" | "model";
@@ -237,6 +238,8 @@ export const NovaChat = ({
 
   // Speech Recognition / Voice Input Dictation State & Hook
   const [isDictating, setIsDictating] = useState(false);
+  const [dictationError, setDictationError] = useState<string | null>(null);
+  const [confirmingClear, setConfirmingClear] = useState(false);
   const dictationRecognitionRef = useRef<any>(null);
 
   const startDictation = () => {
@@ -245,9 +248,10 @@ export const NovaChat = ({
         (window as any).SpeechRecognition ||
         (window as any).webkitSpeechRecognition;
       if (!SpeechRecognition) {
-        alert(
-          "Voice input is not supported or permission is restricted in this browser environment.",
+        setDictationError(
+          "Voice input isn't supported in this browser.",
         );
+        setTimeout(() => setDictationError(null), 4000);
         return;
       }
 
@@ -693,14 +697,7 @@ We are now in real-time voice mode. Be concise and conversational, you don't nee
             </button>
           )}
           <button
-            onClick={() => {
-              if (
-                window.confirm("Clear this conversation? This can't be undone.")
-              ) {
-                setMessages([]);
-                localStorage.removeItem("nova_chat_history");
-              }
-            }}
+            onClick={() => setConfirmingClear(true)}
             aria-label="Clear conversation"
             className="w-9 h-9 rounded-lg border border-border flex items-center justify-center text-text-muted hover:text-destructive transition-colors"
           >
@@ -1176,13 +1173,17 @@ We are now in real-time voice mode. Be concise and conversational, you don't nee
                 onKeyPress={(e) => e.key === "Enter" && handleSend()}
                 aria-label="Message Nova"
                 placeholder={
-                  isDictating
+                  dictationError
+                    ? dictationError
+                    : isDictating
                     ? "Listening... Speak naturally"
                     : "Type or speak to Nova..."
                 }
                 className={cn(
                   "w-full bg-surface text-text-main border rounded-xl py-4 px-12 pr-16 text-base font-display focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all placeholder:text-text-muted",
-                  isDictating
+                  dictationError
+                    ? "border-destructive/60 placeholder:text-destructive"
+                    : isDictating
                     ? "border-destructive ring-2 ring-destructive/15 bg-destructive/[0.04] text-text-main animate-pulse"
                     : "border-border focus:border-primary",
                 )}
@@ -1225,6 +1226,19 @@ We are now in real-time voice mode. Be concise and conversational, you don't nee
         buildInitialPrompt={buildVoiceContext}
         onNavigate={onNavigate}
         onAwardPoints={onAwardPoints}
+      />
+
+      <ConfirmDialog
+        open={confirmingClear}
+        title="Clear this conversation?"
+        message="This can't be undone."
+        confirmLabel="Clear"
+        onConfirm={() => {
+          setMessages([]);
+          localStorage.removeItem("nova_chat_history");
+          setConfirmingClear(false);
+        }}
+        onCancel={() => setConfirmingClear(false)}
       />
     </div>
   );

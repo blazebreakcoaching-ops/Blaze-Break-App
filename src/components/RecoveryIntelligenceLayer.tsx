@@ -473,7 +473,8 @@ export const RecoveryIntelligenceLayer = ({ onAwardPoints, fingerprint }: Recove
   const [triggerNotes, setTriggerNotes] = useState('');
   const [triggerSeverity, setTriggerSeverity] = useState<'low' | 'medium' | 'high'>('medium');
   const [isRecording, setIsRecording] = useState(false);
-  
+  const [dictationError, setDictationError] = useState<string | null>(null);
+
   // Speech Recognition API
   const recognitionRef = useRef<any>(null);
 
@@ -484,7 +485,8 @@ export const RecoveryIntelligenceLayer = ({ onAwardPoints, fingerprint }: Recove
     } else {
       const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
       if (!SpeechRecognition) {
-        alert("Speech recognition is not supported in your browser.");
+        setDictationError("Speech recognition isn't supported in this browser.");
+        setTimeout(() => setDictationError(null), 4000);
         return;
       }
       const recognition = new SpeechRecognition();
@@ -1141,6 +1143,9 @@ export const RecoveryIntelligenceLayer = ({ onAwardPoints, fingerprint }: Recove
                         {isRecording ? "Stop Listening" : "Voice Log"}
                       </button>
                     </div>
+                    {dictationError && (
+                      <p role="alert" className="text-[11px] font-semibold text-destructive dark:text-[#f87171]">{dictationError}</p>
+                    )}
                     <textarea
                       value={triggerNotes}
                       onChange={e => setTriggerNotes(e.target.value)}

@@ -6,6 +6,7 @@ import { useAuth } from '../lib/auth';
 import { secureApiFetch, SecureApiError } from '../lib/secure-api';
 import { syncCalendarSignal } from '../lib/calendar-signals';
 import { syncGmailSignal } from '../lib/gmail-signals';
+import { ConfirmDialog } from './ConfirmDialog';
 
 interface Integration {
   id: string;
@@ -209,12 +210,28 @@ export const IntegrationsDashboard = () => {
     }
   }, []);
 
+  const [pendingDisconnect, setPendingDisconnect] = useState<{ id: string; name: string } | null>(null);
+
+  const performGoogleDisconnect = async () => {
+    setPendingDisconnect(null);
+    await logOut();
+  };
+
+  const performServiceDisconnect = async (id: string) => {
+    setPendingDisconnect(null);
+    setIntegrations(prev => prev.map(inv => inv.id === id ? { ...inv, status: 'loading', errorMessage: undefined } : inv));
+    try {
+      await secureApiFetch(`/api/integrations/${id}/disconnect`, { method: 'POST' });
+      setIntegrations(prev => prev.map(inv => inv.id === id ? { ...inv, status: 'disconnected' } : inv));
+    } catch (e: any) {
+      setIntegrations(prev => prev.map(inv => inv.id === id ? { ...inv, status: 'error', errorMessage: 'Failed to disconnect. Please try again.' } : inv));
+    }
+  };
+
   const toggleIntegration = async (id: string) => {
     if (id === 'google') {
       if (accessToken) {
-        if (window.confirm("Disconnect Google Workspace and revoke token cache?")) {
-          await logOut();
-        }
+        setPendingDisconnect({ id: 'google', name: 'Google Workspace' });
       } else {
         setIntegrations(prev => prev.map(inv => inv.id === 'google' ? { ...inv, status: 'loading', errorMessage: undefined } : inv));
         try {
@@ -235,14 +252,7 @@ export const IntegrationsDashboard = () => {
 
     const current = integrations.find(inv => inv.id === id);
     if (current?.status === 'connected') {
-      if (!window.confirm(`Disconnect ${current.name}?`)) return;
-      setIntegrations(prev => prev.map(inv => inv.id === id ? { ...inv, status: 'loading', errorMessage: undefined } : inv));
-      try {
-        await secureApiFetch(`/api/integrations/${id}/disconnect`, { method: 'POST' });
-        setIntegrations(prev => prev.map(inv => inv.id === id ? { ...inv, status: 'disconnected' } : inv));
-      } catch (e: any) {
-        setIntegrations(prev => prev.map(inv => inv.id === id ? { ...inv, status: 'error', errorMessage: 'Failed to disconnect. Please try again.' } : inv));
-      }
+      setPendingDisconnect({ id, name: current.name });
       return;
     }
 
@@ -622,6 +632,19 @@ export const IntegrationsDashboard = () => {
           The underlying API keys for cloud services (Twilio, Firebase, etc.) are managed via the platform secrets store. User-specific OAuth connections (Slack, Calendly, Jira, Asana, Monday.com) are initiated above and require the corresponding Client ID/Secret to be configured on the server first.
         </p>
       </div>
+
+      <ConfirmDialog
+        open={!!pendingDisconnect}
+        title={`Disconnect ${pendingDisconnect?.name || ''}?`}
+        message={pendingDisconnect?.id === 'google' ? "This also revokes the cached access token." : "You can reconnect at any time."}
+        confirmLabel="Disconnect"
+        onConfirm={() => {
+          if (!pendingDisconnect) return;
+          if (pendingDisconnect.id === 'google') performGoogleDisconnect();
+          else performServiceDisconnect(pendingDisconnect.id);
+        }}
+        onCancel={() => setPendingDisconnect(null)}
+      />
     </div>
   );
 };

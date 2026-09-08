@@ -57,6 +57,7 @@ import { NovaCheckinNudge } from "./NovaCheckinNudge.tsx";
 const NovaVoiceGuidance = ({ stage }: { stage: SHIPStage }) => {
   const [isPlaying, setIsPlaying] = useState(false);
   const [isAudioLoading, setIsAudioLoading] = useState(false);
+  const [voiceError, setVoiceError] = useState<string | null>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
   const activeSourceRef = useRef<AudioBufferSourceNode | null>(null);
 
@@ -131,20 +132,23 @@ const NovaVoiceGuidance = ({ stage }: { stage: SHIPStage }) => {
       }
     } catch (e: any) {
       console.error(e);
-      alert(
-        `Nova Voice Error: ${e.message || "Connection failed. Check API key."}`,
-      );
+      setVoiceError(e.message || "Connection failed.");
       setIsAudioLoading(false);
       setIsPlaying(false);
+      setTimeout(() => setVoiceError(null), 5000);
     }
   };
 
   return (
     <button
       onClick={playGuidance}
+      title={voiceError || undefined}
+      aria-label={voiceError ? `Couldn't play Nova's guidance: ${voiceError}` : undefined}
       className={cn(
         "flex items-center gap-2 px-3 py-1.5 rounded-lg text-[11px] font-black uppercase tracking-widest transition-all shadow-lg",
-        isPlaying || isAudioLoading
+        voiceError
+          ? "bg-destructive/10 text-destructive border border-destructive/30"
+          : isPlaying || isAudioLoading
           ? "bg-primary text-primary-foreground"
           : "bg-surface text-text-main hover:bg-card border border-border",
       )}
@@ -172,7 +176,9 @@ const NovaVoiceGuidance = ({ stage }: { stage: SHIPStage }) => {
       ) : (
         <Volume2 className="w-3 h-3" />
       )}
-      {isAudioLoading
+      {voiceError
+        ? "Couldn't play"
+        : isAudioLoading
         ? "Loading..."
         : isPlaying
           ? "Nova Speaking..."

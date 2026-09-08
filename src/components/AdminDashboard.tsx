@@ -8,6 +8,7 @@ import {
 import { secureApiFetch } from '../lib/secure-api';
 import { motion, AnimatePresence } from 'motion/react';
 import { useAuth } from '../lib/auth';
+import { ConfirmDialog } from './ConfirmDialog';
 
 interface AdminUser {
   uid: string;
@@ -93,6 +94,11 @@ export const AdminDashboard = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedUser, setSelectedUser] = useState<AdminUser | null>(null);
   const [selectedUserRole, setSelectedUserRole] = useState('user');
+  const [pendingAction, setPendingAction] = useState<
+    | { type: 'suspend'; uid: string; email: string; currentlyActive: boolean }
+    | { type: 'revokeAdmin'; uid: string; email: string }
+    | null
+  >(null);
   const [isUpdatingRole, setIsUpdatingRole] = useState(false);
 
   // New Admin User Form State
@@ -300,9 +306,6 @@ export const AdminDashboard = () => {
   };
 
   const handleToggleSuspend = async (uid: string, currentlyActive: boolean) => {
-    if (!window.confirm(`Are you absolutely sure you want to ${currentlyActive ? 'suspend' : 'unsuspend'} this user account?`)) {
-      return;
-    }
     try {
       setLoading(true);
       const res = await secureApiFetch(`/api/admin/users/${uid}/suspend`, {
@@ -360,9 +363,6 @@ export const AdminDashboard = () => {
   };
 
   const handleRevokeAdmin = async (uid: string) => {
-    if (!window.confirm('Are you absolutely sure you want to revoke ALL administrative privileges for this account? This replaces claims immediately.')) {
-      return;
-    }
     try {
       setLoading(true);
       const res = await secureApiFetch(`/api/admin/admin-users/${uid}`, {
@@ -744,7 +744,7 @@ export const AdminDashboard = () => {
                               Edit Claims
                             </button>
                             <button
-                              onClick={() => handleToggleSuspend(u.uid, u.accessStatus === 'active')}
+                              onClick={() => setPendingAction({ type: 'suspend', uid: u.uid, email: u.email, currentlyActive: u.accessStatus === 'active' })}
                               className={`px-3 py-1.5 text-[10px] font-black uppercase tracking-widest rounded-lg transition-all ${
                                 u.accessStatus === 'active'
                                   ? 'bg-destructive/10 hover:bg-destructive/20 text-destructive dark:text-[#f87171]'
@@ -871,7 +871,7 @@ export const AdminDashboard = () => {
                         </td>
                         <td className="py-4 text-right">
                           <button
-                            onClick={() => handleRevokeAdmin(adminUser.uid)}
+                            onClick={() => setPendingAction({ type: 'revokeAdmin', uid: adminUser.uid, email: adminUser.email })}
                             aria-label={`Revoke admin claims for ${adminUser.displayName}`}
                             className="p-2 text-destructive hover:bg-destructive/10 rounded-xl transition-all"
                             title="Revoke Admin claims"
@@ -1148,6 +1148,30 @@ export const AdminDashboard = () => {
           Every administrative claim promotion (e.g. `platform_owner`, `platform_admin`, etc.) overrides the token claims in Firebase. Under GDPR, NICE, and standard professional guidelines, this board enforces complete isolation of clinical records—no clinical diagnosis data of Generalised Anxiety Disorder (GAD) is ever logged or exposed to organization-level dashboards.
         </div>
       </div>
+
+      <ConfirmDialog
+        open={!!pendingAction}
+        title={
+          pendingAction?.type === 'suspend'
+            ? `${pendingAction.currentlyActive ? 'Suspend' : 'Unsuspend'} this account?`
+            : 'Revoke all administrative privileges?'
+        }
+        message={
+          pendingAction?.type === 'suspend'
+            ? `This will ${pendingAction.currentlyActive ? 'suspend' : 'unsuspend'} ${pendingAction.email}'s account access.`
+            : pendingAction?.type === 'revokeAdmin'
+            ? `This replaces ${pendingAction.email}'s Firebase claims immediately, revoking every administrative role they hold.`
+            : ''
+        }
+        confirmLabel={pendingAction?.type === 'suspend' ? (pendingAction.currentlyActive ? 'Suspend' : 'Unsuspend') : 'Revoke'}
+        onConfirm={() => {
+          if (!pendingAction) return;
+          if (pendingAction.type === 'suspend') handleToggleSuspend(pendingAction.uid, pendingAction.currentlyActive);
+          else handleRevokeAdmin(pendingAction.uid);
+          setPendingAction(null);
+        }}
+        onCancel={() => setPendingAction(null)}
+      />
     </motion.div>
   );
 };

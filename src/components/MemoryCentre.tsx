@@ -3,6 +3,7 @@ import { useAuth } from '../lib/auth';
 import { Shield, Brain, Trash2, Edit2, AlertCircle, RefreshCw } from 'lucide-react';
 import { collection, query, getDocs, doc, deleteDoc, updateDoc, writeBatch } from 'firebase/firestore';
 import { db } from '../lib/firebase';
+import { ConfirmDialog } from './ConfirmDialog';
 
 export function MemoryCentre() {
   const { user } = useAuth();
@@ -11,6 +12,7 @@ export function MemoryCentre() {
   const [error, setError] = useState('');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editVal, setEditVal] = useState('');
+  const [confirmingPurge, setConfirmingPurge] = useState(false);
 
   useEffect(() => {
     if (user) {
@@ -43,7 +45,7 @@ export function MemoryCentre() {
   };
 
   const handlePurge = async () => {
-    if (!window.confirm("Are you sure you want to forget ALL memories?")) return;
+    setConfirmingPurge(false);
     try {
       const q = query(getMemoriesRef());
       const snap = await getDocs(q);
@@ -107,8 +109,8 @@ export function MemoryCentre() {
       ) : (
         <div className="space-y-4">
           <div className="flex justify-end">
-            <button 
-              onClick={handlePurge}
+            <button
+              onClick={() => setConfirmingPurge(true)}
               className="text-xs text-destructive dark:text-[#f87171] hover:text-destructive/80 font-medium flex items-center gap-1 transition-colors"
             >
               <Trash2 className="w-3 h-3" />
@@ -164,6 +166,15 @@ export function MemoryCentre() {
           ))}
         </div>
       )}
+
+      <ConfirmDialog
+        open={confirmingPurge}
+        title="Forget all memories?"
+        message="This permanently deletes everything Nova remembers about you. This can't be undone."
+        confirmLabel="Forget All"
+        onConfirm={handlePurge}
+        onCancel={() => setConfirmingPurge(false)}
+      />
     </div>
   );
 }

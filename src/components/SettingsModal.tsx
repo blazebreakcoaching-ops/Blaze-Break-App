@@ -26,6 +26,7 @@ export const SettingsModal = ({ profile, onSave, onClose, onOpenPrivacyCentre }:
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [saved, setSaved] = useState(false);
   const [errors, setErrors] = useState<{ fullName?: string; email?: string }>({});
+  const [deletionRequestStatus, setDeletionRequestStatus] = useState<'idle' | 'sending' | 'sent' | 'error'>('idle');
   const dialogRef = useFocusTrap(true);
 
   useEffect(() => {
@@ -410,18 +411,26 @@ export const SettingsModal = ({ profile, onSave, onClose, onOpenPrivacyCentre }:
                    </p>
                    <button
                      onClick={async () => {
+                       setDeletionRequestStatus('sending');
                        try {
                          const { secureApiFetch } = await import('../lib/secure-api');
                          await secureApiFetch('/api/support/request', { method: 'POST', data: { type: 'deletion', details: 'User-initiated vault deletion request.' }});
-                         alert('Request sent securely. You will receive an email shortly.');
+                         setDeletionRequestStatus('sent');
                        } catch(e) {
-                         alert('Failed to send request. You can also email us directly at support@blazebreak.com');
+                         setDeletionRequestStatus('error');
                        }
                      }}
-                     className="w-full sm:w-auto px-6 py-2.5 bg-surface hover:bg-border text-text-main text-xs font-bold uppercase tracking-widest rounded-lg transition-colors border border-border flex items-center justify-center cursor-pointer"
+                     disabled={deletionRequestStatus === 'sending'}
+                     className="w-full sm:w-auto px-6 py-2.5 bg-surface hover:bg-border text-text-main text-xs font-bold uppercase tracking-widest rounded-lg transition-colors border border-border flex items-center justify-center cursor-pointer disabled:opacity-50"
                    >
-                     Submit Deletion Request
+                     {deletionRequestStatus === 'sending' ? 'Sending...' : 'Submit Deletion Request'}
                    </button>
+                   {deletionRequestStatus === 'sent' && (
+                     <p role="status" className="text-xs font-semibold text-success dark:text-[#4ade80]">Request sent securely. You'll receive an email shortly.</p>
+                   )}
+                   {deletionRequestStatus === 'error' && (
+                     <p role="alert" className="text-xs font-semibold text-destructive dark:text-[#f87171]">Couldn't send that request. You can also email us directly at support@blazebreak.com</p>
+                   )}
                  </div>
               </div>
             </div>
