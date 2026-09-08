@@ -765,9 +765,16 @@ export const HomeSection = ({
           </div>
         </div>
         <div className="h-64 w-full">
-          <Suspense fallback={<div className="h-full w-full flex items-center justify-center text-xs text-text-muted">Loading chart…</div>}>
-            <RecoveryHistoryChart data={pulseHistory} />
-          </Suspense>
+          {pulseHistory.length === 0 ? (
+            <div className="h-full w-full flex flex-col items-center justify-center text-center gap-1.5 px-6">
+              <p className="text-sm font-medium text-text-main">Not enough data yet</p>
+              <p className="text-xs text-text-muted max-w-xs">Complete a daily check-in to start building your real recovery trend - this fills in day by day, honestly.</p>
+            </div>
+          ) : (
+            <Suspense fallback={<div className="h-full w-full flex items-center justify-center text-xs text-text-muted">Loading chart…</div>}>
+              <RecoveryHistoryChart data={pulseHistory} />
+            </Suspense>
+          )}
         </div>
       </SmartCard>
     ),

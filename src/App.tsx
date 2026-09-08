@@ -1002,26 +1002,19 @@ export default function App() {
   const [burnoutRisk, setBurnoutRisk] = useState("Not yet assessed");
   const [showCheckIn, setShowCheckIn] = useState(false);
 
-  // 30-Day Recovery Pulse History
+  // 30-Day Recovery Pulse History - real entries only, added one at a time
+  // as the user actually checks in (see handleCheckInComplete /
+  // handleUpdatePulseHistory below). A brand-new user with no saved history
+  // yet starts at a genuinely empty array rather than a synthetic 30-day
+  // sine-wave chart that would have looked exactly like a real trend.
   const [pulseHistory, setPulseHistory] = useState(() => {
     try {
       const saved = localStorage.getItem("blaze_break_pulse_history");
       if (saved) return JSON.parse(saved);
     } catch(e) {
-      // Non-fatal - falls through to generating the default 30-day
-      // history below.
+      // Non-fatal - falls through to the honest empty default below.
     }
-    
-    return Array.from({length: 30}).map((_, i) => {
-      const date = new Date();
-      date.setDate(date.getDate() - (29 - i));
-      const dt = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-      const score = 40 + Math.sin(i * 0.3) * 20 + Math.random() * 10;
-      return {
-        date: dt,
-        score: Math.floor(score),
-      };
-    });
+    return [];
   });
 
   useEffect(() => {
