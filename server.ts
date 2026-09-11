@@ -33,6 +33,7 @@ import { getEffectiveDataPolicy, validateDataPolicyUpdate } from './org-data-pol
 import { initialAuthStatus, validateConnectorCreate, canSeeConnectorDetail, ORG_CONNECTOR_TYPES } from './org-connectors';
 import { isDeviceChannel, isValidAppVersion, validateDeviceRegistration, evaluateUpdateStatus, DEVICE_CHANNELS } from './desktop-deployment';
 import { getEffectiveBillingState, validateBillingUpdate, checkSeatLimit, billingProvider } from './billing-adapter';
+import { validateSsoConfigInput, encryptSecret, canEnableSsoEnforcement, redactSsoConfig, StoredSsoConfig } from './sso-config';
 
 dotenv.config();
 
@@ -5645,6 +5646,141 @@ app.post("/api/org/:orgId/billing", verifyAppCheck, authenticateFirebaseUser, as
     await db.collection("organisations").doc(orgId).update({ billing: after });
     await logOrgAuditAction(req, orgId, "update_billing", "billing", orgId, { ...before }, { ...after });
     res.json({ success: true, billing: after });
+  } catch (err: any) {
+    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("not found") ? 404 : 500).json({ error: err.message });
+  }
+});
+
+// ============ Enterprise: SSO (schema/service boundary only) ============
+// See sso-config.ts and docs/SSO_INTEGRATION_PLAN.md. There is no real
+// SAML/OIDC assertion validation wired up in this codebase - that would
+// require either a paid Identity Platform upgrade or a third-party IdP
+// proxy, both real infrastructure decisions outside this backend
+// foundation's authority. This is schema, encryption, and RBAC only.
+
+const getSsoConfigDoc = (db: any, orgId: string) =>
+  db.collection("organisations").doc(orgId).collection("sso_config").doc("config");
+
+app.get("/api/org/:orgId/sso", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const { orgId } = req.params;
+    const { db } = await requireOrgPermission(req, orgId, 'org.sso.manage');
+    const doc = await getSsoConfigDoc(db, orgId).get();
+    if (!doc.exists) {
+      return res.json({ configured: false });
+    }
+    res.json({ configured: true, config: redactSsoConfig(doc.data() as StoredSsoConfig) });
+  } catch (err: any) {
+    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("not found") ? 404 : 500).json({ error: err.message });
+  }
+});
+
+// Creates or replaces the SSO config. Deliberately never touches
+// `enforceSso` - that is only ever changed via the dedicated /enforce
+// route below, so this route can never accidentally turn enforcement on.
+app.post("/api/org/:orgId/sso", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const { orgId } = req.params;
+    const { user, db } = await requireOrgPermission(req, orgId, 'org.sso.manage');
+    const encryptionKey = process.env.SSO_CONFIG_ENCRYPTION_KEY;
+    const validation = validateSsoConfigInput(req.body, !!encryptionKey);
+    if (!validation.valid) {
+      return res.status(400).json({ error: validation.error });
+    }
+    const existingDoc = await getSsoConfigDoc(db, orgId).get();
+    const existing = existingDoc.exists ? (existingDoc.data() as StoredSsoConfig) : null;
+    const { providerType, issuer, clientId, metadataUrl, allowedDomains, jitProvisioning, defaultRole, clientSecret, secretRef } = req.body;
+
+    const record: StoredSsoConfig = {
+      providerType,
+      issuer,
+      clientId,
+      metadataUrl: metadataUrl || null,
+      allowedDomains: allowedDomains || [],
+      enforceSso: existing?.enforceSso === true, // never set here - preserved as-is
+      jitProvisioning: jitProvisioning === true,
+      defaultRole: defaultRole || 'member',
+      encryptedSecret: clientSecret ? encryptSecret(clientSecret, encryptionKey as string) : (secretRef ? null : existing?.encryptedSecret || null),
+      secretRef: secretRef || (clientSecret ? null : existing?.secretRef || null),
+      updatedAt: new Date().toISOString(),
+      updatedBy: user.uid,
+    };
+    await getSsoConfigDoc(db, orgId).set(record);
+    await logOrgAuditAction(req, orgId, "update_sso_config", "sso_config", orgId,
+      existing ? { providerType: existing.providerType, issuer: existing.issuer } : null,
+      { providerType: record.providerType, issuer: record.issuer }
+    );
+    res.json({ success: true, config: redactSsoConfig(record) });
+  } catch (err: any) {
+    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("not found") ? 404 : 500).json({ error: err.message });
+  }
+});
+
+// The single most important guardrail in this chunk: enforceSso can only
+// ever be switched ON while the platform-wide `sso_enforcement` feature
+// flag is explicitly enabled - flipping it today, with no real SAML/OIDC
+// validation wired up, would lock every one of an org's members out with
+// no working login path. Turning it OFF is never gated.
+app.post("/api/org/:orgId/sso/enforce", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const { orgId } = req.params;
+    const { db } = await requireOrgPermission(req, orgId, 'org.sso.manage');
+    const { enabled } = req.body;
+    if (typeof enabled !== 'boolean') {
+      return res.status(400).json({ error: '"enabled" must be true or false.' });
+    }
+    const configDoc = await getSsoConfigDoc(db, orgId).get();
+    if (!configDoc.exists) {
+      return res.status(400).json({ error: "Configure SSO for this organisation before enabling enforcement." });
+    }
+    if (enabled) {
+      const flagDoc = await db.collection("public_feature_flags").doc("sso_enforcement").get();
+      const flagEnabled = flagDoc.exists && flagDoc.data()?.enabled === true;
+      if (!canEnableSsoEnforcement(flagEnabled)) {
+        return res.status(403).json({
+          error: "SSO enforcement is not available yet - no real SAML/OIDC validation is wired up on this server. See docs/SSO_INTEGRATION_PLAN.md.",
+        });
+      }
+    }
+    const before = { enforceSso: configDoc.data()?.enforceSso === true };
+    await getSsoConfigDoc(db, orgId).update({ enforceSso: enabled, updatedAt: new Date().toISOString() });
+    await logOrgAuditAction(req, orgId, enabled ? "enable_sso_enforcement" : "disable_sso_enforcement", "sso_config", orgId, before, { enforceSso: enabled });
+    res.json({ success: true, enforceSso: enabled });
+  } catch (err: any) {
+    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("not found") ? 404 : 500).json({ error: err.message });
+  }
+});
+
+// Checks that the stored config is shape-valid and, if a metadataUrl is
+// set, that it's actually reachable - nothing more. This is explicitly
+// NOT a real authentication handshake; no assertion or token is ever
+// validated here.
+app.post("/api/org/:orgId/sso/test", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const { orgId } = req.params;
+    const { db } = await requireOrgPermission(req, orgId, 'org.sso.manage');
+    const doc = await getSsoConfigDoc(db, orgId).get();
+    if (!doc.exists) {
+      return res.status(400).json({ error: "No SSO configuration exists for this organisation yet." });
+    }
+    const config = doc.data() as StoredSsoConfig;
+    let metadataReachable: boolean | null = null;
+    if (config.metadataUrl) {
+      try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 5000);
+        const response = await fetch(config.metadataUrl, { method: "GET", signal: controller.signal });
+        clearTimeout(timeout);
+        metadataReachable = response.ok;
+      } catch {
+        metadataReachable = false;
+      }
+    }
+    res.json({
+      shapeValid: true,
+      metadataReachable,
+      note: "This checks configuration shape and metadata URL reachability only - it is not a real authentication handshake and does not validate any SAML/OIDC assertion.",
+    });
   } catch (err: any) {
     res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("not found") ? 404 : 500).json({ error: err.message });
   }
