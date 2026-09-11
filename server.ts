@@ -410,14 +410,21 @@ const GUARDIAN_STATE_COPY: Record<GuardianAlertState, string> = {
   failed: "I couldn't get that message through. That's a problem on this end, not yours.",
 };
 
-// Guards the window between the cooldown/idempotency Firestore reads below
-// and the write that records them: those are separate round-trips, so two
-// near-simultaneous requests for the same (uid, contactId) - a genuine
-// double-tap, or a client retry that (deliberately) generates a fresh
-// idempotencyKey each call rather than reusing one - would otherwise both
-// read "no recent alert" and both actually message the guardian, despite
-// the cooldown/idempotency comments below implying exactly one send. This
-// synchronous check-and-add closes that race for real (no await happens
+// Guards the window between the cooldown/idempotency/daily-cap Firestore
+// reads below and the write that records them: those are separate
+// round-trips, so two near-simultaneous requests from the same user - a
+// genuine double-tap, or a client retry that (deliberately) generates a
+// fresh idempotencyKey each call rather than reusing one - would otherwise
+// both read "no recent alert" / "14 sent today" and both actually message
+// a guardian, despite the cooldown/idempotency/cap comments below implying
+// exactly one send and a hard ceiling. Keyed on uid alone (not
+// uid:contactId) so this also closes the daily-cap race across DIFFERENT
+// contacts, not just repeat sends to the same one - two alerts to two
+// different guardians in the same instant would otherwise each see the cap
+// as not-yet-reached and both proceed. Guardian alerts are a rare,
+// deliberate action (not a UI a user fires rapidly in normal use), so
+// serializing all of one user's requests has no real cost. This
+// synchronous check-and-add closes the race for real (no await happens
 // between the .has() check and the .add()); the key is released in a
 // `finally` once the request finishes, success or failure.
 const guardianAlertInFlight = new Set<string>();
@@ -434,11 +441,11 @@ app.post("/api/guardian/alert", guardianAlertLimiter, verifyAppCheck, authentica
       return res.status(400).json({ error: "Missing or invalid idempotencyKey." });
     }
 
-    inFlightKey = `${uid}:${contactId}`;
+    inFlightKey = uid;
     if (guardianAlertInFlight.has(inFlightKey)) {
       return res.status(429).json({
         error: "cooldown",
-        userMessage: "Already sending a request to this contact - hang on a moment before trying again.",
+        userMessage: "Already sending your last guardian alert request - hang on a moment before trying again.",
         canOverride: false,
       });
     }
@@ -1534,101 +1541,6 @@ app.post("/api/nova/chat", verifyAppCheck, authenticateFirebaseUser, async (req,
   } catch (error: any) {
     console.error("Gemini Chat Error"); // Redacted raw error
     res.status(500).json({ error: `Nova Chat Sync Failure: A safe operational error occurred.` });
-  }
-});
-
-// Real, deterministic recommendation - which tool actually matters most
-// right now, computed from the person's own real activity across the app.
-// This is a rule-based computation over their own data for their own
-// screen, not data sent to an AI model, so it's a different privacy
-// boundary than the consent-gated AI context above and doesn't require the
-// same opt-in.
-app.get("/api/nova/recommendation", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
-  try {
-    const user = requireAuth(req);
-    const db = getDb();
-    const uid = user.uid;
-
-    const threeDaysAgo = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString();
-    const todayStr = new Date().toISOString().split('T')[0];
-
-    const [moodSnap, bodySnap, commitSnap, boundarySnap, winsSnap, reviewSnap] = await Promise.all([
-      db.collection('users').doc(uid).collection('mood_pulses').where('createdAt', '>=', threeDaysAgo).get(),
-      db.collection('users').doc(uid).collection('body_checkins').where('createdAt', '>=', threeDaysAgo).get(),
-      db.collection('users').doc(uid).collection('energy_commitments').where('status', '==', 'active').get(),
-      db.collection('users').doc(uid).collection('boundary_scripts').orderBy('createdAt', 'desc').limit(1).get(),
-      db.collection('users').doc(uid).collection('wins').orderBy('createdAt', 'desc').limit(1).get(),
-      db.collection('users').doc(uid).collection('weekly_reviews').orderBy('createdAt', 'desc').limit(1).get(),
-    ]);
-
-    // Priority-ordered real signals - the first genuinely true condition
-    // wins, most urgent first.
-    const negativeMoods = moodSnap.docs.filter(d => ['overwhelmed', 'frustrated', 'pressured', 'tired'].includes(d.data().moodLabel));
-    if (negativeMoods.length >= 2) {
-      return res.json({
-        tab: 'reset',
-        title: 'A few tough check-ins recently',
-        message: `You've logged ${negativeMoods.length} stressed or tired mood pulses in the last 3 days. A grounding session might genuinely help right now.`,
-      });
-    }
-
-    const totalActiveDrain = commitSnap.docs.reduce((sum, d) => sum + (d.data().energyDrain || 0), 0);
-    if (totalActiveDrain >= 200) {
-      return res.json({
-        tab: 'recover',
-        title: 'Your energy budget is stretched',
-        message: `You currently have ${commitSnap.size} active commitments totalling ${totalActiveDrain} energy units. Worth reviewing what can be dropped or delegated.`,
-      });
-    }
-
-    const boundaryDoc = boundarySnap.docs[0];
-    const daysSinceBoundary = boundaryDoc ? (Date.now() - new Date(boundaryDoc.data().createdAt).getTime()) / (1000 * 60 * 60 * 24) : Infinity;
-    if (bodySnap.size > 0 && daysSinceBoundary >= 7) {
-      return res.json({
-        tab: 'communicate',
-        title: 'Physical tension, no recent boundary practice',
-        message: "You've logged body tension recently, and it's been over a week since you rehearsed a boundary script. Often the two are connected.",
-      });
-    }
-
-    const hasCheckedInToday = moodSnap.docs.some(d => typeof d.data().createdAt === 'string' && d.data().createdAt.startsWith(todayStr))
-      || bodySnap.docs.some(d => typeof d.data().createdAt === 'string' && d.data().createdAt.startsWith(todayStr));
-    if (!hasCheckedInToday) {
-      return res.json({
-        tab: 'home',
-        title: "You haven't checked in today",
-        message: "A quick mood or body pulse takes seconds, and it's what makes every other recommendation here actually accurate.",
-      });
-    }
-
-    const reviewDoc = reviewSnap.docs[0];
-    const daysSinceReview = reviewDoc ? (Date.now() - new Date(reviewDoc.data().createdAt).getTime()) / (1000 * 60 * 60 * 24) : Infinity;
-    if (daysSinceReview >= 7) {
-      return res.json({
-        tab: 'reflect',
-        title: 'Weekly review is overdue',
-        message: reviewDoc ? "It's been over a week since your last weekly review — worth a few minutes to see what's actually changed." : "You haven't done a weekly review yet — it's a genuinely useful way to see your own patterns.",
-      });
-    }
-
-    const winDoc = winsSnap.docs[0];
-    const daysSinceWin = winDoc ? (Date.now() - new Date(winDoc.data().createdAt).getTime()) / (1000 * 60 * 60 * 24) : Infinity;
-    if (daysSinceWin >= 3) {
-      return res.json({
-        tab: 'communicate',
-        title: 'No wins logged in a few days',
-        message: "It's been a few days since you logged a recovery win. Doesn't have to be big — noticing it is most of the value.",
-      });
-    }
-
-    // Nothing urgent - genuinely say so, rather than inventing a fake concern.
-    res.json({
-      tab: null,
-      title: "You're on a steady rhythm",
-      message: "Recent check-ins, energy load, and boundary practice all look reasonably balanced. Nothing urgent to flag right now.",
-    });
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
   }
 });
 
