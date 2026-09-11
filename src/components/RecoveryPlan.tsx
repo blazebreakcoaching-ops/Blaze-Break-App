@@ -844,7 +844,7 @@ export const RecoveryPlan = ({
                         maxLength={20}
                         value={nickname}
                         onChange={(e) => setNickname(e.target.value)}
-                        className="bg-card border border-border text-xs px-2 py-1 rounded focus:outline-none flex-1 font-bold text-text-main"
+                        className="bg-card border border-border text-xs px-2 py-1 rounded focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary flex-1 font-bold text-text-main"
                       />
                       <button 
                         onClick={saveNickname}

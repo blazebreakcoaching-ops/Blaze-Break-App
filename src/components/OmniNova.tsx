@@ -6,6 +6,7 @@ import ReactMarkdown from 'react-markdown';
 import { getNovaBrain } from '../lib/nova-brain';
 import { secureApiFetch } from '../lib/secure-api';
 import { NovaVoiceCall } from './NovaVoiceCall';
+import { useFocusTrap } from '../lib/useFocusTrap';
 
 interface OmniNovaProps {
   activeTab: string;
@@ -30,6 +31,7 @@ export const OmniNova = ({ activeTab, fingerprint, stats }: OmniNovaProps) => {
   // AudioWorklet capture, live transcript, and barge-in as everywhere else.
   const [showVoiceCall, setShowVoiceCall] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const panelRef = useFocusTrap(isOpen);
 
   // Dedicated to the speak-aloud TTS feature (reading a written reply out
   // loud) - unrelated to the live call above.
@@ -45,6 +47,13 @@ export const OmniNova = ({ activeTab, fingerprint, stats }: OmniNovaProps) => {
   useEffect(() => {
     scrollToBottom();
   }, [messages, isTyping]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const onKeyDown = (e: KeyboardEvent) => { if (e.key === 'Escape') setIsOpen(false); };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [isOpen]);
 
   useEffect(() => {
     if (isOpen && messages.length === 0) {
@@ -222,6 +231,7 @@ export const OmniNova = ({ activeTab, fingerprint, stats }: OmniNovaProps) => {
       <AnimatePresence>
         {isOpen && (
           <motion.div
+            ref={panelRef as any}
             initial={{ opacity: 0, y: 20, scale: 0.95 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 20, scale: 0.95 }}
@@ -230,7 +240,9 @@ export const OmniNova = ({ activeTab, fingerprint, stats }: OmniNovaProps) => {
               isExpanded ? "w-[calc(100vw-3rem)] md:w-[450px] h-[75vh]" : "w-[calc(100vw-3rem)] md:w-[350px] h-[500px]"
             )}
             role="dialog"
+            aria-modal="true"
             aria-labelledby="omninova-panel-title"
+            tabIndex={-1}
           >
             <div className="flex items-center justify-between p-4 bg-card border-b border-border">
               <div className="flex items-center gap-3">

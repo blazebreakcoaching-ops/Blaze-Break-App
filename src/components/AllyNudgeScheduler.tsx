@@ -214,8 +214,9 @@ export const AllyNudgeScheduler = ({ contacts }: AllyNudgeSchedulerProps) => {
               ) : (
                 <>
                   <div className="space-y-2">
-                    <label className="text-[11px] font-black uppercase tracking-widest text-text-muted ml-1">Send to</label>
+                    <label htmlFor="ally-nudge-contact" className="text-[11px] font-black uppercase tracking-widest text-text-muted ml-1">Send to</label>
                     <select
+                      id="ally-nudge-contact"
                       value={contactId}
                       onChange={e => setContactId(e.target.value)}
                       className="w-full bg-white dark:bg-surface border border-border rounded-xl px-4 py-3 text-sm font-medium focus:outline-none focus:border-primary"
@@ -228,8 +229,9 @@ export const AllyNudgeScheduler = ({ contacts }: AllyNudgeSchedulerProps) => {
                   </div>
 
                   <div className="space-y-2">
-                    <label className="text-[11px] font-black uppercase tracking-widest text-text-muted ml-1">Message</label>
+                    <label htmlFor="ally-nudge-message" className="text-[11px] font-black uppercase tracking-widest text-text-muted ml-1">Message</label>
                     <textarea
+                      id="ally-nudge-message"
                       value={message}
                       onChange={e => setMessage(e.target.value)}
                       maxLength={300}
@@ -270,8 +272,9 @@ export const AllyNudgeScheduler = ({ contacts }: AllyNudgeSchedulerProps) => {
                       </div>
                     </div>
                     <div className="space-y-2">
-                      <label className="text-[11px] font-black uppercase tracking-widest text-text-muted ml-1">Time</label>
+                      <label htmlFor="ally-nudge-time" className="text-[11px] font-black uppercase tracking-widest text-text-muted ml-1">Time</label>
                       <input
+                        id="ally-nudge-time"
                         type="time"
                         value={time}
                         onChange={e => setTime(e.target.value)}

@@ -1061,7 +1061,7 @@ export const NervousSystemReset = ({ fingerprint, onAwardPoints }: NervousSystem
                     aria-label="Enable pacer sound"
                     className="sr-only peer"
                   />
-                  <div className="w-8 h-4 bg-surface dark:bg-surface peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-border after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-primary" />
+                  <div className="w-8 h-4 bg-surface dark:bg-surface peer-focus-visible:outline-none peer-focus-visible:ring-2 peer-focus-visible:ring-primary/50 peer-focus-visible:ring-offset-1 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-border after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-primary" />
                 </label>
                 <input
                   type="range"

@@ -121,7 +121,7 @@ export const CommandPalette = ({ isOpen, onClose, tabs, onNavigate, onTalkToNova
             onClick={(e) => e.stopPropagation()}
             onKeyDown={onKeyDown}
           >
-            <div className="flex items-center gap-3 px-4 py-3.5 border-b border-border">
+            <div className="flex items-center gap-3 px-4 py-3.5 border-b border-border focus-within:border-primary/50 transition-colors">
               <Search className="w-4 h-4 text-text-muted shrink-0" aria-hidden="true" />
               <input
                 ref={inputRef}

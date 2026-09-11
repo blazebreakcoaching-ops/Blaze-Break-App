@@ -5,7 +5,6 @@
 
 import React, { useState, useEffect, useRef, useMemo, lazy, Suspense } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import confetti from "canvas-confetti";
 import {
   Home,
   LifeBuoy,
@@ -45,7 +44,7 @@ import {
   BADGES,
   UserProfileData,
 } from "./types.ts";
-import { cn } from "./lib/utils.ts";
+import { cn, fireConfetti } from "./lib/utils.ts";
 import { useFocusTrap } from "./lib/useFocusTrap";
 import { auth, db } from "./lib/firebase.ts";
 import { doc, setDoc, getDoc, onSnapshot } from "firebase/firestore";
@@ -375,16 +374,18 @@ const Sidebar = ({
         />
       </button>
 
-      <div
+      <button
+        type="button"
         className={cn(
-          "flex items-center cursor-pointer group shrink-0",
+          "flex items-center cursor-pointer group shrink-0 text-left",
           isCollapsed ? "justify-center" : "gap-4",
         )}
         onClick={() => setActiveTab("home")}
+        aria-label="Blaze Break, go to Home"
       >
         <div className="w-10 h-10 flex items-center justify-center shrink-0 group-hover:scale-105 transition-all duration-500">
-          <img src="/brand/flame-mark-light.png" alt="Blaze Break" className="w-10 h-10 dark:hidden" />
-          <img src="/brand/flame-mark-dark.png" alt="Blaze Break" className="w-10 h-10 hidden dark:block" />
+          <img src="/brand/flame-mark-light.png" alt="" className="w-10 h-10 dark:hidden" />
+          <img src="/brand/flame-mark-dark.png" alt="" className="w-10 h-10 hidden dark:block" />
         </div>
         <AnimatePresence>
           {!isCollapsed && (
@@ -404,7 +405,7 @@ const Sidebar = ({
             </motion.div>
           )}
         </AnimatePresence>
-      </div>
+      </button>
 
       {!isCollapsed ? (
         <CrisisSupportButton onClick={onOpenCrisisSupport} className="shrink-0 px-1" />
@@ -412,9 +413,10 @@ const Sidebar = ({
         <button
           onClick={onOpenCrisisSupport}
           title="Need support now?"
+          aria-label="Need support now? Open crisis support"
           className="shrink-0 w-full flex items-center justify-center p-3 rounded-2xl text-info bg-info/10 hover:bg-info/20 border border-info/20 transition-colors"
         >
-          <LifeBuoy className="w-5 h-5" />
+          <LifeBuoy className="w-5 h-5" aria-hidden="true" />
         </button>
       )}
 
@@ -801,8 +803,9 @@ const Header = ({
           onClick={onOpenTour}
           className="flex items-center gap-2 px-4 py-2.5 bg-primary/10 hover:bg-primary/20 text-primary dark:text-primary border border-primary/20 rounded-full text-xs font-bold uppercase tracking-wider transition-all scale-[1] hover:scale-[1.03] active:scale-95 cursor-pointer shadow-sm"
           title="Interactive System Walkthrough"
+          aria-label="Recovery Tour: Interactive System Walkthrough"
         >
-          <Compass className="w-3.5 h-3.5" />
+          <Compass className="w-3.5 h-3.5" aria-hidden="true" />
           <span className="hidden sm:inline">Recovery Tour</span>
         </button>
       )}
@@ -819,8 +822,9 @@ const Header = ({
                   : "bg-warning/10 hover:bg-warning/20 text-warning dark:text-warning border-warning/20"
               )}
               title="Ping Support Circle"
+              aria-label={guardianPingActive ? "Ping Active: Guardian Ping to Support Circle" : "Guardian Ping: alert your Support Circle"}
             >
-              <Shield className="w-4 h-4" />
+              <Shield className="w-4 h-4" aria-hidden="true" />
               <span className="hidden sm:inline">
                 {guardianPingActive ? "Ping Active" : "Guardian Ping"}
               </span>
@@ -829,8 +833,9 @@ const Header = ({
               onClick={onSomaticReset}
               className="flex items-center gap-2 px-4 py-2.5 bg-destructive/10 hover:bg-destructive/20 text-destructive dark:text-destructive border border-destructive/20 rounded-full text-xs font-black uppercase tracking-widest transition-all hover:scale-[1.03] active:scale-95 cursor-pointer shadow-sm"
               title="Somatic Reset (60s)"
+              aria-label="Somatic Reset, 60 seconds"
             >
-              <HeartPulse className="w-4 h-4 animate-pulse" />
+              <HeartPulse className="w-4 h-4 animate-pulse" aria-hidden="true" />
               <span className="hidden sm:inline">Somatic Reset</span>
             </button>
           </div>
@@ -840,8 +845,9 @@ const Header = ({
         onClick={() => setDarkMode(!darkMode)}
         className="p-2.5 rounded-full bg-surface dark:bg-card border border-border hover:border-primary/50 text-text-muted hover:text-primary transition-all md:hidden"
         title="Toggle Theme"
+        aria-label={darkMode ? "Switch to light theme" : "Switch to dark theme"}
       >
-        {darkMode ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
+        {darkMode ? <Sun className="w-5 h-5" aria-hidden="true" /> : <Moon className="w-5 h-5" aria-hidden="true" />}
       </button>
       <AuthStatusTracker />
       <button
@@ -1313,7 +1319,7 @@ export default function App() {
       const badge = BADGES.find(b => b.id === newlyUnlocked[0]);
       if (badge) {
         setShowBadgeUnlocked(badge);
-        confetti({ particleCount: 140, spread: 80, origin: { y: 0.6 } });
+        fireConfetti({ particleCount: 140, spread: 80, origin: { y: 0.6 } });
         setTimeout(() => setShowBadgeUnlocked(null), 5000);
       }
     }
@@ -1473,7 +1479,7 @@ export default function App() {
 
       setShowRewardNotification({ points: 100, reason: "Daily Pulse Reward" });
       setTimeout(() => setShowRewardNotification(null), 4000);
-      confetti({ particleCount: 100, spread: 65, origin: { y: 0.6 } });
+      fireConfetti({ particleCount: 100, spread: 65, origin: { y: 0.6 } });
     }
   };
 
@@ -1724,6 +1730,12 @@ export default function App() {
         darkMode ? "dark" : "",
       )}
     >
+      <a
+        href="#main-content"
+        className="sr-only focus:not-sr-only focus:fixed focus:top-4 focus:left-4 focus:z-[300] focus:px-4 focus:py-2.5 focus:rounded-xl focus:bg-primary focus:text-primary-foreground focus:font-bold focus:text-sm focus:shadow-lg"
+      >
+        Skip to main content
+      </a>
       <Sidebar
         activeTab={activeTab}
         setActiveTab={setActiveTab as any}
@@ -1738,6 +1750,8 @@ export default function App() {
       />
 
       <motion.main
+        id="main-content"
+        tabIndex={-1}
         layout
         transition={{ type: "spring", stiffness: 300, damping: 30 }}
         className={cn(

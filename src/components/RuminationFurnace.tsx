@@ -108,7 +108,7 @@ export const RuminationFurnace = ({ onCleared }: { onCleared?: () => void }) => 
               placeholder="Write down what's stuck in your head. e.g., 'I am furious that my Saturday boundary was crossed again...'"
               aria-label="What's stuck in your head"
               className={cn(
-                "w-full h-56 bg-transparent p-6 text-lg lg:text-xl font-medium placeholder:text-text-muted focus:outline-none resize-none transition-all duration-700 relative z-10",
+                "w-full h-56 bg-transparent p-6 text-lg lg:text-xl font-medium placeholder:text-text-muted focus:outline-none focus:ring-2 focus:ring-primary/40 focus:ring-inset resize-none transition-all duration-700 relative z-10",
                 isBurning ? "text-warning grayscale opacity-30" : "text-text-main"
               )}
               style={{

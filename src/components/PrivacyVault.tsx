@@ -539,7 +539,14 @@ export const PrivacyVault = ({
                       </p>
                       <p className="text-xs text-text-muted mt-0.5">Required for core Nova logic.</p>
                     </div>
-                    <button className="w-12 h-6 rounded-full bg-success flex items-center p-1 cursor-default opacity-50 relative" title="Required">
+                    <button
+                      className="w-12 h-6 rounded-full bg-success flex items-center p-1 cursor-default opacity-50 relative"
+                      title="Required"
+                      role="switch"
+                      aria-checked="true"
+                      aria-label="Recovery Personalisation (always on, required for core Nova logic)"
+                      disabled
+                    >
                        <span className="w-4 h-4 rounded-full bg-white translate-x-6" />
                     </button>
                   </div>
@@ -551,9 +558,12 @@ export const PrivacyVault = ({
                       </p>
                       <p className="text-xs text-text-muted mt-0.5">Contribute trends to Team Climate.</p>
                     </div>
-                    <button 
+                    <button
                       onClick={() => handleToggleConsent('enable_anonymous_aggregation_engine', !!flags.enable_anonymous_aggregation_engine)}
                       className={cn("w-12 h-6 rounded-full flex items-center p-1 cursor-pointer transition-colors", flags.enable_anonymous_aggregation_engine ? "bg-success" : "bg-surface")}
+                      role="switch"
+                      aria-checked={!!flags.enable_anonymous_aggregation_engine}
+                      aria-label="Anonymous Aggregation"
                     >
                        <span className={cn("w-4 h-4 rounded-full bg-white transition-transform", flags.enable_anonymous_aggregation_engine ? "translate-x-6" : "translate-x-0")} />
                     </button>
@@ -566,9 +576,12 @@ export const PrivacyVault = ({
                       </p>
                       <p className="text-xs text-text-muted mt-0.5">Share selected goals/wins with preferred contacts.</p>
                     </div>
-                    <button 
+                    <button
                       onClick={() => handleToggleConsent('enable_recovery_ally', !!flags.enable_recovery_ally)}
                       className={cn("w-12 h-6 rounded-full flex items-center p-1 cursor-pointer transition-colors", flags.enable_recovery_ally ? "bg-success" : "bg-surface")}
+                      role="switch"
+                      aria-checked={!!flags.enable_recovery_ally}
+                      aria-label="Recovery Ally"
                     >
                        <span className={cn("w-4 h-4 rounded-full bg-white transition-transform", flags.enable_recovery_ally ? "translate-x-6" : "translate-x-0")} />
                     </button>

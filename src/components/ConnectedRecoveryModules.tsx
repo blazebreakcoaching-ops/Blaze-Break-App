@@ -521,7 +521,7 @@ export const ConnectedGoals = () => {
                </div>
             </div>
             <div className="flex items-center gap-2">
-              <select value={item.status} onChange={e => handleUpdateStatus(item.id, e.target.value)} className="text-xs p-1 bg-transparent border-none outline-none">
+              <select value={item.status} onChange={e => handleUpdateStatus(item.id, e.target.value)} aria-label="Status" className="text-xs p-1 bg-transparent border-none outline-none focus:ring-2 focus:ring-primary/40 rounded">
                 <option value="active">Active</option>
                 <option value="paused">Paused</option>
                 <option value="completed">Completed</option>
@@ -630,7 +630,14 @@ export const ConnectedNovaPermissions = () => {
               <span className="text-sm font-bold text-text-main block">{permissionsLabels[k] || k}</span>
               <span className="text-xs text-text-muted block mt-0.5">Summary-only consent</span>
             </div>
-            <button onClick={() => toggle(k as any)} disabled={loading} className={cn("w-12 h-6 rounded-full transition-colors relative flex items-center shadow-inner", v ? "bg-primary" : "bg-border")}>
+            <button
+              onClick={() => toggle(k as any)}
+              disabled={loading}
+              role="switch"
+              aria-checked={!!v}
+              aria-label={permissionsLabels[k] || k}
+              className={cn("w-12 h-6 rounded-full transition-colors relative flex items-center shadow-inner", v ? "bg-primary" : "bg-border")}
+            >
               <div className={cn("absolute w-4 h-4 rounded-full bg-white transition-transform shadow-sm", v ? "translate-x-7" : "translate-x-1")} />
             </button>
           </div>

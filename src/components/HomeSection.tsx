@@ -835,8 +835,12 @@ export const HomeSection = ({
               "Your recovery is not a suggestion. It is a biological prerequisite for the coming cycle."
             </p>
           </div>
-          <button className="w-11 h-11 rounded-full border border-border flex items-center justify-center text-text-muted hover:text-primary hover:border-primary transition-colors shrink-0">
-            <ChevronRight className="w-5 h-5" />
+          <button
+            onClick={onEnergyRequest}
+            aria-label="Open Recovery Hub"
+            className="w-11 h-11 rounded-full border border-border flex items-center justify-center text-text-muted hover:text-primary hover:border-primary transition-colors shrink-0"
+          >
+            <ChevronRight className="w-5 h-5" aria-hidden="true" />
           </button>
         </div>
       </SmartCard>

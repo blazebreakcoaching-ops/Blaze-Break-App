@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import confetti from 'canvas-confetti';
 import { auth, db } from '../lib/firebase';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { useFocusTrap } from '../lib/useFocusTrap';
@@ -22,7 +21,7 @@ import {
   X,
   Check
 } from 'lucide-react';
-import { cn } from '../lib/utils';
+import { cn, fireConfetti } from '../lib/utils';
 import { BurnoutFingerprint } from '../types';
 
 interface WorkloadRealityCheckProps {
@@ -263,7 +262,7 @@ export const WorkloadRealityCheck = ({ fingerprint, onAwardPoints }: WorkloadRea
       const task = prev.find(t => t.id === id);
       if (task && !task.completed) {
         // Trigger confetti exactly where the user clicked
-        confetti({
+        fireConfetti({
           particleCount: 80,
           spread: 50,
           origin: {
@@ -519,8 +518,9 @@ export const WorkloadRealityCheck = ({ fingerprint, onAwardPoints }: WorkloadRea
               <form onSubmit={handleAddTask} className="grid grid-cols-1 md:grid-cols-6 gap-5 items-end">
                 {/* Title */}
                 <div className="md:col-span-2 space-y-2">
-                  <label className="text-[11px] uppercase font-black tracking-widest text-text-muted block">Task Title / Actionable Goal</label>
+                  <label htmlFor="workload-task-title" className="text-[11px] uppercase font-black tracking-widest text-text-muted block">Task Title / Actionable Goal</label>
                   <input
+                    id="workload-task-title"
                     type="text"
                     required
                     value={newTitle}
@@ -532,8 +532,9 @@ export const WorkloadRealityCheck = ({ fingerprint, onAwardPoints }: WorkloadRea
 
                 {/* Category */}
                 <div className="space-y-2 font-sans">
-                  <label className="text-[11px] uppercase font-black tracking-widest text-text-muted block">Calibration Category</label>
+                  <label htmlFor="workload-task-category" className="text-[11px] uppercase font-black tracking-widest text-text-muted block">Calibration Category</label>
                   <select
+                    id="workload-task-category"
                     value={newCategory}
                     onChange={(e) => setNewCategory(e.target.value as any)}
                     className="w-full bg-white dark:bg-surface border border-border/40 rounded-xl px-3 py-2.5 text-xs text-text-main focus:outline-none focus:border-primary transition-all cursor-pointer"
@@ -547,8 +548,9 @@ export const WorkloadRealityCheck = ({ fingerprint, onAwardPoints }: WorkloadRea
 
                 {/* Priority Selection Field */}
                 <div className="space-y-2 font-sans">
-                  <label className="text-[11px] uppercase font-black tracking-widest text-text-muted block">Priority Level</label>
+                  <label htmlFor="workload-task-priority" className="text-[11px] uppercase font-black tracking-widest text-text-muted block">Priority Level</label>
                   <select
+                    id="workload-task-priority"
                     value={newPriority}
                     onChange={(e) => setNewPriority(e.target.value as any)}
                     className="w-full bg-white dark:bg-surface border border-border/40 rounded-xl px-3 py-2.5 text-xs text-text-main focus:outline-none focus:border-primary transition-all cursor-pointer"
@@ -561,8 +563,9 @@ export const WorkloadRealityCheck = ({ fingerprint, onAwardPoints }: WorkloadRea
 
                 {/* Due Date */}
                 <div className="space-y-2 font-sans">
-                  <label className="text-[11px] uppercase font-black tracking-widest text-text-muted block">Due Date Anchor</label>
+                  <label htmlFor="workload-task-due-date" className="text-[11px] uppercase font-black tracking-widest text-text-muted block">Due Date Anchor</label>
                   <input
+                    id="workload-task-due-date"
                     type="date"
                     required
                     value={newDueDate}
