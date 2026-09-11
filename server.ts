@@ -32,6 +32,7 @@ import { OrgRole, isOrgRole, hasOrgPermission, canAssignRole, OrgPermission } fr
 import { getEffectiveDataPolicy, validateDataPolicyUpdate } from './org-data-policy';
 import { initialAuthStatus, validateConnectorCreate, canSeeConnectorDetail, ORG_CONNECTOR_TYPES } from './org-connectors';
 import { isDeviceChannel, isValidAppVersion, validateDeviceRegistration, evaluateUpdateStatus, DEVICE_CHANNELS } from './desktop-deployment';
+import { getEffectiveBillingState, validateBillingUpdate, checkSeatLimit, billingProvider } from './billing-adapter';
 
 dotenv.config();
 
@@ -5608,6 +5609,47 @@ app.post("/api/admin/release-channels", verifyAppCheck, authenticateFirebaseUser
   }
 });
 
+// ============ Enterprise: central billing & administration ============
+// See billing-adapter.ts and docs/BILLING_ADMIN.md. There is no Stripe (or
+// any) payment provider wired up in this codebase - `billingProvider` is
+// the explicit NullBillingProvider, which reports exactly what's already
+// stored on the org and never pretends a charge or subscription happened.
+
+app.get("/api/org/:orgId/billing", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const { orgId } = req.params;
+    const { org } = await requireOrgPermission(req, orgId, 'org.billing.view');
+    res.json({ billing: getEffectiveBillingState(org.billing), provider: billingProvider.name });
+  } catch (err: any) {
+    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("not found") ? 404 : 500).json({ error: err.message });
+  }
+});
+
+app.post("/api/org/:orgId/billing", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const { orgId } = req.params;
+    const { db, org } = await requireOrgPermission(req, orgId, 'org.billing.manage');
+    const before = getEffectiveBillingState(org.billing);
+    const validation = validateBillingUpdate(req.body);
+    if (!validation.valid) {
+      return res.status(400).json({ error: validation.error });
+    }
+    // Provider identifiers are never accepted from the request body (see
+    // billing-adapter.ts) - only a real provider integration would ever
+    // set those, and none exists yet, so they're carried over unchanged.
+    const after = {
+      ...getEffectiveBillingState(req.body),
+      providerCustomerId: before.providerCustomerId,
+      providerSubscriptionId: before.providerSubscriptionId,
+    };
+    await db.collection("organisations").doc(orgId).update({ billing: after });
+    await logOrgAuditAction(req, orgId, "update_billing", "billing", orgId, { ...before }, { ...after });
+    res.json({ success: true, billing: after });
+  } catch (err: any) {
+    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("not found") ? 404 : 500).json({ error: err.message });
+  }
+});
+
 app.post("/api/org/:orgId/regenerate-join-code", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
   try {
     const { orgId } = req.params;
@@ -5677,6 +5719,19 @@ app.post("/api/org/:orgId/invite", verifyAppCheck, authenticateFirebaseUser, asy
     }
 
     const db = getDb();
+
+    // Enforced seat limit: this org's plan (billing-adapter.ts) allows only
+    // so many seats, counting both active members and people already
+    // invited but not yet joined. A real billing provider would report the
+    // allowance itself; the null provider reports back the org's own
+    // stored seatCount.
+    const pendingInvitesSnap = await db.collection("organisations").doc(orgId).collection("pending_invites").get();
+    const seatAllowance = billingProvider.getSeatAllowance(getEffectiveBillingState(org.billing));
+    const seatCheck = checkSeatLimit((org.memberUids || []).length, pendingInvitesSnap.size, cleaned.length, seatAllowance);
+    if (!seatCheck.allowed) {
+      return res.status(400).json({ error: seatCheck.error });
+    }
+
     const results: { email: string; sent: boolean }[] = [];
 
     for (const email of cleaned) {
