@@ -68,6 +68,32 @@ describe('legacy fallback - orgs and members that predate the members/ subcollec
     const res = await request(app).get(`/api/org/${ORG}/audit-logs`).set(auth('stranger'));
     expect(res.status).toBe(403);
   });
+
+  it('blocks demoting the sole owner of a fully legacy org (adminUids-only, no members/ doc at all)', async () => {
+    seedOrg(ORG, { adminUids: ['legacy_owner'], memberUids: ['legacy_owner'] });
+    // legacy_owner has no members/{uid} doc - resolves to 'owner' purely via
+    // the adminUids fallback. The last-owner guard must still catch this.
+    const res = await request(app)
+      .post(`/api/org/${ORG}/members/legacy_owner/role`)
+      .set(auth('legacy_owner'))
+      .send({ role: 'admin' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/last owner/i);
+  });
+
+  it('blocks removing the sole owner of a fully legacy org via the member-removal route too', async () => {
+    seedOrg(ORG, { adminUids: ['legacy_owner'], memberUids: ['legacy_owner', 'admin_2'] });
+    // legacy_owner has no members/ doc - resolves to 'owner' purely via the
+    // adminUids fallback. admin_2 has a real granular 'admin' doc (so
+    // requireOrgAdmin admits them), but legacy_owner is still the org's
+    // only effective owner and must stay protected.
+    seedMember(ORG, 'admin_2', 'admin');
+    const res = await request(app)
+      .post(`/api/org/${ORG}/members/legacy_owner/remove`)
+      .set(auth('admin_2'));
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/last owner/i);
+  });
 });
 
 describe('RBAC matrix on role-management routes', () => {

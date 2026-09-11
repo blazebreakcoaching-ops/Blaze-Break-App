@@ -25,7 +25,7 @@ Defined in `org-rbac.ts` (`ORG_ROLES`), fully unit-tested in
 | `owner` | Everything. Sole role that can transfer/revoke ownership. |
 | `admin` | Everything operational an owner can do, except granting/revoking `owner` or `security_admin`. |
 | `billing_admin` | View/manage billing, read the org's audit log. |
-| `security_admin` | Manage SSO, manage roles (except granting `owner`), manage the data-use policy, read the audit log. |
+| `security_admin` | Manage SSO, manage roles (except granting/revoking `owner` or `security_admin`), manage the data-use policy, read the audit log. |
 | `connector_admin` | View/manage connectors, read the audit log. |
 | `member` | Use enterprise search, view their own device status. The default role for anyone who joins via a join code. |
 | `viewer` | Read-only across billing, connectors, devices, audit log, and search. Cannot manage anything. |

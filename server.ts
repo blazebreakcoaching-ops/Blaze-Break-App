@@ -4152,6 +4152,12 @@ app.post("/api/org/leave", verifyAppCheck, authenticateFirebaseUser, async (req,
     // silently outlives the membership it describes, the same class of bug
     // user-data-collections.ts's own history warns against.
     await db.collection("organisations").doc(orgId).collection("members").doc(user.uid).delete();
+    // Same reasoning for any desktop-deployment device this user registered
+    // under the org they're leaving (organisations/{orgId}/devices, keyed by
+    // ownerUid) - otherwise it silently outlives the membership too.
+    const devicesSnap = await db.collection("organisations").doc(orgId).collection("devices")
+      .where("ownerUid", "==", user.uid).get();
+    await Promise.all(devicesSnap.docs.map((d: any) => d.ref.delete()));
 
     res.json({ success: true });
   } catch (err: any) {
@@ -4229,10 +4235,33 @@ const requireOrgPermission = async (req: any, orgId: string, permission: OrgPerm
 // Prevents an org from ever being left with zero owners - the same
 // reasoning as assertNotLastPlatformOwner above, scoped to one org's
 // members subcollection instead of the platform-wide admin_users one.
-const assertNotLastOrgOwner = async (db: any, orgId: string, targetUid: string) => {
-  const ownersSnap = await db.collection("organisations").doc(orgId).collection("members").where("role", "==", "owner").get();
-  const isTargetOwner = ownersSnap.docs.some((d: any) => d.id === targetUid);
-  if (isTargetOwner && ownersSnap.size <= 1) {
+//
+// This must mirror getOrgMemberRole's own resolution rules, not just query
+// the members subcollection for role=='owner' - a legacy org (or a legacy
+// owner who has never had a granular members/{uid} doc written) resolves
+// to 'owner' entirely via the org.adminUids fallback, with no matching
+// members doc at all. Querying the subcollection alone would find zero
+// owners for such an org and silently let its actual last owner be
+// demoted or removed with no protection whatsoever.
+const assertNotLastOrgOwner = async (db: any, orgId: string, org: any, targetUid: string) => {
+  const membersSnap = await db.collection("organisations").doc(orgId).collection("members").get();
+  const resolvedRoleByUid = new Map<string, string>();
+  membersSnap.docs.forEach((d: any) => {
+    const role = d.data()?.role;
+    if (isOrgRole(role)) resolvedRoleByUid.set(d.id, role);
+  });
+  const ownerUids = new Set<string>();
+  resolvedRoleByUid.forEach((role, uid) => {
+    if (role === 'owner') ownerUids.add(uid);
+  });
+  // Anyone in the legacy adminUids array who does NOT have a granular
+  // members doc (or whose doc has no valid role) still resolves to 'owner'
+  // via getOrgMemberRole's fallback, and must count as one here too.
+  const adminUids: string[] = org?.adminUids || [];
+  adminUids.forEach((uid) => {
+    if (!resolvedRoleByUid.has(uid)) ownerUids.add(uid);
+  });
+  if (ownerUids.has(targetUid) && ownerUids.size <= 1) {
     throw new Error("Operation Rejected: Cannot remove or downgrade the last owner of this organisation.");
   }
 };
@@ -5074,7 +5103,7 @@ app.post("/api/org/:orgId/members/:memberUid/remove", verifyAppCheck, authentica
       return res.status(400).json({ error: "Use 'Leave Organisation' from your own Privacy Centre to remove yourself." });
     }
     const db = getDb();
-    await assertNotLastOrgOwner(db, orgId, memberUid);
+    await assertNotLastOrgOwner(db, orgId, org, memberUid);
     await db.collection("users").doc(memberUid).set({
       organisationId: FieldValue.delete(),
       shareAnonymizedDataWithOrg: false,
@@ -5088,6 +5117,12 @@ app.post("/api/org/:orgId/members/:memberUid/remove", verifyAppCheck, authentica
     // Clean up the granular Enterprise role record too - see /api/org/leave
     // above for why this matters.
     await db.collection("organisations").doc(orgId).collection("members").doc(memberUid).delete();
+    // Same reasoning for any desktop-deployment device this member
+    // registered under the org (organisations/{orgId}/devices, keyed by
+    // ownerUid) - otherwise it silently outlives the membership too.
+    const devicesSnap = await db.collection("organisations").doc(orgId).collection("devices")
+      .where("ownerUid", "==", memberUid).get();
+    await Promise.all(devicesSnap.docs.map((d: any) => d.ref.delete()));
     await logOrgAuditAction(req, orgId, "remove_member", "member", memberUid);
     res.json({ success: true });
   } catch (err: any) {
@@ -5226,8 +5261,15 @@ app.post("/api/org/:orgId/members/:memberUid/role", verifyAppCheck, authenticate
     const beforeDoc = await memberRef.get();
     const beforeRole = beforeDoc.exists ? beforeDoc.data()?.role : null;
     // Demoting away from 'owner' must never leave the org with zero owners.
-    if (beforeRole === 'owner' && nextRole !== 'owner') {
-      await assertNotLastOrgOwner(db, orgId, memberUid);
+    // Resolved via getOrgMemberRole (not the raw beforeRole above) because a
+    // legacy owner who only exists in org.adminUids - with no granular
+    // members/{uid} doc yet - has beforeRole===null even though they
+    // currently resolve to 'owner'; checking the raw field alone would skip
+    // this guard entirely for every org that predates the granular role
+    // system and silently allow its actual last owner to be demoted.
+    const effectiveBeforeRole = await getOrgMemberRole(db, orgId, org, memberUid);
+    if (effectiveBeforeRole === 'owner' && nextRole !== 'owner') {
+      await assertNotLastOrgOwner(db, orgId, org, memberUid);
     }
     await memberRef.set({ role: nextRole }, { merge: true });
     await logOrgAuditAction(req, orgId, "change_member_role", "member", memberUid, { role: beforeRole }, { role: nextRole });
@@ -6897,6 +6939,15 @@ app.post("/api/user/delete-account", verifyAppCheck, authenticateFirebaseUser, a
         // Clean up the granular Enterprise role record too - see
         // /api/org/leave for why this matters.
         await db.collection("organisations").doc(orgId).collection("members").doc(user.uid).delete();
+        // Same reasoning for any desktop-deployment device this user
+        // registered under the org (organisations/{orgId}/devices, keyed by
+        // ownerUid) - otherwise a device record carrying this user's uid and
+        // deviceName would silently outlive the account it belongs to,
+        // exactly the class of bug the member-record cleanup above exists
+        // to prevent.
+        const devicesSnap = await db.collection("organisations").doc(orgId).collection("devices")
+          .where("ownerUid", "==", user.uid).get();
+        await Promise.all(devicesSnap.docs.map((d: any) => d.ref.delete()));
       }
     } catch (e) {
       // Non-fatal - if the org record is already gone or malformed, the
