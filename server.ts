@@ -34,6 +34,7 @@ import { initialAuthStatus, validateConnectorCreate, canSeeConnectorDetail, ORG_
 import { isDeviceChannel, isValidAppVersion, validateDeviceRegistration, evaluateUpdateStatus, DEVICE_CHANNELS } from './desktop-deployment';
 import { getEffectiveBillingState, validateBillingUpdate, checkSeatLimit, billingProvider } from './billing-adapter';
 import { validateSsoConfigInput, encryptSecret, canEnableSsoEnforcement, redactSsoConfig, StoredSsoConfig } from './sso-config';
+import { searchOrgResources, validateResourceCreate, SearchableResource } from './org-search';
 
 dotenv.config();
 
@@ -5781,6 +5782,99 @@ app.post("/api/org/:orgId/sso/test", verifyAppCheck, authenticateFirebaseUser, a
       metadataReachable,
       note: "This checks configuration shape and metadata URL reachability only - it is not a real authentication handshake and does not validate any SAML/OIDC assertion.",
     });
+  } catch (err: any) {
+    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("not found") ? 404 : 500).json({ error: err.message });
+  }
+});
+
+// ============ Enterprise: search with permission filtering ============
+// See org-search.ts and docs/ENTERPRISE_SEARCH.md. Query matching is a
+// deliberately simple keyword/substring matcher - there is no full-text or
+// vector search engine in this stack. The ACL filtering in org-search.ts
+// is the real security boundary here and is unconditional: a resource the
+// requester can't see is excluded before query matching ever runs.
+
+// Manually registers a searchable resource. There is no automated content-
+// ingestion pipeline in this codebase - this is the only way a resource
+// gets indexed today, and it's marked "indexed" immediately since nothing
+// asynchronous processes it afterward.
+app.post("/api/org/:orgId/search/resources", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const { orgId } = req.params;
+    const { user, db } = await requireOrgPermission(req, orgId, 'org.connectors.manage');
+    const validation = validateResourceCreate(req.body);
+    if (!validation.valid) {
+      return res.status(400).json({ error: validation.error });
+    }
+    const { title, contentType, chunkText, keywords, aclUids, aclRoles, aclTeams, sourceConnectorId } = req.body;
+    const now = new Date().toISOString();
+    const record = {
+      title,
+      contentType,
+      chunkText,
+      keywords: keywords || [],
+      aclUids: aclUids || [],
+      aclRoles: aclRoles || [],
+      aclTeams: aclTeams || [],
+      sourceConnectorId: sourceConnectorId || null,
+      indexStatus: "indexed",
+      indexedAt: now,
+      registeredBy: user.uid,
+    };
+    const ref = await db.collection("organisations").doc(orgId).collection("searchable_resources").add(record);
+    // Audit the metadata, never the chunkText itself - see
+    // docs/ENTERPRISE_RBAC.md's rule that audit entries stay structured
+    // field diffs, not raw content.
+    await logOrgAuditAction(req, orgId, "register_search_resource", "searchable_resource", ref.id, null, { title, contentType });
+    res.json({ success: true, resource: { id: ref.id, ...record } });
+  } catch (err: any) {
+    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("not found") ? 404 : 500).json({ error: err.message });
+  }
+});
+
+app.get("/api/org/:orgId/search/resources", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const { orgId } = req.params;
+    const { db } = await requireOrgPermission(req, orgId, 'org.connectors.manage');
+    const snap = await db.collection("organisations").doc(orgId).collection("searchable_resources").get();
+    const resources = snap.docs.map((d: any) => ({ id: d.id, ...d.data() }));
+    res.json({ resources });
+  } catch (err: any) {
+    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("not found") ? 404 : 500).json({ error: err.message });
+  }
+});
+
+app.post("/api/org/:orgId/search/resources/:resourceId/remove", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const { orgId, resourceId } = req.params;
+    const { db } = await requireOrgPermission(req, orgId, 'org.connectors.manage');
+    const ref = db.collection("organisations").doc(orgId).collection("searchable_resources").doc(resourceId);
+    const doc = await ref.get();
+    if (!doc.exists) {
+      return res.status(404).json({ error: "Searchable resource not found." });
+    }
+    await ref.delete();
+    await logOrgAuditAction(req, orgId, "remove_search_resource", "searchable_resource", resourceId, { title: doc.data().title }, null);
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("not found") ? 404 : 500).json({ error: err.message });
+  }
+});
+
+app.post("/api/org/:orgId/search", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const { orgId } = req.params;
+    const { user, db, org, role } = await requireOrgPermission(req, orgId, 'org.search.query');
+    const { query, filters } = req.body || {};
+    if (query !== undefined && typeof query !== 'string') {
+      return res.status(400).json({ error: '"query" must be a string.' });
+    }
+    const snap = await db.collection("organisations").doc(orgId).collection("searchable_resources")
+      .where("indexStatus", "==", "indexed").get();
+    const resources: SearchableResource[] = snap.docs.map((d: any) => ({ id: d.id, ...d.data() })) as SearchableResource[];
+    const team = (org.memberTeams && org.memberTeams[user.uid]) || null;
+    const results = searchOrgResources(resources, { uid: user.uid, role, team }, query || '', filters);
+    res.json({ results });
   } catch (err: any) {
     res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("not found") ? 404 : 500).json({ error: err.message });
   }
