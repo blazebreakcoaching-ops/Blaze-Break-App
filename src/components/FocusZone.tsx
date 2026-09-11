@@ -150,6 +150,48 @@ class FocusSynthEngine {
     });
   }
 
+  startSingingBowl() {
+    this.stop();
+    this.ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+    const ctx = this.ctx;
+
+    this.masterGain = ctx.createGain();
+    this.masterGain.gain.setValueAtTime(0.18, ctx.currentTime);
+    this.masterGain.connect(ctx.destination);
+
+    // A struck singing bowl's overtone series - a 432Hz fundamental plus its
+    // natural inharmonic partials, each with its own slow tremolo so the
+    // tone breathes and shimmers rather than droning flat.
+    const partials = [
+      { freq: 432, gain: 0.5 },
+      { freq: 432 * 2.4, gain: 0.22 },
+      { freq: 432 * 3.2, gain: 0.14 },
+      { freq: 432 * 4.7, gain: 0.08 },
+    ];
+
+    partials.forEach(({ freq, gain }, i) => {
+      const osc = ctx.createOscillator();
+      osc.type = 'sine';
+      osc.frequency.value = freq;
+
+      const partialGain = ctx.createGain();
+      partialGain.gain.value = gain;
+
+      const tremolo = ctx.createOscillator();
+      tremolo.frequency.value = 0.15 + i * 0.05;
+      const tremoloGain = ctx.createGain();
+      tremoloGain.gain.value = gain * 0.4;
+      tremolo.connect(tremoloGain);
+      tremoloGain.connect(partialGain.gain);
+
+      osc.connect(partialGain).connect(this.masterGain!);
+
+      osc.start();
+      tremolo.start();
+      this.droneOscs.push(osc, tremolo);
+    });
+  }
+
   stop() {
     try {
       if (this.oscL) { this.oscL.stop(); this.oscL.disconnect(); }
@@ -178,7 +220,7 @@ interface FocusZoneProps {
 export function FocusZone({ onAwardPoints, isFocusActive, setIsFocusActive, currentShipStage = "Habits" }: FocusZoneProps) {
   const [duration, setDuration] = useState<number>(25); // minutes
   const [timeLeft, setTimeLeft] = useState<number>(25 * 60); // seconds
-  const [soundMode, setSoundMode] = useState<'none' | 'binaural' | 'ocean' | 'drone'>('none');
+  const [soundMode, setSoundMode] = useState<'none' | 'binaural' | 'ocean' | 'drone' | 'singingBowl'>('none');
   const [isMuted, setIsMuted] = useState(false);
   const [sessionCompleted, setSessionCompleted] = useState(false);
   const victoryDialogRef = useFocusTrap(sessionCompleted);
@@ -276,6 +318,9 @@ export function FocusZone({ onAwardPoints, isFocusActive, setIsFocusActive, curr
       case 'drone':
         synthRef.current.startDeepDrone();
         break;
+      case 'singingBowl':
+        synthRef.current.startSingingBowl();
+        break;
       case 'none':
         synthRef.current.stop();
         break;
@@ -341,7 +386,7 @@ export function FocusZone({ onAwardPoints, isFocusActive, setIsFocusActive, curr
       canEdit: false
     });
 
-    onAwardPoints(100, `${duration}-Minute Deep Work Focus Zone Complete`);
+    onAwardPoints(150, `${duration}-Minute Deep Work Focus Zone Complete`);
   };
 
   const handleCancelRequest = () => {
@@ -412,8 +457,8 @@ export function FocusZone({ onAwardPoints, isFocusActive, setIsFocusActive, curr
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-2">
               <div className="space-y-2.5">
                 <span className="text-[10px] font-black uppercase tracking-widest text-text-muted">Set Block Duration</span>
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                  {[15, 25, 50].map((mins) => (
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  {[15, 25, 45, 60].map((mins) => (
                     <button
                       key={mins}
                       onClick={() => {
@@ -440,7 +485,8 @@ export function FocusZone({ onAwardPoints, isFocusActive, setIsFocusActive, curr
                     { id: 'none', label: 'Absolute Silence' },
                     { id: 'binaural', label: '8Hz Binaural (Alpha)' },
                     { id: 'ocean', label: 'Solfeggio Ocean Rain' },
-                    { id: 'drone', label: 'Sub-harmonic Drone' }
+                    { id: 'drone', label: 'Sub-harmonic Drone' },
+                    { id: 'singingBowl', label: '432Hz Singing Bowl' }
                   ].map((track) => (
                     <button
                       key={track.id}

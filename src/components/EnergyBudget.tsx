@@ -121,7 +121,7 @@ export const EnergyBudgetTool = ({
   const typeConfig: Record<string, { color: string, glow: string, icon: any }> = {
 
     Executive: { color: 'bg-card dark:bg-white', glow: 'shadow-muted-foreground/20', icon: Zap },
-    Creative: { color: 'bg-primary', glow: 'shadow-primary/20', icon: Waves },
+    Emotional: { color: 'bg-primary', glow: 'shadow-primary/20', icon: Waves },
     Social: { color: 'bg-text-main', glow: 'shadow-surface', icon: Users },
     Physical: { color: 'bg-teal-500', glow: 'shadow-teal-500/20', icon: BatteryFull },
   };
@@ -265,7 +265,7 @@ export const EnergyBudgetTool = ({
   return (
     <div className="space-y-12 pb-24">
       {error && (
-        <div className="bg-destructive/10 border border-destructive/20 text-destructive dark:text-[#f87171] text-sm p-4 rounded-xl">{error}</div>
+        <div role="alert" className="bg-destructive/10 border border-destructive/20 text-destructive dark:text-[#f87171] text-sm p-4 rounded-xl">{error}</div>
       )}
       <div className="max-w-4xl">
         <div className="flex items-center gap-4 mb-4">
@@ -456,6 +456,7 @@ export const EnergyBudgetTool = ({
                 <select
                   value={sortBy}
                   onChange={(e) => setSortBy(e.target.value as any)}
+                  aria-label="Sort filters"
                   className="bg-white/5 dark:bg-card border border-border/40 rounded-xl px-3 py-1.5 text-xs text-text-main font-bold uppercase tracking-wider focus:outline-none focus:border-primary cursor-pointer shadow-sm"
                 >
                   <option value="default">Default Sync Order</option>
@@ -575,8 +576,9 @@ export const EnergyBudgetTool = ({
               <div className="space-y-6">
                 <div className="space-y-4">
                   <p className="text-xs uppercase font-black tracking-widest text-text-muted ">Load Description</p>
-                  <input 
-                    type="text" 
+                  <input
+                    type="text"
+                    aria-label="Load description"
                     value={newTaskName}
                     onChange={e => setNewTaskName(e.target.value)}
                     placeholder="Enter activity..."

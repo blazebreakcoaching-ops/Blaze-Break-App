@@ -1,4 +1,4 @@
-import { ConnectedMoodPulse, ConnectedBodyCheckIn, ConnectedWinsLog, ConnectedGoals, ConnectedEnergyBudget, ConnectedWeeklyReviews } from './ConnectedRecoveryModules.tsx';
+import { ConnectedMoodPulse, ConnectedBodyCheckIn, ConnectedWinsLog, ConnectedGoals, ConnectedEnergyBudget, ConnectedWeeklyReviews, ConnectedBoundaryScripts } from './ConnectedRecoveryModules.tsx';
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useAuth } from '../lib/auth';
@@ -17,7 +17,7 @@ import {
   LineChart,
   Mic,
   MicOff,
-HeartPulse, Star, Wind, RefreshCw, TrendingUp, TrendingDown, Target,
+HeartPulse, Star, Wind, RefreshCw, TrendingUp, TrendingDown, Target, FileText,
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { updateNovaMemoryBySourceAndType } from '../lib/nova-brain';
@@ -473,7 +473,8 @@ export const RecoveryIntelligenceLayer = ({ onAwardPoints, fingerprint }: Recove
   const [triggerNotes, setTriggerNotes] = useState('');
   const [triggerSeverity, setTriggerSeverity] = useState<'low' | 'medium' | 'high'>('medium');
   const [isRecording, setIsRecording] = useState(false);
-  
+  const [dictationError, setDictationError] = useState<string | null>(null);
+
   // Speech Recognition API
   const recognitionRef = useRef<any>(null);
 
@@ -484,7 +485,8 @@ export const RecoveryIntelligenceLayer = ({ onAwardPoints, fingerprint }: Recove
     } else {
       const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
       if (!SpeechRecognition) {
-        alert("Speech recognition is not supported in your browser.");
+        setDictationError("Speech recognition isn't supported in this browser.");
+        setTimeout(() => setDictationError(null), 4000);
         return;
       }
       const recognition = new SpeechRecognition();
@@ -752,6 +754,7 @@ export const RecoveryIntelligenceLayer = ({ onAwardPoints, fingerprint }: Recove
             { id: 'social', name: 'Social Battery Tracker', desc: 'Relational load monitor', pill: 'Daily' },
             { id: 'wins', name: 'Wins & Recovery Proof', desc: 'Visible progress ledger', pill: 'Proof' },
             { id: 'goals', name: 'Personal Goals', desc: 'Sleep, boundaries, workload targets', pill: 'Tracked' },
+            { id: 'boundary', name: 'Boundary Scripts', desc: 'Save and reuse pushback scripts', pill: 'Scripts' },
             { id: 'energy', name: 'Energy Capacity Log', desc: 'Category-based allocation history', pill: 'Weekly' },
             { id: 'body', name: 'Body Symptom Check-In', desc: 'Somatic distress logs', pill: 'Somatic' },
             { id: 'weekly', name: 'Weekly Review Ritual', desc: 'Recalibrate weekend values', pill: 'Weekly' },
@@ -842,7 +845,7 @@ export const RecoveryIntelligenceLayer = ({ onAwardPoints, fingerprint }: Recove
 
                 {/* Status Feeback Alerts */}
                 {recalculateError && (
-                  <div className="bg-destructive/5 border border-destructive/20 p-4 rounded-xl flex items-start gap-3" id="recalculate_error_banner">
+                  <div role="alert" className="bg-destructive/5 border border-destructive/20 p-4 rounded-xl flex items-start gap-3" id="recalculate_error_banner">
                     <ShieldAlert className="w-5 h-5 text-destructive shrink-0 mt-0.5" />
                     <div>
                       <span className="text-xs font-black uppercase tracking-wider text-destructive dark:text-[#f87171] block">Couldn't Update</span>
@@ -1089,8 +1092,9 @@ export const RecoveryIntelligenceLayer = ({ onAwardPoints, fingerprint }: Recove
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pb-4 border-b border-border/20">
                   <div className="space-y-4">
                     <div className="space-y-2">
-                      <label className="text-xs font-bold">1. Source of stress trigger:</label>
+                      <label htmlFor="trigger-source-select" className="text-xs font-bold">1. Source of stress trigger:</label>
                       <select
+                        id="trigger-source-select"
                         value={triggerSource}
                         onChange={e => setTriggerSource(e.target.value)}
                         className="w-full px-4 py-3 border border-border/40 bg-white dark:bg-surface text-xs font-bold rounded-xl"
@@ -1126,7 +1130,7 @@ export const RecoveryIntelligenceLayer = ({ onAwardPoints, fingerprint }: Recove
 
                   <div className="space-y-4">
                     <div className="flex items-center justify-between">
-                      <label className="text-xs font-bold">3. Technical details of trigger:</label>
+                      <label htmlFor="trigger-notes-textarea" className="text-xs font-bold">3. Technical details of trigger:</label>
                       <button
                         onClick={toggleRecording}
                         className={cn(
@@ -1140,7 +1144,11 @@ export const RecoveryIntelligenceLayer = ({ onAwardPoints, fingerprint }: Recove
                         {isRecording ? "Stop Listening" : "Voice Log"}
                       </button>
                     </div>
+                    {dictationError && (
+                      <p role="alert" className="text-[11px] font-semibold text-destructive dark:text-[#f87171]">{dictationError}</p>
+                    )}
                     <textarea
+                      id="trigger-notes-textarea"
                       value={triggerNotes}
                       onChange={e => setTriggerNotes(e.target.value)}
                       placeholder="e.g. Manager modified scope on Friday at 4 PM without offering extension."
@@ -1309,6 +1317,31 @@ export const RecoveryIntelligenceLayer = ({ onAwardPoints, fingerprint }: Recove
                     </div>
                   </div>
                   {user ? <ConnectedGoals /> : (
+                    <div className="p-4 bg-surface text-xs text-text-muted rounded-xl flex items-center gap-2">
+                       <Loader2 className="w-3.5 h-3.5 animate-spin" /> Connecting...
+                    </div>
+                  )}
+                </motion.div>
+              )}
+
+              {activeRoom === 'boundary' && (
+                <motion.div
+                  key="boundary"
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -10 }}
+                  className="bg-card border border-border p-6 sm:p-8 rounded-xl"
+                >
+                  <div className="flex items-center gap-3 mb-6">
+                    <div className="w-10 h-10 rounded-xl bg-primary/20 text-[#9a3412] dark:text-primary flex items-center justify-center shrink-0">
+                      <FileText className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h3 className="text-2xl font-display font-black text-text-main mt-1">Boundary Scripts</h3>
+                      <p className="text-xs text-text-muted mt-1">Draft, save, and reuse pushback scripts by scenario - workload, family, client, manager, friend, or personal.</p>
+                    </div>
+                  </div>
+                  {user ? <ConnectedBoundaryScripts /> : (
                     <div className="p-4 bg-surface text-xs text-text-muted rounded-xl flex items-center gap-2">
                        <Loader2 className="w-3.5 h-3.5 animate-spin" /> Connecting...
                     </div>

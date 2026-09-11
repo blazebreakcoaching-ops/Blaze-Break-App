@@ -3,11 +3,12 @@ import {
   ShieldCheck, Search, Loader2, RefreshCw, 
   UserPlus, Key, Activity, Heart, ShieldAlert, Check,
   AlertCircle, UserMinus, Lock, Users, CreditCard,
-  ArrowUpRight, HeartPulse, Building2, Copy, Plus
+  HeartPulse, Building2, Copy, Plus
 } from 'lucide-react';
 import { secureApiFetch } from '../lib/secure-api';
 import { motion, AnimatePresence } from 'motion/react';
 import { useAuth } from '../lib/auth';
+import { ConfirmDialog } from './ConfirmDialog';
 
 interface AdminUser {
   uid: string;
@@ -93,6 +94,11 @@ export const AdminDashboard = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedUser, setSelectedUser] = useState<AdminUser | null>(null);
   const [selectedUserRole, setSelectedUserRole] = useState('user');
+  const [pendingAction, setPendingAction] = useState<
+    | { type: 'suspend'; uid: string; email: string; currentlyActive: boolean }
+    | { type: 'revokeAdmin'; uid: string; email: string }
+    | null
+  >(null);
   const [isUpdatingRole, setIsUpdatingRole] = useState(false);
 
   // New Admin User Form State
@@ -300,9 +306,6 @@ export const AdminDashboard = () => {
   };
 
   const handleToggleSuspend = async (uid: string, currentlyActive: boolean) => {
-    if (!window.confirm(`Are you absolutely sure you want to ${currentlyActive ? 'suspend' : 'unsuspend'} this user account?`)) {
-      return;
-    }
     try {
       setLoading(true);
       const res = await secureApiFetch(`/api/admin/users/${uid}/suspend`, {
@@ -360,9 +363,6 @@ export const AdminDashboard = () => {
   };
 
   const handleRevokeAdmin = async (uid: string) => {
-    if (!window.confirm('Are you absolutely sure you want to revoke ALL administrative privileges for this account? This replaces claims immediately.')) {
-      return;
-    }
     try {
       setLoading(true);
       const res = await secureApiFetch(`/api/admin/admin-users/${uid}`, {
@@ -550,9 +550,6 @@ export const AdminDashboard = () => {
               <span className="text-[10px] font-black uppercase tracking-widest text-text-muted block">Registered Professionals</span>
               <h4 className="text-3xl font-display font-black text-text-main flex items-baseline gap-2">
                 {users.length}
-                <span className="text-xs text-success dark:text-[#4ade80] font-semibold flex items-center gap-0.5">
-                  <ArrowUpRight className="w-3 h-3" /> +0.0%
-                </span>
               </h4>
             </div>
             <div className="p-3 bg-primary/10 text-primary rounded-xl">
@@ -560,21 +557,20 @@ export const AdminDashboard = () => {
             </div>
           </div>
           <div className="pt-2 border-t border-white/5 flex items-center justify-between text-[11px] text-text-muted">
-            <span>Corporate Seats: <strong className="text-text-main font-semibold">0</strong></span>
-            <span>Individual Plans: <strong className="text-text-main font-semibold">0</strong></span>
+            <span>Corporate seats / individual plans: <strong className="text-text-muted font-semibold">Not yet tracked</strong></span>
           </div>
         </div>
 
-        {/* Card 2: Active Subscriptions */}
+        {/* Card 2: Active Subscriptions - no billing system exists yet, so
+            this honestly says so rather than showing numbers that would look
+            like real, currently-zero metrics but are actually just
+            hardcoded and could never change. */}
         <div className="p-6 bg-surface dark:bg-card border border-border rounded-2xl space-y-4 shadow-sm relative overflow-hidden hover:border-primary/40 transition-all duration-300">
           <div className="flex justify-between items-start">
             <div className="space-y-1">
               <span className="text-[10px] font-black uppercase tracking-widest text-text-muted block">Subscription Coverage</span>
-              <h4 className="text-3xl font-display font-black text-text-main flex items-baseline gap-2">
-                0.0%
-                <span className="text-xs text-success dark:text-[#4ade80] font-semibold flex items-center gap-0.5">
-                  <ArrowUpRight className="w-3 h-3" /> Active
-                </span>
+              <h4 className="text-xl font-display font-black text-text-muted">
+                Not yet tracked
               </h4>
             </div>
             <div className="p-3 bg-primary/10 text-primary rounded-xl">
@@ -582,8 +578,7 @@ export const AdminDashboard = () => {
             </div>
           </div>
           <div className="pt-2 border-t border-white/5 flex items-center justify-between text-[11px] text-text-muted">
-            <span>Paid Tiers: <strong className="text-text-main font-semibold">0</strong></span>
-            <span>ARR Baseline: <strong className="text-text-main font-semibold">$0</strong></span>
+            <span>Paid tiers / ARR: <strong className="text-text-muted font-semibold">No billing system connected yet</strong></span>
           </div>
         </div>
 
@@ -646,6 +641,7 @@ export const AdminDashboard = () => {
                 <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" />
                 <input
                   type="text"
+                  aria-label="Query accounts by Email or UID"
                   placeholder="Query accounts by Email or UID..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
@@ -749,7 +745,7 @@ export const AdminDashboard = () => {
                               Edit Claims
                             </button>
                             <button
-                              onClick={() => handleToggleSuspend(u.uid, u.accessStatus === 'active')}
+                              onClick={() => setPendingAction({ type: 'suspend', uid: u.uid, email: u.email, currentlyActive: u.accessStatus === 'active' })}
                               className={`px-3 py-1.5 text-[10px] font-black uppercase tracking-widest rounded-lg transition-all ${
                                 u.accessStatus === 'active'
                                   ? 'bg-destructive/10 hover:bg-destructive/20 text-destructive dark:text-[#f87171]'
@@ -790,8 +786,9 @@ export const AdminDashboard = () => {
 
               <form onSubmit={handleAddAdmin} className="space-y-4">
                 <div>
-                  <label className="block text-xs font-black uppercase tracking-wider text-text-muted mb-2">User Email</label>
+                  <label htmlFor="admin-new-admin-email" className="block text-xs font-black uppercase tracking-wider text-text-muted mb-2">User Email</label>
                   <input
+                    id="admin-new-admin-email"
                     type="email"
                     required
                     placeholder="Enter email e.g. team@example.com"
@@ -801,8 +798,9 @@ export const AdminDashboard = () => {
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-black uppercase tracking-wider text-text-muted mb-2">Display Name (Optional)</label>
+                  <label htmlFor="admin-new-admin-name" className="block text-xs font-black uppercase tracking-wider text-text-muted mb-2">Display Name (Optional)</label>
                   <input
+                    id="admin-new-admin-name"
                     type="text"
                     placeholder="E.g. Nova Analyst"
                     value={newAdminName}
@@ -811,8 +809,9 @@ export const AdminDashboard = () => {
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-black uppercase tracking-wider text-text-muted mb-2">Assign Admin Role</label>
+                  <label htmlFor="admin-new-admin-role" className="block text-xs font-black uppercase tracking-wider text-text-muted mb-2">Assign Admin Role</label>
                   <select
+                    id="admin-new-admin-role"
                     value={newAdminRole}
                     onChange={(e) => setNewAdminRole(e.target.value)}
                     className="w-full p-3 bg-surface border border-border rounded-xl text-sm text-text-main focus:outline-none focus:border-primary"
@@ -876,7 +875,7 @@ export const AdminDashboard = () => {
                         </td>
                         <td className="py-4 text-right">
                           <button
-                            onClick={() => handleRevokeAdmin(adminUser.uid)}
+                            onClick={() => setPendingAction({ type: 'revokeAdmin', uid: adminUser.uid, email: adminUser.email })}
                             aria-label={`Revoke admin claims for ${adminUser.displayName}`}
                             className="p-2 text-destructive hover:bg-destructive/10 rounded-xl transition-all"
                             title="Revoke Admin claims"
@@ -1153,6 +1152,30 @@ export const AdminDashboard = () => {
           Every administrative claim promotion (e.g. `platform_owner`, `platform_admin`, etc.) overrides the token claims in Firebase. Under GDPR, NICE, and standard professional guidelines, this board enforces complete isolation of clinical records—no clinical diagnosis data of Generalised Anxiety Disorder (GAD) is ever logged or exposed to organization-level dashboards.
         </div>
       </div>
+
+      <ConfirmDialog
+        open={!!pendingAction}
+        title={
+          pendingAction?.type === 'suspend'
+            ? `${pendingAction.currentlyActive ? 'Suspend' : 'Unsuspend'} this account?`
+            : 'Revoke all administrative privileges?'
+        }
+        message={
+          pendingAction?.type === 'suspend'
+            ? `This will ${pendingAction.currentlyActive ? 'suspend' : 'unsuspend'} ${pendingAction.email}'s account access.`
+            : pendingAction?.type === 'revokeAdmin'
+            ? `This replaces ${pendingAction.email}'s Firebase claims immediately, revoking every administrative role they hold.`
+            : ''
+        }
+        confirmLabel={pendingAction?.type === 'suspend' ? (pendingAction.currentlyActive ? 'Suspend' : 'Unsuspend') : 'Revoke'}
+        onConfirm={() => {
+          if (!pendingAction) return;
+          if (pendingAction.type === 'suspend') handleToggleSuspend(pendingAction.uid, pendingAction.currentlyActive);
+          else handleRevokeAdmin(pendingAction.uid);
+          setPendingAction(null);
+        }}
+        onCancel={() => setPendingAction(null)}
+      />
     </motion.div>
   );
 };

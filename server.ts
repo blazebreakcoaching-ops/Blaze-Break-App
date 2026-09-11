@@ -27,6 +27,14 @@ import { toClaudeTools, GeminiStyleToolDeclaration } from './nova-claude-tools';
 import { computeClimateStrain, computeClimateStrainByDimension, computeMoodStrain, computeOverallStrain, computeTrend } from './org-risk-trend';
 import { isRealGuardian, isValidGuardianPhone, buildGuardianCallRequestMessage, extractFirstName } from './guardian-alert';
 import { collectionsForExport, collectionsForErasure } from './user-data-collections';
+import { isValidGad7Answers, scoreGad7, interpretGad7 } from './gad7';
+import { OrgRole, isOrgRole, hasOrgPermission, canAssignRole, OrgPermission } from './org-rbac';
+import { getEffectiveDataPolicy, validateDataPolicyUpdate } from './org-data-policy';
+import { initialAuthStatus, validateConnectorCreate, canSeeConnectorDetail, ORG_CONNECTOR_TYPES } from './org-connectors';
+import { isDeviceChannel, isValidAppVersion, validateDeviceRegistration, evaluateUpdateStatus, DEVICE_CHANNELS } from './desktop-deployment';
+import { getEffectiveBillingState, validateBillingUpdate, checkSeatLimit, billingProvider } from './billing-adapter';
+import { validateSsoConfigInput, encryptSecret, canEnableSsoEnforcement, redactSsoConfig, StoredSsoConfig } from './sso-config';
+import { searchOrgResources, validateResourceCreate, SearchableResource } from './org-search';
 
 dotenv.config();
 
@@ -56,17 +64,27 @@ if (!getApps().length) {
 
 const app = express();
 app.set('trust proxy', 1);
-const PORT = 3000;
+// Read the port from the environment (Cloud Run and most hosts inject PORT,
+// commonly 8080, and require the app to listen on it), falling back to 3000
+// for local dev so nothing changes when running `npm run dev`.
+const PORT = Number(process.env.PORT) || 3000;
 
 // Set up CORS
 const allowedOrigins = [
   "https://ais-dev-j3n2iqpfdg7zbjgfq4ixfo-398142886217.europe-west2.run.app",
   "https://ais-pre-j3n2iqpfdg7zbjgfq4ixfo-398142886217.europe-west2.run.app",
-  "http://localhost:3000",
-  "http://localhost:5173",
-  "http://127.0.0.1:3000",
-  "http://127.0.0.1:8081"
 ];
+// Local dev origins are only trusted OUTSIDE production. Allowing localhost in
+// a production deployment would let a page served from a developer's machine
+// make cross-origin calls against the live API, so it's gated behind NODE_ENV.
+if (process.env.NODE_ENV !== "production") {
+  allowedOrigins.push(
+    "http://localhost:3000",
+    "http://localhost:5173",
+    "http://127.0.0.1:3000",
+    "http://127.0.0.1:8081",
+  );
+}
 if (process.env.APP_CHECK_DOMAIN) {
   allowedOrigins.push(`https://${process.env.APP_CHECK_DOMAIN}`);
 }
@@ -128,6 +146,15 @@ const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 100, // limit each IP to 100 requests per windowMs
   message: { error: 'Too many requests, please try again later.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+  validate: { xForwardedForHeader: false, default: true }
+});
+
+const oneLessThingLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 30,
+  message: { error: 'Too many requests, please try again shortly.' },
   standardHeaders: true,
   legacyHeaders: false,
   validate: { xForwardedForHeader: false, default: true }
@@ -383,8 +410,28 @@ const GUARDIAN_STATE_COPY: Record<GuardianAlertState, string> = {
   failed: "I couldn't get that message through. That's a problem on this end, not yours.",
 };
 
+// Guards the window between the cooldown/idempotency/daily-cap Firestore
+// reads below and the write that records them: those are separate
+// round-trips, so two near-simultaneous requests from the same user - a
+// genuine double-tap, or a client retry that (deliberately) generates a
+// fresh idempotencyKey each call rather than reusing one - would otherwise
+// both read "no recent alert" / "14 sent today" and both actually message
+// a guardian, despite the cooldown/idempotency/cap comments below implying
+// exactly one send and a hard ceiling. Keyed on uid alone (not
+// uid:contactId) so this also closes the daily-cap race across DIFFERENT
+// contacts, not just repeat sends to the same one - two alerts to two
+// different guardians in the same instant would otherwise each see the cap
+// as not-yet-reached and both proceed. Guardian alerts are a rare,
+// deliberate action (not a UI a user fires rapidly in normal use), so
+// serializing all of one user's requests has no real cost. This
+// synchronous check-and-add closes the race for real (no await happens
+// between the .has() check and the .add()); the key is released in a
+// `finally` once the request finishes, success or failure.
+const guardianAlertInFlight = new Set<string>();
+
 app.post("/api/guardian/alert", guardianAlertLimiter, verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
   const uid = requireAuth(req).uid; // uid from the verified token only - never from req.body
+  let inFlightKey: string | null = null;
   try {
     const { contactId, idempotencyKey } = req.body || {};
     if (typeof contactId !== "string" || !contactId) {
@@ -393,6 +440,16 @@ app.post("/api/guardian/alert", guardianAlertLimiter, verifyAppCheck, authentica
     if (typeof idempotencyKey !== "string" || idempotencyKey.length < 8) {
       return res.status(400).json({ error: "Missing or invalid idempotencyKey." });
     }
+
+    inFlightKey = uid;
+    if (guardianAlertInFlight.has(inFlightKey)) {
+      return res.status(429).json({
+        error: "cooldown",
+        userMessage: "Already sending your last guardian alert request - hang on a moment before trying again.",
+        canOverride: false,
+      });
+    }
+    guardianAlertInFlight.add(inFlightKey);
 
     const db = getDb();
     const alertsRef = db.collection("users").doc(uid).collection("guardian_alerts");
@@ -504,6 +561,8 @@ app.post("/api/guardian/alert", guardianAlertLimiter, verifyAppCheck, authentica
   } catch (error: any) {
     console.error("[Guardian alert] error:", error?.message || error);
     res.status(500).json({ error: error.message, userMessage: GUARDIAN_STATE_COPY.failed });
+  } finally {
+    if (inFlightKey) guardianAlertInFlight.delete(inFlightKey);
   }
 });
 
@@ -575,6 +634,63 @@ app.get("/api/nova/voice-sessions", verifyAppCheck, authenticateFirebaseUser, as
       sessions: snap.docs.map(d => {
         const data = d.data();
         return { endedAt: data.endedAt, durationMs: data.durationMs, turnCount: data.turnCount };
+      }),
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ============ Personal wellbeing tracking — GAD-7 ============
+// A validated self-report anxiety screener the user completes about
+// themselves. Two hard rules, enforced here:
+//   1. STRICTLY PRIVATE to the individual. Stored under the user document and
+//      there is deliberately NO org/aggregate endpoint for it - a person's
+//      GAD-7 result must never reach an employer dashboard.
+//   2. Self-report, not diagnosis, not inference. The user rates themselves;
+//      the server just validates, scores with the standard published bands
+//      (see gad7.ts), and stores the history so they can see their own trend.
+// Nested under the user, so the GDPR export/delete endpoints cover it
+// automatically (it is health data and must be erasable).
+const Gad7Schema = z.object({
+  answers: z.array(z.number().int().min(0).max(3)).length(7),
+  impairment: z.number().int().min(0).max(3).nullable().optional(),
+}).strict();
+
+app.post("/api/wellbeing/gad7", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const uid = requireAuth(req).uid;
+    const parsed = Gad7Schema.safeParse(req.body);
+    if (!parsed.success || !isValidGad7Answers(parsed.data.answers)) {
+      return res.status(400).json({ error: "Invalid GAD-7 submission." });
+    }
+    const score = scoreGad7(parsed.data.answers);
+    const result = interpretGad7(score);
+    const db = getDb();
+    await db.collection("users").doc(uid).collection("gad7_assessments").add({
+      answers: parsed.data.answers,
+      impairment: parsed.data.impairment ?? null,
+      score,
+      severity: result.severity,
+      createdAt: new Date().toISOString(),
+      serverCreatedAt: FieldValue.serverTimestamp(),
+    });
+    res.json({ score, severity: result.severity, severityLabel: result.severityLabel, summary: result.summary, suggestsSupport: result.suggestsSupport });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get("/api/wellbeing/gad7", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const uid = requireAuth(req).uid;
+    const db = getDb();
+    const snap = await db.collection("users").doc(uid).collection("gad7_assessments")
+      .orderBy("createdAt", "desc").limit(60).get();
+    res.json({
+      assessments: snap.docs.map(d => {
+        const data = d.data();
+        return { id: d.id, score: data.score, severity: data.severity, createdAt: data.createdAt };
       }),
     });
   } catch (error: any) {
@@ -1428,101 +1544,6 @@ app.post("/api/nova/chat", verifyAppCheck, authenticateFirebaseUser, async (req,
   }
 });
 
-// Real, deterministic recommendation - which tool actually matters most
-// right now, computed from the person's own real activity across the app.
-// This is a rule-based computation over their own data for their own
-// screen, not data sent to an AI model, so it's a different privacy
-// boundary than the consent-gated AI context above and doesn't require the
-// same opt-in.
-app.get("/api/nova/recommendation", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
-  try {
-    const user = requireAuth(req);
-    const db = getDb();
-    const uid = user.uid;
-
-    const threeDaysAgo = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString();
-    const todayStr = new Date().toISOString().split('T')[0];
-
-    const [moodSnap, bodySnap, commitSnap, boundarySnap, winsSnap, reviewSnap] = await Promise.all([
-      db.collection('users').doc(uid).collection('mood_pulses').where('createdAt', '>=', threeDaysAgo).get(),
-      db.collection('users').doc(uid).collection('body_checkins').where('createdAt', '>=', threeDaysAgo).get(),
-      db.collection('users').doc(uid).collection('energy_commitments').where('status', '==', 'active').get(),
-      db.collection('users').doc(uid).collection('boundary_scripts').orderBy('createdAt', 'desc').limit(1).get(),
-      db.collection('users').doc(uid).collection('wins').orderBy('createdAt', 'desc').limit(1).get(),
-      db.collection('users').doc(uid).collection('weekly_reviews').orderBy('createdAt', 'desc').limit(1).get(),
-    ]);
-
-    // Priority-ordered real signals - the first genuinely true condition
-    // wins, most urgent first.
-    const negativeMoods = moodSnap.docs.filter(d => ['overwhelmed', 'frustrated', 'pressured', 'tired'].includes(d.data().moodLabel));
-    if (negativeMoods.length >= 2) {
-      return res.json({
-        tab: 'reset',
-        title: 'A few tough check-ins recently',
-        message: `You've logged ${negativeMoods.length} stressed or tired mood pulses in the last 3 days. A grounding session might genuinely help right now.`,
-      });
-    }
-
-    const totalActiveDrain = commitSnap.docs.reduce((sum, d) => sum + (d.data().energyDrain || 0), 0);
-    if (totalActiveDrain >= 200) {
-      return res.json({
-        tab: 'recover',
-        title: 'Your energy budget is stretched',
-        message: `You currently have ${commitSnap.size} active commitments totalling ${totalActiveDrain} energy units. Worth reviewing what can be dropped or delegated.`,
-      });
-    }
-
-    const boundaryDoc = boundarySnap.docs[0];
-    const daysSinceBoundary = boundaryDoc ? (Date.now() - new Date(boundaryDoc.data().createdAt).getTime()) / (1000 * 60 * 60 * 24) : Infinity;
-    if (bodySnap.size > 0 && daysSinceBoundary >= 7) {
-      return res.json({
-        tab: 'communicate',
-        title: 'Physical tension, no recent boundary practice',
-        message: "You've logged body tension recently, and it's been over a week since you rehearsed a boundary script. Often the two are connected.",
-      });
-    }
-
-    const hasCheckedInToday = moodSnap.docs.some(d => typeof d.data().createdAt === 'string' && d.data().createdAt.startsWith(todayStr))
-      || bodySnap.docs.some(d => typeof d.data().createdAt === 'string' && d.data().createdAt.startsWith(todayStr));
-    if (!hasCheckedInToday) {
-      return res.json({
-        tab: 'home',
-        title: "You haven't checked in today",
-        message: "A quick mood or body pulse takes seconds, and it's what makes every other recommendation here actually accurate.",
-      });
-    }
-
-    const reviewDoc = reviewSnap.docs[0];
-    const daysSinceReview = reviewDoc ? (Date.now() - new Date(reviewDoc.data().createdAt).getTime()) / (1000 * 60 * 60 * 24) : Infinity;
-    if (daysSinceReview >= 7) {
-      return res.json({
-        tab: 'reflect',
-        title: 'Weekly review is overdue',
-        message: reviewDoc ? "It's been over a week since your last weekly review — worth a few minutes to see what's actually changed." : "You haven't done a weekly review yet — it's a genuinely useful way to see your own patterns.",
-      });
-    }
-
-    const winDoc = winsSnap.docs[0];
-    const daysSinceWin = winDoc ? (Date.now() - new Date(winDoc.data().createdAt).getTime()) / (1000 * 60 * 60 * 24) : Infinity;
-    if (daysSinceWin >= 3) {
-      return res.json({
-        tab: 'communicate',
-        title: 'No wins logged in a few days',
-        message: "It's been a few days since you logged a recovery win. Doesn't have to be big — noticing it is most of the value.",
-      });
-    }
-
-    // Nothing urgent - genuinely say so, rather than inventing a fake concern.
-    res.json({
-      tab: null,
-      title: "You're on a steady rhythm",
-      message: "Recent check-ins, energy load, and boundary practice all look reasonably balanced. Nothing urgent to flag right now.",
-    });
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
 const DiagnoseRequestSchema = z.object({
   answers: z.record(z.string(), z.union([z.string(), z.number()])).optional().default({}),
   letNovaLearn: z.boolean().optional().default(true),
@@ -1859,6 +1880,104 @@ You MUST respond strictly in the following JSON format. Do not include markdown 
   } catch (error: any) {
     console.error("Voice Journal API error:", error);
     res.status(500).json({ error: "Voice Journal analysis failed. Please try speaking clearly." });
+  }
+});
+
+// ============ One Less Thing: real Nova analysis ============
+// The "One Less Thing" emergency-relief button used to label a fixed,
+// client-side keyword match (if the task mentions "meeting", suggest
+// Delete; etc.) as "Nova's Recommendation" / "Nova is processing" - real
+// UI copy claiming real-time AI reasoning that was never actually
+// happening. This endpoint makes that claim true: an actual Gemini call
+// reads the task and picks the action. The four possible actions and their
+// meanings are unchanged from the original heuristic; only the reasoning
+// behind the pick is now real. The client keeps its original heuristic as
+// an honestly-labelled fallback if this call fails - never presented as
+// live analysis when it isn't.
+const OneLessThingRequestSchema = z.object({
+  task: z.string().trim().min(1).max(300),
+}).strict();
+
+const ONE_LESS_THING_ACTIONS = ['Delete', 'Delay', 'Delegate', 'Simplify'] as const;
+
+app.post("/api/nova/one-less-thing", oneLessThingLimiter, verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const parsed = OneLessThingRequestSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: "Invalid request." });
+    }
+    const { task } = parsed.data;
+
+    if (!process.env.GEMINI_API_KEY || process.env.GEMINI_API_KEY === "MY_GEMINI_API_KEY") {
+      return res.status(401).json({ error: "Nova analysis is not configured on this server." });
+    }
+
+    const abortController = new AbortController();
+    const timeoutId = setTimeout(() => abortController.abort(), 15000);
+
+    try {
+      const response = await ai.models.generateContent({
+        model: "gemini-3.5-flash",
+        contents: {
+          parts: [{
+            text: `You are Nova, a direct, warm burnout-recovery coach. The user is overloaded right now and has named ONE thing weighing on them. Your job is triage: pick the single fastest way to genuinely take it off their plate today.
+
+The thing on their plate: "${task}"
+
+Choose exactly ONE action:
+- Delete: it doesn't need to happen at all, or not today. Cancel it or make it optional.
+- Delay: it's not actually urgent - move it to a specific later time without guilt.
+- Delegate: someone else can genuinely do this, even imperfectly.
+- Simplify: it must happen, but at far lower effort/fidelity than they're planning.
+
+Then write:
+1. advice: 2 sentences, direct and specific to what they described, in Nova's voice - not generic.
+2. template: a real, ready-to-send message they could copy and paste right now to actually make this happen (e.g. to cancel, delegate, or push back). It must be complete and usable exactly as written - never include a bracket placeholder like "[Tuesday]" or "[name]" that still needs filling in; if you need a day or person, invent a concrete, generic one that reads naturally (e.g. "early next week", "whoever's free").
+
+Respond strictly as JSON, no markdown:
+{"action": "Delete" | "Delay" | "Delegate" | "Simplify", "advice": "...", "template": "..."}`,
+          }],
+        },
+        config: {
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              action: { type: Type.STRING },
+              advice: { type: Type.STRING },
+              template: { type: Type.STRING },
+            },
+            required: ["action", "advice", "template"],
+          },
+        },
+      });
+      clearTimeout(timeoutId);
+
+      const text = response.text;
+      if (!text) throw new Error("Empty response from Gemini model.");
+      const parsedModel = JSON.parse(text);
+
+      // Never trust the model's own claim about its output shape - validate
+      // for real, same as every other tool/model-output path in this app.
+      if (!ONE_LESS_THING_ACTIONS.includes(parsedModel.action) || typeof parsedModel.advice !== "string" || typeof parsedModel.template !== "string") {
+        throw new Error("Model returned an unexpected shape.");
+      }
+
+      res.json({
+        action: parsedModel.action,
+        advice: parsedModel.advice.slice(0, 500),
+        template: parsedModel.template.slice(0, 500),
+      });
+    } catch (modelError: any) {
+      clearTimeout(timeoutId);
+      if (modelError.name === "AbortError") {
+        return res.status(504).json({ error: "Nova's analysis timed out." });
+      }
+      throw modelError;
+    }
+  } catch (error: any) {
+    console.error("One Less Thing API error:", error);
+    res.status(500).json({ error: "Could not reach Nova for analysis right now." });
   }
 });
 
@@ -3327,6 +3446,11 @@ app.get("/api/push/vapid-public-key", verifyAppCheck, (req, res) => {
 
 const PushSubscriptionSchema = z.object({
   endpoint: z.string().url(),
+  // PushSubscription.toJSON() (what the client actually sends — see
+  // src/lib/push-notifications.ts) always includes this key, even when its
+  // value is null, so it must be accepted here or every real subscription
+  // gets rejected by .strict() before push notifications can ever work.
+  expirationTime: z.number().nullable().optional(),
   keys: z.object({
     p256dh: z.string(),
     auth: z.string(),
@@ -3923,6 +4047,17 @@ app.post("/api/admin/orgs", verifyAppCheck, authenticateFirebaseUser, async (req
         organisationId: orgId,
         updatedAt: FieldValue.serverTimestamp(),
       }, { merge: true });
+      // The initial admin's granular Enterprise role - owner, since they're
+      // the org's first real member and the legacy adminUids fallback would
+      // resolve them to 'owner' anyway. Written explicitly rather than left
+      // to the fallback so this org has a real members/ record from day one.
+      await db.collection("organisations").doc(orgId).collection("members").doc(initialAdminUid).set({
+        role: 'owner',
+        status: 'active',
+        email: initialAdminEmail,
+        joinedAt: FieldValue.serverTimestamp(),
+        invitedBy: (req as any).user?.uid || 'system',
+      }, { merge: true });
     }
 
     await logAdminAction(req, "manage_organisation", "", orgId, { name, privacyThreshold });
@@ -3955,6 +4090,16 @@ app.post("/api/org/leave", verifyAppCheck, authenticateFirebaseUser, async (req,
       memberUids: FieldValue.arrayRemove(user.uid),
       adminUids: FieldValue.arrayRemove(user.uid),
     });
+    // Clean up the granular Enterprise role record too - otherwise it
+    // silently outlives the membership it describes, the same class of bug
+    // user-data-collections.ts's own history warns against.
+    await db.collection("organisations").doc(orgId).collection("members").doc(user.uid).delete();
+    // Same reasoning for any desktop-deployment device this user registered
+    // under the org they're leaving (organisations/{orgId}/devices, keyed by
+    // ownerUid) - otherwise it silently outlives the membership too.
+    const devicesSnap = await db.collection("organisations").doc(orgId).collection("devices")
+      .where("ownerUid", "==", user.uid).get();
+    await Promise.all(devicesSnap.docs.map((d: any) => d.ref.delete()));
 
     res.json({ success: true });
   } catch (err: any) {
@@ -3971,7 +4116,33 @@ app.post("/api/org/leave", verifyAppCheck, authenticateFirebaseUser, async (req,
 // admins never get direct Firestore read access to another member's data;
 // they only ever see what these endpoints choose to compute and return.
 
-const requireOrgAdmin = async (req: any, orgId: string) => {
+// ============ Enterprise: organisation-level RBAC & audit logging ============
+// A genuinely new layer on top of the org membership model above, not a
+// rename of it. See org-rbac.ts for the role/permission table itself - this
+// section only wires that pure logic to real Firestore reads and to the
+// existing requireAuth/logAdminAction conventions.
+
+// Resolves a member's granular Enterprise role. Prefers the real per-member
+// record (organisations/{orgId}/members/{uid}); if that subdocument doesn't
+// exist yet - an org created, or a member who joined, before this feature
+// existed - falls back to the legacy binary adminUids/memberUids arrays so
+// every existing org and member keeps working with zero migration.
+const getOrgMemberRole = async (db: any, orgId: string, org: any, uid: string): Promise<OrgRole | null> => {
+  const memberDoc = await db.collection("organisations").doc(orgId).collection("members").doc(uid).get();
+  if (memberDoc.exists) {
+    const role = memberDoc.data()?.role;
+    if (isOrgRole(role)) return role;
+  }
+  const adminUids: string[] = org.adminUids || [];
+  const memberUids: string[] = org.memberUids || [];
+  if (adminUids.includes(uid)) return 'owner';
+  if (memberUids.includes(uid)) return 'member';
+  return null;
+};
+
+// Shared by every Enterprise guard below - one real org existence check and
+// one real role resolution, not three copies of the same Firestore reads.
+const loadOrgAndCallerRole = async (req: any, orgId: string) => {
   const user = requireAuth(req);
   const db = getDb();
   const orgDoc = await db.collection("organisations").doc(orgId).get();
@@ -3979,10 +4150,110 @@ const requireOrgAdmin = async (req: any, orgId: string) => {
     throw new Error("Organisation not found.");
   }
   const org = orgDoc.data()!;
-  const adminUids: string[] = org.adminUids || [];
-  if (!adminUids.includes(user.uid)) {
-    throw new Error("Forbidden: Organisation admin privileges required for this organisation.");
+  const role = await getOrgMemberRole(db, orgId, org, user.uid);
+  return { user, db, org, role };
+};
+
+const requireOrgRole = async (req: any, orgId: string, allowedRoles: OrgRole[]) => {
+  const { user, org, role } = await loadOrgAndCallerRole(req, orgId);
+  if (!role || !allowedRoles.includes(role)) {
+    throw new Error("Forbidden: Insufficient organisation role for this action.");
   }
+  return { user, org, role };
+};
+
+// A permission-based variant for routes better expressed as "needs this
+// capability" than "needs to be one of these specific roles" - e.g. both
+// owner and billing_admin can view billing without every such route having
+// to enumerate every role that happens to hold that permission.
+const requireOrgPermission = async (req: any, orgId: string, permission: OrgPermission) => {
+  const { user, db, org, role } = await loadOrgAndCallerRole(req, orgId);
+  if (!hasOrgPermission(role, permission)) {
+    throw new Error("Forbidden: Insufficient organisation permissions for this action.");
+  }
+  return { user, db, org, role };
+};
+
+// Prevents an org from ever being left with zero owners - the same
+// reasoning as assertNotLastPlatformOwner above, scoped to one org's
+// members subcollection instead of the platform-wide admin_users one.
+//
+// This must mirror getOrgMemberRole's own resolution rules, not just query
+// the members subcollection for role=='owner' - a legacy org (or a legacy
+// owner who has never had a granular members/{uid} doc written) resolves
+// to 'owner' entirely via the org.adminUids fallback, with no matching
+// members doc at all. Querying the subcollection alone would find zero
+// owners for such an org and silently let its actual last owner be
+// demoted or removed with no protection whatsoever.
+const assertNotLastOrgOwner = async (db: any, orgId: string, org: any, targetUid: string) => {
+  const membersSnap = await db.collection("organisations").doc(orgId).collection("members").get();
+  const resolvedRoleByUid = new Map<string, string>();
+  membersSnap.docs.forEach((d: any) => {
+    const role = d.data()?.role;
+    if (isOrgRole(role)) resolvedRoleByUid.set(d.id, role);
+  });
+  const ownerUids = new Set<string>();
+  resolvedRoleByUid.forEach((role, uid) => {
+    if (role === 'owner') ownerUids.add(uid);
+  });
+  // Anyone in the legacy adminUids array who does NOT have a granular
+  // members doc (or whose doc has no valid role) still resolves to 'owner'
+  // via getOrgMemberRole's fallback, and must count as one here too.
+  const adminUids: string[] = org?.adminUids || [];
+  adminUids.forEach((uid) => {
+    if (!resolvedRoleByUid.has(uid)) ownerUids.add(uid);
+  });
+  if (ownerUids.has(targetUid) && ownerUids.size <= 1) {
+    throw new Error("Operation Rejected: Cannot remove or downgrade the last owner of this organisation.");
+  }
+};
+
+// Org-scoped counterpart to logAdminAction above - same shape (actor,
+// action, target, timestamp, IP/user agent), plus orgId and structured
+// before/after diffs, written to the ORG's OWN audit trail
+// (organisations/{orgId}/audit_logs) rather than the platform-wide one, so
+// an org's own admins can read their org's history without ever touching
+// - or being able to read - Blaze Break's platform-staff audit log.
+// before/after must stay structured field diffs, never raw free-text
+// content (e.g. never a full document body or chat message).
+const logOrgAuditAction = async (
+  req: any,
+  orgId: string,
+  action: string,
+  targetResourceType: string,
+  targetResourceId: string,
+  before: Record<string, unknown> | null = null,
+  after: Record<string, unknown> | null = null,
+) => {
+  try {
+    const actor = req.user;
+    const db = getDb();
+    await db.collection("organisations").doc(orgId).collection("audit_logs").add({
+      actorUid: actor?.uid || "system",
+      actorEmail: actor?.email || "system",
+      orgId,
+      action,
+      targetResourceType,
+      targetResourceId,
+      before,
+      after,
+      createdAt: FieldValue.serverTimestamp(),
+      ipAddress: req.ip || "",
+      userAgent: req.headers?.["user-agent"] || "",
+    });
+  } catch (err: any) {
+    console.error("Failed to write org audit log:", err.message);
+  }
+};
+
+// Kept as the exact function existing call sites already depend on (~19 of
+// them), now a thin wrapper: 'admin' is a new, distinct granular role from
+// the legacy adminUids array, so this now also admits a real admin-role
+// member who was never added to that array - a real capability expansion,
+// not just a rename - while every existing owner (via the adminUids
+// fallback in getOrgMemberRole) keeps working unchanged.
+const requireOrgAdmin = async (req: any, orgId: string) => {
+  const { user, org } = await requireOrgRole(req, orgId, ['owner', 'admin']);
   return { user, org };
 };
 
@@ -4035,6 +4306,16 @@ app.post("/api/org/join", verifyAppCheck, authenticateFirebaseUser, async (req, 
     await db.collection("organisations").doc(orgDoc.id).update({
       memberUids: FieldValue.arrayUnion(user.uid),
     });
+    // Real per-member Enterprise role record, not just the legacy array -
+    // a fresh join always starts at 'member'; an owner/admin upgrades them
+    // later via the role-management route below.
+    await db.collection("organisations").doc(orgDoc.id).collection("members").doc(user.uid).set({
+      role: 'member',
+      status: 'active',
+      email: user.email || '',
+      joinedAt: FieldValue.serverTimestamp(),
+      invitedBy: 'join_code',
+    }, { merge: true });
 
     // If this person was invited by email, that invite is now resolved -
     // clean it up so the admin's pending list only shows people still
@@ -4764,6 +5045,7 @@ app.post("/api/org/:orgId/members/:memberUid/remove", verifyAppCheck, authentica
       return res.status(400).json({ error: "Use 'Leave Organisation' from your own Privacy Centre to remove yourself." });
     }
     const db = getDb();
+    await assertNotLastOrgOwner(db, orgId, org, memberUid);
     await db.collection("users").doc(memberUid).set({
       organisationId: FieldValue.delete(),
       shareAnonymizedDataWithOrg: false,
@@ -4774,9 +5056,19 @@ app.post("/api/org/:orgId/members/:memberUid/remove", verifyAppCheck, authentica
       adminUids: FieldValue.arrayRemove(memberUid),
       [`memberTeams.${memberUid}`]: FieldValue.delete(),
     });
+    // Clean up the granular Enterprise role record too - see /api/org/leave
+    // above for why this matters.
+    await db.collection("organisations").doc(orgId).collection("members").doc(memberUid).delete();
+    // Same reasoning for any desktop-deployment device this member
+    // registered under the org (organisations/{orgId}/devices, keyed by
+    // ownerUid) - otherwise it silently outlives the membership too.
+    const devicesSnap = await db.collection("organisations").doc(orgId).collection("devices")
+      .where("ownerUid", "==", memberUid).get();
+    await Promise.all(devicesSnap.docs.map((d: any) => d.ref.delete()));
+    await logOrgAuditAction(req, orgId, "remove_member", "member", memberUid);
     res.json({ success: true });
   } catch (err: any) {
-    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
+    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("Rejected") ? 400 : 500).json({ error: err.message });
   }
 });
 
@@ -4825,6 +5117,14 @@ app.post("/api/org/:orgId/members/:memberUid/make-admin", verifyAppCheck, authen
     await db.collection("organisations").doc(orgId).update({
       adminUids: FieldValue.arrayUnion(memberUid),
     });
+    // Keep the granular Enterprise role record in sync with the legacy
+    // array - otherwise a member with an existing members/ doc would have
+    // this promotion silently ignored, since getOrgMemberRole prefers the
+    // granular record over the array fallback.
+    await db.collection("organisations").doc(orgId).collection("members").doc(memberUid).set({
+      role: 'admin',
+    }, { merge: true });
+    await logOrgAuditAction(req, orgId, "grant_admin", "member", memberUid, null, { role: 'admin' });
     res.json({ success: true });
   } catch (err: any) {
     res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
@@ -4845,9 +5145,722 @@ app.post("/api/org/:orgId/members/:memberUid/revoke-admin", verifyAppCheck, auth
     await db.collection("organisations").doc(orgId).update({
       adminUids: FieldValue.arrayRemove(memberUid),
     });
+    // Same sync reasoning as /make-admin above - demote in the granular
+    // record too, back to plain member rather than leaving a stale 'admin'.
+    await db.collection("organisations").doc(orgId).collection("members").doc(memberUid).set({
+      role: 'member',
+    }, { merge: true });
+    await logOrgAuditAction(req, orgId, "revoke_admin", "member", memberUid, { role: 'admin' }, { role: 'member' });
     res.json({ success: true });
   } catch (err: any) {
     res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
+  }
+});
+
+// ============ Enterprise: granular org roles ============
+// The 7-role system (owner/admin/billing_admin/security_admin/
+// connector_admin/member/viewer) layered on top of the legacy binary
+// adminUids/memberUids arrays above. See org-rbac.ts for the role/
+// permission table and getOrgMemberRole/requireOrgRole/requireOrgPermission
+// above for how a caller's role is resolved.
+
+const MemberRoleChangeSchema = z.object({
+  role: z.enum(['owner', 'admin', 'billing_admin', 'security_admin', 'connector_admin', 'member', 'viewer']),
+}).strict();
+
+// Every member's granular role, for the org's own admin UI. Anyone who can
+// read the org at all (viewer+) can see this - it's who has what access,
+// not sensitive content.
+app.get("/api/org/:orgId/members/roles", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const { orgId } = req.params;
+    const { db } = await requireOrgPermission(req, orgId, 'org.audit.read');
+    const membersSnap = await db.collection("organisations").doc(orgId).collection("members").get();
+    const roles = membersSnap.docs.map((d: any) => ({ uid: d.id, ...d.data() }));
+    res.json({ members: roles });
+  } catch (err: any) {
+    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("not found") ? 404 : 500).json({ error: err.message });
+  }
+});
+
+app.post("/api/org/:orgId/members/:memberUid/role", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const { orgId, memberUid } = req.params;
+    const { user, org, role: actorRole } = await requireOrgRole(req, orgId, ['owner', 'admin', 'security_admin']);
+    const parsed = MemberRoleChangeSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: "A valid role is required." });
+    }
+    const { role: nextRole } = parsed.data;
+    if (!canAssignRole(actorRole, nextRole)) {
+      return res.status(403).json({ error: `Forbidden: only an owner can grant or revoke the '${nextRole}' role.` });
+    }
+    if (!(org.memberUids || []).includes(memberUid) && memberUid !== user.uid) {
+      return res.status(400).json({ error: "That person isn't a member of this organisation." });
+    }
+    const db = getDb();
+    const memberRef = db.collection("organisations").doc(orgId).collection("members").doc(memberUid);
+    const beforeDoc = await memberRef.get();
+    const beforeRole = beforeDoc.exists ? beforeDoc.data()?.role : null;
+    // Demoting away from 'owner' must never leave the org with zero owners.
+    // Resolved via getOrgMemberRole (not the raw beforeRole above) because a
+    // legacy owner who only exists in org.adminUids - with no granular
+    // members/{uid} doc yet - has beforeRole===null even though they
+    // currently resolve to 'owner'; checking the raw field alone would skip
+    // this guard entirely for every org that predates the granular role
+    // system and silently allow its actual last owner to be demoted.
+    const effectiveBeforeRole = await getOrgMemberRole(db, orgId, org, memberUid);
+    if (effectiveBeforeRole === 'owner' && nextRole !== 'owner') {
+      await assertNotLastOrgOwner(db, orgId, org, memberUid);
+    }
+    await memberRef.set({ role: nextRole }, { merge: true });
+    await logOrgAuditAction(req, orgId, "change_member_role", "member", memberUid, { role: beforeRole }, { role: nextRole });
+    res.json({ success: true, role: nextRole });
+  } catch (err: any) {
+    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("Rejected") ? 400 : err.message?.includes("not found") ? 404 : 500).json({ error: err.message });
+  }
+});
+
+app.post("/api/org/:orgId/members/:memberUid/suspend", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const { orgId, memberUid } = req.params;
+    await requireOrgRole(req, orgId, ['owner', 'admin', 'security_admin']);
+    const db = getDb();
+    const memberRef = db.collection("organisations").doc(orgId).collection("members").doc(memberUid);
+    await memberRef.set({ status: 'suspended' }, { merge: true });
+    await logOrgAuditAction(req, orgId, "suspend_member", "member", memberUid, { status: 'active' }, { status: 'suspended' });
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
+  }
+});
+
+app.post("/api/org/:orgId/members/:memberUid/reactivate", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const { orgId, memberUid } = req.params;
+    await requireOrgRole(req, orgId, ['owner', 'admin', 'security_admin']);
+    const db = getDb();
+    const memberRef = db.collection("organisations").doc(orgId).collection("members").doc(memberUid);
+    await memberRef.set({ status: 'active' }, { merge: true });
+    await logOrgAuditAction(req, orgId, "reactivate_member", "member", memberUid, { status: 'suspended' }, { status: 'active' });
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
+  }
+});
+
+// Paginated read of this org's own Enterprise audit trail - never the
+// platform-wide admin_audit_logs collection, which this endpoint has no
+// access to and never queries.
+app.get("/api/org/:orgId/audit-logs", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const { orgId } = req.params;
+    const { db } = await requireOrgPermission(req, orgId, 'org.audit.read');
+    const limitN = Math.min(Math.max(parseInt(String(req.query.limit || '50'), 10) || 50, 1), 200);
+    const snap = await db.collection("organisations").doc(orgId).collection("audit_logs")
+      .orderBy("createdAt", "desc").limit(limitN).get();
+    const logs = snap.docs.map((d: any) => ({ id: d.id, ...d.data() }));
+    res.json({ logs });
+  } catch (err: any) {
+    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("not found") ? 404 : 500).json({ error: err.message });
+  }
+});
+
+// ============ Enterprise: no-model-training-by-default data policy ============
+// See org-data-policy.ts and docs/DATA_POLICY.md. getEffectiveDataPolicy is
+// the ONLY place in this codebase that should ever be treated as the source
+// of truth for what an org has actually consented to - it defaults every
+// field to the safe/off setting, so an org that never touches this at all
+// is exactly as protected as one that explicitly locked it down.
+
+// Any org member (viewer+) can see the org's own data policy - it's a
+// stated commitment to the org, not sensitive content.
+app.get("/api/org/:orgId/data-policy", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const { orgId } = req.params;
+    const { org } = await requireOrgPermission(req, orgId, 'org.data_policy.view');
+    res.json({ policy: getEffectiveDataPolicy(org.dataPolicy) });
+  } catch (err: any) {
+    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("not found") ? 404 : 500).json({ error: err.message });
+  }
+});
+
+app.post("/api/org/:orgId/data-policy", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const { orgId } = req.params;
+    const { db, org } = await requireOrgPermission(req, orgId, 'org.data_policy.manage');
+    const before = getEffectiveDataPolicy(org.dataPolicy);
+    // The caller sends the full intended policy (never a partial patch -
+    // see org-data-policy.ts for why), validated as a whole object before
+    // anything is written.
+    const validation = validateDataPolicyUpdate(req.body);
+    if (!validation.valid) {
+      return res.status(400).json({ error: validation.error });
+    }
+    const after = getEffectiveDataPolicy(req.body);
+    await db.collection("organisations").doc(orgId).update({ dataPolicy: after });
+    await logOrgAuditAction(req, orgId, "update_data_policy", "data_policy", orgId, { ...before }, { ...after });
+    res.json({ success: true, policy: after });
+  } catch (err: any) {
+    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("not found") ? 404 : 500).json({ error: err.message });
+  }
+});
+
+// ============ Enterprise: org-level connector admin ============
+// See org-connectors.ts and docs/CONNECTOR_ADMIN.md. A connector here is
+// the org's own administrative registration for an external service (or,
+// for `local`, a genuine no-auth-needed stub) - distinct from an
+// individual member's personal OAuth connection under
+// /api/integrations/*. No route in this section ever marks a connector's
+// authStatus as "connected" without a real handshake actually happening -
+// today, that handshake doesn't exist yet at the org level, so every
+// OAuth-backed connector honestly reports "not_connected" until it does.
+
+const redactConnector = (id: string, data: Record<string, any>, showDetail: boolean) => {
+  const base = {
+    id,
+    type: data.type,
+    displayName: data.displayName,
+    status: data.status,
+    enabled: data.enabled,
+    authStatus: data.authStatus,
+    isLocal: data.isLocal,
+    restrictedToTeams: data.restrictedToTeams || [],
+    createdAt: data.createdAt,
+  };
+  if (!showDetail) return base;
+  return {
+    ...base,
+    configuredBy: data.configuredBy,
+    lastSync: data.lastSync || null,
+    lastError: data.lastError || null,
+    reindexStatus: data.reindexStatus || null,
+    lastReindexRequestedAt: data.lastReindexRequestedAt || null,
+  };
+};
+
+app.get("/api/org/:orgId/connectors", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const { orgId } = req.params;
+    const { db, role } = await requireOrgPermission(req, orgId, 'org.connectors.view');
+    const showDetail = canSeeConnectorDetail(hasOrgPermission(role, 'org.connectors.manage'));
+    const snap = await db.collection("organisations").doc(orgId).collection("connectors").get();
+    const connectors = snap.docs.map((d: any) => redactConnector(d.id, d.data(), showDetail));
+    res.json({ connectors, availableTypes: Object.keys(ORG_CONNECTOR_TYPES) });
+  } catch (err: any) {
+    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("not found") ? 404 : 500).json({ error: err.message });
+  }
+});
+
+app.post("/api/org/:orgId/connectors", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const { orgId } = req.params;
+    const { user, db } = await requireOrgPermission(req, orgId, 'org.connectors.manage');
+    const validation = validateConnectorCreate(req.body);
+    if (!validation.valid) {
+      return res.status(400).json({ error: validation.error });
+    }
+    const { type, displayName, restrictedToTeams } = req.body;
+    const isLocal = ORG_CONNECTOR_TYPES[type].isLocal;
+    const now = new Date().toISOString();
+    const record = {
+      type,
+      displayName,
+      status: "active",
+      enabled: true,
+      isLocal,
+      authStatus: initialAuthStatus(type),
+      configuredBy: user.uid,
+      restrictedToTeams: restrictedToTeams || [],
+      lastSync: null,
+      lastError: null,
+      reindexStatus: null,
+      lastReindexRequestedAt: null,
+      createdAt: now,
+      updatedAt: now,
+    };
+    const ref = await db.collection("organisations").doc(orgId).collection("connectors").add(record);
+    await logOrgAuditAction(req, orgId, "create_connector", "connector", ref.id, null, { type, displayName });
+    res.json({ success: true, connector: redactConnector(ref.id, record, true) });
+  } catch (err: any) {
+    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("not found") ? 404 : 500).json({ error: err.message });
+  }
+});
+
+const loadOrgConnector = async (db: any, orgId: string, connectorId: string) => {
+  const ref = db.collection("organisations").doc(orgId).collection("connectors").doc(connectorId);
+  const doc = await ref.get();
+  if (!doc.exists) {
+    throw new Error("Connector not found.");
+  }
+  return { ref, data: doc.data() };
+};
+
+app.post("/api/org/:orgId/connectors/:connectorId/enable", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const { orgId, connectorId } = req.params;
+    const { db } = await requireOrgPermission(req, orgId, 'org.connectors.manage');
+    const { ref, data } = await loadOrgConnector(db, orgId, connectorId);
+    const before = { status: data.status, enabled: data.enabled };
+    await ref.update({ status: "active", enabled: true, updatedAt: new Date().toISOString() });
+    await logOrgAuditAction(req, orgId, "enable_connector", "connector", connectorId, before, { status: "active", enabled: true });
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("not found") ? 404 : 500).json({ error: err.message });
+  }
+});
+
+app.post("/api/org/:orgId/connectors/:connectorId/disable", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const { orgId, connectorId } = req.params;
+    const { db } = await requireOrgPermission(req, orgId, 'org.connectors.manage');
+    const { ref, data } = await loadOrgConnector(db, orgId, connectorId);
+    const before = { status: data.status, enabled: data.enabled };
+    await ref.update({ status: "disabled", enabled: false, updatedAt: new Date().toISOString() });
+    await logOrgAuditAction(req, orgId, "disable_connector", "connector", connectorId, before, { status: "disabled", enabled: false });
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("not found") ? 404 : 500).json({ error: err.message });
+  }
+});
+
+// Revoke is a harder stop than disable: it also resets authStatus back to
+// its honest starting point, since any future re-enable of an OAuth-backed
+// connector will need a fresh real handshake, not a resumed old one.
+app.post("/api/org/:orgId/connectors/:connectorId/revoke", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const { orgId, connectorId } = req.params;
+    const { db } = await requireOrgPermission(req, orgId, 'org.connectors.manage');
+    const { ref, data } = await loadOrgConnector(db, orgId, connectorId);
+    const before = { status: data.status, enabled: data.enabled, authStatus: data.authStatus };
+    const after = { status: "revoked", enabled: false, authStatus: initialAuthStatus(data.type) };
+    await ref.update({ ...after, updatedAt: new Date().toISOString() });
+    await logOrgAuditAction(req, orgId, "revoke_connector", "connector", connectorId, before, after);
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("not found") ? 404 : 500).json({ error: err.message });
+  }
+});
+
+// No background indexing worker exists in this codebase yet - this marks a
+// job as requested so a future worker has something real to pick up. It
+// never claims the reindex actually happened.
+app.post("/api/org/:orgId/connectors/:connectorId/reindex", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const { orgId, connectorId } = req.params;
+    const { db } = await requireOrgPermission(req, orgId, 'org.connectors.manage');
+    const { ref } = await loadOrgConnector(db, orgId, connectorId);
+    const now = new Date().toISOString();
+    await ref.update({ reindexStatus: "pending", lastReindexRequestedAt: now });
+    await logOrgAuditAction(req, orgId, "request_connector_reindex", "connector", connectorId, null, { reindexStatus: "pending" });
+    res.json({ success: true, reindexStatus: "pending", note: "No background indexing worker is wired up yet - this request is recorded but not yet processed." });
+  } catch (err: any) {
+    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("not found") ? 404 : 500).json({ error: err.message });
+  }
+});
+
+// ============ Enterprise: desktop deployment control plane ============
+// See desktop-deployment.ts and docs/DESKTOP_DEPLOYMENT.md. There is no
+// real Blaze Break desktop client shipping today - the installable PWA is
+// the only client that exists. This is a backend control plane only,
+// built so a future desktop client has somewhere real to register, report
+// its version, and be centrally managed - never presented as proof such a
+// client exists.
+
+// Any org member can self-register their own device - this isn't an admin
+// action, it's the device announcing itself.
+app.post("/api/org/:orgId/devices/register", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const { orgId } = req.params;
+    const { user, db, role } = await loadOrgAndCallerRole(req, orgId);
+    if (!role) {
+      return res.status(403).json({ error: "Forbidden: not a member of this organisation." });
+    }
+    const validation = validateDeviceRegistration(req.body);
+    if (!validation.valid) {
+      return res.status(400).json({ error: validation.error });
+    }
+    const { channel, appVersion, deviceName } = req.body;
+    const now = new Date().toISOString();
+    const record = {
+      ownerUid: user.uid,
+      channel,
+      appVersion,
+      deviceName: deviceName || null,
+      status: "active",
+      lastCheckIn: now,
+      registeredAt: now,
+    };
+    const ref = await db.collection("organisations").doc(orgId).collection("devices").add(record);
+    await logOrgAuditAction(req, orgId, "register_device", "device", ref.id, null, { channel, appVersion });
+    res.json({ success: true, device: { id: ref.id, ...record } });
+  } catch (err: any) {
+    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("not found") ? 404 : 500).json({ error: err.message });
+  }
+});
+
+// Full device roster, including every member's ownerUid - an org-admin
+// action, not something every member can see about each other.
+app.get("/api/org/:orgId/devices", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const { orgId } = req.params;
+    const { db } = await requireOrgPermission(req, orgId, 'org.devices.manage');
+    const snap = await db.collection("organisations").doc(orgId).collection("devices").get();
+    const devices = snap.docs.map((d: any) => ({ id: d.id, ...d.data() }));
+    res.json({ devices });
+  } catch (err: any) {
+    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("not found") ? 404 : 500).json({ error: err.message });
+  }
+});
+
+app.post("/api/org/:orgId/devices/:deviceId/revoke", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const { orgId, deviceId } = req.params;
+    const { db } = await requireOrgPermission(req, orgId, 'org.devices.manage');
+    const ref = db.collection("organisations").doc(orgId).collection("devices").doc(deviceId);
+    const doc = await ref.get();
+    if (!doc.exists) {
+      return res.status(404).json({ error: "Device not found." });
+    }
+    const before = { status: doc.data().status };
+    await ref.update({ status: "revoked", revokedAt: new Date().toISOString() });
+    await logOrgAuditAction(req, orgId, "revoke_device", "device", deviceId, before, { status: "revoked" });
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("not found") ? 404 : 500).json({ error: err.message });
+  }
+});
+
+// A device calls this itself (or an org admin, checking on a member's
+// behalf) to report it's alive and learn whether it's below the enforced
+// minimum version or simply behind the latest.
+app.post("/api/org/:orgId/devices/:deviceId/check-for-update", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const { orgId, deviceId } = req.params;
+    const { user, db, role } = await loadOrgAndCallerRole(req, orgId);
+    if (!role) {
+      return res.status(403).json({ error: "Forbidden: not a member of this organisation." });
+    }
+    const ref = db.collection("organisations").doc(orgId).collection("devices").doc(deviceId);
+    const doc = await ref.get();
+    if (!doc.exists) {
+      return res.status(404).json({ error: "Device not found." });
+    }
+    const device = doc.data();
+    const isOwner = device.ownerUid === user.uid;
+    if (!isOwner && !hasOrgPermission(role, 'org.devices.manage')) {
+      return res.status(403).json({ error: "Forbidden: you may only check updates for your own device." });
+    }
+    if (device.status === "revoked") {
+      return res.status(403).json({ error: "This device has been revoked and can no longer check for updates." });
+    }
+    await ref.update({ lastCheckIn: new Date().toISOString() });
+    const configDoc = await db.collection("app_config").doc("release_channels").get();
+    const channelConfig = configDoc.exists ? (configDoc.data()?.[device.channel] || null) : null;
+    res.json(evaluateUpdateStatus(device.appVersion, channelConfig));
+  } catch (err: any) {
+    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("not found") ? 404 : 500).json({ error: err.message });
+  }
+});
+
+// Platform-wide release channel config (app_config/release_channels) -
+// read by any authenticated member's device check, written only by Blaze
+// Break's own platform staff, since it governs every org's devices at once.
+app.get("/api/app-config/release-channels", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const db = getDb();
+    const doc = await db.collection("app_config").doc("release_channels").get();
+    res.json({ channels: doc.exists ? doc.data() : {} });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/api/admin/release-channels", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    requireAdmin(req);
+    const { channel, minVersion, latestVersion } = req.body;
+    if (!isDeviceChannel(channel)) {
+      return res.status(400).json({ error: `"channel" must be one of: ${DEVICE_CHANNELS.join(', ')}.` });
+    }
+    if (!isValidAppVersion(minVersion) || !isValidAppVersion(latestVersion)) {
+      return res.status(400).json({ error: '"minVersion" and "latestVersion" must be semantic version strings like "1.2.3".' });
+    }
+    const db = getDb();
+    await db.collection("app_config").doc("release_channels").set({ [channel]: { minVersion, latestVersion } }, { merge: true });
+    await logAdminAction(req, "update_release_channel", "", channel, { channel, minVersion, latestVersion });
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ============ Enterprise: central billing & administration ============
+// See billing-adapter.ts and docs/BILLING_ADMIN.md. There is no Stripe (or
+// any) payment provider wired up in this codebase - `billingProvider` is
+// the explicit NullBillingProvider, which reports exactly what's already
+// stored on the org and never pretends a charge or subscription happened.
+
+app.get("/api/org/:orgId/billing", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const { orgId } = req.params;
+    const { org } = await requireOrgPermission(req, orgId, 'org.billing.view');
+    res.json({ billing: getEffectiveBillingState(org.billing), provider: billingProvider.name });
+  } catch (err: any) {
+    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("not found") ? 404 : 500).json({ error: err.message });
+  }
+});
+
+app.post("/api/org/:orgId/billing", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const { orgId } = req.params;
+    const { db, org } = await requireOrgPermission(req, orgId, 'org.billing.manage');
+    const before = getEffectiveBillingState(org.billing);
+    const validation = validateBillingUpdate(req.body);
+    if (!validation.valid) {
+      return res.status(400).json({ error: validation.error });
+    }
+    // Provider identifiers are never accepted from the request body (see
+    // billing-adapter.ts) - only a real provider integration would ever
+    // set those, and none exists yet, so they're carried over unchanged.
+    const after = {
+      ...getEffectiveBillingState(req.body),
+      providerCustomerId: before.providerCustomerId,
+      providerSubscriptionId: before.providerSubscriptionId,
+    };
+    await db.collection("organisations").doc(orgId).update({ billing: after });
+    await logOrgAuditAction(req, orgId, "update_billing", "billing", orgId, { ...before }, { ...after });
+    res.json({ success: true, billing: after });
+  } catch (err: any) {
+    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("not found") ? 404 : 500).json({ error: err.message });
+  }
+});
+
+// ============ Enterprise: SSO (schema/service boundary only) ============
+// See sso-config.ts and docs/SSO_INTEGRATION_PLAN.md. There is no real
+// SAML/OIDC assertion validation wired up in this codebase - that would
+// require either a paid Identity Platform upgrade or a third-party IdP
+// proxy, both real infrastructure decisions outside this backend
+// foundation's authority. This is schema, encryption, and RBAC only.
+
+const getSsoConfigDoc = (db: any, orgId: string) =>
+  db.collection("organisations").doc(orgId).collection("sso_config").doc("config");
+
+app.get("/api/org/:orgId/sso", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const { orgId } = req.params;
+    const { db } = await requireOrgPermission(req, orgId, 'org.sso.manage');
+    const doc = await getSsoConfigDoc(db, orgId).get();
+    if (!doc.exists) {
+      return res.json({ configured: false });
+    }
+    res.json({ configured: true, config: redactSsoConfig(doc.data() as StoredSsoConfig) });
+  } catch (err: any) {
+    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("not found") ? 404 : 500).json({ error: err.message });
+  }
+});
+
+// Creates or replaces the SSO config. Deliberately never touches
+// `enforceSso` - that is only ever changed via the dedicated /enforce
+// route below, so this route can never accidentally turn enforcement on.
+app.post("/api/org/:orgId/sso", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const { orgId } = req.params;
+    const { user, db } = await requireOrgPermission(req, orgId, 'org.sso.manage');
+    const encryptionKey = process.env.SSO_CONFIG_ENCRYPTION_KEY;
+    const validation = validateSsoConfigInput(req.body, !!encryptionKey);
+    if (!validation.valid) {
+      return res.status(400).json({ error: validation.error });
+    }
+    const existingDoc = await getSsoConfigDoc(db, orgId).get();
+    const existing = existingDoc.exists ? (existingDoc.data() as StoredSsoConfig) : null;
+    const { providerType, issuer, clientId, metadataUrl, allowedDomains, jitProvisioning, defaultRole, clientSecret, secretRef } = req.body;
+
+    const record: StoredSsoConfig = {
+      providerType,
+      issuer,
+      clientId,
+      metadataUrl: metadataUrl || null,
+      allowedDomains: allowedDomains || [],
+      enforceSso: existing?.enforceSso === true, // never set here - preserved as-is
+      jitProvisioning: jitProvisioning === true,
+      defaultRole: defaultRole || 'member',
+      encryptedSecret: clientSecret ? encryptSecret(clientSecret, encryptionKey as string) : (secretRef ? null : existing?.encryptedSecret || null),
+      secretRef: secretRef || (clientSecret ? null : existing?.secretRef || null),
+      updatedAt: new Date().toISOString(),
+      updatedBy: user.uid,
+    };
+    await getSsoConfigDoc(db, orgId).set(record);
+    await logOrgAuditAction(req, orgId, "update_sso_config", "sso_config", orgId,
+      existing ? { providerType: existing.providerType, issuer: existing.issuer } : null,
+      { providerType: record.providerType, issuer: record.issuer }
+    );
+    res.json({ success: true, config: redactSsoConfig(record) });
+  } catch (err: any) {
+    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("not found") ? 404 : 500).json({ error: err.message });
+  }
+});
+
+// The single most important guardrail in this chunk: enforceSso can only
+// ever be switched ON while the platform-wide `sso_enforcement` feature
+// flag is explicitly enabled - flipping it today, with no real SAML/OIDC
+// validation wired up, would lock every one of an org's members out with
+// no working login path. Turning it OFF is never gated.
+app.post("/api/org/:orgId/sso/enforce", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const { orgId } = req.params;
+    const { db } = await requireOrgPermission(req, orgId, 'org.sso.manage');
+    const { enabled } = req.body;
+    if (typeof enabled !== 'boolean') {
+      return res.status(400).json({ error: '"enabled" must be true or false.' });
+    }
+    const configDoc = await getSsoConfigDoc(db, orgId).get();
+    if (!configDoc.exists) {
+      return res.status(400).json({ error: "Configure SSO for this organisation before enabling enforcement." });
+    }
+    if (enabled) {
+      const flagDoc = await db.collection("public_feature_flags").doc("sso_enforcement").get();
+      const flagEnabled = flagDoc.exists && flagDoc.data()?.enabled === true;
+      if (!canEnableSsoEnforcement(flagEnabled)) {
+        return res.status(403).json({
+          error: "SSO enforcement is not available yet - no real SAML/OIDC validation is wired up on this server. See docs/SSO_INTEGRATION_PLAN.md.",
+        });
+      }
+    }
+    const before = { enforceSso: configDoc.data()?.enforceSso === true };
+    await getSsoConfigDoc(db, orgId).update({ enforceSso: enabled, updatedAt: new Date().toISOString() });
+    await logOrgAuditAction(req, orgId, enabled ? "enable_sso_enforcement" : "disable_sso_enforcement", "sso_config", orgId, before, { enforceSso: enabled });
+    res.json({ success: true, enforceSso: enabled });
+  } catch (err: any) {
+    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("not found") ? 404 : 500).json({ error: err.message });
+  }
+});
+
+// Checks that the stored config is shape-valid and, if a metadataUrl is
+// set, that it's actually reachable - nothing more. This is explicitly
+// NOT a real authentication handshake; no assertion or token is ever
+// validated here.
+app.post("/api/org/:orgId/sso/test", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const { orgId } = req.params;
+    const { db } = await requireOrgPermission(req, orgId, 'org.sso.manage');
+    const doc = await getSsoConfigDoc(db, orgId).get();
+    if (!doc.exists) {
+      return res.status(400).json({ error: "No SSO configuration exists for this organisation yet." });
+    }
+    const config = doc.data() as StoredSsoConfig;
+    let metadataReachable: boolean | null = null;
+    if (config.metadataUrl) {
+      try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 5000);
+        const response = await fetch(config.metadataUrl, { method: "GET", signal: controller.signal });
+        clearTimeout(timeout);
+        metadataReachable = response.ok;
+      } catch {
+        metadataReachable = false;
+      }
+    }
+    res.json({
+      shapeValid: true,
+      metadataReachable,
+      note: "This checks configuration shape and metadata URL reachability only - it is not a real authentication handshake and does not validate any SAML/OIDC assertion.",
+    });
+  } catch (err: any) {
+    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("not found") ? 404 : 500).json({ error: err.message });
+  }
+});
+
+// ============ Enterprise: search with permission filtering ============
+// See org-search.ts and docs/ENTERPRISE_SEARCH.md. Query matching is a
+// deliberately simple keyword/substring matcher - there is no full-text or
+// vector search engine in this stack. The ACL filtering in org-search.ts
+// is the real security boundary here and is unconditional: a resource the
+// requester can't see is excluded before query matching ever runs.
+
+// Manually registers a searchable resource. There is no automated content-
+// ingestion pipeline in this codebase - this is the only way a resource
+// gets indexed today, and it's marked "indexed" immediately since nothing
+// asynchronous processes it afterward.
+app.post("/api/org/:orgId/search/resources", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const { orgId } = req.params;
+    const { user, db } = await requireOrgPermission(req, orgId, 'org.connectors.manage');
+    const validation = validateResourceCreate(req.body);
+    if (!validation.valid) {
+      return res.status(400).json({ error: validation.error });
+    }
+    const { title, contentType, chunkText, keywords, aclUids, aclRoles, aclTeams, sourceConnectorId } = req.body;
+    const now = new Date().toISOString();
+    const record = {
+      title,
+      contentType,
+      chunkText,
+      keywords: keywords || [],
+      aclUids: aclUids || [],
+      aclRoles: aclRoles || [],
+      aclTeams: aclTeams || [],
+      sourceConnectorId: sourceConnectorId || null,
+      indexStatus: "indexed",
+      indexedAt: now,
+      registeredBy: user.uid,
+    };
+    const ref = await db.collection("organisations").doc(orgId).collection("searchable_resources").add(record);
+    // Audit the metadata, never the chunkText itself - see
+    // docs/ENTERPRISE_RBAC.md's rule that audit entries stay structured
+    // field diffs, not raw content.
+    await logOrgAuditAction(req, orgId, "register_search_resource", "searchable_resource", ref.id, null, { title, contentType });
+    res.json({ success: true, resource: { id: ref.id, ...record } });
+  } catch (err: any) {
+    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("not found") ? 404 : 500).json({ error: err.message });
+  }
+});
+
+app.get("/api/org/:orgId/search/resources", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const { orgId } = req.params;
+    const { db } = await requireOrgPermission(req, orgId, 'org.connectors.manage');
+    const snap = await db.collection("organisations").doc(orgId).collection("searchable_resources").get();
+    const resources = snap.docs.map((d: any) => ({ id: d.id, ...d.data() }));
+    res.json({ resources });
+  } catch (err: any) {
+    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("not found") ? 404 : 500).json({ error: err.message });
+  }
+});
+
+app.post("/api/org/:orgId/search/resources/:resourceId/remove", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const { orgId, resourceId } = req.params;
+    const { db } = await requireOrgPermission(req, orgId, 'org.connectors.manage');
+    const ref = db.collection("organisations").doc(orgId).collection("searchable_resources").doc(resourceId);
+    const doc = await ref.get();
+    if (!doc.exists) {
+      return res.status(404).json({ error: "Searchable resource not found." });
+    }
+    await ref.delete();
+    await logOrgAuditAction(req, orgId, "remove_search_resource", "searchable_resource", resourceId, { title: doc.data().title }, null);
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("not found") ? 404 : 500).json({ error: err.message });
+  }
+});
+
+app.post("/api/org/:orgId/search", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const { orgId } = req.params;
+    const { user, db, org, role } = await requireOrgPermission(req, orgId, 'org.search.query');
+    const { query, filters } = req.body || {};
+    if (query !== undefined && typeof query !== 'string') {
+      return res.status(400).json({ error: '"query" must be a string.' });
+    }
+    const snap = await db.collection("organisations").doc(orgId).collection("searchable_resources")
+      .where("indexStatus", "==", "indexed").get();
+    const resources: SearchableResource[] = snap.docs.map((d: any) => ({ id: d.id, ...d.data() })) as SearchableResource[];
+    const team = (org.memberTeams && org.memberTeams[user.uid]) || null;
+    const results = searchOrgResources(resources, { uid: user.uid, role, team }, query || '', filters);
+    res.json({ results });
+  } catch (err: any) {
+    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("not found") ? 404 : 500).json({ error: err.message });
   }
 });
 
@@ -4920,6 +5933,19 @@ app.post("/api/org/:orgId/invite", verifyAppCheck, authenticateFirebaseUser, asy
     }
 
     const db = getDb();
+
+    // Enforced seat limit: this org's plan (billing-adapter.ts) allows only
+    // so many seats, counting both active members and people already
+    // invited but not yet joined. A real billing provider would report the
+    // allowance itself; the null provider reports back the org's own
+    // stored seatCount.
+    const pendingInvitesSnap = await db.collection("organisations").doc(orgId).collection("pending_invites").get();
+    const seatAllowance = billingProvider.getSeatAllowance(getEffectiveBillingState(org.billing));
+    const seatCheck = checkSeatLimit((org.memberUids || []).length, pendingInvitesSnap.size, cleaned.length, seatAllowance);
+    if (!seatCheck.allowed) {
+      return res.status(400).json({ error: seatCheck.error });
+    }
+
     const results: { email: string; sent: boolean }[] = [];
 
     for (const email of cleaned) {
@@ -5852,6 +6878,18 @@ app.post("/api/user/delete-account", verifyAppCheck, authenticateFirebaseUser, a
           adminUids: FieldValue.arrayRemove(user.uid),
           [`memberTeams.${user.uid}`]: FieldValue.delete(),
         });
+        // Clean up the granular Enterprise role record too - see
+        // /api/org/leave for why this matters.
+        await db.collection("organisations").doc(orgId).collection("members").doc(user.uid).delete();
+        // Same reasoning for any desktop-deployment device this user
+        // registered under the org (organisations/{orgId}/devices, keyed by
+        // ownerUid) - otherwise a device record carrying this user's uid and
+        // deviceName would silently outlive the account it belongs to,
+        // exactly the class of bug the member-record cleanup above exists
+        // to prevent.
+        const devicesSnap = await db.collection("organisations").doc(orgId).collection("devices")
+          .where("ownerUid", "==", user.uid).get();
+        await Promise.all(devicesSnap.docs.map((d: any) => d.ref.delete()));
       }
     } catch (e) {
       // Non-fatal - if the org record is already gone or malformed, the
@@ -5939,6 +6977,16 @@ app.get("/api/user/recommendation", verifyAppCheck, authenticateFirebaseUser, as
       .where("status", "==", "active").get();
     const activeLoad = commitmentsSnap.docs.reduce((sum, d) => sum + (d.data().energyDrain || 0), 0);
 
+    // Whether the user has ever actually used Energy Budget / Recovery Ally
+    // before - without this, a person who has never touched either feature
+    // would show as permanently "stale" (lastEnergyBudgetUpdate/
+    // lastRecoveryAllyActivity undefined -> hoursSince Infinity) and get
+    // nagged toward a tool they've never opened, every single time nothing
+    // else matches. Gating on real prior engagement keeps the reminder
+    // meaningful instead of a blind default.
+    const hasEnergyBudgetHistory = !(await db.collection("users").doc(user.uid).collection("energy_budgets").limit(1).get()).empty;
+    const hasAllyHistory = !(await db.collection("users").doc(user.uid).collection("ally_shared_goals").limit(1).get()).empty;
+
     let recommendation: { tool: string; tab: string; title: string; message: string; points: number; sourcesUsed: string[]; type: string };
 
     if (recentHighSeverity) {
@@ -5992,6 +7040,26 @@ app.get("/api/user/recommendation", verifyAppCheck, authenticateFirebaseUser, as
         message: "It's been a couple of days since your last nervous system reset. Even five minutes of breathing work adds up.",
         points: 15,
         sourcesUsed: ['derived_stats.lastNervousSystemReset'],
+        type: 'recovery_reminder',
+      };
+    } else if (hasEnergyBudgetHistory && hoursSince(stats.lastEnergyBudgetUpdate) > 24 * 10) {
+      recommendation = {
+        tool: 'Energy Budget',
+        tab: 'recover',
+        title: "Your energy budget is out of date",
+        message: "It's been over a week since you last logged an energy budget. A fresh one keeps Nova's read on your capacity honest instead of stale.",
+        points: 15,
+        sourcesUsed: ['derived_stats.lastEnergyBudgetUpdate', 'energy_budgets'],
+        type: 'recovery_reminder',
+      };
+    } else if (hasAllyHistory && hoursSince(stats.lastRecoveryAllyActivity) > 24 * 10) {
+      recommendation = {
+        tool: 'Recovery Ally',
+        tab: 'ally',
+        title: "Your support circle hasn't heard from you",
+        message: "It's been over a week since you checked in on a shared recovery goal. A quick update keeps the people supporting you actually in the loop.",
+        points: 15,
+        sourcesUsed: ['derived_stats.lastRecoveryAllyActivity', 'ally_shared_goals'],
         type: 'recovery_reminder',
       };
     } else {
@@ -6497,11 +7565,28 @@ if (process.env.TEST_MODE !== 'true') {
         return clientWs.close();
       }
 
+      const db = getDb();
+
+      // Same cross-feature awareness packet the text chat endpoint injects
+      // (getNovaContextAndMetadata) - without this, voice-Nova was blind to
+      // everything text-Nova could see: consented check-ins, energy budgets,
+      // mood pulses, derived recovery trends, saved memories. Best-effort by
+      // design (the function itself already degrades to "" on any failure),
+      // so a Firestore hiccup here never blocks the call from starting.
+      const contextResult = await getNovaContextAndMetadata(uid, db);
+      const liveSystemInstruction = NOVA_LIVE_VOICE_PERSONA + contextResult.systemInstructionsAddendum;
+
       // Real per-second cost here (audio in + audio out), so a hard ceiling
       // matters even for a legitimate, authenticated user — 15 minutes is
       // generous for a coaching check-in without leaving a session open
       // indefinitely if a client never explicitly closes it.
       const MAX_SESSION_MS = 15 * 60 * 1000;
+      // A live call has no discrete "turn" boundary the way a single chat
+      // request does, so the per-turn memory-write cap becomes a per-session
+      // one instead - generous enough for a real 15-minute conversation,
+      // still a hard ceiling against a runaway loop of writes.
+      const MAX_VOICE_MEMORY_WRITES = 5;
+      let voiceMemoryWriteCount = 0;
       // sessionTimeout is assigned exactly once, but only after endSession
       // (which reads it via closure) is declared below; TS requires const
       // to initialize immediately, so this can't be a const without
@@ -6543,7 +7628,12 @@ if (process.env.TEST_MODE !== 'true') {
             // second response - the spoken audio remains the real reply.
             inputAudioTranscription: {},
             outputAudioTranscription: {},
-            systemInstruction: NOVA_LIVE_VOICE_PERSONA,
+            systemInstruction: liveSystemInstruction,
+            // Same tool set text chat uses (search_nova_memories,
+            // propose_recovery_action, remember_about_user, suggest_feature),
+            // dispatched through the same executeNovaTool so voice can never
+            // do anything text chat couldn't already do.
+            tools: NOVA_TOOLS_ENABLED ? [{ functionDeclarations: NOVA_TOOLS }] : undefined,
           },
           callbacks: {
             onopen: () => {
@@ -6573,6 +7663,54 @@ if (process.env.TEST_MODE !== 'true') {
                 // than guessing from audio timing alone.
                 if (message.serverContent?.turnComplete) {
                   clientWs.send(JSON.stringify({ turnComplete: true }));
+                }
+                // Function calls from the Live API arrive as a distinct
+                // message shape (message.toolCall), not inline with
+                // serverContent - handled async since dispatching a tool can
+                // mean a Firestore read/write, but onmessage itself stays
+                // synchronous so the audio/transcript relay above is never
+                // delayed by a slow tool call.
+                const functionCalls = message.toolCall?.functionCalls;
+                if (functionCalls && functionCalls.length > 0) {
+                  void (async () => {
+                    const functionResponses = await Promise.all(functionCalls.map(async (call) => {
+                      const name = call.name || "";
+                      const args = (call.args || {}) as Record<string, unknown>;
+                      let output: Record<string, unknown>;
+                      if (name === "remember_about_user") {
+                        // Checked and incremented synchronously before the
+                        // await inside executeNovaTool, same race-safety
+                        // reasoning as the chat loops' per-turn cap.
+                        if (voiceMemoryWriteCount >= MAX_VOICE_MEMORY_WRITES) {
+                          output = { saved: false, error: `Already saved ${MAX_VOICE_MEMORY_WRITES} memories this call - that's enough for one conversation.` };
+                        } else {
+                          voiceMemoryWriteCount++;
+                          output = await executeNovaTool(name, args, uid, db);
+                        }
+                      } else {
+                        output = await executeNovaTool(name, args, uid, db);
+                      }
+                      // Relay a successful feature suggestion to the client the
+                      // same way the text-chat endpoint's planTrace does, so the
+                      // voice call UI can render the same real, validated
+                      // "go there" link - never silent navigation.
+                      if (name === "suggest_feature" && output.suggested) {
+                        try {
+                          clientWs.send(JSON.stringify({
+                            featureSuggestion: { featureId: output.featureId, label: output.label, reason: output.reason },
+                          }));
+                        } catch (e) {
+                          // Best-effort - the call continues even if this relay fails.
+                        }
+                      }
+                      return { id: call.id, name, response: output };
+                    }));
+                    try {
+                      liveSession?.sendToolResponse({ functionResponses });
+                    } catch (e) {
+                      console.error("[Nova Live] failed to send tool response:", e);
+                    }
+                  })();
                 }
               } catch (e) {
                 console.error("[Nova Live] relay-to-client error:", e);

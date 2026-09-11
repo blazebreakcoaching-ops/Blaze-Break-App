@@ -443,7 +443,7 @@ export const DailyVoiceJournal = ({
                   )}
 
                   {error && (
-                    <div className="mt-3 p-3 bg-destructive/10 border border-destructive/20 rounded-xl flex items-start gap-2 max-w-[280px]">
+                    <div role="alert" className="mt-3 p-3 bg-destructive/10 border border-destructive/20 rounded-xl flex items-start gap-2 max-w-[280px]">
                       <AlertCircle className="w-4 h-4 text-destructive shrink-0 mt-0.5" />
                       <p className="text-[11px] text-destructive dark:text-[#f87171] text-left">{error}</p>
                     </div>

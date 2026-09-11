@@ -1,8 +1,9 @@
 import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { MinusCircle, Brain, Trash2, Clock, Users, Zap, CheckCircle2 } from 'lucide-react';
+import { MinusCircle, Brain, Trash2, Clock, Users, Zap, CheckCircle2, WifiOff } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { BurnoutFingerprint } from '../types';
+import { secureApiFetch } from '../lib/secure-api';
 
 interface OneLessThingProps {
   fingerprint: BurnoutFingerprint | null;
@@ -64,63 +65,79 @@ export const OneLessThing = ({ fingerprint, onAwardPoints }: OneLessThingProps) 
     colorClass: string;
     bgColorClass: string;
     borderClass: string;
+    // True when this came from the local fallback heuristic rather than a
+    // real Nova/Gemini call - so the result screen can say so honestly
+    // instead of claiming live analysis that didn't happen.
+    isFallback: boolean;
   } | null>(null);
 
-  const handleAnalyze = () => {
+  const STYLE_BY_ACTION: Record<'Delete' | 'Delay' | 'Delegate' | 'Simplify', { icon: any; colorClass: string; bgColorClass: string; borderClass: string }> = {
+    Delete: { icon: Trash2, colorClass: "text-destructive", bgColorClass: "bg-destructive", borderClass: "border-destructive/30" },
+    Simplify: { icon: Zap, colorClass: "text-success", bgColorClass: "bg-success", borderClass: "border-success/30" },
+    Delegate: { icon: Users, colorClass: "text-primary", bgColorClass: "bg-primary", borderClass: "border-primary/30" },
+    Delay: { icon: Clock, colorClass: "text-warning", bgColorClass: "bg-warning", borderClass: "border-warning/30" },
+  };
+
+  // The local, deterministic fallback - used ONLY when the real Nova call
+  // fails (no network, server not configured, timeout). Kept as a genuine
+  // safety net so the button still does something useful offline, but the
+  // result screen marks it honestly as a fallback rather than presenting it
+  // as Nova's live reasoning.
+  const heuristicOutcome = (rawTask: string) => {
+    const lowerTask = rawTask.toLowerCase();
+    if (lowerTask.includes('meeting') || lowerTask.includes('review')) {
+      return {
+        action: 'Delete' as const,
+        advice: "This doesn't need to happen today, and possibly doesn't need to happen at all. Cancel it or ask for an async update.",
+        template: "Hi team, I’m re-evaluating priorities for today to protect focus time. Let's handle this update asynchronously via Slack/Email instead of a meeting.",
+      };
+    }
+    if (lowerTask.includes('report') || lowerTask.includes('presentation') || lowerTask.includes('deck')) {
+      return {
+        action: 'Simplify' as const,
+        advice: "Lower the fidelity. Stop trying to make it perfect. Give them the rough draft, the bullet points, or the raw data.",
+        template: "Here is the raw data / rough outline. I wanted to get this to you quickly rather than over-polishing. Let me know if you need specific details expanded.",
+      };
+    }
+    if (lowerTask.includes('help') || lowerTask.includes('team') || lowerTask.includes('fix')) {
+      return {
+        action: 'Delegate' as const,
+        advice: "You are hoarding execution. Hand this off. Let someone else solve it at 80% quality instead of you doing it at 100%.",
+        template: "Hey, I need to pass this over to you to run with. Do your best with it, no need to run decisions by me unless it's a catastrophic blocker.",
+      };
+    }
+    return {
+      action: 'Delay' as const,
+      advice: "This is a false emergency. Push it to next week. The business will not collapse.",
+      template: "To ensure I can give this the attention it needs, I am going to push my delivery on this to early next week. Let me know if that creates a critical blocker.",
+    };
+  };
+
+  const handleAnalyze = async () => {
     if (!task.trim()) return;
     setStep('analyzing');
-    
-    // Simulate Nova analysis based on keywords or random
-    setTimeout(() => {
-      const lowerTask = task.toLowerCase();
-      let outcome;
 
-      if (lowerTask.includes('meeting') || lowerTask.includes('review')) {
-        outcome = {
-          action: 'Delete',
-          advice: "This doesn't need to happen today, and possibly doesn't need to happen at all. Cancel it or ask for an async update.",
-          template: "Hi team, I’m re-evaluating priorities for today to protect focus time. Let's handle this update asynchronously via Slack/Email instead of a meeting.",
-          icon: Trash2,
-          colorClass: "text-destructive",
-          bgColorClass: "bg-destructive",
-          borderClass: "border-destructive/30"
-        };
-      } else if (lowerTask.includes('report') || lowerTask.includes('presentation') || lowerTask.includes('deck')) {
-        outcome = {
-          action: 'Simplify',
-          advice: "Lower the fidelity. Stop trying to make it perfect. Give them the rough draft, the bullet points, or the raw data.",
-          template: "Here is the raw data / rough outline. I wanted to get this to you quickly rather than over-polishing. Let me know if you need specific details expanded.",
-          icon: Zap,
-          colorClass: "text-success",
-          bgColorClass: "bg-success",
-          borderClass: "border-success/30"
-        };
-      } else if (lowerTask.includes('help') || lowerTask.includes('team') || lowerTask.includes('fix')) {
-        outcome = {
-          action: 'Delegate',
-          advice: "You are hoarding execution. Hand this off. Let someone else solve it at 80% quality instead of you doing it at 100%.",
-          template: "Hey, I need to pass this over to you to run with. Do your best with it, no need to run decisions by me unless it's a catastrophic blocker.",
-          icon: Users,
-          colorClass: "text-primary",
-          bgColorClass: "bg-primary",
-          borderClass: "border-primary/30"
-        };
-      } else {
-        outcome = {
-          action: 'Delay',
-          advice: "This is a false emergency. Push it to next week. The business will not collapse.",
-          template: "To ensure I can give this the attention it needs, I am going to push my delivery on this to next [Tuesday]. Let me know if that creates a critical blocker.",
-          icon: Clock,
-          colorClass: "text-warning",
-          bgColorClass: "bg-warning",
-          borderClass: "border-warning/30"
-        };
-      }
+    let outcome: { action: 'Delete' | 'Delay' | 'Delegate' | 'Simplify'; advice: string; template?: string };
+    let isFallback = false;
 
-      setResult(outcome as any);
-      setStep('result');
-      if (onAwardPoints) onAwardPoints(10, 'Completed One Less Thing');
-    }, 2500);
+    try {
+      const res = await secureApiFetch('/api/nova/one-less-thing', {
+        method: 'POST',
+        data: { task: task.trim() },
+      });
+      if (!res.ok) throw new Error('Nova analysis unavailable');
+      const data = await res.json();
+      if (!['Delete', 'Delay', 'Delegate', 'Simplify'].includes(data.action)) throw new Error('Unexpected response');
+      outcome = { action: data.action, advice: data.advice, template: data.template };
+    } catch {
+      outcome = heuristicOutcome(task);
+      isFallback = true;
+    }
+
+    const style = STYLE_BY_ACTION[outcome.action];
+    setResult({ ...outcome, ...style, isFallback });
+    setStep('result');
+    if (onAwardPoints) onAwardPoints(10, 'Completed One Less Thing');
   };
 
   const handleReset = () => {
@@ -188,6 +205,7 @@ export const OneLessThing = ({ fingerprint, onAwardPoints }: OneLessThingProps) 
               
               <textarea
                 autoFocus
+                aria-label="Identify the weight"
                 value={task}
                 onChange={(e) => setTask(e.target.value)}
                 placeholder="e.g. The quarterly update presentation I have to give tomorrow..."
@@ -247,10 +265,19 @@ export const OneLessThing = ({ fingerprint, onAwardPoints }: OneLessThingProps) 
                         <result.icon className="w-8 h-8" />
                       </div>
                       <div>
-                        <span className={cn("text-sm font-black uppercase tracking-widest", CARD_TEXT[result.colorClass] || result.colorClass)}>Nova's Recommendation</span>
+                        <span className={cn("text-sm font-black uppercase tracking-widest", CARD_TEXT[result.colorClass] || result.colorClass)}>
+                          {result.isFallback ? "Suggested Move" : "Nova's Recommendation"}
+                        </span>
                         <h3 className="text-4xl font-display font-bold text-text-main mt-1.5">{result.action} It.</h3>
                       </div>
                     </div>
+
+                    {result.isFallback && (
+                      <div className="flex items-center gap-2 text-xs text-text-muted bg-surface dark:bg-surface/50 border border-border rounded-lg px-3 py-2 -mt-4 mb-6">
+                        <WifiOff className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+                        Nova's live analysis wasn't available, so here's the quick version instead.
+                      </div>
+                    )}
 
                     <div className="space-y-6">
                       <p className="text-xl font-medium text-text-main leading-relaxed">

@@ -509,9 +509,10 @@ export const NovaGuardianRelay = ({ contacts, onAdd, onRemove, userName }: NovaG
                 <form onSubmit={handleSubmit} className="space-y-8">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                     <div className="space-y-2 md:col-span-2">
-                      <label className="text-[11px] font-black uppercase tracking-widest text-text-muted ml-1">Identity Designation</label>
-                      <input 
-                        type="text" 
+                      <label htmlFor="guardian-contact-name" className="text-[11px] font-black uppercase tracking-widest text-text-muted ml-1">Identity Designation</label>
+                      <input
+                        id="guardian-contact-name"
+                        type="text"
                         value={newContact.name}
                         onChange={e => setNewContact({...newContact, name: e.target.value})}
                         required
@@ -519,25 +520,28 @@ export const NovaGuardianRelay = ({ contacts, onAdd, onRemove, userName }: NovaG
                         className="w-full bg-surface dark:bg-surface border border-border rounded-xl px-4 py-3.5 text-sm font-medium focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30 transition-all font-sans"
                       />
                     </div>
-                    
+
                     <div className="space-y-2">
-                      <label className="text-[11px] font-black uppercase tracking-widest text-text-muted ml-1">Phone Number</label>
-                      <input 
-                        type="tel" 
+                      <label htmlFor="guardian-contact-phone" className="text-[11px] font-black uppercase tracking-widest text-text-muted ml-1">Phone Number</label>
+                      <input
+                        id="guardian-contact-phone"
+                        type="tel"
                         value={newContact.contactMethod}
                         onChange={e => setNewContact({...newContact, contactMethod: e.target.value})}
                         required
                         pattern="^\+[1-9]\d{6,14}$"
                         title="Include the country code, e.g. +15551234567"
                         placeholder="+15551234567"
+                        aria-describedby="guardian-contact-phone-hint"
                         className="w-full bg-surface dark:bg-surface border border-border rounded-xl px-4 py-3.5 text-sm font-mono focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30 transition-all"
                       />
-                      <p className="text-[10px] text-text-muted ml-1">Include the country code (e.g. +1 for US/Canada, +44 for UK) so the alert can actually be sent.</p>
+                      <p id="guardian-contact-phone-hint" className="text-[10px] text-text-muted ml-1">Include the country code (e.g. +1 for US/Canada, +44 for UK) so the alert can actually be sent.</p>
                     </div>
 
                     <div className="space-y-2">
-                       <label className="text-[11px] font-black uppercase tracking-widest text-text-muted ml-1">Contact Method</label>
+                       <label htmlFor="guardian-contact-method" className="text-[11px] font-black uppercase tracking-widest text-text-muted ml-1">Contact Method</label>
                        <select
+                         id="guardian-contact-method"
                          value={newContact.notificationPreference}
                          onChange={e => setNewContact({...newContact, notificationPreference: e.target.value as any})}
                          className="w-full bg-surface dark:bg-surface border border-border rounded-xl px-4 py-3.5 text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30 transition-all"
@@ -548,10 +552,12 @@ export const NovaGuardianRelay = ({ contacts, onAdd, onRemove, userName }: NovaG
                     </div>
 
                     <div className="space-y-2 md:col-span-2">
-                       <label className="text-[11px] font-black uppercase tracking-widest text-text-muted ml-1">Hierarchical Security Role (Authorised Access Framework)</label>
-                       <select 
+                       <label htmlFor="guardian-contact-role" className="text-[11px] font-black uppercase tracking-widest text-text-muted ml-1">Hierarchical Security Role (Authorised Access Framework)</label>
+                       <select
+                         id="guardian-contact-role"
                          value={newContact.role}
                          onChange={e => setNewContact({...newContact, role: e.target.value as any})}
+                         aria-describedby="guardian-contact-role-hint"
                          className="w-full bg-surface dark:bg-surface border border-border rounded-xl px-4 py-3.5 text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30 transition-all font-sans"
                        >
                          <option value="primary_guardian">Primary Contact (Contacted First)</option>
@@ -560,7 +566,7 @@ export const NovaGuardianRelay = ({ contacts, onAdd, onRemove, userName }: NovaG
                          <option value="peer" disabled>Peer Validator (Blocked by Zone D Privacy Rules)</option>
                          <option value="manager" disabled>Manager (Blocked by Zone A Privacy Isolation Rules)</option>
                        </select>
-                       <p className="text-xs text-text-muted mt-2 ml-1">
+                       <p id="guardian-contact-role-hint" className="text-xs text-text-muted mt-2 ml-1">
                           Note: Under Authorised Access Framework Zone A, organizational managers and peers are strictly prohibited from receiving Guardian crisis intercepts.
                        </p>
                     </div>

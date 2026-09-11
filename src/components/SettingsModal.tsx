@@ -26,6 +26,7 @@ export const SettingsModal = ({ profile, onSave, onClose, onOpenPrivacyCentre }:
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [saved, setSaved] = useState(false);
   const [errors, setErrors] = useState<{ fullName?: string; email?: string }>({});
+  const [deletionRequestStatus, setDeletionRequestStatus] = useState<'idle' | 'sending' | 'sent' | 'error'>('idle');
   const dialogRef = useFocusTrap(true);
 
   useEffect(() => {
@@ -242,6 +243,8 @@ export const SettingsModal = ({ profile, onSave, onClose, onOpenPrivacyCentre }:
                         setFormData({...formData, fullName: e.target.value});
                         if (errors.fullName) setErrors({ ...errors, fullName: undefined });
                       }}
+                      aria-invalid={!!errors.fullName}
+                      aria-describedby={errors.fullName ? "settings-fullname-error" : undefined}
                       className={cn(
                         "w-full bg-surface dark:bg-surface/50 border rounded-xl px-4 py-3 text-sm focus:outline-none transition-all placeholder-slate-400 dark:placeholder-slate-500 text-text-main",
                         errors.fullName
@@ -249,7 +252,7 @@ export const SettingsModal = ({ profile, onSave, onClose, onOpenPrivacyCentre }:
                           : "border-border dark:border-border focus:border-primary dark:focus:border-primary focus:ring-2 focus:ring-primary/20"
                       )}
                     />
-                    {errors.fullName && <p role="alert" className="text-xs text-destructive dark:text-[#f87171] px-1 font-medium">{errors.fullName}</p>}
+                    {errors.fullName && <p id="settings-fullname-error" role="alert" className="text-xs text-destructive dark:text-[#f87171] px-1 font-medium">{errors.fullName}</p>}
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -286,6 +289,8 @@ export const SettingsModal = ({ profile, onSave, onClose, onOpenPrivacyCentre }:
                         setFormData({...formData, managerEmail: e.target.value});
                         if (errors.email) setErrors({ ...errors, email: undefined });
                       }}
+                      aria-invalid={!!errors.email}
+                      aria-describedby={errors.email ? "settings-manager-email-error" : undefined}
                       className={cn(
                         "w-full bg-surface dark:bg-surface/50 border rounded-xl px-4 py-3 text-sm focus:outline-none transition-all placeholder-slate-400 dark:placeholder-slate-500 text-text-main",
                         errors.email
@@ -294,7 +299,7 @@ export const SettingsModal = ({ profile, onSave, onClose, onOpenPrivacyCentre }:
                       )}
                     />
                     {errors.email ? (
-                      <p role="alert" className="text-xs text-destructive dark:text-[#f87171] px-1 font-medium">{errors.email}</p>
+                      <p id="settings-manager-email-error" role="alert" className="text-xs text-destructive dark:text-[#f87171] px-1 font-medium">{errors.email}</p>
                     ) : (
                       <p className="text-[11px] text-text-muted italic px-1 pt-1">
                         We use this ONLY to send aggregated load warnings (predictive sick-leave) when nervous system debt is critical. Personal chat logs and medical fingerprint data are never exposed. Secrecy remains intact.
@@ -410,18 +415,26 @@ export const SettingsModal = ({ profile, onSave, onClose, onOpenPrivacyCentre }:
                    </p>
                    <button
                      onClick={async () => {
+                       setDeletionRequestStatus('sending');
                        try {
                          const { secureApiFetch } = await import('../lib/secure-api');
                          await secureApiFetch('/api/support/request', { method: 'POST', data: { type: 'deletion', details: 'User-initiated vault deletion request.' }});
-                         alert('Request sent securely. You will receive an email shortly.');
+                         setDeletionRequestStatus('sent');
                        } catch(e) {
-                         alert('Failed to send request. You can also email us directly at support@blazebreak.com');
+                         setDeletionRequestStatus('error');
                        }
                      }}
-                     className="w-full sm:w-auto px-6 py-2.5 bg-surface hover:bg-border text-text-main text-xs font-bold uppercase tracking-widest rounded-lg transition-colors border border-border flex items-center justify-center cursor-pointer"
+                     disabled={deletionRequestStatus === 'sending'}
+                     className="w-full sm:w-auto px-6 py-2.5 bg-surface hover:bg-border text-text-main text-xs font-bold uppercase tracking-widest rounded-lg transition-colors border border-border flex items-center justify-center cursor-pointer disabled:opacity-50"
                    >
-                     Submit Deletion Request
+                     {deletionRequestStatus === 'sending' ? 'Sending...' : 'Submit Deletion Request'}
                    </button>
+                   {deletionRequestStatus === 'sent' && (
+                     <p role="status" className="text-xs font-semibold text-success dark:text-[#4ade80]">Request sent securely. You'll receive an email shortly.</p>
+                   )}
+                   {deletionRequestStatus === 'error' && (
+                     <p role="alert" className="text-xs font-semibold text-destructive dark:text-[#f87171]">Couldn't send that request. You can also email us directly at support@blazebreak.com</p>
+                   )}
                  </div>
               </div>
             </div>

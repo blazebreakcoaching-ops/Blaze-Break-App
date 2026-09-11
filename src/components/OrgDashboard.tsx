@@ -1130,8 +1130,9 @@ export const OrgDashboard = () => {
                 <div className="card space-y-4">
                   <h4 className="font-bold text-text-main text-sm">Organisation Settings</h4>
                   <div>
-                    <label className="text-xs font-bold uppercase tracking-widest text-text-muted block mb-1.5">Display Name</label>
+                    <label htmlFor="org-settings-display-name" className="text-xs font-bold uppercase tracking-widest text-text-muted block mb-1.5">Display Name</label>
                     <input
+                      id="org-settings-display-name"
                       type="text"
                       value={settingsName}
                       onChange={(e) => setSettingsName(e.target.value)}
@@ -1139,8 +1140,9 @@ export const OrgDashboard = () => {
                     />
                   </div>
                   <div>
-                    <label className="text-xs font-bold uppercase tracking-widest text-text-muted block mb-1.5">Minimum Cohort Size</label>
+                    <label htmlFor="org-settings-min-cohort" className="text-xs font-bold uppercase tracking-widest text-text-muted block mb-1.5">Minimum Cohort Size</label>
                     <input
+                      id="org-settings-min-cohort"
                       type="number"
                       min="3"
                       max="100"

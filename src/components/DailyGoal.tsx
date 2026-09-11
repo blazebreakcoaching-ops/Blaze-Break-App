@@ -96,6 +96,7 @@ export const DailyGoal = ({ shipStage }: { shipStage: SHIPStage }) => {
         <div className="flex flex-col sm:flex-row gap-3 mt-4">
           <input
             type="text"
+            aria-label="Daily SHIP goal"
             value={goal}
             onChange={(e) => setGoal(e.target.value)}
             placeholder={getStageRecommendation()}

@@ -155,6 +155,7 @@ export const DecompressionDoorway = ({ fingerprint, onAwardPoints }: Decompressi
 
               <div className="space-y-6">
                 <textarea
+                  aria-label="What are you carrying?"
                   value={carryingItem}
                   onChange={(e) => setCarryingItem(e.target.value)}
                   placeholder="e.g. Frustration from that meeting, anxiety about tomorrow's deadline..."

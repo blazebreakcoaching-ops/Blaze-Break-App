@@ -27,10 +27,11 @@ const KEYWORDS: Record<string, string[]> = {
   home: ['pulse', 'dashboard', 'today', 'overview', 'score'],
   plan: ['recovery plan', 'roadmap', 'steps', 'what to do'],
   diagnose: ['burnout', 'assessment', 'test', 'fingerprint', 'where am i'],
-  recover: ['energy', 'battery', 'budget', 'tired', 'drained', 'rest'],
+  recover: ['energy', 'battery', 'budget', 'tired', 'drained', 'rest', 'habit', 'habits', 'weekly goals', 'recovery hub', 'habit os'],
   fuel: ['nutrition', 'food', 'eat', 'caffeine', 'hydration', 'gut'],
   reset: ['breathe', 'breathing', 'calm', 'panic', 'overwhelmed', 'ground', 'somatic', 'nervous system'],
   anxiety_reset: ['anxious', 'anxiety', 'panic', 'racing thoughts', 'spiralling', 'worry'],
+  wellbeing: ['gad-7', 'gad7', 'anxiety check', 'anxiety score', 'track anxiety', 'questionnaire', 'assessment', 'screening', 'how am i doing', 'symptoms'],
   communicate: ['boundary', 'boundaries', 'say no', 'script', 'message', 'email', 'assert'],
   reflect: ['journal', 'reflect', 'write', 'thoughts', 'rumination'],
   nova: ['chat', 'talk', 'coach', 'ai', 'nova', 'ask'],
@@ -120,7 +121,7 @@ export const CommandPalette = ({ isOpen, onClose, tabs, onNavigate, onTalkToNova
             onClick={(e) => e.stopPropagation()}
             onKeyDown={onKeyDown}
           >
-            <div className="flex items-center gap-3 px-4 py-3.5 border-b border-border">
+            <div className="flex items-center gap-3 px-4 py-3.5 border-b border-border focus-within:border-primary/50 transition-colors">
               <Search className="w-4 h-4 text-text-muted shrink-0" aria-hidden="true" />
               <input
                 ref={inputRef}

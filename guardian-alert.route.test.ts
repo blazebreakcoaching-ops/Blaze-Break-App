@@ -185,6 +185,24 @@ describe('POST /api/guardian/alert — idempotency, cooldown, daily cap', () => 
     expect(h.twilioCreate).toHaveBeenCalledTimes(1);
   });
 
+  it('rejects a concurrent second request for the same contact instead of sending twice', async () => {
+    seedUserWithGuardian(USER);
+    // Two near-simultaneous requests with different idempotencyKeys (as a
+    // real double-tap or client retry would generate) - only one may reach
+    // Twilio; the second must be rejected, not silently send a duplicate.
+    const [first, second] = await Promise.all([
+      request(app).post('/api/guardian/alert').set(auth(USER))
+        .send({ contactId: 'guardian_1', idempotencyKey: 'idem_race_first_01' }),
+      request(app).post('/api/guardian/alert').set(auth(USER))
+        .send({ contactId: 'guardian_1', idempotencyKey: 'idem_race_second_01' }),
+    ]);
+    const statuses = [first.status, second.status].sort();
+    expect(statuses).toEqual([200, 429]);
+    const rejected = first.status === 429 ? first : second;
+    expect(rejected.body.error).toBe('cooldown');
+    expect(h.twilioCreate).toHaveBeenCalledTimes(1); // not twice
+  });
+
   it('enforces the daily cap', async () => {
     seedUserWithGuardian(USER);
     // 15 alerts already today (the cap). Use a contact id that won't trip the
@@ -204,6 +222,35 @@ describe('POST /api/guardian/alert — idempotency, cooldown, daily cap', () => 
     expect(res.status).toBe(429);
     expect(res.body.error).toBe('daily_limit');
     expect(h.twilioCreate).not.toHaveBeenCalled();
+  });
+
+  it('closes the daily cap across DIFFERENT contacts too, not just repeat sends to the same one', async () => {
+    const secondGuardian = { ...GUARDIAN, id: 'guardian_2', name: 'Riley Guardian', contactMethod: '+447700900456' };
+    seedDoc(`users/${USER}/user_stats/core`, {
+      supportCircle: [GUARDIAN, secondGuardian],
+      profile: { fullName: 'Jordan Rivera' },
+    });
+    // 14 already sent today - one below the cap. Two concurrent requests to
+    // two DIFFERENT guardians would, without a per-uid lock, both read
+    // "14 sent" and both proceed, landing at 16. The in-flight lock is keyed
+    // on uid alone specifically to prevent that.
+    const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
+    for (let i = 0; i < 14; i++) {
+      seedDoc(`users/${USER}/guardian_alerts/hist_${i}`, {
+        contactId: `someone_else_${i}`,
+        state: 'provider_accepted',
+        createdAt: twoHoursAgo,
+      });
+    }
+    const [toFirstGuardian, toSecondGuardian] = await Promise.all([
+      request(app).post('/api/guardian/alert').set(auth(USER))
+        .send({ contactId: 'guardian_1', idempotencyKey: 'idem_cap_race_g1_01' }),
+      request(app).post('/api/guardian/alert').set(auth(USER))
+        .send({ contactId: 'guardian_2', idempotencyKey: 'idem_cap_race_g2_01' }),
+    ]);
+    const statuses = [toFirstGuardian.status, toSecondGuardian.status].sort();
+    expect(statuses).toEqual([200, 429]);
+    expect(h.twilioCreate).toHaveBeenCalledTimes(1); // exactly one of the two sent, cap held at 15
   });
 });
 

@@ -456,17 +456,19 @@ export const ReflectSection = ({
               <span className="text-xs font-black uppercase tracking-widest text-text-muted block text-left">Log Instant Emotional Marker</span>
               
               <div className="flex flex-col sm:flex-row gap-3">
-                <input 
-                  type="text" 
+                <input
+                  type="text"
                   value={newMoodWord}
                   onChange={(e) => setNewMoodWord(e.target.value)}
                   placeholder="e.g. Fawning, Resentful, Calm, Exhausted"
+                  aria-label="Emotional marker word"
                   className="flex-1 bg-card border border-border/80 rounded-xl px-4 py-3 text-sm text-text-main placeholder:text-text-muted focus:outline-none focus:border-primary transition-all font-sans font-semibold text-left"
                 />
-                
-                <select 
+
+                <select
                   value={newMoodCategory}
                   onChange={(e) => setNewMoodCategory(e.target.value as any)}
+                  aria-label="Emotional marker category"
                   className="bg-card border border-border/80 rounded-xl px-3 py-3 text-xs font-bold uppercase tracking-wider text-text-main focus:outline-none focus:border-primary cursor-pointer"
                 >
                   <option value="negative">Stress Leak</option>
@@ -477,12 +479,14 @@ export const ReflectSection = ({
               <div className="flex items-center justify-between gap-6">
                 <div className="flex-1 flex items-center gap-3">
                   <span className="text-[10px] font-black uppercase tracking-widest text-text-muted shrink-0">Intensity:</span>
-                  <input 
-                    type="range" 
-                    min="1" 
-                    max="10" 
+                  <input
+                    type="range"
+                    min="1"
+                    max="10"
                     value={newMoodIntensity}
                     onChange={(e) => setNewMoodIntensity(Number(e.target.value))}
+                    aria-label="Intensity"
+                    aria-valuetext={`${newMoodIntensity} out of 10`}
                     className="w-full accent-primary cursor-pointer h-1.5 rounded bg-border"
                   />
                   <span className="text-xs font-mono font-bold text-[#9a3412] dark:text-primary shrink-0 w-4">{newMoodIntensity}</span>

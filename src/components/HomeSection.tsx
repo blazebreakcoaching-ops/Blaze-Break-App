@@ -57,6 +57,7 @@ import { NovaCheckinNudge } from "./NovaCheckinNudge.tsx";
 const NovaVoiceGuidance = ({ stage }: { stage: SHIPStage }) => {
   const [isPlaying, setIsPlaying] = useState(false);
   const [isAudioLoading, setIsAudioLoading] = useState(false);
+  const [voiceError, setVoiceError] = useState<string | null>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
   const activeSourceRef = useRef<AudioBufferSourceNode | null>(null);
 
@@ -131,20 +132,23 @@ const NovaVoiceGuidance = ({ stage }: { stage: SHIPStage }) => {
       }
     } catch (e: any) {
       console.error(e);
-      alert(
-        `Nova Voice Error: ${e.message || "Connection failed. Check API key."}`,
-      );
+      setVoiceError(e.message || "Connection failed.");
       setIsAudioLoading(false);
       setIsPlaying(false);
+      setTimeout(() => setVoiceError(null), 5000);
     }
   };
 
   return (
     <button
       onClick={playGuidance}
+      title={voiceError || undefined}
+      aria-label={voiceError ? `Couldn't play Nova's guidance: ${voiceError}` : undefined}
       className={cn(
         "flex items-center gap-2 px-3 py-1.5 rounded-lg text-[11px] font-black uppercase tracking-widest transition-all shadow-lg",
-        isPlaying || isAudioLoading
+        voiceError
+          ? "bg-destructive/10 text-destructive border border-destructive/30"
+          : isPlaying || isAudioLoading
           ? "bg-primary text-primary-foreground"
           : "bg-surface text-text-main hover:bg-card border border-border",
       )}
@@ -172,7 +176,9 @@ const NovaVoiceGuidance = ({ stage }: { stage: SHIPStage }) => {
       ) : (
         <Volume2 className="w-3 h-3" />
       )}
-      {isAudioLoading
+      {voiceError
+        ? "Couldn't play"
+        : isAudioLoading
         ? "Loading..."
         : isPlaying
           ? "Nova Speaking..."
@@ -759,9 +765,16 @@ export const HomeSection = ({
           </div>
         </div>
         <div className="h-64 w-full">
-          <Suspense fallback={<div className="h-full w-full flex items-center justify-center text-xs text-text-muted">Loading chart…</div>}>
-            <RecoveryHistoryChart data={pulseHistory} />
-          </Suspense>
+          {pulseHistory.length === 0 ? (
+            <div className="h-full w-full flex flex-col items-center justify-center text-center gap-1.5 px-6">
+              <p className="text-sm font-medium text-text-main">Not enough data yet</p>
+              <p className="text-xs text-text-muted max-w-xs">Complete a daily check-in to start building your real recovery trend - this fills in day by day, honestly.</p>
+            </div>
+          ) : (
+            <Suspense fallback={<div className="h-full w-full flex items-center justify-center text-xs text-text-muted">Loading chart…</div>}>
+              <RecoveryHistoryChart data={pulseHistory} />
+            </Suspense>
+          )}
         </div>
       </SmartCard>
     ),
@@ -822,8 +835,12 @@ export const HomeSection = ({
               "Your recovery is not a suggestion. It is a biological prerequisite for the coming cycle."
             </p>
           </div>
-          <button className="w-11 h-11 rounded-full border border-border flex items-center justify-center text-text-muted hover:text-primary hover:border-primary transition-colors shrink-0">
-            <ChevronRight className="w-5 h-5" />
+          <button
+            onClick={onEnergyRequest}
+            aria-label="Open Recovery Hub"
+            className="w-11 h-11 rounded-full border border-border flex items-center justify-center text-text-muted hover:text-primary hover:border-primary transition-colors shrink-0"
+          >
+            <ChevronRight className="w-5 h-5" aria-hidden="true" />
           </button>
         </div>
       </SmartCard>

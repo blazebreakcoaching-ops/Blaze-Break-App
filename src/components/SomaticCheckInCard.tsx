@@ -124,6 +124,7 @@ export const SomaticCheckInCard: React.FC<SomaticCheckInCardProps> = ({
               </div>
 
               <textarea
+                aria-label="Optional private note"
                 value={note}
                 onChange={(e) => setNote(e.target.value)}
                 placeholder="Optional private note..."

@@ -5,7 +5,6 @@
 
 import React, { useState, useEffect, useRef, useMemo, lazy, Suspense } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import confetti from "canvas-confetti";
 import {
   Home,
   LifeBuoy,
@@ -45,7 +44,7 @@ import {
   BADGES,
   UserProfileData,
 } from "./types.ts";
-import { cn } from "./lib/utils.ts";
+import { cn, fireConfetti } from "./lib/utils.ts";
 import { useFocusTrap } from "./lib/useFocusTrap";
 import { auth, db } from "./lib/firebase.ts";
 import { doc, setDoc, getDoc, onSnapshot } from "firebase/firestore";
@@ -72,6 +71,7 @@ const NegotiatorTool = lazy(() => import("./components/NegotiatorTool.tsx").then
 const ResourceLibrary = lazy(() => import("./components/ResourceLibrary.tsx").then(m => ({ default: m.ResourceLibrary })));
 const NervousSystemReset = lazy(() => import("./components/NervousSystemReset.tsx").then(m => ({ default: m.NervousSystemReset })));
 const AnxietyResetMode = lazy(() => import("./components/AnxietyResetMode.tsx").then(m => ({ default: m.AnxietyResetMode })));
+const Gad7Check = lazy(() => import("./components/Gad7Check.tsx").then(m => ({ default: m.Gad7Check })));
 
 const MicroRecovery = lazy(() => import("./components/MicroRecovery.tsx").then(m => ({ default: m.MicroRecovery })));
 const SleepBuilder = lazy(() => import("./components/SleepBuilder.tsx").then(m => ({ default: m.SleepBuilder })));
@@ -88,6 +88,7 @@ const FaithValuesMode = lazy(() => import("./components/FaithValuesMode.tsx").th
 const OutcomeTracker = lazy(() => import("./components/OutcomeTracker.tsx").then(m => ({ default: m.OutcomeTracker })));
 import { OmniNova } from "./components/OmniNova.tsx";
 const EnergyBudgetMatrix = lazy(() => import("./components/EnergyBudgetMatrix.tsx").then(m => ({ default: m.EnergyBudgetMatrix })));
+const WeeklyGoalTracker = lazy(() => import("./components/WeeklyGoalTracker.tsx").then(m => ({ default: m.WeeklyGoalTracker })));
 const RuminationFurnace = lazy(() => import("./components/RuminationFurnace.tsx").then(m => ({ default: m.RuminationFurnace })));
 import { SettingsModal } from "./components/SettingsModal.tsx";
 const FutureSelfSimulator = lazy(() => import("./components/FutureSelfSimulator.tsx").then(m => ({ default: m.FutureSelfSimulator })));
@@ -126,6 +127,7 @@ type ActiveTab =
   | "fuel"
   | "reset"
   | "anxiety_reset"
+  | "wellbeing"
   | "communicate"
   | "reflect"
   | "nova"
@@ -197,6 +199,13 @@ export const ALL_TABS: {
     id: "anxiety_reset",
     icon: HeartPulse,
     label: "Anxiety Reset",
+    roles: ["individual", "employee", "executive"],
+    group: "recovery_tools",
+  },
+  {
+    id: "wellbeing",
+    icon: Activity,
+    label: "Anxiety Check-in",
     roles: ["individual", "employee", "executive"],
     group: "recovery_tools",
   },
@@ -365,16 +374,18 @@ const Sidebar = ({
         />
       </button>
 
-      <div
+      <button
+        type="button"
         className={cn(
-          "flex items-center cursor-pointer group shrink-0",
+          "flex items-center cursor-pointer group shrink-0 text-left",
           isCollapsed ? "justify-center" : "gap-4",
         )}
         onClick={() => setActiveTab("home")}
+        aria-label="Blaze Break, go to Home"
       >
         <div className="w-10 h-10 flex items-center justify-center shrink-0 group-hover:scale-105 transition-all duration-500">
-          <img src="/brand/flame-mark-light.png" alt="Blaze Break" className="w-10 h-10 dark:hidden" />
-          <img src="/brand/flame-mark-dark.png" alt="Blaze Break" className="w-10 h-10 hidden dark:block" />
+          <img src="/brand/flame-mark-light.png" alt="" className="w-10 h-10 dark:hidden" />
+          <img src="/brand/flame-mark-dark.png" alt="" className="w-10 h-10 hidden dark:block" />
         </div>
         <AnimatePresence>
           {!isCollapsed && (
@@ -394,7 +405,7 @@ const Sidebar = ({
             </motion.div>
           )}
         </AnimatePresence>
-      </div>
+      </button>
 
       {!isCollapsed ? (
         <CrisisSupportButton onClick={onOpenCrisisSupport} className="shrink-0 px-1" />
@@ -402,9 +413,10 @@ const Sidebar = ({
         <button
           onClick={onOpenCrisisSupport}
           title="Need support now?"
+          aria-label="Need support now? Open crisis support"
           className="shrink-0 w-full flex items-center justify-center p-3 rounded-2xl text-info bg-info/10 hover:bg-info/20 border border-info/20 transition-colors"
         >
-          <LifeBuoy className="w-5 h-5" />
+          <LifeBuoy className="w-5 h-5" aria-hidden="true" />
         </button>
       )}
 
@@ -732,6 +744,7 @@ const Header = ({
           {activeTab === "fuel" && "Recovery Fuel"}
           {activeTab === "reset" && "Nervous System Reset Studio"}
           {activeTab === "anxiety_reset" && "Anxiety Reset"}
+          {activeTab === "wellbeing" && "Anxiety Check-in"}
           {activeTab === "communicate" && "Boundary Architect v2.1"}
           {activeTab === "reflect" && "Behavioral Repatterning"}
           {activeTab === "nova" && "AI Recovery Interface"}
@@ -764,6 +777,8 @@ const Header = ({
           "Fast tools when you are overwhelmed, tense, scattered, panicky, angry, flat, or mentally fried."}
         {activeTab === "anxiety_reset" &&
           "A secure somatic handrail to de-escalate nervous system arousal, racing thoughts, and panic loops."}
+        {activeTab === "wellbeing" &&
+          "A short, private, well-established self-check for anxiety — track how you're doing over time. Not a diagnosis; only you ever see it."}
         {activeTab === "communicate" &&
           "Precision scripting to prevent energy siphoning at the source."}
         {activeTab === "reflect" &&
@@ -788,8 +803,9 @@ const Header = ({
           onClick={onOpenTour}
           className="flex items-center gap-2 px-4 py-2.5 bg-primary/10 hover:bg-primary/20 text-primary dark:text-primary border border-primary/20 rounded-full text-xs font-bold uppercase tracking-wider transition-all scale-[1] hover:scale-[1.03] active:scale-95 cursor-pointer shadow-sm"
           title="Interactive System Walkthrough"
+          aria-label="Recovery Tour: Interactive System Walkthrough"
         >
-          <Compass className="w-3.5 h-3.5" />
+          <Compass className="w-3.5 h-3.5" aria-hidden="true" />
           <span className="hidden sm:inline">Recovery Tour</span>
         </button>
       )}
@@ -806,8 +822,9 @@ const Header = ({
                   : "bg-warning/10 hover:bg-warning/20 text-warning dark:text-warning border-warning/20"
               )}
               title="Ping Support Circle"
+              aria-label={guardianPingActive ? "Ping Active: Guardian Ping to Support Circle" : "Guardian Ping: alert your Support Circle"}
             >
-              <Shield className="w-4 h-4" />
+              <Shield className="w-4 h-4" aria-hidden="true" />
               <span className="hidden sm:inline">
                 {guardianPingActive ? "Ping Active" : "Guardian Ping"}
               </span>
@@ -816,8 +833,9 @@ const Header = ({
               onClick={onSomaticReset}
               className="flex items-center gap-2 px-4 py-2.5 bg-destructive/10 hover:bg-destructive/20 text-destructive dark:text-destructive border border-destructive/20 rounded-full text-xs font-black uppercase tracking-widest transition-all hover:scale-[1.03] active:scale-95 cursor-pointer shadow-sm"
               title="Somatic Reset (60s)"
+              aria-label="Somatic Reset, 60 seconds"
             >
-              <HeartPulse className="w-4 h-4 animate-pulse" />
+              <HeartPulse className="w-4 h-4 animate-pulse" aria-hidden="true" />
               <span className="hidden sm:inline">Somatic Reset</span>
             </button>
           </div>
@@ -827,8 +845,9 @@ const Header = ({
         onClick={() => setDarkMode(!darkMode)}
         className="p-2.5 rounded-full bg-surface dark:bg-card border border-border hover:border-primary/50 text-text-muted hover:text-primary transition-all md:hidden"
         title="Toggle Theme"
+        aria-label={darkMode ? "Switch to light theme" : "Switch to dark theme"}
       >
-        {darkMode ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
+        {darkMode ? <Sun className="w-5 h-5" aria-hidden="true" /> : <Moon className="w-5 h-5" aria-hidden="true" />}
       </button>
       <AuthStatusTracker />
       <button
@@ -989,26 +1008,19 @@ export default function App() {
   const [burnoutRisk, setBurnoutRisk] = useState("Not yet assessed");
   const [showCheckIn, setShowCheckIn] = useState(false);
 
-  // 30-Day Recovery Pulse History
+  // 30-Day Recovery Pulse History - real entries only, added one at a time
+  // as the user actually checks in (see handleCheckInComplete /
+  // handleUpdatePulseHistory below). A brand-new user with no saved history
+  // yet starts at a genuinely empty array rather than a synthetic 30-day
+  // sine-wave chart that would have looked exactly like a real trend.
   const [pulseHistory, setPulseHistory] = useState(() => {
     try {
       const saved = localStorage.getItem("blaze_break_pulse_history");
       if (saved) return JSON.parse(saved);
     } catch(e) {
-      // Non-fatal - falls through to generating the default 30-day
-      // history below.
+      // Non-fatal - falls through to the honest empty default below.
     }
-    
-    return Array.from({length: 30}).map((_, i) => {
-      const date = new Date();
-      date.setDate(date.getDate() - (29 - i));
-      const dt = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-      const score = 40 + Math.sin(i * 0.3) * 20 + Math.random() * 10;
-      return {
-        date: dt,
-        score: Math.floor(score),
-      };
-    });
+    return [];
   });
 
   useEffect(() => {
@@ -1307,7 +1319,7 @@ export default function App() {
       const badge = BADGES.find(b => b.id === newlyUnlocked[0]);
       if (badge) {
         setShowBadgeUnlocked(badge);
-        confetti({ particleCount: 140, spread: 80, origin: { y: 0.6 } });
+        fireConfetti({ particleCount: 140, spread: 80, origin: { y: 0.6 } });
         setTimeout(() => setShowBadgeUnlocked(null), 5000);
       }
     }
@@ -1467,7 +1479,7 @@ export default function App() {
 
       setShowRewardNotification({ points: 100, reason: "Daily Pulse Reward" });
       setTimeout(() => setShowRewardNotification(null), 4000);
-      confetti({ particleCount: 100, spread: 65, origin: { y: 0.6 } });
+      fireConfetti({ particleCount: 100, spread: 65, origin: { y: 0.6 } });
     }
   };
 
@@ -1718,6 +1730,12 @@ export default function App() {
         darkMode ? "dark" : "",
       )}
     >
+      <a
+        href="#main-content"
+        className="sr-only focus:not-sr-only focus:fixed focus:top-4 focus:left-4 focus:z-[300] focus:px-4 focus:py-2.5 focus:rounded-xl focus:bg-primary focus:text-primary-foreground focus:font-bold focus:text-sm focus:shadow-lg"
+      >
+        Skip to main content
+      </a>
       <Sidebar
         activeTab={activeTab}
         setActiveTab={setActiveTab as any}
@@ -1732,6 +1750,8 @@ export default function App() {
       />
 
       <motion.main
+        id="main-content"
+        tabIndex={-1}
         layout
         transition={{ type: "spring", stiffness: 300, damping: 30 }}
         className={cn(
@@ -1910,6 +1930,7 @@ export default function App() {
 
             {activeTab === "recover" && (
               <div className="space-y-32">
+                <WeeklyGoalTracker onAwardPoints={awardPoints} />
                 <EnergyBudgetMatrix onPointsEarned={awardPoints} />
                 <FocusZone
                   onAwardPoints={awardPoints}
@@ -2024,7 +2045,7 @@ export default function App() {
                   User's current stats: Points: ${stats.points}.
                   Recovery Debt Profile: ${JSON.stringify(stats.debts || [])}.
                   Use this data to provide surgical advice. If Sleep Debt is high, recommend rest. If Neural Fatigue is high, recommend deep work blocks or blackout.
-                  Be direct and analytical. Use the user's Burnout Fingerprint archetypes if available.`}
+                  Match the user's preferred communication tone when it's provided in the context below; if the tone ever seems to be landing wrong, it's fine to gently offer to adjust it. Use the user's Burnout Fingerprint archetypes if available.`}
                   initialMessage={
                     fingerprint
                       ? `Hey! As a "${fingerprint.profile}", today's recovery is critical. How can I help you set boundaries?`
@@ -2032,6 +2053,13 @@ export default function App() {
                   }
                   onAwardPoints={awardPoints}
                   onNavigate={setActiveTab as any}
+                  onToneChange={(tone) =>
+                    setStats((prev) =>
+                      prev.profile
+                        ? { ...prev, profile: { ...prev.profile, novaTone: tone } }
+                        : prev,
+                    )
+                  }
                 />
               </div>
             )}
@@ -2043,6 +2071,10 @@ export default function App() {
                   onNavigate={setActiveTab as any}
                 />
               </div>
+            )}
+
+            {activeTab === "wellbeing" && (
+              <Gad7Check onNeedSupport={() => setShowCrisisSupport(true)} />
             )}
 
             {activeTab === "reset" && (

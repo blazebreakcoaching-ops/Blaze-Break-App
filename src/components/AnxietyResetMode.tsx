@@ -526,8 +526,9 @@ export const AnxietyResetMode = ({ onAwardPoints, onNavigate }: AnxietyResetMode
                         <span className="text-3xl font-bold text-destructive dark:text-[#f87171] block">5</span>
                         <h5 className="font-bold text-text-main text-base">Things you can SEE in your immediate environment</h5>
                         <p className="text-xs text-text-muted">Acknowledge them silently or list them here to focus your sight.</p>
-                        <input 
+                        <input
                           type="text"
+                          aria-label="Things you can see"
                           value={groundingInputs[0]}
                           onChange={(e) => {
                             const newInputs = [...groundingInputs];
@@ -545,8 +546,9 @@ export const AnxietyResetMode = ({ onAwardPoints, onNavigate }: AnxietyResetMode
                         <span className="text-3xl font-bold text-destructive dark:text-[#f87171] block">4</span>
                         <h5 className="font-bold text-text-main text-base">Things you can physically FEEL</h5>
                         <p className="text-xs text-text-muted">Feet flat on floor, texture of your desk, weight of your body, air temperature.</p>
-                        <input 
+                        <input
                           type="text"
+                          aria-label="Things you can feel"
                           value={groundingInputs[1]}
                           onChange={(e) => {
                             const newInputs = [...groundingInputs];
@@ -564,8 +566,9 @@ export const AnxietyResetMode = ({ onAwardPoints, onNavigate }: AnxietyResetMode
                         <span className="text-3xl font-bold text-destructive dark:text-[#f87171] block">3</span>
                         <h5 className="font-bold text-text-main text-base">Things you can HEAR</h5>
                         <p className="text-xs text-text-muted">Traffic, computer fan hum, distant voices, wind outside.</p>
-                        <input 
+                        <input
                           type="text"
+                          aria-label="Things you can hear"
                           value={groundingInputs[2]}
                           onChange={(e) => {
                             const newInputs = [...groundingInputs];
@@ -583,8 +586,9 @@ export const AnxietyResetMode = ({ onAwardPoints, onNavigate }: AnxietyResetMode
                         <span className="text-3xl font-bold text-destructive dark:text-[#f87171] block">2</span>
                         <h5 className="font-bold text-text-main text-base">Things you can SMELL</h5>
                         <p className="text-xs text-text-muted">Coffee, clean laundry, woody notes, fresh air.</p>
-                        <input 
+                        <input
                           type="text"
+                          aria-label="Things you can smell"
                           value={groundingInputs[3]}
                           onChange={(e) => {
                             const newInputs = [...groundingInputs];
@@ -602,8 +606,9 @@ export const AnxietyResetMode = ({ onAwardPoints, onNavigate }: AnxietyResetMode
                         <span className="text-3xl font-bold text-destructive dark:text-[#f87171] block">1</span>
                         <h5 className="font-bold text-text-main text-base">Thing you can TASTE</h5>
                         <p className="text-xs text-text-muted">Toothpaste, glass of water, faint coffee, mint.</p>
-                        <input 
+                        <input
                           type="text"
+                          aria-label="Thing you can taste"
                           value={groundingInputs[4]}
                           onChange={(e) => {
                             const newInputs = [...groundingInputs];
@@ -682,6 +687,7 @@ export const AnxietyResetMode = ({ onAwardPoints, onNavigate }: AnxietyResetMode
                       <motion.div key="dump_area" className="space-y-4">
                         <textarea
                           rows={5}
+                          aria-label="Worry dump"
                           value={worryText}
                           onChange={(e) => setWorryText(e.target.value)}
                           placeholder="I am stressing about..."
@@ -733,8 +739,9 @@ export const AnxietyResetMode = ({ onAwardPoints, onNavigate }: AnxietyResetMode
                       <div key={idx} className="grid grid-cols-1 sm:grid-cols-2 gap-3 border-b border-white/[0.03] pb-3">
                         <div className="space-y-1">
                           <label className="text-[10px] text-destructive dark:text-[#f87171] font-bold uppercase tracking-wider">The Fear Loop</label>
-                          <input 
+                          <input
                             type="text"
+                            aria-label={`Fear loop, scenario ${idx + 1}`}
                             value={f.fear}
                             onChange={(e) => {
                               const newList = [...fearsList];
@@ -747,8 +754,9 @@ export const AnxietyResetMode = ({ onAwardPoints, onNavigate }: AnxietyResetMode
                         </div>
                         <div className="space-y-1">
                           <label className="text-[10px] text-success dark:text-[#4ade80] font-bold uppercase tracking-wider">The Factual Reality</label>
-                          <input 
+                          <input
                             type="text"
+                            aria-label={`Factual reality, scenario ${idx + 1}`}
                             value={f.fact}
                             onChange={(e) => {
                               const newList = [...fearsList];
@@ -791,8 +799,9 @@ export const AnxietyResetMode = ({ onAwardPoints, onNavigate }: AnxietyResetMode
                     Anxiety wants us to solve things 6 months in advance. We can't. 
                     What is exactly ONE tiny step you can take in the next 15 minutes that is 100% within your immediate physical control?
                   </p>
-                  <input 
+                  <input
                     type="text"
+                    aria-label="One tiny controllable step"
                     value={oneAction}
                     onChange={(e) => setOneAction(e.target.value)}
                     placeholder="e.g., Send a 1-sentence delay email / Drink a glass of water..."
@@ -967,8 +976,9 @@ export const AnxietyResetMode = ({ onAwardPoints, onNavigate }: AnxietyResetMode
             </div>
 
             <div className="space-y-3 pt-4 text-left">
-              <label className="text-xs uppercase tracking-widest text-text-muted font-bold block">Private Notes (Encrypted Trigger Journal)</label>
-              <input 
+              <label htmlFor="anxiety-reset-user-note" className="text-xs uppercase tracking-widest text-text-muted font-bold block">Private Notes (Encrypted Trigger Journal)</label>
+              <input
+                id="anxiety-reset-user-note"
                 type="text"
                 value={userNote}
                 onChange={(e) => setUserNote(e.target.value)}

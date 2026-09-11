@@ -1,6 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Sparkles, Mic, MicOff, PhoneOff, RefreshCw, Loader2, AlertCircle } from 'lucide-react';
+import { Sparkles, Mic, MicOff, PhoneOff, RefreshCw, Loader2, AlertCircle, Target, X } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { useFocusTrap } from '../lib/useFocusTrap';
 import { useNovaLiveVoice } from '../lib/useNovaLiveVoice';
@@ -11,6 +11,11 @@ interface NovaVoiceCallProps {
   // Optional context primer (fingerprint, recent chat, Nova's memory) so the
   // call starts already knowing who it's talking to.
   buildInitialPrompt?: () => string;
+  // When Nova's suggest_feature tool fires mid-call, this renders as a real,
+  // tappable "Open Tool" link (never silent redirection) - the same pattern
+  // NovaChat already uses for its own suggest_feature card.
+  onNavigate?: (tab: string) => void;
+  onAwardPoints?: (amount: number, reason: string) => void;
 }
 
 function formatElapsed(ms: number): string {
@@ -25,11 +30,13 @@ function formatElapsed(ms: number): string {
 // reconnect - rather than the inline mic toggle. Everything real-time lives in
 // the shared useNovaLiveVoice hook; this component is only presentation and
 // call lifecycle.
-export const NovaVoiceCall = ({ isOpen, onClose, buildInitialPrompt }: NovaVoiceCallProps) => {
+export const NovaVoiceCall = ({ isOpen, onClose, buildInitialPrompt, onNavigate, onAwardPoints }: NovaVoiceCallProps) => {
   const dialogRef = useFocusTrap(isOpen);
   const transcriptEndRef = useRef<HTMLDivElement | null>(null);
-  const { status, error, isNovaSpeaking, isMuted, transcript, elapsedMs, start, stop, toggleMute } =
-    useNovaLiveVoice({ buildInitialPrompt });
+  const {
+    status, error, isNovaSpeaking, isMuted, transcript, elapsedMs,
+    featureSuggestion, dismissFeatureSuggestion, start, stop, toggleMute,
+  } = useNovaLiveVoice({ buildInitialPrompt });
 
   // Auto-start the call when the screen opens; tear it down when it closes.
   useEffect(() => {
@@ -153,6 +160,51 @@ export const NovaVoiceCall = ({ isOpen, onClose, buildInitialPrompt }: NovaVoice
               )}
               <div ref={transcriptEndRef} />
             </div>
+
+            {/* Feature suggestion - real, validated, and never acted on
+                without an explicit tap, matching NovaChat's own card. */}
+            <AnimatePresence>
+              {featureSuggestion && (
+                <motion.div
+                  initial={{ opacity: 0, y: 10, scale: 0.97 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: -10, scale: 0.97 }}
+                  className="w-full p-4 bg-primary/5 border border-primary/20 rounded-2xl flex items-start gap-3"
+                >
+                  <div className="w-8 h-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center shrink-0">
+                    <Target className="w-4 h-4" aria-hidden="true" />
+                  </div>
+                  <div className="flex-1 space-y-1.5 min-w-0">
+                    <span className="text-[10px] font-black uppercase tracking-widest text-[#9a3412] dark:text-primary flex items-center gap-1">
+                      <Sparkles className="w-3 h-3" aria-hidden="true" /> Nova suggests
+                    </span>
+                    <p className="text-xs font-bold text-text-main">{featureSuggestion.label}</p>
+                    <p className="text-[11px] text-text-muted leading-relaxed">{featureSuggestion.reason}</p>
+                    <div className="flex items-center gap-2 pt-1">
+                      {onNavigate && (
+                        <button
+                          onClick={() => {
+                            onNavigate(featureSuggestion.featureId);
+                            onAwardPoints?.(10, `Navigated to ${featureSuggestion.label} via Coach Nudge`);
+                            handleEnd();
+                          }}
+                          className="px-3.5 py-1.5 bg-primary/10 hover:bg-primary hover:text-primary-foreground font-black text-[11px] uppercase tracking-wider rounded-lg transition-colors text-[#9a3412] dark:text-primary border border-primary/25 cursor-pointer"
+                        >
+                          Open Tool
+                        </button>
+                      )}
+                      <button
+                        onClick={dismissFeatureSuggestion}
+                        aria-label="Dismiss suggestion"
+                        className="px-2 py-1.5 text-text-muted hover:text-text-main text-[11px] font-bold uppercase tracking-wider rounded-lg transition-colors cursor-pointer"
+                      >
+                        <X className="w-3.5 h-3.5" aria-hidden="true" />
+                      </button>
+                    </div>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
 
             {/* Controls */}
             <div className="flex items-center gap-6">

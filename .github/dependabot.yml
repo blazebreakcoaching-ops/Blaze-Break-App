@@ -1,0 +1,21 @@
+version: 2
+updates:
+  # npm dependencies. Weekly, grouped so a wave of minor/patch bumps arrives as
+  # one reviewable PR rather than dozens. Security updates are raised
+  # immediately regardless of this schedule.
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10
+    groups:
+      minor-and-patch:
+        update-types:
+          - "minor"
+          - "patch"
+
+  # Keep the GitHub Actions used in CI/deploy pinned and current.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"

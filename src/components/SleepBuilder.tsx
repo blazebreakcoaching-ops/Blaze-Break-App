@@ -139,8 +139,9 @@ export const SleepBuilder = ({ fingerprint, onAwardPoints }: SleepBuilderProps) 
                    <h4 className="text-lg font-display font-bold text-text-main">Bedtime Target</h4>
                  </div>
                </div>
-               <input 
-                 type="time" 
+               <input
+                 type="time"
+                 aria-label="Bedtime target"
                  value={bedtime}
                  onChange={(e) => setBedtime(e.target.value)}
                  className="w-full bg-transparent border-b-2 border-border/50 text-3xl font-display font-black text-[#9a3412] dark:text-primary focus:outline-none focus:border-primary transition-colors py-2"
@@ -185,7 +186,8 @@ export const SleepBuilder = ({ fingerprint, onAwardPoints }: SleepBuilderProps) 
               <span className="tag">Free-write</span>
             </div>
             <p className="text-sm font-medium text-text-muted">Dump any racing thoughts here. They are structurally contained for the night.</p>
-            <textarea 
+            <textarea
+              aria-label="Mental unload"
               value={mentalUnload}
               onChange={(e) => setMentalUnload(e.target.value)}
               placeholder="What is keeping your nervous system engaged right now?"
@@ -216,8 +218,9 @@ export const SleepBuilder = ({ fingerprint, onAwardPoints }: SleepBuilderProps) 
               <p className="text-xs font-medium text-text-muted mb-4">Store action items you are afraid of forgetting. Deal with them tomorrow.</p>
               
               <form onSubmit={handleParkItem} className="flex gap-2">
-                <input 
-                  type="text" 
+                <input
+                  type="text"
+                  aria-label="Item to park for tomorrow"
                   value={parkedItem}
                   onChange={(e) => setParkedItem(e.target.value)}
                   placeholder="Task or worry..."

@@ -6,6 +6,7 @@ import { useAuth } from '../lib/auth';
 import { secureApiFetch, SecureApiError } from '../lib/secure-api';
 import { syncCalendarSignal } from '../lib/calendar-signals';
 import { syncGmailSignal } from '../lib/gmail-signals';
+import { ConfirmDialog } from './ConfirmDialog';
 
 interface Integration {
   id: string;
@@ -20,6 +21,20 @@ interface Integration {
 // Google is intentionally excluded — it's handled by Firebase Auth directly.
 const OAUTH_SERVICE_IDS = ['slack', 'jira', 'asana', 'calendly', 'monday'] as const;
 
+// Fallback icon shown in place of the hotlinked brand SVG if it ever fails
+// to load (a Wikimedia Commons file renamed, moved, or briefly
+// unreachable) - reuses the same per-service icon already used below for
+// each integration's real-signal card, so the fallback still reads as
+// intentional rather than a broken image.
+const FALLBACK_ICONS: Record<string, React.ElementType> = {
+  google: CalendarDays,
+  slack: MessageSquare,
+  jira: ListChecks,
+  asana: CheckSquare,
+  calendly: Clock3,
+  monday: LayoutGrid,
+};
+
 const BASE_INTEGRATIONS: Integration[] = [
   { id: 'google', name: 'Google Workspace', description: 'Real calendar meeting-load and Gmail inbox-load tracking.', status: 'disconnected', iconUrl: 'https://upload.wikimedia.org/wikipedia/commons/c/c1/Google_%22G%22_logo.svg' },
   { id: 'slack', name: 'Slack', description: 'Real message-load tracking, Do-Not-Disturb scheduling, and auto-reply.', status: 'disconnected', iconUrl: 'https://upload.wikimedia.org/wikipedia/commons/d/d5/Slack_icon_2019.svg' },
@@ -32,6 +47,7 @@ const BASE_INTEGRATIONS: Integration[] = [
 export const IntegrationsDashboard = () => {
   const { user, accessToken, signInWithCalendar, logOut } = useAuth();
   const [integrations, setIntegrations] = useState<Integration[]>(BASE_INTEGRATIONS);
+  const [brokenIconIds, setBrokenIconIds] = useState<Set<string>>(new Set());
   const [returnBanner, setReturnBanner] = useState<{ service: string; status: 'connected' | 'error'; reason?: string } | null>(null);
   const [calendarSignal, setCalendarSignal] = useState<any>(null);
   const [slackSignal, setSlackSignal] = useState<any>(null);
@@ -194,12 +210,28 @@ export const IntegrationsDashboard = () => {
     }
   }, []);
 
+  const [pendingDisconnect, setPendingDisconnect] = useState<{ id: string; name: string } | null>(null);
+
+  const performGoogleDisconnect = async () => {
+    setPendingDisconnect(null);
+    await logOut();
+  };
+
+  const performServiceDisconnect = async (id: string) => {
+    setPendingDisconnect(null);
+    setIntegrations(prev => prev.map(inv => inv.id === id ? { ...inv, status: 'loading', errorMessage: undefined } : inv));
+    try {
+      await secureApiFetch(`/api/integrations/${id}/disconnect`, { method: 'POST' });
+      setIntegrations(prev => prev.map(inv => inv.id === id ? { ...inv, status: 'disconnected' } : inv));
+    } catch (e: any) {
+      setIntegrations(prev => prev.map(inv => inv.id === id ? { ...inv, status: 'error', errorMessage: 'Failed to disconnect. Please try again.' } : inv));
+    }
+  };
+
   const toggleIntegration = async (id: string) => {
     if (id === 'google') {
       if (accessToken) {
-        if (window.confirm("Disconnect Google Workspace and revoke token cache?")) {
-          await logOut();
-        }
+        setPendingDisconnect({ id: 'google', name: 'Google Workspace' });
       } else {
         setIntegrations(prev => prev.map(inv => inv.id === 'google' ? { ...inv, status: 'loading', errorMessage: undefined } : inv));
         try {
@@ -220,14 +252,7 @@ export const IntegrationsDashboard = () => {
 
     const current = integrations.find(inv => inv.id === id);
     if (current?.status === 'connected') {
-      if (!window.confirm(`Disconnect ${current.name}?`)) return;
-      setIntegrations(prev => prev.map(inv => inv.id === id ? { ...inv, status: 'loading', errorMessage: undefined } : inv));
-      try {
-        await secureApiFetch(`/api/integrations/${id}/disconnect`, { method: 'POST' });
-        setIntegrations(prev => prev.map(inv => inv.id === id ? { ...inv, status: 'disconnected' } : inv));
-      } catch (e: any) {
-        setIntegrations(prev => prev.map(inv => inv.id === id ? { ...inv, status: 'error', errorMessage: 'Failed to disconnect. Please try again.' } : inv));
-      }
+      setPendingDisconnect({ id, name: current.name });
       return;
     }
 
@@ -286,7 +311,19 @@ export const IntegrationsDashboard = () => {
           >
             <div className="flex items-start justify-between">
               <div className="w-12 h-12 rounded-2xl bg-white dark:bg-surface border border-border shadow-sm flex items-center justify-center p-2 shrink-0">
-                <img src={integration.iconUrl} alt={integration.name} className="w-full h-full object-contain" />
+                {brokenIconIds.has(integration.id) ? (
+                  (() => {
+                    const FallbackIcon = FALLBACK_ICONS[integration.id] || Key;
+                    return <FallbackIcon className="w-6 h-6 text-text-muted" aria-hidden="true" />;
+                  })()
+                ) : (
+                  <img
+                    src={integration.iconUrl}
+                    alt={integration.name}
+                    className="w-full h-full object-contain"
+                    onError={() => setBrokenIconIds((prev) => new Set(prev).add(integration.id))}
+                  />
+                )}
               </div>
               <div className={cn(
                 "px-3 py-1 rounded-full text-xs font-black uppercase tracking-widest flex items-center gap-1.5",
@@ -595,6 +632,19 @@ export const IntegrationsDashboard = () => {
           The underlying API keys for cloud services (Twilio, Firebase, etc.) are managed via the platform secrets store. User-specific OAuth connections (Slack, Calendly, Jira, Asana, Monday.com) are initiated above and require the corresponding Client ID/Secret to be configured on the server first.
         </p>
       </div>
+
+      <ConfirmDialog
+        open={!!pendingDisconnect}
+        title={`Disconnect ${pendingDisconnect?.name || ''}?`}
+        message={pendingDisconnect?.id === 'google' ? "This also revokes the cached access token." : "You can reconnect at any time."}
+        confirmLabel="Disconnect"
+        onConfirm={() => {
+          if (!pendingDisconnect) return;
+          if (pendingDisconnect.id === 'google') performGoogleDisconnect();
+          else performServiceDisconnect(pendingDisconnect.id);
+        }}
+        onCancel={() => setPendingDisconnect(null)}
+      />
     </div>
   );
 };

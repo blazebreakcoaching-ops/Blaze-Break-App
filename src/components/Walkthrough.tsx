@@ -433,6 +433,7 @@ export const Walkthrough = ({
                   </span>
                   <textarea
                     rows={3}
+                    aria-label="Rehearse your custom response"
                     value={practiceInput}
                     onChange={(e) => setPracticeInput(e.target.value)}
                     placeholder="Type or copy your response to test against Nova's analytical boundaries (e.g. 'I can do that, but to maintain quality I need...')"
