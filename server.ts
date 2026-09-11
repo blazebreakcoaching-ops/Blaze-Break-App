@@ -28,6 +28,7 @@ import { computeClimateStrain, computeClimateStrainByDimension, computeMoodStrai
 import { isRealGuardian, isValidGuardianPhone, buildGuardianCallRequestMessage, extractFirstName } from './guardian-alert';
 import { collectionsForExport, collectionsForErasure } from './user-data-collections';
 import { isValidGad7Answers, scoreGad7, interpretGad7 } from './gad7';
+import { OrgRole, isOrgRole, hasOrgPermission, canAssignRole, OrgPermission } from './org-rbac';
 
 dotenv.config();
 
@@ -4098,6 +4099,17 @@ app.post("/api/admin/orgs", verifyAppCheck, authenticateFirebaseUser, async (req
         organisationId: orgId,
         updatedAt: FieldValue.serverTimestamp(),
       }, { merge: true });
+      // The initial admin's granular Enterprise role - owner, since they're
+      // the org's first real member and the legacy adminUids fallback would
+      // resolve them to 'owner' anyway. Written explicitly rather than left
+      // to the fallback so this org has a real members/ record from day one.
+      await db.collection("organisations").doc(orgId).collection("members").doc(initialAdminUid).set({
+        role: 'owner',
+        status: 'active',
+        email: initialAdminEmail,
+        joinedAt: FieldValue.serverTimestamp(),
+        invitedBy: (req as any).user?.uid || 'system',
+      }, { merge: true });
     }
 
     await logAdminAction(req, "manage_organisation", "", orgId, { name, privacyThreshold });
@@ -4130,6 +4142,10 @@ app.post("/api/org/leave", verifyAppCheck, authenticateFirebaseUser, async (req,
       memberUids: FieldValue.arrayRemove(user.uid),
       adminUids: FieldValue.arrayRemove(user.uid),
     });
+    // Clean up the granular Enterprise role record too - otherwise it
+    // silently outlives the membership it describes, the same class of bug
+    // user-data-collections.ts's own history warns against.
+    await db.collection("organisations").doc(orgId).collection("members").doc(user.uid).delete();
 
     res.json({ success: true });
   } catch (err: any) {
@@ -4146,7 +4162,33 @@ app.post("/api/org/leave", verifyAppCheck, authenticateFirebaseUser, async (req,
 // admins never get direct Firestore read access to another member's data;
 // they only ever see what these endpoints choose to compute and return.
 
-const requireOrgAdmin = async (req: any, orgId: string) => {
+// ============ Enterprise: organisation-level RBAC & audit logging ============
+// A genuinely new layer on top of the org membership model above, not a
+// rename of it. See org-rbac.ts for the role/permission table itself - this
+// section only wires that pure logic to real Firestore reads and to the
+// existing requireAuth/logAdminAction conventions.
+
+// Resolves a member's granular Enterprise role. Prefers the real per-member
+// record (organisations/{orgId}/members/{uid}); if that subdocument doesn't
+// exist yet - an org created, or a member who joined, before this feature
+// existed - falls back to the legacy binary adminUids/memberUids arrays so
+// every existing org and member keeps working with zero migration.
+const getOrgMemberRole = async (db: any, orgId: string, org: any, uid: string): Promise<OrgRole | null> => {
+  const memberDoc = await db.collection("organisations").doc(orgId).collection("members").doc(uid).get();
+  if (memberDoc.exists) {
+    const role = memberDoc.data()?.role;
+    if (isOrgRole(role)) return role;
+  }
+  const adminUids: string[] = org.adminUids || [];
+  const memberUids: string[] = org.memberUids || [];
+  if (adminUids.includes(uid)) return 'owner';
+  if (memberUids.includes(uid)) return 'member';
+  return null;
+};
+
+// Shared by every Enterprise guard below - one real org existence check and
+// one real role resolution, not three copies of the same Firestore reads.
+const loadOrgAndCallerRole = async (req: any, orgId: string) => {
   const user = requireAuth(req);
   const db = getDb();
   const orgDoc = await db.collection("organisations").doc(orgId).get();
@@ -4154,10 +4196,87 @@ const requireOrgAdmin = async (req: any, orgId: string) => {
     throw new Error("Organisation not found.");
   }
   const org = orgDoc.data()!;
-  const adminUids: string[] = org.adminUids || [];
-  if (!adminUids.includes(user.uid)) {
-    throw new Error("Forbidden: Organisation admin privileges required for this organisation.");
+  const role = await getOrgMemberRole(db, orgId, org, user.uid);
+  return { user, db, org, role };
+};
+
+const requireOrgRole = async (req: any, orgId: string, allowedRoles: OrgRole[]) => {
+  const { user, org, role } = await loadOrgAndCallerRole(req, orgId);
+  if (!role || !allowedRoles.includes(role)) {
+    throw new Error("Forbidden: Insufficient organisation role for this action.");
   }
+  return { user, org, role };
+};
+
+// A permission-based variant for routes better expressed as "needs this
+// capability" than "needs to be one of these specific roles" - e.g. both
+// owner and billing_admin can view billing without every such route having
+// to enumerate every role that happens to hold that permission.
+const requireOrgPermission = async (req: any, orgId: string, permission: OrgPermission) => {
+  const { user, db, org, role } = await loadOrgAndCallerRole(req, orgId);
+  if (!hasOrgPermission(role, permission)) {
+    throw new Error("Forbidden: Insufficient organisation permissions for this action.");
+  }
+  return { user, db, org, role };
+};
+
+// Prevents an org from ever being left with zero owners - the same
+// reasoning as assertNotLastPlatformOwner above, scoped to one org's
+// members subcollection instead of the platform-wide admin_users one.
+const assertNotLastOrgOwner = async (db: any, orgId: string, targetUid: string) => {
+  const ownersSnap = await db.collection("organisations").doc(orgId).collection("members").where("role", "==", "owner").get();
+  const isTargetOwner = ownersSnap.docs.some((d: any) => d.id === targetUid);
+  if (isTargetOwner && ownersSnap.size <= 1) {
+    throw new Error("Operation Rejected: Cannot remove or downgrade the last owner of this organisation.");
+  }
+};
+
+// Org-scoped counterpart to logAdminAction above - same shape (actor,
+// action, target, timestamp, IP/user agent), plus orgId and structured
+// before/after diffs, written to the ORG's OWN audit trail
+// (organisations/{orgId}/audit_logs) rather than the platform-wide one, so
+// an org's own admins can read their org's history without ever touching
+// - or being able to read - Blaze Break's platform-staff audit log.
+// before/after must stay structured field diffs, never raw free-text
+// content (e.g. never a full document body or chat message).
+const logOrgAuditAction = async (
+  req: any,
+  orgId: string,
+  action: string,
+  targetResourceType: string,
+  targetResourceId: string,
+  before: Record<string, unknown> | null = null,
+  after: Record<string, unknown> | null = null,
+) => {
+  try {
+    const actor = req.user;
+    const db = getDb();
+    await db.collection("organisations").doc(orgId).collection("audit_logs").add({
+      actorUid: actor?.uid || "system",
+      actorEmail: actor?.email || "system",
+      orgId,
+      action,
+      targetResourceType,
+      targetResourceId,
+      before,
+      after,
+      createdAt: FieldValue.serverTimestamp(),
+      ipAddress: req.ip || "",
+      userAgent: req.headers?.["user-agent"] || "",
+    });
+  } catch (err: any) {
+    console.error("Failed to write org audit log:", err.message);
+  }
+};
+
+// Kept as the exact function existing call sites already depend on (~19 of
+// them), now a thin wrapper: 'admin' is a new, distinct granular role from
+// the legacy adminUids array, so this now also admits a real admin-role
+// member who was never added to that array - a real capability expansion,
+// not just a rename - while every existing owner (via the adminUids
+// fallback in getOrgMemberRole) keeps working unchanged.
+const requireOrgAdmin = async (req: any, orgId: string) => {
+  const { user, org } = await requireOrgRole(req, orgId, ['owner', 'admin']);
   return { user, org };
 };
 
@@ -4210,6 +4329,16 @@ app.post("/api/org/join", verifyAppCheck, authenticateFirebaseUser, async (req, 
     await db.collection("organisations").doc(orgDoc.id).update({
       memberUids: FieldValue.arrayUnion(user.uid),
     });
+    // Real per-member Enterprise role record, not just the legacy array -
+    // a fresh join always starts at 'member'; an owner/admin upgrades them
+    // later via the role-management route below.
+    await db.collection("organisations").doc(orgDoc.id).collection("members").doc(user.uid).set({
+      role: 'member',
+      status: 'active',
+      email: user.email || '',
+      joinedAt: FieldValue.serverTimestamp(),
+      invitedBy: 'join_code',
+    }, { merge: true });
 
     // If this person was invited by email, that invite is now resolved -
     // clean it up so the admin's pending list only shows people still
@@ -4939,6 +5068,7 @@ app.post("/api/org/:orgId/members/:memberUid/remove", verifyAppCheck, authentica
       return res.status(400).json({ error: "Use 'Leave Organisation' from your own Privacy Centre to remove yourself." });
     }
     const db = getDb();
+    await assertNotLastOrgOwner(db, orgId, memberUid);
     await db.collection("users").doc(memberUid).set({
       organisationId: FieldValue.delete(),
       shareAnonymizedDataWithOrg: false,
@@ -4949,9 +5079,13 @@ app.post("/api/org/:orgId/members/:memberUid/remove", verifyAppCheck, authentica
       adminUids: FieldValue.arrayRemove(memberUid),
       [`memberTeams.${memberUid}`]: FieldValue.delete(),
     });
+    // Clean up the granular Enterprise role record too - see /api/org/leave
+    // above for why this matters.
+    await db.collection("organisations").doc(orgId).collection("members").doc(memberUid).delete();
+    await logOrgAuditAction(req, orgId, "remove_member", "member", memberUid);
     res.json({ success: true });
   } catch (err: any) {
-    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
+    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("Rejected") ? 400 : 500).json({ error: err.message });
   }
 });
 
@@ -5000,6 +5134,14 @@ app.post("/api/org/:orgId/members/:memberUid/make-admin", verifyAppCheck, authen
     await db.collection("organisations").doc(orgId).update({
       adminUids: FieldValue.arrayUnion(memberUid),
     });
+    // Keep the granular Enterprise role record in sync with the legacy
+    // array - otherwise a member with an existing members/ doc would have
+    // this promotion silently ignored, since getOrgMemberRole prefers the
+    // granular record over the array fallback.
+    await db.collection("organisations").doc(orgId).collection("members").doc(memberUid).set({
+      role: 'admin',
+    }, { merge: true });
+    await logOrgAuditAction(req, orgId, "grant_admin", "member", memberUid, null, { role: 'admin' });
     res.json({ success: true });
   } catch (err: any) {
     res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
@@ -5020,9 +5162,117 @@ app.post("/api/org/:orgId/members/:memberUid/revoke-admin", verifyAppCheck, auth
     await db.collection("organisations").doc(orgId).update({
       adminUids: FieldValue.arrayRemove(memberUid),
     });
+    // Same sync reasoning as /make-admin above - demote in the granular
+    // record too, back to plain member rather than leaving a stale 'admin'.
+    await db.collection("organisations").doc(orgId).collection("members").doc(memberUid).set({
+      role: 'member',
+    }, { merge: true });
+    await logOrgAuditAction(req, orgId, "revoke_admin", "member", memberUid, { role: 'admin' }, { role: 'member' });
     res.json({ success: true });
   } catch (err: any) {
     res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
+  }
+});
+
+// ============ Enterprise: granular org roles ============
+// The 7-role system (owner/admin/billing_admin/security_admin/
+// connector_admin/member/viewer) layered on top of the legacy binary
+// adminUids/memberUids arrays above. See org-rbac.ts for the role/
+// permission table and getOrgMemberRole/requireOrgRole/requireOrgPermission
+// above for how a caller's role is resolved.
+
+const MemberRoleChangeSchema = z.object({
+  role: z.enum(['owner', 'admin', 'billing_admin', 'security_admin', 'connector_admin', 'member', 'viewer']),
+}).strict();
+
+// Every member's granular role, for the org's own admin UI. Anyone who can
+// read the org at all (viewer+) can see this - it's who has what access,
+// not sensitive content.
+app.get("/api/org/:orgId/members/roles", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const { orgId } = req.params;
+    const { db } = await requireOrgPermission(req, orgId, 'org.audit.read');
+    const membersSnap = await db.collection("organisations").doc(orgId).collection("members").get();
+    const roles = membersSnap.docs.map((d: any) => ({ uid: d.id, ...d.data() }));
+    res.json({ members: roles });
+  } catch (err: any) {
+    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("not found") ? 404 : 500).json({ error: err.message });
+  }
+});
+
+app.post("/api/org/:orgId/members/:memberUid/role", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const { orgId, memberUid } = req.params;
+    const { user, org, role: actorRole } = await requireOrgRole(req, orgId, ['owner', 'admin', 'security_admin']);
+    const parsed = MemberRoleChangeSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: "A valid role is required." });
+    }
+    const { role: nextRole } = parsed.data;
+    if (!canAssignRole(actorRole, nextRole)) {
+      return res.status(403).json({ error: `Forbidden: only an owner can grant or revoke the '${nextRole}' role.` });
+    }
+    if (!(org.memberUids || []).includes(memberUid) && memberUid !== user.uid) {
+      return res.status(400).json({ error: "That person isn't a member of this organisation." });
+    }
+    const db = getDb();
+    const memberRef = db.collection("organisations").doc(orgId).collection("members").doc(memberUid);
+    const beforeDoc = await memberRef.get();
+    const beforeRole = beforeDoc.exists ? beforeDoc.data()?.role : null;
+    // Demoting away from 'owner' must never leave the org with zero owners.
+    if (beforeRole === 'owner' && nextRole !== 'owner') {
+      await assertNotLastOrgOwner(db, orgId, memberUid);
+    }
+    await memberRef.set({ role: nextRole }, { merge: true });
+    await logOrgAuditAction(req, orgId, "change_member_role", "member", memberUid, { role: beforeRole }, { role: nextRole });
+    res.json({ success: true, role: nextRole });
+  } catch (err: any) {
+    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("Rejected") ? 400 : err.message?.includes("not found") ? 404 : 500).json({ error: err.message });
+  }
+});
+
+app.post("/api/org/:orgId/members/:memberUid/suspend", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const { orgId, memberUid } = req.params;
+    await requireOrgRole(req, orgId, ['owner', 'admin', 'security_admin']);
+    const db = getDb();
+    const memberRef = db.collection("organisations").doc(orgId).collection("members").doc(memberUid);
+    await memberRef.set({ status: 'suspended' }, { merge: true });
+    await logOrgAuditAction(req, orgId, "suspend_member", "member", memberUid, { status: 'active' }, { status: 'suspended' });
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
+  }
+});
+
+app.post("/api/org/:orgId/members/:memberUid/reactivate", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const { orgId, memberUid } = req.params;
+    await requireOrgRole(req, orgId, ['owner', 'admin', 'security_admin']);
+    const db = getDb();
+    const memberRef = db.collection("organisations").doc(orgId).collection("members").doc(memberUid);
+    await memberRef.set({ status: 'active' }, { merge: true });
+    await logOrgAuditAction(req, orgId, "reactivate_member", "member", memberUid, { status: 'suspended' }, { status: 'active' });
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
+  }
+});
+
+// Paginated read of this org's own Enterprise audit trail - never the
+// platform-wide admin_audit_logs collection, which this endpoint has no
+// access to and never queries.
+app.get("/api/org/:orgId/audit-logs", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const { orgId } = req.params;
+    const { db } = await requireOrgPermission(req, orgId, 'org.audit.read');
+    const limitN = Math.min(Math.max(parseInt(String(req.query.limit || '50'), 10) || 50, 1), 200);
+    const snap = await db.collection("organisations").doc(orgId).collection("audit_logs")
+      .orderBy("createdAt", "desc").limit(limitN).get();
+    const logs = snap.docs.map((d: any) => ({ id: d.id, ...d.data() }));
+    res.json({ logs });
+  } catch (err: any) {
+    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("not found") ? 404 : 500).json({ error: err.message });
   }
 });
 
@@ -6027,6 +6277,9 @@ app.post("/api/user/delete-account", verifyAppCheck, authenticateFirebaseUser, a
           adminUids: FieldValue.arrayRemove(user.uid),
           [`memberTeams.${user.uid}`]: FieldValue.delete(),
         });
+        // Clean up the granular Enterprise role record too - see
+        // /api/org/leave for why this matters.
+        await db.collection("organisations").doc(orgId).collection("members").doc(user.uid).delete();
       }
     } catch (e) {
       // Non-fatal - if the org record is already gone or malformed, the
