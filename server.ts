@@ -29,6 +29,7 @@ import { isRealGuardian, isValidGuardianPhone, buildGuardianCallRequestMessage, 
 import { collectionsForExport, collectionsForErasure } from './user-data-collections';
 import { isValidGad7Answers, scoreGad7, interpretGad7 } from './gad7';
 import { OrgRole, isOrgRole, hasOrgPermission, canAssignRole, OrgPermission } from './org-rbac';
+import { getEffectiveDataPolicy, validateDataPolicyUpdate } from './org-data-policy';
 
 dotenv.config();
 
@@ -5271,6 +5272,46 @@ app.get("/api/org/:orgId/audit-logs", verifyAppCheck, authenticateFirebaseUser, 
       .orderBy("createdAt", "desc").limit(limitN).get();
     const logs = snap.docs.map((d: any) => ({ id: d.id, ...d.data() }));
     res.json({ logs });
+  } catch (err: any) {
+    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("not found") ? 404 : 500).json({ error: err.message });
+  }
+});
+
+// ============ Enterprise: no-model-training-by-default data policy ============
+// See org-data-policy.ts and docs/DATA_POLICY.md. getEffectiveDataPolicy is
+// the ONLY place in this codebase that should ever be treated as the source
+// of truth for what an org has actually consented to - it defaults every
+// field to the safe/off setting, so an org that never touches this at all
+// is exactly as protected as one that explicitly locked it down.
+
+// Any org member (viewer+) can see the org's own data policy - it's a
+// stated commitment to the org, not sensitive content.
+app.get("/api/org/:orgId/data-policy", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const { orgId } = req.params;
+    const { org } = await requireOrgPermission(req, orgId, 'org.data_policy.view');
+    res.json({ policy: getEffectiveDataPolicy(org.dataPolicy) });
+  } catch (err: any) {
+    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("not found") ? 404 : 500).json({ error: err.message });
+  }
+});
+
+app.post("/api/org/:orgId/data-policy", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const { orgId } = req.params;
+    const { db, org } = await requireOrgPermission(req, orgId, 'org.data_policy.manage');
+    const before = getEffectiveDataPolicy(org.dataPolicy);
+    // The caller sends the full intended policy (never a partial patch -
+    // see org-data-policy.ts for why), validated as a whole object before
+    // anything is written.
+    const validation = validateDataPolicyUpdate(req.body);
+    if (!validation.valid) {
+      return res.status(400).json({ error: validation.error });
+    }
+    const after = getEffectiveDataPolicy(req.body);
+    await db.collection("organisations").doc(orgId).update({ dataPolicy: after });
+    await logOrgAuditAction(req, orgId, "update_data_policy", "data_policy", orgId, { ...before }, { ...after });
+    res.json({ success: true, policy: after });
   } catch (err: any) {
     res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("not found") ? 404 : 500).json({ error: err.message });
   }
