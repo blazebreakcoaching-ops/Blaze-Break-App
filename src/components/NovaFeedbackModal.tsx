@@ -152,8 +152,9 @@ export const NovaFeedbackModal = () => {
                 </div>
 
                 <div className="space-y-3">
-                  <label className="text-xs font-black text-text-main uppercase tracking-widest block">Optional Feedback</label>
+                  <label htmlFor="nova-feedback-text" className="text-xs font-black text-text-main uppercase tracking-widest block">Optional Feedback</label>
                   <textarea
+                    id="nova-feedback-text"
                     value={feedbackText}
                     onChange={(e) => setFeedbackText(e.target.value)}
                     placeholder="Tell Nova what worked well or what needs adjustment..."

@@ -845,7 +845,7 @@ export const RecoveryIntelligenceLayer = ({ onAwardPoints, fingerprint }: Recove
 
                 {/* Status Feeback Alerts */}
                 {recalculateError && (
-                  <div className="bg-destructive/5 border border-destructive/20 p-4 rounded-xl flex items-start gap-3" id="recalculate_error_banner">
+                  <div role="alert" className="bg-destructive/5 border border-destructive/20 p-4 rounded-xl flex items-start gap-3" id="recalculate_error_banner">
                     <ShieldAlert className="w-5 h-5 text-destructive shrink-0 mt-0.5" />
                     <div>
                       <span className="text-xs font-black uppercase tracking-wider text-destructive dark:text-[#f87171] block">Couldn't Update</span>
@@ -1092,8 +1092,9 @@ export const RecoveryIntelligenceLayer = ({ onAwardPoints, fingerprint }: Recove
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pb-4 border-b border-border/20">
                   <div className="space-y-4">
                     <div className="space-y-2">
-                      <label className="text-xs font-bold">1. Source of stress trigger:</label>
+                      <label htmlFor="trigger-source-select" className="text-xs font-bold">1. Source of stress trigger:</label>
                       <select
+                        id="trigger-source-select"
                         value={triggerSource}
                         onChange={e => setTriggerSource(e.target.value)}
                         className="w-full px-4 py-3 border border-border/40 bg-white dark:bg-surface text-xs font-bold rounded-xl"
@@ -1129,7 +1130,7 @@ export const RecoveryIntelligenceLayer = ({ onAwardPoints, fingerprint }: Recove
 
                   <div className="space-y-4">
                     <div className="flex items-center justify-between">
-                      <label className="text-xs font-bold">3. Technical details of trigger:</label>
+                      <label htmlFor="trigger-notes-textarea" className="text-xs font-bold">3. Technical details of trigger:</label>
                       <button
                         onClick={toggleRecording}
                         className={cn(
@@ -1147,6 +1148,7 @@ export const RecoveryIntelligenceLayer = ({ onAwardPoints, fingerprint }: Recove
                       <p role="alert" className="text-[11px] font-semibold text-destructive dark:text-[#f87171]">{dictationError}</p>
                     )}
                     <textarea
+                      id="trigger-notes-textarea"
                       value={triggerNotes}
                       onChange={e => setTriggerNotes(e.target.value)}
                       placeholder="e.g. Manager modified scope on Friday at 4 PM without offering extension."

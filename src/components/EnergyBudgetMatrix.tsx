@@ -124,7 +124,7 @@ export const EnergyBudgetMatrix = ({ onPointsEarned }: { onPointsEarned: (pts: n
   return (
     <div className="space-y-12 pb-24 font-sans max-w-[1400px] mx-auto">
       {error && (
-        <div className="bg-destructive/10 border border-destructive/20 text-destructive text-sm p-4 rounded-xl">{error}</div>
+        <div role="alert" className="bg-destructive/10 border border-destructive/20 text-destructive text-sm p-4 rounded-xl">{error}</div>
       )}
       {/* Executive Header */}
       <div className="relative overflow-hidden rounded-xl bg-background border border-border p-6 sm:p-8 md:p-10">
@@ -193,8 +193,9 @@ export const EnergyBudgetMatrix = ({ onPointsEarned }: { onPointsEarned: (pts: n
             
             <div className="space-y-6">
                <div className="space-y-2">
-                 <label className="text-[11px] font-black uppercase tracking-widest text-text-muted ml-1">Stressor Identifier</label>
+                 <label htmlFor="energy-matrix-stressor" className="text-[11px] font-black uppercase tracking-widest text-text-muted ml-1">Stressor Identifier</label>
                  <input
+                   id="energy-matrix-stressor"
                    type="text"
                    value={input}
                    onChange={(e) => setInput(e.target.value)}
@@ -208,9 +209,11 @@ export const EnergyBudgetMatrix = ({ onPointsEarned }: { onPointsEarned: (pts: n
                   <span>Energy Drain Coefficient</span>
                   <span className="text-primary px-2 py-0.5 bg-primary/10 rounded">{drainSlider}</span>
                 </div>
-                <input 
+                <input
                   type="range" min="10" max="100" step="5"
                   value={drainSlider} onChange={(e) => setDrainSlider(Number(e.target.value))}
+                  aria-label="Energy drain coefficient"
+                  aria-valuetext={`${drainSlider}`}
                   className="w-full h-1.5 bg-card rounded-lg appearance-none cursor-pointer accent-primary transition-all"
                 />
               </div>

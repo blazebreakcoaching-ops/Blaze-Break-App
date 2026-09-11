@@ -243,6 +243,8 @@ export const SettingsModal = ({ profile, onSave, onClose, onOpenPrivacyCentre }:
                         setFormData({...formData, fullName: e.target.value});
                         if (errors.fullName) setErrors({ ...errors, fullName: undefined });
                       }}
+                      aria-invalid={!!errors.fullName}
+                      aria-describedby={errors.fullName ? "settings-fullname-error" : undefined}
                       className={cn(
                         "w-full bg-surface dark:bg-surface/50 border rounded-xl px-4 py-3 text-sm focus:outline-none transition-all placeholder-slate-400 dark:placeholder-slate-500 text-text-main",
                         errors.fullName
@@ -250,7 +252,7 @@ export const SettingsModal = ({ profile, onSave, onClose, onOpenPrivacyCentre }:
                           : "border-border dark:border-border focus:border-primary dark:focus:border-primary focus:ring-2 focus:ring-primary/20"
                       )}
                     />
-                    {errors.fullName && <p role="alert" className="text-xs text-destructive dark:text-[#f87171] px-1 font-medium">{errors.fullName}</p>}
+                    {errors.fullName && <p id="settings-fullname-error" role="alert" className="text-xs text-destructive dark:text-[#f87171] px-1 font-medium">{errors.fullName}</p>}
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -287,6 +289,8 @@ export const SettingsModal = ({ profile, onSave, onClose, onOpenPrivacyCentre }:
                         setFormData({...formData, managerEmail: e.target.value});
                         if (errors.email) setErrors({ ...errors, email: undefined });
                       }}
+                      aria-invalid={!!errors.email}
+                      aria-describedby={errors.email ? "settings-manager-email-error" : undefined}
                       className={cn(
                         "w-full bg-surface dark:bg-surface/50 border rounded-xl px-4 py-3 text-sm focus:outline-none transition-all placeholder-slate-400 dark:placeholder-slate-500 text-text-main",
                         errors.email
@@ -295,7 +299,7 @@ export const SettingsModal = ({ profile, onSave, onClose, onOpenPrivacyCentre }:
                       )}
                     />
                     {errors.email ? (
-                      <p role="alert" className="text-xs text-destructive dark:text-[#f87171] px-1 font-medium">{errors.email}</p>
+                      <p id="settings-manager-email-error" role="alert" className="text-xs text-destructive dark:text-[#f87171] px-1 font-medium">{errors.email}</p>
                     ) : (
                       <p className="text-[11px] text-text-muted italic px-1 pt-1">
                         We use this ONLY to send aggregated load warnings (predictive sick-leave) when nervous system debt is critical. Personal chat logs and medical fingerprint data are never exposed. Secrecy remains intact.

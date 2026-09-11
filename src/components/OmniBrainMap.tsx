@@ -357,11 +357,12 @@ export const OmniBrainMap = ({ activeTab, setActiveTab, darkMode, setDarkMode, s
             </h3>
             <div className="relative">
               <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" />
-              <input 
-                type="text" 
+              <input
+                type="text"
+                aria-label="Search modules"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search modules..." 
+                placeholder="Search modules..."
                 className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-white/15 bg-surface/60 text-text-main placeholder-slate-500 text-xs font-medium focus:ring-1 focus:ring-primary focus:outline-none transition-all"
               />
               {searchQuery && (
@@ -412,9 +413,10 @@ export const OmniBrainMap = ({ activeTab, setActiveTab, darkMode, setDarkMode, s
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-1.5 text-left">
-                <label className="text-xs font-black uppercase tracking-wider text-text-muted">Source</label>
-                <select 
-                  value={startNode} 
+                <label htmlFor="brain-map-source-node" className="text-xs font-black uppercase tracking-wider text-text-muted">Source</label>
+                <select
+                  id="brain-map-source-node"
+                  value={startNode}
                   onChange={(e) => setStartNode(e.target.value)}
                   className="w-full py-2 px-3 rounded-xl border border-border bg-surface text-text-main text-xs font-medium focus:outline-none focus:ring-1 focus:ring-primary cursor-pointer"
                 >
@@ -428,9 +430,10 @@ export const OmniBrainMap = ({ activeTab, setActiveTab, darkMode, setDarkMode, s
               </div>
 
               <div className="space-y-1.5 text-left">
-                <label className="text-xs font-black uppercase tracking-wider text-text-muted">Destination</label>
-                <select 
-                  value={endNode} 
+                <label htmlFor="brain-map-destination-node" className="text-xs font-black uppercase tracking-wider text-text-muted">Destination</label>
+                <select
+                  id="brain-map-destination-node"
+                  value={endNode}
                   onChange={(e) => setEndNode(e.target.value)}
                   className="w-full py-2 px-3 rounded-xl border border-border bg-surface text-text-main text-xs font-medium focus:outline-none focus:ring-1 focus:ring-primary cursor-pointer"
                 >

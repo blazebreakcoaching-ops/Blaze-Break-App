@@ -167,6 +167,7 @@ export const AllyView = ({ token }: { token: string }) => {
                   <div role="alert" className="p-3 bg-destructive/10 border border-destructive/20 text-destructive dark:text-[#f87171] text-xs rounded-xl">{sendError}</div>
                 )}
                 <textarea
+                  aria-label="Your encouragement note"
                   value={message}
                   onChange={(e) => setMessage(e.target.value)}
                   placeholder="You're doing great — proud of you for sticking with this."

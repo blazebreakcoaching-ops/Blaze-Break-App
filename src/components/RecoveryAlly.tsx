@@ -258,7 +258,7 @@ export const RecoveryAlly = () => {
       </div>
 
       {error && (
-        <div className="p-3 bg-destructive/10 border border-destructive/20 text-destructive text-sm rounded-xl max-w-2xl">{error}</div>
+        <div role="alert" className="p-3 bg-destructive/10 border border-destructive/20 text-destructive text-sm rounded-xl max-w-2xl">{error}</div>
       )}
 
       {!isInvited ? (
@@ -275,10 +275,11 @@ export const RecoveryAlly = () => {
 
           <form onSubmit={handleInvite} className="space-y-6">
             <div className="space-y-2">
-              <label className="text-xs font-medium uppercase tracking-widest text-text-muted ml-1">Their Email</label>
+              <label htmlFor="recovery-ally-email" className="text-xs font-medium uppercase tracking-widest text-text-muted ml-1">Their Email</label>
               <div className="relative group">
                 <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-text-muted group-focus-within:text-primary transition-colors" />
                 <input
+                  id="recovery-ally-email"
                   type="email"
                   value={emailDraft}
                   onChange={(e) => setEmailDraft(e.target.value)}
@@ -419,6 +420,7 @@ export const RecoveryAlly = () => {
                     <div className="flex gap-3 bg-surface dark:bg-card border border-border p-2 rounded-lg">
                       <input
                         type="text"
+                        aria-label="New shared goal"
                         value={newGoalText}
                         onChange={(e) => setNewGoalText(e.target.value)}
                         placeholder="e.g. No meetings after 6pm..."

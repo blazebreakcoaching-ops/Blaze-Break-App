@@ -205,6 +205,7 @@ export const OneLessThing = ({ fingerprint, onAwardPoints }: OneLessThingProps) 
               
               <textarea
                 autoFocus
+                aria-label="Identify the weight"
                 value={task}
                 onChange={(e) => setTask(e.target.value)}
                 placeholder="e.g. The quarterly update presentation I have to give tomorrow..."

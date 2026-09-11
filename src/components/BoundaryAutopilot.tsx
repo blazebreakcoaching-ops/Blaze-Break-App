@@ -178,6 +178,7 @@ export const BoundaryAutopilot = () => {
               <select
                 value={recipientId}
                 onChange={(e) => setRecipientId(e.target.value)}
+                aria-label="Choose who to message"
                 className="w-full p-3 rounded-xl border border-border bg-surface text-sm text-text-main"
               >
                 <option value="">Choose who to message...</option>
@@ -186,6 +187,7 @@ export const BoundaryAutopilot = () => {
               <textarea
                 value={messageDraft}
                 onChange={(e) => setMessageDraft(e.target.value)}
+                aria-label="Boundary message draft"
                 placeholder="Draft your boundary message..."
                 rows={4}
                 className="w-full p-3 rounded-xl border border-border bg-surface text-sm text-text-main resize-none"
@@ -249,6 +251,7 @@ export const BoundaryAutopilot = () => {
               <input
                 value={statusText}
                 onChange={(e) => setStatusText(e.target.value)}
+                aria-label="Status text"
                 placeholder="Status text"
                 maxLength={100}
                 className="w-full p-3 rounded-xl border border-border bg-surface text-sm text-text-main"
@@ -284,6 +287,7 @@ export const BoundaryAutopilot = () => {
                 <select
                   value={selectedEventId}
                   onChange={(e) => setSelectedEventId(e.target.value)}
+                  aria-label="Choose a meeting to decline"
                   className="w-full p-3 rounded-xl border border-border bg-surface text-sm text-text-main"
                 >
                   <option value="">Choose a meeting to decline...</option>

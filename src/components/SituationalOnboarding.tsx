@@ -396,6 +396,7 @@ export const SituationalOnboarding = ({ onComplete }: OnboardingProps) => {
                     </p>
                     <input
                       type="text"
+                      aria-label="Full Name / Alias"
                       placeholder="e.g. A. Morgan"
                       value={profile.fullName}
                       onChange={(e) =>
@@ -410,6 +411,7 @@ export const SituationalOnboarding = ({ onComplete }: OnboardingProps) => {
                     </p>
                     <input
                       type="text"
+                      aria-label="Job Title / Role"
                       placeholder="e.g. Director of Operations"
                       value={profile.role}
                       onChange={(e) =>

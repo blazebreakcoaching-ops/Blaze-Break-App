@@ -139,10 +139,11 @@ export function MemoryCentre() {
               
               {editingId === m.id ? (
                 <div className="mt-2 space-y-2 relative z-10">
-                  <input 
-                    type="text" 
-                    value={editVal} 
-                    onChange={e => setEditVal(e.target.value)} 
+                  <input
+                    type="text"
+                    aria-label={`Edit memory: ${m.type.replace(/_/g, ' ')}`}
+                    value={editVal}
+                    onChange={e => setEditVal(e.target.value)}
                     maxLength={300}
                     className="w-full bg-card border border-border/20 rounded px-3 py-2 text-sm focus:outline-none focus:border-primary/50" 
                   />

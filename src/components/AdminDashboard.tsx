@@ -641,6 +641,7 @@ export const AdminDashboard = () => {
                 <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" />
                 <input
                   type="text"
+                  aria-label="Query accounts by Email or UID"
                   placeholder="Query accounts by Email or UID..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
@@ -785,8 +786,9 @@ export const AdminDashboard = () => {
 
               <form onSubmit={handleAddAdmin} className="space-y-4">
                 <div>
-                  <label className="block text-xs font-black uppercase tracking-wider text-text-muted mb-2">User Email</label>
+                  <label htmlFor="admin-new-admin-email" className="block text-xs font-black uppercase tracking-wider text-text-muted mb-2">User Email</label>
                   <input
+                    id="admin-new-admin-email"
                     type="email"
                     required
                     placeholder="Enter email e.g. team@example.com"
@@ -796,8 +798,9 @@ export const AdminDashboard = () => {
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-black uppercase tracking-wider text-text-muted mb-2">Display Name (Optional)</label>
+                  <label htmlFor="admin-new-admin-name" className="block text-xs font-black uppercase tracking-wider text-text-muted mb-2">Display Name (Optional)</label>
                   <input
+                    id="admin-new-admin-name"
                     type="text"
                     placeholder="E.g. Nova Analyst"
                     value={newAdminName}
@@ -806,8 +809,9 @@ export const AdminDashboard = () => {
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-black uppercase tracking-wider text-text-muted mb-2">Assign Admin Role</label>
+                  <label htmlFor="admin-new-admin-role" className="block text-xs font-black uppercase tracking-wider text-text-muted mb-2">Assign Admin Role</label>
                   <select
+                    id="admin-new-admin-role"
                     value={newAdminRole}
                     onChange={(e) => setNewAdminRole(e.target.value)}
                     className="w-full p-3 bg-surface border border-border rounded-xl text-sm text-text-main focus:outline-none focus:border-primary"

@@ -84,6 +84,7 @@ export const DigitalBoundaryShield = ({ fingerprint, onAwardPoints }: DigitalBou
                 <div className="flex gap-4">
                   <input
                     type="text"
+                    aria-label="Message or request to assess"
                     value={urgentLoudMsg}
                     onChange={(e) => setUrgentLoudMsg(e.target.value)}
                     placeholder="Paste the message or describe the request..."
