@@ -410,8 +410,21 @@ const GUARDIAN_STATE_COPY: Record<GuardianAlertState, string> = {
   failed: "I couldn't get that message through. That's a problem on this end, not yours.",
 };
 
+// Guards the window between the cooldown/idempotency Firestore reads below
+// and the write that records them: those are separate round-trips, so two
+// near-simultaneous requests for the same (uid, contactId) - a genuine
+// double-tap, or a client retry that (deliberately) generates a fresh
+// idempotencyKey each call rather than reusing one - would otherwise both
+// read "no recent alert" and both actually message the guardian, despite
+// the cooldown/idempotency comments below implying exactly one send. This
+// synchronous check-and-add closes that race for real (no await happens
+// between the .has() check and the .add()); the key is released in a
+// `finally` once the request finishes, success or failure.
+const guardianAlertInFlight = new Set<string>();
+
 app.post("/api/guardian/alert", guardianAlertLimiter, verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
   const uid = requireAuth(req).uid; // uid from the verified token only - never from req.body
+  let inFlightKey: string | null = null;
   try {
     const { contactId, idempotencyKey } = req.body || {};
     if (typeof contactId !== "string" || !contactId) {
@@ -420,6 +433,16 @@ app.post("/api/guardian/alert", guardianAlertLimiter, verifyAppCheck, authentica
     if (typeof idempotencyKey !== "string" || idempotencyKey.length < 8) {
       return res.status(400).json({ error: "Missing or invalid idempotencyKey." });
     }
+
+    inFlightKey = `${uid}:${contactId}`;
+    if (guardianAlertInFlight.has(inFlightKey)) {
+      return res.status(429).json({
+        error: "cooldown",
+        userMessage: "Already sending a request to this contact - hang on a moment before trying again.",
+        canOverride: false,
+      });
+    }
+    guardianAlertInFlight.add(inFlightKey);
 
     const db = getDb();
     const alertsRef = db.collection("users").doc(uid).collection("guardian_alerts");
@@ -531,6 +554,8 @@ app.post("/api/guardian/alert", guardianAlertLimiter, verifyAppCheck, authentica
   } catch (error: any) {
     console.error("[Guardian alert] error:", error?.message || error);
     res.status(500).json({ error: error.message, userMessage: GUARDIAN_STATE_COPY.failed });
+  } finally {
+    if (inFlightKey) guardianAlertInFlight.delete(inFlightKey);
   }
 });
 
@@ -3509,6 +3534,11 @@ app.get("/api/push/vapid-public-key", verifyAppCheck, (req, res) => {
 
 const PushSubscriptionSchema = z.object({
   endpoint: z.string().url(),
+  // PushSubscription.toJSON() (what the client actually sends — see
+  // src/lib/push-notifications.ts) always includes this key, even when its
+  // value is null, so it must be accepted here or every real subscription
+  // gets rejected by .strict() before push notifications can ever work.
+  expirationTime: z.number().nullable().optional(),
   keys: z.object({
     p256dh: z.string(),
     auth: z.string(),

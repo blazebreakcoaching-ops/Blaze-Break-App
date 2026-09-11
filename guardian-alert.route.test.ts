@@ -185,6 +185,24 @@ describe('POST /api/guardian/alert — idempotency, cooldown, daily cap', () => 
     expect(h.twilioCreate).toHaveBeenCalledTimes(1);
   });
 
+  it('rejects a concurrent second request for the same contact instead of sending twice', async () => {
+    seedUserWithGuardian(USER);
+    // Two near-simultaneous requests with different idempotencyKeys (as a
+    // real double-tap or client retry would generate) - only one may reach
+    // Twilio; the second must be rejected, not silently send a duplicate.
+    const [first, second] = await Promise.all([
+      request(app).post('/api/guardian/alert').set(auth(USER))
+        .send({ contactId: 'guardian_1', idempotencyKey: 'idem_race_first_01' }),
+      request(app).post('/api/guardian/alert').set(auth(USER))
+        .send({ contactId: 'guardian_1', idempotencyKey: 'idem_race_second_01' }),
+    ]);
+    const statuses = [first.status, second.status].sort();
+    expect(statuses).toEqual([200, 429]);
+    const rejected = first.status === 429 ? first : second;
+    expect(rejected.body.error).toBe('cooldown');
+    expect(h.twilioCreate).toHaveBeenCalledTimes(1); // not twice
+  });
+
   it('enforces the daily cap', async () => {
     seedUserWithGuardian(USER);
     // 15 alerts already today (the cap). Use a contact id that won't trip the

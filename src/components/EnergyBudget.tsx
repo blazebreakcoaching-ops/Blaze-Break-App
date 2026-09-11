@@ -121,7 +121,7 @@ export const EnergyBudgetTool = ({
   const typeConfig: Record<string, { color: string, glow: string, icon: any }> = {
 
     Executive: { color: 'bg-card dark:bg-white', glow: 'shadow-muted-foreground/20', icon: Zap },
-    Creative: { color: 'bg-primary', glow: 'shadow-primary/20', icon: Waves },
+    Emotional: { color: 'bg-primary', glow: 'shadow-primary/20', icon: Waves },
     Social: { color: 'bg-text-main', glow: 'shadow-surface', icon: Users },
     Physical: { color: 'bg-teal-500', glow: 'shadow-teal-500/20', icon: BatteryFull },
   };
