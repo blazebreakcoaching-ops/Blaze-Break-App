@@ -30,6 +30,7 @@ import { collectionsForExport, collectionsForErasure } from './user-data-collect
 import { isValidGad7Answers, scoreGad7, interpretGad7 } from './gad7';
 import { OrgRole, isOrgRole, hasOrgPermission, canAssignRole, OrgPermission } from './org-rbac';
 import { getEffectiveDataPolicy, validateDataPolicyUpdate } from './org-data-policy';
+import { initialAuthStatus, validateConnectorCreate, canSeeConnectorDetail, ORG_CONNECTOR_TYPES } from './org-connectors';
 
 dotenv.config();
 
@@ -5312,6 +5313,159 @@ app.post("/api/org/:orgId/data-policy", verifyAppCheck, authenticateFirebaseUser
     await db.collection("organisations").doc(orgId).update({ dataPolicy: after });
     await logOrgAuditAction(req, orgId, "update_data_policy", "data_policy", orgId, { ...before }, { ...after });
     res.json({ success: true, policy: after });
+  } catch (err: any) {
+    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("not found") ? 404 : 500).json({ error: err.message });
+  }
+});
+
+// ============ Enterprise: org-level connector admin ============
+// See org-connectors.ts and docs/CONNECTOR_ADMIN.md. A connector here is
+// the org's own administrative registration for an external service (or,
+// for `local`, a genuine no-auth-needed stub) - distinct from an
+// individual member's personal OAuth connection under
+// /api/integrations/*. No route in this section ever marks a connector's
+// authStatus as "connected" without a real handshake actually happening -
+// today, that handshake doesn't exist yet at the org level, so every
+// OAuth-backed connector honestly reports "not_connected" until it does.
+
+const redactConnector = (id: string, data: Record<string, any>, showDetail: boolean) => {
+  const base = {
+    id,
+    type: data.type,
+    displayName: data.displayName,
+    status: data.status,
+    enabled: data.enabled,
+    authStatus: data.authStatus,
+    isLocal: data.isLocal,
+    restrictedToTeams: data.restrictedToTeams || [],
+    createdAt: data.createdAt,
+  };
+  if (!showDetail) return base;
+  return {
+    ...base,
+    configuredBy: data.configuredBy,
+    lastSync: data.lastSync || null,
+    lastError: data.lastError || null,
+    reindexStatus: data.reindexStatus || null,
+    lastReindexRequestedAt: data.lastReindexRequestedAt || null,
+  };
+};
+
+app.get("/api/org/:orgId/connectors", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const { orgId } = req.params;
+    const { db, role } = await requireOrgPermission(req, orgId, 'org.connectors.view');
+    const showDetail = canSeeConnectorDetail(hasOrgPermission(role, 'org.connectors.manage'));
+    const snap = await db.collection("organisations").doc(orgId).collection("connectors").get();
+    const connectors = snap.docs.map((d: any) => redactConnector(d.id, d.data(), showDetail));
+    res.json({ connectors, availableTypes: Object.keys(ORG_CONNECTOR_TYPES) });
+  } catch (err: any) {
+    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("not found") ? 404 : 500).json({ error: err.message });
+  }
+});
+
+app.post("/api/org/:orgId/connectors", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const { orgId } = req.params;
+    const { user, db } = await requireOrgPermission(req, orgId, 'org.connectors.manage');
+    const validation = validateConnectorCreate(req.body);
+    if (!validation.valid) {
+      return res.status(400).json({ error: validation.error });
+    }
+    const { type, displayName, restrictedToTeams } = req.body;
+    const isLocal = ORG_CONNECTOR_TYPES[type].isLocal;
+    const now = new Date().toISOString();
+    const record = {
+      type,
+      displayName,
+      status: "active",
+      enabled: true,
+      isLocal,
+      authStatus: initialAuthStatus(type),
+      configuredBy: user.uid,
+      restrictedToTeams: restrictedToTeams || [],
+      lastSync: null,
+      lastError: null,
+      reindexStatus: null,
+      lastReindexRequestedAt: null,
+      createdAt: now,
+      updatedAt: now,
+    };
+    const ref = await db.collection("organisations").doc(orgId).collection("connectors").add(record);
+    await logOrgAuditAction(req, orgId, "create_connector", "connector", ref.id, null, { type, displayName });
+    res.json({ success: true, connector: redactConnector(ref.id, record, true) });
+  } catch (err: any) {
+    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("not found") ? 404 : 500).json({ error: err.message });
+  }
+});
+
+const loadOrgConnector = async (db: any, orgId: string, connectorId: string) => {
+  const ref = db.collection("organisations").doc(orgId).collection("connectors").doc(connectorId);
+  const doc = await ref.get();
+  if (!doc.exists) {
+    throw new Error("Connector not found.");
+  }
+  return { ref, data: doc.data() };
+};
+
+app.post("/api/org/:orgId/connectors/:connectorId/enable", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const { orgId, connectorId } = req.params;
+    const { db } = await requireOrgPermission(req, orgId, 'org.connectors.manage');
+    const { ref, data } = await loadOrgConnector(db, orgId, connectorId);
+    const before = { status: data.status, enabled: data.enabled };
+    await ref.update({ status: "active", enabled: true, updatedAt: new Date().toISOString() });
+    await logOrgAuditAction(req, orgId, "enable_connector", "connector", connectorId, before, { status: "active", enabled: true });
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("not found") ? 404 : 500).json({ error: err.message });
+  }
+});
+
+app.post("/api/org/:orgId/connectors/:connectorId/disable", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const { orgId, connectorId } = req.params;
+    const { db } = await requireOrgPermission(req, orgId, 'org.connectors.manage');
+    const { ref, data } = await loadOrgConnector(db, orgId, connectorId);
+    const before = { status: data.status, enabled: data.enabled };
+    await ref.update({ status: "disabled", enabled: false, updatedAt: new Date().toISOString() });
+    await logOrgAuditAction(req, orgId, "disable_connector", "connector", connectorId, before, { status: "disabled", enabled: false });
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("not found") ? 404 : 500).json({ error: err.message });
+  }
+});
+
+// Revoke is a harder stop than disable: it also resets authStatus back to
+// its honest starting point, since any future re-enable of an OAuth-backed
+// connector will need a fresh real handshake, not a resumed old one.
+app.post("/api/org/:orgId/connectors/:connectorId/revoke", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const { orgId, connectorId } = req.params;
+    const { db } = await requireOrgPermission(req, orgId, 'org.connectors.manage');
+    const { ref, data } = await loadOrgConnector(db, orgId, connectorId);
+    const before = { status: data.status, enabled: data.enabled, authStatus: data.authStatus };
+    const after = { status: "revoked", enabled: false, authStatus: initialAuthStatus(data.type) };
+    await ref.update({ ...after, updatedAt: new Date().toISOString() });
+    await logOrgAuditAction(req, orgId, "revoke_connector", "connector", connectorId, before, after);
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("not found") ? 404 : 500).json({ error: err.message });
+  }
+});
+
+// No background indexing worker exists in this codebase yet - this marks a
+// job as requested so a future worker has something real to pick up. It
+// never claims the reindex actually happened.
+app.post("/api/org/:orgId/connectors/:connectorId/reindex", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const { orgId, connectorId } = req.params;
+    const { db } = await requireOrgPermission(req, orgId, 'org.connectors.manage');
+    const { ref } = await loadOrgConnector(db, orgId, connectorId);
+    const now = new Date().toISOString();
+    await ref.update({ reindexStatus: "pending", lastReindexRequestedAt: now });
+    await logOrgAuditAction(req, orgId, "request_connector_reindex", "connector", connectorId, null, { reindexStatus: "pending" });
+    res.json({ success: true, reindexStatus: "pending", note: "No background indexing worker is wired up yet - this request is recorded but not yet processed." });
   } catch (err: any) {
     res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("not found") ? 404 : 500).json({ error: err.message });
   }
