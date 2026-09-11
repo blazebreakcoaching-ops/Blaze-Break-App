@@ -31,6 +31,7 @@ import { isValidGad7Answers, scoreGad7, interpretGad7 } from './gad7';
 import { OrgRole, isOrgRole, hasOrgPermission, canAssignRole, OrgPermission } from './org-rbac';
 import { getEffectiveDataPolicy, validateDataPolicyUpdate } from './org-data-policy';
 import { initialAuthStatus, validateConnectorCreate, canSeeConnectorDetail, ORG_CONNECTOR_TYPES } from './org-connectors';
+import { isDeviceChannel, isValidAppVersion, validateDeviceRegistration, evaluateUpdateStatus, DEVICE_CHANNELS } from './desktop-deployment';
 
 dotenv.config();
 
@@ -5468,6 +5469,142 @@ app.post("/api/org/:orgId/connectors/:connectorId/reindex", verifyAppCheck, auth
     res.json({ success: true, reindexStatus: "pending", note: "No background indexing worker is wired up yet - this request is recorded but not yet processed." });
   } catch (err: any) {
     res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("not found") ? 404 : 500).json({ error: err.message });
+  }
+});
+
+// ============ Enterprise: desktop deployment control plane ============
+// See desktop-deployment.ts and docs/DESKTOP_DEPLOYMENT.md. There is no
+// real Blaze Break desktop client shipping today - the installable PWA is
+// the only client that exists. This is a backend control plane only,
+// built so a future desktop client has somewhere real to register, report
+// its version, and be centrally managed - never presented as proof such a
+// client exists.
+
+// Any org member can self-register their own device - this isn't an admin
+// action, it's the device announcing itself.
+app.post("/api/org/:orgId/devices/register", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const { orgId } = req.params;
+    const { user, db, role } = await loadOrgAndCallerRole(req, orgId);
+    if (!role) {
+      return res.status(403).json({ error: "Forbidden: not a member of this organisation." });
+    }
+    const validation = validateDeviceRegistration(req.body);
+    if (!validation.valid) {
+      return res.status(400).json({ error: validation.error });
+    }
+    const { channel, appVersion, deviceName } = req.body;
+    const now = new Date().toISOString();
+    const record = {
+      ownerUid: user.uid,
+      channel,
+      appVersion,
+      deviceName: deviceName || null,
+      status: "active",
+      lastCheckIn: now,
+      registeredAt: now,
+    };
+    const ref = await db.collection("organisations").doc(orgId).collection("devices").add(record);
+    await logOrgAuditAction(req, orgId, "register_device", "device", ref.id, null, { channel, appVersion });
+    res.json({ success: true, device: { id: ref.id, ...record } });
+  } catch (err: any) {
+    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("not found") ? 404 : 500).json({ error: err.message });
+  }
+});
+
+// Full device roster, including every member's ownerUid - an org-admin
+// action, not something every member can see about each other.
+app.get("/api/org/:orgId/devices", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const { orgId } = req.params;
+    const { db } = await requireOrgPermission(req, orgId, 'org.devices.manage');
+    const snap = await db.collection("organisations").doc(orgId).collection("devices").get();
+    const devices = snap.docs.map((d: any) => ({ id: d.id, ...d.data() }));
+    res.json({ devices });
+  } catch (err: any) {
+    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("not found") ? 404 : 500).json({ error: err.message });
+  }
+});
+
+app.post("/api/org/:orgId/devices/:deviceId/revoke", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const { orgId, deviceId } = req.params;
+    const { db } = await requireOrgPermission(req, orgId, 'org.devices.manage');
+    const ref = db.collection("organisations").doc(orgId).collection("devices").doc(deviceId);
+    const doc = await ref.get();
+    if (!doc.exists) {
+      return res.status(404).json({ error: "Device not found." });
+    }
+    const before = { status: doc.data().status };
+    await ref.update({ status: "revoked", revokedAt: new Date().toISOString() });
+    await logOrgAuditAction(req, orgId, "revoke_device", "device", deviceId, before, { status: "revoked" });
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("not found") ? 404 : 500).json({ error: err.message });
+  }
+});
+
+// A device calls this itself (or an org admin, checking on a member's
+// behalf) to report it's alive and learn whether it's below the enforced
+// minimum version or simply behind the latest.
+app.post("/api/org/:orgId/devices/:deviceId/check-for-update", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const { orgId, deviceId } = req.params;
+    const { user, db, role } = await loadOrgAndCallerRole(req, orgId);
+    if (!role) {
+      return res.status(403).json({ error: "Forbidden: not a member of this organisation." });
+    }
+    const ref = db.collection("organisations").doc(orgId).collection("devices").doc(deviceId);
+    const doc = await ref.get();
+    if (!doc.exists) {
+      return res.status(404).json({ error: "Device not found." });
+    }
+    const device = doc.data();
+    const isOwner = device.ownerUid === user.uid;
+    if (!isOwner && !hasOrgPermission(role, 'org.devices.manage')) {
+      return res.status(403).json({ error: "Forbidden: you may only check updates for your own device." });
+    }
+    if (device.status === "revoked") {
+      return res.status(403).json({ error: "This device has been revoked and can no longer check for updates." });
+    }
+    await ref.update({ lastCheckIn: new Date().toISOString() });
+    const configDoc = await db.collection("app_config").doc("release_channels").get();
+    const channelConfig = configDoc.exists ? (configDoc.data()?.[device.channel] || null) : null;
+    res.json(evaluateUpdateStatus(device.appVersion, channelConfig));
+  } catch (err: any) {
+    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("not found") ? 404 : 500).json({ error: err.message });
+  }
+});
+
+// Platform-wide release channel config (app_config/release_channels) -
+// read by any authenticated member's device check, written only by Blaze
+// Break's own platform staff, since it governs every org's devices at once.
+app.get("/api/app-config/release-channels", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const db = getDb();
+    const doc = await db.collection("app_config").doc("release_channels").get();
+    res.json({ channels: doc.exists ? doc.data() : {} });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/api/admin/release-channels", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    requireAdmin(req);
+    const { channel, minVersion, latestVersion } = req.body;
+    if (!isDeviceChannel(channel)) {
+      return res.status(400).json({ error: `"channel" must be one of: ${DEVICE_CHANNELS.join(', ')}.` });
+    }
+    if (!isValidAppVersion(minVersion) || !isValidAppVersion(latestVersion)) {
+      return res.status(400).json({ error: '"minVersion" and "latestVersion" must be semantic version strings like "1.2.3".' });
+    }
+    const db = getDb();
+    await db.collection("app_config").doc("release_channels").set({ [channel]: { minVersion, latestVersion } }, { merge: true });
+    await logAdminAction(req, "update_release_channel", "", channel, { channel, minVersion, latestVersion });
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
   }
 });
 
