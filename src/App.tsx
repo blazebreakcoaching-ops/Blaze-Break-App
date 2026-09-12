@@ -151,6 +151,7 @@ type ActiveTab =
   | "privacy"
   | "subscription"
   | "org"
+  | "myteam"
   | "evolution"
   | "intelligence"
   | "executive"
@@ -159,6 +160,7 @@ type ActiveTab =
 
 // Components
 const HomeSection = lazy(() => import("./components/HomeSection.tsx").then(m => ({ default: m.HomeSection })));
+const TeamDashboard = lazy(() => import("./components/TeamDashboard.tsx").then(m => ({ default: m.TeamDashboard })));
 
 export const ALL_TABS: {
   id: ActiveTab;
@@ -350,6 +352,7 @@ const Sidebar = ({
   setIsCollapsed,
   onOpenCrisisSupport,
   onOpenLauncher,
+  hasManagedTeam,
 }: {
   activeTab: string;
   setActiveTab: (t: string) => void;
@@ -361,6 +364,7 @@ const Sidebar = ({
   setIsCollapsed: (v: boolean | ((prev: boolean) => boolean)) => void;
   onOpenCrisisSupport: () => void;
   onOpenLauncher: () => void;
+  hasManagedTeam: boolean;
 }) => {
   const [pendingTasksCount, setPendingTasksCount] = useState(0);
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
@@ -406,6 +410,12 @@ const Sidebar = ({
   }, []);
 
   const tabs = ALL_TABS.filter((t) => isTabVisible(t, authRole, currentTier));
+  // "My Team" is gated on a real, admin-assigned backend fact (teamManagers),
+  // not the authRole self-selection every other tab above uses - so it's
+  // appended here rather than folded into ALL_TABS' static role list.
+  if (hasManagedTeam) {
+    tabs.push({ id: "myteam" as ActiveTab, icon: Users, label: "My Team", roles: [] });
+  }
 
   const sidebarVariants = {
     expanded: { width: "16rem", padding: "2rem" },
@@ -1065,6 +1075,21 @@ export default function App() {
     const slackTickInterval = setInterval(tickSlack, 65 * 1000);
     return () => clearInterval(slackTickInterval);
   }, [user, accessToken]);
+
+  // Whether this person manages a team (org-rbac.ts's teamManagers, distinct
+  // from the coarse authRole self-selection above) - drives whether the "My
+  // Team" nav entry appears at all. Not gated on effectiveRole, since a real
+  // team manager designation is a live, admin-assigned fact from the org
+  // backend, not something inferred from onboarding's role picker.
+  const [managedTeams, setManagedTeams] = useState<string[]>([]);
+  useEffect(() => {
+    if (!user) return;
+    secureApiFetch('/api/org/me').then(res => res.json()).then(data => {
+      setManagedTeams(data.managedTeams || []);
+    }).catch(() => {
+      // Non-critical - the "My Team" nav entry just stays hidden if this fails.
+    });
+  }, [user]);
 
   const [flow, setFlow] = useState<AppFlow>("landing");
   const [activeTab, setActiveTab] = useState<ActiveTab>("home");
@@ -2180,6 +2205,7 @@ export default function App() {
         setIsCollapsed={setIsSidebarCollapsed}
         onOpenCrisisSupport={() => setShowCrisisSupport(true)}
         onOpenLauncher={() => setShowLauncher(true)}
+        hasManagedTeam={managedTeams.length > 0}
       />
 
       <motion.main
@@ -2666,6 +2692,12 @@ export default function App() {
               <div className="space-y-32">
                 <OrgDashboard />
                 <OutcomeTracker fingerprint={fingerprint} />
+              </div>
+            )}
+
+            {activeTab === "myteam" && (
+              <div className="space-y-32">
+                <TeamDashboard />
               </div>
             )}
 
