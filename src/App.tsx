@@ -36,6 +36,7 @@ import {
   HeartPulse,
   HelpCircle,
   CreditCard,
+  ClipboardCheck,
 } from "lucide-react";
 
 import {
@@ -152,6 +153,7 @@ type ActiveTab =
   | "subscription"
   | "org"
   | "myteam"
+  | "hr_escalation"
   | "evolution"
   | "intelligence"
   | "executive"
@@ -161,6 +163,7 @@ type ActiveTab =
 // Components
 const HomeSection = lazy(() => import("./components/HomeSection.tsx").then(m => ({ default: m.HomeSection })));
 const TeamDashboard = lazy(() => import("./components/TeamDashboard.tsx").then(m => ({ default: m.TeamDashboard })));
+const HrEscalationDashboard = lazy(() => import("./components/HrEscalationDashboard.tsx").then(m => ({ default: m.HrEscalationDashboard })));
 
 export const ALL_TABS: {
   id: ActiveTab;
@@ -353,6 +356,7 @@ const Sidebar = ({
   onOpenCrisisSupport,
   onOpenLauncher,
   hasManagedTeam,
+  isHrViewer,
 }: {
   activeTab: string;
   setActiveTab: (t: string) => void;
@@ -365,6 +369,7 @@ const Sidebar = ({
   onOpenCrisisSupport: () => void;
   onOpenLauncher: () => void;
   hasManagedTeam: boolean;
+  isHrViewer: boolean;
 }) => {
   const [pendingTasksCount, setPendingTasksCount] = useState(0);
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
@@ -415,6 +420,9 @@ const Sidebar = ({
   // appended here rather than folded into ALL_TABS' static role list.
   if (hasManagedTeam) {
     tabs.push({ id: "myteam" as ActiveTab, icon: Users, label: "My Team", roles: [] });
+  }
+  if (isHrViewer) {
+    tabs.push({ id: "hr_escalation" as ActiveTab, icon: ClipboardCheck, label: "HR Escalation", roles: [] });
   }
 
   const sidebarVariants = {
@@ -1082,12 +1090,14 @@ export default function App() {
   // team manager designation is a live, admin-assigned fact from the org
   // backend, not something inferred from onboarding's role picker.
   const [managedTeams, setManagedTeams] = useState<string[]>([]);
+  const [isHrViewer, setIsHrViewer] = useState(false);
   useEffect(() => {
     if (!user) return;
     secureApiFetch('/api/org/me').then(res => res.json()).then(data => {
       setManagedTeams(data.managedTeams || []);
+      setIsHrViewer(data.isHrViewer === true);
     }).catch(() => {
-      // Non-critical - the "My Team" nav entry just stays hidden if this fails.
+      // Non-critical - the "My Team"/"HR" nav entries just stay hidden if this fails.
     });
   }, [user]);
 
@@ -2206,6 +2216,7 @@ export default function App() {
         onOpenCrisisSupport={() => setShowCrisisSupport(true)}
         onOpenLauncher={() => setShowLauncher(true)}
         hasManagedTeam={managedTeams.length > 0}
+        isHrViewer={isHrViewer}
       />
 
       <motion.main
@@ -2698,6 +2709,12 @@ export default function App() {
             {activeTab === "myteam" && (
               <div className="space-y-32">
                 <TeamDashboard />
+              </div>
+            )}
+
+            {activeTab === "hr_escalation" && (
+              <div className="space-y-32">
+                <HrEscalationDashboard />
               </div>
             )}
 
