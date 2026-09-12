@@ -36,7 +36,8 @@ import { isDeviceChannel, isValidAppVersion, validateDeviceRegistration, evaluat
 import { getEffectiveBillingState, validateBillingUpdate, checkSeatLimit, billingProvider } from './billing-adapter';
 import { validateSsoConfigInput, encryptSecret, canEnableSsoEnforcement, redactSsoConfig, StoredSsoConfig } from './sso-config';
 import { searchOrgResources, validateResourceCreate, SearchableResource } from './org-search';
-import { managedTeamsFor, isHrViewer, validateTeamAssignment, validateHrViewerList, computeQualifyingTeamGroups } from './org-team-management';
+import { managedTeamsFor, isTeamManager, isHrViewer, validateTeamAssignment, validateHrViewerList, computeQualifyingTeamGroups } from './org-team-management';
+import { validateAckInput } from './team-escalation';
 
 dotenv.config();
 
@@ -5297,6 +5298,56 @@ app.get("/api/org/:orgId/team-dashboard", verifyAppCheck, authenticateFirebaseUs
     }));
 
     res.json({ teams });
+  } catch (err: any) {
+    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("not found") ? 404 : 500).json({ error: err.message });
+  }
+});
+
+// A manager logging that they addressed an elevated signal - a factual
+// follow-through record for HR to read (see team-escalation.ts), never a
+// verified fact (there's no way to confirm a real conversation happened)
+// and never a score computed on the manager. The caller must actually
+// manage :team (or be an org admin) - this isn't a general-purpose note
+// anyone can leave on any team.
+app.post("/api/org/:orgId/team-dashboard/:team/acknowledge", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const { orgId, team } = req.params;
+    const { user, db, org, role } = await loadOrgAndCallerRole(req, orgId);
+    const isAdmin = role === 'owner' || role === 'admin';
+    if (!isTeamManager(org.teamManagers, user.uid, team) && !isAdmin) {
+      return res.status(403).json({ error: "Forbidden: you don't manage this team." });
+    }
+    const validation = validateAckInput(req.body);
+    if (!validation.valid) {
+      return res.status(400).json({ error: validation.error });
+    }
+    const note: string | null = req.body?.note || null;
+
+    // Best-effort context for HR - the team's current strain at the moment
+    // of acknowledgment, if enough consenting members exist to compute one.
+    // Never blocks the ack itself if this comes back null (e.g. the team
+    // is below the k-anonymity threshold right now).
+    const memberTeams: Record<string, string> = org.memberTeams || {};
+    const memberUids: string[] = org.memberUids || [];
+    const consentingUids = await getConsentingMemberUids(db, memberUids);
+    const teamConsentingUids = consentingUids.filter((uid) => memberTeams[uid] === team);
+    const overallConcernAtAck = teamConsentingUids.length >= (org.privacyThreshold || 5)
+      ? (await computeStrainSnapshotForCohort(db, teamConsentingUids)).overallConcern
+      : null;
+
+    const record = {
+      team,
+      acknowledgedBy: user.uid,
+      acknowledgedByEmail: user.email || null,
+      note,
+      overallConcernAtAck,
+      createdAt: new Date().toISOString(),
+    };
+    await db.collection("organisations").doc(orgId).collection("team_escalation_acks").add(record);
+    // Never log the note text itself - only whether one was provided -
+    // matching the existing "structured diffs, never raw content" rule.
+    await logOrgAuditAction(req, orgId, "acknowledge_team_signal", "team_escalation_ack", team, null, { notePresent: !!note });
+    res.json({ success: true, ack: record });
   } catch (err: any) {
     res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("not found") ? 404 : 500).json({ error: err.message });
   }
