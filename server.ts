@@ -37,7 +37,7 @@ import { getEffectiveBillingState, validateBillingUpdate, checkSeatLimit, billin
 import { validateSsoConfigInput, encryptSecret, canEnableSsoEnforcement, redactSsoConfig, StoredSsoConfig } from './sso-config';
 import { searchOrgResources, validateResourceCreate, SearchableResource } from './org-search';
 import { managedTeamsFor, isTeamManager, isHrViewer, validateTeamAssignment, validateHrViewerList, computeQualifyingTeamGroups } from './org-team-management';
-import { validateAckInput } from './team-escalation';
+import { validateAckInput, describeFollowUp } from './team-escalation';
 
 dotenv.config();
 
@@ -5348,6 +5348,72 @@ app.post("/api/org/:orgId/team-dashboard/:team/acknowledge", verifyAppCheck, aut
     // matching the existing "structured diffs, never raw content" rule.
     await logOrgAuditAction(req, orgId, "acknowledge_team_signal", "team_escalation_ack", team, null, { notePresent: !!note });
     res.json({ success: true, ack: record });
+  } catch (err: any) {
+    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("not found") ? 404 : 500).json({ error: err.message });
+  }
+});
+
+// HR's view: every qualifying team at once (unlike the manager's own view,
+// which only ever sees the team(s) they manage), same aggregate data a
+// manager sees, plus each team's real follow-up status - never a computed
+// score on the manager, just whether a recent acknowledgment exists (see
+// team-escalation.ts). Gated to the hrViewerUids allow-list or org admin -
+// deliberately not a new OrgRole, matching the same reasoning teamManagers
+// itself uses (see org-team-management.ts's header comment).
+app.get("/api/org/:orgId/hr-dashboard", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const { orgId } = req.params;
+    const { user, db, org, role } = await loadOrgAndCallerRole(req, orgId);
+    const isAdmin = role === 'owner' || role === 'admin';
+    if (!isHrViewer(org.hrViewerUids, user.uid) && !isAdmin) {
+      return res.status(403).json({ error: "Forbidden: you don't have HR viewer access to this organisation." });
+    }
+
+    const threshold = org.privacyThreshold || 5;
+    const memberUids: string[] = org.memberUids || [];
+    const memberTeams: Record<string, string> = org.memberTeams || {};
+    const consentingUids = await getConsentingMemberUids(db, memberUids);
+
+    if (consentingUids.length < threshold) {
+      return res.json({ locked: true, cohortSize: consentingUids.length, threshold, teams: [] });
+    }
+
+    const orgSnapshot = await computeStrainSnapshotForCohort(db, consentingUids);
+    const { qualifying: teamGroups } = computeQualifyingTeamGroups(consentingUids, memberTeams, threshold);
+    const teamSnapshots: Record<string, OrgStrainSnapshot> = {};
+    const engagementRates: Record<string, number> = {};
+    await Promise.all(Object.entries(teamGroups).map(async ([team, uids]) => {
+      teamSnapshots[team] = await computeStrainSnapshotForCohort(db, uids);
+      engagementRates[team] = await computeEngagementRate(db, uids, 7);
+    }));
+
+    const { teamTrends } = await computeTrendHistory(db, orgId, orgSnapshot, teamSnapshots);
+
+    const now = new Date();
+    const teams = await Promise.all(Object.entries(teamSnapshots).map(async ([team, snap]) => {
+      const acksSnap = await db.collection("organisations").doc(orgId).collection("team_escalation_acks")
+        .where("team", "==", team).orderBy("createdAt", "desc").limit(5).get();
+      const acks = acksSnap.docs.map((d: any) => d.data());
+      const followUp = describeFollowUp(acks, now);
+      const indicators = sortByAttention(buildPrimaryIndicators({
+        overall: snap.overallConcern,
+        mood: snap.moodConcern,
+        climate: snap.climateConcern,
+        overallTrend: teamTrends[team],
+      }));
+      return {
+        team,
+        cohortSize: teamGroups[team].length,
+        overallConcern: snap.overallConcern,
+        moodConcern: snap.moodConcern,
+        climateConcern: snap.climateConcern,
+        engagementRate: engagementRates[team],
+        indicators,
+        followUp,
+      };
+    }));
+
+    res.json({ locked: false, cohortSize: consentingUids.length, threshold, teams });
   } catch (err: any) {
     res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("not found") ? 404 : 500).json({ error: err.message });
   }
