@@ -135,3 +135,20 @@ describe('GET/POST /api/org/:orgId/hr-viewers', () => {
     expect(entry.after.uids).toEqual(['hr_1']);
   });
 });
+
+describe('admin-only team-management routes — 404 on a nonexistent org, matching every other route', () => {
+  it('manage-teams returns 404, not 500, for an org that does not exist', async () => {
+    const res = await request(app).post(`/api/org/does_not_exist/members/mgr_1/manage-teams`).set(auth('owner_1')).send({ teams: [] });
+    expect(res.status).toBe(404);
+  });
+
+  it('GET hr-viewers returns 404, not 500, for an org that does not exist', async () => {
+    const res = await request(app).get(`/api/org/does_not_exist/hr-viewers`).set(auth('owner_1'));
+    expect(res.status).toBe(404);
+  });
+
+  it('POST hr-viewers returns 404, not 500, for an org that does not exist', async () => {
+    const res = await request(app).post(`/api/org/does_not_exist/hr-viewers`).set(auth('owner_1')).send({ uids: [] });
+    expect(res.status).toBe(404);
+  });
+});

@@ -17,7 +17,7 @@ vi.mock('twilio', () => ({ default: () => ({ messages: { create: vi.fn() } }) })
 
 import request from 'supertest';
 import { app } from './server';
-import { seedDoc, resetStore } from './test/fake-firestore';
+import { seedDoc, resetStore, allPaths } from './test/fake-firestore';
 
 const ORG = 'org_1';
 const auth = (uid: string) => ({ Authorization: `Bearer ${uid}` });
@@ -149,5 +149,70 @@ describe('GET /api/org/:orgId/team-dashboard — Nova nudge banner', () => {
     const res = await request(app).get(`/api/org/${ORG}/team-dashboard`).set(auth('mgr_a'));
     // No mood/climate data logged at all -> null concern, not elevated.
     expect(res.body.teams[0].nudge).toBeNull();
+  });
+});
+
+describe('GET /api/org/:orgId/team-dashboard — never writes the shared org-wide history', () => {
+  it('does not create a risk_trend_history entry, even for the org\'s first-ever check today', async () => {
+    seedOrg(ORG, {
+      adminUids: ['owner_1'],
+      memberUids: ['owner_1', 'mgr_a', 'a1', 'a2', 'a3'],
+      memberTeams: { a1: 'Team A', a2: 'Team A', a3: 'Team A' },
+      teamManagers: { mgr_a: ['Team A'] },
+      privacyThreshold: 3,
+    });
+    ['a1', 'a2', 'a3'].forEach(uid => seedDoc(`users/${uid}`, { shareAnonymizedDataWithOrg: true }));
+
+    await request(app).get(`/api/org/${ORG}/team-dashboard`).set(auth('mgr_a'));
+
+    const historyPaths = allPaths().filter(p => p.startsWith(`organisations/${ORG}/risk_trend_history/`));
+    expect(historyPaths.length).toBe(0);
+  });
+
+  it('a manager managing two teams does not write two conflicting history entries', async () => {
+    seedOrg(ORG, {
+      adminUids: ['owner_1'],
+      memberUids: ['owner_1', 'mgr_ab', 'a1', 'a2', 'a3', 'b1', 'b2', 'b3'],
+      memberTeams: { a1: 'Team A', a2: 'Team A', a3: 'Team A', b1: 'Team B', b2: 'Team B', b3: 'Team B' },
+      teamManagers: { mgr_ab: ['Team A', 'Team B'] },
+      privacyThreshold: 3,
+    });
+    ['a1', 'a2', 'a3', 'b1', 'b2', 'b3'].forEach(uid => seedDoc(`users/${uid}`, { shareAnonymizedDataWithOrg: true }));
+
+    const res = await request(app).get(`/api/org/${ORG}/team-dashboard`).set(auth('mgr_ab'));
+    expect(res.body.teams.length).toBe(2);
+
+    const historyPaths = allPaths().filter(p => p.startsWith(`organisations/${ORG}/risk_trend_history/`));
+    expect(historyPaths.length).toBe(0);
+  });
+
+  it('risk-trend still writes the correct, complete org-wide snapshot even after team-dashboard was checked first that day', async () => {
+    seedOrg(ORG, {
+      adminUids: ['owner_1'],
+      memberUids: ['owner_1', 'mgr_a', 'a1', 'a2', 'a3', 'b1', 'b2', 'b3'],
+      memberTeams: { a1: 'Team A', a2: 'Team A', a3: 'Team A', b1: 'Team B', b2: 'Team B', b3: 'Team B' },
+      teamManagers: { mgr_a: ['Team A'] },
+      privacyThreshold: 3,
+    });
+    ['a1', 'a2', 'a3', 'b1', 'b2', 'b3'].forEach(uid => seedDoc(`users/${uid}`, { shareAnonymizedDataWithOrg: true }));
+    // A history entry is only ever written when there's a real strain
+    // signal to record (overallConcern !== null) - seed a recent mood
+    // pulse for everyone so that's true here.
+    const recentIso = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    ['a1', 'a2', 'a3', 'b1', 'b2', 'b3'].forEach(uid =>
+      seedDoc(`users/${uid}/mood_pulses/mp1`, { moodLabel: 'calm', createdAt: recentIso }));
+
+    // The manager checks their own team dashboard first, before any org
+    // admin has looked at risk-trend today.
+    await request(app).get(`/api/org/${ORG}/team-dashboard`).set(auth('mgr_a'));
+
+    const riskTrendRes = await request(app).get(`/api/org/${ORG}/risk-trend`).set(auth('owner_1'));
+    expect(riskTrendRes.status).toBe(200);
+    // Both teams must be present - proof the day's history entry wasn't
+    // already (wrongly) written by team-dashboard with only Team A in it.
+    expect(Object.keys(riskTrendRes.body.teamBreakdown).sort()).toEqual(['Team A', 'Team B']);
+
+    const historyPaths = allPaths().filter(p => p.startsWith(`organisations/${ORG}/risk_trend_history/`));
+    expect(historyPaths.length).toBe(1);
   });
 });

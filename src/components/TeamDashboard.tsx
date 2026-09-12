@@ -173,7 +173,13 @@ export const TeamDashboard = () => {
                       </div>
                     </div>
                     {ackConfirmed[entry.team] ? (
-                      <p className="text-xs font-bold text-[#166534] dark:text-[#4ade80] pl-8">Logged - thank you.</p>
+                      <p
+                        ref={(el) => { el?.focus(); }}
+                        tabIndex={-1}
+                        className="text-xs font-bold text-[#166534] dark:text-[#4ade80] pl-8"
+                      >
+                        Logged - thank you.
+                      </p>
                     ) : (
                       <div className="pl-8 space-y-2">
                         <label htmlFor={`ack-note-${entry.team}`} className="sr-only">Optional note about how you addressed this</label>

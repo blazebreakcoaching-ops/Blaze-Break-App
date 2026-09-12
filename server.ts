@@ -4829,14 +4829,23 @@ const computeEngagementRate = async (db: any, uids: string[], windowDays: number
   return Math.round((activeCount / uids.length) * 100);
 };
 
-// Reads organisations/{orgId}/risk_trend_history, writes today's snapshot
-// if none has been recorded yet today (idempotent - once per UTC day
-// regardless of how many routes/times this is called), and derives every
-// trend (org-wide + per-signal + per-team) against whichever prior
-// snapshot sits closest to ~28 days back. Extracted so risk-trend,
-// team-dashboard, and hr-dashboard all read the exact same history and
-// can never drift into disagreeing about what "the trend" is for the same
-// underlying data.
+// Reads organisations/{orgId}/risk_trend_history, and - only when
+// `writeSnapshot` is true - writes today's snapshot if none has been
+// recorded yet today (idempotent - once per UTC day regardless of how
+// many routes/times this is called), then derives every trend (org-wide +
+// per-signal + per-team) against whichever prior snapshot sits closest to
+// ~28 days back. Extracted so risk-trend and hr-dashboard read and write
+// the exact same history and can never drift into disagreeing about what
+// "the trend" is for the same underlying data.
+//
+// `writeSnapshot` MUST be false whenever `orgSnapshot` isn't genuinely the
+// whole org's snapshot - e.g. team-dashboard, which only ever has ONE
+// manager's own team's data. Writing there would corrupt the shared daily
+// history: it would mislabel that one team's strain as the org-wide
+// number, and silently drop every other team's concern for that day
+// (including ones that separately qualify) - whichever route happens to
+// run first each day currently "wins" the write, so this MUST stay
+// read-only for any caller that doesn't have the complete picture.
 interface TrendHistoryResult {
   orgTrend: ReturnType<typeof computeTrend>;
   moodTrend: ReturnType<typeof computeTrend>;
@@ -4850,7 +4859,8 @@ const computeTrendHistory = async (
   db: any,
   orgId: string,
   orgSnapshot: OrgStrainSnapshot,
-  teamSnapshots: Record<string, OrgStrainSnapshot>
+  teamSnapshots: Record<string, OrgStrainSnapshot>,
+  writeSnapshot: boolean = true
 ): Promise<TrendHistoryResult> => {
   // Read history first so today's write (if any) doesn't contaminate the
   // "previous" comparison computed just below.
@@ -4866,7 +4876,7 @@ const computeTrendHistory = async (
 
   const todayUtc = new Date().toISOString().slice(0, 10);
   const alreadySnapshottedToday = history.some((h: any) => h.recordedAt.slice(0, 10) === todayUtc);
-  if (!alreadySnapshottedToday && orgSnapshot.overallConcern !== null) {
+  if (writeSnapshot && !alreadySnapshottedToday && orgSnapshot.overallConcern !== null) {
     const teamConcerns: Record<string, number | null> = {};
     Object.entries(teamSnapshots).forEach(([team, snap]) => { teamConcerns[team] = snap.overallConcern; });
     await db.collection("organisations").doc(orgId).collection("risk_trend_history").add({
@@ -5200,7 +5210,7 @@ app.post("/api/org/:orgId/members/:memberUid/manage-teams", verifyAppCheck, auth
     await logOrgAuditAction(req, orgId, "assign_team_manager", "team_manager", memberUid, before, { teams });
     res.json({ success: true, teams });
   } catch (err: any) {
-    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
+    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("not found") ? 404 : 500).json({ error: err.message });
   }
 });
 
@@ -5210,7 +5220,7 @@ app.get("/api/org/:orgId/hr-viewers", verifyAppCheck, authenticateFirebaseUser, 
     const { org } = await requireOrgAdmin(req, orgId);
     res.json({ uids: org.hrViewerUids || [] });
   } catch (err: any) {
-    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
+    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("not found") ? 404 : 500).json({ error: err.message });
   }
 });
 
@@ -5236,7 +5246,7 @@ app.post("/api/org/:orgId/hr-viewers", verifyAppCheck, authenticateFirebaseUser,
     await logOrgAuditAction(req, orgId, "update_hr_viewers", "hr_viewers", orgId, before, { uids });
     res.json({ success: true, uids });
   } catch (err: any) {
-    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
+    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("not found") ? 404 : 500).json({ error: err.message });
   }
 });
 
@@ -5270,7 +5280,10 @@ app.get("/api/org/:orgId/team-dashboard", verifyAppCheck, authenticateFirebaseUs
       }
       const snapshot = await computeStrainSnapshotForCohort(db, teamConsentingUids);
       const engagementRate = await computeEngagementRate(db, teamConsentingUids, 7);
-      const { teamTrends } = await computeTrendHistory(db, orgId, snapshot, { [team]: snapshot });
+      // Read-only: this route only ever has ONE team's data, never the
+      // whole org's, so it must never write the shared daily snapshot -
+      // see computeTrendHistory's own docstring for why.
+      const { teamTrends } = await computeTrendHistory(db, orgId, snapshot, { [team]: snapshot }, false);
       const indicators = sortByAttention(buildPrimaryIndicators({
         overall: snapshot.overallConcern,
         mood: snapshot.moodConcern,
