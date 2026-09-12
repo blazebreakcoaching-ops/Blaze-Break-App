@@ -35,6 +35,7 @@ import { isDeviceChannel, isValidAppVersion, validateDeviceRegistration, evaluat
 import { getEffectiveBillingState, validateBillingUpdate, checkSeatLimit, billingProvider } from './billing-adapter';
 import { validateSsoConfigInput, encryptSecret, canEnableSsoEnforcement, redactSsoConfig, StoredSsoConfig } from './sso-config';
 import { searchOrgResources, validateResourceCreate, SearchableResource } from './org-search';
+import { managedTeamsFor, validateTeamAssignment, validateHrViewerList, computeQualifyingTeamGroups } from './org-team-management';
 
 dotenv.config();
 
@@ -4803,6 +4804,27 @@ const computeStrainSnapshotForCohort = async (db: any, uids: string[]): Promise<
   };
 };
 
+// The cohort-level "did people actually use the app" signal - extracted
+// from the original /api/org/:orgId/dashboard route so the same real
+// engagement math can be reused per-team (team-dashboard, hr-dashboard)
+// without duplicating it. Deliberately never returns anything about a
+// specific uid - only how many of `uids` had any activity, so a caller
+// can only ever learn a percentage, never who.
+const computeEngagementRate = async (db: any, uids: string[], windowDays: number): Promise<number> => {
+  if (uids.length === 0) return 0;
+  const sinceIso = new Date(Date.now() - windowDays * 24 * 60 * 60 * 1000).toISOString();
+  let activeCount = 0;
+  await Promise.all(uids.map(async (uid) => {
+    const moodSnap = await db.collection("users").doc(uid).collection("mood_pulses")
+      .where("createdAt", ">=", sinceIso).limit(1).get();
+    if (!moodSnap.empty) { activeCount++; return; }
+    const bodySnap = await db.collection("users").doc(uid).collection("body_checkins")
+      .where("createdAt", ">=", sinceIso).limit(1).get();
+    if (!bodySnap.empty) activeCount++;
+  }));
+  return Math.round((activeCount / uids.length) * 100);
+};
+
 app.get("/api/org/:orgId/risk-trend", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
   try {
     const { orgId } = req.params;
@@ -4827,17 +4849,12 @@ app.get("/api/org/:orgId/risk-trend", verifyAppCheck, authenticateFirebaseUser, 
     // in teamBreakdown at all - not shown as "locked", simply absent,
     // since listing a locked team by name would itself say more about a
     // small team's participation than this feature should ever reveal.
-    const teamGroups: Record<string, string[]> = {};
-    consentingUids.forEach((uid) => {
-      const team = memberTeams[uid];
-      if (team) {
-        if (!teamGroups[team]) teamGroups[team] = [];
-        teamGroups[team].push(uid);
-      }
-    });
-    const qualifyingTeams = Object.entries(teamGroups).filter(([, uids]) => uids.length >= threshold);
+    // (computeQualifyingTeamGroups is the same shared helper the manager
+    // and HR team-welfare dashboards use, so this rule can never drift
+    // between routes.)
+    const { qualifying: teamGroups } = computeQualifyingTeamGroups(consentingUids, memberTeams, threshold);
     const teamSnapshots: Record<string, OrgStrainSnapshot> = {};
-    await Promise.all(qualifyingTeams.map(async ([team, uids]) => {
+    await Promise.all(Object.entries(teamGroups).map(async ([team, uids]) => {
       teamSnapshots[team] = await computeStrainSnapshotForCohort(db, uids);
     }));
 
@@ -5017,6 +5034,7 @@ app.get("/api/org/:orgId/members", verifyAppCheck, authenticateFirebaseUser, asy
     const memberTeams: Record<string, string> = org.memberTeams || {};
 
     const members = await Promise.all(memberUids.map(async (uid) => {
+      const managesTeams = managedTeamsFor(org.teamManagers, uid);
       try {
         const authUser = await getAuth().getUser(uid);
         return {
@@ -5025,13 +5043,14 @@ app.get("/api/org/:orgId/members", verifyAppCheck, authenticateFirebaseUser, asy
           displayName: authUser.displayName || null,
           isAdmin: adminUids.includes(uid),
           team: memberTeams[uid] || null,
+          managesTeams,
         };
       } catch (e) {
-        return { uid, email: null, displayName: null, isAdmin: adminUids.includes(uid), team: memberTeams[uid] || null };
+        return { uid, email: null, displayName: null, isAdmin: adminUids.includes(uid), team: memberTeams[uid] || null, managesTeams };
       }
     }));
 
-    res.json({ members });
+    res.json({ members, existingTeams: Array.from(new Set(Object.values(memberTeams))), hrViewerUids: org.hrViewerUids || [] });
   } catch (err: any) {
     res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
   }
@@ -5100,6 +5119,78 @@ app.post("/api/org/:orgId/members/:memberUid/team", verifyAppCheck, authenticate
       [fieldPath]: trimmed && trimmed.length > 0 ? trimmed : FieldValue.delete(),
     });
     res.json({ success: true });
+  } catch (err: any) {
+    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
+  }
+});
+
+// ============ Team-welfare dashboards: manager & HR designation ============
+// See org-team-management.ts and docs/TEAM_WELFARE_DASHBOARDS.md. Being a
+// team manager or an HR viewer is orthogonal to org-rbac.ts's org-wide
+// role table - a plain 'member' can manage a team, and neither
+// designation grants any of the org-wide ORG_PERMISSIONS. Both are simple
+// admin-curated allow-lists, assignable only by an org owner/admin, same
+// gate as the memberTeams assignment route just above.
+
+// Full-replace (send the whole intended team list), not an incremental
+// patch - same "no partial updates" reasoning as org-data-policy.ts.
+app.post("/api/org/:orgId/members/:memberUid/manage-teams", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const { orgId, memberUid } = req.params;
+    const { org } = await requireOrgAdmin(req, orgId);
+    if (!(org.memberUids || []).includes(memberUid)) {
+      return res.status(400).json({ error: "That person isn't a member of this organisation." });
+    }
+    const existingTeams = Array.from(new Set(Object.values(org.memberTeams || {}) as string[]));
+    const validation = validateTeamAssignment(req.body, existingTeams);
+    if (!validation.valid) {
+      return res.status(400).json({ error: validation.error });
+    }
+    const { teams } = req.body;
+    const db = getDb();
+    const before = { teams: managedTeamsFor(org.teamManagers, memberUid) };
+    const fieldPath = `teamManagers.${memberUid}`;
+    await db.collection("organisations").doc(orgId).update({
+      [fieldPath]: teams.length > 0 ? teams : FieldValue.delete(),
+    });
+    await logOrgAuditAction(req, orgId, "assign_team_manager", "team_manager", memberUid, before, { teams });
+    res.json({ success: true, teams });
+  } catch (err: any) {
+    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
+  }
+});
+
+app.get("/api/org/:orgId/hr-viewers", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const { orgId } = req.params;
+    const { org } = await requireOrgAdmin(req, orgId);
+    res.json({ uids: org.hrViewerUids || [] });
+  } catch (err: any) {
+    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
+  }
+});
+
+app.post("/api/org/:orgId/hr-viewers", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const { orgId } = req.params;
+    const { org } = await requireOrgAdmin(req, orgId);
+    const validation = validateHrViewerList(req.body);
+    if (!validation.valid) {
+      return res.status(400).json({ error: validation.error });
+    }
+    const { uids } = req.body;
+    // Every uid must be a real member of this org - an HR viewer allow-list
+    // is not a place to grant access to an outsider.
+    const memberUids: string[] = org.memberUids || [];
+    const unknownUid = uids.find((uid: string) => !memberUids.includes(uid));
+    if (unknownUid) {
+      return res.status(400).json({ error: `"${unknownUid}" isn't a member of this organisation.` });
+    }
+    const db = getDb();
+    const before = { uids: org.hrViewerUids || [] };
+    await db.collection("organisations").doc(orgId).update({ hrViewerUids: uids });
+    await logOrgAuditAction(req, orgId, "update_hr_viewers", "hr_viewers", orgId, before, { uids });
+    res.json({ success: true, uids });
   } catch (err: any) {
     res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
   }
