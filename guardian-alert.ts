@@ -17,13 +17,27 @@ export interface GuardianCandidate {
   contactMethod?: string;
 }
 
+// Roles the product's own UI (NovaGuardianRelay.tsx) treats as permanently
+// disabled for Guardian alerts - "organizational managers and peers are
+// strictly prohibited from receiving Guardian crisis intercepts" per its
+// own copy. That was previously enforced only by disabling the &lt;option&gt;
+// in a &lt;select&gt; - a client crafting (or a bug constructing) a contact
+// record with role: 'manager' AND isGuardian: true could still pass the
+// old isRealGuardian check, since isGuardian === true was checked with OR,
+// independently of role. Checked here explicitly so the real enforcement
+// point (server-side, immediately before every send) can't be bypassed by
+// any client-side data shape, regardless of how it was constructed.
+const DISALLOWED_GUARDIAN_ROLES = ['manager', 'peer'];
+
 // A contact counts as a real guardian only if explicitly marked as one -
-// either the isGuardian flag or one of the two guardian roles. This is
-// the entire "consent" gate for Tier 1: the user already authorised this
-// person by adding them to their own guardian list. There is no separate
-// inference step and none should ever be added here.
+// either the isGuardian flag or one of the two guardian roles - AND its
+// role isn't one this product has decided may never receive a Guardian
+// alert. This is the entire "consent" gate for Tier 1: the user already
+// authorised this person by adding them to their own guardian list. There
+// is no separate inference step and none should ever be added here.
 export const isRealGuardian = (contact: GuardianCandidate | undefined | null): boolean => {
   if (!contact) return false;
+  if (contact.role && DISALLOWED_GUARDIAN_ROLES.includes(contact.role)) return false;
   return contact.isGuardian === true || contact.role === 'primary_guardian' || contact.role === 'backup_guardian';
 };
 
@@ -50,6 +64,25 @@ export const extractFirstName = (fullName: string | undefined | null): string =>
   if (!trimmed) return 'A Blaze Break user';
   return trimmed.split(/\s+/)[0];
 };
+
+// The scheduled/recurring "nudge" messaging system (a user arranges in
+// advance for automatic, unattended SMS/WhatsApp messages to a chosen
+// contact on a schedule, processed by a cron job with no per-send user
+// action) is exactly docs/GUARDIAN_SUPPORT_SPEC.md's own "Tier 3"
+// capability shape - a planned communication arrangement configured ahead
+// of time. The spec declares Tier 3 "[REVIEW - research only, do not
+// build]" and "permanently out of scope... not deferred pending approval.
+// It is excluded" until ten named governance workstreams (clinical,
+// safeguarding, legal) and a documented, tested kill-switch exist. None of
+// that review has happened. This flag is that kill-switch: it defaults to
+// OFF (unlike toolsAreEnabled's default-on/opt-out pattern in
+// nova-tools.ts) precisely because Tier 3 has no standing approval to be
+// on by default - an operator must explicitly opt in by setting
+// NUDGE_SCHEDULER_ENABLED=true, which should not happen until that review
+// exists. Gates both creating new schedules and the cron job actually
+// sending anything, so the feature is fully inert (not just quietly
+// failing to send) while disabled.
+export const nudgeSchedulerIsEnabled = (envValue: string | undefined): boolean => envValue === 'true';
 
 export interface CooldownCheck {
   onCooldown: boolean;
