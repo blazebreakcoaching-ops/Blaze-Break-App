@@ -1739,7 +1739,7 @@ export const ResultView = ({
           </div>
 
           <p className="text-sm text-text-muted leading-relaxed font-medium">
-            Based on your diagnostics, Nova has synthesized an actionable recovery protocol. 
+            Based on your check-in, Nova has put together an actionable recovery plan.
             Commit to the items below daily to build boundary muscle memory, claim rewards, and recover high baseline energy.
           </p>
 
@@ -1878,7 +1878,7 @@ export const ResultView = ({
             Next Step: Pillar 2 (Rebuild Energy)
           </h4>
           <p className="text-text-muted text-sm font-serif italic">
-            Nova has mapped this diagnostics profile to a baseline daily Energy
+            Nova has mapped this check-in profile to a baseline daily Energy
             Budget.
           </p>
         </div>
@@ -1894,7 +1894,7 @@ export const ResultView = ({
         onClick={onRestart}
         className="mx-auto block text-text-muted text-xs uppercase tracking-widest font-black hover:text-text-muted transition-colors cursor-pointer"
       >
-        Retake Diagnostic Assessment
+        Retake Check-in
       </button>
     </div>
   );

@@ -876,7 +876,7 @@ export const NervousSystemReset = ({ fingerprint, onAwardPoints }: NervousSystem
               <div className="space-y-2">
                 <h4 id="reset-confirm-title" className="text-xl font-display font-medium text-text-main">Reset Studio State?</h4>
                 <p className="text-sm text-text-muted leading-relaxed">
-                  Are you sure you want to clear your active somatic diagnostic choices, ongoing breathwork routines, and grounding toolkit selections? This action will reset your studio work-in-progress state.
+                  Are you sure you want to clear your active check-in choices, ongoing breathwork routines, and grounding toolkit selections? This action will reset your studio work-in-progress state.
                 </p>
               </div>
               <div className="flex gap-3 justify-end pt-2">
@@ -1242,7 +1242,7 @@ export const NervousSystemReset = ({ fingerprint, onAwardPoints }: NervousSystem
               </div>
               <h3 className="text-2xl font-display font-bold text-text-main mb-4">Choose a Practice</h3>
               <p className="text-sm font-medium text-text-muted max-w-md mx-auto">
-                Connect with Nova's diagnostic above or select a breathing mode from the library to begin nervous system regulation.
+                Talk with Nova above or select a breathing mode from the library to begin.
               </p>
             </div>
           )}

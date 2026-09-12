@@ -395,11 +395,11 @@ export const RecoveryVelocityMap = () => {
         <div className="space-y-3 flex-1 text-left">
           <div className="flex items-center gap-2">
             <span className="text-[10px] font-black uppercase text-text-muted tracking-widest">
-              Nova Coaching Diagnostics
+              Nova Coaching Insights
             </span>
             <span className="h-1.5 w-1.5 rounded-full bg-primary/40" />
             <span className="text-[10px] font-black uppercase font-mono text-[#9a3412] dark:text-primary tracking-widest">
-              Realtime Neural Feed
+              Based On Your Recent Check-ins
             </span>
           </div>
           <p className="text-text-muted text-sm leading-relaxed font-serif">

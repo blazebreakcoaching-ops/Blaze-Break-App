@@ -166,7 +166,7 @@ export const ALL_TABS: {
   {
     id: "diagnose",
     icon: MapPin,
-    label: "Diagnose",
+    label: "Check-in",
     roles: ["individual", "employee", "executive"],
     featureId: "burnout_diagnostic",
     group: "recovery_tools",
@@ -751,7 +751,7 @@ const Header = ({
           {activeTab === "privacy" && "Privacy & Trust Centre"}
           {activeTab === "ally" && "Guardian Protection Network"}
           {activeTab === "org" && "Collective Stability Pulse"}
-          {activeTab === "evolution" && "Burnout Diagnostic Evolution"}
+          {activeTab === "evolution" && "Burnout Pattern Evolution"}
           {activeTab === "intelligence" && "Recovery Strategy Engine"}
         </span>
       </div>
@@ -1569,7 +1569,7 @@ export default function App() {
 
     // Sync Fingerprint
     if (fingerprint) {
-      updateNovaMemoryBySourceAndType("Diagnostic Engine", "profile", {
+      updateNovaMemoryBySourceAndType("Burnout Fingerprint Check-in", "profile", {
         content: `User exhibits burnout fingerprint: ${fingerprint.profile}. Priorities: ${fingerprint.priorities.join(", ")}.`,
         confidence: "high",
         canEdit: false,
@@ -1910,7 +1910,7 @@ export default function App() {
                 <DiagnoseView
                   onComplete={(f) => {
                     setFingerprint(f);
-                    awardPoints(250, "Diagnostic Completion");
+                    awardPoints(250, "Burnout Check-in Completed");
                     unlockBadge("first_step");
                   }}
                 />

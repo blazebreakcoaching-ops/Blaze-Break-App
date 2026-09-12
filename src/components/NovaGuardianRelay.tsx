@@ -26,6 +26,7 @@ import {
 } from 'lucide-react';
 import { SupportContact } from '../types';
 import { cn } from '../lib/utils';
+import { isRealGuardian, buildGuardianCallRequestMessage, extractFirstName } from '../../guardian-alert';
 
 interface NovaGuardianRelayProps {
   contacts: SupportContact[];
@@ -175,38 +176,55 @@ const GuardianCard = ({
          </div>
          
          <div className="grid grid-cols-2 gap-2">
-            <button 
-              onClick={() => onActivateSOS(contact.id)}
-              className={cn("col-span-1 py-3 text-[11px] font-black uppercase tracking-widest rounded-xl transition-all shadow-sm", contact.role.includes('guardian') ? "bg-destructive hover:bg-destructive text-destructive-foreground" : "bg-white dark:bg-surface border border-destructive dark:border-destructive text-destructive dark:text-destructive hover:bg-destructive dark:hover:bg-destructive")}
-            >
-              Manual SOS
-            </button>
-            <button 
+            {/* Sending a real alert is only ever available for contacts
+                that are actually guardians - matching what
+                /api/guardian/alert itself enforces server-side (it 403s
+                anyone else). Previously these buttons rendered for every
+                contact regardless of role, relying only on a disabled
+                &lt;option&gt; in the add-contact form to keep non-guardians
+                out - not a real enforcement point. */}
+            {isRealGuardian(contact) ? (
+              <button
+                onClick={() => onActivateSOS(contact.id)}
+                className="col-span-1 py-3 text-[11px] font-black uppercase tracking-widest rounded-xl transition-all shadow-sm bg-destructive hover:bg-destructive text-destructive-foreground"
+              >
+                Manual SOS
+              </button>
+            ) : (
+              <div className="col-span-1" />
+            )}
+            <button
               onClick={handleHealthCheck}
               disabled={isSyncing}
               className="col-span-1 py-3 text-[11px] font-black uppercase tracking-widest rounded-xl transition-all bg-success/10 text-[#166534] dark:text-[#4ade80] hover:bg-success/20 shadow-sm"
             >
               {isHealthChecking ? <Loader2 className="w-3 h-3 animate-spin mx-auto" /> : "Ping Status"}
             </button>
-            
+
             {/* Quick Relay */}
-            <button 
-              onClick={handleQuickRelay}
-              className={cn(
-                "col-span-2 py-4 rounded-xl text-xs font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2 mt-2", 
-                countdown !== null 
-                  ? "bg-destructive text-destructive-foreground animate-pulse shadow-[0_0_20px_rgba(225,29,72,0.6)]" 
-                  : contact.role.includes('guardian') ? "bg-primary text-primary-foreground hover:bg-primary-dark" : "bg-surface text-text-main"
-              )}
-            >
-              {countdown !== null ? (
-                <><AlertTriangle className="w-4 h-4" /> Abort Dispatch ({countdown}s)</>
-              ) : isRelaying ? (
-                <><Loader2 className="w-4 h-4 animate-spin" /> Transmitting...</>
-              ) : (
-                <><Zap className="w-4 h-4" /> One-Touch Alert</>
-              )}
-            </button>
+            {isRealGuardian(contact) ? (
+              <button
+                onClick={handleQuickRelay}
+                className={cn(
+                  "col-span-2 py-4 rounded-xl text-xs font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2 mt-2",
+                  countdown !== null
+                    ? "bg-destructive text-destructive-foreground animate-pulse shadow-[0_0_20px_rgba(225,29,72,0.6)]"
+                    : "bg-primary text-primary-foreground hover:bg-primary-dark"
+                )}
+              >
+                {countdown !== null ? (
+                  <><AlertTriangle className="w-4 h-4" /> Abort Dispatch ({countdown}s)</>
+                ) : isRelaying ? (
+                  <><Loader2 className="w-4 h-4 animate-spin" /> Transmitting...</>
+                ) : (
+                  <><Zap className="w-4 h-4" /> One-Touch Alert</>
+                )}
+              </button>
+            ) : (
+              <p className="col-span-2 py-3 text-center text-[11px] text-text-muted">
+                Only guardians can be sent an alert. Add this person as a guardian to enable this.
+              </p>
+            )}
          </div>
       </div>
     </motion.div>
@@ -281,31 +299,28 @@ export const NovaGuardianRelay = ({ contacts, onAdd, onRemove, userName }: NovaG
     }
   };
 
+  // Routed through the hardened, spec-compliant /api/guardian/alert
+  // endpoint - not a raw /api/twilio/send call - so a real Guardian alert
+  // gets the same abuse-prevention every other guardian send-path already
+  // has: a server-side isRealGuardian check on the caller's own stored
+  // contact (never trusting the client's copy), a per-contact cooldown, a
+  // daily cap, and idempotency so a double-tap can't double-send. A fresh
+  // idempotencyKey per call is intentional (matching CrisisSupport.tsx's
+  // own pattern) - each tap is a new, distinct request for that dispatch.
   const sendRealAlert = async (contact: SupportContact) => {
     setIsSending(true);
-    const senderName = userName?.trim() || 'A Blaze Break user';
-    const message = `Nova Alert: ${senderName} has asked for extra support right now. This message was sent because they manually requested it.`;
-
-    if (!/^\+[1-9]\d{6,14}$/.test(contact.contactMethod)) {
-      setSendSuccess("Couldn't send - this contact's number isn't in a valid format. Edit it and try again.");
-      setTimeout(() => { setSendSuccess(null); setIsSending(false); }, 4000);
-      return;
-    }
+    const idempotencyKey = `${contact.id}_${Date.now()}_${Math.random().toString(36).slice(2)}`;
 
     try {
-      const res = await secureApiFetch('/api/twilio/send', {
+      const res = await secureApiFetch('/api/guardian/alert', {
         method: 'POST',
-        data: {
-          to: contact.contactMethod,
-          message,
-          useWhatsapp: contact.notificationPreference === 'whatsapp',
-        },
+        data: { contactId: contact.id, idempotencyKey },
       });
       const body = await res.json();
-      if (res.ok && body.success) {
-        setSendSuccess(`Alert sent to ${contact.name}.`);
+      if (res.ok) {
+        setSendSuccess(body.userMessage || `Alert sent to ${contact.name}.`);
       } else {
-        setSendSuccess(body.error || "Couldn't send that alert right now.");
+        setSendSuccess(body.userMessage || body.error || "Couldn't send that alert right now.");
       }
     } catch (e) {
       setSendSuccess("Couldn't reach the messaging service right now.");
@@ -620,8 +635,8 @@ export const NovaGuardianRelay = ({ contacts, onAdd, onRemove, userName }: NovaG
 
                   <div className="p-5 bg-black/40 rounded-xl border border-border/50 shadow-inner">
                     <p className="text-[11px] font-mono leading-relaxed text-text-muted">
-                      [PAYLOAD PREVIEW]<br/><br/>
-                      "Nova Alert: {userName?.trim() || 'A Blaze Break user'} has asked for extra support right now. This message was sent because they manually requested it."
+                      [MESSAGE PREVIEW]<br/><br/>
+                      "{buildGuardianCallRequestMessage(extractFirstName(userName))}"
                     </p>
                   </div>
 

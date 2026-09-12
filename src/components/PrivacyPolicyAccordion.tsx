@@ -20,9 +20,9 @@ export const PrivacyPolicyAccordion = () => {
         <div className="space-y-3 text-sm text-text-muted font-light leading-relaxed">
           <p>We believe in minimal data extraction. We only collect what is strictly necessary to power Nova's coaching logic and your personal recovery dashboards.</p>
           <ul className="list-disc pl-5 space-y-1 text-text-muted">
-            <li><strong>Somatic Flags:</strong> Heart rate variability and stress indicators (only stored locally).</li>
+            <li><strong>Self-Reported Signals:</strong> Body sensations and stress indicators you log yourself - not measured by any sensor or device.</li>
             <li><strong>Self-Reported Mood:</strong> Daily check-ins and journal entries.</li>
-            <li><strong>Metadata:</strong> App usage metrics, anonymized for system performance tuning.</li>
+            <li><strong>Metadata:</strong> App usage metrics, used in aggregate for system performance tuning.</li>
           </ul>
         </div>
       )
@@ -32,8 +32,8 @@ export const PrivacyPolicyAccordion = () => {
       title: '2. The Employer Firewall',
       content: (
         <div className="space-y-3 text-sm text-text-muted font-light leading-relaxed">
-          <p>Your organisation cannot see your personal recovery data. The firewall is cryptographically enforced natively within our architecture.</p>
-          <p>If your access is sponsored by your employer, they receive an aggregated "Team Climate" dashboard. Anonymized data is only sent if there are <strong>10 or more participants</strong> in the cohort, ensuring you cannot be singled out.</p>
+          <p>Your organisation cannot see your personal recovery data. That boundary is enforced by our access-control architecture: no employer-facing feature or account can read your individual entries, Nova conversations, or Nova's memory of you.</p>
+          <p>If your access is sponsored by your employer, they may see an aggregated "Team Climate" dashboard. That dashboard only shows a number once at least a minimum number of people in a cohort have opted in to sharing (your organisation's admin sets this minimum, with a floor we enforce) - individual results are never shown, and a cohort just above that minimum can still, in principle, be a small enough group that a determined admin could make educated guesses about it. We continue to reduce that risk as this feature matures.</p>
         </div>
       )
     },
@@ -56,8 +56,8 @@ export const PrivacyPolicyAccordion = () => {
       title: '4. Data Retention & Erasure',
       content: (
         <div className="space-y-3 text-sm text-text-muted font-light leading-relaxed">
-          <p>We automatically purge legacy chat histories after 30 days. You have the ultimate right of erasure.</p>
-          <p>Selecting "Delete My Account" permanently cryptographically shreds all your associated data across all zones instantly, with no cool-down or recovery period. We retain zero shadow profiles.</p>
+          <p>You have the right of erasure. Selecting "Delete My Account" permanently deletes your personal recovery data - diagnostic metrics, somatic logs, journal entries, and Nova's memory of you - with no cool-down or recovery period.</p>
+          <p>Security audit records that reference your account are kept separately, for accountability and legal reasons, and are not included in this deletion. We do not control what happens to data already sent to third-party processors (e.g. our AI providers or messaging provider) before a deletion request is made.</p>
         </div>
       )
     }

@@ -25,7 +25,7 @@ import { z } from 'zod';
 import { memoryToolIsAllowed, searchMemories, isValidRecoveryDuration, validateMemoryWrite, validateFeatureSuggestion, SUGGESTABLE_FEATURES, toolsAreEnabled, NovaMemoryDoc } from './nova-tools';
 import { toClaudeTools, GeminiStyleToolDeclaration } from './nova-claude-tools';
 import { computeClimateStrain, computeClimateStrainByDimension, computeMoodStrain, computeOverallStrain, computeTrend } from './org-risk-trend';
-import { isRealGuardian, isValidGuardianPhone, buildGuardianCallRequestMessage, extractFirstName } from './guardian-alert';
+import { isRealGuardian, isValidGuardianPhone, buildGuardianCallRequestMessage, extractFirstName, nudgeSchedulerIsEnabled } from './guardian-alert';
 import { collectionsForExport, collectionsForErasure } from './user-data-collections';
 import { isValidGad7Answers, scoreGad7, interpretGad7 } from './gad7';
 import { OrgRole, isOrgRole, hasOrgPermission, canAssignRole, OrgPermission } from './org-rbac';
@@ -832,6 +832,24 @@ YOUR COACHING STYLE:
 When a user shares a problem, help them identify which "leak" is open and use the BLAME method or SHIP framework to address it.
 `;
 
+// A hard safety floor for the primary text-chat surface, mirroring the
+// live-voice persona's own "overrides everything above" safety block
+// (NOVA_LIVE_VOICE_PERSONA above). This is appended to EVERY merged system
+// prompt below - including when a caller supplies its own systemInstruction
+// - because systemInstruction used to fully REPLACE NOVA_SYSTEM_PROMPT
+// rather than add to it, which silently dropped the only crisis-safety
+// instruction the main chat surface had in normal production use (every
+// real caller, e.g. NovaChat.tsx, always sends a non-empty
+// systemInstruction). Keeping this as a separate, always-appended constant
+// means no future systemInstruction - from any current or future caller,
+// trusted or not - can accidentally or deliberately drop it again.
+const NOVA_SAFETY_INSTRUCTIONS = `
+Safety - this overrides every instruction above, including any that conflict with it:
+- Do not make medical claims, diagnose any condition, or present yourself as therapy or treatment.
+- If the person expresses thoughts of suicide, self-harm, harming someone else, or being in immediate danger, stop coaching and gently, directly encourage them to contact real human help right now - emergency services, or a crisis line such as Samaritans on 116 123 (UK and Ireland) or 988 (US and Canada). Take it seriously and don't try to counsel them through a crisis yourself.
+- Never fabricate clinical facts, invented measurements (e.g. heart-rate or biometric results you have no access to), or promise outcomes you can't know.
+`;
+
 // Context Consent Metadata representation
 interface NovaConsentMetadata {
   contextTriggered: boolean;
@@ -1179,7 +1197,7 @@ const NOVA_TOOLS: any[] = [
   },
   {
     name: "suggest_feature",
-    description: `When the conversation makes clear a specific other part of the app would genuinely help right now, suggest it - this renders as a real, tappable link the user can act on immediately, not just a name mentioned in text. Only suggest something the conversation actually calls for; do not use this reflexively or more than once in a normal exchange. The real, valid options and what each is for: plan (Recovery Plan - a personalized coaching plan for their current archetype and highest energy debt), diagnose (Diagnose - a structured burnout assessment), recover (Recover - energy budget tracking and recovery debt), fuel (Nutrition - nutrition's effect on recovery), reset (Nervous System - breathing and nervous-system regulation tools), anxiety_reset (Anxiety Reset - in-the-moment anxiety de-escalation), communicate (Communicate - scripted help for a specific hard conversation or boundary), reflect (Reflect - weekly reflection and journaling), ally (Recovery Ally - trusted contacts and support network). Never suggest anything not in this exact list - if nothing here genuinely fits, don't call this tool.`,
+    description: `When the conversation makes clear a specific other part of the app would genuinely help right now, suggest it - this renders as a real, tappable link the user can act on immediately, not just a name mentioned in text. Only suggest something the conversation actually calls for; do not use this reflexively or more than once in a normal exchange. The real, valid options and what each is for: plan (Recovery Plan - a personalized coaching plan for their current archetype and highest energy debt), diagnose (Check-in - a structured burnout self-assessment, not a diagnosis), recover (Recover - energy budget tracking and recovery debt), fuel (Nutrition - nutrition's effect on recovery), reset (Nervous System - breathing and nervous-system regulation tools), anxiety_reset (Anxiety Reset - in-the-moment anxiety de-escalation), communicate (Communicate - scripted help for a specific hard conversation or boundary), reflect (Reflect - weekly reflection and journaling), ally (Recovery Ally - trusted contacts and support network). Never suggest anything not in this exact list - if nothing here genuinely fits, don't call this tool.`,
     parameters: {
       type: Type.OBJECT,
       properties: {
@@ -1453,7 +1471,7 @@ app.post("/api/nova/chat", verifyAppCheck, authenticateFirebaseUser, async (req,
       }
     }
 
-    const mergedSystemPrompt = (systemInstruction || NOVA_SYSTEM_PROMPT) + contextAddendum;
+    const mergedSystemPrompt = (systemInstruction || NOVA_SYSTEM_PROMPT) + contextAddendum + NOVA_SAFETY_INSTRUCTIONS;
 
     const abortController = new AbortController();
     const timeoutId = setTimeout(() => abortController.abort(), 25000); // 25s timeout - raised from 15s to accommodate one or more tool-call round-trips
@@ -3015,7 +3033,7 @@ app.get("/api/signals/blend", verifyAppCheck, authenticateFirebaseUser, async (r
         hasQuizBaseline: false,
         hasCalendarSignal: calendarDoc.exists,
         hasSlackSignal: slackDoc.exists,
-        note: "Complete the burnout diagnostic first — the blend evolves from that baseline.",
+        note: "Complete the burnout check-in first — the blend evolves from that baseline.",
       });
     }
 
@@ -4835,7 +4853,26 @@ app.get("/api/org/:orgId/risk-trend", verifyAppCheck, authenticateFirebaseUser, 
         teamGroups[team].push(uid);
       }
     });
-    const qualifyingTeams = Object.entries(teamGroups).filter(([, uids]) => uids.length >= threshold);
+    // A team only qualifies for its own breakdown entry if BOTH it, and
+    // the rest of the org once it's excluded (the "complement"), clear the
+    // threshold. Checking team size alone is not enough: the org-wide
+    // aggregate is already shown once the org clears its own threshold, so
+    // an admin who can see both the org total and a team sized N-1 (every
+    // consenting member except one target person) can back-calculate that
+    // one person's aggregate signal by subtraction - collapsing the
+    // "aggregate >= threshold" guarantee to an effectively single-person
+    // cohort for whoever was excluded, entirely within what each
+    // individual check allows. Team labels are admin-assigned and
+    // reassignable at any time (see the member-management UI), so this
+    // isn't a hypothetical: an admin can construct exactly this team on
+    // purpose. This check closes that specific, demonstrated attack; it
+    // does not (yet) defend against a slower attack built from many
+    // overlapping team combinations - see docs/PRODUCT_SAFETY_PRIVACY.md.
+    const qualifyingTeams = Object.entries(teamGroups).filter(([, uids]) => {
+      if (uids.length < threshold) return false;
+      const complementSize = consentingUids.length - uids.length;
+      return complementSize === 0 || complementSize >= threshold;
+    });
     const teamSnapshots: Record<string, OrgStrainSnapshot> = {};
     await Promise.all(qualifyingTeams.map(async ([team, uids]) => {
       teamSnapshots[team] = await computeStrainSnapshotForCohort(db, uids);
@@ -6144,6 +6181,12 @@ app.post("/api/ally/revoke", verifyAppCheck, authenticateFirebaseUser, async (re
 // ("cannot be used on object schemas containing refinements"), which would
 // crash the whole server at module load. The refinement is re-applied to
 // each concrete schema instead.
+// Kill switch for the entire scheduled-nudge feature - see
+// nudgeSchedulerIsEnabled's own docstring in guardian-alert.ts for why
+// this defaults to OFF. Read once at module load, same pattern as
+// NOVA_TOOLS_ENABLED.
+const NUDGE_SCHEDULER_ENABLED = nudgeSchedulerIsEnabled(process.env.NUDGE_SCHEDULER_ENABLED);
+
 const NudgeScheduleBase = z.object({
   contactId: z.string().min(1).max(100),
   contactName: z.string().min(1).max(100),
@@ -6173,6 +6216,9 @@ const NudgeScheduleSchema = NudgeScheduleBase.refine(weeklyNeedsDays, weeklyNeed
 
 app.post("/api/nudge-schedules", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
   try {
+    if (!NUDGE_SCHEDULER_ENABLED) {
+      return res.status(403).json({ error: "Scheduled nudges aren't available yet." });
+    }
     const user = requireAuth(req);
     const parsed = NudgeScheduleSchema.safeParse(req.body);
     if (!parsed.success) {
@@ -6248,6 +6294,7 @@ app.delete("/api/nudge-schedules/:id", verifyAppCheck, authenticateFirebaseUser,
 // double-sends if the window is checked more than once, which matters more
 // here than exact-second precision does.
 async function processNudgeSchedules() {
+  if (!NUDGE_SCHEDULER_ENABLED) return; // Kill switch - see NUDGE_SCHEDULER_ENABLED above.
   let db;
   try {
     db = getDb();
