@@ -54,6 +54,10 @@ export const TeamDashboard = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [teams, setTeams] = useState<TeamEntry[]>([]);
+  const [orgId, setOrgId] = useState<string | null>(null);
+  const [ackNotes, setAckNotes] = useState<Record<string, string>>({});
+  const [acknowledgingTeam, setAcknowledgingTeam] = useState<string | null>(null);
+  const [ackConfirmed, setAckConfirmed] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     const load = async () => {
@@ -67,6 +71,7 @@ export const TeamDashboard = () => {
           setLoading(false);
           return;
         }
+        setOrgId(me.organisationId);
         const res = await secureApiFetch(`/api/org/${me.organisationId}/team-dashboard`);
         const data = await res.json();
         if (!res.ok) {
@@ -81,6 +86,26 @@ export const TeamDashboard = () => {
     };
     load();
   }, []);
+
+  // A factual "I addressed this" record HR can read - not a verified fact,
+  // and never a score. See docs/TEAM_WELFARE_DASHBOARDS.md.
+  const handleAcknowledge = async (team: string) => {
+    if (!orgId) return;
+    setAcknowledgingTeam(team);
+    try {
+      const res = await secureApiFetch(`/api/org/${orgId}/team-dashboard/${encodeURIComponent(team)}/acknowledge`, {
+        method: 'POST',
+        data: { note: ackNotes[team]?.trim() || undefined },
+      });
+      if (res.ok) {
+        setAckConfirmed(prev => ({ ...prev, [team]: true }));
+        setAckNotes(prev => ({ ...prev, [team]: '' }));
+      }
+    } catch (e) {
+      // Non-critical - the manager can just try again.
+    }
+    setAcknowledgingTeam(null);
+  };
 
   if (loading) {
     return (
@@ -139,12 +164,38 @@ export const TeamDashboard = () => {
                 </div>
 
                 {entry.nudge && (
-                  <div role="status" className="bg-warning/10 border border-warning/20 rounded-xl p-4 flex items-start gap-3">
-                    <HeartPulse className="w-5 h-5 text-warning shrink-0 mt-0.5" aria-hidden="true" />
-                    <div>
-                      <p className="font-bold text-text-main text-sm">{entry.nudge.title}</p>
-                      <p className="text-text-muted text-sm mt-0.5">{entry.nudge.message}</p>
+                  <div role="status" className="bg-warning/10 border border-warning/20 rounded-xl p-4 space-y-3">
+                    <div className="flex items-start gap-3">
+                      <HeartPulse className="w-5 h-5 text-warning shrink-0 mt-0.5" aria-hidden="true" />
+                      <div>
+                        <p className="font-bold text-text-main text-sm">{entry.nudge.title}</p>
+                        <p className="text-text-muted text-sm mt-0.5">{entry.nudge.message}</p>
+                      </div>
                     </div>
+                    {ackConfirmed[entry.team] ? (
+                      <p className="text-xs font-bold text-[#166534] dark:text-[#4ade80] pl-8">Logged - thank you.</p>
+                    ) : (
+                      <div className="pl-8 space-y-2">
+                        <label htmlFor={`ack-note-${entry.team}`} className="sr-only">Optional note about how you addressed this</label>
+                        <input
+                          id={`ack-note-${entry.team}`}
+                          type="text"
+                          value={ackNotes[entry.team] || ''}
+                          onChange={(e) => setAckNotes(prev => ({ ...prev, [entry.team]: e.target.value }))}
+                          placeholder="Optional note, e.g. 'Held a 1:1 on Friday'"
+                          maxLength={500}
+                          className="w-full bg-surface border border-border rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-primary/50"
+                        />
+                        <button
+                          onClick={() => handleAcknowledge(entry.team)}
+                          disabled={acknowledgingTeam === entry.team}
+                          className="text-xs font-bold text-[#9a3412] dark:text-primary hover:opacity-70 disabled:opacity-50 flex items-center gap-1.5"
+                        >
+                          {acknowledgingTeam === entry.team ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
+                          Log that I addressed this
+                        </button>
+                      </div>
+                    )}
                   </div>
                 )}
 
