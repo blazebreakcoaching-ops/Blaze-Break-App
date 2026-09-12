@@ -31,25 +31,54 @@ const nextAutoId = () => `auto_${(++autoIdCounter).toString(36)}_${Date.now().to
 // string so tests comparing timestamps stay deterministic; tests can move it.
 let fakeNowIso = new Date('2026-01-01T00:00:00.000Z').toISOString();
 
+// Resolves one write-value sentinel (or plain value) against whatever
+// currently sits at that spot - shared by both the top-level-key path and
+// the dotted-field-path below so a sentinel behaves identically either way.
+function resolveValue(value: any, current: any): any {
+  if (value === SERVER_TIMESTAMP) return fakeNowIso;
+  if (value === DELETE_FIELD) return undefined; // caller deletes the key
+  if (value && typeof value === 'object' && (value as ArrayOp).__arrayOp) {
+    const op = value as ArrayOp;
+    const arr: any[] = Array.isArray(current) ? current.slice() : [];
+    if (op.__arrayOp === 'remove') return arr.filter((v) => !op.values.includes(v));
+    for (const v of op.values) if (!arr.includes(v)) arr.push(v);
+    return arr;
+  }
+  return value;
+}
+
+// A key containing '.' is a real Firestore field-path update - it reaches
+// into (creating, if absent) nested maps without disturbing sibling keys,
+// exactly like the Admin SDK's update({'a.b': value}) does against real
+// Firestore. This matters here because several routes (memberTeams.{uid},
+// teamManagers.{uid}) rely on that exact semantic, and getting it wrong in
+// this fake would silently pass a broken write path in every test.
+function setAtPath(root: DocData, path: string, value: any): void {
+  const segments = path.split('.');
+  let node = root;
+  for (let i = 0; i < segments.length - 1; i++) {
+    const seg = segments[i];
+    if (typeof node[seg] !== 'object' || node[seg] === null || Array.isArray(node[seg])) {
+      node[seg] = {};
+    }
+    node = node[seg];
+  }
+  const lastSeg = segments[segments.length - 1];
+  const resolved = resolveValue(value, node[lastSeg]);
+  if (resolved === undefined) delete node[lastSeg];
+  else node[lastSeg] = resolved;
+}
+
 function resolveWrites(data: DocData, existing: DocData | undefined): DocData {
   const out: DocData = { ...(existing || {}) };
   for (const [key, value] of Object.entries(data)) {
-    if (value === SERVER_TIMESTAMP) {
-      out[key] = fakeNowIso;
-    } else if (value === DELETE_FIELD) {
-      delete out[key];
-    } else if (value && typeof value === 'object' && (value as ArrayOp).__arrayOp) {
-      const op = value as ArrayOp;
-      const current: any[] = Array.isArray(out[key]) ? out[key].slice() : [];
-      if (op.__arrayOp === 'remove') {
-        out[key] = current.filter((v) => !op.values.includes(v));
-      } else {
-        for (const v of op.values) if (!current.includes(v)) current.push(v);
-        out[key] = current;
-      }
-    } else {
-      out[key] = value;
+    if (key.includes('.')) {
+      setAtPath(out, key, value);
+      continue;
     }
+    const resolved = resolveValue(value, out[key]);
+    if (resolved === undefined) delete out[key];
+    else out[key] = resolved;
   }
   return out;
 }
