@@ -25,6 +25,7 @@ import { z } from 'zod';
 import { memoryToolIsAllowed, searchMemories, isValidRecoveryDuration, validateMemoryWrite, validateFeatureSuggestion, SUGGESTABLE_FEATURES, toolsAreEnabled, NovaMemoryDoc } from './nova-tools';
 import { toClaudeTools, GeminiStyleToolDeclaration } from './nova-claude-tools';
 import { computeClimateStrain, computeClimateStrainByDimension, computeMoodStrain, computeOverallStrain, computeTrend } from './org-risk-trend';
+import { buildPrimaryIndicators, sortByAttention } from './org-leading-indicators';
 import { isRealGuardian, isValidGuardianPhone, buildGuardianCallRequestMessage, extractFirstName } from './guardian-alert';
 import { collectionsForExport, collectionsForErasure } from './user-data-collections';
 import { isValidGad7Answers, scoreGad7, interpretGad7 } from './gad7';
@@ -35,7 +36,7 @@ import { isDeviceChannel, isValidAppVersion, validateDeviceRegistration, evaluat
 import { getEffectiveBillingState, validateBillingUpdate, checkSeatLimit, billingProvider } from './billing-adapter';
 import { validateSsoConfigInput, encryptSecret, canEnableSsoEnforcement, redactSsoConfig, StoredSsoConfig } from './sso-config';
 import { searchOrgResources, validateResourceCreate, SearchableResource } from './org-search';
-import { managedTeamsFor, validateTeamAssignment, validateHrViewerList, computeQualifyingTeamGroups } from './org-team-management';
+import { managedTeamsFor, isHrViewer, validateTeamAssignment, validateHrViewerList, computeQualifyingTeamGroups } from './org-team-management';
 
 dotenv.config();
 
@@ -4360,6 +4361,8 @@ app.get("/api/org/me", verifyAppCheck, authenticateFirebaseUser, async (req, res
       joinCode: isOrgAdmin ? org.joinCode : undefined,
       privacyThreshold: isOrgAdmin ? (org.privacyThreshold || 5) : undefined,
       shareAnonymizedDataWithOrg: userDoc.data()?.shareAnonymizedDataWithOrg === true,
+      managedTeams: managedTeamsFor(org.teamManagers, user.uid),
+      isHrViewer: isHrViewer(org.hrViewerUids, user.uid),
     });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
@@ -4825,6 +4828,93 @@ const computeEngagementRate = async (db: any, uids: string[], windowDays: number
   return Math.round((activeCount / uids.length) * 100);
 };
 
+// Reads organisations/{orgId}/risk_trend_history, writes today's snapshot
+// if none has been recorded yet today (idempotent - once per UTC day
+// regardless of how many routes/times this is called), and derives every
+// trend (org-wide + per-signal + per-team) against whichever prior
+// snapshot sits closest to ~28 days back. Extracted so risk-trend,
+// team-dashboard, and hr-dashboard all read the exact same history and
+// can never drift into disagreeing about what "the trend" is for the same
+// underlying data.
+interface TrendHistoryResult {
+  orgTrend: ReturnType<typeof computeTrend>;
+  moodTrend: ReturnType<typeof computeTrend>;
+  climateTrend: ReturnType<typeof computeTrend>;
+  comparedAgainst: string | null;
+  history: { recordedAt: string; overallConcern: number | null }[];
+  teamTrends: Record<string, ReturnType<typeof computeTrend>>;
+}
+
+const computeTrendHistory = async (
+  db: any,
+  orgId: string,
+  orgSnapshot: OrgStrainSnapshot,
+  teamSnapshots: Record<string, OrgStrainSnapshot>
+): Promise<TrendHistoryResult> => {
+  // Read history first so today's write (if any) doesn't contaminate the
+  // "previous" comparison computed just below.
+  const historySnap = await db.collection("organisations").doc(orgId).collection("risk_trend_history")
+    .orderBy("recordedAt", "desc").limit(90).get();
+  const history = historySnap.docs.map((d: any) => d.data() as {
+    recordedAt: string;
+    overallConcern: number | null;
+    moodConcern: number | null;
+    climateConcern: number | null;
+    teamConcerns?: Record<string, number | null>;
+  });
+
+  const todayUtc = new Date().toISOString().slice(0, 10);
+  const alreadySnapshottedToday = history.some((h: any) => h.recordedAt.slice(0, 10) === todayUtc);
+  if (!alreadySnapshottedToday && orgSnapshot.overallConcern !== null) {
+    const teamConcerns: Record<string, number | null> = {};
+    Object.entries(teamSnapshots).forEach(([team, snap]) => { teamConcerns[team] = snap.overallConcern; });
+    await db.collection("organisations").doc(orgId).collection("risk_trend_history").add({
+      recordedAt: new Date().toISOString(),
+      overallConcern: orgSnapshot.overallConcern,
+      moodConcern: orgSnapshot.moodConcern,
+      climateConcern: orgSnapshot.climateConcern,
+      teamConcerns,
+    });
+  }
+
+  // Compare against whichever snapshot sits closest to ~28 days back - a
+  // genuine month-over-month read, not noisy day-to-day movement in a
+  // signal built on overlapping 7-day windows.
+  const twentyEightDaysAgo = Date.now() - 28 * 24 * 60 * 60 * 1000;
+  const findClosestPrior = (getValue: (h: any) => number | null | undefined) => history
+    .filter((h: any) => new Date(h.recordedAt).getTime() <= twentyEightDaysAgo && getValue(h) != null)
+    .sort((a: any, b: any) => Math.abs(new Date(a.recordedAt).getTime() - twentyEightDaysAgo) - Math.abs(new Date(b.recordedAt).getTime() - twentyEightDaysAgo))[0];
+
+  const priorOrgSnapshot = findClosestPrior((h: any) => h.overallConcern);
+  const orgTrend = computeTrend(orgSnapshot.overallConcern, priorOrgSnapshot?.overallConcern ?? null);
+
+  // Per-signal direction of travel, for the leading-indicators view. Mood
+  // and climate move at different speeds (mood is the faster, more
+  // volatile early signal), so showing each one's trend separately is the
+  // point - "mood is worsening while climate holds steady" is exactly the
+  // kind of early, structural read this view exists to surface. Aggregate
+  // only; never per person.
+  const priorMood = findClosestPrior((h: any) => h.moodConcern);
+  const moodTrend = computeTrend(orgSnapshot.moodConcern, priorMood?.moodConcern ?? null);
+  const priorClimate = findClosestPrior((h: any) => h.climateConcern);
+  const climateTrend = computeTrend(orgSnapshot.climateConcern, priorClimate?.climateConcern ?? null);
+
+  const teamTrends: Record<string, ReturnType<typeof computeTrend>> = {};
+  Object.entries(teamSnapshots).forEach(([team, snap]) => {
+    const priorTeamSnapshot = findClosestPrior((h: any) => h.teamConcerns?.[team]);
+    teamTrends[team] = computeTrend(snap.overallConcern, priorTeamSnapshot?.teamConcerns?.[team] ?? null);
+  });
+
+  return {
+    orgTrend,
+    moodTrend,
+    climateTrend,
+    comparedAgainst: priorOrgSnapshot?.recordedAt || null,
+    history: history.slice().reverse().map((h: any) => ({ recordedAt: h.recordedAt, overallConcern: h.overallConcern })),
+    teamTrends,
+  };
+};
+
 app.get("/api/org/:orgId/risk-trend", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
   try {
     const { orgId } = req.params;
@@ -4858,59 +4948,12 @@ app.get("/api/org/:orgId/risk-trend", verifyAppCheck, authenticateFirebaseUser, 
       teamSnapshots[team] = await computeStrainSnapshotForCohort(db, uids);
     }));
 
-    // Snapshot handling: read history first so today's write (if any)
-    // doesn't contaminate the "previous" comparison, and only ever write
-    // once per UTC day regardless of how many times this is loaded.
-    const historySnap = await db.collection("organisations").doc(orgId).collection("risk_trend_history")
-      .orderBy("recordedAt", "desc").limit(90).get();
-    const history = historySnap.docs.map((d: any) => d.data() as {
-      recordedAt: string;
-      overallConcern: number | null;
-      moodConcern: number | null;
-      climateConcern: number | null;
-      teamConcerns?: Record<string, number | null>;
-    });
-
-    const todayUtc = new Date().toISOString().slice(0, 10);
-    const alreadySnapshottedToday = history.some((h: any) => h.recordedAt.slice(0, 10) === todayUtc);
-    if (!alreadySnapshottedToday && orgSnapshot.overallConcern !== null) {
-      const teamConcerns: Record<string, number | null> = {};
-      Object.entries(teamSnapshots).forEach(([team, snap]) => { teamConcerns[team] = snap.overallConcern; });
-      await db.collection("organisations").doc(orgId).collection("risk_trend_history").add({
-        recordedAt: new Date().toISOString(),
-        overallConcern: orgSnapshot.overallConcern,
-        moodConcern: orgSnapshot.moodConcern,
-        climateConcern: orgSnapshot.climateConcern,
-        teamConcerns,
-      });
-    }
-
-    // Compare against whichever snapshot sits closest to ~28 days back -
-    // a genuine month-over-month read, not noisy day-to-day movement in
-    // a signal built on overlapping 7-day windows.
-    const twentyEightDaysAgo = Date.now() - 28 * 24 * 60 * 60 * 1000;
-    const findClosestPrior = (getValue: (h: any) => number | null | undefined) => history
-      .filter((h: any) => new Date(h.recordedAt).getTime() <= twentyEightDaysAgo && getValue(h) != null)
-      .sort((a: any, b: any) => Math.abs(new Date(a.recordedAt).getTime() - twentyEightDaysAgo) - Math.abs(new Date(b.recordedAt).getTime() - twentyEightDaysAgo))[0];
-
-    const priorOrgSnapshot = findClosestPrior((h: any) => h.overallConcern);
-    const orgTrend = computeTrend(orgSnapshot.overallConcern, priorOrgSnapshot?.overallConcern ?? null);
-
-    // Per-signal direction of travel, for the leading-indicators view. Mood
-    // and climate move at different speeds (mood is the faster, more
-    // volatile early signal), so showing each one's trend separately is the
-    // point - "mood is worsening while climate holds steady" is exactly the
-    // kind of early, structural read this view exists to surface. Aggregate
-    // only; never per person.
-    const priorMood = findClosestPrior((h: any) => h.moodConcern);
-    const moodTrend = computeTrend(orgSnapshot.moodConcern, priorMood?.moodConcern ?? null);
-    const priorClimate = findClosestPrior((h: any) => h.climateConcern);
-    const climateTrend = computeTrend(orgSnapshot.climateConcern, priorClimate?.climateConcern ?? null);
+    const { orgTrend, moodTrend, climateTrend, comparedAgainst, history, teamTrends } =
+      await computeTrendHistory(db, orgId, orgSnapshot, teamSnapshots);
 
     const teamBreakdown: Record<string, OrgStrainSnapshot & { trend: ReturnType<typeof computeTrend> }> = {};
     Object.entries(teamSnapshots).forEach(([team, snap]) => {
-      const priorTeamSnapshot = findClosestPrior((h: any) => h.teamConcerns?.[team]);
-      teamBreakdown[team] = { ...snap, trend: computeTrend(snap.overallConcern, priorTeamSnapshot?.teamConcerns?.[team] ?? null) };
+      teamBreakdown[team] = { ...snap, trend: teamTrends[team] };
     });
 
     res.json({
@@ -4924,8 +4967,8 @@ app.get("/api/org/:orgId/risk-trend", verifyAppCheck, authenticateFirebaseUser, 
       trend: orgTrend,
       moodTrend,
       climateTrend,
-      comparedAgainst: priorOrgSnapshot?.recordedAt || null,
-      history: history.slice().reverse().map((h: any) => ({ recordedAt: h.recordedAt, overallConcern: h.overallConcern })),
+      comparedAgainst,
+      history,
       teamBreakdown,
     });
   } catch (err: any) {
@@ -5193,6 +5236,69 @@ app.post("/api/org/:orgId/hr-viewers", verifyAppCheck, authenticateFirebaseUser,
     res.json({ success: true, uids });
   } catch (err: any) {
     res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
+  }
+});
+
+// The manager's own view: resolves the caller's managed team(s) from
+// org.teamManagers[uid] - no :team param, since a manager only ever sees
+// their own. An org owner/admin is also let through even if they manage no
+// team themselves (for support purposes), rather than being hard-blocked;
+// same per-team k-anonymity rule as risk-trend applies to every team
+// returned, so a manager of a too-small team sees an explicit "not enough
+// people yet" (unlike the org-wide multi-team view, a manager already
+// knows who's on their own team, so this is honest UX, not a leak).
+app.get("/api/org/:orgId/team-dashboard", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const { orgId } = req.params;
+    const { user, db, org, role } = await loadOrgAndCallerRole(req, orgId);
+    const isAdmin = role === 'owner' || role === 'admin';
+    const managedTeams = managedTeamsFor(org.teamManagers, user.uid);
+    if (managedTeams.length === 0 && !isAdmin) {
+      return res.status(403).json({ error: "Forbidden: you don't manage any team in this organisation." });
+    }
+
+    const threshold = org.privacyThreshold || 5;
+    const memberUids: string[] = org.memberUids || [];
+    const memberTeams: Record<string, string> = org.memberTeams || {};
+    const consentingUids = await getConsentingMemberUids(db, memberUids);
+
+    const teams = await Promise.all(managedTeams.map(async (team) => {
+      const teamConsentingUids = consentingUids.filter((uid) => memberTeams[uid] === team);
+      if (teamConsentingUids.length < threshold) {
+        return { team, locked: true, cohortSize: teamConsentingUids.length, threshold };
+      }
+      const snapshot = await computeStrainSnapshotForCohort(db, teamConsentingUids);
+      const engagementRate = await computeEngagementRate(db, teamConsentingUids, 7);
+      const { teamTrends } = await computeTrendHistory(db, orgId, snapshot, { [team]: snapshot });
+      const indicators = sortByAttention(buildPrimaryIndicators({
+        overall: snapshot.overallConcern,
+        mood: snapshot.moodConcern,
+        climate: snapshot.climateConcern,
+        overallTrend: teamTrends[team],
+      }));
+      // The Nova nudge: only surfaced when the top-attention indicator
+      // actually warrants one - never invented when things look fine.
+      const topIndicator = indicators[0];
+      const nudge = topIndicator && (topIndicator.severity === 'elevated' || topIndicator.direction === 'worsening')
+        ? { title: 'Consider a team check-in', message: topIndicator.note }
+        : null;
+      return {
+        team,
+        locked: false,
+        cohortSize: teamConsentingUids.length,
+        threshold,
+        overallConcern: snapshot.overallConcern,
+        moodConcern: snapshot.moodConcern,
+        climateConcern: snapshot.climateConcern,
+        engagementRate,
+        indicators,
+        nudge,
+      };
+    }));
+
+    res.json({ teams });
+  } catch (err: any) {
+    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("not found") ? 404 : 500).json({ error: err.message });
   }
 });
 
