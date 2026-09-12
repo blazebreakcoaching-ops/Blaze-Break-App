@@ -88,7 +88,7 @@ export const GamificationDisplay = ({ stats, fingerprint, shipStage = 'Safety', 
               ? "Today's snapshot is based on your recent check-ins. Patterns appear over time, not from one day. Keep checking in."
               : fingerprint 
                 ? `"Based on your ${fingerprint.profile || 'High Achiever'} profile, your energy recovery is currently stabilizing. An early pattern is forming across your ${stats.streak} day streak. Keep checking in to improve accuracy."`
-                : `"Your engagement streak stands at ${stats.streak} days, with ${stats.points} points accumulated. Run your Burnout Fingerprint diagnostic to receive personalized baseline recommendations."`}
+                : `"Your engagement streak stands at ${stats.streak} days, with ${stats.points} points accumulated. Complete your Burnout Fingerprint check-in to receive personalized baseline recommendations."`}
         </p>
       </div>
 

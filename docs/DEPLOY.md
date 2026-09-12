@@ -74,9 +74,13 @@ direct client access. Deploy them whenever they change:
 firebase deploy --only firestore:rules
 ```
 
-They are deny-by-default with per-collection field validation and a
-k-anonymity gate on org aggregates. Server-only collections are written
-exclusively via the Admin SDK and correctly have no client rule.
+They are deny-by-default with per-collection field validation, restricting
+direct client reads of `mood_pulses`/`body_checkins`/`climate_survey_responses`
+to their own owner. The minimum-cohort ("k-anonymity") threshold itself is
+enforced in application code (`server.ts`, via the Admin SDK), not in these
+rules - see `docs/PRODUCT_SAFETY_PRIVACY.md` for that boundary. Server-only
+collections are written exclusively via the Admin SDK and correctly have no
+client rule.
 
 ---
 

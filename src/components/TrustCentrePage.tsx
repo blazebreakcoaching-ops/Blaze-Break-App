@@ -148,11 +148,11 @@ export const TrustCentrePage = ({ onBack }: TrustCentrePageProps) => {
              </div>
              <div className="space-y-3 p-6 bg-background border border-white/[0.02] rounded-2xl">
                <h4 className="text-text-main font-bold text-sm">How do I export or delete my data?</h4>
-               <p className="text-text-muted font-light text-xs leading-relaxed">Inside the app, navigate to the Privacy Centre. Under the "Consent" tab, you will find options to download a JSON archive of all your entries or permanently erase your account.</p>
+               <p className="text-text-muted font-light text-xs leading-relaxed">Inside the app, navigate to the Privacy Centre. Under the "Consent" tab, you will find options to download a JSON archive of your personal recovery entries, or permanently delete your account's personal data (security audit records are kept separately, for accountability and legal reasons).</p>
              </div>
              <div className="space-y-3 p-6 bg-background border border-white/[0.02] rounded-2xl">
                <h4 className="text-text-main font-bold text-sm">What is the Burnout Fingerprint?</h4>
-               <p className="text-text-muted font-light text-xs leading-relaxed">It is a proprietary diagnostic that assesses your behavioral loop (e.g. over-functioning, fawning, isolation) so Nova can provide targeted boundary-setting scripts rather than generic wellness advice.</p>
+               <p className="text-text-muted font-light text-xs leading-relaxed">It's a self-assessment - not a clinical diagnosis - that maps your behavioral loop (e.g. over-functioning, fawning, isolation) so Nova can provide targeted boundary-setting scripts rather than generic wellness advice.</p>
              </div>
              <div className="space-y-3 p-6 bg-background border border-white/[0.02] rounded-2xl">
                <h4 className="text-text-main font-bold text-sm">What does a Recovery Ally see?</h4>

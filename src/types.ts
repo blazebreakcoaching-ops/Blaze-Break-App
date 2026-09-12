@@ -215,7 +215,7 @@ export interface UserStats {
 }
 
 export const BADGES: Badge[] = [
-  { id: 'first_step', name: 'The First Step', description: 'Complete your first diagnostic.', icon: 'Flag', category: 'milestone' },
+  { id: 'first_step', name: 'The First Step', description: 'Complete your first check-in.', icon: 'Flag', category: 'milestone' },
   { id: 'consistency_3', name: '3-Day Spark', description: 'Maintain a 3-day recovery streak.', icon: 'Zap', category: 'streak' },
   { id: 'consistency_7', name: 'Flow State', description: 'Maintain a 7-day recovery streak.', icon: 'Waves', category: 'streak' },
   { id: 'point_1000', name: 'Energy Master', description: 'Earn 1,000 total recovery points.', icon: 'Target', category: 'points' },

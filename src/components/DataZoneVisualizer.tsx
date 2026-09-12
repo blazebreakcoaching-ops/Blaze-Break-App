@@ -5,13 +5,13 @@ import { cn } from '../lib/utils';
 export const DataZoneVisualizer = () => {
   const collections = [
     { name: "Mood Pulse Journal", zone: "private", icon: Lock, desc: "Personal logs" },
-    { name: "Burnout Fingerprint", zone: "private", icon: Activity, desc: "Diagnostic profile" },
-    { name: "Nova Chat Transcripts", zone: "private", icon: Lock, desc: "AI therapy logs" },
+    { name: "Burnout Fingerprint", zone: "private", icon: Activity, desc: "Self-assessment profile" },
+    { name: "Nova Chat Transcripts", zone: "private", icon: Lock, desc: "AI coaching chat logs - not therapy" },
     { name: "Recovery Milestones", zone: "shared", icon: Users, desc: "Shared with Allies" },
     { name: "Weekly Wins", zone: "shared", icon: Users, desc: "Shared with Allies" },
-    { name: "Somatic Reset Triggers", zone: "private", icon: Lock, desc: "Health metrics" },
+    { name: "Somatic Reset Triggers", zone: "private", icon: Lock, desc: "Self-reported, not sensor data" },
     { name: "Aggregated Engagement", zone: "org", icon: Building, desc: "Org dashboard" },
-    { name: "Team Burnout Risk (K-Anonymized)", zone: "org", icon: Building, desc: "Org dashboard" },
+    { name: "Team Burnout Risk (Minimum-Cohort Aggregated)", zone: "org", icon: Building, desc: "Org dashboard" },
     { name: "Authorised Access Logs", zone: "private", icon: ShieldCheck, desc: "Audit trail" }
   ];
 
