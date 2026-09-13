@@ -36,13 +36,15 @@ import { getEffectiveBillingState, validateBillingUpdate, checkSeatLimit, billin
 import { validateSsoConfigInput, encryptSecret, canEnableSsoEnforcement, redactSsoConfig, StoredSsoConfig } from './sso-config';
 import { searchOrgResources, validateResourceCreate, SearchableResource } from './org-search';
 import {
-  EntitlementRecord, EntitlementPlan, CapabilityId, getEffectiveEntitlement, hasPremiumEntitlement,
+  EntitlementRecord, EntitlementPlan, CapabilityId, getEffectiveEntitlement,
   effectivePlan, checkDailyQuota, getCapability, validateAdminGrant,
 } from './entitlements';
 import {
   SmsCategory, CATEGORIES_SUBJECT_TO_AGGREGATE_CAP, checkSmsQuota, estimateSmsSegments,
   smsGloballyEnabled, smsCategoryEnabled,
 } from './sms-guardrails';
+import { getEffectiveNotificationPreferences, routeNotification } from './notification-router';
+import { UsageTotals, estimateCost } from './cost-estimates';
 
 dotenv.config();
 
@@ -3771,6 +3773,28 @@ const runScheduledPulseCheck = async () => {
       const lastPush = pulse.lastPushSentAt ? new Date(pulse.lastPushSentAt).getTime() : 0;
       if ((now - lastPush) / (1000 * 60 * 60) < PUSH_COOLDOWN_HOURS) continue;
 
+      // Route through the same preference/quiet-hours logic every other
+      // notification category uses (notification-router.ts), rather than
+      // firing unconditionally - this was the one scheduled notification
+      // in the codebase that never consulted preferences/notifications at
+      // all (that doc previously only governed the in-app banner).
+      const [prefsSnap, profileSnap] = await Promise.all([
+        db.collection("users").doc(uid).collection("preferences").doc("notifications").get(),
+        db.collection("users").doc(uid).collection("user_stats").doc("core").get(),
+      ]);
+      const prefs = getEffectiveNotificationPreferences(prefsSnap.exists ? prefsSnap.data() : null);
+      const timeZone = profileSnap.data()?.profile?.timeZone;
+      let localHour = new Date().getUTCHours();
+      if (typeof timeZone === 'string' && timeZone) {
+        try {
+          localHour = parseInt(new Intl.DateTimeFormat('en-US', { timeZone, hour: '2-digit', hour12: false }).format(new Date()), 10);
+        } catch (e) {
+          // Invalid/unrecognized timezone string - fall back to UTC hour above rather than failing the whole check.
+        }
+      }
+      const routing = routeNotification('checkin_reminder', prefs, localHour, 0, { push: true, email: false, sms: false });
+      if (!routing.send) continue;
+
       await sendPushToUser(uid, isStale
         ? { title: "Nova hasn't heard from you in a while", body: "No pressure — just checking in. Your recovery tools are here whenever you're ready." }
         : { title: "Nova: your recovery score has been low", body: "Things look tough right now. A short reset might help — Blaze Break is here." }
@@ -3787,6 +3811,50 @@ if (pushConfigured && process.env.TEST_MODE !== 'true') {
 }
 
 // Admin Dashboard Summary Metrics API
+// Lightweight operating visibility (section 39/40 of the hardening brief),
+// built entirely from the usage_counters this same batch of work started
+// writing (checkAndReserveCapability, sendTwilioMessage) - not a live read
+// of actual Gemini/Twilio billing, since neither provider is wired up
+// here with a queryable cost API. Every number in the response is
+// explicitly labelled an estimate; see cost-estimates.ts/docs/
+// COST_MONITORING.md for the rates and their sourcing.
+app.get("/api/admin/cost-usage", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    requireAdmin(req);
+    const db = getDb();
+    const periodDays = 7;
+    const sinceIso = new Date(Date.now() - periodDays * 24 * 60 * 60 * 1000).toISOString();
+
+    const totals: UsageTotals = { novaTextCount: 0, novaVoiceCount: 0, diagnoseCount: 0, smsSegmentCount: 0 };
+    try {
+      const snap = await db.collectionGroup("usage_counters").where("updatedAt", ">=", sinceIso).get();
+      snap.docs.forEach((doc: any) => {
+        const data = doc.data();
+        totals.novaTextCount += Number(data.nova_text) || 0;
+        totals.novaVoiceCount += Number(data.nova_voice) || 0;
+        totals.diagnoseCount += Number(data.diagnose) || 0;
+        // smsCount tracks messages sent, not exact provider segments (segment
+        // count isn't persisted per-send) - treated here as ~1 segment each,
+        // a conservative underestimate for any longer message.
+        totals.smsSegmentCount += Number(data.smsCount) || 0;
+      });
+    } catch (e) {
+      // This is an estimate/visibility endpoint, not a critical path -
+      // degrade to zeros rather than failing the whole admin view.
+    }
+
+    res.json({
+      periodDays,
+      isEstimate: true,
+      note: "Rough internal estimates from captured usage counts, not live provider billing data. See docs/COST_MONITORING.md.",
+      usage: totals,
+      estimatedCostUsd: estimateCost(totals),
+    });
+  } catch (err: any) {
+    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
+  }
+});
+
 app.get("/api/admin/summary", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
   try {
     requireAdmin(req);

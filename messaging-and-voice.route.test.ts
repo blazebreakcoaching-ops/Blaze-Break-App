@@ -27,7 +27,7 @@ vi.mock('twilio', () => ({ default: () => ({ messages: { create: h.twilioCreate 
 
 import request from 'supertest';
 import { app } from './server';
-import { getDocRaw, resetStore } from './test/fake-firestore';
+import { getDocRaw, seedDoc, resetStore } from './test/fake-firestore';
 
 const USER = 'user_owner';
 const OTHER = 'user_other';
@@ -71,6 +71,23 @@ describe('POST /api/twilio/send — authenticated, validated outbound SMS', () =
     const res = await request(app).post('/api/twilio/send').set(auth(USER)).send({ to: '+447700900123', message: 'hi' });
     expect(res.status).toBe(400);
     expect(res.body.success).toBe(false);
+  });
+
+  it('is blocked by the per-user aggregate daily SMS cap once already reached, without calling the provider', async () => {
+    const today = new Date().toISOString().slice(0, 10);
+    seedDoc(`users/${USER}/usage_counters/${today}`, { smsCount: 20 }); // SMS_LIMITS.perUserDailyLimit
+    const res = await request(app).post('/api/twilio/send').set(auth(USER)).send({ to: '+447700900123', message: 'hi' });
+    expect(res.status).toBe(400);
+    expect(res.body.success).toBe(false);
+    expect(h.twilioCreate).not.toHaveBeenCalled();
+  });
+
+  it('a successful send increments the daily/monthly usage counters used by the aggregate cap', async () => {
+    await request(app).post('/api/twilio/send').set(auth(USER)).send({ to: '+447700900123', message: 'hi' });
+    const today = new Date().toISOString().slice(0, 10);
+    const monthKey = `month-${today.slice(0, 7)}`;
+    expect(getDocRaw(`users/${USER}/usage_counters/${today}`)?.smsCount).toBe(1);
+    expect(getDocRaw(`users/${USER}/usage_counters/${monthKey}`)?.smsCount).toBe(1);
   });
 });
 
