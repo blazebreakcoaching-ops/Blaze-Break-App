@@ -68,15 +68,18 @@ Grant the Cloud Run runtime service account:
 ## 4. Firestore security rules
 
 The rules live in `firestore.rules` and are the last line of defence for
-direct client access. Deploy them whenever they change:
+direct client access. Deploy them (and indexes, which changed together
+in the same commit) whenever either changes:
 
 ```
-firebase deploy --only firestore:rules
+firebase deploy --only firestore:rules,firestore:indexes
 ```
 
 They are deny-by-default with per-collection field validation and a
-k-anonymity gate on org aggregates. Server-only collections are written
-exclusively via the Admin SDK and correctly have no client rule.
+k-anonymity gate on org aggregates. Server-only collections — including
+`entitlements/status` (Free/Premium tier) and `usage_counters` (capability
+quota tracking, see `docs/FREE_PREMIUM_ENTITLEMENTS.md`) — are written
+exclusively via the Admin SDK and correctly have no client write rule.
 
 ---
 
