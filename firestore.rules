@@ -131,11 +131,23 @@ service cloud.firestore {
             request.resource.data.keys().hasOnly(['privacyNoticeVersion', 'termsVersion', 'aiPersonalisationEnabled', 'regionContextEnabled', 'preferredNameGreetingEnabled', 'anonymousOrganisationContributionEnabled', 'acceptedAt', 'updatedAt']);
       }
       
-      // E. users/{uid}/entitlements/status
+      // E. users/{uid}/entitlements/status - the real Free/Premium
+      // entitlement record (plan/status/billingSource/dates), plus the
+      // pre-existing platform-admin `role` field. Readable by the owner so
+      // the client can show its own plan; never client-writable, so tier
+      // and role changes can only come from the backend (see
+      // entitlements.ts and GET/POST /api/entitlements* in server.ts).
       match /entitlements/status {
         allow read: if isOwner(uid);
         allow write: if false; // Backend/Admin only
       }
+
+      // E2. users/{uid}/usage_counters/{day} - per-day capability usage
+      // counters (Nova messages, voice sessions, etc.) backing entitlement
+      // fair-use quotas. Deliberately has NO client rule at all (not even
+      // read) - Firestore denies any path with no matching rule, and a
+      // client that could read or write its own usage counter could watch
+      // or reset its own quota. Backend/Admin SDK only.
 
       // Third-party OAuth integrations (Slack, Jira, Asana, Calendly, Monday.com)
       // integration_tokens holds raw access/refresh tokens — never client-readable,
@@ -641,6 +653,17 @@ service cloud.firestore {
       // support circle, and the burnout fingerprint. Client-writable (unlike
       // derived/stats, which is server-only) since these are earned/edited
       // directly through normal app use, not server-computed aggregates.
+      //
+      // profile.subscription is explicitly blocked below: it used to be
+      // read as the account's Premium/tier signal (src/App.tsx), which
+      // meant a client could grant itself Premium with a raw Firestore
+      // write - Firestore rules never validated it beyond "profile is a
+      // map". The real, server-authoritative tier now lives in the locked
+      // users/{uid}/entitlements/status doc (allow write: if false, see
+      // below) via entitlements.ts; this field is never read for
+      // authorization again, and no client write may set it, so an old or
+      // forged value here can't mislead anything. See
+      // docs/FREE_PREMIUM_ENTITLEMENTS.md.
       match /user_stats/core {
         allow read, delete: if isOwner(uid);
         allow create, update: if isOwner(uid)
@@ -656,7 +679,7 @@ service cloud.firestore {
             && (!('committedActionIds' in request.resource.data) || (request.resource.data.committedActionIds is list && request.resource.data.committedActionIds.size() <= 500))
             && (!('supportCircle' in request.resource.data) || (request.resource.data.supportCircle is list && request.resource.data.supportCircle.size() <= 20))
             && (!('debts' in request.resource.data) || (request.resource.data.debts is list && request.resource.data.debts.size() <= 20))
-            && (!('profile' in request.resource.data) || request.resource.data.profile is map)
+            && (!('profile' in request.resource.data) || (request.resource.data.profile is map && !('subscription' in request.resource.data.profile)))
             && (!('fingerprint' in request.resource.data) || request.resource.data.fingerprint is map || request.resource.data.fingerprint == null);
       }
 

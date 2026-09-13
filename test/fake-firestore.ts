@@ -15,6 +15,7 @@ type DocData = Record<string, any>;
 // mirroring how firebase-admin defers these to write time.
 const SERVER_TIMESTAMP = Symbol('serverTimestamp');
 interface ArrayOp { __arrayOp: 'union' | 'remove'; values: any[]; }
+interface IncrementOp { __increment: number; }
 const DELETE_FIELD = Symbol('deleteField');
 
 export const FakeFieldValue = {
@@ -22,6 +23,7 @@ export const FakeFieldValue = {
   arrayUnion: (...values: any[]): ArrayOp => ({ __arrayOp: 'union', values }),
   arrayRemove: (...values: any[]): ArrayOp => ({ __arrayOp: 'remove', values }),
   delete: () => DELETE_FIELD,
+  increment: (n: number): IncrementOp => ({ __increment: n }),
 };
 
 let autoIdCounter = 0;
@@ -47,6 +49,9 @@ function resolveWrites(data: DocData, existing: DocData | undefined): DocData {
         for (const v of op.values) if (!current.includes(v)) current.push(v);
         out[key] = current;
       }
+    } else if (value && typeof value === 'object' && typeof (value as IncrementOp).__increment === 'number') {
+      const base = typeof out[key] === 'number' ? out[key] : 0;
+      out[key] = base + (value as IncrementOp).__increment;
     } else {
       out[key] = value;
     }
