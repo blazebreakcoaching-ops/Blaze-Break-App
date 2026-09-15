@@ -30,10 +30,15 @@ what WAS done.
   service account with the Play Developer API enabled.
 - Firebase/Google Cloud: nothing new required for entitlements
   specifically — the `entitlements/status` and `usage_counters`
-  subcollections use the existing Firestore/Admin SDK setup. The one new
-  deploy step is `firebase deploy --only firestore:rules,firestore:indexes`
-  to ship the updated rule (blocking `profile.subscription`) and the new
-  `usage_counters.updatedAt` collection-group index this pass added.
+  subcollections use the existing Firestore/Admin SDK setup.
+  `firebase deploy --only firestore:rules,firestore:indexes` ships the
+  updated rule (blocking `profile.subscription`). The
+  `usage_counters.updatedAt` collection-group index this pass needs is
+  **not** deployed that way, though — this project's Firestore database
+  is Enterprise edition, which doesn't support `fieldOverrides` via
+  `firebase deploy` at all. Create it directly instead; see the "Firestore
+  Enterprise edition" section of `docs/DEPLOY.md` for the exact command
+  and why.
 
 ## Needs a product/scope decision (not a unilateral code change)
 
