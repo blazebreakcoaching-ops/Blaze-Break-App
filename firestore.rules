@@ -140,11 +140,11 @@ service cloud.firestore {
       // Third-party OAuth integrations (Slack, Jira, Asana, Calendly, Monday.com)
       // integration_tokens holds raw access/refresh tokens — never client-readable,
       // written only by the backend via the Admin SDK (which bypasses these rules).
-      match /integration_tokens/{service} {
+      match /integration_tokens/{serviceName} {
         allow read, write: if false;
       }
       // integrations holds redacted connection status only (no secrets) — safe to read.
-      match /integrations/{service} {
+      match /integrations/{serviceName} {
         allow read: if isOwner(uid);
         allow write: if false; // Backend/Admin only
       }
