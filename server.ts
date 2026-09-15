@@ -112,8 +112,12 @@ if (process.env.NODE_ENV === "production") {
         defaultSrc: ["'self'"],
         // No 'unsafe-inline' for scripts — the one inline script this app had
         // (service worker registration) was moved to an external file
-        // specifically so this could stay strict.
-        scriptSrc: ["'self'"],
+        // specifically so this could stay strict. apis.google.com/gstatic are
+        // needed for Firebase Auth's Google sign-in popup flow (its helper
+        // script) and for reCAPTCHA Enterprise (App Check) - without these,
+        // signInWithPopup fails with CSP script-src violations, confirmed
+        // against a real deploy.
+        scriptSrc: ["'self'", "https://apis.google.com", "https://www.gstatic.com"],
         // Tailwind/Framer Motion rely on inline style attributes at runtime;
         // disallowing that would require a much larger refactor than this
         // security pass covers, so this one directive stays permissive.
@@ -127,6 +131,12 @@ if (process.env.NODE_ENV === "production") {
           "wss://*.firebaseio.com",
           "ws:", "wss:",                // same-origin WebSocket (Nova live voice) — scheme itself, not a host, since it's same-origin
         ],
+        // Firebase Auth's popup-based sign-in relays the OAuth result back to
+        // this page via a hidden iframe hosted on the Firebase project's own
+        // authDomain (<project>.firebaseapp.com/__/auth/iframe) - without an
+        // explicit allowance it falls back to default-src 'self' and silently
+        // breaks the sign-in popup handshake.
+        frameSrc: ["'self'", "https://*.firebaseapp.com", "https://accounts.google.com"],
         frameAncestors: ["'none'"], // Blocks clickjacking — this app should never be framed by another site
         objectSrc: ["'none'"],
         baseUri: ["'self'"],
