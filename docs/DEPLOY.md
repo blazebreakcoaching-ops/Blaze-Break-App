@@ -75,11 +75,15 @@ in the same commit) whenever either changes:
 firebase deploy --only firestore:rules,firestore:indexes
 ```
 
-They are deny-by-default with per-collection field validation and a
-k-anonymity gate on org aggregates. Server-only collections — including
-`entitlements/status` (Free/Premium tier) and `usage_counters` (capability
-quota tracking, see `docs/FREE_PREMIUM_ENTITLEMENTS.md`) — are written
-exclusively via the Admin SDK and correctly have no client write rule.
+They are deny-by-default with per-collection field validation, restricting
+direct client reads of `mood_pulses`/`body_checkins`/`climate_survey_responses`
+to their own owner. The minimum-cohort ("k-anonymity") threshold itself is
+enforced in application code (`server.ts`, via the Admin SDK), not in these
+rules - see `docs/PRODUCT_SAFETY_PRIVACY.md` for that boundary. Server-only
+collections — including `entitlements/status` (Free/Premium tier) and
+`usage_counters` (capability quota tracking, see
+`docs/FREE_PREMIUM_ENTITLEMENTS.md`) — are written exclusively via the
+Admin SDK and correctly have no client write rule.
 
 ### This project's database is Firestore Enterprise edition
 

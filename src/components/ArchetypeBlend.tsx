@@ -66,7 +66,7 @@ export const ArchetypeBlend = () => {
         </div>
       ) : !data?.hasQuizBaseline ? (
         <p className="text-xs text-text-muted">
-          {data?.note || "Complete the burnout diagnostic to see your blend."}
+          {data?.note || "Complete the burnout check-in to see your blend."}
         </p>
       ) : (
         <>

@@ -141,7 +141,7 @@ export const AssuranceCentre = () => {
               <div className="p-5 rounded-2xl bg-surface/50 border border-white/[0.04] space-y-2">
                 <h3 className="font-semibold text-[#9a3412] dark:text-primary text-sm">Anonymity Thresholds</h3>
                 <p className="text-xs text-text-muted">
-                  Minimum N=10 rule applied to all employer dashboards before any grouped wellbeing trends or survey data is visible. Individual indicators (Recovery Velocity, Mood Pulse) are suppressed.
+                  A minimum-cohort rule applies to every employer dashboard: grouped wellbeing trends and survey data are suppressed until a cohort has at least a set number of consenting participants (defaults to 5; an org admin can adjust it, with a floor of 3 we enforce). Individual indicators (Recovery Velocity, Mood Pulse) are never shown to an employer.
                 </p>
               </div>
               <div className="p-5 rounded-2xl bg-surface/50 border border-white/[0.04] space-y-2">
@@ -270,7 +270,7 @@ export const AssuranceCentre = () => {
                   <div className="w-8 h-8 rounded-full bg-card flex items-center justify-center text-text-muted text-xs font-bold">1</div>
                   <div>
                     <h4 className="text-sm font-medium text-text-muted">Baseline Registration</h4>
-                    <p className="text-xs text-text-muted">Record completely anonymous perceived workload before platform use.</p>
+                    <p className="text-xs text-text-muted">Record self-reported perceived workload before platform use, shown to an employer only in aggregate once the minimum-cohort threshold above is met.</p>
                   </div>
                 </div>
                 <div className="flex items-center gap-4">

@@ -443,7 +443,7 @@ export const RecoveryPlan = ({
           <div className="space-y-4 max-w-lg">
             <h3 className="text-2xl font-display font-medium tracking-tight text-text-main">Recovery Plan locked</h3>
             <p className="text-sm text-text-muted leading-relaxed">
-              Nova needs both your <strong className="font-medium text-text-main">Burnout Fingerprint Diagnostic</strong> and your <strong className="font-medium text-text-main">Recovery Debt Tracker</strong> to build a personalized recovery plan.
+              Nova needs both your <strong className="font-medium text-text-main">Burnout Fingerprint Check-in</strong> and your <strong className="font-medium text-text-main">Recovery Debt Tracker</strong> to build a personalized recovery plan.
             </p>
           </div>
 
@@ -457,14 +457,14 @@ export const RecoveryPlan = ({
                 </div>
                 <div>
                   <p className="text-xs font-bold text-text-main">Burnout Fingerprint</p>
-                  <p className="text-[10px] text-text-muted font-semibold">Diagnostic Questionnaire</p>
+                  <p className="text-[10px] text-text-muted font-semibold">Self-Assessment Check-in</p>
                 </div>
               </div>
               <button
                 onClick={() => onNavigateTab('diagnose')}
                 className="btn-primary py-1.5 px-4 text-[10px] font-medium uppercase tracking-widest rounded-lg flex items-center gap-1.5"
               >
-                Diagnose Now <ChevronRight className="w-3.5 h-3.5" />
+                Check In Now <ChevronRight className="w-3.5 h-3.5" />
               </button>
             </div>
 
@@ -584,7 +584,7 @@ export const RecoveryPlan = ({
           <div className="lg:col-span-2 space-y-3">
             <div className="flex items-center gap-2">
               <Sparkles className="w-4 h-4 text-primary" />
-              <span className="text-[11px] font-medium uppercase tracking-widest text-text-main">Nova's Direct Diagnosis</span>
+              <span className="text-[11px] font-medium uppercase tracking-widest text-text-main">Nova's Direct Read</span>
             </div>
             <p className="text-sm text-text-muted leading-relaxed font-serif italic border-l-2 border-primary/30 pl-4">
               "{getNovaSynthesis()}"

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { isRealGuardian, isValidGuardianPhone, buildGuardianCallRequestMessage, extractFirstName, checkCooldown } from './guardian-alert';
+import { isRealGuardian, isValidGuardianPhone, buildGuardianCallRequestMessage, extractFirstName, checkCooldown, nudgeSchedulerIsEnabled } from './guardian-alert';
 
 describe('isRealGuardian: the entire consent gate for Tier 1 - must be exact, since this decides who a message can go to', () => {
   it('accepts a contact explicitly flagged isGuardian', () => {
@@ -30,6 +30,34 @@ describe('isRealGuardian: the entire consent gate for Tier 1 - must be exact, si
 
   it('rejects an empty object', () => {
     expect(isRealGuardian({})).toBe(false);
+  });
+
+  it('rejects a contact with role "manager" even if isGuardian is (incorrectly, or via a crafted write) set true - the product explicitly bans org managers from Guardian alerts, and that must hold regardless of how the contact record was constructed, not just what the UI dropdown allows', () => {
+    expect(isRealGuardian({ role: 'manager', isGuardian: true })).toBe(false);
+  });
+
+  it('rejects a contact with role "peer" even if isGuardian is set true, for the same reason', () => {
+    expect(isRealGuardian({ role: 'peer', isGuardian: true })).toBe(false);
+  });
+});
+
+describe('nudgeSchedulerIsEnabled: kill switch for the Tier-3 scheduled-messaging feature, must default OFF', () => {
+  it('defaults to disabled when the env var is unset', () => {
+    expect(nudgeSchedulerIsEnabled(undefined)).toBe(false);
+  });
+
+  it('defaults to disabled for an empty string', () => {
+    expect(nudgeSchedulerIsEnabled('')).toBe(false);
+  });
+
+  it('stays disabled for anything other than the exact string "true"', () => {
+    expect(nudgeSchedulerIsEnabled('1')).toBe(false);
+    expect(nudgeSchedulerIsEnabled('yes')).toBe(false);
+    expect(nudgeSchedulerIsEnabled('True')).toBe(false);
+  });
+
+  it('is enabled only when explicitly set to "true"', () => {
+    expect(nudgeSchedulerIsEnabled('true')).toBe(true);
   });
 });
 

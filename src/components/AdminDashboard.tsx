@@ -480,7 +480,7 @@ export const AdminDashboard = () => {
             <ShieldCheck className="w-6 h-6 text-primary" /> Master Super Admin Portal
           </h3>
           <p className="text-xs text-text-muted mt-1 uppercase tracking-widest font-black">
-            Platform Security Claims, Auditor Trails, and Somatosensory Diagnostics
+            Platform Security Controls, Audit Trails, and System Health
           </p>
         </div>
         <div className="flex items-center gap-3">

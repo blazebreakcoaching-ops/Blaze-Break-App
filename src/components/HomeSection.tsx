@@ -918,7 +918,7 @@ export const HomeSection = ({
           {[
             { label: "Complete today's check-in", pts: 50, done: hasClaimedDaily },
             { label: "Reach a 3-day streak", pts: 100, done: stats.streak >= 3 },
-            { label: "Complete your burnout diagnostic", pts: 75, done: !!fingerprint }
+            { label: "Complete your burnout check-in", pts: 75, done: !!fingerprint }
           ].map((q, i) => (
             <div key={i} className={cn("flex items-center justify-between p-4 rounded-2xl border transition-all", q.done ? "bg-surface/50 border-border/50" : "bg-card border-border shadow-sm hover:shadow-md")}>
               <div className="flex items-center gap-3">
