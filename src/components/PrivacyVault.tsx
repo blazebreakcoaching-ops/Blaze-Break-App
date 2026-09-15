@@ -859,7 +859,7 @@ export const PrivacyVault = ({
                           onChange={(e) => setAcknowledgedLoss(e.target.checked)}
                           className="mt-0.5 accent-destructive rounded border-white/[0.1] bg-background cursor-pointer"
                         />
-                        <span>I understand that all somatic stress metrics & audit ledgers will be permanently destroyed.</span>
+                        <span>I understand that my personal recovery data - diagnostic metrics, somatic logs, and Nova's memory of me - will be permanently erased. Security audit records are kept separately for accountability and legal reasons and aren't included in this deletion.</span>
                       </label>
                       <label className="flex items-start gap-3 cursor-pointer select-none">
                         <input 
@@ -969,7 +969,7 @@ export const PrivacyVault = ({
                     <div className="flex flex-col items-center justify-center py-6 space-y-3">
                       <Loader2 className="w-8 h-8 text-destructive dark:text-[#f87171] animate-spin" />
                       <p className="text-xs font-bold text-destructive dark:text-[#f87171] font-mono tracking-widest uppercase animate-pulse">
-                        Wiping Diagnostic Logs...
+                        Deleting Your Data...
                       </p>
                     </div>
                     <div className="space-y-1 text-xs text-text-muted font-mono leading-relaxed bg-background p-3 rounded-lg border border-white/[0.02]">

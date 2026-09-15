@@ -26,8 +26,8 @@ export interface FeatureDefinition {
 export const FEATURE_REGISTRY: Record<string, FeatureDefinition> = {
   burnout_diagnostic: {
     id: 'burnout_diagnostic',
-    name: 'Burnout Diagnostic',
-    purpose: 'Assesses the user to determine their burnout state and fingerprint.',
+    name: 'Burnout Check-in',
+    purpose: 'A self-assessment check-in to help identify the user\'s burnout patterns and fingerprint - not a clinical diagnosis.',
     section: 'Assess',
     status: 'active',
     riskLevel: 'low',
@@ -102,7 +102,13 @@ export const FEATURE_REGISTRY: Record<string, FeatureDefinition> = {
   guardian_protocol: {
     id: 'guardian_protocol',
     name: 'Guardian Alerts',
-    purpose: 'Escalation system for when a user is in severe recovery debt or high risk.',
+    // Deliberately not "an escalation system for when a user is at high
+    // risk" - this feature never infers, scores, or classifies risk (see
+    // guardian-alert.ts's own header comment and
+    // docs/GUARDIAN_SUPPORT_SPEC.md §0.1). It only ever dispatches a
+    // message when the user explicitly taps a button to ask a
+    // self-chosen trusted contact to reach out.
+    purpose: 'A one-tap way for the user to ask a trusted contact they chose in advance to reach out - always user-initiated, never automatic.',
     section: 'Safety',
     status: 'active',
     riskLevel: 'high',

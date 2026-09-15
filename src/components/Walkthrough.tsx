@@ -96,8 +96,8 @@ export const Walkthrough = ({
       themeColor: "from-amber-500/10 to-orange-500/10 text-[#9a3412] dark:text-warning border-warning/20"
     },
     {
-      title: "The Burnout Diagnostic & Fingerprint",
-      pill: "Pillar 1: Diagnostic Profile",
+      title: "The Burnout Check-in & Fingerprint",
+      pill: "Pillar 1: Check-in Profile",
       description: "Take the assessment to find your burnout archetype — 12 real patterns, from Founder on Fire to The Impostor to Crisis Sprinter — plus your actual blend, not just one label. Spotting the pattern is what prevents it from repeating.",
       recoveryInference: "Helps you surface where your energy is actually leaking, before it turns into full burnout.",
       icon: ShieldAlert,
@@ -615,10 +615,10 @@ export const Walkthrough = ({
                       className="p-5 bg-destructive/20 border border-destructive/20 rounded-2xl space-y-2.5"
                     >
                       <span className="text-[10px] uppercase font-black tracking-widest text-destructive dark:text-[#f87171] block">
-                        Biometric Down-Regulation Profile
+                        Paced Breathing Complete
                       </span>
                       <p className="text-xs text-text-muted leading-relaxed">
-                        <strong>Test Succeeded.</strong> By matching the parasympathetic ratio (4s Inhale, 3s Hold, 5s Exhale), you triggered an instantaneous vagus nerve dampening. Heart rate variability (HRV) increased, and neural fatigue has begun to stabilize.
+                        <strong>Nice work.</strong> You just completed a paced breath (4s inhale, 3s hold, 5s exhale) - many people find a longer exhale than inhale helps them feel a little calmer. This app has no sensor and can't measure anything about your body, so nothing here is an actual biometric reading - it's just a breathing pattern you can return to whenever it helps.
                       </p>
                       <div className="pt-2 border-t border-white/5 flex flex-col sm:flex-row gap-3 justify-between items-center">
                         <span className="text-[10px] text-[#166534] dark:text-[#4ade80] font-semibold flex items-center gap-1">

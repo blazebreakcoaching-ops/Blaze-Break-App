@@ -31,7 +31,7 @@ interface BrainNode {
 const BRAIN_NODES: BrainNode[] = [
   // Pre-frontal (Executive / Insight)
   { id: 'home', label: 'Pulse', icon: Home, x: 50, y: 15, group: 'insight', description: 'Real-time autonomic nervous system indicator & delta tracking' },
-  { id: 'diagnose', label: 'Fingerprint', icon: MapPin, x: 25, y: 25, group: 'insight', description: 'Diagnostic profiling across five burnout archetypes' },
+  { id: 'diagnose', label: 'Fingerprint', icon: MapPin, x: 25, y: 25, group: 'insight', description: 'Self-assessment check-in across five burnout archetypes' },
   { id: 'simulator', label: 'Simulator', icon: Zap, x: 75, y: 25, group: 'insight', description: 'Predictive modeling of professional task overload and reserves' },
   
   // Motor Lobe (Execution / Boundaries)
@@ -181,7 +181,7 @@ const CATEGORY_STYLES = {
     text: 'text-[#1c1917] dark:text-[#f5f5f4]',
     glow: 'shadow-[rgba(234,88,12,0.25)_0px_0px_20px]',
     dotClass: 'bg-primary',
-    label: 'Executive & Diagnosis'
+    label: 'Executive & Check-in'
   },
   action: {
     color: 'rose',

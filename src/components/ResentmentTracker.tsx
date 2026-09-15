@@ -176,7 +176,7 @@ export const ResentmentTracker = ({ fingerprint, onAwardPoints, onNavigate }: Re
                        <Brain className="w-4 h-4" />
                      </div>
                      <div>
-                       <h3 className="text-sm font-display font-bold text-text-main tracking-tight">Nova's Diagnosis</h3>
+                       <h3 className="text-sm font-display font-bold text-text-main tracking-tight">Nova's Read</h3>
                        <p className="text-[11px] uppercase tracking-[0.2em] font-black text-[#9a3412] dark:text-primary">Root Cause Extraction</p>
                      </div>
                    </div>

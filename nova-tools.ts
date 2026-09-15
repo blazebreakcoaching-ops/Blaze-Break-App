@@ -148,7 +148,7 @@ export const validateMemoryWrite = (args: { type?: unknown; content?: unknown; c
 // person actually taps.
 export const SUGGESTABLE_FEATURES: Record<string, string> = {
   plan: 'Recovery Plan',
-  diagnose: 'Diagnose',
+  diagnose: 'Check-in',
   recover: 'Recover',
   fuel: 'Nutrition',
   reset: 'Nervous System',

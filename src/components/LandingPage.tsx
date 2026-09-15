@@ -94,7 +94,7 @@ export const LandingPage = ({ onStart, onOpenTrustCentre }: LandingPageProps) =>
             without <span className="text-transparent bg-clip-text bg-gradient-to-r from-primary to-accent italic font-serif font-medium">self-destruction.</span>
           </h2>
           <p className="max-w-2xl mx-auto text-base sm:text-lg text-text-muted font-light leading-relaxed">
-            Stop optimising your exhaustion. Blaze Break decodes your physiological and mental burnout fingerprint to rebuild elite-tier nervous recovery into your hyper-scale workload.
+            Stop optimising your exhaustion. Blaze Break maps your personal burnout fingerprint - from a self-assessment, not a biometric scan - to rebuild real recovery into your hyper-scale workload.
           </p>
           <div className="pt-8 flex flex-col sm:flex-row items-center justify-center gap-4">
             <button 
@@ -116,7 +116,7 @@ export const LandingPage = ({ onStart, onOpenTrustCentre }: LandingPageProps) =>
           </div>
           <h3 className="text-lg font-bold text-text-main tracking-wide">Dynamic Energy Credits</h3>
           <p className="text-text-muted text-xs leading-relaxed">
-            Time management is a delusion; energy capacity is everything. Map your schedule to a custom cognitive credit budget that prevents midday crashes before they trigger cortisol spikes.
+            Time management is a delusion; energy capacity is everything. Map your schedule to a custom cognitive credit budget that helps you get ahead of midday crashes, not just react to them.
           </p>
         </div>
         <div className="bg-surface/60 border border-white/[0.04] p-8 rounded-2xl hover:border-accent/20 transition-all duration-500 space-y-4 shadow-lg">
@@ -132,7 +132,7 @@ export const LandingPage = ({ onStart, onOpenTrustCentre }: LandingPageProps) =>
           <div className="w-12 h-12 bg-accent/10 border border-accent/20 rounded-xl flex items-center justify-center text-[#9a3412] dark:text-accent">
             <ShieldCheck className="w-6 h-6" />
           </div>
-          <h3 className="text-lg font-bold text-text-main tracking-wide">Autonomous Guardian System</h3>
+          <h3 className="text-lg font-bold text-text-main tracking-wide">One-Tap Guardian Support</h3>
           <p className="text-text-muted text-xs leading-relaxed">
             A pre-set escalation network for high-stakes moments. Add trusted contacts once, then reach them in one tap when you need real support — no automatic monitoring, no biometric tracking, just a fast, private way to ask for help.
           </p>
