@@ -110,6 +110,15 @@ export const isValidWritableConfidence = (confidence: unknown): confidence is Wr
 // change: set the env var to exactly 'false'.
 export const toolsAreEnabled = (envValue: string | undefined): boolean => envValue !== 'false';
 
+// Independent kill switch for Gemini Live voice specifically, separate
+// from NOVA_TOOLS_ENABLED and from unsetting GEMINI_API_KEY (which would
+// also take down every other Gemini-backed Nova feature at once). Same
+// default-on polarity as toolsAreEnabled, for the same reason: unset,
+// empty, or unexpected values keep voice on, so adding this switch can't
+// itself cause a silent regression. Flipping it off in an incident - e.g.
+// runaway Live-voice spend - is one env var, no redeploy.
+export const liveVoiceIsEnabled = (envValue: string | undefined): boolean => envValue !== 'false';
+
 // Keeps a single, hallucinated-but-plausible-looking memory entry from
 // becoming an unbounded wall of text in someone's permanent record.
 export const MAX_MEMORY_CONTENT_LENGTH = 300;

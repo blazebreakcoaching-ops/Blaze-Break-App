@@ -22,7 +22,7 @@ import { getAppCheck } from 'firebase-admin/app-check';
 import cors from 'cors';
 import rateLimit from 'express-rate-limit';
 import { z } from 'zod';
-import { memoryToolIsAllowed, searchMemories, isValidRecoveryDuration, validateMemoryWrite, validateFeatureSuggestion, SUGGESTABLE_FEATURES, toolsAreEnabled, NovaMemoryDoc } from './nova-tools';
+import { memoryToolIsAllowed, searchMemories, isValidRecoveryDuration, validateMemoryWrite, validateFeatureSuggestion, SUGGESTABLE_FEATURES, toolsAreEnabled, liveVoiceIsEnabled, NovaMemoryDoc } from './nova-tools';
 import { toClaudeTools, GeminiStyleToolDeclaration } from './nova-claude-tools';
 import { computeClimateStrain, computeClimateStrainByDimension, computeMoodStrain, computeOverallStrain, computeTrend } from './org-risk-trend';
 import { isRealGuardian, isValidGuardianPhone, buildGuardianCallRequestMessage, extractFirstName, nudgeSchedulerIsEnabled } from './guardian-alert';
@@ -35,6 +35,16 @@ import { isDeviceChannel, isValidAppVersion, validateDeviceRegistration, evaluat
 import { getEffectiveBillingState, validateBillingUpdate, checkSeatLimit, billingProvider } from './billing-adapter';
 import { validateSsoConfigInput, encryptSecret, canEnableSsoEnforcement, redactSsoConfig, StoredSsoConfig } from './sso-config';
 import { searchOrgResources, validateResourceCreate, SearchableResource } from './org-search';
+import {
+  EntitlementRecord, EntitlementPlan, CapabilityId, getEffectiveEntitlement,
+  effectivePlan, checkDailyQuota, getCapability, validateAdminGrant,
+} from './entitlements';
+import {
+  SmsCategory, CATEGORIES_SUBJECT_TO_AGGREGATE_CAP, checkSmsQuota, estimateSmsSegments,
+  smsGloballyEnabled, smsCategoryEnabled,
+} from './sms-guardrails';
+import { getEffectiveNotificationPreferences, routeNotification } from './notification-router';
+import { UsageTotals, estimateCost } from './cost-estimates';
 
 dotenv.config();
 
@@ -189,6 +199,48 @@ const guardianAlertLimiter = rateLimit({
   windowMs: 60 * 60 * 1000,
   max: 5,
   message: { error: "That's a lot of alerts in a short time. Please wait a little before sending another." },
+  standardHeaders: true,
+  legacyHeaders: false,
+  validate: { xForwardedForHeader: false, default: true }
+});
+
+// Nova text/diagnose/voice-journal previously relied on the generic
+// 100/15min apiLimiter alone - fine for cheap routes, not for AI-model
+// calls. These sit alongside the entitlement daily-quota check
+// (checkAndReserveCapability): the quota is the cost/abuse ceiling, this
+// limiter is the burst-protection floor (stops a tight retry loop from
+// hammering the provider even within a day's quota).
+const novaChatLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 60,
+  message: { error: 'Too many Nova messages, please slow down and try again shortly.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+  validate: { xForwardedForHeader: false, default: true }
+});
+
+const novaDiagnoseLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 15,
+  message: { error: 'Too many check-in requests, please try again shortly.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+  validate: { xForwardedForHeader: false, default: true }
+});
+
+const novaVoiceJournalLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 15,
+  message: { error: 'Too many voice journal requests, please try again shortly.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+  validate: { xForwardedForHeader: false, default: true }
+});
+
+const exportLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 5,
+  message: { error: 'Too many export requests, please try again later.' },
   standardHeaders: true,
   legacyHeaders: false,
   validate: { xForwardedForHeader: false, default: true }
@@ -357,23 +409,71 @@ const TwilioSendSchema = z.object({
 // ally nudge scheduler. Deliberately does NOT bypass auth/rate-limiting for
 // the route; the scheduler calls this directly since it already knows the
 // message is legitimate (it was configured by an authenticated user earlier).
-async function sendTwilioMessage(uid: string, to: string, message: string, useWhatsapp: boolean): Promise<{ success: boolean; sid?: string; error?: string }> {
+// Central SMS cost/abuse enforcement point - every Twilio send in this
+// codebase goes through this one function, so this is the one place that
+// needs to check the global/category kill switches and the per-user
+// aggregate cap (see sms-guardrails.ts for why guardian_alert is exempt
+// from the cap but not the global switch).
+const SMS_GLOBALLY_ENABLED = smsGloballyEnabled(process.env.SMS_ENABLED);
+const SMS_MANUAL_SEND_ENABLED = smsCategoryEnabled(process.env.SMS_MANUAL_SEND_ENABLED);
+
+async function sendTwilioMessage(
+  uid: string,
+  to: string,
+  message: string,
+  useWhatsapp: boolean,
+  category: SmsCategory = 'manual_send'
+): Promise<{ success: boolean; sid?: string; error?: string }> {
+  if (!SMS_GLOBALLY_ENABLED) {
+    return { success: false, error: "Messaging is temporarily unavailable." };
+  }
+  if (category === 'manual_send' && !SMS_MANUAL_SEND_ENABLED) {
+    return { success: false, error: "Direct messaging is temporarily unavailable." };
+  }
+
+  const db = getDb();
+  const dayKey = usageCounterTodayKey();
+  const monthKey = `month-${dayKey.slice(0, 7)}`;
+  const usageSubjectToCap = CATEGORIES_SUBJECT_TO_AGGREGATE_CAP.includes(category);
+  if (usageSubjectToCap) {
+    const [daySnap, monthSnap] = await Promise.all([
+      db.collection("users").doc(uid).collection("usage_counters").doc(dayKey).get(),
+      db.collection("users").doc(uid).collection("usage_counters").doc(monthKey).get(),
+    ]);
+    const quota = checkSmsQuota(category, Number(daySnap.data()?.smsCount) || 0, Number(monthSnap.data()?.smsCount) || 0);
+    if (!quota.allowed) {
+      return {
+        success: false,
+        error: quota.reason === 'monthly_limit_reached'
+          ? "You've reached this month's messaging limit."
+          : "You've reached today's messaging limit. It resets tomorrow.",
+      };
+    }
+  }
+
   const client = initTwilio();
   const fromPhone = process.env.TWILIO_PHONE_NUMBER;
   if (!client || !fromPhone) {
     return { success: false, error: "Messaging is unavailable because the support messaging system is not configured." };
   }
+  const { segments, encoding } = estimateSmsSegments(message);
   try {
     const m = await client.messages.create({
       body: message,
       from: useWhatsapp ? `whatsapp:${fromPhone}` : fromPhone,
       to: useWhatsapp ? `whatsapp:${to}` : to,
     });
-    await logAutopilotAction(uid, "sms_send", { to, useWhatsapp }, true);
+    await logAutopilotAction(uid, "sms_send", { to, useWhatsapp, category, segments, encoding }, true);
+    if (usageSubjectToCap) {
+      await Promise.all([
+        db.collection("users").doc(uid).collection("usage_counters").doc(dayKey).set({ smsCount: FieldValue.increment(1) }, { merge: true }),
+        db.collection("users").doc(uid).collection("usage_counters").doc(monthKey).set({ smsCount: FieldValue.increment(1) }, { merge: true }),
+      ]);
+    }
     return { success: true, sid: m.sid };
   } catch (error: any) {
     console.error("Twilio error:", error);
-    await logAutopilotAction(uid, "sms_send", { error: error.message }, false);
+    await logAutopilotAction(uid, "sms_send", { error: error.message, category }, false);
     return { success: false, error: error.message };
   }
 }
@@ -386,7 +486,7 @@ app.post("/api/twilio/send", smsLimiter, verifyAppCheck, authenticateFirebaseUse
       return res.status(400).json({ error: "Invalid request — a valid E.164 phone number and message are required." });
     }
     const { to, message, useWhatsapp } = parsed.data;
-    const result = await sendTwilioMessage(uid, to, message, useWhatsapp);
+    const result = await sendTwilioMessage(uid, to, message, useWhatsapp, 'manual_send');
     if (!result.success) {
       return res.status(400).json({ success: false, error: result.error });
     }
@@ -533,7 +633,7 @@ app.post("/api/guardian/alert", guardianAlertLimiter, verifyAppCheck, authentica
       updatedAt: FieldValue.serverTimestamp(),
     });
 
-    const result = await sendTwilioMessage(uid, contact.contactMethod, message, contact.notificationPreference === "whatsapp");
+    const result = await sendTwilioMessage(uid, contact.contactMethod, message, contact.notificationPreference === "whatsapp", 'guardian_alert');
     const finalState: GuardianAlertState = result.success ? "provider_accepted" : "failed";
 
     await existingRef.update({
@@ -858,12 +958,30 @@ interface NovaConsentMetadata {
 }
 
 // Build Nova Context Builder
+// Every per-collection read below used to be an unbounded `.get()` -
+// re-scanning a user's ENTIRE history (every check-in, every energy
+// budget, ever) on every single Nova chat message and every Live voice
+// session start. That's the single largest Firestore cost driver in this
+// codebase (confirmed by audit): cost grew linearly with account age and
+// re-read the same data on every turn of a conversation. Bounding each
+// read to the most recent N documents both fixes that and is a genuinely
+// *better* input for Nova - recent context is more relevant to "what's
+// going on with this person right now" than a multi-year full history
+// would be (see docs/AI_COST_CONTROL.md).
+const NOVA_CONTEXT_RECENT_LIMIT = 60;
+
 async function getNovaContextAndMetadata(uid: string, firestoreDb: any): Promise<{ systemInstructionsAddendum: string; metadata: NovaConsentMetadata }> {
   const metadata: NovaConsentMetadata = {
     contextTriggered: false,
     modulesUsed: [],
     rationale: ""
   };
+
+  // Honest about the cap: once a section hits NOVA_CONTEXT_RECENT_LIMIT,
+  // the true lifetime count may be higher - say so rather than silently
+  // implying "60" is a person's entire history.
+  const describeCount = (n: number): string =>
+    n >= NOVA_CONTEXT_RECENT_LIMIT ? `${n}+ (most recent ${NOVA_CONTEXT_RECENT_LIMIT} considered)` : `${n}`;
 
   try {
     const permDoc = await firestoreDb.collection('users').doc(uid).collection('nova_permissions').doc('current').get();
@@ -879,7 +997,7 @@ async function getNovaContextAndMetadata(uid: string, firestoreDb: any): Promise
 
     // Check-ins: Compact count of logs and list of energy/stress scores
     if (perms.allowCheckins) {
-      const snap = await firestoreDb.collection('users').doc(uid).collection('checkins').get();
+      const snap = await firestoreDb.collection('users').doc(uid).collection('checkins').orderBy('createdAt', 'desc').limit(NOVA_CONTEXT_RECENT_LIMIT).get();
       const count = snap.size;
       const energyLevels: number[] = [];
       const stressLoads: number[] = [];
@@ -889,7 +1007,7 @@ async function getNovaContextAndMetadata(uid: string, firestoreDb: any): Promise
         if (typeof data.stressLoad === 'number') stressLoads.push(data.stressLoad);
       });
       infoParts.push(`Check-ins Summary:
-- Number of logged check-ins: ${count}
+- Number of logged check-ins: ${describeCount(count)}
 - Self-reported Energy Levels over time: ${JSON.stringify(energyLevels)}
 - Self-reported Stress Loads over time: ${JSON.stringify(stressLoads)}`);
       used.push("checkins");
@@ -897,7 +1015,7 @@ async function getNovaContextAndMetadata(uid: string, firestoreDb: any): Promise
 
     // Energy Budgets: Log count and overall average capacity remaining
     if (perms.allowEnergyBudgets) {
-      const snap = await firestoreDb.collection('users').doc(uid).collection('energy_budgets').get();
+      const snap = await firestoreDb.collection('users').doc(uid).collection('energy_budgets').orderBy('createdAt', 'desc').limit(NOVA_CONTEXT_RECENT_LIMIT).get();
       const count = snap.size;
       const remainingCapacities: number[] = [];
       snap.docs.forEach((doc: any) => {
@@ -908,14 +1026,14 @@ async function getNovaContextAndMetadata(uid: string, firestoreDb: any): Promise
         ? Math.round(remainingCapacities.reduce((a, b) => a + b, 0) / remainingCapacities.length)
         : null;
       infoParts.push(`Energy Budgets Summary:
-- Number of logged budgets: ${count}
+- Number of logged budgets: ${describeCount(count)}
 - Average remaining energy capacity across budgets: ${avgRemaining !== null ? avgRemaining + "%" : "N/A"}`);
       used.push("energy_budgets");
     }
 
     // Mood Pulses: Compact counts of labels and intensity list
     if (perms.allowMoodPulses) {
-      const snap = await firestoreDb.collection('users').doc(uid).collection('mood_pulses').get();
+      const snap = await firestoreDb.collection('users').doc(uid).collection('mood_pulses').orderBy('createdAt', 'desc').limit(NOVA_CONTEXT_RECENT_LIMIT).get();
       const count = snap.size;
       const labelCounts: Record<string, number> = {};
       const intensities: number[] = [];
@@ -927,7 +1045,7 @@ async function getNovaContextAndMetadata(uid: string, firestoreDb: any): Promise
         if (typeof data.intensity === 'number') intensities.push(data.intensity);
       });
       infoParts.push(`Mood Pulses Summary:
-- Number of logged mood pulses: ${count}
+- Number of logged mood pulses: ${describeCount(count)}
 - Self-reported Mood label occurrences: ${JSON.stringify(labelCounts)}
 - Self-reported Mood Intensities over time: ${JSON.stringify(intensities)}`);
       used.push("mood_pulses");
@@ -935,7 +1053,7 @@ async function getNovaContextAndMetadata(uid: string, firestoreDb: any): Promise
 
     // Body Checkins: Frequencies of somatic tension categories
     if (perms.allowBodyCheckins) {
-      const snap = await firestoreDb.collection('users').doc(uid).collection('body_checkins').get();
+      const snap = await firestoreDb.collection('users').doc(uid).collection('body_checkins').orderBy('createdAt', 'desc').limit(NOVA_CONTEXT_RECENT_LIMIT).get();
       const count = snap.size;
       const signalCounts: Record<string, number> = {};
       snap.docs.forEach((doc: any) => {
@@ -948,14 +1066,14 @@ async function getNovaContextAndMetadata(uid: string, firestoreDb: any): Promise
         }
       });
       infoParts.push(`Body Check-ins Summary:
-- Number of logged body check-ins: ${count}
+- Number of logged body check-ins: ${describeCount(count)}
 - Logged Body Tension and Symptom Category counts: ${JSON.stringify(signalCounts)}`);
       used.push("body_checkins");
     }
 
     // Wins: Compact counts by category
     if (perms.allowWins) {
-      const snap = await firestoreDb.collection('users').doc(uid).collection('wins').get();
+      const snap = await firestoreDb.collection('users').doc(uid).collection('wins').orderBy('createdAt', 'desc').limit(NOVA_CONTEXT_RECENT_LIMIT).get();
       const count = snap.size;
       const cateCounts: Record<string, number> = {};
       snap.docs.forEach((doc: any) => {
@@ -965,22 +1083,22 @@ async function getNovaContextAndMetadata(uid: string, firestoreDb: any): Promise
         }
       });
       infoParts.push(`Wins Summary:
-- Number of logged wins: ${count}
+- Number of logged wins: ${describeCount(count)}
 - Categories of wins logged: ${JSON.stringify(cateCounts)}`);
       used.push("wins");
     }
 
     // Weekly reviews: Review counts only
     if (perms.allowWeeklyReviews) {
-      const snap = await firestoreDb.collection('users').doc(uid).collection('weekly_reviews').get();
+      const snap = await firestoreDb.collection('users').doc(uid).collection('weekly_reviews').orderBy('createdAt', 'desc').limit(NOVA_CONTEXT_RECENT_LIMIT).get();
       infoParts.push(`Weekly Reviews Summary:
-- Total number of completed weekly reviews: ${snap.size}`);
+- Total number of completed weekly reviews: ${describeCount(snap.size)}`);
       used.push("weekly_reviews");
     }
 
     // Boundary Scripts: Scenario types and status tracking
     if (perms.allowBoundaryScripts) {
-      const snap = await firestoreDb.collection('users').doc(uid).collection('boundary_scripts').get();
+      const snap = await firestoreDb.collection('users').doc(uid).collection('boundary_scripts').orderBy('createdAt', 'desc').limit(NOVA_CONTEXT_RECENT_LIMIT).get();
       const count = snap.size;
       const scenarioCounts: Record<string, number> = {};
       const statusCounts: Record<string, number> = {};
@@ -994,7 +1112,7 @@ async function getNovaContextAndMetadata(uid: string, firestoreDb: any): Promise
         }
       });
       infoParts.push(`Boundary Scripts Summary:
-- Total boundary scripts configured: ${count}
+- Total boundary scripts configured: ${describeCount(count)}
 - Frequency of scenario types targeted: ${JSON.stringify(scenarioCounts)}
 - Boundary script status counts: ${JSON.stringify(statusCounts)}`);
       used.push("boundary_scripts");
@@ -1002,7 +1120,7 @@ async function getNovaContextAndMetadata(uid: string, firestoreDb: any): Promise
 
     // Goals: Completed or active count tracking
     if (perms.allowGoals) {
-      const snap = await firestoreDb.collection('users').doc(uid).collection('goals').get();
+      const snap = await firestoreDb.collection('users').doc(uid).collection('goals').orderBy('createdAt', 'desc').limit(NOVA_CONTEXT_RECENT_LIMIT).get();
       const count = snap.size;
       const statusCounts: Record<string, number> = {};
       const categoryCounts: Record<string, number> = {};
@@ -1016,7 +1134,7 @@ async function getNovaContextAndMetadata(uid: string, firestoreDb: any): Promise
         }
       });
       infoParts.push(`Goals Summary:
-- Total goals tracking: ${count}
+- Total goals tracking: ${describeCount(count)}
 - Goal status distribution: ${JSON.stringify(statusCounts)}
 - Goal category distribution: ${JSON.stringify(categoryCounts)}`);
       used.push("goals");
@@ -1084,18 +1202,14 @@ async function getNovaContextAndMetadata(uid: string, firestoreDb: any): Promise
 
     // Memory Usage
     if (perms.allowNovaMemory && perms.allowNovaUseSavedMemories) {
-      const memRef = firestoreDb.collection('users').doc(uid).collection('nova_memories');
+      // Ordering/limiting at the Firestore level (rather than fetching
+      // every saved memory and sorting/slicing in JS) means this scales
+      // with "5", not with how many memories Nova has ever saved.
+      const memRef = firestoreDb.collection('users').doc(uid).collection('nova_memories').orderBy('updatedAt', 'desc').limit(5);
       const memSnap = await memRef.get();
       const memories = memSnap.docs.map((d: any) => d.data());
 
-      // Most recently updated first, capped at 5 - matches the same
-      // "top 5" limit this passive injection always had, now against
-      // real documents instead of ones that could never actually match
-      // the old filter criteria.
-      const recentMemories = memories
-        .filter((mem: any) => mem && typeof mem.content === 'string')
-        .sort((a: any, b: any) => new Date(b.updatedAt || 0).getTime() - new Date(a.updatedAt || 0).getTime())
-        .slice(0, 5);
+      const recentMemories = memories.filter((mem: any) => mem && typeof mem.content === 'string');
 
       if (recentMemories.length > 0) {
         const memTextList = recentMemories.map((m: any) => `- [${m.type}] ${m.content}${m.source ? ` (Source: ${m.source})` : ''}`);
@@ -1157,6 +1271,12 @@ const ChatRequestSchema = z.object({
 // calling at all) across every provider, without needing to also change
 // NOVA_CHAT_PROVIDER or take Nova chat down entirely.
 const NOVA_TOOLS_ENABLED = toolsAreEnabled(process.env.NOVA_TOOLS_ENABLED);
+const NOVA_LIVE_VOICE_ENABLED = liveVoiceIsEnabled(process.env.NOVA_LIVE_VOICE_ENABLED);
+// Configurable, not hardcoded - see docs/AI_COST_CONTROL.md. Live voice is
+// the single most expensive per-minute Nova surface, so both the hard
+// session ceiling and the idle cutoff are env-tunable without a redeploy.
+const NOVA_LIVE_MAX_SESSION_MS = Number(process.env.NOVA_LIVE_MAX_SESSION_MS) || 15 * 60 * 1000;
+const NOVA_LIVE_IDLE_TIMEOUT_MS = Number(process.env.NOVA_LIVE_IDLE_TIMEOUT_MS) || 90 * 1000;
 
 const NOVA_TOOLS: any[] = [
   {
@@ -1427,7 +1547,7 @@ async function callClaudeNovaChat(
   return { text, planTrace };
 }
 
-app.post("/api/nova/chat", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+app.post("/api/nova/chat", novaChatLimiter, verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
   try {
     const parsedParams = ChatRequestSchema.safeParse(req.body);
     if (!parsedParams.success) {
@@ -1451,6 +1571,19 @@ app.post("/api/nova/chat", verifyAppCheck, authenticateFirebaseUser, async (req,
 
     const verifiedUser = (req as any).user;
     const uid = verifiedUser?.uid;
+
+    if (uid) {
+      const quota = await checkAndReserveCapability(uid, 'nova_text');
+      if (!quota.allowed) {
+        return res.status(429).json({
+          error: quota.plan === 'free'
+            ? "You've reached today's free Nova chat limit. It resets tomorrow, or upgrade to Blaze Break Premium for a much higher daily allowance."
+            : "You've reached today's Nova chat fair-use limit. It resets tomorrow.",
+          code: 'capability_limit_reached',
+          capability: 'nova_text',
+        });
+      }
+    }
 
     // This is the real, consent-gated read of the person's actual recovery
     // data - mood, energy, boundaries, goals, wins, and more, each only
@@ -1567,7 +1700,7 @@ const DiagnoseRequestSchema = z.object({
   letNovaLearn: z.boolean().optional().default(true),
 }).strict();
 
-app.post("/api/nova/diagnose", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+app.post("/api/nova/diagnose", novaDiagnoseLimiter, verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
   // Nova personal recovery context remains disabled until secure private-data storage and consent-controlled processing are approved.
   try {
     const parsedParams = DiagnoseRequestSchema.safeParse(req.body);
@@ -1575,6 +1708,7 @@ app.post("/api/nova/diagnose", verifyAppCheck, authenticateFirebaseUser, async (
         return res.status(400).json({ error: "Invalid request payload or forbidden fields detected.", details: (parsedParams as any).error?.errors || [] });
     }
     const { answers, letNovaLearn } = parsedParams.data;
+    const diagnoseUid = requireAuth(req).uid;
 
     const dims = computeDimensionScores(answers);
     const {
@@ -1643,7 +1777,14 @@ app.post("/api/nova/diagnose", verifyAppCheck, authenticateFirebaseUser, async (
 
     let analysis = '';
     const geminiKey = process.env.GEMINI_API_KEY;
-    if (geminiKey && geminiKey !== "MY_GEMINI_API_KEY") {
+    // AI narrative is a cost-gated enhancement, not the diagnose feature
+    // itself - the deterministic archetype/scores above always compute
+    // regardless of quota. Over quota, this simply falls through to the
+    // static fallback analysis below rather than blocking the route,
+    // matching the same graceful-degradation pattern already used when
+    // Gemini itself is unavailable.
+    const diagnoseQuota = await checkAndReserveCapability(diagnoseUid, 'diagnose');
+    if (diagnoseQuota.allowed && geminiKey && geminiKey !== "MY_GEMINI_API_KEY") {
       try {
         const prompt = `
           You are Nova, an analytical and direct British high-performance recovery coach for high achievers who have burned out. 
@@ -1710,8 +1851,7 @@ app.post("/api/nova/diagnose", verifyAppCheck, authenticateFirebaseUser, async (
     // write only happens if the user has actually opted into it via Settings.
     if (letNovaLearn) {
       try {
-        const uid = requireAuth(req).uid;
-        await getDb().collection("users").doc(uid).collection("diagnostics").doc("latest").set({
+        await getDb().collection("users").doc(diagnoseUid).collection("diagnostics").doc("latest").set({
           archScores,
           profile,
           scores: {
@@ -1818,7 +1958,7 @@ const VoiceJournalRequestSchema = z.object({
   mimeType: z.string().min(1)
 }).strict();
 
-app.post("/api/nova/voice-journal", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+app.post("/api/nova/voice-journal", novaVoiceJournalLimiter, verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
   try {
     const parsedParams = VoiceJournalRequestSchema.safeParse(req.body);
     if (!parsedParams.success) {
@@ -2097,6 +2237,72 @@ const logAdminAction = async (req: any, action: string, targetUid: string, targe
     console.error("Failed to write admin audit log:", err.message);
   }
 };
+
+// ============================================================================
+// Free/Premium Entitlements (server-authoritative)
+// ============================================================================
+// See entitlements.ts for the pure model this wraps with I/O. The single
+// source of truth is users/{uid}/entitlements/status, which firestore.rules
+// makes `allow write: if false` - only the Admin SDK (this file) ever
+// writes it, so nothing here ever needs to distrust its own read. Every
+// route that gates on Premium/usage quotas goes through
+// getEntitlementRecord/checkAndReserveCapability, never a client-supplied
+// field (that was the actual bug this system replaces - see the AA rule
+// comment in firestore.rules).
+
+const getEntitlementRecord = async (uid: string): Promise<EntitlementRecord> => {
+  const db = getDb();
+  const snap = await db.collection("users").doc(uid).collection("entitlements").doc("status").get();
+  return getEffectiveEntitlement(snap.exists ? (snap.data() as Partial<EntitlementRecord>) : null);
+};
+
+const usageCounterTodayKey = () => new Date().toISOString().slice(0, 10);
+
+// Checks today's usage of `capability` against the account's plan and, if
+// allowed, immediately increments the counter. This is a best-effort
+// fair-use guard, not a billing-grade lock: two requests racing in the
+// same instant could both pass, which is an accepted trade-off (the goal
+// is stopping runaway/abusive usage, not metering to the exact request -
+// "soft quotas, generous for legitimate users"). Consuming the quota
+// unconditionally on allow, rather than only after a downstream AI call
+// succeeds, is the same simplification the existing express-rate-limit
+// limiters in this file already make.
+const checkAndReserveCapability = async (
+  uid: string,
+  capability: CapabilityId
+): Promise<{ allowed: boolean; limit: number | null; used: number; plan: EntitlementPlan }> => {
+  const record = await getEntitlementRecord(uid);
+  const plan = effectivePlan(record);
+  const db = getDb();
+  const usageRef = db.collection("users").doc(uid).collection("usage_counters").doc(usageCounterTodayKey());
+  const usageSnap = await usageRef.get();
+  const usedToday = Number(usageSnap.data()?.[capability]) || 0;
+  const result = checkDailyQuota(plan, capability, usedToday);
+  if (result.allowed) {
+    await usageRef.set({ [capability]: FieldValue.increment(1), updatedAt: new Date().toISOString() }, { merge: true });
+  }
+  return { ...result, plan };
+};
+
+app.get("/api/entitlements/me", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const uid = (req as any).user?.uid;
+    if (!uid) throw new Error("Unauthorized.");
+    const record = await getEntitlementRecord(uid);
+    const plan = effectivePlan(record);
+    const db = getDb();
+    const usageSnap = await db.collection("users").doc(uid).collection("usage_counters").doc(usageCounterTodayKey()).get();
+    const usageData = usageSnap.data() || {};
+    const capabilities: Record<string, { enabled: boolean; limit: number | null; used: number }> = {};
+    (['nova_text', 'nova_voice', 'diagnose', 'exports'] as CapabilityId[]).forEach((id) => {
+      const cap = getCapability(plan, id);
+      capabilities[id] = { enabled: cap.enabled, limit: cap.dailyLimit, used: Number(usageData[id]) || 0 };
+    });
+    res.json({ plan, status: record.status, billingSource: record.billingSource, entitlementEnd: record.entitlementEnd, renewalDate: record.renewalDate, capabilities });
+  } catch (err: any) {
+    res.status(err.message?.includes("Unauthorized") ? 401 : 500).json({ error: err.message });
+  }
+});
 
 // ============================================================================
 // Third-Party OAuth Integrations (Slack, Jira, Asana, Calendly, Monday.com)
@@ -3585,6 +3791,28 @@ const runScheduledPulseCheck = async () => {
       const lastPush = pulse.lastPushSentAt ? new Date(pulse.lastPushSentAt).getTime() : 0;
       if ((now - lastPush) / (1000 * 60 * 60) < PUSH_COOLDOWN_HOURS) continue;
 
+      // Route through the same preference/quiet-hours logic every other
+      // notification category uses (notification-router.ts), rather than
+      // firing unconditionally - this was the one scheduled notification
+      // in the codebase that never consulted preferences/notifications at
+      // all (that doc previously only governed the in-app banner).
+      const [prefsSnap, profileSnap] = await Promise.all([
+        db.collection("users").doc(uid).collection("preferences").doc("notifications").get(),
+        db.collection("users").doc(uid).collection("user_stats").doc("core").get(),
+      ]);
+      const prefs = getEffectiveNotificationPreferences(prefsSnap.exists ? prefsSnap.data() : null);
+      const timeZone = profileSnap.data()?.profile?.timeZone;
+      let localHour = new Date().getUTCHours();
+      if (typeof timeZone === 'string' && timeZone) {
+        try {
+          localHour = parseInt(new Intl.DateTimeFormat('en-US', { timeZone, hour: '2-digit', hour12: false }).format(new Date()), 10);
+        } catch (e) {
+          // Invalid/unrecognized timezone string - fall back to UTC hour above rather than failing the whole check.
+        }
+      }
+      const routing = routeNotification('checkin_reminder', prefs, localHour, 0, { push: true, email: false, sms: false });
+      if (!routing.send) continue;
+
       await sendPushToUser(uid, isStale
         ? { title: "Nova hasn't heard from you in a while", body: "No pressure — just checking in. Your recovery tools are here whenever you're ready." }
         : { title: "Nova: your recovery score has been low", body: "Things look tough right now. A short reset might help — Blaze Break is here." }
@@ -3601,6 +3829,50 @@ if (pushConfigured && process.env.TEST_MODE !== 'true') {
 }
 
 // Admin Dashboard Summary Metrics API
+// Lightweight operating visibility (section 39/40 of the hardening brief),
+// built entirely from the usage_counters this same batch of work started
+// writing (checkAndReserveCapability, sendTwilioMessage) - not a live read
+// of actual Gemini/Twilio billing, since neither provider is wired up
+// here with a queryable cost API. Every number in the response is
+// explicitly labelled an estimate; see cost-estimates.ts/docs/
+// COST_MONITORING.md for the rates and their sourcing.
+app.get("/api/admin/cost-usage", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    requireAdmin(req);
+    const db = getDb();
+    const periodDays = 7;
+    const sinceIso = new Date(Date.now() - periodDays * 24 * 60 * 60 * 1000).toISOString();
+
+    const totals: UsageTotals = { novaTextCount: 0, novaVoiceCount: 0, diagnoseCount: 0, smsSegmentCount: 0 };
+    try {
+      const snap = await db.collectionGroup("usage_counters").where("updatedAt", ">=", sinceIso).get();
+      snap.docs.forEach((doc: any) => {
+        const data = doc.data();
+        totals.novaTextCount += Number(data.nova_text) || 0;
+        totals.novaVoiceCount += Number(data.nova_voice) || 0;
+        totals.diagnoseCount += Number(data.diagnose) || 0;
+        // smsCount tracks messages sent, not exact provider segments (segment
+        // count isn't persisted per-send) - treated here as ~1 segment each,
+        // a conservative underestimate for any longer message.
+        totals.smsSegmentCount += Number(data.smsCount) || 0;
+      });
+    } catch (e) {
+      // This is an estimate/visibility endpoint, not a critical path -
+      // degrade to zeros rather than failing the whole admin view.
+    }
+
+    res.json({
+      periodDays,
+      isEstimate: true,
+      note: "Rough internal estimates from captured usage counts, not live provider billing data. See docs/COST_MONITORING.md.",
+      usage: totals,
+      estimatedCostUsd: estimateCost(totals),
+    });
+  } catch (err: any) {
+    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
+  }
+});
+
 app.get("/api/admin/summary", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
   try {
     requireAdmin(req);
@@ -3830,6 +4102,45 @@ app.post("/api/admin/users/:uid/role", verifyAppCheck, authenticateFirebaseUser,
     res.json({ success: true });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+// The one real, working way to grant Premium today, pending a live
+// Stripe/Apple/Google integration: a platform admin sets it directly
+// (beta testers, support cases, manual comps, or - until organisation-
+// sponsored access is reconciled automatically - an org's Premium seat).
+// billingSource is always forced to 'admin' here, never taken from the
+// request body, so an admin grant can never be mistaken for a real
+// provider record reconciled by a webhook.
+app.post("/api/admin/users/:uid/entitlement", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    requireAdmin(req);
+    const targetUid = req.params.uid;
+    const validation = validateAdminGrant(req.body || {});
+    if (!validation.valid) {
+      return res.status(400).json({ error: validation.error });
+    }
+    const { plan, status, durationDays } = req.body;
+    const now = new Date();
+    const entitlementEnd = typeof durationDays === 'number'
+      ? new Date(now.getTime() + durationDays * 24 * 60 * 60 * 1000).toISOString()
+      : null;
+
+    const db = getDb();
+    await db.collection("users").doc(targetUid).collection("entitlements").doc("status").set({
+      plan,
+      status,
+      billingSource: 'admin',
+      entitlementStart: now.toISOString(),
+      entitlementEnd,
+      renewalDate: null,
+      lastVerifiedAt: now.toISOString(),
+    }, { merge: true });
+
+    await logAdminAction(req, "grant_entitlement", targetUid, "", { plan, status, durationDays: durationDays ?? null });
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
   }
 });
 
@@ -6335,7 +6646,7 @@ async function processNudgeSchedules() {
         const localDateKey = `${get('year')}-${get('month')}-${get('day')}`;
         if (data.lastSentPeriod === localDateKey) continue; // Already sent for this local day.
 
-        const result = await sendTwilioMessage(uid, data.contactMethod, data.message, data.notificationPreference === 'whatsapp');
+        const result = await sendTwilioMessage(uid, data.contactMethod, data.message, data.notificationPreference === 'whatsapp', 'ally_nudge');
         await doc.ref.update({
           lastSentAt: new Date().toISOString(),
           lastSentPeriod: localDateKey,
@@ -6867,9 +7178,17 @@ const ACTIVITY_FIELD_MAP: Record<string, string> = {
 // deletion (an erasure failure that contradicts what the UI promises).
 // Dynamic enumeration means new collections are covered automatically.
 
-app.get("/api/user/export", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+app.get("/api/user/export", exportLimiter, verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
   try {
     const user = requireAuth(req);
+    // A daily cap here is abuse protection against scripted repeated
+    // full-account pulls, not a restriction on the underlying data-access
+    // right - the limit is generous enough (1/day free, 20/day Premium)
+    // that no genuine one-off export request is ever affected.
+    const exportQuota = await checkAndReserveCapability(user.uid, 'exports');
+    if (!exportQuota.allowed) {
+      return res.status(429).json({ error: "You've already exported your data today. Please try again tomorrow.", code: 'capability_limit_reached', capability: 'exports' });
+    }
     const db = getDb();
     const userRef = db.collection("users").doc(user.uid);
 
@@ -7612,6 +7931,21 @@ if (process.env.TEST_MODE !== 'true') {
         return clientWs.close();
       }
 
+      if (!NOVA_LIVE_VOICE_ENABLED) {
+        clientWs.send(JSON.stringify({ error: "Voice coaching is temporarily unavailable. Continue with Nova by text for now." }));
+        return clientWs.close();
+      }
+
+      const liveQuota = await checkAndReserveCapability(uid, 'nova_voice');
+      if (!liveQuota.allowed) {
+        clientWs.send(JSON.stringify({
+          error: liveQuota.plan === 'free'
+            ? "You've used today's free Nova voice session. Upgrade to Blaze Break Premium for many more, or continue with Nova by text."
+            : "You've reached today's Nova voice fair-use limit. It resets tomorrow - continue with Nova by text for now.",
+        }));
+        return clientWs.close();
+      }
+
       const db = getDb();
 
       // Same cross-feature awareness packet the text chat endpoint injects
@@ -7624,22 +7958,32 @@ if (process.env.TEST_MODE !== 'true') {
       const liveSystemInstruction = NOVA_LIVE_VOICE_PERSONA + contextResult.systemInstructionsAddendum;
 
       // Real per-second cost here (audio in + audio out), so a hard ceiling
-      // matters even for a legitimate, authenticated user — 15 minutes is
-      // generous for a coaching check-in without leaving a session open
-      // indefinitely if a client never explicitly closes it.
-      const MAX_SESSION_MS = 15 * 60 * 1000;
+      // matters even for a legitimate, authenticated user — 15 minutes
+      // (NOVA_LIVE_MAX_SESSION_MS) is generous for a coaching check-in
+      // without leaving a session open indefinitely if a client never
+      // explicitly closes it.
+      const MAX_SESSION_MS = NOVA_LIVE_MAX_SESSION_MS;
       // A live call has no discrete "turn" boundary the way a single chat
       // request does, so the per-turn memory-write cap becomes a per-session
       // one instead - generous enough for a real 15-minute conversation,
       // still a hard ceiling against a runaway loop of writes.
       const MAX_VOICE_MEMORY_WRITES = 5;
       let voiceMemoryWriteCount = 0;
-      // sessionTimeout is assigned exactly once, but only after endSession
-      // (which reads it via closure) is declared below; TS requires const
-      // to initialize immediately, so this can't be a const without
-      // restructuring the timer setup.
+      // sessionTimeout/idleTimeout are assigned exactly once each, but only
+      // after endSession (which reads them via closure) is declared below;
+      // TS requires const to initialize immediately, so these can't be
+      // const without restructuring the timer setup.
       // eslint-disable-next-line prefer-const
       let sessionTimeout: NodeJS.Timeout;
+      // Separate from the flat session ceiling above: a connection left
+      // open with no audio flowing in either direction (mic muted, app
+      // backgrounded, network half-dead) shouldn't run the full 15 minutes
+      // billing per-second the whole time. Reset on any real activity.
+      let idleTimeout: NodeJS.Timeout;
+      const resetIdleTimer = () => {
+        clearTimeout(idleTimeout);
+        idleTimeout = setTimeout(() => endSession("This voice session ended after a period of inactivity."), NOVA_LIVE_IDLE_TIMEOUT_MS);
+      };
       let liveSession: any = null;
       let sessionEnded = false;
 
@@ -7647,6 +7991,7 @@ if (process.env.TEST_MODE !== 'true') {
         if (sessionEnded) return;
         sessionEnded = true;
         clearTimeout(sessionTimeout);
+        clearTimeout(idleTimeout);
         try {
           liveSession?.close();
         } catch (e) {
@@ -7688,6 +8033,7 @@ if (process.env.TEST_MODE !== 'true') {
             },
             onmessage: (message: LiveServerMessage) => {
               if (sessionEnded) return;
+              resetIdleTimer();
               try {
                 if (message.serverContent?.interrupted) {
                   clientWs.send(JSON.stringify({ interrupted: true }));
@@ -7778,10 +8124,12 @@ if (process.env.TEST_MODE !== 'true') {
         return clientWs.close();
       }
 
-      sessionTimeout = setTimeout(() => endSession("This voice session has reached its 15-minute limit."), MAX_SESSION_MS);
+      sessionTimeout = setTimeout(() => endSession("This voice session has reached its time limit."), MAX_SESSION_MS);
+      resetIdleTimer();
 
       clientWs.on("message", (data) => {
         if (sessionEnded) return;
+        resetIdleTimer();
         try {
           const parsed = JSON.parse(data.toString());
           if (parsed.initialPrompt) {

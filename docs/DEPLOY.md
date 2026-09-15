@@ -68,10 +68,11 @@ Grant the Cloud Run runtime service account:
 ## 4. Firestore security rules
 
 The rules live in `firestore.rules` and are the last line of defence for
-direct client access. Deploy them whenever they change:
+direct client access. Deploy them (and indexes, which changed together
+in the same commit) whenever either changes:
 
 ```
-firebase deploy --only firestore:rules
+firebase deploy --only firestore:rules,firestore:indexes
 ```
 
 They are deny-by-default with per-collection field validation, restricting
@@ -79,8 +80,70 @@ direct client reads of `mood_pulses`/`body_checkins`/`climate_survey_responses`
 to their own owner. The minimum-cohort ("k-anonymity") threshold itself is
 enforced in application code (`server.ts`, via the Admin SDK), not in these
 rules - see `docs/PRODUCT_SAFETY_PRIVACY.md` for that boundary. Server-only
-collections are written exclusively via the Admin SDK and correctly have no
-client rule.
+collections — including `entitlements/status` (Free/Premium tier) and
+`usage_counters` (capability quota tracking, see
+`docs/FREE_PREMIUM_ENTITLEMENTS.md`) — are written exclusively via the
+Admin SDK and correctly have no client write rule.
+
+### This project's database is Firestore Enterprise edition
+
+Discovered the hard way during the first real deploy — worth knowing
+before you touch `firestore.rules`/`firestore.indexes.json` again:
+
+- **`firebase.json` must name the database explicitly.** This project
+  doesn't use the `(default)` Firestore database; it uses a named one
+  (`ai-studio-67723f85-0bfc-4690-ac83-580d6face1fc`, set as
+  `firestore.database` in `firebase.json`). Without that field, `firebase
+  deploy` tries to target/create a `(default)` database instead of the
+  real one.
+- **`fieldOverrides` in `firestore.indexes.json` cannot be deployed via
+  `firebase deploy` on Enterprise edition.** It's simply unsupported by
+  the CLI against this database type. `firestore.indexes.json`
+  deliberately contains only the one composite index that page of
+  Enterprise-edition config *does* accept
+  (`audit_logs`: userId + createdAt) — every single-field
+  collection-group index this codebase needs is created directly instead:
+
+  ```
+  gcloud firestore indexes composite create \
+    --collection-group=pulse_status --field-config=field-path=score,order=ascending \
+    --query-scope=collection-group --database=ai-studio-67723f85-0bfc-4690-ac83-580d6face1fc
+
+  gcloud firestore indexes composite create \
+    --collection-group=pulse_status --field-config=field-path=reportedAt,order=ascending \
+    --query-scope=collection-group --database=ai-studio-67723f85-0bfc-4690-ac83-580d6face1fc
+
+  gcloud firestore indexes composite create \
+    --collection-group=recovery_ally --field-config=field-path=shareToken,order=ascending \
+    --query-scope=collection-group --database=ai-studio-67723f85-0bfc-4690-ac83-580d6face1fc
+
+  gcloud firestore indexes composite create \
+    --collection-group=nudge_schedules --field-config=field-path=enabled,order=ascending \
+    --query-scope=collection-group --database=ai-studio-67723f85-0bfc-4690-ac83-580d6face1fc
+
+  gcloud firestore indexes composite create \
+    --collection-group=usage_counters --field-config=field-path=updatedAt,order=ascending \
+    --query-scope=collection-group --database=ai-studio-67723f85-0bfc-4690-ac83-580d6face1fc
+  ```
+
+  The last one (`usage_counters.updatedAt`) backs `GET
+  /api/admin/cost-usage` — create it once that route is live in
+  production; it isn't needed before then. Confirm each with
+  `gcloud firestore indexes composite list --database=<id>` — look for
+  `STATE: READY`. **If a new collection-group query is added later that
+  needs its own single-field index, it goes here, not back into
+  `fieldOverrides`.**
+- **`firebase firestore:delete --all-collections` silently does nothing
+  on this database type** — it reports success (exit 0) without deleting
+  anything. Confirmed by direct REST API check. Use
+  `gcloud firestore bulk-delete --collection-ids=<name> --database=<id>`
+  instead, and verify emptiness afterward rather than trusting the exit
+  code.
+- **`{service}` is a reserved word in Firestore Rules syntax** and can't
+  be used as a wildcard match variable (e.g. `match
+  /integration_tokens/{service}` fails to compile) — this codebase uses
+  `{serviceName}` instead. Keep that in mind if adding new per-provider
+  match blocks.
 
 ---
 

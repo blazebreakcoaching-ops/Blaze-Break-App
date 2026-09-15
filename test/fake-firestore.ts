@@ -15,6 +15,7 @@ type DocData = Record<string, any>;
 // mirroring how firebase-admin defers these to write time.
 const SERVER_TIMESTAMP = Symbol('serverTimestamp');
 interface ArrayOp { __arrayOp: 'union' | 'remove'; values: any[]; }
+interface IncrementOp { __increment: number; }
 const DELETE_FIELD = Symbol('deleteField');
 
 export const FakeFieldValue = {
@@ -22,6 +23,7 @@ export const FakeFieldValue = {
   arrayUnion: (...values: any[]): ArrayOp => ({ __arrayOp: 'union', values }),
   arrayRemove: (...values: any[]): ArrayOp => ({ __arrayOp: 'remove', values }),
   delete: () => DELETE_FIELD,
+  increment: (n: number): IncrementOp => ({ __increment: n }),
 };
 
 let autoIdCounter = 0;
@@ -47,6 +49,9 @@ function resolveWrites(data: DocData, existing: DocData | undefined): DocData {
         for (const v of op.values) if (!current.includes(v)) current.push(v);
         out[key] = current;
       }
+    } else if (value && typeof value === 'object' && typeof (value as IncrementOp).__increment === 'number') {
+      const base = typeof out[key] === 'number' ? out[key] : 0;
+      out[key] = base + (value as IncrementOp).__increment;
     } else {
       out[key] = value;
     }
@@ -164,6 +169,37 @@ class CollectionRef {
   }
 }
 
+// A collection-group query matches every document whose immediate parent
+// collection id equals `collectionId`, at any depth/any parent document -
+// unlike CollectionRef, which only matches direct children of one fixed
+// path. Supports the where/get subset the routes under test actually use.
+class CollectionGroupRef {
+  private clauses: WhereClause[] = [];
+
+  constructor(private store: FakeStore, private collectionId: string) {}
+
+  where(field: string, op: string, value: any) {
+    const q = new CollectionGroupRef(this.store, this.collectionId);
+    q.clauses = [...this.clauses, [field, op, value]];
+    return q;
+  }
+
+  async get(): Promise<QuerySnapshot> {
+    const rows: DocSnapshot[] = [];
+    for (const [docPath, data] of this.store.docs.entries()) {
+      const segs = docPath.split('/');
+      // Even length (…/collection/doc), and the collection segment right
+      // before the doc id matches this group's collection id.
+      if (segs.length % 2 === 0 && segs[segs.length - 2] === this.collectionId) {
+        if (this.clauses.every((c) => matchesWhere(data, c))) {
+          rows.push(new DocSnapshot(this.store, docPath, data));
+        }
+      }
+    }
+    return new QuerySnapshot(rows);
+  }
+}
+
 class DocRef {
   constructor(private store: FakeStore, public path: string) {}
   get id() { return this.path.split('/').pop() as string; }
@@ -173,8 +209,9 @@ class DocRef {
     return new DocSnapshot(this.store, this.path, this.store.docs.get(this.path));
   }
 
-  async set(data: DocData) {
-    this.store.docs.set(this.path, resolveWrites(data, undefined));
+  async set(data: DocData, options?: { merge?: boolean }) {
+    const existing = options?.merge ? this.store.docs.get(this.path) : undefined;
+    this.store.docs.set(this.path, resolveWrites(data, existing));
   }
 
   async update(data: DocData) {
@@ -206,6 +243,7 @@ class DocRef {
 export class FakeFirestore {
   constructor(private store: FakeStore) {}
   collection(id: string) { return new CollectionRef(this.store, id); }
+  collectionGroup(id: string) { return new CollectionGroupRef(this.store, id); }
 
   // Deletes a document (or every doc within a collection) and everything
   // nested beneath it - the erasure the delete-account endpoint relies on.

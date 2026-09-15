@@ -71,6 +71,49 @@ directly to a user's permanent memory record. If it ever starts
 behaving unexpectedly in production, this is the fastest lever —
 one env var, no code change, no provider switch.
 
+## Live voice cost controls (added with the commercial-hardening pass)
+
+**`NOVA_LIVE_VOICE_ENABLED`** — set to exactly `false` to disable Live
+voice specifically, independent of every other Gemini feature. The
+socket refuses with a friendly "continue by text" message instead of a
+raw error. Anything else (unset, empty, a typo) leaves it on. This is
+the fastest lever for a Live-voice-specific cost incident — unsetting
+`GEMINI_API_KEY` would also kill Nova chat, diagnose, and every other
+Gemini path at once, which this switch avoids.
+
+**`NOVA_LIVE_MAX_SESSION_MS`** — the hard session ceiling. Defaults to
+15 minutes (`900000`). A session is force-ended once this elapses,
+regardless of activity.
+
+**`NOVA_LIVE_IDLE_TIMEOUT_MS`** — defaults to 90 seconds
+(`90000`). Distinct from the session ceiling: resets on every real
+activity (audio in from the client, or any message relayed from
+Gemini) and ends the session if nothing happens for this long, so a
+connection left open with a muted mic or a backgrounded app doesn't run
+the full session length regardless of actual use.
+
+See `docs/AI_COST_CONTROL.md` for the full Live voice cost-control
+picture, including the `nova_voice` capability quota (1 session/day
+Free, 20/day Premium) that's checked before either of these timers
+starts.
+
+## SMS cost controls (added with the commercial-hardening pass)
+
+**`SMS_ENABLED`** — set to exactly `false` to disable all Twilio SMS,
+including guardian alerts. This is the global provider-outage/incident
+switch, not a routine cost lever — see `docs/NOTIFICATION_ARCHITECTURE.md`
+for why guardian alerts are otherwise exempt from every other SMS cost
+guardrail.
+
+**`SMS_MANUAL_SEND_ENABLED`** — set to exactly `false` to disable only
+`POST /api/twilio/send` (the authenticated, low-traffic manual-send
+route), leaving guardian alerts and ally nudges unaffected.
+
+`NUDGE_SCHEDULER_ENABLED` already existed (from the prior product-safety
+hardening pass) and governs the ally-nudge scheduler specifically,
+defaulting **off** — the one switch in this codebase that defaults off
+on purpose.
+
 ## Recommended order, if/when any of this gets turned on for real
 
 1. Confirm Vertex's ADC actually works in the real deployment
