@@ -25,6 +25,7 @@ import { z } from 'zod';
 import { memoryToolIsAllowed, searchMemories, isValidRecoveryDuration, validateMemoryWrite, validateFeatureSuggestion, SUGGESTABLE_FEATURES, toolsAreEnabled, NovaMemoryDoc } from './nova-tools';
 import { toClaudeTools, GeminiStyleToolDeclaration } from './nova-claude-tools';
 import { computeClimateStrain, computeClimateStrainByDimension, computeMoodStrain, computeOverallStrain, computeTrend } from './org-risk-trend';
+import { buildPrimaryIndicators, sortByAttention } from './org-leading-indicators';
 import { isRealGuardian, isValidGuardianPhone, buildGuardianCallRequestMessage, extractFirstName } from './guardian-alert';
 import { collectionsForExport, collectionsForErasure } from './user-data-collections';
 import { isValidGad7Answers, scoreGad7, interpretGad7 } from './gad7';
@@ -35,6 +36,8 @@ import { isDeviceChannel, isValidAppVersion, validateDeviceRegistration, evaluat
 import { getEffectiveBillingState, validateBillingUpdate, checkSeatLimit, billingProvider } from './billing-adapter';
 import { validateSsoConfigInput, encryptSecret, canEnableSsoEnforcement, redactSsoConfig, StoredSsoConfig } from './sso-config';
 import { searchOrgResources, validateResourceCreate, SearchableResource } from './org-search';
+import { managedTeamsFor, isTeamManager, isHrViewer, validateTeamAssignment, validateHrViewerList, computeQualifyingTeamGroups } from './org-team-management';
+import { validateAckInput, describeFollowUp } from './team-escalation';
 
 dotenv.config();
 
@@ -4359,6 +4362,8 @@ app.get("/api/org/me", verifyAppCheck, authenticateFirebaseUser, async (req, res
       joinCode: isOrgAdmin ? org.joinCode : undefined,
       privacyThreshold: isOrgAdmin ? (org.privacyThreshold || 5) : undefined,
       shareAnonymizedDataWithOrg: userDoc.data()?.shareAnonymizedDataWithOrg === true,
+      managedTeams: managedTeamsFor(org.teamManagers, user.uid),
+      isHrViewer: isHrViewer(org.hrViewerUids, user.uid),
     });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
@@ -4803,6 +4808,124 @@ const computeStrainSnapshotForCohort = async (db: any, uids: string[]): Promise<
   };
 };
 
+// The cohort-level "did people actually use the app" signal - extracted
+// from the original /api/org/:orgId/dashboard route so the same real
+// engagement math can be reused per-team (team-dashboard, hr-dashboard)
+// without duplicating it. Deliberately never returns anything about a
+// specific uid - only how many of `uids` had any activity, so a caller
+// can only ever learn a percentage, never who.
+const computeEngagementRate = async (db: any, uids: string[], windowDays: number): Promise<number> => {
+  if (uids.length === 0) return 0;
+  const sinceIso = new Date(Date.now() - windowDays * 24 * 60 * 60 * 1000).toISOString();
+  let activeCount = 0;
+  await Promise.all(uids.map(async (uid) => {
+    const moodSnap = await db.collection("users").doc(uid).collection("mood_pulses")
+      .where("createdAt", ">=", sinceIso).limit(1).get();
+    if (!moodSnap.empty) { activeCount++; return; }
+    const bodySnap = await db.collection("users").doc(uid).collection("body_checkins")
+      .where("createdAt", ">=", sinceIso).limit(1).get();
+    if (!bodySnap.empty) activeCount++;
+  }));
+  return Math.round((activeCount / uids.length) * 100);
+};
+
+// Reads organisations/{orgId}/risk_trend_history, and - only when
+// `writeSnapshot` is true - writes today's snapshot if none has been
+// recorded yet today (idempotent - once per UTC day regardless of how
+// many routes/times this is called), then derives every trend (org-wide +
+// per-signal + per-team) against whichever prior snapshot sits closest to
+// ~28 days back. Extracted so risk-trend and hr-dashboard read and write
+// the exact same history and can never drift into disagreeing about what
+// "the trend" is for the same underlying data.
+//
+// `writeSnapshot` MUST be false whenever `orgSnapshot` isn't genuinely the
+// whole org's snapshot - e.g. team-dashboard, which only ever has ONE
+// manager's own team's data. Writing there would corrupt the shared daily
+// history: it would mislabel that one team's strain as the org-wide
+// number, and silently drop every other team's concern for that day
+// (including ones that separately qualify) - whichever route happens to
+// run first each day currently "wins" the write, so this MUST stay
+// read-only for any caller that doesn't have the complete picture.
+interface TrendHistoryResult {
+  orgTrend: ReturnType<typeof computeTrend>;
+  moodTrend: ReturnType<typeof computeTrend>;
+  climateTrend: ReturnType<typeof computeTrend>;
+  comparedAgainst: string | null;
+  history: { recordedAt: string; overallConcern: number | null }[];
+  teamTrends: Record<string, ReturnType<typeof computeTrend>>;
+}
+
+const computeTrendHistory = async (
+  db: any,
+  orgId: string,
+  orgSnapshot: OrgStrainSnapshot,
+  teamSnapshots: Record<string, OrgStrainSnapshot>,
+  writeSnapshot: boolean = true
+): Promise<TrendHistoryResult> => {
+  // Read history first so today's write (if any) doesn't contaminate the
+  // "previous" comparison computed just below.
+  const historySnap = await db.collection("organisations").doc(orgId).collection("risk_trend_history")
+    .orderBy("recordedAt", "desc").limit(90).get();
+  const history = historySnap.docs.map((d: any) => d.data() as {
+    recordedAt: string;
+    overallConcern: number | null;
+    moodConcern: number | null;
+    climateConcern: number | null;
+    teamConcerns?: Record<string, number | null>;
+  });
+
+  const todayUtc = new Date().toISOString().slice(0, 10);
+  const alreadySnapshottedToday = history.some((h: any) => h.recordedAt.slice(0, 10) === todayUtc);
+  if (writeSnapshot && !alreadySnapshottedToday && orgSnapshot.overallConcern !== null) {
+    const teamConcerns: Record<string, number | null> = {};
+    Object.entries(teamSnapshots).forEach(([team, snap]) => { teamConcerns[team] = snap.overallConcern; });
+    await db.collection("organisations").doc(orgId).collection("risk_trend_history").add({
+      recordedAt: new Date().toISOString(),
+      overallConcern: orgSnapshot.overallConcern,
+      moodConcern: orgSnapshot.moodConcern,
+      climateConcern: orgSnapshot.climateConcern,
+      teamConcerns,
+    });
+  }
+
+  // Compare against whichever snapshot sits closest to ~28 days back - a
+  // genuine month-over-month read, not noisy day-to-day movement in a
+  // signal built on overlapping 7-day windows.
+  const twentyEightDaysAgo = Date.now() - 28 * 24 * 60 * 60 * 1000;
+  const findClosestPrior = (getValue: (h: any) => number | null | undefined) => history
+    .filter((h: any) => new Date(h.recordedAt).getTime() <= twentyEightDaysAgo && getValue(h) != null)
+    .sort((a: any, b: any) => Math.abs(new Date(a.recordedAt).getTime() - twentyEightDaysAgo) - Math.abs(new Date(b.recordedAt).getTime() - twentyEightDaysAgo))[0];
+
+  const priorOrgSnapshot = findClosestPrior((h: any) => h.overallConcern);
+  const orgTrend = computeTrend(orgSnapshot.overallConcern, priorOrgSnapshot?.overallConcern ?? null);
+
+  // Per-signal direction of travel, for the leading-indicators view. Mood
+  // and climate move at different speeds (mood is the faster, more
+  // volatile early signal), so showing each one's trend separately is the
+  // point - "mood is worsening while climate holds steady" is exactly the
+  // kind of early, structural read this view exists to surface. Aggregate
+  // only; never per person.
+  const priorMood = findClosestPrior((h: any) => h.moodConcern);
+  const moodTrend = computeTrend(orgSnapshot.moodConcern, priorMood?.moodConcern ?? null);
+  const priorClimate = findClosestPrior((h: any) => h.climateConcern);
+  const climateTrend = computeTrend(orgSnapshot.climateConcern, priorClimate?.climateConcern ?? null);
+
+  const teamTrends: Record<string, ReturnType<typeof computeTrend>> = {};
+  Object.entries(teamSnapshots).forEach(([team, snap]) => {
+    const priorTeamSnapshot = findClosestPrior((h: any) => h.teamConcerns?.[team]);
+    teamTrends[team] = computeTrend(snap.overallConcern, priorTeamSnapshot?.teamConcerns?.[team] ?? null);
+  });
+
+  return {
+    orgTrend,
+    moodTrend,
+    climateTrend,
+    comparedAgainst: priorOrgSnapshot?.recordedAt || null,
+    history: history.slice().reverse().map((h: any) => ({ recordedAt: h.recordedAt, overallConcern: h.overallConcern })),
+    teamTrends,
+  };
+};
+
 app.get("/api/org/:orgId/risk-trend", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
   try {
     const { orgId } = req.params;
@@ -4827,73 +4950,21 @@ app.get("/api/org/:orgId/risk-trend", verifyAppCheck, authenticateFirebaseUser, 
     // in teamBreakdown at all - not shown as "locked", simply absent,
     // since listing a locked team by name would itself say more about a
     // small team's participation than this feature should ever reveal.
-    const teamGroups: Record<string, string[]> = {};
-    consentingUids.forEach((uid) => {
-      const team = memberTeams[uid];
-      if (team) {
-        if (!teamGroups[team]) teamGroups[team] = [];
-        teamGroups[team].push(uid);
-      }
-    });
-    const qualifyingTeams = Object.entries(teamGroups).filter(([, uids]) => uids.length >= threshold);
+    // (computeQualifyingTeamGroups is the same shared helper the manager
+    // and HR team-welfare dashboards use, so this rule can never drift
+    // between routes.)
+    const { qualifying: teamGroups } = computeQualifyingTeamGroups(consentingUids, memberTeams, threshold);
     const teamSnapshots: Record<string, OrgStrainSnapshot> = {};
-    await Promise.all(qualifyingTeams.map(async ([team, uids]) => {
+    await Promise.all(Object.entries(teamGroups).map(async ([team, uids]) => {
       teamSnapshots[team] = await computeStrainSnapshotForCohort(db, uids);
     }));
 
-    // Snapshot handling: read history first so today's write (if any)
-    // doesn't contaminate the "previous" comparison, and only ever write
-    // once per UTC day regardless of how many times this is loaded.
-    const historySnap = await db.collection("organisations").doc(orgId).collection("risk_trend_history")
-      .orderBy("recordedAt", "desc").limit(90).get();
-    const history = historySnap.docs.map((d: any) => d.data() as {
-      recordedAt: string;
-      overallConcern: number | null;
-      moodConcern: number | null;
-      climateConcern: number | null;
-      teamConcerns?: Record<string, number | null>;
-    });
-
-    const todayUtc = new Date().toISOString().slice(0, 10);
-    const alreadySnapshottedToday = history.some((h: any) => h.recordedAt.slice(0, 10) === todayUtc);
-    if (!alreadySnapshottedToday && orgSnapshot.overallConcern !== null) {
-      const teamConcerns: Record<string, number | null> = {};
-      Object.entries(teamSnapshots).forEach(([team, snap]) => { teamConcerns[team] = snap.overallConcern; });
-      await db.collection("organisations").doc(orgId).collection("risk_trend_history").add({
-        recordedAt: new Date().toISOString(),
-        overallConcern: orgSnapshot.overallConcern,
-        moodConcern: orgSnapshot.moodConcern,
-        climateConcern: orgSnapshot.climateConcern,
-        teamConcerns,
-      });
-    }
-
-    // Compare against whichever snapshot sits closest to ~28 days back -
-    // a genuine month-over-month read, not noisy day-to-day movement in
-    // a signal built on overlapping 7-day windows.
-    const twentyEightDaysAgo = Date.now() - 28 * 24 * 60 * 60 * 1000;
-    const findClosestPrior = (getValue: (h: any) => number | null | undefined) => history
-      .filter((h: any) => new Date(h.recordedAt).getTime() <= twentyEightDaysAgo && getValue(h) != null)
-      .sort((a: any, b: any) => Math.abs(new Date(a.recordedAt).getTime() - twentyEightDaysAgo) - Math.abs(new Date(b.recordedAt).getTime() - twentyEightDaysAgo))[0];
-
-    const priorOrgSnapshot = findClosestPrior((h: any) => h.overallConcern);
-    const orgTrend = computeTrend(orgSnapshot.overallConcern, priorOrgSnapshot?.overallConcern ?? null);
-
-    // Per-signal direction of travel, for the leading-indicators view. Mood
-    // and climate move at different speeds (mood is the faster, more
-    // volatile early signal), so showing each one's trend separately is the
-    // point - "mood is worsening while climate holds steady" is exactly the
-    // kind of early, structural read this view exists to surface. Aggregate
-    // only; never per person.
-    const priorMood = findClosestPrior((h: any) => h.moodConcern);
-    const moodTrend = computeTrend(orgSnapshot.moodConcern, priorMood?.moodConcern ?? null);
-    const priorClimate = findClosestPrior((h: any) => h.climateConcern);
-    const climateTrend = computeTrend(orgSnapshot.climateConcern, priorClimate?.climateConcern ?? null);
+    const { orgTrend, moodTrend, climateTrend, comparedAgainst, history, teamTrends } =
+      await computeTrendHistory(db, orgId, orgSnapshot, teamSnapshots);
 
     const teamBreakdown: Record<string, OrgStrainSnapshot & { trend: ReturnType<typeof computeTrend> }> = {};
     Object.entries(teamSnapshots).forEach(([team, snap]) => {
-      const priorTeamSnapshot = findClosestPrior((h: any) => h.teamConcerns?.[team]);
-      teamBreakdown[team] = { ...snap, trend: computeTrend(snap.overallConcern, priorTeamSnapshot?.teamConcerns?.[team] ?? null) };
+      teamBreakdown[team] = { ...snap, trend: teamTrends[team] };
     });
 
     res.json({
@@ -4907,8 +4978,8 @@ app.get("/api/org/:orgId/risk-trend", verifyAppCheck, authenticateFirebaseUser, 
       trend: orgTrend,
       moodTrend,
       climateTrend,
-      comparedAgainst: priorOrgSnapshot?.recordedAt || null,
-      history: history.slice().reverse().map((h: any) => ({ recordedAt: h.recordedAt, overallConcern: h.overallConcern })),
+      comparedAgainst,
+      history,
       teamBreakdown,
     });
   } catch (err: any) {
@@ -5017,6 +5088,7 @@ app.get("/api/org/:orgId/members", verifyAppCheck, authenticateFirebaseUser, asy
     const memberTeams: Record<string, string> = org.memberTeams || {};
 
     const members = await Promise.all(memberUids.map(async (uid) => {
+      const managesTeams = managedTeamsFor(org.teamManagers, uid);
       try {
         const authUser = await getAuth().getUser(uid);
         return {
@@ -5025,13 +5097,14 @@ app.get("/api/org/:orgId/members", verifyAppCheck, authenticateFirebaseUser, asy
           displayName: authUser.displayName || null,
           isAdmin: adminUids.includes(uid),
           team: memberTeams[uid] || null,
+          managesTeams,
         };
       } catch (e) {
-        return { uid, email: null, displayName: null, isAdmin: adminUids.includes(uid), team: memberTeams[uid] || null };
+        return { uid, email: null, displayName: null, isAdmin: adminUids.includes(uid), team: memberTeams[uid] || null, managesTeams };
       }
     }));
 
-    res.json({ members });
+    res.json({ members, existingTeams: Array.from(new Set(Object.values(memberTeams))), hrViewerUids: org.hrViewerUids || [] });
   } catch (err: any) {
     res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
   }
@@ -5102,6 +5175,260 @@ app.post("/api/org/:orgId/members/:memberUid/team", verifyAppCheck, authenticate
     res.json({ success: true });
   } catch (err: any) {
     res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
+  }
+});
+
+// ============ Team-welfare dashboards: manager & HR designation ============
+// See org-team-management.ts and docs/TEAM_WELFARE_DASHBOARDS.md. Being a
+// team manager or an HR viewer is orthogonal to org-rbac.ts's org-wide
+// role table - a plain 'member' can manage a team, and neither
+// designation grants any of the org-wide ORG_PERMISSIONS. Both are simple
+// admin-curated allow-lists, assignable only by an org owner/admin, same
+// gate as the memberTeams assignment route just above.
+
+// Full-replace (send the whole intended team list), not an incremental
+// patch - same "no partial updates" reasoning as org-data-policy.ts.
+app.post("/api/org/:orgId/members/:memberUid/manage-teams", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const { orgId, memberUid } = req.params;
+    const { org } = await requireOrgAdmin(req, orgId);
+    if (!(org.memberUids || []).includes(memberUid)) {
+      return res.status(400).json({ error: "That person isn't a member of this organisation." });
+    }
+    const existingTeams = Array.from(new Set(Object.values(org.memberTeams || {}) as string[]));
+    const validation = validateTeamAssignment(req.body, existingTeams);
+    if (!validation.valid) {
+      return res.status(400).json({ error: validation.error });
+    }
+    const { teams } = req.body;
+    const db = getDb();
+    const before = { teams: managedTeamsFor(org.teamManagers, memberUid) };
+    const fieldPath = `teamManagers.${memberUid}`;
+    await db.collection("organisations").doc(orgId).update({
+      [fieldPath]: teams.length > 0 ? teams : FieldValue.delete(),
+    });
+    await logOrgAuditAction(req, orgId, "assign_team_manager", "team_manager", memberUid, before, { teams });
+    res.json({ success: true, teams });
+  } catch (err: any) {
+    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("not found") ? 404 : 500).json({ error: err.message });
+  }
+});
+
+app.get("/api/org/:orgId/hr-viewers", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const { orgId } = req.params;
+    const { org } = await requireOrgAdmin(req, orgId);
+    res.json({ uids: org.hrViewerUids || [] });
+  } catch (err: any) {
+    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("not found") ? 404 : 500).json({ error: err.message });
+  }
+});
+
+app.post("/api/org/:orgId/hr-viewers", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const { orgId } = req.params;
+    const { org } = await requireOrgAdmin(req, orgId);
+    const validation = validateHrViewerList(req.body);
+    if (!validation.valid) {
+      return res.status(400).json({ error: validation.error });
+    }
+    const { uids } = req.body;
+    // Every uid must be a real member of this org - an HR viewer allow-list
+    // is not a place to grant access to an outsider.
+    const memberUids: string[] = org.memberUids || [];
+    const unknownUid = uids.find((uid: string) => !memberUids.includes(uid));
+    if (unknownUid) {
+      return res.status(400).json({ error: `"${unknownUid}" isn't a member of this organisation.` });
+    }
+    const db = getDb();
+    const before = { uids: org.hrViewerUids || [] };
+    await db.collection("organisations").doc(orgId).update({ hrViewerUids: uids });
+    await logOrgAuditAction(req, orgId, "update_hr_viewers", "hr_viewers", orgId, before, { uids });
+    res.json({ success: true, uids });
+  } catch (err: any) {
+    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("not found") ? 404 : 500).json({ error: err.message });
+  }
+});
+
+// The manager's own view: resolves the caller's managed team(s) from
+// org.teamManagers[uid] - no :team param, since a manager only ever sees
+// their own. An org owner/admin is also let through even if they manage no
+// team themselves (for support purposes), rather than being hard-blocked;
+// same per-team k-anonymity rule as risk-trend applies to every team
+// returned, so a manager of a too-small team sees an explicit "not enough
+// people yet" (unlike the org-wide multi-team view, a manager already
+// knows who's on their own team, so this is honest UX, not a leak).
+app.get("/api/org/:orgId/team-dashboard", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const { orgId } = req.params;
+    const { user, db, org, role } = await loadOrgAndCallerRole(req, orgId);
+    const isAdmin = role === 'owner' || role === 'admin';
+    const managedTeams = managedTeamsFor(org.teamManagers, user.uid);
+    if (managedTeams.length === 0 && !isAdmin) {
+      return res.status(403).json({ error: "Forbidden: you don't manage any team in this organisation." });
+    }
+
+    const threshold = org.privacyThreshold || 5;
+    const memberUids: string[] = org.memberUids || [];
+    const memberTeams: Record<string, string> = org.memberTeams || {};
+    const consentingUids = await getConsentingMemberUids(db, memberUids);
+
+    const teams = await Promise.all(managedTeams.map(async (team) => {
+      const teamConsentingUids = consentingUids.filter((uid) => memberTeams[uid] === team);
+      if (teamConsentingUids.length < threshold) {
+        return { team, locked: true, cohortSize: teamConsentingUids.length, threshold };
+      }
+      const snapshot = await computeStrainSnapshotForCohort(db, teamConsentingUids);
+      const engagementRate = await computeEngagementRate(db, teamConsentingUids, 7);
+      // Read-only: this route only ever has ONE team's data, never the
+      // whole org's, so it must never write the shared daily snapshot -
+      // see computeTrendHistory's own docstring for why.
+      const { teamTrends } = await computeTrendHistory(db, orgId, snapshot, { [team]: snapshot }, false);
+      const indicators = sortByAttention(buildPrimaryIndicators({
+        overall: snapshot.overallConcern,
+        mood: snapshot.moodConcern,
+        climate: snapshot.climateConcern,
+        overallTrend: teamTrends[team],
+      }));
+      // The Nova nudge: only surfaced when the top-attention indicator
+      // actually warrants one - never invented when things look fine.
+      const topIndicator = indicators[0];
+      const nudge = topIndicator && (topIndicator.severity === 'elevated' || topIndicator.direction === 'worsening')
+        ? { title: 'Consider a team check-in', message: topIndicator.note }
+        : null;
+      return {
+        team,
+        locked: false,
+        cohortSize: teamConsentingUids.length,
+        threshold,
+        overallConcern: snapshot.overallConcern,
+        moodConcern: snapshot.moodConcern,
+        climateConcern: snapshot.climateConcern,
+        engagementRate,
+        indicators,
+        nudge,
+      };
+    }));
+
+    res.json({ teams });
+  } catch (err: any) {
+    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("not found") ? 404 : 500).json({ error: err.message });
+  }
+});
+
+// A manager logging that they addressed an elevated signal - a factual
+// follow-through record for HR to read (see team-escalation.ts), never a
+// verified fact (there's no way to confirm a real conversation happened)
+// and never a score computed on the manager. The caller must actually
+// manage :team (or be an org admin) - this isn't a general-purpose note
+// anyone can leave on any team.
+app.post("/api/org/:orgId/team-dashboard/:team/acknowledge", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const { orgId, team } = req.params;
+    const { user, db, org, role } = await loadOrgAndCallerRole(req, orgId);
+    const isAdmin = role === 'owner' || role === 'admin';
+    if (!isTeamManager(org.teamManagers, user.uid, team) && !isAdmin) {
+      return res.status(403).json({ error: "Forbidden: you don't manage this team." });
+    }
+    const validation = validateAckInput(req.body);
+    if (!validation.valid) {
+      return res.status(400).json({ error: validation.error });
+    }
+    const note: string | null = req.body?.note || null;
+
+    // Best-effort context for HR - the team's current strain at the moment
+    // of acknowledgment, if enough consenting members exist to compute one.
+    // Never blocks the ack itself if this comes back null (e.g. the team
+    // is below the k-anonymity threshold right now).
+    const memberTeams: Record<string, string> = org.memberTeams || {};
+    const memberUids: string[] = org.memberUids || [];
+    const consentingUids = await getConsentingMemberUids(db, memberUids);
+    const teamConsentingUids = consentingUids.filter((uid) => memberTeams[uid] === team);
+    const overallConcernAtAck = teamConsentingUids.length >= (org.privacyThreshold || 5)
+      ? (await computeStrainSnapshotForCohort(db, teamConsentingUids)).overallConcern
+      : null;
+
+    const record = {
+      team,
+      acknowledgedBy: user.uid,
+      acknowledgedByEmail: user.email || null,
+      note,
+      overallConcernAtAck,
+      createdAt: new Date().toISOString(),
+    };
+    await db.collection("organisations").doc(orgId).collection("team_escalation_acks").add(record);
+    // Never log the note text itself - only whether one was provided -
+    // matching the existing "structured diffs, never raw content" rule.
+    await logOrgAuditAction(req, orgId, "acknowledge_team_signal", "team_escalation_ack", team, null, { notePresent: !!note });
+    res.json({ success: true, ack: record });
+  } catch (err: any) {
+    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("not found") ? 404 : 500).json({ error: err.message });
+  }
+});
+
+// HR's view: every qualifying team at once (unlike the manager's own view,
+// which only ever sees the team(s) they manage), same aggregate data a
+// manager sees, plus each team's real follow-up status - never a computed
+// score on the manager, just whether a recent acknowledgment exists (see
+// team-escalation.ts). Gated to the hrViewerUids allow-list or org admin -
+// deliberately not a new OrgRole, matching the same reasoning teamManagers
+// itself uses (see org-team-management.ts's header comment).
+app.get("/api/org/:orgId/hr-dashboard", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const { orgId } = req.params;
+    const { user, db, org, role } = await loadOrgAndCallerRole(req, orgId);
+    const isAdmin = role === 'owner' || role === 'admin';
+    if (!isHrViewer(org.hrViewerUids, user.uid) && !isAdmin) {
+      return res.status(403).json({ error: "Forbidden: you don't have HR viewer access to this organisation." });
+    }
+
+    const threshold = org.privacyThreshold || 5;
+    const memberUids: string[] = org.memberUids || [];
+    const memberTeams: Record<string, string> = org.memberTeams || {};
+    const consentingUids = await getConsentingMemberUids(db, memberUids);
+
+    if (consentingUids.length < threshold) {
+      return res.json({ locked: true, cohortSize: consentingUids.length, threshold, teams: [] });
+    }
+
+    const orgSnapshot = await computeStrainSnapshotForCohort(db, consentingUids);
+    const { qualifying: teamGroups } = computeQualifyingTeamGroups(consentingUids, memberTeams, threshold);
+    const teamSnapshots: Record<string, OrgStrainSnapshot> = {};
+    const engagementRates: Record<string, number> = {};
+    await Promise.all(Object.entries(teamGroups).map(async ([team, uids]) => {
+      teamSnapshots[team] = await computeStrainSnapshotForCohort(db, uids);
+      engagementRates[team] = await computeEngagementRate(db, uids, 7);
+    }));
+
+    const { teamTrends } = await computeTrendHistory(db, orgId, orgSnapshot, teamSnapshots);
+
+    const now = new Date();
+    const teams = await Promise.all(Object.entries(teamSnapshots).map(async ([team, snap]) => {
+      const acksSnap = await db.collection("organisations").doc(orgId).collection("team_escalation_acks")
+        .where("team", "==", team).orderBy("createdAt", "desc").limit(5).get();
+      const acks = acksSnap.docs.map((d: any) => d.data());
+      const followUp = describeFollowUp(acks, now);
+      const indicators = sortByAttention(buildPrimaryIndicators({
+        overall: snap.overallConcern,
+        mood: snap.moodConcern,
+        climate: snap.climateConcern,
+        overallTrend: teamTrends[team],
+      }));
+      return {
+        team,
+        cohortSize: teamGroups[team].length,
+        overallConcern: snap.overallConcern,
+        moodConcern: snap.moodConcern,
+        climateConcern: snap.climateConcern,
+        engagementRate: engagementRates[team],
+        indicators,
+        followUp,
+      };
+    }));
+
+    res.json({ locked: false, cohortSize: consentingUids.length, threshold, teams });
+  } catch (err: any) {
+    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("not found") ? 404 : 500).json({ error: err.message });
   }
 });
 

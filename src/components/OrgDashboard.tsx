@@ -30,7 +30,9 @@ import {
   RotateCw,
   ArrowUp,
   ArrowDown,
-  Minus
+  Minus,
+  ClipboardList,
+  Eye
 } from 'lucide-react';
 import { buildPrimaryIndicators, buildDimensionIndicators, sortByAttention, LeadingIndicator } from '../../org-leading-indicators';
 import { cn } from '../lib/utils';
@@ -107,10 +109,15 @@ export const OrgDashboard = () => {
 
   const [suggestions, setSuggestions] = useState<{ id: string; message: string }[]>([]);
 
-  const [members, setMembers] = useState<{ uid: string; email: string | null; displayName: string | null; isAdmin: boolean; team: string | null }[]>([]);
+  const [members, setMembers] = useState<{ uid: string; email: string | null; displayName: string | null; isAdmin: boolean; team: string | null; managesTeams: string[] }[]>([]);
   const [editingTeamUid, setEditingTeamUid] = useState<string | null>(null);
   const [teamInputValue, setTeamInputValue] = useState('');
   const [savingTeamUid, setSavingTeamUid] = useState<string | null>(null);
+  const [hrViewerUids, setHrViewerUids] = useState<string[]>([]);
+  const [editingManagesUid, setEditingManagesUid] = useState<string | null>(null);
+  const [managesInputValue, setManagesInputValue] = useState('');
+  const [savingManagesUid, setSavingManagesUid] = useState<string | null>(null);
+  const [savingHrViewerUid, setSavingHrViewerUid] = useState<string | null>(null);
   const [membersLoading, setMembersLoading] = useState(false);
   const [membersError, setMembersError] = useState('');
   const [memberActionUid, setMemberActionUid] = useState<string | null>(null);
@@ -202,6 +209,7 @@ export const OrgDashboard = () => {
         setMembersError(data.error || 'Could not load your team roster.');
       } else {
         setMembers(data.members || []);
+        setHrViewerUids(data.hrViewerUids || []);
       }
     } catch (e) {
       setMembersError('Could not load your team roster.');
@@ -284,6 +292,54 @@ export const OrgDashboard = () => {
       setMembersError("Could not save that person's team.");
     }
     setSavingTeamUid(null);
+  };
+
+  const handleSetManagesTeams = async (memberUid: string, teams: string[]) => {
+    if (!orgStatus?.organisationId) return;
+    setSavingManagesUid(memberUid);
+    setMembersError('');
+    try {
+      const res = await secureApiFetch(`/api/org/${orgStatus.organisationId}/members/${memberUid}/manage-teams`, {
+        method: 'POST',
+        data: { teams },
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setMembersError(data.error || "Could not save which teams this person manages.");
+      } else {
+        setMembers(prev => prev.map(m => m.uid === memberUid ? { ...m, managesTeams: teams } : m));
+        setEditingManagesUid(null);
+      }
+    } catch (e) {
+      setMembersError("Could not save which teams this person manages.");
+    }
+    setSavingManagesUid(null);
+  };
+
+  // hrViewerUids is a full-replace list (see docs/TEAM_WELFARE_DASHBOARDS.md) -
+  // toggling one person means sending the whole intended list, not a patch.
+  const handleToggleHrViewer = async (memberUid: string) => {
+    if (!orgStatus?.organisationId) return;
+    const nextUids = hrViewerUids.includes(memberUid)
+      ? hrViewerUids.filter(uid => uid !== memberUid)
+      : [...hrViewerUids, memberUid];
+    setSavingHrViewerUid(memberUid);
+    setMembersError('');
+    try {
+      const res = await secureApiFetch(`/api/org/${orgStatus.organisationId}/hr-viewers`, {
+        method: 'POST',
+        data: { uids: nextUids },
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setMembersError(data.error || "Could not update HR viewer access.");
+      } else {
+        setHrViewerUids(nextUids);
+      }
+    } catch (e) {
+      setMembersError("Could not update HR viewer access.");
+    }
+    setSavingHrViewerUid(null);
   };
 
   const handleSaveSettings = async () => {
@@ -1082,8 +1138,57 @@ export const OrgDashboard = () => {
                               {member.team ? `Team: ${member.team}` : '+ Add team'}
                             </button>
                           )}
+                          {editingManagesUid === member.uid ? (
+                            <div className="flex items-center gap-1.5 mt-1.5">
+                              <input
+                                type="text"
+                                value={managesInputValue}
+                                onChange={(e) => setManagesInputValue(e.target.value)}
+                                onKeyDown={(e) => {
+                                  const parsed = managesInputValue.split(',').map(t => t.trim()).filter(Boolean);
+                                  if (e.key === 'Enter') handleSetManagesTeams(member.uid, parsed);
+                                  if (e.key === 'Escape') setEditingManagesUid(null);
+                                }}
+                                list="org-team-names"
+                                placeholder="e.g. Engineering, Sales"
+                                aria-label={`Teams ${member.displayName || member.email || 'this person'} manages, comma-separated`}
+                                autoFocus
+                                className="text-xs bg-surface border border-border rounded-lg px-2 py-1 w-40 focus:outline-none focus:border-primary/50"
+                              />
+                              <button
+                                onClick={() => handleSetManagesTeams(member.uid, managesInputValue.split(',').map(t => t.trim()).filter(Boolean))}
+                                disabled={savingManagesUid === member.uid}
+                                aria-label="Save managed teams"
+                                className="text-xs font-bold text-[#9a3412] dark:text-primary hover:opacity-70 disabled:opacity-50"
+                              >
+                                {savingManagesUid === member.uid ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Save'}
+                              </button>
+                              <button onClick={() => setEditingManagesUid(null)} aria-label="Cancel editing managed teams" className="text-xs text-text-muted hover:text-text-main">
+                                Cancel
+                              </button>
+                            </div>
+                          ) : (
+                            <button
+                              onClick={() => { setEditingManagesUid(member.uid); setManagesInputValue(member.managesTeams.join(', ')); }}
+                              className="flex items-center gap-1 text-xs text-text-muted hover:text-[#9a3412] dark:hover:text-primary mt-1 transition-colors"
+                              aria-label={member.managesTeams.length > 0 ? `Edit teams ${member.displayName || member.email || 'this person'} manages: ${member.managesTeams.join(', ')}` : `Designate ${member.displayName || member.email || 'this person'} as a team manager`}
+                            >
+                              <ClipboardList className="w-3 h-3" aria-hidden="true" />
+                              {member.managesTeams.length > 0 ? `Manages: ${member.managesTeams.join(', ')}` : '+ Manages a team'}
+                            </button>
+                          )}
                         </div>
                         <div className="flex items-center gap-2 shrink-0">
+                          <button
+                            onClick={() => handleToggleHrViewer(member.uid)}
+                            disabled={savingHrViewerUid === member.uid}
+                            aria-label={hrViewerUids.includes(member.uid) ? `Revoke HR viewer access for ${member.displayName || member.email || 'this person'}` : `Grant HR viewer access to ${member.displayName || member.email || 'this person'}`}
+                            title="HR viewer access to team-welfare escalation data"
+                            className={`text-xs font-bold transition-opacity flex items-center gap-1 disabled:opacity-50 ${hrViewerUids.includes(member.uid) ? 'text-[#9a3412] dark:text-primary hover:opacity-70' : 'text-text-muted hover:text-[#9a3412] dark:hover:text-primary'}`}
+                          >
+                            {savingHrViewerUid === member.uid ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Eye className="w-3.5 h-3.5" aria-hidden="true" />}
+                            {hrViewerUids.includes(member.uid) ? 'HR Viewer' : 'Grant HR'}
+                          </button>
                           {isSelf ? (
                             <span className="text-xs font-bold uppercase tracking-widest text-text-muted bg-surface px-2 py-1 rounded">You</span>
                           ) : member.isAdmin ? (
