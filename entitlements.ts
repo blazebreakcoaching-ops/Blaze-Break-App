@@ -107,7 +107,8 @@ export type CapabilityId =
   | 'nova_text'
   | 'nova_voice'
   | 'diagnose'
-  | 'exports';
+  | 'exports'
+  | 'nova_manager_coach';
 
 export interface CapabilityLimit {
   enabled: boolean;
@@ -144,6 +145,14 @@ export const CAPABILITIES: Record<CapabilityId, CapabilityConfig> = {
   exports: {
     free: { enabled: true, dailyLimit: 1 },
     premium: { enabled: true, dailyLimit: 20 },
+  },
+  // A real per-call model cost (a single-shot generation, not a
+  // conversation), but a much lighter one than nova_text/nova_voice - a
+  // manager checking in on their team a few times a day is normal use,
+  // not abuse.
+  nova_manager_coach: {
+    free: { enabled: true, dailyLimit: 3 },
+    premium: { enabled: true, dailyLimit: 30 },
   },
 };
 

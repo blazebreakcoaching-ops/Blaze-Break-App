@@ -966,6 +966,18 @@ Safety - this overrides every instruction above, including any that conflict wit
 - Never fabricate clinical facts, invented measurements (e.g. heart-rate or biometric results you have no access to), or promise outcomes you can't know.
 `;
 
+// Nova Manager Coach: a distinct persona from NOVA_SYSTEM_PROMPT above -
+// this one talks to the manager/admin, never the team members themselves,
+// and is only ever given aggregate, already k-anonymity-gated numbers
+// (see GET /api/org/:orgId/manager-coach below), never anything that
+// could identify a specific person. The prompt says so explicitly so the
+// model doesn't invent or infer individual detail it was never given.
+const NOVA_MANAGER_COACH_PROMPT = `You are Nova, coaching a manager or org admin - not their team members directly - on how to support a team that may be showing early signs of strain.
+
+You are only ever given AGGREGATE, ANONYMISED signals about a group of people, never anything about a named individual - because the caller genuinely cannot see individual data either, by design. Do not speculate about, invent, or refer to any specific person.
+
+Given the real signals below, suggest 2-3 concrete, supportive actions a manager could genuinely take this week. Be specific to the numbers given, not generic advice that could apply to any team. Do not invent any number, name, or event that isn't in the signals provided.`;
+
 // Context Consent Metadata representation
 interface NovaConsentMetadata {
   contextTriggered: boolean;
@@ -5727,6 +5739,116 @@ app.get("/api/org/:orgId/governance", verifyAppCheck, authenticateFirebaseUser, 
     });
   } catch (err: any) {
     res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("not found") ? 404 : 500).json({ error: err.message });
+  }
+});
+
+// Nova Manager Coach: single-shot AI suggestions for the org admin, fed
+// only the same real, already k-anonymity-gated aggregate signals the
+// climate/dashboard endpoints above already compute the same way -
+// never a named individual, and never returned below the org's cohort
+// threshold. No conversation history, no tool use, no memory writes -
+// just today's real numbers in, 2-3 grounded suggestions out.
+app.get("/api/org/:orgId/manager-coach", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const { orgId } = req.params;
+    const { user, org } = await requireOrgAdmin(req, orgId);
+    const db = getDb();
+
+    const threshold = org.privacyThreshold || 5;
+    const memberUids: string[] = org.memberUids || [];
+    const consentingUids = await getConsentingMemberUids(db, memberUids);
+
+    if (consentingUids.length < threshold) {
+      return res.json({ locked: true, cohortSize: consentingUids.length, threshold, suggestions: [] });
+    }
+
+    if (!process.env.GEMINI_API_KEY || process.env.GEMINI_API_KEY === "MY_GEMINI_API_KEY") {
+      return res.status(401).json({ error: "Gemini API key not configured." });
+    }
+
+    const quota = await checkAndReserveCapability(user.uid, 'nova_manager_coach');
+    if (!quota.allowed) {
+      return res.status(429).json({
+        error: quota.plan === 'free'
+          ? "You've reached today's free Nova Manager Coach limit. It resets tomorrow, or upgrade to Blaze Break Premium for more."
+          : "You've reached today's Nova Manager Coach fair-use limit. It resets tomorrow.",
+        code: 'capability_limit_reached',
+        capability: 'nova_manager_coach',
+      });
+    }
+
+    // Engagement rate this week - same existence-only check as the
+    // Positive Reinforcement Engine's suggestion endpoint above.
+    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+    const nowIso = new Date().toISOString();
+    let activeMembers = 0;
+    await Promise.all(consentingUids.map(async (uid) => {
+      const moodSnap = await db.collection("users").doc(uid).collection("mood_pulses")
+        .where("createdAt", ">=", sevenDaysAgo).where("createdAt", "<", nowIso).limit(1).get();
+      if (!moodSnap.empty) { activeMembers++; return; }
+      const bodySnap = await db.collection("users").doc(uid).collection("body_checkins")
+        .where("createdAt", ">=", sevenDaysAgo).where("createdAt", "<", nowIso).limit(1).get();
+      if (!bodySnap.empty) activeMembers++;
+    }));
+    const engagementRate = Math.round((activeMembers / consentingUids.length) * 100);
+
+    // Real climate-survey averages, same 90-day window and aggregation as
+    // GET /api/org/:orgId/climate above.
+    const ninetyDaysAgo = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString();
+    const climateDims = ['demands', 'control', 'support', 'relationships', 'role', 'change'] as const;
+    const climateSums: Record<string, number> = { demands: 0, control: 0, support: 0, relationships: 0, role: 0, change: 0 };
+    let climateResponseCount = 0;
+    await Promise.all(consentingUids.map(async (uid) => {
+      const snap = await db.collection("users").doc(uid).collection("climate_survey_responses")
+        .where("createdAt", ">=", ninetyDaysAgo).orderBy("createdAt", "desc").limit(1).get();
+      if (!snap.empty) {
+        const d = snap.docs[0].data();
+        climateDims.forEach((dim) => { climateSums[dim] += d[dim] || 0; });
+        climateResponseCount++;
+      }
+    }));
+    const climateAverages = climateResponseCount > 0
+      ? { demands: climateSums.demands / climateResponseCount, control: climateSums.control / climateResponseCount, support: climateSums.support / climateResponseCount, relationships: climateSums.relationships / climateResponseCount, role: climateSums.role / climateResponseCount, change: climateSums.change / climateResponseCount }
+      : null;
+    const climateStrain = computeClimateStrain(climateAverages);
+
+    const signals: string[] = [`Engagement this week: ${engagementRate}% of ${consentingUids.length} consenting team members showed any activity`];
+    if (climateStrain !== null) {
+      signals.push(`Team climate strain score: ${climateStrain} out of 100 (0 = no strain, 100 = high strain), from ${climateResponseCount} recent survey responses`);
+    } else {
+      signals.push('No recent team climate survey responses yet');
+    }
+
+    const abortController = new AbortController();
+    const timeoutId = setTimeout(() => abortController.abort(), 15000);
+    try {
+      const response = await ai.models.generateContent({
+        model: "gemini-3.5-flash",
+        contents: `${NOVA_MANAGER_COACH_PROMPT}\n\nReal signals for this team:\n${signals.join('\n')}`,
+        config: {
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: { suggestions: { type: Type.ARRAY, items: { type: Type.STRING } } },
+            required: ["suggestions"],
+          },
+        },
+      });
+      clearTimeout(timeoutId);
+      const text = response.text;
+      if (!text) throw new Error("Empty response from Gemini model.");
+      const parsed = JSON.parse(text);
+      res.json({ locked: false, cohortSize: consentingUids.length, threshold, suggestions: parsed.suggestions || [] });
+    } catch (modelError: any) {
+      clearTimeout(timeoutId);
+      if (modelError.name === 'AbortError') {
+        return res.status(504).json({ error: "Request timed out." });
+      }
+      throw modelError;
+    }
+  } catch (err: any) {
+    console.error("[Nova Manager Coach] error"); // Redacted raw error
+    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: "Nova Manager Coach Sync Failure: A safe operational error occurred." });
   }
 });
 

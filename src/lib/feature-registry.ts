@@ -377,7 +377,7 @@ export const FEATURE_REGISTRY: Record<string, FeatureDefinition> = {
     name: 'Nova Manager Coach',
     purpose: 'Recommends supportive manager actions',
     section: 'Workplace',
-    status: 'planned',
+    status: 'active',
     riskLevel: 'medium',
     usesAI: true,
     usesSensitiveData: false,

@@ -157,6 +157,32 @@ export const OrgDashboard = () => {
   const [auditLogsLoading, setAuditLogsLoading] = useState(false);
   const [auditLogsError, setAuditLogsError] = useState('');
 
+  // Nova Manager Coach - manual refresh only, never automatic, to keep the
+  // real per-call AI cost bounded to when an admin actually wants it.
+  const [managerCoachSuggestions, setManagerCoachSuggestions] = useState<string[] | null>(null);
+  const [managerCoachLoading, setManagerCoachLoading] = useState(false);
+  const [managerCoachError, setManagerCoachError] = useState('');
+
+  const fetchManagerCoach = async () => {
+    if (!orgStatus?.organisationId) return;
+    setManagerCoachLoading(true);
+    setManagerCoachError('');
+    try {
+      const res = await secureApiFetch(`/api/org/${orgStatus.organisationId}/manager-coach`);
+      const data = await res.json();
+      if (!res.ok) {
+        setManagerCoachError(data.error || "Could not get Nova's suggestions right now.");
+      } else if (data.locked) {
+        setManagerCoachError('Not enough opted-in teammates yet for Nova to see any real signal.');
+      } else {
+        setManagerCoachSuggestions(data.suggestions || []);
+      }
+    } catch (e) {
+      setManagerCoachError("Could not get Nova's suggestions right now.");
+    }
+    setManagerCoachLoading(false);
+  };
+
   const fetchGovernance = async (currentOrgId: string) => {
     setGovernanceLoading(true);
     setGovernanceError('');
@@ -682,6 +708,35 @@ export const OrgDashboard = () => {
                 </div>
               ) : (
                 <p className="text-sm text-text-muted py-8 text-center">No body check-ins logged by your team this week yet.</p>
+              )}
+            </div>
+
+            <div className="card space-y-4">
+              <div className="flex items-center justify-between gap-4 flex-wrap">
+                <div>
+                  <h4 className="font-bold text-text-main flex items-center gap-2"><Sparkles className="w-5 h-5 text-primary" /> Nova's Suggestions For Your Team</h4>
+                  <p className="text-xs text-text-muted max-w-xl leading-relaxed">
+                    Fed only the real, aggregate numbers above - never a named individual. Nova sees exactly what you see, nothing more.
+                  </p>
+                </div>
+                <button
+                  onClick={fetchManagerCoach}
+                  disabled={managerCoachLoading}
+                  className="px-4 py-2 bg-primary text-primary-foreground rounded-xl text-xs font-bold hover:opacity-90 transition-colors disabled:opacity-50 flex items-center gap-2 shrink-0"
+                >
+                  {managerCoachLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
+                  {managerCoachSuggestions ? 'Refresh suggestions' : "Get Nova's suggestions"}
+                </button>
+              </div>
+              {managerCoachError && (
+                <div role="alert" className="p-3 bg-destructive/10 border border-destructive/20 text-destructive dark:text-[#f87171] text-xs rounded-xl">{managerCoachError}</div>
+              )}
+              {managerCoachSuggestions && managerCoachSuggestions.length > 0 && (
+                <div className="space-y-2">
+                  {managerCoachSuggestions.map((s, i) => (
+                    <div key={i} className="p-3 bg-surface dark:bg-card/40 border border-border rounded-xl text-sm text-text-main leading-relaxed">{s}</div>
+                  ))}
+                </div>
               )}
             </div>
 
