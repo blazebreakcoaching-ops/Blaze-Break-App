@@ -34,6 +34,7 @@ import {
   Brain,
   Lock,
   HeartPulse,
+  HelpCircle,
 } from "lucide-react";
 
 import {
@@ -107,6 +108,7 @@ import { updateNovaMemoryBySourceAndType, logJourney } from "./lib/nova-brain.ts
 const TrustCentrePage = lazy(() => import("./components/TrustCentrePage.tsx").then(m => ({ default: m.TrustCentrePage })));
 import { hasSubscriptionEntitlement } from "./lib/entitlement.ts";
 const RecoveryAlly = lazy(() => import("./components/RecoveryAlly.tsx").then(m => ({ default: m.RecoveryAlly })));
+const UserGuide = lazy(() => import("./components/UserGuide.tsx").then(m => ({ default: m.UserGuide })));
 import { SomaticResetOverlay } from "./components/SomaticResetOverlay.tsx";
 const RecoveryPlan = lazy(() => import("./components/RecoveryPlan.tsx").then(m => ({ default: m.RecoveryPlan })));
 const FocusZone = lazy(() => import("./components/FocusZone.tsx").then(m => ({ default: m.FocusZone })));
@@ -132,6 +134,7 @@ type ActiveTab =
   | "reflect"
   | "nova"
   | "ally"
+  | "guide"
   | "privacy"
   | "org"
   | "evolution"
@@ -246,6 +249,28 @@ export const ALL_TABS: {
     icon: HeartPulse,
     label: "Recovery Ally",
     roles: ["individual", "employee", "executive", "recovery_ally"],
+  },
+  {
+    id: "guide",
+    icon: HelpCircle,
+    label: "User Guide",
+    roles: [
+      "individual",
+      "employee",
+      "recovery_ally",
+      "manager",
+      "organisation_admin",
+      "executive",
+      "platform_admin",
+      "security_admin",
+      "platform_owner",
+      "support_admin",
+      "content_admin",
+      "coach_admin",
+      "b2b_admin",
+      "viewer_admin",
+      "user",
+    ],
   },
   {
     id: "org",
@@ -750,6 +775,7 @@ const Header = ({
           {activeTab === "nova" && "AI Recovery Interface"}
           {activeTab === "privacy" && "Privacy & Trust Centre"}
           {activeTab === "ally" && "Guardian Protection Network"}
+          {activeTab === "guide" && "How To Use Blaze Break"}
           {activeTab === "org" && "Collective Stability Pulse"}
           {activeTab === "evolution" && "Burnout Pattern Evolution"}
           {activeTab === "intelligence" && "Recovery Strategy Engine"}
@@ -789,6 +815,8 @@ const Header = ({
           "Your recovery is private by default. Your employer cannot spy on you."}
         {activeTab === "ally" &&
           "Secure integration with your support system."}
+        {activeTab === "guide" &&
+          "A plain-English walkthrough — what everything does, and where to start if it feels like a lot."}
         {activeTab === "org" &&
           "Analysing systemic resilience across the professional ecosystem."}
         {activeTab === "evolution" &&
@@ -2133,6 +2161,12 @@ export default function App() {
                   userName={stats.profile?.fullName}
                 />
                 <AllyNudgeScheduler contacts={stats.supportCircle || []} />
+              </div>
+            )}
+
+            {activeTab === "guide" && (
+              <div className="space-y-32">
+                <UserGuide onNavigate={setActiveTab as any} />
               </div>
             )}
 
