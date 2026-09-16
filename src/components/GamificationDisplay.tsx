@@ -87,8 +87,8 @@ export const GamificationDisplay = ({ stats, fingerprint, shipStage = 'Safety', 
             : stats.streak < 3
               ? "Today's snapshot is based on your recent check-ins. Patterns appear over time, not from one day. Keep checking in."
               : fingerprint 
-                ? `"Based on your ${fingerprint.profile || 'High Achiever'} profile, your energy recovery is currently stabilizing. An early pattern is forming across your ${stats.streak} day streak. Keep checking in to improve accuracy."`
-                : `"Your engagement streak stands at ${stats.streak} days, with ${stats.points} points accumulated. Complete your Burnout Fingerprint check-in to receive personalized baseline recommendations."`}
+                ? `"Based on your ${fingerprint.profile || 'High Achiever'} profile, your energy recovery is currently stabilising. An early pattern is forming across your ${stats.streak} day streak. Keep checking in to improve accuracy."`
+                : `"Your engagement streak stands at ${stats.streak} days, with ${stats.points} points accumulated. Complete your Burnout Fingerprint check-in to receive personalised baseline recommendations."`}
         </p>
       </div>
 
@@ -249,7 +249,7 @@ export const GamificationDisplay = ({ stats, fingerprint, shipStage = 'Safety', 
           {stats.streak < 3 ? (
             <div className="flex flex-col items-center justify-center py-12 text-center flex-1">
               <p className="text-xs text-text-muted font-medium max-w-xs">
-                Complete more check-ins to unlock rhythm visualizations.
+                Complete more check-ins to unlock rhythm visualisations.
               </p>
             </div>
           ) : (

@@ -851,7 +851,7 @@ We are now in real-time voice mode. Be concise and conversational, you don't nee
                       {msg.privacyMetadata && (
                         <div className="mt-3 pt-2 text-[11px] leading-relaxed flex items-start gap-1.5 text-text-muted border-t border-border/10 group-hover:text-primary transition-colors cursor-help" title={msg.privacyMetadata.rationale}>
                           <span className="shrink-0 text-success" aria-label="Privacy Shield">🛡️</span>
-                          <span>Permissioned context used: Uses {msg.privacyMetadata.modulesUsed?.length > 0 ? "compact " + msg.privacyMetadata.modulesUsed.map((m: string) => m.replace(/_|-/g, ' ')).join(', ') + " summary" : "no personalized context"}. No raw notes shared (completely hidden).</span>
+                          <span>Permissioned context used: Uses {msg.privacyMetadata.modulesUsed?.length > 0 ? "compact " + msg.privacyMetadata.modulesUsed.map((m: string) => m.replace(/_|-/g, ' ')).join(', ') + " summary" : "no personalised context"}. No raw notes shared (completely hidden).</span>
                         </div>
                       )}
                     </div>

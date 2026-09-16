@@ -746,7 +746,7 @@ const Header = ({
           {activeTab === "anxiety_reset" && "Anxiety Reset"}
           {activeTab === "wellbeing" && "Anxiety Check-in"}
           {activeTab === "communicate" && "Boundary Architect v2.1"}
-          {activeTab === "reflect" && "Behavioral Repatterning"}
+          {activeTab === "reflect" && "Behavioural Repatterning"}
           {activeTab === "nova" && "AI Recovery Interface"}
           {activeTab === "privacy" && "Privacy & Trust Centre"}
           {activeTab === "ally" && "Guardian Protection Network"}
@@ -782,19 +782,19 @@ const Header = ({
         {activeTab === "communicate" &&
           "Precision scripting to prevent energy siphoning at the source."}
         {activeTab === "reflect" &&
-          "The Chapter-to-Action engine. Turning knowledge into armor."}
+          "The Chapter-to-Action engine. Turning knowledge into armour."}
         {activeTab === "nova" &&
-          "Nova is processing your physiological and behavioral patterns."}
+          "Nova is processing your physiological and behavioural patterns."}
         {activeTab === "privacy" &&
           "Your recovery is private by default. Your employer cannot spy on you."}
         {activeTab === "ally" &&
           "Secure integration with your support system."}
         {activeTab === "org" &&
-          "Analyzing systemic resilience across the professional ecosystem."}
+          "Analysing systemic resilience across the professional ecosystem."}
         {activeTab === "evolution" &&
           "Administrative access: Systemic pattern analysis and burnout progression tracking."}
         {activeTab === "intelligence" &&
-          "Administrative access: Machine learning layer for organizational stress mapping."}
+          "Administrative access: Machine learning layer for organisational stress mapping."}
       </p>
     </div>
     <div className="flex items-center gap-4">
@@ -1522,7 +1522,7 @@ export default function App() {
   };
 
   const titles: Record<string, string> = {
-    plan: "Personalized Recovery Plan",
+    plan: "Personalised Recovery Plan",
     micro: "Micro-Recovery",
     home: "Daily Pulse",
     diagnose: "Burnout Fingerprint",
@@ -1532,7 +1532,7 @@ export default function App() {
     library: "Resource Library",
     nova: "Ask Nova",
     safety: "Safety & Support",
-    org: "Organization Insights",
+    org: "Organisation Insights",
     integrations: "Integrations",
     engine: "Evolution Engine",
     reset: "Reset Studio",
@@ -1580,26 +1580,26 @@ export default function App() {
       if (fingerprint.profile === "Founder on Fire") {
         triggers =
           "Existential threats, idle time, taking client feedback personally.";
-        tone = "Aggressive reality-checks, analytical, firm prioritization.";
+        tone = "Aggressive reality-checks, analytical, firm prioritisation.";
       } else if (fingerprint.profile === "Over-Giver") {
         triggers =
           "Guilt from resting, disappointing others, absorbing structural gaps.";
         tone =
-          'Direct but supportive, challenging the "helpful" fawning behaviors.';
+          'Direct but supportive, challenging the "helpful" fawning behaviours.';
       } else if (fingerprint.profile === "Silent Resenter") {
         triggers =
           "Unnecessary obligations, performative compliance, buffering bad processes.";
-        tone = "Validating resentment as data, encouraging radical candor.";
+        tone = "Validating resentment as data, encouraging radical candour.";
       } else if (fingerprint.profile === "Manager in the Middle") {
         triggers =
-          "Squeeze play between leadership and reports, continuous emotional labor.";
+          "Squeeze play between leadership and reports, continuous emotional labour.";
         tone =
           "Structural, systemic, pushing back on timelines, mandating deep work blocks.";
       } else {
         triggers =
           "Cortisol spikes, structural anxiety, aiming for 120% when 85% is fine.";
         tone =
-          "Direct, focusing on stability over optimization, anti-perfectionism.";
+          "Direct, focusing on stability over optimisation, anti-perfectionism.";
       }
 
       updateNovaMemoryBySourceAndType("Burnout Analysis", "trigger", {

@@ -58,7 +58,7 @@ export const ResentmentTracker = ({ fingerprint, onAwardPoints, onNavigate }: Re
         canEdit: true,
       });
 
-      if (onAwardPoints) onAwardPoints(30, 'Logged & Analyzed Resentment');
+      if (onAwardPoints) onAwardPoints(30, 'Logged & Analysed Resentment');
     } catch (e) {
       setError("Couldn't reach Nova for analysis right now. Try again in a moment.");
     } finally {
@@ -126,7 +126,7 @@ export const ResentmentTracker = ({ fingerprint, onAwardPoints, onNavigate }: Re
                 ) : (
                   <Brain className="w-5 h-5" />
                 )}
-                {isAnalyzing ? "Nova is Analyzing Patterns..." : "Analyze the Resentment"}
+                {isAnalyzing ? "Nova is Analysing Patterns..." : "Analyse the Resentment"}
               </button>
             )}
 

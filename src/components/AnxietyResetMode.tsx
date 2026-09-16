@@ -30,7 +30,7 @@ const TOOLS = [
   { id: 'calm_90s', name: '90-Second Calm Reset', description: 'A fast, ambient countdown to bring your focus back to the present moment.', duration: 90 },
   { id: 'grounding_54321', name: '5-4-3-2-1 Grounding', description: 'Engage your five senses to anchor your mind during a nervous spike.', duration: 120 },
   { id: 'breathing_pacer', name: 'Breathing Pacer', description: 'Somatic pacing to slow down physical arousal and heartbeat.', duration: 60 },
-  { id: 'worry_dump', name: 'Worry Dump & Release', description: 'Write down every chaotic thought, then vaporize it into negative space.', duration: 150 },
+  { id: 'worry_dump', name: 'Worry Dump & Release', description: 'Write down every chaotic thought, then vaporise it into negative space.', duration: 150 },
   { id: 'fear_vs_fact', name: 'Fear vs. Fact Filter', description: 'Deconstruct panic narratives by pairing anxious assumptions with solid reality.', duration: 180 },
   { id: 'one_step', name: 'One Controllable Step', description: 'Filter out future anxieties and commit to exactly one immediate tiny action.', duration: 90 },
   { id: 'nova_script', name: "Nova's Calm Grounding Script", description: "Analytical, direct guidance from Nova to restore executive control.", duration: 120 },
@@ -264,7 +264,7 @@ export const AnxietyResetMode = ({ onAwardPoints, onNavigate }: AnxietyResetMode
 
             <p className="text-sm text-text-muted leading-relaxed">
               For moments when racing thoughts, tight chest, panic, or work dread start taking over your nervous system. 
-              We are not diagnosing or treating medical conditions. This is a secure handrail to stabilize your body 
+              We are not diagnosing or treating medical conditions. This is a secure handrail to stabilise your body
               and de-escalate acute mental fatigue in real time.
             </p>
 
@@ -273,7 +273,7 @@ export const AnxietyResetMode = ({ onAwardPoints, onNavigate }: AnxietyResetMode
               <div className="text-xs text-text-muted leading-normal">
                 <strong className="text-text-main">Safety Boundary:</strong> This tool supports moments of high anxiety, 
                 dread, or somatic panic. It is not a clinical replacement for therapy, GAD diagnosis, or emergency care. 
-                All logs are encrypted, completely confidential, and never shared with B2B organizations.
+                All logs are encrypted, completely confidential, and never shared with B2B organisations.
               </div>
             </div>
 
@@ -383,7 +383,7 @@ export const AnxietyResetMode = ({ onAwardPoints, onNavigate }: AnxietyResetMode
                 onClick={() => setStep('tool_selection')}
                 className="px-6 py-3 bg-destructive hover:opacity-90 text-destructive-foreground font-bold uppercase tracking-widest text-xs rounded-xl transition-all shadow-md"
               >
-                Analyze & Match Reset Tool
+                Analyse & Match Reset Tool
               </button>
             </div>
           </motion.div>
@@ -701,7 +701,7 @@ export const AnxietyResetMode = ({ onAwardPoints, onNavigate }: AnxietyResetMode
                           }}
                           className="w-full px-5 py-3 bg-destructive hover:opacity-90 text-destructive-foreground font-bold uppercase tracking-widest text-xs rounded-xl transition-all shadow-md flex items-center justify-center gap-2 disabled:opacity-40"
                         >
-                          <Trash2 className="w-4 h-4" /> Vaporize Chaos & Move On
+                          <Trash2 className="w-4 h-4" /> Vaporise Chaos & Move On
                         </button>
                       </motion.div>
                     ) : (
@@ -953,19 +953,19 @@ export const AnxietyResetMode = ({ onAwardPoints, onNavigate }: AnxietyResetMode
               <span className="text-6xl font-light text-text-main">{intensityAfter}</span>
               <span className="text-text-muted text-lg">/10</span>
               <div className="mt-2 text-xs uppercase tracking-widest font-bold text-success dark:text-[#4ade80]">
-                {intensityAfter <= 3 ? 'Stabilized' : intensityAfter <= 5 ? 'Manageable Tension' : 'Heightened (Consider repeat cycle)'}
+                {intensityAfter <= 3 ? 'Stabilised' : intensityAfter <= 5 ? 'Manageable Tension' : 'Heightened (Consider repeat cycle)'}
               </div>
             </div>
 
             <div className="px-4">
-              <input 
-                type="range" 
-                min="1" 
-                max="10" 
+              <input
+                type="range"
+                min="1"
+                max="10"
                 value={intensityAfter}
                 onChange={(e) => setIntensityAfter(Number(e.target.value))}
                 aria-label="Distress level now, 1 to 10"
-                aria-valuetext={`${intensityAfter} out of 10, ${intensityAfter <= 3 ? 'Stabilized' : intensityAfter <= 5 ? 'Manageable Tension' : 'Heightened, consider repeat cycle'}`}
+                aria-valuetext={`${intensityAfter} out of 10, ${intensityAfter <= 3 ? 'Stabilised' : intensityAfter <= 5 ? 'Manageable Tension' : 'Heightened, consider repeat cycle'}`}
                 className="w-full accent-success cursor-pointer h-2 bg-border rounded-lg appearance-none"
               />
               <div className="flex justify-between text-[10px] text-text-muted font-bold uppercase mt-2">
@@ -1011,7 +1011,7 @@ export const AnxietyResetMode = ({ onAwardPoints, onNavigate }: AnxietyResetMode
                 <Sparkles className="w-6 h-6" />
               </div>
               <div>
-                <h3 className="font-display text-xl font-semibold text-text-main tracking-tight">De-escalation Stabilized</h3>
+                <h3 className="font-display text-xl font-semibold text-text-main tracking-tight">De-escalation Stabilised</h3>
                 <span className="text-xs uppercase tracking-widest text-success dark:text-[#4ade80] font-bold">Secure baseline restored (+50 points earned)</span>
               </div>
             </div>
@@ -1026,7 +1026,7 @@ export const AnxietyResetMode = ({ onAwardPoints, onNavigate }: AnxietyResetMode
                 <strong className="text-text-main">Your Tiny Action:</strong> {oneAction || 'Slow down physical tasks for the next 20 minutes. Give your inbox a break while your body settles.'}
               </p>
               <p className="text-xs text-text-muted leading-relaxed italic">
-                "We saved this event securely. Over time, we will help you map exactly what triggers these spikes—whether it is Sunday evening meetings or poor sleep debt. Your recovery score is stabilizing."
+                "We saved this event securely. Over time, we will help you map exactly what triggers these spikes—whether it is Sunday evening meetings or poor sleep debt. Your recovery score is stabilising."
               </p>
             </div>
 

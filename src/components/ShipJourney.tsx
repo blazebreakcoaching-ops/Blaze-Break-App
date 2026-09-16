@@ -17,7 +17,7 @@ const STAGES: SHIPStage[] = [
     label: 'Safety', 
     icon: ShieldAlert, 
     color: 'amber', 
-    desc: 'Emergency boundary setting and nervous system stabilization.',
+    desc: 'Emergency boundary setting and nervous system stabilisation.',
     tasks: ['Set emergency "No" auto-responder', 'Identify 3 immediate drainers to delegating', 'Establish 8pm digital blackout']
   },
   { 

@@ -942,7 +942,7 @@ YOUR COACHING STYLE:
 - Be direct. Challenge their "verdict" narratives (case-building, replays, and narratives of powerlessness/identity-shame) and help them focus on the factual "event" (recovery, action, and agency).
 - Create scripts. If the user needs to set a boundary, provide a firm, clean, no-drama script.
 - Support "Floor Versions." Encourage the minimum viable action that still counts as an identity vote.
-- AVOID: Do not make medical claims. Do not diagnose mental illnesses. Do not pretend to be therapy. If a user expresses severe distress or self-harm thoughts, prioritize safety and refer to professional help without providing coaching.
+- AVOID: Do not make medical claims. Do not diagnose mental illnesses. Do not pretend to be therapy. If a user expresses severe distress or self-harm thoughts, prioritise safety and refer to professional help without providing coaching.
 
 When a user shares a problem, help them identify which "leak" is open and use the BLAME method or SHIP framework to address it.
 `;
@@ -3368,7 +3368,7 @@ app.post("/api/signals/recovery-explain", verifyAppCheck, authenticateFirebaseUs
     }
     if (input.rehearsalCount) {
       score += 5;
-      factors.push({ label: "Practiced a boundary rehearsal", delta: 5, source: "self-report" });
+      factors.push({ label: "Practised a boundary rehearsal", delta: 5, source: "self-report" });
     }
     if (input.streak !== undefined && input.streak > 3) {
       score += 5;
@@ -7408,7 +7408,7 @@ app.get("/api/user/recommendation", verifyAppCheck, authenticateFirebaseUser, as
         tool: 'Boundary Rehearsal',
         tab: 'communicate',
         title: "Worth rehearsing a script",
-        message: "It's been a while since you practiced a boundary script. If something's been sitting on your plate, a few minutes of rehearsal makes it easier to actually say.",
+        message: "It's been a while since you practised a boundary script. If something's been sitting on your plate, a few minutes of rehearsal makes it easier to actually say.",
         points: 20,
         sourcesUsed: ['derived_stats.lastBoundaryRehearsal', 'energy_commitments'],
         type: 'recovery_reminder',

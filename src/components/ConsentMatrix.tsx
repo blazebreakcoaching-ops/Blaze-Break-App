@@ -41,7 +41,7 @@ export const ConsentMatrix = ({ profile, onUpdate }: { profile: UserProfileData,
           <Database className="w-5 h-5 text-primary" /> Data & Privacy Controls
         </h3>
         <p className="text-xs text-text-muted max-w-xl leading-relaxed">
-          You are the sole custodian of your recovery telemetry. Visualize and strictly govern which data nodes Nova can process to model your biological performance.
+          You are the sole custodian of your recovery telemetry. Visualise and strictly govern which data nodes Nova can process to model your biological performance.
         </p>
       </div>
 

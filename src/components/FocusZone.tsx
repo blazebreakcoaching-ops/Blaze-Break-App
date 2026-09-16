@@ -701,7 +701,7 @@ export function FocusZone({ onAwardPoints, isFocusActive, setIsFocusActive, curr
                 </div>
 
                 <p className="text-xs text-text-muted leading-relaxed font-semibold max-w-sm">
-                  You successfully preserved {duration} minutes of high cognitive bandwidth. Nova has recorded this as a peak stability achievement and synchronized it with your recovery index.
+                  You successfully preserved {duration} minutes of high cognitive bandwidth. Nova has recorded this as a peak stability achievement and synchronised it with your recovery index.
                 </p>
 
                 {/* Reward breakdown */}

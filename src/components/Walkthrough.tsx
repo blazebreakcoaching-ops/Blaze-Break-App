@@ -115,7 +115,7 @@ export const Walkthrough = ({
       title: "Energy Budget",
       pill: "Pillar 3: Load Allocator",
       description: "Don't take on tasks blindly. Set a weekly energy budget, assign your SHIP recovery stage to each task, and see clearly what you can actually handle right now.",
-      recoveryInference: "Tasks that match your current SHIP stage are flagged as 'Phase Anchors' — the ones worth prioritizing while you recover.",
+      recoveryInference: "Tasks that match your current SHIP stage are flagged as 'Phase Anchors' — the ones worth prioritising while you recover.",
       icon: Battery,
       themeColor: "from-primary/10 to-primary/5 text-[#9a3412] dark:text-primary border-primary/20"
     },
@@ -208,7 +208,7 @@ export const Walkthrough = ({
 
       if (hasApology) {
         score = 45;
-        critiqueText = "Nova: I spotted fawning behavior. You apologized. High achievers use apologies to soften social friction, but it signals vulnerability and invites pushback. Re-read the script: state your capacity as an equation, not a moral failure.";
+        critiqueText = "Nova: I spotted fawning behaviour. You apologised. High achievers use apologies to soften social friction, but it signals vulnerability and invites pushback. Re-read the script: state your capacity as an equation, not a moral failure.";
       } else if (isFirm) {
         score = 88;
         critiqueText = "Nova: Excellent firm boundaries. You clearly outlined parameters of capacity and resource tradeoffs without feeling defensive. This prevents cognitive overload and retains full executive command.";

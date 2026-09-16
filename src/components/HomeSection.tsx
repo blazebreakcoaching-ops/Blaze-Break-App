@@ -692,7 +692,7 @@ export const HomeSection = ({
               : '"Your nervous system is carrying recovery debt. '}
             {stats.streak >= 3 && (
               <span className="text-text-main font-serif italic">
-                Cease the optimization narrative.
+                Cease the optimisation narrative.
               </span>
             )}
             {stats.streak >= 3 && ' Today is about active repair."'}
@@ -1358,7 +1358,7 @@ export const HomeSection = ({
                   animate={{ opacity: 1, scale: 1 }}
                   className="p-4 bg-success/10 border border-success/20 rounded-xl text-center space-y-1"
                 >
-                  <p className="text-xs font-bold text-success">✓ Trigger Captured & Neutralized</p>
+                  <p className="text-xs font-bold text-success">✓ Trigger Captured & Neutralised</p>
                   <p className="text-[10px] text-text-muted font-medium">Logged securely. +25 XP awarded.</p>
                 </motion.div>
               ) : (

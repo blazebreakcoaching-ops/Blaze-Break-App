@@ -681,7 +681,7 @@ export const ReflectSection = ({
                                     <div className="space-y-3">
                                       <input 
                                         type="text" 
-                                        placeholder="Customize specific constraint..."
+                                        placeholder="Customise specific constraint..."
                                         className="w-full bg-card border border-border/50 rounded-xl px-4 py-3 text-sm text-text-main placeholder:text-text-muted focus:outline-none focus:border-primary transition-all font-mono"
                                       />
                                       <button 
@@ -888,7 +888,7 @@ export const ReflectSection = ({
                       </div>
                     ) : triggers.length === 0 ? (
                       <div className="h-full flex items-center justify-center text-text-muted text-xs font-medium">
-                        No logged incidents available to visualize correlation.
+                        No logged incidents available to visualise correlation.
                       </div>
                     ) : (
                       <ResponsiveContainer width="100%" height="100%">

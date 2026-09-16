@@ -333,7 +333,7 @@ export const RecoveryIntelligenceLayer = ({ onAwardPoints, fingerprint }: Recove
         id: 'promo-talk',
         title: 'High-Output Negotiation',
         situation: 'More responsibilities without corresponding title or compensation adjustments.',
-        script: "I'm excited to take on these [Senior Tasks]. To do this effectively, I'd like to formalize this transition. Can we look at the promotion criteria this week so we're aligned on the roadmap for my new role?",
+        script: "I'm excited to take on these [Senior Tasks]. To do this effectively, I'd like to formalise this transition. Can we look at the promotion criteria this week so we're aligned on the roadmap for my new role?",
         advice: "Turn 'extra work' into 'career advancement' immediately. If they aren't ready for the title, they aren't ready for the work."
       };
     }
@@ -343,7 +343,7 @@ export const RecoveryIntelligenceLayer = ({ onAwardPoints, fingerprint }: Recove
         title: 'The Weekend Boundary',
         situation: 'A client or coworker expects off-hours responses.',
         script: "Thanks for your note. To maintain the quality of service I provide my clients, I dedicate my weekends to recovery so I can be fully available during business hours. I'll have an answer for you by noon today.",
-        advice: "Never apologize for having a weekend. You are a high-value resource; resources need maintenance."
+        advice: "Never apologise for having a weekend. You are a high-value resource; resources need maintenance."
       };
     }
     if (lowercase.includes('low-leverage') || lowercase.includes('busywork') || lowercase.includes('admin') || lowercase.includes('manually') || lowercase.includes('reports') || lowercase.includes('delegate') || lowercase.includes('excel')) {
@@ -750,7 +750,7 @@ export const RecoveryIntelligenceLayer = ({ onAwardPoints, fingerprint }: Recove
           {[
             { id: 'velocity', name: 'Recovery Velocity Score', desc: 'Sustained or slipping profile', pill: 'Indicator' },
             { id: 'mood', name: 'Mood Pulse', desc: '3-second quick mood logs', pill: 'Daily' },
-            { id: 'trigger', name: 'Trigger Journal', desc: 'Catalog stress spikes', pill: 'Daily' },
+            { id: 'trigger', name: 'Trigger Journal', desc: 'Catalogue stress spikes', pill: 'Daily' },
             { id: 'social', name: 'Social Battery Tracker', desc: 'Relational load monitor', pill: 'Daily' },
             { id: 'wins', name: 'Wins & Recovery Proof', desc: 'Visible progress ledger', pill: 'Proof' },
             { id: 'goals', name: 'Personal Goals', desc: 'Sleep, boundaries, workload targets', pill: 'Tracked' },
@@ -1086,7 +1086,7 @@ export const RecoveryIntelligenceLayer = ({ onAwardPoints, fingerprint }: Recove
                 <div>
                   <span className="text-xs font-black uppercase tracking-widest text-[#9a3412] dark:text-primary">Relapse analysis log</span>
                   <h3 className="text-2xl font-display font-black text-text-main mt-1">Stress Trigger Journal</h3>
-                  <p className="text-xs text-text-muted mt-1">Identify visual/verbal/structural vectors setting off defense cycles.</p>
+                  <p className="text-xs text-text-muted mt-1">Identify visual/verbal/structural vectors setting off defence cycles.</p>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pb-4 border-b border-border/20">
@@ -1162,7 +1162,7 @@ export const RecoveryIntelligenceLayer = ({ onAwardPoints, fingerprint }: Recove
                       return (
                         <div className="mt-2 p-3.5 bg-primary/10 border border-primary/20 rounded-xl space-y-2 text-left">
                           <div className="flex items-center gap-1.5 text-[11px] uppercase font-black tracking-widest text-[#9a3412] dark:text-primary">
-                            <Sparkles className="w-3.5 h-3.5" /> Nova Coaching: Pattern Recognized
+                            <Sparkles className="w-3.5 h-3.5" /> Nova Coaching: Pattern Recognised
                           </div>
                           <p className="text-[11px] font-bold text-text-main leading-relaxed">
                             We detected a <span className="text-[#9a3412] dark:text-primary">{suggestion.situation}</span> pattern. Here is a recommended rehearsal pushback script:

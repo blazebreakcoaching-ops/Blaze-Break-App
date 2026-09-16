@@ -113,7 +113,7 @@ export const ExecutiveBoardReport = ({
     await new Promise(r => setTimeout(r, 650));
 
     setCompilationProgress(90);
-    setCompilationStatusText(fetchedData?.aiAnalysis ? "Reviewed by Nova..." : "Finalizing without AI commentary...");
+    setCompilationStatusText(fetchedData?.aiAnalysis ? "Reviewed by Nova..." : "Finalising without AI commentary...");
     await new Promise(r => setTimeout(r, 550));
 
     setCompilationProgress(100);
@@ -348,7 +348,7 @@ export const ExecutiveBoardReport = ({
 
             <div class="stat-card" style="border-left: 4px solid #10b981;">
                 <div class="stat-label">Boundaries Protected</div>
-                <div class="stat-value">${liveReportData ? `${liveReportData.boundariesProtected} Practiced` : 'No data yet'}</div>
+                <div class="stat-value">${liveReportData ? `${liveReportData.boundariesProtected} Practised` : 'No data yet'}</div>
                 <div class="stat-desc">Boundary scripts rehearsed this week.</div>
             </div>
         </div>
@@ -545,7 +545,7 @@ export const ExecutiveBoardReport = ({
           {[
             { label: 'Deep Work Protected', value: reportData ? `${reportData.deepWorkHours} hrs` : '—', icon: Clock },
             { label: 'Sleep Debt Carried', value: reportData?.sleepDebtHours !== null && reportData?.sleepDebtHours !== undefined ? `${reportData.sleepDebtHours} hrs` : 'Not logged', icon: Activity },
-            { label: 'Boundaries Practiced', value: String(reportData?.boundariesProtected ?? 0), icon: ShieldAlert },
+            { label: 'Boundaries Practised', value: String(reportData?.boundariesProtected ?? 0), icon: ShieldAlert },
             { label: 'Recovery ROI', value: userStats?.points ? `${userStats.points} pts` : 'No data yet', icon: TrendingUp },
           ].map((metric, i) => (
             <div key={i} className="card p-5 group hover:border-primary/30 transition-all cursor-default">
@@ -585,7 +585,7 @@ export const ExecutiveBoardReport = ({
                 </div>
                 <div>
                   <h3 id="config-modal-title" className="text-xl font-display font-bold text-text-main">Executive Compile Engine</h3>
-                  <p className="text-xs text-text-muted">Customize reports prior to printing or PDF compilation</p>
+                  <p className="text-xs text-text-muted">Customise reports prior to printing or PDF compilation</p>
                 </div>
               </div>
 
@@ -596,7 +596,7 @@ export const ExecutiveBoardReport = ({
                     <div className="flex justify-between items-center">
                       <div>
                         <p id="ai-commentary-label" className="text-sm font-bold text-text-main">Nova's Core Commentary Block</p>
-                        <p className="text-[11px] text-text-muted">Include the latest qualitative bio-behavioral counseling feedback from Coach Nova</p>
+                        <p className="text-[11px] text-text-muted">Include the latest qualitative bio-behavioural counselling feedback from Coach Nova</p>
                       </div>
                       <input 
                         type="checkbox"
@@ -638,7 +638,7 @@ export const ExecutiveBoardReport = ({
                     <div className="border-t border-white/[0.02] pt-4 flex justify-between items-center">
                       <div>
                         <p id="signature-label" className="text-sm font-bold text-text-main">Legal & Signature Safeguard block</p>
-                        <p className="text-[11px] text-text-muted">Append certified counselor signature slot and corporate compliance line</p>
+                        <p className="text-[11px] text-text-muted">Append certified counsellor signature slot and corporate compliance line</p>
                       </div>
                       <input 
                         type="checkbox"

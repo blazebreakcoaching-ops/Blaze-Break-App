@@ -203,7 +203,7 @@ export const TacticalOverride = ({ onComplete }: TacticalOverrideProps) => {
                 <div className="w-20 h-20 bg-success/20 rounded-full flex items-center justify-center mx-auto mb-6">
                   <CheckCircle2 className="w-10 h-10 text-success dark:text-[#4ade80]" />
                 </div>
-                <h1 className="text-3xl font-black uppercase tracking-widest text-text-main">Nervous System Stabilized</h1>
+                <h1 className="text-3xl font-black uppercase tracking-widest text-text-main">Nervous System Stabilised</h1>
                 <div className="space-y-4 text-left bg-card border border-border p-6 rounded-2xl">
                   <h3 className="text-text-muted font-bold mb-4">Immediate Action Required:</h3>
                   <div className="p-4 bg-card rounded-xl">

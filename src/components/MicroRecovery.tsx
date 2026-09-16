@@ -235,7 +235,7 @@ export const MicroRecovery = ({ fingerprint, onAwardPoints }: MicroRecoveryProps
       }
     } catch (e: any) {
       console.error(e);
-      setCalendarError(`Authorization complete but failed to pull events: ${e.message || e}. Using demo simulation.`);
+      setCalendarError(`Authorisation complete but failed to pull events: ${e.message || e}. Using demo simulation.`);
       setIsDemoMode(true);
     } finally {
       setLoadingCalendar(false);

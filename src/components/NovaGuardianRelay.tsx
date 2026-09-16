@@ -577,12 +577,12 @@ export const NovaGuardianRelay = ({ contacts, onAdd, onRemove, userName }: NovaG
                        >
                          <option value="primary_guardian">Primary Contact (Contacted First)</option>
                          <option value="backup_guardian">Secondary Sentinel (Failover Endpoint)</option>
-                         <option value="coach">Therapist / Counselor</option>
+                         <option value="coach">Therapist / Counsellor</option>
                          <option value="peer" disabled>Peer Validator (Blocked by Zone D Privacy Rules)</option>
                          <option value="manager" disabled>Manager (Blocked by Zone A Privacy Isolation Rules)</option>
                        </select>
                        <p id="guardian-contact-role-hint" className="text-xs text-text-muted mt-2 ml-1">
-                          Note: Under Authorised Access Framework Zone A, organizational managers and peers are strictly prohibited from receiving Guardian crisis intercepts.
+                          Note: Under Authorised Access Framework Zone A, organisational managers and peers are strictly prohibited from receiving Guardian crisis intercepts.
                        </p>
                     </div>
                   </div>

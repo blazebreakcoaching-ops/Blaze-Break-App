@@ -27,7 +27,7 @@ export const NegotiatorTool = () => {
     };
 
     const key = `${request.type}-${request.intensity}`;
-    setGeneratedScript(scripts[key] || `I am requesting a ${request.type} for the project due to ${request.reason}. I appreciate your understanding as I prioritize high-quality output.`);
+    setGeneratedScript(scripts[key] || `I am requesting a ${request.type} for the project due to ${request.reason}. I appreciate your understanding as I prioritise high-quality output.`);
     setStep(2);
   };
 
@@ -146,7 +146,7 @@ export const NegotiatorTool = () => {
             <div className="p-4 bg-warning/10 border border-warning/20 rounded-xl flex gap-3 text-left">
               <AlertTriangle className="w-5 h-5 text-[#9a3412] dark:text-warning shrink-0" />
               <p className="text-xs text-[#9a3412] dark:text-warning uppercase font-black leading-tight tracking-wide">
-                NEGOTIATION TIP: If they push back, immediately pivot to a "priority swap" question. Do not apologize for the budget.
+                NEGOTIATION TIP: If they push back, immediately pivot to a "priority swap" question. Do not apologise for the budget.
               </p>
             </div>
           </motion.div>

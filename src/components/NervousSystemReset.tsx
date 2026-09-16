@@ -42,8 +42,8 @@ const GROUNDING_MODES: Record<GroundingMode, { name: string; description: string
   'scan': { name: 'Body Scan', description: 'Progressive awareness of physical tension.', instructions: ['Notice your toes', 'Move attention up to your calves', 'Notice your thighs and hips', 'Feel your stomach and chest', 'Release your shoulders and jaw'], icon: UserCircle },
   'feet': { name: 'Feet-on-Floor', description: 'Tethering technique for panicky feelings.', instructions: ['Place both feet flat on the ground', 'Press down gently through your heels', 'Notice the solid floor beneath you', 'Imagine roots growing from your feet', 'Breathe steadily'], icon: Activity },
   'sound': { name: 'Sound-Based Grounding', description: 'Auditory focus to stop racing thoughts.', instructions: ['Close your eyes', 'Listen for the loudest sound', 'Listen for the quietest sound', 'Listen for a sound inside the room', 'Listen for a sound outside the room'], icon: Ear },
-  'room': { name: 'Come Back to the Room', description: 'Spatial awareness recovery.', instructions: ['Find a corner of the room', 'Trace the lines of the ceiling', 'Notice the colors of the walls', 'Count the windows', 'Acknowledge you are safe here'], icon: MapPin },
-  'timer': { name: 'Calm Visual Timer', description: 'A soothing focus anchor.', instructions: ['Watch the shape expand and contract', 'Let your thoughts drift past', 'Keep your eyes on the center point', 'Allow 2 minutes to pass', 'Return to your task'], icon: Minimize2 },
+  'room': { name: 'Come Back to the Room', description: 'Spatial awareness recovery.', instructions: ['Find a corner of the room', 'Trace the lines of the ceiling', 'Notice the colours of the walls', 'Count the windows', 'Acknowledge you are safe here'], icon: MapPin },
+  'timer': { name: 'Calm Visual Timer', description: 'A soothing focus anchor.', instructions: ['Watch the shape expand and contract', 'Let your thoughts drift past', 'Keep your eyes on the centre point', 'Allow 2 minutes to pass', 'Return to your task'], icon: Minimize2 },
 };
 
 export const NervousSystemReset = ({ fingerprint, onAwardPoints }: NervousSystemResetProps) => {

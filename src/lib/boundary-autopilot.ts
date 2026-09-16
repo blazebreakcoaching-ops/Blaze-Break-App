@@ -40,7 +40,7 @@ export const declineCalendarEvent = async (accessToken: string, eventId: string)
 
   const selfEntry = (event.attendees || []).find((a: any) => a.self);
   if (!selfEntry) {
-    throw new Error("Couldn't find your own attendee entry on this event — you may be the organizer, not an invitee.");
+    throw new Error("Couldn't find your own attendee entry on this event — you may be the organiser, not an invitee.");
   }
   const updatedAttendees = event.attendees.map((a: any) =>
     a.self ? { ...a, responseStatus: 'declined' } : a

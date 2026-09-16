@@ -245,7 +245,7 @@ export const DailyVoiceJournal = ({
 
     } catch (e: any) {
       console.error("Voice Journal analysis failed:", e);
-      setError(e.message || "Could not analyze the audio. Please speak clearly.");
+      setError(e.message || "Could not analyse the audio. Please speak clearly.");
     } finally {
       setIsAnalyzing(false);
       setAudioBlob(null);
@@ -421,7 +421,7 @@ export const DailyVoiceJournal = ({
                           onClick={analyzeVoiceJournal}
                           className="px-6 py-2.5 bg-primary hover:opacity-90 text-primary-foreground font-bold text-xs uppercase tracking-widest rounded-xl transition-all shadow-md flex items-center gap-2"
                         >
-                          <Sparkles className="w-3.5 h-3.5" /> Analyze with Nova
+                          <Sparkles className="w-3.5 h-3.5" /> Analyse with Nova
                         </button>
                         <button
                           onClick={() => setAudioBlob(null)}

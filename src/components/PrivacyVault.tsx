@@ -127,7 +127,7 @@ export const PrivacyVault = ({
         updatedAt: new Date().toISOString(),
       }, { merge: true });
       setOrgStatus(prev => prev ? { ...prev, shareAnonymizedDataWithOrg: next } : prev);
-      await handleAuditAction(next ? 'Enabled anonymized org data sharing' : 'Disabled anonymized org data sharing', 'organisation', next ? 'authorised' : 'denied');
+      await handleAuditAction(next ? 'Enabled anonymised org data sharing' : 'Disabled anonymised org data sharing', 'organisation', next ? 'authorised' : 'denied');
     } catch (e) {
       setOrgError('Could not save that change.');
     }
@@ -454,7 +454,7 @@ export const PrivacyVault = ({
 
                     <div className="p-4 rounded-2xl bg-surface border border-border flex flex-col sm:flex-row items-center justify-between gap-4">
                       <div>
-                        <h4 className="text-sm font-bold text-text-main">Share anonymized data with {orgStatus.organisationName || 'your organisation'}</h4>
+                        <h4 className="text-sm font-bold text-text-main">Share anonymised data with {orgStatus.organisationName || 'your organisation'}</h4>
                         <p className="text-xs text-text-muted mt-1 max-w-lg">Off by default. When on, your mood and body check-ins count toward your team's aggregate wellbeing trends — never shown individually, and never shown at all unless enough teammates also opt in.</p>
                       </div>
                       <button
@@ -868,7 +868,7 @@ export const PrivacyVault = ({
                           onChange={(e) => setAcknowledgedUnlink(e.target.checked)}
                           className="mt-0.5 accent-destructive rounded border-white/[0.1] bg-background cursor-pointer"
                         />
-                        <span>I authorize immediate termination of Firebase Cloud Run sync channels.</span>
+                        <span>I authorise immediate termination of Firebase Cloud Run sync channels.</span>
                       </label>
                       <label className="flex items-start gap-3 cursor-pointer select-none">
                         <input 
@@ -877,12 +877,12 @@ export const PrivacyVault = ({
                           onChange={(e) => setAcknowledgedNoRecovery(e.target.checked)}
                           className="mt-0.5 accent-destructive rounded border-white/[0.1] bg-background cursor-pointer"
                         />
-                        <span>I accept Nova Coach will forget my behavioral baseline and cannot recover it.</span>
+                        <span>I accept Nova Coach will forget my behavioural baseline and cannot recover it.</span>
                       </label>
                     </div>
 
                     <p className="text-xs text-text-muted">
-                      To authorize deletion, please type your full name matches the profile below:
+                      To authorise deletion, please type your full name matches the profile below:
                       <strong className="block text-[#9a3412] dark:text-primary mt-1 select-all font-mono">
                         {profile.fullName || "CONFIRM DELETION"}
                       </strong>
@@ -891,7 +891,7 @@ export const PrivacyVault = ({
                     <div className="space-y-1">
                       <input
                         type="text"
-                        aria-label="Type your full name to authorize deletion"
+                        aria-label="Type your full name to authorise deletion"
                         className="w-full bg-surface border border-white/[0.08] focus:border-destructive/50 rounded-xl px-4 py-3 text-sm font-medium text-text-main placeholder:text-text-muted/40 outline-none transition-all font-mono"
                         placeholder="Type your full name exactly"
                         value={typedFullName}
@@ -905,7 +905,7 @@ export const PrivacyVault = ({
                             : "text-destructive/80 dark:text-[#f87171]"
                         )}>
                           {typedFullName.trim().toLowerCase() === (profile.fullName || "CONFIRM DELETION").trim().toLowerCase()
-                            ? "✓ Full name authorized" 
+                            ? "✓ Full name authorised"
                             : "✗ Name mismatch. Ensure matches spelling exactly."
                           }
                         </p>
@@ -976,7 +976,7 @@ export const PrivacyVault = ({
                       <p className="text-destructive dark:text-[#f87171]">● [1/4] Overwriting Zone A-C metadata...</p>
                       <p className="text-destructive dark:text-[#f87171]">● [2/4] Destroying audit ledger traces...</p>
                       <p className="text-destructive dark:text-[#f87171]">● [3/4] Purging offline local storage namespaces...</p>
-                      <p className="text-destructive dark:text-[#f87171]">● [4/4] Finalizing cryptographic shredding...</p>
+                      <p className="text-destructive dark:text-[#f87171]">● [4/4] Finalising cryptographic shredding...</p>
                     </div>
                   </div>
                 )}

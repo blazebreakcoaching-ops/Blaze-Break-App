@@ -32,7 +32,7 @@ const BRAIN_NODES: BrainNode[] = [
   // Pre-frontal (Executive / Insight)
   { id: 'home', label: 'Pulse', icon: Home, x: 50, y: 15, group: 'insight', description: 'Real-time autonomic nervous system indicator & delta tracking' },
   { id: 'diagnose', label: 'Fingerprint', icon: MapPin, x: 25, y: 25, group: 'insight', description: 'Self-assessment check-in across five burnout archetypes' },
-  { id: 'simulator', label: 'Simulator', icon: Zap, x: 75, y: 25, group: 'insight', description: 'Predictive modeling of professional task overload and reserves' },
+  { id: 'simulator', label: 'Simulator', icon: Zap, x: 75, y: 25, group: 'insight', description: 'Predictive modelling of professional task overload and reserves' },
   
   // Motor Lobe (Execution / Boundaries)
   { id: 'communicate', label: 'Boundary Lab', icon: MessageSquare, x: 15, y: 50, group: 'action', description: 'Adaptive scripts & simulated negotiation under pressure' },
@@ -50,9 +50,9 @@ const BRAIN_NODES: BrainNode[] = [
   
   // Temporal (Connections / Systems)
   { id: 'safety', label: 'Guardians', icon: Shield, x: 10, y: 70, group: 'system', description: 'Zero-transcript crisis relay, health check & contact escrow' },
-  { id: 'org', label: 'Resilience', icon: Users, x: 90, y: 70, group: 'system', description: 'Anonymized workforce collective pulse monitoring metrics' },
+  { id: 'org', label: 'Resilience', icon: Users, x: 90, y: 70, group: 'system', description: 'Anonymised workforce collective pulse monitoring metrics' },
   { id: 'integrations', label: 'Integrations', icon: Settings, x: 40, y: 85, group: 'system', description: 'Google Workspace ecosystem connectors' },
-  { id: 'engine', label: 'Evolution Engine', icon: Settings, x: 60, y: 85, group: 'system', description: 'System parameter optimization feedback loops' },
+  { id: 'engine', label: 'Evolution Engine', icon: Settings, x: 60, y: 85, group: 'system', description: 'System parameter optimisation feedback loops' },
 ];
 
 // Node Positions for line connections mapping
@@ -288,7 +288,7 @@ export const OmniBrainMap = ({ activeTab, setActiveTab, darkMode, setDarkMode, s
       return `Direct somatic mapping active. Connecting ${startObj.label} directly with ${endObj.label} represents immediate autonomic feedback to reinforce baseline reserves.`;
     }
     if (length === 2 && shortestPath.includes('nova')) {
-      return `Core centralized routing. Insights from ${startObj.label} flow through the central Nova Core to optimize ${endObj.label}, balancing physiological cues with executive boundaries.`;
+      return `Core centralised routing. Insights from ${startObj.label} flow through the central Nova Core to optimise ${endObj.label}, balancing physiological cues with executive boundaries.`;
     }
     return `Synaptic flow verified (${length} Hops). Bridging ${startObj.label} with ${endObj.label} requires an integrated chain. This proves that cognitive recovery directly rests on biological scaffolding.`;
   }, [shortestPath, startNode, endNode]);
@@ -484,7 +484,7 @@ export const OmniBrainMap = ({ activeTab, setActiveTab, darkMode, setDarkMode, s
              <ul className="space-y-2.5 text-xs text-text-muted">
                <li className="flex items-start gap-2.5">
                  <span className="w-4 h-4 rounded bg-primary/10 border border-primary/30 text-primary text-xs font-bold flex items-center justify-center shrink-0">1</span>
-                 <span>Synchronize inhaling with target node expansions</span>
+                 <span>Synchronise inhaling with target node expansions</span>
                </li>
                <li className="flex items-start gap-2.5">
                  <span className="w-4 h-4 rounded bg-primary/10 border border-primary/30 text-primary text-xs font-bold flex items-center justify-center shrink-0">2</span>

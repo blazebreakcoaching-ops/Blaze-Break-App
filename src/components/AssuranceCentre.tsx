@@ -133,7 +133,7 @@ export const AssuranceCentre = () => {
             </div>
             <div className="grid gap-4">
               <div className="p-5 rounded-2xl bg-surface/50 border border-white/[0.04] space-y-2">
-                <h3 className="font-semibold text-[#9a3412] dark:text-primary text-sm">Personal vs. Organization Separation</h3>
+                <h3 className="font-semibold text-[#9a3412] dark:text-primary text-sm">Personal vs. Organisation Separation</h3>
                 <p className="text-xs text-text-muted">
                   Strict context boundary. Employer-sponsored users exist in a 'Participation Space' for anonymous trends. Private 'Recovery Vault' history is never accessible to employers.
                 </p>

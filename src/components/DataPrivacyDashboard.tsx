@@ -49,7 +49,7 @@ export const DataPrivacyDashboard = ({
     {
       id: 'ai_memory',
       label: 'Contextual AI Memory',
-      category: 'Personalization',
+      category: 'Personalisation',
       description: 'Allows Nova to remember previous coaching sessions and your specified goals.',
       novaUsage: 'Nova references your historical wins to reinforce your progress during low-energy days.',
       icon: Brain,

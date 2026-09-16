@@ -323,9 +323,9 @@ export const SomaticResetOverlay = ({ isOpen, onClose, onAwardPoints }: SomaticR
                 <div className="space-y-2.5">
                   {[
                     { key: 'texture', text: 'Identify and touch 1 texture near you (desk, jeans)', sub: 'Somatic feel receptor anchor' },
-                    { key: 'sound', text: 'Acknowledge 1 distant constant background noise', sub: 'Auditory cortex stabilization' },
+                    { key: 'sound', text: 'Acknowledge 1 distant constant background noise', sub: 'Auditory cortex stabilisation' },
                     { key: 'tension', text: 'Consciously drop your shoulders and unclench jaw', sub: 'Skeletal muscle decompression' },
-                    { key: 'heartbeat', text: 'Place hand on heart: feel its steady pace', sub: 'Biofeedback loop normalization' },
+                    { key: 'heartbeat', text: 'Place hand on heart: feel its steady pace', sub: 'Biofeedback loop normalisation' },
                   ].map((item) => {
                     const checked = groundingChecks[item.key as keyof typeof groundingChecks];
                     return (
@@ -382,7 +382,7 @@ export const SomaticResetOverlay = ({ isOpen, onClose, onAwardPoints }: SomaticR
                   </span>
                   <h3 className="text-3xl font-display font-black text-text-main tracking-tight">Baseline Restored</h3>
                   <p className="text-xs text-text-muted leading-relaxed max-w-xs mx-auto">
-                    You chose 60 seconds of conscious regulation over 60 seconds of passive performance. Your vagal tone has been stabilized.
+                    You chose 60 seconds of conscious regulation over 60 seconds of passive performance. Your vagal tone has been stabilised.
                   </p>
                 </div>
 
@@ -393,7 +393,7 @@ export const SomaticResetOverlay = ({ isOpen, onClose, onAwardPoints }: SomaticR
                   </div>
                   <div className="flex justify-between text-xs">
                     <span className="text-text-muted font-bold">Nervous System Shift:</span>
-                    <span className="font-mono text-success dark:text-[#4ade80] font-bold">Normalized</span>
+                    <span className="font-mono text-success dark:text-[#4ade80] font-bold">Normalised</span>
                   </div>
                   <div className="flex justify-between text-xs items-center">
                     <span className="text-text-muted font-bold">Stability points:</span>

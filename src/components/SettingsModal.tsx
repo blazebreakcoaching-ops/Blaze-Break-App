@@ -267,7 +267,7 @@ export const SettingsModal = ({ profile, onSave, onClose, onOpenPrivacyCentre }:
                       />
                     </div>
                     <div className="space-y-1.5">
-                      <label htmlFor="settings-org" className="text-xs font-black uppercase tracking-widest text-text-muted px-1">Organization</label>
+                      <label htmlFor="settings-org" className="text-xs font-black uppercase tracking-widest text-text-muted px-1">Organisation</label>
                       <input
                         id="settings-org"
                         type="text"
@@ -284,7 +284,7 @@ export const SettingsModal = ({ profile, onSave, onClose, onOpenPrivacyCentre }:
                       id="settings-manager-email"
                       type="email"
                       value={formData.managerEmail}
-                      placeholder="For proactive organizational resilience alerts"
+                      placeholder="For proactive organisational resilience alerts"
                       onChange={e => {
                         setFormData({...formData, managerEmail: e.target.value});
                         if (errors.email) setErrors({ ...errors, email: undefined });

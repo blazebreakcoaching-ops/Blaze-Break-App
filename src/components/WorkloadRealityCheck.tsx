@@ -190,7 +190,7 @@ export const WorkloadRealityCheck = ({ fingerprint, onAwardPoints }: WorkloadRea
           },
           {
             id: 'wait-' + Date.now(),
-            title: answers.wait || 'Optimize secondary style guidelines',
+            title: answers.wait || 'Optimise secondary style guidelines',
             category: 'wait',
             energyDrain: 30,
             priority: 'low',
@@ -457,7 +457,7 @@ export const WorkloadRealityCheck = ({ fingerprint, onAwardPoints }: WorkloadRea
               className="w-16 h-16 border-4 border-primary/20 border-t-primary rounded-full mb-8 shrink-0"
             />
             <h3 className="text-2xl font-display font-bold text-text-main mb-2">Stripping the Noise...</h3>
-            <p className="text-text-muted font-medium max-w-md">Nova is categorizing your inputs to protect your energy baseline.</p>
+            <p className="text-text-muted font-medium max-w-md">Nova is categorising your inputs to protect your energy baseline.</p>
           </motion.div>
         )}
 
@@ -511,7 +511,7 @@ export const WorkloadRealityCheck = ({ fingerprint, onAwardPoints }: WorkloadRea
                 </div>
                 <div>
                   <h4 className="text-xs font-black uppercase tracking-wider text-[#9a3412] dark:text-primary">Task Calibration</h4>
-                  <p className="text-[11px] text-text-muted mt-0.5">Define a task with its specific energetic toll, prioritization node, and deadline.</p>
+                  <p className="text-[11px] text-text-muted mt-0.5">Define a task with its specific energetic toll, prioritisation node, and deadline.</p>
                 </div>
               </div>
 
@@ -899,7 +899,7 @@ export const WorkloadRealityCheck = ({ fingerprint, onAwardPoints }: WorkloadRea
                 <Sparkles className="w-3.5 h-3.5 animate-bounce" /> Your Prescribed Recovery Action Plan Step
               </span>
               <p className="text-xs text-text-muted leading-relaxed">
-                Review your task inventory prioritized by energetic drain. To prevent burnout, commit to completing your <strong>Must Do Today</strong> lists early, then completely power down during the <strong>Mandatory Recovery Block</strong>.
+                Review your task inventory prioritised by energetic drain. To prevent burnout, commit to completing your <strong>Must Do Today</strong> lists early, then completely power down during the <strong>Mandatory Recovery Block</strong>.
               </p>
               <div className="flex flex-wrap gap-2.5">
                 <button

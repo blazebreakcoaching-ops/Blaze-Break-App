@@ -135,7 +135,7 @@ export const ResourceLibrary = ({ fingerprint }: ResourceLibraryProps) => {
               </div>
               <div className="space-y-3">
                 <h4 className="text-xl font-display font-bold text-text-main">The Architecture of Capacity</h4>
-                <p className="text-sm text-text-muted font-medium leading-relaxed">Advanced strategies for organizing your life and commitments to prevent baseline collapse.</p>
+                <p className="text-sm text-text-muted font-medium leading-relaxed">Advanced strategies for organising your life and commitments to prevent baseline collapse.</p>
               </div>
             </div>
         </div>

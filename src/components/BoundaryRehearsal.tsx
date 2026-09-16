@@ -65,7 +65,7 @@ const scriptGroups: ScriptGroup[] = [
         id: 'promo-talk',
         title: 'High-Output Negotiation',
         situation: 'You are being asked to do more senior work without the title/pay.',
-        script: "I'm excited to take on these [Senior Tasks]. To do this effectively, I'd like to formalize this transition. Can we look at the promotion criteria this week so we're aligned on the roadmap for my new role?",
+        script: "I'm excited to take on these [Senior Tasks]. To do this effectively, I'd like to formalise this transition. Can we look at the promotion criteria this week so we're aligned on the roadmap for my new role?",
         advice: "Turn 'extra work' into 'career advancement' immediately. If they aren't ready for the title, they aren't ready for the work."
       },
       {
@@ -91,9 +91,9 @@ const scriptGroups: ScriptGroup[] = [
       {
         id: 'requesting-resources',
         title: 'Asking for structural help',
-        situation: 'You realize a project cannot be completed without more resources.',
+        situation: 'You realise a project cannot be completed without more resources.',
         script: "I've mapped the critical path for this delivery. To hit the current deadline without compromising quality, we need an additional analyst for 15 hours a week. Otherwise, we will need to adjust the operational timeline by two weeks.",
-        advice: 'Present the problem as a math equation (resources versus timeline), not an emotional appeal.'
+        advice: 'Present the problem as a maths equation (resources versus timeline), not an emotional appeal.'
       }
     ]
   },
@@ -106,11 +106,11 @@ const scriptGroups: ScriptGroup[] = [
         title: 'The Weekend Boundary',
         situation: 'A client expects an immediate response on a Sunday.',
         script: "(Send Monday 9AM) Thanks for your note. To maintain the quality of service I provide my clients, I dedicate my weekends to recovery so I can be fully available during business hours. I'll have an answer for you by noon today.",
-        advice: 'Never apologize for having a weekend. You are a high-value resource; resources need maintenance.'
+        advice: 'Never apologise for having a weekend. You are a high-value resource; resources need maintenance.'
       },
       {
         id: 'discount-ask',
-        title: 'The "Quick Favor" Ask',
+        title: 'The "Quick Favour" Ask',
         situation: 'Client asks for extra work for free.',
         script: "That's a great addition to the project scope. I've drafted a quick addendum with the adjusted timeline and fee for this extra module. Shall I send it over for approval?",
         advice: "Never say 'No' to more work, say 'Yes, and here is the price.' It frames you as a professional, not a volunteer."
@@ -130,7 +130,7 @@ const scriptGroups: ScriptGroup[] = [
       },
       {
         id: 'family-burnout',
-        title: 'Emotional Labor Check',
+        title: 'Emotional Labour Check',
         situation: 'Being the "emotional rock" for family while depleted.',
         script: "I really want to be there for you, but I don't have the emotional capacity right now to give this the attention it deserves. Can we talk about this tomorrow after I've had some rest?",
         advice: "Setting boundaries with family is the hardest. Use the 'quality' argument: 'I want to be a good listener, and I can't be one right now.'"
@@ -433,7 +433,7 @@ export const BoundaryRehearsal = ({ onAwardPoints, onRehearsalComplete }: { onAw
              </div>
           </div>
           <p className="text-sm lg:text-base text-text-muted font-serif italic leading-relaxed max-w-2xl border-l-2 border-primary/30 pl-5 py-1">
-            "Master the 'Firm No' and the 'Strategic Yes'. Practical scripts for high-stakes moments. Stop apologizing for protecting your own time."
+            "Master the 'Firm No' and the 'Strategic Yes'. Practical scripts for high-stakes moments. Stop apologising for protecting your own time."
           </p>
         </div>
       </div>
@@ -717,7 +717,7 @@ export const BoundaryRehearsal = ({ onAwardPoints, onRehearsalComplete }: { onAw
                       ROLEPLAY: You are the manager, client, or family member. BE TOUGH. Push back slightly. Ask 'Why?' or 'Can't you just squeeze it in?'.
                       CRITIQUE: After they reply, give them a one-sentence critique if they apologized or sounded weak.
                       GOAL: Help them deliver the line with zero apology and maximum professionalism. Executive tone.`}
-                      initialMessage={`"Alright, let's practice. I'll play the other side of this conversation and push back a little — that's the point. Here goes: 'Hey, I know you're at capacity, but I really need this handled by tonight. Can you just make it happen?'"`}
+                      initialMessage={`"Alright, let's practise. I'll play the other side of this conversation and push back a little — that's the point. Here goes: 'Hey, I know you're at capacity, but I really need this handled by tonight. Can you just make it happen?'"`}
                     />
                   </div>
                 </div>

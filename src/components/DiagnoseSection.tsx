@@ -38,7 +38,7 @@ const questions = [
   },
   {
     id: "boundaries",
-    text: 'When someone requests a "quick favor" that encroaches on your focused recovery time, you:',
+    text: 'When someone requests a "quick favour" that encroaches on your focused recovery time, you:',
     options: [
       {
         text: "Hold my line. I politely but firmly decline if I am occupied.",
@@ -53,7 +53,7 @@ const questions = [
         value: 3,
       },
       {
-        text: "Panic and prioritize. I drop my own health to solve their problem.",
+        text: "Panic and prioritise. I drop my own health to solve their problem.",
         value: 4,
       },
     ],
@@ -304,7 +304,7 @@ export const DiagnoseView = ({
       if (data.error) throw new Error(data.error);
       onComplete({ ...data, wasQuickCheck: mode === 'quick' });
     } catch (err: any) {
-      setError(err.message || "Failed to analyze assessment");
+      setError(err.message || "Failed to analyse assessment");
     } finally {
       setLoading(false);
     }
@@ -347,7 +347,7 @@ export const DiagnoseView = ({
           <RefreshCcw className="w-12 h-12 text-primary" />
         </motion.div>
         <p className="text-xl text-text-muted text-center italic">
-          Nova is analyzing your burnout fingerprint...
+          Nova is analysing your burnout fingerprint...
           <br />
           <span className="text-sm font-bold uppercase tracking-widest  not-italic">
             Connecting dots in your energy patterns
@@ -968,7 +968,7 @@ const getLeakDetails = (key: string, score: number) => {
   };
 
   const defaultConf = {
-    title: "Analyzing",
+    title: "Analysing",
     desc: "Extracting patterns...",
     color: "bg-surface",
     bg: "bg-surface",
@@ -1012,7 +1012,7 @@ const FINGERPRINT_ENHANCEMENTS: Record<
     recoveryStrategies: [
       "Re-learn to sit with the discomfort of disappointing others.",
       "Schedule non-negotiable isolated recovery time.",
-      "Practice self-soothing when guilt arises during rest.",
+      "Practise self-soothing when guilt arises during rest.",
     ],
     boundaryStrategies: [
       "Script: 'Let me check my capacity' before ANY new commitment.",
@@ -1032,7 +1032,7 @@ const FINGERPRINT_ENHANCEMENTS: Record<
       "Reconnect with values outside the current professional environment.",
     ],
     boundaryStrategies: [
-      "Practice radical candour over quiet compliance.",
+      "Practise radical candour over quiet compliance.",
       "Stop buffering bad processes with your own free time.",
       "Define exactly what is 'not your job' and leave it undone.",
     ],
@@ -1040,7 +1040,7 @@ const FINGERPRINT_ENHANCEMENTS: Record<
   "Manager in the Middle": {
     insights: [
       "Caught in a permanent squeeze play between leadership and direct reports.",
-      "Energy completely vaporized by mediation and emotional labor.",
+      "Energy completely vaporised by mediation and emotional labour.",
       "Zero space to breathe or execute your own strategic work.",
     ],
     recoveryStrategies: [
@@ -1079,7 +1079,7 @@ const FINGERPRINT_ENHANCEMENTS: Record<
     ],
     recoveryStrategies: [
       "Keep a running, written record of wins you cannot mentally minimise.",
-      "Practice letting a success stand for a full day before moving to the next thing.",
+      "Practise letting a success stand for a full day before moving to the next thing.",
       "Notice the specific moment you start 'proving it again' and name it out loud.",
     ],
     boundaryStrategies: [
@@ -1146,14 +1146,14 @@ const FINGERPRINT_ENHANCEMENTS: Record<
       "Recovery windows get sabotaged, consciously or not, because rest doesn't feel earned without a crisis behind it.",
     ],
     recoveryStrategies: [
-      "Practice sitting in a genuinely calm period without manufacturing urgency to fill it.",
+      "Practise sitting in a genuinely calm period without manufacturing urgency to fill it.",
       "Notice the physical sensation of boredom or stillness without immediately reaching for a new fire.",
       "Build the recognition that a quiet week is a success, not a warning sign.",
     ],
     boundaryStrategies: [
       "Decline being the default first responder for problems that aren't actually urgent.",
       "Let a 'crisis' sit for an hour before reacting, to test whether it's real or self-generated.",
-      "Practice ending a day with nothing left to 'fix'.",
+      "Practise ending a day with nothing left to 'fix'.",
     ],
   },
   "People-Pleasing Performer": {
@@ -1163,7 +1163,7 @@ const FINGERPRINT_ENHANCEMENTS: Record<
       "Being liked and being known are not the same thing, and only one of them is currently being fed.",
     ],
     recoveryStrategies: [
-      "Practice naming one honest internal state out loud each day, even a small one.",
+      "Practise naming one honest internal state out loud each day, even a small one.",
       "Notice the specific moments the 'performance' switches on, and what triggers it.",
       "Let one interaction be less polished than usual, on purpose, as practice.",
     ],
@@ -1180,14 +1180,14 @@ const FINGERPRINT_ENHANCEMENTS: Record<
       "Things that would resolve fine without you often get absorbed anyway, out of habit rather than necessity.",
     ],
     recoveryStrategies: [
-      "Practice identifying whose responsibility something actually is before stepping in.",
+      "Practise identifying whose responsibility something actually is before stepping in.",
       "Let one thing go wrong without your intervention, and observe what actually happens.",
       "Notice the specific feeling that shows up when you're not the one solving something.",
     ],
     boundaryStrategies: [
       "Say 'that's not mine to fix' and leave it there, even when it's uncomfortable.",
       "Ask directly whether your involvement was actually requested before offering it.",
-      "Practice the sentence 'I trust this will get handled without me'.",
+      "Practise the sentence 'I trust this will get handled without me'.",
     ],
   },
 };
@@ -1225,7 +1225,7 @@ const PERSONALIZED_RECOVERY_PLANS: Record<
     ],
     boundaryStrategies: [
       { id: "hfee-1", situation: "When asked to attend a late-afternoon progress update", script: "I have a hard cutoff at 5 PM today. Let me review the notes async or we can touch base tomorrow morning." },
-      { id: "hfee-2", situation: "When requested to take on an extra high-priority project", script: "I can take this on, but to maintain quality, we need to defer either X or Y task. Which one should we deprioritize?" }
+      { id: "hfee-2", situation: "When requested to take on an extra high-priority project", script: "I can take this on, but to maintain quality, we need to defer either X or Y task. Which one should we deprioritise?" }
     ],
     reflectionPrompts: [
       { id: "hfeq-1", question: "What is the metabolic price am I paying for maintaining 120% output when 85% meets the operational objective?" },
@@ -1249,7 +1249,7 @@ const PERSONALIZED_RECOVERY_PLANS: Record<
   },
   "Over-Giver": {
     recommendedActions: [
-      { id: "og-1", text: "Practice saying 'No' to one unsolicited help invitation or project vacuum.", points: 40 },
+      { id: "og-1", text: "Practise saying 'No' to one unsolicited help invitation or project vacuum.", points: 40 },
       { id: "og-2", text: "Schedule 45 minutes of isolated, solitary recovery with zero social engagement.", points: 50 },
       { id: "og-3", text: "Reframe guilt as physiological evidence of healing when transitioning into resting state.", points: 30 }
     ],
@@ -1265,7 +1265,7 @@ const PERSONALIZED_RECOVERY_PLANS: Record<
   "Silent Resenter": {
     recommendedActions: [
       { id: "sr-1", text: "Identify one task that is 'not your job' and leave it undone, observing the outcome.", points: 40 },
-      { id: "sr-2", text: "Practice radical candour by expressing one frustration directly and constructively.", points: 50 },
+      { id: "sr-2", text: "Practise radical candour by expressing one frustration directly and constructively.", points: 50 },
       { id: "sr-3", text: "Do a primary values audit to identify where your daily work diverges from your core values.", points: 30 }
     ],
     boundaryStrategies: [
@@ -1279,12 +1279,12 @@ const PERSONALIZED_RECOVERY_PLANS: Record<
   },
   "Manager in the Middle": {
     recommendedActions: [
-      { id: "mim-1", text: "Cancel or postpone one non-essential team synchronization meeting this week.", points: 40 },
+      { id: "mim-1", text: "Cancel or postpone one non-essential team synchronisation meeting this week.", points: 40 },
       { id: "mim-2", text: "Delegate a status-update dashboard completely to a senior direct report.", points: 50 },
       { id: "mim-3", text: "Add a 15-minute 'no meetings' buffer zone block inside your shared Outlook calendar.", points: 30 }
     ],
     boundaryStrategies: [
-      { id: "mimm-1", situation: "When senior leadership sets high-pressure targets without capacity support", script: "With our current staffing levels, we can either hit target A with high confidence, or distribute capacity over all three. Which do we prioritize?" },
+      { id: "mimm-1", situation: "When senior leadership sets high-pressure targets without capacity support", script: "With our current staffing levels, we can either hit target A with high confidence, or distribute capacity over all three. Which do we prioritise?" },
       { id: "mimm-2", situation: "When team members request constant direct assistance on basic problems", script: "I want to empower you here. Spend 20 minutes framing the three potential solutions, and we'll review them during our weekly 1:1." }
     ],
     reflectionPrompts: [
@@ -1729,7 +1729,7 @@ export const ResultView = ({
                 <BookOpen className="w-5 h-5" />
               </div>
               <div>
-                <h3 className="text-2xl font-display font-bold tracking-tight text-text-main">Personalized Recovery Plan</h3>
+                <h3 className="text-2xl font-display font-bold tracking-tight text-text-main">Personalised Recovery Plan</h3>
                 <p className="text-xs text-text-muted uppercase tracking-wider font-extrabold text-[#9a3412] dark:text-primary-light">Nova Curated • Profile: {result.profile}</p>
               </div>
             </div>
@@ -1796,7 +1796,7 @@ export const ResultView = ({
               <div className="flex items-center gap-2 text-[#9a3412] dark:text-warning font-bold uppercase tracking-widest text-xs border-b border-border pb-2 mb-2">
                 <ShieldCheck className="w-4 h-4" /> Boundary Scripts
               </div>
-              <p className="text-[11px] text-text-muted italic mb-2">Practice using these highly professional, firm pushback scripts.</p>
+              <p className="text-[11px] text-text-muted italic mb-2">Practise using these highly professional, firm pushback scripts.</p>
               <div className="space-y-3 flex-grow">
                 {((PERSONALIZED_RECOVERY_PLANS[result.profile] || PERSONALIZED_RECOVERY_PLANS["High-Functioning Exhausted"]).boundaryStrategies).map((scrip) => {
                   const isCommitted = committedBoundaries.includes(scrip.id);

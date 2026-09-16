@@ -20,7 +20,7 @@ const MODES: Record<GroundingMode, { label: string, icon: any, description: stri
 
 const REFLECTIONS: Record<GroundingMode, Array<{title: string; content: string}>> = {
   secular: [
-    { title: 'The Limits of Physiology', content: 'Your body is not a machine. It requires downtime to consolidate memory and repair cellular damage. Honoring this limit is logical, not lazy.' },
+    { title: 'The Limits of Physiology', content: 'Your body is not a machine. It requires downtime to consolidate memory and repair cellular damage. Honouring this limit is logical, not lazy.' },
     { title: 'Circle of Control', content: 'You can only control your actions and your immediate responses. Everything else is external. Release the external.' },
   ],
   values: [

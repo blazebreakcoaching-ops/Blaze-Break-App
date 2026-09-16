@@ -121,7 +121,7 @@ export const FEATURE_REGISTRY: Record<string, FeatureDefinition> = {
   boundary_rehearsal: {
     id: 'boundary_rehearsal',
     name: 'Boundary Rehearsal',
-    purpose: 'Simulated environment to practice setting boundaries with Nova.',
+    purpose: 'Simulated environment to practise setting boundaries with Nova.',
     section: 'Practice',
     status: 'active',
     riskLevel: 'medium',
@@ -147,7 +147,7 @@ export const FEATURE_REGISTRY: Record<string, FeatureDefinition> = {
   mood_pulse: {
     id: 'mood_pulse',
     name: 'Mood Pulse',
-    purpose: 'Lightweight biometric mood logger using colors & visual metrics to detect performance fatigue dips over time.',
+    purpose: 'Lightweight biometric mood logger using colours & visual metrics to detect performance fatigue dips over time.',
     section: 'Recovery Intelligence signals',
     status: 'active',
     riskLevel: 'low',
@@ -160,7 +160,7 @@ export const FEATURE_REGISTRY: Record<string, FeatureDefinition> = {
   trigger_journal: {
     id: 'trigger_journal',
     name: 'Trigger Journal',
-    purpose: 'Identify stressors (meetings, deadline scope, tones of voice) causing emotional shutdowns or fawning behavior loops.',
+    purpose: 'Identify stressors (meetings, deadline scope, tones of voice) causing emotional shutdowns or fawning behaviour loops.',
     section: 'Recovery Intelligence signals',
     status: 'active',
     riskLevel: 'medium',
@@ -212,7 +212,7 @@ export const FEATURE_REGISTRY: Record<string, FeatureDefinition> = {
   weekly_review: {
     id: 'weekly_review',
     name: 'Weekly Review Ritual',
-    purpose: 'End-of-cycle process designed to consolidate daily inputs into long-term behavioral planning and strategic boundary focus.',
+    purpose: 'End-of-cycle process designed to consolidate daily inputs into long-term behavioural planning and strategic boundary focus.',
     section: 'Recovery Intelligence signals',
     status: 'active',
     riskLevel: 'medium',
@@ -225,7 +225,7 @@ export const FEATURE_REGISTRY: Record<string, FeatureDefinition> = {
   return_to_work_planner: {
     id: 'return_to_work_planner',
     name: 'Return-to-Work Planner',
-    purpose: 'Phased re-entry framework with customizable meeting ceilings and boundary presets for individuals returning from leave.',
+    purpose: 'Phased re-entry framework with customisable meeting ceilings and boundary presets for individuals returning from leave.',
     section: 'Recovery Intelligence signals',
     status: 'active',
     riskLevel: 'medium',
@@ -238,7 +238,7 @@ export const FEATURE_REGISTRY: Record<string, FeatureDefinition> = {
   focus_shield: {
     id: 'focus_shield',
     name: 'Focus Shield',
-    purpose: 'Block out focus windows and minimize mental context-switching during active hours to preserve nervous reserves.',
+    purpose: 'Block out focus windows and minimise mental context-switching during active hours to preserve nervous reserves.',
     section: 'Recovery Intelligence signals',
     status: 'active',
     riskLevel: 'low',

@@ -135,7 +135,7 @@ export const EnergyBudgetTool = ({
     const highCostExec = tasks.filter(t => t.cost >= 25 && t.type === 'Executive');
     
     if (highCostSocial.length > 0) {
-      return `"To improve your Recovery Velocity Score, I suggest delegating or deferring '${highCostSocial[0].task}'. It is currently consuming a significant portion of your energy cap. Reallocating this will stabilize your baseline."`;
+      return `"To improve your Recovery Velocity Score, I suggest delegating or deferring '${highCostSocial[0].task}'. It is currently consuming a significant portion of your energy cap. Reallocating this will stabilise your baseline."`;
     } else if (highCostExec.length > 0) {
       return `"Your executive function is heavily taxed by '${highCostExec[0].task}'. To protect your Recovery Velocity, consider time-boxing this or breaking it down into smaller micro-commitments."`;
     }
@@ -371,7 +371,7 @@ export const EnergyBudgetTool = ({
                 <div className="text-xs leading-tight text-text-muted font-sans font-bold">
                   <span className="text-success dark:text-[#4ade80] font-extrabold uppercase tracking-wide">Weekend buffer check:</span>{' '}
                   {safeDays.length > 0
-                    ? <>{safeDays.map(d => d.day).join(' & ')} load maintained safely under budget. High recharge score synchronized.</>
+                    ? <>{safeDays.map(d => d.day).join(' & ')} load maintained safely under budget. High recharge score synchronised.</>
                     : 'No load logged yet this week.'}
                 </div>
               </div>

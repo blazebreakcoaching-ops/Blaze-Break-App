@@ -191,7 +191,7 @@ export const RecoveryFuelEngine = ({
       contextStr += "Hydration metrics under baseline guidelines. ";
     }
     if (morningLight === false) {
-      contextStr += "Circadian synchronization light missing. ";
+      contextStr += "Circadian synchronisation light missing. ";
     }
     if (isAdult && alcoholLogged === true) {
       contextStr += "Alcohol logged (reduced REM recovery probability). ";
@@ -211,7 +211,7 @@ export const RecoveryFuelEngine = ({
     );
 
     if (onAwardPoints) {
-      onAwardPoints(25, "Biometric Fuel Synchronization Logged");
+      onAwardPoints(25, "Biometric Fuel Synchronisation Logged");
       if (morningLight && hydrationGlasses >= 6 && hasEaten) {
         onAwardPoints(15, "Perfect Physiological Alignment Badge Unlocked");
       }
@@ -406,7 +406,7 @@ export const RecoveryFuelEngine = ({
       insights.push({
         title: "Sunder-Load Meal Gaps",
         type: "critical" as const,
-        description: "Skipping meals triggers physiological emergency protocols. Epinephrine surges to mobilize liver glycogen, mimicking sudden anxiety and creating false panic signals.",
+        description: "Skipping meals triggers physiological emergency protocols. Epinephrine surges to mobilise liver glycogen, mimicking sudden anxiety and creating false panic signals.",
         coaching: "Do not attempt deep boundary discussions or major strategic decisions while nutrient-derived glucose is flatlined. Eat slow-release starch first."
       });
     }
@@ -461,7 +461,7 @@ export const RecoveryFuelEngine = ({
         title: "Youth Circadian Baseline",
         type: "info" as const,
         description: "Adolescent brain development is heavily reliant on deep REM sleep and natural melatonin cycles. Secondary stimulants or sleep-inhibitors trigger persistent neural exhaustion.",
-        coaching: "Prioritize consistent wake times and high-density nutrient intake over active screens."
+        coaching: "Prioritise consistent wake times and high-density nutrient intake over active screens."
       });
     }
 
@@ -470,7 +470,7 @@ export const RecoveryFuelEngine = ({
       insights.push({
         title: "Physiological Baseline Restored",
         type: "success" as const,
-        description: "Your fuel rhythm metrics match the optimized guidelines. Your hormone fluxes are stabilized.",
+        description: "Your fuel rhythm metrics match the optimised guidelines. Your hormone fluxes are stabilised.",
         coaching: "Stable nutrition translates to a robust psychological perimeter. Rehearse boundary parameters with maximum firmness today."
       });
     }
@@ -539,7 +539,7 @@ export const RecoveryFuelEngine = ({
                   }}
                   className="px-4 py-2 bg-primary-light hover:bg-primary text-[#1c1917] dark:text-text-main dark:hover:text-[#1c1917] font-bold text-xs uppercase tracking-wider rounded-xl transition-all shadow-md cursor-pointer"
                 >
-                  Fueled Up (+15 pts)
+                  Fuelled Up (+15 pts)
                 </button>
               )}
               <button
@@ -652,7 +652,7 @@ export const RecoveryFuelEngine = ({
                   Today's Nutrition Plan Synced
                 </h3>
                 <p className="text-xs text-text-muted max-w-md mx-auto leading-relaxed">
-                  Your daily indicators have been committed to Nova's active parameter ledger. Your coach is correlating these inputs against behavioral logs.
+                  Your daily indicators have been committed to Nova's active parameter ledger. Your coach is correlating these inputs against behavioural logs.
                 </p>
                 <div className="flex items-center justify-center gap-4">
                   <button
@@ -995,7 +995,7 @@ export const RecoveryFuelEngine = ({
                       </div>
                     </div>
                     <p className="text-xs text-text-muted leading-relaxed">
-                      "Your recovery clock starts in the morning. Get light early, reduce light late." 5-10 minutes of morning photons triggers visual pathway signals that synchronize your nervous system.
+                      "Your recovery clock starts in the morning. Get light early, reduce light late." 5-10 minutes of morning photons triggers visual pathway signals that synchronise your nervous system.
                     </p>
                   </div>
 
@@ -1293,7 +1293,7 @@ export const RecoveryFuelEngine = ({
                 The digestive system communicates directly with your brain via the vagus nerve. Inflammatory pathways, microbiome changes, or severe meal skipping directly manifest as cognitive fog and defensive cynicism.
               </p>
               <div className="bg-white/40 dark:bg-card/30 p-4 rounded-xl text-[11px] text-text-muted font-bold leading-normal">
-                💡 <span className="text-[#9a3412] dark:text-primary">Fact:</span> Poor meal timing, late screen exposure, high caffeine, and chronic workplace stress all cooperate to lock the autonomic nervous system into a defense cycle, prolonging neurological fatigue. This is educational support, not medical treatment.
+                💡 <span className="text-[#9a3412] dark:text-primary">Fact:</span> Poor meal timing, late screen exposure, high caffeine, and chronic workplace stress all cooperate to lock the autonomic nervous system into a defence cycle, prolonging neurological fatigue. This is educational support, not medical treatment.
               </div>
             </div>
 
@@ -1312,7 +1312,7 @@ export const RecoveryFuelEngine = ({
                 Micronutrients like magnesium glycinate, Vitamin D, high-dose B vitamins, and omega-3 essential fatty acids participate in normal cellular and nervous system functions. Chronic stress siphons these mineral reserves.
               </p>
               <div className="bg-warning/5 text-[#9a3412] dark:text-warning p-4 rounded-xl text-xs font-black uppercase tracking-wider leading-relaxed border border-warning/10">
-                ⚠️ Safe Recovery Boundary: This app supports behavioral recovery. Do not treat supplement insights as a prescription. Speak to a qualified medical professional if you suspect clinical deficiencies, take prescription medication, are pregnant, or are under 18.
+                ⚠️ Safe Recovery Boundary: This app supports behavioural recovery. Do not treat supplement insights as a prescription. Speak to a qualified medical professional if you suspect clinical deficiencies, take prescription medication, are pregnant, or are under 18.
               </div>
             </div>
 
@@ -1379,7 +1379,7 @@ export const RecoveryFuelEngine = ({
                   </div>
                   <div className="space-y-1">
                     <span className="font-bold text-text-main">🥑 Avocados, Nuts & Roasted Chickpeas</span>
-                    <p className="text-[11px] text-text-muted leading-relaxed">Portable office fuel (almonds, walnuts) that gives you clean fats/fiber. Perfect to snack on 20 minutes before a high-pressure board meeting.</p>
+                    <p className="text-[11px] text-text-muted leading-relaxed">Portable office fuel (almonds, walnuts) that gives you clean fats/fibre. Perfect to snack on 20 minutes before a high-pressure board meeting.</p>
                   </div>
                   <div className="space-y-1">
                     <span className="font-bold text-text-main">🥚 Dense Protein Anchors (Eggs & Yogurts)</span>
@@ -1398,7 +1398,7 @@ export const RecoveryFuelEngine = ({
         <div>
           <span className="text-[11px] uppercase font-black tracking-wider text-text-muted">Safe Coaching Boundary</span>
           <p className="text-xs text-text-muted leading-relaxed mt-0.5">
-            This module provides non-clinical educational support to stabilize daily behavioral cycles. Do not interpret tracking alerts or insights as medical, nutritional, psychiatric, or metabolic advice.
+            This module provides non-clinical educational support to stabilise daily behavioural cycles. Do not interpret tracking alerts or insights as medical, nutritional, psychiatric, or metabolic advice.
           </p>
         </div>
       </div>

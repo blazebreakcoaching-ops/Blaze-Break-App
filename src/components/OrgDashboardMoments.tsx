@@ -361,7 +361,7 @@ export const OrgDashboardMoments = () => {
               <div className="py-12 text-center text-text-muted text-sm">Join an organisation from the Trust &amp; Privacy Centre to see and post recognitions.</div>
             ) : recognitions.length === 0 ? (
               <div className="py-12 text-center border-2 border-dashed border-border rounded-xl">
-                <p className="text-text-muted text-sm">Nothing posted yet. Be the first to recognize a teammate above.</p>
+                <p className="text-text-muted text-sm">Nothing posted yet. Be the first to recognise a teammate above.</p>
               </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">

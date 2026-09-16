@@ -268,7 +268,7 @@ export const OmniNova = ({ activeTab, fingerprint, stats }: OmniNovaProps) => {
                 </button>
                 <button 
                   onClick={() => setIsExpanded(!isExpanded)}
-                  aria-label={isExpanded ? "Minimize panel" : "Expand panel"}
+                  aria-label={isExpanded ? "Minimise panel" : "Expand panel"}
                   className="p-2 rounded-lg hover:bg-card text-text-muted transition-colors"
                 >
                   {isExpanded ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
@@ -319,7 +319,7 @@ export const OmniNova = ({ activeTab, fingerprint, stats }: OmniNovaProps) => {
                           {msg.privacyMetadata && (
                             <div className="mt-2.5 pt-2 border-t border-border/10 text-[11px] text-text-muted flex items-start gap-1 cursor-help group-hover:text-[#9a3412] dark:group-hover:text-primary transition-colors" title={msg.privacyMetadata.rationale}>
                               <span className="shrink-0 text-success" aria-label="Privacy Shield">🛡️</span>
-                              <span>Permissioned context used: Uses {msg.privacyMetadata.modulesUsed?.length > 0 ? "compact " + msg.privacyMetadata.modulesUsed.map((m: string) => m.replace(/_|-/g, ' ')).join(', ') + " summary" : "no personalized context"}. No raw notes shared (completely hidden).</span>
+                              <span>Permissioned context used: Uses {msg.privacyMetadata.modulesUsed?.length > 0 ? "compact " + msg.privacyMetadata.modulesUsed.map((m: string) => m.replace(/_|-/g, ' ')).join(', ') + " summary" : "no personalised context"}. No raw notes shared (completely hidden).</span>
                             </div>
                           )}
                         </div>

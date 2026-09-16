@@ -206,7 +206,7 @@ export const LandingPage = ({ onStart, onOpenTrustCentre }: LandingPageProps) =>
                   ) : (
                     <LogIn className="w-4 h-4" />
                   )}
-                  <span role="status" aria-live="polite">{signingIn ? 'Initializing...' : 'Continue with Google'}</span>
+                  <span role="status" aria-live="polite">{signingIn ? 'Initialising...' : 'Continue with Google'}</span>
                 </button>
               </div>
 

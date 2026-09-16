@@ -490,7 +490,7 @@ export const OrgDashboard = () => {
         <div className="flex flex-col sm:flex-row sm:items-center gap-3 text-sm font-medium text-text-main">
           <div className="flex items-center gap-3">
             <ShieldCheck className="w-5 h-5 text-primary shrink-0" />
-            <span><strong>Privacy Rule Active:</strong> All organizational data is aggregated and anonymized. Cohort size: {cohortSize} team members.</span>
+            <span><strong>Privacy Rule Active:</strong> All organisational data is aggregated and anonymised. Cohort size: {cohortSize} team members.</span>
           </div>
         </div>
 
@@ -558,7 +558,7 @@ export const OrgDashboard = () => {
               </div>
               <div className="relative z-10 max-w-3xl">
                 <div className="flex items-center gap-3 mb-4">
-                  <div className="tag bg-surface dark:bg-card/10 text-text-main border-white/20">Organizational Resilience Pulse</div>
+                  <div className="tag bg-surface dark:bg-card/10 text-text-main border-white/20">Organisational Resilience Pulse</div>
                 </div>
                 <h3 className="text-4xl font-display font-bold text-text-main tracking-tight leading-tight mb-4">
                   Team Mood, Last {dashboardData.windowDays || 7} Days

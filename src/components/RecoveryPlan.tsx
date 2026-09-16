@@ -101,7 +101,7 @@ export const RecoveryPlan = ({
     
     let feedback: string;
     if (archetype === 'Founder on Fire') {
-      feedback = "Your identity is completely fused with the survival of your venture. Right now, your " + highestDebt.label + " is at " + Math.round(highestDebtRatio * 100) + "%. This is not an operational metric to optimize; it is a biological warning. Cease the fawning performance narratives and rest.";
+      feedback = "Your identity is completely fused with the survival of your venture. Right now, your " + highestDebt.label + " is at " + Math.round(highestDebtRatio * 100) + "%. This is not an operational metric to optimise; it is a biological warning. Cease the fawning performance narratives and rest.";
     } else if (archetype === 'Over-Giver') {
       feedback = "Your fawning habit has turned you into a safety net for everyone else's obligations. Your current " + highestDebt.label + " (" + Math.round(highestDebtRatio * 100) + "% load) is a physical proof of fawning. You are leaking energy by keeping others comfortable. Let's patch it.";
     } else if (archetype === 'Silent Resenter') {
@@ -123,7 +123,7 @@ export const RecoveryPlan = ({
     } else if (archetype === 'Responsibility Addict') {
       feedback = "You've quietly taken ownership of things that were never yours to carry. Your " + highestDebt.label + " is at " + Math.round(highestDebtRatio * 100) + "%. Today is about leaving one thing where it actually belongs.";
     } else {
-      feedback = "Perfectionism is a slow energy leak. Your " + highestDebt.label + " is currently loaded to " + Math.round(highestDebtRatio * 100) + "% capacity. Stop aiming for 120% where a calm, steady 85% is perfect. Let's practice active nervous system regulation.";
+      feedback = "Perfectionism is a slow energy leak. Your " + highestDebt.label + " is currently loaded to " + Math.round(highestDebtRatio * 100) + "% capacity. Stop aiming for 120% where a calm, steady 85% is perfect. Let's practise active nervous system regulation.";
     }
     return feedback;
   };
@@ -166,7 +166,7 @@ export const RecoveryPlan = ({
         text: 'Establish sleep anchor: Go fully screen-free 1 hour before bed',
         points: 50,
         completed: completedIds.includes('rec_sleep_2'),
-        tag: 'Circadian Stabilization'
+        tag: 'Circadian Stabilisation'
       });
     } else if (debtLabel === 'Neural Fatigue') {
       items.push({
@@ -201,7 +201,7 @@ export const RecoveryPlan = ({
         text: 'Decline or delegate at least one non-essential meeting on your calendar',
         points: 50,
         completed: completedIds.includes('rec_social_2'),
-        tag: 'Calendar Defense'
+        tag: 'Calendar Defence'
       });
     }
 
@@ -231,7 +231,7 @@ export const RecoveryPlan = ({
         text: 'Draft a direct, honest feedback response regarding a repetitive task bypass',
         points: 75,
         completed: completedIds.includes('comm_resenter_1'),
-        tag: 'Radical Candor'
+        tag: 'Radical Candour'
       });
     } else if (archetype === 'Manager in the Middle') {
       items.push({
@@ -246,7 +246,7 @@ export const RecoveryPlan = ({
       items.push({
         id: 'comm_impostor_1',
         section: 'Communicate',
-        text: 'Practice accepting praise for a win out loud, without qualifying or deflecting it',
+        text: 'Practise accepting praise for a win out loud, without qualifying or deflecting it',
         points: 75,
         completed: completedIds.includes('comm_impostor_1'),
         tag: 'Owning Wins'
@@ -264,7 +264,7 @@ export const RecoveryPlan = ({
       items.push({
         id: 'comm_adapter_1',
         section: 'Communicate',
-        text: 'Practice directly requesting one specific accommodation (buffer time, written follow-up) without over-explaining',
+        text: 'Practise directly requesting one specific accommodation (buffer time, written follow-up) without over-explaining',
         points: 75,
         completed: completedIds.includes('comm_adapter_1'),
         tag: 'Direct Ask'
@@ -282,7 +282,7 @@ export const RecoveryPlan = ({
       items.push({
         id: 'comm_crisissprinter_1',
         section: 'Communicate',
-        text: 'Practice telling a colleague "this can wait until tomorrow" for something that genuinely can',
+        text: 'Practise telling a colleague "this can wait until tomorrow" for something that genuinely can',
         points: 75,
         completed: completedIds.includes('comm_crisissprinter_1'),
         tag: 'De-escalating Urgency'
@@ -291,7 +291,7 @@ export const RecoveryPlan = ({
       items.push({
         id: 'comm_ppperformer_1',
         section: 'Communicate',
-        text: 'Practice giving an honest, unpolished answer to "how are you" instead of the automatic "fine"',
+        text: 'Practise giving an honest, unpolished answer to "how are you" instead of the automatic "fine"',
         points: 75,
         completed: completedIds.includes('comm_ppperformer_1'),
         tag: 'Dropping the Performance'
@@ -309,10 +309,10 @@ export const RecoveryPlan = ({
       items.push({
         id: 'comm_exhaust_1',
         section: 'Communicate',
-        text: 'Practice the "I am fully booked this cycle, we can prioritize this next week" script',
+        text: 'Practise the "I am fully booked this cycle, we can prioritise this next week" script',
         points: 75,
         completed: completedIds.includes('comm_exhaust_1'),
-        tag: 'Capacity Defense'
+        tag: 'Capacity Defence'
       });
     }
 
@@ -411,7 +411,7 @@ export const RecoveryPlan = ({
   // peers to fill the space, this honestly shows just the real user's own
   // standing until that's genuinely built.
   const userEntry = {
-    name: optInLeaderboard ? nickname : 'You (Anonymized)',
+    name: optInLeaderboard ? nickname : 'You (Anonymised)',
     level: Math.floor(stats.points / 500) + 1,
     points: stats.points,
     stage: stats.unlockedBadges.includes('boundary_set') ? 'Identity' : 'Safety',
@@ -443,7 +443,7 @@ export const RecoveryPlan = ({
           <div className="space-y-4 max-w-lg">
             <h3 className="text-2xl font-display font-medium tracking-tight text-text-main">Recovery Plan locked</h3>
             <p className="text-sm text-text-muted leading-relaxed">
-              Nova needs both your <strong className="font-medium text-text-main">Burnout Fingerprint Check-in</strong> and your <strong className="font-medium text-text-main">Recovery Debt Tracker</strong> to build a personalized recovery plan.
+              Nova needs both your <strong className="font-medium text-text-main">Burnout Fingerprint Check-in</strong> and your <strong className="font-medium text-text-main">Recovery Debt Tracker</strong> to build a personalised recovery plan.
             </p>
           </div>
 
@@ -567,7 +567,7 @@ export const RecoveryPlan = ({
             </div>
             <div>
               <span className="text-[11px] uppercase tracking-widest font-medium text-[#9a3412] dark:text-primary">Your recovery plan</span>
-              <h2 className="text-xl font-display font-medium text-text-main tracking-tight">Personalized Recovery Plan</h2>
+              <h2 className="text-xl font-display font-medium text-text-main tracking-tight">Personalised Recovery Plan</h2>
             </div>
           </div>
           <div className="flex flex-col items-end shrink-0">
@@ -760,7 +760,7 @@ export const RecoveryPlan = ({
                   onClick={() => setRehearsalStep(1)}
                   className="text-xs text-[#9a3412] dark:text-primary hover:underline font-bold"
                 >
-                  Practice Again
+                  Practise Again
                 </button>
               </motion.div>
             )}
@@ -777,7 +777,7 @@ export const RecoveryPlan = ({
             </div>
             
             <p className="text-[11px] text-text-muted font-medium leading-relaxed">
-              Identify your biggest fawning/pleasing leak today. Nova analyzes saved reflections to adjust capacity targets.
+              Identify your biggest fawning/pleasing leak today. Nova analyses saved reflections to adjust capacity targets.
             </p>
 
             <textarea

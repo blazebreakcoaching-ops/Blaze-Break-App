@@ -105,7 +105,7 @@ export const SituationalOnboarding = ({ onComplete }: OnboardingProps) => {
             </h4>
             <p className="text-xs text-text-muted">
               Your entries and personal metrics stay private. If you're using
-              this through an employer, they only ever see anonymized,
+              this through an employer, they only ever see anonymised,
               aggregated trends — never your individual data.
             </p>
           </div>
@@ -114,7 +114,7 @@ export const SituationalOnboarding = ({ onComplete }: OnboardingProps) => {
             <div className="flex items-start justify-between p-4 rounded-xl border border-border bg-surface hover:border-text-muted transition-colors">
               <div className="space-y-1">
                 <h4 className="text-sm font-semibold text-text-main">
-                  Personalized Greetings
+                  Personalised Greetings
                 </h4>
                 <p className="text-xs text-text-muted">
                   Allow Nova to use your preferred name.
@@ -129,7 +129,7 @@ export const SituationalOnboarding = ({ onComplete }: OnboardingProps) => {
                 }
                 role="switch"
                 aria-checked={profile.useNameInGreetings !== false}
-                aria-label="Personalized Greetings: allow Nova to use your preferred name"
+                aria-label="Personalised Greetings: allow Nova to use your preferred name"
                 className={cn(
                   "w-10 h-6 shrink-0 rounded-full transition-colors relative",
                   profile.useNameInGreetings !== false
@@ -149,7 +149,7 @@ export const SituationalOnboarding = ({ onComplete }: OnboardingProps) => {
             <div className="flex items-start justify-between p-4 rounded-xl border border-border bg-surface hover:border-text-muted transition-colors">
               <div className="space-y-1">
                 <h4 className="text-sm font-semibold text-text-main">
-                  Personalized learning
+                  Personalised learning
                 </h4>
                 <p className="text-xs text-text-muted">
                   Let Nova adjust its suggestions based on your check-ins.
@@ -161,7 +161,7 @@ export const SituationalOnboarding = ({ onComplete }: OnboardingProps) => {
                 }
                 role="switch"
                 aria-checked={profile.letNovaLearn !== false}
-                aria-label="Personalized learning: let Nova adjust its suggestions based on your check-ins"
+                aria-label="Personalised learning: let Nova adjust its suggestions based on your check-ins"
                 className={cn(
                   "w-10 h-6 shrink-0 rounded-full transition-colors relative",
                   profile.letNovaLearn !== false
@@ -273,7 +273,7 @@ export const SituationalOnboarding = ({ onComplete }: OnboardingProps) => {
                     Stage {step + 1} of {steps.length}
                   </span>
                   <span className="text-xs font-bold text-text-muted">
-                    {Math.round(((step + 1) / steps.length) * 100)}% Synchronized
+                    {Math.round(((step + 1) / steps.length) * 100)}% Synchronised
                   </span>
                 </div>
                 <span className="text-xs font-mono font-bold text-text-muted">

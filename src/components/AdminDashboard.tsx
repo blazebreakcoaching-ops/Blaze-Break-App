@@ -406,7 +406,7 @@ export const AdminDashboard = () => {
             Required: Platform Admin Role
           </p>
           <p className="text-sm text-text-muted leading-relaxed">
-            Your current account role (<span className="text-[#9a3412] dark:text-primary font-bold font-mono">{appRole}</span>) is unauthorized to read platform security custom claims or audit logs.
+            Your current account role (<span className="text-[#9a3412] dark:text-primary font-bold font-mono">{appRole}</span>) is unauthorised to read platform security custom claims or audit logs.
           </p>
         </div>
 
@@ -1081,7 +1081,7 @@ export const AdminDashboard = () => {
               <div className="p-5 bg-surface dark:bg-card border border-border rounded-2xl space-y-1">
                 <span className="text-xs font-black uppercase tracking-wider text-text-muted block">Average Exit Intensity</span>
                 <h3 className="text-3xl font-display font-bold text-success dark:text-[#4ade80]">{metrics.avgEndIntensity} <span className="text-xs text-text-muted">/10</span></h3>
-                <span className="text-[10px] text-text-muted">Post-Somatic Stabilization State</span>
+                <span className="text-[10px] text-text-muted">Post-Somatic Stabilisation State</span>
               </div>
               <div className="p-5 bg-surface dark:bg-card border border-border rounded-2xl space-y-1">
                 <span className="text-xs font-black uppercase tracking-wider text-text-muted block">System Effectiveness</span>
@@ -1128,7 +1128,7 @@ export const AdminDashboard = () => {
                   </div>
                   <h4 className="font-display text-lg font-bold text-text-main">Somatic Efficacy Insight</h4>
                   <p className="text-xs text-text-muted leading-relaxed">
-                    Based on anonymized telemetry events, <span className="text-text-main font-semibold">"{metrics.mostEffectiveTool}"</span> is the highest-performing tool, causing the largest percentage drops in subjective anxiety.
+                    Based on anonymised telemetry events, <span className="text-text-main font-semibold">"{metrics.mostEffectiveTool}"</span> is the highest-performing tool, causing the largest percentage drops in subjective anxiety.
                   </p>
                   <p className="text-xs text-text-muted leading-relaxed">
                     This suggests the GAD-informed autonomic breathwork loops successfully decrease sympathovagal overactivity in high-stress states.
@@ -1149,7 +1149,7 @@ export const AdminDashboard = () => {
         <ShieldCheck className="w-5 h-5 text-primary shrink-0 mt-0.5" />
         <div>
           <strong className="text-[#9a3412] dark:text-primary block mb-1">Privacy & Role Hierarchy Guideline</strong> 
-          Every administrative claim promotion (e.g. `platform_owner`, `platform_admin`, etc.) overrides the token claims in Firebase. Under GDPR, NICE, and standard professional guidelines, this board enforces complete isolation of clinical records—no clinical diagnosis data of Generalised Anxiety Disorder (GAD) is ever logged or exposed to organization-level dashboards.
+          Every administrative claim promotion (e.g. `platform_owner`, `platform_admin`, etc.) overrides the token claims in Firebase. Under GDPR, NICE, and standard professional guidelines, this board enforces complete isolation of clinical records—no clinical diagnosis data of Generalised Anxiety Disorder (GAD) is ever logged or exposed to organisation-level dashboards.
         </div>
       </div>
 

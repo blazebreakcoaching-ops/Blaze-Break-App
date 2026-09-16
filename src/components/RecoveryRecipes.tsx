@@ -64,7 +64,7 @@ const RECIPES: Record<RecipeId, Recipe> = {
     breathwork: 'Deep belly breathing. Place hand on stomach, ensure only the stomach rises.',
     thoughtReset: '"Recovery is a biological requirement for performance. I am not lazy; I am reloading."',
     bodyReset: 'Lie flat on the floor for 3 minutes. Surrender your physical weight entirely.',
-    action: 'Do a zero-output activity for 10 minutes (watch a video, read fiction). Do not optimize it.',
+    action: 'Do a zero-output activity for 10 minutes (watch a video, read fiction). Do not optimise it.',
     boundary: 'Put your phone in Do Not Disturb Mode for the next hour.',
     icon: Shield,
     colorClass: 'text-[#166534] dark:text-[#4ade80]',
@@ -94,7 +94,7 @@ const RECIPES: Record<RecipeId, Recipe> = {
     breathwork: 'Rapid nasal inhales (breath of fire) for 15 seconds to wake the sympathetic system up gently.',
     thoughtReset: '"Numbness is simply my nervous system pulling the circuit breaker to protect me from overload."',
     bodyReset: 'Splash freezing cold water on your face, or hold an ice cube. Force a sensory reset.',
-    action: 'Do one tiny, mechanical task that requires no thought (wipe the desk, organize a folder).',
+    action: 'Do one tiny, mechanical task that requires no thought (wipe the desk, organise a folder).',
     boundary: 'Decline all optional social interactions today. Protect the shell.',
     icon: CloudFog,
     colorClass: 'text-text-muted',
@@ -136,7 +136,7 @@ const RECIPES: Record<RecipeId, Recipe> = {
   capacity: {
     id: 'capacity',
     trigger: 'I am over capacity',
-    breathwork: 'Inhale and audibly sigh on the exhale. A loud, vocalized drop of tension.',
+    breathwork: 'Inhale and audibly sigh on the exhale. A loud, vocalised drop of tension.',
     thoughtReset: '"If everything is urgent, nothing is urgent. System failure is imminent if I do not drop load."',
     bodyReset: 'Sit down, put your head between your knees, and breathe for 60 seconds.',
     action: 'Cancel or reschedule the next thing on your calendar today. No apologies, just a logistical update.',
@@ -171,7 +171,7 @@ export const RecoveryRecipes = ({ fingerprint, onAwardPoints }: RecoveryRecipesP
           <div className="space-y-4">
             <h3 className="text-5xl font-display font-bold text-text-main tracking-tight">Recovery Recipes</h3>
             <p className="text-xl text-text-muted font-medium  max-w-2xl">
-              "Like a personalized playlist, but for burnout recovery. Simple. Repeatable. Effective."
+              "Like a personalised playlist, but for burnout recovery. Simple. Repeatable. Effective."
             </p>
           </div>
         </div>

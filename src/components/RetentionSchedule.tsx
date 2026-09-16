@@ -6,7 +6,7 @@ export const RetentionSchedule = () => {
     { category: 'Private Nova Chat History', retention: '30 Days', action: 'Auto-Purge', icon: Clock, color: 'text-destructive' },
     { category: 'Mood Logs & Triggers', retention: '12 Months', action: 'Anonymise', icon: Server, color: 'text-primary' },
     { category: 'Account Metadata', retention: 'Duration of Account', action: 'Retain', icon: History, color: 'text-text-muted' },
-    { category: 'Organization Aggregates', retention: '24 Months', action: 'Retain (Anonymized)', icon: EyeOff, color: 'text-success dark:text-[#4ade80]' }
+    { category: 'Organisation Aggregates', retention: '24 Months', action: 'Retain (Anonymised)', icon: EyeOff, color: 'text-success dark:text-[#4ade80]' }
   ];
 
   return (
