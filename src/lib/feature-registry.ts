@@ -390,7 +390,7 @@ export const FEATURE_REGISTRY: Record<string, FeatureDefinition> = {
     name: 'Positive Reinforcement Engine',
     purpose: 'Rewards healthy recovery behaviours',
     section: 'Core Architecture',
-    status: 'planned',
+    status: 'active',
     riskLevel: 'low',
     usesAI: false,
     usesSensitiveData: false,

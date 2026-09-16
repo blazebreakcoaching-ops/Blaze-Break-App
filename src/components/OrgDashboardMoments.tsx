@@ -38,6 +38,8 @@ export const OrgDashboardMoments = () => {
   const [winsLoading, setWinsLoading] = useState(true);
 
   const [isOrgAdmin, setIsOrgAdmin] = useState(false);
+  const [suggestions, setSuggestions] = useState<string[]>([]);
+  const [suggestionsLoading, setSuggestionsLoading] = useState(false);
   const [challenges, setChallenges] = useState<{ id: string; title: string; description: string; participantCount: number; participationRate: number; joined: boolean; active: boolean }[]>([]);
   const [challengesLoading, setChallengesLoading] = useState(true);
   const [challengesError, setChallengesError] = useState('');
@@ -80,6 +82,24 @@ export const OrgDashboardMoments = () => {
     setWallLoading(false);
   };
 
+  // Positive Reinforcement Engine: real, admin-only suggestions for the
+  // composer below, derived from an already k-anonymity-gated engagement
+  // signal server-side - never fabricated, and never shown below the
+  // org's cohort threshold (locked: true just yields no suggestions).
+  const fetchSuggestions = async (currentOrgId: string) => {
+    setSuggestionsLoading(true);
+    try {
+      const res = await secureApiFetch(`/api/org/${currentOrgId}/recognition-suggestions`);
+      const data = await res.json();
+      if (res.ok && !data.locked) {
+        setSuggestions(data.suggestions || []);
+      }
+    } catch (e) {
+      // Non-fatal - the composer works fine with no suggestions shown.
+    }
+    setSuggestionsLoading(false);
+  };
+
   useEffect(() => {
     const load = async () => {
       try {
@@ -90,6 +110,7 @@ export const OrgDashboardMoments = () => {
           setIsOrgAdmin(!!me.isOrgAdmin);
           await fetchWall(me.organisationId);
           await fetchChallenges(me.organisationId);
+          if (me.isOrgAdmin) await fetchSuggestions(me.organisationId);
         } else {
           setWallLoading(false);
           setChallengesLoading(false);
@@ -323,6 +344,28 @@ export const OrgDashboardMoments = () => {
       <AnimatePresence mode="wait">
         {activeTab === 'wall' && (
           <motion.div key="wall" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95 }} className="space-y-6">
+            {isOrgAdmin && !suggestionsLoading && suggestions.length > 0 && (
+              <div className="card bg-warning/5 border-warning/20 space-y-3">
+                <h4 className="text-sm font-bold text-text-main flex items-center gap-2"><Sparkles className="w-4 h-4 text-warning" /> Suggested shout-outs</h4>
+                <p className="text-xs text-text-muted">
+                  Based on your team's real engagement signal this week — nothing here names anyone individually. Use one as a starting point, or ignore.
+                </p>
+                <div className="space-y-2">
+                  {suggestions.map((s, i) => (
+                    <div key={i} className="flex items-start gap-3 p-3 bg-white dark:bg-card border border-border rounded-xl">
+                      <p className="text-xs text-text-main leading-relaxed flex-1">{s}</p>
+                      <button
+                        onClick={() => setNewMessage(s)}
+                        className="shrink-0 text-[10px] font-black uppercase tracking-widest text-[#9a3412] dark:text-warning hover:underline"
+                      >
+                        Use this
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <div className="card bg-white dark:bg-card border-border space-y-4">
               <h4 className="text-sm font-bold text-text-main flex items-center gap-2"><Heart className="w-4 h-4 text-warning" /> Note Some Appreciation</h4>
               <textarea

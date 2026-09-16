@@ -25,6 +25,7 @@ import { z } from 'zod';
 import { memoryToolIsAllowed, searchMemories, isValidRecoveryDuration, validateMemoryWrite, validateFeatureSuggestion, SUGGESTABLE_FEATURES, toolsAreEnabled, liveVoiceIsEnabled, NovaMemoryDoc } from './nova-tools';
 import { toClaudeTools, GeminiStyleToolDeclaration } from './nova-claude-tools';
 import { computeClimateStrain, computeClimateStrainByDimension, computeMoodStrain, computeOverallStrain, computeTrend } from './org-risk-trend';
+import { suggestRecognitionPrompts } from './positive-reinforcement';
 import { isRealGuardian, isValidGuardianPhone, buildGuardianCallRequestMessage, extractFirstName, nudgeSchedulerIsEnabled } from './guardian-alert';
 import { collectionsForExport, collectionsForErasure } from './user-data-collections';
 import { isValidGad7Answers, scoreGad7, interpretGad7 } from './gad7';
@@ -4783,6 +4784,67 @@ app.get("/api/org/:orgId/dashboard", verifyAppCheck, authenticateFirebaseUser, a
       moodDistribution: { positive: moodPositive, negative: moodNegative, neutral: moodNeutral },
       avgMoodIntensity: moodCount > 0 ? Number((moodIntensitySum / moodCount).toFixed(1)) : null,
       topBodySignals,
+    });
+  } catch (err: any) {
+    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
+  }
+});
+
+// Positive Reinforcement Engine: suggests recognition prompts for the wall
+// below, built entirely from the same k-anonymity-gated engagement-rate
+// signal the dashboard endpoint above already computes - never a named
+// individual, and refuses below the org's cohort threshold exactly like
+// every other aggregate endpoint in this file. Suggestions are just text
+// for a human to review/edit/discard in the composer; nothing here posts
+// anything on anyone's behalf.
+app.get("/api/org/:orgId/recognition-suggestions", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const { orgId } = req.params;
+    const { org } = await requireOrgAdmin(req, orgId);
+    const db = getDb();
+
+    const threshold = org.privacyThreshold || 5;
+    const memberUids: string[] = org.memberUids || [];
+    const consentingUids = await getConsentingMemberUids(db, memberUids);
+
+    if (consentingUids.length < threshold) {
+      return res.json({ locked: true, cohortSize: consentingUids.length, threshold, suggestions: [] });
+    }
+
+    // Existence-only checks (limit 1), unlike the dashboard endpoint's full
+    // scan - all this needs is "did this member show any activity in this
+    // window", not the full mood/body distribution.
+    const countActiveInWindow = async (sinceIso: string, untilIso: string): Promise<number> => {
+      let active = 0;
+      await Promise.all(consentingUids.map(async (uid) => {
+        const moodSnap = await db.collection("users").doc(uid).collection("mood_pulses")
+          .where("createdAt", ">=", sinceIso).where("createdAt", "<", untilIso).limit(1).get();
+        if (!moodSnap.empty) { active++; return; }
+        const bodySnap = await db.collection("users").doc(uid).collection("body_checkins")
+          .where("createdAt", ">=", sinceIso).where("createdAt", "<", untilIso).limit(1).get();
+        if (!bodySnap.empty) active++;
+      }));
+      return active;
+    };
+
+    const now = Date.now();
+    const nowIso = new Date(now).toISOString();
+    const oneWeekAgo = new Date(now - 7 * 24 * 60 * 60 * 1000).toISOString();
+    const twoWeeksAgo = new Date(now - 14 * 24 * 60 * 60 * 1000).toISOString();
+
+    const [currentActive, previousActive] = await Promise.all([
+      countActiveInWindow(oneWeekAgo, nowIso),
+      countActiveInWindow(twoWeeksAgo, oneWeekAgo),
+    ]);
+
+    const current = { engagementRate: Math.round((currentActive / consentingUids.length) * 100) };
+    const previous = { engagementRate: Math.round((previousActive / consentingUids.length) * 100) };
+
+    res.json({
+      locked: false,
+      cohortSize: consentingUids.length,
+      threshold,
+      suggestions: suggestRecognitionPrompts(current, previous),
     });
   } catch (err: any) {
     res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
