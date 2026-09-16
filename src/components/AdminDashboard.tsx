@@ -191,7 +191,14 @@ export const AdminDashboard = () => {
       }
       setOrgs(loadedOrgs);
 
-      if (fetchFailed || loadedUsers.length === 0 || loadedAdmins.length === 0 || loadedLogs.length === 0) {
+      // Only a genuine fetch failure counts as an error here - an empty
+      // list (no admin promotions yet, no audit log entries yet) is a
+      // normal, honest state for a lightly-used platform, and each tab
+      // already renders its own clear "nothing here yet" message for it.
+      // Treating "loaded fine, genuinely nothing there" the same as
+      // "failed to load" showed a scary error banner on a completely
+      // healthy first-time view.
+      if (fetchFailed) {
         setLoadError(true);
       }
 
