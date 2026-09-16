@@ -7887,8 +7887,31 @@ async function setupVite() {
     app.use(vite.middlewares);
   } else {
     const distPath = path.join(process.cwd(), 'dist');
-    app.use(express.static(distPath));
+    app.use(express.static(distPath, {
+      // Every other file here is content-hashed by Vite (safe to cache
+      // indefinitely - a changed file gets a new filename), but
+      // index.html's filename never changes. Without this, a browser can
+      // keep serving a stale, cached index.html referencing a previous
+      // deploy's asset hashes long after those files are gone from the
+      // server - the exact "Failed to load module script... MIME type of
+      // text/html" blank-page failure this fixes.
+      setHeaders: (res, filePath) => {
+        if (path.basename(filePath) === 'index.html') {
+          res.setHeader('Cache-Control', 'no-cache');
+        }
+      },
+    }));
     app.get('*all', (req, res) => {
+      // A request that reaches here for something under /assets/ or with
+      // a file extension is a stale reference to a build artifact that no
+      // longer exists - typically a browser still holding an old
+      // index.html from before a redeploy. A real 404 lets the browser
+      // report that cleanly; silently serving today's index.html instead
+      // (200, wrong MIME type) is what produced the confusing blank page.
+      if (req.path.startsWith('/assets/') || path.extname(req.path)) {
+        return res.status(404).end();
+      }
+      res.setHeader('Cache-Control', 'no-cache');
       res.sendFile(path.join(distPath, 'index.html'));
     });
   }
