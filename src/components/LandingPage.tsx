@@ -150,6 +150,9 @@ export const LandingPage = ({ onStart, onOpenTrustCentre }: LandingPageProps) =>
         <p className="text-[11px] uppercase tracking-[0.3em] font-black text-text-muted">
           Blaze Break — Burnout Recovery, Built Right
         </p>
+        <p className="text-[10px] tracking-[0.2em] font-medium text-text-muted mt-3">
+          Created by Tourae Martin
+        </p>
       </footer>
 
       {/* Sleek Authentication Modal Overlay */}

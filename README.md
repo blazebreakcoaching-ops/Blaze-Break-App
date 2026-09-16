@@ -1,5 +1,7 @@
 # Blaze Break
 
+Created by Tourae Martin.
+
 Burnout recovery coaching app for individuals, teams, and organisations.
 A React + Vite frontend backed by a real Express server (`server.ts`),
 Firebase/Firestore, and Nova - an AI coach with real tool use, memory,
