@@ -4046,43 +4046,32 @@ app.get("/api/admin/summary", verifyAppCheck, authenticateFirebaseUser, async (r
 app.get("/api/admin/users", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
   try {
     requireAdmin(req);
-    let users = [];
     const db = getDb();
-    try {
-      const usersSnap = await db.collection("users").limit(100).get();
-      if (usersSnap.empty) {
-        users = [
-          {
-            uid: (req as any).user.uid,
-            email: (req as any).user.email || "current-user@example.com",
-            createdAt: new Date().toISOString(),
-            lastSignIn: new Date().toISOString(),
-            accessStatus: "active"
-          }
-        ];
-      } else {
-        users = usersSnap.docs.map(doc => {
-          const data = doc.data();
-          return {
-            uid: doc.id,
-            email: data.email || "unknown@example.com",
-            createdAt: data.createdAt || new Date().toISOString(),
-            lastSignIn: data.lastActivity || new Date().toISOString(),
-            accessStatus: "active"
-          };
-        });
+    const usersSnap = await db.collection("users").limit(100).get();
+    // Email/join-date/last-active come from the real Firebase Auth record,
+    // not the Firestore users/{uid} doc - that doc's own `email` field
+    // isn't reliably populated, and trusting it produced the exact
+    // "unknown@example.com" / "today" placeholders this page's own error
+    // banner says it refuses to show. authUser.metadata is always real for
+    // an account that genuinely exists, the same source
+    // GET /api/admin/users/:uid already uses correctly for one account.
+    const users = await Promise.all(usersSnap.docs.map(async (doc) => {
+      try {
+        const authUser = await getAuth().getUser(doc.id);
+        return {
+          uid: doc.id,
+          email: authUser.email || null,
+          createdAt: authUser.metadata.creationTime,
+          lastSignIn: authUser.metadata.lastSignInTime,
+          accessStatus: authUser.disabled ? "disabled" : "active",
+        };
+      } catch (e) {
+        // A Firestore doc with no matching live Auth account (e.g.
+        // deleted directly in the Auth console) - surfaced honestly
+        // rather than papered over with a fabricated email/date.
+        return { uid: doc.id, email: null, createdAt: null, lastSignIn: null, accessStatus: "unknown" };
       }
-    } catch (adminErr: any) {
-      users = [
-        {
-          uid: (req as any).user.uid,
-          email: (req as any).user.email || "current-user@example.com",
-          createdAt: new Date().toISOString(),
-          lastSignIn: new Date().toISOString(),
-          accessStatus: "active"
-        }
-      ];
-    }
+    }));
     res.json({ users, total: users.length });
   } catch (err: any) {
     console.error("[ADMIN] Error fetching users:", err.message);

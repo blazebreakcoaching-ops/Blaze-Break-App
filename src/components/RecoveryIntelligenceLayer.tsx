@@ -767,8 +767,8 @@ export const RecoveryIntelligenceLayer = ({ onAwardPoints, fingerprint }: Recove
               aria-current={activeRoom === room.id ? 'true' : undefined}
               className={cn(
                 "w-full p-4 rounded-2xl text-left border transition-all flex items-center justify-between group cursor-pointer",
-                activeRoom === room.id 
-                  ? "bg-text-main text-surface border-text-main shadow-md scale-[1.01]" 
+                activeRoom === room.id
+                  ? "bg-primary/10 text-[#9a3412] dark:text-primary border-primary shadow-md scale-[1.01]"
                   : "bg-surface/20 hover:bg-surface/50 text-text-muted hover:text-text-main border-border/45"
               )}
             >
@@ -777,8 +777,8 @@ export const RecoveryIntelligenceLayer = ({ onAwardPoints, fingerprint }: Recove
                   <h4 className="font-bold text-xs">{room.name}</h4>
                   <span className={cn(
                     "text-[10px] uppercase tracking-wider font-black px-1.5 py-0.5 rounded",
-                    activeRoom === room.id 
-                      ? "bg-surface/10 text-surface" 
+                    activeRoom === room.id
+                      ? "bg-primary/20 text-[#9a3412] dark:text-primary"
                       : "bg-card text-text-muted"
                   )}>
                     {room.pill}
@@ -786,7 +786,7 @@ export const RecoveryIntelligenceLayer = ({ onAwardPoints, fingerprint }: Recove
                 </div>
                 <p className={cn(
                   "text-xs mt-0.5 font-medium",
-                  activeRoom === room.id ? "text-surface/70" : "text-text-muted/70"
+                  activeRoom === room.id ? "text-[#9a3412]/70 dark:text-primary/70" : "text-text-muted/70"
                 )}>{room.desc}</p>
               </div>
               <ChevronRight className={cn("w-4 h-4 transition-transform", activeRoom === room.id ? "translate-x-1" : "opacity-0 group-hover:opacity-100")} />
