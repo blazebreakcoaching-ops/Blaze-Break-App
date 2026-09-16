@@ -1943,6 +1943,9 @@ app.post("/api/nova/speech", verifyAppCheck, speechLimiter, authenticateFirebase
             voiceConfig: {
               prebuiltVoiceConfig: { voiceName: "Aoede" },
             },
+            // Blaze Break is a British-branded app - Nova should sound like
+            // it, not defer to the model's US-English default.
+            languageCode: "en-GB",
           },
         },
       });
@@ -8027,6 +8030,7 @@ if (process.env.TEST_MODE !== 'true') {
             responseModalities: [Modality.AUDIO],
             speechConfig: {
               voiceConfig: { prebuiltVoiceConfig: { voiceName: "Aoede" } }, // Same voice as the existing single-shot TTS endpoint, so Nova sounds consistent everywhere.
+              languageCode: "en-GB", // British accent, matching the single-shot TTS endpoint.
             },
             // Native transcription of both sides of the call, relayed to the
             // client so the voice-call UI can show a live, accessible
