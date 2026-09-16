@@ -24,6 +24,17 @@ import { NovaVoiceCall } from "./NovaVoiceCall";
 import { NovaToneControl } from "./NovaToneControl";
 import { ConfirmDialog } from "./ConfirmDialog";
 
+// The server's ChatRequestSchema (server.ts) caps history at 50 entries
+// and systemInstruction at 3000 characters, and rejects the whole request
+// if either is exceeded. Nova's own memory brain (nova-brain.ts) and the
+// localStorage-persisted chat history both grow unbounded over real,
+// long-term use, so this component stays well under those caps rather than
+// relying on the server's hard ceiling - see handleSend and
+// getDynamicContext below.
+const NOVA_CHAT_HISTORY_LIMIT = 20;
+const NOVA_BRAIN_CONTEXT_LIMIT = 15;
+const NOVA_SYSTEM_INSTRUCTION_LIMIT = 2800;
+
 interface Message {
   role: "user" | "model";
   parts: [{ text: string }];
@@ -517,8 +528,16 @@ We are now in real-time voice mode. Be concise and conversational, you don't nee
     try {
       const brain = getNovaBrain();
       if (brain.length > 0) {
+        // Bounded to the most recent entries - only 'state' memories are
+        // pruned in nova-brain.ts, so profile/trigger/rule/preference
+        // memories accumulate forever, and dumping all of them here used to
+        // silently blow past the server's systemInstruction size cap after
+        // enough real use.
+        const recentBrain = [...brain]
+          .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+          .slice(0, NOVA_BRAIN_CONTEXT_LIMIT);
         contextStr += `\n--- Nova Personal Context Brain ---\n`;
-        brain.forEach((mem) => {
+        recentBrain.forEach((mem) => {
           contextStr += `[${mem.type.toUpperCase()}] (${mem.confidence} confidence): ${mem.content}\n`;
         });
         contextStr += `-----------------------------------\n`;
@@ -593,18 +612,31 @@ We are now in real-time voice mode. Be concise and conversational, you don't nee
           "TONE OVERRIDE: Validate their resentment as valuable data. Encourage radical candor and setting boundaries, even if it causes minor friction.";
       }
 
-      const response = await secureApiFetch("/api/nova/chat", {
-        method: "POST",
-        data: {
-          message: messageText,
-          history: messages,
-          systemInstruction: `
+      const fullSystemInstruction = `
             ${systemInstruction || ""}
             User Burnout Fingerprint: ${JSON.stringify(fingerprint || "Not taken yet")}.
             ${dynamicContext}
             Conversation context is critical. Refer to past behaviors mentioned in history if relevant. Match the user's preferred tone noted above. Gently call out performance-identity fawning or anxiety-driven overwork if they're pretending things are urgent, but stay warm - this is a person going through burnout, not a performance review.
             ${toneModifier}
-          `,
+          `;
+
+      const response = await secureApiFetch("/api/nova/chat", {
+        method: "POST",
+        data: {
+          message: messageText,
+          // The server rejects the whole request if history has more than
+          // 50 entries, and nova_chat_history in localStorage is never
+          // pruned client-side - only the recent turns matter for a live
+          // reply anyway.
+          history: messages.slice(-NOVA_CHAT_HISTORY_LIMIT),
+          // A hard ceiling as a last line of defence: even with the brain
+          // context capped above, a long fingerprint or workload-check-in
+          // answer could still push this over the server's 3000-character
+          // cap and silently break the whole chat with a "forbidden fields"
+          // validation error.
+          systemInstruction: fullSystemInstruction.length > NOVA_SYSTEM_INSTRUCTION_LIMIT
+            ? fullSystemInstruction.slice(0, NOVA_SYSTEM_INSTRUCTION_LIMIT)
+            : fullSystemInstruction,
         },
       });
 
