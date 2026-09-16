@@ -118,6 +118,7 @@ const CalendarDefenseView = lazy(() => import("./components/CalendarDefenseView.
 import { secureApiFetch } from "./lib/secure-api";
 import { syncCalendarSignal } from "./lib/calendar-signals";
 import { subscribeToPushNotifications, reportPulseStatus } from "./lib/push-notifications";
+import { logAuditAction } from "./lib/audit-logger";
 
 type AppFlow = "landing" | "onboarding" | "app" | "trust-centre" | "admin";
 
@@ -1741,6 +1742,18 @@ export default function App() {
               content: `Onboarding complete. Goal: ${profile.purpose || "N/A"}. Main drain: ${profile.primaryDrain || "N/A"}. Preferred tone: ${profile.novaTone || "N/A"}.`,
               confidence: "verified",
               canEdit: true,
+            });
+
+            // Structured record of which consent toggles were on/off at
+            // completion - never the free-text answers themselves, matching
+            // the "structured diffs, never raw content" rule every other
+            // audit log entry in this app already follows.
+            logAuditAction({
+              userId: profile.fullName || "anonymous",
+              action: "Completed onboarding",
+              target: "onboarding_consent",
+              status: "authorised",
+              details: `useNameInGreetings=${profile.useNameInGreetings !== false}, letNovaLearn=${profile.letNovaLearn !== false}, sendNovaNudges=${profile.sendNovaNudges !== false}`,
             });
           }}
         />

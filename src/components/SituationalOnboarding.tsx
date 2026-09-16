@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { UserProfileData } from "../types";
 import { cn } from "../lib/utils";
+import { logAuditAction } from "../lib/audit-logger";
 
 interface OnboardingProps {
   onComplete: (profile: UserProfileData) => void;
@@ -121,12 +122,20 @@ export const SituationalOnboarding = ({ onComplete }: OnboardingProps) => {
                 </p>
               </div>
               <button
-                onClick={() =>
+                onClick={() => {
+                  const next = !profile.useNameInGreetings;
+                  logAuditAction({
+                    userId: profile.fullName || 'anonymous',
+                    action: `Toggled consent for personalised_greetings to ${next}`,
+                    target: 'personalised_greetings',
+                    status: next ? 'authorised' : 'denied',
+                    details: 'User explicitly changed consent during onboarding.',
+                  });
                   setProfile((p) => ({
                     ...p,
-                    useNameInGreetings: !p.useNameInGreetings,
-                  }))
-                }
+                    useNameInGreetings: next,
+                  }));
+                }}
                 role="switch"
                 aria-checked={profile.useNameInGreetings !== false}
                 aria-label="Personalised Greetings: allow Nova to use your preferred name"
@@ -156,9 +165,17 @@ export const SituationalOnboarding = ({ onComplete }: OnboardingProps) => {
                 </p>
               </div>
               <button
-                onClick={() =>
-                  setProfile((p) => ({ ...p, letNovaLearn: !p.letNovaLearn }))
-                }
+                onClick={() => {
+                  const next = !profile.letNovaLearn;
+                  logAuditAction({
+                    userId: profile.fullName || 'anonymous',
+                    action: `Toggled consent for personalised_learning to ${next}`,
+                    target: 'personalised_learning',
+                    status: next ? 'authorised' : 'denied',
+                    details: 'User explicitly changed consent during onboarding.',
+                  });
+                  setProfile((p) => ({ ...p, letNovaLearn: next }));
+                }}
                 role="switch"
                 aria-checked={profile.letNovaLearn !== false}
                 aria-label="Personalised learning: let Nova adjust its suggestions based on your check-ins"
@@ -188,12 +205,20 @@ export const SituationalOnboarding = ({ onComplete }: OnboardingProps) => {
                 </p>
               </div>
               <button
-                onClick={() =>
+                onClick={() => {
+                  const next = !profile.sendNovaNudges;
+                  logAuditAction({
+                    userId: profile.fullName || 'anonymous',
+                    action: `Toggled consent for gentle_reminders to ${next}`,
+                    target: 'gentle_reminders',
+                    status: next ? 'authorised' : 'denied',
+                    details: 'User explicitly changed consent during onboarding.',
+                  });
                   setProfile((p) => ({
                     ...p,
-                    sendNovaNudges: !p.sendNovaNudges,
-                  }))
-                }
+                    sendNovaNudges: next,
+                  }));
+                }}
                 role="switch"
                 aria-checked={profile.sendNovaNudges !== false}
                 aria-label="Gentle reminders: get occasional check-in prompts when it might help"

@@ -305,7 +305,7 @@ export const FEATURE_REGISTRY: Record<string, FeatureDefinition> = {
     name: 'Personalised Onboarding',
     purpose: 'Gathers user context safely',
     section: 'Core Architecture',
-    status: 'planned',
+    status: 'active',
     riskLevel: 'medium',
     usesAI: false,
     usesSensitiveData: true,
