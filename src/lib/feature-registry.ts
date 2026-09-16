@@ -416,7 +416,7 @@ export const FEATURE_REGISTRY: Record<string, FeatureDefinition> = {
     name: 'Workplace Governance Console',
     purpose: 'Privacy, thresholds, permissions and audits',
     section: 'Privacy & Governance',
-    status: 'planned',
+    status: 'active',
     riskLevel: 'medium',
     usesAI: false,
     usesSensitiveData: false,

@@ -29,7 +29,7 @@ import { suggestRecognitionPrompts } from './positive-reinforcement';
 import { isRealGuardian, isValidGuardianPhone, buildGuardianCallRequestMessage, extractFirstName, nudgeSchedulerIsEnabled } from './guardian-alert';
 import { collectionsForExport, collectionsForErasure } from './user-data-collections';
 import { isValidGad7Answers, scoreGad7, interpretGad7 } from './gad7';
-import { OrgRole, isOrgRole, hasOrgPermission, canAssignRole, OrgPermission } from './org-rbac';
+import { OrgRole, isOrgRole, hasOrgPermission, canAssignRole, OrgPermission, ORG_ROLE_PERMISSIONS } from './org-rbac';
 import { getEffectiveDataPolicy, validateDataPolicyUpdate } from './org-data-policy';
 import { initialAuthStatus, validateConnectorCreate, canSeeConnectorDetail, ORG_CONNECTOR_TYPES } from './org-connectors';
 import { isDeviceChannel, isValidAppVersion, validateDeviceRegistration, evaluateUpdateStatus, DEVICE_CHANNELS } from './desktop-deployment';
@@ -4989,7 +4989,7 @@ app.get("/api/org/:orgId/suggestions", verifyAppCheck, authenticateFirebaseUser,
 app.post("/api/org/:orgId/cost-inputs", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
   try {
     const { orgId } = req.params;
-    await requireOrgAdmin(req, orgId);
+    const { org } = await requireOrgAdmin(req, orgId);
     const { annualSicknessDays, avgDailyCostPerEmployee, headcount } = req.body;
     if (
       typeof annualSicknessDays !== 'number' || annualSicknessDays < 0 ||
@@ -5004,6 +5004,7 @@ app.post("/api/org/:orgId/cost-inputs", verifyAppCheck, authenticateFirebaseUser
       costInputs,
       updatedAt: FieldValue.serverTimestamp(),
     });
+    await logOrgAuditAction(req, orgId, "update_cost_inputs", "organisation", orgId, org.costInputs || null, costInputs);
     // Also appended to a real history log, not just overwritten - this is
     // what makes the "track your trend over months" claim already shown in
     // the UI an honest one rather than another insinuated-but-missing
@@ -5521,12 +5522,15 @@ app.post("/api/org/:orgId/members/:memberUid/team", verifyAppCheck, authenticate
     if (team !== null && (typeof team !== 'string' || team.length > 60)) {
       return res.status(400).json({ error: "Team name must be text under 60 characters, or null to clear it." });
     }
+    const previousTeam: string | null = (org.memberTeams || {})[memberUid] || null;
     const trimmed = typeof team === 'string' ? team.trim() : null;
+    const nextTeam = trimmed && trimmed.length > 0 ? trimmed : null;
     const db = getDb();
     const fieldPath = `memberTeams.${memberUid}`;
     await db.collection("organisations").doc(orgId).update({
-      [fieldPath]: trimmed && trimmed.length > 0 ? trimmed : FieldValue.delete(),
+      [fieldPath]: nextTeam ?? FieldValue.delete(),
     });
+    await logOrgAuditAction(req, orgId, "assign_member_team", "member", memberUid, { team: previousTeam }, { team: nextTeam });
     res.json({ success: true });
   } catch (err: any) {
     res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
@@ -5689,6 +5693,38 @@ app.get("/api/org/:orgId/audit-logs", verifyAppCheck, authenticateFirebaseUser, 
       .orderBy("createdAt", "desc").limit(limitN).get();
     const logs = snap.docs.map((d: any) => ({ id: d.id, ...d.data() }));
     res.json({ logs });
+  } catch (err: any) {
+    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("not found") ? 404 : 500).json({ error: err.message });
+  }
+});
+
+// Workplace Governance Console: a single read combining the org's real
+// privacy threshold, its members' real assigned roles (resolved via
+// getOrgMemberRole, so legacy orgs without a granular members/{uid} doc
+// yet still resolve correctly), and the static role->permission
+// reference table from org-rbac.ts - generated from the real source of
+// truth, never a hand-duplicated copy that could drift out of sync.
+// Gated the same as the audit log below, since this is the same
+// "who can do what, and who's actually assigned what" surface.
+app.get("/api/org/:orgId/governance", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const { orgId } = req.params;
+    const { db, org } = await requireOrgPermission(req, orgId, 'org.audit.read');
+    const memberUids: string[] = org.memberUids || [];
+    const members = await Promise.all(memberUids.map(async (uid) => {
+      const role = await getOrgMemberRole(db, orgId, org, uid);
+      try {
+        const authUser = await getAuth().getUser(uid);
+        return { uid, email: authUser.email || null, displayName: authUser.displayName || null, role };
+      } catch (e) {
+        return { uid, email: null, displayName: null, role };
+      }
+    }));
+    res.json({
+      privacyThreshold: org.privacyThreshold || 5,
+      members,
+      roleReference: ORG_ROLE_PERMISSIONS,
+    });
   } catch (err: any) {
     res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("not found") ? 404 : 500).json({ error: err.message });
   }
@@ -6311,23 +6347,30 @@ app.post("/api/org/:orgId/regenerate-join-code", verifyAppCheck, authenticateFir
 app.post("/api/org/:orgId/settings", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
   try {
     const { orgId } = req.params;
-    await requireOrgAdmin(req, orgId);
+    const { org } = await requireOrgAdmin(req, orgId);
     const { name, privacyThreshold } = req.body;
     const update: any = { updatedAt: FieldValue.serverTimestamp() };
+    const before: Record<string, unknown> = {};
+    const after: Record<string, unknown> = {};
     if (name !== undefined) {
       if (typeof name !== 'string' || name.trim().length === 0 || name.length > 100) {
         return res.status(400).json({ error: "Name must be 1-100 characters." });
       }
       update.name = name.trim();
+      before.name = org.name;
+      after.name = update.name;
     }
     if (privacyThreshold !== undefined) {
       if (typeof privacyThreshold !== 'number' || privacyThreshold < 3 || privacyThreshold > 100) {
         return res.status(400).json({ error: "Minimum cohort size must be between 3 and 100." });
       }
       update.privacyThreshold = privacyThreshold;
+      before.privacyThreshold = org.privacyThreshold || 5;
+      after.privacyThreshold = privacyThreshold;
     }
     const db = getDb();
     await db.collection("organisations").doc(orgId).update(update);
+    await logOrgAuditAction(req, orgId, "update_org_settings", "organisation", orgId, before, after);
     res.json({ success: true });
   } catch (err: any) {
     res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });

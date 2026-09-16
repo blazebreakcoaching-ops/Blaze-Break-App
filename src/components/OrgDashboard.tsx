@@ -61,7 +61,7 @@ const BODY_SIGNAL_LABELS: Record<string, string> = {
 };
 
 export const OrgDashboard = () => {
-  const [activeSubTab, setActiveSubTab] = useState<'climate' | 'pulse' | 'value' | 'moments' | 'team'>('pulse');
+  const [activeSubTab, setActiveSubTab] = useState<'climate' | 'pulse' | 'value' | 'moments' | 'team' | 'governance'>('pulse');
   const [alertEnabled, setAlertEnabled] = useState(false);
 
   const [orgStatus, setOrgStatus] = useState<{ organisationId: string | null; organisationName?: string; isOrgAdmin?: boolean; joinCode?: string; privacyThreshold?: number } | null>(null);
@@ -142,6 +142,58 @@ export const OrgDashboard = () => {
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+
+  // Workplace Governance Console: fetched lazily (only once the tab is
+  // actually opened, not on every dashboard load) since it's an
+  // occasional reference view, not something shown on the default screen.
+  const [governanceData, setGovernanceData] = useState<{
+    privacyThreshold: number;
+    members: { uid: string; email: string | null; displayName: string | null; role: string | null }[];
+    roleReference: Record<string, string[]>;
+  } | null>(null);
+  const [governanceLoading, setGovernanceLoading] = useState(false);
+  const [governanceError, setGovernanceError] = useState('');
+  const [auditLogs, setAuditLogs] = useState<{ id: string; actorEmail: string; action: string; targetResourceType: string; targetResourceId: string; createdAt: any }[]>([]);
+  const [auditLogsLoading, setAuditLogsLoading] = useState(false);
+  const [auditLogsError, setAuditLogsError] = useState('');
+
+  const fetchGovernance = async (currentOrgId: string) => {
+    setGovernanceLoading(true);
+    setGovernanceError('');
+    try {
+      const res = await secureApiFetch(`/api/org/${currentOrgId}/governance`);
+      const data = await res.json();
+      if (!res.ok) {
+        setGovernanceError(data.error || 'Could not load governance data.');
+      } else {
+        setGovernanceData(data);
+      }
+    } catch (e) {
+      setGovernanceError('Could not load governance data.');
+    }
+    setGovernanceLoading(false);
+
+    setAuditLogsLoading(true);
+    setAuditLogsError('');
+    try {
+      const logsRes = await secureApiFetch(`/api/org/${currentOrgId}/audit-logs?limit=50`);
+      const logsData = await logsRes.json();
+      if (!logsRes.ok) {
+        setAuditLogsError(logsData.error || 'Could not load the audit log.');
+      } else {
+        setAuditLogs(logsData.logs || []);
+      }
+    } catch (e) {
+      setAuditLogsError('Could not load the audit log.');
+    }
+    setAuditLogsLoading(false);
+  };
+
+  useEffect(() => {
+    if (activeSubTab === 'governance' && orgStatus?.organisationId && orgStatus.isOrgAdmin && !governanceData && !governanceLoading) {
+      fetchGovernance(orgStatus.organisationId);
+    }
+  }, [activeSubTab, orgStatus]);
 
   useEffect(() => {
     const load = async () => {
@@ -526,6 +578,7 @@ export const OrgDashboard = () => {
            { id: 'climate', label: 'Team Climate Dashboard', icon: LineChartIcon },
            { id: 'value', label: 'People Value Engine', icon: Building },
            { id: 'moments', label: 'Blaze Bright Moments', icon: Sparkles },
+           { id: 'governance', label: 'Workplace Governance', icon: ShieldCheck },
            { id: 'team', label: 'Team & Settings', icon: Users }
         ].map(tab => {
           const Icon = tab.icon;
@@ -1008,6 +1061,93 @@ export const OrgDashboard = () => {
         {activeSubTab === 'moments' && (
           <motion.div key="moments" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95 }}>
             <OrgDashboardMoments />
+          </motion.div>
+        )}
+
+        {activeSubTab === 'governance' && (
+          <motion.div key="governance" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95 }} className="space-y-8 pb-24">
+            <div className="card">
+              <h3 className="text-lg font-display font-bold text-text-main mb-1 flex items-center gap-2"><ShieldCheck className="w-5 h-5 text-primary" /> Workplace Governance Console</h3>
+              <p className="text-sm text-text-muted">Privacy thresholds, who can do what, and a real record of admin actions on this organisation.</p>
+            </div>
+
+            {(governanceError || auditLogsError) && (
+              <div role="alert" className="p-3 bg-destructive/10 border border-destructive/20 text-destructive dark:text-[#f87171] text-sm rounded-xl">
+                {governanceError || auditLogsError}
+              </div>
+            )}
+
+            {governanceLoading ? (
+              <div className="flex items-center justify-center py-16"><Loader2 className="w-6 h-6 animate-spin text-primary" /></div>
+            ) : governanceData ? (
+              <>
+                <div className="card space-y-2">
+                  <h4 className="font-bold text-text-main flex items-center gap-2"><Lock className="w-4 h-4 text-primary" /> Minimum Cohort Size</h4>
+                  <p className="text-sm text-text-muted">
+                    Aggregate dashboards across this org stay locked below <strong className="text-text-main">{governanceData.privacyThreshold} people</strong>.
+                  </p>
+                  <button onClick={() => setActiveSubTab('team')} className="text-xs font-bold text-[#9a3412] dark:text-primary hover:underline">
+                    Change this in Team &amp; Settings →
+                  </button>
+                </div>
+
+                <div className="card space-y-4">
+                  <h4 className="font-bold text-text-main flex items-center gap-2"><Users className="w-4 h-4 text-primary" /> Roles &amp; Permissions</h4>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs">
+                      <thead>
+                        <tr className="border-b border-border text-text-muted uppercase tracking-widest">
+                          <th className="py-2 pr-4">Role</th>
+                          <th className="py-2">What they can do</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {Object.entries(governanceData.roleReference).map(([role, permissions]) => (
+                          <tr key={role} className="border-b border-border/50">
+                            <td className="py-2 pr-4 font-bold text-text-main capitalize whitespace-nowrap">{role.replace(/_/g, ' ')}</td>
+                            <td className="py-2 text-text-muted">{permissions.length === 0 ? 'No admin permissions' : permissions.map(p => p.replace(/^org\./, '').replace(/[._]/g, ' ')).join(', ')}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <div className="pt-2 space-y-1.5">
+                    {governanceData.members.map(m => (
+                      <div key={m.uid} className="flex items-center justify-between text-xs py-1.5 border-b border-border/30 last:border-0">
+                        <span className="text-text-main">{m.displayName || m.email || m.uid}</span>
+                        <span className="text-text-muted font-bold uppercase tracking-widest">{(m.role || 'member').replace(/_/g, ' ')}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </>
+            ) : null}
+
+            <div className="card space-y-4">
+              <h4 className="font-bold text-text-main flex items-center gap-2"><ShieldPlus className="w-4 h-4 text-primary" /> Audit Log</h4>
+              {auditLogsLoading ? (
+                <div className="flex items-center justify-center py-10"><Loader2 className="w-5 h-5 animate-spin text-primary" /></div>
+              ) : auditLogs.length === 0 ? (
+                <p className="text-sm text-text-muted">No recorded admin actions yet.</p>
+              ) : (
+                <div className="space-y-2 max-h-96 overflow-y-auto">
+                  {auditLogs.map(log => {
+                    const when = log.createdAt?._seconds
+                      ? new Date(log.createdAt._seconds * 1000).toLocaleString()
+                      : (log.createdAt ? new Date(log.createdAt).toLocaleString() : '');
+                    return (
+                      <div key={log.id} className="text-xs p-3 bg-surface dark:bg-surface/50 border border-border rounded-lg flex items-start justify-between gap-4">
+                        <div>
+                          <p className="text-text-main"><strong>{log.actorEmail || 'system'}</strong> — {log.action.replace(/_/g, ' ')}</p>
+                          <p className="text-text-muted">{log.targetResourceType}: {log.targetResourceId}</p>
+                        </div>
+                        <span className="text-text-muted whitespace-nowrap">{when}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
           </motion.div>
         )}
 
