@@ -198,7 +198,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
   
   const hasRole = (allowedRoles: AuthRole[]) => {
-    const isSuperAdminUser = user?.email === 'teampublication@gmail.com' || (user as any)?.isAdmin === true;
+    // Both owner email variants - see the matching fix/comment on
+    // isSuperAdminUser in App.tsx for why this needs both.
+    const isSuperAdminUser = user?.email === 'teampublication@gmail.com' || user?.email === 'teampublication@googlemail.com' || (user as any)?.isAdmin === true;
     if (isSuperAdminUser) return true;
     return allowedRoles.includes(appRole);
   };

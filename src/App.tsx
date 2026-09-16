@@ -882,8 +882,13 @@ const Header = ({
 export default function App() {
   const { user, appRole, loading: authLoading, accessToken } = useAuth();
 
-  // Bulletproof global super admin check
-  const isSuperAdminUser = user?.email === 'teampublication@gmail.com' || (user as any)?.isAdmin === true;
+  // Bulletproof global super admin check. Both owner email variants, same
+  // as server.ts's requireAdmin/requireRole/requirePlatformOwner and
+  // auth.tsx's own role resolution - this was the one spot that only
+  // checked the .gmail.com address, so the real owner account (on
+  // .googlemail.com) never saw any admin-gated tab despite the server
+  // already recognising it as platform_owner for every API call.
+  const isSuperAdminUser = user?.email === 'teampublication@gmail.com' || user?.email === 'teampublication@googlemail.com' || (user as any)?.isAdmin === true;
   const effectiveRole = isSuperAdminUser ? 'platform_admin' : appRole;
 
   // Computed once rather than inline in the animate prop - regenerating these
