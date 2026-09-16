@@ -98,6 +98,25 @@ export const OrgDashboardValue = ({ onNavigateToTrend }: { onNavigateToTrend?: (
     ? Math.round(estimatedAnnualCost / costInputs.headcount)
     : null;
 
+  // Management Savings Planner: whether the org's real cost-per-employee
+  // figure is genuinely trending up, down, or flat across the entered
+  // history - never presumed. A 3% move is treated as the threshold for
+  // "real" versus normal fluctuation between updates, since cost-per-
+  // employee can be any magnitude (unlike a fixed 0-100 score), so a
+  // percentage move is the honest comparison, not a fixed point delta.
+  const costPerEmployeeHistory = costHistory
+    .map((h) => (h.headcount > 0 ? (h.annualSicknessDays * h.avgDailyCostPerEmployee) / h.headcount : null))
+    .filter((v): v is number => v !== null);
+  const latestTwoCostPoints = costPerEmployeeHistory.slice(-2);
+  const costTrend: 'rising' | 'falling' | 'flat' | 'insufficient_data' = (() => {
+    if (latestTwoCostPoints.length < 2 || latestTwoCostPoints[0] === 0) return 'insufficient_data';
+    const [prev, curr] = latestTwoCostPoints;
+    const changeRatio = (curr - prev) / prev;
+    if (changeRatio > 0.03) return 'rising';
+    if (changeRatio < -0.03) return 'falling';
+    return 'flat';
+  })();
+
   return (
     <div className="space-y-8 pb-24">
       {/* Header */}
@@ -324,9 +343,22 @@ export const OrgDashboardValue = ({ onNavigateToTrend }: { onNavigateToTrend?: (
                     <p className="text-xs text-[#9a3412] dark:text-primary mb-6 leading-relaxed">
                       A general 30/60/90-day framework for addressing common pressure signals — a starting structure, not one generated from your specific data.
                     </p>
+                    {costTrend === 'rising' && (
+                      <div className="mb-4 p-3 bg-white dark:bg-card border border-primary/20 rounded-lg flex items-start gap-2">
+                        <TrendingUp className="w-4 h-4 text-[#9a3412] dark:text-primary shrink-0 mt-0.5" />
+                        <p className="text-xs text-text-main leading-relaxed">
+                          Your real cost-per-employee figure has risen across your last two updates — the signal below is highlighted because your own numbers actually support it.
+                        </p>
+                      </div>
+                    )}
                     <div className="space-y-2">
-                      <button className="w-full text-left px-4 py-3 rounded-xl bg-white dark:bg-card border border-border font-bold text-sm text-text-main shadow-sm flex items-center justify-between">
-                        Stress-related absence is increasing <ArrowRight className="w-4 h-4 text-text-muted" />
+                      <button className={cn(
+                        "w-full text-left px-4 py-3 rounded-xl border text-sm flex items-center justify-between transition-colors",
+                        costTrend === 'rising'
+                          ? "bg-white dark:bg-card border-border font-bold text-text-main shadow-sm"
+                          : "bg-surface border-border text-text-muted hover:bg-surface dark:bg-card dark:hover:bg-surface"
+                      )}>
+                        Stress-related absence is increasing {costTrend === 'rising' && <ArrowRight className="w-4 h-4 text-text-muted" />}
                       </button>
                       <button className="w-full text-left px-4 py-3 rounded-xl bg-surface border border-border text-sm text-text-muted hover:bg-surface dark:bg-card dark:hover:bg-surface transition-colors">
                         Team morale is dropping
@@ -335,6 +367,11 @@ export const OrgDashboardValue = ({ onNavigateToTrend }: { onNavigateToTrend?: (
                         High voluntary turnover
                       </button>
                     </div>
+                    {costTrend === 'insufficient_data' && (
+                      <p className="text-[11px] text-[#9a3412] dark:text-primary mt-3 leading-relaxed opacity-80">
+                        Not enough cost updates yet to say which pressure signal applies to you — enter figures on the Cost of Pressure tab a second time to start tracking a real trend.
+                      </p>
+                    )}
                   </div>
 
                   <div className="card">
