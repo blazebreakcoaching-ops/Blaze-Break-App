@@ -100,6 +100,7 @@ export const AdminDashboard = () => {
     | null
   >(null);
   const [isUpdatingRole, setIsUpdatingRole] = useState(false);
+  const [grantingEntitlementUid, setGrantingEntitlementUid] = useState<string | null>(null);
 
   // New Admin User Form State
   const [newAdminEmail, setNewAdminEmail] = useState('');
@@ -302,6 +303,34 @@ export const AdminDashboard = () => {
       setError(e.message);
     } finally {
       setIsUpdatingRole(false);
+    }
+  };
+
+  // Grants or clears a Premium entitlement directly - the same "admin
+  // comp" path server.ts documents as the one real way to give an account
+  // Premium today, pending a live Stripe/Apple/Google integration (beta
+  // testers, support cases, or the founder's own account). No fixed end
+  // date is set, so it stays in effect until changed here again.
+  const handleGrantEntitlement = async (uid: string, plan: 'premium' | 'free') => {
+    try {
+      setGrantingEntitlementUid(uid);
+      setError(null);
+      const res = await secureApiFetch(`/api/admin/users/${uid}/entitlement`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ plan, status: 'active' })
+      });
+
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.error || "Couldn't update that account's plan.");
+      }
+
+      showSuccess(plan === 'premium' ? 'Account upgraded to Premium.' : 'Account reverted to Free.');
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setGrantingEntitlementUid(null);
     }
   };
 
@@ -743,6 +772,15 @@ export const AdminDashboard = () => {
                               className="px-3 py-1.5 bg-primary/10 hover:bg-primary/20 text-[#9a3412] dark:text-primary text-[10px] font-black uppercase tracking-widest rounded-lg transition-all"
                             >
                               Edit Claims
+                            </button>
+                            <button
+                              onClick={() => handleGrantEntitlement(u.uid, 'premium')}
+                              disabled={grantingEntitlementUid === u.uid}
+                              title="Grant this account Premium (admin comp - no billing involved)"
+                              className="px-3 py-1.5 bg-success/10 hover:bg-success/20 text-success dark:text-[#4ade80] text-[10px] font-black uppercase tracking-widest rounded-lg transition-all disabled:opacity-50 flex items-center gap-1.5"
+                            >
+                              {grantingEntitlementUid === u.uid ? <Loader2 className="w-3 h-3 animate-spin" /> : <CreditCard className="w-3 h-3" />}
+                              Grant Premium
                             </button>
                             <button
                               onClick={() => setPendingAction({ type: 'suspend', uid: u.uid, email: u.email, currentlyActive: u.accessStatus === 'active' })}
