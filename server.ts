@@ -114,10 +114,13 @@ if (process.env.NODE_ENV === "production") {
         // (service worker registration) was moved to an external file
         // specifically so this could stay strict. apis.google.com/gstatic are
         // needed for Firebase Auth's Google sign-in popup flow (its helper
-        // script) and for reCAPTCHA Enterprise (App Check) - without these,
-        // signInWithPopup fails with CSP script-src violations, confirmed
-        // against a real deploy.
-        scriptSrc: ["'self'", "https://apis.google.com", "https://www.gstatic.com"],
+        // script); www.google.com specifically is where reCAPTCHA Enterprise's
+        // own verification script actually loads from
+        // (recaptcha/enterprise.js) - App Check silently can't produce a real
+        // token without it, which cascades into Firestore looking "offline"
+        // (it's not offline, it's waiting on a token that can never arrive).
+        // Confirmed against a real deploy - www.gstatic.com alone wasn't enough.
+        scriptSrc: ["'self'", "https://apis.google.com", "https://www.gstatic.com", "https://www.google.com"],
         // Tailwind/Framer Motion rely on inline style attributes at runtime;
         // disallowing that would require a much larger refactor than this
         // security pass covers, so this one directive stays permissive.
@@ -135,8 +138,10 @@ if (process.env.NODE_ENV === "production") {
         // this page via a hidden iframe hosted on the Firebase project's own
         // authDomain (<project>.firebaseapp.com/__/auth/iframe) - without an
         // explicit allowance it falls back to default-src 'self' and silently
-        // breaks the sign-in popup handshake.
-        frameSrc: ["'self'", "https://*.firebaseapp.com", "https://accounts.google.com"],
+        // breaks the sign-in popup handshake. www.google.com covers
+        // reCAPTCHA Enterprise's own risk-assessment iframe (App Check),
+        // which it uses even in invisible/score-only mode.
+        frameSrc: ["'self'", "https://*.firebaseapp.com", "https://accounts.google.com", "https://www.google.com"],
         frameAncestors: ["'none'"], // Blocks clickjacking — this app should never be framed by another site
         objectSrc: ["'none'"],
         baseUri: ["'self'"],
