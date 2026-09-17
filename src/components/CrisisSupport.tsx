@@ -5,6 +5,7 @@ import { cn } from '../lib/utils';
 import { useFocusTrap } from '../lib/useFocusTrap';
 import { secureApiFetch } from '../lib/secure-api';
 import { updateNovaMemoryBySourceAndType } from '../lib/nova-brain';
+import { detectCrisisRegion, getBrowserTimeZone } from '../../crisis-region';
 
 interface GuardianForCrisisAction {
   id: string;
@@ -90,64 +91,79 @@ const GuardianQuickAction = ({ guardians }: { guardians: GuardianForCrisisAction
   );
 };
 
+const UkIrelandBlock = () => (
+  <div className="space-y-3">
+    <h5 className="text-[11px] font-black uppercase tracking-widest text-text-muted ml-1">If you're in the UK or Ireland</h5>
+    <a href="tel:116123" className="flex items-center justify-between p-4 rounded-xl border border-warning/20 dark:border-warning-foreground/30 bg-warning/10 dark:bg-warning-foreground/20 hover:bg-warning/20 dark:hover:bg-warning-foreground/40 transition-colors group">
+      <div className="space-y-1.5">
+        <span className="text-sm font-bold text-[#9a3412] dark:text-warning block">Samaritans</span>
+        <span className="text-[11px] font-black uppercase tracking-widest text-[#9a3412] dark:text-warning font-mono">Call 116 123 &middot; free &middot; 24/7</span>
+      </div>
+      <PhoneCall className="w-5 h-5 text-[#9a3412] dark:text-warning group-hover:scale-110 transition-transform shrink-0" />
+    </a>
+    <a href="sms:85258?body=SHOUT" className="flex items-center justify-between p-4 rounded-xl border border-primary-light dark:border-primary-dark/30 bg-primary-light dark:bg-primary-dark/20 hover:bg-primary-light dark:hover:bg-primary-dark/40 transition-colors group">
+      <div className="space-y-1.5">
+        <span className="text-sm font-bold text-[#9a3412] dark:text-primary block">Shout</span>
+        <span className="text-[11px] font-black uppercase tracking-widest text-[#9a3412] dark:text-primary font-mono">Text "SHOUT" to 85258</span>
+      </div>
+      <MessageCircle className="w-5 h-5 text-primary group-hover:scale-110 transition-transform shrink-0" />
+    </a>
+    <a href="tel:999" className="flex items-center justify-between p-4 rounded-xl border border-destructive dark:border-destructive/30 bg-destructive dark:bg-destructive/20 hover:bg-destructive dark:hover:bg-destructive/40 transition-colors group">
+      <div className="space-y-1.5">
+        <span className="text-sm font-bold text-destructive-foreground dark:text-[#f87171] block">Emergency services</span>
+        <span className="text-[11px] font-black uppercase tracking-widest text-destructive-foreground dark:text-[#f87171] font-mono">Call 999 &middot; for immediate danger</span>
+      </div>
+      <PhoneCall className="w-5 h-5 text-destructive-foreground dark:text-destructive group-hover:scale-110 transition-transform shrink-0" />
+    </a>
+  </div>
+);
+
+const UsCanadaBlock = () => (
+  <div className="space-y-3">
+    <h5 className="text-[11px] font-black uppercase tracking-widest text-text-muted ml-1">If you're in the US or Canada</h5>
+    <a href="tel:988" className="flex items-center justify-between p-4 rounded-xl border border-destructive dark:border-destructive/30 bg-destructive dark:bg-destructive/20 hover:bg-destructive dark:hover:bg-destructive/40 transition-colors group">
+      <div className="space-y-1.5">
+        <span className="text-sm font-bold text-destructive-foreground dark:text-[#f87171] block">988 Suicide & Crisis Lifeline</span>
+        <span className="text-[11px] font-black uppercase tracking-widest text-destructive-foreground dark:text-[#f87171] font-mono">Call or text 988 &middot; free &middot; 24/7</span>
+      </div>
+      <PhoneCall className="w-5 h-5 text-destructive-foreground dark:text-destructive group-hover:scale-110 transition-transform shrink-0" />
+    </a>
+    <a href="sms:741741?body=HOME" className="flex items-center justify-between p-4 rounded-xl border border-primary-light dark:border-primary-dark/30 bg-primary-light dark:bg-primary-dark/20 hover:bg-primary-light dark:hover:bg-primary-dark/40 transition-colors group">
+      <div className="space-y-1.5">
+        <span className="text-sm font-bold text-[#9a3412] dark:text-primary block">Crisis Text Line</span>
+        <span className="text-[11px] font-black uppercase tracking-widest text-[#9a3412] dark:text-primary font-mono">Text "HOME" to 741741</span>
+      </div>
+      <MessageCircle className="w-5 h-5 text-primary group-hover:scale-110 transition-transform shrink-0" />
+    </a>
+  </div>
+);
+
 // Single source of truth for crisis resource content. Used both in the
 // standalone global modal (reachable from anywhere) and inline on the
 // Recovery Ally / Guardian Relay page, so the two never drift out of sync.
-export const CrisisSupportContent = ({ guardians = [] }: { guardians?: GuardianForCrisisAction[] }) => (
-  <div className="space-y-6">
-    <p className="text-sm text-text-muted leading-relaxed">
-      If things feel like too much right now, you don't have to handle it alone.
-      These are free, confidential, and available any time.
-    </p>
+export const CrisisSupportContent = ({ guardians = [] }: { guardians?: GuardianForCrisisAction[] }) => {
+  // A reorder hint only - detectCrisisRegion never causes a block to be
+  // hidden, see crisis-region.ts. Computed once per mount rather than
+  // memoised across the app's lifetime, since a laptop that travels
+  // between time zones should get a fresh guess each time this opens.
+  const region = detectCrisisRegion(getBrowserTimeZone());
+  const blocks = region === "us_canada" ? [UsCanadaBlock, UkIrelandBlock] : [UkIrelandBlock, UsCanadaBlock];
 
-    <GuardianQuickAction guardians={guardians} />
-
+  return (
     <div className="space-y-6">
-      <div className="space-y-3">
-        <h5 className="text-[11px] font-black uppercase tracking-widest text-text-muted ml-1">If you're in the UK or Ireland</h5>
-        <a href="tel:116123" className="flex items-center justify-between p-4 rounded-xl border border-warning/20 dark:border-warning-foreground/30 bg-warning/10 dark:bg-warning-foreground/20 hover:bg-warning/20 dark:hover:bg-warning-foreground/40 transition-colors group">
-          <div className="space-y-1.5">
-            <span className="text-sm font-bold text-[#9a3412] dark:text-warning block">Samaritans</span>
-            <span className="text-[11px] font-black uppercase tracking-widest text-[#9a3412] dark:text-warning font-mono">Call 116 123 &middot; free &middot; 24/7</span>
-          </div>
-          <PhoneCall className="w-5 h-5 text-[#9a3412] dark:text-warning group-hover:scale-110 transition-transform shrink-0" />
-        </a>
-        <a href="sms:85258?body=SHOUT" className="flex items-center justify-between p-4 rounded-xl border border-primary-light dark:border-primary-dark/30 bg-primary-light dark:bg-primary-dark/20 hover:bg-primary-light dark:hover:bg-primary-dark/40 transition-colors group">
-          <div className="space-y-1.5">
-            <span className="text-sm font-bold text-[#9a3412] dark:text-primary block">Shout</span>
-            <span className="text-[11px] font-black uppercase tracking-widest text-[#9a3412] dark:text-primary font-mono">Text "SHOUT" to 85258</span>
-          </div>
-          <MessageCircle className="w-5 h-5 text-primary group-hover:scale-110 transition-transform shrink-0" />
-        </a>
-        <a href="tel:999" className="flex items-center justify-between p-4 rounded-xl border border-destructive dark:border-destructive/30 bg-destructive dark:bg-destructive/20 hover:bg-destructive dark:hover:bg-destructive/40 transition-colors group">
-          <div className="space-y-1.5">
-            <span className="text-sm font-bold text-destructive-foreground dark:text-[#f87171] block">Emergency services</span>
-            <span className="text-[11px] font-black uppercase tracking-widest text-destructive-foreground dark:text-[#f87171] font-mono">Call 999 &middot; for immediate danger</span>
-          </div>
-          <PhoneCall className="w-5 h-5 text-destructive-foreground dark:text-destructive group-hover:scale-110 transition-transform shrink-0" />
-        </a>
-      </div>
+      <p className="text-sm text-text-muted leading-relaxed">
+        If things feel like too much right now, you don't have to handle it alone.
+        These are free, confidential, and available any time.
+      </p>
 
-      <div className="space-y-3">
-        <h5 className="text-[11px] font-black uppercase tracking-widest text-text-muted ml-1">If you're in the US or Canada</h5>
-        <a href="tel:988" className="flex items-center justify-between p-4 rounded-xl border border-destructive dark:border-destructive/30 bg-destructive dark:bg-destructive/20 hover:bg-destructive dark:hover:bg-destructive/40 transition-colors group">
-          <div className="space-y-1.5">
-            <span className="text-sm font-bold text-destructive-foreground dark:text-[#f87171] block">988 Suicide & Crisis Lifeline</span>
-            <span className="text-[11px] font-black uppercase tracking-widest text-destructive-foreground dark:text-[#f87171] font-mono">Call or text 988 &middot; free &middot; 24/7</span>
-          </div>
-          <PhoneCall className="w-5 h-5 text-destructive-foreground dark:text-destructive group-hover:scale-110 transition-transform shrink-0" />
-        </a>
-        <a href="sms:741741?body=HOME" className="flex items-center justify-between p-4 rounded-xl border border-primary-light dark:border-primary-dark/30 bg-primary-light dark:bg-primary-dark/20 hover:bg-primary-light dark:hover:bg-primary-dark/40 transition-colors group">
-          <div className="space-y-1.5">
-            <span className="text-sm font-bold text-[#9a3412] dark:text-primary block">Crisis Text Line</span>
-            <span className="text-[11px] font-black uppercase tracking-widest text-[#9a3412] dark:text-primary font-mono">Text "HOME" to 741741</span>
-          </div>
-          <MessageCircle className="w-5 h-5 text-primary group-hover:scale-110 transition-transform shrink-0" />
-        </a>
+      <GuardianQuickAction guardians={guardians} />
+
+      <div className="space-y-6">
+        {blocks.map((Block, i) => <Block key={i} />)}
       </div>
     </div>
-  </div>
-);
+  );
+};
 
 interface CrisisSupportModalProps {
   isOpen: boolean;

@@ -105,6 +105,7 @@ const EvolutionEngine = lazy(() => import("./components/EvolutionEngine.tsx").th
 import { MicroInterventions } from "./components/MicroInterventions.tsx";
 import { NovaOverloadShield } from "./components/NovaOverloadShield.tsx";
 import { updateNovaMemoryBySourceAndType, logJourney, initNovaPermissionsForNewUser, setNovaMemoryConsent } from "./lib/nova-brain.ts";
+import { buildDashboardGreeting } from "../dashboard-greeting.ts";
 const TrustCentrePage = lazy(() => import("./components/TrustCentrePage.tsx").then(m => ({ default: m.TrustCentrePage })));
 import { hasSubscriptionEntitlement } from "./lib/entitlement.ts";
 const RecoveryAlly = lazy(() => import("./components/RecoveryAlly.tsx").then(m => ({ default: m.RecoveryAlly })));
@@ -699,6 +700,19 @@ const Header = ({
   const [guardianPingActive, setGuardianPingActive] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
+  // Computed once per mount (lazy initializer, not recomputed on every
+  // render) so it stays put for the session instead of changing every time
+  // this component re-renders - a greeting that shuffles mid-visit would
+  // read as buggy, not charming. new Date().getHours() already reflects
+  // the visitor's own local device clock, no timezone lookup needed.
+  const [dashboardGreeting] = useState(() =>
+    buildDashboardGreeting(
+      new Date().getHours(),
+      profile?.useNameInGreetings !== false && userName ? userName.split(" ")[0] : null,
+      Math.random()
+    )
+  );
+
   const handleGuardianPing = async () => {
     if (guardianPingActive) return;
     const primary = (supportCircle || []).find((c: any) => c.role === 'primary_guardian') || (supportCircle || [])[0];
@@ -783,7 +797,11 @@ const Header = ({
         </span>
       </div>
       <h2 className="text-5xl font-display font-bold text-text-main leading-tight tracking-tight mb-3 capitalize">
-        {title}
+        {activeTab === "home" ? (
+          <span className="normal-case">{dashboardGreeting}</span>
+        ) : (
+          title
+        )}
       </h2>
       <p className="text-text-muted text-base leading-relaxed  font-medium">
         {activeTab === "home" &&
