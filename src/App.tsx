@@ -425,7 +425,7 @@ const Sidebar = ({
               <h1 className="font-display font-black text-xl tracking-tighter text-text-main leading-none truncate">
                 Blaze Break
               </h1>
-              <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-primary mt-1 truncate">
+              <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-primary mt-1 whitespace-normal leading-tight">
                 Recovery Companion
               </span>
             </motion.div>

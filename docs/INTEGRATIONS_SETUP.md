@@ -129,11 +129,13 @@ Firestore project.
   Slack's card shows "Not Yet Available" instead of erroring, and the other
   four are unaffected.
 
-## What this doesn't include yet
+## What's also already built
 
-This gets accounts *connected* — it does not implement anything that actually
-*uses* the tokens (e.g. reading Jira sprint data, posting Slack DND status,
-pulling Asana tasks). That's separate, per-service work built on top of the
-stored access token once a connection exists. Also not included: automatic
-token refresh before expiry (each provider's refresh flow differs slightly —
-worth building once you see which integrations get used).
+This isn't just account *connection* — the tokens are genuinely used.
+`getValidAccessToken(uid, service)` (`server.ts`) transparently refreshes an
+access token before it expires (each provider's refresh flow is handled via
+the same `OAUTH_PROVIDERS` config entry used for the initial exchange), and
+the `/api/signals/*` routes call real provider APIs with it: Jira issue
+counts, Asana task load, Monday board load, Calendly meeting load, Slack
+message volume. `NovaOverloadShield.tsx` and Boundary Autopilot both consume
+this live data today, not stored/stale tokens sitting unused.
