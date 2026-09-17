@@ -252,8 +252,15 @@ export const HomeSection = ({
   // without it, a new user's very first view of this app had literally no
   // points, levels, or rewards visible anywhere, despite that system
   // being fully built.
-  const DEFAULT_LEFT = ['hero', 'trends', 'hub'];
-  const DEFAULT_RIGHT = ['directive', 'gamification'];
+  //
+  // gamification lives in the wide (lg:col-span-2) column deliberately -
+  // GamificationDisplay.tsx's own internal layout (the SHIP Pathway map,
+  // Energy/Engagement charts, badge grid) only expands to multiple
+  // columns at md:/lg: breakpoints. Squeezed into the narrow single-column
+  // sidebar, every one of those sections collapses to one cramped vertical
+  // stack instead - it needs the room the wide column actually has.
+  const DEFAULT_LEFT = ['hero', 'gamification', 'trends'];
+  const DEFAULT_RIGHT = ['directive', 'hub'];
   const DEFAULT_HIDDEN = ['stats', 'streakCalendar', 'anxietyResetCard', 'somaticAccelerator', 'velocity', 'daily', 'micro', 'activity', 'quests', 'network', 'radar', 'archetypeBlend'];
   const LAYOUT_STORAGE_KEY = 'blaze_home_dashboard_layout_v2';
 
@@ -383,6 +390,16 @@ export const HomeSection = ({
   const handleAddWidget = (id: string) => {
     setHiddenWidgets((prev) => prev.filter((cardId) => cardId !== id));
     setLeftOrder((prev) => (prev.includes(id) ? prev : [...prev, id]));
+  };
+
+  // Restores the current defaults - the one way an existing, already-
+  // customised (or already-saved-lopsided) layout gets the benefit of a
+  // future default change, since the saved localStorage layout otherwise
+  // always wins over a new DEFAULT_LEFT/DEFAULT_RIGHT.
+  const handleResetLayout = () => {
+    setLeftOrder(DEFAULT_LEFT);
+    setRightOrder(DEFAULT_RIGHT);
+    setHiddenWidgets(DEFAULT_HIDDEN);
   };
 
   useEffect(() => {
@@ -1252,6 +1269,16 @@ export const HomeSection = ({
             </motion.div>
           ))}
         </AnimatePresence>
+
+        <div className="flex items-center justify-center gap-4">
+          <button
+            onClick={handleResetLayout}
+            title="Put every widget back in its default position and column"
+            className="text-xs font-bold text-text-muted hover:text-primary transition-colors"
+          >
+            Reset layout
+          </button>
+        </div>
 
         <div className="relative">
           <button
