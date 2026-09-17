@@ -33,6 +33,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [appRole, setAppRole] = useState<AuthRole>('individual');
   const [accessToken, setAccessToken] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  // Set right before signOut() and consumed the next time onAuthStateChanged
+  // fires with no user. Without this, an explicit sign-out was indistinguishable
+  // from a brand-new visitor, so it immediately spun up a fresh, blank
+  // anonymous account - discarding the real one - and the app treated that
+  // empty account as someone who'd never onboarded, running onboarding again.
+  const explicitSignOutRef = React.useRef(false);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (userRecord) => {
@@ -85,20 +91,29 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       } else {
         (window as any).__ACTIVE_USER_EMAIL__ = null;
         setAppRole('individual');
-        // Nobody signed in at all yet (not even anonymously) - this fires
-        // once, right after the app first loads for a brand-new visitor.
-        // Signing in anonymously here means every feature that reads
-        // auth.currentUser gets a real, Firestore-backed identity from the
-        // first moment, instead of a local-only/"demo" fallback.
-        try {
-          await signInAnonymously(auth);
-          // Don't set user/loading below for this invocation - that would
-          // briefly flash a logged-out state. onAuthStateChanged fires again
-          // momentarily with the real anonymous userRecord, and that
-          // invocation sets user/loading correctly instead.
-          return;
-        } catch (e) {
-          console.error("Anonymous sign-in failed - features requiring a signed-in user will be unavailable until the user signs in manually.", e);
+
+        if (explicitSignOutRef.current) {
+          // They just deliberately signed out - land them on a clean,
+          // properly-signed-out state instead of silently re-authenticating
+          // them as a new anonymous stranger who'd look like they need
+          // onboarding again.
+          explicitSignOutRef.current = false;
+        } else {
+          // Nobody signed in at all yet (not even anonymously) - this fires
+          // once, right after the app first loads for a brand-new visitor.
+          // Signing in anonymously here means every feature that reads
+          // auth.currentUser gets a real, Firestore-backed identity from the
+          // first moment, instead of a local-only/"demo" fallback.
+          try {
+            await signInAnonymously(auth);
+            // Don't set user/loading below for this invocation - that would
+            // briefly flash a logged-out state. onAuthStateChanged fires again
+            // momentarily with the real anonymous userRecord, and that
+            // invocation sets user/loading correctly instead.
+            return;
+          } catch (e) {
+            console.error("Anonymous sign-in failed - features requiring a signed-in user will be unavailable until the user signs in manually.", e);
+          }
         }
       }
       setUser(userRecord);
@@ -193,6 +208,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const logOut = async () => {
+    explicitSignOutRef.current = true;
     await signOut(auth);
     setAccessToken(null);
   };
