@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { BurnoutFingerprint, UserStats } from '../types';
 import { cn } from '../lib/utils';
+import { updateNovaMemoryBySourceAndType, logJourney } from '../lib/nova-brain';
 
 interface RecoveryPlanProps {
   stats: UserStats;
@@ -338,6 +339,11 @@ export const RecoveryPlan = ({
         const nextState = !act.completed;
         if (nextState) {
           onAwardPoints(pts, `Completed Recovery Action: ${act.text.substring(0, 30)}...`);
+          updateNovaMemoryBySourceAndType('Recovery Plan', 'state', {
+            content: `Completed recovery action (${act.section}): "${act.text}".`,
+            confidence: 'verified',
+            canEdit: true,
+          });
         }
         return { ...act, completed: nextState };
       }
@@ -384,6 +390,11 @@ export const RecoveryPlan = ({
     if (commAct && !commAct.completed) {
       handleToggleCheck(commAct.id, commAct.points);
     }
+
+    // The rehearsed script itself is never recorded, matching
+    // BoundaryRehearsal.tsx's own existing precedent - just that a
+    // rehearsal happened, and which tailored scenario it was for.
+    logJourney('Completed a boundary rehearsal practice session', commAct?.tag ? `Scenario: "${commAct.tag}"` : undefined);
 
     setRehearsalText('');
     setRehearsalStep(2); // Finish state

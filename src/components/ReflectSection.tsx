@@ -1,5 +1,6 @@
 import { auth, db } from '../lib/firebase';
 import { collection, doc, setDoc, getDocs, query, orderBy, limit } from 'firebase/firestore';
+import { updateNovaMemoryBySourceAndType } from '../lib/nova-brain';
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Book, CheckCircle2, ChevronRight, Sparkles, Zap, ArrowRight, BookOpen, Activity, LayoutTemplate, Brain, AlertTriangle, TrendingUp, X, Clock, HelpCircle, Loader2 } from 'lucide-react';
@@ -207,6 +208,16 @@ export const ReflectSection = ({
       setMoodLogs(prev => [...prev, { id, date: dateStr, word, intensity, category }].slice(-30));
       setNewMoodWord('');
       onAwardPoints(40, "Emotional pattern logged to Nova Core");
+      // Same source name RecoveryIntelligenceLayer.tsx's Mood Pulse Room
+      // uses for the same emotional_patterns collection - this screen is a
+      // second entry point to the same underlying signal, not a separate
+      // one, so it upserts the same memory rather than creating a
+      // duplicate/conflicting one.
+      updateNovaMemoryBySourceAndType('Mood Pulse Room', 'state', {
+        content: `Reflection logged: mood "${word}" intensity ${intensity}/10, category "${category}".`,
+        confidence: 'high',
+        canEdit: false,
+      });
     } catch (e) {
       console.error("Could not save this mood log:", e);
     }

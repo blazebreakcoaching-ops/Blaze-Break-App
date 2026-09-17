@@ -16,6 +16,7 @@ import {
   computeConsistencyIndex,
   GOAL_COMPLETION_XP,
 } from '../../weekly-goal-tracker';
+import { updateNovaMemoryBySourceAndType } from '../lib/nova-brain';
 
 // "System Habit OS" - the weekly recovery-habit tracker from the original
 // prototype this project started from. It never made it into this
@@ -107,11 +108,20 @@ export const WeeklyGoalTracker = ({ onAwardPoints }: WeeklyGoalTrackerProps) => 
     setSaving(false);
   };
 
+  const recordGoalsMemory = (currentGoals: HabitGoal[]) => {
+    updateNovaMemoryBySourceAndType('Weekly Goal Tracker', 'state', {
+      content: `This week's recovery goals: ${currentGoals.length} set, ${countGoalsMet(currentGoals)} completed. Consistency index: ${computeConsistencyIndex(currentGoals)}%.`,
+      confidence: 'verified',
+      canEdit: true,
+    });
+  };
+
   const startWeek = async () => {
     const fresh = buildDefaultGoals();
     setGoals(fresh);
     setConfirmingNewWeek(false);
     await persist(fresh);
+    recordGoalsMemory(fresh);
   };
 
   const adjustProgress = async (goalId: string, delta: number) => {
@@ -128,6 +138,7 @@ export const WeeklyGoalTracker = ({ onAwardPoints }: WeeklyGoalTrackerProps) => 
     setGoals(next);
     await persist(next);
     if (awarded) onAwardPoints(GOAL_COMPLETION_XP, `Weekly habit met: ${(awarded as { label: string }).label}`);
+    recordGoalsMemory(next);
   };
 
   const addCustomGoal = async () => {

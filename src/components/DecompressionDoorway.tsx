@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { DoorOpen, ArrowRight, Wind, Heart, Brain, Briefcase, Zap, CheckCircle2 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { BurnoutFingerprint } from '../types';
+import { updateNovaMemoryBySourceAndType } from '../lib/nova-brain';
 
 interface DecompressionDoorwayProps {
   fingerprint: BurnoutFingerprint | null;
@@ -62,6 +63,11 @@ export const DecompressionDoorway = ({ fingerprint, onAwardPoints }: Decompressi
   const handleComplete = () => {
     setStep('complete');
     if (onAwardPoints) onAwardPoints(15, 'Completed Decompression Doorway');
+    updateNovaMemoryBySourceAndType('Decompression Doorway', 'state', {
+      content: `Work-to-home transition completed - carrying "${carryingItem.trim() || 'N/A'}", intention "${intention.trim() || 'N/A'}".`,
+      confidence: 'verified',
+      canEdit: true,
+    });
     setTimeout(() => {
       // Reset after a while
       setStep('roles');

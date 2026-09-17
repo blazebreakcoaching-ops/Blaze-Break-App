@@ -4,6 +4,7 @@ import { MinusCircle, Brain, Trash2, Clock, Users, Zap, CheckCircle2, WifiOff } 
 import { cn } from '../lib/utils';
 import { BurnoutFingerprint } from '../types';
 import { secureApiFetch } from '../lib/secure-api';
+import { updateNovaMemoryBySourceAndType } from '../lib/nova-brain';
 
 interface OneLessThingProps {
   fingerprint: BurnoutFingerprint | null;
@@ -138,6 +139,11 @@ export const OneLessThing = ({ fingerprint, onAwardPoints }: OneLessThingProps) 
     setResult({ ...outcome, ...style, isFallback });
     setStep('result');
     if (onAwardPoints) onAwardPoints(10, 'Completed One Less Thing');
+    updateNovaMemoryBySourceAndType('One Less Thing', 'state', {
+      content: `Named overwhelming task "${task.trim()}" - disposition: ${outcome.action}.`,
+      confidence: 'verified',
+      canEdit: true,
+    });
   };
 
   const handleReset = () => {

@@ -3,6 +3,7 @@ import { Target, CheckCircle, Loader2 } from 'lucide-react';
 import { SHIPStage } from '../types';
 import { collection, doc, setDoc, getDocs, query, orderBy, limit } from 'firebase/firestore';
 import { auth, db } from '../lib/firebase';
+import { updateNovaMemoryBySourceAndType } from '../lib/nova-brain';
 
 export const DailyGoal = ({ shipStage }: { shipStage: SHIPStage }) => {
   const [goal, setGoal] = useState<string>('');
@@ -56,6 +57,11 @@ export const DailyGoal = ({ shipStage }: { shipStage: SHIPStage }) => {
       });
       setTodaysGoalId(id);
       setIsCommitted(true);
+      updateNovaMemoryBySourceAndType('Daily Goal', 'state', {
+        content: `Today's SHIP commitment: "${goal.trim()}".`,
+        confidence: 'verified',
+        canEdit: true,
+      });
     } catch (e) {
       console.error("Could not save today's goal:", e);
     }
