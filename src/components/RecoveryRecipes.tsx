@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { Moon, Zap, Shield, Flame, CloudFog, Crosshair, Power, AlertTriangle, Wind, Brain, Activity, ArrowRight, ShieldCheck, CheckCircle2 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { BurnoutFingerprint } from '../types';
+import { updateNovaMemoryBySourceAndType } from '../lib/nova-brain';
 
 interface RecoveryRecipesProps {
   fingerprint: BurnoutFingerprint | null;
@@ -296,6 +297,11 @@ export const RecoveryRecipes = ({ fingerprint, onAwardPoints }: RecoveryRecipesP
                  className={cn("btn-primary", recipe.bgColorClass, recipe.fgClass)}
                  onClick={() => {
                    if (onAwardPoints) onAwardPoints(15, `Completed Recipe: ${recipe.trigger}`);
+                   updateNovaMemoryBySourceAndType('Recovery Recipes', 'trigger', {
+                     content: `Completed recovery recipe for trigger "${recipe.trigger}".`,
+                     confidence: 'verified',
+                     canEdit: true,
+                   });
                    setActiveRecipe(null);
                  }}
                >

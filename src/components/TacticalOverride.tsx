@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { Wind, X, CheckCircle2, AlertOctagon } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { useFocusTrap } from '../lib/useFocusTrap';
+import { updateNovaMemoryBySourceAndType } from '../lib/nova-brain';
 
 interface TacticalOverrideProps {
   onComplete?: () => void;
@@ -51,6 +52,11 @@ export const TacticalOverride = ({ onComplete }: TacticalOverrideProps) => {
             const next = c + 1;
             if (next >= 3) {
               setPhase('anchoring'); // Move to next phase after 3 cycles
+              updateNovaMemoryBySourceAndType('Tactical Override', 'state', {
+                content: `Emergency box-breathing reset completed at ${new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}.`,
+                confidence: 'verified',
+                canEdit: false,
+              });
             }
             return next;
           });

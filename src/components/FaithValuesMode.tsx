@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { Compass, Globe, MoonStar, ArrowRight, ShieldCheck, CheckCircle2, Feather } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { BurnoutFingerprint } from '../types';
+import { updateNovaMemoryBySourceAndType } from '../lib/nova-brain';
 
 interface FaithValuesModeProps {
   fingerprint: BurnoutFingerprint | null;
@@ -45,6 +46,11 @@ export const FaithValuesMode = ({ fingerprint, onAwardPoints }: FaithValuesModeP
   const handleComplete = (idx: number) => {
     setCompletedReflection(idx);
     if (onAwardPoints) onAwardPoints(10, 'Completed Grounding Reflection');
+    updateNovaMemoryBySourceAndType('Grounding Mode', 'preference', {
+      content: `Grounding mode: ${MODES[activeMode].label}. Last reflection completed: "${REFLECTIONS[activeMode][idx]?.title || 'N/A'}".`,
+      confidence: 'verified',
+      canEdit: true,
+    });
     setTimeout(() => {
       setCompletedReflection(null);
     }, 3000);

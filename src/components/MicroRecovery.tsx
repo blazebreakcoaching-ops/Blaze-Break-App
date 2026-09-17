@@ -16,6 +16,7 @@ import { BurnoutFingerprint } from '../types';
 import { useAuth } from '../lib/auth';
 import { auth, db } from '../lib/firebase';
 import { doc, setDoc } from 'firebase/firestore';
+import { updateNovaMemoryBySourceAndType } from '../lib/nova-brain';
 
 interface MicroRecoveryProps {
   fingerprint: BurnoutFingerprint | null;
@@ -269,6 +270,11 @@ export const MicroRecovery = ({ fingerprint, onAwardPoints }: MicroRecoveryProps
           // Non-fatal - the completion itself still counts even if this save fails.
         });
       }
+      updateNovaMemoryBySourceAndType('Micro Recovery', 'state', {
+        content: `Completed ${activeAction.time} micro-recovery: "${activeAction.description}".`,
+        confidence: 'verified',
+        canEdit: true,
+      });
     }
     if (onAwardPoints) {
       onAwardPoints(

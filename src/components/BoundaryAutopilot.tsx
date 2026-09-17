@@ -5,6 +5,7 @@ import { cn } from '../lib/utils';
 import { useAuth } from '../lib/auth';
 import { secureApiFetch } from '../lib/secure-api';
 import { fetchUpcomingEvents, declineCalendarEvent, UpcomingEvent } from '../lib/boundary-autopilot';
+import { updateNovaMemoryBySourceAndType } from '../lib/nova-brain';
 
 type ActionTab = 'message' | 'dnd' | 'status' | 'calendar' | 'history';
 
@@ -87,6 +88,14 @@ export const BoundaryAutopilot = () => {
       await fn();
       setStatus({ type: 'success', message: successMessage });
       setPendingConfirm(false);
+      // successMessage is already a clean, human-readable summary (e.g.
+      // "Message sent.") - it never contains the actual message/status
+      // text, so this can't leak drafted content into Nova's memory.
+      updateNovaMemoryBySourceAndType('Boundary Autopilot', 'rule', {
+        content: `Boundary action taken: ${successMessage} (${new Date().toLocaleString('en-GB', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: 'short' })}).`,
+        confidence: 'verified',
+        canEdit: false,
+      });
     } catch (e: any) {
       setStatus({ type: 'error', message: e.message || 'Something went wrong.' });
     } finally {

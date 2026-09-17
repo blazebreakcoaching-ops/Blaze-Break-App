@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Flame, Wind, RotateCcw, TerminalSquare } from 'lucide-react';
 import { cn } from '../lib/utils';
+import { getNovaBrain, updateNovaMemoryBySourceAndType } from '../lib/nova-brain';
+import { nextRuminationUseCount, buildRuminationMemoryContent } from '../../rumination-furnace';
 
 export const RuminationFurnace = ({ onCleared }: { onCleared?: () => void }) => {
   const [input, setInput] = useState('');
@@ -11,7 +13,18 @@ export const RuminationFurnace = ({ onCleared }: { onCleared?: () => void }) => 
   const handleBurn = () => {
     if (!input.trim()) return;
     setIsBurning(true);
-    
+
+    // Only the fact that the ritual was used, and how often, is recorded -
+    // never what was typed. See rumination-furnace.ts for why the content
+    // builder can't take the raw text even if this call site tried to.
+    const existing = getNovaBrain().find(m => m.source === 'Rumination Furnace' && m.type === 'state');
+    const count = nextRuminationUseCount(existing?.content);
+    updateNovaMemoryBySourceAndType('Rumination Furnace', 'state', {
+      content: buildRuminationMemoryContent(count),
+      confidence: 'verified',
+      canEdit: false,
+    });
+
     // Simulate burning process
     setTimeout(() => {
       setIsBurning(false);

@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { Shield, BellOff, MessageSquare, Calendar, Power, AlertTriangle, ShieldCheck, CheckCircle2 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { BurnoutFingerprint } from '../types';
+import { updateNovaMemoryBySourceAndType } from '../lib/nova-brain';
 
 interface DigitalBoundaryShieldProps {
   fingerprint: BurnoutFingerprint | null;
@@ -35,12 +36,22 @@ export const DigitalBoundaryShield = ({ fingerprint, onAwardPoints }: DigitalBou
     }
   };
 
+  const recordShieldMemory = (weekend: boolean, triage: 'urgent' | 'loud' | null) => {
+    updateNovaMemoryBySourceAndType('Digital Boundary Shield', 'state', {
+      content: `Weekend protection ${weekend ? 'active' : 'inactive'}.${triage ? ` Last message triage marked "${triage}".` : ''}`,
+      confidence: 'verified',
+      canEdit: true,
+    });
+  };
+
   const handleFilterCheck = () => {
     if (!urgentLoudMsg.trim()) return;
-    
+
     // Simple heuristic or random for the sake of the demonstration
     const isLoud = urgentLoudMsg.length > 20 || urgentLoudMsg.toLowerCase().includes('need') || urgentLoudMsg.toLowerCase().includes('quick');
-    setFilterResult(isLoud ? 'loud' : 'urgent');
+    const result = isLoud ? 'loud' : 'urgent';
+    setFilterResult(result);
+    recordShieldMemory(weekendMode, result);
   };
 
   return (
@@ -159,8 +170,10 @@ export const DigitalBoundaryShield = ({ fingerprint, onAwardPoints }: DigitalBou
               </div>
               <button 
                 onClick={() => {
-                  setWeekendMode(!weekendMode);
-                  if (!weekendMode && onAwardPoints) onAwardPoints(20, 'Weekend Protection Mode Activated');
+                  const next = !weekendMode;
+                  setWeekendMode(next);
+                  if (next && onAwardPoints) onAwardPoints(20, 'Weekend Protection Mode Activated');
+                  recordShieldMemory(next, filterResult);
                 }}
                 role="switch"
                 aria-checked={weekendMode}

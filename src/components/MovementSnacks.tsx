@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { Activity, Maximize, User, RefreshCcw, Sun, CheckCircle2 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { BurnoutFingerprint } from '../types';
+import { updateNovaMemoryBySourceAndType } from '../lib/nova-brain';
 
 interface MovementSnacksProps {
   fingerprint: BurnoutFingerprint | null;
@@ -76,6 +77,13 @@ export const MovementSnacks = ({ fingerprint, onAwardPoints }: MovementSnacksPro
     setInProgress(false);
     setCompleted(true);
     if (onAwardPoints) onAwardPoints(10, 'Executed Movement Snack');
+    if (activeSnack) {
+      updateNovaMemoryBySourceAndType('Movement Snacks', 'state', {
+        content: `Completed movement break: "${M_SNACKS[activeSnack].name}".`,
+        confidence: 'verified',
+        canEdit: true,
+      });
+    }
     setTimeout(() => {
       setActiveSnack(null);
       setCompleted(false);

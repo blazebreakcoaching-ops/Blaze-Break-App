@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Briefcase, Send, Copy, AlertTriangle } from 'lucide-react';
 import { cn } from '../lib/utils';
+import { updateNovaMemoryBySourceAndType } from '../lib/nova-brain';
 
 export const NegotiatorTool = () => {
   const [step, setStep] = useState(0);
@@ -29,6 +30,11 @@ export const NegotiatorTool = () => {
     const key = `${request.type}-${request.intensity}`;
     setGeneratedScript(scripts[key] || `I am requesting a ${request.type} for the project due to ${request.reason}. I appreciate your understanding as I prioritise high-quality output.`);
     setStep(2);
+    updateNovaMemoryBySourceAndType('Boundary Negotiator', 'trigger', {
+      content: `Boundary negotiation drafted: type "${request.type}", reason "${request.reason}", intensity "${request.intensity}".`,
+      confidence: 'verified',
+      canEdit: true,
+    });
   };
 
   return (
