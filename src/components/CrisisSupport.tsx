@@ -196,6 +196,17 @@ export const CrisisSupportModal = ({ isOpen, onClose, guardians = [] }: CrisisSu
             dragElastic={{ top: 0, bottom: 0.6 }}
             onDragEnd={(_, info) => { if (info.offset.y > 100) onClose(); }}
             className="card w-full max-w-md max-h-[85vh] overflow-y-auto bg-card border border-border shadow-lg p-6 space-y-6"
+            // The shared .card class (index.css) sets overflow: hidden as
+            // plain, unlayered CSS, while Tailwind's utility classes (like
+            // overflow-y-auto above) live inside CSS cascade layers -
+            // unlayered CSS always wins over layered CSS regardless of
+            // source order, so .card's overflow: hidden was silently
+            // clipping this dialog's content with no way to scroll to it.
+            // An inline style always wins over both, so this is the one
+            // reliable way to actually get scrolling here without touching
+            // the shared .card class (used in 50+ places) and risking
+            // regressions elsewhere.
+            style={{ overflow: "hidden auto" }}
           >
             <div
               onPointerDown={(e) => dragControls.start(e)}
