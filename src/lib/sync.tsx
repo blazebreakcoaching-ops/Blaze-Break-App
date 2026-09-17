@@ -5,25 +5,25 @@ export const AuthStatusTracker = () => {
   const { user, loading, signIn, logOut } = useAuth();
   
   if (loading) {
-     return <div className="animate-pulse w-8 h-8 rounded-full bg-border dark:bg-surface" />;
+     return <div className="h-12 w-12 animate-pulse rounded-full bg-border dark:bg-surface" />;
   }
 
   if (user) {
     return (
-      <button 
+      <button
         onClick={logOut}
-        className="flex items-center gap-2 group p-1 pr-3 rounded-full hover:bg-surface dark:bg-card transition-colors"
+        className="h-12 flex items-center gap-2 group p-1 pr-3 rounded-full hover:bg-surface dark:bg-card transition-colors"
       >
-        <img src={user.photoURL || `https://ui-avatars.com/api/?name=${user.email}`} alt="Avatar" className="w-8 h-8 rounded-full" />
+        <img src={user.photoURL || `https://ui-avatars.com/api/?name=${user.email}`} alt="Avatar" className="w-10 h-10 rounded-full" />
         <span className="text-xs font-bold text-text-muted hidden sm:inline-block">Sign Out</span>
       </button>
     );
   }
 
   return (
-    <button 
+    <button
       onClick={signIn}
-      className="btn-primary px-4 py-2 rounded-full text-xs font-black uppercase tracking-widest"
+      className="h-12 btn-primary px-4 rounded-full text-xs font-black uppercase tracking-widest"
     >
       Sign In
     </button>
