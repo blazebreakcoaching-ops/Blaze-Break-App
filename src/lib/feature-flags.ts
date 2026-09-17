@@ -42,7 +42,7 @@ export type FeatureFlag =
   | 'compliance_iso_27001';
 
 const DEFAULT_FLAGS: Record<FeatureFlag, boolean> = {
-  enable_nova_voice: false,
+  enable_nova_voice: true,
   enable_calendar_integration: true,
   enable_slack_integration: false,
   enable_overload_shield: true,

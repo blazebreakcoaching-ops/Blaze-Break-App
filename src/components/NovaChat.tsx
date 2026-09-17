@@ -23,6 +23,7 @@ import { doc, getDoc } from "firebase/firestore";
 import { NovaVoiceCall } from "./NovaVoiceCall";
 import { NovaToneControl } from "./NovaToneControl";
 import { ConfirmDialog } from "./ConfirmDialog";
+import { getFeatureFlags } from "../lib/feature-flags";
 
 // The server's ChatRequestSchema (server.ts) caps history at 50 entries
 // and systemInstruction at 3000 characters, and rejects the whole request
@@ -99,25 +100,23 @@ export const NovaChat = ({
     }
     return [];
   });
-  const [flags, setFlags] = useState<{ [key: string]: boolean }>({
-    enable_nova_voice: false,
-  });
+  // Reads from the single shared source of truth (feature-flags.ts)
+  // rather than a hand-duplicated default that had drifted out of sync
+  // with it - this local default said enable_nova_voice: false, and
+  // loadFlags() only ever overwrote it if localStorage already had a
+  // saved value, so a brand-new user (no saved flags yet at all) stayed
+  // stuck on the stale false default forever, regardless of what the
+  // real, current default elsewhere said.
+  const [flags, setFlags] = useState<{ [key: string]: boolean }>(getFeatureFlags());
 
   useEffect(() => {
-    const loadFlags = () => {
-      try {
-        const savedFlags = localStorage.getItem("blaze_feature_flags");
-        if (savedFlags) {
-          setFlags(JSON.parse(savedFlags));
-        }
-      } catch (e) {
-        // Non-fatal - if the saved flags are missing or corrupted,
-        // this just keeps whatever flags were already in state.
-      }
-    };
-    loadFlags();
+    const loadFlags = () => setFlags(getFeatureFlags());
     window.addEventListener("storage", loadFlags);
-    return () => window.removeEventListener("storage", loadFlags);
+    window.addEventListener("feature-flags-updated", loadFlags);
+    return () => {
+      window.removeEventListener("storage", loadFlags);
+      window.removeEventListener("feature-flags-updated", loadFlags);
+    };
   }, []);
 
   const voiceFeatureEnabled = flags.enable_nova_voice;

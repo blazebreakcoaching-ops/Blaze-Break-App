@@ -1,37 +1,20 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { ToggleLeft, ToggleRight, ShieldAlert, Cpu, Settings2 } from 'lucide-react';
+import { getFeatureFlags, setFeatureFlag, FeatureFlag } from '../lib/feature-flags';
 
 export const FeatureFlagsView = () => {
-  const [flags, setFlags] = useState<{ [key: string]: boolean }>({
-    enable_overload_shield: false,
-    enable_guardian_protocol: false,
-    enable_nova_coach: true,
-    enable_nova_voice: false,
-    compliance_gdpr_active: true,
-    compliance_cyber_essentials: true,
-    compliance_iso_27001: true
-  });
-
-  useEffect(() => {
-    try {
-      const savedFlags = localStorage.getItem('blaze_feature_flags');
-      if (savedFlags) {
-        setFlags(prev => ({ ...prev, ...JSON.parse(savedFlags) }));
-      }
-    } catch (e) {
-      // Non-fatal - if localStorage is unavailable or the saved value is
-      // corrupted, the flags just fall back to their in-memory defaults.
-    }
-  }, []);
+  // Reads from the single shared source of truth (feature-flags.ts) rather
+  // than a second, hand-duplicated set of defaults - those two drifted out
+  // of sync before (this file said enable_nova_voice defaulted to false
+  // after the real default had already been changed to true elsewhere),
+  // showing the toggle in the wrong position even though the feature
+  // itself was already on.
+  const [flags, setFlags] = useState<{ [key: string]: boolean }>(getFeatureFlags());
 
   const toggleFlag = (key: string) => {
-    setFlags(prev => {
-      const next = { ...prev, [key]: !prev[key] };
-      localStorage.setItem('blaze_feature_flags', JSON.stringify(next));
-      window.dispatchEvent(new Event('feature-flags-updated'));
-      window.dispatchEvent(new Event('storage'));
-      return next;
-    });
+    const next = !flags[key];
+    setFeatureFlag(key as FeatureFlag, next);
+    setFlags(prev => ({ ...prev, [key]: next }));
   };
 
   return (
