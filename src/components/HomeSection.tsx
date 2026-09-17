@@ -253,14 +253,20 @@ export const HomeSection = ({
   // points, levels, or rewards visible anywhere, despite that system
   // being fully built.
   //
-  // gamification lives in the wide (lg:col-span-2) column deliberately -
-  // GamificationDisplay.tsx's own internal layout (the SHIP Pathway map,
-  // Energy/Engagement charts, badge grid) only expands to multiple
-  // columns at md:/lg: breakpoints. Squeezed into the narrow single-column
-  // sidebar, every one of those sections collapses to one cramped vertical
-  // stack instead - it needs the room the wide column actually has.
-  const DEFAULT_LEFT = ['hero', 'gamification', 'trends'];
-  const DEFAULT_RIGHT = ['directive', 'hub'];
+  // Both gamification and hub live in the wide (lg:col-span-2) column
+  // deliberately - each has its own internal row/grid layout (hub is a
+  // fixed-size icon, then text, then a round button, all in one row;
+  // gamification's SHIP Pathway map, Energy/Engagement charts, and badge
+  // grid all expand to multiple columns) that only has room to lay out
+  // properly at real width. Squeezed into the narrow sidebar, hub's text
+  // wraps to one word per line and gamification's sections collapse into
+  // one cramped stack - both confirmed against real screenshots, not
+  // guessed. trends and directive are genuinely narrow-friendly (a
+  // Recharts chart that scales to whatever width it's given, and a
+  // simple vertical text stack respectively), so they're what the narrow
+  // column actually holds.
+  const DEFAULT_LEFT = ['hero', 'gamification', 'hub'];
+  const DEFAULT_RIGHT = ['directive', 'trends'];
   const DEFAULT_HIDDEN = ['stats', 'streakCalendar', 'anxietyResetCard', 'somaticAccelerator', 'velocity', 'daily', 'micro', 'activity', 'quests', 'network', 'radar', 'archetypeBlend'];
   const LAYOUT_STORAGE_KEY = 'blaze_home_dashboard_layout_v2';
 
