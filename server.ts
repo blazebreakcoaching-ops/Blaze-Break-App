@@ -168,9 +168,23 @@ app.use(cors({
 app.use(express.json({ limit: '10kb' }));
 
 // Set up rate limiting
+//
+// 100/15min (was the original value here) is too tight for genuine
+// interactive use of this app, not just abuse - it's a global, per-IP
+// ceiling shared across every /api/ route, and a single load of the
+// admin "Live Activity & Access" screen alone fires 4 parallel requests
+// (users, admin-users, audit-logs, orgs). A real, active session (or a
+// shared office/NAT IP with multiple legitimate users) can exhaust 100
+// requests in minutes through completely normal navigation, and because
+// this is IP-based and server-side, neither a hard refresh nor an
+// incognito window resets it - confirmed as the root cause of a live
+// "Couldn't load live data" report that persisted through both. Raised
+// to a ceiling that still meaningfully blocks scraping/abuse (roughly
+// 40 requests/minute sustained) while comfortably covering real
+// dashboard use.
 const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // limit each IP to 100 requests per windowMs
+  max: 600, // limit each IP to 600 requests per windowMs
   message: { error: 'Too many requests, please try again later.' },
   standardHeaders: true,
   legacyHeaders: false,

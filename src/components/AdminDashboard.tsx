@@ -87,7 +87,7 @@ export const AdminDashboard = () => {
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [loadError, setLoadError] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
   // Forms State
@@ -125,12 +125,19 @@ export const AdminDashboard = () => {
     try {
       setLoading(true);
       setError(null);
-      setLoadError(false);
+      setLoadError(null);
 
       let loadedUsers: AdminUser[] = [];
       let loadedAdmins: PlatformAdmin[] = [];
       let loadedLogs: AuditLog[] = [];
       let fetchFailed = false;
+      // A 429 (rate limited) is a completely different situation from a
+      // real server error, and looks nothing like it from the user's side -
+      // this was mistaken for a broken dashboard once already because the
+      // generic message gave no way to tell them apart. Any 429 among the
+      // three fetches below wins over a generic failure, since "wait a
+      // few minutes" is actionable and a generic error message isn't.
+      let rateLimited = false;
 
       try {
         // 1. Fetch Users from secure API
@@ -140,6 +147,7 @@ export const AdminDashboard = () => {
           loadedUsers = uData.users || [];
         } else {
           console.error("API returned error for users list:", usersRes.status);
+          if (usersRes.status === 429) rateLimited = true;
           fetchFailed = true;
         }
       } catch (e) {
@@ -155,6 +163,7 @@ export const AdminDashboard = () => {
           loadedAdmins = aData.admins || [];
         } else {
           console.error("API returned error for admin users:", adminsRes.status);
+          if (adminsRes.status === 429) rateLimited = true;
           fetchFailed = true;
         }
       } catch (e) {
@@ -170,6 +179,7 @@ export const AdminDashboard = () => {
           loadedLogs = logData.logs || [];
         } else {
           console.error("API returned error for audit logs:", auditRes.status);
+          if (auditRes.status === 429) rateLimited = true;
           fetchFailed = true;
         }
       } catch (e) {
@@ -199,7 +209,11 @@ export const AdminDashboard = () => {
       // "failed to load" showed a scary error banner on a completely
       // healthy first-time view.
       if (fetchFailed) {
-        setLoadError(true);
+        setLoadError(
+          rateLimited
+            ? "Too many requests in a short time — please wait a few minutes and retry."
+            : "Couldn't load live data — showing nothing rather than placeholders."
+        );
       }
 
       setUsers(loadedUsers);
@@ -220,19 +234,25 @@ export const AdminDashboard = () => {
     try {
       const res = await secureApiFetch('/api/admin/summary');
       if (!res.ok) {
-        setLoadError(true);
+        // A genuine fetch failure - distinct from the "zero resets logged
+        // yet" case below, which is not an error. This used to set the
+        // same loadError for both, which meant a completely healthy,
+        // lightly-used account (0 somatic resets so far - an entirely
+        // normal, honest state) permanently showed the app's red
+        // "couldn't load" banner on every single visit, indistinguishable
+        // from a real outage.
+        if (res.status === 429) {
+          setLoadError("Too many requests in a short time — please wait a few minutes and retry.");
+        } else {
+          setLoadError("Couldn't load live data — showing nothing rather than placeholders.");
+        }
         setMetrics(null);
         return;
       }
       const data = await res.json();
-      if (!data.totalResets || data.totalResets === 0) {
-        setLoadError(true);
-        setMetrics(null);
-        return;
-      }
 
       setMetrics({
-        totalSessions: data.totalResets,
+        totalSessions: data.totalResets ?? 0,
         avgStartIntensity: data.avgIntensityBefore ?? 0,
         avgEndIntensity: data.avgIntensityAfter ?? 0,
         avgReduction: data.avgIntensityReduction ?? 0,
@@ -244,7 +264,7 @@ export const AdminDashboard = () => {
 
     } catch (err) {
       console.error("Somatic aggregation failed: ", err);
-      setLoadError(true);
+      setLoadError("Couldn't load live data — showing nothing rather than placeholders.");
       setMetrics(null);
     }
   };
@@ -568,7 +588,7 @@ export const AdminDashboard = () => {
           >
             <div className="flex items-center gap-2">
               <AlertCircle className="w-4 h-4 shrink-0" />
-              Couldn't load live data — showing nothing rather than placeholders.
+              {loadError}
             </div>
             <button onClick={loadAllData} className="hover:opacity-80 transition-opacity">
               [Retry]
