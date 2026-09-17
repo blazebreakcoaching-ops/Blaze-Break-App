@@ -539,21 +539,25 @@ export const ConnectedGoals = () => {
 export const ConnectedNovaPermissions = () => {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  // Matches the real defaults set at onboarding (nova-brain.ts's
+  // initNovaPermissionsForNewUser/ensureNovaPermissionsExist) - only used
+  // as a fallback before fetchPerms below resolves, or for the rare
+  // account that somehow still has no permissions doc.
   const [perms, setPerms] = useState({
-    allowCheckins: false,
-    allowEnergyBudgets: false,
-    allowMoodPulses: false,
-    allowBodyCheckins: false,
-    allowWins: false,
-    allowWeeklyReviews: false,
-    allowBoundaryScripts: false,
-    allowGoals: false,
-    allowRecoveryDebt: false,
-    allowRecoveryVelocity: false,
-    allowEnergyTrend: false,
-    allowMoodTrend: false,
-    allowNovaMemory: false,
-    allowNovaUseSavedMemories: false // shadow field, kept in sync with allowNovaMemory - see toggle()
+    allowCheckins: true,
+    allowEnergyBudgets: true,
+    allowMoodPulses: true,
+    allowBodyCheckins: true,
+    allowWins: true,
+    allowWeeklyReviews: true,
+    allowBoundaryScripts: true,
+    allowGoals: true,
+    allowRecoveryDebt: true,
+    allowRecoveryVelocity: true,
+    allowEnergyTrend: true,
+    allowMoodTrend: true,
+    allowNovaMemory: true,
+    allowNovaUseSavedMemories: true // shadow field, kept in sync with allowNovaMemory - see toggle()
   });
   
   
@@ -619,7 +623,7 @@ export const ConnectedNovaPermissions = () => {
       </div>
       <div className="bg-primary/5 text-primary text-xs p-3 rounded-lg border border-primary/20 mb-4 font-bold flex gap-2">
         <Sparkles className="w-4 h-4 shrink-0" />
-        <span>Nova personalisation is limited to permitted compact summaries. Raw text remains excluded. Memory is off by default and only used for categories you turn on below.</span>
+        <span>Nova personalisation is limited to permitted compact summaries. Raw text remains excluded. These categories are on by default from onboarding so Nova has real context from the start - turn any of them off below at any time.</span>
       </div>
       <ErrorMessage msg={error} />
       

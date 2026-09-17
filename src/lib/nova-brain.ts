@@ -1,5 +1,5 @@
 import { auth, db } from './firebase';
-import { collection, doc, getDocs, setDoc, deleteDoc, query, orderBy } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, setDoc, deleteDoc, query, orderBy } from 'firebase/firestore';
 
 export type MemoryType = 'profile' | 'trigger' | 'state' | 'rule' | 'preference';
 export type ConfidenceLevel = 'low' | 'medium' | 'high' | 'verified';
@@ -31,6 +31,98 @@ let cachedUid: string | null = null;
 let initPromise: Promise<void> | null = null;
 
 const memoriesCollection = (uid: string) => collection(db, 'users', uid, 'nova_memories');
+
+// The onboarding "Personalised learning" toggle (profile.letNovaLearn) is
+// the one real switch for whether Nova learns about someone at all. It's
+// mirrored into localStorage's blaze_profile (kept in sync by App.tsx on
+// both onboarding completion and every Settings save) because every
+// function below is called synchronously, fire-and-forget, from deep
+// inside ~40 feature components that have no React context to read the
+// canonical Firestore profile from directly.
+export const isNovaLearningAllowed = (): boolean => {
+  try {
+    const stored = localStorage.getItem('blaze_profile');
+    // No profile yet means onboarding hasn't completed - default open,
+    // matching the toggle's own on-by-default stance once it does exist.
+    if (!stored) return true;
+    const profile = JSON.parse(stored);
+    return profile.letNovaLearn !== false;
+  } catch (e) {
+    return true;
+  }
+};
+
+// Everything Nova's server-side context builder (getNovaContextAndMetadata
+// in server.ts) is willing to use, gated per category on this doc. Defaults
+// to on for every category except the two memory ones, which the caller
+// decides based on what the user actually chose during onboarding.
+const NOVA_PERMISSION_DEFAULTS = {
+  allowCheckins: true,
+  allowEnergyBudgets: true,
+  allowMoodPulses: true,
+  allowBodyCheckins: true,
+  allowWins: true,
+  allowWeeklyReviews: true,
+  allowBoundaryScripts: true,
+  allowGoals: true,
+  allowRecoveryDebt: true,
+  allowRecoveryVelocity: true,
+  allowEnergyTrend: true,
+  allowMoodTrend: true,
+};
+
+// Called once, right when onboarding completes. Without this doc existing,
+// getNovaContextAndMetadata returns nothing at all (server.ts), so a user
+// who never separately visits Settings > Nova Privacy Controls would
+// otherwise leave Nova completely context-blind. allowMemory carries
+// through exactly what the user chose on the onboarding consent step.
+export const initNovaPermissionsForNewUser = (uid: string, allowMemory: boolean) => {
+  setDoc(doc(db, 'users', uid, 'nova_permissions', 'current'), {
+    ...NOVA_PERMISSION_DEFAULTS,
+    allowNovaMemory: allowMemory,
+    allowNovaUseSavedMemories: allowMemory,
+    updatedAt: new Date().toISOString(),
+  }, { merge: true }).catch(() => {
+    // Non-fatal - Nova just stays context-blind for this session; the next
+    // successful write (e.g. a later Settings change) will fix it.
+  });
+};
+
+// Backfills the same defaults for anyone who onboarded before this existed
+// and has never visited Settings > Nova Privacy Controls, so they aren't
+// stuck context-blind forever. Only fills in what's missing - never
+// overwrites a doc that already exists, since someone may have
+// deliberately turned individual categories off.
+export const ensureNovaPermissionsExist = async (uid: string, allowMemory: boolean) => {
+  try {
+    const ref = doc(db, 'users', uid, 'nova_permissions', 'current');
+    const snap = await getDoc(ref);
+    if (!snap.exists()) {
+      await setDoc(ref, {
+        ...NOVA_PERMISSION_DEFAULTS,
+        allowNovaMemory: allowMemory,
+        allowNovaUseSavedMemories: allowMemory,
+        updatedAt: new Date().toISOString(),
+      });
+    }
+  } catch (e) {
+    // Non-fatal, same reasoning as initNovaPermissionsForNewUser.
+  }
+};
+
+// Updates just the memory-specific permissions from Settings or the Trust
+// Centre's "Let Nova remember..." toggle - never touches the other
+// categories, so flipping this doesn't silently reset someone's other
+// preferences.
+export const setNovaMemoryConsent = (uid: string, enabled: boolean) => {
+  setDoc(doc(db, 'users', uid, 'nova_permissions', 'current'), {
+    allowNovaMemory: enabled,
+    allowNovaUseSavedMemories: enabled,
+    updatedAt: new Date().toISOString(),
+  }, { merge: true }).catch(() => {
+    // Non-fatal, same reasoning as persistMemory.
+  });
+};
 
 export const initNovaBrain = (uid: string): Promise<void> => {
   if (cachedUid === uid && initPromise) return initPromise;
@@ -83,6 +175,7 @@ export const getNovaBrain = (): NovaMemory[] => {
 };
 
 export const addNovaMemory = (memory: Omit<NovaMemory, 'id' | 'createdAt' | 'updatedAt'>) => {
+  if (!isNovaLearningAllowed()) return;
   const newMemory: NovaMemory = {
     ...memory,
     id: `mem_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
@@ -97,6 +190,7 @@ export const addNovaMemory = (memory: Omit<NovaMemory, 'id' | 'createdAt' | 'upd
 };
 
 export const logJourney = (action: string, details?: string) => {
+  if (!isNovaLearningAllowed()) return;
   const content = `User Action: ${action}${details ? ` - ${details}` : ''}`;
   const newMemory: NovaMemory = {
     id: `mem_journey_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
@@ -139,6 +233,7 @@ export const updateNovaMemoryBySourceAndType = (
   type: MemoryType,
   memoryParams: Omit<NovaMemory, 'id' | 'createdAt' | 'updatedAt' | 'source' | 'type'>
 ) => {
+  if (!isNovaLearningAllowed()) return;
   const existingIndex = cachedBrain.findIndex(m => m.source === source && m.type === type);
 
   if (existingIndex > -1) {

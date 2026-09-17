@@ -1877,7 +1877,23 @@ app.post("/api/nova/diagnose", novaDiagnoseLimiter, verifyAppCheck, authenticate
     // detection needs something durable to drift *from*), which is exactly what
     // the "consent-controlled processing" gate above was waiting for — so this
     // write only happens if the user has actually opted into it via Settings.
-    if (letNovaLearn) {
+    //
+    // The consent check itself trusts the stored users/{uid}/nova_permissions/current
+    // doc, not the client-supplied `letNovaLearn` boolean above - a tampered
+    // client could otherwise always claim consent regardless of what the user
+    // actually chose. Falls back to the request value only if no permissions
+    // doc exists yet (shouldn't happen from onboarding onward - see
+    // nova-brain.ts's initNovaPermissionsForNewUser).
+    let allowLearning = letNovaLearn;
+    try {
+      const permSnap = await getDb().collection("users").doc(diagnoseUid).collection("nova_permissions").doc("current").get();
+      if (permSnap.exists) {
+        allowLearning = permSnap.data()?.allowNovaMemory !== false;
+      }
+    } catch (e) {
+      // Non-fatal - falls back to the request-supplied value above.
+    }
+    if (allowLearning) {
       try {
         await getDb().collection("users").doc(diagnoseUid).collection("diagnostics").doc("latest").set({
           archScores,

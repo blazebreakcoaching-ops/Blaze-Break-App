@@ -95,7 +95,7 @@ import { SettingsModal } from "./components/SettingsModal.tsx";
 const FutureSelfSimulator = lazy(() => import("./components/FutureSelfSimulator.tsx").then(m => ({ default: m.FutureSelfSimulator })));
 const AssuranceCentre = lazy(() => import("./components/AssuranceCentre.tsx").then(m => ({ default: m.AssuranceCentre })));
 import { AuthStatusTracker } from "./lib/sync.tsx";
-import { initNovaBrain, clearNovaBrainCache } from "./lib/nova-brain";
+import { initNovaBrain, clearNovaBrainCache, ensureNovaPermissionsExist } from "./lib/nova-brain";
 import { useAuth } from "./lib/auth.tsx";
 const IntegrationsDashboard = lazy(() => import("./components/IntegrationsDashboard.tsx").then(m => ({ default: m.IntegrationsDashboard })));
 const AdminDashboard = lazy(() => import("./components/AdminDashboard.tsx").then(m => ({ default: m.AdminDashboard })));
@@ -104,7 +104,7 @@ import { InAppNudge } from "./components/InAppNudge.tsx";
 const EvolutionEngine = lazy(() => import("./components/EvolutionEngine.tsx").then(m => ({ default: m.EvolutionEngine })));
 import { MicroInterventions } from "./components/MicroInterventions.tsx";
 import { NovaOverloadShield } from "./components/NovaOverloadShield.tsx";
-import { updateNovaMemoryBySourceAndType, logJourney } from "./lib/nova-brain.ts";
+import { updateNovaMemoryBySourceAndType, logJourney, initNovaPermissionsForNewUser, setNovaMemoryConsent } from "./lib/nova-brain.ts";
 const TrustCentrePage = lazy(() => import("./components/TrustCentrePage.tsx").then(m => ({ default: m.TrustCentrePage })));
 import { hasSubscriptionEntitlement } from "./lib/entitlement.ts";
 const RecoveryAlly = lazy(() => import("./components/RecoveryAlly.tsx").then(m => ({ default: m.RecoveryAlly })));
@@ -1270,6 +1270,15 @@ export default function App() {
       setStats(loadedStats);
       statsLoadedRef.current = true;
 
+      // Backfill nova_permissions/current for anyone who completed
+      // onboarding before this existed and has never separately visited
+      // Settings > Nova Privacy Controls - fire-and-forget, only for
+      // already-onboarded users (a fresh onboarding flow creates its own
+      // via initNovaPermissionsForNewUser).
+      if (user && loadedStats.profile?.fullName) {
+        ensureNovaPermissionsExist(user.uid, loadedStats.profile?.letNovaLearn !== false);
+      }
+
       // Firestore is the real source of truth now. localStorage is only
       // consulted as a one-time migration path for anyone who took the
       // assessment before this was persisted server-side - their result
@@ -1736,8 +1745,17 @@ export default function App() {
             setActiveTab("home");
             setPostOnboardingProfile(profile);
 
+            // Creates the users/{uid}/nova_permissions/current doc Nova's
+            // server-side context builder requires to have any context at
+            // all - without this, Nova stays blind until someone separately
+            // finds Settings > Nova Privacy Controls. Memory specifically
+            // carries through whatever the user chose on the consent step.
+            if (user) {
+              initNovaPermissionsForNewUser(user.uid, profile.letNovaLearn !== false);
+            }
+
             updateNovaMemoryBySourceAndType("Onboarding Telemetry", "profile", {
-              content: `Onboarding complete. Goal: ${profile.purpose || "N/A"}. Main drain: ${profile.primaryDrain || "N/A"}. Preferred tone: ${profile.novaTone || "N/A"}.`,
+              content: `Onboarding complete. Goal: ${profile.purpose || "N/A"}. Work context: ${profile.pathway || "N/A"}. Main drain: ${profile.primaryDrain || "N/A"}. Preferred tone: ${profile.novaTone || "N/A"}.`,
               confidence: "verified",
               canEdit: true,
             });
@@ -2405,7 +2423,19 @@ export default function App() {
           <SettingsModal
             profile={stats.profile}
             onClose={() => setShowSettings(false)}
-            onSave={(profile) => setStats((prev) => ({ ...prev, profile }))}
+            onSave={(profile) => {
+              setStats((prev) => ({ ...prev, profile }));
+              // Keeps blaze_profile in sync outside onboarding too - it's
+              // the only source nova-brain.ts's isNovaLearningAllowed() (and
+              // NovaChat.tsx's situational-context reads) can check
+              // synchronously, so a Settings change to "Behavioural
+              // Learning" needs to land here immediately, not just in
+              // Firestore on the next debounced save.
+              localStorage.setItem("blaze_profile", JSON.stringify(profile));
+              if (user) {
+                setNovaMemoryConsent(user.uid, profile.letNovaLearn !== false);
+              }
+            }}
             onOpenPrivacyCentre={() => {
               setShowSettings(false);
               setActiveTab("privacy");

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Database, Calendar, BookOpen, Brain, Activity } from 'lucide-react';
+import { Database, Calendar, BookOpen, Activity } from 'lucide-react';
 import { cn } from '../lib/utils.ts';
 import { UserProfileData } from '../types.ts';
 import { logAuditAction } from '../lib/audit-logger.ts';
@@ -8,7 +8,6 @@ export const ConsentMatrix = ({ profile, onUpdate }: { profile: UserProfileData,
   const dataPoints = [
     { id: 'mood', label: 'Mood & Biological Processing', icon: Activity, required: true, desc: "Aggregates inputs into your Recovery Velocity Score.", zone: "Zone A", zoneColor: "primary" },
     { id: 'calendar', label: 'Calendar Integration', icon: Calendar, required: false, desc: "Scans meeting density to calculate 'Meeting Fatigue'.", zone: "Zone A", zoneColor: "primary" },
-    { id: 'ai_memory', label: 'Nova AI Memory Context', icon: Brain, required: false, desc: "Permits Nova to remember conversational context.", zone: "Zone A", zoneColor: "primary" },
     { id: 'journal', label: 'Trigger Journal Scanning', icon: BookOpen, required: false, desc: "Used for detecting pattern similarities over 90 days.", zone: "Zone A", zoneColor: "primary" },
   ];
 

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Activity, Calendar, Brain, BookOpen, ChevronDown, Settings } from 'lucide-react';
+import { Activity, Calendar, BookOpen, ChevronDown, Settings } from 'lucide-react';
 import { UserProfileData } from '../types.ts';
 import { cn } from '../lib/utils.ts';
 import { useFeatureFlags, setFeatureFlag, FeatureFlag } from '../lib/feature-flags.ts';
@@ -45,16 +45,6 @@ export const DataPrivacyDashboard = ({
       icon: Calendar,
       required: false,
       flagId: 'enable_calendar_sync' as FeatureFlag
-    },
-    {
-      id: 'ai_memory',
-      label: 'Contextual AI Memory',
-      category: 'Personalisation',
-      description: 'Allows Nova to remember previous coaching sessions and your specified goals.',
-      novaUsage: 'Nova references your historical wins to reinforce your progress during low-energy days.',
-      icon: Brain,
-      required: false,
-      flagId: 'enable_ai_memory' as FeatureFlag
     },
     {
       id: 'journal',
