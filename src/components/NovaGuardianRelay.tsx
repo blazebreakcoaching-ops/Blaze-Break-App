@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { CrisisSupportContent } from './CrisisSupport';
 import { secureApiFetch } from '../lib/secure-api';
 import { useFocusTrap } from '../lib/useFocusTrap';
+import { updateNovaMemoryBySourceAndType } from '../lib/nova-brain';
 import {
   Users, 
   ShieldCheck, 
@@ -319,6 +320,16 @@ export const NovaGuardianRelay = ({ contacts, onAdd, onRemove, userName }: NovaG
       const body = await res.json();
       if (res.ok) {
         setSendSuccess(body.userMessage || `Alert sent to ${contact.name}.`);
+        // A real safety event, not a preference - system-derived and
+        // never user-deletable from a memory review screen, matching the
+        // existing Guardian Protocol "Safety Engine" rule in App.tsx
+        // (which only records whether the protocol is enabled, not that
+        // an actual escalation happened).
+        updateNovaMemoryBySourceAndType('Guardian Relay', 'state', {
+          content: `Guardian escalation triggered to a trusted contact after no response, on ${new Date().toLocaleDateString('en-GB')} - Nova should treat this as a recent high-severity event.`,
+          confidence: 'verified',
+          canEdit: false,
+        });
       } else {
         setSendSuccess(body.userMessage || body.error || "Couldn't send that alert right now.");
       }

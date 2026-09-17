@@ -4,6 +4,7 @@ import { X, PhoneCall, MessageCircle, LifeBuoy, Loader2, CheckCircle2 } from 'lu
 import { cn } from '../lib/utils';
 import { useFocusTrap } from '../lib/useFocusTrap';
 import { secureApiFetch } from '../lib/secure-api';
+import { updateNovaMemoryBySourceAndType } from '../lib/nova-brain';
 
 interface GuardianForCrisisAction {
   id: string;
@@ -37,6 +38,16 @@ const GuardianQuickAction = ({ guardians }: { guardians: GuardianForCrisisAction
       });
       const data = await res.json();
       setResultByContact(prev => ({ ...prev, [contact.id]: { ok: res.ok, text: data.userMessage || (res.ok ? 'Sent.' : "Couldn't send that.") } }));
+      if (res.ok) {
+        // A real safety event, not a preference - system-derived and
+        // never user-deletable from a memory review screen, matching the
+        // existing Guardian Protocol "Safety Engine" rule in App.tsx.
+        updateNovaMemoryBySourceAndType('Crisis Support', 'state', {
+          content: `User reached out to a trusted contact for crisis support on ${new Date().toLocaleDateString('en-GB')}.`,
+          confidence: 'verified',
+          canEdit: false,
+        });
+      }
     } catch (e) {
       setResultByContact(prev => ({ ...prev, [contact.id]: { ok: false, text: "Couldn't reach the messaging service right now." } }));
     }
