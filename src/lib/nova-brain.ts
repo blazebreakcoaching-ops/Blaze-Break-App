@@ -255,3 +255,25 @@ export const updateNovaMemoryBySourceAndType = (
     });
   }
 };
+
+// Lets a user hand-edit the text of a memory they're allowed to change
+// (mem.canEdit) from a review screen (MemoryCentre.tsx), mirroring the
+// persist-and-cache pattern the rest of this file already uses instead of
+// mutating Firestore directly - a raw Firestore write here wouldn't update
+// cachedBrain, so other open surfaces (NovaChat.tsx, EvolutionEngine.tsx)
+// would keep showing the old content until a reload.
+export const editNovaMemoryContent = (id: string, content: string) => {
+  const existingIndex = cachedBrain.findIndex(m => m.id === id);
+  if (existingIndex === -1) return;
+
+  const updated: NovaMemory = {
+    ...cachedBrain[existingIndex],
+    content,
+    updatedAt: new Date().toISOString(),
+  };
+  cachedBrain = [...cachedBrain.slice(0, existingIndex), updated, ...cachedBrain.slice(existingIndex + 1)];
+  window.dispatchEvent(new Event('nova-brain-updated'));
+
+  const uid = auth.currentUser?.uid;
+  if (uid) persistMemory(uid, updated);
+};

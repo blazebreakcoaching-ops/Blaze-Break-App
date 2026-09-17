@@ -1,80 +1,48 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../lib/auth';
-import { Shield, Brain, Trash2, Edit2, AlertCircle, RefreshCw } from 'lucide-react';
-import { collection, query, getDocs, doc, deleteDoc, updateDoc, writeBatch } from 'firebase/firestore';
-import { db } from '../lib/firebase';
+import { Shield, Brain, Trash2, Edit2 } from 'lucide-react';
+import { getNovaBrain, deleteNovaMemory, editNovaMemoryContent, NovaMemory } from '../lib/nova-brain';
 import { ConfirmDialog } from './ConfirmDialog';
 
 export function MemoryCentre() {
   const { user } = useAuth();
-  const [memories, setMemories] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
+  const [memories, setMemories] = useState<NovaMemory[]>([]);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editVal, setEditVal] = useState('');
   const [confirmingPurge, setConfirmingPurge] = useState(false);
 
+  // Reads the same shared in-memory cache every other Nova-memory surface
+  // (NovaChat.tsx, EvolutionEngine.tsx) reads, instead of a separate direct
+  // Firestore query - so a delete/edit made here shows up everywhere else
+  // immediately, and vice versa, rather than only after a reload.
   useEffect(() => {
-    if (user) {
-      loadMemories();
-    }
+    setMemories(getNovaBrain());
+    const handleBrainUpdate = () => setMemories(getNovaBrain());
+    window.addEventListener('nova-brain-updated', handleBrainUpdate);
+    return () => window.removeEventListener('nova-brain-updated', handleBrainUpdate);
   }, [user]);
 
-  const getMemoriesRef = () => collection(db, 'users', user!.uid, 'nova_memories');
-
-  const loadMemories = async () => {
-    try {
-      const q = query(getMemoriesRef());
-      const snap = await getDocs(q);
-      const mems = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      setMemories(mems.filter((m: any) => !m.revoked));
-    } catch (e: any) {
-      setError(e.message);
-    } finally {
-      setLoading(false);
-    }
+  const handleDelete = (id: string) => {
+    deleteNovaMemory(id);
   };
 
-  const handleDelete = async (id: string) => {
-    try {
-      await deleteDoc(doc(getMemoriesRef(), id));
-      setMemories(mems => mems.filter(m => m.id !== id));
-    } catch (e: any) {
-      setError(e.message);
-    }
-  };
-
-  const handlePurge = async () => {
+  const handlePurge = () => {
     setConfirmingPurge(false);
-    try {
-      const q = query(getMemoriesRef());
-      const snap = await getDocs(q);
-      const batch = writeBatch(db);
-      snap.docs.forEach(d => batch.delete(d.ref));
-      await batch.commit();
-      setMemories([]);
-    } catch (e: any) {
-      setError(e.message);
-    }
+    // Same canEdit boundary as the per-item Forget button - a bulk purge
+    // shouldn't be a backdoor for deleting system-derived safety memories
+    // (e.g. Guardian Protocol status) that the per-item control protects.
+    getNovaBrain().filter(m => m.canEdit).forEach(m => deleteNovaMemory(m.id));
   };
 
-  const startEdit = (m: any) => {
+  const startEdit = (m: NovaMemory) => {
     setEditingId(m.id);
     setEditVal(m.content);
   };
 
-  const saveEdit = async (m: any) => {
-    try {
-      const now = new Date().toISOString();
-      await updateDoc(doc(getMemoriesRef(), m.id), { content: editVal, updatedAt: now });
-      setMemories(mems => mems.map(me => me.id === m.id ? { ...me, content: editVal, updatedAt: now } : me));
-      setEditingId(null);
-    } catch (e: any) {
-      setError(e.message);
-    }
+  const saveEdit = (m: NovaMemory) => {
+    editNovaMemoryContent(m.id, editVal);
+    setEditingId(null);
   };
-
-  if (loading) return <div className="p-4"><RefreshCw className="animate-spin w-5 h-5 text-text-muted" /></div>;
 
   return (
     <div className="bg-card border border-border/10 rounded-2xl p-6 text-text">
@@ -92,13 +60,6 @@ export function MemoryCentre() {
           <span>Privacy Controlled</span>
         </div>
       </div>
-
-      {error && (
-        <div role="alert" className="mb-4 p-3 bg-destructive/10 text-destructive dark:text-[#f87171] text-sm rounded flex items-center gap-2">
-          <AlertCircle className="w-4 h-4 shrink-0" />
-          {error}
-        </div>
-      )}
 
       {memories.length === 0 ? (
         <div className="p-8 text-center bg-background rounded-xl border border-dashed border-border/20">
@@ -125,16 +86,18 @@ export function MemoryCentre() {
                   {m.type.replace(/_/g, ' ')}
                 </span>
                 
-                <div className="opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity flex items-center gap-2 z-10 relative">
-                  {(editingId !== m.id) && (
-                     <button onClick={() => startEdit(m)} aria-label={`Edit memory: ${m.type.replace(/_/g, ' ')}`} className="p-1 text-text-muted hover:text-primary transition-colors" title="Edit">
-                       <Edit2 className="w-3.5 h-3.5" />
-                     </button>
-                  )}
-                  <button onClick={() => handleDelete(m.id)} aria-label={`Forget memory: ${m.type.replace(/_/g, ' ')}`} className="p-1 text-text-muted hover:text-destructive transition-colors" title="Forget this">
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
-                </div>
+                {m.canEdit && (
+                  <div className="opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity flex items-center gap-2 z-10 relative">
+                    {(editingId !== m.id) && (
+                       <button onClick={() => startEdit(m)} aria-label={`Edit memory: ${m.type.replace(/_/g, ' ')}`} className="p-1 text-text-muted hover:text-primary transition-colors" title="Edit">
+                         <Edit2 className="w-3.5 h-3.5" />
+                       </button>
+                    )}
+                    <button onClick={() => handleDelete(m.id)} aria-label={`Forget memory: ${m.type.replace(/_/g, ' ')}`} className="p-1 text-text-muted hover:text-destructive transition-colors" title="Forget this">
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                )}
               </div>
               
               {editingId === m.id ? (
@@ -171,7 +134,7 @@ export function MemoryCentre() {
       <ConfirmDialog
         open={confirmingPurge}
         title="Forget all memories?"
-        message="This permanently deletes everything Nova remembers about you. This can't be undone."
+        message="This permanently deletes every memory you're able to edit. System-derived safety records (like Guardian Protocol status) aren't affected. This can't be undone."
         confirmLabel="Forget All"
         onConfirm={handlePurge}
         onCancel={() => setConfirmingPurge(false)}
