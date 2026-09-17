@@ -16,7 +16,7 @@ import {
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import { cn } from "../lib/utils";
-import { getNovaBrain, addNovaMemory } from "../lib/nova-brain";
+import { addNovaMemory } from "../lib/nova-brain";
 import { secureApiFetch } from "../lib/secure-api";
 import { auth, db } from "../lib/firebase";
 import { doc, getDoc } from "firebase/firestore";
@@ -27,13 +27,14 @@ import { getFeatureFlags } from "../lib/feature-flags";
 
 // The server's ChatRequestSchema (server.ts) caps history at 50 entries
 // and systemInstruction at 3000 characters, and rejects the whole request
-// if either is exceeded. Nova's own memory brain (nova-brain.ts) and the
-// localStorage-persisted chat history both grow unbounded over real,
-// long-term use, so this component stays well under those caps rather than
-// relying on the server's hard ceiling - see handleSend and
-// getDynamicContext below.
+// if either is exceeded. The localStorage-persisted chat history grows
+// unbounded over real, long-term use, so this component stays well under
+// those caps rather than relying on the server's hard ceiling - see
+// handleSend and getDynamicContext below. Nova's saved-memory content is no
+// longer assembled here at all (see getDynamicContext/buildVoiceContext) -
+// the server's own getNovaContextAndMetadata is the single place that
+// happens now, so it can't be duplicated or bypass the consent gate.
 const NOVA_CHAT_HISTORY_LIMIT = 20;
-const NOVA_BRAIN_CONTEXT_LIMIT = 15;
 const NOVA_SYSTEM_INSTRUCTION_LIMIT = 2800;
 
 interface Message {
@@ -393,25 +394,17 @@ export const NovaChat = ({
   // alert()). Opening the call is just a flag; all the real-time logic lives
   // in one place instead of being duplicated here. This builds the context
   // the call is primed with, unchanged from what the old inline path sent.
+  // Saved-memory content used to be duplicated in here directly from
+  // getNovaBrain() - unfiltered, with no consent check. It's removed: the
+  // server's own liveSystemInstruction (built from getNovaContextAndMetadata,
+  // server.ts) is now the only carrier of memory content into a voice call.
   const buildVoiceContext = () => {
-    let brainContext = "";
-    try {
-      const brain = getNovaBrain();
-      if (brain.length > 0) {
-        brainContext =
-          "\nNova Personal Brain Context:\n" +
-          brain.map((mem) => `[${mem.type}]: ${mem.content}`).join("\n") +
-          "\n";
-      }
-    } catch (e) {
-      // Non-fatal - proceeds without this piece of context.
-    }
     return `User Burnout Fingerprint: ${JSON.stringify(fingerprint || "Not taken yet")}.
 Recent chat history: ${messages
       .slice(-5)
       .map((m) => m.role + ": " + m.parts[0].text)
       .join("\n")}.
-${brainContext}${novaTone ? `\nThe user's preferred tone for Nova is: ${novaTone}. Match it.\n` : ""}
+${novaTone ? `\nThe user's preferred tone for Nova is: ${novaTone}. Match it.\n` : ""}
 We are now in real-time voice mode. Be concise and conversational, you don't need to use markdown.`;
   };
 
@@ -524,28 +517,11 @@ We are now in real-time voice mode. Be concise and conversational, you don't nee
       contextStr += situationalContext;
     }
 
-    try {
-      const brain = getNovaBrain();
-      if (brain.length > 0) {
-        // Bounded to the most recent entries - only 'state' memories are
-        // pruned in nova-brain.ts, so profile/trigger/rule/preference
-        // memories accumulate forever, and dumping all of them here used to
-        // silently blow past the server's systemInstruction size cap after
-        // enough real use.
-        const recentBrain = [...brain]
-          .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-          .slice(0, NOVA_BRAIN_CONTEXT_LIMIT);
-        contextStr += `\n--- Nova Personal Context Brain ---\n`;
-        recentBrain.forEach((mem) => {
-          contextStr += `[${mem.type.toUpperCase()}] (${mem.confidence} confidence): ${mem.content}\n`;
-        });
-        contextStr += `-----------------------------------\n`;
-      }
-    } catch (e) {
-      // Non-fatal - one context source among several here; a failure
-      // reading Nova's memory brain shouldn't block the rest of these
-      // from still contributing to the context string.
-    }
+    // Saved-memory content used to be assembled here directly from
+    // getNovaBrain() - unfiltered, with no consent check, and duplicated
+    // against the server's own separately-fetched, consent-gated memories
+    // (getNovaContextAndMetadata in server.ts). The server is now the only
+    // place memory content enters the prompt, for both text and voice.
 
     try {
       if (auth.currentUser) {

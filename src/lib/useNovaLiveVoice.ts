@@ -27,9 +27,12 @@ export interface VoiceFeatureSuggestion {
 
 export interface UseNovaLiveVoiceOptions {
   // Optional context to prime the session with before the person speaks
-  // (burnout fingerprint, recent chat, Nova's memory of them). Returned as a
-  // plain string; the server forwards it with turnComplete:false so Nova has
-  // it in mind without treating it as a turn to answer.
+  // (burnout fingerprint, recent chat, preferred tone). Saved-memory content
+  // is deliberately not included here - the server's own
+  // liveSystemInstruction (built from getNovaContextAndMetadata) is the
+  // single, consent-gated place that happens. Returned as a plain string;
+  // the server forwards it with turnComplete:false so Nova has it in mind
+  // without treating it as a turn to answer.
   buildInitialPrompt?: () => string;
   // Called once when the session ends for any reason, so a host component can
   // reset its own UI. Optional.
