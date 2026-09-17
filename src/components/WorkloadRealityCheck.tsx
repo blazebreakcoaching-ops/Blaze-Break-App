@@ -23,6 +23,7 @@ import {
 } from 'lucide-react';
 import { cn, fireConfetti } from '../lib/utils';
 import { BurnoutFingerprint } from '../types';
+import { updateNovaMemoryBySourceAndType } from '../lib/nova-brain';
 
 interface WorkloadRealityCheckProps {
   fingerprint: BurnoutFingerprint | null;
@@ -175,6 +176,12 @@ export const WorkloadRealityCheck = ({ fingerprint, onAwardPoints }: WorkloadRea
       setIsSynthesizing(false);
       setResult(true);
       saveWorkloadState({ completed: true });
+
+      updateNovaMemoryBySourceAndType('Workload Reality Check', 'state', {
+        content: `Latest workload triage - must: "${answers.must || 'N/A'}", can wait: "${answers.wait || 'N/A'}", can delegate: "${answers.delegate || 'N/A'}", pretending is urgent: "${answers.pretend || 'N/A'}".`,
+        confidence: 'verified',
+        canEdit: true,
+      });
 
       // Sync onboarding answers to tasks if tasks is empty
       if (tasks.length === 0) {

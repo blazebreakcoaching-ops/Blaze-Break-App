@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { CheckCircle2, TrendingDown, Crosshair, Activity, ArchiveX, BatteryWarning, BatteryCharging, Network, Loader2 } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { cn } from '../lib/utils';
+import { updateNovaMemoryBySourceAndType } from '../lib/nova-brain';
 
 interface Commitment {
   id: string;
@@ -70,6 +71,11 @@ export const EnergyBudgetMatrix = ({ onPointsEarned }: { onPointsEarned: (pts: n
       return;
     }
     onPointsEarned(50, `Logged into Energy Audit: ${newCommitment.name}`);
+    updateNovaMemoryBySourceAndType('Energy Budget Matrix', 'state', {
+      content: `Logged commitment "${newCommitment.name}" (${newCommitment.type}) rated ${newCommitment.energyDrain}/100 energy drain.`,
+      confidence: 'verified',
+      canEdit: true,
+    });
   };
 
   const handleAction = async (id: string, action: Commitment['status']) => {

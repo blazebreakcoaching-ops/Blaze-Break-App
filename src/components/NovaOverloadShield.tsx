@@ -18,6 +18,7 @@ import {
 import { cn } from '../lib/utils';
 import { BurnoutFingerprint } from '../types';
 import { secureApiFetch } from '../lib/secure-api';
+import { updateNovaMemoryBySourceAndType } from '../lib/nova-brain';
 
 interface NovaOverloadShieldProps {
   fingerprint: BurnoutFingerprint | null;
@@ -214,6 +215,13 @@ export const NovaOverloadShield = ({ fingerprint, onAwardPoints, onNavigate }: N
 
   const calculateRisk = () => {
     setSimulating(true);
+    if (activeTab === 'manual') {
+      updateNovaMemoryBySourceAndType('Overload Shield', 'state', {
+        content: `Self-reported load: ${manualData.meetings} meetings, ${manualData.hours}h planned, message pressure ${manualData.messagePressure}, sleep quality ${manualData.sleepQuality}, energy ${manualData.energyLevel}.`,
+        confidence: 'verified',
+        canEdit: true,
+      });
+    }
     setTimeout(() => {
       setSimulating(false);
       // Removed the manual calculation so we can just show a scanning animation before resolving.

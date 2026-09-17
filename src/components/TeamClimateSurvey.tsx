@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Compass, CheckCircle2, Loader2 } from 'lucide-react';
 import { auth, db } from '../lib/firebase';
 import { collection, doc, setDoc, getDocs, query, orderBy, limit } from 'firebase/firestore';
+import { updateNovaMemoryBySourceAndType } from '../lib/nova-brain';
 
 interface Dimension {
   key: 'demands' | 'control' | 'support' | 'relationships' | 'role' | 'change';
@@ -67,6 +68,15 @@ export const TeamClimateSurvey = ({ organisationName }: { organisationName?: str
         change: answers.change,
       });
       setJustSubmitted(true);
+      // This is Nova's own 1:1 coaching memory for this individual - never
+      // the org-facing aggregate path (which stays k-anonymity-gated and
+      // untouched by this write), so recording it here doesn't affect the
+      // "never shown individually" promise made above about the employer.
+      updateNovaMemoryBySourceAndType('Team Climate Survey', 'state', {
+        content: `Latest team climate self-report - demands: ${answers.demands}/5, control: ${answers.control}/5, support: ${answers.support}/5, relationships: ${answers.relationships}/5, role clarity: ${answers.role}/5, change management: ${answers.change}/5.`,
+        confidence: 'verified',
+        canEdit: true,
+      });
     } catch (e) {
       setError('Could not save your responses. Please try again.');
     }

@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { Sparkles, Calendar, Activity, ArrowRight, Shield, Zap, RefreshCw, X, Play, Clock, Heart } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { BurnoutFingerprint } from '../types';
+import { updateNovaMemoryBySourceAndType } from '../lib/nova-brain';
 
 interface FutureSelfSimulatorProps {
   fingerprint: BurnoutFingerprint | null;
@@ -24,6 +25,11 @@ export const FutureSelfSimulator = ({ fingerprint }: FutureSelfSimulatorProps) =
 
   const handleSimulate = () => {
     setStep('processing');
+    updateNovaMemoryBySourceAndType('Future Self Simulator', 'state', {
+      content: `Ran a future-self simulation with: ${inputs.meetings} meetings, sleep rated ${inputs.sleep}/3, energy ${inputs.energy}/100, pressure ${inputs.pressure}/3, emotional load ${inputs.emotional}/3.`,
+      confidence: 'verified',
+      canEdit: true,
+    });
     setTimeout(() => {
       setStep('simulation');
     }, 2000);

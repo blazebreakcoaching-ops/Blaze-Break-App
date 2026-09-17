@@ -3,6 +3,7 @@ import { motion } from 'motion/react';
 import { ShieldCheck, HeartPulse, ArrowRight, ArrowLeft, LifeBuoy, TrendingDown, TrendingUp, Minus, Lock, Loader2 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { secureApiFetch } from '../lib/secure-api';
+import { updateNovaMemoryBySourceAndType } from '../lib/nova-brain';
 import {
   GAD7_QUESTIONS,
   GAD7_OPTIONS,
@@ -68,9 +69,18 @@ export const Gad7Check = ({ onNeedSupport }: Gad7CheckProps) => {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Could not save your check-in.');
-      setResult(interpretGad7(data.score));
+      const interpreted = interpretGad7(data.score);
+      setResult(interpreted);
       setStep('result');
       loadHistory();
+      // Not a diagnosis (matches this screen's own copy) - just the same
+      // factual score/band Nova can already see elsewhere in the app,
+      // now kept current in its context too.
+      updateNovaMemoryBySourceAndType('GAD-7 Screener', 'state', {
+        content: `Latest anxiety self-check (GAD-7): ${interpreted.score}/21, "${interpreted.severityLabel}" band.`,
+        confidence: 'verified',
+        canEdit: false,
+      });
     } catch (e: any) {
       setError(e?.message || 'Something went wrong saving your check-in.');
     }
