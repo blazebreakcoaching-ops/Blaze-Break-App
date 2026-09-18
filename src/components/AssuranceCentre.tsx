@@ -215,7 +215,7 @@ export const AssuranceCentre = () => {
                  { label: 'Tenant Isolation', status: 'Active' },
                  { label: 'Encryption @ Rest', status: 'Pending' },
                  { label: 'OAuth Token Vault', status: 'Active' },
-                 { label: 'MFA Support', status: 'Roadmap' },
+                 { label: 'MFA Support', status: 'Active' },
                  { label: 'Audit Logging', status: 'Partial' },
                  { label: 'SSO/SAML', status: 'Roadmap' },
                  { label: 'OWASP AI Threats', status: 'Auditing' },
