@@ -56,10 +56,10 @@ const BoundaryRehearsal = lazy(() => import("./components/BoundaryRehearsal.tsx"
 const BoundaryAutopilot = lazy(() => import("./components/BoundaryAutopilot.tsx").then(m => ({ default: m.BoundaryAutopilot })));
 const ReflectSection = lazy(() => import("./components/ReflectSection.tsx").then(m => ({ default: m.ReflectSection })));
 const NovaChat = lazy(() => import("./components/NovaChat.tsx").then(m => ({ default: m.NovaChat })));
-import { Walkthrough } from "./components/Walkthrough.tsx";
+const Walkthrough = lazy(() => import("./components/Walkthrough.tsx").then(m => ({ default: m.Walkthrough })));
 import { CrisisSupportModal, CrisisSupportButton } from "./components/CrisisSupport.tsx";
 import { ErrorBoundary } from "./components/ErrorBoundary.tsx";
-import { CommandPalette } from "./components/CommandPalette.tsx";
+const CommandPalette = lazy(() => import("./components/CommandPalette.tsx").then(m => ({ default: m.CommandPalette })));
 import { HeyNovaIndicator } from "./components/HeyNovaIndicator.tsx";
 import { useHeyNovaWakeWord } from "./lib/useHeyNovaWakeWord";
 import { NOVA_VOICE_STATUS_EVENT, VoiceStatus } from "./lib/useNovaLiveVoice";
@@ -1024,6 +1024,15 @@ export default function App() {
   const [showWalkthrough, setShowWalkthrough] = useState(false);
   const [showCrisisSupport, setShowCrisisSupport] = useState(false);
   const [showLauncher, setShowLauncher] = useState(false);
+  // Walkthrough and CommandPalette are both always-mounted with `isOpen` as
+  // a prop (not a JSX conditional), like SomaticResetOverlay above, so they
+  // can play their own internal open/close animations - same "sticky mount"
+  // treatment: mount once on first open, never unmount again, deferring
+  // each chunk's fetch until actually needed without touching animations.
+  const [walkthroughReadyToMount, setWalkthroughReadyToMount] = useState(false);
+  useEffect(() => { if (showWalkthrough) setWalkthroughReadyToMount(true); }, [showWalkthrough]);
+  const [launcherReadyToMount, setLauncherReadyToMount] = useState(false);
+  useEffect(() => { if (showLauncher) setLauncherReadyToMount(true); }, [showLauncher]);
 
   // Quick-find (command palette): open with Cmd/Ctrl+K from anywhere. Cuts
   // through the app's breadth so someone can jump straight to the tool they
@@ -2519,23 +2528,31 @@ export default function App() {
             />
           </Suspense>
         )}
-        <Walkthrough
-          isOpen={showWalkthrough}
-          onClose={() => setShowWalkthrough(false)}
-          onAwardPoints={awardPoints}
-        />
+        {walkthroughReadyToMount && (
+          <Suspense fallback={null}>
+            <Walkthrough
+              isOpen={showWalkthrough}
+              onClose={() => setShowWalkthrough(false)}
+              onAwardPoints={awardPoints}
+            />
+          </Suspense>
+        )}
       </AnimatePresence>
 
       <CrisisSupportModal isOpen={showCrisisSupport} onClose={() => setShowCrisisSupport(false)} guardians={stats.supportCircle || []} />
-      <CommandPalette
-        isOpen={showLauncher}
-        onClose={() => { setShowLauncher(false); setLauncherInitialQuery(""); }}
-        tabs={launcherTabs}
-        onNavigate={(id) => setActiveTab(id as ActiveTab)}
-        onTalkToNova={() => setActiveTab("nova")}
-        onCrisis={() => setShowCrisisSupport(true)}
-        initialQuery={launcherInitialQuery}
-      />
+      {launcherReadyToMount && (
+        <Suspense fallback={null}>
+          <CommandPalette
+            isOpen={showLauncher}
+            onClose={() => { setShowLauncher(false); setLauncherInitialQuery(""); }}
+            tabs={launcherTabs}
+            onNavigate={(id) => setActiveTab(id as ActiveTab)}
+            onTalkToNova={() => setActiveTab("nova")}
+            onCrisis={() => setShowCrisisSupport(true)}
+            initialQuery={launcherInitialQuery}
+          />
+        </Suspense>
+      )}
       <HeyNovaIndicator status={wakeWordStatus} />
       <InAppNudge />
       {user && (
