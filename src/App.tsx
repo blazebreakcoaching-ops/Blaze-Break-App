@@ -120,6 +120,7 @@ const FocusZone = lazy(() => import("./components/FocusZone.tsx").then(m => ({ d
 import { SubscriptionTier } from "./types.ts";
 const ExecutiveBoardReport = lazy(() => import("./components/ExecutiveBoardReport.tsx").then(m => ({ default: m.ExecutiveBoardReport })));
 const CalendarDefenseView = lazy(() => import("./components/CalendarDefenseView.tsx").then(m => ({ default: m.CalendarDefenseView })));
+const WhatsNewModal = lazy(() => import("./components/WhatsNewModal.tsx").then(m => ({ default: m.WhatsNewModal })));
 import { secureApiFetch } from "./lib/secure-api";
 import { syncCalendarSignal } from "./lib/calendar-signals";
 import { subscribeToPushNotifications, reportPulseStatus } from "./lib/push-notifications";
@@ -2512,6 +2513,11 @@ export default function App() {
       />
       <HeyNovaIndicator status={wakeWordStatus} />
       <InAppNudge />
+      {user && (
+        <Suspense fallback={null}>
+          <WhatsNewModal />
+        </Suspense>
+      )}
 
       <AnimatePresence>
         {postOnboardingProfile && (() => {
