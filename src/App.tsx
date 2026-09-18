@@ -70,7 +70,7 @@ const OrgDashboard = lazy(() => import("./components/OrgDashboard.tsx").then(m =
 const PrivacyVault = lazy(() => import("./components/PrivacyVault.tsx").then(m => ({ default: m.PrivacyVault })));
 import { LandingPage } from "./components/LandingPage.tsx";
 import { SituationalOnboarding } from "./components/SituationalOnboarding.tsx";
-import { ConnectedDailyCheckIn } from "./components/ConnectedRecoveryModules.tsx";
+const ConnectedDailyCheckIn = lazy(() => import("./components/ConnectedRecoveryModules.tsx").then(m => ({ default: m.ConnectedDailyCheckIn })));
 const NegotiatorTool = lazy(() => import("./components/NegotiatorTool.tsx").then(m => ({ default: m.NegotiatorTool })));
 
 const ResourceLibrary = lazy(() => import("./components/ResourceLibrary.tsx").then(m => ({ default: m.ResourceLibrary })));
@@ -114,7 +114,7 @@ const TrustCentrePage = lazy(() => import("./components/TrustCentrePage.tsx").th
 import { hasSubscriptionEntitlement } from "./lib/entitlement.ts";
 const RecoveryAlly = lazy(() => import("./components/RecoveryAlly.tsx").then(m => ({ default: m.RecoveryAlly })));
 const UserGuide = lazy(() => import("./components/UserGuide.tsx").then(m => ({ default: m.UserGuide })));
-import { SomaticResetOverlay } from "./components/SomaticResetOverlay.tsx";
+const SomaticResetOverlay = lazy(() => import("./components/SomaticResetOverlay.tsx").then(m => ({ default: m.SomaticResetOverlay })));
 const RecoveryPlan = lazy(() => import("./components/RecoveryPlan.tsx").then(m => ({ default: m.RecoveryPlan })));
 const FocusZone = lazy(() => import("./components/FocusZone.tsx").then(m => ({ default: m.FocusZone })));
 import { SubscriptionTier } from "./types.ts";
@@ -1117,6 +1117,17 @@ export default function App() {
 
   // Gamification State
   const [showSomaticReset, setShowSomaticReset] = useState(false);
+  // SomaticResetOverlay is lazy-loaded but always mounted (isOpen is just a
+  // prop, not a conditional-render gate) so its own internal AnimatePresence
+  // can play a real open/close animation - so instead of gating the mount on
+  // showSomaticReset directly (which would lose the close animation on every
+  // open, not just the first), this "sticky" flag mounts it once on first
+  // open and never unmounts it again, deferring the chunk fetch until it's
+  // actually needed without touching the animation behavior at all.
+  const [somaticReadyToMount, setSomaticReadyToMount] = useState(false);
+  useEffect(() => {
+    if (showSomaticReset) setSomaticReadyToMount(true);
+  }, [showSomaticReset]);
   const [showRewardNotification, setShowRewardNotification] = useState<{
     points: number;
     reason: string;
@@ -1966,7 +1977,11 @@ export default function App() {
           userName={stats.profile?.fullName}
         />
 
-        <SomaticResetOverlay isOpen={showSomaticReset} onClose={() => setShowSomaticReset(false)} onAwardPoints={awardPoints} />
+        {somaticReadyToMount && (
+          <Suspense fallback={null}>
+            <SomaticResetOverlay isOpen={showSomaticReset} onClose={() => setShowSomaticReset(false)} onAwardPoints={awardPoints} />
+          </Suspense>
+        )}
 
         <AnimatePresence mode="wait">
           <motion.div
@@ -2322,14 +2337,16 @@ export default function App() {
 
         <AnimatePresence>
           {user && showCheckIn && (
-            <ConnectedDailyCheckIn
-              onClose={() => setShowCheckIn(false)}
-              onComplete={handleCheckInComplete}
-              onReviewWithNova={() => {
-                setShowCheckIn(false);
-                setActiveTab("nova");
-              }}
-            />
+            <Suspense fallback={null}>
+              <ConnectedDailyCheckIn
+                onClose={() => setShowCheckIn(false)}
+                onComplete={handleCheckInComplete}
+                onReviewWithNova={() => {
+                  setShowCheckIn(false);
+                  setActiveTab("nova");
+                }}
+              />
+            </Suspense>
           )}
         </AnimatePresence>
 
