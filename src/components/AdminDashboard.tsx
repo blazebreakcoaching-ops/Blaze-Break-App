@@ -9,6 +9,7 @@ import { secureApiFetch } from '../lib/secure-api';
 import { motion, AnimatePresence } from 'motion/react';
 import { useAuth } from '../lib/auth';
 import { ConfirmDialog } from './ConfirmDialog';
+import { formatFeedbackCategory } from '../lib/feedback-format';
 
 interface AdminUser {
   uid: string;
@@ -1180,7 +1181,7 @@ export const AdminDashboard = () => {
                       : 'border-white/10 text-text-muted hover:text-text-main'
                   }`}
                 >
-                  {cat === 'all' ? 'All' : cat === 'general' ? 'General' : cat === 'bug' ? 'Bug Reports' : cat === 'feature_request' ? 'Feature Requests' : 'Testimonials'}
+                  {cat === 'all' ? 'All' : formatFeedbackCategory(cat)}
                 </button>
               ))}
             </div>
@@ -1193,7 +1194,7 @@ export const AdminDashboard = () => {
                     <div className="flex items-center justify-between gap-4 mb-2">
                       <div className="flex items-center gap-2">
                         <span className="text-xs font-black uppercase tracking-wider text-text-main font-mono">
-                          {item.category === 'general' ? 'General Feedback' : item.category === 'bug' ? 'Bug Report' : item.category === 'feature_request' ? 'Feature Request' : 'Testimonial'}
+                          {formatFeedbackCategory(item.category)}
                         </span>
                         {item.category === 'testimonial' && item.publicUseConsent && (
                           <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-success/10 text-success dark:text-[#4ade80] border border-success/20">
