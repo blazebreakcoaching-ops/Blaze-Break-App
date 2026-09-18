@@ -1209,7 +1209,17 @@ export const AdminDashboard = () => {
                           </span>
                         )}
                       </div>
-                      <span className="text-[10px] text-text-muted shrink-0 font-mono">{new Date(item.createdAt).toLocaleString()}</span>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <span className="text-[10px] text-text-muted font-mono">{new Date(item.createdAt).toLocaleString()}</span>
+                        <button
+                          onClick={() => { navigator.clipboard.writeText(item.message); showSuccess('Feedback copied'); }}
+                          aria-label={`Copy feedback from ${item.userEmail}`}
+                          className="p-1.5 text-text-muted hover:text-primary transition-colors"
+                          title="Copy feedback"
+                        >
+                          <Copy className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                     </div>
                     <p className="text-xs text-text-muted leading-relaxed whitespace-pre-wrap">{item.message}</p>
                     <p className="text-[10px] text-text-muted mt-2 font-mono">{item.userEmail}</p>
