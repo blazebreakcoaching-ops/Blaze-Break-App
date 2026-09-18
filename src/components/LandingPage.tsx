@@ -116,7 +116,20 @@ export const LandingPage = ({ onStart, onOpenTrustCentre }: LandingPageProps) =>
       {/* Premium Glow Aura Backdrops */}
       <div className="absolute top-0 left-1/4 w-[500px] h-[500px] bg-primary/5 rounded-full blur-[140px] pointer-events-none" />
       <div className="absolute bottom-10 right-1/4 w-[600px] h-[600px] bg-teal-500/3 rounded-full blur-[160px] pointer-events-none" />
-      <div className="absolute inset-0 bg-[linear-gradient(to_right,#161f30_1px,transparent_1px),linear-gradient(to_bottom,#161f30_1px,transparent_1px)] bg-[size:4rem_4rem] [mask-image:radial-gradient(ellipse_60%_50%_at_50%_0%,#000_70%,transparent_100%)] opacity-25" />
+      {/* iOS Safari/Chrome (both WebKit) need -webkit-mask-image explicitly -
+          without it, WebKit ignores the mask entirely and this faint grid
+          pattern renders as a solid dark block over the hero heading
+          instead of fading out. Set via inline style rather than another
+          Tailwind arbitrary-property class so both the standard and
+          -webkit- prefixed properties are guaranteed to land, regardless
+          of what the build pipeline does or doesn't autoprefix. */}
+      <div
+        className="absolute inset-0 bg-[linear-gradient(to_right,#161f30_1px,transparent_1px),linear-gradient(to_bottom,#161f30_1px,transparent_1px)] bg-[size:4rem_4rem] opacity-25"
+        style={{
+          maskImage: 'radial-gradient(ellipse 60% 50% at 50% 0%, #000 70%, transparent 100%)',
+          WebkitMaskImage: 'radial-gradient(ellipse 60% 50% at 50% 0%, #000 70%, transparent 100%)',
+        }}
+      />
 
       {/* Navigation */}
       <nav className="fixed top-0 w-full z-50 px-8 py-6 flex justify-between items-center backdrop-blur-xl bg-background/70 border-b border-white/[0.04]">
