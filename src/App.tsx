@@ -106,8 +106,8 @@ const AdminDashboard = lazy(() => import("./components/AdminDashboard.tsx").then
 import { NovaFeedbackModal } from "./components/NovaFeedbackModal.tsx";
 import { InAppNudge } from "./components/InAppNudge.tsx";
 const EvolutionEngine = lazy(() => import("./components/EvolutionEngine.tsx").then(m => ({ default: m.EvolutionEngine })));
-import { MicroInterventions } from "./components/MicroInterventions.tsx";
-import { NovaOverloadShield } from "./components/NovaOverloadShield.tsx";
+const MicroInterventions = lazy(() => import("./components/MicroInterventions.tsx").then(m => ({ default: m.MicroInterventions })));
+const NovaOverloadShield = lazy(() => import("./components/NovaOverloadShield.tsx").then(m => ({ default: m.NovaOverloadShield })));
 import { updateNovaMemoryBySourceAndType, logJourney, initNovaPermissionsForNewUser, setNovaMemoryConsent } from "./lib/nova-brain.ts";
 import { buildDashboardGreeting } from "../dashboard-greeting.ts";
 const TrustCentrePage = lazy(() => import("./components/TrustCentrePage.tsx").then(m => ({ default: m.TrustCentrePage })));
