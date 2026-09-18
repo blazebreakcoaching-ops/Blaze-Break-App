@@ -127,7 +127,7 @@ export const SettingsModal = ({ profile, onSave, onClose, onOpenPrivacyCentre }:
         </button>
 
         {/* Tab Header Selector */}
-        <div role="tablist" className="flex border-b border-border dark:border-border mb-6 scrollbar-none gap-2 shrink-0">
+        <div role="tablist" className="flex border-b border-border dark:border-border mb-6 overflow-x-auto gap-2 shrink-0 pr-10">
           <button
             role="tab"
             aria-selected={activeTab === 'profile'}
@@ -135,7 +135,7 @@ export const SettingsModal = ({ profile, onSave, onClose, onOpenPrivacyCentre }:
             aria-controls="settings-panel"
             onClick={() => setActiveTab('profile')}
             className={cn(
-              "pb-3.5 px-4 text-xs font-black uppercase tracking-widest relative cursor-pointer flex items-center gap-2",
+              "pb-3.5 px-4 text-xs font-black uppercase tracking-widest relative cursor-pointer flex items-center gap-2 shrink-0 whitespace-nowrap",
               activeTab === 'profile' ? "text-primary dark:text-primary" : "text-text-muted hover:text-text-main dark:hover:text-text-muted"
             )}
           >
@@ -152,7 +152,7 @@ export const SettingsModal = ({ profile, onSave, onClose, onOpenPrivacyCentre }:
             aria-controls="settings-panel"
             onClick={() => setActiveTab('notifications')}
             className={cn(
-              "pb-3.5 px-4 text-xs font-black uppercase tracking-widest relative cursor-pointer flex items-center gap-2",
+              "pb-3.5 px-4 text-xs font-black uppercase tracking-widest relative cursor-pointer flex items-center gap-2 shrink-0 whitespace-nowrap",
               activeTab === 'notifications' ? "text-primary dark:text-primary" : "text-text-muted hover:text-text-main dark:hover:text-text-muted"
             )}
           >
@@ -169,7 +169,7 @@ export const SettingsModal = ({ profile, onSave, onClose, onOpenPrivacyCentre }:
             aria-controls="settings-panel"
             onClick={() => setActiveTab('consent')}
             className={cn(
-              "pb-3.5 px-4 text-xs font-black uppercase tracking-widest relative cursor-pointer flex items-center gap-2",
+              "pb-3.5 px-4 text-xs font-black uppercase tracking-widest relative cursor-pointer flex items-center gap-2 shrink-0 whitespace-nowrap",
               activeTab === 'consent' ? "text-primary dark:text-primary" : "text-text-muted hover:text-text-main dark:hover:text-text-muted"
             )}
           >
@@ -186,7 +186,7 @@ export const SettingsModal = ({ profile, onSave, onClose, onOpenPrivacyCentre }:
             aria-controls="settings-panel"
             onClick={() => setActiveTab('experiments')}
             className={cn(
-              "pb-3.5 px-4 text-xs font-black uppercase tracking-widest relative cursor-pointer flex items-center gap-2",
+              "pb-3.5 px-4 text-xs font-black uppercase tracking-widest relative cursor-pointer flex items-center gap-2 shrink-0 whitespace-nowrap",
               activeTab === 'experiments' ? "text-primary dark:text-primary" : "text-text-muted hover:text-text-main dark:hover:text-text-muted"
             )}
           >
@@ -203,7 +203,7 @@ export const SettingsModal = ({ profile, onSave, onClose, onOpenPrivacyCentre }:
             aria-controls="settings-panel"
             onClick={() => setActiveTab('feedback')}
             className={cn(
-              "pb-3.5 px-4 text-xs font-black uppercase tracking-widest relative cursor-pointer flex items-center gap-2",
+              "pb-3.5 px-4 text-xs font-black uppercase tracking-widest relative cursor-pointer flex items-center gap-2 shrink-0 whitespace-nowrap",
               activeTab === 'feedback' ? "text-primary dark:text-primary" : "text-text-muted hover:text-text-main dark:hover:text-text-muted"
             )}
           >
