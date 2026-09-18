@@ -1074,7 +1074,7 @@ export default function App() {
     window.addEventListener(NOVA_VOICE_STATUS_EVENT, onVoiceStatus);
     return () => window.removeEventListener(NOVA_VOICE_STATUS_EVENT, onVoiceStatus);
   }, []);
-  const { status: wakeWordStatus } = useHeyNovaWakeWord({
+  const { status: wakeWordStatus, lastWakeAt: wakeWordLastWakeAt } = useHeyNovaWakeWord({
     enabled: featureFlags.enable_hey_nova_wake_word,
     // Also pauses while the palette itself is already open - without this,
     // the listener kept running underneath it, and could pick up speech
@@ -2575,7 +2575,7 @@ export default function App() {
           />
         </Suspense>
       )}
-      <HeyNovaIndicator status={wakeWordStatus} />
+      <HeyNovaIndicator status={wakeWordStatus} lastWakeAt={wakeWordLastWakeAt} />
       <InAppNudge />
       {user && (
         <Suspense fallback={null}>
