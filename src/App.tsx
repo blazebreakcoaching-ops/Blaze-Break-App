@@ -68,6 +68,7 @@ const AllyNudgeScheduler = lazy(() => import("./components/AllyNudgeScheduler.ts
 const OrgDashboard = lazy(() => import("./components/OrgDashboard.tsx").then(m => ({ default: m.OrgDashboard })));
 const PrivacyVault = lazy(() => import("./components/PrivacyVault.tsx").then(m => ({ default: m.PrivacyVault })));
 import { LandingPage } from "./components/LandingPage.tsx";
+import { MfaChallenge } from "./components/MfaChallenge.tsx";
 import { SituationalOnboarding } from "./components/SituationalOnboarding.tsx";
 const ConnectedDailyCheckIn = lazy(() => import("./components/ConnectedRecoveryModules.tsx").then(m => ({ default: m.ConnectedDailyCheckIn })));
 const NegotiatorTool = lazy(() => import("./components/NegotiatorTool.tsx").then(m => ({ default: m.NegotiatorTool })));
@@ -937,7 +938,7 @@ const Header = ({
 };
 
 export default function App() {
-  const { user, appRole, loading: authLoading, accessToken } = useAuth();
+  const { user, appRole, loading: authLoading, accessToken, mfaPending } = useAuth();
 
   // Bulletproof global super admin check. Both owner email variants, same
   // as server.ts's requireAdmin/requireRole/requirePlatformOwner and
@@ -1786,6 +1787,16 @@ export default function App() {
       canEdit: false,
     });
   }, [stats.profile, shipStage, energyLevel, burnoutRisk, fingerprint, stats.debts, stats.supportCircle]);
+
+  // Blocks app access (not Firebase auth itself, which already fully
+  // succeeded by this point) whenever the signed-in account has 2FA
+  // enabled and hasn't verified it this session - the highest-risk piece
+  // of this whole feature, since it's the one gate that can lock someone
+  // out of their own account, so it stays a single, simple, first check
+  // ahead of every other flow branch below.
+  if (user && mfaPending) {
+    return <MfaChallenge />;
+  }
 
   if (flow === "landing") {
     return (

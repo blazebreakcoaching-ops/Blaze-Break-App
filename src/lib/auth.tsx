@@ -9,11 +9,16 @@ interface AuthContextType {
   appRole: AuthRole;
   loading: boolean;
   accessToken: string | null;
+  // True once a signed-in, non-anonymous user with 2FA enabled hasn't yet
+  // verified it this session - App.tsx renders MfaChallenge instead of the
+  // app while this is true. Always false for anonymous sessions.
+  mfaPending: boolean;
   signIn: () => Promise<void>;
   signInWithCalendar: () => Promise<string | null>;
   signUpWithEmail: (email: string, password: string) => Promise<void>;
   signInWithEmail: (email: string, password: string) => Promise<void>;
   sendPasswordReset: (email: string) => Promise<void>;
+  verifyMfaAtSignIn: (codeOrRecoveryCode: string, isRecoveryCode?: boolean) => Promise<void>;
   logOut: () => Promise<void>;
   hasRole: (allowedRoles: AuthRole[]) => boolean;
 }
@@ -23,14 +28,21 @@ const AuthContext = createContext<AuthContextType>({
   appRole: 'individual',
   loading: true,
   accessToken: null,
+  mfaPending: false,
   signIn: async () => {},
   signInWithCalendar: async () => null,
   signUpWithEmail: async () => {},
   signInWithEmail: async () => {},
   sendPasswordReset: async () => {},
+  verifyMfaAtSignIn: async () => {},
   logOut: async () => {},
   hasRole: () => false,
 });
+
+// sessionStorage (not localStorage) so a completed verification doesn't
+// silently carry over into a genuinely new browser session on the same
+// device/profile - only this tab-session's own sign-in is trusted.
+const mfaVerifiedSessionKey = (uid: string) => `blazebreak_mfa_verified_${uid}`;
 
 export const useAuth = () => useContext(AuthContext);
 
@@ -39,6 +51,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [appRole, setAppRole] = useState<AuthRole>('individual');
   const [accessToken, setAccessToken] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [mfaPending, setMfaPending] = useState(false);
   // Set right before signOut() and consumed the next time onAuthStateChanged
   // fires with no user. Without this, an explicit sign-out was indistinguishable
   // from a brand-new visitor, so it immediately spun up a fresh, blank
@@ -94,6 +107,42 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         } catch (e) {
           console.error("Authorised Access Framework mapping failed:", e);
           setAppRole('individual');
+        }
+
+        // 2FA never applies to an anonymous session - only check once this
+        // is a real account. Cached per-tab-session in sessionStorage so a
+        // page refresh doesn't re-challenge someone who already verified
+        // moments ago; a genuinely new browser session always re-checks.
+        if (!userRecord.isAnonymous) {
+          let alreadyVerifiedThisSession = false;
+          try {
+            alreadyVerifiedThisSession = sessionStorage.getItem(mfaVerifiedSessionKey(userRecord.uid)) === 'true';
+          } catch {
+            // sessionStorage can be blocked (private browsing, locked-down
+            // settings) - just means this falls through to the server
+            // check below every time, which is safe, just a bit redundant.
+          }
+
+          if (alreadyVerifiedThisSession) {
+            setMfaPending(false);
+          } else {
+            try {
+              const res = await secureApiFetch('/api/auth/mfa/status');
+              const data = await res.json();
+              setMfaPending(data.enabled === true);
+            } catch (e) {
+              // Fail OPEN, not closed - a transient network error checking
+              // 2FA status must never lock someone out of their own
+              // account. The mirror image of this app's established
+              // "never remove safety to save availability" principle:
+              // never ADD a blocking gate on top of a mere connectivity
+              // hiccup either.
+              console.warn("Could not check two-factor status — continuing without the extra sign-in step this session.", e);
+              setMfaPending(false);
+            }
+          }
+        } else {
+          setMfaPending(false);
         }
 
       } else {
@@ -269,10 +318,39 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     await secureApiFetch('/api/auth/password-reset/request', { method: 'POST', data: { email } });
   };
 
+  // Called from MfaChallenge.tsx once someone enters a correct code or
+  // recovery code at sign-in. Verification itself happens server-side
+  // (POST /api/auth/mfa/totp/verify-at-signin, which also enforces the
+  // lockout) - this just records the result for this session and clears
+  // the gate.
+  const verifyMfaAtSignIn = async (codeOrRecoveryCode: string, isRecoveryCode = false) => {
+    await secureApiFetch('/api/auth/mfa/totp/verify-at-signin', {
+      method: 'POST',
+      data: isRecoveryCode ? { recoveryCode: codeOrRecoveryCode } : { code: codeOrRecoveryCode },
+    });
+    if (auth.currentUser) {
+      try {
+        sessionStorage.setItem(mfaVerifiedSessionKey(auth.currentUser.uid), 'true');
+      } catch {
+        // sessionStorage blocked - mfaPending still flips false below for
+        // this render, just won't survive a refresh in that case.
+      }
+    }
+    setMfaPending(false);
+  };
+
   const logOut = async () => {
     explicitSignOutRef.current = true;
+    if (user) {
+      try {
+        sessionStorage.removeItem(mfaVerifiedSessionKey(user.uid));
+      } catch {
+        // sessionStorage blocked - nothing to clear.
+      }
+    }
     await signOut(auth);
     setAccessToken(null);
+    setMfaPending(false);
   };
   
   const hasRole = (allowedRoles: AuthRole[]) => {
@@ -284,7 +362,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   return (
-    <AuthContext.Provider value={{ user, appRole, loading, accessToken, signIn, signInWithCalendar, signUpWithEmail, signInWithEmail, sendPasswordReset, logOut, hasRole }}>
+    <AuthContext.Provider value={{ user, appRole, loading, accessToken, mfaPending, signIn, signInWithCalendar, signUpWithEmail, signInWithEmail, sendPasswordReset, verifyMfaAtSignIn, logOut, hasRole }}>
       {children}
     </AuthContext.Provider>
   );
