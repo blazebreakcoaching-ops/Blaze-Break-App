@@ -134,7 +134,7 @@ const FEATURE_GROUPS: { label: string; features: GuideFeature[] }[] = [
   { label: 'Reflection & safety net', features: SAFETY_NET },
 ];
 
-const FAQ: { q: string; a: string }[] = [
+const FAQ: { q: string; a: string; links?: { label: string; tab?: string; href?: string }[] }[] = [
   {
     q: 'Do I have to check in every day?',
     a: "No. Daily use helps the trend charts and Nova's suggestions feel sharper, but there's no penalty for gaps — pick it back up whenever, streak or no streak.",
@@ -146,10 +146,12 @@ const FAQ: { q: string; a: string }[] = [
   {
     q: 'Can my employer see what I write?',
     a: 'No. If your account is connected to an organisation, they only ever see anonymised, aggregated trends across enough people to protect anyone’s identity — never your individual entries, chats, or check-ins.',
+    links: [{ label: 'See exactly what\'s shared', tab: 'privacy' }],
   },
   {
     q: 'Is Nova a substitute for therapy?',
     a: 'No — Nova is a coach for day-to-day burnout recovery, not a clinician. For anything clinical or urgent, please use the crisis support options below or speak to a qualified professional.',
+    links: [{ label: 'Talk to Nova', tab: 'nova' }, { label: 'Jump to crisis support', href: '#crisis-support' }],
   },
 ];
 
@@ -187,7 +189,17 @@ export const UserGuide = ({ onNavigate }: { onNavigate?: (tab: string) => void }
         </p>
         <div className="bg-card border border-border p-5 rounded-lg max-w-2xl mb-5">
           <p className="text-sm text-text-main leading-relaxed">
-            <strong className="text-[#9a3412] dark:text-primary">The minimum that still counts:</strong> open Blaze Break, look at your Pulse screen, and do the one thing it suggests. That's it. That's a complete visit. You don't need to work through every tab or finish a streak.
+            <strong className="text-[#9a3412] dark:text-primary">The minimum that still counts:</strong> open Blaze Break, look at your{' '}
+            {onNavigate ? (
+              <button
+                type="button"
+                onClick={() => onNavigate('home')}
+                className="underline decoration-dashed decoration-primary/50 underline-offset-2 text-[#9a3412] dark:text-primary hover:opacity-80"
+              >
+                Pulse screen
+              </button>
+            ) : 'Pulse screen'}
+            , and do the one thing it suggests. That's it. That's a complete visit. You don't need to work through every tab or finish a streak.
           </p>
         </div>
         <ul className="space-y-3 max-w-2xl">
@@ -203,9 +215,9 @@ export const UserGuide = ({ onNavigate }: { onNavigate?: (tab: string) => void }
         <h3 className="text-lg font-display font-medium text-text-main mb-5">Getting started</h3>
         <div className="space-y-4 max-w-2xl">
           {[
-            { n: 1, t: 'Sign in', d: 'One account, synced across your devices.' },
-            { n: 2, t: 'Do the Check-in', d: 'A short self-assessment that builds your personal burnout picture.' },
-            { n: 3, t: 'Look at your Recovery Plan', d: 'A small, specific starting point based on your Check-in — a suggestion, not an instruction.' },
+            { n: 1, t: 'Sign in', d: 'One account, synced across your devices.', tab: undefined as string | undefined },
+            { n: 2, t: 'Do the Check-in', d: 'A short self-assessment that builds your personal burnout picture.', tab: 'diagnose' },
+            { n: 3, t: 'Look at your Recovery Plan', d: 'A small, specific starting point based on your Check-in — a suggestion, not an instruction.', tab: 'plan' },
           ].map((s) => (
             <div key={s.n} className="flex items-start gap-4">
               <div className="w-8 h-8 rounded-full bg-primary/10 border border-primary/20 text-[#9a3412] dark:text-primary flex items-center justify-center shrink-0 text-sm font-bold font-display">
@@ -214,6 +226,15 @@ export const UserGuide = ({ onNavigate }: { onNavigate?: (tab: string) => void }
               <div>
                 <p className="text-sm font-bold text-text-main">{s.t}</p>
                 <p className="text-sm text-text-muted leading-relaxed">{s.d}</p>
+                {s.tab && onNavigate && (
+                  <button
+                    type="button"
+                    onClick={() => onNavigate(s.tab as string)}
+                    className="mt-1 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-[#9a3412] dark:text-primary hover:underline"
+                  >
+                    Go there <ArrowRight className="w-3 h-3" />
+                  </button>
+                )}
               </div>
             </div>
           ))}
@@ -287,13 +308,37 @@ export const UserGuide = ({ onNavigate }: { onNavigate?: (tab: string) => void }
                 <span className="text-primary text-lg leading-none shrink-0 group-open:rotate-45 transition-transform">+</span>
               </summary>
               <p className="text-sm text-text-muted leading-relaxed mt-3">{item.a}</p>
+              {item.links && item.links.length > 0 && (
+                <div className="flex flex-wrap gap-x-5 gap-y-1 mt-3">
+                  {item.links.map((link) =>
+                    link.tab && onNavigate ? (
+                      <button
+                        key={link.label}
+                        type="button"
+                        onClick={() => onNavigate(link.tab as string)}
+                        className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-widest text-[#9a3412] dark:text-primary hover:underline"
+                      >
+                        {link.label} <ArrowRight className="w-3 h-3" />
+                      </button>
+                    ) : link.href ? (
+                      <a
+                        key={link.label}
+                        href={link.href}
+                        className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-widest text-[#9a3412] dark:text-primary hover:underline"
+                      >
+                        {link.label} <ArrowRight className="w-3 h-3" />
+                      </a>
+                    ) : null
+                  )}
+                </div>
+              )}
             </details>
           ))}
         </div>
       </div>
 
       {/* Crisis support */}
-      <div className="bg-surface border border-destructive/20 p-6 rounded-xl max-w-2xl">
+      <div id="crisis-support" className="bg-surface border border-destructive/20 p-6 rounded-xl max-w-2xl scroll-mt-6">
         <p className="text-[11px] font-black uppercase tracking-widest text-destructive dark:text-[#f87171] mb-2">Always reachable, from anywhere in the app</p>
         <h4 className="text-sm font-bold text-text-main mb-2">If things feel urgent right now</h4>
         <p className="text-xs text-text-muted leading-relaxed mb-4">
