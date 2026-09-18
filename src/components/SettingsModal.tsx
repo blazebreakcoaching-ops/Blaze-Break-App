@@ -1,9 +1,10 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { X, Upload, CheckCircle2, User, Sliders, Settings2 } from 'lucide-react';
+import { X, Upload, CheckCircle2, User, Sliders, Settings2, MessageSquare } from 'lucide-react';
 import { UserProfileData } from '../types';
 import { NotificationSettingsView } from './NotificationSettingsView';
 import { FeatureFlagsView } from './FeatureFlagsView';
+import { FeedbackForm } from './FeedbackForm';
 import { cn } from '../lib/utils';
 import { useFocusTrap } from '../lib/useFocusTrap';
 
@@ -15,7 +16,7 @@ interface SettingsModalProps {
 }
 
 export const SettingsModal = ({ profile, onSave, onClose, onOpenPrivacyCentre }: SettingsModalProps) => {
-  const [activeTab, setActiveTab] = useState<'profile' | 'notifications' | 'experiments' | 'consent'>('profile');
+  const [activeTab, setActiveTab] = useState<'profile' | 'notifications' | 'experiments' | 'consent' | 'feedback'>('profile');
   const [formData, setFormData] = useState<UserProfileData>(profile || {
     fullName: '',
     role: '',
@@ -191,6 +192,23 @@ export const SettingsModal = ({ profile, onSave, onClose, onOpenPrivacyCentre }:
           >
             <Settings2 className="w-4 h-4" /> Feature Flags
             {activeTab === 'experiments' && (
+              <motion.div layoutId="setting-tab" className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary dark:bg-primary rounded-full" />
+            )}
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeTab === 'feedback'}
+            id="settings-tab-feedback"
+            aria-controls="settings-panel"
+            onClick={() => setActiveTab('feedback')}
+            className={cn(
+              "pb-3.5 px-4 text-xs font-black uppercase tracking-widest relative cursor-pointer flex items-center gap-2",
+              activeTab === 'feedback' ? "text-primary dark:text-primary" : "text-text-muted hover:text-text-main dark:hover:text-text-muted"
+            )}
+          >
+            <MessageSquare className="w-4 h-4" /> Feedback &amp; Testimonials
+            {activeTab === 'feedback' && (
               <motion.div layoutId="setting-tab" className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary dark:bg-primary rounded-full" />
             )}
           </button>
@@ -438,9 +456,13 @@ export const SettingsModal = ({ profile, onSave, onClose, onOpenPrivacyCentre }:
                  </div>
               </div>
             </div>
-          ) : (
+          ) : activeTab === 'experiments' ? (
             <div className="py-2">
               <FeatureFlagsView />
+            </div>
+          ) : (
+            <div className="py-2">
+              <FeedbackForm />
             </div>
           )}
         </div>
