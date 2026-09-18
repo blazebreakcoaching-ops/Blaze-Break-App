@@ -759,7 +759,7 @@ const Header = ({
   };
 
   return (
-    <header className="flex items-center justify-between mb-12 relative transition-colors duration-500">
+    <header className="flex flex-col sm:flex-row sm:items-center items-start justify-between gap-6 mb-12 relative transition-colors duration-500">
       <AnimatePresence>
         {toastMessage && (
           <motion.div
@@ -809,7 +809,7 @@ const Header = ({
           {activeTab === "intelligence" && "Recovery Strategy Engine"}
         </span>
       </div>
-      <h2 className="text-5xl font-display font-bold text-text-main leading-tight tracking-tight mb-3 capitalize">
+      <h2 className="text-3xl sm:text-5xl font-display font-bold text-text-main leading-tight tracking-tight mb-3 capitalize">
         {activeTab === "home" ? (
           <span className="normal-case">{dashboardGreeting}</span>
         ) : (
@@ -857,7 +857,7 @@ const Header = ({
           "Administrative access: Machine learning layer for organisational stress mapping."}
       </p>
     </div>
-    <div className="flex items-center gap-4">
+    <div className="flex items-center flex-wrap gap-2 sm:gap-4">
       {onOpenTour && (
         <button
           onClick={onOpenTour}
