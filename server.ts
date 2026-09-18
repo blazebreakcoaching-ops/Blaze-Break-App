@@ -28,8 +28,8 @@ import { computeClimateStrain, computeClimateStrainByDimension, computeMoodStrai
 import { suggestRecognitionPrompts } from './positive-reinforcement';
 import { isRealGuardian, isValidGuardianPhone, buildGuardianCallRequestMessage, extractFirstName, nudgeSchedulerIsEnabled } from './guardian-alert';
 import { collectionsForExport, collectionsForErasure } from './user-data-collections';
-import { htmlToPlainTextFallback, buildEmailVerificationEmail, buildPasswordResetEmail, buildPasswordChangedEmail, buildMfaEnabledEmail } from './brevo-templates';
-import { generateTotpSecret, buildOtpauthUri, verifyTotpCode, generateRecoveryCodes, hashRecoveryCode, encryptSecret as encryptTotpSecret, decryptSecret as decryptTotpSecret } from './totp-mfa';
+import { htmlToPlainTextFallback, buildEmailVerificationEmail, buildPasswordResetEmail, buildPasswordChangedEmail, buildMfaEnabledEmail, buildMfaDisabledEmail } from './brevo-templates';
+import { generateTotpSecret, buildOtpauthUri, verifyTotpCode, generateRecoveryCodes, hashRecoveryCode, encryptSecret as encryptTotpSecret, decryptSecret as decryptTotpSecret, isTotpLockedOut, nextLockoutState } from './totp-mfa';
 import { isValidGad7Answers, scoreGad7, interpretGad7 } from './gad7';
 import { OrgRole, isOrgRole, hasOrgPermission, canAssignRole, OrgPermission, ORG_ROLE_PERMISSIONS } from './org-rbac';
 import { getEffectiveDataPolicy, validateDataPolicyUpdate } from './org-data-policy';
@@ -2658,6 +2658,136 @@ app.post("/api/auth/mfa/totp/enroll/confirm", verifyAppCheck, authenticateFireba
   } catch (error: any) {
     console.error("[MFA] enroll/confirm error:", error.message);
     res.status(500).json({ error: "Could not confirm two-factor setup right now." });
+  }
+});
+
+const MfaCodeOrRecoverySchema = z.object({
+  code: z.string().regex(/^\d{6}$/, "Code must be 6 digits").optional(),
+  recoveryCode: z.string().min(8).max(20).optional(),
+}).strict().refine((d) => Boolean(d.code) !== Boolean(d.recoveryCode), {
+  message: "Provide either a 6-digit code or a recovery code, not both.",
+});
+
+interface MfaVerifyResult {
+  ok: boolean;
+  reason?: 'locked' | 'not_enrolled' | 'invalid';
+}
+
+// Shared by verify-at-signin and disable below — both need the identical
+// "check lockout, verify a code or a single-use recovery code, record the
+// attempt" logic, differing only in what happens after a success. The
+// failed-attempt/lockout counters live in Firestore (not express-rate-
+// limit's in-memory store) specifically so they survive Cloud Run scaling
+// an instance to zero or running more than one instance at once.
+const verifyMfaAttempt = async (
+  db: FirebaseFirestore.Firestore,
+  uid: string,
+  input: { code?: string; recoveryCode?: string }
+): Promise<MfaVerifyResult> => {
+  const docRef = getMfaDocRef(db, uid);
+  const snap = await docRef.get();
+  const data = snap.data();
+  if (!data?.enabled || !data.secretEncrypted) {
+    return { ok: false, reason: 'not_enrolled' };
+  }
+  if (isTotpLockedOut(data.lockedUntil || null)) {
+    return { ok: false, reason: 'locked' };
+  }
+
+  let success = false;
+  let recoveryCodesHashed: { hash: string; usedAt: string | null }[] | undefined = data.recoveryCodesHashed;
+  if (input.code) {
+    const key = getMfaEncryptionKey();
+    const secret = decryptTotpSecret(data.secretEncrypted, key);
+    success = await verifyTotpCode(secret, input.code);
+  } else if (input.recoveryCode) {
+    const hash = hashRecoveryCode(input.recoveryCode);
+    const matchIndex = (recoveryCodesHashed || []).findIndex((rc) => rc.hash === hash && rc.usedAt === null);
+    if (matchIndex !== -1) {
+      success = true;
+      const now = new Date().toISOString();
+      recoveryCodesHashed = recoveryCodesHashed!.map((rc, i) => (i === matchIndex ? { ...rc, usedAt: now } : rc));
+    }
+  }
+
+  const lockout = nextLockoutState(data.failedAttempts || 0, success);
+  const now = new Date().toISOString();
+  await docRef.set({
+    failedAttempts: lockout.failedAttempts,
+    lockedUntil: lockout.lockedUntil,
+    ...(success ? { lastVerifiedAt: now } : {}),
+    ...(recoveryCodesHashed ? { recoveryCodesHashed } : {}),
+    updatedAt: now,
+  }, { merge: true });
+
+  return success ? { ok: true } : { ok: false, reason: 'invalid' };
+};
+
+app.post("/api/auth/mfa/totp/verify-at-signin", verifyAppCheck, authenticateFirebaseUser, mfaSigninVerifyLimiter, async (req, res) => {
+  try {
+    const parsed = MfaCodeOrRecoverySchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: "Provide either a 6-digit code or a recovery code." });
+    }
+    const user = requireAuth(req);
+    const db = getDb();
+    const result = await verifyMfaAttempt(db, user.uid, parsed.data);
+    if (!result.ok) {
+      if (result.reason === 'locked') {
+        return res.status(429).json({ error: "Too many incorrect attempts. Please wait a few minutes and try again." });
+      }
+      // Deliberately the same generic 401 whether the code was wrong or
+      // 2FA somehow isn't enrolled — no reason to tell an attacker which.
+      return res.status(401).json({ error: "That code didn't match. Please try again." });
+    }
+    res.json({ verified: true });
+  } catch (error: any) {
+    console.error("[MFA] verify-at-signin error:", error.message);
+    res.status(500).json({ error: "Could not verify your code right now." });
+  }
+});
+
+app.post("/api/auth/mfa/totp/disable", verifyAppCheck, authenticateFirebaseUser, mfaEnrollLimiter, async (req, res) => {
+  try {
+    const parsed = MfaCodeOrRecoverySchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: "Provide either a 6-digit code or a recovery code." });
+    }
+    const user = requireAuth(req);
+    const db = getDb();
+    const result = await verifyMfaAttempt(db, user.uid, parsed.data);
+    if (!result.ok) {
+      if (result.reason === 'not_enrolled') {
+        return res.status(400).json({ error: "Two-factor authentication isn't turned on." });
+      }
+      if (result.reason === 'locked') {
+        return res.status(429).json({ error: "Too many incorrect attempts. Please wait a few minutes and try again." });
+      }
+      return res.status(401).json({ error: "That code didn't match. Please try again." });
+    }
+
+    await getMfaDocRef(db, user.uid).set({
+      enabled: false,
+      secretEncrypted: null,
+      pendingSecretEncrypted: null,
+      recoveryCodesHashed: [],
+      failedAttempts: 0,
+      lockedUntil: null,
+      updatedAt: new Date().toISOString(),
+    }, { merge: true });
+
+    // Sent regardless of who triggered this — a security notice for a
+    // change the account owner didn't make is exactly when this matters
+    // most, same reasoning as the password-changed notice above.
+    if (user.email) {
+      const { subject, html } = buildMfaDisabledEmail();
+      await sendBrevoHtmlEmail(user.email, subject, html);
+    }
+
+    res.json({ success: true });
+  } catch (error: any) {
+    console.error("[MFA] disable error:", error.message);
+    res.status(500).json({ error: "Could not turn off two-factor authentication right now." });
   }
 });
 

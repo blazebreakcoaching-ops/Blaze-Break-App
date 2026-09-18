@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ShieldCheck, Loader2, Copy, Check, KeyRound } from 'lucide-react';
+import { ShieldCheck, Loader2, Copy, Check, KeyRound, ShieldOff } from 'lucide-react';
 import QRCode from 'qrcode';
 import { secureApiFetch } from '../lib/secure-api';
 import { cn } from '../lib/utils';
@@ -7,9 +7,10 @@ import { cn } from '../lib/utils';
 // The opt-in "extra security" step the owner asked for - a fully custom,
 // app-level TOTP second factor (Firebase's native MFA needs a paid
 // Identity Platform upgrade this project doesn't have). Off by default;
-// this view is entirely how someone turns it on. The "turn off" control
-// lands alongside the disable endpoint in a follow-up piece of work, so
-// this view only ever adds a second factor, never silently removes one.
+// turning it on requires an authenticator app; turning it off requires
+// proving control of it first (a current code or a recovery code) -
+// nobody with just a settings-page click can silently remove someone
+// else's second factor from an already-open session.
 
 type ViewState = 'loading' | 'off' | 'enrolling' | 'confirmCode' | 'recoveryCodes' | 'on';
 
@@ -23,6 +24,10 @@ export const SecuritySettingsView = () => {
   const [busy, setBusy] = useState(false);
   const [recoveryCodes, setRecoveryCodes] = useState<string[]>([]);
   const [copied, setCopied] = useState(false);
+  const [disabling, setDisabling] = useState(false);
+  const [disableInput, setDisableInput] = useState('');
+  const [disableError, setDisableError] = useState<string | null>(null);
+  const [disableBusy, setDisableBusy] = useState(false);
 
   useEffect(() => {
     const loadStatus = async () => {
@@ -71,6 +76,27 @@ export const SecuritySettingsView = () => {
       setError(e?.message || "That code didn't work. Please try again.");
     } finally {
       setBusy(false);
+    }
+  };
+
+  const submitDisable = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setDisableError(null);
+    setDisableBusy(true);
+    try {
+      const trimmed = disableInput.trim();
+      const isNumericCode = /^\d{6}$/.test(trimmed);
+      await secureApiFetch('/api/auth/mfa/totp/disable', {
+        method: 'POST',
+        data: isNumericCode ? { code: trimmed } : { recoveryCode: trimmed },
+      });
+      setState('off');
+      setDisabling(false);
+      setDisableInput('');
+    } catch (e: any) {
+      setDisableError(e?.message || "That code didn't work. Please try again.");
+    } finally {
+      setDisableBusy(false);
     }
   };
 
@@ -129,7 +155,7 @@ export const SecuritySettingsView = () => {
       )}
 
       {state === 'on' && (
-        <div className="border border-border rounded-xl p-4 space-y-2">
+        <div className="border border-border rounded-xl p-4 space-y-3">
           <div className="flex items-center gap-2 text-success">
             <ShieldCheck className="w-4 h-4" />
             <h4 className="text-sm font-bold text-text-main">Two-factor authentication is on</h4>
@@ -138,6 +164,52 @@ export const SecuritySettingsView = () => {
             {enrolledAt ? `Enabled ${new Date(enrolledAt).toLocaleDateString()}. ` : ''}
             You'll be asked for a code from your authenticator app each time you sign in.
           </p>
+          {!disabling ? (
+            <button
+              type="button"
+              onClick={() => { setDisabling(true); setDisableError(null); setDisableInput(''); }}
+              className="text-xs font-bold text-text-muted hover:text-destructive transition-colors flex items-center gap-1.5"
+            >
+              <ShieldOff className="w-3.5 h-3.5" /> Turn off two-factor authentication
+            </button>
+          ) : (
+            <form onSubmit={submitDisable} className="space-y-3 pt-2 border-t border-border">
+              <p className="text-xs text-text-muted pt-3">
+                Enter a current code from your authenticator app, or a recovery code, to confirm.
+              </p>
+              <div className="relative">
+                <KeyRound className="w-4 h-4 text-text-muted absolute left-4 top-1/2 -translate-y-1/2" aria-hidden="true" />
+                <input
+                  type="text"
+                  required
+                  value={disableInput}
+                  onChange={(e) => setDisableInput(e.target.value)}
+                  placeholder="6-digit code or recovery code"
+                  className="w-full bg-background border border-border rounded-xl pl-11 pr-4 py-3 text-sm text-text-main placeholder:text-text-muted focus:outline-none focus:border-primary/50 transition-colors"
+                />
+              </div>
+              {disableError && (
+                <p role="alert" className="text-xs text-destructive leading-relaxed">{disableError}</p>
+              )}
+              <div className="flex flex-col sm:flex-row gap-2">
+                <button
+                  type="submit"
+                  disabled={disableBusy || disableInput.trim().length === 0}
+                  className="px-6 py-2.5 bg-destructive text-white text-xs font-bold uppercase tracking-widest rounded-lg disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  {disableBusy && <Loader2 className="w-4 h-4 animate-spin" />}
+                  Confirm turn off
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setDisabling(false); setDisableError(null); }}
+                  className="px-6 py-2.5 text-xs font-bold uppercase tracking-widest text-text-muted hover:text-text-main transition-colors"
+                >
+                  Cancel
+                </button>
+              </div>
+            </form>
+          )}
         </div>
       )}
 

@@ -270,3 +270,128 @@ describe('POST /api/auth/mfa/totp/enroll/confirm', () => {
     expect(res.status).toBe(400);
   });
 });
+
+// Enrolls a fresh user end-to-end via the real routes and returns the
+// secret (for generating live codes) and the one-time recovery codes.
+async function enrollUser(uid: string): Promise<{ secret: string; recoveryCodes: string[] }> {
+  const startRes = await request(app).post('/api/auth/mfa/totp/enroll/start').set(auth(uid));
+  const secret = startRes.body.secretForManualEntry;
+  const code = await generateOtp({ secret });
+  const confirmRes = await request(app).post('/api/auth/mfa/totp/enroll/confirm').set(auth(uid)).send({ code });
+  return { secret, recoveryCodes: confirmRes.body.recoveryCodes };
+}
+
+describe('POST /api/auth/mfa/totp/verify-at-signin', () => {
+  it('accepts a correct current code', async () => {
+    const { secret } = await enrollUser('signin_user');
+    const code = await generateOtp({ secret });
+    const res = await request(app).post('/api/auth/mfa/totp/verify-at-signin').set(auth('signin_user')).send({ code });
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ verified: true });
+  });
+
+  it('accepts a valid recovery code and marks it used (single-use)', async () => {
+    const { recoveryCodes } = await enrollUser('recovery_user');
+    const firstUse = await request(app).post('/api/auth/mfa/totp/verify-at-signin').set(auth('recovery_user')).send({ recoveryCode: recoveryCodes[0] });
+    expect(firstUse.status).toBe(200);
+
+    const secondUse = await request(app).post('/api/auth/mfa/totp/verify-at-signin').set(auth('recovery_user')).send({ recoveryCode: recoveryCodes[0] });
+    expect(secondUse.status).toBe(401);
+  });
+
+  it('accepts a recovery code regardless of case/whitespace/dash formatting', async () => {
+    const { recoveryCodes } = await enrollUser('recovery_format_user');
+    const messy = ` ${recoveryCodes[0].toLowerCase().replace('-', '')} `;
+    const res = await request(app).post('/api/auth/mfa/totp/verify-at-signin').set(auth('recovery_format_user')).send({ recoveryCode: messy });
+    expect(res.status).toBe(200);
+  });
+
+  it('rejects a wrong code with 401', async () => {
+    const { secret } = await enrollUser('wrong_signin_user');
+    const realCode = await generateOtp({ secret });
+    const wrongCode = realCode === '000000' ? '111111' : '000000';
+    const res = await request(app).post('/api/auth/mfa/totp/verify-at-signin').set(auth('wrong_signin_user')).send({ code: wrongCode });
+    expect(res.status).toBe(401);
+  });
+
+  it('rejects when MFA was never enrolled', async () => {
+    const res = await request(app).post('/api/auth/mfa/totp/verify-at-signin').set(auth('never_enrolled_user')).send({ code: '123456' });
+    expect(res.status).toBe(401);
+  });
+
+  it('rejects a body with both a code and a recovery code, or neither', async () => {
+    const both = await request(app).post('/api/auth/mfa/totp/verify-at-signin').set(auth('x')).send({ code: '123456', recoveryCode: 'AAAA-1111' });
+    expect(both.status).toBe(400);
+    const neither = await request(app).post('/api/auth/mfa/totp/verify-at-signin').set(auth('x')).send({});
+    expect(neither.status).toBe(400);
+  });
+
+  it('locks out after 5 consecutive wrong attempts, rejecting even a subsequently correct code', async () => {
+    const { secret } = await enrollUser('lockout_user');
+    for (let i = 0; i < 5; i++) {
+      const res = await request(app).post('/api/auth/mfa/totp/verify-at-signin').set(auth('lockout_user')).send({ code: '000000' });
+      expect(res.status).toBe(401);
+    }
+    const correctCode = await generateOtp({ secret });
+    const lockedRes = await request(app).post('/api/auth/mfa/totp/verify-at-signin').set(auth('lockout_user')).send({ code: correctCode });
+    expect(lockedRes.status).toBe(429);
+  });
+
+  it('resets the failed-attempt counter after a success', async () => {
+    const { secret } = await enrollUser('reset_counter_user');
+    await request(app).post('/api/auth/mfa/totp/verify-at-signin').set(auth('reset_counter_user')).send({ code: '000000' });
+    await request(app).post('/api/auth/mfa/totp/verify-at-signin').set(auth('reset_counter_user')).send({ code: '000000' });
+    const goodCode = await generateOtp({ secret });
+    const success = await request(app).post('/api/auth/mfa/totp/verify-at-signin').set(auth('reset_counter_user')).send({ code: goodCode });
+    expect(success.status).toBe(200);
+    const stored = getDocRaw('users/reset_counter_user/security/mfa_totp');
+    expect(stored?.failedAttempts).toBe(0);
+  });
+});
+
+describe('POST /api/auth/mfa/totp/disable', () => {
+  it('disables with a correct code, clears the secret and recovery codes, and emails a notice', async () => {
+    const { secret } = await enrollUser('disable_user');
+    const code = await generateOtp({ secret });
+    fetchMock.mockClear();
+
+    const res = await request(app).post('/api/auth/mfa/totp/disable').set(auth('disable_user')).send({ code });
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ success: true });
+    const stored = getDocRaw('users/disable_user/security/mfa_totp');
+    expect(stored?.enabled).toBe(false);
+    expect(stored?.secretEncrypted).toBeNull();
+    expect(stored?.recoveryCodesHashed).toEqual([]);
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [, options] = fetchMock.mock.calls[0];
+    expect(JSON.parse(options.body).to).toEqual([{ email: 'disable_user@test.dev' }]);
+
+    const statusRes = await request(app).get('/api/auth/mfa/status').set(auth('disable_user'));
+    expect(statusRes.body.enabled).toBe(false);
+  });
+
+  it('disables with a valid recovery code just as well as a TOTP code', async () => {
+    const { recoveryCodes } = await enrollUser('disable_recovery_user');
+    const res = await request(app).post('/api/auth/mfa/totp/disable').set(auth('disable_recovery_user')).send({ recoveryCode: recoveryCodes[0] });
+    expect(res.status).toBe(200);
+  });
+
+  it('refuses to disable with a wrong code, leaving MFA on', async () => {
+    const { secret } = await enrollUser('disable_wrong_user');
+    const realCode = await generateOtp({ secret });
+    const wrongCode = realCode === '000000' ? '111111' : '000000';
+
+    const res = await request(app).post('/api/auth/mfa/totp/disable').set(auth('disable_wrong_user')).send({ code: wrongCode });
+
+    expect(res.status).toBe(401);
+    const stored = getDocRaw('users/disable_wrong_user/security/mfa_totp');
+    expect(stored?.enabled).toBe(true);
+  });
+
+  it('rejects disabling when MFA was never enabled', async () => {
+    const res = await request(app).post('/api/auth/mfa/totp/disable').set(auth('not_enabled_user')).send({ code: '123456' });
+    expect(res.status).toBe(400);
+  });
+});
