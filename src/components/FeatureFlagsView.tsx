@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ToggleLeft, ToggleRight, ShieldAlert, Cpu, Settings2 } from 'lucide-react';
+import { ToggleLeft, ToggleRight, ShieldAlert, Cpu, Settings2, Mic } from 'lucide-react';
 import { getFeatureFlags, setFeatureFlag, FeatureFlag } from '../lib/feature-flags';
 
 export const FeatureFlagsView = () => {
@@ -101,7 +101,31 @@ export const FeatureFlagsView = () => {
             </p>
           </div>
         </div>
-        
+        {/* Hey Nova Wake Word */}
+        <div className="bg-surface dark:bg-surface/50 border border-border dark:border-border rounded-xl p-5 flex gap-4 items-start transition-all hover:border-primary/30">
+          <div className="bg-primary/10 p-2 rounded-lg shrink-0 mt-0.5">
+            <Mic className="w-5 h-5 text-[#9a3412] dark:text-primary" />
+          </div>
+          <div className="flex-1 space-y-1">
+            <div className="flex justify-between items-center group">
+              <h4 className="font-bold text-sm text-text-main">"Hey Nova" Wake Word</h4>
+              <button
+                type="button"
+                onClick={() => toggleFlag('enable_hey_nova_wake_word')}
+                role="switch"
+                aria-checked={flags.enable_hey_nova_wake_word}
+                aria-label='"Hey Nova" Wake Word'
+                className="text-primary transition-transform active:scale-95 cursor-pointer"
+              >
+                {flags.enable_hey_nova_wake_word ? <ToggleRight className="w-6 h-6" /> : <ToggleLeft className="w-6 h-6 text-text-muted" />}
+              </button>
+            </div>
+            <p className="text-xs text-text-muted max-w-[90%] leading-relaxed">
+              Say "hey Nova" from anywhere in the app to open hands-free search. Turning this on keeps your microphone continuously listening for that phrase while the app is open — your browser will ask for microphone access. Nova only opens a results list for you to confirm; it never navigates or acts on its own.
+            </p>
+          </div>
+        </div>
+
         <div className="space-y-1 mt-8 mb-4">
           <h3 className="text-xl font-display font-bold text-text-main flex items-center gap-2">
             <ShieldAlert className="w-5 h-5 text-primary" /> Assurance & Compliance Toggles
