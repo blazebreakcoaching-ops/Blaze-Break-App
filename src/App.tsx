@@ -60,6 +60,10 @@ import { Walkthrough } from "./components/Walkthrough.tsx";
 import { CrisisSupportModal, CrisisSupportButton } from "./components/CrisisSupport.tsx";
 import { ErrorBoundary } from "./components/ErrorBoundary.tsx";
 import { CommandPalette } from "./components/CommandPalette.tsx";
+import { HeyNovaIndicator } from "./components/HeyNovaIndicator.tsx";
+import { useHeyNovaWakeWord } from "./lib/useHeyNovaWakeWord";
+import { NOVA_VOICE_STATUS_EVENT, VoiceStatus } from "./lib/useNovaLiveVoice";
+import { useFeatureFlags } from "./lib/feature-flags";
 const NovaGuardianRelay = lazy(() => import("./components/NovaGuardianRelay.tsx").then(m => ({ default: m.NovaGuardianRelay })));
 const AllyNudgeScheduler = lazy(() => import("./components/AllyNudgeScheduler.tsx").then(m => ({ default: m.AllyNudgeScheduler })));
 const OrgDashboard = lazy(() => import("./components/OrgDashboard.tsx").then(m => ({ default: m.OrgDashboard })));
@@ -1027,12 +1031,41 @@ export default function App() {
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && (e.key === 'k' || e.key === 'K')) {
         e.preventDefault();
+        // Cmd/Ctrl+K always starts from a clean search, whether it's
+        // opening fresh or the next time it opens after this closes it -
+        // a leftover "Hey Nova" query should never resurface unprompted.
+        setLauncherInitialQuery("");
         setShowLauncher((v) => !v);
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, []);
+
+  // "Hey Nova" wake word: opens the same quick-find palette above,
+  // pre-filled with whatever was said after the wake phrase, so saying it
+  // from anywhere in the app works exactly like Cmd/Ctrl+K plus a head
+  // start on the search - never a silent navigation.
+  const featureFlags = useFeatureFlags();
+  const [launcherInitialQuery, setLauncherInitialQuery] = useState("");
+  const [voiceCallActive, setVoiceCallActive] = useState(false);
+  useEffect(() => {
+    const onVoiceStatus = (e: Event) => {
+      const status = (e as CustomEvent<VoiceStatus>).detail;
+      setVoiceCallActive(status === "connecting" || status === "live");
+    };
+    window.addEventListener(NOVA_VOICE_STATUS_EVENT, onVoiceStatus);
+    return () => window.removeEventListener(NOVA_VOICE_STATUS_EVENT, onVoiceStatus);
+  }, []);
+  const { status: wakeWordStatus } = useHeyNovaWakeWord({
+    enabled: featureFlags.enable_hey_nova_wake_word,
+    paused: voiceCallActive,
+    onWake: (query) => {
+      setLauncherInitialQuery(query);
+      setShowLauncher(true);
+    },
+  });
+
   const [postOnboardingProfile, setPostOnboardingProfile] = useState<UserProfileData | null>(null);
   const welcomeModalRef = useFocusTrap(!!postOnboardingProfile);
   useEffect(() => {
@@ -2470,12 +2503,14 @@ export default function App() {
       <CrisisSupportModal isOpen={showCrisisSupport} onClose={() => setShowCrisisSupport(false)} guardians={stats.supportCircle || []} />
       <CommandPalette
         isOpen={showLauncher}
-        onClose={() => setShowLauncher(false)}
+        onClose={() => { setShowLauncher(false); setLauncherInitialQuery(""); }}
         tabs={launcherTabs}
         onNavigate={(id) => setActiveTab(id as ActiveTab)}
         onTalkToNova={() => setActiveTab("nova")}
         onCrisis={() => setShowCrisisSupport(true)}
+        initialQuery={launcherInitialQuery}
       />
+      <HeyNovaIndicator status={wakeWordStatus} />
       <InAppNudge />
 
       <AnimatePresence>
