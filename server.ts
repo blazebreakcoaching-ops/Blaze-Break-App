@@ -276,6 +276,15 @@ const exportLimiter = rateLimit({
   validate: { xForwardedForHeader: false, default: true }
 });
 
+const feedbackLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 10,
+  message: { error: 'Too many feedback submissions, please try again later.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+  validate: { xForwardedForHeader: false, default: true }
+});
+
 app.use('/api/', apiLimiter);
 
 // Global Error Handler for safe JSON error returns (e.g. 413 Payload Too Large)
@@ -416,6 +425,59 @@ Details: ${details || 'No details provided'}
   } catch (err: any) {
     console.error("[SUPPORT] Error processing support request:", err.message);
     res.status(500).json({ error: "Failed to process request" });
+  }
+});
+
+// Feedback & Testimonials Route
+const FeedbackSubmissionSchema = z.object({
+  category: z.enum(['general', 'bug', 'feature_request', 'testimonial']),
+  message: z.string().min(1).max(2000),
+  rating: z.number().min(1).max(5).optional(),
+  publicUseConsent: z.boolean().optional().default(false),
+}).strict();
+
+app.post("/api/feedback/submit", feedbackLimiter, verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const parsed = FeedbackSubmissionSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: "Invalid feedback submission." });
+    }
+    const user = requireAuth(req);
+    const { category, message, rating, publicUseConsent } = parsed.data;
+    // Consent to public use only means anything for a testimonial - forced
+    // false for every other category regardless of what the client sends.
+    const consentToRecord = category === 'testimonial' ? publicUseConsent : false;
+
+    const db = getDb();
+    const docRef = await db.collection("feedback_submissions").add({
+      userId: user.uid,
+      userEmail: user.email || "",
+      category,
+      message,
+      rating: rating ?? null,
+      publicUseConsent: consentToRecord,
+      createdAt: FieldValue.serverTimestamp(),
+    });
+
+    console.log(`[FEEDBACK] Submission received. Category: ${category}, UID: ${user.uid}`);
+
+    const subject = `Blaze Break - New ${category === 'testimonial' ? 'Testimonial' : 'Feedback'} Submission`;
+    const body = `
+User email: ${user.email}
+UID: ${user.uid}
+Category: ${category}
+Rating: ${rating ?? 'n/a'}
+Public-use consent: ${consentToRecord ? 'yes' : 'no'}
+
+Message:
+${message}
+    `.trim();
+    await sendBrevoEmail("support@blazebreak.com", subject, body);
+
+    res.json({ success: true, id: docRef.id });
+  } catch (err: any) {
+    console.error("[FEEDBACK] Error processing submission:", err.message);
+    res.status(500).json({ error: "Failed to submit feedback" });
   }
 });
 
