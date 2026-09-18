@@ -14,6 +14,7 @@ import {
   Book,
   Lock,
   PhoneCall,
+  ListChecks,
 } from 'lucide-react';
 
 interface GuideFeature {
@@ -27,19 +28,44 @@ interface GuideFeature {
 // Grounded in the real tabs in ALL_TABS (App.tsx) - this only describes
 // features that actually exist, with an "Open" button that jumps straight
 // to the real tab rather than just describing it.
-const FEATURES: GuideFeature[] = [
+//
+// Deliberately excluded: org, evolution, intelligence, admin (manager/
+// platform-admin only - a different audience from everyone who can see
+// this guide) and executive (App.tsx's route-protection effect redirects
+// straight back to Home for anyone who isn't an executive or admin the
+// instant that tab is opened - since this guide is visible to every role,
+// an "Open" button here would silently bounce most readers who tapped it).
+// Grouped by what someone actually needs, not just tab order.
+const START_HERE: GuideFeature[] = [
   { tab: 'home', tag: 'Pulse', title: 'Your daily Pulse', description: "Where you land every time you open the app. One suggested action for today, your recovery stage, and your trend over time - not a to-do list.", icon: Home },
   { tab: 'diagnose', tag: 'Check-in', title: 'Check-in', description: "A short, honest self-assessment (not a medical test) that builds your personal burnout picture. The rest of the app is quietly built around it.", icon: MapPin },
+  { tab: 'plan', tag: 'Recovery Plan', title: 'Your Recovery Plan', description: "A small, specific starting point based on your Check-in - practical next steps, not a rigid programme. It updates as your Check-in and your week change.", icon: ListChecks },
+];
+
+const DAILY_TOOLS: GuideFeature[] = [
   { tab: 'recover', tag: 'Recover', title: 'Energy budget', description: 'See where your energy is actually going this week, and where to protect some back.', icon: BatteryFull },
   { tab: 'fuel', tag: 'Nutrition', title: 'Recovery fuel', description: 'Simple, low-effort food ideas for days when cooking is one decision too many.', icon: Apple },
   { tab: 'reset', tag: 'Nervous System', title: 'Reset', description: "Short, guided techniques for calming down when you're wired or overloaded.", icon: Wind },
   { tab: 'anxiety_reset', tag: 'Anxiety Reset', title: 'In-the-moment relief', description: 'Quick tools for when anxiety spikes and you need something right now, not a plan.', icon: HeartPulse },
   { tab: 'wellbeing', tag: 'Anxiety Check-in', title: 'GAD-7, about a minute', description: 'A short, well-established seven-question self-check, so you can notice a pattern before it builds up.', icon: Activity },
+];
+
+const TALK_TOOLS: GuideFeature[] = [
   { tab: 'communicate', tag: 'Communicate', title: 'Workload negotiator', description: "Generates a ready-to-send script for the awkward conversation, so you're not writing it from scratch while stressed.", icon: MessageSquare },
-  { tab: 'reflect', tag: 'Reflect', title: 'Weekly review', description: 'A few minutes at the end of the week to notice what actually helped, in your own words.', icon: Book },
   { tab: 'nova', tag: 'Nova Coach', title: 'Talk it through', description: "Text or voice, whichever you'd rather use. Nova remembers your context, so you don't have to re-explain yourself every time.", icon: Sparkles },
+];
+
+const SAFETY_NET: GuideFeature[] = [
+  { tab: 'reflect', tag: 'Reflect', title: 'Weekly review', description: 'A few minutes at the end of the week to notice what actually helped, in your own words.', icon: Book },
   { tab: 'ally', tag: 'Recovery Ally', title: 'Someone in your corner', description: "Invite a trusted friend, mentor, or partner to check in - you choose exactly what they see, and can turn any of it off any time.", icon: HeartPulse },
   { tab: 'privacy', tag: 'Privacy Centre', title: 'Your data, your rules', description: 'See exactly what is stored, export it, or delete it - always on, nothing to go looking for.', icon: Lock },
+];
+
+const FEATURE_GROUPS: { label: string; features: GuideFeature[] }[] = [
+  { label: 'Start here', features: START_HERE },
+  { label: 'Day-to-day recovery tools', features: DAILY_TOOLS },
+  { label: 'When you need to talk', features: TALK_TOOLS },
+  { label: 'Reflection & safety net', features: SAFETY_NET },
 ];
 
 const FAQ: { q: string; a: string }[] = [
@@ -124,32 +150,37 @@ export const UserGuide = ({ onNavigate }: { onNavigate?: (tab: string) => void }
         </div>
       </div>
 
-      {/* Feature grid */}
-      <div>
-        <p className="text-[11px] font-black uppercase tracking-widest text-primary mb-3 px-1">Pick what fits today</p>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {FEATURES.map((f) => {
-            const Icon = f.icon;
-            return (
-              <div key={f.tab} className="rounded-xl bg-card border border-border p-5 flex flex-col">
-                <div className="w-9 h-9 rounded-lg bg-primary/10 border border-primary/20 text-[#9a3412] dark:text-primary flex items-center justify-center shrink-0 mb-3">
-                  <Icon className="w-4 h-4" />
-                </div>
-                <p className="text-[10px] font-black uppercase tracking-widest text-text-muted mb-1">{f.tag}</p>
-                <p className="text-sm font-bold text-text-main mb-2">{f.title}</p>
-                <p className="text-xs text-text-muted leading-relaxed flex-1">{f.description}</p>
-                {onNavigate && (
-                  <button
-                    onClick={() => onNavigate(f.tab)}
-                    className="mt-4 self-start flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-widest text-[#9a3412] dark:text-primary hover:underline"
-                  >
-                    Open <ArrowRight className="w-3 h-3" />
-                  </button>
-                )}
-              </div>
-            );
-          })}
-        </div>
+      {/* Feature grid, grouped by what someone actually needs */}
+      <div className="space-y-8">
+        <p className="text-[11px] font-black uppercase tracking-widest text-primary px-1">Pick what fits today</p>
+        {FEATURE_GROUPS.map((group) => (
+          <div key={group.label}>
+            <p className="text-xs font-bold text-text-main mb-3 px-1">{group.label}</p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              {group.features.map((f) => {
+                const Icon = f.icon;
+                return (
+                  <div key={f.tab} className="rounded-xl bg-card border border-border p-5 flex flex-col">
+                    <div className="w-9 h-9 rounded-lg bg-primary/10 border border-primary/20 text-[#9a3412] dark:text-primary flex items-center justify-center shrink-0 mb-3">
+                      <Icon className="w-4 h-4" />
+                    </div>
+                    <p className="text-[10px] font-black uppercase tracking-widest text-text-muted mb-1">{f.tag}</p>
+                    <p className="text-sm font-bold text-text-main mb-2">{f.title}</p>
+                    <p className="text-xs text-text-muted leading-relaxed flex-1">{f.description}</p>
+                    {onNavigate && (
+                      <button
+                        onClick={() => onNavigate(f.tab)}
+                        className="mt-4 self-start flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-widest text-[#9a3412] dark:text-primary hover:underline"
+                      >
+                        Open <ArrowRight className="w-3 h-3" />
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ))}
       </div>
 
       {/* FAQ */}
