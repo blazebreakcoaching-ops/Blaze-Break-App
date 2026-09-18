@@ -2,6 +2,8 @@ import { useState } from 'react';
 import { Star, MessageSquare, Bug, Lightbulb, Quote } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { secureApiFetch } from '../lib/secure-api';
+import { auth } from '../lib/firebase';
+import { logAuditAction } from '../lib/audit-logger';
 
 type FeedbackCategory = 'general' | 'bug' | 'feature_request' | 'testimonial';
 
@@ -49,6 +51,20 @@ export const FeedbackForm = () => {
         },
       });
       if (!res.ok) throw new Error('Submission failed');
+
+      if (category === 'testimonial') {
+        // Same idiom ConsentMatrix.tsx already uses for a consent toggle -
+        // gives the user their own visible, tamper-resistant record of this
+        // decision in their personal audit trail, separate from the
+        // admin-only feedback_submissions record the server just wrote.
+        await logAuditAction({
+          userId: auth.currentUser?.email || 'anonymous',
+          action: `Consented to public-use review for testimonial (consent: ${publicUseConsent})`,
+          target: 'testimonial_public_use_consent',
+          status: 'authorised',
+          details: `Category: testimonial. Public-use consent: ${publicUseConsent}.`,
+        });
+      }
 
       setStatus('sent');
       reset();
