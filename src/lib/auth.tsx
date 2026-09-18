@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { User, signInWithPopup, signInAnonymously, linkWithPopup, signInWithCredential, GoogleAuthProvider, signOut, onAuthStateChanged } from 'firebase/auth';
+import { User, signInWithPopup, signInAnonymously, linkWithPopup, linkWithCredential, signInWithCredential, signInWithEmailAndPassword, createUserWithEmailAndPassword, EmailAuthProvider, GoogleAuthProvider, signOut, onAuthStateChanged } from 'firebase/auth';
 import { auth, getDb } from './firebase';
+import { secureApiFetch } from './secure-api';
 import { AuthRole } from '../types';
 
 interface AuthContextType {
@@ -10,6 +11,9 @@ interface AuthContextType {
   accessToken: string | null;
   signIn: () => Promise<void>;
   signInWithCalendar: () => Promise<string | null>;
+  signUpWithEmail: (email: string, password: string) => Promise<void>;
+  signInWithEmail: (email: string, password: string) => Promise<void>;
+  sendPasswordReset: (email: string) => Promise<void>;
   logOut: () => Promise<void>;
   hasRole: (allowedRoles: AuthRole[]) => boolean;
 }
@@ -21,6 +25,9 @@ const AuthContext = createContext<AuthContextType>({
   accessToken: null,
   signIn: async () => {},
   signInWithCalendar: async () => null,
+  signUpWithEmail: async () => {},
+  signInWithEmail: async () => {},
+  sendPasswordReset: async () => {},
   logOut: async () => {},
   hasRole: () => false,
 });
@@ -208,6 +215,60 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  // Same anonymous-upgrade pattern as signIn()/signInWithCalendar() above,
+  // via EmailAuthProvider instead of GoogleAuthProvider. Unlike Google,
+  // there's no embedded-credential trick to salvage a collision with - a
+  // failed link here just means the email is already someone's real
+  // account, which is a "go sign in instead" message, not a silent merge.
+  const signUpWithEmail = async (email: string, password: string) => {
+    try {
+      if (auth.currentUser?.isAnonymous) {
+        const credential = EmailAuthProvider.credential(email, password);
+        await linkWithCredential(auth.currentUser, credential);
+        return;
+      }
+      await createUserWithEmailAndPassword(auth, email, password);
+    } catch (e: any) {
+      if (e?.code === 'auth/email-already-in-use' || e?.code === 'auth/credential-already-in-use') {
+        throw new Error('An account with this email already exists. Try signing in instead.');
+      }
+      throw e;
+    }
+  };
+
+  const signInWithEmail = async (email: string, password: string) => {
+    try {
+      if (auth.currentUser?.isAnonymous) {
+        const credential = EmailAuthProvider.credential(email, password);
+        await linkWithCredential(auth.currentUser, credential);
+        return;
+      }
+      await signInWithEmailAndPassword(auth, email, password);
+    } catch (e: any) {
+      if (e?.code === 'auth/email-already-in-use' || e?.code === 'auth/credential-already-in-use') {
+        // This email already belongs to someone else's real, pre-existing
+        // account, so linking the anonymous session to it can't work -
+        // sign straight into that real account with the same email/
+        // password already in hand instead. This abandons the anonymous
+        // session's data, same as signIn()'s Google fallback above, since
+        // the collision has already proven this was never really the
+        // anonymous session's identity to keep.
+        await signInWithEmailAndPassword(auth, email, password);
+        return;
+      }
+      throw e;
+    }
+  };
+
+  // Deliberately NOT Firebase's own sendPasswordResetEmail() - the reset
+  // email must go out through this app's Brevo integration like every
+  // other transactional email it sends, not Firebase's default mailer.
+  // The server generates the actual reset link and does the sending;
+  // this always resolves (never reveals whether the email has an account).
+  const sendPasswordReset = async (email: string) => {
+    await secureApiFetch('/api/auth/password-reset/request', { method: 'POST', data: { email } });
+  };
+
   const logOut = async () => {
     explicitSignOutRef.current = true;
     await signOut(auth);
@@ -223,7 +284,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   return (
-    <AuthContext.Provider value={{ user, appRole, loading, accessToken, signIn, signInWithCalendar, logOut, hasRole }}>
+    <AuthContext.Provider value={{ user, appRole, loading, accessToken, signIn, signInWithCalendar, signUpWithEmail, signInWithEmail, sendPasswordReset, logOut, hasRole }}>
       {children}
     </AuthContext.Provider>
   );
