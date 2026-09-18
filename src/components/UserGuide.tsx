@@ -24,6 +24,12 @@ interface GuideFeature {
   description: string;
   icon: React.ElementType;
   definition?: { term: string; text: string };
+  // Real on-screen names of the individual tools inside a multi-tool
+  // section, verified against each tool's own heading rather than
+  // guessed from its component name. Collapsed behind a toggle by
+  // default (see `expandedCard`) - printing every one of these under
+  // every card would break this page's own "skim, don't study" rule.
+  subTools?: string[];
 }
 
 // A small "what does this mean?" mark - click/tap (not hover, which the
@@ -87,9 +93,13 @@ const DAILY_TOOLS: GuideFeature[] = [
   {
     tab: 'recover', tag: 'Recover', title: 'Energy budget', description: 'See where your energy is actually going this week, and where to protect some back.', icon: BatteryFull,
     definition: { term: 'Energy Budget', text: "Where your energy actually goes each day and each week, and how much you have left before you're overdrawn - a budget, but for capacity instead of money." },
+    subTools: ['7-Day Recovery Cycle', 'Energy Delta Management', 'Nova Focus Zone', 'Energy & Capacity', 'Micro-Recovery Menu', 'The "One Less Thing" Button', 'Workload Reality Check'],
   },
   { tab: 'fuel', tag: 'Nutrition', title: 'Recovery fuel', description: 'Simple, low-effort food ideas for days when cooking is one decision too many.', icon: Apple },
-  { tab: 'reset', tag: 'Nervous System', title: 'Reset', description: "Short, guided techniques for calming down when you're wired or overloaded.", icon: Wind },
+  {
+    tab: 'reset', tag: 'Nervous System', title: 'Reset', description: "Short, guided techniques for calming down when you're wired or overloaded.", icon: Wind,
+    subTools: ['The Rumination Furnace', 'Nervous System Reset Studio', 'Sleep & Wind-Down Builder', 'Movement Snacks', 'The Decompression Doorway', 'Recovery Recipes', 'Faith & Values Grounding', 'Resource Library', 'Quick micro-interventions (breathing, movement, and more)'],
+  },
   { tab: 'anxiety_reset', tag: 'Anxiety Reset', title: 'In-the-moment relief', description: 'Quick tools for when anxiety spikes and you need something right now, not a plan.', icon: HeartPulse },
   {
     tab: 'wellbeing', tag: 'Anxiety Check-in', title: 'GAD-7, about a minute', description: 'A short, well-established seven-question self-check, so you can notice a pattern before it builds up.', icon: Activity,
@@ -98,12 +108,18 @@ const DAILY_TOOLS: GuideFeature[] = [
 ];
 
 const TALK_TOOLS: GuideFeature[] = [
-  { tab: 'communicate', tag: 'Communicate', title: 'Workload negotiator', description: "Generates a ready-to-send script for the awkward conversation, so you're not writing it from scratch while stressed.", icon: MessageSquare },
+  {
+    tab: 'communicate', tag: 'Communicate', title: 'Workload negotiator', description: "Generates a ready-to-send script for the awkward conversation, so you're not writing it from scratch while stressed.", icon: MessageSquare,
+    subTools: ['Boundary Rehearsal', 'Boundary Autopilot', 'Workload Negotiator', 'Hard Talk Prep', 'Digital Boundary Shield', 'Nova Overload Shield'],
+  },
   { tab: 'nova', tag: 'Nova Coach', title: 'Talk it through', description: "Text or voice, whichever you'd rather use. Nova remembers your context, so you don't have to re-explain yourself every time.", icon: Sparkles },
 ];
 
 const SAFETY_NET: GuideFeature[] = [
-  { tab: 'reflect', tag: 'Reflect', title: 'Weekly review', description: 'A few minutes at the end of the week to notice what actually helped, in your own words.', icon: Book },
+  {
+    tab: 'reflect', tag: 'Reflect', title: 'Weekly review', description: 'A few minutes at the end of the week to notice what actually helped, in your own words.', icon: Book,
+    subTools: ['Daily reflection journal', 'Resentment Tracker'],
+  },
   {
     tab: 'ally', tag: 'Recovery Ally', title: 'Someone in your corner', description: "Invite a trusted friend, mentor, or partner to check in - you choose exactly what they see, and can turn any of it off any time.", icon: HeartPulse,
     definition: { term: 'Guardian Protocol', text: "A one-tap way to ask a trusted contact you've chosen in advance to reach out to you. It's always something you start yourself - the app never watches for risk or sends anything without you tapping the button first." },
@@ -138,6 +154,10 @@ const FAQ: { q: string; a: string }[] = [
 ];
 
 export const UserGuide = ({ onNavigate }: { onNavigate?: (tab: string) => void }) => {
+  // One card's "what's inside" list open at a time - unlike DefinitionMark's
+  // independent state, these lists run 6-9 items long, so several open
+  // together would make the page balloon unpredictably.
+  const [expandedCard, setExpandedCard] = useState<string | null>(null);
   return (
     <div className="space-y-8 pb-12">
       {/* Intro / masthead */}
@@ -220,6 +240,25 @@ export const UserGuide = ({ onNavigate }: { onNavigate?: (tab: string) => void }
                       {f.definition && <DefinitionMark term={f.definition.term} definition={f.definition.text} />}
                     </p>
                     <p className="text-xs text-text-muted leading-relaxed flex-1">{f.description}</p>
+                    {f.subTools && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => setExpandedCard(expandedCard === f.tab ? null : f.tab)}
+                          aria-expanded={expandedCard === f.tab}
+                          className="mt-3 self-start flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest text-text-muted hover:text-primary"
+                        >
+                          {expandedCard === f.tab ? "Hide what's inside" : "See what's inside"}
+                        </button>
+                        {expandedCard === f.tab && (
+                          <ul className="mt-2 space-y-1">
+                            {f.subTools.map((t) => (
+                              <li key={t} className="text-[11px] text-text-muted leading-relaxed">&middot; {t}</li>
+                            ))}
+                          </ul>
+                        )}
+                      </>
+                    )}
                     {onNavigate && (
                       <button
                         onClick={() => onNavigate(f.tab)}
