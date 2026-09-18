@@ -1,9 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import { 
-  ShieldCheck, Search, Loader2, RefreshCw, 
+import {
+  ShieldCheck, Search, Loader2, RefreshCw,
   UserPlus, Key, Activity, Heart, ShieldAlert, Check,
   AlertCircle, UserMinus, Lock, Users, CreditCard,
-  HeartPulse, Building2, Copy, Plus
+  HeartPulse, Building2, Copy, Plus, MessageSquare, Star
 } from 'lucide-react';
 import { secureApiFetch } from '../lib/secure-api';
 import { motion, AnimatePresence } from 'motion/react';
@@ -34,6 +34,17 @@ interface AuditLog {
   targetUid?: string;
   targetEmail?: string;
   details?: any;
+  createdAt: string;
+}
+
+interface FeedbackSubmission {
+  id: string;
+  userId: string;
+  userEmail: string;
+  category: 'general' | 'bug' | 'feature_request' | 'testimonial';
+  message: string;
+  rating: number | null;
+  publicUseConsent: boolean;
   createdAt: string;
 }
 
@@ -78,10 +89,12 @@ export const AdminDashboard = () => {
     'viewer_admin'
   ].includes(currentRole);
 
-  const [activeTab, setActiveTab] = useState<'users' | 'admins' | 'orgs' | 'audit' | 'somatic'>('users');
+  const [activeTab, setActiveTab] = useState<'users' | 'admins' | 'orgs' | 'audit' | 'somatic' | 'feedback'>('users');
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [admins, setAdmins] = useState<PlatformAdmin[]>([]);
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
+  const [feedbackSubmissions, setFeedbackSubmissions] = useState<FeedbackSubmission[]>([]);
+  const [feedbackCategoryFilter, setFeedbackCategoryFilter] = useState<'all' | FeedbackSubmission['category']>('all');
   const [metrics, setMetrics] = useState<ResetMetrics | null>(null);
   const [orgs, setOrgs] = useState<{ id: string; name: string; joinCode: string; privacyThreshold: number; memberCount: number; adminCount: number }[]>([]);
 
@@ -200,6 +213,21 @@ export const AdminDashboard = () => {
         console.error("Could not reach organisations API:", e);
       }
       setOrgs(loadedOrgs);
+
+      let loadedFeedback: FeedbackSubmission[] = [];
+      try {
+        // Not fatal if this fails, same reasoning as organisations above -
+        // no feedback submitted yet is a normal, expected state, not an
+        // error condition worth showing the dashboard's red banner for.
+        const feedbackRes = await secureApiFetch('/api/admin/feedback');
+        if (feedbackRes.ok) {
+          const feedbackData = await feedbackRes.json();
+          loadedFeedback = feedbackData.submissions || [];
+        }
+      } catch (e) {
+        console.error("Could not reach feedback API:", e);
+      }
+      setFeedbackSubmissions(loadedFeedback);
 
       // Only a genuine fetch failure counts as an error here - an empty
       // list (no admin promotions yet, no audit log entries yet) is a
@@ -666,7 +694,8 @@ export const AdminDashboard = () => {
           { id: 'admins', label: 'Promote Platform Admins', icon: ShieldAlert },
           { id: 'orgs', label: 'Organisations', icon: Building2 },
           { id: 'audit', label: 'Auditor Event Log', icon: Activity },
-          { id: 'somatic', label: 'Somatic De-escalation Stats', icon: Heart }
+          { id: 'somatic', label: 'Somatic De-escalation Stats', icon: Heart },
+          { id: 'feedback', label: 'Feedback & Testimonials', icon: MessageSquare }
         ].map((tab) => {
           const IconComponent = tab.icon;
           return (
@@ -1121,6 +1150,78 @@ export const AdminDashboard = () => {
               {auditLogs.length === 0 && (
                 <div className="py-12 text-center text-text-muted text-sm italic">
                   No administrative actions are logged in this ledger yet.
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Tab: Feedback & Testimonials */}
+        {activeTab === 'feedback' && (
+          <div className="card p-6 bg-surface dark:bg-card border border-border rounded-2xl">
+            <div className="flex items-center justify-between mb-6">
+              <div>
+                <h4 className="text-sm font-bold text-text-main">User Feedback & Testimonials</h4>
+                <p className="text-xs text-text-muted mt-0.5">Submissions land here privately - nothing shown here is ever displayed publicly on its own.</p>
+              </div>
+              <div className="text-xs uppercase font-black tracking-widest text-text-muted">
+                Submissions: {feedbackSubmissions.length}
+              </div>
+            </div>
+
+            <div className="flex flex-wrap gap-2 mb-5">
+              {(['all', 'general', 'bug', 'feature_request', 'testimonial'] as const).map((cat) => (
+                <button
+                  key={cat}
+                  onClick={() => setFeedbackCategoryFilter(cat)}
+                  className={`px-3 py-1.5 rounded-full text-xs font-bold tracking-tight border transition-all cursor-pointer ${
+                    feedbackCategoryFilter === cat
+                      ? 'border-primary bg-primary/10 text-primary'
+                      : 'border-white/10 text-text-muted hover:text-text-main'
+                  }`}
+                >
+                  {cat === 'all' ? 'All' : cat === 'general' ? 'General' : cat === 'bug' ? 'Bug Reports' : cat === 'feature_request' ? 'Feature Requests' : 'Testimonials'}
+                </button>
+              ))}
+            </div>
+
+            <div className="space-y-4">
+              {feedbackSubmissions
+                .filter((item) => feedbackCategoryFilter === 'all' || item.category === feedbackCategoryFilter)
+                .map((item) => (
+                  <div key={item.id} className="p-4 bg-card hover:bg-white/[0.01] rounded-xl border border-white/5 transition-all">
+                    <div className="flex items-center justify-between gap-4 mb-2">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-black uppercase tracking-wider text-text-main font-mono">
+                          {item.category === 'general' ? 'General Feedback' : item.category === 'bug' ? 'Bug Report' : item.category === 'feature_request' ? 'Feature Request' : 'Testimonial'}
+                        </span>
+                        {item.category === 'testimonial' && item.publicUseConsent && (
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-success/10 text-success dark:text-[#4ade80] border border-success/20">
+                            Cleared for public use
+                          </span>
+                        )}
+                        {item.rating != null && (
+                          <span className="flex items-center gap-0.5 text-[10px] text-text-muted">
+                            {Array.from({ length: 5 }).map((_, i) => (
+                              <Star key={i} className={`w-3 h-3 ${i < item.rating! ? 'fill-primary text-primary' : 'text-text-muted'}`} />
+                            ))}
+                          </span>
+                        )}
+                      </div>
+                      <span className="text-[10px] text-text-muted shrink-0 font-mono">{new Date(item.createdAt).toLocaleString()}</span>
+                    </div>
+                    <p className="text-xs text-text-muted leading-relaxed whitespace-pre-wrap">{item.message}</p>
+                    <p className="text-[10px] text-text-muted mt-2 font-mono">{item.userEmail}</p>
+                  </div>
+                ))}
+              {feedbackSubmissions.length === 0 && (
+                <div className="py-12 text-center text-text-muted text-sm italic">
+                  No feedback or testimonials submitted yet.
+                </div>
+              )}
+              {feedbackSubmissions.length > 0 && feedbackSubmissions.filter((item) => feedbackCategoryFilter === 'all' || item.category === feedbackCategoryFilter).length === 0 && (
+                <div className="py-12 text-center text-text-muted text-sm italic">
+                  No submissions match this filter.
                 </div>
               )}
             </div>

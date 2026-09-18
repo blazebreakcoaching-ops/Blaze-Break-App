@@ -4374,6 +4374,18 @@ app.get("/api/admin/audit-logs", verifyAppCheck, authenticateFirebaseUser, async
   }
 });
 
+app.get("/api/admin/feedback", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    requireAdmin(req);
+    const db = getDb();
+    const snap = await db.collection("feedback_submissions").orderBy("createdAt", "desc").limit(200).get();
+    const submissions = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    res.json({ submissions });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.post("/api/admin/feature-flags", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
   try {
     requireAdmin(req);
