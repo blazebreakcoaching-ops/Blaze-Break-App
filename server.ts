@@ -20,7 +20,7 @@ import { getAuth } from 'firebase-admin/auth';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { getAppCheck } from 'firebase-admin/app-check';
 import cors from 'cors';
-import rateLimit from 'express-rate-limit';
+import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import { z } from 'zod';
 import { memoryToolIsAllowed, searchMemories, isValidRecoveryDuration, validateMemoryWrite, validateFeatureSuggestion, SUGGESTABLE_FEATURES, toolsAreEnabled, liveVoiceIsEnabled, NovaMemoryDoc } from './nova-tools';
 import { toClaudeTools, GeminiStyleToolDeclaration } from './nova-claude-tools';
@@ -302,7 +302,10 @@ const passwordResetRequestLimiter = rateLimit({
   validate: { xForwardedForHeader: false, default: true }
 });
 
-const uidKeyGenerator = (req: express.Request): string => (req as any).user?.uid || req.ip || 'unknown';
+// express-rate-limit requires its own ipKeyGenerator helper (not raw req.ip)
+// for any IP-based fallback in a custom keyGenerator, so IPv6 addresses get
+// normalised the same safe way its own default keying does.
+const uidKeyGenerator = (req: express.Request): string => (req as any).user?.uid || ipKeyGenerator(req.ip || '0.0.0.0');
 
 const emailVerifySendLimiter = rateLimit({
   windowMs: 60 * 60 * 1000,
