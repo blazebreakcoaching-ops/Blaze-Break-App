@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   HelpCircle,
   Sparkles,
@@ -23,7 +23,39 @@ interface GuideFeature {
   title: string;
   description: string;
   icon: React.ElementType;
+  definition?: { term: string; text: string };
 }
+
+// A small "what does this mean?" mark - click/tap (not hover, which the
+// app's other hand-rolled tooltips use but doesn't work on mobile touch)
+// toggles a short definition panel. Independent open state per instance:
+// these are one-sentence popovers, so there's no real cost to two being
+// open at once.
+const DefinitionMark = ({ term, definition }: { term: string; definition: string }) => {
+  const [open, setOpen] = useState(false);
+  return (
+    <span className="relative inline-block align-middle ml-1">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+        aria-label={open ? `Hide definition of ${term}` : `What does "${term}" mean?`}
+        className="inline-flex items-center justify-center w-4 h-4 rounded-full text-primary/60 hover:text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-1 transition-colors"
+      >
+        <HelpCircle className="w-3.5 h-3.5" aria-hidden="true" />
+      </button>
+      {open && (
+        <span
+          role="note"
+          className="absolute z-50 top-full left-0 mt-2 w-64 max-w-[85vw] p-3 bg-card text-left border border-border rounded-lg shadow-lg block"
+        >
+          <span className="block text-[10px] font-black uppercase tracking-widest text-primary mb-1">{term}</span>
+          <span className="block text-xs text-text-muted leading-relaxed">{definition}</span>
+        </span>
+      )}
+    </span>
+  );
+};
 
 // Grounded in the real tabs in ALL_TABS (App.tsx) - this only describes
 // features that actually exist, with an "Open" button that jumps straight
@@ -37,17 +69,32 @@ interface GuideFeature {
 // an "Open" button here would silently bounce most readers who tapped it).
 // Grouped by what someone actually needs, not just tab order.
 const START_HERE: GuideFeature[] = [
-  { tab: 'home', tag: 'Pulse', title: 'Your daily Pulse', description: "Where you land every time you open the app. One suggested action for today, your recovery stage, and your trend over time - not a to-do list.", icon: Home },
-  { tab: 'diagnose', tag: 'Check-in', title: 'Check-in', description: "A short, honest self-assessment (not a medical test) that builds your personal burnout picture. The rest of the app is quietly built around it.", icon: MapPin },
-  { tab: 'plan', tag: 'Recovery Plan', title: 'Your Recovery Plan', description: "A small, specific starting point based on your Check-in - practical next steps, not a rigid programme. It updates as your Check-in and your week change.", icon: ListChecks },
+  {
+    tab: 'home', tag: 'Pulse', title: 'Your daily Pulse', description: "Where you land every time you open the app. One suggested action for today, your recovery stage, and your trend over time - not a to-do list.", icon: Home,
+    definition: { term: 'Recovery Velocity', text: "Which direction your recovery is trending right now, and how fast - not where you are today, but whether things are getting better, holding steady, or slipping." },
+  },
+  {
+    tab: 'diagnose', tag: 'Check-in', title: 'Check-in', description: "A short, honest self-assessment (not a medical test) that builds your personal burnout picture. The rest of the app is quietly built around it.", icon: MapPin,
+    definition: { term: 'Burnout Fingerprint', text: "A short, honest self-assessment - not a medical test - that builds your personal burnout picture. The rest of the app is quietly built around it." },
+  },
+  {
+    tab: 'plan', tag: 'Recovery Plan', title: 'Your Recovery Plan', description: "A small, specific starting point based on your Check-in - practical next steps, not a rigid programme. It updates as your Check-in and your week change.", icon: ListChecks,
+    definition: { term: 'Recovery Debt', text: "A single running score for sustained stress, low energy, and skipped rest, combined into one number - the higher it is, the more your recovery is 'owed,' not a measure of how little you got done." },
+  },
 ];
 
 const DAILY_TOOLS: GuideFeature[] = [
-  { tab: 'recover', tag: 'Recover', title: 'Energy budget', description: 'See where your energy is actually going this week, and where to protect some back.', icon: BatteryFull },
+  {
+    tab: 'recover', tag: 'Recover', title: 'Energy budget', description: 'See where your energy is actually going this week, and where to protect some back.', icon: BatteryFull,
+    definition: { term: 'Energy Budget', text: "Where your energy actually goes each day and each week, and how much you have left before you're overdrawn - a budget, but for capacity instead of money." },
+  },
   { tab: 'fuel', tag: 'Nutrition', title: 'Recovery fuel', description: 'Simple, low-effort food ideas for days when cooking is one decision too many.', icon: Apple },
   { tab: 'reset', tag: 'Nervous System', title: 'Reset', description: "Short, guided techniques for calming down when you're wired or overloaded.", icon: Wind },
   { tab: 'anxiety_reset', tag: 'Anxiety Reset', title: 'In-the-moment relief', description: 'Quick tools for when anxiety spikes and you need something right now, not a plan.', icon: HeartPulse },
-  { tab: 'wellbeing', tag: 'Anxiety Check-in', title: 'GAD-7, about a minute', description: 'A short, well-established seven-question self-check, so you can notice a pattern before it builds up.', icon: Activity },
+  {
+    tab: 'wellbeing', tag: 'Anxiety Check-in', title: 'GAD-7, about a minute', description: 'A short, well-established seven-question self-check, so you can notice a pattern before it builds up.', icon: Activity,
+    definition: { term: 'GAD-7', text: "A short, well-established self-check for anxiety symptoms. It's a way to notice how you're doing over time - it is not a diagnosis, and only you ever see it." },
+  },
 ];
 
 const TALK_TOOLS: GuideFeature[] = [
@@ -57,7 +104,10 @@ const TALK_TOOLS: GuideFeature[] = [
 
 const SAFETY_NET: GuideFeature[] = [
   { tab: 'reflect', tag: 'Reflect', title: 'Weekly review', description: 'A few minutes at the end of the week to notice what actually helped, in your own words.', icon: Book },
-  { tab: 'ally', tag: 'Recovery Ally', title: 'Someone in your corner', description: "Invite a trusted friend, mentor, or partner to check in - you choose exactly what they see, and can turn any of it off any time.", icon: HeartPulse },
+  {
+    tab: 'ally', tag: 'Recovery Ally', title: 'Someone in your corner', description: "Invite a trusted friend, mentor, or partner to check in - you choose exactly what they see, and can turn any of it off any time.", icon: HeartPulse,
+    definition: { term: 'Guardian Protocol', text: "A one-tap way to ask a trusted contact you've chosen in advance to reach out to you. It's always something you start yourself - the app never watches for risk or sends anything without you tapping the button first." },
+  },
   { tab: 'privacy', tag: 'Privacy Centre', title: 'Your data, your rules', description: 'See exactly what is stored, export it, or delete it - always on, nothing to go looking for.', icon: Lock },
 ];
 
@@ -165,7 +215,10 @@ export const UserGuide = ({ onNavigate }: { onNavigate?: (tab: string) => void }
                       <Icon className="w-4 h-4" />
                     </div>
                     <p className="text-[10px] font-black uppercase tracking-widest text-text-muted mb-1">{f.tag}</p>
-                    <p className="text-sm font-bold text-text-main mb-2">{f.title}</p>
+                    <p className="text-sm font-bold text-text-main mb-2">
+                      {f.title}
+                      {f.definition && <DefinitionMark term={f.definition.term} definition={f.definition.text} />}
+                    </p>
                     <p className="text-xs text-text-muted leading-relaxed flex-1">{f.description}</p>
                     {onNavigate && (
                       <button
