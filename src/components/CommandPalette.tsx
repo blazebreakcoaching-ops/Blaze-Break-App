@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { Search, CornerDownLeft, Sparkles, LifeBuoy, ArrowRight } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { useFocusTrap } from '../lib/useFocusTrap';
+import { getAvailableMoods, matchTabs } from '../lib/paletteMatch';
 
 export interface PaletteTab {
   id: string;
@@ -18,40 +19,12 @@ interface CommandPaletteProps {
   onNavigate: (id: string) => void;
   onTalkToNova?: () => void;
   onCrisis?: () => void;
+  // Pre-fills the search on open — used by the "Hey Nova" wake-word
+  // listener to hand off what it heard after the wake phrase.
+  initialQuery?: string;
 }
 
-// Search synonyms so people find a tool by how they'd describe it in the
-// moment, not just its official label ("panic" -> Anxiety Reset, "breathe" ->
-// Nervous System). Keyed by tab id; unknown ids simply have no extra terms.
-const KEYWORDS: Record<string, string[]> = {
-  home: ['pulse', 'dashboard', 'today', 'overview', 'score'],
-  plan: ['recovery plan', 'roadmap', 'steps', 'what to do'],
-  diagnose: ['burnout', 'assessment', 'test', 'fingerprint', 'where am i'],
-  recover: ['energy', 'battery', 'budget', 'tired', 'drained', 'rest', 'habit', 'habits', 'weekly goals', 'recovery hub', 'habit os'],
-  fuel: ['nutrition', 'food', 'eat', 'caffeine', 'hydration', 'gut'],
-  reset: ['breathe', 'breathing', 'calm', 'panic', 'overwhelmed', 'ground', 'somatic', 'nervous system'],
-  anxiety_reset: ['anxious', 'anxiety', 'panic', 'racing thoughts', 'spiralling', 'worry'],
-  wellbeing: ['gad-7', 'gad7', 'anxiety check', 'anxiety score', 'track anxiety', 'questionnaire', 'assessment', 'screening', 'how am i doing', 'symptoms'],
-  communicate: ['boundary', 'boundaries', 'say no', 'script', 'message', 'email', 'assert'],
-  reflect: ['journal', 'reflect', 'write', 'thoughts', 'rumination'],
-  nova: ['chat', 'talk', 'coach', 'ai', 'nova', 'ask'],
-  ally: ['guardian', 'support', 'friend', 'ally', 'someone i trust'],
-  org: ['team', 'organisation', 'organization', 'dashboard', 'workplace'],
-};
-
-// "How are you right now?" - a feeling-first way in, so someone in a bad
-// moment doesn't have to know the app's vocabulary. Each maps to a tool that
-// genuinely helps with that state; only shown if that tool is available.
-const MOODS: { label: string; emoji: string; tab: string }[] = [
-  { label: 'Overwhelmed', emoji: '😵‍💫', tab: 'reset' },
-  { label: 'Anxious', emoji: '😰', tab: 'anxiety_reset' },
-  { label: "Can't focus", emoji: '🌫️', tab: 'reset' },
-  { label: 'Drained', emoji: '🔋', tab: 'recover' },
-  { label: 'Resentful', emoji: '😤', tab: 'reflect' },
-  { label: 'Need to say no', emoji: '🛑', tab: 'communicate' },
-];
-
-export const CommandPalette = ({ isOpen, onClose, tabs, onNavigate, onTalkToNova, onCrisis }: CommandPaletteProps) => {
+export const CommandPalette = ({ isOpen, onClose, tabs, onNavigate, onTalkToNova, onCrisis, initialQuery }: CommandPaletteProps) => {
   const dialogRef = useFocusTrap(isOpen);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [query, setQuery] = useState('');
@@ -59,29 +32,22 @@ export const CommandPalette = ({ isOpen, onClose, tabs, onNavigate, onTalkToNova
 
   useEffect(() => {
     if (isOpen) {
-      setQuery('');
+      setQuery(initialQuery ?? '');
       setHighlight(0);
       // Focus the input once the dialog is mounted.
       const t = setTimeout(() => inputRef.current?.focus(), 40);
       return () => clearTimeout(t);
     }
+    // Only re-run when the dialog opens/closes — a changing initialQuery
+    // while already open shouldn't yank focus/text out from under someone
+    // mid-edit.
   }, [isOpen]);
 
   const tabById = useMemo(() => new Map(tabs.map((t) => [t.id, t])), [tabs]);
-  const availableMoods = useMemo(() => MOODS.filter((m) => tabById.has(m.tab)), [tabById]);
+  const availableMoods = useMemo(() => getAvailableMoods(new Set(tabById.keys())), [tabById]);
 
   // Flat, ordered list of selectable results for the current query.
-  const results = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    const items: { kind: 'nav'; id: string; label: string; icon: React.ElementType }[] = [];
-    for (const t of tabs) {
-      const hay = [t.label.toLowerCase(), ...(KEYWORDS[t.id] || [])].join(' ');
-      if (!q || hay.includes(q) || t.label.toLowerCase().includes(q)) {
-        items.push({ kind: 'nav', id: t.id, label: t.label, icon: t.icon });
-      }
-    }
-    return items;
-  }, [query, tabs]);
+  const results = useMemo(() => matchTabs(tabs, query), [query, tabs]);
 
   useEffect(() => { setHighlight(0); }, [query]);
 
