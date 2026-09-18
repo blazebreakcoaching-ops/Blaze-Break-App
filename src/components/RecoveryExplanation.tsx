@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { ChevronDown, Radio } from 'lucide-react';
 import { collection, doc, getDoc, getDocs, query, orderBy, limit } from 'firebase/firestore';
-import { auth, db } from '../lib/firebase';
+import { auth } from '../lib/firebase';
+import { db } from '../lib/firestore';
 import { cn } from '../lib/utils';
 import { secureApiFetch } from '../lib/secure-api';
 

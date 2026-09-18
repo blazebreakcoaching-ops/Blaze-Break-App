@@ -47,8 +47,7 @@ import {
 } from "./types.ts";
 import { cn, fireConfetti } from "./lib/utils.ts";
 import { useFocusTrap } from "./lib/useFocusTrap";
-import { auth, db } from "./lib/firebase.ts";
-import { doc, setDoc, getDoc, onSnapshot } from "firebase/firestore";
+import { auth, getDb } from "./lib/firebase.ts";
 const DiagnoseView = lazy(() => import("./components/DiagnoseSection.tsx").then(m => ({ default: m.DiagnoseView })));
 const ResultView = lazy(() => import("./components/DiagnoseSection.tsx").then(m => ({ default: m.ResultView })));
 const EnergyBudgetTool = lazy(() => import("./components/EnergyBudget.tsx").then(m => ({ default: m.EnergyBudgetTool })));
@@ -353,22 +352,30 @@ const Sidebar = ({
   }, []);
 
   useEffect(() => {
-    if (!auth.currentUser) return;
-    const unsubscribe = onSnapshot(
-      doc(db, "users", auth.currentUser.uid, "workload_reality_check", "state"),
-      (snap) => {
-        if (snap.exists()) {
-          const data = snap.data();
-          const tasksList = Array.isArray(data.tasks) ? data.tasks : [];
-          const pending = tasksList.filter((t: any) => !t.completed).length;
-          setPendingTasksCount(pending);
+    const uid = auth.currentUser?.uid;
+    if (!uid) return;
+    let unsubscribe: (() => void) | undefined;
+    let cancelled = false;
+    (async () => {
+      const db = await getDb();
+      const { doc, onSnapshot } = await import("firebase/firestore");
+      if (cancelled) return;
+      unsubscribe = onSnapshot(
+        doc(db, "users", uid, "workload_reality_check", "state"),
+        (snap) => {
+          if (snap.exists()) {
+            const data = snap.data();
+            const tasksList = Array.isArray(data.tasks) ? data.tasks : [];
+            const pending = tasksList.filter((t: any) => !t.completed).length;
+            setPendingTasksCount(pending);
+          }
+        },
+        (err) => {
+          console.error(err);
         }
-      },
-      (err) => {
-        console.error(err);
-      }
-    );
-    return () => unsubscribe();
+      );
+    })();
+    return () => { cancelled = true; unsubscribe?.(); };
   }, []);
 
   const tabs = ALL_TABS.filter((t) => {
@@ -1327,6 +1334,8 @@ export default function App() {
       let loadedFingerprint: BurnoutFingerprint | null = null;
       if (user) {
         try {
+          const db = await getDb();
+          const { doc, getDoc } = await import("firebase/firestore");
           const snap = await getDoc(doc(db, "users", user.uid, "user_stats", "core"));
           if (snap.exists()) {
             const data = snap.data();
@@ -1440,26 +1449,34 @@ export default function App() {
 
   useEffect(() => {
     if (authLoading || !user || !statsLoadedRef.current) return;
-    const t = setTimeout(() => {
-      setDoc(doc(db, "users", user.uid, "user_stats", "core"), {
-        ...stats,
-        updatedAt: new Date().toISOString(),
-      }, { merge: true }).catch(() => {
+    const t = setTimeout(async () => {
+      try {
+        const db = await getDb();
+        const { doc, setDoc } = await import("firebase/firestore");
+        await setDoc(doc(db, "users", user.uid, "user_stats", "core"), {
+          ...stats,
+          updatedAt: new Date().toISOString(),
+        }, { merge: true });
+      } catch {
         // Non-fatal - the UI still reflects the change locally even if this save fails.
-      });
+      }
     }, 800);
     return () => clearTimeout(t);
   }, [stats, authLoading, user]);
 
   useEffect(() => {
     if (authLoading || !user || !fingerprintLoadedRef.current) return;
-    const t = setTimeout(() => {
-      setDoc(doc(db, "users", user.uid, "user_stats", "core"), {
-        fingerprint: fingerprint || null,
-        updatedAt: new Date().toISOString(),
-      }, { merge: true }).catch(() => {
+    const t = setTimeout(async () => {
+      try {
+        const db = await getDb();
+        const { doc, setDoc } = await import("firebase/firestore");
+        await setDoc(doc(db, "users", user.uid, "user_stats", "core"), {
+          fingerprint: fingerprint || null,
+          updatedAt: new Date().toISOString(),
+        }, { merge: true });
+      } catch {
         // Non-fatal - the UI still reflects the change locally even if this save fails.
-      });
+      }
     }, 800);
     return () => clearTimeout(t);
   }, [fingerprint, authLoading, user]);

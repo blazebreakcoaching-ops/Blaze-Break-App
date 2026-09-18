@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Wind, X, HeartPulse, ShieldCheck, Check, Award } from 'lucide-react';
-import { auth, db } from '../lib/firebase';
+import { auth } from '../lib/firebase';
+import { db } from '../lib/firestore';
 import { addDoc, collection } from 'firebase/firestore';
 import { secureApiFetch } from '../lib/secure-api';
 import { logJourney } from '../lib/nova-brain';

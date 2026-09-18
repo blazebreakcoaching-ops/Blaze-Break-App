@@ -1,5 +1,4 @@
-import { auth, db } from './firebase';
-import { collection, doc, getDoc, getDocs, setDoc, deleteDoc, query, orderBy } from 'firebase/firestore';
+import { auth, getDb } from './firebase';
 
 export type MemoryType = 'profile' | 'trigger' | 'state' | 'rule' | 'preference';
 export type ConfidenceLevel = 'low' | 'medium' | 'high' | 'verified';
@@ -30,7 +29,11 @@ let cachedBrain: NovaMemory[] = [];
 let cachedUid: string | null = null;
 let initPromise: Promise<void> | null = null;
 
-const memoriesCollection = (uid: string) => collection(db, 'users', uid, 'nova_memories');
+const memoriesCollection = async (uid: string) => {
+  const db = await getDb();
+  const { collection } = await import('firebase/firestore');
+  return collection(db, 'users', uid, 'nova_memories');
+};
 
 // The onboarding "Personalised learning" toggle (profile.letNovaLearn) is
 // the one real switch for whether Nova learns about someone at all. It's
@@ -77,15 +80,21 @@ const NOVA_PERMISSION_DEFAULTS = {
 // otherwise leave Nova completely context-blind. allowMemory carries
 // through exactly what the user chose on the onboarding consent step.
 export const initNovaPermissionsForNewUser = (uid: string, allowMemory: boolean) => {
-  setDoc(doc(db, 'users', uid, 'nova_permissions', 'current'), {
-    ...NOVA_PERMISSION_DEFAULTS,
-    allowNovaMemory: allowMemory,
-    allowNovaUseSavedMemories: allowMemory,
-    updatedAt: new Date().toISOString(),
-  }, { merge: true }).catch(() => {
-    // Non-fatal - Nova just stays context-blind for this session; the next
-    // successful write (e.g. a later Settings change) will fix it.
-  });
+  (async () => {
+    try {
+      const db = await getDb();
+      const { doc, setDoc } = await import('firebase/firestore');
+      await setDoc(doc(db, 'users', uid, 'nova_permissions', 'current'), {
+        ...NOVA_PERMISSION_DEFAULTS,
+        allowNovaMemory: allowMemory,
+        allowNovaUseSavedMemories: allowMemory,
+        updatedAt: new Date().toISOString(),
+      }, { merge: true });
+    } catch {
+      // Non-fatal - Nova just stays context-blind for this session; the next
+      // successful write (e.g. a later Settings change) will fix it.
+    }
+  })();
 };
 
 // Backfills the same defaults for anyone who onboarded before this existed
@@ -95,6 +104,8 @@ export const initNovaPermissionsForNewUser = (uid: string, allowMemory: boolean)
 // deliberately turned individual categories off.
 export const ensureNovaPermissionsExist = async (uid: string, allowMemory: boolean) => {
   try {
+    const db = await getDb();
+    const { doc, getDoc, setDoc } = await import('firebase/firestore');
     const ref = doc(db, 'users', uid, 'nova_permissions', 'current');
     const snap = await getDoc(ref);
     if (!snap.exists()) {
@@ -115,13 +126,19 @@ export const ensureNovaPermissionsExist = async (uid: string, allowMemory: boole
 // categories, so flipping this doesn't silently reset someone's other
 // preferences.
 export const setNovaMemoryConsent = (uid: string, enabled: boolean) => {
-  setDoc(doc(db, 'users', uid, 'nova_permissions', 'current'), {
-    allowNovaMemory: enabled,
-    allowNovaUseSavedMemories: enabled,
-    updatedAt: new Date().toISOString(),
-  }, { merge: true }).catch(() => {
-    // Non-fatal, same reasoning as persistMemory.
-  });
+  (async () => {
+    try {
+      const db = await getDb();
+      const { doc, setDoc } = await import('firebase/firestore');
+      await setDoc(doc(db, 'users', uid, 'nova_permissions', 'current'), {
+        allowNovaMemory: enabled,
+        allowNovaUseSavedMemories: enabled,
+        updatedAt: new Date().toISOString(),
+      }, { merge: true });
+    } catch {
+      // Non-fatal, same reasoning as persistMemory.
+    }
+  })();
 };
 
 export const initNovaBrain = (uid: string): Promise<void> => {
@@ -129,7 +146,8 @@ export const initNovaBrain = (uid: string): Promise<void> => {
   cachedUid = uid;
   initPromise = (async () => {
     try {
-      const snap = await getDocs(query(memoriesCollection(uid), orderBy('createdAt', 'desc')));
+      const { getDocs, query, orderBy } = await import('firebase/firestore');
+      const snap = await getDocs(query(await memoriesCollection(uid), orderBy('createdAt', 'desc')));
       cachedBrain = snap.docs.map(d => ({ id: d.id, ...d.data() } as NovaMemory));
     } catch (e) {
       // Leaves the cache empty rather than pretending memories loaded.
@@ -149,25 +167,37 @@ export const clearNovaBrainCache = () => {
 };
 
 const persistMemory = (uid: string, memory: NovaMemory) => {
-  setDoc(doc(db, 'users', uid, 'nova_memories', memory.id), {
-    type: memory.type,
-    content: memory.content,
-    source: memory.source,
-    confidence: memory.confidence,
-    createdAt: memory.createdAt,
-    updatedAt: memory.updatedAt,
-    canEdit: memory.canEdit,
-  }).catch(() => {
-    // Non-fatal - the cache (and therefore the UI) still reflects the
-    // memory even if the Firestore write fails; it just won't survive
-    // a reload or be visible on another device until the next successful write.
-  });
+  (async () => {
+    try {
+      const db = await getDb();
+      const { doc, setDoc } = await import('firebase/firestore');
+      await setDoc(doc(db, 'users', uid, 'nova_memories', memory.id), {
+        type: memory.type,
+        content: memory.content,
+        source: memory.source,
+        confidence: memory.confidence,
+        createdAt: memory.createdAt,
+        updatedAt: memory.updatedAt,
+        canEdit: memory.canEdit,
+      });
+    } catch {
+      // Non-fatal - the cache (and therefore the UI) still reflects the
+      // memory even if the Firestore write fails; it just won't survive
+      // a reload or be visible on another device until the next successful write.
+    }
+  })();
 };
 
 const persistDelete = (uid: string, id: string) => {
-  deleteDoc(doc(db, 'users', uid, 'nova_memories', id)).catch(() => {
-    // Non-fatal, same reasoning as persistMemory.
-  });
+  (async () => {
+    try {
+      const db = await getDb();
+      const { doc, deleteDoc } = await import('firebase/firestore');
+      await deleteDoc(doc(db, 'users', uid, 'nova_memories', id));
+    } catch {
+      // Non-fatal, same reasoning as persistMemory.
+    }
+  })();
 };
 
 export const getNovaBrain = (): NovaMemory[] => {

@@ -2,7 +2,7 @@ import { ConnectedMoodPulse, ConnectedBodyCheckIn, ConnectedWinsLog, ConnectedGo
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useAuth } from '../lib/auth';
-import { db } from '../lib/firebase';
+import { db } from '../lib/firestore';
 import { doc, getDoc, setDoc, addDoc, collection, getDocs, query, orderBy, limit } from 'firebase/firestore';
 import {
   Activity, 

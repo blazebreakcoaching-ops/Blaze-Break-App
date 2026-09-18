@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { motion } from 'motion/react';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
-import { auth, db } from '../lib/firebase';
+import { auth } from '../lib/firebase';
+import { db } from '../lib/firestore';
 import { Target, Shield, Zap, Wind, Moon, Plus, RefreshCw, Minus, Trophy, Loader2, Trash2 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import {

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
-import { auth, db } from '../lib/firebase';
+import { auth } from '../lib/firebase';
+import { db } from '../lib/firestore';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import {
   Sparkles, 

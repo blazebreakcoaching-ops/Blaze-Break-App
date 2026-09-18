@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { auth, db } from '../lib/firebase';
+import { auth } from '../lib/firebase';
+import { db } from '../lib/firestore';
 import { addDoc, collection } from 'firebase/firestore';
 import { addNovaMemory } from '../lib/nova-brain';
 import { useFocusTrap } from '../lib/useFocusTrap';

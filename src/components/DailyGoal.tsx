@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { Target, CheckCircle, Loader2 } from 'lucide-react';
 import { SHIPStage } from '../types';
 import { collection, doc, setDoc, getDocs, query, orderBy, limit } from 'firebase/firestore';
-import { auth, db } from '../lib/firebase';
+import { auth } from '../lib/firebase';
+import { db } from '../lib/firestore';
 import { updateNovaMemoryBySourceAndType } from '../lib/nova-brain';
 
 export const DailyGoal = ({ shipStage }: { shipStage: SHIPStage }) => {

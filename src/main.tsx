@@ -45,7 +45,17 @@ if (typeof window !== 'undefined') {
   };
 }
 
-testFirebaseConnection();
+// Deferred off the critical rendering path - this is a connectivity check,
+// not something any part of the first paint depends on, and calling it here
+// unconditionally used to force an immediate Firestore chunk fetch on every
+// load regardless of what page was showing. requestIdleCallback runs it once
+// the browser is actually idle; setTimeout is the fallback for Safari, which
+// doesn't implement it.
+if (typeof window.requestIdleCallback === "function") {
+  window.requestIdleCallback(() => testFirebaseConnection());
+} else {
+  setTimeout(() => testFirebaseConnection(), 2000);
+}
 
 const allyTokenMatch = window.location.pathname.match(/^\/ally\/([a-zA-Z0-9]+)$/);
 

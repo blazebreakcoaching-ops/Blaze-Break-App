@@ -14,7 +14,8 @@ import {
 import { cn } from '../lib/utils';
 import { BurnoutFingerprint } from '../types';
 import { useAuth } from '../lib/auth';
-import { auth, db } from '../lib/firebase';
+import { auth } from '../lib/firebase';
+import { db } from '../lib/firestore';
 import { doc, setDoc } from 'firebase/firestore';
 import { updateNovaMemoryBySourceAndType } from '../lib/nova-brain';
 

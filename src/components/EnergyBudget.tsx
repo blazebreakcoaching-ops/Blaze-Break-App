@@ -1,4 +1,5 @@
-import { auth, db } from '../lib/firebase';
+import { auth } from '../lib/firebase';
+import { db } from '../lib/firestore';
 import { collection, doc, setDoc, getDoc, getDocs, updateDoc, deleteDoc, deleteField, query, orderBy } from 'firebase/firestore';
 import { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';

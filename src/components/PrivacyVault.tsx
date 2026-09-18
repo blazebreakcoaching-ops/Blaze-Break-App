@@ -30,7 +30,8 @@ import { PrivacyPolicyAccordion } from './PrivacyPolicyAccordion.tsx';
 
 import { ConnectedNovaPermissions } from './ConnectedRecoveryModules.tsx';
 import { MemoryCentre } from './MemoryCentre.tsx';
-import { auth, db } from '../lib/firebase';
+import { auth } from '../lib/firebase';
+import { db } from '../lib/firestore';
 import { signOut } from 'firebase/auth';
 import { doc, setDoc } from 'firebase/firestore';
 import { secureApiFetch } from '../lib/secure-api.ts';

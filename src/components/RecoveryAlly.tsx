@@ -4,7 +4,8 @@ import { HeartPulse, CheckSquare, Target, Mail, Award, Trash2, CheckCircle2, Ale
 import { cn } from '../lib/utils';
 import { logJourney } from '../lib/nova-brain';
 import { secureApiFetch } from '../lib/secure-api';
-import { auth, db } from '../lib/firebase';
+import { auth } from '../lib/firebase';
+import { db } from '../lib/firestore';
 import { doc, getDoc, setDoc, collection, addDoc, getDocs, deleteDoc, orderBy, query, limit } from 'firebase/firestore';
 
 interface SharedGoal {

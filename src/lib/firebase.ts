@@ -1,12 +1,33 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
-import { getFirestore, doc, getDocFromServer } from 'firebase/firestore';
 import { initializeAppCheck, ReCaptchaEnterpriseProvider, getToken } from 'firebase/app-check';
 import firebaseConfig from '../../firebase-applet-config.json';
+import type { Firestore } from 'firebase/firestore';
 
-const app = initializeApp(firebaseConfig);
-export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId); // Enterprise config
+export const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
+
+// Firestore is this app's single largest JS dependency (~480KB) and used to
+// be initialized eagerly here, forcing every page load - including the
+// anonymous marketing landing page - to fetch and parse it before it was
+// ever actually used. Deferred to first real use instead: src/lib/firestore.ts
+// holds the synchronous `db` export for the ~24 components that are already
+// lazy()-loaded elsewhere (safe - their own chunk load is already deferred,
+// so pulling this module in when they load changes nothing about eager
+// bundle weight); the couple of remaining call sites that ARE part of the
+// eager entry chunk (auth.tsx, App.tsx) use this getter instead.
+let _db: Firestore | null = null;
+let _dbPromise: Promise<Firestore> | null = null;
+export async function getDb(): Promise<Firestore> {
+  if (_db) return _db;
+  if (!_dbPromise) {
+    _dbPromise = import('firebase/firestore').then(({ getFirestore }) => {
+      _db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
+      return _db;
+    });
+  }
+  return _dbPromise;
+}
 
 // Prepare App Check (observation/test mode)
 // The actual site key must be configured in environment variables or via the console UI.
@@ -37,6 +58,8 @@ export async function getAppCheckToken(forceRefresh: boolean = false): Promise<s
 
 export async function testFirebaseConnection() {
   try {
+    const db = await getDb();
+    const { doc, getDocFromServer } = await import('firebase/firestore');
     await getDocFromServer(doc(db, 'test', 'connection'));
     console.log("Firebase connected successfully");
   } catch (error: any) {

@@ -2,9 +2,22 @@ import React, { useEffect, useState, useRef } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { Sparkles, X, ChevronRight } from "lucide-react";
 import { useAuth } from '../lib/auth';
-import { db } from '../lib/firebase';
-import { doc, getDoc, collection, addDoc, updateDoc, query, orderBy, limit, getDocs } from 'firebase/firestore';
+import { getDb } from '../lib/firebase';
 import { secureApiFetch } from '../lib/secure-api';
+
+// InAppNudge is always mounted from app start (it polls every 60s), not a
+// modal with an open/close trigger, so unlike the lazy-loaded modals
+// elsewhere in this codebase, deferring ITS load wouldn't help - it needs
+// to run immediately anyway. What needed fixing was that it (like
+// nova-brain.ts) statically imported firebase/firestore at the top of the
+// file, which alone was enough to force Firestore back into the eager
+// bundle regardless of everything else. This resolves both `db` and the
+// Firestore functions on first real use instead.
+const getFirestoreApi = async () => {
+  const db = await getDb();
+  const mod = await import('firebase/firestore');
+  return { db, ...mod };
+};
 
 export const InAppNudge = () => {
   const { user } = useAuth();
@@ -32,6 +45,7 @@ export const InAppNudge = () => {
   const loadPreferences = async () => {
     if (!user) return;
     try {
+      const { db, doc, getDoc } = await getFirestoreApi();
       const snap = await getDoc(doc(db, 'users', user.uid, 'preferences', 'notifications'));
       if (snap.exists()) {
         setPreferences(snap.data());
@@ -56,6 +70,8 @@ export const InAppNudge = () => {
       }
       const me = orgStatusCache.current;
       if (!me.organisationId || !me.shareAnonymizedDataWithOrg) return null;
+
+      const { db, collection, getDocs, query, orderBy, limit } = await getFirestoreApi();
 
       // Don't re-nag daily - once shown, wait a while before checking again,
       // using the same nudge_history log everything else already writes to.
@@ -90,6 +106,7 @@ export const InAppNudge = () => {
   const checkCheckInDue = async (): Promise<{ category: string; message: string } | null> => {
     if (!user) return null;
     try {
+      const { db, collection, getDocs, query, orderBy, limit } = await getFirestoreApi();
       const todayStr = new Date().toISOString().split('T')[0];
       const snap = await getDocs(query(collection(db, 'users', user.uid, 'checkins'), orderBy('createdAt', 'desc'), limit(1)));
       if (!snap.empty && typeof snap.docs[0].data().createdAt === 'string' && snap.docs[0].data().createdAt.startsWith(todayStr)) {
@@ -104,6 +121,7 @@ export const InAppNudge = () => {
   const checkRecoveryActionDue = async (): Promise<{ category: string; message: string } | null> => {
     if (!user) return null;
     try {
+      const { db, collection, getDocs, query, orderBy, limit } = await getFirestoreApi();
       const snap = await getDocs(query(collection(db, 'users', user.uid, 'wins'), orderBy('createdAt', 'desc'), limit(1)));
       if (!snap.empty) {
         const daysSince = (Date.now() - new Date(snap.docs[0].data().createdAt).getTime()) / (1000 * 60 * 60 * 24);
@@ -118,6 +136,7 @@ export const InAppNudge = () => {
   const checkBoundaryPracticeDue = async (): Promise<{ category: string; message: string } | null> => {
     if (!user) return null;
     try {
+      const { db, collection, getDocs, query, orderBy, limit } = await getFirestoreApi();
       const snap = await getDocs(query(collection(db, 'users', user.uid, 'boundary_scripts'), orderBy('createdAt', 'desc'), limit(1)));
       if (!snap.empty) {
         const daysSince = (Date.now() - new Date(snap.docs[0].data().createdAt).getTime()) / (1000 * 60 * 60 * 24);
@@ -132,6 +151,7 @@ export const InAppNudge = () => {
   const checkWeeklyReviewDue = async (): Promise<{ category: string; message: string } | null> => {
     if (!user) return null;
     try {
+      const { db, collection, getDocs, query, orderBy, limit } = await getFirestoreApi();
       const snap = await getDocs(query(collection(db, 'users', user.uid, 'weekly_reviews'), orderBy('createdAt', 'desc'), limit(1)));
       if (!snap.empty) {
         const daysSince = (Date.now() - new Date(snap.docs[0].data().createdAt).getTime()) / (1000 * 60 * 60 * 24);
@@ -146,6 +166,7 @@ export const InAppNudge = () => {
   const checkGoalFollowUpDue = async (): Promise<{ category: string; message: string } | null> => {
     if (!user) return null;
     try {
+      const { db, collection, getDocs, query, orderBy, limit } = await getFirestoreApi();
       const todayStr = new Date().toISOString().split('T')[0];
       const snap = await getDocs(query(collection(db, 'users', user.uid, 'goals'), orderBy('createdAt', 'desc'), limit(1)));
       if (snap.empty) return null;
@@ -260,6 +281,7 @@ export const InAppNudge = () => {
     
     // Log to backend
     try {
+      const { db, collection, addDoc } = await getFirestoreApi();
       const docRef = await addDoc(collection(db, 'users', user.uid, 'nudge_history'), nudgeData);
       const histItem = { id: docRef.id, ...nudgeData };
       setCurrentNudge(histItem);
@@ -278,6 +300,7 @@ export const InAppNudge = () => {
     
     if (currentNudge.id) {
       try {
+        const { db, doc, updateDoc } = await getFirestoreApi();
         await updateDoc(doc(db, 'users', user.uid, 'nudge_history', currentNudge.id), {
           status: reason ? "dismissed" : "action_taken",
           dismissedAt: reason ? new Date().toISOString() : undefined,

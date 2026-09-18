@@ -3,7 +3,8 @@ import { motion, AnimatePresence } from 'motion/react';
 import { Flame, Brain, ArrowRight, AlertOctagon, ShieldAlert } from 'lucide-react';
 import { BurnoutFingerprint } from '../types';
 import { secureApiFetch } from '../lib/secure-api';
-import { auth, db } from '../lib/firebase';
+import { auth } from '../lib/firebase';
+import { db } from '../lib/firestore';
 import { collection, addDoc } from 'firebase/firestore';
 import { addNovaMemory } from '../lib/nova-brain';
 

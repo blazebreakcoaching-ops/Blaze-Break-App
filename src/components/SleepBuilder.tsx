@@ -3,7 +3,8 @@ import { motion, AnimatePresence } from 'motion/react';
 import { Moon, Coffee, Smartphone, Edit3, Bed, ZapOff, CheckCircle2, Activity } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { BurnoutFingerprint } from '../types';
-import { auth, db } from '../lib/firebase';
+import { auth } from '../lib/firebase';
+import { db } from '../lib/firestore';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { addNovaMemory } from '../lib/nova-brain';
 

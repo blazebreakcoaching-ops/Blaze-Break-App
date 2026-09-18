@@ -1,7 +1,6 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { User, signInWithPopup, signInAnonymously, linkWithPopup, signInWithCredential, GoogleAuthProvider, signOut, onAuthStateChanged } from 'firebase/auth';
-import { auth, db } from './firebase';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { auth, getDb } from './firebase';
 import { AuthRole } from '../types';
 
 interface AuthContextType {
@@ -46,9 +45,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         (window as any).__ACTIVE_USER_EMAIL__ = userRecord.email;
         
         try {
+          const db = await getDb();
+          const { doc, getDoc, setDoc } = await import('firebase/firestore');
           const userDocRef = doc(db, 'users', userRecord.uid);
           const userDoc = await getDoc(userDocRef);
-          
+
           if (!userDoc.exists()) {
              await setDoc(userDocRef, {
                 ...(userRecord.displayName ? { displayName: userRecord.displayName } : {}),

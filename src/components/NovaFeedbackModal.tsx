@@ -3,7 +3,8 @@ import { motion, AnimatePresence } from 'motion/react';
 import { X, Star, MessageSquare } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { useFocusTrap } from '../lib/useFocusTrap';
-import { auth, db } from '../lib/firebase';
+import { auth } from '../lib/firebase';
+import { db } from '../lib/firestore';
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 
 export const NovaFeedbackModal = () => {

@@ -34,7 +34,8 @@ const ChartCardFallback = () => (
 );
 import { BurnoutFingerprint, UserStats, SHIPStage } from "../types.ts";
 import { cn } from "../lib/utils.ts";
-import { auth, db } from "../lib/firebase";
+import { auth } from '../lib/firebase';
+import { db } from '../lib/firestore';
 import { doc, setDoc } from "firebase/firestore";
 import { secureApiFetch } from "../lib/secure-api";
 import { ActivityLog } from "./ActivityLog.tsx";

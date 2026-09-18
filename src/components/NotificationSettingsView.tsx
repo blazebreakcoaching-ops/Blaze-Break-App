@@ -3,7 +3,7 @@ import { Shield, Bell, Moon, Clock, Settings, Brain, Activity, Heart, Bookmark, 
 import { useAuth } from '../lib/auth';
 import { cn } from '../lib/utils';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
-import { db } from '../lib/firebase';
+import { db } from '../lib/firestore';
 
 export interface NudgePreferences {
   notificationsEnabled: boolean;

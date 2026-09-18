@@ -1,4 +1,5 @@
-import { auth, db } from '../lib/firebase';
+import { auth } from '../lib/firebase';
+import { db } from '../lib/firestore';
 import { collection, doc, setDoc, getDocs, query, orderBy, limit } from 'firebase/firestore';
 import { useState, useEffect, useRef } from 'react';
 import { motion } from 'motion/react';
