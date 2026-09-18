@@ -7,6 +7,7 @@ import { FeatureFlagsView } from './FeatureFlagsView';
 import { FeedbackForm } from './FeedbackForm';
 import { cn } from '../lib/utils';
 import { useFocusTrap } from '../lib/useFocusTrap';
+import { secureApiFetch } from '../lib/secure-api';
 
 interface SettingsModalProps {
   profile: UserProfileData | undefined;
@@ -435,7 +436,6 @@ export const SettingsModal = ({ profile, onSave, onClose, onOpenPrivacyCentre }:
                      onClick={async () => {
                        setDeletionRequestStatus('sending');
                        try {
-                         const { secureApiFetch } = await import('../lib/secure-api');
                          await secureApiFetch('/api/support/request', { method: 'POST', data: { type: 'deletion', details: 'User-initiated vault deletion request.' }});
                          setDeletionRequestStatus('sent');
                        } catch(e) {

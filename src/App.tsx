@@ -95,7 +95,7 @@ import { OmniNova } from "./components/OmniNova.tsx";
 const EnergyBudgetMatrix = lazy(() => import("./components/EnergyBudgetMatrix.tsx").then(m => ({ default: m.EnergyBudgetMatrix })));
 const WeeklyGoalTracker = lazy(() => import("./components/WeeklyGoalTracker.tsx").then(m => ({ default: m.WeeklyGoalTracker })));
 const RuminationFurnace = lazy(() => import("./components/RuminationFurnace.tsx").then(m => ({ default: m.RuminationFurnace })));
-import { SettingsModal } from "./components/SettingsModal.tsx";
+const SettingsModal = lazy(() => import("./components/SettingsModal.tsx").then(m => ({ default: m.SettingsModal })));
 const FutureSelfSimulator = lazy(() => import("./components/FutureSelfSimulator.tsx").then(m => ({ default: m.FutureSelfSimulator })));
 const AssuranceCentre = lazy(() => import("./components/AssuranceCentre.tsx").then(m => ({ default: m.AssuranceCentre })));
 import { AuthStatusTracker } from "./lib/sync.tsx";
@@ -2472,27 +2472,35 @@ export default function App() {
 
       <AnimatePresence>
         {showSettings && (
-          <SettingsModal
-            profile={stats.profile}
-            onClose={() => setShowSettings(false)}
-            onSave={(profile) => {
-              setStats((prev) => ({ ...prev, profile }));
-              // Keeps blaze_profile in sync outside onboarding too - it's
-              // the only source nova-brain.ts's isNovaLearningAllowed() (and
-              // NovaChat.tsx's situational-context reads) can check
-              // synchronously, so a Settings change to "Behavioural
-              // Learning" needs to land here immediately, not just in
-              // Firestore on the next debounced save.
-              localStorage.setItem("blaze_profile", JSON.stringify(profile));
-              if (user) {
-                setNovaMemoryConsent(user.uid, profile.letNovaLearn !== false);
-              }
-            }}
-            onOpenPrivacyCentre={() => {
-              setShowSettings(false);
-              setActiveTab("privacy");
-            }}
-          />
+          // Minimal-fallback Suspense: SettingsModal is only ever reached by
+          // a direct click (the Settings gear), so a spinner would only ever
+          // flash for the first open per session - not worth the visual
+          // noise. Scoped tightly to just this conditional block, not the
+          // whole AnimatePresence, so Walkthrough below (an always-mounted
+          // sibling here) is never replaced by this fallback.
+          <Suspense fallback={null}>
+            <SettingsModal
+              profile={stats.profile}
+              onClose={() => setShowSettings(false)}
+              onSave={(profile) => {
+                setStats((prev) => ({ ...prev, profile }));
+                // Keeps blaze_profile in sync outside onboarding too - it's
+                // the only source nova-brain.ts's isNovaLearningAllowed() (and
+                // NovaChat.tsx's situational-context reads) can check
+                // synchronously, so a Settings change to "Behavioural
+                // Learning" needs to land here immediately, not just in
+                // Firestore on the next debounced save.
+                localStorage.setItem("blaze_profile", JSON.stringify(profile));
+                if (user) {
+                  setNovaMemoryConsent(user.uid, profile.letNovaLearn !== false);
+                }
+              }}
+              onOpenPrivacyCentre={() => {
+                setShowSettings(false);
+                setActiveTab("privacy");
+              }}
+            />
+          </Suspense>
         )}
         <Walkthrough
           isOpen={showWalkthrough}
