@@ -28,6 +28,7 @@ import { computeClimateStrain, computeClimateStrainByDimension, computeMoodStrai
 import { suggestRecognitionPrompts } from './positive-reinforcement';
 import { isRealGuardian, isValidGuardianPhone, buildGuardianCallRequestMessage, extractFirstName, nudgeSchedulerIsEnabled } from './guardian-alert';
 import { collectionsForExport, collectionsForErasure } from './user-data-collections';
+import { htmlToPlainTextFallback } from './brevo-templates';
 import { isValidGad7Answers, scoreGad7, interpretGad7 } from './gad7';
 import { OrgRole, isOrgRole, hasOrgPermission, canAssignRole, OrgPermission, ORG_ROLE_PERMISSIONS } from './org-rbac';
 import { getEffectiveDataPolicy, validateDataPolicyUpdate } from './org-data-policy';
@@ -361,7 +362,7 @@ const initTwilio = () => {
 };
 
 // Brevo Initialization
-const sendBrevoEmail = async (toEmail: string, subject: string, textContent: string) => {
+const postToBrevoEmail = async (payload: Record<string, unknown>): Promise<boolean> => {
   const brevoKey = process.env.BREVO_API_KEY;
   if (!brevoKey) {
     console.warn("[BREVO] API key not found. Email not sent.");
@@ -375,12 +376,7 @@ const sendBrevoEmail = async (toEmail: string, subject: string, textContent: str
         'Content-Type': 'application/json',
         'api-key': brevoKey
       },
-      body: JSON.stringify({
-        sender: { name: "Blaze Break Support", email: "support@blazebreak.com" },
-        to: [{ email: toEmail }],
-        subject: subject,
-        textContent: textContent
-      })
+      body: JSON.stringify(payload)
     });
     if (!res.ok) {
       console.error("[BREVO] Failed to send email:", await res.text());
@@ -392,6 +388,28 @@ const sendBrevoEmail = async (toEmail: string, subject: string, textContent: str
     return false;
   }
 };
+
+const sendBrevoEmail = (toEmail: string, subject: string, textContent: string) =>
+  postToBrevoEmail({
+    sender: { name: "Blaze Break Support", email: "support@blazebreak.com" },
+    to: [{ email: toEmail }],
+    subject,
+    textContent
+  });
+
+// This app's first HTML email sender - every other transactional email
+// (support auto-reply, org invites, ally invites) stays plain-text via
+// sendBrevoEmail above, untouched. Used for account-security emails
+// (password reset, email verification, MFA change notices) that need a
+// clickable link and a bit of branding rather than a raw URL in plaintext.
+const sendBrevoHtmlEmail = (toEmail: string, subject: string, htmlContent: string) =>
+  postToBrevoEmail({
+    sender: { name: "Blaze Break Support", email: "support@blazebreak.com" },
+    to: [{ email: toEmail }],
+    subject,
+    htmlContent,
+    textContent: htmlToPlainTextFallback(htmlContent)
+  });
 
 // Support & Deletion Request Route
 app.post("/api/support/request", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
