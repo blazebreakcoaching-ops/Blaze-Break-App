@@ -91,7 +91,7 @@ const RecoveryFuelEngine = lazy(() => import("./components/RecoveryFuelEngine.ts
 const RecoveryIntelligenceLayer = lazy(() => import("./components/RecoveryIntelligenceLayer.tsx").then(m => ({ default: m.RecoveryIntelligenceLayer })));
 const FaithValuesMode = lazy(() => import("./components/FaithValuesMode.tsx").then(m => ({ default: m.FaithValuesMode })));
 const OutcomeTracker = lazy(() => import("./components/OutcomeTracker.tsx").then(m => ({ default: m.OutcomeTracker })));
-import { OmniNova } from "./components/OmniNova.tsx";
+const OmniNova = lazy(() => import("./components/OmniNova.tsx").then(m => ({ default: m.OmniNova })));
 const EnergyBudgetMatrix = lazy(() => import("./components/EnergyBudgetMatrix.tsx").then(m => ({ default: m.EnergyBudgetMatrix })));
 const WeeklyGoalTracker = lazy(() => import("./components/WeeklyGoalTracker.tsx").then(m => ({ default: m.WeeklyGoalTracker })));
 const RuminationFurnace = lazy(() => import("./components/RuminationFurnace.tsx").then(m => ({ default: m.RuminationFurnace })));
@@ -103,7 +103,7 @@ import { initNovaBrain, clearNovaBrainCache, ensureNovaPermissionsExist } from "
 import { useAuth } from "./lib/auth.tsx";
 const IntegrationsDashboard = lazy(() => import("./components/IntegrationsDashboard.tsx").then(m => ({ default: m.IntegrationsDashboard })));
 const AdminDashboard = lazy(() => import("./components/AdminDashboard.tsx").then(m => ({ default: m.AdminDashboard })));
-import { NovaFeedbackModal } from "./components/NovaFeedbackModal.tsx";
+const NovaFeedbackModal = lazy(() => import("./components/NovaFeedbackModal.tsx").then(m => ({ default: m.NovaFeedbackModal })));
 import { InAppNudge } from "./components/InAppNudge.tsx";
 const EvolutionEngine = lazy(() => import("./components/EvolutionEngine.tsx").then(m => ({ default: m.EvolutionEngine })));
 const MicroInterventions = lazy(() => import("./components/MicroInterventions.tsx").then(m => ({ default: m.MicroInterventions })));
@@ -2351,14 +2351,14 @@ export default function App() {
         </AnimatePresence>
 
         {flow === "app" && !user && (
-          <>
+          <Suspense fallback={null}>
             <OmniNova
               activeTab={activeTab}
               fingerprint={fingerprint}
               stats={stats}
             />
             <NovaFeedbackModal />
-          </>
+          </Suspense>
         )}
       </motion.main>
 
