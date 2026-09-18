@@ -155,6 +155,17 @@ service cloud.firestore {
       match /integration_tokens/{serviceName} {
         allow read, write: if false;
       }
+
+      // security holds the opt-in TOTP 2FA record (AES-256-GCM encrypted
+      // secret, hashed single-use recovery codes, failed-attempt/lockout
+      // counters) — never client-readable or client-writable, even a
+      // redacted "is MFA enabled" read goes through the dedicated
+      // GET /api/auth/mfa/status endpoint, never direct Firestore access,
+      // so the encrypted secret can never reach the client outside the
+      // one-time enrollment response.
+      match /security/{docId} {
+        allow read, write: if false;
+      }
       // integrations holds redacted connection status only (no secrets) — safe to read.
       match /integrations/{serviceName} {
         allow read: if isOwner(uid);
