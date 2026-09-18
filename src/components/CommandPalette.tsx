@@ -51,6 +51,23 @@ export const CommandPalette = ({ isOpen, onClose, tabs, onNavigate, onTalkToNova
 
   useEffect(() => { setHighlight(0); }, [query]);
 
+  // A window-level listener, not just the dialog's own onKeyDown below -
+  // matching NovaFeedbackModal.tsx/SettingsModal.tsx's established pattern.
+  // The div-level handler only fires when focus is actually inside the
+  // dialog; that's reliable when the palette opens from a click, but when
+  // it opens from the "Hey Nova" wake word (an async voice callback, not a
+  // direct user gesture) focus landing inside the dialog is less
+  // dependable, and Escape would silently do nothing. This works
+  // regardless of where focus actually is.
+  useEffect(() => {
+    if (!isOpen) return;
+    const onWindowKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onWindowKeyDown);
+    return () => window.removeEventListener('keydown', onWindowKeyDown);
+  }, [isOpen, onClose]);
+
   if (!isOpen) return null;
 
   const choose = (id: string) => {
@@ -62,7 +79,6 @@ export const CommandPalette = ({ isOpen, onClose, tabs, onNavigate, onTalkToNova
     if (e.key === 'ArrowDown') { e.preventDefault(); setHighlight((h) => Math.min(h + 1, results.length - 1)); }
     else if (e.key === 'ArrowUp') { e.preventDefault(); setHighlight((h) => Math.max(h - 1, 0)); }
     else if (e.key === 'Enter') { e.preventDefault(); const r = results[highlight]; if (r) choose(r.id); }
-    else if (e.key === 'Escape') { e.preventDefault(); onClose(); }
   };
 
   return (

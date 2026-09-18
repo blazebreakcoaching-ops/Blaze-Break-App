@@ -1076,7 +1076,12 @@ export default function App() {
   }, []);
   const { status: wakeWordStatus } = useHeyNovaWakeWord({
     enabled: featureFlags.enable_hey_nova_wake_word,
-    paused: voiceCallActive,
+    // Also pauses while the palette itself is already open - without this,
+    // the listener kept running underneath it, and could pick up speech
+    // (the person talking to fill in their search, ambient noise, etc.)
+    // and re-trigger onWake, making the palette look like it wouldn't
+    // close since it could reopen right behind Escape.
+    paused: voiceCallActive || showLauncher,
     onWake: (query) => {
       setLauncherInitialQuery(query);
       setShowLauncher(true);
