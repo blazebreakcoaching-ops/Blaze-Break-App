@@ -28,7 +28,7 @@ import { computeClimateStrain, computeClimateStrainByDimension, computeMoodStrai
 import { suggestRecognitionPrompts } from './positive-reinforcement';
 import { isRealGuardian, isValidGuardianPhone, buildGuardianCallRequestMessage, extractFirstName, nudgeSchedulerIsEnabled } from './guardian-alert';
 import { collectionsForExport, collectionsForErasure } from './user-data-collections';
-import { htmlToPlainTextFallback } from './brevo-templates';
+import { htmlToPlainTextFallback, buildEmailVerificationEmail } from './brevo-templates';
 import { isValidGad7Answers, scoreGad7, interpretGad7 } from './gad7';
 import { OrgRole, isOrgRole, hasOrgPermission, canAssignRole, OrgPermission, ORG_ROLE_PERMISSIONS } from './org-rbac';
 import { getEffectiveDataPolicy, validateDataPolicyUpdate } from './org-data-policy';
@@ -281,6 +281,54 @@ const feedbackLimiter = rateLimit({
   windowMs: 60 * 60 * 1000,
   max: 10,
   message: { error: 'Too many feedback submissions, please try again later.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+  validate: { xForwardedForHeader: false, default: true }
+});
+
+// Account security routes (email verification, password reset, TOTP 2FA).
+// passwordResetRequestLimiter is IP-keyed since there's no session yet at
+// that point in the flow — every other limiter below is keyed by uid via
+// uidKeyGenerator, which requires authenticateFirebaseUser to run BEFORE
+// the limiter in those routes' middleware chain (a deliberate deviation
+// from this file's usual limiter-first ordering, since the uid isn't known
+// until auth has run).
+const passwordResetRequestLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 5,
+  message: { error: 'Too many password reset requests, please try again later.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+  validate: { xForwardedForHeader: false, default: true }
+});
+
+const uidKeyGenerator = (req: express.Request): string => (req as any).user?.uid || req.ip || 'unknown';
+
+const emailVerifySendLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 3,
+  keyGenerator: uidKeyGenerator,
+  message: { error: 'Too many verification emails requested, please try again later.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+  validate: { xForwardedForHeader: false, default: true }
+});
+
+const mfaEnrollLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 10,
+  keyGenerator: uidKeyGenerator,
+  message: { error: 'Too many attempts, please try again later.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+  validate: { xForwardedForHeader: false, default: true }
+});
+
+const mfaSigninVerifyLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 8,
+  keyGenerator: uidKeyGenerator,
+  message: { error: 'Too many verification attempts, please try again shortly.' },
   standardHeaders: true,
   legacyHeaders: false,
   validate: { xForwardedForHeader: false, default: true }
@@ -2378,6 +2426,65 @@ const logAdminAction = async (req: any, action: string, targetUid: string, targe
     console.error("Failed to write admin audit log:", err.message);
   }
 };
+
+// ============================================================================
+// Account security: email verification, password reset (Brevo-routed), TOTP 2FA
+// ============================================================================
+// Email/password sign-up itself happens entirely client-side (Firebase Auth
+// SDK, src/lib/auth.tsx) — the routes below cover what the client SDK can't
+// do on its own: sending these two emails through this app's own Brevo
+// integration instead of Firebase's default mailer (matching every other
+// transactional email this app sends), and the custom TOTP second factor
+// (Firebase's native MFA needs a paid Identity Platform upgrade this
+// project doesn't have — see docs/SSO_INTEGRATION_PLAN.md for the same
+// tier wall hit by an earlier, unrelated feature).
+
+// Where the link Firebase generates should land — a page this app owns
+// (src/components/AuthActionPage.tsx, wired in src/main.tsx) rather than
+// Firebase's own hosted action-handling page, exactly like the existing
+// /ally/:token top-level route.
+const authActionUrl = (): string => {
+  const appBase = (process.env.APP_URL || "").replace(/\/$/, "");
+  return `${appBase}/auth/action`;
+};
+
+// generatePasswordResetLink()/generateEmailVerificationLink() additionally
+// require the Cloud Run runtime service account to hold
+// roles/iam.serviceAccountTokenCreator (self-bound), because signing the
+// link needs iam.serviceAccounts.signBlob — a permission Application
+// Default Credentials via the metadata server does not implicitly grant.
+// This app has no service-account key file (see the Admin SDK init above),
+// so this is a real, separate IAM grant that can't be verified from inside
+// this codebase. Logged distinctly so it's diagnosable in Cloud Run logs
+// rather than surfacing as an unexplained generic failure.
+const ACCOUNT_LINK_PERMISSION_HINT =
+  'If this is a permission error, the Cloud Run runtime service account likely needs roles/iam.serviceAccountTokenCreator (self-bound) granted — see docs/DEPLOY.md.';
+
+app.post("/api/auth/verify-email/send", verifyAppCheck, authenticateFirebaseUser, emailVerifySendLimiter, async (req, res) => {
+  try {
+    const user = requireAuth(req);
+    if (!user.email) {
+      return res.status(400).json({ error: "This account has no email address to verify." });
+    }
+    try {
+      const link = await getAuth().generateEmailVerificationLink(user.email, {
+        url: authActionUrl(),
+        handleCodeInApp: true,
+      });
+      const { subject, html } = buildEmailVerificationEmail(link);
+      await sendBrevoHtmlEmail(user.email, subject, html);
+    } catch (linkError: any) {
+      // Soft-fail like every other Brevo-backed send in this app — the
+      // person can just ask to resend, rather than seeing a hard error for
+      // something that isn't actionable from their side.
+      console.error(`[AUTH] generateEmailVerificationLink failed. ${ACCOUNT_LINK_PERMISSION_HINT}`, linkError?.message || linkError);
+    }
+    res.json({ success: true });
+  } catch (error: any) {
+    console.error("[AUTH] verify-email/send error:", error.message);
+    res.status(500).json({ error: "Could not send verification email right now." });
+  }
+});
 
 // ============================================================================
 // Free/Premium Entitlements (server-authoritative)
