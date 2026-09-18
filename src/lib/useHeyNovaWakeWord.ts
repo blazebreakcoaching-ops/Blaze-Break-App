@@ -42,8 +42,49 @@ interface UseHeyNovaWakeWordOptions {
 
 export function useHeyNovaWakeWord({ enabled, paused, onWake }: UseHeyNovaWakeWordOptions) {
   const [status, setStatus] = useState<HeyNovaWakeStatus>('idle');
+  const [lastWakeAt, setLastWakeAt] = useState<number | null>(null);
   const onWakeRef = useRef(onWake);
   onWakeRef.current = onWake;
+  const audioCtxRef = useRef<AudioContext | null>(null);
+
+  // A short, synthesized two-note "ding" - the acknowledgement that "hey
+  // Nova" was actually heard, played the instant it's detected, before the
+  // command palette opens. No external audio asset; a fresh AudioContext
+  // is created lazily on first use and reused for the hook's lifetime
+  // (not recreated per-wake). Safe to create without a fresh user gesture
+  // here specifically, since a wake event can only ever fire after the
+  // person already interacted with the page to turn the feature on and
+  // grant microphone access.
+  const playAcknowledgementTone = () => {
+    try {
+      const AudioContextCtor = window.AudioContext || (window as any).webkitAudioContext;
+      if (!AudioContextCtor) return;
+      let ctx = audioCtxRef.current;
+      if (!ctx || ctx.state === 'closed') {
+        ctx = new AudioContextCtor();
+        audioCtxRef.current = ctx;
+      }
+      if (ctx.state === 'suspended') ctx.resume();
+
+      const now = ctx.currentTime;
+      const gain = ctx.createGain();
+      gain.gain.setValueAtTime(0, now);
+      gain.gain.linearRampToValueAtTime(0.12, now + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.18);
+      gain.connect(ctx.destination);
+
+      const osc = ctx.createOscillator();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(880, now);
+      osc.frequency.setValueAtTime(1320, now + 0.09);
+      osc.connect(gain);
+      osc.start(now);
+      osc.stop(now + 0.2);
+    } catch {
+      // Non-fatal - a missing/blocked chime is cosmetic, never worth
+      // interrupting the actual wake-word flow over.
+    }
+  };
 
   useEffect(() => {
     const SpeechRecognitionCtor =
@@ -77,6 +118,8 @@ export function useHeyNovaWakeWord({ enabled, paused, onWake }: UseHeyNovaWakeWo
           const transcript = event.results[i][0].transcript as string;
           const query = extractQueryAfterWake(transcript);
           if (query !== null) {
+            playAcknowledgementTone();
+            setLastWakeAt(Date.now());
             onWakeRef.current(query);
             // Stop this instance now rather than let it keep listening mid
             // utterance - onend's restart brings a fresh one back, so the
@@ -124,5 +167,5 @@ export function useHeyNovaWakeWord({ enabled, paused, onWake }: UseHeyNovaWakeWo
     };
   }, [enabled, paused]);
 
-  return { status };
+  return { status, lastWakeAt };
 }
