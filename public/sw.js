@@ -7,7 +7,11 @@
 // while offline) becomes a priority, that's real additional work on top of
 // this, not a small extension of it.
 
-const SHELL_CACHE = 'blaze-break-shell-v1';
+// Bumped to v2 so everyone currently stuck with a stale v1 fallback (cached
+// once at install time and never refreshed - see the fetch handler below)
+// gets a clean one immediately via the activate handler's cleanup, rather
+// than waiting on their next successful navigation to self-heal.
+const SHELL_CACHE = 'blaze-break-shell-v2';
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
@@ -33,12 +37,30 @@ self.addEventListener('fetch', (event) => {
   // support at all.
   if (event.request.mode === 'navigate') {
     event.respondWith(
-      fetch(event.request).catch(() =>
-        caches.match('/').then((cached) => cached || new Response(
-          '<html><body style="font-family:sans-serif;text-align:center;padding:3rem;color:#57534e"><h2>You\'re offline</h2><p>Blaze Break needs a connection to load. Reconnect and try again.</p></body></html>',
-          { headers: { 'Content-Type': 'text/html' } }
-        ))
-      )
+      fetch(event.request)
+        .then((response) => {
+          // Keep the offline-fallback copy current. Without this, the
+          // page cached once at install time (below) would be served
+          // forever whenever a real fetch fails - including a real but
+          // stale copy referencing JS/CSS files from a since-overwritten
+          // deploy, which is the exact "blank white screen on a normal
+          // refresh" bug this fixes. A real network hiccup (e.g. a Cloud
+          // Run instance cold-starting from zero after the app's sat
+          // idle) was falling through to that frozen copy; a hard
+          // refresh bypasses the service worker entirely, which is why
+          // it always "fixed" the symptom without explaining it.
+          if (response.ok) {
+            const copy = response.clone();
+            caches.open(SHELL_CACHE).then((cache) => cache.put('/', copy));
+          }
+          return response;
+        })
+        .catch(() =>
+          caches.match('/').then((cached) => cached || new Response(
+            '<html><body style="font-family:sans-serif;text-align:center;padding:3rem;color:#57534e"><h2>You\'re offline</h2><p>Blaze Break needs a connection to load. Reconnect and try again.</p></body></html>',
+            { headers: { 'Content-Type': 'text/html' } }
+          ))
+        )
     );
   }
 });
