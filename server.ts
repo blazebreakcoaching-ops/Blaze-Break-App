@@ -28,7 +28,8 @@ import { computeClimateStrain, computeClimateStrainByDimension, computeMoodStrai
 import { suggestRecognitionPrompts } from './positive-reinforcement';
 import { isRealGuardian, isValidGuardianPhone, buildGuardianCallRequestMessage, extractFirstName, nudgeSchedulerIsEnabled } from './guardian-alert';
 import { collectionsForExport, collectionsForErasure } from './user-data-collections';
-import { htmlToPlainTextFallback, buildEmailVerificationEmail, buildPasswordResetEmail, buildPasswordChangedEmail } from './brevo-templates';
+import { htmlToPlainTextFallback, buildEmailVerificationEmail, buildPasswordResetEmail, buildPasswordChangedEmail, buildMfaEnabledEmail } from './brevo-templates';
+import { generateTotpSecret, buildOtpauthUri, verifyTotpCode, generateRecoveryCodes, hashRecoveryCode, encryptSecret as encryptTotpSecret, decryptSecret as decryptTotpSecret } from './totp-mfa';
 import { isValidGad7Answers, scoreGad7, interpretGad7 } from './gad7';
 import { OrgRole, isOrgRole, hasOrgPermission, canAssignRole, OrgPermission, ORG_ROLE_PERMISSIONS } from './org-rbac';
 import { getEffectiveDataPolicy, validateDataPolicyUpdate } from './org-data-policy';
@@ -2540,6 +2541,124 @@ app.post("/api/auth/password-reset/confirm-notify", verifyAppCheck, passwordRese
   const { subject, html } = buildPasswordChangedEmail();
   await sendBrevoHtmlEmail(parsed.data.email, subject, html);
   res.json({ success: true });
+});
+
+// ---- TOTP two-factor authentication (opt-in "extra security") ------------
+// users/{uid}/security/mfa_totp holds: an AES-256-GCM-encrypted secret
+// (never the plaintext), a pending secret set only during enrollment,
+// hashed single-use recovery codes, and a durable (Firestore, not
+// in-memory) failed-attempt/lockout counter. firestore.rules locks this
+// collection to server/Admin-SDK access only - see MFA_DOC below.
+const MFA_DOC = 'mfa_totp';
+
+const getMfaDocRef = (db: FirebaseFirestore.Firestore, uid: string) =>
+  db.collection('users').doc(uid).collection('security').doc(MFA_DOC);
+
+// MFA_ENCRYPTION_KEY must be 32 random bytes, base64-encoded (e.g.
+// `openssl rand -base64 32`), set on the Cloud Run service. Deliberately a
+// hard failure (unlike Brevo's soft-fail) — silently storing an
+// unencrypted TOTP secret would be a real security regression, not a
+// missed nice-to-have.
+const getMfaEncryptionKey = (): Buffer => {
+  const raw = process.env.MFA_ENCRYPTION_KEY;
+  if (!raw) {
+    throw new Error('[MFA] MFA_ENCRYPTION_KEY is not set on this server — TOTP enrollment cannot proceed. Generate one with `openssl rand -base64 32` and set it in the Cloud Run service environment.');
+  }
+  const key = Buffer.from(raw, 'base64');
+  if (key.length !== 32) {
+    throw new Error(`[MFA] MFA_ENCRYPTION_KEY must decode to exactly 32 bytes (got ${key.length}) — generate one with \`openssl rand -base64 32\`.`);
+  }
+  return key;
+};
+
+app.get("/api/auth/mfa/status", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const user = requireAuth(req);
+    const db = getDb();
+    const snap = await getMfaDocRef(db, user.uid).get();
+    const data = snap.exists ? snap.data() : undefined;
+    res.json({ enabled: data?.enabled === true, enrolledAt: data?.enrolledAt || null });
+  } catch (error: any) {
+    console.error("[MFA] status error:", error.message);
+    res.status(500).json({ error: "Could not check two-factor status right now." });
+  }
+});
+
+app.post("/api/auth/mfa/totp/enroll/start", verifyAppCheck, authenticateFirebaseUser, mfaEnrollLimiter, async (req, res) => {
+  try {
+    const user = requireAuth(req);
+    if (!user.email) {
+      return res.status(400).json({ error: "This account needs an email address before enabling two-factor authentication." });
+    }
+    const key = getMfaEncryptionKey();
+    const secret = generateTotpSecret();
+    const otpauthUri = buildOtpauthUri(secret, user.email);
+    const db = getDb();
+    // A fresh enroll/start always overwrites any earlier pending secret —
+    // only the most recently started enrollment attempt can be confirmed,
+    // so an abandoned QR scan can't be confirmed later with a stale code.
+    await getMfaDocRef(db, user.uid).set({
+      pendingSecretEncrypted: encryptTotpSecret(secret, key),
+      updatedAt: new Date().toISOString(),
+    }, { merge: true });
+    res.json({ otpauthUri, secretForManualEntry: secret });
+  } catch (error: any) {
+    console.error("[MFA] enroll/start error:", error.message);
+    res.status(500).json({ error: "Could not start two-factor setup right now." });
+  }
+});
+
+const MfaEnrollConfirmSchema = z.object({
+  code: z.string().regex(/^\d{6}$/, "Code must be 6 digits"),
+}).strict();
+
+app.post("/api/auth/mfa/totp/enroll/confirm", verifyAppCheck, authenticateFirebaseUser, mfaEnrollLimiter, async (req, res) => {
+  try {
+    const parsed = MfaEnrollConfirmSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: "Please enter the 6-digit code from your authenticator app." });
+    }
+    const user = requireAuth(req);
+    const key = getMfaEncryptionKey();
+    const db = getDb();
+    const docRef = getMfaDocRef(db, user.uid);
+    const snap = await docRef.get();
+    const data = snap.data();
+    if (!data?.pendingSecretEncrypted) {
+      return res.status(400).json({ error: "No two-factor setup in progress. Please start again." });
+    }
+    const secret = decryptTotpSecret(data.pendingSecretEncrypted, key);
+    const valid = await verifyTotpCode(secret, parsed.data.code);
+    if (!valid) {
+      return res.status(400).json({ error: "That code didn't match. Please try again." });
+    }
+
+    const recoveryCodes = generateRecoveryCodes();
+    const now = new Date().toISOString();
+    await docRef.set({
+      secretEncrypted: data.pendingSecretEncrypted,
+      pendingSecretEncrypted: null,
+      enabled: true,
+      enrolledAt: now,
+      lastVerifiedAt: now,
+      recoveryCodesHashed: recoveryCodes.map((code) => ({ hash: hashRecoveryCode(code), usedAt: null })),
+      failedAttempts: 0,
+      lockedUntil: null,
+      updatedAt: now,
+    }, { merge: true });
+
+    if (user.email) {
+      const { subject, html } = buildMfaEnabledEmail();
+      await sendBrevoHtmlEmail(user.email, subject, html);
+    }
+
+    // Returned once, at the moment of enrollment, and never again — the
+    // server only ever stores their hashes from this point on.
+    res.json({ recoveryCodes });
+  } catch (error: any) {
+    console.error("[MFA] enroll/confirm error:", error.message);
+    res.status(500).json({ error: "Could not confirm two-factor setup right now." });
+  }
 });
 
 // ============================================================================

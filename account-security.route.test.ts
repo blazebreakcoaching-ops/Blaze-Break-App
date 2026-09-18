@@ -9,6 +9,8 @@ const h = vi.hoisted(() => {
   process.env.NODE_ENV = 'test';
   process.env.BREVO_API_KEY = 'brevo_test_key';
   process.env.APP_URL = 'https://app.blazebreak.example';
+  // 32 random bytes, base64 — same shape openssl rand -base64 32 produces.
+  process.env.MFA_ENCRYPTION_KEY = 'zP9Q1kM8m8yqjq2r7z1Xw3f0T6a8Zc1s2eYlQwK9O0k=';
   return {
     generateEmailVerificationLink: vi.fn(async (email: string) => `https://app.blazebreak.example/auth/action?mode=verifyEmail&oobCode=fake-code-for-${email}`),
     generatePasswordResetLink: vi.fn(async (email: string) => `https://app.blazebreak.example/auth/action?mode=resetPassword&oobCode=fake-reset-for-${email}`),
@@ -34,8 +36,9 @@ vi.mock('firebase-admin/firestore', async () => {
 });
 
 import request from 'supertest';
+import { generate as generateOtp } from 'otplib';
 import { app } from './server';
-import { resetStore } from './test/fake-firestore';
+import { resetStore, seedDoc, getDocRaw } from './test/fake-firestore';
 
 const auth = (uid: string) => ({ Authorization: `Bearer ${uid}` });
 
@@ -164,5 +167,106 @@ describe('POST /api/auth/password-reset/confirm-notify', () => {
     const res = await request(app).post('/api/auth/password-reset/confirm-notify').send({ email: 'not-an-email' });
     expect(res.status).toBe(400);
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('GET /api/auth/mfa/status', () => {
+  it('reports disabled with no enrollment doc at all', async () => {
+    const res = await request(app).get('/api/auth/mfa/status').set(auth('fresh_user'));
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ enabled: false, enrolledAt: null });
+  });
+
+  it('reports enabled once a doc says so, and never returns the secret', async () => {
+    seedDoc('users/enrolled_user/security/mfa_totp', {
+      secretEncrypted: 'totally-encrypted-blob',
+      enabled: true,
+      enrolledAt: '2026-01-01T00:00:00.000Z',
+    });
+    const res = await request(app).get('/api/auth/mfa/status').set(auth('enrolled_user'));
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ enabled: true, enrolledAt: '2026-01-01T00:00:00.000Z' });
+    expect(JSON.stringify(res.body)).not.toContain('totally-encrypted-blob');
+  });
+});
+
+describe('POST /api/auth/mfa/totp/enroll/start', () => {
+  it('generates and stores an encrypted pending secret, returning the otpauth URI and manual-entry secret', async () => {
+    const res = await request(app).post('/api/auth/mfa/totp/enroll/start').set(auth('enroll_user'));
+
+    expect(res.status).toBe(200);
+    expect(res.body.otpauthUri).toMatch(/^otpauth:\/\/totp\//);
+    expect(typeof res.body.secretForManualEntry).toBe('string');
+    expect(res.body.secretForManualEntry.length).toBeGreaterThan(0);
+
+    const stored = getDocRaw('users/enroll_user/security/mfa_totp');
+    expect(stored?.pendingSecretEncrypted).toBeTruthy();
+    // The stored value must be encrypted, not the plaintext secret verbatim.
+    expect(stored?.pendingSecretEncrypted).not.toBe(res.body.secretForManualEntry);
+    // Never persisted as "enabled" from just starting enrollment.
+    expect(stored?.enabled).toBeUndefined();
+  });
+
+  it('overwrites an earlier abandoned pending secret on a second start', async () => {
+    const first = await request(app).post('/api/auth/mfa/totp/enroll/start').set(auth('restart_user'));
+    const second = await request(app).post('/api/auth/mfa/totp/enroll/start').set(auth('restart_user'));
+    expect(first.body.secretForManualEntry).not.toBe(second.body.secretForManualEntry);
+
+    const stored = getDocRaw('users/restart_user/security/mfa_totp');
+    // Confirming with the first (now-abandoned) secret must fail.
+    const staleCode = await generateOtp({ secret: first.body.secretForManualEntry });
+    const res = await request(app).post('/api/auth/mfa/totp/enroll/confirm').set(auth('restart_user')).send({ code: staleCode });
+    expect(res.status).toBe(400);
+    expect(stored?.enabled).toBeUndefined();
+  });
+});
+
+describe('POST /api/auth/mfa/totp/enroll/confirm', () => {
+  it('confirms with the correct code, enables MFA, emails a notice, and returns recovery codes once', async () => {
+    const startRes = await request(app).post('/api/auth/mfa/totp/enroll/start').set(auth('confirm_user'));
+    const code = await generateOtp({ secret: startRes.body.secretForManualEntry });
+
+    const res = await request(app).post('/api/auth/mfa/totp/enroll/confirm').set(auth('confirm_user')).send({ code });
+
+    expect(res.status).toBe(200);
+    expect(Array.isArray(res.body.recoveryCodes)).toBe(true);
+    expect(res.body.recoveryCodes).toHaveLength(8);
+
+    const stored = getDocRaw('users/confirm_user/security/mfa_totp');
+    expect(stored?.enabled).toBe(true);
+    expect(stored?.pendingSecretEncrypted).toBeNull();
+    expect(stored?.secretEncrypted).toBeTruthy();
+    // Only hashes are stored server-side, never the plaintext recovery codes.
+    expect(stored?.recoveryCodesHashed).toHaveLength(8);
+    expect(JSON.stringify(stored?.recoveryCodesHashed)).not.toContain(res.body.recoveryCodes[0]);
+
+    // The "2FA enabled" notice went out via Brevo.
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [, options] = fetchMock.mock.calls[0];
+    expect(JSON.parse(options.body).to).toEqual([{ email: 'confirm_user@test.dev' }]);
+  });
+
+  it('rejects a wrong 6-digit code and leaves MFA unenabled', async () => {
+    const startRes = await request(app).post('/api/auth/mfa/totp/enroll/start').set(auth('wrongcode_user'));
+    const realCode = await generateOtp({ secret: startRes.body.secretForManualEntry });
+    const wrongCode = realCode === '000000' ? '111111' : '000000';
+
+    const res = await request(app).post('/api/auth/mfa/totp/enroll/confirm').set(auth('wrongcode_user')).send({ code: wrongCode });
+
+    expect(res.status).toBe(400);
+    expect(fetchMock).not.toHaveBeenCalled();
+    const stored = getDocRaw('users/wrongcode_user/security/mfa_totp');
+    expect(stored?.enabled).toBeUndefined();
+  });
+
+  it('rejects confirmation with no enrollment ever started', async () => {
+    const res = await request(app).post('/api/auth/mfa/totp/enroll/confirm').set(auth('never_started_user')).send({ code: '123456' });
+    expect(res.status).toBe(400);
+  });
+
+  it('rejects a malformed code (not 6 digits) with 400', async () => {
+    await request(app).post('/api/auth/mfa/totp/enroll/start').set(auth('malformed_user'));
+    const res = await request(app).post('/api/auth/mfa/totp/enroll/confirm').set(auth('malformed_user')).send({ code: 'abcdef' });
+    expect(res.status).toBe(400);
   });
 });
