@@ -28,7 +28,7 @@ import { computeClimateStrain, computeClimateStrainByDimension, computeMoodStrai
 import { suggestRecognitionPrompts } from './positive-reinforcement';
 import { isRealGuardian, isValidGuardianPhone, buildGuardianCallRequestMessage, extractFirstName, nudgeSchedulerIsEnabled } from './guardian-alert';
 import { collectionsForExport, collectionsForErasure } from './user-data-collections';
-import { htmlToPlainTextFallback, buildEmailVerificationEmail } from './brevo-templates';
+import { htmlToPlainTextFallback, buildEmailVerificationEmail, buildPasswordResetEmail, buildPasswordChangedEmail } from './brevo-templates';
 import { isValidGad7Answers, scoreGad7, interpretGad7 } from './gad7';
 import { OrgRole, isOrgRole, hasOrgPermission, canAssignRole, OrgPermission, ORG_ROLE_PERMISSIONS } from './org-rbac';
 import { getEffectiveDataPolicy, validateDataPolicyUpdate } from './org-data-policy';
@@ -2484,6 +2484,59 @@ app.post("/api/auth/verify-email/send", verifyAppCheck, authenticateFirebaseUser
     console.error("[AUTH] verify-email/send error:", error.message);
     res.status(500).json({ error: "Could not send verification email right now." });
   }
+});
+
+const PasswordResetRequestSchema = z.object({
+  email: z.string().email().max(254),
+}).strict();
+
+// No session exists at this point in the flow, so this is verifyAppCheck-
+// only (no authenticateFirebaseUser) — the same shape as the public
+// /api/ally/view/:token routes. Always resolves to the identical generic
+// response regardless of whether the email is malformed, unregistered, or
+// a real account — a caller must never be able to learn which emails have
+// a Blaze Break account from this endpoint's behaviour.
+app.post("/api/auth/password-reset/request", verifyAppCheck, passwordResetRequestLimiter, async (req, res) => {
+  const genericResponse = { success: true, message: "If that email has a Blaze Break account, we've sent a password reset link." };
+  const parsed = PasswordResetRequestSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.json(genericResponse);
+  }
+  try {
+    const link = await getAuth().generatePasswordResetLink(parsed.data.email, {
+      url: authActionUrl(),
+      handleCodeInApp: true,
+    });
+    const { subject, html } = buildPasswordResetEmail(link);
+    await sendBrevoHtmlEmail(parsed.data.email, subject, html);
+  } catch (error: any) {
+    // auth/user-not-found is the expected, silent case for an email with
+    // no account — anything else (most likely the signBlob IAM permission)
+    // is worth a clear, actionable log line.
+    if (error?.code !== 'auth/user-not-found') {
+      console.error(`[AUTH] generatePasswordResetLink failed. ${ACCOUNT_LINK_PERMISSION_HINT}`, error?.message || error);
+    }
+  }
+  res.json(genericResponse);
+});
+
+const PasswordResetConfirmNotifySchema = z.object({
+  email: z.string().email().max(254),
+}).strict();
+
+// Fired by AuthActionPage.tsx right after a successful client-side
+// confirmPasswordReset() — standard security hygiene (notify the account
+// owner their password changed) via the same Brevo HTML pipeline. Also
+// unauthenticated by design: by this point the person has just proven
+// control of the account via the one-time reset code, not a session token.
+app.post("/api/auth/password-reset/confirm-notify", verifyAppCheck, passwordResetRequestLimiter, async (req, res) => {
+  const parsed = PasswordResetConfirmNotifySchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: "Invalid request." });
+  }
+  const { subject, html } = buildPasswordChangedEmail();
+  await sendBrevoHtmlEmail(parsed.data.email, subject, html);
+  res.json({ success: true });
 });
 
 // ============================================================================

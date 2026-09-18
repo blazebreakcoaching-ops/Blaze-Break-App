@@ -11,6 +11,7 @@ const h = vi.hoisted(() => {
   process.env.APP_URL = 'https://app.blazebreak.example';
   return {
     generateEmailVerificationLink: vi.fn(async (email: string) => `https://app.blazebreak.example/auth/action?mode=verifyEmail&oobCode=fake-code-for-${email}`),
+    generatePasswordResetLink: vi.fn(async (email: string) => `https://app.blazebreak.example/auth/action?mode=resetPassword&oobCode=fake-reset-for-${email}`),
   };
 });
 
@@ -24,6 +25,7 @@ vi.mock('firebase-admin/auth', () => ({
   getAuth: () => ({
     verifyIdToken: async (token: string) => ({ uid: token, email: `${token}@test.dev` }),
     generateEmailVerificationLink: h.generateEmailVerificationLink,
+    generatePasswordResetLink: h.generatePasswordResetLink,
   }),
 }));
 vi.mock('firebase-admin/firestore', async () => {
@@ -44,6 +46,10 @@ beforeEach(() => {
   h.generateEmailVerificationLink.mockClear();
   h.generateEmailVerificationLink.mockImplementation(
     async (email: string) => `https://app.blazebreak.example/auth/action?mode=verifyEmail&oobCode=fake-code-for-${email}`
+  );
+  h.generatePasswordResetLink.mockClear();
+  h.generatePasswordResetLink.mockImplementation(
+    async (email: string) => `https://app.blazebreak.example/auth/action?mode=resetPassword&oobCode=fake-reset-for-${email}`
   );
   fetchMock = vi.fn(async () => ({ ok: true, text: async () => '' }));
   vi.stubGlobal('fetch', fetchMock);
@@ -87,5 +93,76 @@ describe('POST /api/auth/verify-email/send', () => {
   it('rejects with 401 when there is no auth token at all', async () => {
     const res = await request(app).post('/api/auth/verify-email/send');
     expect(res.status).toBe(401);
+  });
+});
+
+describe('POST /api/auth/password-reset/request — no-enumeration guarantee', () => {
+  it('sends a reset email and returns the generic response for a real, resolvable email', async () => {
+    const res = await request(app).post('/api/auth/password-reset/request').send({ email: 'real@test.dev' });
+
+    expect(res.status).toBe(200);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [, options] = fetchMock.mock.calls[0];
+    const body = JSON.parse(options.body);
+    expect(body.to).toEqual([{ email: 'real@test.dev' }]);
+    expect(body.htmlContent).toContain('fake-reset-for-real@test.dev');
+  });
+
+  it('returns the byte-for-byte identical response for an email with no account, and sends no email', async () => {
+    h.generatePasswordResetLink.mockRejectedValueOnce(Object.assign(new Error('no user'), { code: 'auth/user-not-found' }));
+
+    const resExisting = await request(app).post('/api/auth/password-reset/request').send({ email: 'real@test.dev' });
+    const resMissing = await request(app).post('/api/auth/password-reset/request').send({ email: 'ghost@test.dev' });
+
+    expect(resMissing.body).toEqual(resExisting.body);
+    expect(resMissing.status).toBe(resExisting.status);
+    // Only the real account's send actually reached Brevo.
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('returns the same generic response even for a malformed email, without ever calling Firebase Auth', async () => {
+    const res = await request(app).post('/api/auth/password-reset/request').send({ email: 'not-an-email' });
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+    expect(h.generatePasswordResetLink).not.toHaveBeenCalled();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('logs a distinct, actionable line for a real failure (not auth/user-not-found) without leaking it to the response', async () => {
+    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    h.generatePasswordResetLink.mockRejectedValueOnce(new Error('PERMISSION_DENIED: iam.serviceAccounts.signBlob'));
+
+    const res = await request(app).post('/api/auth/password-reset/request').send({ email: 'real@test.dev' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.message).not.toMatch(/permission|signBlob/i);
+    const logged = consoleErrorSpy.mock.calls.map((call) => call.join(' ')).join('\n');
+    expect(logged).toMatch(/serviceAccountTokenCreator/);
+    consoleErrorSpy.mockRestore();
+  });
+
+  it('never requires auth — this is a pre-sign-in endpoint', async () => {
+    const res = await request(app).post('/api/auth/password-reset/request').send({ email: 'anon@test.dev' });
+    expect(res.status).toBe(200);
+  });
+});
+
+describe('POST /api/auth/password-reset/confirm-notify', () => {
+  it('sends a "password changed" notice to the given email with no clickable link in it', async () => {
+    const res = await request(app).post('/api/auth/password-reset/confirm-notify').send({ email: 'real@test.dev' });
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ success: true });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [, options] = fetchMock.mock.calls[0];
+    const body = JSON.parse(options.body);
+    expect(body.to).toEqual([{ email: 'real@test.dev' }]);
+    expect(body.htmlContent).not.toContain('<a ');
+  });
+
+  it('rejects a malformed email with 400', async () => {
+    const res = await request(app).post('/api/auth/password-reset/confirm-notify').send({ email: 'not-an-email' });
+    expect(res.status).toBe(400);
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });
