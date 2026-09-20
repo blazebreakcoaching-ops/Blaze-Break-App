@@ -316,6 +316,36 @@ async function runTests() {
     createdAt: '2026-06-01', updatedAt: '2026-06-01', canEdit: true
   }));
 
+  // anxiety_reset_events - server-write-only (no client writer exists;
+  // server.ts's POST /api/anxiety-reset is the only legitimate writer).
+  const anxietyEventRef = userA.firestore().collection('anxiety_reset_events').doc('e1');
+
+  // * user A reads their own anxiety reset event.
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    await ctx.firestore().collection('anxiety_reset_events').doc('e1').set({
+      userId: 'userA', mode: 'guided_breath', createdAt: '2026-06-01'
+    });
+  });
+  await assertSucceeds(anxietyEventRef.get());
+
+  // * user A cannot create an anxiety reset event directly (client writes
+  //   are entirely server-mediated now, not just field-validated).
+  await assertFails(userA.firestore().collection('anxiety_reset_events').doc('e2').set({
+    userId: 'userA', mode: 'guided_breath', createdAt: '2026-06-01'
+  }));
+
+  // * user A cannot update or delete an existing anxiety reset event either.
+  await assertFails(anxietyEventRef.update({ mode: 'hacked' }));
+  await assertFails(anxietyEventRef.delete());
+
+  // * user A cannot read user B's anxiety reset event.
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    await ctx.firestore().collection('anxiety_reset_events').doc('eB').set({
+      userId: 'userB', mode: 'guided_breath', createdAt: '2026-06-01'
+    });
+  });
+  await assertFails(userA.firestore().collection('anxiety_reset_events').doc('eB').get());
+
   console.log("All rule tests passed successfully!");
   await testEnv.cleanup();
 }

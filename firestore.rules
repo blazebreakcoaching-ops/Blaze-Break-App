@@ -744,11 +744,17 @@ service cloud.firestore {
       allow write: if false;
     }
 
-    // GAD-informed anxiety reset events collection
+    // GAD-informed anxiety reset events collection. Server-write-only, same
+    // shape as audit_logs above - server.ts's POST /api/anxiety-reset is
+    // the only legitimate writer (App Check + auth + Zod-validated), and
+    // no client code anywhere writes to this collection directly. The
+    // previous client-writable rule had no schema validation at all, so a
+    // signed-in client could write arbitrary fields/values directly via
+    // the Firestore SDK - including a fabricated safetyLevel - bypassing
+    // App Check, validation, and the server's point-award logic entirely.
     match /anxiety_reset_events/{eventId} {
-      allow read, delete: if isSignedIn() && resource.data.userId == request.auth.uid;
-      allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
-      allow update: if isSignedIn() && request.resource.data.userId == request.auth.uid && resource.data.userId == request.auth.uid;
+      allow read: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow write: if false;
     }
 
     // Admin-specific collections
