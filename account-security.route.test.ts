@@ -14,6 +14,12 @@ const h = vi.hoisted(() => {
   return {
     generateEmailVerificationLink: vi.fn(async (email: string) => `https://app.blazebreak.example/auth/action?mode=verifyEmail&oobCode=fake-code-for-${email}`),
     generatePasswordResetLink: vi.fn(async (email: string) => `https://app.blazebreak.example/auth/action?mode=resetPassword&oobCode=fake-reset-for-${email}`),
+    // uid -> customClaims, so setCustomUserClaims/getUser act like a real
+    // account-level store across calls within a test instead of no-ops,
+    // and a route that reads decodedToken.mfaEnabled after a claims sync
+    // sees it. Must live inside vi.hoisted (not a plain top-level const)
+    // since the vi.mock factory below runs before ordinary module code.
+    claimsStore: new Map<string, Record<string, unknown>>(),
   };
 });
 
@@ -25,9 +31,14 @@ vi.mock('firebase-admin/app', () => ({ initializeApp: vi.fn(), getApps: () => [{
 vi.mock('firebase-admin/app-check', () => ({ getAppCheck: () => ({ verifyToken: vi.fn() }) }));
 vi.mock('firebase-admin/auth', () => ({
   getAuth: () => ({
-    verifyIdToken: async (token: string) => ({ uid: token, email: `${token}@test.dev` }),
+    verifyIdToken: async (token: string) => ({ uid: token, email: `${token}@test.dev`, ...(h.claimsStore.get(token) || {}) }),
     generateEmailVerificationLink: h.generateEmailVerificationLink,
     generatePasswordResetLink: h.generatePasswordResetLink,
+    getUser: async (uid: string) => ({ customClaims: h.claimsStore.get(uid) || {} }),
+    setCustomUserClaims: async (uid: string, claims: Record<string, unknown>) => {
+      h.claimsStore.set(uid, claims);
+    },
+    revokeRefreshTokens: vi.fn(async () => {}),
   }),
 }));
 vi.mock('firebase-admin/firestore', async () => {
@@ -46,6 +57,7 @@ let fetchMock: ReturnType<typeof vi.fn>;
 
 beforeEach(() => {
   resetStore();
+  h.claimsStore.clear();
   h.generateEmailVerificationLink.mockClear();
   h.generateEmailVerificationLink.mockImplementation(
     async (email: string) => `https://app.blazebreak.example/auth/action?mode=verifyEmail&oobCode=fake-code-for-${email}`
@@ -272,13 +284,18 @@ describe('POST /api/auth/mfa/totp/enroll/confirm', () => {
 });
 
 // Enrolls a fresh user end-to-end via the real routes and returns the
-// secret (for generating live codes) and the one-time recovery codes.
-async function enrollUser(uid: string): Promise<{ secret: string; recoveryCodes: string[] }> {
+// secret (for generating live codes), the one-time recovery codes, and the
+// session token issued on confirm — once an account has MFA enabled, the
+// account-level mfaEnabled claim gates every further authenticated call
+// (other than status/verify-at-signin) behind a proven-this-session token,
+// so callers that need to hit another gated route afterwards (e.g. disable)
+// must attach it.
+async function enrollUser(uid: string): Promise<{ secret: string; recoveryCodes: string[]; mfaSessionToken: string }> {
   const startRes = await request(app).post('/api/auth/mfa/totp/enroll/start').set(auth(uid));
   const secret = startRes.body.secretForManualEntry;
   const code = await generateOtp({ secret });
   const confirmRes = await request(app).post('/api/auth/mfa/totp/enroll/confirm').set(auth(uid)).send({ code });
-  return { secret, recoveryCodes: confirmRes.body.recoveryCodes };
+  return { secret, recoveryCodes: confirmRes.body.recoveryCodes, mfaSessionToken: confirmRes.body.mfaSessionToken };
 }
 
 describe('POST /api/auth/mfa/totp/verify-at-signin', () => {
@@ -287,7 +304,8 @@ describe('POST /api/auth/mfa/totp/verify-at-signin', () => {
     const code = await generateOtp({ secret });
     const res = await request(app).post('/api/auth/mfa/totp/verify-at-signin').set(auth('signin_user')).send({ code });
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ verified: true });
+    expect(res.body.verified).toBe(true);
+    expect(typeof res.body.mfaSessionToken).toBe('string');
   });
 
   it('accepts a valid recovery code and marks it used (single-use)', async () => {
@@ -350,12 +368,16 @@ describe('POST /api/auth/mfa/totp/verify-at-signin', () => {
 });
 
 describe('POST /api/auth/mfa/totp/disable', () => {
-  it('disables with a correct code, clears the secret and recovery codes, and emails a notice', async () => {
-    const { secret } = await enrollUser('disable_user');
+  it('disables with a correct code, clears the secret and recovery codes, revokes sessions, and emails a notice', async () => {
+    const { secret, mfaSessionToken } = await enrollUser('disable_user');
     const code = await generateOtp({ secret });
     fetchMock.mockClear();
 
-    const res = await request(app).post('/api/auth/mfa/totp/disable').set(auth('disable_user')).send({ code });
+    const res = await request(app)
+      .post('/api/auth/mfa/totp/disable')
+      .set(auth('disable_user'))
+      .set('X-MFA-Session-Token', mfaSessionToken)
+      .send({ code });
 
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ success: true });
@@ -363,6 +385,9 @@ describe('POST /api/auth/mfa/totp/disable', () => {
     expect(stored?.enabled).toBe(false);
     expect(stored?.secretEncrypted).toBeNull();
     expect(stored?.recoveryCodesHashed).toEqual([]);
+    // The mfaEnabled claim is synced off, so a plain (no session-token)
+    // request from here on is no longer gated.
+    expect(h.claimsStore.get('disable_user')?.mfaEnabled).toBe(false);
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const [, options] = fetchMock.mock.calls[0];
@@ -373,17 +398,25 @@ describe('POST /api/auth/mfa/totp/disable', () => {
   });
 
   it('disables with a valid recovery code just as well as a TOTP code', async () => {
-    const { recoveryCodes } = await enrollUser('disable_recovery_user');
-    const res = await request(app).post('/api/auth/mfa/totp/disable').set(auth('disable_recovery_user')).send({ recoveryCode: recoveryCodes[0] });
+    const { recoveryCodes, mfaSessionToken } = await enrollUser('disable_recovery_user');
+    const res = await request(app)
+      .post('/api/auth/mfa/totp/disable')
+      .set(auth('disable_recovery_user'))
+      .set('X-MFA-Session-Token', mfaSessionToken)
+      .send({ recoveryCode: recoveryCodes[0] });
     expect(res.status).toBe(200);
   });
 
   it('refuses to disable with a wrong code, leaving MFA on', async () => {
-    const { secret } = await enrollUser('disable_wrong_user');
+    const { secret, mfaSessionToken } = await enrollUser('disable_wrong_user');
     const realCode = await generateOtp({ secret });
     const wrongCode = realCode === '000000' ? '111111' : '000000';
 
-    const res = await request(app).post('/api/auth/mfa/totp/disable').set(auth('disable_wrong_user')).send({ code: wrongCode });
+    const res = await request(app)
+      .post('/api/auth/mfa/totp/disable')
+      .set(auth('disable_wrong_user'))
+      .set('X-MFA-Session-Token', mfaSessionToken)
+      .send({ code: wrongCode });
 
     expect(res.status).toBe(401);
     const stored = getDocRaw('users/disable_wrong_user/security/mfa_totp');
@@ -393,5 +426,38 @@ describe('POST /api/auth/mfa/totp/disable', () => {
   it('rejects disabling when MFA was never enabled', async () => {
     const res = await request(app).post('/api/auth/mfa/totp/disable').set(auth('not_enabled_user')).send({ code: '123456' });
     expect(res.status).toBe(400);
+  });
+
+  it('rejects an enabled account\'s disable/enroll calls without a valid MFA session token, even with a valid ID token', async () => {
+    const { secret } = await enrollUser('nosession_user');
+    const code = await generateOtp({ secret });
+
+    const disableRes = await request(app).post('/api/auth/mfa/totp/disable').set(auth('nosession_user')).send({ code });
+    expect(disableRes.status).toBe(401);
+    expect(disableRes.body.code).toBe('MFA_SESSION_REQUIRED');
+    const stored = getDocRaw('users/nosession_user/security/mfa_totp');
+    expect(stored?.enabled).toBe(true);
+
+    // Also blocks re-enrollment — the takeover path this gate specifically
+    // closes: an attacker with a valid-but-unverified token silently
+    // overwriting the real authenticator via enroll/start + enroll/confirm.
+    const enrollStartRes = await request(app).post('/api/auth/mfa/totp/enroll/start').set(auth('nosession_user'));
+    expect(enrollStartRes.status).toBe(401);
+    expect(enrollStartRes.body.code).toBe('MFA_SESSION_REQUIRED');
+  });
+
+  it('an expired or tampered MFA session token is rejected the same as a missing one', async () => {
+    const { secret, mfaSessionToken } = await enrollUser('tampered_user');
+    const code = await generateOtp({ secret });
+    const tampered = mfaSessionToken.slice(0, -1) + (mfaSessionToken.endsWith('0') ? '1' : '0');
+
+    const res = await request(app)
+      .post('/api/auth/mfa/totp/disable')
+      .set(auth('tampered_user'))
+      .set('X-MFA-Session-Token', tampered)
+      .send({ code });
+
+    expect(res.status).toBe(401);
+    expect(res.body.code).toBe('MFA_SESSION_REQUIRED');
   });
 });

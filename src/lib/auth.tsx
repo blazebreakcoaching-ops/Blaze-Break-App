@@ -2,6 +2,7 @@ import React, { createContext, useContext, useEffect, useState } from 'react';
 import { User, signInWithPopup, signInAnonymously, linkWithPopup, linkWithCredential, signInWithCredential, signInWithEmailAndPassword, createUserWithEmailAndPassword, EmailAuthProvider, GoogleAuthProvider, signOut, onAuthStateChanged } from 'firebase/auth';
 import { auth, getDb } from './firebase';
 import { secureApiFetch } from './secure-api';
+import { getMfaSessionToken, setMfaSessionToken, clearMfaSessionToken } from './mfa-session';
 import { AuthRole } from '../types';
 
 interface AuthContextType {
@@ -38,11 +39,6 @@ const AuthContext = createContext<AuthContextType>({
   logOut: async () => {},
   hasRole: () => false,
 });
-
-// sessionStorage (not localStorage) so a completed verification doesn't
-// silently carry over into a genuinely new browser session on the same
-// device/profile - only this tab-session's own sign-in is trusted.
-const mfaVerifiedSessionKey = (uid: string) => `blazebreak_mfa_verified_${uid}`;
 
 export const useAuth = () => useContext(AuthContext);
 
@@ -114,14 +110,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         // page refresh doesn't re-challenge someone who already verified
         // moments ago; a genuinely new browser session always re-checks.
         if (!userRecord.isAnonymous) {
-          let alreadyVerifiedThisSession = false;
-          try {
-            alreadyVerifiedThisSession = sessionStorage.getItem(mfaVerifiedSessionKey(userRecord.uid)) === 'true';
-          } catch {
-            // sessionStorage can be blocked (private browsing, locked-down
-            // settings) - just means this falls through to the server
-            // check below every time, which is safe, just a bit redundant.
-          }
+          // A stored token (not just a boolean flag) - it's the exact
+          // thing the server checks, so "do we already have a live one"
+          // and "do we need to re-challenge" can never drift apart.
+          const alreadyVerifiedThisSession = !!getMfaSessionToken(userRecord.uid);
 
           if (alreadyVerifiedThisSession) {
             setMfaPending(false);
@@ -324,17 +316,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // lockout) - this just records the result for this session and clears
   // the gate.
   const verifyMfaAtSignIn = async (codeOrRecoveryCode: string, isRecoveryCode = false) => {
-    await secureApiFetch('/api/auth/mfa/totp/verify-at-signin', {
+    const res = await secureApiFetch('/api/auth/mfa/totp/verify-at-signin', {
       method: 'POST',
       data: isRecoveryCode ? { recoveryCode: codeOrRecoveryCode } : { code: codeOrRecoveryCode },
     });
-    if (auth.currentUser) {
-      try {
-        sessionStorage.setItem(mfaVerifiedSessionKey(auth.currentUser.uid), 'true');
-      } catch {
-        // sessionStorage blocked - mfaPending still flips false below for
-        // this render, just won't survive a refresh in that case.
-      }
+    const data = await res.json();
+    if (auth.currentUser && data.mfaSessionToken) {
+      setMfaSessionToken(auth.currentUser.uid, data.mfaSessionToken);
     }
     setMfaPending(false);
   };
@@ -342,11 +330,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const logOut = async () => {
     explicitSignOutRef.current = true;
     if (user) {
-      try {
-        sessionStorage.removeItem(mfaVerifiedSessionKey(user.uid));
-      } catch {
-        // sessionStorage blocked - nothing to clear.
-      }
+      clearMfaSessionToken(user.uid);
     }
     await signOut(auth);
     setAccessToken(null);

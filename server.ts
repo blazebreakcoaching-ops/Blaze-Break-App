@@ -381,6 +381,19 @@ const verifyAppCheck = async (req: express.Request, res: express.Response, next:
   }
 };
 
+// Two routes a user must be able to reach with a valid-but-not-yet-MFA-
+// verified session: checking whether they even need to challenge, and
+// submitting that challenge. Every other authenticated route — including
+// the 2FA enroll/disable routes themselves — requires an established MFA
+// session once an account has 2FA enabled, specifically so a stolen-but-
+// unverified ID token can't be used to silently re-enroll a new
+// authenticator (overwriting the real one) or turn 2FA off without ever
+// proving the existing code.
+const MFA_GATE_EXEMPT_PATHS = new Set([
+  '/api/auth/mfa/status',
+  '/api/auth/mfa/totp/verify-at-signin',
+]);
+
 // Firebase ID Token Authentication Middleware for Nova API Layer Hardening
 const authenticateFirebaseUser = async (req: express.Request, res: express.Response, next: express.NextFunction) => {
   const authHeader = req.headers.authorization;
@@ -390,8 +403,27 @@ const authenticateFirebaseUser = async (req: express.Request, res: express.Respo
 
   const token = authHeader.split('Bearer ')[1];
   try {
-    const decodedToken = await getAuth().verifyIdToken(token);
+    // checkRevoked: true so a password change or 2FA disable (both of
+    // which call revokeRefreshTokens) immediately invalidates any ID
+    // token already in flight, not just future token refreshes.
+    const decodedToken = await getAuth().verifyIdToken(token, true);
     (req as any).user = decodedToken;
+
+    // mfaEnabled is an account-level custom claim (kept in sync by the
+    // enroll/confirm and disable routes) — cheap to check on every
+    // request with no extra Firestore read. Whether *this session* has
+    // actually cleared that challenge is a separate, session-scoped fact
+    // proven by the signed X-MFA-Session-Token header, never by the ID
+    // token itself (a custom claim is baked into every future token
+    // Firebase mints for this uid, so it can't distinguish a verified
+    // session from an attacker's own fresh, independently-obtained one).
+    if (decodedToken.mfaEnabled === true && !MFA_GATE_EXEMPT_PATHS.has(req.path)) {
+      const sessionToken = req.headers['x-mfa-session-token'];
+      if (typeof sessionToken !== 'string' || !verifyMfaSessionToken(sessionToken, decodedToken.uid)) {
+        return res.status(401).json({ error: 'Two-factor verification required for this session.', code: 'MFA_SESSION_REQUIRED' });
+      }
+    }
+
     next();
   } catch (error) {
     // Redacted logging: Do not log the token itself
@@ -2571,6 +2603,56 @@ const getMfaEncryptionKey = (): Buffer => {
   return key;
 };
 
+// A session-scoped, short-lived, HMAC-signed proof that *this session*
+// (not just this uid, ever) has cleared a 2FA challenge. Self-verifying —
+// no Firestore read needed on every gated request — and deliberately
+// reuses MFA_ENCRYPTION_KEY as the HMAC key rather than requiring a new
+// secret, since both already carry the same "TOTP-subsystem-only, never
+// exposed to the client" sensitivity.
+const MFA_SESSION_TOKEN_TTL_MS = 12 * 60 * 60 * 1000; // 12 hours
+
+const signMfaSessionToken = (uid: string): string => {
+  const expiresAtMs = Date.now() + MFA_SESSION_TOKEN_TTL_MS;
+  const payload = `${uid}.${expiresAtMs}`;
+  const sig = crypto.createHmac('sha256', getMfaEncryptionKey()).update(payload).digest('hex');
+  return `${payload}.${sig}`;
+};
+
+const verifyMfaSessionToken = (token: string, uid: string): boolean => {
+  const parts = token.split('.');
+  if (parts.length !== 3) return false;
+  const [tokenUid, expiresAtStr, sig] = parts;
+  if (tokenUid !== uid) return false;
+  const expiresAtMs = Number(expiresAtStr);
+  if (!Number.isFinite(expiresAtMs) || Date.now() > expiresAtMs) return false;
+  let expectedSig: string;
+  try {
+    expectedSig = crypto.createHmac('sha256', getMfaEncryptionKey()).update(`${tokenUid}.${expiresAtStr}`).digest('hex');
+  } catch {
+    return false;
+  }
+  const expectedBuf = Buffer.from(expectedSig, 'hex');
+  const actualBuf = Buffer.from(sig, 'hex');
+  if (expectedBuf.length !== actualBuf.length) return false;
+  return crypto.timingSafeEqual(expectedBuf, actualBuf);
+};
+
+// Keeps the account-level "does this uid have 2FA on" fact (used by the
+// cheap per-request gate check in authenticateFirebaseUser) in sync with
+// the Firestore record that's the actual source of truth. Best-effort: a
+// failure here shouldn't fail the enroll/disable request itself, since the
+// Firestore write is what actually matters — it's logged so a stuck claim
+// (which would either wrongly gate or wrongly not-gate future requests
+// until it's retried) doesn't fail silently.
+const setMfaEnabledClaim = async (uid: string, enabled: boolean) => {
+  try {
+    const existing = await getAuth().getUser(uid);
+    await getAuth().setCustomUserClaims(uid, { ...(existing.customClaims || {}), mfaEnabled: enabled });
+  } catch (error) {
+    console.error(`[MFA] Failed to sync mfaEnabled claim for ${uid} to ${enabled}:`, (error as Error).message);
+  }
+};
+
 app.get("/api/auth/mfa/status", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
   try {
     const user = requireAuth(req);
@@ -2647,14 +2729,20 @@ app.post("/api/auth/mfa/totp/enroll/confirm", verifyAppCheck, authenticateFireba
       updatedAt: now,
     }, { merge: true });
 
+    await setMfaEnabledClaim(user.uid, true);
+
     if (user.email) {
       const { subject, html } = buildMfaEnabledEmail();
       await sendBrevoHtmlEmail(user.email, subject, html);
     }
 
+    // Enrolling proves the user just cleared a real 2FA challenge (the
+    // code from their new authenticator) — issue a session token now so
+    // they aren't immediately re-challenged by the gate this same
+    // request's mfaEnabled claim will start enforcing on their next call.
     // Returned once, at the moment of enrollment, and never again — the
     // server only ever stores their hashes from this point on.
-    res.json({ recoveryCodes });
+    res.json({ recoveryCodes, mfaSessionToken: signMfaSessionToken(user.uid) });
   } catch (error: any) {
     console.error("[MFA] enroll/confirm error:", error.message);
     res.status(500).json({ error: "Could not confirm two-factor setup right now." });
@@ -2685,42 +2773,54 @@ const verifyMfaAttempt = async (
   input: { code?: string; recoveryCode?: string }
 ): Promise<MfaVerifyResult> => {
   const docRef = getMfaDocRef(db, uid);
-  const snap = await docRef.get();
-  const data = snap.data();
-  if (!data?.enabled || !data.secretEncrypted) {
-    return { ok: false, reason: 'not_enrolled' };
-  }
-  if (isTotpLockedOut(data.lockedUntil || null)) {
-    return { ok: false, reason: 'locked' };
-  }
-
-  let success = false;
-  let recoveryCodesHashed: { hash: string; usedAt: string | null }[] | undefined = data.recoveryCodesHashed;
-  if (input.code) {
-    const key = getMfaEncryptionKey();
-    const secret = decryptTotpSecret(data.secretEncrypted, key);
-    success = await verifyTotpCode(secret, input.code);
-  } else if (input.recoveryCode) {
-    const hash = hashRecoveryCode(input.recoveryCode);
-    const matchIndex = (recoveryCodesHashed || []).findIndex((rc) => rc.hash === hash && rc.usedAt === null);
-    if (matchIndex !== -1) {
-      success = true;
-      const now = new Date().toISOString();
-      recoveryCodesHashed = recoveryCodesHashed!.map((rc, i) => (i === matchIndex ? { ...rc, usedAt: now } : rc));
+  // A transaction, not a plain get-then-set, so two concurrent attempts
+  // (e.g. an attacker script racing requests) can't both read the same
+  // failedAttempts count before either write lands and slip past the
+  // lockout threshold.
+  return db.runTransaction(async (tx) => {
+    const snap = await tx.get(docRef);
+    const data = snap.data();
+    if (!data?.enabled || !data.secretEncrypted) {
+      return { ok: false, reason: 'not_enrolled' };
     }
-  }
+    if (isTotpLockedOut(data.lockedUntil || null)) {
+      return { ok: false, reason: 'locked' };
+    }
 
-  const lockout = nextLockoutState(data.failedAttempts || 0, success);
-  const now = new Date().toISOString();
-  await docRef.set({
-    failedAttempts: lockout.failedAttempts,
-    lockedUntil: lockout.lockedUntil,
-    ...(success ? { lastVerifiedAt: now } : {}),
-    ...(recoveryCodesHashed ? { recoveryCodesHashed } : {}),
-    updatedAt: now,
-  }, { merge: true });
+    let success = false;
+    let recoveryCodesHashed: { hash: string; usedAt: string | null }[] | undefined = data.recoveryCodesHashed;
+    if (input.code) {
+      const key = getMfaEncryptionKey();
+      const secret = decryptTotpSecret(data.secretEncrypted, key);
+      success = await verifyTotpCode(secret, input.code);
+    } else if (input.recoveryCode) {
+      const hash = hashRecoveryCode(input.recoveryCode);
+      const matchIndex = (recoveryCodesHashed || []).findIndex((rc) => rc.hash === hash && rc.usedAt === null);
+      if (matchIndex !== -1) {
+        success = true;
+        const now = new Date().toISOString();
+        recoveryCodesHashed = recoveryCodesHashed!.map((rc, i) => (i === matchIndex ? { ...rc, usedAt: now } : rc));
+      }
+    }
 
-  return success ? { ok: true } : { ok: false, reason: 'invalid' };
+    const lockout = nextLockoutState(data.failedAttempts || 0, success);
+    const now = new Date().toISOString();
+    tx.set(docRef, {
+      failedAttempts: lockout.failedAttempts,
+      lockedUntil: lockout.lockedUntil,
+      ...(success ? { lastVerifiedAt: now } : {}),
+      ...(recoveryCodesHashed ? { recoveryCodesHashed } : {}),
+      updatedAt: now,
+    }, { merge: true });
+
+    // Deterministic signal only (attempt count, lockout state) — never a
+    // record of what was guessed or any inference about the person.
+    if (!success) {
+      console.warn(`[MFA] Failed verification attempt for uid ${uid} (failedAttempts=${lockout.failedAttempts}${lockout.lockedUntil ? ', now locked out until ' + lockout.lockedUntil : ''}).`);
+    }
+
+    return success ? { ok: true } : { ok: false, reason: 'invalid' };
+  });
 };
 
 app.post("/api/auth/mfa/totp/verify-at-signin", verifyAppCheck, authenticateFirebaseUser, mfaSigninVerifyLimiter, async (req, res) => {
@@ -2740,7 +2840,7 @@ app.post("/api/auth/mfa/totp/verify-at-signin", verifyAppCheck, authenticateFire
       // 2FA somehow isn't enrolled — no reason to tell an attacker which.
       return res.status(401).json({ error: "That code didn't match. Please try again." });
     }
-    res.json({ verified: true });
+    res.json({ verified: true, mfaSessionToken: signMfaSessionToken(user.uid) });
   } catch (error: any) {
     console.error("[MFA] verify-at-signin error:", error.message);
     res.status(500).json({ error: "Could not verify your code right now." });
@@ -2775,6 +2875,14 @@ app.post("/api/auth/mfa/totp/disable", verifyAppCheck, authenticateFirebaseUser,
       lockedUntil: null,
       updatedAt: new Date().toISOString(),
     }, { merge: true });
+
+    await setMfaEnabledClaim(user.uid, false);
+    // Revoke every refresh token issued before this moment. Without this,
+    // an already-open session elsewhere (e.g. an attacker's, if this
+    // disable itself was unauthorized) would keep working indefinitely on
+    // its existing ID token even after 2FA protection is removed — this
+    // forces every session, including this one, to re-authenticate.
+    await getAuth().revokeRefreshTokens(user.uid);
 
     // Sent regardless of who triggered this — a security notice for a
     // change the account owner didn't make is exactly when this matters

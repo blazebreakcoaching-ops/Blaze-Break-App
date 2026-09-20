@@ -240,6 +240,36 @@ class DocRef {
   }
 }
 
+// The fake is single-threaded and in-memory, so a "transaction" here needs
+// no optimistic-concurrency/retry machinery - it just has to expose the same
+// tx.get()/set()/update()/delete() surface real handler code calls, applying
+// writes immediately against the shared store.
+class FakeTransaction {
+  constructor(private store: FakeStore) {}
+
+  async get(ref: DocRef): Promise<DocSnapshot> {
+    return new DocSnapshot(this.store, ref.path, this.store.docs.get(ref.path));
+  }
+
+  set(ref: DocRef, data: DocData, options?: { merge?: boolean }) {
+    const existing = options?.merge ? this.store.docs.get(ref.path) : undefined;
+    this.store.docs.set(ref.path, resolveWrites(data, existing));
+    return this;
+  }
+
+  update(ref: DocRef, data: DocData) {
+    const existing = this.store.docs.get(ref.path);
+    if (!existing) throw new Error(`fake-firestore: update on missing doc ${ref.path}`);
+    this.store.docs.set(ref.path, resolveWrites(data, existing));
+    return this;
+  }
+
+  delete(ref: DocRef) {
+    this.store.docs.delete(ref.path);
+    return this;
+  }
+}
+
 export class FakeFirestore {
   constructor(private store: FakeStore) {}
   collection(id: string) { return new CollectionRef(this.store, id); }
@@ -254,6 +284,10 @@ export class FakeFirestore {
         this.store.docs.delete(docPath);
       }
     }
+  }
+
+  async runTransaction<T>(fn: (tx: FakeTransaction) => Promise<T>): Promise<T> {
+    return fn(new FakeTransaction(this.store));
   }
 }
 

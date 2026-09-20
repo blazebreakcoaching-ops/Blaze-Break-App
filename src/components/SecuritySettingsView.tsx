@@ -2,6 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { ShieldCheck, Loader2, Copy, Check, KeyRound, ShieldOff } from 'lucide-react';
 import QRCode from 'qrcode';
 import { secureApiFetch } from '../lib/secure-api';
+import { auth } from '../lib/firebase';
+import { useAuth } from '../lib/auth';
+import { setMfaSessionToken } from '../lib/mfa-session';
 import { cn } from '../lib/utils';
 
 // The opt-in "extra security" step the owner asked for - a fully custom,
@@ -12,9 +15,10 @@ import { cn } from '../lib/utils';
 // nobody with just a settings-page click can silently remove someone
 // else's second factor from an already-open session.
 
-type ViewState = 'loading' | 'off' | 'enrolling' | 'confirmCode' | 'recoveryCodes' | 'on';
+type ViewState = 'loading' | 'off' | 'enrolling' | 'confirmCode' | 'recoveryCodes' | 'on' | 'disabledSignOut';
 
 export const SecuritySettingsView = () => {
+  const { logOut } = useAuth();
   const [state, setState] = useState<ViewState>('loading');
   const [enrolledAt, setEnrolledAt] = useState<string | null>(null);
   const [manualSecret, setManualSecret] = useState('');
@@ -70,6 +74,15 @@ export const SecuritySettingsView = () => {
       const res = await secureApiFetch('/api/auth/mfa/totp/enroll/confirm', { method: 'POST', data: { code } });
       const data = await res.json();
       setRecoveryCodes(data.recoveryCodes || []);
+      if (auth.currentUser && data.mfaSessionToken) {
+        setMfaSessionToken(auth.currentUser.uid, data.mfaSessionToken);
+        // Picks up the mfaEnabled claim the server just set, rather than
+        // waiting for the SDK's own ~hourly refresh - otherwise every
+        // gated request between now and then would rely solely on the
+        // session token line above, which is correct but unnecessarily
+        // fragile to keep as the only thing working.
+        await auth.currentUser.getIdToken(true);
+      }
       setEnrolledAt(new Date().toISOString());
       setState('recoveryCodes');
     } catch (e: any) {
@@ -90,9 +103,14 @@ export const SecuritySettingsView = () => {
         method: 'POST',
         data: isNumericCode ? { code: trimmed } : { recoveryCode: trimmed },
       });
-      setState('off');
       setDisabling(false);
       setDisableInput('');
+      // Disabling revokes every refresh token issued before this moment
+      // (server-side, so it can't be skipped) - the current session,
+      // including this one, can no longer silently refresh its ID token.
+      // Sign out openly and explain why, rather than leaving the app
+      // running on a session that's about to start failing every request.
+      setState('disabledSignOut');
     } catch (e: any) {
       setDisableError(e?.message || "That code didn't work. Please try again.");
     } finally {
@@ -210,6 +228,25 @@ export const SecuritySettingsView = () => {
               </div>
             </form>
           )}
+        </div>
+      )}
+
+      {state === 'disabledSignOut' && (
+        <div className="border border-border rounded-xl p-4 space-y-3">
+          <div className="flex items-center gap-2">
+            <ShieldOff className="w-4 h-4 text-text-muted" />
+            <h4 className="text-sm font-bold text-text-main">Two-factor authentication is now off</h4>
+          </div>
+          <p className="text-xs text-text-muted">
+            For your security, this signs you out everywhere. Please sign back in to continue.
+          </p>
+          <button
+            type="button"
+            onClick={() => { logOut(); }}
+            className="w-full sm:w-auto px-6 py-2.5 btn-primary text-xs font-bold uppercase tracking-widest rounded-lg"
+          >
+            Sign in again
+          </button>
         </div>
       )}
 
