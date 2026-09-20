@@ -157,6 +157,22 @@ if (process.env.NODE_ENV === "production") {
   }));
 }
 
+// Helmet (as of this version) doesn't ship a Permissions-Policy middleware,
+// unlike its older deprecated Feature-Policy equivalent - set it directly.
+// microphone is genuinely used (Nova Live Voice, Daily Voice Journal, the
+// "Hey Nova" wake word) and clipboard-write is used throughout (the many
+// copy-to-clipboard buttons); everything else powerful this app has no use
+// for is explicitly denied rather than left to each browser's default.
+app.use((req, res, next) => {
+  res.setHeader(
+    'Permissions-Policy',
+    'camera=(), microphone=(self), geolocation=(), payment=(), usb=(), midi=(), ' +
+    'magnetometer=(), gyroscope=(), accelerometer=(), display-capture=(), ' +
+    'fullscreen=(self), clipboard-write=(self)'
+  );
+  next();
+});
+
 app.use(cors({
   origin: (origin, callback) => {
     if (!origin || allowedOrigins.includes(origin)) {
@@ -5103,10 +5119,21 @@ app.post("/api/admin/content-library", verifyAppCheck, authenticateFirebaseUser,
   }
 });
 
+// Matches AdminDashboard.tsx's own client-side sanitization
+// (newOrgId.trim().toLowerCase().replace(/[^a-z0-9-]/g, '-')) - the server
+// previously trusted that sanitization entirely and used whatever string
+// arrived verbatim as a Firestore document ID, with no validation of its
+// own for a caller that bypasses the UI.
+const OrgIdSchema = z.string().min(1).max(100).regex(/^[a-z0-9-]+$/, 'orgId must contain only lowercase letters, numbers, and hyphens.');
+
 app.post("/api/admin/orgs", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
   try {
     requireAdmin(req);
     const { orgId, name, privacyThreshold, initialAdminEmail } = req.body;
+    const parsedOrgId = OrgIdSchema.safeParse(orgId);
+    if (!parsedOrgId.success) {
+      return res.status(400).json({ error: 'orgId must be 1-100 characters: lowercase letters, numbers, and hyphens only.' });
+    }
     const db = getDb();
 
     let initialAdminUid: string | null = null;
@@ -9148,13 +9175,13 @@ if (process.env.TEST_MODE !== 'true') {
                     }));
                     try {
                       liveSession?.sendToolResponse({ functionResponses });
-                    } catch (e) {
-                      console.error("[Nova Live] failed to send tool response:", e);
+                    } catch (e: any) {
+                      console.error("[Nova Live] failed to send tool response:", e?.message || e);
                     }
                   })();
                 }
-              } catch (e) {
-                console.error("[Nova Live] relay-to-client error:", e);
+              } catch (e: any) {
+                console.error("[Nova Live] relay-to-client error:", e?.message || e);
               }
             },
             onerror: (e: any) => {
@@ -9189,8 +9216,8 @@ if (process.env.TEST_MODE !== 'true') {
           if (parsed.audio) {
             liveSession.sendRealtimeInput({ audio: { data: parsed.audio, mimeType: "audio/pcm;rate=16000" } });
           }
-        } catch (e) {
-          console.error("[Nova Live] client message parse error:", e);
+        } catch (e: any) {
+          console.error("[Nova Live] client message parse error:", e?.message || e);
         }
       });
 

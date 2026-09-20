@@ -227,11 +227,23 @@ service cloud.firestore {
             && request.resource.data.archetype in ['High-Functioning Exhausted', 'Over-Giver', 'Silent Resenter', 'Founder on Fire', 'Manager in the Middle'];
       }
       
-      // B. checkins
+      // B. checkins - previously had no field validation at all (any
+      // shape/type was accepted from a signed-in owner). Matches the exact
+      // fields ConnectedDailyCheckIn.tsx writes: four 0-10 sliders, an
+      // optional note, and a fixed 'user' source.
       match /checkins/{checkinId} {
         allow read: if isOwner(uid);
         allow delete: if isOwner(uid);
-        allow create, update: if isOwner(uid);
+        allow create, update: if isOwner(uid)
+            && hasOnly(['createdAt', 'updatedAt', 'energyLevel', 'focusLevel', 'detachmentLevel', 'stressLoad', 'note', 'source'])
+            && hasAll(['createdAt', 'updatedAt', 'energyLevel', 'focusLevel', 'detachmentLevel', 'stressLoad', 'source'])
+            && request.resource.data.energyLevel is number && request.resource.data.energyLevel >= 0 && request.resource.data.energyLevel <= 10
+            && request.resource.data.focusLevel is number && request.resource.data.focusLevel >= 0 && request.resource.data.focusLevel <= 10
+            && request.resource.data.detachmentLevel is number && request.resource.data.detachmentLevel >= 0 && request.resource.data.detachmentLevel <= 10
+            && request.resource.data.stressLoad is number && request.resource.data.stressLoad >= 0 && request.resource.data.stressLoad <= 10
+            && request.resource.data.source == 'user'
+            && isOptionalStringWithMax(request.resource.data, 'note', 500)
+            && (request.method == 'create' ? true : checkCreatedAtUnchanged());
       }
       
       // C. energy_budgets
