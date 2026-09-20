@@ -38,6 +38,17 @@ export const STRAY_USER_COLLECTIONS: StrayUserCollection[] = [
     eraseOnDeletion: true,
   },
   {
+    // Written via .add() with a userId field, but only ever read back by
+    // orderBy("createdAt") (the admin feedback dashboard) - never by a
+    // .where("userId", ...) query. That made it invisible to the original
+    // guardrail scanner, which only looked for userId queries, not userId
+    // writes - the scanner below has since been hardened to catch this
+    // shape too.
+    name: 'feedback_submissions',
+    exportOnRequest: true,
+    eraseOnDeletion: true,
+  },
+  {
     name: 'audit_logs',
     exportOnRequest: true,
     eraseOnDeletion: false,
