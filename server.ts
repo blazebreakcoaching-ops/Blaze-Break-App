@@ -185,13 +185,27 @@ app.use(express.json({ limit: '10kb' }));
 // to a ceiling that still meaningfully blocks scraping/abuse (roughly
 // 40 requests/minute sustained) while comfortably covering real
 // dashboard use.
+// express-rate-limit never logs a 429 rejection on its own - previously
+// every limiter below relied on its `message` response body alone, so a
+// burst of rejected requests (a real signal for credential stuffing,
+// scraping, or a misbehaving client) produced zero log output anywhere.
+// A deterministic, non-clinical signal only - request rate against a
+// fixed ceiling, never anything about what the request contained.
+const logRateLimitExceeded = (limiterName: string) =>
+  (req: express.Request, res: express.Response, _next: express.NextFunction, options: any) => {
+    const uid = (req as any).user?.uid;
+    console.warn(`[RATE LIMIT] ${limiterName} exceeded by IP ${req.ip}${uid ? ` (uid ${uid})` : ''} on ${req.method} ${req.originalUrl}`);
+    res.status(options.statusCode).json(options.message);
+  };
+
 const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 600, // limit each IP to 600 requests per windowMs
   message: { error: 'Too many requests, please try again later.' },
   standardHeaders: true,
   legacyHeaders: false,
-  validate: { xForwardedForHeader: false, default: true }
+  validate: { xForwardedForHeader: false, default: true },
+  handler: logRateLimitExceeded('apiLimiter'),
 });
 
 const oneLessThingLimiter = rateLimit({
@@ -200,7 +214,8 @@ const oneLessThingLimiter = rateLimit({
   message: { error: 'Too many requests, please try again shortly.' },
   standardHeaders: true,
   legacyHeaders: false,
-  validate: { xForwardedForHeader: false, default: true }
+  validate: { xForwardedForHeader: false, default: true },
+  handler: logRateLimitExceeded('oneLessThingLimiter'),
 });
 
 const speechLimiter = rateLimit({
@@ -209,7 +224,8 @@ const speechLimiter = rateLimit({
   message: { error: 'Too many speech requests, please try again later.' },
   standardHeaders: true,
   legacyHeaders: false,
-  validate: { xForwardedForHeader: false, default: true }
+  validate: { xForwardedForHeader: false, default: true },
+  handler: logRateLimitExceeded('speechLimiter'),
 });
 
 const smsLimiter = rateLimit({
@@ -218,7 +234,8 @@ const smsLimiter = rateLimit({
   message: { error: 'Too many messaging requests, please try again later.' },
   standardHeaders: true,
   legacyHeaders: false,
-  validate: { xForwardedForHeader: false, default: true }
+  validate: { xForwardedForHeader: false, default: true },
+  handler: logRateLimitExceeded('smsLimiter'),
 });
 
 // Guardian alerts specifically: the Guardian Support spec (docs/GUARDIAN_SUPPORT_SPEC.md
@@ -234,7 +251,8 @@ const guardianAlertLimiter = rateLimit({
   message: { error: "That's a lot of alerts in a short time. Please wait a little before sending another." },
   standardHeaders: true,
   legacyHeaders: false,
-  validate: { xForwardedForHeader: false, default: true }
+  validate: { xForwardedForHeader: false, default: true },
+  handler: logRateLimitExceeded('guardianAlertLimiter'),
 });
 
 // Nova text/diagnose/voice-journal previously relied on the generic
@@ -249,7 +267,8 @@ const novaChatLimiter = rateLimit({
   message: { error: 'Too many Nova messages, please slow down and try again shortly.' },
   standardHeaders: true,
   legacyHeaders: false,
-  validate: { xForwardedForHeader: false, default: true }
+  validate: { xForwardedForHeader: false, default: true },
+  handler: logRateLimitExceeded('novaChatLimiter'),
 });
 
 const novaDiagnoseLimiter = rateLimit({
@@ -258,7 +277,8 @@ const novaDiagnoseLimiter = rateLimit({
   message: { error: 'Too many check-in requests, please try again shortly.' },
   standardHeaders: true,
   legacyHeaders: false,
-  validate: { xForwardedForHeader: false, default: true }
+  validate: { xForwardedForHeader: false, default: true },
+  handler: logRateLimitExceeded('novaDiagnoseLimiter'),
 });
 
 const novaVoiceJournalLimiter = rateLimit({
@@ -267,7 +287,8 @@ const novaVoiceJournalLimiter = rateLimit({
   message: { error: 'Too many voice journal requests, please try again shortly.' },
   standardHeaders: true,
   legacyHeaders: false,
-  validate: { xForwardedForHeader: false, default: true }
+  validate: { xForwardedForHeader: false, default: true },
+  handler: logRateLimitExceeded('novaVoiceJournalLimiter'),
 });
 
 // Same shape as novaDiagnoseLimiter above - a comparable single-shot
@@ -278,7 +299,8 @@ const resentmentAnalysisLimiter = rateLimit({
   message: { error: 'Too many requests, please try again shortly.' },
   standardHeaders: true,
   legacyHeaders: false,
-  validate: { xForwardedForHeader: false, default: true }
+  validate: { xForwardedForHeader: false, default: true },
+  handler: logRateLimitExceeded('resentmentAnalysisLimiter'),
 });
 
 // Same shape again - the executive report and manager coach are each a
@@ -290,7 +312,8 @@ const executiveReportLimiter = rateLimit({
   message: { error: 'Too many requests, please try again shortly.' },
   standardHeaders: true,
   legacyHeaders: false,
-  validate: { xForwardedForHeader: false, default: true }
+  validate: { xForwardedForHeader: false, default: true },
+  handler: logRateLimitExceeded('executiveReportLimiter'),
 });
 
 const managerCoachLimiter = rateLimit({
@@ -299,7 +322,8 @@ const managerCoachLimiter = rateLimit({
   message: { error: 'Too many requests, please try again shortly.' },
   standardHeaders: true,
   legacyHeaders: false,
-  validate: { xForwardedForHeader: false, default: true }
+  validate: { xForwardedForHeader: false, default: true },
+  handler: logRateLimitExceeded('managerCoachLimiter'),
 });
 
 const exportLimiter = rateLimit({
@@ -308,7 +332,8 @@ const exportLimiter = rateLimit({
   message: { error: 'Too many export requests, please try again later.' },
   standardHeaders: true,
   legacyHeaders: false,
-  validate: { xForwardedForHeader: false, default: true }
+  validate: { xForwardedForHeader: false, default: true },
+  handler: logRateLimitExceeded('exportLimiter'),
 });
 
 const feedbackLimiter = rateLimit({
@@ -317,7 +342,8 @@ const feedbackLimiter = rateLimit({
   message: { error: 'Too many feedback submissions, please try again later.' },
   standardHeaders: true,
   legacyHeaders: false,
-  validate: { xForwardedForHeader: false, default: true }
+  validate: { xForwardedForHeader: false, default: true },
+  handler: logRateLimitExceeded('feedbackLimiter'),
 });
 
 // Account security routes (email verification, password reset, TOTP 2FA).
@@ -333,7 +359,8 @@ const passwordResetRequestLimiter = rateLimit({
   message: { error: 'Too many password reset requests, please try again later.' },
   standardHeaders: true,
   legacyHeaders: false,
-  validate: { xForwardedForHeader: false, default: true }
+  validate: { xForwardedForHeader: false, default: true },
+  handler: logRateLimitExceeded('passwordResetRequestLimiter'),
 });
 
 // express-rate-limit requires its own ipKeyGenerator helper (not raw req.ip)
@@ -348,7 +375,8 @@ const emailVerifySendLimiter = rateLimit({
   message: { error: 'Too many verification emails requested, please try again later.' },
   standardHeaders: true,
   legacyHeaders: false,
-  validate: { xForwardedForHeader: false, default: true }
+  validate: { xForwardedForHeader: false, default: true },
+  handler: logRateLimitExceeded('emailVerifySendLimiter'),
 });
 
 const mfaEnrollLimiter = rateLimit({
@@ -358,7 +386,8 @@ const mfaEnrollLimiter = rateLimit({
   message: { error: 'Too many attempts, please try again later.' },
   standardHeaders: true,
   legacyHeaders: false,
-  validate: { xForwardedForHeader: false, default: true }
+  validate: { xForwardedForHeader: false, default: true },
+  handler: logRateLimitExceeded('mfaEnrollLimiter'),
 });
 
 const mfaSigninVerifyLimiter = rateLimit({
@@ -368,7 +397,8 @@ const mfaSigninVerifyLimiter = rateLimit({
   message: { error: 'Too many verification attempts, please try again shortly.' },
   standardHeaders: true,
   legacyHeaders: false,
-  validate: { xForwardedForHeader: false, default: true }
+  validate: { xForwardedForHeader: false, default: true },
+  handler: logRateLimitExceeded('mfaSigninVerifyLimiter'),
 });
 
 app.use('/api/', apiLimiter);
