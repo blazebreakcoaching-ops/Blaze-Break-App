@@ -334,6 +334,24 @@ service cloud.firestore {
             && (request.method == 'create' ? true : checkCreatedAtUnchanged());
       }
 
+      // Weekly Recovery Goal Tracker ("7-Day Recovery Cycle" / System Habit
+      // OS) - one document per ISO week (doc id == weekId), fully
+      // overwritten by WeeklyGoalTracker.tsx's persist() on every progress
+      // change. Had NO rule at all here until now - since Firestore denies
+      // by default on a path no rule matches, every read/write to this
+      // collection was silently failing in production, making the feature
+      // completely non-functional despite looking fully built.
+      match /weekly_habit_cycles/{weekId} {
+        allow read: if isOwner(uid);
+        allow create, update: if isOwner(uid)
+            && hasOnly(['weekId', 'startedAt', 'goals'])
+            && hasAll(['weekId', 'startedAt', 'goals'])
+            && request.resource.data.weekId.matches('^[0-9]{4}-W[0-9]{2}$')
+            && isStringWithMax(request.resource.data.startedAt, 40)
+            && request.resource.data.goals is list
+            && request.resource.data.goals.size() <= 50;
+      }
+
       // Recovery Fuel Engine's daily physiological check-in - previously
       // localStorage-only despite the panel being explicitly labeled
       // "Connected to Nova". Keyed by date so each day naturally has at
