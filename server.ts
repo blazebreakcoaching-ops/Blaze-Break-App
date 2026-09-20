@@ -2549,21 +2549,32 @@ app.post("/api/auth/password-reset/request", verifyAppCheck, passwordResetReques
   if (!parsed.success) {
     return res.json(genericResponse);
   }
-  try {
-    const link = await getAuth().generatePasswordResetLink(parsed.data.email, {
-      url: authActionUrl(),
-      handleCodeInApp: true,
-    });
-    const { subject, html } = buildPasswordResetEmail(link);
-    await sendBrevoHtmlEmail(parsed.data.email, subject, html);
-  } catch (error: any) {
-    // auth/user-not-found is the expected, silent case for an email with
-    // no account — anything else (most likely the signBlob IAM permission)
-    // is worth a clear, actionable log line.
-    if (error?.code !== 'auth/user-not-found') {
-      console.error(`[AUTH] generatePasswordResetLink failed. ${ACCOUNT_LINK_PERMISSION_HINT}`, error?.message || error);
+  // Deliberately not awaited before responding. A real account takes a
+  // real, measurably longer path here (Admin SDK link generation + a
+  // Brevo API call) than a non-existent one (an instant auth/user-not-
+  // found) — awaiting either before responding would leak exactly the
+  // account-enumeration signal the identical response body is meant to
+  // hide, just via response latency instead of content. Firing this off
+  // and responding immediately keeps the response time identical either
+  // way; the actual send still happens, just without the caller waiting
+  // on (or being able to time) it.
+  (async () => {
+    try {
+      const link = await getAuth().generatePasswordResetLink(parsed.data.email, {
+        url: authActionUrl(),
+        handleCodeInApp: true,
+      });
+      const { subject, html } = buildPasswordResetEmail(link);
+      await sendBrevoHtmlEmail(parsed.data.email, subject, html);
+    } catch (error: any) {
+      // auth/user-not-found is the expected, silent case for an email with
+      // no account — anything else (most likely the signBlob IAM permission)
+      // is worth a clear, actionable log line.
+      if (error?.code !== 'auth/user-not-found') {
+        console.error(`[AUTH] generatePasswordResetLink failed. ${ACCOUNT_LINK_PERMISSION_HINT}`, error?.message || error);
+      }
     }
-  }
+  })();
   res.json(genericResponse);
 });
 
