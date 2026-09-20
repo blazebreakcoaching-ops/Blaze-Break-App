@@ -15,6 +15,15 @@ vi.mock('firebase-admin/firestore', async () => {
 });
 vi.mock('twilio', () => ({ default: () => ({ messages: { create: vi.fn() } }) }));
 
+// Controllable stand-in for dns.promises.lookup, so the /sso/test SSRF
+// guard's behaviour can be tested deterministically without a real DNS
+// lookup or network access. Each test sets what address(es) the next
+// lookup call should resolve to.
+const h = vi.hoisted(() => ({
+  dnsLookup: vi.fn(async () => [{ address: '8.8.8.8', family: 4 }]),
+}));
+vi.mock('dns', () => ({ default: { promises: { lookup: h.dnsLookup } } }));
+
 import request from 'supertest';
 import { app } from './server';
 import { seedDoc, resetStore } from './test/fake-firestore';
@@ -36,9 +45,15 @@ function seedMember(orgId: string, uid: string, role: string) {
 
 const validConfig = { providerType: 'oidc', issuer: 'https://idp.example.com', clientId: 'client-123' };
 
+let fetchMock: ReturnType<typeof vi.fn>;
+
 beforeEach(() => {
   resetStore();
   delete process.env.SSO_CONFIG_ENCRYPTION_KEY;
+  h.dnsLookup.mockClear();
+  h.dnsLookup.mockResolvedValue([{ address: '8.8.8.8', family: 4 }]);
+  fetchMock = vi.fn(async () => ({ ok: true }));
+  vi.stubGlobal('fetch', fetchMock);
 });
 
 describe('GET /api/org/:orgId/sso', () => {
@@ -218,6 +233,75 @@ describe('POST /api/org/:orgId/sso/test', () => {
     seedMember(ORG, 'owner_1', 'owner');
     const res = await request(app).post(`/api/org/${ORG}/sso/test`).set(auth('owner_1'));
     expect(res.status).toBe(400);
+  });
+
+  describe('metadataUrl SSRF guard', () => {
+    const withMetadataUrl = { ...validConfig, metadataUrl: 'https://idp.example.com/metadata' };
+
+    it('fetches and reports reachable when the resolved address is a public IP', async () => {
+      seedOrg(ORG, { adminUids: ['owner_1'], memberUids: ['owner_1'] });
+      seedMember(ORG, 'owner_1', 'owner');
+      await request(app).post(`/api/org/${ORG}/sso`).set(auth('owner_1')).send(withMetadataUrl);
+      h.dnsLookup.mockResolvedValue([{ address: '8.8.8.8', family: 4 }]);
+
+      const res = await request(app).post(`/api/org/${ORG}/sso/test`).set(auth('owner_1'));
+
+      expect(res.status).toBe(200);
+      expect(res.body.metadataReachable).toBe(true);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+
+    it('never fetches, and reports unreachable, when the resolved address is a private/internal IP', async () => {
+      seedOrg(ORG, { adminUids: ['owner_1'], memberUids: ['owner_1'] });
+      seedMember(ORG, 'owner_1', 'owner');
+      await request(app).post(`/api/org/${ORG}/sso`).set(auth('owner_1')).send(withMetadataUrl);
+      h.dnsLookup.mockResolvedValue([{ address: '10.0.0.5', family: 4 }]);
+
+      const res = await request(app).post(`/api/org/${ORG}/sso/test`).set(auth('owner_1'));
+
+      expect(res.status).toBe(200);
+      expect(res.body.metadataReachable).toBe(false);
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it('never fetches, and reports unreachable, when the resolved address is the cloud metadata link-local IP', async () => {
+      seedOrg(ORG, { adminUids: ['owner_1'], memberUids: ['owner_1'] });
+      seedMember(ORG, 'owner_1', 'owner');
+      await request(app).post(`/api/org/${ORG}/sso`).set(auth('owner_1')).send(withMetadataUrl);
+      h.dnsLookup.mockResolvedValue([{ address: '169.254.169.254', family: 4 }]);
+
+      const res = await request(app).post(`/api/org/${ORG}/sso/test`).set(auth('owner_1'));
+
+      expect(res.status).toBe(200);
+      expect(res.body.metadataReachable).toBe(false);
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it('blocks if ANY resolved address is private, even when another is public', async () => {
+      seedOrg(ORG, { adminUids: ['owner_1'], memberUids: ['owner_1'] });
+      seedMember(ORG, 'owner_1', 'owner');
+      await request(app).post(`/api/org/${ORG}/sso`).set(auth('owner_1')).send(withMetadataUrl);
+      h.dnsLookup.mockResolvedValue([{ address: '8.8.8.8', family: 4 }, { address: '127.0.0.1', family: 4 }]);
+
+      const res = await request(app).post(`/api/org/${ORG}/sso/test`).set(auth('owner_1'));
+
+      expect(res.status).toBe(200);
+      expect(res.body.metadataReachable).toBe(false);
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it('reports unreachable (not an error) when DNS resolution itself fails', async () => {
+      seedOrg(ORG, { adminUids: ['owner_1'], memberUids: ['owner_1'] });
+      seedMember(ORG, 'owner_1', 'owner');
+      await request(app).post(`/api/org/${ORG}/sso`).set(auth('owner_1')).send(withMetadataUrl);
+      h.dnsLookup.mockRejectedValue(new Error('ENOTFOUND'));
+
+      const res = await request(app).post(`/api/org/${ORG}/sso/test`).set(auth('owner_1'));
+
+      expect(res.status).toBe(200);
+      expect(res.body.metadataReachable).toBe(false);
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
   });
 });
 

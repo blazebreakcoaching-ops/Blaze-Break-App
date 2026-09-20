@@ -3,6 +3,7 @@ import helmet from "helmet";
 import path from "path";
 import fs from "fs";
 import crypto from "crypto";
+import dns from "dns";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, Type, Modality, LiveServerMessage } from "@google/genai";
 import Anthropic from "@anthropic-ai/sdk";
@@ -36,7 +37,7 @@ import { getEffectiveDataPolicy, validateDataPolicyUpdate } from './org-data-pol
 import { initialAuthStatus, validateConnectorCreate, canSeeConnectorDetail, ORG_CONNECTOR_TYPES } from './org-connectors';
 import { isDeviceChannel, isValidAppVersion, validateDeviceRegistration, evaluateUpdateStatus, DEVICE_CHANNELS } from './desktop-deployment';
 import { getEffectiveBillingState, validateBillingUpdate, checkSeatLimit, billingProvider } from './billing-adapter';
-import { validateSsoConfigInput, encryptSecret, canEnableSsoEnforcement, redactSsoConfig, StoredSsoConfig } from './sso-config';
+import { validateSsoConfigInput, encryptSecret, canEnableSsoEnforcement, redactSsoConfig, isBlockedIpAddress, StoredSsoConfig } from './sso-config';
 import { searchOrgResources, validateResourceCreate, SearchableResource } from './org-search';
 import {
   EntitlementRecord, EntitlementPlan, CapabilityId, getEffectiveEntitlement,
@@ -7012,11 +7013,26 @@ app.post("/api/org/:orgId/sso/test", verifyAppCheck, authenticateFirebaseUser, a
     let metadataReachable: boolean | null = null;
     if (config.metadataUrl) {
       try {
-        const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 5000);
-        const response = await fetch(config.metadataUrl, { method: "GET", signal: controller.signal });
-        clearTimeout(timeout);
-        metadataReachable = response.ok;
+        // https:// is already required at config-save time, but that says
+        // nothing about where the URL actually points - resolve it and
+        // refuse to fetch if any resolved address is private/loopback/
+        // link-local/cloud-metadata, so this reachability check can't be
+        // used as an internal-network probe. Folded into the same generic
+        // `false` result as any other failure below (never a distinct
+        // "blocked" response) so it can't be used to distinguish a
+        // blocked address from a genuinely unreachable one either.
+        const hostname = new URL(config.metadataUrl).hostname;
+        const addresses = await dns.promises.lookup(hostname, { all: true });
+        const isBlocked = addresses.length === 0 || addresses.some((a) => isBlockedIpAddress(a.address));
+        if (isBlocked) {
+          metadataReachable = false;
+        } else {
+          const controller = new AbortController();
+          const timeout = setTimeout(() => controller.abort(), 5000);
+          const response = await fetch(config.metadataUrl, { method: "GET", signal: controller.signal });
+          clearTimeout(timeout);
+          metadataReachable = response.ok;
+        }
       } catch {
         metadataReachable = false;
       }
