@@ -269,6 +269,17 @@ const novaVoiceJournalLimiter = rateLimit({
   validate: { xForwardedForHeader: false, default: true }
 });
 
+// Same shape as novaDiagnoseLimiter above - a comparable single-shot
+// Gemini call from raw user text.
+const resentmentAnalysisLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 15,
+  message: { error: 'Too many requests, please try again shortly.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+  validate: { xForwardedForHeader: false, default: true }
+});
+
 const exportLimiter = rateLimit({
   windowMs: 60 * 60 * 1000,
   max: 5,
@@ -2955,7 +2966,7 @@ app.get("/api/entitlements/me", verifyAppCheck, authenticateFirebaseUser, async 
     const usageSnap = await db.collection("users").doc(uid).collection("usage_counters").doc(usageCounterTodayKey()).get();
     const usageData = usageSnap.data() || {};
     const capabilities: Record<string, { enabled: boolean; limit: number | null; used: number }> = {};
-    (['nova_text', 'nova_voice', 'diagnose', 'exports'] as CapabilityId[]).forEach((id) => {
+    (['nova_text', 'nova_voice', 'diagnose', 'exports', 'resentment_analysis'] as CapabilityId[]).forEach((id) => {
       const cap = getCapability(plan, id);
       capabilities[id] = { enabled: cap.enabled, limit: cap.dailyLimit, used: Number(usageData[id]) || 0 };
     });
@@ -8607,13 +8618,25 @@ const ResentmentAnalysisRequestSchema = z.object({
   log: z.string().min(1).max(3000),
 }).strict();
 
-app.post("/api/nova/resentment-analysis", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+app.post("/api/nova/resentment-analysis", resentmentAnalysisLimiter, verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
   try {
     const parsed = ResentmentAnalysisRequestSchema.safeParse(req.body);
     if (!parsed.success) {
       return res.status(400).json({ error: "Invalid request.", details: (parsed as any).error?.errors || [] });
     }
     const { log } = parsed.data;
+
+    const user = requireAuth(req);
+    const quota = await checkAndReserveCapability(user.uid, 'resentment_analysis');
+    if (!quota.allowed) {
+      return res.status(429).json({
+        error: quota.plan === 'free'
+          ? "You've reached today's free limit for this. It resets tomorrow, or upgrade to Blaze Break Premium for more."
+          : "You've reached today's fair-use limit for this. It resets tomorrow.",
+        code: 'capability_limit_reached',
+        capability: 'resentment_analysis',
+      });
+    }
 
     const prompt = `You are Nova, a direct, analytical British high-performance recovery coach. The user has just written raw, unfiltered venting about something that's currently resenting them at work or in life - they were explicitly told "be unprofessional, be petty, just get it out." Read what they actually wrote and extract genuine structural patterns from it. Do not invent specifics not present in their text - if something isn't there, say so honestly rather than filling the gap with a generic-sounding but fabricated observation.
 

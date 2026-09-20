@@ -108,7 +108,8 @@ export type CapabilityId =
   | 'nova_voice'
   | 'diagnose'
   | 'exports'
-  | 'nova_manager_coach';
+  | 'nova_manager_coach'
+  | 'resentment_analysis';
 
 export interface CapabilityLimit {
   enabled: boolean;
@@ -153,6 +154,15 @@ export const CAPABILITIES: Record<CapabilityId, CapabilityConfig> = {
   nova_manager_coach: {
     free: { enabled: true, dailyLimit: 3 },
     premium: { enabled: true, dailyLimit: 30 },
+  },
+  // A single-shot generation from raw user text, same cost shape as
+  // diagnose - mirrors its limits rather than inventing a separate figure.
+  // This capability previously had no server-side gate at all (a real cost
+  // and abuse exposure: any signed-in account could call it unlimited
+  // times), unlike every other Gemini-backed route.
+  resentment_analysis: {
+    free: { enabled: true, dailyLimit: 5 },
+    premium: { enabled: true, dailyLimit: 50 },
   },
 };
 

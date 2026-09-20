@@ -60,8 +60,15 @@ export const ResentmentTracker = ({ fingerprint, onAwardPoints, onNavigate }: Re
       });
 
       if (onAwardPoints) onAwardPoints(30, 'Logged & Analysed Resentment');
-    } catch (e) {
-      setError("Couldn't reach Nova for analysis right now. Try again in a moment.");
+    } catch (e: any) {
+      // A daily-limit/rate-limit response has a real, specific message
+      // worth showing (e.g. "reached today's free limit") - only fall
+      // back to the generic copy for a genuine connectivity failure.
+      setError(
+        e?.status === 429
+          ? e.message.replace(/^Rate Limit Exceeded:\s*/, '')
+          : "Couldn't reach Nova for analysis right now. Try again in a moment."
+      );
     } finally {
       setIsAnalyzing(false);
     }
