@@ -5,6 +5,12 @@ rather than a surprise. See `docs/FREE_PREMIUM_ENTITLEMENTS.md`,
 `docs/AI_COST_CONTROL.md`, and `docs/NOTIFICATION_ARCHITECTURE.md` for
 what WAS done.
 
+This file tracks commercial/cost-hardening gaps only. For the
+security-hardening pass's own open items (data retention decisions,
+backup/PITR confirmation, environment separation, alerting, etc.), see
+`docs/OUTSTANDING_SECURITY_ITEMS.md` instead — a separate list, for a
+separate audience, kept deliberately un-merged with this one.
+
 ## Needs real provider credentials (can't be built untestable)
 
 - **Stripe checkout + webhook handler.** No `stripe` npm dependency
