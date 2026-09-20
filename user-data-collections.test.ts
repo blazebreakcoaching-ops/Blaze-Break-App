@@ -73,10 +73,39 @@ describe('user-data-collections registry', () => {
   });
 });
 
+// Finds every top-level collection written with a userId FIELD (via .add(),
+// .set(), or .create()) but never necessarily queried by one - the shape
+// findTopLevelUserIdCollections above cannot see. feedback_submissions was
+// exactly this: stamped with userId on write, but only ever read back by
+// orderBy("createdAt") for the admin dashboard, with no .where("userId", ...)
+// anywhere - invisible to a scanner that only looks for userId queries.
+function findTopLevelUserIdWriteCollections(src: string): string[] {
+  const found = new Set<string>();
+  const collRe = /\.collection\(\s*["']([a-zA-Z_]+)["']\s*\)/g;
+  let m: RegExpExecArray | null;
+  while ((m = collRe.exec(src)) !== null) {
+    const name = m[1];
+    const pre = src.slice(Math.max(0, m.index - 40), m.index);
+    const isTopLevel = /\bdb\s*$/.test(pre) || /getDb\(\)\s*$/.test(pre);
+    if (!isTopLevel) continue;
+    // Look just past this .collection(...) call for a write (.add/.set/
+    // .create) that stamps a literal userId field onto the document - the
+    // same field name the export/erasure endpoints themselves query by.
+    const after = src.slice(m.index, m.index + 400);
+    if (/\.(add|set|create)\(/.test(after) && /\buserId\s*:/.test(after)) {
+      found.add(name);
+    }
+  }
+  return [...found].sort();
+}
+
 describe('GUARDRAIL: server.ts top-level userId-keyed collections are all classified', () => {
-  it('every top-level collection queried by userId is either a declared personal collection or an explicit exemption', () => {
+  it('every top-level collection queried OR written by userId is either a declared personal collection or an explicit exemption', () => {
     const src = readFileSync(resolve(process.cwd(), 'server.ts'), 'utf8');
-    const discovered = findTopLevelUserIdCollections(src);
+    const discovered = [...new Set([
+      ...findTopLevelUserIdCollections(src),
+      ...findTopLevelUserIdWriteCollections(src),
+    ])].sort();
 
     // Sanity check the scanner still works - if this ever finds nothing,
     // the regex has drifted and the guardrail is silently disabled.
@@ -98,10 +127,19 @@ describe('GUARDRAIL: server.ts top-level userId-keyed collections are all classi
     ).toEqual([]);
   });
 
-  it('the two collections we already fixed are still detected by the scanner', () => {
+  it('the two collections we already fixed are still detected by the query scanner', () => {
     const src = readFileSync(resolve(process.cwd(), 'server.ts'), 'utf8');
     const discovered = findTopLevelUserIdCollections(src);
     expect(discovered).toContain('anxiety_reset_events');
     expect(discovered).toContain('audit_logs');
+  });
+
+  it('feedback_submissions (write-only, no userId query) is detected by the write scanner', () => {
+    const src = readFileSync(resolve(process.cwd(), 'server.ts'), 'utf8');
+    // Confirms the write scanner is doing real work, not just duplicating
+    // the query scanner's results - this collection has no
+    // .where("userId", ...) anywhere, so only the write scanner finds it.
+    expect(findTopLevelUserIdCollections(src)).not.toContain('feedback_submissions');
+    expect(findTopLevelUserIdWriteCollections(src)).toContain('feedback_submissions');
   });
 });

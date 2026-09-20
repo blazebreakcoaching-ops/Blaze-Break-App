@@ -1,10 +1,11 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { X, Upload, CheckCircle2, User, Sliders, Settings2, MessageSquare } from 'lucide-react';
+import { X, Upload, CheckCircle2, User, Sliders, Settings2, MessageSquare, ShieldCheck } from 'lucide-react';
 import { UserProfileData } from '../types';
 import { NotificationSettingsView } from './NotificationSettingsView';
 import { FeatureFlagsView } from './FeatureFlagsView';
 import { FeedbackForm } from './FeedbackForm';
+import { SecuritySettingsView } from './SecuritySettingsView';
 import { cn } from '../lib/utils';
 import { useFocusTrap } from '../lib/useFocusTrap';
 import { secureApiFetch } from '../lib/secure-api';
@@ -17,7 +18,7 @@ interface SettingsModalProps {
 }
 
 export const SettingsModal = ({ profile, onSave, onClose, onOpenPrivacyCentre }: SettingsModalProps) => {
-  const [activeTab, setActiveTab] = useState<'profile' | 'notifications' | 'experiments' | 'consent' | 'feedback'>('profile');
+  const [activeTab, setActiveTab] = useState<'profile' | 'notifications' | 'security' | 'experiments' | 'consent' | 'feedback'>('profile');
   const [formData, setFormData] = useState<UserProfileData>(profile || {
     fullName: '',
     role: '',
@@ -159,6 +160,23 @@ export const SettingsModal = ({ profile, onSave, onClose, onOpenPrivacyCentre }:
           >
             <Sliders className="w-4 h-4" /> Notification Shielding
             {activeTab === 'notifications' && (
+              <motion.div layoutId="setting-tab" className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary dark:bg-primary rounded-full" />
+            )}
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeTab === 'security'}
+            id="settings-tab-security"
+            aria-controls="settings-panel"
+            onClick={() => setActiveTab('security')}
+            className={cn(
+              "pb-3.5 px-4 text-xs font-black uppercase tracking-widest relative cursor-pointer flex items-center gap-2 shrink-0 whitespace-nowrap",
+              activeTab === 'security' ? "text-primary dark:text-primary" : "text-text-muted hover:text-text-main dark:hover:text-text-muted"
+            )}
+          >
+            <ShieldCheck className="w-4 h-4" /> Security
+            {activeTab === 'security' && (
               <motion.div layoutId="setting-tab" className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary dark:bg-primary rounded-full" />
             )}
           </button>
@@ -346,6 +364,10 @@ export const SettingsModal = ({ profile, onSave, onClose, onOpenPrivacyCentre }:
           ) : activeTab === 'notifications' ? (
             <div className="py-2">
               <NotificationSettingsView />
+            </div>
+          ) : activeTab === 'security' ? (
+            <div className="py-2">
+              <SecuritySettingsView />
             </div>
           ) : activeTab === 'consent' ? (
             <div className="space-y-6">

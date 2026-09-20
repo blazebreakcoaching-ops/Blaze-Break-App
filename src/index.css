@@ -114,6 +114,17 @@
 
   }
 
+  html, body {
+    /* Defensive guard against horizontal overflow/scroll - reported on an
+       iPhone XS Max in Chrome (WebKit): the "Need support now?" fixed
+       button appeared clipped at the left edge and, on some tabs, page
+       text was cut off at both edges simultaneously, consistent with the
+       page having become horizontally scrollable when it never should be.
+       No element in this app is meant to exceed the viewport width, so
+       clipping instead of scrolling is always the correct behaviour here. */
+    overflow-x: hidden;
+  }
+
   body {
     background-color: var(--background);
     color: var(--foreground);

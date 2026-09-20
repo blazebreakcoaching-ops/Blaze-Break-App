@@ -155,6 +155,17 @@ service cloud.firestore {
       match /integration_tokens/{serviceName} {
         allow read, write: if false;
       }
+
+      // security holds the opt-in TOTP 2FA record (AES-256-GCM encrypted
+      // secret, hashed single-use recovery codes, failed-attempt/lockout
+      // counters) — never client-readable or client-writable, even a
+      // redacted "is MFA enabled" read goes through the dedicated
+      // GET /api/auth/mfa/status endpoint, never direct Firestore access,
+      // so the encrypted secret can never reach the client outside the
+      // one-time enrollment response.
+      match /security/{docId} {
+        allow read, write: if false;
+      }
       // integrations holds redacted connection status only (no secrets) — safe to read.
       match /integrations/{serviceName} {
         allow read: if isOwner(uid);
@@ -216,11 +227,23 @@ service cloud.firestore {
             && request.resource.data.archetype in ['High-Functioning Exhausted', 'Over-Giver', 'Silent Resenter', 'Founder on Fire', 'Manager in the Middle'];
       }
       
-      // B. checkins
+      // B. checkins - previously had no field validation at all (any
+      // shape/type was accepted from a signed-in owner). Matches the exact
+      // fields ConnectedDailyCheckIn.tsx writes: four 0-10 sliders, an
+      // optional note, and a fixed 'user' source.
       match /checkins/{checkinId} {
         allow read: if isOwner(uid);
         allow delete: if isOwner(uid);
-        allow create, update: if isOwner(uid);
+        allow create, update: if isOwner(uid)
+            && hasOnly(['createdAt', 'updatedAt', 'energyLevel', 'focusLevel', 'detachmentLevel', 'stressLoad', 'note', 'source'])
+            && hasAll(['createdAt', 'updatedAt', 'energyLevel', 'focusLevel', 'detachmentLevel', 'stressLoad', 'source'])
+            && request.resource.data.energyLevel is number && request.resource.data.energyLevel >= 0 && request.resource.data.energyLevel <= 10
+            && request.resource.data.focusLevel is number && request.resource.data.focusLevel >= 0 && request.resource.data.focusLevel <= 10
+            && request.resource.data.detachmentLevel is number && request.resource.data.detachmentLevel >= 0 && request.resource.data.detachmentLevel <= 10
+            && request.resource.data.stressLoad is number && request.resource.data.stressLoad >= 0 && request.resource.data.stressLoad <= 10
+            && request.resource.data.source == 'user'
+            && isOptionalStringWithMax(request.resource.data, 'note', 500)
+            && (request.method == 'create' ? true : checkCreatedAtUnchanged());
       }
       
       // C. energy_budgets
@@ -321,6 +344,24 @@ service cloud.firestore {
             && request.resource.data.status in ['active', 'paused', 'completed']
             && request.resource.data.category in ['sleep', 'boundaries', 'workload', 'nutrition_rhythm', 'movement', 'reflection', 'recovery_time']
             && (request.method == 'create' ? true : checkCreatedAtUnchanged());
+      }
+
+      // Weekly Recovery Goal Tracker ("7-Day Recovery Cycle" / System Habit
+      // OS) - one document per ISO week (doc id == weekId), fully
+      // overwritten by WeeklyGoalTracker.tsx's persist() on every progress
+      // change. Had NO rule at all here until now - since Firestore denies
+      // by default on a path no rule matches, every read/write to this
+      // collection was silently failing in production, making the feature
+      // completely non-functional despite looking fully built.
+      match /weekly_habit_cycles/{weekId} {
+        allow read: if isOwner(uid);
+        allow create, update: if isOwner(uid)
+            && hasOnly(['weekId', 'startedAt', 'goals'])
+            && hasAll(['weekId', 'startedAt', 'goals'])
+            && request.resource.data.weekId.matches('^[0-9]{4}-W[0-9]{2}$')
+            && isStringWithMax(request.resource.data.startedAt, 40)
+            && request.resource.data.goals is list
+            && request.resource.data.goals.size() <= 50;
       }
 
       // Recovery Fuel Engine's daily physiological check-in - previously
@@ -733,11 +774,17 @@ service cloud.firestore {
       allow write: if false;
     }
 
-    // GAD-informed anxiety reset events collection
+    // GAD-informed anxiety reset events collection. Server-write-only, same
+    // shape as audit_logs above - server.ts's POST /api/anxiety-reset is
+    // the only legitimate writer (App Check + auth + Zod-validated), and
+    // no client code anywhere writes to this collection directly. The
+    // previous client-writable rule had no schema validation at all, so a
+    // signed-in client could write arbitrary fields/values directly via
+    // the Firestore SDK - including a fabricated safetyLevel - bypassing
+    // App Check, validation, and the server's point-award logic entirely.
     match /anxiety_reset_events/{eventId} {
-      allow read, delete: if isSignedIn() && resource.data.userId == request.auth.uid;
-      allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
-      allow update: if isSignedIn() && request.resource.data.userId == request.auth.uid && resource.data.userId == request.auth.uid;
+      allow read: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow write: if false;
     }
 
     // Admin-specific collections

@@ -48,6 +48,13 @@ Optional (feature-flagged provider/integration paths):
 - `NOVA_CHAT_PROVIDER`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `VERTEX_LOCATION`,
   `NOVA_TOOLS_ENABLED` — alternative Nova providers/behaviour.
 - `BREVO_API_KEY`, web-push VAPID keys — email/push, if used.
+- `MFA_ENCRYPTION_KEY` — required before any user can enable the opt-in
+  2FA toggle (`openssl rand -base64 32`). Enrollment fails loudly, not
+  silently, if unset. See `docs/SECURITY_ARCHITECTURE.md`.
+- `SSO_CONFIG_ENCRYPTION_KEY` — required before an org can store an
+  inline SSO client secret (`openssl rand -hex 32`); without it the
+  server only accepts a `secretRef` pointing elsewhere. See
+  `docs/SSO_INTEGRATION_PLAN.md`.
 
 **Firebase Admin & Vertex AI use Application Default Credentials** — no key
 file. On Cloud Run this is the service account attached to the service; grant
@@ -62,6 +69,23 @@ Grant the Cloud Run runtime service account:
 - `roles/datastore.user` — Firestore read/write.
 - `roles/firebaseauth.admin` — verify ID/App Check tokens, delete accounts.
 - `roles/aiplatform.user` — the Vertex AI Nova path (only if `NOVA_CHAT_PROVIDER=vertex`).
+- `roles/iam.serviceAccountTokenCreator`, **granted to the runtime service
+  account on itself** (self-bound) — required for password-reset and
+  email-verification link generation (`generatePasswordResetLink`/
+  `generateEmailVerificationLink`, both used in `server.ts`). Application
+  Default Credentials via the metadata server don't implicitly grant
+  `iam.serviceAccounts.signBlob`, which those two Admin SDK calls need to
+  sign the link. Without this grant, the feature fails loudly (a
+  distinct, logged `[AUTH] ... failed — likely missing
+  roles/iam.serviceAccountTokenCreator` line) rather than silently, but a
+  missing password-reset flow in production is still a real, disruptive
+  gap. Grant it with:
+  ```
+  gcloud iam service-accounts add-iam-policy-binding \
+    RUNTIME_SERVICE_ACCOUNT_EMAIL \
+    --member="serviceAccount:RUNTIME_SERVICE_ACCOUNT_EMAIL" \
+    --role="roles/iam.serviceAccountTokenCreator"
+  ```
 
 ---
 

@@ -3,6 +3,7 @@ import helmet from "helmet";
 import path from "path";
 import fs from "fs";
 import crypto from "crypto";
+import dns from "dns";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, Type, Modality, LiveServerMessage } from "@google/genai";
 import Anthropic from "@anthropic-ai/sdk";
@@ -20,7 +21,7 @@ import { getAuth } from 'firebase-admin/auth';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { getAppCheck } from 'firebase-admin/app-check';
 import cors from 'cors';
-import rateLimit from 'express-rate-limit';
+import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import { z } from 'zod';
 import { memoryToolIsAllowed, searchMemories, isValidRecoveryDuration, validateMemoryWrite, validateFeatureSuggestion, SUGGESTABLE_FEATURES, toolsAreEnabled, liveVoiceIsEnabled, NovaMemoryDoc } from './nova-tools';
 import { toClaudeTools, GeminiStyleToolDeclaration } from './nova-claude-tools';
@@ -28,13 +29,15 @@ import { computeClimateStrain, computeClimateStrainByDimension, computeMoodStrai
 import { suggestRecognitionPrompts } from './positive-reinforcement';
 import { isRealGuardian, isValidGuardianPhone, buildGuardianCallRequestMessage, extractFirstName, nudgeSchedulerIsEnabled } from './guardian-alert';
 import { collectionsForExport, collectionsForErasure } from './user-data-collections';
+import { htmlToPlainTextFallback, buildEmailVerificationEmail, buildPasswordResetEmail, buildPasswordChangedEmail, buildMfaEnabledEmail, buildMfaDisabledEmail } from './brevo-templates';
+import { generateTotpSecret, buildOtpauthUri, verifyTotpCode, generateRecoveryCodes, hashRecoveryCode, encryptSecret as encryptTotpSecret, decryptSecret as decryptTotpSecret, isTotpLockedOut, nextLockoutState } from './totp-mfa';
 import { isValidGad7Answers, scoreGad7, interpretGad7 } from './gad7';
 import { OrgRole, isOrgRole, hasOrgPermission, canAssignRole, OrgPermission, ORG_ROLE_PERMISSIONS } from './org-rbac';
 import { getEffectiveDataPolicy, validateDataPolicyUpdate } from './org-data-policy';
 import { initialAuthStatus, validateConnectorCreate, canSeeConnectorDetail, ORG_CONNECTOR_TYPES } from './org-connectors';
 import { isDeviceChannel, isValidAppVersion, validateDeviceRegistration, evaluateUpdateStatus, DEVICE_CHANNELS } from './desktop-deployment';
 import { getEffectiveBillingState, validateBillingUpdate, checkSeatLimit, billingProvider } from './billing-adapter';
-import { validateSsoConfigInput, encryptSecret, canEnableSsoEnforcement, redactSsoConfig, StoredSsoConfig } from './sso-config';
+import { validateSsoConfigInput, encryptSecret, canEnableSsoEnforcement, redactSsoConfig, isBlockedIpAddress, StoredSsoConfig } from './sso-config';
 import { searchOrgResources, validateResourceCreate, SearchableResource } from './org-search';
 import {
   EntitlementRecord, EntitlementPlan, CapabilityId, getEffectiveEntitlement,
@@ -154,6 +157,22 @@ if (process.env.NODE_ENV === "production") {
   }));
 }
 
+// Helmet (as of this version) doesn't ship a Permissions-Policy middleware,
+// unlike its older deprecated Feature-Policy equivalent - set it directly.
+// microphone is genuinely used (Nova Live Voice, Daily Voice Journal, the
+// "Hey Nova" wake word) and clipboard-write is used throughout (the many
+// copy-to-clipboard buttons); everything else powerful this app has no use
+// for is explicitly denied rather than left to each browser's default.
+app.use((req, res, next) => {
+  res.setHeader(
+    'Permissions-Policy',
+    'camera=(), microphone=(self), geolocation=(), payment=(), usb=(), midi=(), ' +
+    'magnetometer=(), gyroscope=(), accelerometer=(), display-capture=(), ' +
+    'fullscreen=(self), clipboard-write=(self)'
+  );
+  next();
+});
+
 app.use(cors({
   origin: (origin, callback) => {
     if (!origin || allowedOrigins.includes(origin)) {
@@ -182,13 +201,27 @@ app.use(express.json({ limit: '10kb' }));
 // to a ceiling that still meaningfully blocks scraping/abuse (roughly
 // 40 requests/minute sustained) while comfortably covering real
 // dashboard use.
+// express-rate-limit never logs a 429 rejection on its own - previously
+// every limiter below relied on its `message` response body alone, so a
+// burst of rejected requests (a real signal for credential stuffing,
+// scraping, or a misbehaving client) produced zero log output anywhere.
+// A deterministic, non-clinical signal only - request rate against a
+// fixed ceiling, never anything about what the request contained.
+const logRateLimitExceeded = (limiterName: string) =>
+  (req: express.Request, res: express.Response, _next: express.NextFunction, options: any) => {
+    const uid = (req as any).user?.uid;
+    console.warn(`[RATE LIMIT] ${limiterName} exceeded by IP ${req.ip}${uid ? ` (uid ${uid})` : ''} on ${req.method} ${req.originalUrl}`);
+    res.status(options.statusCode).json(options.message);
+  };
+
 const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 600, // limit each IP to 600 requests per windowMs
   message: { error: 'Too many requests, please try again later.' },
   standardHeaders: true,
   legacyHeaders: false,
-  validate: { xForwardedForHeader: false, default: true }
+  validate: { xForwardedForHeader: false, default: true },
+  handler: logRateLimitExceeded('apiLimiter'),
 });
 
 const oneLessThingLimiter = rateLimit({
@@ -197,7 +230,8 @@ const oneLessThingLimiter = rateLimit({
   message: { error: 'Too many requests, please try again shortly.' },
   standardHeaders: true,
   legacyHeaders: false,
-  validate: { xForwardedForHeader: false, default: true }
+  validate: { xForwardedForHeader: false, default: true },
+  handler: logRateLimitExceeded('oneLessThingLimiter'),
 });
 
 const speechLimiter = rateLimit({
@@ -206,7 +240,8 @@ const speechLimiter = rateLimit({
   message: { error: 'Too many speech requests, please try again later.' },
   standardHeaders: true,
   legacyHeaders: false,
-  validate: { xForwardedForHeader: false, default: true }
+  validate: { xForwardedForHeader: false, default: true },
+  handler: logRateLimitExceeded('speechLimiter'),
 });
 
 const smsLimiter = rateLimit({
@@ -215,7 +250,8 @@ const smsLimiter = rateLimit({
   message: { error: 'Too many messaging requests, please try again later.' },
   standardHeaders: true,
   legacyHeaders: false,
-  validate: { xForwardedForHeader: false, default: true }
+  validate: { xForwardedForHeader: false, default: true },
+  handler: logRateLimitExceeded('smsLimiter'),
 });
 
 // Guardian alerts specifically: the Guardian Support spec (docs/GUARDIAN_SUPPORT_SPEC.md
@@ -231,7 +267,8 @@ const guardianAlertLimiter = rateLimit({
   message: { error: "That's a lot of alerts in a short time. Please wait a little before sending another." },
   standardHeaders: true,
   legacyHeaders: false,
-  validate: { xForwardedForHeader: false, default: true }
+  validate: { xForwardedForHeader: false, default: true },
+  handler: logRateLimitExceeded('guardianAlertLimiter'),
 });
 
 // Nova text/diagnose/voice-journal previously relied on the generic
@@ -246,7 +283,8 @@ const novaChatLimiter = rateLimit({
   message: { error: 'Too many Nova messages, please slow down and try again shortly.' },
   standardHeaders: true,
   legacyHeaders: false,
-  validate: { xForwardedForHeader: false, default: true }
+  validate: { xForwardedForHeader: false, default: true },
+  handler: logRateLimitExceeded('novaChatLimiter'),
 });
 
 const novaDiagnoseLimiter = rateLimit({
@@ -255,7 +293,8 @@ const novaDiagnoseLimiter = rateLimit({
   message: { error: 'Too many check-in requests, please try again shortly.' },
   standardHeaders: true,
   legacyHeaders: false,
-  validate: { xForwardedForHeader: false, default: true }
+  validate: { xForwardedForHeader: false, default: true },
+  handler: logRateLimitExceeded('novaDiagnoseLimiter'),
 });
 
 const novaVoiceJournalLimiter = rateLimit({
@@ -264,7 +303,43 @@ const novaVoiceJournalLimiter = rateLimit({
   message: { error: 'Too many voice journal requests, please try again shortly.' },
   standardHeaders: true,
   legacyHeaders: false,
-  validate: { xForwardedForHeader: false, default: true }
+  validate: { xForwardedForHeader: false, default: true },
+  handler: logRateLimitExceeded('novaVoiceJournalLimiter'),
+});
+
+// Same shape as novaDiagnoseLimiter above - a comparable single-shot
+// Gemini call from raw user text.
+const resentmentAnalysisLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 15,
+  message: { error: 'Too many requests, please try again shortly.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+  validate: { xForwardedForHeader: false, default: true },
+  handler: logRateLimitExceeded('resentmentAnalysisLimiter'),
+});
+
+// Same shape again - the executive report and manager coach are each a
+// comparable single-shot Gemini call, and previously had no rate limiter
+// at all (unlike nova/chat, diagnose, and every other AI-backed route).
+const executiveReportLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 15,
+  message: { error: 'Too many requests, please try again shortly.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+  validate: { xForwardedForHeader: false, default: true },
+  handler: logRateLimitExceeded('executiveReportLimiter'),
+});
+
+const managerCoachLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 15,
+  message: { error: 'Too many requests, please try again shortly.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+  validate: { xForwardedForHeader: false, default: true },
+  handler: logRateLimitExceeded('managerCoachLimiter'),
 });
 
 const exportLimiter = rateLimit({
@@ -273,7 +348,8 @@ const exportLimiter = rateLimit({
   message: { error: 'Too many export requests, please try again later.' },
   standardHeaders: true,
   legacyHeaders: false,
-  validate: { xForwardedForHeader: false, default: true }
+  validate: { xForwardedForHeader: false, default: true },
+  handler: logRateLimitExceeded('exportLimiter'),
 });
 
 const feedbackLimiter = rateLimit({
@@ -282,7 +358,63 @@ const feedbackLimiter = rateLimit({
   message: { error: 'Too many feedback submissions, please try again later.' },
   standardHeaders: true,
   legacyHeaders: false,
-  validate: { xForwardedForHeader: false, default: true }
+  validate: { xForwardedForHeader: false, default: true },
+  handler: logRateLimitExceeded('feedbackLimiter'),
+});
+
+// Account security routes (email verification, password reset, TOTP 2FA).
+// passwordResetRequestLimiter is IP-keyed since there's no session yet at
+// that point in the flow — every other limiter below is keyed by uid via
+// uidKeyGenerator, which requires authenticateFirebaseUser to run BEFORE
+// the limiter in those routes' middleware chain (a deliberate deviation
+// from this file's usual limiter-first ordering, since the uid isn't known
+// until auth has run).
+const passwordResetRequestLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 5,
+  message: { error: 'Too many password reset requests, please try again later.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+  validate: { xForwardedForHeader: false, default: true },
+  handler: logRateLimitExceeded('passwordResetRequestLimiter'),
+});
+
+// express-rate-limit requires its own ipKeyGenerator helper (not raw req.ip)
+// for any IP-based fallback in a custom keyGenerator, so IPv6 addresses get
+// normalised the same safe way its own default keying does.
+const uidKeyGenerator = (req: express.Request): string => (req as any).user?.uid || ipKeyGenerator(req.ip || '0.0.0.0');
+
+const emailVerifySendLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 3,
+  keyGenerator: uidKeyGenerator,
+  message: { error: 'Too many verification emails requested, please try again later.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+  validate: { xForwardedForHeader: false, default: true },
+  handler: logRateLimitExceeded('emailVerifySendLimiter'),
+});
+
+const mfaEnrollLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 10,
+  keyGenerator: uidKeyGenerator,
+  message: { error: 'Too many attempts, please try again later.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+  validate: { xForwardedForHeader: false, default: true },
+  handler: logRateLimitExceeded('mfaEnrollLimiter'),
+});
+
+const mfaSigninVerifyLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 8,
+  keyGenerator: uidKeyGenerator,
+  message: { error: 'Too many verification attempts, please try again shortly.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+  validate: { xForwardedForHeader: false, default: true },
+  handler: logRateLimitExceeded('mfaSigninVerifyLimiter'),
 });
 
 app.use('/api/', apiLimiter);
@@ -328,6 +460,19 @@ const verifyAppCheck = async (req: express.Request, res: express.Response, next:
   }
 };
 
+// Two routes a user must be able to reach with a valid-but-not-yet-MFA-
+// verified session: checking whether they even need to challenge, and
+// submitting that challenge. Every other authenticated route — including
+// the 2FA enroll/disable routes themselves — requires an established MFA
+// session once an account has 2FA enabled, specifically so a stolen-but-
+// unverified ID token can't be used to silently re-enroll a new
+// authenticator (overwriting the real one) or turn 2FA off without ever
+// proving the existing code.
+const MFA_GATE_EXEMPT_PATHS = new Set([
+  '/api/auth/mfa/status',
+  '/api/auth/mfa/totp/verify-at-signin',
+]);
+
 // Firebase ID Token Authentication Middleware for Nova API Layer Hardening
 const authenticateFirebaseUser = async (req: express.Request, res: express.Response, next: express.NextFunction) => {
   const authHeader = req.headers.authorization;
@@ -337,8 +482,27 @@ const authenticateFirebaseUser = async (req: express.Request, res: express.Respo
 
   const token = authHeader.split('Bearer ')[1];
   try {
-    const decodedToken = await getAuth().verifyIdToken(token);
+    // checkRevoked: true so a password change or 2FA disable (both of
+    // which call revokeRefreshTokens) immediately invalidates any ID
+    // token already in flight, not just future token refreshes.
+    const decodedToken = await getAuth().verifyIdToken(token, true);
     (req as any).user = decodedToken;
+
+    // mfaEnabled is an account-level custom claim (kept in sync by the
+    // enroll/confirm and disable routes) — cheap to check on every
+    // request with no extra Firestore read. Whether *this session* has
+    // actually cleared that challenge is a separate, session-scoped fact
+    // proven by the signed X-MFA-Session-Token header, never by the ID
+    // token itself (a custom claim is baked into every future token
+    // Firebase mints for this uid, so it can't distinguish a verified
+    // session from an attacker's own fresh, independently-obtained one).
+    if (decodedToken.mfaEnabled === true && !MFA_GATE_EXEMPT_PATHS.has(req.path)) {
+      const sessionToken = req.headers['x-mfa-session-token'];
+      if (typeof sessionToken !== 'string' || !verifyMfaSessionToken(sessionToken, decodedToken.uid)) {
+        return res.status(401).json({ error: 'Two-factor verification required for this session.', code: 'MFA_SESSION_REQUIRED' });
+      }
+    }
+
     next();
   } catch (error) {
     // Redacted logging: Do not log the token itself
@@ -361,7 +525,7 @@ const initTwilio = () => {
 };
 
 // Brevo Initialization
-const sendBrevoEmail = async (toEmail: string, subject: string, textContent: string) => {
+const postToBrevoEmail = async (payload: Record<string, unknown>): Promise<boolean> => {
   const brevoKey = process.env.BREVO_API_KEY;
   if (!brevoKey) {
     console.warn("[BREVO] API key not found. Email not sent.");
@@ -375,12 +539,7 @@ const sendBrevoEmail = async (toEmail: string, subject: string, textContent: str
         'Content-Type': 'application/json',
         'api-key': brevoKey
       },
-      body: JSON.stringify({
-        sender: { name: "Blaze Break Support", email: "support@blazebreak.com" },
-        to: [{ email: toEmail }],
-        subject: subject,
-        textContent: textContent
-      })
+      body: JSON.stringify(payload)
     });
     if (!res.ok) {
       console.error("[BREVO] Failed to send email:", await res.text());
@@ -392,6 +551,28 @@ const sendBrevoEmail = async (toEmail: string, subject: string, textContent: str
     return false;
   }
 };
+
+const sendBrevoEmail = (toEmail: string, subject: string, textContent: string) =>
+  postToBrevoEmail({
+    sender: { name: "Blaze Break Support", email: "support@blazebreak.com" },
+    to: [{ email: toEmail }],
+    subject,
+    textContent
+  });
+
+// This app's first HTML email sender - every other transactional email
+// (support auto-reply, org invites, ally invites) stays plain-text via
+// sendBrevoEmail above, untouched. Used for account-security emails
+// (password reset, email verification, MFA change notices) that need a
+// clickable link and a bit of branding rather than a raw URL in plaintext.
+const sendBrevoHtmlEmail = (toEmail: string, subject: string, htmlContent: string) =>
+  postToBrevoEmail({
+    sender: { name: "Blaze Break Support", email: "support@blazebreak.com" },
+    to: [{ email: toEmail }],
+    subject,
+    htmlContent,
+    textContent: htmlToPlainTextFallback(htmlContent)
+  });
 
 // Support & Deletion Request Route
 app.post("/api/support/request", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
@@ -2362,6 +2543,453 @@ const logAdminAction = async (req: any, action: string, targetUid: string, targe
 };
 
 // ============================================================================
+// Account security: email verification, password reset (Brevo-routed), TOTP 2FA
+// ============================================================================
+// Email/password sign-up itself happens entirely client-side (Firebase Auth
+// SDK, src/lib/auth.tsx) — the routes below cover what the client SDK can't
+// do on its own: sending these two emails through this app's own Brevo
+// integration instead of Firebase's default mailer (matching every other
+// transactional email this app sends), and the custom TOTP second factor
+// (Firebase's native MFA needs a paid Identity Platform upgrade this
+// project doesn't have — see docs/SSO_INTEGRATION_PLAN.md for the same
+// tier wall hit by an earlier, unrelated feature).
+
+// Where the link Firebase generates should land — a page this app owns
+// (src/components/AuthActionPage.tsx, wired in src/main.tsx) rather than
+// Firebase's own hosted action-handling page, exactly like the existing
+// /ally/:token top-level route.
+const authActionUrl = (): string => {
+  const appBase = (process.env.APP_URL || "").replace(/\/$/, "");
+  return `${appBase}/auth/action`;
+};
+
+// generatePasswordResetLink()/generateEmailVerificationLink() additionally
+// require the Cloud Run runtime service account to hold
+// roles/iam.serviceAccountTokenCreator (self-bound), because signing the
+// link needs iam.serviceAccounts.signBlob — a permission Application
+// Default Credentials via the metadata server does not implicitly grant.
+// This app has no service-account key file (see the Admin SDK init above),
+// so this is a real, separate IAM grant that can't be verified from inside
+// this codebase. Logged distinctly so it's diagnosable in Cloud Run logs
+// rather than surfacing as an unexplained generic failure.
+const ACCOUNT_LINK_PERMISSION_HINT =
+  'If this is a permission error, the Cloud Run runtime service account likely needs roles/iam.serviceAccountTokenCreator (self-bound) granted — see docs/DEPLOY.md.';
+
+app.post("/api/auth/verify-email/send", verifyAppCheck, authenticateFirebaseUser, emailVerifySendLimiter, async (req, res) => {
+  try {
+    const user = requireAuth(req);
+    if (!user.email) {
+      return res.status(400).json({ error: "This account has no email address to verify." });
+    }
+    try {
+      const link = await getAuth().generateEmailVerificationLink(user.email, {
+        url: authActionUrl(),
+        handleCodeInApp: true,
+      });
+      const { subject, html } = buildEmailVerificationEmail(link);
+      await sendBrevoHtmlEmail(user.email, subject, html);
+    } catch (linkError: any) {
+      // Soft-fail like every other Brevo-backed send in this app — the
+      // person can just ask to resend, rather than seeing a hard error for
+      // something that isn't actionable from their side.
+      console.error(`[AUTH] generateEmailVerificationLink failed. ${ACCOUNT_LINK_PERMISSION_HINT}`, linkError?.message || linkError);
+    }
+    res.json({ success: true });
+  } catch (error: any) {
+    console.error("[AUTH] verify-email/send error:", error.message);
+    res.status(500).json({ error: "Could not send verification email right now." });
+  }
+});
+
+const PasswordResetRequestSchema = z.object({
+  email: z.string().email().max(254),
+}).strict();
+
+// No session exists at this point in the flow, so this is verifyAppCheck-
+// only (no authenticateFirebaseUser) — the same shape as the public
+// /api/ally/view/:token routes. Always resolves to the identical generic
+// response regardless of whether the email is malformed, unregistered, or
+// a real account — a caller must never be able to learn which emails have
+// a Blaze Break account from this endpoint's behaviour.
+app.post("/api/auth/password-reset/request", verifyAppCheck, passwordResetRequestLimiter, async (req, res) => {
+  const genericResponse = { success: true, message: "If that email has a Blaze Break account, we've sent a password reset link." };
+  const parsed = PasswordResetRequestSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.json(genericResponse);
+  }
+  // Deliberately not awaited before responding. A real account takes a
+  // real, measurably longer path here (Admin SDK link generation + a
+  // Brevo API call) than a non-existent one (an instant auth/user-not-
+  // found) — awaiting either before responding would leak exactly the
+  // account-enumeration signal the identical response body is meant to
+  // hide, just via response latency instead of content. Firing this off
+  // and responding immediately keeps the response time identical either
+  // way; the actual send still happens, just without the caller waiting
+  // on (or being able to time) it.
+  (async () => {
+    try {
+      const link = await getAuth().generatePasswordResetLink(parsed.data.email, {
+        url: authActionUrl(),
+        handleCodeInApp: true,
+      });
+      const { subject, html } = buildPasswordResetEmail(link);
+      await sendBrevoHtmlEmail(parsed.data.email, subject, html);
+    } catch (error: any) {
+      // auth/user-not-found is the expected, silent case for an email with
+      // no account — anything else (most likely the signBlob IAM permission)
+      // is worth a clear, actionable log line.
+      if (error?.code !== 'auth/user-not-found') {
+        console.error(`[AUTH] generatePasswordResetLink failed. ${ACCOUNT_LINK_PERMISSION_HINT}`, error?.message || error);
+      }
+    }
+  })();
+  res.json(genericResponse);
+});
+
+const PasswordResetConfirmNotifySchema = z.object({
+  email: z.string().email().max(254),
+}).strict();
+
+// Fired by AuthActionPage.tsx right after a successful client-side
+// confirmPasswordReset() — standard security hygiene (notify the account
+// owner their password changed) via the same Brevo HTML pipeline. Also
+// unauthenticated by design: by this point the person has just proven
+// control of the account via the one-time reset code, not a session token.
+app.post("/api/auth/password-reset/confirm-notify", verifyAppCheck, passwordResetRequestLimiter, async (req, res) => {
+  const parsed = PasswordResetConfirmNotifySchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: "Invalid request." });
+  }
+  const { subject, html } = buildPasswordChangedEmail();
+  await sendBrevoHtmlEmail(parsed.data.email, subject, html);
+  res.json({ success: true });
+});
+
+// ---- TOTP two-factor authentication (opt-in "extra security") ------------
+// users/{uid}/security/mfa_totp holds: an AES-256-GCM-encrypted secret
+// (never the plaintext), a pending secret set only during enrollment,
+// hashed single-use recovery codes, and a durable (Firestore, not
+// in-memory) failed-attempt/lockout counter. firestore.rules locks this
+// collection to server/Admin-SDK access only - see MFA_DOC below.
+const MFA_DOC = 'mfa_totp';
+
+const getMfaDocRef = (db: FirebaseFirestore.Firestore, uid: string) =>
+  db.collection('users').doc(uid).collection('security').doc(MFA_DOC);
+
+// MFA_ENCRYPTION_KEY must be 32 random bytes, base64-encoded (e.g.
+// `openssl rand -base64 32`), set on the Cloud Run service. Deliberately a
+// hard failure (unlike Brevo's soft-fail) — silently storing an
+// unencrypted TOTP secret would be a real security regression, not a
+// missed nice-to-have.
+const getMfaEncryptionKey = (): Buffer => {
+  const raw = process.env.MFA_ENCRYPTION_KEY;
+  if (!raw) {
+    throw new Error('[MFA] MFA_ENCRYPTION_KEY is not set on this server — TOTP enrollment cannot proceed. Generate one with `openssl rand -base64 32` and set it in the Cloud Run service environment.');
+  }
+  const key = Buffer.from(raw, 'base64');
+  if (key.length !== 32) {
+    throw new Error(`[MFA] MFA_ENCRYPTION_KEY must decode to exactly 32 bytes (got ${key.length}) — generate one with \`openssl rand -base64 32\`.`);
+  }
+  return key;
+};
+
+// A session-scoped, short-lived, HMAC-signed proof that *this session*
+// (not just this uid, ever) has cleared a 2FA challenge. Self-verifying —
+// no Firestore read needed on every gated request — and deliberately
+// reuses MFA_ENCRYPTION_KEY as the HMAC key rather than requiring a new
+// secret, since both already carry the same "TOTP-subsystem-only, never
+// exposed to the client" sensitivity.
+const MFA_SESSION_TOKEN_TTL_MS = 12 * 60 * 60 * 1000; // 12 hours
+
+const signMfaSessionToken = (uid: string): string => {
+  const expiresAtMs = Date.now() + MFA_SESSION_TOKEN_TTL_MS;
+  const payload = `${uid}.${expiresAtMs}`;
+  const sig = crypto.createHmac('sha256', getMfaEncryptionKey()).update(payload).digest('hex');
+  return `${payload}.${sig}`;
+};
+
+const verifyMfaSessionToken = (token: string, uid: string): boolean => {
+  const parts = token.split('.');
+  if (parts.length !== 3) return false;
+  const [tokenUid, expiresAtStr, sig] = parts;
+  if (tokenUid !== uid) return false;
+  const expiresAtMs = Number(expiresAtStr);
+  if (!Number.isFinite(expiresAtMs) || Date.now() > expiresAtMs) return false;
+  let expectedSig: string;
+  try {
+    expectedSig = crypto.createHmac('sha256', getMfaEncryptionKey()).update(`${tokenUid}.${expiresAtStr}`).digest('hex');
+  } catch {
+    return false;
+  }
+  const expectedBuf = Buffer.from(expectedSig, 'hex');
+  const actualBuf = Buffer.from(sig, 'hex');
+  if (expectedBuf.length !== actualBuf.length) return false;
+  return crypto.timingSafeEqual(expectedBuf, actualBuf);
+};
+
+// Keeps the account-level "does this uid have 2FA on" fact (used by the
+// cheap per-request gate check in authenticateFirebaseUser) in sync with
+// the Firestore record that's the actual source of truth. Best-effort: a
+// failure here shouldn't fail the enroll/disable request itself, since the
+// Firestore write is what actually matters — it's logged so a stuck claim
+// (which would either wrongly gate or wrongly not-gate future requests
+// until it's retried) doesn't fail silently.
+const setMfaEnabledClaim = async (uid: string, enabled: boolean) => {
+  try {
+    const existing = await getAuth().getUser(uid);
+    await getAuth().setCustomUserClaims(uid, { ...(existing.customClaims || {}), mfaEnabled: enabled });
+  } catch (error) {
+    console.error(`[MFA] Failed to sync mfaEnabled claim for ${uid} to ${enabled}:`, (error as Error).message);
+  }
+};
+
+app.get("/api/auth/mfa/status", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const user = requireAuth(req);
+    const db = getDb();
+    const snap = await getMfaDocRef(db, user.uid).get();
+    const data = snap.exists ? snap.data() : undefined;
+    res.json({ enabled: data?.enabled === true, enrolledAt: data?.enrolledAt || null });
+  } catch (error: any) {
+    console.error("[MFA] status error:", error.message);
+    res.status(500).json({ error: "Could not check two-factor status right now." });
+  }
+});
+
+app.post("/api/auth/mfa/totp/enroll/start", verifyAppCheck, authenticateFirebaseUser, mfaEnrollLimiter, async (req, res) => {
+  try {
+    const user = requireAuth(req);
+    if (!user.email) {
+      return res.status(400).json({ error: "This account needs an email address before enabling two-factor authentication." });
+    }
+    const key = getMfaEncryptionKey();
+    const secret = generateTotpSecret();
+    const otpauthUri = buildOtpauthUri(secret, user.email);
+    const db = getDb();
+    // A fresh enroll/start always overwrites any earlier pending secret —
+    // only the most recently started enrollment attempt can be confirmed,
+    // so an abandoned QR scan can't be confirmed later with a stale code.
+    await getMfaDocRef(db, user.uid).set({
+      pendingSecretEncrypted: encryptTotpSecret(secret, key),
+      updatedAt: new Date().toISOString(),
+    }, { merge: true });
+    res.json({ otpauthUri, secretForManualEntry: secret });
+  } catch (error: any) {
+    console.error("[MFA] enroll/start error:", error.message);
+    res.status(500).json({ error: "Could not start two-factor setup right now." });
+  }
+});
+
+const MfaEnrollConfirmSchema = z.object({
+  code: z.string().regex(/^\d{6}$/, "Code must be 6 digits"),
+}).strict();
+
+app.post("/api/auth/mfa/totp/enroll/confirm", verifyAppCheck, authenticateFirebaseUser, mfaEnrollLimiter, async (req, res) => {
+  try {
+    const parsed = MfaEnrollConfirmSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: "Please enter the 6-digit code from your authenticator app." });
+    }
+    const user = requireAuth(req);
+    const key = getMfaEncryptionKey();
+    const db = getDb();
+    const docRef = getMfaDocRef(db, user.uid);
+    const snap = await docRef.get();
+    const data = snap.data();
+    if (!data?.pendingSecretEncrypted) {
+      return res.status(400).json({ error: "No two-factor setup in progress. Please start again." });
+    }
+    const secret = decryptTotpSecret(data.pendingSecretEncrypted, key);
+    const valid = await verifyTotpCode(secret, parsed.data.code);
+    if (!valid) {
+      return res.status(400).json({ error: "That code didn't match. Please try again." });
+    }
+
+    const recoveryCodes = generateRecoveryCodes();
+    const now = new Date().toISOString();
+    await docRef.set({
+      secretEncrypted: data.pendingSecretEncrypted,
+      pendingSecretEncrypted: null,
+      enabled: true,
+      enrolledAt: now,
+      lastVerifiedAt: now,
+      recoveryCodesHashed: recoveryCodes.map((code) => ({ hash: hashRecoveryCode(code), usedAt: null })),
+      failedAttempts: 0,
+      lockedUntil: null,
+      updatedAt: now,
+    }, { merge: true });
+
+    await setMfaEnabledClaim(user.uid, true);
+
+    if (user.email) {
+      const { subject, html } = buildMfaEnabledEmail();
+      await sendBrevoHtmlEmail(user.email, subject, html);
+    }
+
+    // Enrolling proves the user just cleared a real 2FA challenge (the
+    // code from their new authenticator) — issue a session token now so
+    // they aren't immediately re-challenged by the gate this same
+    // request's mfaEnabled claim will start enforcing on their next call.
+    // Returned once, at the moment of enrollment, and never again — the
+    // server only ever stores their hashes from this point on.
+    res.json({ recoveryCodes, mfaSessionToken: signMfaSessionToken(user.uid) });
+  } catch (error: any) {
+    console.error("[MFA] enroll/confirm error:", error.message);
+    res.status(500).json({ error: "Could not confirm two-factor setup right now." });
+  }
+});
+
+const MfaCodeOrRecoverySchema = z.object({
+  code: z.string().regex(/^\d{6}$/, "Code must be 6 digits").optional(),
+  recoveryCode: z.string().min(8).max(20).optional(),
+}).strict().refine((d) => Boolean(d.code) !== Boolean(d.recoveryCode), {
+  message: "Provide either a 6-digit code or a recovery code, not both.",
+});
+
+interface MfaVerifyResult {
+  ok: boolean;
+  reason?: 'locked' | 'not_enrolled' | 'invalid';
+}
+
+// Shared by verify-at-signin and disable below — both need the identical
+// "check lockout, verify a code or a single-use recovery code, record the
+// attempt" logic, differing only in what happens after a success. The
+// failed-attempt/lockout counters live in Firestore (not express-rate-
+// limit's in-memory store) specifically so they survive Cloud Run scaling
+// an instance to zero or running more than one instance at once.
+const verifyMfaAttempt = async (
+  db: FirebaseFirestore.Firestore,
+  uid: string,
+  input: { code?: string; recoveryCode?: string }
+): Promise<MfaVerifyResult> => {
+  const docRef = getMfaDocRef(db, uid);
+  // A transaction, not a plain get-then-set, so two concurrent attempts
+  // (e.g. an attacker script racing requests) can't both read the same
+  // failedAttempts count before either write lands and slip past the
+  // lockout threshold.
+  return db.runTransaction(async (tx) => {
+    const snap = await tx.get(docRef);
+    const data = snap.data();
+    if (!data?.enabled || !data.secretEncrypted) {
+      return { ok: false, reason: 'not_enrolled' };
+    }
+    if (isTotpLockedOut(data.lockedUntil || null)) {
+      return { ok: false, reason: 'locked' };
+    }
+
+    let success = false;
+    let recoveryCodesHashed: { hash: string; usedAt: string | null }[] | undefined = data.recoveryCodesHashed;
+    if (input.code) {
+      const key = getMfaEncryptionKey();
+      const secret = decryptTotpSecret(data.secretEncrypted, key);
+      success = await verifyTotpCode(secret, input.code);
+    } else if (input.recoveryCode) {
+      const hash = hashRecoveryCode(input.recoveryCode);
+      const matchIndex = (recoveryCodesHashed || []).findIndex((rc) => rc.hash === hash && rc.usedAt === null);
+      if (matchIndex !== -1) {
+        success = true;
+        const now = new Date().toISOString();
+        recoveryCodesHashed = recoveryCodesHashed!.map((rc, i) => (i === matchIndex ? { ...rc, usedAt: now } : rc));
+      }
+    }
+
+    const lockout = nextLockoutState(data.failedAttempts || 0, success);
+    const now = new Date().toISOString();
+    tx.set(docRef, {
+      failedAttempts: lockout.failedAttempts,
+      lockedUntil: lockout.lockedUntil,
+      ...(success ? { lastVerifiedAt: now } : {}),
+      ...(recoveryCodesHashed ? { recoveryCodesHashed } : {}),
+      updatedAt: now,
+    }, { merge: true });
+
+    // Deterministic signal only (attempt count, lockout state) — never a
+    // record of what was guessed or any inference about the person.
+    if (!success) {
+      console.warn(`[MFA] Failed verification attempt for uid ${uid} (failedAttempts=${lockout.failedAttempts}${lockout.lockedUntil ? ', now locked out until ' + lockout.lockedUntil : ''}).`);
+    }
+
+    return success ? { ok: true } : { ok: false, reason: 'invalid' };
+  });
+};
+
+app.post("/api/auth/mfa/totp/verify-at-signin", verifyAppCheck, authenticateFirebaseUser, mfaSigninVerifyLimiter, async (req, res) => {
+  try {
+    const parsed = MfaCodeOrRecoverySchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: "Provide either a 6-digit code or a recovery code." });
+    }
+    const user = requireAuth(req);
+    const db = getDb();
+    const result = await verifyMfaAttempt(db, user.uid, parsed.data);
+    if (!result.ok) {
+      if (result.reason === 'locked') {
+        return res.status(429).json({ error: "Too many incorrect attempts. Please wait a few minutes and try again." });
+      }
+      // Deliberately the same generic 401 whether the code was wrong or
+      // 2FA somehow isn't enrolled — no reason to tell an attacker which.
+      return res.status(401).json({ error: "That code didn't match. Please try again." });
+    }
+    res.json({ verified: true, mfaSessionToken: signMfaSessionToken(user.uid) });
+  } catch (error: any) {
+    console.error("[MFA] verify-at-signin error:", error.message);
+    res.status(500).json({ error: "Could not verify your code right now." });
+  }
+});
+
+app.post("/api/auth/mfa/totp/disable", verifyAppCheck, authenticateFirebaseUser, mfaEnrollLimiter, async (req, res) => {
+  try {
+    const parsed = MfaCodeOrRecoverySchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: "Provide either a 6-digit code or a recovery code." });
+    }
+    const user = requireAuth(req);
+    const db = getDb();
+    const result = await verifyMfaAttempt(db, user.uid, parsed.data);
+    if (!result.ok) {
+      if (result.reason === 'not_enrolled') {
+        return res.status(400).json({ error: "Two-factor authentication isn't turned on." });
+      }
+      if (result.reason === 'locked') {
+        return res.status(429).json({ error: "Too many incorrect attempts. Please wait a few minutes and try again." });
+      }
+      return res.status(401).json({ error: "That code didn't match. Please try again." });
+    }
+
+    await getMfaDocRef(db, user.uid).set({
+      enabled: false,
+      secretEncrypted: null,
+      pendingSecretEncrypted: null,
+      recoveryCodesHashed: [],
+      failedAttempts: 0,
+      lockedUntil: null,
+      updatedAt: new Date().toISOString(),
+    }, { merge: true });
+
+    await setMfaEnabledClaim(user.uid, false);
+    // Revoke every refresh token issued before this moment. Without this,
+    // an already-open session elsewhere (e.g. an attacker's, if this
+    // disable itself was unauthorized) would keep working indefinitely on
+    // its existing ID token even after 2FA protection is removed — this
+    // forces every session, including this one, to re-authenticate.
+    await getAuth().revokeRefreshTokens(user.uid);
+
+    // Sent regardless of who triggered this — a security notice for a
+    // change the account owner didn't make is exactly when this matters
+    // most, same reasoning as the password-changed notice above.
+    if (user.email) {
+      const { subject, html } = buildMfaDisabledEmail();
+      await sendBrevoHtmlEmail(user.email, subject, html);
+    }
+
+    res.json({ success: true });
+  } catch (error: any) {
+    console.error("[MFA] disable error:", error.message);
+    res.status(500).json({ error: "Could not turn off two-factor authentication right now." });
+  }
+});
+
+// ============================================================================
 // Free/Premium Entitlements (server-authoritative)
 // ============================================================================
 // See entitlements.ts for the pure model this wraps with I/O. The single
@@ -2417,7 +3045,7 @@ app.get("/api/entitlements/me", verifyAppCheck, authenticateFirebaseUser, async 
     const usageSnap = await db.collection("users").doc(uid).collection("usage_counters").doc(usageCounterTodayKey()).get();
     const usageData = usageSnap.data() || {};
     const capabilities: Record<string, { enabled: boolean; limit: number | null; used: number }> = {};
-    (['nova_text', 'nova_voice', 'diagnose', 'exports'] as CapabilityId[]).forEach((id) => {
+    (['nova_text', 'nova_voice', 'diagnose', 'exports', 'resentment_analysis', 'executive_report'] as CapabilityId[]).forEach((id) => {
       const cap = getCapability(plan, id);
       capabilities[id] = { enabled: cap.enabled, limit: cap.dailyLimit, used: Number(usageData[id]) || 0 };
     });
@@ -4196,12 +4824,27 @@ app.get("/api/admin/users/:uid", verifyAppCheck, authenticateFirebaseUser, async
   }
 });
 
+// The app-facing AuthRole union (src/types.ts) - kept in sync by hand since
+// that file isn't imported here. Previously this route stored/claimed
+// whatever string the request body sent verbatim - a typo or a malicious
+// value would silently become this user's role with no rejection.
+const APP_USER_ROLES = [
+  'individual', 'employee', 'recovery_ally', 'manager', 'organisation_admin',
+  'executive', 'platform_admin', 'security_admin', 'platform_owner',
+  'support_admin', 'content_admin', 'coach_admin', 'b2b_admin', 'viewer_admin', 'user',
+] as const;
+const AppUserRoleSchema = z.object({ role: z.enum(APP_USER_ROLES) }).strict();
+
 app.post("/api/admin/users/:uid/role", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
   try {
     requirePlatformOwner(req);
+    const parsed = AppUserRoleSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: `"role" must be one of: ${APP_USER_ROLES.join(', ')}.` });
+    }
     const targetUid = req.params.uid;
-    const { role } = req.body;
-    
+    const { role } = parsed.data;
+
     await getAuth().setCustomUserClaims(targetUid, { role });
     
     const db = getDb();
@@ -4282,11 +4925,29 @@ app.get("/api/admin/admin-users", verifyAppCheck, authenticateFirebaseUser, asyn
   }
 });
 
+// The admin-panel role vocabulary getPermissionsForRole() above actually
+// knows how to map to permissions - narrower than APP_USER_ROLES (an admin
+// account is never 'individual', 'employee', etc.). Previously unvalidated:
+// an invalid role string would still set admin:true on the account and
+// create/update an admin_users doc, just with getPermissionsForRole()'s
+// default: [] - a real admin account with a nonsense role and no
+// permissions, silently.
+const ADMIN_PANEL_ROLES = [
+  'platform_owner', 'platform_admin', 'support_admin',
+  'content_admin', 'coach_admin', 'b2b_admin', 'viewer_admin',
+] as const;
+const AdminPanelRoleSchema = z.object({ role: z.enum(ADMIN_PANEL_ROLES) }).strict();
+
 app.post("/api/admin/admin-users", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
   try {
     requirePlatformOwner(req);
-    const { email, role, displayName } = req.body;
-    
+    const { email, displayName } = req.body;
+    const parsedRole = AdminPanelRoleSchema.safeParse({ role: req.body.role });
+    if (!parsedRole.success) {
+      return res.status(400).json({ error: `"role" must be one of: ${ADMIN_PANEL_ROLES.join(', ')}.` });
+    }
+    const { role } = parsedRole.data;
+
     const authUser = await getAuth().getUserByEmail(email);
     const targetUid = authUser.uid;
     
@@ -4319,9 +4980,13 @@ app.post("/api/admin/admin-users", verifyAppCheck, authenticateFirebaseUser, asy
 app.post("/api/admin/admin-users/:uid/role", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
   try {
     requirePlatformOwner(req);
+    const parsed = AdminPanelRoleSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: `"role" must be one of: ${ADMIN_PANEL_ROLES.join(', ')}.` });
+    }
     const targetUid = req.params.uid;
-    const { role } = req.body;
-    
+    const { role } = parsed.data;
+
     await assertNotLastPlatformOwner(targetUid, firebaseConfigDatabaseId);
     
     await getAuth().setCustomUserClaims(targetUid, {
@@ -4454,10 +5119,21 @@ app.post("/api/admin/content-library", verifyAppCheck, authenticateFirebaseUser,
   }
 });
 
+// Matches AdminDashboard.tsx's own client-side sanitization
+// (newOrgId.trim().toLowerCase().replace(/[^a-z0-9-]/g, '-')) - the server
+// previously trusted that sanitization entirely and used whatever string
+// arrived verbatim as a Firestore document ID, with no validation of its
+// own for a caller that bypasses the UI.
+const OrgIdSchema = z.string().min(1).max(100).regex(/^[a-z0-9-]+$/, 'orgId must contain only lowercase letters, numbers, and hyphens.');
+
 app.post("/api/admin/orgs", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
   try {
     requireAdmin(req);
     const { orgId, name, privacyThreshold, initialAdminEmail } = req.body;
+    const parsedOrgId = OrgIdSchema.safeParse(orgId);
+    if (!parsedOrgId.success) {
+      return res.status(400).json({ error: 'orgId must be 1-100 characters: lowercase letters, numbers, and hyphens only.' });
+    }
     const db = getDb();
 
     let initialAdminUid: string | null = null;
@@ -5841,7 +6517,7 @@ app.get("/api/org/:orgId/governance", verifyAppCheck, authenticateFirebaseUser, 
 // never a named individual, and never returned below the org's cohort
 // threshold. No conversation history, no tool use, no memory writes -
 // just today's real numbers in, 2-3 grounded suggestions out.
-app.get("/api/org/:orgId/manager-coach", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+app.get("/api/org/:orgId/manager-coach", managerCoachLimiter, verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
   try {
     const { orgId } = req.params;
     const { user, org } = await requireOrgAdmin(req, orgId);
@@ -6431,11 +7107,26 @@ app.post("/api/org/:orgId/sso/test", verifyAppCheck, authenticateFirebaseUser, a
     let metadataReachable: boolean | null = null;
     if (config.metadataUrl) {
       try {
-        const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 5000);
-        const response = await fetch(config.metadataUrl, { method: "GET", signal: controller.signal });
-        clearTimeout(timeout);
-        metadataReachable = response.ok;
+        // https:// is already required at config-save time, but that says
+        // nothing about where the URL actually points - resolve it and
+        // refuse to fetch if any resolved address is private/loopback/
+        // link-local/cloud-metadata, so this reachability check can't be
+        // used as an internal-network probe. Folded into the same generic
+        // `false` result as any other failure below (never a distinct
+        // "blocked" response) so it can't be used to distinguish a
+        // blocked address from a genuinely unreachable one either.
+        const hostname = new URL(config.metadataUrl).hostname;
+        const addresses = await dns.promises.lookup(hostname, { all: true });
+        const isBlocked = addresses.length === 0 || addresses.some((a) => isBlockedIpAddress(a.address));
+        if (isBlocked) {
+          metadataReachable = false;
+        } else {
+          const controller = new AbortController();
+          const timeout = setTimeout(() => controller.abort(), 5000);
+          const response = await fetch(config.metadataUrl, { method: "GET", signal: controller.signal });
+          clearTimeout(timeout);
+          metadataReachable = response.ok;
+        }
       } catch {
         metadataReachable = false;
       }
@@ -8069,13 +8760,25 @@ const ResentmentAnalysisRequestSchema = z.object({
   log: z.string().min(1).max(3000),
 }).strict();
 
-app.post("/api/nova/resentment-analysis", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+app.post("/api/nova/resentment-analysis", resentmentAnalysisLimiter, verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
   try {
     const parsed = ResentmentAnalysisRequestSchema.safeParse(req.body);
     if (!parsed.success) {
       return res.status(400).json({ error: "Invalid request.", details: (parsed as any).error?.errors || [] });
     }
     const { log } = parsed.data;
+
+    const user = requireAuth(req);
+    const quota = await checkAndReserveCapability(user.uid, 'resentment_analysis');
+    if (!quota.allowed) {
+      return res.status(429).json({
+        error: quota.plan === 'free'
+          ? "You've reached today's free limit for this. It resets tomorrow, or upgrade to Blaze Break Premium for more."
+          : "You've reached today's fair-use limit for this. It resets tomorrow.",
+        code: 'capability_limit_reached',
+        capability: 'resentment_analysis',
+      });
+    }
 
     const prompt = `You are Nova, a direct, analytical British high-performance recovery coach. The user has just written raw, unfiltered venting about something that's currently resenting them at work or in life - they were explicitly told "be unprofessional, be petty, just get it out." Read what they actually wrote and extract genuine structural patterns from it. Do not invent specifics not present in their text - if something isn't there, say so honestly rather than filling the gap with a generic-sounding but fabricated observation.
 
@@ -8109,9 +8812,19 @@ Respond strictly in this JSON format, no markdown, no commentary outside the JSO
   }
 });
 
-app.get("/api/signals/executive-report", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+app.get("/api/signals/executive-report", executiveReportLimiter, verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
   try {
     const user = requireAuth(req);
+    const quota = await checkAndReserveCapability(user.uid, 'executive_report');
+    if (!quota.allowed) {
+      return res.status(429).json({
+        error: quota.plan === 'free'
+          ? "You've reached today's free limit for this. It resets tomorrow, or upgrade to Blaze Break Premium for more."
+          : "You've reached today's fair-use limit for this. It resets tomorrow.",
+        code: 'capability_limit_reached',
+        capability: 'executive_report',
+      });
+    }
     const db = getDb();
     const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
 
@@ -8462,13 +9175,13 @@ if (process.env.TEST_MODE !== 'true') {
                     }));
                     try {
                       liveSession?.sendToolResponse({ functionResponses });
-                    } catch (e) {
-                      console.error("[Nova Live] failed to send tool response:", e);
+                    } catch (e: any) {
+                      console.error("[Nova Live] failed to send tool response:", e?.message || e);
                     }
                   })();
                 }
-              } catch (e) {
-                console.error("[Nova Live] relay-to-client error:", e);
+              } catch (e: any) {
+                console.error("[Nova Live] relay-to-client error:", e?.message || e);
               }
             },
             onerror: (e: any) => {
@@ -8503,8 +9216,8 @@ if (process.env.TEST_MODE !== 'true') {
           if (parsed.audio) {
             liveSession.sendRealtimeInput({ audio: { data: parsed.audio, mimeType: "audio/pcm;rate=16000" } });
           }
-        } catch (e) {
-          console.error("[Nova Live] client message parse error:", e);
+        } catch (e: any) {
+          console.error("[Nova Live] client message parse error:", e?.message || e);
         }
       });
 

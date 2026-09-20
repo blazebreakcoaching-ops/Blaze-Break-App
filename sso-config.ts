@@ -122,6 +122,45 @@ export const validateSsoConfigInput = (input: unknown, encryptionConfigured: boo
   return { valid: true };
 };
 
+// ---- SSRF guard for the "test configuration" reachability check --------
+// server.ts's /sso/test route fetches config.metadataUrl to check it's
+// reachable. https:// is already required by validateSsoConfigInput above,
+// but a URL's scheme says nothing about where it actually points - an org
+// admin (who only needs the org-scoped org.sso.manage permission, not a
+// platform-level one) could otherwise point this at an internal service or
+// a cloud metadata endpoint (e.g. 169.254.169.254) and use the
+// reachable/unreachable response as a probe. This checks the RESOLVED IP
+// address, not the hostname string, so both a bare IP literal and a DNS
+// name that happens to resolve to one are caught the same way - the actual
+// DNS lookup is server.ts's job (this stays pure/I/O-free and testable).
+const isBlockedIpv4 = (ip: string): boolean => {
+  const parts = ip.split('.').map(Number);
+  if (parts.length !== 4 || parts.some((n) => !Number.isInteger(n) || n < 0 || n > 255)) return false;
+  const [a, b] = parts;
+  if (a === 0) return true; // 0.0.0.0/8 - "this network"
+  if (a === 10) return true; // 10.0.0.0/8 - private
+  if (a === 127) return true; // 127.0.0.0/8 - loopback
+  if (a === 169 && b === 254) return true; // 169.254.0.0/16 - link-local, incl. cloud metadata
+  if (a === 172 && b >= 16 && b <= 31) return true; // 172.16.0.0/12 - private
+  if (a === 192 && b === 168) return true; // 192.168.0.0/16 - private
+  if (a === 100 && b >= 64 && b <= 127) return true; // 100.64.0.0/10 - carrier-grade NAT
+  if (a >= 224) return true; // 224.0.0.0/4 multicast + 240.0.0.0/4 reserved
+  return false;
+};
+
+const isBlockedIpv6 = (ip: string): boolean => {
+  const normalized = ip.toLowerCase();
+  if (normalized === '::1' || normalized === '::') return true; // loopback / unspecified
+  if (/^fe[89ab][0-9a-f]:/.test(normalized)) return true; // fe80::/10 - link-local
+  if (/^f[cd][0-9a-f]{2}:/.test(normalized)) return true; // fc00::/7 - unique local
+  const mapped = /^::ffff:(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})$/.exec(normalized);
+  if (mapped) return isBlockedIpv4(mapped[1]); // IPv4-mapped IPv6 - check the embedded address
+  return false;
+};
+
+export const isBlockedIpAddress = (ip: string): boolean =>
+  ip.includes(':') ? isBlockedIpv6(ip) : isBlockedIpv4(ip);
+
 // ---- Real encryption, gated entirely by the caller supplying a key ----
 
 const ALGORITHM = 'aes-256-gcm';

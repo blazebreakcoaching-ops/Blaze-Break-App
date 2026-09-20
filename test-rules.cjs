@@ -316,6 +316,83 @@ async function runTests() {
     createdAt: '2026-06-01', updatedAt: '2026-06-01', canEdit: true
   }));
 
+  // weekly_habit_cycles - previously had NO rule at all (silently
+  // non-functional in production). Confirms the new rule actually lets
+  // the real feature work, not just that it blocks bad writes.
+  const habitCycleRef = userA.firestore().collection('users').doc('userA').collection('weekly_habit_cycles').doc('2026-W06');
+
+  // * user A creates this week's cycle.
+  await assertSucceeds(habitCycleRef.set({
+    weekId: '2026-W06',
+    startedAt: '2026-02-02T00:00:00.000Z',
+    goals: [{ id: 'focus', category: 'Focus', label: 'Complete 3 Deep Work Focus Zone Blocks', target: 3, progress: 0, xpAwarded: false }]
+  }));
+
+  // * user A reads their own cycle.
+  await assertSucceeds(habitCycleRef.get());
+
+  // * user A updates progress (a full overwrite, matching persist()).
+  await assertSucceeds(habitCycleRef.set({
+    weekId: '2026-W06',
+    startedAt: '2026-02-02T00:00:00.000Z',
+    goals: [{ id: 'focus', category: 'Focus', label: 'Complete 3 Deep Work Focus Zone Blocks', target: 3, progress: 1, xpAwarded: false }]
+  }));
+
+  // * user A writes a malformed weekId.
+  await assertFails(habitCycleRef.set({
+    weekId: 'not-a-week',
+    startedAt: '2026-02-02T00:00:00.000Z',
+    goals: []
+  }));
+
+  // * user A writes an extra, unexpected field.
+  await assertFails(habitCycleRef.set({
+    weekId: '2026-W06',
+    startedAt: '2026-02-02T00:00:00.000Z',
+    goals: [],
+    hackData: true
+  }));
+
+  // * user A writes goals as a non-list.
+  await assertFails(habitCycleRef.set({
+    weekId: '2026-W06',
+    startedAt: '2026-02-02T00:00:00.000Z',
+    goals: 'not a list'
+  }));
+
+  // * user A cannot read user B's cycle.
+  await assertFails(userA.firestore().collection('users').doc('userB').collection('weekly_habit_cycles').doc('2026-W06').get());
+
+  // anxiety_reset_events - server-write-only (no client writer exists;
+  // server.ts's POST /api/anxiety-reset is the only legitimate writer).
+  const anxietyEventRef = userA.firestore().collection('anxiety_reset_events').doc('e1');
+
+  // * user A reads their own anxiety reset event.
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    await ctx.firestore().collection('anxiety_reset_events').doc('e1').set({
+      userId: 'userA', mode: 'guided_breath', createdAt: '2026-06-01'
+    });
+  });
+  await assertSucceeds(anxietyEventRef.get());
+
+  // * user A cannot create an anxiety reset event directly (client writes
+  //   are entirely server-mediated now, not just field-validated).
+  await assertFails(userA.firestore().collection('anxiety_reset_events').doc('e2').set({
+    userId: 'userA', mode: 'guided_breath', createdAt: '2026-06-01'
+  }));
+
+  // * user A cannot update or delete an existing anxiety reset event either.
+  await assertFails(anxietyEventRef.update({ mode: 'hacked' }));
+  await assertFails(anxietyEventRef.delete());
+
+  // * user A cannot read user B's anxiety reset event.
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    await ctx.firestore().collection('anxiety_reset_events').doc('eB').set({
+      userId: 'userB', mode: 'guided_breath', createdAt: '2026-06-01'
+    });
+  });
+  await assertFails(userA.firestore().collection('anxiety_reset_events').doc('eB').get());
+
   console.log("All rule tests passed successfully!");
   await testEnv.cleanup();
 }

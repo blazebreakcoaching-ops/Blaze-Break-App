@@ -50,11 +50,13 @@ function seedFullUser() {
   // Stray top-level collections keyed by userId:
   seedDoc(`anxiety_reset_events/are1`, { userId: USER, kind: 'panic', createdAt: '2026-01-01T00:00:00Z' });
   seedDoc(`audit_logs/al1`, { userId: USER, action: 'consent_granted', createdAt: '2026-01-01T00:00:00Z' });
+  seedDoc(`feedback_submissions/fb1`, { userId: USER, category: 'bug', message: 'Something broke', createdAt: '2026-01-01T00:00:00Z' });
   // Another user's data, in the same collections:
   seedDoc(`users/${OTHER}`, { displayName: 'Someone Else' });
   seedDoc(`users/${OTHER}/mood_pulses/mpx`, { moodLabel: 'calm' });
   seedDoc(`anxiety_reset_events/areX`, { userId: OTHER, kind: 'panic' });
   seedDoc(`audit_logs/alX`, { userId: OTHER, action: 'login' });
+  seedDoc(`feedback_submissions/fbX`, { userId: OTHER, category: 'general', message: 'Someone else entirely' });
   // The org the user belongs to:
   seedDoc(`organisations/org_1`, { memberUids: [USER, OTHER], adminUids: [USER], memberTeams: { [USER]: 'team_a' } });
 }
@@ -77,6 +79,8 @@ describe('GET /api/user/export — portability (GDPR Art. 15/20)', () => {
     expect(res.body.collections.anxiety_reset_events[0].userId).toBe(USER);
     expect(res.body.collections.audit_logs).toHaveLength(1);
     expect(res.body.collections.audit_logs[0].userId).toBe(USER);
+    expect(res.body.collections.feedback_submissions).toHaveLength(1);
+    expect(res.body.collections.feedback_submissions[0].userId).toBe(USER);
   });
 
   it('requires authentication', async () => {
@@ -98,8 +102,10 @@ describe('POST /api/user/delete-account — erasure (GDPR Art. 17)', () => {
     expect(getDocRaw(`users/${USER}/mood_pulses/mp1`)).toBeUndefined();
     expect(getDocRaw(`users/${USER}/guardian_alerts/ga1`)).toBeUndefined();
 
-    // anxiety_reset_events (eraseOnDeletion: true) for this user is gone.
+    // anxiety_reset_events and feedback_submissions (eraseOnDeletion: true)
+    // for this user are gone.
     expect(getDocRaw('anxiety_reset_events/are1')).toBeUndefined();
+    expect(getDocRaw('feedback_submissions/fb1')).toBeUndefined();
   });
 
   it('deliberately KEEPS audit_logs — a compliance trail must outlive the account', async () => {
@@ -118,6 +124,7 @@ describe('POST /api/user/delete-account — erasure (GDPR Art. 17)', () => {
     expect(getDocRaw(`users/${OTHER}/mood_pulses/mpx`)).toBeDefined();
     expect(getDocRaw('anxiety_reset_events/areX')).toBeDefined();
     expect(getDocRaw('audit_logs/alX')).toBeDefined();
+    expect(getDocRaw('feedback_submissions/fbX')).toBeDefined();
   });
 
   it('removes the user from their organisation membership', async () => {

@@ -38,4 +38,11 @@ describe('server boots', () => {
     const res = await request(app).get('/api/user/export');
     expect(res.status).toBe(401);
   });
+
+  it('sets a restrictive Permissions-Policy header on every response', async () => {
+    const res = await request(app).get('/api/user/export');
+    expect(res.headers['permissions-policy']).toBeTruthy();
+    expect(res.headers['permissions-policy']).toContain('camera=()');
+    expect(res.headers['permissions-policy']).toContain('microphone=(self)');
+  });
 });

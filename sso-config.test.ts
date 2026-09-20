@@ -9,6 +9,7 @@ import {
   decryptSecret,
   canEnableSsoEnforcement,
   redactSsoConfig,
+  isBlockedIpAddress,
 } from './sso-config';
 
 describe('isSsoProviderType / isAllowedJitRole', () => {
@@ -179,5 +180,49 @@ describe('redactSsoConfig', () => {
 
   it('reports hasSecret: false when neither is present', () => {
     expect(redactSsoConfig({ ...stored, encryptedSecret: null, secretRef: null }).hasSecret).toBe(false);
+  });
+});
+
+describe('isBlockedIpAddress — SSRF guard for the metadataUrl reachability check', () => {
+  it('blocks IPv4 loopback, private, link-local, cloud-metadata, and CGNAT ranges', () => {
+    expect(isBlockedIpAddress('127.0.0.1')).toBe(true);
+    expect(isBlockedIpAddress('127.53.0.9')).toBe(true);
+    expect(isBlockedIpAddress('10.0.0.1')).toBe(true);
+    expect(isBlockedIpAddress('172.16.0.1')).toBe(true);
+    expect(isBlockedIpAddress('172.31.255.255')).toBe(true);
+    expect(isBlockedIpAddress('192.168.1.1')).toBe(true);
+    expect(isBlockedIpAddress('169.254.169.254')).toBe(true); // cloud metadata (AWS/GCP/Azure)
+    expect(isBlockedIpAddress('100.64.0.1')).toBe(true); // carrier-grade NAT
+    expect(isBlockedIpAddress('0.0.0.0')).toBe(true);
+    expect(isBlockedIpAddress('224.0.0.1')).toBe(true); // multicast
+  });
+
+  it('allows ordinary public IPv4 addresses', () => {
+    expect(isBlockedIpAddress('8.8.8.8')).toBe(false);
+    expect(isBlockedIpAddress('1.1.1.1')).toBe(false);
+    expect(isBlockedIpAddress('172.15.255.255')).toBe(false); // just outside 172.16.0.0/12
+    expect(isBlockedIpAddress('172.32.0.0')).toBe(false); // just outside 172.16.0.0/12
+  });
+
+  it('blocks IPv6 loopback, link-local, and unique-local ranges', () => {
+    expect(isBlockedIpAddress('::1')).toBe(true);
+    expect(isBlockedIpAddress('::')).toBe(true);
+    expect(isBlockedIpAddress('fe80::1')).toBe(true);
+    expect(isBlockedIpAddress('fc00::1')).toBe(true);
+    expect(isBlockedIpAddress('fd12:3456:789a::1')).toBe(true);
+  });
+
+  it('blocks an IPv4-mapped IPv6 address whose embedded IPv4 is blocked', () => {
+    expect(isBlockedIpAddress('::ffff:169.254.169.254')).toBe(true);
+    expect(isBlockedIpAddress('::ffff:127.0.0.1')).toBe(true);
+  });
+
+  it('allows an ordinary public IPv6 address', () => {
+    expect(isBlockedIpAddress('2001:4860:4860::8888')).toBe(false); // Google public DNS
+  });
+
+  it('is not fooled by a malformed/non-numeric string', () => {
+    expect(isBlockedIpAddress('not-an-ip')).toBe(false);
+    expect(isBlockedIpAddress('999.999.999.999')).toBe(false);
   });
 });

@@ -1,16 +1,19 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Sparkles, ArrowRight, ShieldCheck, BatteryLow, MessageSquareText, LogIn, ArrowLeft, Loader2 } from 'lucide-react';
+import { Sparkles, ArrowRight, ShieldCheck, BatteryLow, MessageSquareText, LogIn, ArrowLeft, Loader2, Mail, Lock } from 'lucide-react';
 import { useAuth } from '../lib/auth';
 import { useFocusTrap } from '../lib/useFocusTrap';
+import { secureApiFetch } from '../lib/secure-api';
 
 interface LandingPageProps {
   onStart: () => void;
   onOpenTrustCentre: () => void;
 }
 
+type AuthMode = 'signin' | 'signup' | 'forgot';
+
 export const LandingPage = ({ onStart, onOpenTrustCentre }: LandingPageProps) => {
-  const { user, signIn } = useAuth();
+  const { user, signIn, signUpWithEmail, signInWithEmail, sendPasswordReset } = useAuth();
   const [showAuthModal, setShowAuthModal] = useState(false);
   const authDialogRef = useFocusTrap(showAuthModal);
 
@@ -21,6 +24,28 @@ export const LandingPage = ({ onStart, onOpenTrustCentre }: LandingPageProps) =>
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [showAuthModal]);
   const [signingIn, setSigningIn] = useState(false);
+
+  // Email/password sign-up, sign-in, and forgot-password all share this one
+  // modal - `authMode` picks which form is showing. Reset to a clean slate
+  // every time the modal opens, so a previous attempt's typed password or
+  // error message never lingers into the next visit.
+  const [authMode, setAuthMode] = useState<AuthMode>('signin');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [authError, setAuthError] = useState<string | null>(null);
+  const [emailAuthSubmitting, setEmailAuthSubmitting] = useState(false);
+  const [resetLinkSent, setResetLinkSent] = useState(false);
+
+  useEffect(() => {
+    if (showAuthModal) return;
+    setAuthMode('signin');
+    setEmail('');
+    setPassword('');
+    setConfirmPassword('');
+    setAuthError(null);
+    setResetLinkSent(false);
+  }, [showAuthModal]);
 
   const handleStartRequest = () => {
     if (user) {
@@ -43,12 +68,68 @@ export const LandingPage = ({ onStart, onOpenTrustCentre }: LandingPageProps) =>
     }
   };
 
+  const handleEmailAuthSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAuthError(null);
+    if (authMode === 'signup' && password !== confirmPassword) {
+      setAuthError("Those passwords don't match.");
+      return;
+    }
+    if (password.length < 8) {
+      setAuthError('Password must be at least 8 characters.');
+      return;
+    }
+    try {
+      setEmailAuthSubmitting(true);
+      if (authMode === 'signup') {
+        await signUpWithEmail(email, password);
+        // Best-effort - never block getting into the app on this succeeding.
+        secureApiFetch('/api/auth/verify-email/send', { method: 'POST' }).catch(() => {});
+      } else {
+        await signInWithEmail(email, password);
+      }
+      setShowAuthModal(false);
+      onStart();
+    } catch (err: any) {
+      setAuthError(err?.message || 'Something went wrong. Please try again.');
+    } finally {
+      setEmailAuthSubmitting(false);
+    }
+  };
+
+  const handleForgotPasswordSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAuthError(null);
+    try {
+      setEmailAuthSubmitting(true);
+      await sendPasswordReset(email);
+      setResetLinkSent(true);
+    } catch (err: any) {
+      setAuthError(err?.message || 'Something went wrong. Please try again.');
+    } finally {
+      setEmailAuthSubmitting(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-background selection:bg-primary/20 selection:text-[#9a3412] dark:selection:text-primary relative overflow-hidden text-text-main">
       {/* Premium Glow Aura Backdrops */}
       <div className="absolute top-0 left-1/4 w-[500px] h-[500px] bg-primary/5 rounded-full blur-[140px] pointer-events-none" />
       <div className="absolute bottom-10 right-1/4 w-[600px] h-[600px] bg-teal-500/3 rounded-full blur-[160px] pointer-events-none" />
-      <div className="absolute inset-0 bg-[linear-gradient(to_right,#161f30_1px,transparent_1px),linear-gradient(to_bottom,#161f30_1px,transparent_1px)] bg-[size:4rem_4rem] [mask-image:radial-gradient(ellipse_60%_50%_at_50%_0%,#000_70%,transparent_100%)] opacity-25" />
+      {/* iOS Safari/Chrome (both WebKit) need -webkit-mask-image explicitly -
+          without it, WebKit ignores the mask entirely and this faint grid
+          pattern renders as a solid dark block over the hero heading
+          instead of fading out. Set via inline style rather than another
+          Tailwind arbitrary-property class so both the standard and
+          -webkit- prefixed properties are guaranteed to land, regardless
+          of what the build pipeline does or doesn't autoprefix. */}
+      <div
+        className="absolute inset-0 bg-[linear-gradient(to_right,#161f30_1px,transparent_1px),linear-gradient(to_bottom,#161f30_1px,transparent_1px)] bg-[size:4rem_4rem] opacity-25"
+        style={{
+          maskImage: 'radial-gradient(ellipse 60% 50% at 50% 0%, #000 70%, transparent 100%)',
+          WebkitMaskImage: 'radial-gradient(ellipse 60% 50% at 50% 0%, #000 70%, transparent 100%)',
+        }}
+      />
 
       {/* Navigation */}
       <nav className="fixed top-0 w-full z-50 px-8 py-6 flex justify-between items-center backdrop-blur-xl bg-background/70 border-b border-white/[0.04]">
@@ -192,30 +273,169 @@ export const LandingPage = ({ onStart, onOpenTrustCentre }: LandingPageProps) =>
                 <div className="w-12 h-12 bg-primary/10 rounded-2xl flex items-center justify-center text-primary mb-4">
                   <Sparkles className="w-6 h-6" />
                 </div>
-                <h3 id="auth-modal-title" className="text-2xl font-bold text-text-main tracking-tight">Access Account</h3>
-                <p className="text-text-muted text-sm mt-1 leading-relaxed">
-                  Register or login. Blaze Break is in controlled early access. Features may evolve. Data tools are for coaching support, not medical diagnosis. Optional Nova AI is a recovery coach, not a therapist.
-                </p>
+                <h3 id="auth-modal-title" className="text-2xl font-bold text-text-main tracking-tight">
+                  {authMode === 'forgot' ? 'Reset your password' : authMode === 'signup' ? 'Create your account' : 'Access Account'}
+                </h3>
+                {authMode !== 'forgot' && (
+                  <p className="text-text-muted text-sm mt-1 leading-relaxed">
+                    Register or login. Blaze Break is in controlled early access. Features may evolve. Data tools are for coaching support, not medical diagnosis. Optional Nova AI is a recovery coach, not a therapist.
+                  </p>
+                )}
               </div>
 
-              <div className="space-y-3 pt-2">
-                <button
-                  onClick={handleGoogleSignIn}
-                  disabled={signingIn}
-                  className="w-full flex items-center justify-center gap-3 bg-text-main text-surface font-bold text-xs uppercase tracking-widest py-4.5 rounded-2xl hover:scale-[1.02] active:scale-95 transition-all shadow-lg shadow-text-main/15 disabled:opacity-50"
-                >
-                  {signingIn ? (
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                  ) : (
-                    <LogIn className="w-4 h-4" />
-                  )}
-                  <span role="status" aria-live="polite">{signingIn ? 'Initialising...' : 'Continue with Google'}</span>
-                </button>
-              </div>
+              {authMode === 'forgot' ? (
+                resetLinkSent ? (
+                  <div className="space-y-4 pt-2">
+                    <p className="text-sm text-text-main leading-relaxed">
+                      If <span className="font-bold">{email}</span> has a Blaze Break account, we've sent a link to reset the password. Check the inbox (and spam folder) for an email from Blaze Break Support.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => setAuthMode('signin')}
+                      className="w-full flex items-center justify-center gap-2 text-xs font-bold uppercase tracking-widest text-text-muted hover:text-text-main transition-colors py-2"
+                    >
+                      <ArrowLeft className="w-3.5 h-3.5" /> Back to sign in
+                    </button>
+                  </div>
+                ) : (
+                  <form onSubmit={handleForgotPasswordSubmit} className="space-y-3 pt-2">
+                    <p className="text-text-muted text-sm leading-relaxed -mt-2">
+                      Enter the email on your account and we'll send a link to reset your password.
+                    </p>
+                    <div className="relative">
+                      <Mail className="w-4 h-4 text-text-muted absolute left-4 top-1/2 -translate-y-1/2" aria-hidden="true" />
+                      <input
+                        type="email"
+                        required
+                        autoComplete="email"
+                        value={email}
+                        onChange={(e) => setEmail(e.target.value)}
+                        placeholder="Email address"
+                        className="w-full bg-background border border-border rounded-xl pl-11 pr-4 py-3.5 text-sm text-text-main placeholder:text-text-muted focus:outline-none focus:border-primary/50 transition-colors"
+                      />
+                    </div>
+                    {authError && (
+                      <p role="alert" className="text-xs text-destructive leading-relaxed">{authError}</p>
+                    )}
+                    <button
+                      type="submit"
+                      disabled={emailAuthSubmitting}
+                      className="w-full flex items-center justify-center gap-3 bg-text-main text-surface font-bold text-xs uppercase tracking-widest py-4.5 rounded-2xl hover:scale-[1.02] active:scale-95 transition-all shadow-lg shadow-text-main/15 disabled:opacity-50"
+                    >
+                      {emailAuthSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                      <span role="status" aria-live="polite">{emailAuthSubmitting ? 'Sending…' : 'Send reset link'}</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { setAuthError(null); setAuthMode('signin'); }}
+                      className="w-full flex items-center justify-center gap-2 text-xs font-bold uppercase tracking-widest text-text-muted hover:text-text-main transition-colors py-2"
+                    >
+                      <ArrowLeft className="w-3.5 h-3.5" /> Back to sign in
+                    </button>
+                  </form>
+                )
+              ) : (
+                <>
+                  <div className="space-y-3 pt-2">
+                    <button
+                      onClick={handleGoogleSignIn}
+                      disabled={signingIn}
+                      className="w-full flex items-center justify-center gap-3 bg-text-main text-surface font-bold text-xs uppercase tracking-widest py-4.5 rounded-2xl hover:scale-[1.02] active:scale-95 transition-all shadow-lg shadow-text-main/15 disabled:opacity-50"
+                    >
+                      {signingIn ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <LogIn className="w-4 h-4" />
+                      )}
+                      <span role="status" aria-live="polite">{signingIn ? 'Initialising...' : 'Continue with Google'}</span>
+                    </button>
+                  </div>
 
-              <p className="text-xs text-text-muted text-center leading-normal">
-                Guardian, SMS/WhatsApp, and payments are currently disabled. Do not use for urgent or emergency support.
-              </p>
+                  <div className="flex items-center gap-3">
+                    <div className="flex-1 h-px bg-border" />
+                    <span className="text-[10px] font-black uppercase tracking-widest text-text-muted">or with email</span>
+                    <div className="flex-1 h-px bg-border" />
+                  </div>
+
+                  <form onSubmit={handleEmailAuthSubmit} className="space-y-3">
+                    <div className="relative">
+                      <Mail className="w-4 h-4 text-text-muted absolute left-4 top-1/2 -translate-y-1/2" aria-hidden="true" />
+                      <input
+                        type="email"
+                        required
+                        autoComplete="email"
+                        value={email}
+                        onChange={(e) => setEmail(e.target.value)}
+                        placeholder="Email address"
+                        className="w-full bg-background border border-border rounded-xl pl-11 pr-4 py-3.5 text-sm text-text-main placeholder:text-text-muted focus:outline-none focus:border-primary/50 transition-colors"
+                      />
+                    </div>
+                    <div className="relative">
+                      <Lock className="w-4 h-4 text-text-muted absolute left-4 top-1/2 -translate-y-1/2" aria-hidden="true" />
+                      <input
+                        type="password"
+                        required
+                        autoComplete={authMode === 'signup' ? 'new-password' : 'current-password'}
+                        minLength={8}
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        placeholder="Password"
+                        className="w-full bg-background border border-border rounded-xl pl-11 pr-4 py-3.5 text-sm text-text-main placeholder:text-text-muted focus:outline-none focus:border-primary/50 transition-colors"
+                      />
+                    </div>
+                    {authMode === 'signup' && (
+                      <div className="relative">
+                        <Lock className="w-4 h-4 text-text-muted absolute left-4 top-1/2 -translate-y-1/2" aria-hidden="true" />
+                        <input
+                          type="password"
+                          required
+                          autoComplete="new-password"
+                          minLength={8}
+                          value={confirmPassword}
+                          onChange={(e) => setConfirmPassword(e.target.value)}
+                          placeholder="Confirm password"
+                          className="w-full bg-background border border-border rounded-xl pl-11 pr-4 py-3.5 text-sm text-text-main placeholder:text-text-muted focus:outline-none focus:border-primary/50 transition-colors"
+                        />
+                      </div>
+                    )}
+                    {authMode === 'signin' && (
+                      <div className="text-right -mt-1">
+                        <button
+                          type="button"
+                          onClick={() => { setAuthError(null); setAuthMode('forgot'); }}
+                          className="text-xs font-bold text-text-muted hover:text-text-main transition-colors"
+                        >
+                          Forgot password?
+                        </button>
+                      </div>
+                    )}
+                    {authError && (
+                      <p role="alert" className="text-xs text-destructive leading-relaxed">{authError}</p>
+                    )}
+                    <button
+                      type="submit"
+                      disabled={emailAuthSubmitting}
+                      className="w-full flex items-center justify-center gap-3 bg-primary text-white font-bold text-xs uppercase tracking-widest py-4.5 rounded-2xl hover:scale-[1.02] active:scale-95 transition-all shadow-lg shadow-primary/15 disabled:opacity-50"
+                    >
+                      {emailAuthSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                      <span role="status" aria-live="polite">
+                        {emailAuthSubmitting ? 'Please wait…' : authMode === 'signup' ? 'Create account' : 'Sign in'}
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { setAuthError(null); setAuthMode(authMode === 'signup' ? 'signin' : 'signup'); }}
+                      className="w-full text-center text-xs font-bold text-text-muted hover:text-text-main transition-colors py-1"
+                    >
+                      {authMode === 'signup' ? 'Already have an account? Sign in' : "Don't have an account? Sign up"}
+                    </button>
+                  </form>
+
+                  <p className="text-xs text-text-muted text-center leading-normal">
+                    Guardian, SMS/WhatsApp, and payments are currently disabled. Do not use for urgent or emergency support.
+                  </p>
+                </>
+              )}
             </motion.div>
           </div>
         )}
