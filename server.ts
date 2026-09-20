@@ -4778,12 +4778,27 @@ app.get("/api/admin/users/:uid", verifyAppCheck, authenticateFirebaseUser, async
   }
 });
 
+// The app-facing AuthRole union (src/types.ts) - kept in sync by hand since
+// that file isn't imported here. Previously this route stored/claimed
+// whatever string the request body sent verbatim - a typo or a malicious
+// value would silently become this user's role with no rejection.
+const APP_USER_ROLES = [
+  'individual', 'employee', 'recovery_ally', 'manager', 'organisation_admin',
+  'executive', 'platform_admin', 'security_admin', 'platform_owner',
+  'support_admin', 'content_admin', 'coach_admin', 'b2b_admin', 'viewer_admin', 'user',
+] as const;
+const AppUserRoleSchema = z.object({ role: z.enum(APP_USER_ROLES) }).strict();
+
 app.post("/api/admin/users/:uid/role", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
   try {
     requirePlatformOwner(req);
+    const parsed = AppUserRoleSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: `"role" must be one of: ${APP_USER_ROLES.join(', ')}.` });
+    }
     const targetUid = req.params.uid;
-    const { role } = req.body;
-    
+    const { role } = parsed.data;
+
     await getAuth().setCustomUserClaims(targetUid, { role });
     
     const db = getDb();
@@ -4864,11 +4879,29 @@ app.get("/api/admin/admin-users", verifyAppCheck, authenticateFirebaseUser, asyn
   }
 });
 
+// The admin-panel role vocabulary getPermissionsForRole() above actually
+// knows how to map to permissions - narrower than APP_USER_ROLES (an admin
+// account is never 'individual', 'employee', etc.). Previously unvalidated:
+// an invalid role string would still set admin:true on the account and
+// create/update an admin_users doc, just with getPermissionsForRole()'s
+// default: [] - a real admin account with a nonsense role and no
+// permissions, silently.
+const ADMIN_PANEL_ROLES = [
+  'platform_owner', 'platform_admin', 'support_admin',
+  'content_admin', 'coach_admin', 'b2b_admin', 'viewer_admin',
+] as const;
+const AdminPanelRoleSchema = z.object({ role: z.enum(ADMIN_PANEL_ROLES) }).strict();
+
 app.post("/api/admin/admin-users", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
   try {
     requirePlatformOwner(req);
-    const { email, role, displayName } = req.body;
-    
+    const { email, displayName } = req.body;
+    const parsedRole = AdminPanelRoleSchema.safeParse({ role: req.body.role });
+    if (!parsedRole.success) {
+      return res.status(400).json({ error: `"role" must be one of: ${ADMIN_PANEL_ROLES.join(', ')}.` });
+    }
+    const { role } = parsedRole.data;
+
     const authUser = await getAuth().getUserByEmail(email);
     const targetUid = authUser.uid;
     
@@ -4901,9 +4934,13 @@ app.post("/api/admin/admin-users", verifyAppCheck, authenticateFirebaseUser, asy
 app.post("/api/admin/admin-users/:uid/role", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
   try {
     requirePlatformOwner(req);
+    const parsed = AdminPanelRoleSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: `"role" must be one of: ${ADMIN_PANEL_ROLES.join(', ')}.` });
+    }
     const targetUid = req.params.uid;
-    const { role } = req.body;
-    
+    const { role } = parsed.data;
+
     await assertNotLastPlatformOwner(targetUid, firebaseConfigDatabaseId);
     
     await getAuth().setCustomUserClaims(targetUid, {
