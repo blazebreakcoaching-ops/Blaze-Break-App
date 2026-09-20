@@ -109,7 +109,8 @@ export type CapabilityId =
   | 'diagnose'
   | 'exports'
   | 'nova_manager_coach'
-  | 'resentment_analysis';
+  | 'resentment_analysis'
+  | 'executive_report';
 
 export interface CapabilityLimit {
   enabled: boolean;
@@ -161,6 +162,13 @@ export const CAPABILITIES: Record<CapabilityId, CapabilityConfig> = {
   // and abuse exposure: any signed-in account could call it unlimited
   // times), unlike every other Gemini-backed route.
   resentment_analysis: {
+    free: { enabled: true, dailyLimit: 5 },
+    premium: { enabled: true, dailyLimit: 50 },
+  },
+  // Same shape again - a single-shot generation grounded in the caller's
+  // own last-7-days data. Previously had no rate limiter and no quota at
+  // all, unlike every other Gemini-backed route.
+  executive_report: {
     free: { enabled: true, dailyLimit: 5 },
     premium: { enabled: true, dailyLimit: 50 },
   },

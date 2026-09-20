@@ -280,6 +280,27 @@ const resentmentAnalysisLimiter = rateLimit({
   validate: { xForwardedForHeader: false, default: true }
 });
 
+// Same shape again - the executive report and manager coach are each a
+// comparable single-shot Gemini call, and previously had no rate limiter
+// at all (unlike nova/chat, diagnose, and every other AI-backed route).
+const executiveReportLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 15,
+  message: { error: 'Too many requests, please try again shortly.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+  validate: { xForwardedForHeader: false, default: true }
+});
+
+const managerCoachLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 15,
+  message: { error: 'Too many requests, please try again shortly.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+  validate: { xForwardedForHeader: false, default: true }
+});
+
 const exportLimiter = rateLimit({
   windowMs: 60 * 60 * 1000,
   max: 5,
@@ -2977,7 +2998,7 @@ app.get("/api/entitlements/me", verifyAppCheck, authenticateFirebaseUser, async 
     const usageSnap = await db.collection("users").doc(uid).collection("usage_counters").doc(usageCounterTodayKey()).get();
     const usageData = usageSnap.data() || {};
     const capabilities: Record<string, { enabled: boolean; limit: number | null; used: number }> = {};
-    (['nova_text', 'nova_voice', 'diagnose', 'exports', 'resentment_analysis'] as CapabilityId[]).forEach((id) => {
+    (['nova_text', 'nova_voice', 'diagnose', 'exports', 'resentment_analysis', 'executive_report'] as CapabilityId[]).forEach((id) => {
       const cap = getCapability(plan, id);
       capabilities[id] = { enabled: cap.enabled, limit: cap.dailyLimit, used: Number(usageData[id]) || 0 };
     });
@@ -6401,7 +6422,7 @@ app.get("/api/org/:orgId/governance", verifyAppCheck, authenticateFirebaseUser, 
 // never a named individual, and never returned below the org's cohort
 // threshold. No conversation history, no tool use, no memory writes -
 // just today's real numbers in, 2-3 grounded suggestions out.
-app.get("/api/org/:orgId/manager-coach", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+app.get("/api/org/:orgId/manager-coach", managerCoachLimiter, verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
   try {
     const { orgId } = req.params;
     const { user, org } = await requireOrgAdmin(req, orgId);
@@ -8681,9 +8702,19 @@ Respond strictly in this JSON format, no markdown, no commentary outside the JSO
   }
 });
 
-app.get("/api/signals/executive-report", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+app.get("/api/signals/executive-report", executiveReportLimiter, verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
   try {
     const user = requireAuth(req);
+    const quota = await checkAndReserveCapability(user.uid, 'executive_report');
+    if (!quota.allowed) {
+      return res.status(429).json({
+        error: quota.plan === 'free'
+          ? "You've reached today's free limit for this. It resets tomorrow, or upgrade to Blaze Break Premium for more."
+          : "You've reached today's fair-use limit for this. It resets tomorrow.",
+        code: 'capability_limit_reached',
+        capability: 'executive_report',
+      });
+    }
     const db = getDb();
     const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
 
