@@ -400,7 +400,7 @@ service cloud.firestore {
         allow read: if isOwner(uid);
         allow delete: if isOwner(uid);
         allow create, update: if isOwner(uid)
-            && hasOnly(['allowCheckins', 'allowEnergyBudgets', 'allowMoodPulses', 'allowBodyCheckins', 'allowWins', 'allowWeeklyReviews', 'allowBoundaryScripts', 'allowGoals', 'allowRecoveryDebt', 'allowRecoveryVelocity', 'allowEnergyTrend', 'allowMoodTrend', 'allowCalendarSignals', 'allowNovaMemory', 'allowNovaMemorySuggestions', 'allowNovaUseSavedMemories', 'allowNovaRememberCoachingPreferences', 'allowNovaRememberRecoveryPatterns', 'allowNovaRememberGoals', 'updatedAt'])
+            && hasOnly(['allowCheckins', 'allowEnergyBudgets', 'allowMoodPulses', 'allowBodyCheckins', 'allowWins', 'allowWeeklyReviews', 'allowBoundaryScripts', 'allowGoals', 'allowRecoveryDebt', 'allowRecoveryVelocity', 'allowEnergyTrend', 'allowMoodTrend', 'allowCalendarSignals', 'allowFingerprint', 'allowRecoveryPlanProgress', 'allowDiagnosisProgress', 'allowEnergyCommitments', 'allowStressTriggers', 'allowHabitCycles', 'allowFuelLogs', 'allowFocusSessions', 'allowSomaticResets', 'allowRecoveryAlly', 'allowNovaMemory', 'allowNovaMemorySuggestions', 'allowNovaUseSavedMemories', 'allowNovaRememberCoachingPreferences', 'allowNovaRememberRecoveryPatterns', 'allowNovaRememberGoals', 'updatedAt'])
             && hasAll(['allowCheckins', 'allowEnergyBudgets', 'allowMoodPulses', 'allowBodyCheckins', 'allowWins', 'allowWeeklyReviews', 'allowBoundaryScripts', 'allowGoals', 'allowRecoveryDebt', 'allowRecoveryVelocity', 'allowEnergyTrend', 'allowMoodTrend', 'allowNovaMemory', 'allowNovaMemorySuggestions', 'allowNovaUseSavedMemories', 'allowNovaRememberCoachingPreferences', 'allowNovaRememberRecoveryPatterns', 'allowNovaRememberGoals'])
             && request.resource.data.allowCheckins is bool
             && request.resource.data.allowEnergyBudgets is bool
@@ -415,6 +415,16 @@ service cloud.firestore {
             && request.resource.data.allowEnergyTrend is bool
             && request.resource.data.allowMoodTrend is bool
             && (!('allowCalendarSignals' in request.resource.data) || request.resource.data.allowCalendarSignals is bool)
+            && (!('allowFingerprint' in request.resource.data) || request.resource.data.allowFingerprint is bool)
+            && (!('allowRecoveryPlanProgress' in request.resource.data) || request.resource.data.allowRecoveryPlanProgress is bool)
+            && (!('allowDiagnosisProgress' in request.resource.data) || request.resource.data.allowDiagnosisProgress is bool)
+            && (!('allowEnergyCommitments' in request.resource.data) || request.resource.data.allowEnergyCommitments is bool)
+            && (!('allowStressTriggers' in request.resource.data) || request.resource.data.allowStressTriggers is bool)
+            && (!('allowHabitCycles' in request.resource.data) || request.resource.data.allowHabitCycles is bool)
+            && (!('allowFuelLogs' in request.resource.data) || request.resource.data.allowFuelLogs is bool)
+            && (!('allowFocusSessions' in request.resource.data) || request.resource.data.allowFocusSessions is bool)
+            && (!('allowSomaticResets' in request.resource.data) || request.resource.data.allowSomaticResets is bool)
+            && (!('allowRecoveryAlly' in request.resource.data) || request.resource.data.allowRecoveryAlly is bool)
             && request.resource.data.allowNovaMemory is bool
             && request.resource.data.allowNovaMemorySuggestions is bool
             && request.resource.data.allowNovaUseSavedMemories is bool
@@ -659,9 +669,15 @@ service cloud.firestore {
       match /diagnosis_progress/{profileId} {
         allow read, delete: if isOwner(uid);
         allow create, update: if isOwner(uid)
-            && hasOnly(['completedActions', 'committedBoundaries', 'reflections', 'awardedReflections', 'updatedAt'])
+            && hasOnly(['completedActions', 'committedBoundaries', 'allActionIds', 'allBoundaryIds', 'reflections', 'awardedReflections', 'updatedAt'])
             && (!('completedActions' in request.resource.data) || request.resource.data.completedActions is list)
             && (!('committedBoundaries' in request.resource.data) || request.resource.data.committedBoundaries is list)
+            // allActionIds/allBoundaryIds: same "was missing from hasOnly,
+            // so every write silently failed" bug as recovery_plan_progress
+            // above - DiagnoseSection.tsx has written these since
+            // GET /api/user/resume-prompt needed them.
+            && (!('allActionIds' in request.resource.data) || request.resource.data.allActionIds is list)
+            && (!('allBoundaryIds' in request.resource.data) || request.resource.data.allBoundaryIds is list)
             && (!('awardedReflections' in request.resource.data) || request.resource.data.awardedReflections is list)
             && (!('reflections' in request.resource.data) || request.resource.data.reflections is map);
       }
@@ -670,8 +686,16 @@ service cloud.firestore {
       match /recovery_plan_progress/state {
         allow read, delete: if isOwner(uid);
         allow create, update: if isOwner(uid)
-            && hasOnly(['completedIds', 'submittedJournals', 'nickname', 'leaderboardOptIn', 'updatedAt'])
+            && hasOnly(['completedIds', 'allActionIds', 'submittedJournals', 'nickname', 'leaderboardOptIn', 'updatedAt'])
             && (!('completedIds' in request.resource.data) || request.resource.data.completedIds is list)
+            // allActionIds: the full set of this plan's action ids, written
+            // once when the plan is built - RecoveryPlan.tsx has written this
+            // alongside completedIds since GET /api/user/resume-prompt needed
+            // it to compute "N remaining", but it was missing from this list
+            // (hasOnly rejects any field not named here), so every one of
+            // those writes was silently failing and the resume-prompt was
+            // permanently dead.
+            && (!('allActionIds' in request.resource.data) || request.resource.data.allActionIds is list)
             && (!('submittedJournals' in request.resource.data) || (request.resource.data.submittedJournals is list && request.resource.data.submittedJournals.size() <= 100))
             && (!('nickname' in request.resource.data) || isStringWithMax(request.resource.data.nickname, 40))
             && (!('leaderboardOptIn' in request.resource.data) || request.resource.data.leaderboardOptIn is bool);

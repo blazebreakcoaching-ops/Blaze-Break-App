@@ -1534,6 +1534,163 @@ async function getNovaContextAndMetadata(uid: string, firestoreDb: any): Promise
       }
     }
 
+    // Broader "Nova sees the whole app" pass - the categories below fill in
+    // modules the context builder never read from at all, so Nova was
+    // context-blind to them even with every permission above already
+    // granted. Same compact-aggregate-only rule as everything above: counts,
+    // distributions, numeric summaries - never raw free text (trigger notes,
+    // reflections, journal/venting content stay excluded, same as checkins'
+    // note field and boundary_scripts' content already are). These flags are
+    // newly added to nova_permissions/current, so an existing user's saved
+    // doc may not have them set yet - `!== false` (not a strict truthy
+    // check) keeps this genuinely default-on for them too, not just for
+    // brand-new accounts, matching allowCalendarSignals' existing precedent
+    // (src/lib/nova-brain.ts's isCalendarSignalConsentGranted).
+
+    // Burnout Fingerprint / archetype - arguably the single most
+    // foundational piece of "who is this person" that was missing.
+    if (perms.allowFingerprint !== false) {
+      const fpSnap = await firestoreDb.collection('users').doc(uid).collection('recovery').doc('fingerprint').get();
+      if (fpSnap.exists) {
+        const data = fpSnap.data();
+        infoParts.push(`Burnout Fingerprint:
+- Archetype: ${data?.archetype || "N/A"}`);
+        used.push("fingerprint");
+      }
+    }
+
+    // Recovery Plan progress - completion only, never the submitted journal text.
+    if (perms.allowRecoveryPlanProgress !== false) {
+      const planSnap = await firestoreDb.collection('users').doc(uid).collection('recovery_plan_progress').doc('state').get();
+      if (planSnap.exists) {
+        const data = planSnap.data()!;
+        const allIds: string[] = Array.isArray(data.allActionIds) ? data.allActionIds : [];
+        const completedIds: string[] = Array.isArray(data.completedIds) ? data.completedIds : [];
+        if (allIds.length > 0) {
+          infoParts.push(`Recovery Plan Progress:
+- Completed: ${completedIds.length} of ${allIds.length} actions`);
+          used.push("recovery_plan_progress");
+        }
+      }
+    }
+
+    // Post-check-in action plan progress, per burnout profile - completion
+    // counts only, never the written reflections themselves.
+    if (perms.allowDiagnosisProgress !== false) {
+      const diagSnap = await firestoreDb.collection('users').doc(uid).collection('diagnosis_progress').get();
+      const diagLines: string[] = [];
+      diagSnap.docs.forEach((d: any) => {
+        const data = d.data();
+        const allActionIds: string[] = Array.isArray(data.allActionIds) ? data.allActionIds : [];
+        const allBoundaryIds: string[] = Array.isArray(data.allBoundaryIds) ? data.allBoundaryIds : [];
+        const completedActions: string[] = Array.isArray(data.completedActions) ? data.completedActions : [];
+        const committedBoundaries: string[] = Array.isArray(data.committedBoundaries) ? data.committedBoundaries : [];
+        if (allActionIds.length + allBoundaryIds.length > 0) {
+          diagLines.push(`- ${d.id}: ${completedActions.length} of ${allActionIds.length} actions completed, ${committedBoundaries.length} of ${allBoundaryIds.length} boundary scripts committed`);
+        }
+      });
+      if (diagLines.length > 0) {
+        infoParts.push(`Action Plan Progress:\n${diagLines.join("\n")}`);
+        used.push("diagnosis_progress");
+      }
+    }
+
+    // Energy Commitments - real current active load, same figure the
+    // recommendation engine already computes for the "your active load
+    // looks heavy" nudge, now visible to Nova in conversation too.
+    if (perms.allowEnergyCommitments !== false) {
+      const commitSnap = await firestoreDb.collection('users').doc(uid).collection('energy_commitments').where('status', '==', 'active').get();
+      if (!commitSnap.empty) {
+        const totalDrain = commitSnap.docs.reduce((sum: number, d: any) => sum + (d.data().energyDrain || 0), 0);
+        infoParts.push(`Energy Commitments Summary:
+- Active commitments: ${commitSnap.size}
+- Total active energy drain: ${totalDrain} units`);
+        used.push("energy_commitments");
+      }
+    }
+
+    // Stress Triggers - frequency and severity only, never the free-text note.
+    if (perms.allowStressTriggers !== false) {
+      const triggerSnap = await firestoreDb.collection('users').doc(uid).collection('stress_triggers').orderBy('createdAt', 'desc').limit(NOVA_CONTEXT_RECENT_LIMIT).get();
+      if (!triggerSnap.empty) {
+        const severities = triggerSnap.docs.map((d: any) => d.data().severity).filter((v: any) => typeof v === 'number');
+        const avgSeverity = severities.length > 0 ? Math.round((severities.reduce((a: number, b: number) => a + b, 0) / severities.length) * 10) / 10 : null;
+        infoParts.push(`Stress Triggers Summary:
+- Number of logged triggers: ${describeCount(triggerSnap.size)}
+- Average severity: ${avgSeverity !== null ? avgSeverity + "/10" : "N/A"}`);
+        used.push("stress_triggers");
+      }
+    }
+
+    // Weekly Habit Cycles
+    if (perms.allowHabitCycles !== false) {
+      const habitSnap = await firestoreDb.collection('users').doc(uid).collection('weekly_habit_cycles').orderBy('startedAt', 'desc').limit(NOVA_CONTEXT_RECENT_LIMIT).get();
+      if (!habitSnap.empty) {
+        const totalGoals = habitSnap.docs.reduce((sum: number, d: any) => sum + (Array.isArray(d.data().goals) ? d.data().goals.length : 0), 0);
+        infoParts.push(`Weekly Habit Cycles Summary:
+- Weeks tracked: ${describeCount(habitSnap.size)}
+- Total habit goals set: ${totalGoals}`);
+        used.push("habit_cycles");
+      }
+    }
+
+    // Recovery Fuel Engine's daily physiological check-in
+    if (perms.allowFuelLogs !== false) {
+      const fuelSnap = await firestoreDb.collection('users').doc(uid).collection('recovery_fuel_logs').orderBy('createdAt', 'desc').limit(NOVA_CONTEXT_RECENT_LIMIT).get();
+      if (!fuelSnap.empty) {
+        const count = fuelSnap.size;
+        const skippedBreakfast = fuelSnap.docs.filter((d: any) => d.data().skippedBreakfast === true).length;
+        const hydrationValues = fuelSnap.docs.map((d: any) => d.data().hydrationGlasses).filter((v: any) => typeof v === 'number');
+        const avgHydration = hydrationValues.length > 0 ? Math.round(hydrationValues.reduce((a: number, b: number) => a + b, 0) / hydrationValues.length) : null;
+        infoParts.push(`Recovery Fuel Summary:
+- Days logged: ${describeCount(count)}
+- Skipped breakfast: ${skippedBreakfast} of ${count} logged days
+- Average hydration: ${avgHydration !== null ? avgHydration + " glasses/day" : "N/A"}`);
+        used.push("fuel_logs");
+      }
+    }
+
+    // Focus Zone sessions
+    if (perms.allowFocusSessions !== false) {
+      const focusSnap = await firestoreDb.collection('users').doc(uid).collection('focus_sessions').orderBy('createdAt', 'desc').limit(NOVA_CONTEXT_RECENT_LIMIT).get();
+      if (!focusSnap.empty) {
+        const completed = focusSnap.docs.filter((d: any) => d.data().completed === true).length;
+        const totalMinutes = focusSnap.docs.reduce((sum: number, d: any) => sum + (d.data().durationMinutes || 0), 0);
+        infoParts.push(`Focus Sessions Summary:
+- Sessions logged: ${describeCount(focusSnap.size)}
+- Completed: ${completed}
+- Total focused minutes: ${totalMinutes}`);
+        used.push("focus_sessions");
+      }
+    }
+
+    // Nervous System Reset (somatic reset) usage
+    if (perms.allowSomaticResets !== false) {
+      const somaticSnap = await firestoreDb.collection('users').doc(uid).collection('somatic_reset_sessions').orderBy('createdAt', 'desc').limit(NOVA_CONTEXT_RECENT_LIMIT).get();
+      if (!somaticSnap.empty) {
+        const totalSeconds = somaticSnap.docs.reduce((sum: number, d: any) => sum + (d.data().durationSeconds || 0), 0);
+        infoParts.push(`Nervous System Reset Summary:
+- Sessions completed: ${describeCount(somaticSnap.size)}
+- Total duration: ${totalSeconds} seconds`);
+        used.push("somatic_resets");
+      }
+    }
+
+    // Recovery Ally - whether connected, and shared-goal activity. Never
+    // the ally's own name/email, which belongs to the ally, not the coaching
+    // context.
+    if (perms.allowRecoveryAlly !== false) {
+      const allySnap = await firestoreDb.collection('users').doc(uid).collection('recovery_ally').doc('state').get();
+      const goalsSnap = await firestoreDb.collection('users').doc(uid).collection('ally_shared_goals').get();
+      const allyConnected = allySnap.exists && allySnap.data()?.isInvited === true;
+      if (allyConnected || !goalsSnap.empty) {
+        infoParts.push(`Recovery Ally Summary:
+- Ally connected: ${allyConnected ? "yes" : "no"}
+- Shared goals: ${goalsSnap.size}`);
+        used.push("recovery_ally");
+      }
+    }
+
     // Memory Usage
     if (perms.allowNovaMemory && perms.allowNovaUseSavedMemories) {
       // Ordering/limiting at the Firestore level (rather than fetching
