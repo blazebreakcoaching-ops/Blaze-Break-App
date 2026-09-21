@@ -240,8 +240,7 @@ export const NovaGuardianRelay = ({ contacts, onAdd, onRemove, userName }: NovaG
     isGuardian: true,
     contactMethod: '',
     relation: 'Partner',
-    notificationPreference: 'sms',
-    autoAlertEnabled: false
+    notificationPreference: 'sms'
   });
   
   const [activeSOS, setActiveSOS] = useState<string | null>(null);
@@ -262,7 +261,7 @@ export const NovaGuardianRelay = ({ contacts, onAdd, onRemove, userName }: NovaG
     e.preventDefault();
     if (newContact.name.trim() && newContact.contactMethod.trim()) {
       onAdd({ ...newContact, isGuardian: newContact.role.includes('guardian') });
-      setNewContact({ name: '', role: 'peer', isGuardian: false, contactMethod: '', relation: 'Friend', notificationPreference: 'sms', autoAlertEnabled: false });
+      setNewContact({ name: '', role: 'peer', isGuardian: false, contactMethod: '', relation: 'Friend', notificationPreference: 'sms' });
       setIsAdding(false);
     }
   };

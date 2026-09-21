@@ -2469,9 +2469,22 @@ const requireAuth = (req: any) => {
   return req.user;
 };
 
+// Bootstrap platform-owner access for the founder account by email, so the
+// very first admin login works before any custom claim has been set on it.
+// Configurable via env var (comma-separated) rather than a literal address
+// hardcoded at every call site - defaults to the two addresses already in
+// use today, so this doesn't change current deployed behavior, just gives
+// it one source of truth instead of four independently-maintained copies.
+const OWNER_BOOTSTRAP_EMAILS = (process.env.OWNER_BOOTSTRAP_EMAILS || 'teampublication@gmail.com,teampublication@googlemail.com')
+  .split(',')
+  .map((e) => e.trim().toLowerCase())
+  .filter(Boolean);
+const isOwnerBootstrapEmail = (email: string | null | undefined) =>
+  !!email && OWNER_BOOTSTRAP_EMAILS.includes(email.toLowerCase());
+
 const requireAdmin = (req: any) => {
   const user = requireAuth(req);
-  const isSuperAdmin = user.platform_admin === true || user.admin === true || user.role === 'platform_owner' || user.email === 'teampublication@gmail.com' || user.email === 'teampublication@googlemail.com';
+  const isSuperAdmin = user.platform_admin === true || user.admin === true || user.role === 'platform_owner' || isOwnerBootstrapEmail(user.email);
   if (!isSuperAdmin) {
     throw new Error("Forbidden: Admin privileges required.");
   }
@@ -2480,7 +2493,7 @@ const requireAdmin = (req: any) => {
 
 const requireRole = (req: any, allowedRoles: string[]) => {
   const user = requireAuth(req);
-  const role = user.role || (user.email === 'teampublication@gmail.com' || user.email === 'teampublication@googlemail.com' ? 'platform_owner' : 'user');
+  const role = user.role || (isOwnerBootstrapEmail(user.email) ? 'platform_owner' : 'user');
   if (!allowedRoles.includes(role) && !allowedRoles.includes(user.role)) {
     throw new Error(`Forbidden: Role in ${allowedRoles.join(', ')} required.`);
   }
@@ -2489,7 +2502,7 @@ const requireRole = (req: any, allowedRoles: string[]) => {
 
 const requirePlatformOwner = (req: any) => {
   const user = requireAuth(req);
-  const isOwner = user.platformOwner === true || user.email === 'teampublication@gmail.com' || user.email === 'teampublication@googlemail.com' || user.role === 'platform_owner';
+  const isOwner = user.platformOwner === true || isOwnerBootstrapEmail(user.email) || user.role === 'platform_owner';
   if (!isOwner) {
     throw new Error("Forbidden: Platform Owner privileges required.");
   }
@@ -2540,23 +2553,31 @@ const getPermissionsForRole = (role: string): string[] => {
 };
 
 const logAdminAction = async (req: any, action: string, targetUid: string, targetEmail: string, metadata: any) => {
+  const actor = req.user;
+  const entry = {
+    actorUid: actor?.uid || "system",
+    actorEmail: actor?.email || "system",
+    actorRole: actor?.role || (isOwnerBootstrapEmail(actor?.email) ? "platform_owner" : "platform_admin"),
+    action,
+    targetUid,
+    targetEmail,
+    createdAt: FieldValue.serverTimestamp(),
+    metadata,
+    ipAddress: req.ip || "",
+    userAgent: req.headers["user-agent"] || ""
+  };
   try {
-    const actor = req.user;
     const db = getDb();
-    await db.collection("admin_audit_logs").add({
-      actorUid: actor?.uid || "system",
-      actorEmail: actor?.email || "system",
-      actorRole: actor?.role || (actor?.email === "teampublication@gmail.com" ? "platform_owner" : "platform_admin"),
-      action,
-      targetUid,
-      targetEmail,
-      createdAt: FieldValue.serverTimestamp(),
-      metadata,
-      ipAddress: req.ip || "",
-      userAgent: req.headers["user-agent"] || ""
-    });
+    await db.collection("admin_audit_logs").add(entry);
   } catch (err: any) {
-    console.error("Failed to write admin audit log:", err.message);
+    // The admin action this logs already happened by the time we get here -
+    // we can't roll it back, and blocking the response on a retry would
+    // punish the admin for an audit-log outage they can't fix. But a
+    // swallowed failure here means an admin mutation (including entitlement
+    // grants and role changes) leaves zero trace, so log the full entry
+    // inline - not just the error - so it's recoverable from Cloud Run logs
+    // even though it never reached Firestore.
+    console.error("Failed to write admin audit log:", err.message, JSON.stringify(entry));
   }
 };
 
@@ -5072,12 +5093,18 @@ app.post("/api/admin/users/:uid/entitlement", verifyAppCheck, authenticateFireba
   }
 });
 
+const AdminSuspendSchema = z.object({ suspend: z.boolean() }).strict();
+
 app.post("/api/admin/users/:uid/suspend", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
   try {
     requireAdmin(req);
+    const parsed = AdminSuspendSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: '"suspend" must be a boolean.' });
+    }
     const targetUid = req.params.uid;
-    const { suspend } = req.body;
-    
+    const { suspend } = parsed.data;
+
     await getAuth().updateUser(targetUid, { disabled: suspend });
     await logAdminAction(req, suspend ? "suspend_user" : "unsuspend_user", targetUid, "", {});
     res.json({ success: true });
@@ -5527,24 +5554,29 @@ const logOrgAuditAction = async (
   before: Record<string, unknown> | null = null,
   after: Record<string, unknown> | null = null,
 ) => {
+  const actor = req.user;
+  const entry = {
+    actorUid: actor?.uid || "system",
+    actorEmail: actor?.email || "system",
+    orgId,
+    action,
+    targetResourceType,
+    targetResourceId,
+    before,
+    after,
+    createdAt: FieldValue.serverTimestamp(),
+    ipAddress: req.ip || "",
+    userAgent: req.headers?.["user-agent"] || "",
+  };
   try {
-    const actor = req.user;
     const db = getDb();
-    await db.collection("organisations").doc(orgId).collection("audit_logs").add({
-      actorUid: actor?.uid || "system",
-      actorEmail: actor?.email || "system",
-      orgId,
-      action,
-      targetResourceType,
-      targetResourceId,
-      before,
-      after,
-      createdAt: FieldValue.serverTimestamp(),
-      ipAddress: req.ip || "",
-      userAgent: req.headers?.["user-agent"] || "",
-    });
+    await db.collection("organisations").doc(orgId).collection("audit_logs").add(entry);
   } catch (err: any) {
-    console.error("Failed to write org audit log:", err.message);
+    // Same tradeoff as logAdminAction: the org action already happened, so
+    // we log the full entry inline rather than block/retry - otherwise a
+    // Firestore hiccup here leaves an org's own compliance trail with a
+    // silent gap and nothing pointing to what was missed.
+    console.error("Failed to write org audit log:", err.message, JSON.stringify(entry));
   }
 };
 
@@ -9263,7 +9295,27 @@ if (process.env.TEST_MODE !== 'true') {
         return clientWs.close();
       }
 
-      const liveQuota = await checkAndReserveCapability(uid, 'nova_voice');
+      // Unlike every other await in this handler, these two weren't
+      // individually try/caught - a Firestore error inside
+      // getEntitlementRecord (permission error, transient network blip)
+      // became an unhandled rejection inside a WS event listener: no error
+      // reached the client, the socket just hung open with no feedback,
+      // and in modern Node an unhandled rejection can terminate the whole
+      // process, not just this one connection.
+      let liveQuota: Awaited<ReturnType<typeof checkAndReserveCapability>>;
+      let minutesQuota: Awaited<ReturnType<typeof checkCapabilityQuota>>;
+      try {
+        liveQuota = await checkAndReserveCapability(uid, 'nova_voice');
+        // Separate from the daily session-COUNT check above: this is the
+        // monthly cumulative-MINUTES allowance (docs/AI_COST_CONTROL.md).
+        // Checked (not reserved) here - the real minutes used are only
+        // known once the session actually ends, recorded via
+        // recordCapabilityUsage in endSession below.
+        minutesQuota = await checkCapabilityQuota(uid, 'nova_voice_minutes');
+      } catch (e) {
+        clientWs.send(JSON.stringify({ error: "Couldn't verify your Nova voice access right now. Please try again, or continue with Nova by text." }));
+        return clientWs.close();
+      }
       if (!liveQuota.allowed) {
         clientWs.send(JSON.stringify({
           error: liveQuota.plan === 'free'
@@ -9272,13 +9324,6 @@ if (process.env.TEST_MODE !== 'true') {
         }));
         return clientWs.close();
       }
-
-      // Separate from the daily session-COUNT check above: this is the
-      // monthly cumulative-MINUTES allowance (docs/AI_COST_CONTROL.md).
-      // Checked (not reserved) here - the real minutes used are only
-      // known once the session actually ends, recorded via
-      // recordCapabilityUsage in endSession below.
-      const minutesQuota = await checkCapabilityQuota(uid, 'nova_voice_minutes');
       if (!minutesQuota.allowed) {
         clientWs.send(JSON.stringify({
           error: "You've used this month's Nova voice minutes. They reset next month - continue with Nova by text for now, or upgrade for a higher monthly allowance.",
