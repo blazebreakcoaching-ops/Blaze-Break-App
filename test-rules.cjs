@@ -69,7 +69,12 @@ async function runTests() {
   // * user A creates own goal.
   await assertSucceeds(goalRef.set({ createdAt: '2025', updatedAt: '2025', title: 'Goal', status: 'active', category: 'sleep' }));
 
-  // * user A updates own nova_permissions/current.
+  // * user A updates own nova_permissions/current. allowNovaMemory/
+  // allowNovaUseSavedMemories are also hasAll-required - this assertion was
+  // stale against that (missing both), which would have made every
+  // "succeeds" case here a false negative for the exact bug that turned
+  // out to make this doc uncreatable in the real app (see firestore.rules'
+  // comment on this match block).
   await assertSucceeds(permRef.set({
     allowCheckins: true,
     allowEnergyBudgets: true,
@@ -82,7 +87,9 @@ async function runTests() {
     allowRecoveryDebt: true,
     allowRecoveryVelocity: true,
     allowEnergyTrend: true,
-    allowMoodTrend: true
+    allowMoodTrend: true,
+    allowNovaMemory: true,
+    allowNovaUseSavedMemories: true
   }));
 
   // Failures:
