@@ -15,6 +15,7 @@ import {
   Lock,
   PhoneCall,
   ListChecks,
+  CreditCard,
 } from 'lucide-react';
 
 interface GuideFeature {
@@ -125,6 +126,7 @@ const SAFETY_NET: GuideFeature[] = [
     definition: { term: 'Guardian Protocol', text: "A one-tap way to ask a trusted contact you've chosen in advance to reach out to you. It's always something you start yourself - the app never watches for risk or sends anything without you tapping the button first." },
   },
   { tab: 'privacy', tag: 'Privacy Centre', title: 'Your data, your rules', description: 'See exactly what is stored, export it, or delete it - always on, nothing to go looking for.', icon: Lock },
+  { tab: 'subscription', tag: 'Plan & Billing', title: 'Your plan and usage', description: "See your current plan, what's included, how much you've used this month, and change or cancel any time - no calls, no hoops.", icon: CreditCard },
 ];
 
 const FEATURE_GROUPS: { label: string; features: GuideFeature[] }[] = [
