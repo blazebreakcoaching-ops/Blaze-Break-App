@@ -84,6 +84,50 @@ export const extractFirstName = (fullName: string | undefined | null): string =>
 // failing to send) while disabled.
 export const nudgeSchedulerIsEnabled = (envValue: string | undefined): boolean => envValue === 'true';
 
+// docs/GUARDIAN_SUPPORT_SPEC.md §E.7 feature-flag strategy: "a flag declares
+// requiresCapability: [...]. The server refuses to report a flag as enabled
+// if the named capability is not registered at boot. A flag cannot be
+// switched on for a feature that does not exist." This registry is a
+// statement of fact about what dispatch mechanism actually exists in this
+// checkout - not a runtime setting - so a future flag can never be flipped
+// on for a pipeline that was removed or never built. That was the exact
+// failure mode the old "Guardian Check-In Suggestions" copy had (promising
+// a capability the code didn't have), which §E.8 exists to retire.
+const REGISTERED_GUARDIAN_CAPABILITIES: ReadonlySet<string> = new Set(['guardian_dispatch_pipeline']);
+
+export const guardianCapabilityIsRegistered = (capability: string): boolean =>
+  REGISTERED_GUARDIAN_CAPABILITIES.has(capability);
+
+// The guardian_alerts flag itself (§E.8 step 1 names it, §E.7 point 2
+// requires it declare its capability precondition). Tier 1 one-tap alert
+// sending (POST /api/guardian/alert, driven from NovaGuardianRelay.tsx and
+// CrisisSupport.tsx) already ships live in production today - unlike a
+// brand-new feature being staged in behind a flag for the first time, this
+// flag is being added retroactively as a real off-switch and a structural
+// guarantee that the capability precondition genuinely holds, not as a
+// migration step that should default off and interrupt something users
+// already rely on.
+export const GUARDIAN_ALERTS_FLAG = {
+  id: 'guardian_alerts',
+  requiresCapability: ['guardian_dispatch_pipeline'],
+  copyKey: 'guardian_alerts_capability',
+} as const;
+
+// envValue is passed in (not read from process.env internally) so this
+// stays pure and testable, matching nudgeSchedulerIsEnabled's pattern
+// above - server.ts and the client-facing /api/guardian/config route are
+// the only real callers, each passing process.env.GUARDIAN_ALERTS_ENABLED.
+// Fail-open (undefined/anything but the literal string 'false' means
+// enabled), same as SMS_GLOBALLY_ENABLED in sms-guardrails.ts - disabling
+// this removes a safety feature, so silence should never accidentally
+// switch it off. It can NEVER report enabled if its required capability
+// isn't registered, regardless of the env var - that's the actual
+// structural guarantee §E.7.2 asks for.
+export const guardianAlertsEnabled = (envValue: string | undefined): boolean => {
+  if (!GUARDIAN_ALERTS_FLAG.requiresCapability.every(guardianCapabilityIsRegistered)) return false;
+  return envValue !== 'false';
+};
+
 export interface CooldownCheck {
   onCooldown: boolean;
   msRemaining: number;

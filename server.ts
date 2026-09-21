@@ -27,7 +27,7 @@ import { memoryToolIsAllowed, searchMemories, isValidRecoveryDuration, validateM
 import { toClaudeTools, GeminiStyleToolDeclaration } from './nova-claude-tools';
 import { computeClimateStrain, computeClimateStrainByDimension, computeMoodStrain, computeOverallStrain, computeTrend } from './org-risk-trend';
 import { suggestRecognitionPrompts } from './positive-reinforcement';
-import { isRealGuardian, isValidGuardianPhone, buildGuardianCallRequestMessage, extractFirstName, nudgeSchedulerIsEnabled } from './guardian-alert';
+import { isRealGuardian, isValidGuardianPhone, buildGuardianCallRequestMessage, extractFirstName, nudgeSchedulerIsEnabled, guardianAlertsEnabled } from './guardian-alert';
 import { collectionsForExport, collectionsForErasure } from './user-data-collections';
 import { htmlToPlainTextFallback, buildEmailVerificationEmail, buildPasswordResetEmail, buildPasswordChangedEmail, buildMfaEnabledEmail, buildMfaDisabledEmail } from './brevo-templates';
 import { generateTotpSecret, buildOtpauthUri, verifyTotpCode, generateRecoveryCodes, hashRecoveryCode, encryptSecret as encryptTotpSecret, decryptSecret as decryptTotpSecret, isTotpLockedOut, nextLockoutState } from './totp-mfa';
@@ -788,6 +788,18 @@ app.post("/api/twilio/send", smsLimiter, verifyAppCheck, authenticateFirebaseUse
   }
 });
 
+// docs/GUARDIAN_SUPPORT_SPEC.md §E.7 point 1: "Copy is bound to flag state -
+// the UI cannot render capability-claiming copy that is not owned by an
+// enabled flag." The frontend cannot read process.env itself, so this is
+// the one authoritative place it learns whether the real dispatch route
+// below is actually live before it renders "Send" buttons or "will ask
+// them to call you" copy. authenticateFirebaseUser only (no App Check) -
+// this is a read of non-sensitive, non-per-user config, same trust level
+// as any other UI-gating flag check in this app.
+app.get("/api/guardian/config", authenticateFirebaseUser, async (_req, res) => {
+  res.json({ alertsEnabled: guardianAlertsEnabled(process.env.GUARDIAN_ALERTS_ENABLED) });
+});
+
 // ============ Guardian Support — Tier 1: one-tap guardian call request ============
 // Per docs/GUARDIAN_SUPPORT_SPEC.md. Deterministic dispatch only: no LLM is
 // anywhere in this path, so §D.8's "an LLM may prepare but never dispatch"
@@ -820,7 +832,14 @@ const GUARDIAN_STATE_COPY: Record<GuardianAlertState, string> = {
 // `finally` once the request finishes, success or failure.
 const guardianAlertInFlight = new Set<string>();
 
+// §E.7's capability-registered kill switch - see guardian-alert.ts for why
+// this defaults enabled rather than following the spec's literal
+// "ship new, default off" step. Checked first thing inside the handler,
+// before any Firestore read or business logic below it.
 app.post("/api/guardian/alert", guardianAlertLimiter, verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  if (!guardianAlertsEnabled(process.env.GUARDIAN_ALERTS_ENABLED)) {
+    return res.status(503).json({ error: "Guardian alerts are temporarily unavailable. Please reach out to your contact directly for now." });
+  }
   const uid = requireAuth(req).uid; // uid from the verified token only - never from req.body
   let inFlightKey: string | null = null;
   try {

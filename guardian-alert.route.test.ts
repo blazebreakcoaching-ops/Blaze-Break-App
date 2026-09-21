@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
 // ---- Hoisted setup: runs before server.ts is imported --------------------
 // server.ts has import-time side effects (Firebase init, and a listen() call
@@ -350,5 +350,58 @@ describe('GET /api/guardian/alerts — history is metadata only', () => {
     const res = await request(app).get('/api/guardian/alerts').set(auth(OTHER));
     expect(res.status).toBe(200);
     expect(res.body.alerts).toHaveLength(0);
+  });
+});
+
+// §E.7 feature-flag strategy: the flag must default enabled (Tier 1
+// dispatch already ships live today - see guardian-alert.ts), but a real
+// operator kill switch must exist and must actually stop sends, not just
+// look like it does.
+describe('Guardian alerts flag (§E.7)', () => {
+  const ORIGINAL_ENV = process.env.GUARDIAN_ALERTS_ENABLED;
+  afterEach(() => {
+    if (ORIGINAL_ENV === undefined) delete process.env.GUARDIAN_ALERTS_ENABLED;
+    else process.env.GUARDIAN_ALERTS_ENABLED = ORIGINAL_ENV;
+  });
+
+  it('GET /api/guardian/config reports enabled by default (undefined env var)', async () => {
+    delete process.env.GUARDIAN_ALERTS_ENABLED;
+    const res = await request(app).get('/api/guardian/config').set(auth(USER));
+    expect(res.status).toBe(200);
+    expect(res.body.alertsEnabled).toBe(true);
+  });
+
+  it('GET /api/guardian/config requires authentication', async () => {
+    const res = await request(app).get('/api/guardian/config');
+    expect(res.status).toBe(401);
+  });
+
+  it('GET /api/guardian/config reports disabled when the kill switch is set', async () => {
+    process.env.GUARDIAN_ALERTS_ENABLED = 'false';
+    const res = await request(app).get('/api/guardian/config').set(auth(USER));
+    expect(res.body.alertsEnabled).toBe(false);
+  });
+
+  it('POST /api/guardian/alert actually refuses to send when the kill switch is set, not just reports it', async () => {
+    process.env.GUARDIAN_ALERTS_ENABLED = 'false';
+    seedUserWithGuardian(USER);
+    const res = await request(app)
+      .post('/api/guardian/alert')
+      .set(auth(USER))
+      .send({ contactId: 'guardian_1', idempotencyKey: 'kill_switch_test_key' });
+    expect(res.status).toBe(503);
+    expect(h.twilioCreate).not.toHaveBeenCalled();
+    expect(getDocRaw(`users/${USER}/guardian_alerts/kill_switch_test_key`)).toBeUndefined();
+  });
+
+  it('POST /api/guardian/alert sends normally once re-enabled', async () => {
+    process.env.GUARDIAN_ALERTS_ENABLED = 'true';
+    seedUserWithGuardian(USER);
+    const res = await request(app)
+      .post('/api/guardian/alert')
+      .set(auth(USER))
+      .send({ contactId: 'guardian_1', idempotencyKey: 're_enabled_test_key' });
+    expect(res.status).toBe(200);
+    expect(h.twilioCreate).toHaveBeenCalledTimes(1);
   });
 });
