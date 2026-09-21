@@ -101,6 +101,7 @@ const FutureSelfSimulator = lazy(() => import("./components/FutureSelfSimulator.
 const AssuranceCentre = lazy(() => import("./components/AssuranceCentre.tsx").then(m => ({ default: m.AssuranceCentre })));
 import { AuthStatusTracker } from "./lib/sync.tsx";
 import { initNovaBrain, clearNovaBrainCache, ensureNovaPermissionsExist } from "./lib/nova-brain";
+import { migrateSupportCircleIfNeeded, addSupportCircleContact, removeSupportCircleContact } from "./lib/support-circle";
 import { useAuth } from "./lib/auth.tsx";
 const IntegrationsDashboard = lazy(() => import("./components/IntegrationsDashboard.tsx").then(m => ({ default: m.IntegrationsDashboard })));
 const AdminDashboard = lazy(() => import("./components/AdminDashboard.tsx").then(m => ({ default: m.AdminDashboard })));
@@ -1372,6 +1373,20 @@ export default function App() {
       setStats(loadedStats);
       statsLoadedRef.current = true;
 
+      // Guardian contacts now live in the validated support_circle
+      // subcollection, not the unvalidated array this doc's own
+      // supportCircle field used to be. Loads the real list (backfilling
+      // from the legacy array exactly once, for anyone who saved contacts
+      // before this existed) and reconciles local state with it.
+      if (user) {
+        migrateSupportCircleIfNeeded(user.uid, loadedStats.supportCircle).then((supportCircle) => {
+          setStats((prev) => ({ ...prev, supportCircle }));
+        }).catch(() => {
+          // Non-fatal - the legacy array already in loadedStats.supportCircle
+          // stays in local state either way, so contacts still render.
+        });
+      }
+
       // Backfill nova_permissions/current for anyone who completed
       // onboarding before this existed and has never separately visited
       // Settings > Nova Privacy Controls - fire-and-forget, only for
@@ -1474,8 +1489,15 @@ export default function App() {
       try {
         const db = await getDb();
         const { doc, setDoc } = await import("firebase/firestore");
+        // supportCircle is deliberately excluded - it now persists to its
+        // own validated support_circle subcollection (see
+        // handleAddContact/handleRemoveContact and src/lib/support-circle.ts),
+        // not this generic merge write, which is why it was unvalidated
+        // (firestore.rules could only check "is a list", never a single
+        // contact's shape) in the first place.
+        const { supportCircle: _supportCircle, ...statsToPersist } = stats;
         await setDoc(doc(db, "users", user.uid, "user_stats", "core"), {
-          ...stats,
+          ...statsToPersist,
           updatedAt: new Date().toISOString(),
         }, { merge: true });
       } catch {
@@ -1635,17 +1657,24 @@ export default function App() {
   };
 
   const handleAddContact = (contact: Omit<SupportContact, "id">) => {
-    setStats((prev) => {
-      const newContact: SupportContact = {
-        ...contact,
-        id: Math.random().toString(36).substr(2, 9),
-      };
-      return {
-        ...prev,
-        supportCircle: [...prev.supportCircle, newContact],
-      };
-    });
+    const newContact: SupportContact = {
+      ...contact,
+      id: Math.random().toString(36).substr(2, 9),
+    };
+    setStats((prev) => ({
+      ...prev,
+      supportCircle: [...prev.supportCircle, newContact],
+    }));
     awardPoints(25, "New Support Partner");
+    // Guardian contacts persist to their own validated subcollection, not
+    // the generic user_stats/core autosave - see src/lib/support-circle.ts.
+    if (user) {
+      addSupportCircleContact(user.uid, newContact).catch(() => {
+        // Non-fatal - local state already reflects the add either way; a
+        // failed write here just means it won't survive a reload, same
+        // degradation as every other best-effort save in this file.
+      });
+    }
   };
 
   const handleRemoveContact = (id: string) => {
@@ -1653,6 +1682,11 @@ export default function App() {
       ...prev,
       supportCircle: prev.supportCircle.filter((c) => c.id !== id),
     }));
+    if (user) {
+      removeSupportCircleContact(user.uid, id).catch(() => {
+        // Non-fatal - see handleAddContact's note above.
+      });
+    }
   };
 
   const handleCommitAction = (actionId: string) => {

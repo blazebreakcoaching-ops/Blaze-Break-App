@@ -879,13 +879,25 @@ app.post("/api/guardian/alert", guardianAlertLimiter, verifyAppCheck, authentica
       });
     }
 
-    // Load the user's own guardian list server-side and look the contact up
-    // in it - the phone number is never taken from the request body. A
-    // caller can only ever message a contact that is genuinely their own,
-    // genuinely marked as a guardian.
-    const statsSnap = await db.collection("users").doc(uid).collection("user_stats").doc("core").get();
-    const supportCircle: any[] = statsSnap.exists ? (statsSnap.data()?.supportCircle || []) : [];
-    const contact = supportCircle.find(c => c?.id === contactId);
+    // Load the user's own guardian contact server-side and look it up by id
+    // - the phone number is never taken from the request body. A caller can
+    // only ever message a contact that is genuinely their own, genuinely
+    // marked as a guardian. Reads the validated support_circle subcollection
+    // first (the real source of truth - see src/lib/support-circle.ts);
+    // falls back to the legacy user_stats/core.supportCircle array for any
+    // account that hasn't opened the app since the client-side migration to
+    // that subcollection shipped, so a real alert send can't break during
+    // that transition window. statsSnap is also needed below regardless, for
+    // the sender's own name in the message template.
+    const [contactDocSnap, statsSnap] = await Promise.all([
+      db.collection("users").doc(uid).collection("support_circle").doc(contactId).get(),
+      db.collection("users").doc(uid).collection("user_stats").doc("core").get(),
+    ]);
+    let contact: any = contactDocSnap.exists ? { id: contactDocSnap.id, ...contactDocSnap.data() } : null;
+    if (!contact) {
+      const legacySupportCircle: any[] = statsSnap.exists ? (statsSnap.data()?.supportCircle || []) : [];
+      contact = legacySupportCircle.find(c => c?.id === contactId) || null;
+    }
     if (!isRealGuardian(contact)) {
       return res.status(403).json({
         error: "not_a_guardian",
