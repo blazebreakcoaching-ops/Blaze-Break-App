@@ -782,7 +782,7 @@ const Header = ({
           </motion.div>
         )}
       </AnimatePresence>
-    <div className="max-w-3xl">
+    <div className="max-w-3xl min-w-0 flex-1">
       <div className="flex items-center gap-4 mb-3">
         <div className="flex items-center justify-center relative group">
           <div className={cn("h-3 w-3 rounded-full transition-colors duration-500 shadow-lg", 
@@ -869,7 +869,7 @@ const Header = ({
           "Administrative access: Machine learning layer for organisational stress mapping."}
       </p>
     </div>
-    <div className="flex items-center flex-wrap gap-2 sm:gap-4">
+    <div className="flex items-center flex-wrap gap-2 sm:gap-4 shrink-0">
       {onOpenTour && (
         <button
           onClick={onOpenTour}
