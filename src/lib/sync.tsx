@@ -15,7 +15,7 @@ export const AuthStatusTracker = () => {
         className="h-12 flex items-center gap-2 group p-1 pr-3 rounded-full hover:bg-surface dark:bg-card transition-colors"
       >
         <img src={user.photoURL || `https://ui-avatars.com/api/?name=${user.email}`} alt="Avatar" className="w-10 h-10 rounded-full" />
-        <span className="text-xs font-bold text-text-muted hidden sm:inline-block">Sign Out</span>
+        <span className="text-xs font-bold text-text-muted hidden lg:inline-block">Sign Out</span>
       </button>
     );
   }
