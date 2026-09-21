@@ -80,6 +80,71 @@ describe('GET /api/entitlements/me', () => {
     const res = await request(app).get('/api/entitlements/me').set(auth(USER));
     expect(res.body.plan).toBe('free');
   });
+
+  // Route-level coverage for every real purchasable plan (not just Free
+  // and legacy) - each reports its own distinct capability limits, proving
+  // the whole read path (stored doc -> getEffectiveEntitlement ->
+  // effectivePlan -> getCapability) works per-plan, not just for the
+  // default/legacy cases already covered above.
+  it.each([
+    ['core', 300],
+    ['performance', 600],
+    ['executive', 1000],
+  ] as const)('a stored "%s" record reports its own distinct nova_text limit (%i)', async (plan, expectedLimit) => {
+    seedDoc(`users/${USER}/entitlements/status`, { plan, status: 'active' });
+    const res = await request(app).get('/api/entitlements/me').set(auth(USER));
+    expect(res.body.plan).toBe(plan);
+    expect(res.body.capabilities.nova_text.limit).toBe(expectedLimit);
+  });
+
+  it('surfaces cancelAtPeriodEnd so the client can show "ends on <date>, not renewing"', async () => {
+    seedDoc(`users/${USER}/entitlements/status`, {
+      plan: 'performance', status: 'active', cancelAtPeriodEnd: true, entitlementEnd: '2030-01-01T00:00:00.000Z',
+    });
+    const res = await request(app).get('/api/entitlements/me').set(auth(USER));
+    expect(res.body.cancelAtPeriodEnd).toBe(true);
+    expect(res.body.entitlementEnd).toBe('2030-01-01T00:00:00.000Z');
+  });
+
+  // billingSource: 'organisation' is real schema (an org's sponsored seat -
+  // see docs/FREE_PREMIUM_ENTITLEMENTS.md's "Organisation-sponsored
+  // access"), even though automatic provisioning isn't wired up yet - an
+  // admin using this same route to grant it manually must round-trip
+  // correctly, same as any other billingSource.
+  it('an organisation-sponsored entitlement (billingSource: "organisation") is read back correctly', async () => {
+    seedDoc(`users/${USER}/entitlements/status`, { plan: 'performance', status: 'active', billingSource: 'organisation' });
+    const res = await request(app).get('/api/entitlements/me').set(auth(USER));
+    expect(res.body.plan).toBe('performance');
+    expect(res.body.billingSource).toBe('organisation');
+  });
+});
+
+describe('GET /api/entitlements/pricing', () => {
+  it('requires authentication', async () => {
+    expect((await request(app).get('/api/entitlements/pricing')).status).toBe(401);
+  });
+
+  it('returns exactly the four purchasable plans, never legacy_premium', async () => {
+    const res = await request(app).get('/api/entitlements/pricing').set(auth(USER));
+    expect(res.status).toBe(200);
+    const plans = res.body.plans.map((p: any) => p.plan);
+    expect(plans.sort()).toEqual(['core', 'executive', 'free', 'performance']);
+  });
+
+  it('marks Performance as most popular and matches the agreed launch prices', async () => {
+    const res = await request(app).get('/api/entitlements/pricing').set(auth(USER));
+    const performance = res.body.plans.find((p: any) => p.plan === 'performance');
+    const core = res.body.plans.find((p: any) => p.plan === 'core');
+    expect(performance.mostPopular).toBe(true);
+    expect(performance.pricing).toEqual({ monthlyGbp: 49.99, annualGbp: 499 });
+    expect(core.mostPopular).toBe(false);
+  });
+
+  it('is data-driven from the same capability matrix the quota checks use - sms_nudges is disabled for Free', async () => {
+    const res = await request(app).get('/api/entitlements/pricing').set(auth(USER));
+    const free = res.body.plans.find((p: any) => p.plan === 'free');
+    expect(free.capabilities.sms_nudges.enabled).toBe(false);
+  });
 });
 
 describe('POST /api/admin/users/:uid/entitlement', () => {
