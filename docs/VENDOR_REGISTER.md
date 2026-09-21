@@ -129,8 +129,12 @@ explicitly connected it.
 | **Monday.com** | Same category | OAuth token exchange; read-only board activity signals |
 
 All five: the OAuth `state` parameter is HMAC-signed
-(`OAUTH_STATE_SECRET`) for CSRF protection, tokens are stored per-org
-under `integration_tokens` (server-write-only Firestore collection), and
+(`OAUTH_STATE_SECRET`) for CSRF protection, tokens are stored per-user
+(under the connecting individual's own `users/{uid}/integration_tokens`,
+server-write-only Firestore collection — not org-keyed, so there is no
+`organisations/{orgId}/integration_tokens` to look in for org-scoped
+token management; revoking or rotating a connection is per the connecting
+user's own account), and
 every aggregate figure computed from this data is gated behind the org's
 own `privacyThreshold` (k-anonymity floor of 3, default 5) before it's
 ever shown to anyone — see `docs/PRODUCT_SAFETY_PRIVACY.md` §5 and
