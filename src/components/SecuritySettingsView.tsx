@@ -15,7 +15,7 @@ import { cn } from '../lib/utils';
 // nobody with just a settings-page click can silently remove someone
 // else's second factor from an already-open session.
 
-type ViewState = 'loading' | 'off' | 'enrolling' | 'confirmCode' | 'recoveryCodes' | 'on' | 'disabledSignOut';
+type ViewState = 'loading' | 'off' | 'enrolling' | 'confirmCode' | 'recoveryCodes' | 'on' | 'disabledSignOut' | 'loadError';
 
 export const SecuritySettingsView = () => {
   const { logOut } = useAuth();
@@ -33,18 +33,26 @@ export const SecuritySettingsView = () => {
   const [disableError, setDisableError] = useState<string | null>(null);
   const [disableBusy, setDisableBusy] = useState(false);
 
+  const loadStatus = async () => {
+    setState('loading');
+    setError(null);
+    try {
+      const res = await secureApiFetch('/api/auth/mfa/status');
+      const data = await res.json();
+      setEnrolledAt(data.enrolledAt || null);
+      setState(data.enabled ? 'on' : 'off');
+    } catch (e) {
+      // Don't default to 'off' here - if 2FA is actually enabled
+      // server-side, that would briefly show the "turn it on" enrollment
+      // screen instead, which is confusing (the server-side gate is
+      // separate and unaffected either way, but the UI shouldn't imply a
+      // security setting is off when it genuinely doesn't know).
+      setError("Couldn't check your two-factor status right now.");
+      setState('loadError');
+    }
+  };
+
   useEffect(() => {
-    const loadStatus = async () => {
-      try {
-        const res = await secureApiFetch('/api/auth/mfa/status');
-        const data = await res.json();
-        setEnrolledAt(data.enrolledAt || null);
-        setState(data.enabled ? 'on' : 'off');
-      } catch (e) {
-        setError("Couldn't check your two-factor status right now.");
-        setState('off');
-      }
-    };
     loadStatus();
   }, []);
 
@@ -149,6 +157,16 @@ export const SecuritySettingsView = () => {
 
       {error && (
         <p role="alert" className="text-xs text-destructive leading-relaxed">{error}</p>
+      )}
+
+      {state === 'loadError' && (
+        <button
+          type="button"
+          onClick={loadStatus}
+          className="text-xs font-bold uppercase tracking-widest text-primary hover:underline"
+        >
+          Try again
+        </button>
       )}
 
       {state === 'off' && (

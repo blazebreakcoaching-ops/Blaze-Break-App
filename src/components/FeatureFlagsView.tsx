@@ -47,7 +47,7 @@ export const FeatureFlagsView = () => {
               </button>
             </div>
             <p className="text-xs text-text-muted max-w-[90%] leading-relaxed">
-              Activate the mandatory breathing & delay screen. Automatically blocks access to work channels when biometric or active debt thresholds cross critical failure levels.
+              Shows a status card (stable / drifting / overload risk) based on your meeting load, message volume, and recovery gaps, with a suggestion for what to protect. It's advisory - a status read and a nudge, not a screen you're blocked by or a channel it locks you out of.
             </p>
           </div>
         </div>

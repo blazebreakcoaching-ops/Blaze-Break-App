@@ -104,4 +104,22 @@ describe('POST /api/nova/resentment-analysis — quota and failure handling', ()
     expect(res.status).toBe(500);
     expect(res.body.error).toBeTruthy();
   });
+
+  // Previously this shape wasn't validated at all - the raw JSON.parse
+  // output went straight to the client, and the only backstop was
+  // firestore.rules silently rejecting the eventual client write. Now the
+  // route itself refuses an out-of-shape model response.
+  it('reports a clean error instead of forwarding an unexpectedly-shaped model response', async () => {
+    h.generateContent.mockImplementationOnce(async () => ({ text: JSON.stringify({ yesMeantNo: 12345 }) }));
+    const res = await request(app).post('/api/nova/resentment-analysis').set(auth('person_7')).send({ log: 'venting text' });
+    expect(res.status).toBe(500);
+    expect(res.body.error).toBeTruthy();
+  });
+
+  it('reports a clean error instead of forwarding a field that exceeds firestore.rules\' length cap', async () => {
+    h.generateContent.mockImplementationOnce(async () => ({ text: JSON.stringify({ missingBoundary: 'x'.repeat(301) }) }));
+    const res = await request(app).post('/api/nova/resentment-analysis').set(auth('person_8')).send({ log: 'venting text' });
+    expect(res.status).toBe(500);
+    expect(res.body.error).toBeTruthy();
+  });
 });

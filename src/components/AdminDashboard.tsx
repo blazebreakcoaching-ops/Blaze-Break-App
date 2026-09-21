@@ -54,7 +54,7 @@ interface ResetMetrics {
   avgStartIntensity: number;
   avgEndIntensity: number;
   avgReduction: number;
-  mostEffectiveTool: string;
+  mostUsedTool: string;
   toolUsage: Record<string, number>;
   safetyEscalations: number;
   crisisReferrals: number;
@@ -92,6 +92,7 @@ export const AdminDashboard = () => {
 
   const [activeTab, setActiveTab] = useState<'users' | 'admins' | 'orgs' | 'audit' | 'somatic' | 'feedback'>('users');
   const [users, setUsers] = useState<AdminUser[]>([]);
+  const [usersCapped, setUsersCapped] = useState(false);
   const [admins, setAdmins] = useState<PlatformAdmin[]>([]);
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
   const [feedbackSubmissions, setFeedbackSubmissions] = useState<FeedbackSubmission[]>([]);
@@ -159,6 +160,7 @@ export const AdminDashboard = () => {
         if (usersRes.ok) {
           const uData = await usersRes.json();
           loadedUsers = uData.users || [];
+          setUsersCapped(Boolean(uData.capped));
         } else {
           console.error("API returned error for users list:", usersRes.status);
           if (usersRes.status === 429) rateLimited = true;
@@ -285,8 +287,8 @@ export const AdminDashboard = () => {
         avgStartIntensity: data.avgIntensityBefore ?? 0,
         avgEndIntensity: data.avgIntensityAfter ?? 0,
         avgReduction: data.avgIntensityReduction ?? 0,
-        mostEffectiveTool: data.mostUsedResetTool || 'None',
-        toolUsage: {},
+        mostUsedTool: data.mostUsedResetTool || 'None',
+        toolUsage: data.toolCounts ?? {},
         safetyEscalations: data.safetyEscalations ?? 0,
         crisisReferrals: data.crisisReferrals ?? 0,
       });
@@ -638,7 +640,7 @@ export const AdminDashboard = () => {
             <div className="space-y-1">
               <span className="text-[10px] font-black uppercase tracking-widest text-text-muted block">Registered Professionals</span>
               <h4 className="text-3xl font-display font-black text-text-main flex items-baseline gap-2">
-                {users.length}
+                {users.length}{usersCapped ? '+' : ''}
               </h4>
             </div>
             <div className="p-3 bg-primary/10 text-primary rounded-xl">
@@ -739,7 +741,8 @@ export const AdminDashboard = () => {
                 />
               </div>
               <div className="text-xs uppercase tracking-wider font-black text-text-muted">
-                Displaying {filteredUsers.length} of {users.length} registered
+                Displaying {filteredUsers.length} of {users.length}{usersCapped ? '+' : ''} registered
+                {usersCapped && <span className="block normal-case font-medium text-[10px] mt-0.5">Showing the first {users.length} - there are more.</span>}
               </div>
             </div>
 
@@ -830,7 +833,9 @@ export const AdminDashboard = () => {
                                 setSelectedUser(u);
                                 setSelectedUserRole('user'); // Default suggestion
                               }}
-                              className="px-3 py-1.5 bg-primary/10 hover:bg-primary/20 text-[#9a3412] dark:text-primary text-[10px] font-black uppercase tracking-widest rounded-lg transition-all"
+                              disabled={currentRole !== 'platform_owner'}
+                              title={currentRole !== 'platform_owner' ? 'Only a Platform Owner can write a security claim' : undefined}
+                              className="px-3 py-1.5 bg-primary/10 hover:bg-primary/20 text-[#9a3412] dark:text-primary text-[10px] font-black uppercase tracking-widest rounded-lg transition-all disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-primary/10"
                             >
                               Edit Claims
                             </button>
@@ -842,6 +847,15 @@ export const AdminDashboard = () => {
                             >
                               {grantingEntitlementUid === u.uid ? <Loader2 className="w-3 h-3 animate-spin" /> : <CreditCard className="w-3 h-3" />}
                               Grant Performance
+                            </button>
+                            <button
+                              onClick={() => handleGrantEntitlement(u.uid, 'free')}
+                              disabled={grantingEntitlementUid === u.uid}
+                              title="Revert this account to the Free plan"
+                              className="px-3 py-1.5 bg-surface hover:bg-border text-text-muted text-[10px] font-black uppercase tracking-widest rounded-lg transition-all disabled:opacity-50 flex items-center gap-1.5"
+                            >
+                              {grantingEntitlementUid === u.uid ? <Loader2 className="w-3 h-3 animate-spin" /> : <CreditCard className="w-3 h-3" />}
+                              Revert to Free
                             </button>
                             <button
                               onClick={() => setPendingAction({ type: 'suspend', uid: u.uid, email: u.email, currentlyActive: u.accessStatus === 'active' })}
@@ -1266,8 +1280,8 @@ export const AdminDashboard = () => {
               </div>
               <div className="p-5 bg-surface dark:bg-card border border-border rounded-2xl space-y-1">
                 <span className="text-xs font-black uppercase tracking-wider text-text-muted block">System Effectiveness</span>
-                <h3 className="text-3xl font-display font-bold text-[#9a3412] dark:text-primary">-{metrics.avgReduction} <span className="text-xs text-text-muted">CR</span></h3>
-                <span className="text-[10px] text-success dark:text-[#4ade80] font-semibold">Average Arousal Drop</span>
+                <h3 className="text-3xl font-display font-bold text-[#9a3412] dark:text-primary">{metrics.avgReduction} <span className="text-xs text-text-muted">pts</span></h3>
+                <span className="text-[10px] text-success dark:text-[#4ade80] font-semibold">Average Arousal Drop (0-10 scale)</span>
               </div>
             </div>
 
@@ -1280,24 +1294,28 @@ export const AdminDashboard = () => {
                 </div>
 
                 <div className="space-y-4 pt-4">
-                  {Object.entries(metrics.toolUsage).map(([toolName, count], idx) => {
-                    const total = Object.values(metrics.toolUsage).reduce((a, b) => a + b, 0);
-                    const percentage = total > 0 ? (count / total) * 100 : 0;
-                    return (
-                      <div key={toolName} className="space-y-1.5">
-                        <div className="flex items-center justify-between text-xs">
-                          <span className="font-bold text-text-main">{toolName}</span>
-                          <span className="text-text-muted font-mono">{count} Deployments ({percentage.toFixed(0)}%)</span>
+                  {Object.keys(metrics.toolUsage).length === 0 ? (
+                    <p className="text-xs text-text-muted italic">No somatic resets logged yet.</p>
+                  ) : (
+                    Object.entries(metrics.toolUsage).map(([toolName, count]) => {
+                      const total = Object.values(metrics.toolUsage).reduce((a, b) => a + b, 0);
+                      const percentage = total > 0 ? (count / total) * 100 : 0;
+                      return (
+                        <div key={toolName} className="space-y-1.5">
+                          <div className="flex items-center justify-between text-xs">
+                            <span className="font-bold text-text-main">{toolName}</span>
+                            <span className="text-text-muted font-mono">{count} Deployments ({percentage.toFixed(0)}%)</span>
+                          </div>
+                          <div className="h-2 bg-white/5 rounded-full overflow-hidden">
+                            <div
+                              className="h-full bg-primary rounded-full"
+                              style={{ width: `${percentage}%` }}
+                            />
+                          </div>
                         </div>
-                        <div className="h-2 bg-white/5 rounded-full overflow-hidden">
-                          <div 
-                            className="h-full bg-primary rounded-full" 
-                            style={{ width: `${percentage}%` }}
-                          />
-                        </div>
-                      </div>
-                    );
-                  })}
+                      );
+                    })
+                  )}
                 </div>
               </div>
 
@@ -1307,12 +1325,12 @@ export const AdminDashboard = () => {
                   <div className="p-2.5 bg-destructive/10 text-destructive rounded-xl w-fit">
                     <Heart className="w-5 h-5 fill-current" />
                   </div>
-                  <h4 className="font-display text-lg font-bold text-text-main">Somatic Efficacy Insight</h4>
+                  <h4 className="font-display text-lg font-bold text-text-main">Tool Usage Insight</h4>
                   <p className="text-xs text-text-muted leading-relaxed">
-                    Based on anonymised telemetry events, <span className="text-text-main font-semibold">"{metrics.mostEffectiveTool}"</span> is the highest-performing tool, causing the largest percentage drops in subjective anxiety.
+                    Based on anonymised telemetry events, <span className="text-text-main font-semibold">"{metrics.mostUsedTool}"</span> is the most frequently selected tool - this reflects usage volume, not measured effectiveness per tool.
                   </p>
                   <p className="text-xs text-text-muted leading-relaxed">
-                    This suggests the GAD-informed autonomic breathwork loops successfully decrease sympathovagal overactivity in high-stress states.
+                    "Average Arousal Drop" above is the only measured before/after effectiveness figure, and it's aggregated across all tools together, not broken down per tool.
                   </p>
                 </div>
 

@@ -2200,11 +2200,13 @@ export default function App() {
                   fingerprint={fingerprint}
                   onAwardPoints={awardPoints}
                 />
-                <NovaOverloadShield
-                  fingerprint={fingerprint}
-                  onAwardPoints={awardPoints}
-                  onNavigate={setActiveTab as any}
-                />
+                {featureFlags.enable_overload_shield && (
+                  <NovaOverloadShield
+                    fingerprint={fingerprint}
+                    onAwardPoints={awardPoints}
+                    onNavigate={setActiveTab as any}
+                  />
+                )}
               </div>
             )}
 
