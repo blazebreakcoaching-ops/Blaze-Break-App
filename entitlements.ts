@@ -40,6 +40,14 @@
 // billing - the B2B "enterprise" plan name and the B2C "Executive" tier
 // name are coincidentally close but describe entirely different
 // products for entirely different customers.
+//
+// This module is the source of truth for USAGE-QUOTA gating (Nova
+// message/voice limits, exports, etc.) - it is NOT the gate for tab/
+// feature *visibility* in the sidebar, which is a separate, older system
+// (`SubscriptionTier` in src/types.ts, `hasSubscriptionEntitlement` in
+// src/lib/entitlement.ts). The two intentionally govern different things
+// (see docs/FREE_PREMIUM_ENTITLEMENTS.md) - don't assume granting a plan
+// here also unlocks something gated by the other system, or vice versa.
 
 // ---- Plans ---------------------------------------------------------------
 // New-customer tiers, in ascending order. `legacy_premium` is

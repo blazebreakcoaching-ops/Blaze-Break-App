@@ -61,11 +61,14 @@ keep new "why did Nova suggest this" work in that same shape.
 
 **Memory.** `remember_about_user`'s write path (`server.ts`,
 `nova-tools.ts`) already gates writes behind an explicit user opt-in,
-validates content length/type, rate-limits to 2 writes per turn, and
-deliberately excludes `'verified'` as a model-writable confidence level
-(a probabilistic inference is never "verified"). Users can see, edit, and
-delete every memory in `MemoryCentre.tsx`. This is a reasonable, already
-good design - no change made.
+validates content length/type, rate-limits to 2 writes per turn (text chat)
+or 5 writes per session (Nova Live voice, which has no discrete turn
+boundary, so the cap is per-session instead - still a hard ceiling against
+a runaway loop of writes), and deliberately excludes `'verified'` as a
+model-writable confidence level (a probabilistic inference is never
+"verified"). Users can see, edit, and delete every memory in
+`MemoryCentre.tsx`. This is a reasonable, already good design - no change
+made.
 
 **Feature routing.** `suggest_feature`'s allow-list (`SUGGESTABLE_FEATURES`
 in `nova-tools.ts`) is validated server-side against a hardcoded catalog
