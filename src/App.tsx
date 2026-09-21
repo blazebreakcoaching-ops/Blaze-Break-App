@@ -869,7 +869,7 @@ const Header = ({
           "Administrative access: Machine learning layer for organisational stress mapping."}
       </p>
     </div>
-    <div className="flex items-center flex-wrap gap-2 sm:gap-4 shrink-0">
+    <div className="flex items-end flex-wrap gap-2 sm:gap-4 shrink-0">
       {onOpenTour && (
         <button
           onClick={onOpenTour}
