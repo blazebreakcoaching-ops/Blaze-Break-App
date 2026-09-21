@@ -558,6 +558,16 @@ export const ConnectedNovaPermissions = () => {
     allowEnergyTrend: true,
     allowMoodTrend: true,
     allowCalendarSignals: true,
+    allowFingerprint: true,
+    allowRecoveryPlanProgress: true,
+    allowDiagnosisProgress: true,
+    allowEnergyCommitments: true,
+    allowStressTriggers: true,
+    allowHabitCycles: true,
+    allowFuelLogs: true,
+    allowFocusSessions: true,
+    allowSomaticResets: true,
+    allowRecoveryAlly: true,
     allowNovaMemory: true,
     allowNovaUseSavedMemories: true // shadow field, kept in sync with allowNovaMemory - see toggle()
   });
@@ -579,6 +589,16 @@ export const ConnectedNovaPermissions = () => {
     allowEnergyTrend: "Let Nova use my Energy Trend",
     allowMoodTrend: "Let Nova use my Mood Trend",
     allowCalendarSignals: "Let Nova sync my calendar meeting load",
+    allowFingerprint: "Let Nova know my Burnout Fingerprint archetype",
+    allowRecoveryPlanProgress: "Let Nova see my Recovery Plan progress",
+    allowDiagnosisProgress: "Let Nova see my post-check-in action plan progress",
+    allowEnergyCommitments: "Let Nova use my Energy Commitments",
+    allowStressTriggers: "Let Nova use my Stress Trigger log (counts only, never the notes)",
+    allowHabitCycles: "Let Nova use my Weekly Habit Cycles",
+    allowFuelLogs: "Let Nova use my Recovery Fuel log",
+    allowFocusSessions: "Let Nova use my Focus Sessions",
+    allowSomaticResets: "Let Nova use my Nervous System Reset activity",
+    allowRecoveryAlly: "Let Nova use my Recovery Ally activity",
     allowNovaMemory: "Let Nova remember things about me across conversations"
   };
 

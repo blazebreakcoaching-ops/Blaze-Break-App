@@ -78,6 +78,19 @@ const NOVA_PERMISSION_DEFAULTS = {
   // features use my data" consent surface the user sees in one place
   // (DataPrivacyDashboard.tsx / "Nova Privacy Controls").
   allowCalendarSignals: true,
+  // Broader "Nova sees the whole app" pass - same default-on, compact-
+  // aggregate-only treatment as every category above. Each gates one more
+  // module's summary in server.ts's getNovaContextAndMetadata.
+  allowFingerprint: true,
+  allowRecoveryPlanProgress: true,
+  allowDiagnosisProgress: true,
+  allowEnergyCommitments: true,
+  allowStressTriggers: true,
+  allowHabitCycles: true,
+  allowFuelLogs: true,
+  allowFocusSessions: true,
+  allowSomaticResets: true,
+  allowRecoveryAlly: true,
 };
 
 // Called once, right when onboarding completes. Without this doc existing,
