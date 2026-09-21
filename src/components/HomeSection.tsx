@@ -21,6 +21,9 @@ import {
   AlertTriangle,
   Battery,
   Waves,
+  TrendingUp,
+  TrendingDown,
+  Minus,
 } from "lucide-react";
 // recharts is heavy (pulls in d3); loaded lazily via RecoveryHistoryChart
 // so it stays out of the home-screen bundle until the history card renders.
@@ -239,6 +242,7 @@ export const HomeSection = ({
     micro: "Micro-Recovery",
     activity: "Activity Log",
     directive: "Nova's Suggestion",
+    weeklyRecap: "Weekly Recap",
     quests: "Milestones",
     network: "Guardian Network",
     radar: "Relapse Radar",
@@ -268,7 +272,7 @@ export const HomeSection = ({
   // column actually holds.
   const DEFAULT_LEFT = ['hero', 'gamification', 'hub'];
   const DEFAULT_RIGHT = ['directive', 'trends'];
-  const DEFAULT_HIDDEN = ['stats', 'streakCalendar', 'anxietyResetCard', 'somaticAccelerator', 'velocity', 'daily', 'micro', 'activity', 'quests', 'network', 'radar', 'archetypeBlend'];
+  const DEFAULT_HIDDEN = ['stats', 'streakCalendar', 'anxietyResetCard', 'somaticAccelerator', 'velocity', 'daily', 'micro', 'activity', 'weeklyRecap', 'quests', 'network', 'radar', 'archetypeBlend'];
   const LAYOUT_STORAGE_KEY = 'blaze_home_dashboard_layout_v2';
 
   // Real recommendation, computed server-side from actual cross-module
@@ -316,6 +320,34 @@ export const HomeSection = ({
       setRecommendationLoading(false);
     };
     loadRecommendation();
+  }, []);
+
+  // Weekly Recovery Recap - a plain "here's what you actually did this
+  // week" read (opt-in via Add Widget), fetched independently of the
+  // recommendation above since it never competes for that card's slot.
+  const [weeklyRecap, setWeeklyRecap] = useState<{
+    hasActivity: boolean;
+    checkinsCount?: number;
+    currentStreak?: number;
+    energyDirection?: 'rising' | 'falling' | 'stable' | 'unknown';
+    highlight?: string | null;
+  } | null>(null);
+  const [weeklyRecapLoading, setWeeklyRecapLoading] = useState(true);
+
+  useEffect(() => {
+    const loadWeeklyRecap = async () => {
+      if (!auth.currentUser) { setWeeklyRecapLoading(false); return; }
+      try {
+        const res = await secureApiFetch('/api/user/weekly-recap');
+        if (res.ok) {
+          setWeeklyRecap(await res.json());
+        }
+      } catch (e) {
+        // Leaves weeklyRecap null - the card shows a graceful fallback.
+      }
+      setWeeklyRecapLoading(false);
+    };
+    loadWeeklyRecap();
   }, []);
 
   const loadLayout = (): { left: string[]; right: string[]; hidden: string[] } => {
@@ -952,6 +984,60 @@ export const HomeSection = ({
             <ArrowRight className="w-4 h-4 opacity-70 group-hover:translate-x-1 transition-transform" />
           </button>
         </div>
+      </SmartCard>
+    ),
+    weeklyRecap: (
+      <SmartCard id="weeklyRecap" key="weeklyRecap" title="Weekly Recap" energyDrain="low" onDragStart={handleDragStart} onDragOver={handleDragOver} onDrop={(e, id) => handleDrop(e, id, 'right')} onMoveUp={handleMoveUp} onMoveDown={handleMoveDown} isFirst={isFirstInCol('weeklyRecap')} isLast={isLastInCol('weeklyRecap')} className="p-6">
+        <h3 className="text-xs font-black text-text-muted uppercase tracking-widest mb-6 px-1 flex items-center gap-2">
+          <History className="w-4 h-4 text-primary" /> This week
+        </h3>
+        {weeklyRecapLoading ? (
+          <div className="flex items-center justify-center py-8">
+            <Loader2 className="w-5 h-5 animate-spin text-text-muted" />
+          </div>
+        ) : !weeklyRecap || !weeklyRecap.hasActivity ? (
+          <p className="text-xs text-text-muted font-medium">Nothing logged yet this week - a check-in is a good place to start.</p>
+        ) : (
+          <div className="space-y-3">
+            <div className="flex items-center justify-between p-4 rounded-2xl border border-border bg-surface/50">
+              <div className="flex items-center gap-3">
+                <div className="w-5 h-5 rounded-lg flex items-center justify-center bg-surface dark:bg-surface/50 text-text-muted">
+                  <CheckCircle className="w-3 h-3" />
+                </div>
+                <span className="text-xs font-bold tracking-tight text-text-main">Check-ins this week</span>
+              </div>
+              <span className="text-xs font-black tracking-tighter text-primary">{weeklyRecap.checkinsCount}</span>
+            </div>
+            <div className="flex items-center justify-between p-4 rounded-2xl border border-border bg-surface/50">
+              <div className="flex items-center gap-3">
+                <div className="w-5 h-5 rounded-lg flex items-center justify-center bg-surface dark:bg-surface/50 text-text-muted">
+                  <Flame className="w-3 h-3" />
+                </div>
+                <span className="text-xs font-bold tracking-tight text-text-main">Current streak</span>
+              </div>
+              <span className="text-xs font-black tracking-tighter text-primary">{weeklyRecap.currentStreak} {weeklyRecap.currentStreak === 1 ? 'day' : 'days'}</span>
+            </div>
+            {weeklyRecap.energyDirection && weeklyRecap.energyDirection !== 'unknown' && (
+              <div className="flex items-center justify-between p-4 rounded-2xl border border-border bg-surface/50">
+                <div className="flex items-center gap-3">
+                  <div className="w-5 h-5 rounded-lg flex items-center justify-center bg-surface dark:bg-surface/50 text-text-muted">
+                    {weeklyRecap.energyDirection === 'rising' ? <TrendingUp className="w-3 h-3" /> : weeklyRecap.energyDirection === 'falling' ? <TrendingDown className="w-3 h-3" /> : <Minus className="w-3 h-3" />}
+                  </div>
+                  <span className="text-xs font-bold tracking-tight text-text-main">Energy this week</span>
+                </div>
+                <span className="text-xs font-black tracking-tighter text-text-muted">
+                  {weeklyRecap.energyDirection === 'rising' ? 'Trending up' : weeklyRecap.energyDirection === 'falling' ? 'Trending down' : 'Holding steady'}
+                </span>
+              </div>
+            )}
+            {weeklyRecap.highlight && (
+              <div className="mt-2 p-4 bg-surface rounded-lg border border-border">
+                <span className="text-[11px] font-medium text-text-muted uppercase tracking-widest block mb-1">This week's highlight</span>
+                <p className="text-sm font-medium text-text-main">"{weeklyRecap.highlight}"</p>
+              </div>
+            )}
+          </div>
+        )}
       </SmartCard>
     ),
     quests: (
