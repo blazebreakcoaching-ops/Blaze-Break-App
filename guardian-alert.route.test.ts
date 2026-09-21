@@ -64,6 +64,15 @@ function seedUserWithGuardian(uid: string, guardian: any = GUARDIAN, fullName = 
   });
 }
 
+// The real, current storage location (support_circle subcollection) -
+// legacy supportCircle-array seeding above exercises the fallback path for
+// not-yet-migrated accounts; this exercises the primary path.
+function seedUserWithGuardianInSubcollection(uid: string, guardian: any = GUARDIAN, fullName = 'Jordan Rivera') {
+  const { id, ...rest } = guardian;
+  seedDoc(`users/${uid}/support_circle/${id}`, { ...rest, createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z' });
+  seedDoc(`users/${uid}/user_stats/core`, { profile: { fullName } });
+}
+
 const auth = (uid: string) => ({ Authorization: `Bearer ${uid}` });
 
 beforeEach(() => {
@@ -403,5 +412,54 @@ describe('Guardian alerts flag (§E.7)', () => {
       .send({ contactId: 'guardian_1', idempotencyKey: 're_enabled_test_key' });
     expect(res.status).toBe(200);
     expect(h.twilioCreate).toHaveBeenCalledTimes(1);
+  });
+});
+
+// Guardian contacts now persist to a validated support_circle subcollection
+// (src/lib/support-circle.ts) instead of the unvalidated user_stats/core
+// .supportCircle array - the tests above all still exercise the legacy-
+// array fallback path (seedUserWithGuardian). These exercise the real,
+// current storage location directly, and prove it's checked first.
+describe('POST /api/guardian/alert — reads from the validated support_circle subcollection', () => {
+  it('sends to a guardian stored only in support_circle (no legacy array at all)', async () => {
+    seedUserWithGuardianInSubcollection(USER);
+    const res = await request(app)
+      .post('/api/guardian/alert')
+      .set(auth(USER))
+      .send({ contactId: 'guardian_1', idempotencyKey: 'subcollection_key_01' });
+    expect(res.status).toBe(200);
+    expect(h.twilioCreate).toHaveBeenCalledTimes(1);
+  });
+
+  it('prefers the subcollection contact over a stale legacy array entry for the same id', async () => {
+    // Legacy array still has the old (invalid) phone number; the real
+    // subcollection has since been updated with a valid one. If the server
+    // read the legacy array first, this would 400 on an invalid number.
+    seedDoc(`users/${USER}/user_stats/core`, {
+      supportCircle: [{ ...GUARDIAN, contactMethod: 'not-a-real-number' }],
+      profile: { fullName: 'Jordan Rivera' },
+    });
+    seedDoc(`users/${USER}/support_circle/guardian_1`, {
+      name: 'Sam Guardian', isGuardian: true, role: 'primary_guardian',
+      contactMethod: '+447700900123', notificationPreference: 'sms',
+      createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-02T00:00:00.000Z',
+    });
+    const res = await request(app)
+      .post('/api/guardian/alert')
+      .set(auth(USER))
+      .send({ contactId: 'guardian_1', idempotencyKey: 'subcollection_priority_key' });
+    expect(res.status).toBe(200);
+    expect(h.twilioCreate).toHaveBeenCalledTimes(1);
+  });
+
+  it('still rejects a non-guardian contact found in the subcollection', async () => {
+    seedUserWithGuardianInSubcollection(USER, { ...GUARDIAN, id: 'peer_1', role: 'peer', isGuardian: false });
+    const res = await request(app)
+      .post('/api/guardian/alert')
+      .set(auth(USER))
+      .send({ contactId: 'peer_1', idempotencyKey: 'subcollection_non_guardian_key' });
+    expect(res.status).toBe(403);
+    expect(res.body.error).toBe('not_a_guardian');
+    expect(h.twilioCreate).not.toHaveBeenCalled();
   });
 });
