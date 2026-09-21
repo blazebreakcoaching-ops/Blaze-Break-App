@@ -207,6 +207,21 @@ service cloud.firestore {
         allow read, write: if false;
       }
 
+      // guardian_alerts is the Tier 1 Guardian Support send history
+      // (docs/GUARDIAN_SUPPORT_SPEC.md §D.7) — written only by
+      // POST /api/guardian/alert via the Admin SDK. Every other
+      // server-only collection in this file gets an explicit locked block
+      // like this one; this collection previously had none (relying on
+      // Firestore's default-deny for unmatched paths, which was already
+      // safe but undocumented and inconsistent with this file's own
+      // pattern). The owner's own history is readable only through
+      // GET /api/guardian/alerts, which returns metadata (contact name,
+      // state, timestamp) but never message content — never direct
+      // Firestore access, so this stays fully locked.
+      match /guardian_alerts/{alertId} {
+        allow read, write: if false;
+      }
+
       // pulse_status is what the scheduled push-notification check reads —
       // no reason for the client to read this back directly since it's a
       // copy of data already computed client-side.

@@ -7914,7 +7914,16 @@ async function processNudgeSchedules() {
   }
 }
 
-cron.schedule('*/5 * * * *', processNudgeSchedules);
+// Unlike this file's other two startup-time side effects (the pulse-check
+// setInterval and the app.listen/WebSocket block below), this registration
+// was unconditional - a real (if inert, thanks to NUDGE_SCHEDULER_ENABLED
+// defaulting false) node-cron timer was left running on every test-file
+// import that pulls in server.ts. Harmless today only because the kill
+// switch stays off in test envs; guarded the same way as the other two so
+// that stays true structurally, not by convention.
+if (process.env.TEST_MODE !== 'true') {
+  cron.schedule('*/5 * * * *', processNudgeSchedules);
+}
 
 // Public - the ally doesn't have an account. Access is entirely gated by
 // possession of an unguessable 48-character token, and the response only
