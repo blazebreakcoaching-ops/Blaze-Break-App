@@ -254,6 +254,52 @@ describe('POST /api/guardian/alert — idempotency, cooldown, daily cap', () => 
   });
 });
 
+// The B2C multi-tier subscription system added two SEPARATE SMS gates
+// downstream of this route, inside sendTwilioMessage (server.ts): the
+// pre-existing aggregate abuse cap (sms-guardrails.ts) and the new
+// sms_nudges tier allowance (entitlements.ts, Free/Core: disabled). Both
+// are scoped to the 'ally_nudge'/'manual_send' categories only - never
+// 'guardian_alert', the category this route always sends under. These
+// tests prove that exemption holds all the way through the real route,
+// not just in the pure category-list logic.
+describe('POST /api/guardian/alert — never subject to the SMS tier allowance or the aggregate abuse cap', () => {
+  it('a Free-tier account (no sms_nudges allowance at all) can still send a guardian alert', async () => {
+    seedUserWithGuardian(USER);
+    // No entitlements/status doc seeded - this account is Free by default,
+    // and Free's sms_nudges capability is { enabled: false, limit: 0 }.
+    const res = await request(app)
+      .post('/api/guardian/alert').set(auth(USER))
+      .send({ contactId: 'guardian_1', idempotencyKey: 'idem_free_tier_guardian_01' });
+    expect(res.status).toBe(200);
+    expect(h.twilioCreate).toHaveBeenCalledTimes(1);
+  });
+
+  it('a guardian alert still sends once the general SMS aggregate cap (ally_nudge/manual_send) is already maxed out', async () => {
+    seedUserWithGuardian(USER);
+    const today = new Date().toISOString().slice(0, 10);
+    const monthKey = `month-${today.slice(0, 7)}`;
+    // SMS_LIMITS.perUserDailyLimit / perUserMonthlyLimit, already exhausted
+    // by manual_send/ally_nudge sends - would block those categories, but
+    // guardian_alert is never subject to this cap.
+    seedDoc(`users/${USER}/usage_counters/${today}`, { smsCount: 20 });
+    seedDoc(`users/${USER}/usage_counters/${monthKey}`, { smsCount: 150 });
+    const res = await request(app)
+      .post('/api/guardian/alert').set(auth(USER))
+      .send({ contactId: 'guardian_1', idempotencyKey: 'idem_capped_guardian_01' });
+    expect(res.status).toBe(200);
+    expect(h.twilioCreate).toHaveBeenCalledTimes(1);
+  });
+
+  it('sending a guardian alert does not consume the sms_nudges tier counter (it is a different code path entirely)', async () => {
+    seedUserWithGuardian(USER);
+    const monthKey = `month-${new Date().toISOString().slice(0, 7)}`;
+    await request(app)
+      .post('/api/guardian/alert').set(auth(USER))
+      .send({ contactId: 'guardian_1', idempotencyKey: 'idem_no_tier_counter_01' });
+    expect(getDocRaw(`users/${USER}/usage_counters/${monthKey}`)?.sms_nudges).toBeUndefined();
+  });
+});
+
 describe('POST /api/guardian/alert — provider failure handling', () => {
   it('records state=failed and returns 502 when the provider rejects', async () => {
     seedUserWithGuardian(USER);

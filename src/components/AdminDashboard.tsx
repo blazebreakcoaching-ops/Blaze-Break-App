@@ -362,12 +362,16 @@ export const AdminDashboard = () => {
     }
   };
 
-  // Grants or clears a Premium entitlement directly - the same "admin
-  // comp" path server.ts documents as the one real way to give an account
-  // Premium today, pending a live Stripe/Apple/Google integration (beta
+  // Grants or clears a paid entitlement directly - the same "admin comp"
+  // path server.ts documents as the one real way to give an account paid
+  // access today, pending a live Stripe/Apple/Google integration (beta
   // testers, support cases, or the founder's own account). No fixed end
   // date is set, so it stays in effect until changed here again.
-  const handleGrantEntitlement = async (uid: string, plan: 'premium' | 'free') => {
+  // 'performance' is the admin-comp equivalent of the old single Premium
+  // tier (docs/FREE_PREMIUM_ENTITLEMENTS.md) - 'legacy_premium' is never
+  // an admin-assignable value, only a read-path outcome for accounts that
+  // predate the multi-tier model (docs/LEGACY_CUSTOMER_MIGRATION.md).
+  const handleGrantEntitlement = async (uid: string, plan: 'performance' | 'free') => {
     try {
       setGrantingEntitlementUid(uid);
       setError(null);
@@ -382,7 +386,7 @@ export const AdminDashboard = () => {
         throw new Error(errorData.error || "Couldn't update that account's plan.");
       }
 
-      showSuccess(plan === 'premium' ? 'Account upgraded to Premium.' : 'Account reverted to Free.');
+      showSuccess(plan === 'performance' ? 'Account upgraded to Performance.' : 'Account reverted to Free.');
     } catch (e: any) {
       setError(e.message);
     } finally {
@@ -831,13 +835,13 @@ export const AdminDashboard = () => {
                               Edit Claims
                             </button>
                             <button
-                              onClick={() => handleGrantEntitlement(u.uid, 'premium')}
+                              onClick={() => handleGrantEntitlement(u.uid, 'performance')}
                               disabled={grantingEntitlementUid === u.uid}
-                              title="Grant this account Premium (admin comp - no billing involved)"
+                              title="Grant this account the Performance plan (admin comp - no billing involved)"
                               className="px-3 py-1.5 bg-success/10 hover:bg-success/20 text-success dark:text-[#4ade80] text-[10px] font-black uppercase tracking-widest rounded-lg transition-all disabled:opacity-50 flex items-center gap-1.5"
                             >
                               {grantingEntitlementUid === u.uid ? <Loader2 className="w-3 h-3 animate-spin" /> : <CreditCard className="w-3 h-3" />}
-                              Grant Premium
+                              Grant Performance
                             </button>
                             <button
                               onClick={() => setPendingAction({ type: 'suspend', uid: u.uid, email: u.email, currentlyActive: u.accessStatus === 'active' })}

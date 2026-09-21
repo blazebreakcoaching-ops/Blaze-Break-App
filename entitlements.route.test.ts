@@ -66,12 +66,12 @@ describe('GET /api/entitlements/me', () => {
     expect(res.body.capabilities.nova_voice.limit).toBe(1);
   });
 
-  it('reflects a real stored Premium entitlement', async () => {
+  it('a stored legacy plan: "premium" record (pre-B2C-tier accounts) is transparently reported as legacy_premium', async () => {
     seedDoc(`users/${USER}/entitlements/status`, {
       plan: 'premium', status: 'active', billingSource: 'admin', entitlementEnd: null, lastVerifiedAt: '2026-01-01T00:00:00.000Z',
     });
     const res = await request(app).get('/api/entitlements/me').set(auth(USER));
-    expect(res.body.plan).toBe('premium');
+    expect(res.body.plan).toBe('legacy_premium');
     expect(res.body.capabilities.nova_voice.limit).toBe(20);
   });
 
@@ -80,15 +80,80 @@ describe('GET /api/entitlements/me', () => {
     const res = await request(app).get('/api/entitlements/me').set(auth(USER));
     expect(res.body.plan).toBe('free');
   });
+
+  // Route-level coverage for every real purchasable plan (not just Free
+  // and legacy) - each reports its own distinct capability limits, proving
+  // the whole read path (stored doc -> getEffectiveEntitlement ->
+  // effectivePlan -> getCapability) works per-plan, not just for the
+  // default/legacy cases already covered above.
+  it.each([
+    ['core', 300],
+    ['performance', 600],
+    ['executive', 1000],
+  ] as const)('a stored "%s" record reports its own distinct nova_text limit (%i)', async (plan, expectedLimit) => {
+    seedDoc(`users/${USER}/entitlements/status`, { plan, status: 'active' });
+    const res = await request(app).get('/api/entitlements/me').set(auth(USER));
+    expect(res.body.plan).toBe(plan);
+    expect(res.body.capabilities.nova_text.limit).toBe(expectedLimit);
+  });
+
+  it('surfaces cancelAtPeriodEnd so the client can show "ends on <date>, not renewing"', async () => {
+    seedDoc(`users/${USER}/entitlements/status`, {
+      plan: 'performance', status: 'active', cancelAtPeriodEnd: true, entitlementEnd: '2030-01-01T00:00:00.000Z',
+    });
+    const res = await request(app).get('/api/entitlements/me').set(auth(USER));
+    expect(res.body.cancelAtPeriodEnd).toBe(true);
+    expect(res.body.entitlementEnd).toBe('2030-01-01T00:00:00.000Z');
+  });
+
+  // billingSource: 'organisation' is real schema (an org's sponsored seat -
+  // see docs/FREE_PREMIUM_ENTITLEMENTS.md's "Organisation-sponsored
+  // access"), even though automatic provisioning isn't wired up yet - an
+  // admin using this same route to grant it manually must round-trip
+  // correctly, same as any other billingSource.
+  it('an organisation-sponsored entitlement (billingSource: "organisation") is read back correctly', async () => {
+    seedDoc(`users/${USER}/entitlements/status`, { plan: 'performance', status: 'active', billingSource: 'organisation' });
+    const res = await request(app).get('/api/entitlements/me').set(auth(USER));
+    expect(res.body.plan).toBe('performance');
+    expect(res.body.billingSource).toBe('organisation');
+  });
+});
+
+describe('GET /api/entitlements/pricing', () => {
+  it('requires authentication', async () => {
+    expect((await request(app).get('/api/entitlements/pricing')).status).toBe(401);
+  });
+
+  it('returns exactly the four purchasable plans, never legacy_premium', async () => {
+    const res = await request(app).get('/api/entitlements/pricing').set(auth(USER));
+    expect(res.status).toBe(200);
+    const plans = res.body.plans.map((p: any) => p.plan);
+    expect(plans.sort()).toEqual(['core', 'executive', 'free', 'performance']);
+  });
+
+  it('marks Performance as most popular and matches the agreed launch prices', async () => {
+    const res = await request(app).get('/api/entitlements/pricing').set(auth(USER));
+    const performance = res.body.plans.find((p: any) => p.plan === 'performance');
+    const core = res.body.plans.find((p: any) => p.plan === 'core');
+    expect(performance.mostPopular).toBe(true);
+    expect(performance.pricing).toEqual({ monthlyGbp: 49.99, annualGbp: 499 });
+    expect(core.mostPopular).toBe(false);
+  });
+
+  it('is data-driven from the same capability matrix the quota checks use - sms_nudges is disabled for Free', async () => {
+    const res = await request(app).get('/api/entitlements/pricing').set(auth(USER));
+    const free = res.body.plans.find((p: any) => p.plan === 'free');
+    expect(free.capabilities.sms_nudges.enabled).toBe(false);
+  });
 });
 
 describe('POST /api/admin/users/:uid/entitlement', () => {
   it('requires authentication', async () => {
-    expect((await request(app).post(`/api/admin/users/${USER}/entitlement`).send({ plan: 'premium', status: 'active' })).status).toBe(401);
+    expect((await request(app).post(`/api/admin/users/${USER}/entitlement`).send({ plan: 'performance', status: 'active' })).status).toBe(401);
   });
 
   it('refuses a non-admin caller', async () => {
-    const res = await request(app).post(`/api/admin/users/${USER}/entitlement`).set(auth(USER)).send({ plan: 'premium', status: 'active' });
+    const res = await request(app).post(`/api/admin/users/${USER}/entitlement`).set(auth(USER)).send({ plan: 'performance', status: 'active' });
     expect(res.status).toBe(403);
   });
 
@@ -98,27 +163,46 @@ describe('POST /api/admin/users/:uid/entitlement', () => {
     expect(getDocRaw(`users/${USER}/entitlements/status`)).toBeUndefined();
   });
 
+  it('rejects the old "premium" plan name - it no longer exists as a purchasable/grantable plan', async () => {
+    const res = await request(app).post(`/api/admin/users/${USER}/entitlement`).set(auth(ADMIN)).send({ plan: 'premium', status: 'active' });
+    expect(res.status).toBe(400);
+    expect(getDocRaw(`users/${USER}/entitlements/status`)).toBeUndefined();
+  });
+
+  it('rejects "legacy_premium" - it is a read-path migration outcome, never an admin-grantable plan', async () => {
+    const res = await request(app).post(`/api/admin/users/${USER}/entitlement`).set(auth(ADMIN)).send({ plan: 'legacy_premium', status: 'active' });
+    expect(res.status).toBe(400);
+    expect(getDocRaw(`users/${USER}/entitlements/status`)).toBeUndefined();
+  });
+
   it('an admin grant is written with billingSource forced to admin, never taken from the request body', async () => {
     const res = await request(app).post(`/api/admin/users/${USER}/entitlement`).set(auth(ADMIN))
-      .send({ plan: 'premium', status: 'active', billingSource: 'stripe', durationDays: 30 });
+      .send({ plan: 'performance', status: 'active', billingSource: 'stripe', durationDays: 30 });
     expect(res.status).toBe(200);
     const stored = getDocRaw(`users/${USER}/entitlements/status`);
-    expect(stored?.plan).toBe('premium');
+    expect(stored?.plan).toBe('performance');
     expect(stored?.billingSource).toBe('admin');
     expect(stored?.entitlementEnd).not.toBeNull();
   });
 
   it('an admin grant with no durationDays sets no fixed end', async () => {
-    await request(app).post(`/api/admin/users/${USER}/entitlement`).set(auth(ADMIN)).send({ plan: 'premium', status: 'active' });
+    await request(app).post(`/api/admin/users/${USER}/entitlement`).set(auth(ADMIN)).send({ plan: 'performance', status: 'active' });
     expect(getDocRaw(`users/${USER}/entitlements/status`)?.entitlementEnd).toBeNull();
   });
 
   it('a grant merges into the entitlement doc rather than clobbering an existing platform-admin role field', async () => {
     seedDoc(`users/${USER}/entitlements/status`, { role: 'support_admin' });
-    await request(app).post(`/api/admin/users/${USER}/entitlement`).set(auth(ADMIN)).send({ plan: 'premium', status: 'active' });
+    await request(app).post(`/api/admin/users/${USER}/entitlement`).set(auth(ADMIN)).send({ plan: 'performance', status: 'active' });
     const stored = getDocRaw(`users/${USER}/entitlements/status`);
     expect(stored?.role).toBe('support_admin');
-    expect(stored?.plan).toBe('premium');
+    expect(stored?.plan).toBe('performance');
+  });
+
+  it('logs whether the grant was an upgrade, downgrade, or lateral move relative to the prior plan', async () => {
+    seedDoc(`users/${USER}/entitlements/status`, { plan: 'free', status: 'active' });
+    await request(app).post(`/api/admin/users/${USER}/entitlement`).set(auth(ADMIN)).send({ plan: 'executive', status: 'active' });
+    const stored = getDocRaw(`users/${USER}/entitlements/status`);
+    expect(stored?.plan).toBe('executive');
   });
 });
 

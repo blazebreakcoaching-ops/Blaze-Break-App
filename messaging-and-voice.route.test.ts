@@ -59,6 +59,7 @@ describe('POST /api/twilio/send — authenticated, validated outbound SMS', () =
   });
 
   it('sends a valid message via the provider', async () => {
+    seedDoc(`users/${USER}/entitlements/status`, { plan: 'performance', status: 'active' });
     const res = await request(app).post('/api/twilio/send').set(auth(USER)).send({ to: '+447700900123', message: 'Thinking of you.' });
     expect(res.status).toBe(200);
     expect(res.body.success).toBe(true);
@@ -67,10 +68,23 @@ describe('POST /api/twilio/send — authenticated, validated outbound SMS', () =
   });
 
   it('reports a provider failure honestly rather than claiming success', async () => {
+    seedDoc(`users/${USER}/entitlements/status`, { plan: 'performance', status: 'active' });
     h.twilioCreate.mockImplementationOnce(async () => { throw new Error('provider down'); });
     const res = await request(app).post('/api/twilio/send').set(auth(USER)).send({ to: '+447700900123', message: 'hi' });
     expect(res.status).toBe(400);
     expect(res.body.success).toBe(false);
+    expect(h.twilioCreate).toHaveBeenCalledTimes(1);
+  });
+
+  // sms_nudges is the new B2C tier-allowance layer (entitlements.ts) -
+  // Free/Core have no SMS allowance at all (fallback: push/in-app/email);
+  // this is a DIFFERENT, additional gate from the aggregate abuse cap
+  // above, which every plan is subject to regardless of tier.
+  it('a Free-tier account (no SMS allowance) is blocked from sending, without calling the provider', async () => {
+    const res = await request(app).post('/api/twilio/send').set(auth(USER)).send({ to: '+447700900123', message: 'hi' });
+    expect(res.status).toBe(400);
+    expect(res.body.success).toBe(false);
+    expect(h.twilioCreate).not.toHaveBeenCalled();
   });
 
   it('is blocked by the per-user aggregate daily SMS cap once already reached, without calling the provider', async () => {
@@ -82,12 +96,14 @@ describe('POST /api/twilio/send — authenticated, validated outbound SMS', () =
     expect(h.twilioCreate).not.toHaveBeenCalled();
   });
 
-  it('a successful send increments the daily/monthly usage counters used by the aggregate cap', async () => {
+  it('a successful send increments the daily/monthly usage counters used by the aggregate cap, and the sms_nudges tier counter', async () => {
+    seedDoc(`users/${USER}/entitlements/status`, { plan: 'performance', status: 'active' });
     await request(app).post('/api/twilio/send').set(auth(USER)).send({ to: '+447700900123', message: 'hi' });
     const today = new Date().toISOString().slice(0, 10);
     const monthKey = `month-${today.slice(0, 7)}`;
     expect(getDocRaw(`users/${USER}/usage_counters/${today}`)?.smsCount).toBe(1);
     expect(getDocRaw(`users/${USER}/usage_counters/${monthKey}`)?.smsCount).toBe(1);
+    expect(getDocRaw(`users/${USER}/usage_counters/${monthKey}`)?.sms_nudges).toBe(1);
   });
 });
 

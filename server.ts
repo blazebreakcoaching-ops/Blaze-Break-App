@@ -40,8 +40,10 @@ import { getEffectiveBillingState, validateBillingUpdate, checkSeatLimit, billin
 import { validateSsoConfigInput, encryptSecret, canEnableSsoEnforcement, redactSsoConfig, isBlockedIpAddress, StoredSsoConfig } from './sso-config';
 import { searchOrgResources, validateResourceCreate, SearchableResource } from './org-search';
 import {
-  EntitlementRecord, EntitlementPlan, CapabilityId, getEffectiveEntitlement,
-  effectivePlan, checkDailyQuota, getCapability, validateAdminGrant,
+  EntitlementRecord, EntitlementPlan, CapabilityId, CAPABILITIES, getEffectiveEntitlement,
+  effectivePlan, checkQuota, getCapability, validateAdminGrant,
+  minutesUsedForSession, PLAN_PRICING, annualSavingsGbp, PERFORMANCE_IS_MOST_POPULAR,
+  PURCHASABLE_PLANS, isUpgrade, isDowngrade,
 } from './entitlements';
 import {
   SmsCategory, CATEGORIES_SUBJECT_TO_AGGREGATE_CAP, checkSmsQuota, estimateSmsSegments,
@@ -708,6 +710,12 @@ async function sendTwilioMessage(
   const dayKey = usageCounterTodayKey();
   const monthKey = `month-${dayKey.slice(0, 7)}`;
   const usageSubjectToCap = CATEGORIES_SUBJECT_TO_AGGREGATE_CAP.includes(category);
+  // Tier SMS allowance (sms_nudges) is checked here, inside the SAME
+  // usageSubjectToCap branch as the pre-existing abuse-cap check below -
+  // that branch is never entered for 'guardian_alert', so Guardian
+  // Support SMS automatically inherits this exemption without any
+  // separate bypass logic. See docs/FREE_PREMIUM_ENTITLEMENTS.md.
+  let tierQuotaPlan: EntitlementPlan | null = null;
   if (usageSubjectToCap) {
     const [daySnap, monthSnap] = await Promise.all([
       db.collection("users").doc(uid).collection("usage_counters").doc(dayKey).get(),
@@ -720,6 +728,15 @@ async function sendTwilioMessage(
         error: quota.reason === 'monthly_limit_reached'
           ? "You've reached this month's messaging limit."
           : "You've reached today's messaging limit. It resets tomorrow.",
+      };
+    }
+
+    const tierQuota = await checkCapabilityQuota(uid, 'sms_nudges');
+    tierQuotaPlan = tierQuota.plan;
+    if (!tierQuota.allowed) {
+      return {
+        success: false,
+        error: "You've used this month's text nudges. They'll continue by push/in-app notification instead - upgrade for a higher monthly SMS allowance.",
       };
     }
   }
@@ -737,10 +754,11 @@ async function sendTwilioMessage(
       to: useWhatsapp ? `whatsapp:${to}` : to,
     });
     await logAutopilotAction(uid, "sms_send", { to, useWhatsapp, category, segments, encoding }, true);
-    if (usageSubjectToCap) {
+    if (usageSubjectToCap && tierQuotaPlan) {
       await Promise.all([
         db.collection("users").doc(uid).collection("usage_counters").doc(dayKey).set({ smsCount: FieldValue.increment(1) }, { merge: true }),
         db.collection("users").doc(uid).collection("usage_counters").doc(monthKey).set({ smsCount: FieldValue.increment(1) }, { merge: true }),
+        recordCapabilityUsage(uid, 'sms_nudges', tierQuotaPlan, 1),
       ]);
     }
     return { success: true, sid: m.sid };
@@ -3008,30 +3026,73 @@ const getEntitlementRecord = async (uid: string): Promise<EntitlementRecord> => 
 };
 
 const usageCounterTodayKey = () => new Date().toISOString().slice(0, 10);
+// Same 'month-YYYY-MM' key shape sendTwilioMessage's pre-existing
+// SMS aggregate-cap counters already use - one convention for every
+// monthly-reset counter in this codebase, not a second one invented here.
+const usageCounterMonthKey = () => `month-${usageCounterTodayKey().slice(0, 7)}`;
 
-// Checks today's usage of `capability` against the account's plan and, if
-// allowed, immediately increments the counter. This is a best-effort
-// fair-use guard, not a billing-grade lock: two requests racing in the
-// same instant could both pass, which is an accepted trade-off (the goal
-// is stopping runaway/abusive usage, not metering to the exact request -
-// "soft quotas, generous for legitimate users"). Consuming the quota
-// unconditionally on allow, rather than only after a downstream AI call
-// succeeds, is the same simplification the existing express-rate-limit
-// limiters in this file already make.
+const usageCounterRef = (db: FirebaseFirestore.Firestore, uid: string, resetPeriod: 'daily' | 'monthly' | undefined) => {
+  const key = resetPeriod === 'monthly' ? usageCounterMonthKey() : usageCounterTodayKey();
+  return db.collection("users").doc(uid).collection("usage_counters").doc(key);
+};
+
+const getCapabilityUsage = async (uid: string, capability: CapabilityId, plan: EntitlementPlan): Promise<number> => {
+  const db = getDb();
+  const cap = getCapability(plan, capability);
+  const usageSnap = await usageCounterRef(db, uid, cap.resetPeriod).get();
+  return Number(usageSnap.data()?.[capability]) || 0;
+};
+
+// Increments a capability's usage-period counter by `amount` (1 for a
+// plain event count, or the real elapsed minutes for a duration-based
+// capability like nova_voice_minutes) without checking/enforcing a
+// limit itself - the caller decides when recording is appropriate (see
+// nova_voice_minutes, which is checked at session START but only
+// recorded at session END, once the real duration is known).
+const recordCapabilityUsage = async (uid: string, capability: CapabilityId, plan: EntitlementPlan, amount: number): Promise<void> => {
+  if (amount <= 0) return;
+  const db = getDb();
+  const cap = getCapability(plan, capability);
+  await usageCounterRef(db, uid, cap.resetPeriod).set({ [capability]: FieldValue.increment(amount), updatedAt: new Date().toISOString() }, { merge: true });
+};
+
+// Checks this period's usage of `capability` against the account's plan
+// and, if allowed, immediately increments the counter by 1. This is a
+// best-effort fair-use guard, not a billing-grade lock: two requests
+// racing in the same instant could both pass, which is an accepted
+// trade-off (the goal is stopping runaway/abusive usage, not metering to
+// the exact request - "soft quotas, generous for legitimate users").
+// Consuming the quota unconditionally on allow, rather than only after a
+// downstream AI call succeeds, is the same simplification the existing
+// express-rate-limit limiters in this file already make. Not used for
+// nova_voice_minutes - see checkCapabilityQuota + recordCapabilityUsage
+// for that capability's check-at-start/record-at-end shape instead.
 const checkAndReserveCapability = async (
   uid: string,
   capability: CapabilityId
 ): Promise<{ allowed: boolean; limit: number | null; used: number; plan: EntitlementPlan }> => {
   const record = await getEntitlementRecord(uid);
   const plan = effectivePlan(record);
-  const db = getDb();
-  const usageRef = db.collection("users").doc(uid).collection("usage_counters").doc(usageCounterTodayKey());
-  const usageSnap = await usageRef.get();
-  const usedToday = Number(usageSnap.data()?.[capability]) || 0;
-  const result = checkDailyQuota(plan, capability, usedToday);
+  const usedThisPeriod = await getCapabilityUsage(uid, capability, plan);
+  const result = checkQuota(plan, capability, usedThisPeriod);
   if (result.allowed) {
-    await usageRef.set({ [capability]: FieldValue.increment(1), updatedAt: new Date().toISOString() }, { merge: true });
+    await recordCapabilityUsage(uid, capability, plan, 1);
   }
+  return { ...result, plan };
+};
+
+// Read-only version of the check above, for a capability whose usage is
+// recorded separately (nova_voice_minutes: checked before a session is
+// allowed to start, recorded only once the session actually ends with a
+// real duration - see the Nova Live WebSocket handler).
+const checkCapabilityQuota = async (
+  uid: string,
+  capability: CapabilityId
+): Promise<{ allowed: boolean; limit: number | null; used: number; plan: EntitlementPlan }> => {
+  const record = await getEntitlementRecord(uid);
+  const plan = effectivePlan(record);
+  const usedThisPeriod = await getCapabilityUsage(uid, capability, plan);
+  const result = checkQuota(plan, capability, usedThisPeriod);
   return { ...result, plan };
 };
 
@@ -3042,16 +3103,46 @@ app.get("/api/entitlements/me", verifyAppCheck, authenticateFirebaseUser, async 
     const record = await getEntitlementRecord(uid);
     const plan = effectivePlan(record);
     const db = getDb();
-    const usageSnap = await db.collection("users").doc(uid).collection("usage_counters").doc(usageCounterTodayKey()).get();
-    const usageData = usageSnap.data() || {};
-    const capabilities: Record<string, { enabled: boolean; limit: number | null; used: number }> = {};
-    (['nova_text', 'nova_voice', 'diagnose', 'exports', 'resentment_analysis', 'executive_report'] as CapabilityId[]).forEach((id) => {
+    const [dailySnap, monthlySnap] = await Promise.all([
+      db.collection("users").doc(uid).collection("usage_counters").doc(usageCounterTodayKey()).get(),
+      db.collection("users").doc(uid).collection("usage_counters").doc(usageCounterMonthKey()).get(),
+    ]);
+    const dailyUsage = dailySnap.data() || {};
+    const monthlyUsage = monthlySnap.data() || {};
+    const capabilities: Record<string, { enabled: boolean; limit: number | null; resetPeriod?: string; unit?: string; used: number }> = {};
+    (['nova_text', 'nova_voice', 'nova_voice_minutes', 'diagnose', 'exports', 'resentment_analysis', 'executive_report', 'sms_nudges'] as CapabilityId[]).forEach((id) => {
       const cap = getCapability(plan, id);
-      capabilities[id] = { enabled: cap.enabled, limit: cap.dailyLimit, used: Number(usageData[id]) || 0 };
+      const usageData = cap.resetPeriod === 'monthly' ? monthlyUsage : dailyUsage;
+      capabilities[id] = { enabled: cap.enabled, limit: cap.limit, resetPeriod: cap.resetPeriod, unit: cap.unit, used: Number(usageData[id]) || 0 };
     });
-    res.json({ plan, status: record.status, billingSource: record.billingSource, entitlementEnd: record.entitlementEnd, renewalDate: record.renewalDate, capabilities });
+    res.json({ plan, status: record.status, billingSource: record.billingSource, entitlementEnd: record.entitlementEnd, renewalDate: record.renewalDate, cancelAtPeriodEnd: record.cancelAtPeriodEnd, capabilities });
   } catch (err: any) {
     res.status(err.message?.includes("Unauthorized") ? 401 : 500).json({ error: err.message });
+  }
+});
+
+// Data-driven pricing/tier matrix for the pricing page - reads entirely
+// from entitlements.ts's PLAN_PRICING/CAPABILITIES so the page can never
+// drift from what checkQuota/getCapability actually enforce. Behind
+// authenticateFirebaseUser like every other route in this file (every
+// visitor already has an anonymous Firebase session by the time the app
+// renders - see src/lib/auth.tsx - so this doesn't gate the pricing page
+// behind a real sign-up). legacy_premium is deliberately excluded - it's
+// not a plan a visitor can choose, see entitlements.ts.
+app.get("/api/entitlements/pricing", verifyAppCheck, authenticateFirebaseUser, async (_req, res) => {
+  try {
+    const plans = PURCHASABLE_PLANS.map((plan) => ({
+      plan,
+      pricing: PLAN_PRICING[plan as Exclude<EntitlementPlan, 'legacy_premium'>],
+      annualSavingsGbp: annualSavingsGbp(plan as Exclude<EntitlementPlan, 'legacy_premium'>),
+      mostPopular: plan === 'performance' && PERFORMANCE_IS_MOST_POPULAR,
+      capabilities: Object.fromEntries(
+        (Object.keys(CAPABILITIES) as CapabilityId[]).map((id) => [id, getCapability(plan, id)])
+      ),
+    }));
+    res.json({ plans });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
   }
 });
 
@@ -4595,8 +4686,24 @@ app.get("/api/admin/cost-usage", verifyAppCheck, authenticateFirebaseUser, async
     const sinceIso = new Date(Date.now() - periodDays * 24 * 60 * 60 * 1000).toISOString();
 
     const totals: UsageTotals = { novaTextCount: 0, novaVoiceCount: 0, diagnoseCount: 0, smsSegmentCount: 0 };
+    // Nova usage broken down by plan tier - the one real, non-sensitive
+    // commercial signal this pass can honestly report for the B2C
+    // pricing brief's "Nova Live usage by tier" analytics ask. Built from
+    // the same usage_counters snapshot below (no extra reads for the
+    // counts themselves), cross-referenced against each distinct active
+    // uid's real entitlement record - one extra read per uid active in
+    // the period, the same "how many people used the app this week"
+    // scale the unbounded collectionGroup query below already assumes.
+    const byTier: Record<EntitlementPlan, { novaTextCount: number; novaVoiceCount: number; novaVoiceMinutes: number }> = {
+      free: { novaTextCount: 0, novaVoiceCount: 0, novaVoiceMinutes: 0 },
+      core: { novaTextCount: 0, novaVoiceCount: 0, novaVoiceMinutes: 0 },
+      performance: { novaTextCount: 0, novaVoiceCount: 0, novaVoiceMinutes: 0 },
+      executive: { novaTextCount: 0, novaVoiceCount: 0, novaVoiceMinutes: 0 },
+      legacy_premium: { novaTextCount: 0, novaVoiceCount: 0, novaVoiceMinutes: 0 },
+    };
     try {
       const snap = await db.collectionGroup("usage_counters").where("updatedAt", ">=", sinceIso).get();
+      const uidToDocs = new Map<string, FirebaseFirestore.QueryDocumentSnapshot[]>();
       snap.docs.forEach((doc: any) => {
         const data = doc.data();
         totals.novaTextCount += Number(data.nova_text) || 0;
@@ -4606,6 +4713,63 @@ app.get("/api/admin/cost-usage", verifyAppCheck, authenticateFirebaseUser, async
         // count isn't persisted per-send) - treated here as ~1 segment each,
         // a conservative underestimate for any longer message.
         totals.smsSegmentCount += Number(data.smsCount) || 0;
+
+        // usage_counters docs always live at users/{uid}/usage_counters/{key}
+        // - read the uid directly from the path segment rather than
+        // doc.ref.parent.parent, which the lightweight Firestore test
+        // double doesn't implement (this still works identically against
+        // the real Admin SDK, which uses the same path shape).
+        const pathSegs = doc.ref.path.split('/');
+        const uid = pathSegs.length === 4 && pathSegs[0] === 'users' ? pathSegs[1] : undefined;
+        if (uid) {
+          if (!uidToDocs.has(uid)) uidToDocs.set(uid, []);
+          uidToDocs.get(uid)!.push(doc);
+        }
+      });
+
+      const uids = Array.from(uidToDocs.keys());
+      const plans = await Promise.all(uids.map((uid) =>
+        getEntitlementRecord(uid).then((r) => effectivePlan(r)).catch(() => 'free' as EntitlementPlan)
+      ));
+      uids.forEach((uid, i) => {
+        const plan = plans[i];
+        for (const doc of uidToDocs.get(uid)!) {
+          const data = doc.data();
+          byTier[plan].novaTextCount += Number(data.nova_text) || 0;
+          byTier[plan].novaVoiceCount += Number(data.nova_voice) || 0;
+          byTier[plan].novaVoiceMinutes += Number(data.nova_voice_minutes) || 0;
+        }
+      });
+    } catch (e) {
+      // This is an estimate/visibility endpoint, not a critical path -
+      // degrade to zeros rather than failing the whole admin view.
+    }
+
+    // Admin-driven plan changes - the only real "conversion"-adjacent
+    // event that exists today, since there is no live checkout to source
+    // a real signup/purchase event from. Genuine signup counts, monthly-
+    // vs-annual split, cancellations/churn, and ARPU all require a live
+    // payment provider to mean anything real, and are deliberately NOT
+    // fabricated here - see docs/FREE_PREMIUM_ENTITLEMENTS.md and the
+    // final report's honest accounting of what analytics could and
+    // couldn't be built without one.
+    const planChangesPeriodDays = 30;
+    const planChanges: { upgrade: number; downgrade: number; lateral: number; byPlan: Record<string, number> } =
+      { upgrade: 0, downgrade: 0, lateral: 0, byPlan: {} };
+    try {
+      const sinceLogsIso = new Date(Date.now() - planChangesPeriodDays * 24 * 60 * 60 * 1000).toISOString();
+      const logsSnap = await db.collection("admin_audit_logs")
+        .where("action", "==", "grant_entitlement")
+        .limit(500)
+        .get();
+      logsSnap.docs.forEach((doc) => {
+        const data = doc.data();
+        const createdAt = data.createdAt?.toDate ? data.createdAt.toDate().toISOString() : null;
+        if (createdAt && createdAt < sinceLogsIso) return;
+        const change = data.metadata?.planChange;
+        if (change === 'upgrade' || change === 'downgrade' || change === 'lateral') planChanges[change as 'upgrade' | 'downgrade' | 'lateral']++;
+        const plan = data.metadata?.plan;
+        if (typeof plan === 'string') planChanges.byPlan[plan] = (planChanges.byPlan[plan] || 0) + 1;
       });
     } catch (e) {
       // This is an estimate/visibility endpoint, not a critical path -
@@ -4618,6 +4782,12 @@ app.get("/api/admin/cost-usage", verifyAppCheck, authenticateFirebaseUser, async
       note: "Rough internal estimates from captured usage counts, not live provider billing data. See docs/COST_MONITORING.md.",
       usage: totals,
       estimatedCostUsd: estimateCost(totals),
+      byTier,
+      planChanges: {
+        ...planChanges,
+        periodDays: planChangesPeriodDays,
+        note: "Admin-driven plan grants/changes only - there is no live checkout yet, so there is no real signup/purchase event to source true conversion, monthly-vs-annual split, cancellation, or ARPU data from.",
+      },
     });
   } catch (err: any) {
     res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
@@ -4882,7 +5052,9 @@ app.post("/api/admin/users/:uid/entitlement", verifyAppCheck, authenticateFireba
       : null;
 
     const db = getDb();
-    await db.collection("users").doc(targetUid).collection("entitlements").doc("status").set({
+    const entitlementRef = db.collection("users").doc(targetUid).collection("entitlements").doc("status");
+    const previousPlan = effectivePlan(getEffectiveEntitlement((await entitlementRef.get()).data()));
+    await entitlementRef.set({
       plan,
       status,
       billingSource: 'admin',
@@ -4892,7 +5064,8 @@ app.post("/api/admin/users/:uid/entitlement", verifyAppCheck, authenticateFireba
       lastVerifiedAt: now.toISOString(),
     }, { merge: true });
 
-    await logAdminAction(req, "grant_entitlement", targetUid, "", { plan, status, durationDays: durationDays ?? null });
+    const planChange = isUpgrade(previousPlan, plan) ? 'upgrade' : isDowngrade(previousPlan, plan) ? 'downgrade' : 'lateral';
+    await logAdminAction(req, "grant_entitlement", targetUid, "", { plan, status, durationDays: durationDays ?? null, previousPlan, planChange });
     res.json({ success: true });
   } catch (err: any) {
     res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
@@ -9014,11 +9187,25 @@ if (process.env.TEST_MODE !== 'true') {
       if (!liveQuota.allowed) {
         clientWs.send(JSON.stringify({
           error: liveQuota.plan === 'free'
-            ? "You've used today's free Nova voice session. Upgrade to Blaze Break Premium for many more, or continue with Nova by text."
+            ? "You've used today's free Nova voice session. Upgrade for many more, or continue with Nova by text."
             : "You've reached today's Nova voice fair-use limit. It resets tomorrow - continue with Nova by text for now.",
         }));
         return clientWs.close();
       }
+
+      // Separate from the daily session-COUNT check above: this is the
+      // monthly cumulative-MINUTES allowance (docs/AI_COST_CONTROL.md).
+      // Checked (not reserved) here - the real minutes used are only
+      // known once the session actually ends, recorded via
+      // recordCapabilityUsage in endSession below.
+      const minutesQuota = await checkCapabilityQuota(uid, 'nova_voice_minutes');
+      if (!minutesQuota.allowed) {
+        clientWs.send(JSON.stringify({
+          error: "You've used this month's Nova voice minutes. They reset next month - continue with Nova by text for now, or upgrade for a higher monthly allowance.",
+        }));
+        return clientWs.close();
+      }
+      const novaLiveSessionStartedAt = Date.now();
 
       const db = getDb();
 
@@ -9066,6 +9253,14 @@ if (process.env.TEST_MODE !== 'true') {
         sessionEnded = true;
         clearTimeout(sessionTimeout);
         clearTimeout(idleTimeout);
+        // Records the REAL elapsed minutes against this account's monthly
+        // Nova Live allowance, now that the actual duration is known -
+        // fire-and-forget (this function is synchronous, called from
+        // several timer/callback paths) but never silently dropped: an
+        // async failure here would otherwise mean an account's real usage
+        // just doesn't count against its monthly minutes, forever.
+        recordCapabilityUsage(uid, 'nova_voice_minutes', liveQuota.plan, minutesUsedForSession(Date.now() - novaLiveSessionStartedAt))
+          .catch((e) => console.error(`[Nova Live] failed to record voice minutes for uid ${uid}:`, e?.message || e));
         try {
           liveSession?.close();
         } catch (e) {

@@ -142,12 +142,14 @@ service cloud.firestore {
         allow write: if false; // Backend/Admin only
       }
 
-      // E2. users/{uid}/usage_counters/{day} - per-day capability usage
-      // counters (Nova messages, voice sessions, etc.) backing entitlement
-      // fair-use quotas. Deliberately has NO client rule at all (not even
-      // read) - Firestore denies any path with no matching rule, and a
-      // client that could read or write its own usage counter could watch
-      // or reset its own quota. Backend/Admin SDK only.
+      // E2. users/{uid}/usage_counters/{day|month} - per-day AND per-month
+      // (doc id 'month-YYYY-MM') capability usage counters (Nova messages,
+      // voice minutes, SMS nudges, etc.) backing entitlement fair-use
+      // quotas. Deliberately has NO client rule at all (not even read) -
+      // Firestore denies any path with no matching rule, so this covers
+      // both key shapes automatically; a client that could read or write
+      // its own usage counter could watch or reset its own quota.
+      // Backend/Admin SDK only.
 
       // Third-party OAuth integrations (Slack, Jira, Asana, Calendly, Monday.com)
       // integration_tokens holds raw access/refresh tokens — never client-readable,
