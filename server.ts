@@ -8177,6 +8177,7 @@ app.post("/api/recovery/recalculate", verifyAppCheck, authenticateFirebaseUser, 
       return res.status(401).json({ error: "Unauthorized. Missing user ID." });
     }
 
+    const db = getDb();
     const { checkins = [], energy_budgets = [], mood_pulses = [], body_checkins = [], wins = [], weekly_reviews = [], goals = [] } = req.body;
 
     const now = new Date();
@@ -8415,17 +8416,26 @@ app.post("/api/recovery/recalculate", verifyAppCheck, authenticateFirebaseUser, 
       calculatedAt
     };
 
-    // The client will save these summaries to Firestore since server lacks credentials
-    res.json({
-      success: true,
-      calculatedAt,
-      summaries: {
-        recovery_debt: debtSummary,
-        recovery_velocity: velocitySummary,
-        energy_trend: energySummary,
-        mood_trend: moodSummary
-      }
-    });
+    // firestore.rules locks derived/{summaryId} to server-only writes (same
+    // as derived/stats), so this has to persist here, not on the client -
+    // the client previously tried to setDoc these itself after getting them
+    // back from this route, which always failed with permission-denied
+    // (the rule doesn't special-case these 4 doc IDs) while still awarding
+    // points and showing a success state, since that happened before the
+    // failed write was reached.
+    const summaries = {
+      recovery_debt: debtSummary,
+      recovery_velocity: velocitySummary,
+      energy_trend: energySummary,
+      mood_trend: moodSummary,
+    };
+    await Promise.all(
+      Object.entries(summaries).map(([key, summary]) =>
+        db.collection("users").doc(uid).collection("derived").doc(key).set(summary)
+      )
+    );
+
+    res.json({ success: true, calculatedAt, summaries });
 
   } catch (error: any) {
     console.warn("Calculations Error Observation"); // Redacted raw details

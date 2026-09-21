@@ -222,13 +222,11 @@ export const RecoveryIntelligenceLayer = ({ onAwardPoints, fingerprint }: Recove
       if (data.success && data.summaries) {
         setRecalculateSuccess(true);
         onAwardPoints(15, 'Recalculated Derived Recovery Intelligence');
-        
-        // Save to firestore exactly as server returned it
-        const { setDoc } = await import('firebase/firestore');
-        for (const [key, summary] of Object.entries(data.summaries)) {
-          await setDoc(doc(db, 'users', user.uid, 'derived', key), summary as any);
-        }
 
+        // The server already persisted these (derived/{summaryId} is
+        // server-only written, per firestore.rules) - re-fetch to pick up
+        // what it just saved, rather than the client attempting its own
+        // write here, which firestore.rules would always reject.
         await fetchDerivedSummaries();
         setTimeout(() => setRecalculateSuccess(false), 3000);
       } else {
