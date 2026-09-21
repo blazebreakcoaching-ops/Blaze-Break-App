@@ -35,6 +35,7 @@ import {
   Lock,
   HeartPulse,
   HelpCircle,
+  CreditCard,
 } from "lucide-react";
 
 import {
@@ -144,6 +145,7 @@ type ActiveTab =
   | "ally"
   | "guide"
   | "privacy"
+  | "subscription"
   | "org"
   | "evolution"
   | "intelligence"
@@ -239,6 +241,12 @@ export const ALL_TABS: {
     label: "Nova Coach",
     roles: ["individual", "employee", "executive"],
     featureId: "nova_text_coach",
+  },
+  {
+    id: "subscription",
+    icon: CreditCard,
+    label: "Subscription",
+    roles: ["individual", "employee", "executive"],
   },
   {
     id: "privacy",
@@ -802,6 +810,7 @@ const Header = ({
           {activeTab === "communicate" && "Boundary Architect v2.1"}
           {activeTab === "reflect" && "Behavioural Repatterning"}
           {activeTab === "nova" && "AI Recovery Interface"}
+          {activeTab === "subscription" && "Plan & Billing"}
           {activeTab === "privacy" && "Privacy & Trust Centre"}
           {activeTab === "ally" && "Guardian Protection Network"}
           {activeTab === "guide" && "How To Use Blaze Break"}
@@ -844,6 +853,8 @@ const Header = ({
           "The Chapter-to-Action engine. Turning knowledge into armour."}
         {activeTab === "nova" &&
           "Nova is processing your physiological and behavioural patterns."}
+        {activeTab === "subscription" &&
+          "Your current plan, usage this month, and how to change it."}
         {activeTab === "privacy" &&
           "Your recovery is private by default. Your employer cannot spy on you."}
         {activeTab === "ally" &&
@@ -2236,6 +2247,12 @@ export default function App() {
               </div>
             )}
 
+            {activeTab === "subscription" && (
+              <div className="space-y-32">
+                <SubscriptionCentre />
+              </div>
+            )}
+
             {activeTab === "anxiety_reset" && (
               <div className="space-y-32">
                 <AnxietyResetMode
@@ -2326,7 +2343,6 @@ export default function App() {
                   onTriggerSync={handleTriggerGlobalSync}
                   onAwardPoints={awardPoints}
                 />
-                <SubscriptionCentre />
                 <TrustCentrePage onBack={() => {}} />
                 <AssuranceCentre />
                 <IntegrationsDashboard />
