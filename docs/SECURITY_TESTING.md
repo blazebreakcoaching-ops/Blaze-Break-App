@@ -150,8 +150,8 @@ user-authorised only:
   `weekly-goal-tracker.test.ts` — feature-correctness suites; included
   in the total test count but not primarily security-relevant.
 - `brevo-templates.test.ts`, `src/lib/feedback-format.test.ts`,
-  `src/lib/paletteMatch.test.ts`, `src/lib/useHeyNovaWakeWord.test.ts` —
-  pure-logic/UI-adjacent tests, same note as above.
+  `src/lib/paletteMatch.test.ts` — pure-logic/UI-adjacent tests, same note
+  as above.
 
 ## What automated testing does NOT cover
 

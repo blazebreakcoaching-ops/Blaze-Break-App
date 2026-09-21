@@ -200,6 +200,9 @@ export interface UserStats {
   profile?: UserProfileData;
   debts?: Debt[];
   recoveryScore?: number;
+  // The What's New changelog version this account has already acknowledged
+  // - lets the modal stay dismissed across devices, not just this browser.
+  lastSeenChangelogVersion?: string;
 }
 
 export const BADGES: Badge[] = [

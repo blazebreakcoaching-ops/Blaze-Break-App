@@ -14,15 +14,6 @@ import { buildContinuityPreamble, VoiceSessionRecord } from '../../voice-continu
 
 export type VoiceStatus = 'idle' | 'connecting' | 'live' | 'error';
 
-// Broadcast globally (rather than returned only to this hook's own caller)
-// because useNovaLiveVoice is instantiated independently in three separate
-// leaf components (NovaChat, OmniNova, NovaVoiceCall) with no shared parent
-// that could otherwise pass a live call's status down to something mounted
-// at the top of the app - like the "Hey Nova" wake-word listener, which
-// needs to stop itself while a real voice call has the microphone, rather
-// than fight over it or catch Nova's own voice as a false wake trigger.
-export const NOVA_VOICE_STATUS_EVENT = 'nova-voice-status-changed';
-
 export interface TranscriptLine {
   role: 'user' | 'nova';
   text: string;
@@ -333,25 +324,12 @@ export function useNovaLiveVoice(options: UseNovaLiveVoiceOptions = {}) {
 
   const dismissFeatureSuggestion = useCallback(() => setFeatureSuggestion(null), []);
 
-  // Let anything mounted elsewhere in the app (the "Hey Nova" wake-word
-  // listener) know when a real voice call is live, without needing this
-  // hook's three independent call sites to each thread a callback down to
-  // a shared parent.
-  useEffect(() => {
-    window.dispatchEvent(new CustomEvent(NOVA_VOICE_STATUS_EVENT, { detail: status }));
-  }, [status]);
-
-  // Tear everything down if the host component unmounts mid-call. Also
-  // broadcasts 'idle' explicitly - unmounting doesn't run the status-change
-  // effect above (React doesn't re-fire effects for a component that's
-  // going away), so without this an unmount during a live call would leave
-  // the wake-word listener thinking the mic is still busy indefinitely.
+  // Tear everything down if the host component unmounts mid-call.
   useEffect(() => () => {
     endedByUserRef.current = true;
     recordSession();
     if (wsRef.current) { try { wsRef.current.close(); } catch { /* noop */ } wsRef.current = null; }
     cleanupAudio();
-    window.dispatchEvent(new CustomEvent(NOVA_VOICE_STATUS_EVENT, { detail: 'idle' as VoiceStatus }));
   }, [cleanupAudio, recordSession]);
 
   return { status, error, isNovaSpeaking, isMuted, transcript, elapsedMs, featureSuggestion, dismissFeatureSuggestion, start, stop, toggleMute };
