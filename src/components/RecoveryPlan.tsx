@@ -329,6 +329,12 @@ export const RecoveryPlan = ({
     });
 
       setActions(items);
+
+      // Persists the full set of action ids this plan actually contains
+      // (which varies by debt/archetype), alongside completedIds - lets
+      // a server route compute real "N remaining" rather than only
+      // knowing "some are done" (used by GET /api/user/resume-prompt).
+      savePlanProgress({ allActionIds: items.map((item) => item.id) });
     };
     buildPlan();
   }, [fingerprint, stats.debts]);
