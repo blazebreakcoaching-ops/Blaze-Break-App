@@ -322,6 +322,19 @@ export const ALL_TABS: {
   },
 ];
 
+// Single source of truth for "can this role/tier see this tab" - previously
+// duplicated by hand (including the "privacy" exclusion) across the
+// sidebar, the quick-find launcher, and the mobile tab bar. A future hidden
+// tab added to one of those three and missed in another would otherwise
+// silently diverge without anyone noticing.
+const isTabVisible = (t: (typeof ALL_TABS)[number], role: string | undefined, tier: SubscriptionTier) => {
+  if (t.id === "privacy") return false; // Reachable via Settings > Consent & Privacy instead
+  if (role === "platform_admin") return true;
+  if (!role || !t.roles.includes(role)) return false;
+  if (t.featureId && !hasSubscriptionEntitlement(tier, t.featureId)) return false;
+  return true;
+};
+
 const Sidebar = ({
   activeTab,
   setActiveTab,
@@ -388,14 +401,7 @@ const Sidebar = ({
     return () => { cancelled = true; unsubscribe?.(); };
   }, []);
 
-  const tabs = ALL_TABS.filter((t) => {
-    if (t.id === "privacy") return false; // Reachable via Settings > Consent & Privacy instead
-    if (authRole === "platform_admin") return true;
-    if (!t.roles.includes(authRole)) return false;
-    if (t.featureId && !hasSubscriptionEntitlement(currentTier, t.featureId))
-      return false;
-    return true;
-  });
+  const tabs = ALL_TABS.filter((t) => isTabVisible(t, authRole, currentTier));
 
   const sidebarVariants = {
     expanded: { width: "16rem", padding: "2rem" },
@@ -1186,13 +1192,8 @@ export default function App() {
   // so the quick-find launcher never offers a tab that isn't really available.
   const launcherTabs = useMemo(
     () =>
-      ALL_TABS.filter((t) => {
-        if (t.id === "privacy") return false;
-        if (effectiveRole === "platform_admin") return true;
-        if (!t.roles.includes(effectiveRole)) return false;
-        if (t.featureId && !hasSubscriptionEntitlement(stats.profile?.subscription || "recovery", t.featureId)) return false;
-        return true;
-      }).map((t) => ({ id: t.id, label: t.label, icon: t.icon, group: t.group })),
+      ALL_TABS.filter((t) => isTabVisible(t, effectiveRole, stats.profile?.subscription || "recovery"))
+        .map((t) => ({ id: t.id, label: t.label, icon: t.icon, group: t.group })),
     [effectiveRole, stats.profile?.subscription],
   );
 
@@ -2491,16 +2492,8 @@ export default function App() {
           </AnimatePresence>
           <div className="flex justify-around items-center h-14 overflow-x-auto custom-scrollbar px-2 gap-2">
             {(() => {
-              const visibleTabs = ALL_TABS.filter(
-                (t) =>
-                  t.id !== "privacy" && // Reachable via Settings > Consent & Privacy instead
-                  (effectiveRole === "platform_admin" ||
-                  (t.roles.includes(effectiveRole || "individual") &&
-                  (!t.featureId ||
-                    hasSubscriptionEntitlement(
-                      stats.profile?.subscription || "recovery",
-                      t.featureId,
-                    )))),
+              const visibleTabs = ALL_TABS.filter((t) =>
+                isTabVisible(t, effectiveRole || "individual", stats.profile?.subscription || "recovery"),
               );
               const renderedGroups = new Set<string>();
               return visibleTabs.map((tab) => {

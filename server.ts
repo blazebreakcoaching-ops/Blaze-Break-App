@@ -3131,7 +3131,7 @@ app.get("/api/entitlements/me", verifyAppCheck, authenticateFirebaseUser, async 
     const dailyUsage = dailySnap.data() || {};
     const monthlyUsage = monthlySnap.data() || {};
     const capabilities: Record<string, { enabled: boolean; limit: number | null; resetPeriod?: string; unit?: string; used: number }> = {};
-    (['nova_text', 'nova_voice', 'nova_voice_minutes', 'diagnose', 'exports', 'resentment_analysis', 'executive_report', 'sms_nudges'] as CapabilityId[]).forEach((id) => {
+    (['nova_text', 'nova_voice', 'nova_voice_minutes', 'diagnose', 'exports', 'resentment_analysis', 'executive_report', 'sms_nudges', 'nova_manager_coach'] as CapabilityId[]).forEach((id) => {
       const cap = getCapability(plan, id);
       const usageData = cap.resetPeriod === 'monthly' ? monthlyUsage : dailyUsage;
       capabilities[id] = { enabled: cap.enabled, limit: cap.limit, resetPeriod: cap.resetPeriod, unit: cap.unit, used: Number(usageData[id]) || 0 };
