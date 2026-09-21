@@ -131,8 +131,18 @@ export const EvolutionEngine = () => {
                       {feature.usesSensitiveData && <Lock className="w-4 h-4 text-warning" />}
                     </div>
                     
-                    {feature.status === 'active' && (
-                      <button 
+                    {/* Only enable_overload_shield is actually wired to gate
+                        anything (App.tsx checks it before rendering
+                        NovaOverloadShield) - every other flag here is read by
+                        nothing outside this screen, so a real Enable/Disable
+                        control for it would be a lie. Rather than remove the
+                        registry's governance metadata (still useful
+                        documentation - risk level, data zone, AI usage), the
+                        control itself is shown only where it's real, and
+                        every other feature says so plainly instead of
+                        offering a switch that does nothing. */}
+                    {feature.status === 'active' && feature.featureFlagName === 'enable_overload_shield' ? (
+                      <button
                         onClick={() => handleToggleFlag(feature.featureFlagName as FeatureFlag, flags[feature.featureFlagName as FeatureFlag] || false)}
                         aria-pressed={flags[feature.featureFlagName as FeatureFlag] || false}
                         className={cn(
@@ -145,11 +155,19 @@ export const EvolutionEngine = () => {
                           <><Plus className="w-3.5 h-3.5" /> Enable Flag</>
                         )}
                       </button>
-                    )}
+                    ) : feature.status === 'active' ? (
+                      <span
+                        title="This flag exists in the registry but nothing in the app currently reads it - toggling it here would have no real effect."
+                        className="text-xs font-bold px-3 py-1.5 rounded-lg border border-border/40 text-text-muted/60 flex items-center gap-1.5"
+                      >
+                        Not enforced
+                      </span>
+                    ) : null}
                  </div>
 
-                 {/* Absolute corner indicator if running */}
-                 {flags[feature.featureFlagName as FeatureFlag] && feature.status === 'active' && (
+                 {/* Absolute corner indicator if the flag both toggles AND
+                     genuinely gates something - see note above. */}
+                 {flags[feature.featureFlagName as FeatureFlag] && feature.status === 'active' && feature.featureFlagName === 'enable_overload_shield' && (
                    <div className="absolute -top-1 -right-1 w-3 h-3 bg-success rounded-full border-2 border-white shadow-sm" />
                  )}
               </div>

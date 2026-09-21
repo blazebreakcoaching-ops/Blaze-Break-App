@@ -1,11 +1,24 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Activity, Calendar, BookOpen, ChevronDown, Settings } from 'lucide-react';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { Activity, Calendar, ChevronDown, Settings } from 'lucide-react';
 import { UserProfileData } from '../types.ts';
 import { cn } from '../lib/utils.ts';
 import { useFeatureFlags, setFeatureFlag, FeatureFlag } from '../lib/feature-flags.ts';
 import { logAuditAction } from '../lib/audit-logger.ts';
+import { auth } from '../lib/firebase';
+import { db } from '../lib/firestore';
 
+// Two toggle mechanisms exist side by side here, deliberately:
+// - flagId (localStorage, src/lib/feature-flags.ts) for UI-only display
+//   preferences with no server-side effect to gate.
+// - permissionKey (Firestore users/{uid}/nova_permissions/current) for
+//   anything that actually controls whether real data collection happens
+//   server-side - the same doc/mechanism already used by "Nova Privacy
+//   Controls" (ConnectedRecoveryModules.tsx). Calendar sync previously used
+//   a flagId (enable_calendar_sync) that didn't even exist in the flag
+//   schema, so toggling it did nothing at all - not just decorative, an
+//   outright no-op consent control.
 interface DataPoint {
   id: string;
   label: string;
@@ -14,16 +27,33 @@ interface DataPoint {
   novaUsage: string;
   icon: React.ElementType;
   required: boolean;
-  flagId: FeatureFlag;
+  flagId?: FeatureFlag;
+  permissionKey?: 'allowCalendarSignals';
 }
 
-export const DataPrivacyDashboard = ({ 
+export const DataPrivacyDashboard = ({
   profile,
-}: { 
-  profile: UserProfileData 
+}: {
+  profile: UserProfileData
 }) => {
   const flags = useFeatureFlags();
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  // Defaults to true, matching NOVA_PERMISSION_DEFAULTS.allowCalendarSignals
+  // (src/lib/nova-brain.ts) until the real doc loads.
+  const [allowCalendarSignals, setAllowCalendarSignals] = useState(true);
+
+  useEffect(() => {
+    const uid = auth.currentUser?.uid;
+    if (!uid) return;
+    getDoc(doc(db, 'users', uid, 'nova_permissions', 'current')).then((snap) => {
+      if (snap.exists() && typeof snap.data().allowCalendarSignals === 'boolean') {
+        setAllowCalendarSignals(snap.data().allowCalendarSignals);
+      }
+    }).catch(() => {
+      // Non-fatal - stays at the true default, same as every other
+      // category in this doc when it can't be read.
+    });
+  }, []);
 
   const dataPoints: DataPoint[] = [
     {
@@ -44,27 +74,46 @@ export const DataPrivacyDashboard = ({
       novaUsage: 'Nova surfaces heavy meeting days and back-to-back stretches so you can spot overload and plan a break around it. It does not predict the future or act on your calendar for you.',
       icon: Calendar,
       required: false,
-      flagId: 'enable_calendar_sync' as FeatureFlag
-    },
-    {
-      id: 'journal',
-      label: 'Trigger Journal Processing',
-      category: 'Reflection',
-      description: 'Allows semantic processing of your free-text journal entries.',
-      novaUsage: 'Nova scans for repetitive stress keywords to help you identify unacknowledged boundaries.',
-      icon: BookOpen,
-      required: false,
-      flagId: 'enable_journal_scanning' as FeatureFlag
+      permissionKey: 'allowCalendarSignals'
     }
+    // A third "Trigger Journal Processing" entry used to be listed here,
+    // describing semantic scanning of journal entries for stress keywords.
+    // No such processing exists anywhere in this codebase - no journal
+    // entry is ever read for keyword/semantic analysis by anything. Removed
+    // rather than left describing a capability that was never built.
   ];
 
   const handleToggle = async (point: DataPoint, e: React.MouseEvent) => {
     e.stopPropagation();
     if (point.required) return;
-    
+
+    if (point.permissionKey) {
+      const uid = auth.currentUser?.uid;
+      if (!uid) return;
+      const newState = !allowCalendarSignals;
+      setAllowCalendarSignals(newState);
+      await logAuditAction({
+        userId: profile.fullName || 'anonymous',
+        action: `Toggled Data Privacy Category: ${point.label}`,
+        target: point.id,
+        status: newState ? 'authorised' : 'revoked' as any,
+        details: `User set ${point.label} sharing to ${newState}`
+      });
+      try {
+        await setDoc(doc(db, 'users', uid, 'nova_permissions', 'current'), {
+          [point.permissionKey]: newState,
+          updatedAt: new Date().toISOString(),
+        }, { merge: true });
+      } catch (err) {
+        setAllowCalendarSignals(!newState); // Revert the optimistic update on a real save failure.
+      }
+      return;
+    }
+
+    if (!point.flagId) return;
     const currentState = flags[point.flagId] ?? true; // assuming default true if undefined
     const newState = !currentState;
-    
+
     await logAuditAction({
       userId: profile.fullName || 'anonymous',
       action: `Toggled Data Privacy Category: ${point.label}`,
@@ -90,7 +139,8 @@ export const DataPrivacyDashboard = ({
 
       <div className="space-y-3">
         {dataPoints.map((point) => {
-          const isEnabled = point.required || (flags[point.flagId] !== false);
+          const isEnabled = point.required
+            || (point.permissionKey ? allowCalendarSignals : (point.flagId ? flags[point.flagId] !== false : true));
           const isExpanded = expandedId === point.id;
           
           return (
