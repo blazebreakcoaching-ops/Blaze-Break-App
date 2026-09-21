@@ -68,4 +68,38 @@ describe('GET /api/admin/cost-usage', () => {
     const res = await request(app).get('/api/admin/cost-usage').set(auth(ADMIN));
     expect(res.body.usage.novaTextCount).toBe(0);
   });
+
+  // byTier is the B2C pricing brief's "Nova Live usage by tier" analytics
+  // ask - the one usage signal that's genuinely real without a live
+  // payment provider, since it's derived from each user's actual
+  // server-authoritative entitlement record.
+  it('breaks Nova usage down by the actual plan each uid is entitled to', async () => {
+    const today = new Date().toISOString();
+    seedDoc('users/free_user/usage_counters/day1', { nova_text: 10, nova_voice: 1, updatedAt: today });
+    seedDoc('users/paid_user/entitlements/status', { plan: 'performance', status: 'active' });
+    seedDoc('users/paid_user/usage_counters/day1', { nova_text: 20, nova_voice: 3, updatedAt: today });
+    seedDoc(`users/paid_user/usage_counters/month-${today.slice(0, 7)}`, { nova_voice_minutes: 45, updatedAt: today });
+
+    const res = await request(app).get('/api/admin/cost-usage').set(auth(ADMIN));
+    expect(res.body.byTier.free).toEqual({ novaTextCount: 10, novaVoiceCount: 1, novaVoiceMinutes: 0 });
+    expect(res.body.byTier.performance).toEqual({ novaTextCount: 20, novaVoiceCount: 3, novaVoiceMinutes: 45 });
+    expect(res.body.byTier.executive).toEqual({ novaTextCount: 0, novaVoiceCount: 0, novaVoiceMinutes: 0 });
+  });
+
+  // planChanges is sourced from the existing admin_audit_logs
+  // grant_entitlement entries (POST /api/admin/users/:uid/entitlement) -
+  // the only real "conversion"-adjacent event today, since there is no
+  // live checkout. It must say so honestly rather than implying it's
+  // real purchase/signup data.
+  it('summarises admin-driven plan changes and is explicit about what it is not', async () => {
+    await request(app).post('/api/admin/users/u1/entitlement').set(auth(ADMIN)).send({ plan: 'free', status: 'active' });
+    await request(app).post('/api/admin/users/u1/entitlement').set(auth(ADMIN)).send({ plan: 'executive', status: 'active' });
+    await request(app).post('/api/admin/users/u2/entitlement').set(auth(ADMIN)).send({ plan: 'free', status: 'active' });
+
+    const res = await request(app).get('/api/admin/cost-usage').set(auth(ADMIN));
+    expect(res.body.planChanges.upgrade).toBe(1);
+    expect(res.body.planChanges.byPlan.executive).toBe(1);
+    expect(res.body.planChanges.byPlan.free).toBe(2);
+    expect(res.body.planChanges.note).toMatch(/no live checkout/i);
+  });
 });

@@ -4686,8 +4686,24 @@ app.get("/api/admin/cost-usage", verifyAppCheck, authenticateFirebaseUser, async
     const sinceIso = new Date(Date.now() - periodDays * 24 * 60 * 60 * 1000).toISOString();
 
     const totals: UsageTotals = { novaTextCount: 0, novaVoiceCount: 0, diagnoseCount: 0, smsSegmentCount: 0 };
+    // Nova usage broken down by plan tier - the one real, non-sensitive
+    // commercial signal this pass can honestly report for the B2C
+    // pricing brief's "Nova Live usage by tier" analytics ask. Built from
+    // the same usage_counters snapshot below (no extra reads for the
+    // counts themselves), cross-referenced against each distinct active
+    // uid's real entitlement record - one extra read per uid active in
+    // the period, the same "how many people used the app this week"
+    // scale the unbounded collectionGroup query below already assumes.
+    const byTier: Record<EntitlementPlan, { novaTextCount: number; novaVoiceCount: number; novaVoiceMinutes: number }> = {
+      free: { novaTextCount: 0, novaVoiceCount: 0, novaVoiceMinutes: 0 },
+      core: { novaTextCount: 0, novaVoiceCount: 0, novaVoiceMinutes: 0 },
+      performance: { novaTextCount: 0, novaVoiceCount: 0, novaVoiceMinutes: 0 },
+      executive: { novaTextCount: 0, novaVoiceCount: 0, novaVoiceMinutes: 0 },
+      legacy_premium: { novaTextCount: 0, novaVoiceCount: 0, novaVoiceMinutes: 0 },
+    };
     try {
       const snap = await db.collectionGroup("usage_counters").where("updatedAt", ">=", sinceIso).get();
+      const uidToDocs = new Map<string, FirebaseFirestore.QueryDocumentSnapshot[]>();
       snap.docs.forEach((doc: any) => {
         const data = doc.data();
         totals.novaTextCount += Number(data.nova_text) || 0;
@@ -4697,6 +4713,63 @@ app.get("/api/admin/cost-usage", verifyAppCheck, authenticateFirebaseUser, async
         // count isn't persisted per-send) - treated here as ~1 segment each,
         // a conservative underestimate for any longer message.
         totals.smsSegmentCount += Number(data.smsCount) || 0;
+
+        // usage_counters docs always live at users/{uid}/usage_counters/{key}
+        // - read the uid directly from the path segment rather than
+        // doc.ref.parent.parent, which the lightweight Firestore test
+        // double doesn't implement (this still works identically against
+        // the real Admin SDK, which uses the same path shape).
+        const pathSegs = doc.ref.path.split('/');
+        const uid = pathSegs.length === 4 && pathSegs[0] === 'users' ? pathSegs[1] : undefined;
+        if (uid) {
+          if (!uidToDocs.has(uid)) uidToDocs.set(uid, []);
+          uidToDocs.get(uid)!.push(doc);
+        }
+      });
+
+      const uids = Array.from(uidToDocs.keys());
+      const plans = await Promise.all(uids.map((uid) =>
+        getEntitlementRecord(uid).then((r) => effectivePlan(r)).catch(() => 'free' as EntitlementPlan)
+      ));
+      uids.forEach((uid, i) => {
+        const plan = plans[i];
+        for (const doc of uidToDocs.get(uid)!) {
+          const data = doc.data();
+          byTier[plan].novaTextCount += Number(data.nova_text) || 0;
+          byTier[plan].novaVoiceCount += Number(data.nova_voice) || 0;
+          byTier[plan].novaVoiceMinutes += Number(data.nova_voice_minutes) || 0;
+        }
+      });
+    } catch (e) {
+      // This is an estimate/visibility endpoint, not a critical path -
+      // degrade to zeros rather than failing the whole admin view.
+    }
+
+    // Admin-driven plan changes - the only real "conversion"-adjacent
+    // event that exists today, since there is no live checkout to source
+    // a real signup/purchase event from. Genuine signup counts, monthly-
+    // vs-annual split, cancellations/churn, and ARPU all require a live
+    // payment provider to mean anything real, and are deliberately NOT
+    // fabricated here - see docs/FREE_PREMIUM_ENTITLEMENTS.md and the
+    // final report's honest accounting of what analytics could and
+    // couldn't be built without one.
+    const planChangesPeriodDays = 30;
+    const planChanges: { upgrade: number; downgrade: number; lateral: number; byPlan: Record<string, number> } =
+      { upgrade: 0, downgrade: 0, lateral: 0, byPlan: {} };
+    try {
+      const sinceLogsIso = new Date(Date.now() - planChangesPeriodDays * 24 * 60 * 60 * 1000).toISOString();
+      const logsSnap = await db.collection("admin_audit_logs")
+        .where("action", "==", "grant_entitlement")
+        .limit(500)
+        .get();
+      logsSnap.docs.forEach((doc) => {
+        const data = doc.data();
+        const createdAt = data.createdAt?.toDate ? data.createdAt.toDate().toISOString() : null;
+        if (createdAt && createdAt < sinceLogsIso) return;
+        const change = data.metadata?.planChange;
+        if (change === 'upgrade' || change === 'downgrade' || change === 'lateral') planChanges[change as 'upgrade' | 'downgrade' | 'lateral']++;
+        const plan = data.metadata?.plan;
+        if (typeof plan === 'string') planChanges.byPlan[plan] = (planChanges.byPlan[plan] || 0) + 1;
       });
     } catch (e) {
       // This is an estimate/visibility endpoint, not a critical path -
@@ -4709,6 +4782,12 @@ app.get("/api/admin/cost-usage", verifyAppCheck, authenticateFirebaseUser, async
       note: "Rough internal estimates from captured usage counts, not live provider billing data. See docs/COST_MONITORING.md.",
       usage: totals,
       estimatedCostUsd: estimateCost(totals),
+      byTier,
+      planChanges: {
+        ...planChanges,
+        periodDays: planChangesPeriodDays,
+        note: "Admin-driven plan grants/changes only - there is no live checkout yet, so there is no real signup/purchase event to source true conversion, monthly-vs-annual split, cancellation, or ARPU data from.",
+      },
     });
   } catch (err: any) {
     res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
