@@ -819,8 +819,10 @@ const Header = ({
           {activeTab === "ally" && "Guardian Protection Network"}
           {activeTab === "guide" && "How To Use Blaze Break"}
           {activeTab === "org" && "Collective Stability Pulse"}
-          {activeTab === "evolution" && "Burnout Pattern Evolution"}
-          {activeTab === "intelligence" && "Recovery Strategy Engine"}
+          {activeTab === "evolution" && "Feature Configuration"}
+          {activeTab === "intelligence" && "Recovery Trends"}
+          {activeTab === "executive" && "Executive Reporting"}
+          {activeTab === "admin" && "Platform Administration"}
         </span>
       </div>
       <h2 className="text-3xl sm:text-5xl font-display font-bold text-text-main leading-tight tracking-tight mb-3 capitalize">
@@ -862,15 +864,19 @@ const Header = ({
         {activeTab === "privacy" &&
           "Your recovery is private by default. Your employer cannot spy on you."}
         {activeTab === "ally" &&
-          "Secure integration with your support system."}
+          "The people you've chosen to have alongside you — share a goal, or let them know when you need backup."}
         {activeTab === "guide" &&
           "A plain-English walkthrough — what everything does, and where to start if it feels like a lot."}
         {activeTab === "org" &&
           "Analysing systemic resilience across the professional ecosystem."}
         {activeTab === "evolution" &&
-          "Administrative access: Systemic pattern analysis and burnout progression tracking."}
+          "Turn modules on or off. Most reflect a real on/off state; a few are placeholders not yet wired to anything — each one says which."}
         {activeTab === "intelligence" &&
-          "Administrative access: Machine learning layer for organisational stress mapping."}
+          "Your recovery debt, velocity, energy, and mood trends — computed from what you've actually logged, not a prediction."}
+        {activeTab === "executive" &&
+          "Cost-avoidance estimates, calendar load, and integration status for reporting up."}
+        {activeTab === "admin" &&
+          "Live account activity, entitlements, and access across the platform."}
       </p>
     </div>
     <div className="flex items-end flex-wrap gap-2 sm:gap-4 shrink-0">
@@ -1698,7 +1704,15 @@ export default function App() {
     safety: "Safety & Support",
     org: "Organisation Insights",
     integrations: "Integrations",
-    engine: "Evolution Engine",
+    anxiety_reset: "Anxiety Reset",
+    wellbeing: "Anxiety Check-in",
+    subscription: "Plan & Billing",
+    ally: "Recovery Ally",
+    guide: "User Guide",
+    evolution: "Evolution Engine",
+    intelligence: "Recovery Intelligence Layer",
+    executive: "Executive ROI",
+    admin: "Live Activity & Access",
     reset: "Reset Studio",
     fuel: "Recovery Fuel Engine",
     signals: "Recovery Signals",
