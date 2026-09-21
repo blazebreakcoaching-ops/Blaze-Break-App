@@ -882,8 +882,9 @@ const Header = ({
         </button>
       )}
       {onSomaticReset && (
-        <div className="relative flex items-center gap-2">
-          <span className="absolute -top-5 left-1/2 -translate-x-1/2 text-[10px] uppercase tracking-widest text-destructive font-bold animate-pulse whitespace-nowrap">High Stress Flag</span>
+        <div className="flex flex-col items-center gap-1">
+          <span className="text-[10px] uppercase tracking-widest text-destructive font-bold animate-pulse whitespace-nowrap">High Stress Flag</span>
+          <div className="flex items-center gap-2">
           <button
             onClick={handleGuardianPing}
             className={cn(
@@ -909,6 +910,7 @@ const Header = ({
             <HeartPulse className="w-4 h-4 animate-pulse" aria-hidden="true" />
             <span className="hidden sm:inline">Somatic Reset</span>
           </button>
+          </div>
         </div>
       )}
       <button
