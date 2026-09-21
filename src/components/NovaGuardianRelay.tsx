@@ -28,6 +28,7 @@ import {
 import { SupportContact } from '../types';
 import { cn } from '../lib/utils';
 import { isRealGuardian, buildGuardianCallRequestMessage, extractFirstName } from '../../guardian-alert';
+import { useGuardianAlertsEnabled } from '../lib/useGuardianAlertsEnabled';
 
 interface NovaGuardianRelayProps {
   contacts: SupportContact[];
@@ -36,18 +37,20 @@ interface NovaGuardianRelayProps {
   userName?: string;
 }
 
-const GuardianCard = ({ 
-  contact, 
-  onRemove, 
-  onSendTest, 
+const GuardianCard = ({
+  contact,
+  onRemove,
+  onSendTest,
   onTriggerRelay,
-  onActivateSOS
-}: { 
-  contact: SupportContact; 
+  onActivateSOS,
+  alertsEnabled
+}: {
+  contact: SupportContact;
   onRemove: (id: string) => void;
   onSendTest: () => Promise<boolean>;
   onTriggerRelay: () => void;
   onActivateSOS: (id: string) => void;
+  alertsEnabled: boolean;
 }) => {
   const [countdown, setCountdown] = useState<number | null>(null);
   const [isHealthChecking, setIsHealthChecking] = useState(false);
@@ -184,7 +187,7 @@ const GuardianCard = ({
                 contact regardless of role, relying only on a disabled
                 &lt;option&gt; in the add-contact form to keep non-guardians
                 out - not a real enforcement point. */}
-            {isRealGuardian(contact) ? (
+            {isRealGuardian(contact) && alertsEnabled ? (
               <button
                 onClick={() => onActivateSOS(contact.id)}
                 className="col-span-1 py-3 text-[11px] font-black uppercase tracking-widest rounded-xl transition-all shadow-sm bg-destructive hover:bg-destructive text-destructive-foreground"
@@ -203,7 +206,7 @@ const GuardianCard = ({
             </button>
 
             {/* Quick Relay */}
-            {isRealGuardian(contact) ? (
+            {isRealGuardian(contact) && alertsEnabled ? (
               <button
                 onClick={handleQuickRelay}
                 className={cn(
@@ -221,6 +224,10 @@ const GuardianCard = ({
                   <><Zap className="w-4 h-4" /> One-Touch Alert</>
                 )}
               </button>
+            ) : isRealGuardian(contact) ? (
+              <p className="col-span-2 py-3 text-center text-[11px] text-text-muted">
+                Guardian alerts are temporarily unavailable. Please reach out to {contact.name} directly for now.
+              </p>
             ) : (
               <p className="col-span-2 py-3 text-center text-[11px] text-text-muted">
                 Only guardians can be sent an alert. Add this person as a guardian to enable this.
@@ -247,6 +254,7 @@ export const NovaGuardianRelay = ({ contacts, onAdd, onRemove, userName }: NovaG
   const [isSending, setIsSending] = useState(false);
   const [sendSuccess, setSendSuccess] = useState<string | null>(null);
   const sosDialogRef = useFocusTrap(!!activeSOS);
+  const alertsEnabled = useGuardianAlertsEnabled();
 
   useEffect(() => {
     if (!activeSOS) return;
@@ -325,7 +333,7 @@ export const NovaGuardianRelay = ({ contacts, onAdd, onRemove, userName }: NovaG
         // (which only records whether the protocol is enabled, not that
         // an actual escalation happened).
         updateNovaMemoryBySourceAndType('Guardian Relay', 'state', {
-          content: `Guardian escalation triggered to a trusted contact after no response, on ${new Date().toLocaleDateString('en-GB')} - Nova should treat this as a recent high-severity event.`,
+          content: `User sent a Guardian alert to a trusted contact on ${new Date().toLocaleDateString('en-GB')}, via a direct one-tap request - this was not automatic and did not follow any unanswered message.`,
           confidence: 'verified',
           canEdit: false,
         });
@@ -397,13 +405,14 @@ export const NovaGuardianRelay = ({ contacts, onAdd, onRemove, userName }: NovaG
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <AnimatePresence mode="popLayout">
               {contacts.map((contact) => (
-                <GuardianCard 
-                  key={contact.id} 
-                  contact={contact} 
+                <GuardianCard
+                  key={contact.id}
+                  contact={contact}
                   onRemove={onRemove}
                   onSendTest={() => sendTestAlert(contact)}
                   onTriggerRelay={() => triggerLiveRelay(contact)}
                   onActivateSOS={setActiveSOS}
+                  alertsEnabled={alertsEnabled}
                 />
               ))}
             </AnimatePresence>

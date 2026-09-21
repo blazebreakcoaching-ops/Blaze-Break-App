@@ -6,6 +6,7 @@ import { useFocusTrap } from '../lib/useFocusTrap';
 import { secureApiFetch } from '../lib/secure-api';
 import { updateNovaMemoryBySourceAndType } from '../lib/nova-brain';
 import { detectCrisisRegion, getBrowserTimeZone } from '../../crisis-region';
+import { useGuardianAlertsEnabled } from '../lib/useGuardianAlertsEnabled';
 
 interface GuardianForCrisisAction {
   id: string;
@@ -25,6 +26,7 @@ const GuardianQuickAction = ({ guardians }: { guardians: GuardianForCrisisAction
   const [sendingId, setSendingId] = useState<string | null>(null);
   const [resultByContact, setResultByContact] = useState<Record<string, { ok: boolean; text: string }>>({});
   const realGuardians = guardians.filter(g => g.isGuardian || g.role === 'primary_guardian' || g.role === 'backup_guardian');
+  const alertsEnabled = useGuardianAlertsEnabled();
 
   if (realGuardians.length === 0) return null;
 
@@ -63,15 +65,22 @@ const GuardianQuickAction = ({ guardians }: { guardians: GuardianForCrisisAction
         return (
           <div key={g.id} className="space-y-2">
             <button
-              onClick={() => sendAlert(g)}
-              disabled={sendingId === g.id}
-              aria-label={`Ask ${g.name} to call you`}
+              onClick={() => alertsEnabled && sendAlert(g)}
+              disabled={sendingId === g.id || !alertsEnabled}
+              aria-label={alertsEnabled ? `Ask ${g.name} to call you` : `Guardian alerts temporarily unavailable`}
               className="w-full flex items-center justify-between p-4 rounded-xl border border-primary-light dark:border-primary-dark/30 bg-primary-light dark:bg-primary-dark/20 hover:bg-primary-light dark:hover:bg-primary-dark/40 disabled:opacity-60 transition-colors group"
             >
-              <div className="space-y-1.5 text-left">
-                <span className="text-sm font-bold text-[#9a3412] dark:text-primary block">Ask {g.name} to call me</span>
-                <span className="text-[11px] font-black uppercase tracking-widest text-[#9a3412] dark:text-primary font-mono">Sends a text asking them to call you right now</span>
-              </div>
+              {alertsEnabled ? (
+                <div className="space-y-1.5 text-left">
+                  <span className="text-sm font-bold text-[#9a3412] dark:text-primary block">Ask {g.name} to call me</span>
+                  <span className="text-[11px] font-black uppercase tracking-widest text-[#9a3412] dark:text-primary font-mono">Sends a text asking them to call you right now</span>
+                </div>
+              ) : (
+                <div className="space-y-1.5 text-left">
+                  <span className="text-sm font-bold text-text-muted block">Guardian alerts temporarily unavailable</span>
+                  <span className="text-[11px] font-black uppercase tracking-widest text-text-muted font-mono">Please reach out to {g.name} directly for now</span>
+                </div>
+              )}
               {sendingId === g.id ? (
                 <Loader2 className="w-5 h-5 text-primary animate-spin shrink-0" />
               ) : (

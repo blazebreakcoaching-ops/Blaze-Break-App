@@ -731,6 +731,28 @@ The previous failure — copy promising a capability the code did not have — m
 3. **No inference path can be flag-enabled, because none exists.** There is no classifier, scorer, or detector in the codebase to gate. The CI check in item 4 additionally fails the build if any module imports or defines wellbeing-classification logic in the guardian path.
 4. **CI check.** A test asserts that every user-facing string claiming an action ("we will contact", "automatically notify") is reachable only under a flag whose capability is registered. This test fails the build otherwise.
 
+**Implementation status (Tier 1 only):** points 1, 2, and 4 above are built and live —
+`guardian-alert.ts`'s `GUARDIAN_ALERTS_FLAG`/`guardianAlertsEnabled()`/
+`guardianCapabilityIsRegistered()`, wired into `POST /api/guardian/alert`
+(refuses to send when the capability isn't registered or the
+`GUARDIAN_ALERTS_ENABLED` kill switch is set to `'false'`) and into
+`GET /api/guardian/config`, which `src/lib/useGuardianAlertsEnabled.ts`
+reads so `NovaGuardianRelay.tsx` and `CrisisSupport.tsx` stop rendering
+their send actions/copy when the flag reports disabled.
+`guardian-copy-safety.test.ts` is the CI check in point 4 — an AST-based
+scan (not a rendered-DOM test; this repo has no jsdom/testing-library
+dependency) proving each known capability-claiming string in those two
+files sits inside an `alertsEnabled`-gated branch, and fails if a future
+change adds new unguarded capability-claiming copy.
+Point 3 already held with no code change needed (verified during this
+pass — no classifier/scorer/detector exists in the guardian path).
+**One deliberate deviation from step 1 of §E.8's migration table below:**
+the flag defaults **enabled**, not disabled — Tier 1 already shipped and
+was in live use before this flag existed, so defaulting it off would have
+silently removed a safety feature real users already relied on the moment
+this deployed, rather than staging a new feature in safely. This was an
+explicit product decision, not an oversight.
+
 ### E.8 Migration from "Guardian Check-In Suggestions"
 
 | Step | Action | Label |

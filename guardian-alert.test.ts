@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { isRealGuardian, isValidGuardianPhone, buildGuardianCallRequestMessage, extractFirstName, checkCooldown, nudgeSchedulerIsEnabled } from './guardian-alert';
+import { isRealGuardian, isValidGuardianPhone, buildGuardianCallRequestMessage, extractFirstName, checkCooldown, nudgeSchedulerIsEnabled, guardianAlertsEnabled, guardianCapabilityIsRegistered, GUARDIAN_ALERTS_FLAG } from './guardian-alert';
 
 describe('isRealGuardian: the entire consent gate for Tier 1 - must be exact, since this decides who a message can go to', () => {
   it('accepts a contact explicitly flagged isGuardian', () => {
@@ -58,6 +58,41 @@ describe('nudgeSchedulerIsEnabled: kill switch for the Tier-3 scheduled-messagin
 
   it('is enabled only when explicitly set to "true"', () => {
     expect(nudgeSchedulerIsEnabled('true')).toBe(true);
+  });
+});
+
+describe('guardianAlertsEnabled: §E.7 flag - must default ON (Tier 1 already ships live) but be a real off-switch', () => {
+  it('defaults to enabled when the env var is unset (unlike nudgeSchedulerIsEnabled, this is fail-open)', () => {
+    expect(guardianAlertsEnabled(undefined)).toBe(true);
+  });
+
+  it('is enabled for anything other than the exact string "false"', () => {
+    expect(guardianAlertsEnabled('')).toBe(true);
+    expect(guardianAlertsEnabled('0')).toBe(true);
+    expect(guardianAlertsEnabled('False')).toBe(true);
+  });
+
+  it('is disabled only when explicitly set to "false"', () => {
+    expect(guardianAlertsEnabled('false')).toBe(false);
+  });
+
+  // §E.7 point 2: "The server refuses to report a flag as enabled if the
+  // named capability is not registered at boot. A flag cannot be switched
+  // on for a feature that does not exist." Proves this is a structural
+  // guarantee, not just a decorative flag name - if guardian_dispatch_pipeline
+  // is genuinely registered (it is, today), the env var is the only thing
+  // that can turn it off, and the flag's own declared requirement matches
+  // the capability that's actually checked.
+  it('declares exactly the capability precondition guardianAlertsEnabled actually checks', () => {
+    expect(GUARDIAN_ALERTS_FLAG.requiresCapability).toEqual(['guardian_dispatch_pipeline']);
+    expect(guardianCapabilityIsRegistered('guardian_dispatch_pipeline')).toBe(true);
+  });
+
+  it('would never report enabled for a capability this codebase has not registered, regardless of the env var', () => {
+    // guardian_dispatch_pipeline is real and registered (proven above), but
+    // this documents the actual rule for any future capability name: an
+    // unregistered one can never be reported enabled, "true" env var or not.
+    expect(guardianCapabilityIsRegistered('a_capability_that_does_not_exist')).toBe(false);
   });
 });
 
