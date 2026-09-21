@@ -37,7 +37,6 @@ export type FeatureFlag =
   | 'enable_people_value_engine'
   | 'enable_management_savings_planner'
   | 'enable_blaze_bright_moments'
-  | 'enable_hey_nova_wake_word'
   | 'compliance_gdpr_active'
   | 'compliance_cyber_essentials'
   | 'compliance_iso_27001';
@@ -79,10 +78,6 @@ const DEFAULT_FLAGS: Record<FeatureFlag, boolean> = {
   enable_people_value_engine: true,
   enable_management_savings_planner: false,
   enable_blaze_bright_moments: true,
-  // Off by default - this turns on a continuous, always-listening
-  // microphone (not a one-off dictation tap), so it needs an explicit,
-  // informed opt-in rather than being on for everyone out of the box.
-  enable_hey_nova_wake_word: false,
   compliance_gdpr_active: true,
   compliance_cyber_essentials: true,
   compliance_iso_27001: true

@@ -161,10 +161,10 @@ if (process.env.NODE_ENV === "production") {
 
 // Helmet (as of this version) doesn't ship a Permissions-Policy middleware,
 // unlike its older deprecated Feature-Policy equivalent - set it directly.
-// microphone is genuinely used (Nova Live Voice, Daily Voice Journal, the
-// "Hey Nova" wake word) and clipboard-write is used throughout (the many
-// copy-to-clipboard buttons); everything else powerful this app has no use
-// for is explicitly denied rather than left to each browser's default.
+// microphone is genuinely used (Nova Live Voice, Daily Voice Journal) and
+// clipboard-write is used throughout (the many copy-to-clipboard buttons);
+// everything else powerful this app has no use for is explicitly denied
+// rather than left to each browser's default.
 app.use((req, res, next) => {
   res.setHeader(
     'Permissions-Policy',

@@ -19,12 +19,9 @@ interface CommandPaletteProps {
   onNavigate: (id: string) => void;
   onTalkToNova?: () => void;
   onCrisis?: () => void;
-  // Pre-fills the search on open — used by the "Hey Nova" wake-word
-  // listener to hand off what it heard after the wake phrase.
-  initialQuery?: string;
 }
 
-export const CommandPalette = ({ isOpen, onClose, tabs, onNavigate, onTalkToNova, onCrisis, initialQuery }: CommandPaletteProps) => {
+export const CommandPalette = ({ isOpen, onClose, tabs, onNavigate, onTalkToNova, onCrisis }: CommandPaletteProps) => {
   const dialogRef = useFocusTrap(isOpen);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [query, setQuery] = useState('');
@@ -32,15 +29,12 @@ export const CommandPalette = ({ isOpen, onClose, tabs, onNavigate, onTalkToNova
 
   useEffect(() => {
     if (isOpen) {
-      setQuery(initialQuery ?? '');
+      setQuery('');
       setHighlight(0);
       // Focus the input once the dialog is mounted.
       const t = setTimeout(() => inputRef.current?.focus(), 40);
       return () => clearTimeout(t);
     }
-    // Only re-run when the dialog opens/closes — a changing initialQuery
-    // while already open shouldn't yank focus/text out from under someone
-    // mid-edit.
   }, [isOpen]);
 
   const tabById = useMemo(() => new Map(tabs.map((t) => [t.id, t])), [tabs]);
@@ -54,10 +48,7 @@ export const CommandPalette = ({ isOpen, onClose, tabs, onNavigate, onTalkToNova
   // A window-level listener, not just the dialog's own onKeyDown below -
   // matching NovaFeedbackModal.tsx/SettingsModal.tsx's established pattern.
   // The div-level handler only fires when focus is actually inside the
-  // dialog; that's reliable when the palette opens from a click, but when
-  // it opens from the "Hey Nova" wake word (an async voice callback, not a
-  // direct user gesture) focus landing inside the dialog is less
-  // dependable, and Escape would silently do nothing. This works
+  // dialog, which isn't guaranteed right after it opens - this works
   // regardless of where focus actually is.
   useEffect(() => {
     if (!isOpen) return;

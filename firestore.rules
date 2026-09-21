@@ -735,8 +735,9 @@ service cloud.firestore {
               'points', 'streak', 'rehearsalCount', 'lastEngagementDate',
               'unlockedBadges', 'supportCircle', 'committedActionIds',
               'weeklyGoalsComplete', 'level', 'profile', 'debts',
-              'recoveryScore', 'fingerprint', 'updatedAt'
+              'recoveryScore', 'fingerprint', 'lastSeenChangelogVersion', 'updatedAt'
             ])
+            && (!('lastSeenChangelogVersion' in request.resource.data) || isStringWithMax(request.resource.data.lastSeenChangelogVersion, 100))
             && (!('points' in request.resource.data) || (request.resource.data.points is number && request.resource.data.points >= 0))
             && (!('streak' in request.resource.data) || (request.resource.data.streak is number && request.resource.data.streak >= 0))
             && (!('unlockedBadges' in request.resource.data) || (request.resource.data.unlockedBadges is list && request.resource.data.unlockedBadges.size() <= 50))

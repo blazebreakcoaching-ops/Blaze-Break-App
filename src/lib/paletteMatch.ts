@@ -1,6 +1,5 @@
-// Shared "find the right tool" logic, used by both the visible command
-// palette (CommandPalette.tsx) and the "Hey Nova" wake-word listener
-// (useHeyNovaWakeWord.ts). Kept framework-free and dependency-free so it
+// Shared "find the right tool" logic for the command palette
+// (CommandPalette.tsx). Kept framework-free and dependency-free so it
 // stays plain-unit-testable — this repo's vitest config runs with
 // environment: 'node' (no DOM), so nothing here can touch React or the
 // DOM directly.

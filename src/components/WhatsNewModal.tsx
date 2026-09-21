@@ -10,29 +10,42 @@ import { useFocusTrap } from '../lib/useFocusTrap';
 // list with no content-authoring pattern elsewhere in the app to justify
 // more infrastructure than that.
 const CHANGELOG_VERSION = 'nova-wake-word-2026-09';
-const CHANGELOG_LAST_SEEN_KEY = 'blaze_changelog_last_seen';
 
 const CHANGELOG_ITEMS: { title: string; description: string }[] = [
   { title: 'Recovery Plan in the User Guide', description: 'See how your Recovery Plan works and where it comes from, right inside the guide.' },
   { title: 'Feedback & Testimonials in Settings', description: 'Share a rating, a bug, or a story about how Blaze Break has helped - right from Settings.' },
-  { title: '"Hey Nova" wake word', description: 'Say "hey Nova" to open hands-free search from anywhere in the app, once you turn it on in Settings.' },
 ];
+
+interface WhatsNewModalProps {
+  // Undefined until the account's real user_stats/core doc has loaded (or
+  // simply unset for an account that's never acknowledged anything yet) -
+  // `loaded` distinguishes those two so the modal never judges "seen" off
+  // a still-loading default.
+  lastSeenVersion: string | undefined;
+  loaded: boolean;
+  onSeen: (version: string) => void;
+}
 
 // Only mounted by the caller when a user is signed in (App.tsx gates this
 // on `user`, unlike NovaFeedbackModal which is guest-only) - so this
 // component doesn't need its own auth check, just the version-gated
 // trigger, mirroring NovaFeedbackModal.tsx's self-triggering shape with a
 // hardcoded version string instead of a rolling time window.
-export const WhatsNewModal = () => {
+//
+// Acknowledgement is stored on the account (user_stats/core.
+// lastSeenChangelogVersion, via the caller's existing autosave) rather
+// than localStorage, so "seen" follows the person across devices instead
+// of resetting every time they sign in somewhere new.
+export const WhatsNewModal = ({ lastSeenVersion, loaded, onSeen }: WhatsNewModalProps) => {
   const [isOpen, setIsOpen] = useState(false);
   const modalRef = useFocusTrap(isOpen);
 
   useEffect(() => {
-    if (localStorage.getItem(CHANGELOG_LAST_SEEN_KEY) === CHANGELOG_VERSION) return;
+    if (!loaded || lastSeenVersion === CHANGELOG_VERSION) return;
     // Small delay so this never interrupts someone the moment the app loads.
     const timer = setTimeout(() => setIsOpen(true), 3000);
     return () => clearTimeout(timer);
-  }, []);
+  }, [loaded, lastSeenVersion]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -43,7 +56,7 @@ export const WhatsNewModal = () => {
 
   const handleClose = () => {
     setIsOpen(false);
-    localStorage.setItem(CHANGELOG_LAST_SEEN_KEY, CHANGELOG_VERSION);
+    onSeen(CHANGELOG_VERSION);
   };
 
   return (

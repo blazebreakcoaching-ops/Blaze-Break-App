@@ -60,9 +60,6 @@ const Walkthrough = lazy(() => import("./components/Walkthrough.tsx").then(m => 
 import { CrisisSupportModal, CrisisSupportButton } from "./components/CrisisSupport.tsx";
 import { ErrorBoundary } from "./components/ErrorBoundary.tsx";
 const CommandPalette = lazy(() => import("./components/CommandPalette.tsx").then(m => ({ default: m.CommandPalette })));
-import { HeyNovaIndicator } from "./components/HeyNovaIndicator.tsx";
-import { useHeyNovaWakeWord } from "./lib/useHeyNovaWakeWord";
-import { NOVA_VOICE_STATUS_EVENT, VoiceStatus } from "./lib/useNovaLiveVoice";
 import { useFeatureFlags } from "./lib/feature-flags";
 const NovaGuardianRelay = lazy(() => import("./components/NovaGuardianRelay.tsx").then(m => ({ default: m.NovaGuardianRelay })));
 const AllyNudgeScheduler = lazy(() => import("./components/AllyNudgeScheduler.tsx").then(m => ({ default: m.AllyNudgeScheduler })));
@@ -1077,10 +1074,6 @@ export default function App() {
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && (e.key === 'k' || e.key === 'K')) {
         e.preventDefault();
-        // Cmd/Ctrl+K always starts from a clean search, whether it's
-        // opening fresh or the next time it opens after this closes it -
-        // a leftover "Hey Nova" query should never resurface unprompted.
-        setLauncherInitialQuery("");
         setShowLauncher((v) => !v);
       }
     };
@@ -1088,34 +1081,7 @@ export default function App() {
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
-  // "Hey Nova" wake word: opens the same quick-find palette above,
-  // pre-filled with whatever was said after the wake phrase, so saying it
-  // from anywhere in the app works exactly like Cmd/Ctrl+K plus a head
-  // start on the search - never a silent navigation.
   const featureFlags = useFeatureFlags();
-  const [launcherInitialQuery, setLauncherInitialQuery] = useState("");
-  const [voiceCallActive, setVoiceCallActive] = useState(false);
-  useEffect(() => {
-    const onVoiceStatus = (e: Event) => {
-      const status = (e as CustomEvent<VoiceStatus>).detail;
-      setVoiceCallActive(status === "connecting" || status === "live");
-    };
-    window.addEventListener(NOVA_VOICE_STATUS_EVENT, onVoiceStatus);
-    return () => window.removeEventListener(NOVA_VOICE_STATUS_EVENT, onVoiceStatus);
-  }, []);
-  const { status: wakeWordStatus, lastWakeAt: wakeWordLastWakeAt } = useHeyNovaWakeWord({
-    enabled: featureFlags.enable_hey_nova_wake_word,
-    // Also pauses while the palette itself is already open - without this,
-    // the listener kept running underneath it, and could pick up speech
-    // (the person talking to fill in their search, ambient noise, etc.)
-    // and re-trigger onWake, making the palette look like it wouldn't
-    // close since it could reopen right behind Escape.
-    paused: voiceCallActive || showLauncher,
-    onWake: (query) => {
-      setLauncherInitialQuery(query);
-      setShowLauncher(true);
-    },
-  });
 
   const [postOnboardingProfile, setPostOnboardingProfile] = useState<UserProfileData | null>(null);
   const welcomeModalRef = useFocusTrap(!!postOnboardingProfile);
@@ -1269,6 +1235,11 @@ export default function App() {
   const prevUserRef = useRef<any>(null);
   const flowRef = useRef(flow);
   const statsLoadedRef = useRef(false);
+  // Reactive twin of statsLoadedRef - WhatsNewModal needs to know when the
+  // real, account-level lastSeenChangelogVersion has actually loaded (a
+  // ref flipping doesn't trigger a re-render), so it never judges "seen"
+  // off the still-loading default.
+  const [statsLoaded, setStatsLoaded] = useState(false);
   const fingerprintLoadedRef = useRef(false);
   flowRef.current = flow;
 
@@ -1379,6 +1350,7 @@ export default function App() {
       }
       setStats(loadedStats);
       statsLoadedRef.current = true;
+      setStatsLoaded(true);
 
       // Guardian contacts now live in the validated support_circle
       // subcollection, not the unvalidated array this doc's own
@@ -2633,20 +2605,22 @@ export default function App() {
         <Suspense fallback={null}>
           <CommandPalette
             isOpen={showLauncher}
-            onClose={() => { setShowLauncher(false); setLauncherInitialQuery(""); }}
+            onClose={() => setShowLauncher(false)}
             tabs={launcherTabs}
             onNavigate={(id) => setActiveTab(id as ActiveTab)}
             onTalkToNova={() => setActiveTab("nova")}
             onCrisis={() => setShowCrisisSupport(true)}
-            initialQuery={launcherInitialQuery}
           />
         </Suspense>
       )}
-      <HeyNovaIndicator status={wakeWordStatus} lastWakeAt={wakeWordLastWakeAt} />
       <InAppNudge />
       {user && (
         <Suspense fallback={null}>
-          <WhatsNewModal />
+          <WhatsNewModal
+            lastSeenVersion={stats.lastSeenChangelogVersion}
+            loaded={statsLoaded}
+            onSeen={(version) => setStats(prev => ({ ...prev, lastSeenChangelogVersion: version }))}
+          />
         </Suspense>
       )}
 
