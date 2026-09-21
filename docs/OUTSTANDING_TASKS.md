@@ -19,21 +19,29 @@ separate audience, kept deliberately un-merged with this one.
   exist would be unverifiable code, not a real integration — deliberately
   not done, matching the same honest gap `billing-adapter.ts` already
   documented for Enterprise billing. Scoped in detail in
-  `docs/FREE_PREMIUM_ENTITLEMENTS.md`.
+  `docs/STRIPE_PRODUCTS.md`.
 - **Apple App Store Server Notifications v2 + receipt verification.**
-  Needs an App Store Connect API key.
+  Needs an App Store Connect API key. Scoped in `docs/MOBILE_SUBSCRIPTIONS.md`.
 - **Google Play Real-time Developer Notifications + Play Developer API
-  verification.** Needs a Play service-account key.
+  verification.** Needs a Play service-account key. Scoped in
+  `docs/MOBILE_SUBSCRIPTIONS.md`.
 
-**Manual configuration needed when these are picked up:**
-- Stripe: create the product/prices (£19.99/mo, £179/yr), a webhook
-  endpoint pointed at `/api/webhooks/stripe` (once built), and the
+**Manual configuration needed when these are picked up** (current tier
+pricing — Free/Core £34.99mo·£349yr/Performance £49.99mo·£499yr/Executive
+£69.99mo·£699yr — is `entitlements.ts`'s `PLAN_PRICING`, the one source of
+truth; the £19.99/£179 figures this note previously listed were the
+single-tier Premium price the B2C multi-tier revision replaced):
+- Stripe: create the 3 tier products/prices per
+  `docs/STRIPE_PRODUCTS.md`, a webhook endpoint pointed at
+  `/api/webhooks/stripe` (once built), and the
   `STRIPE_WEBHOOK_SECRET`/`STRIPE_SECRET_KEY` env vars via Secret Manager
   (same pattern `docs/DEPLOY.md` already uses for every other secret).
 - Apple: App Store Connect subscription products matching the same
-  pricing, an App Store Server Notifications v2 URL, and a server API key.
-- Google Play: subscription products, a Pub/Sub topic for RTDN, and a
-  service account with the Play Developer API enabled.
+  pricing (see `docs/MOBILE_SUBSCRIPTIONS.md`), an App Store Server
+  Notifications v2 URL, and a server API key.
+- Google Play: subscription products (see `docs/MOBILE_SUBSCRIPTIONS.md`),
+  a Pub/Sub topic for RTDN, and a service account with the Play Developer
+  API enabled.
 - Firebase/Google Cloud: nothing new required for entitlements
   specifically — the `entitlements/status` and `usage_counters`
   subcollections use the existing Firestore/Admin SDK setup.

@@ -121,14 +121,16 @@ was tightened in this pass (`anxiety_reset_events` closed to server-write-
 only, `weekly_habit_cycles` given a rule at all — it had none, silently
 non-functional in production — `checkins` given real field validation).
 
-## 5. What this account is entitled to do — Free/Premium capabilities
+## 5. What this account is entitled to do — tier capabilities
 
 `entitlements.ts` + `checkAndReserveCapability` in `server.ts` is the
-single, server-authoritative source of truth for Free-vs-Premium access
-and daily usage quotas per capability (Nova text/voice, diagnose,
-exports, resentment analysis, executive report, manager coach). The
-record lives at `users/{uid}/entitlements/status`, which Firestore rules
-make `allow write: if false` — only the Admin SDK ever writes it. This
+single, server-authoritative source of truth for tier access (Free/Core/
+Performance/Executive, plus the non-purchasable `legacy_premium` for
+accounts that predate this tier set) and daily/monthly usage quotas per
+capability (Nova text/voice/voice-minutes, diagnose, exports, resentment
+analysis, executive report, manager coach, SMS nudges). The record lives
+at `users/{uid}/entitlements/status`, which Firestore rules make
+`allow write: if false` — only the Admin SDK ever writes it. This
 replaced an earlier real bug where tier was read from a client-writable
 Firestore field. See `docs/FREE_PREMIUM_ENTITLEMENTS.md`.
 
