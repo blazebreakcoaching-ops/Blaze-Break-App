@@ -8692,6 +8692,70 @@ app.get("/api/user/resume-prompt", verifyAppCheck, authenticateFirebaseUser, asy
   }
 });
 
+// Weekly Recovery Recap - a plain "here's what you actually did this
+// week" read, not a recommendation. Template-based off real data the
+// person already logged (check-in count, current streak, which way
+// energy moved, one win) rather than an AI call - genuinely tailored to
+// their week without the latency/cost/rate-limit surface a Nova call
+// would add. Deliberately separate from the recommendation/resume-prompt
+// routes above - this never suggests anything or competes with "today's
+// focus" for the one-clear-next-step slot, it's a retrospective widget
+// someone opts into from "Add widget".
+app.get("/api/user/weekly-recap", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const user = requireAuth(req);
+    const db = getDb();
+    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+
+    const [checkinsSnap, winsSnap, statsSnap] = await Promise.all([
+      db.collection("users").doc(user.uid).collection("checkins").where("createdAt", ">=", sevenDaysAgo).get(),
+      db.collection("users").doc(user.uid).collection("wins").where("createdAt", ">=", sevenDaysAgo).orderBy("createdAt", "desc").limit(1).get(),
+      db.collection("users").doc(user.uid).collection("user_stats").doc("core").get(),
+    ]);
+
+    const checkinsCount = checkinsSnap.size;
+    if (checkinsCount === 0) {
+      return res.json({ hasActivity: false });
+    }
+
+    const stats = statsSnap.exists ? statsSnap.data()! : {};
+    const currentStreak = typeof stats.streak === "number" ? stats.streak : 0;
+
+    // Compares the first half of this week's check-ins to the second half
+    // - same technique as /api/recovery/recalculate's getDirection, just
+    // over a 7-day window instead of 30, and on the raw 0-10 energyLevel
+    // scale rather than the derived 0-100 score.
+    const energyValues = checkinsSnap.docs
+      .map((d) => d.data())
+      .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
+      .map((d) => Number(d.energyLevel))
+      .filter((v) => !isNaN(v));
+    let energyDirection: "rising" | "falling" | "stable" | "unknown" = "unknown";
+    if (energyValues.length >= 2) {
+      const half = Math.floor(energyValues.length / 2);
+      const avg1 = energyValues.slice(0, half).reduce((a, b) => a + b, 0) / half;
+      const avg2 = energyValues.slice(half).reduce((a, b) => a + b, 0) / (energyValues.length - half);
+      if (avg2 - avg1 > 1) energyDirection = "rising";
+      else if (avg1 - avg2 > 1) energyDirection = "falling";
+      else energyDirection = "stable";
+    }
+
+    const highlight = winsSnap.empty ? null : (winsSnap.docs[0].data().title as string) || null;
+
+    res.json({
+      hasActivity: true,
+      checkinsCount,
+      currentStreak,
+      energyDirection,
+      highlight,
+      weekStart: sevenDaysAgo,
+      weekEnd: new Date().toISOString(),
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.get("/api/user/recommendation", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
   try {
     const user = requireAuth(req);
