@@ -111,6 +111,7 @@ const NovaOverloadShield = lazy(() => import("./components/NovaOverloadShield.ts
 import { updateNovaMemoryBySourceAndType, logJourney, initNovaPermissionsForNewUser, setNovaMemoryConsent } from "./lib/nova-brain.ts";
 import { buildDashboardGreeting } from "../dashboard-greeting.ts";
 const TrustCentrePage = lazy(() => import("./components/TrustCentrePage.tsx").then(m => ({ default: m.TrustCentrePage })));
+const SubscriptionCentre = lazy(() => import("./components/SubscriptionCentre.tsx").then(m => ({ default: m.SubscriptionCentre })));
 import { hasSubscriptionEntitlement } from "./lib/entitlement.ts";
 const RecoveryAlly = lazy(() => import("./components/RecoveryAlly.tsx").then(m => ({ default: m.RecoveryAlly })));
 const UserGuide = lazy(() => import("./components/UserGuide.tsx").then(m => ({ default: m.UserGuide })));
@@ -2325,6 +2326,7 @@ export default function App() {
                   onTriggerSync={handleTriggerGlobalSync}
                   onAwardPoints={awardPoints}
                 />
+                <SubscriptionCentre />
                 <TrustCentrePage onBack={() => {}} />
                 <AssuranceCentre />
                 <IntegrationsDashboard />
