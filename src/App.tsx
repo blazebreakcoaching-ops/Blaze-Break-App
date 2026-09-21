@@ -878,7 +878,7 @@ const Header = ({
           aria-label="Recovery Tour: Interactive System Walkthrough"
         >
           <Compass className="w-3.5 h-3.5" aria-hidden="true" />
-          <span className="hidden sm:inline">Recovery Tour</span>
+          <span className="hidden lg:inline">Recovery Tour</span>
         </button>
       )}
       {onSomaticReset && (
@@ -897,7 +897,7 @@ const Header = ({
             aria-label={guardianPingActive ? "Ping Active: Guardian Ping to Support Circle" : "Guardian Ping: alert your Support Circle"}
           >
             <Shield className="w-4 h-4" aria-hidden="true" />
-            <span className="hidden sm:inline">
+            <span className="hidden lg:inline">
               {guardianPingActive ? "Ping Active" : "Guardian Ping"}
             </span>
           </button>
@@ -908,7 +908,7 @@ const Header = ({
             aria-label="Somatic Reset, 60 seconds"
           >
             <HeartPulse className="w-4 h-4 animate-pulse" aria-hidden="true" />
-            <span className="hidden sm:inline">Somatic Reset</span>
+            <span className="hidden lg:inline">Somatic Reset</span>
           </button>
           </div>
         </div>
@@ -937,7 +937,7 @@ const Header = ({
             <User className="w-5 h-5 m-2.5 text-text-muted" />
           )}
         </div>
-        <div className="flex flex-col items-start hidden sm:flex">
+        <div className="flex flex-col items-start hidden lg:flex">
           <span className="text-xs font-bold text-text-main line-clamp-1 max-w-[100px]">
             {profile?.fullName || "Profile Settings"}
           </span>
