@@ -78,7 +78,6 @@ export interface SupportContact {
   contactMethod: string;
   relation?: string;
   notificationPreference?: 'sms' | 'whatsapp';
-  autoAlertEnabled?: boolean;
 }
 
 export interface OrgTrends {

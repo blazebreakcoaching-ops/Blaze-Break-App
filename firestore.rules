@@ -439,7 +439,12 @@ service cloud.firestore {
       // caller is allowed to claim, not what the collection can hold.
       match /nova_memories/{memoryId} {
         allow read: if isOwner(uid);
-        allow delete: if isOwner(uid);
+        // canEdit:false marks a system-derived record (e.g. Safety Engine
+        // memories) the UI deliberately won't offer a delete button for -
+        // this must hold that same line at the data layer too, or it's not
+        // a real protection, just a UI suggestion bypassable from the
+        // console or any other direct Firestore client.
+        allow delete: if isOwner(uid) && resource.data.canEdit == true;
         allow create, update: if isOwner(uid)
             && hasOnly(['type', 'content', 'source', 'confidence', 'createdAt', 'updatedAt', 'canEdit'])
             && hasAll(['type', 'content', 'source', 'confidence', 'createdAt', 'updatedAt', 'canEdit'])
@@ -683,7 +688,7 @@ service cloud.firestore {
       match /support_circle/{contactId} {
         allow read, delete: if isOwner(uid);
         allow create, update: if isOwner(uid)
-            && hasOnly(['createdAt', 'updatedAt', 'name', 'role', 'isGuardian', 'contactMethod', 'relation', 'notificationPreference', 'autoAlertEnabled'])
+            && hasOnly(['createdAt', 'updatedAt', 'name', 'role', 'isGuardian', 'contactMethod', 'relation', 'notificationPreference'])
             && hasAll(['createdAt', 'updatedAt', 'name', 'role', 'isGuardian', 'contactMethod'])
             && isStringWithMax(request.resource.data.name, 100)
             && isStringWithMax(request.resource.data.contactMethod, 100)

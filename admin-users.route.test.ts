@@ -12,6 +12,7 @@ const h = vi.hoisted(() => {
   return {
     setCustomUserClaims: vi.fn(async () => {}),
     getUserByEmail: vi.fn(async (email: string) => ({ uid: `uid_${email}`, email, displayName: null })),
+    updateUser: vi.fn(async () => {}),
   };
 });
 
@@ -23,6 +24,7 @@ vi.mock('firebase-admin/auth', () => ({
     verifyIdToken: async (t: string) => ({ uid: t, email: `${t}@test.dev`, role: t === 'owner_1' ? 'platform_owner' : undefined }),
     setCustomUserClaims: h.setCustomUserClaims,
     getUserByEmail: h.getUserByEmail,
+    updateUser: h.updateUser,
   }),
 }));
 vi.mock('firebase-admin/firestore', async () => {
@@ -43,6 +45,7 @@ beforeEach(() => {
   resetStore();
   h.setCustomUserClaims.mockClear();
   h.getUserByEmail.mockClear();
+  h.updateUser.mockClear();
 });
 
 describe('POST /api/admin/admin-users', () => {
@@ -149,6 +152,45 @@ describe('POST /api/admin/users/:uid/role (app-level AuthRole)', () => {
     expect(h.setCustomUserClaims).toHaveBeenCalledWith('target_uid', { role: 'manager' });
     const stored = getDocRaw('users/target_uid/entitlements/status');
     expect(stored?.role).toBe('manager');
+  });
+});
+
+describe('POST /api/admin/users/:uid/suspend', () => {
+  it('requires admin', async () => {
+    const res = await request(app).post('/api/admin/users/target_uid/suspend').set(auth(NOT_OWNER)).send({ suspend: true });
+    expect(res.status).toBe(500);
+    expect(h.updateUser).not.toHaveBeenCalled();
+  });
+
+  it('rejects a non-boolean suspend value', async () => {
+    const res = await request(app).post('/api/admin/users/target_uid/suspend').set(auth(OWNER)).send({ suspend: 'true' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/suspend/i);
+    expect(h.updateUser).not.toHaveBeenCalled();
+  });
+
+  it('rejects a missing suspend field', async () => {
+    const res = await request(app).post('/api/admin/users/target_uid/suspend').set(auth(OWNER)).send({});
+    expect(res.status).toBe(400);
+    expect(h.updateUser).not.toHaveBeenCalled();
+  });
+
+  it('rejects an extra, unexpected field in the body', async () => {
+    const res = await request(app).post('/api/admin/users/target_uid/suspend').set(auth(OWNER)).send({ suspend: true, reason: 'test' });
+    expect(res.status).toBe(400);
+    expect(h.updateUser).not.toHaveBeenCalled();
+  });
+
+  it('disables the target account on suspend: true', async () => {
+    const res = await request(app).post('/api/admin/users/target_uid/suspend').set(auth(OWNER)).send({ suspend: true });
+    expect(res.status).toBe(200);
+    expect(h.updateUser).toHaveBeenCalledWith('target_uid', { disabled: true });
+  });
+
+  it('re-enables the target account on suspend: false', async () => {
+    const res = await request(app).post('/api/admin/users/target_uid/suspend').set(auth(OWNER)).send({ suspend: false });
+    expect(res.status).toBe(200);
+    expect(h.updateUser).toHaveBeenCalledWith('target_uid', { disabled: false });
   });
 });
 

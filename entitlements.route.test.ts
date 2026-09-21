@@ -117,6 +117,15 @@ describe('GET /api/entitlements/me', () => {
     expect(res.body.plan).toBe('performance');
     expect(res.body.billingSource).toBe('organisation');
   });
+
+  // nova_manager_coach is a real, enforced capability (its own quota route
+  // exists) but was previously missing from this summary endpoint's
+  // returned capability list - a client had no way to show its own limit.
+  it('includes nova_manager_coach in the returned capability list', async () => {
+    const res = await request(app).get('/api/entitlements/me').set(auth(USER));
+    expect(res.body.capabilities.nova_manager_coach).toBeDefined();
+    expect(typeof res.body.capabilities.nova_manager_coach.limit === 'number' || res.body.capabilities.nova_manager_coach.limit === null).toBe(true);
+  });
 });
 
 describe('GET /api/entitlements/pricing', () => {

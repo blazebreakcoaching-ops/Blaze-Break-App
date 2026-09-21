@@ -974,10 +974,9 @@ export const PrivacyVault = ({
                       </p>
                     </div>
                     <div className="space-y-1 text-xs text-text-muted font-mono leading-relaxed bg-background p-3 rounded-lg border border-white/[0.02]">
-                      <p className="text-destructive dark:text-[#f87171]">● [1/4] Overwriting Zone A-C metadata...</p>
-                      <p className="text-destructive dark:text-[#f87171]">● [2/4] Destroying audit ledger traces...</p>
-                      <p className="text-destructive dark:text-[#f87171]">● [3/4] Purging offline local storage namespaces...</p>
-                      <p className="text-destructive dark:text-[#f87171]">● [4/4] Finalising cryptographic shredding...</p>
+                      <p className="text-destructive dark:text-[#f87171]">● [1/3] Erasing your recovery data from our servers...</p>
+                      <p className="text-destructive dark:text-[#f87171]">● [2/3] Clearing locally stored data on this device...</p>
+                      <p className="text-destructive dark:text-[#f87171]">● [3/3] Signing you out...</p>
                     </div>
                   </div>
                 )}
