@@ -200,17 +200,6 @@ export interface UserStats {
   profile?: UserProfileData;
   debts?: Debt[];
   recoveryScore?: number;
-  intelligence?: {
-    moodLogs?: any[];
-    triggers?: any[];
-    socialBattery?: number;
-    wins?: any[];
-    bodySymptoms?: string[];
-    weeklyReview?: any;
-    rtwPhase?: number;
-    meetingLimit?: number;
-    isFocusShieldActive?: boolean;
-  };
 }
 
 export const BADGES: Badge[] = [

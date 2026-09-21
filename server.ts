@@ -4962,6 +4962,7 @@ app.get("/api/admin/summary", verifyAppCheck, authenticateFirebaseUser, async (r
       avgIntensityReduction: countWithIntensity > 0 ? Number(((totalBefore - totalAfter) / countWithIntensity).toFixed(1)) : 0,
       mostCommonTrigger,
       mostUsedResetTool,
+      toolCounts,
       completionRate: totalResets > 0 ? Math.round((completedCount / totalResets) * 100) : 100,
       totalResets,
       safetyEscalations,
@@ -4973,11 +4974,13 @@ app.get("/api/admin/summary", verifyAppCheck, authenticateFirebaseUser, async (r
 });
 
 // Admin Dashboard - Account Operations Only
+const ADMIN_USERS_PAGE_LIMIT = 100;
+
 app.get("/api/admin/users", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
   try {
     requireAdmin(req);
     const db = getDb();
-    const usersSnap = await db.collection("users").limit(100).get();
+    const usersSnap = await db.collection("users").limit(ADMIN_USERS_PAGE_LIMIT).get();
     // Email/join-date/last-active come from the real Firebase Auth record,
     // not the Firestore users/{uid} doc - that doc's own `email` field
     // isn't reliably populated, and trusting it produced the exact
@@ -5002,7 +5005,12 @@ app.get("/api/admin/users", verifyAppCheck, authenticateFirebaseUser, async (req
         return { uid: doc.id, email: null, createdAt: null, lastSignIn: null, accessStatus: "unknown" };
       }
     }));
-    res.json({ users, total: users.length });
+    // This route has always been capped at ADMIN_USERS_PAGE_LIMIT with no
+    // pagination - `capped` tells the client honestly when the real count
+    // exceeds what was fetched, so "Registered Professionals: 100" doesn't
+    // silently become a permanently-wrong number once the user base grows
+    // past the page size, instead of a real (if approximate) "100+".
+    res.json({ users, total: users.length, capped: usersSnap.size >= ADMIN_USERS_PAGE_LIMIT });
   } catch (err: any) {
     console.error("[ADMIN] Error fetching users:", err.message);
     res.status(500).json({ error: "Failed to fetch admin data." });
@@ -9073,6 +9081,21 @@ const ResentmentAnalysisRequestSchema = z.object({
   log: z.string().min(1).max(3000),
 }).strict();
 
+// Matches firestore.rules' resentment_logs shape exactly (isStringWithMax
+// caps of 500/500/500/300) - previously the model's raw JSON.parse output
+// went straight to the client and then into a Firestore write with no
+// server-side check in between, so the rule's own length/shape validation
+// was the only thing standing between a malformed model response and a
+// silently-rejected client write. Validating here instead gives a real
+// error response if the model ever returns an unexpected shape, rather
+// than a mysterious failed save on the client.
+const ResentmentAnalysisResponseSchema = z.object({
+  yesMeantNo: z.string().max(500).optional(),
+  unclear: z.string().max(500).optional(),
+  unappreciated: z.string().max(500).optional(),
+  missingBoundary: z.string().max(300).optional(),
+});
+
 app.post("/api/nova/resentment-analysis", resentmentAnalysisLimiter, verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
   try {
     const parsed = ResentmentAnalysisRequestSchema.safeParse(req.body);
@@ -9116,9 +9139,13 @@ Respond strictly in this JSON format, no markdown, no commentary outside the JSO
 
     const text = response.text;
     if (!text) throw new Error("Empty response from Gemini model.");
-    const analysis = JSON.parse(text);
+    const rawAnalysis = JSON.parse(text);
+    const validated = ResentmentAnalysisResponseSchema.safeParse(rawAnalysis);
+    if (!validated.success) {
+      throw new Error(`Model returned an unexpected shape: ${validated.error.message}`);
+    }
 
-    res.json(analysis);
+    res.json(validated.data);
   } catch (err: any) {
     console.error("[Nova] resentment analysis error:", err.message);
     res.status(500).json({ error: "Could not analyze that right now." });
