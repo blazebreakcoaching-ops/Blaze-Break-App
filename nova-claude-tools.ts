@@ -1,10 +1,10 @@
 // Translates Nova's existing tool declarations (written for Gemini's
 // functionDeclarations shape) into Anthropic's tool-use shape, so the
-// same three tools (search_nova_memories, propose_recovery_action,
-// remember_about_user) work identically regardless of which provider is
-// handling a given chat turn. Kept pure and dependency-free so it's
-// testable without an Anthropic client or network access - matching the
-// pattern already established for nova-tools.ts.
+// same tools (search_nova_memories, propose_recovery_action,
+// remember_about_user, suggest_feature) work identically regardless of
+// which provider is handling a given chat turn. Kept pure and
+// dependency-free so it's testable without an Anthropic client or network
+// access - matching the pattern already established for nova-tools.ts.
 
 export interface GeminiStyleToolDeclaration {
   name: string;
