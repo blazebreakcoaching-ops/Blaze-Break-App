@@ -275,7 +275,13 @@ export const InAppNudge = () => {
       category: cat,
       message: text,
       shownAt: now.toISOString(),
-      createdAt: now.toISOString()
+      createdAt: now.toISOString(),
+      // Required by firestore.rules' nudge_history validation
+      // (source == 'in_app_nova', status in the enum below) - missing
+      // either field made every write here silently fail permission-denied,
+      // caught by the try/catch below with no visible symptom.
+      source: 'in_app_nova',
+      status: 'shown' as const,
     };
     setCurrentNudge(nudgeData);
     
@@ -301,11 +307,16 @@ export const InAppNudge = () => {
     if (currentNudge.id) {
       try {
         const { db, doc, updateDoc } = await getFirestoreApi();
+        // "acted_on" (not "action_taken") matches firestore.rules' status
+        // enum. Firestore's SDK also throws client-side on an explicit
+        // `undefined` field value, so dismissedAt/actionTakenAt/
+        // reasonCategory are only included when they actually apply,
+        // rather than always present with one side undefined - both bugs
+        // meant this write always failed, silently, before either field
+        // mismatch even reached the server.
         await updateDoc(doc(db, 'users', user.uid, 'nudge_history', currentNudge.id), {
-          status: reason ? "dismissed" : "action_taken",
-          dismissedAt: reason ? new Date().toISOString() : undefined,
-          actionTakenAt: !reason ? new Date().toISOString() : undefined,
-          reasonCategory: reason,
+          status: reason ? "dismissed" : "acted_on",
+          ...(reason ? { dismissedAt: new Date().toISOString(), reasonCategory: reason } : { actionTakenAt: new Date().toISOString() }),
           updatedAt: new Date().toISOString()
         });
       } catch (e) {
