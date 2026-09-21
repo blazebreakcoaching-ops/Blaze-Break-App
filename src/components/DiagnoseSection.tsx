@@ -1439,6 +1439,16 @@ export const ResultView = ({
       } catch (e) {
         // Leaves the honest empty state in place rather than pretending progress loaded.
       }
+
+      // Persists the full set of action/boundary ids this profile's plan
+      // actually contains, alongside completedActions/committedBoundaries
+      // - lets a server route compute real "N remaining" rather than only
+      // knowing "some are done" (used by GET /api/user/resume-prompt).
+      const plan = PERSONALIZED_RECOVERY_PLANS[result.profile] || PERSONALIZED_RECOVERY_PLANS["High-Functioning Exhausted"];
+      saveProgress({
+        allActionIds: plan.recommendedActions.map((a) => a.id),
+        allBoundaryIds: plan.boundaryStrategies.map((s) => s.id),
+      });
     };
     load();
   }, [result.profile]);

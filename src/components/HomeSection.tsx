@@ -284,6 +284,27 @@ export const HomeSection = ({
     const loadRecommendation = async () => {
       if (!auth.currentUser) { setRecommendationLoading(false); return; }
       try {
+        // "Pick up where you left off" takes priority over the generic
+        // recommendation whenever there's genuine unfinished progress on
+        // Recovery Plan or the post-check-in action plan - it's more
+        // specific and actionable than a staleness-based nudge. Same
+        // response shape as /api/user/recommendation, so it slots into
+        // this exact card with no extra rendering logic.
+        const resumeRes = await secureApiFetch('/api/user/resume-prompt');
+        if (resumeRes.ok) {
+          const resumeData = await resumeRes.json();
+          if (resumeData.hasIncomplete) {
+            setRecommendation({
+              tool: resumeData.tool,
+              tab: resumeData.tab,
+              title: resumeData.title,
+              message: resumeData.message,
+              points: resumeData.points,
+            });
+            setRecommendationLoading(false);
+            return;
+          }
+        }
         const res = await secureApiFetch('/api/user/recommendation');
         if (res.ok) {
           setRecommendation(await res.json());
@@ -890,7 +911,7 @@ export const HomeSection = ({
               <div className="w-2 h-2 rounded-full bg-primary"></div>
               <h3 className="text-[11px] font-medium uppercase tracking-widest text-text-main">Today's focus</h3>
             </div>
-            {recommendation && <span className="text-[11px] font-mono text-text-muted">+{recommendation.points}</span>}
+            {recommendation && recommendation.points > 0 && <span className="text-[11px] font-mono text-text-muted">+{recommendation.points}</span>}
           </div>
           {recommendationLoading ? (
             <div className="flex items-center justify-center py-8">

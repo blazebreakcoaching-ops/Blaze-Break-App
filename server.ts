@@ -8522,6 +8522,86 @@ app.post("/api/user/mark-activity", verifyAppCheck, authenticateFirebaseUser, as
   }
 });
 
+// "Pick up where you left off" - checked by the client BEFORE
+// /api/user/recommendation, and takes priority over it whenever there's
+// genuine unfinished progress on Recovery Plan or the post-check-in
+// action plan - the only two features with real, resumable partial
+// state today (check-in/reflect save nothing until final submit;
+// weekly goals/energy budget are time-boxed and "in progress" by
+// design all week, so neither maps cleanly to "abandoned" - both
+// deliberately left for a future pass rather than guessed at here).
+// Kept as a fully separate function from the rule-based recommendation
+// engine above so it carries zero risk to those rules. Only ever
+// surfaces ONE prompt (the most recently touched), matching this
+// product's "one clear next step per page" principle - never a stack
+// of reminders. Copy is deliberately optional-sounding, never framed
+// as a broken streak or something owed.
+app.get("/api/user/resume-prompt", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const user = requireAuth(req);
+    const db = getDb();
+
+    type ResumeCandidate = { tool: string; tab: string; title: string; message: string; updatedAt: string };
+    const candidates: ResumeCandidate[] = [];
+
+    const planSnap = await db.collection("users").doc(user.uid).collection("recovery_plan_progress").doc("state").get();
+    if (planSnap.exists) {
+      const data = planSnap.data()!;
+      const allIds: string[] = Array.isArray(data.allActionIds) ? data.allActionIds : [];
+      const completedIds: string[] = Array.isArray(data.completedIds) ? data.completedIds : [];
+      const remaining = allIds.filter((id) => !completedIds.includes(id)).length;
+      if (allIds.length > 0 && remaining > 0 && typeof data.updatedAt === 'string') {
+        candidates.push({
+          tool: 'Recovery Plan',
+          tab: 'plan',
+          title: "Pick up where you left off",
+          message: "Whenever you're ready - you left your Recovery Plan partway through. It's exactly as you left it.",
+          updatedAt: data.updatedAt,
+        });
+      }
+    }
+
+    const diagnosisSnap = await db.collection("users").doc(user.uid).collection("diagnosis_progress").get();
+    for (const doc of diagnosisSnap.docs) {
+      const data = doc.data();
+      const allActionIds: string[] = Array.isArray(data.allActionIds) ? data.allActionIds : [];
+      const allBoundaryIds: string[] = Array.isArray(data.allBoundaryIds) ? data.allBoundaryIds : [];
+      const completedActions: string[] = Array.isArray(data.completedActions) ? data.completedActions : [];
+      const committedBoundaries: string[] = Array.isArray(data.committedBoundaries) ? data.committedBoundaries : [];
+      const remainingActions = allActionIds.filter((id) => !completedActions.includes(id)).length;
+      const remainingBoundaries = allBoundaryIds.filter((id) => !committedBoundaries.includes(id)).length;
+      const totalKnown = allActionIds.length + allBoundaryIds.length;
+      if (totalKnown > 0 && (remainingActions + remainingBoundaries) > 0 && typeof data.updatedAt === 'string') {
+        candidates.push({
+          tool: 'Your Action Plan',
+          tab: 'diagnose',
+          title: "Pick up where you left off",
+          message: "Whenever you're ready - you left some of your recovery actions unfinished. They're exactly as you left them.",
+          updatedAt: data.updatedAt,
+        });
+      }
+    }
+
+    if (candidates.length === 0) {
+      return res.json({ hasIncomplete: false });
+    }
+
+    // Only ever surface the single most recently-touched candidate.
+    candidates.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+    const chosen = candidates[0];
+    res.json({
+      hasIncomplete: true,
+      tool: chosen.tool,
+      tab: chosen.tab,
+      title: chosen.title,
+      message: chosen.message,
+      points: 0,
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.get("/api/user/recommendation", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
   try {
     const user = requireAuth(req);
