@@ -396,12 +396,30 @@ service cloud.firestore {
       }
       
       // J. nova_permissions/current
+      //
+      // allowNovaMemorySuggestions/allowNovaRememberCoachingPreferences/
+      // allowNovaRememberRecoveryPatterns/allowNovaRememberGoals were
+      // required here (hasAll) since this app's very first commit, but no
+      // client or server code anywhere has ever written them (confirmed by
+      // a full-repo audit) - they were placeholders for a granular memory-
+      // type consent UI that was never built. Because hasAll required them
+      // and nothing supplied them, this doc could NEVER be successfully
+      // created by ANY account: both nova-brain.ts's initNovaPermissionsForNewUser
+      // (onboarding) and ensureNovaPermissionsExist (existing-account
+      // backfill) write to a not-yet-existing doc, which Firestore treats
+      // as a create, which always failed this hasAll check, silently
+      // (empty catch blocks). Meaning Nova has never actually had this
+      // doc, ever, for anyone - server.ts's getNovaContextAndMetadata has
+      // always taken its "no permissions doc" branch and returned zero
+      // context. Removed as vestigial, matching this session's existing
+      // precedent for dead schema fields (see the removed
+      // autoAlertEnabled field).
       match /nova_permissions/current {
         allow read: if isOwner(uid);
         allow delete: if isOwner(uid);
         allow create, update: if isOwner(uid)
-            && hasOnly(['allowCheckins', 'allowEnergyBudgets', 'allowMoodPulses', 'allowBodyCheckins', 'allowWins', 'allowWeeklyReviews', 'allowBoundaryScripts', 'allowGoals', 'allowRecoveryDebt', 'allowRecoveryVelocity', 'allowEnergyTrend', 'allowMoodTrend', 'allowCalendarSignals', 'allowFingerprint', 'allowRecoveryPlanProgress', 'allowDiagnosisProgress', 'allowEnergyCommitments', 'allowStressTriggers', 'allowHabitCycles', 'allowFuelLogs', 'allowFocusSessions', 'allowSomaticResets', 'allowRecoveryAlly', 'allowNovaMemory', 'allowNovaMemorySuggestions', 'allowNovaUseSavedMemories', 'allowNovaRememberCoachingPreferences', 'allowNovaRememberRecoveryPatterns', 'allowNovaRememberGoals', 'updatedAt'])
-            && hasAll(['allowCheckins', 'allowEnergyBudgets', 'allowMoodPulses', 'allowBodyCheckins', 'allowWins', 'allowWeeklyReviews', 'allowBoundaryScripts', 'allowGoals', 'allowRecoveryDebt', 'allowRecoveryVelocity', 'allowEnergyTrend', 'allowMoodTrend', 'allowNovaMemory', 'allowNovaMemorySuggestions', 'allowNovaUseSavedMemories', 'allowNovaRememberCoachingPreferences', 'allowNovaRememberRecoveryPatterns', 'allowNovaRememberGoals'])
+            && hasOnly(['allowCheckins', 'allowEnergyBudgets', 'allowMoodPulses', 'allowBodyCheckins', 'allowWins', 'allowWeeklyReviews', 'allowBoundaryScripts', 'allowGoals', 'allowRecoveryDebt', 'allowRecoveryVelocity', 'allowEnergyTrend', 'allowMoodTrend', 'allowCalendarSignals', 'allowFingerprint', 'allowRecoveryPlanProgress', 'allowDiagnosisProgress', 'allowEnergyCommitments', 'allowStressTriggers', 'allowHabitCycles', 'allowFuelLogs', 'allowFocusSessions', 'allowSomaticResets', 'allowRecoveryAlly', 'allowNovaMemory', 'allowNovaUseSavedMemories', 'updatedAt'])
+            && hasAll(['allowCheckins', 'allowEnergyBudgets', 'allowMoodPulses', 'allowBodyCheckins', 'allowWins', 'allowWeeklyReviews', 'allowBoundaryScripts', 'allowGoals', 'allowRecoveryDebt', 'allowRecoveryVelocity', 'allowEnergyTrend', 'allowMoodTrend', 'allowNovaMemory', 'allowNovaUseSavedMemories'])
             && request.resource.data.allowCheckins is bool
             && request.resource.data.allowEnergyBudgets is bool
             && request.resource.data.allowMoodPulses is bool
@@ -426,11 +444,7 @@ service cloud.firestore {
             && (!('allowSomaticResets' in request.resource.data) || request.resource.data.allowSomaticResets is bool)
             && (!('allowRecoveryAlly' in request.resource.data) || request.resource.data.allowRecoveryAlly is bool)
             && request.resource.data.allowNovaMemory is bool
-            && request.resource.data.allowNovaMemorySuggestions is bool
-            && request.resource.data.allowNovaUseSavedMemories is bool
-            && request.resource.data.allowNovaRememberCoachingPreferences is bool
-            && request.resource.data.allowNovaRememberRecoveryPatterns is bool
-            && request.resource.data.allowNovaRememberGoals is bool;
+            && request.resource.data.allowNovaUseSavedMemories is bool;
       }
 
       // K. derived summaries
