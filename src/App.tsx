@@ -100,7 +100,7 @@ const SettingsModal = lazy(() => import("./components/SettingsModal.tsx").then(m
 const FutureSelfSimulator = lazy(() => import("./components/FutureSelfSimulator.tsx").then(m => ({ default: m.FutureSelfSimulator })));
 const AssuranceCentre = lazy(() => import("./components/AssuranceCentre.tsx").then(m => ({ default: m.AssuranceCentre })));
 import { AuthStatusTracker } from "./lib/sync.tsx";
-import { initNovaBrain, clearNovaBrainCache, ensureNovaPermissionsExist } from "./lib/nova-brain";
+import { initNovaBrain, clearNovaBrainCache, ensureNovaPermissionsExist, isCalendarSignalConsentGranted } from "./lib/nova-brain";
 import { migrateSupportCircleIfNeeded, addSupportCircleContact, removeSupportCircleContact } from "./lib/support-circle";
 import { useAuth } from "./lib/auth.tsx";
 const IntegrationsDashboard = lazy(() => import("./components/IntegrationsDashboard.tsx").then(m => ({ default: m.IntegrationsDashboard })));
@@ -986,7 +986,14 @@ export default function App() {
     if (!user) return;
 
     if (accessToken) {
-      syncCalendarSignal(accessToken);
+      // DataPrivacyDashboard.tsx's "Calendar Sync" toggle previously
+      // referenced a feature-flag name that didn't exist in the schema, so
+      // it had no effect at all - this call ran regardless of what the
+      // toggle showed. Now genuinely gated on the same consent doc that
+      // toggle actually writes to.
+      isCalendarSignalConsentGranted(user.uid).then((allowed) => {
+        if (allowed) syncCalendarSignal(accessToken);
+      });
     }
 
     const tickSlack = () => {

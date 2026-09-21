@@ -557,6 +557,7 @@ export const ConnectedNovaPermissions = () => {
     allowRecoveryVelocity: true,
     allowEnergyTrend: true,
     allowMoodTrend: true,
+    allowCalendarSignals: true,
     allowNovaMemory: true,
     allowNovaUseSavedMemories: true // shadow field, kept in sync with allowNovaMemory - see toggle()
   });
@@ -577,6 +578,7 @@ export const ConnectedNovaPermissions = () => {
     allowRecoveryVelocity: "Let Nova use my Recovery Velocity summary",
     allowEnergyTrend: "Let Nova use my Energy Trend",
     allowMoodTrend: "Let Nova use my Mood Trend",
+    allowCalendarSignals: "Let Nova sync my calendar meeting load",
     allowNovaMemory: "Let Nova remember things about me across conversations"
   };
 

@@ -400,7 +400,7 @@ service cloud.firestore {
         allow read: if isOwner(uid);
         allow delete: if isOwner(uid);
         allow create, update: if isOwner(uid)
-            && hasOnly(['allowCheckins', 'allowEnergyBudgets', 'allowMoodPulses', 'allowBodyCheckins', 'allowWins', 'allowWeeklyReviews', 'allowBoundaryScripts', 'allowGoals', 'allowRecoveryDebt', 'allowRecoveryVelocity', 'allowEnergyTrend', 'allowMoodTrend', 'allowNovaMemory', 'allowNovaMemorySuggestions', 'allowNovaUseSavedMemories', 'allowNovaRememberCoachingPreferences', 'allowNovaRememberRecoveryPatterns', 'allowNovaRememberGoals', 'updatedAt'])
+            && hasOnly(['allowCheckins', 'allowEnergyBudgets', 'allowMoodPulses', 'allowBodyCheckins', 'allowWins', 'allowWeeklyReviews', 'allowBoundaryScripts', 'allowGoals', 'allowRecoveryDebt', 'allowRecoveryVelocity', 'allowEnergyTrend', 'allowMoodTrend', 'allowCalendarSignals', 'allowNovaMemory', 'allowNovaMemorySuggestions', 'allowNovaUseSavedMemories', 'allowNovaRememberCoachingPreferences', 'allowNovaRememberRecoveryPatterns', 'allowNovaRememberGoals', 'updatedAt'])
             && hasAll(['allowCheckins', 'allowEnergyBudgets', 'allowMoodPulses', 'allowBodyCheckins', 'allowWins', 'allowWeeklyReviews', 'allowBoundaryScripts', 'allowGoals', 'allowRecoveryDebt', 'allowRecoveryVelocity', 'allowEnergyTrend', 'allowMoodTrend', 'allowNovaMemory', 'allowNovaMemorySuggestions', 'allowNovaUseSavedMemories', 'allowNovaRememberCoachingPreferences', 'allowNovaRememberRecoveryPatterns', 'allowNovaRememberGoals'])
             && request.resource.data.allowCheckins is bool
             && request.resource.data.allowEnergyBudgets is bool
@@ -414,6 +414,7 @@ service cloud.firestore {
             && request.resource.data.allowRecoveryVelocity is bool
             && request.resource.data.allowEnergyTrend is bool
             && request.resource.data.allowMoodTrend is bool
+            && (!('allowCalendarSignals' in request.resource.data) || request.resource.data.allowCalendarSignals is bool)
             && request.resource.data.allowNovaMemory is bool
             && request.resource.data.allowNovaMemorySuggestions is bool
             && request.resource.data.allowNovaUseSavedMemories is bool

@@ -72,6 +72,12 @@ const NOVA_PERMISSION_DEFAULTS = {
   allowRecoveryVelocity: true,
   allowEnergyTrend: true,
   allowMoodTrend: true,
+  // Not part of Nova's chat context builder like the categories above -
+  // gates whether App.tsx's calendar-signal sync (src/lib/calendar-signals.ts)
+  // runs at all. Lives in the same doc since it's the same "how Nova-branded
+  // features use my data" consent surface the user sees in one place
+  // (DataPrivacyDashboard.tsx / "Nova Privacy Controls").
+  allowCalendarSignals: true,
 };
 
 // Called once, right when onboarding completes. Without this doc existing,
@@ -118,6 +124,28 @@ export const ensureNovaPermissionsExist = async (uid: string, allowMemory: boole
     }
   } catch (e) {
     // Non-fatal, same reasoning as initNovaPermissionsForNewUser.
+  }
+};
+
+// Gate for App.tsx's calendar-signal sync (src/lib/calendar-signals.ts),
+// which previously ran unconditionally for anyone signed in with a Google
+// access token - the DataPrivacyDashboard.tsx toggle for it referenced a
+// feature-flag name that didn't exist in the flag schema, so it had no
+// effect at all. Fails open (true) on a missing doc or a read error, same
+// default as every other category here - the real gate on whether this
+// even fires is still "did the user grant the Google Calendar OAuth scope
+// in the first place."
+export const isCalendarSignalConsentGranted = async (uid: string): Promise<boolean> => {
+  try {
+    const db = await getDb();
+    const { doc, getDoc } = await import('firebase/firestore');
+    const snap = await getDoc(doc(db, 'users', uid, 'nova_permissions', 'current'));
+    if (snap.exists() && typeof snap.data().allowCalendarSignals === 'boolean') {
+      return snap.data().allowCalendarSignals;
+    }
+    return true;
+  } catch (e) {
+    return true;
   }
 };
 
