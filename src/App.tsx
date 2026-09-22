@@ -2275,6 +2275,13 @@ export default function App() {
                         : prev,
                     )
                   }
+                  onStyleChange={(style) =>
+                    setStats((prev) =>
+                      prev.profile
+                        ? { ...prev, profile: { ...prev.profile, questioningStyle: style } }
+                        : prev,
+                    )
+                  }
                 />
               </div>
             )}
