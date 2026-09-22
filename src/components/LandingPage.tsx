@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Sparkles, ArrowRight, ShieldCheck, BatteryLow, MessageSquareText, LogIn, ArrowLeft, Loader2, Mail, Lock } from 'lucide-react';
+import { ArrowRight, ShieldCheck, BatteryLow, MessageSquareText, LogIn, ArrowLeft, Loader2, Mail, Lock, Sun, Moon } from 'lucide-react';
 import { useAuth } from '../lib/auth';
 import { useFocusTrap } from '../lib/useFocusTrap';
 import { secureApiFetch } from '../lib/secure-api';
@@ -8,11 +8,21 @@ import { secureApiFetch } from '../lib/secure-api';
 interface LandingPageProps {
   onStart: () => void;
   onOpenTrustCentre: () => void;
+  // Optional because App.tsx's dark mode state already defaults every
+  // visitor to their system preference before this component ever
+  // mounts (see its useState initializer) - these props exist purely so
+  // a visitor can *see* and *override* that default from the very first
+  // screen they land on, matching the toggle the inner app already has.
+  // Undefined props degrade gracefully: the toggle button simply doesn't
+  // render rather than throwing, so this stays optional at the type
+  // level even though App.tsx always passes both in practice.
+  darkMode?: boolean;
+  setDarkMode?: (d: boolean) => void;
 }
 
 type AuthMode = 'signin' | 'signup' | 'forgot';
 
-export const LandingPage = ({ onStart, onOpenTrustCentre }: LandingPageProps) => {
+export const LandingPage = ({ onStart, onOpenTrustCentre, darkMode, setDarkMode }: LandingPageProps) => {
   const { user, signIn, signUpWithEmail, signInWithEmail, sendPasswordReset } = useAuth();
   const [showAuthModal, setShowAuthModal] = useState(false);
   const authDialogRef = useFocusTrap(showAuthModal);
@@ -144,13 +154,23 @@ export const LandingPage = ({ onStart, onOpenTrustCentre }: LandingPageProps) =>
           </div>
         </div>
         <div className="flex items-center gap-4">
-          <button 
+          {setDarkMode && (
+            <button
+              onClick={() => setDarkMode(!darkMode)}
+              className="p-2.5 rounded-full bg-surface dark:bg-card border border-border hover:border-primary/50 text-text-muted hover:text-primary transition-all"
+              title="Toggle theme"
+              aria-label={darkMode ? "Switch to light theme" : "Switch to dark theme"}
+            >
+              {darkMode ? <Sun className="w-4 h-4" aria-hidden="true" /> : <Moon className="w-4 h-4" aria-hidden="true" />}
+            </button>
+          )}
+          <button
             onClick={onOpenTrustCentre}
             className="text-xs sm:text-xs uppercase tracking-widest font-bold text-text-muted hover:text-text-main transition-colors hidden sm:flex items-center gap-2"
           >
             <ShieldCheck className="w-4 h-4" /> Trust Centre
           </button>
-          <button 
+          <button
             onClick={handleStartRequest}
             className="btn-primary text-xs sm:text-xs uppercase tracking-widest px-6 sm:px-8 py-3 rounded-xl flex items-center gap-2"
           >
@@ -223,9 +243,8 @@ export const LandingPage = ({ onStart, onOpenTrustCentre }: LandingPageProps) =>
       {/* Footer */}
       <footer className="py-16 border-t border-white/[0.03] mt-20 text-center opacity-70">
         <div className="flex items-center justify-center gap-3 mb-4">
-          <div className="w-8 h-8 bg-accent/20 rounded-xl flex items-center justify-center text-[#9a3412] dark:text-accent">
-            <Sparkles className="w-4 h-4" />
-          </div>
+          <img src="/brand/flame-mark-light.png" alt="" className="w-8 h-8 dark:hidden" />
+          <img src="/brand/flame-mark-dark.png" alt="" className="w-8 h-8 hidden dark:block" />
           <p className="font-bold text-sm tracking-tight text-text-main">Blaze Break</p>
         </div>
         <p className="text-[11px] uppercase tracking-[0.3em] font-black text-text-muted">
@@ -270,8 +289,9 @@ export const LandingPage = ({ onStart, onOpenTrustCentre }: LandingPageProps) =>
               </button>
 
               <div className="text-left pt-4">
-                <div className="w-12 h-12 bg-primary/10 rounded-2xl flex items-center justify-center text-primary mb-4">
-                  <Sparkles className="w-6 h-6" />
+                <div className="w-12 h-12 bg-primary/10 rounded-2xl flex items-center justify-center mb-4">
+                  <img src="/brand/flame-mark-light.png" alt="" className="w-6 h-6 dark:hidden" />
+                  <img src="/brand/flame-mark-dark.png" alt="" className="w-6 h-6 hidden dark:block" />
                 </div>
                 <h3 id="auth-modal-title" className="text-2xl font-bold text-text-main tracking-tight">
                   {authMode === 'forgot' ? 'Reset your password' : authMode === 'signup' ? 'Create your account' : 'Access Account'}
