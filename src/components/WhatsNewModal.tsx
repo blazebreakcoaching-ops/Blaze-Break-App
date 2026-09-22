@@ -6,14 +6,26 @@ import { useFocusTrap } from '../lib/useFocusTrap';
 // Bump this string and replace CHANGELOG_ITEMS whenever new features ship
 // that existing users wouldn't otherwise discover. Shows the current full
 // list to anyone whose stored value doesn't match - not an accumulating
-// diff/history - which is a real but acceptable limitation for a 3-item
+// diff/history - which is a real but acceptable limitation for a short
 // list with no content-authoring pattern elsewhere in the app to justify
 // more infrastructure than that.
-const CHANGELOG_VERSION = 'nova-wake-word-2026-09';
+//
+// IMPORTANT - keep this in lockstep or it goes stale silently: this exact
+// failure mode is why the list previously sat un-updated for months while
+// pointing at a feature ("Hey Nova" wake word) that had since been
+// removed. Whenever you ship a real, user-facing feature, bump the
+// version string AND replace every item below with the current set of
+// things worth telling existing users about - don't append, don't leave
+// old items in. Never list a feature that's still behind a
+// default-off flag (nobody can actually use it yet, so announcing it is
+// just confusing) - e.g. Guardian Support Invitation ships flag-off and
+// is deliberately excluded here for that reason.
+const CHANGELOG_VERSION = 'questioning-style-2026-09';
 
 const CHANGELOG_ITEMS: { title: string; description: string }[] = [
-  { title: 'Recovery Plan in the User Guide', description: 'See how your Recovery Plan works and where it comes from, right inside the guide.' },
-  { title: 'Feedback & Testimonials in Settings', description: 'Share a rating, a bug, or a story about how Blaze Break has helped - right from Settings.' },
+  { title: 'Choose how Nova asks you things', description: 'Pick Nova\'s questioning style in Settings - Operator, Board Member, Mentor, or Pre-Mortem - to match how you like to think things through.' },
+  { title: '"Pick up where you left off" on Home', description: 'If you left your Recovery Plan or an action plan partway through, Home will now offer to take you straight back to it.' },
+  { title: 'Weekly Recovery Recap', description: 'A new widget on Home sums up how your week actually went, at a glance.' },
 ];
 
 interface WhatsNewModalProps {
