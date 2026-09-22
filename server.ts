@@ -2341,6 +2341,33 @@ async function callClaudeNovaChat(
   return { text, planTrace };
 }
 
+// Every AI-route catch block below logs through this instead of either
+// swallowing the error entirely or logging only a fixed label - both of
+// which happened at various points across these routes, and made a real,
+// currently-live failure (every Nova chat message 500ing) completely
+// undiagnosable from Cloud Run logs, which showed nothing but the literal
+// string "Gemini Chat Error" with no way to tell an expired API key from
+// a renamed model from a network timeout. Deliberately logs only the
+// exception's own name/message/status/code - never the error object
+// wholesale (some SDKs attach the original request payload to a verbose
+// error, which could include the user's own message text) and never
+// anything from req.body - so this stays consistent with the actual
+// reason this redaction existed in the first place (keeping conversation
+// content out of logs), while no longer discarding the one thing an
+// operator actually needs to fix a live bug. Still never reaches the
+// client - the res.json() calls at each site keep their own generic,
+// unchanged "safe operational error occurred" message.
+function logRouteError(label: string, error: any): void {
+  console.error(
+    label,
+    JSON.stringify({
+      name: error?.name,
+      message: error?.message,
+      status: error?.status ?? error?.code,
+    })
+  );
+}
+
 app.post("/api/nova/chat", novaChatLimiter, verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
   try {
     const parsedParams = ChatRequestSchema.safeParse(req.body);
@@ -2487,7 +2514,7 @@ app.post("/api/nova/chat", novaChatLimiter, verifyAppCheck, authenticateFirebase
       throw modelError;
     }
   } catch (error: any) {
-    console.error("Gemini Chat Error"); // Redacted raw error
+    logRouteError("Gemini Chat Error", error);
     res.status(500).json({ error: `Nova Chat Sync Failure: A safe operational error occurred.` });
   }
 });
@@ -2625,10 +2652,10 @@ app.post("/api/nova/diagnose", novaDiagnoseLimiter, verifyAppCheck, authenticate
           }
         } catch (modelError: any) {
           clearTimeout(timeoutId);
-          console.warn("Diagnose model timeout/error observation"); // Redacted
+          logRouteError("Diagnose model timeout/error observation", modelError);
         }
       } catch (gem_err) {
-        console.error("Gemini diagnose error observation"); // Redacted
+        logRouteError("Gemini diagnose error observation", gem_err);
       }
     }
 
@@ -2707,7 +2734,7 @@ app.post("/api/nova/diagnose", novaDiagnoseLimiter, verifyAppCheck, authenticate
       analysis
     });
   } catch (error: any) {
-    // Redact real error message
+    logRouteError("Diagnose Sync Failure", error);
     res.status(500).json({ error: "Diagnose Sync Failure: A safe operational error occurred." });
   }
 });
@@ -2765,7 +2792,7 @@ app.post("/api/nova/speech", verifyAppCheck, speechLimiter, authenticateFirebase
       throw modelError;
     }
   } catch (error: any) {
-    console.warn("TTS Error Observation"); // Redacted
+    logRouteError("TTS Error Observation", error);
     res.status(500).json({ error: "TTS Sync Failure: A safe operational error occurred." });
   }
 });
@@ -7328,7 +7355,7 @@ app.get("/api/org/:orgId/manager-coach", managerCoachLimiter, verifyAppCheck, au
       throw modelError;
     }
   } catch (err: any) {
-    console.error("[Nova Manager Coach] error"); // Redacted raw error
+    logRouteError("[Nova Manager Coach] error", err);
     res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: "Nova Manager Coach Sync Failure: A safe operational error occurred." });
   }
 });
@@ -8906,7 +8933,7 @@ app.post("/api/recovery/recalculate", verifyAppCheck, authenticateFirebaseUser, 
     res.json({ success: true, calculatedAt, summaries });
 
   } catch (error: any) {
-    console.warn("Calculations Error Observation"); // Redacted raw details
+    logRouteError("Calculations Error Observation", error);
     res.status(500).json({ error: "Calculations Sync Failure: A safe operational error occurred." });
   }
 });
