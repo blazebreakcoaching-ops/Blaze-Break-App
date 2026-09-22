@@ -1367,38 +1367,98 @@ BOUNDARIES THAT APPLY TO THIS STYLE, NO EXCEPTIONS:
 // nova_permissions doc at all (no doc = no context, by design), but a
 // self-chosen interaction style isn't recovery data being shared under
 // consent - it should still apply even for an account with no permissions
-// doc yet.
-async function getNovaQuestioningStyleAddendum(uid: string, firestoreDb: any): Promise<string> {
+// doc yet. Shared by both getNovaQuestioningStyleAddendum (conversational
+// surfaces) and getNovaStyleToneAddendum (one-shot statement surfaces,
+// below) - same stored preference, two different renderings of it.
+async function getUserQuestioningStyle(uid: string, firestoreDb: any): Promise<unknown> {
   try {
     const statsSnap = await firestoreDb.collection("users").doc(uid).collection("user_stats").doc("core").get();
-    const style = statsSnap.exists ? statsSnap.data()?.profile?.questioningStyle : undefined;
-    return buildNovaQuestioningStyleModule(style);
+    return statsSnap.exists ? statsSnap.data()?.profile?.questioningStyle : undefined;
   } catch {
-    return "";
+    return undefined;
   }
+}
+
+async function getNovaQuestioningStyleAddendum(uid: string, firestoreDb: any): Promise<string> {
+  const style = await getUserQuestioningStyle(uid, firestoreDb);
+  return buildNovaQuestioningStyleModule(style);
+}
+
+// Tone variant of the same four styles, for the one-shot statement
+// surfaces (diagnose narrative, one-less-thing triage) where Nova never
+// asks the user a question at all - NOVA_QUESTIONING_STYLE_BLOCKS above is
+// written entirely around questioning cadence ("open with a question...",
+// "ask about cost before feelings...") and has nothing to attach to on a
+// surface that produces one paragraph or one fixed-shape decision. This
+// reinterprets each style as a register/framing instruction for a single
+// piece of writing instead. Same four-way enum, same user choice - just a
+// different lens for a differently-shaped surface.
+const NOVA_STYLE_TONE_BLOCKS: Record<NovaQuestioningStyle, string> = {
+  operator: `TONE: OPERATOR
+Blunt and constraint-focused. Name the real blocker in the first sentence, no throat-clearing. Prefer a forced, concrete framing ("this is a boundary problem, not a capacity one") over a hedged, exploratory one.`,
+  board_member: `TONE: BOARD MEMBER
+Strategic and consequence-focused. Frame the observation in terms of cost, trade-off, and what stays true in six months if nothing changes - not just how it currently feels.`,
+  mentor: `TONE: MENTOR
+Warmer, still direct. Reflect back what's actually happening in one honest sentence before delivering the harder part. The warmth is in the tone, never in a softened conclusion.`,
+  pre_mortem: `TONE: PRE-MORTEM
+Stress-test framing. Name what would have to be true for the current approach to fail, without layering reassurance on top of it.`,
+};
+
+function buildNovaStyleToneModule(style: unknown): string {
+  if (typeof style !== "string" || !(style in NOVA_STYLE_TONE_BLOCKS)) return "";
+  const block = NOVA_STYLE_TONE_BLOCKS[style as NovaQuestioningStyle];
+  return `
+--- NOVA STYLE (CHOSEN BY THE USER) ---
+This changes the register of what you write, not who you are - you remain Nova, and the output format already specified above still applies exactly as given.
+
+${block}
+
+BOUNDARIES THAT APPLY TO THIS STYLE, NO EXCEPTIONS:
+- This may not probe for, infer, or imply a mental-health diagnosis, risk level, or clinical judgement about the user.
+- Never claim clinical insight, predict outcomes you can't know, or fabricate certainty you don't have.
+--------------------------------------------------------------`;
+}
+
+async function getNovaStyleToneAddendum(uid: string, firestoreDb: any): Promise<string> {
+  const style = await getUserQuestioningStyle(uid, firestoreDb);
+  return buildNovaStyleToneModule(style);
 }
 
 // AUDIT (per-surface decision, recorded explicitly rather than by
 // omission): every place in this file that builds a "You are Nova" prompt
-// was checked against whether the questioning-style module belongs there.
-// getNovaQuestioningStyleAddendum is wired into exactly two call sites -
-// /api/nova/chat and the Nova Live voice route - because those are the
-// only two surfaces where Nova is holding a live, turn-by-turn
-// conversation and genuinely asking the user anything. Every other
-// "You are Nova" surface is a one-shot generator producing a fixed-shape
-// analysis or report, never asking the user a question at all, so a
-// "questioning style" has nothing to attach to there:
-//   - the diagnose-narrative generator (~line 2358: 3-4 sentence coaching
-//     analysis from diagnostic scores)
-//   - /api/nova/voice-journal (~line 2572: transcription + fixed-shape
-//     JSON analysis of a voice memo)
-//   - /api/nova/one-less-thing (~line 2668: single triage decision + JSON)
-//   - /api/nova/resentment-analysis (~line 9439: structured pattern
-//     extraction from raw venting text, fixed JSON shape)
-//   - /api/signals/executive-report (~line 9534: 2-3 sentence report
-//     summary from numeric aggregates only, no free text)
-//   - NOVA_MANAGER_COACH_PROMPT (~line 7072: one-shot manager coaching
-//     from k-anonymised aggregate signals, never an individual's content)
+// was checked against whether Nova is asking the user something directly,
+// in their own conversation.
+//
+// APPLY (questioning-style, via getNovaQuestioningStyleAddendum - shapes
+// HOW Nova asks): /api/nova/chat and the Nova Live voice route - the only
+// two surfaces holding a live, turn-by-turn conversation.
+//
+// APPLY (style tone, via getNovaStyleToneAddendum - shapes the register of
+// a single piece of writing, since neither of these ever asks the user a
+// question to apply a "questioning" cadence to):
+//   - the diagnose-narrative generator (~line 2358): a 3-4 sentence
+//     coaching analysis of the user's own diagnostic result, addressed
+//     directly to them.
+//   - /api/nova/one-less-thing (~line 2668): a real coaching decision
+//     (which of 4 actions to take on a task they named) put directly to
+//     the user, plus advice and a ready-to-send template.
+//
+// DO NOT APPLY (neither module - no question or personal decision is put
+// to the user, so there's nothing for either style axis to shape):
+//   - /api/nova/voice-journal (~line 2572): transcribes and extracts
+//     themes from the user's own voice memo - this is Nova analysing what
+//     they said, not asking them anything.
+//   - /api/nova/resentment-analysis (~line 9439): pattern extraction from
+//     the user's raw venting text - same reasoning as voice-journal.
+//   - /api/signals/executive-report (~line 9534): written FOR THE USER'S
+//     MANAGER, not for the user - applying the employee's personal style
+//     preference to a document a manager reads doesn't make sense, and no
+//     question is asked to anyone in it. Confirmed manager-facing framing
+//     still holds by reading the route directly, not just its name.
+//   - NOVA_MANAGER_COACH_PROMPT (~line 7072): one-shot manager coaching
+//     from k-anonymised aggregate signals, never an individual's content -
+//     same reasoning as executive-report, plus there's no single user's
+//     style preference that would even apply to an aggregate.
 // PRE-EXISTING FINDING, NOW PARTLY REMEDIATED: none of the six one-shot
 // generators above ever append NOVA_SAFETY_INSTRUCTIONS - each calls
 // ai.models.generateContent with the persona text folded directly into
@@ -2408,8 +2468,9 @@ app.post("/api/nova/diagnose", novaDiagnoseLimiter, verifyAppCheck, authenticate
     const diagnoseQuota = await checkAndReserveCapability(diagnoseUid, 'diagnose');
     if (diagnoseQuota.allowed && geminiKey && geminiKey !== "MY_GEMINI_API_KEY") {
       try {
+        const styleToneAddendum = await getNovaStyleToneAddendum(diagnoseUid, getDb());
         const prompt = `
-          You are Nova, an analytical and direct British high-performance recovery coach for high achievers who have burned out. 
+          You are Nova, an analytical and direct British high-performance recovery coach for high achievers who have burned out.
           The user has completed their diagnostic and been assigned the archetype: "${profile}".
           CRITICAL: Do not attempt to invent, rename or override their assigned archetype in your response. Stick exclusively to the assigned type.
           Here are their detailed scores (from 1 to 4, where 4 is most severe):
@@ -2433,7 +2494,7 @@ app.post("/api/nova/diagnose", novaDiagnoseLimiter, verifyAppCheck, authenticate
           Identify their primary "leak" (e.g. boundaries, sleep pattern, fawning) based on their highest scores.
           Use British English spelling (e.g., dialled, rationalise, prioritising, behaviour, defence, vapourised) and terminology.
           Write in first person as Nova ("I see...", "Let's patch this leak."). Do not use markdown bullet points. Return only the plain English paragraph.
-        `;
+        ${styleToneAddendum}`;
 
         const abortController = new AbortController();
         const timeoutId = setTimeout(() => abortController.abort(), 10000);
@@ -2707,6 +2768,7 @@ app.post("/api/nova/one-less-thing", oneLessThingLimiter, verifyAppCheck, authen
       return res.status(400).json({ error: "Invalid request." });
     }
     const { task } = parsed.data;
+    const oneLessThingUid = requireAuth(req).uid;
 
     if (!process.env.GEMINI_API_KEY || process.env.GEMINI_API_KEY === "MY_GEMINI_API_KEY") {
       return res.status(401).json({ error: "Nova analysis is not configured on this server." });
@@ -2716,6 +2778,7 @@ app.post("/api/nova/one-less-thing", oneLessThingLimiter, verifyAppCheck, authen
     const timeoutId = setTimeout(() => abortController.abort(), 15000);
 
     try {
+      const styleToneAddendum = await getNovaStyleToneAddendum(oneLessThingUid, getDb());
       const response = await ai.models.generateContent({
         model: "gemini-3.5-flash",
         contents: {
@@ -2735,7 +2798,8 @@ Then write:
 2. template: a real, ready-to-send message they could copy and paste right now to actually make this happen (e.g. to cancel, delegate, or push back). It must be complete and usable exactly as written - never include a bracket placeholder like "[Tuesday]" or "[name]" that still needs filling in; if you need a day or person, invent a concrete, generic one that reads naturally (e.g. "early next week", "whoever's free").
 
 Respond strictly as JSON, no markdown:
-{"action": "Delete" | "Delay" | "Delegate" | "Simplify", "advice": "...", "template": "..."}`,
+{"action": "Delete" | "Delay" | "Delegate" | "Simplify", "advice": "...", "template": "..."}
+${styleToneAddendum}`,
           }],
         },
         config: {

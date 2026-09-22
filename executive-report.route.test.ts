@@ -10,7 +10,7 @@ const h = vi.hoisted(() => {
   process.env.NODE_ENV = 'test';
   process.env.GEMINI_API_KEY = 'test-key-not-a-placeholder';
   return {
-    generateContent: vi.fn(async () => ({ text: 'Solid week of protected focus time.' })),
+    generateContent: vi.fn(async (_req: any) => ({ text: 'Solid week of protected focus time.' })),
   };
 });
 
@@ -91,5 +91,24 @@ describe('GET /api/signals/executive-report — quota enforcement', () => {
     }
     const res = await request(app).get('/api/signals/executive-report').set(auth('quota_empty_user'));
     expect(res.status).toBe(429);
+  });
+});
+
+// Negative coverage: this report is written FOR THE USER'S MANAGER, not the
+// user, and no question is asked to anyone in it - a deliberate exclusion
+// from both the questioning-cadence and style-tone modules (see the AUDIT
+// comment above getNovaStyleToneAddendum in server.ts), not an oversight.
+describe('GET /api/signals/executive-report — style is never applied here', () => {
+  it("does not apply the user's chosen style even when one is set", async () => {
+    seedDoc('users/styled_user/boundary_scripts/s1', { createdAt: new Date().toISOString() });
+    seedDoc('users/styled_user/user_stats/core', { profile: { questioningStyle: 'mentor' } });
+    const res = await request(app).get('/api/signals/executive-report').set(auth('styled_user'));
+    expect(res.status).toBe(200);
+    expect(h.generateContent).toHaveBeenCalledTimes(1);
+    const promptText = h.generateContent.mock.calls[0][0].contents as string;
+    expect(promptText).not.toContain('NOVA QUESTIONING STYLE');
+    expect(promptText).not.toContain('NOVA STYLE');
+    expect(promptText).not.toContain('TONE: MENTOR');
+    expect(promptText).not.toContain('STYLE: MENTOR');
   });
 });

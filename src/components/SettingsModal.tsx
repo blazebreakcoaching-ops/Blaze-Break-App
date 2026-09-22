@@ -457,7 +457,9 @@ export const SettingsModal = ({ profile, onSave, onClose, onOpenPrivacyCentre }:
                      <NovaStyleControl
                        value={formData.questioningStyle}
                        onChange={(style) => {
-                         const next = { ...formData, questioningStyle: style };
+                         // Firestore rejects an explicit `undefined` field value
+                         // outright, so "Off" persists as `null`, not `style` as-is.
+                         const next = { ...formData, questioningStyle: style ?? null };
                          setFormData(next);
                          onSave(next);
                        }}

@@ -39,7 +39,7 @@ vi.mock('@google/genai', () => ({
 
 import request from 'supertest';
 import { app } from './server';
-import { resetStore } from './test/fake-firestore';
+import { resetStore, seedDoc } from './test/fake-firestore';
 
 const auth = (uid: string) => ({ Authorization: `Bearer ${uid}` });
 
@@ -152,5 +152,23 @@ describe('POST /api/nova/resentment-analysis — safety floor', () => {
     });
     const call = h.generateContent.mock.calls[0][0];
     expect(call.contents).toContain('Samaritans on 116 123');
+  });
+});
+
+// Negative coverage: this is pattern extraction from the user's own raw
+// text, not a question or decision put to them, so neither the
+// questioning-cadence module nor the style-TONE module belongs here - a
+// deliberate exclusion (see the AUDIT comment above
+// getNovaStyleToneAddendum in server.ts), not an oversight. This locks
+// that in so a future change can't silently start applying style here.
+describe('POST /api/nova/resentment-analysis — style is never applied here', () => {
+  it("does not apply the user's chosen style, questioning or tone, even when one is set", async () => {
+    seedDoc('users/person_12/user_stats/core', { profile: { questioningStyle: 'operator' } });
+    await request(app).post('/api/nova/resentment-analysis').set(auth('person_12')).send({ log: 'venting text' });
+    const call = h.generateContent.mock.calls[0][0];
+    expect(call.contents).not.toContain('NOVA QUESTIONING STYLE');
+    expect(call.contents).not.toContain('NOVA STYLE');
+    expect(call.contents).not.toContain('TONE: OPERATOR');
+    expect(call.contents).not.toContain('STYLE: OPERATOR');
   });
 });

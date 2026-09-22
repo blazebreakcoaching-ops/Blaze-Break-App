@@ -111,3 +111,23 @@ describe('GET /api/org/:orgId/manager-coach — quota and failure handling', () 
     expect(res.body.error).toBeTruthy();
   });
 });
+
+// Negative coverage: this is one-shot manager coaching built entirely from
+// k-anonymised aggregate signals, never an individual's content - there's
+// no single user's style preference that could even apply to an aggregate,
+// and no question is asked to anyone in it. A deliberate exclusion from
+// both the questioning-cadence and style-tone modules (see the AUDIT
+// comment above getNovaStyleToneAddendum in server.ts), not an oversight.
+describe('GET /api/org/:orgId/manager-coach — style is never applied here', () => {
+  it("does not apply even the requesting admin's own chosen style", async () => {
+    seedOrg(3, 3);
+    seedDoc(`users/${ADMIN}/user_stats/core`, { profile: { questioningStyle: 'board_member' } });
+    const res = await request(app).get(`/api/org/${ORG}/manager-coach`).set(auth(ADMIN));
+    expect(res.status).toBe(200);
+    const promptText = h.generateContent.mock.calls[0][0].contents as string;
+    expect(promptText).not.toContain('NOVA QUESTIONING STYLE');
+    expect(promptText).not.toContain('NOVA STYLE');
+    expect(promptText).not.toContain('TONE: BOARD MEMBER');
+    expect(promptText).not.toContain('STYLE: BOARD MEMBER');
+  });
+});
