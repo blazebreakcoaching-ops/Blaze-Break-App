@@ -99,11 +99,11 @@ export const WhatsNewModal = ({ lastSeenVersion, loaded, onSeen }: WhatsNewModal
                 aria-label="Close what's new dialog"
                 className="absolute top-4 right-4 p-2 rounded-xl text-text-muted hover:text-text-main hover:bg-surface dark:hover:bg-white/5 transition-colors cursor-pointer"
               >
-                <X className="w-4 h-4" />
+                <X className="w-4 h-4" aria-hidden="true" />
               </button>
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center text-primary">
-                  <Sparkles className="w-5 h-5" />
+                  <Sparkles className="w-5 h-5" aria-hidden="true" />
                 </div>
                 <div>
                   <h3 id="whats-new-title" className="text-lg font-bold text-text-main">What's New</h3>

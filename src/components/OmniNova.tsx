@@ -225,7 +225,24 @@ export const OmniNova = ({ activeTab, fingerprint, stats }: OmniNovaProps) => {
         aria-expanded={isOpen}
         className="fixed bottom-20 md:bottom-6 right-6 z-50 w-14 h-14 rounded-xl bg-card border border-border shadow-lg flex items-center justify-center text-text-main hover:bg-card transition-colors group"
       >
-        <Sparkles className="w-6 h-6 text-primary group-hover:rotate-12 transition-transform" />
+        {/* Real Blaze Break brand mark (same asset as the sidebar/landing
+            page - see App.tsx/LandingPage.tsx) instead of a generic
+            Sparkles icon, so the one persistent, always-visible "open
+            Nova" button reads as the product's own identity rather than
+            a stock "AI" glyph. alt="" is correct here - the button's own
+            aria-label above already gives this control its accessible
+            name; a non-empty alt would announce redundant image text to
+            screen reader users on top of that label. */}
+        <img
+          src="/brand/flame-mark-light.png"
+          alt=""
+          className="w-7 h-7 dark:hidden group-hover:rotate-12 transition-transform"
+        />
+        <img
+          src="/brand/flame-mark-dark.png"
+          alt=""
+          className="w-7 h-7 hidden dark:block group-hover:rotate-12 transition-transform"
+        />
       </motion.button>
 
       <AnimatePresence>

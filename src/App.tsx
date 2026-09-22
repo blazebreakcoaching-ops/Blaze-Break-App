@@ -918,8 +918,14 @@ const Header = ({
               actually doing - which read as a false, alarming detection
               claim ("the app has flagged you as high-stress right now").
               This is a plain, static label for a support shortcut instead. */}
-          <span className="text-[10px] uppercase tracking-widest text-text-muted font-bold whitespace-nowrap">Need Support Now?</span>
-          <div className="flex items-center gap-2">
+          <span id="header-support-caption" className="text-[10px] uppercase tracking-widest text-text-muted font-bold whitespace-nowrap">Need Support Now?</span>
+          {/* role="group" + aria-labelledby gives screen reader users the
+              same context sighted users get from the caption above, even
+              when navigating by button rather than reading the page
+              top-to-bottom - each button's own aria-label is already
+              descriptive on its own, but neither mentions why these two
+              specific buttons are grouped together. */}
+          <div role="group" aria-labelledby="header-support-caption" className="flex items-center gap-2">
           <button
             onClick={handleGuardianPing}
             className={cn(

@@ -51,7 +51,7 @@ export const GuardianSupportInvitation = ({ userName, onDismiss }: GuardianSuppo
         <div className="flex items-start justify-between gap-3">
           <div className="flex items-center gap-2.5">
             <div className="w-8 h-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center shrink-0">
-              <HeartHandshake className="w-4 h-4" />
+              <HeartHandshake className="w-4 h-4" aria-hidden="true" />
             </div>
             <h4 className="text-sm font-bold text-text-main">You do not have to handle this alone.</h4>
           </div>
@@ -60,7 +60,7 @@ export const GuardianSupportInvitation = ({ userName, onDismiss }: GuardianSuppo
             aria-label="Dismiss this suggestion"
             className="p-1 -m-1 rounded-lg text-text-muted hover:text-text-main hover:bg-surface transition-colors shrink-0"
           >
-            <X className="w-4 h-4" />
+            <X className="w-4 h-4" aria-hidden="true" />
           </button>
         </div>
 
@@ -71,13 +71,13 @@ export const GuardianSupportInvitation = ({ userName, onDismiss }: GuardianSuppo
             onClick={handleOpen}
             className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-primary text-primary-foreground text-xs font-bold uppercase tracking-wide hover:opacity-90 transition-opacity"
           >
-            Contact my Guardian <ArrowRight className="w-3.5 h-3.5" />
+            Contact my Guardian <ArrowRight className="w-3.5 h-3.5" aria-hidden="true" />
           </button>
           <button
             onClick={handleExploreOtherSupport}
             className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-surface hover:bg-border/40 text-text-main text-xs font-bold uppercase tracking-wide transition-colors"
           >
-            <Compass className="w-3.5 h-3.5" /> Explore other support
+            <Compass className="w-3.5 h-3.5" aria-hidden="true" /> Explore other support
           </button>
         </div>
         <button
