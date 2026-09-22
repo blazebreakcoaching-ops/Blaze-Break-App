@@ -79,6 +79,7 @@ const START_HERE: GuideFeature[] = [
   {
     tab: 'home', tag: 'Pulse', title: 'Your daily Pulse', description: "Where you land every time you open the app. One suggested action for today, your recovery stage, and your trend over time - not a to-do list.", icon: Home,
     definition: { term: 'Recovery Velocity', text: "Which direction your recovery is trending right now, and how fast - not where you are today, but whether things are getting better, holding steady, or slipping." },
+    subTools: ['Weekly Recovery Recap', '"Pick up where you left off" prompt (shows only if you have something genuinely unfinished)'],
   },
   {
     tab: 'diagnose', tag: 'Check-in', title: 'Check-in', description: "A short, honest self-assessment (not a medical test) that builds your personal burnout picture. The rest of the app is quietly built around it.", icon: MapPin,
@@ -113,7 +114,11 @@ const TALK_TOOLS: GuideFeature[] = [
     tab: 'communicate', tag: 'Communicate', title: 'Workload negotiator', description: "Generates a ready-to-send script for the awkward conversation, so you're not writing it from scratch while stressed.", icon: MessageSquare,
     subTools: ['Boundary Rehearsal', 'Boundary Autopilot', 'Workload Negotiator', 'Hard Talk Prep', 'Digital Boundary Shield', 'Nova Overload Shield'],
   },
-  { tab: 'nova', tag: 'Nova Coach', title: 'Talk it through', description: "Text or voice, whichever you'd rather use. Nova remembers your context, so you don't have to re-explain yourself every time.", icon: Sparkles },
+  {
+    tab: 'nova', tag: 'Nova Coach', title: 'Talk it through', description: "Text or voice, whichever you'd rather use. Nova remembers your context, so you don't have to re-explain yourself every time.", icon: Sparkles,
+    definition: { term: 'Questioning style', text: "How Nova prefers to ask you things, not what it knows - pick Operator, Board Member, Mentor, or Pre-Mortem in Settings to match how you like to think things through. Purely a style choice; it never changes what Nova can see or do." },
+    subTools: ['Choose how Nova asks you things (Settings → Nova Style)'],
+  },
 ];
 
 const SAFETY_NET: GuideFeature[] = [

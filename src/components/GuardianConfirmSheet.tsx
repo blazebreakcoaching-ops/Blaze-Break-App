@@ -183,13 +183,13 @@ export const GuardianConfirmSheet = ({ userName, onClose }: GuardianConfirmSheet
             {step === 'no_guardian' ? "No Guardian set up yet" : 'Reach out to your Guardian'}
           </h3>
           <button onClick={onClose} aria-label="Close" className="p-2 -m-2 rounded-full text-text-muted hover:text-text-main hover:bg-surface transition-colors shrink-0">
-            <X className="w-5 h-5" />
+            <X className="w-5 h-5" aria-hidden="true" />
           </button>
         </div>
 
         {step === 'loading' && (
           <div className="py-10 flex justify-center" role="status" aria-live="polite">
-            <Loader2 className="w-6 h-6 animate-spin text-text-muted" />
+            <Loader2 className="w-6 h-6 animate-spin text-text-muted" aria-hidden="true" />
           </div>
         )}
 
@@ -199,10 +199,10 @@ export const GuardianConfirmSheet = ({ userName, onClose }: GuardianConfirmSheet
               I don't have anyone set up to contact for you yet. You can add someone you trust - then reaching them is one tap, any time.
             </p>
             <button onClick={handleAddGuardian} className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-primary text-primary-foreground text-sm font-bold hover:opacity-90 transition-opacity">
-              <UserPlus className="w-4 h-4" /> Add someone I trust
+              <UserPlus className="w-4 h-4" aria-hidden="true" /> Add someone I trust
             </button>
             <button onClick={handleExploreOtherSupport} className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-surface hover:bg-border/40 text-text-main text-sm font-bold transition-colors">
-              <Compass className="w-4 h-4" /> Explore urgent support options
+              <Compass className="w-4 h-4" aria-hidden="true" /> Explore urgent support options
             </button>
             <button onClick={onClose} className="w-full text-center text-sm text-text-muted hover:text-text-main transition-colors py-2">
               Continue chatting
@@ -230,7 +230,7 @@ export const GuardianConfirmSheet = ({ userName, onClose }: GuardianConfirmSheet
           <div className="space-y-4">
             {guardians.length > 1 && (
               <button onClick={() => setStep('pick_contact')} className="flex items-center gap-1 text-xs text-text-muted hover:text-text-main transition-colors">
-                <ChevronLeft className="w-3.5 h-3.5" /> Choose someone else
+                <ChevronLeft className="w-3.5 h-3.5" aria-hidden="true" /> Choose someone else
               </button>
             )}
             <div className="flex items-center justify-between text-sm">
@@ -263,10 +263,10 @@ export const GuardianConfirmSheet = ({ userName, onClose }: GuardianConfirmSheet
 
             <div className="grid grid-cols-2 gap-2">
               <button onClick={handleCall} disabled={step === 'sending'} className="flex items-center justify-center gap-2 py-3 rounded-xl bg-surface hover:bg-border/40 text-text-main text-xs font-bold uppercase tracking-wide transition-colors disabled:opacity-50">
-                <PhoneCall className="w-3.5 h-3.5" /> Call {selected.name}
+                <PhoneCall className="w-3.5 h-3.5" aria-hidden="true" /> Call {selected.name}
               </button>
               <button onClick={handleCopy} disabled={step === 'sending'} className="flex items-center justify-center gap-2 py-3 rounded-xl bg-surface hover:bg-border/40 text-text-main text-xs font-bold uppercase tracking-wide transition-colors disabled:opacity-50">
-                {copied ? <CheckCircle2 className="w-3.5 h-3.5 text-success" /> : <Copy className="w-3.5 h-3.5" />}
+                {copied ? <CheckCircle2 className="w-3.5 h-3.5 text-success" aria-hidden="true" /> : <Copy className="w-3.5 h-3.5" aria-hidden="true" />}
                 {copied ? 'Copied' : 'Copy message'}
               </button>
             </div>
@@ -290,7 +290,7 @@ export const GuardianConfirmSheet = ({ userName, onClose }: GuardianConfirmSheet
                   disabled={step === 'sending'}
                   className="py-3 rounded-xl font-bold text-xs uppercase tracking-widest bg-primary text-primary-foreground hover:opacity-90 transition-opacity flex items-center justify-center gap-2 disabled:opacity-60"
                 >
-                  {step === 'sending' ? <><Loader2 className="w-4 h-4 animate-spin" /> Sending…</> : <><Send className="w-4 h-4" /> Send it now</>}
+                  {step === 'sending' ? <><Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" /> Sending…</> : <><Send className="w-4 h-4" aria-hidden="true" /> Send it now</>}
                 </button>
               )}
             </div>
@@ -300,7 +300,7 @@ export const GuardianConfirmSheet = ({ userName, onClose }: GuardianConfirmSheet
         {(step === 'sent' || step === 'failed') && (
           <div className="py-4 text-center space-y-4" role="status" aria-live="polite">
             <div className={`w-14 h-14 rounded-full flex items-center justify-center mx-auto ${step === 'sent' ? 'bg-success/20 text-success' : 'bg-destructive/10 text-destructive'}`}>
-              {step === 'sent' ? <CheckCircle2 className="w-7 h-7" /> : <X className="w-7 h-7" />}
+              {step === 'sent' ? <CheckCircle2 className="w-7 h-7" aria-hidden="true" /> : <X className="w-7 h-7" aria-hidden="true" />}
             </div>
             <p className="text-sm font-medium text-text-main">{resultMessage}</p>
             {step === 'failed' && (
