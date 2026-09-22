@@ -34,6 +34,15 @@ function extractTitlesKeys(): string[] {
   return Array.from(block.matchAll(/^\s*([a-z_]+):\s*"/gm)).map((m) => m[1]);
 }
 
+function extractEyebrowKeys(): string[] {
+  const start = appText.indexOf('const EYEBROW_LABELS: Record<string, string> = {');
+  if (start === -1) throw new Error('EYEBROW_LABELS map not found in App.tsx');
+  const end = appText.indexOf('\n};', start);
+  if (end === -1) throw new Error('Could not find end of EYEBROW_LABELS map');
+  const block = appText.slice(start, end);
+  return Array.from(block.matchAll(/^\s*([a-z_]+):\s*"/gm)).map((m) => m[1]);
+}
+
 describe('Header page titles', () => {
   const tabIds = extractAllTabIds();
   const titleKeys = extractTitlesKeys();
@@ -46,5 +55,23 @@ describe('Header page titles', () => {
   it('every sidebar tab has a real title, so none fall back to the generic "Dashboard Module" placeholder', () => {
     const missing = tabIds.filter((id) => !titleKeys.includes(id));
     expect(missing, `these tabs have no titles[] entry and will show "Dashboard Module": ${missing.join(', ')}`).toEqual([]);
+  });
+});
+
+describe('Header eyebrow label', () => {
+  const tabIds = extractAllTabIds();
+  const eyebrowKeys = extractEyebrowKeys();
+
+  // EYEBROW_LABELS is allowed to be a partial map - the render site falls
+  // back to the real `title` for anything missing (see EYEBROW_LABELS'
+  // own comment in App.tsx) - so this only guards against a *stale* key
+  // that no longer corresponds to a real tab, not a missing one.
+  it('every EYEBROW_LABELS key is a real tab id (catches renamed/removed tabs left stale here)', () => {
+    const stale = eyebrowKeys.filter((id) => !tabIds.includes(id));
+    expect(stale, `these EYEBROW_LABELS keys don't match any real tab id: ${stale.join(', ')}`).toEqual([]);
+  });
+
+  it('the eyebrow render site falls back to the real title instead of rendering blank', () => {
+    expect(appText.includes('{EYEBROW_LABELS[activeTab] || title}')).toBe(true);
   });
 });

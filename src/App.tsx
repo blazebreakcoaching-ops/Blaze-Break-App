@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, useRef, useMemo, lazy, Suspense } from "react";
+import React, { useState, useEffect, useRef, useMemo, useCallback, lazy, Suspense } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import {
   Home,
@@ -698,6 +698,40 @@ const Sidebar = ({
   );
 };
 
+// Stylised eyebrow label shown above the real page title in the Header.
+// Deliberately falls back to the real `title` prop for any tab without a
+// custom entry here, rather than rendering blank - this line previously
+// went silently empty on 15 of the app's 33 tabs (plan, micro, library,
+// safety, integrations, signals, sleep, movement, doorway, shield,
+// resentment, workload, oneless, recipes, faith) because the old
+// exhaustive if-chain had no fallback case at all, and nothing caught it
+// since this repo has no component-test harness. This map only needs
+// entries for tabs that want a distinct stylised eyebrow; everything else
+// reuses the real title automatically, so a newly added tab can never
+// silently go blank here again the way "Dashboard Module" once could for
+// the h2 title below (see dashboard-titles.test.ts).
+const EYEBROW_LABELS: Record<string, string> = {
+  home: "Neuro-Stability Engine",
+  diagnose: "Loop Analysis",
+  recover: "Energy Delta Management",
+  fuel: "Recovery Fuel",
+  reset: "Nervous System Reset Studio",
+  anxiety_reset: "Anxiety Reset",
+  wellbeing: "Anxiety Check-in",
+  communicate: "Boundary Architect v2.1",
+  reflect: "Behavioural Repatterning",
+  nova: "AI Recovery Interface",
+  subscription: "Plan & Billing",
+  privacy: "Privacy & Trust Centre",
+  ally: "Guardian Protection Network",
+  guide: "How To Use Blaze Break",
+  org: "Collective Stability Pulse",
+  evolution: "Feature Configuration",
+  intelligence: "Recovery Trends",
+  executive: "Executive Reporting",
+  admin: "Platform Administration",
+};
+
 const Header = ({
   title,
   activeTab,
@@ -804,25 +838,7 @@ const Header = ({
         </div>
         <div className="h-0.5 w-16 bg-primary/30 rounded-full" />
         <span className="text-[11px] font-black uppercase tracking-[0.4em] text-primary transition-all duration-500">
-          {activeTab === "home" && "Neuro-Stability Engine"}
-          {activeTab === "diagnose" && "Loop Analysis"}
-          {activeTab === "recover" && "Energy Delta Management"}
-          {activeTab === "fuel" && "Recovery Fuel"}
-          {activeTab === "reset" && "Nervous System Reset Studio"}
-          {activeTab === "anxiety_reset" && "Anxiety Reset"}
-          {activeTab === "wellbeing" && "Anxiety Check-in"}
-          {activeTab === "communicate" && "Boundary Architect v2.1"}
-          {activeTab === "reflect" && "Behavioural Repatterning"}
-          {activeTab === "nova" && "AI Recovery Interface"}
-          {activeTab === "subscription" && "Plan & Billing"}
-          {activeTab === "privacy" && "Privacy & Trust Centre"}
-          {activeTab === "ally" && "Guardian Protection Network"}
-          {activeTab === "guide" && "How To Use Blaze Break"}
-          {activeTab === "org" && "Collective Stability Pulse"}
-          {activeTab === "evolution" && "Feature Configuration"}
-          {activeTab === "intelligence" && "Recovery Trends"}
-          {activeTab === "executive" && "Executive Reporting"}
-          {activeTab === "admin" && "Platform Administration"}
+          {EYEBROW_LABELS[activeTab] || title}
         </span>
       </div>
       <h2 className="text-3xl sm:text-5xl font-display font-bold text-text-main leading-tight tracking-tight mb-3 capitalize">
@@ -893,7 +909,16 @@ const Header = ({
       )}
       {onSomaticReset && (
         <div className="flex flex-col items-center gap-1">
-          <span className="text-[10px] uppercase tracking-widest text-destructive font-bold animate-pulse whitespace-nowrap">High Stress Flag</span>
+          {/* Static caption for the two manual buttons below - it is not
+              a live reading of the user's state (Blaze Break never infers
+              or displays a stress/risk score - see AGENTS.md's "no medical
+              claims" rule). It previously read "High Stress Flag" with a
+              pulsing red destructive treatment, on screen unconditionally
+              for every user on every visit regardless of how they're
+              actually doing - which read as a false, alarming detection
+              claim ("the app has flagged you as high-stress right now").
+              This is a plain, static label for a support shortcut instead. */}
+          <span className="text-[10px] uppercase tracking-widest text-text-muted font-bold whitespace-nowrap">Need Support Now?</span>
           <div className="flex items-center gap-2">
           <button
             onClick={handleGuardianPing}
@@ -1011,6 +1036,26 @@ export default function App() {
 
   const [flow, setFlow] = useState<AppFlow>("landing");
   const [activeTab, setActiveTab] = useState<ActiveTab>("home");
+  // Validated wrapper around setActiveTab for any navigation request that
+  // didn't originate from a hardcoded, statically-known-valid string in
+  // this file - the 'navigate_tab' window event (dispatched from several
+  // components, including ones relaying a Gemini tool call's freeform
+  // featureId) and every onNavigate prop handed to a child. Without this,
+  // an unrecognised id (a typo, a renamed/removed tab, or a value an LLM
+  // didn't format exactly as instructed) would still reach setActiveTab
+  // unchecked, leaving `activeTab` pointing at nothing in `titles` - the
+  // same "Dashboard Module" placeholder dashboard-titles.test.ts already
+  // guards against for the sidebar, but that static check can't see a
+  // value that only ever arrives at runtime. Silently no-ops rather than
+  // navigating anywhere, since teleporting to an arbitrary fallback tab
+  // would be its own kind of confusing.
+  const safeSetActiveTab = useCallback((tab: string) => {
+    if ((ALL_TABS as { id: string }[]).some((t) => t.id === tab)) {
+      setActiveTab(tab as ActiveTab);
+    } else {
+      console.warn(`Ignored navigation to unknown tab id: ${tab}`);
+    }
+  }, []);
   const [fingerprint, setFingerprint] = useState<BurnoutFingerprint | null>(
     null,
   );
@@ -1051,12 +1096,12 @@ export default function App() {
     const handleNav = (e: Event) => {
       const tab = (e as CustomEvent).detail;
       if (tab) {
-        setActiveTab(tab as ActiveTab);
+        safeSetActiveTab(tab);
       }
     };
     window.addEventListener('navigate_tab', handleNav);
     return () => window.removeEventListener('navigate_tab', handleNav);
-  }, []);
+  }, [safeSetActiveTab]);
 
   // Settings State
   const [showSettings, setShowSettings] = useState(false);
@@ -1740,6 +1785,15 @@ export default function App() {
     privacy: "Privacy Centre",
   };
 
+  // The browser/PWA tab title never changed with navigation - every page
+  // showed the same static "Blaze Break" from index.html forever, so
+  // browser history, bookmarks, and the app-switcher on a phone couldn't
+  // distinguish one open page from another. Reuses the same `titles` map
+  // the in-app header already uses, so the two can never drift apart.
+  useEffect(() => {
+    document.title = titles[activeTab] ? `${titles[activeTab]} — Blaze Break` : "Blaze Break";
+  }, [activeTab]);
+
   useEffect(() => {
     // Sync Profile
     if (stats.profile) {
@@ -1959,7 +2013,7 @@ export default function App() {
       </a>
       <Sidebar
         activeTab={activeTab}
-        setActiveTab={setActiveTab as any}
+        setActiveTab={safeSetActiveTab as any}
         darkMode={darkMode}
         setDarkMode={setDarkMode}
         authRole={effectiveRole}
@@ -2125,7 +2179,7 @@ export default function App() {
                 stats={stats}
                 fingerprint={fingerprint}
                 onAwardPoints={awardPoints}
-                onNavigateTab={(tab) => setActiveTab(tab)}
+                onNavigateTab={(tab) => safeSetActiveTab(tab)}
                 onRehearsalComplete={incrementRehearsal}
               />
             )}
@@ -2243,7 +2297,7 @@ export default function App() {
                   <NovaOverloadShield
                     fingerprint={fingerprint}
                     onAwardPoints={awardPoints}
-                    onNavigate={setActiveTab as any}
+                    onNavigate={safeSetActiveTab as any}
                   />
                 )}
               </div>
@@ -2259,7 +2313,7 @@ export default function App() {
                 <ResentmentTracker
                   fingerprint={fingerprint}
                   onAwardPoints={awardPoints}
-                  onNavigate={setActiveTab as any}
+                  onNavigate={safeSetActiveTab as any}
                 />
               </div>
             )}
@@ -2279,7 +2333,7 @@ export default function App() {
                       : "I'm Nova. I help high achievers recover without losing their ambition. What's draining you today?"
                   }
                   onAwardPoints={awardPoints}
-                  onNavigate={setActiveTab as any}
+                  onNavigate={safeSetActiveTab as any}
                   onToneChange={(tone) =>
                     setStats((prev) =>
                       prev.profile
@@ -2313,7 +2367,7 @@ export default function App() {
               <div className="space-y-32">
                 <AnxietyResetMode
                   onAwardPoints={awardPoints}
-                  onNavigate={setActiveTab as any}
+                  onNavigate={safeSetActiveTab as any}
                 />
               </div>
             )}
@@ -2378,7 +2432,7 @@ export default function App() {
 
             {activeTab === "guide" && (
               <div className="space-y-32">
-                <UserGuide onNavigate={setActiveTab as any} />
+                <UserGuide onNavigate={safeSetActiveTab as any} />
               </div>
             )}
 
@@ -2645,7 +2699,7 @@ export default function App() {
             isOpen={showLauncher}
             onClose={() => setShowLauncher(false)}
             tabs={launcherTabs}
-            onNavigate={(id) => setActiveTab(id as ActiveTab)}
+            onNavigate={(id) => safeSetActiveTab(id)}
             onTalkToNova={() => setActiveTab("nova")}
             onCrisis={() => setShowCrisisSupport(true)}
           />
