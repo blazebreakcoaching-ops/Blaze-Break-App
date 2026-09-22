@@ -437,8 +437,8 @@ const Sidebar = ({
         aria-label="Blaze Break, go to Home"
       >
         <div className="w-10 h-10 flex items-center justify-center shrink-0 group-hover:scale-105 transition-all duration-500">
-          <img src="/brand/flame-icon-light.png" alt="" className="w-10 h-10 dark:hidden" />
-          <img src="/brand/flame-icon-dark.png" alt="" className="w-10 h-10 hidden dark:block" />
+          <img src="/brand/flame-mark-light.png" alt="" className="w-10 h-10 dark:hidden" />
+          <img src="/brand/flame-mark-dark.png" alt="" className="w-10 h-10 hidden dark:block" />
         </div>
         <AnimatePresence>
           {!isCollapsed && (

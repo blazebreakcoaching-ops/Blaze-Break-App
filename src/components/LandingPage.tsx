@@ -145,8 +145,8 @@ export const LandingPage = ({ onStart, onOpenTrustCentre, darkMode, setDarkMode 
       <nav className="fixed top-0 w-full z-50 px-8 py-6 flex justify-between items-center backdrop-blur-xl bg-background/70 border-b border-white/[0.04]">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 flex items-center justify-center shadow-xl shadow-primary/20">
-            <img src="/brand/flame-icon-light.png" alt="" className="w-10 h-10 dark:hidden" />
-            <img src="/brand/flame-icon-dark.png" alt="" className="w-10 h-10 hidden dark:block" />
+            <img src="/brand/flame-mark-light.png" alt="" className="w-10 h-10 dark:hidden" />
+            <img src="/brand/flame-mark-dark.png" alt="" className="w-10 h-10 hidden dark:block" />
           </div>
           <div className="flex flex-col">
             <h1 className="font-serif font-black text-lg tracking-tight text-text-main leading-none">Blaze Break</h1>
@@ -289,8 +289,8 @@ export const LandingPage = ({ onStart, onOpenTrustCentre, darkMode, setDarkMode 
       {/* Footer */}
       <footer className="py-16 border-t border-white/[0.03] mt-20 text-center opacity-70">
         <div className="flex items-center justify-center gap-3 mb-4">
-          <img src="/brand/flame-icon-light.png" alt="" className="w-8 h-8 dark:hidden" />
-          <img src="/brand/flame-icon-dark.png" alt="" className="w-8 h-8 hidden dark:block" />
+          <img src="/brand/flame-mark-light.png" alt="" className="w-8 h-8 dark:hidden" />
+          <img src="/brand/flame-mark-dark.png" alt="" className="w-8 h-8 hidden dark:block" />
           <p className="font-bold text-sm tracking-tight text-text-main">Blaze Break</p>
         </div>
         <p className="text-[11px] uppercase tracking-[0.3em] font-black text-text-muted">
@@ -336,8 +336,8 @@ export const LandingPage = ({ onStart, onOpenTrustCentre, darkMode, setDarkMode 
 
               <div className="text-left pt-4">
                 <div className="w-12 h-12 bg-primary/10 rounded-2xl flex items-center justify-center mb-4">
-                  <img src="/brand/flame-icon-light.png" alt="" className="w-6 h-6 dark:hidden" />
-                  <img src="/brand/flame-icon-dark.png" alt="" className="w-6 h-6 hidden dark:block" />
+                  <img src="/brand/flame-mark-light.png" alt="" className="w-6 h-6 dark:hidden" />
+                  <img src="/brand/flame-mark-dark.png" alt="" className="w-6 h-6 hidden dark:block" />
                 </div>
                 <h3 id="auth-modal-title" className="text-2xl font-bold text-text-main tracking-tight">
                   {authMode === 'forgot' ? 'Reset your password' : authMode === 'signup' ? 'Create your account' : 'Access Account'}
