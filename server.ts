@@ -2515,6 +2515,19 @@ app.post("/api/nova/chat", novaChatLimiter, verifyAppCheck, authenticateFirebase
     }
   } catch (error: any) {
     logRouteError("Gemini Chat Error", error);
+    // The specific, real cause behind an incident where every chat message
+    // failed: the underlying Gemini API key was still on Google's free
+    // tier (20 requests/day, for the whole app combined, not per user) and
+    // had run out for the day - a billing/quota configuration issue, not a
+    // bug in this route. That surfaces here as a 429 from the provider
+    // itself. Distinguishing it from a genuine server error both gives the
+    // user an honest, actionable message instead of a scary generic one,
+    // and makes this specific failure mode instantly recognisable in
+    // Cloud Run logs by its distinct status code, without needing to
+    // re-read the full logRouteError payload every time.
+    if (error?.status === 429) {
+      return res.status(503).json({ error: "Nova is at capacity right now and can't respond - this is a temporary usage limit, not a problem with your account. Please try again shortly." });
+    }
     res.status(500).json({ error: `Nova Chat Sync Failure: A safe operational error occurred.` });
   }
 });
