@@ -1926,6 +1926,8 @@ export default function App() {
         <LandingPage
           onStart={() => setFlow("onboarding")}
           onOpenTrustCentre={() => setFlow("trust-centre")}
+          darkMode={darkMode}
+          setDarkMode={setDarkMode}
         />
         <button
           onClick={() => setShowCrisisSupport(true)}

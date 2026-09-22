@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { motion } from 'motion/react';
-import { Loader2, CheckCircle2, AlertTriangle, Lock, Sparkles } from 'lucide-react';
+import { Loader2, CheckCircle2, AlertTriangle, Lock } from 'lucide-react';
 import { verifyPasswordResetCode, confirmPasswordReset, applyActionCode } from 'firebase/auth';
 import { auth } from '../lib/firebase';
 import { useAuth } from '../lib/auth';
@@ -106,8 +106,9 @@ export const AuthActionPage = () => {
         transition={{ duration: 0.4 }}
         className="bg-surface border border-border rounded-xl p-8 max-w-md w-full shadow-lg space-y-6"
       >
-        <div className="w-12 h-12 bg-primary/10 rounded-2xl flex items-center justify-center text-primary">
-          <Sparkles className="w-6 h-6" />
+        <div className="w-12 h-12 bg-primary/10 rounded-2xl flex items-center justify-center">
+          <img src="/brand/flame-mark-light.png" alt="" className="w-6 h-6 dark:hidden" />
+          <img src="/brand/flame-mark-dark.png" alt="" className="w-6 h-6 hidden dark:block" />
         </div>
 
         {stage === 'loading' && (
