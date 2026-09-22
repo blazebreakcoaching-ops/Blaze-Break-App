@@ -9823,8 +9823,19 @@ async function setupVite() {
       // deploy's asset hashes long after those files are gone from the
       // server - the exact "Failed to load module script... MIME type of
       // text/html" blank-page failure this fixes.
+      //
+      // sw.js gets the same treatment for a related reason: browsers only
+      // re-check a service worker script for updates periodically (and
+      // otherwise reuse whatever they last fetched), so without an
+      // explicit no-cache header here, a browser that cached an older
+      // sw.js before a fix like this one shipped can keep running that
+      // stale worker logic for a long time afterwards even though the
+      // server has the fix - reintroducing the exact blank-page-on-normal-
+      // refresh symptom the worker itself exists to prevent (see
+      // public/sw.js's own history), just with a longer, harder-to-explain
+      // delay before it self-heals.
       setHeaders: (res, filePath) => {
-        if (path.basename(filePath) === 'index.html') {
+        if (path.basename(filePath) === 'index.html' || path.basename(filePath) === 'sw.js') {
           res.setHeader('Cache-Control', 'no-cache');
         }
       },
