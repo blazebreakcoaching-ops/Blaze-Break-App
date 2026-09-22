@@ -152,18 +152,46 @@ server folds the value in as instruction text
   Behaviourally regression-tested in `nova-questioning-style.route.test.ts`
   (a crisis-signalling message still reaches the model with the real
   safety floor present, alongside an active style).
-- **A pre-existing, separate gap, only partly closed:** none of the six
+- **A pre-existing, separate gap, now mostly closed:** none of the six
   one-shot generators above originally had any crisis-safety instruction
   at all (unlike the two conversational surfaces). Per explicit product
   sign-off, voice-journal and resentment-analysis - the two most exposed
   to raw personal free-text/audio - now get `NOVA_ONE_SHOT_SAFETY_FLOOR`
   appended to their prompts, mirroring `NOVA_SAFETY_INSTRUCTIONS`'
   pattern (a standing instruction, not a canned string - the model
-  generates its own supportive wording). The diagnose-narrative,
-  one-less-thing, executive-report, and manager-coach generators still
-  have no safety floor; this remains open, lower-priority (they process
-  a short task label, numeric aggregates, or scores already computed
-  deterministically, not open-ended personal disclosure).
+  generates its own supportive wording). Manager-coach now gets
+  `NOVA_MANAGER_COACH_SAFETY_FLOOR` - a differently-shaped floor, since
+  this surface only ever sees pre-aggregated, k-anonymised team numbers,
+  never an individual's own words, so there's no message to read distress
+  out of and the crisis-line pointer doesn't apply; what it guards
+  against instead is presenting an aggregate as a clinical judgement or
+  nudging a manager to act on a specific unnamed person from a team
+  average. The diagnose-narrative, one-less-thing, and executive-report
+  generators still have no safety floor; this remains open, lower-priority
+  (a short task label or scores already computed deterministically, not
+  open-ended personal disclosure).
+- **A request that was declined, and why:** a request to have Nova
+  autonomously text a user's Guardian contact whenever it judges, from the
+  user's own language in a live conversation, that they're expressing
+  "critical feelings" - was not built. Guardian Relay's own code
+  (`guardian-alert.ts`) and its live UI copy (`NovaGuardianRelay.tsx`:
+  "This is entirely manual. Nova does not monitor you or decide when to
+  alert anyone - your guardian is only ever contacted when you choose to
+  reach out.") both currently guarantee this never happens, and
+  `docs/GUARDIAN_SUPPORT_SPEC.md` explicitly scopes any automatic,
+  unattended contact ("Tier 3") as "permanently out of scope... until ten
+  named governance workstreams (clinical, safeguarding, legal) and a
+  documented, tested kill-switch exist" - none of which has happened.
+  Building it would mean an LLM's own read of "critical feelings" (no
+  matter how the trigger is worded - "clear intent," not "predictive,"
+  was the framing requested) autonomously contacting a real third party
+  about someone's mental state with no human review in between, which is
+  exactly the shape of decision the product's own standing rules require
+  real clinical/safeguarding/legal sign-off for, not a unilateral code
+  change. This needs a genuine product decision with that review attached
+  before any implementation - see §3's Nova Questioning Style entry above
+  for the general standard this codebase already holds itself to on
+  exactly this class of change.
 
 ## 4. Safety without surveillance (Guardian)
 

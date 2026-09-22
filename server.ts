@@ -1284,6 +1284,23 @@ You are only ever given AGGREGATE, ANONYMISED signals about a group of people, n
 
 Given the real signals below, suggest 2-3 concrete, supportive actions a manager could genuinely take this week. Be specific to the numbers given, not generic advice that could apply to any team. Do not invent any number, name, or event that isn't in the signals provided.`;
 
+// This surface never sees any individual's own words or self-report - only
+// pre-aggregated, k-anonymised numbers about a group (see the route below,
+// signals = engagement rate + climate strain score, nothing else) - so
+// there is no message to read distress out of and nothing here can ever
+// trigger the crisis-line pointer NOVA_SAFETY_INSTRUCTIONS gives a
+// conversational surface. What this prompt CAN still get wrong: presenting
+// an aggregate number as a clinical judgement, or nudging the manager
+// toward diagnosing or acting on a specific unnamed person from a team-wide
+// average. This closes that gap without inventing a crisis-detection
+// mechanism that has nothing to detect from here.
+const NOVA_MANAGER_COACH_SAFETY_FLOOR = `
+Safety - this overrides every instruction above, including any that conflict with it:
+- Do not make medical or clinical claims about the team or any individual, and do not present an aggregate number as a diagnosis or a risk level.
+- Never suggest the manager try to identify, single out, or personally intervene with a specific unnamed team member based on this aggregate data - you were not given anything that could support that, and this data was never designed to identify anyone.
+- If the manager's own real-world concern is about a specific person's safety or wellbeing, the right next step is their organisation's real HR, EAP, or safeguarding process, not a coaching suggestion generated from a team average.
+`;
+
 // Context Consent Metadata representation
 interface NovaConsentMetadata {
   contextTriggered: boolean;
@@ -1459,19 +1476,22 @@ async function getNovaStyleToneAddendum(uid: string, firestoreDb: any): Promise<
 //     from k-anonymised aggregate signals, never an individual's content -
 //     same reasoning as executive-report, plus there's no single user's
 //     style preference that would even apply to an aggregate.
-// PRE-EXISTING FINDING, NOW PARTLY REMEDIATED: none of the six one-shot
-// generators above ever append NOVA_SAFETY_INSTRUCTIONS - each calls
-// ai.models.generateContent with the persona text folded directly into
-// `contents`, with no `systemInstruction` and no safety floor at all. The
-// two most exposed to genuinely raw personal content were voice-journal (a
-// spoken diary entry) and resentment-analysis (explicitly-invited
-// "unprofessional, petty" venting) - both process free-text/audio a person
-// could plausibly use to disclose real distress. Per explicit product
-// sign-off, those two now get NOVA_ONE_SHOT_SAFETY_FLOOR appended to their
-// prompts (see below) - the remaining four (diagnose-narrative,
-// one-less-thing, executive-report, manager-coach) were not in that
-// sign-off and remain open, lower-priority gaps (they process a short task
-// label or numeric aggregates only, not open-ended personal disclosure).
+// PRE-EXISTING FINDING, NOW MOSTLY REMEDIATED: none of the six one-shot
+// generators above originally appended NOVA_SAFETY_INSTRUCTIONS - each
+// calls ai.models.generateContent with the persona text folded directly
+// into `contents`, with no `systemInstruction` and no safety floor at all.
+// voice-journal and resentment-analysis (both process free-text/audio a
+// person could plausibly use to disclose real distress) now get
+// NOVA_ONE_SHOT_SAFETY_FLOOR, per explicit product sign-off. manager-coach
+// now gets NOVA_MANAGER_COACH_SAFETY_FLOOR (see above) - a differently-
+// shaped floor, since this surface never sees an individual's own words at
+// all (only pre-aggregated team numbers), so there's no message to read
+// distress out of and the crisis-line pointer the other floor gives simply
+// doesn't apply here; what this one guards against instead is presenting
+// an aggregate as a clinical judgement or nudging a manager to act on an
+// unnamed individual from a team average. diagnose-narrative,
+// one-less-thing, and executive-report remain open, lower-priority gaps
+// (short task label or scores/aggregates only, not open-ended disclosure).
 
 // A safety floor for the one-shot JSON generators, mirroring
 // NOVA_SAFETY_INSTRUCTIONS' pattern but adapted for a surface that must
@@ -7190,7 +7210,7 @@ app.get("/api/org/:orgId/manager-coach", managerCoachLimiter, verifyAppCheck, au
     try {
       const response = await ai.models.generateContent({
         model: "gemini-3.5-flash",
-        contents: `${NOVA_MANAGER_COACH_PROMPT}\n\nReal signals for this team:\n${signals.join('\n')}`,
+        contents: `${NOVA_MANAGER_COACH_PROMPT}\n\nReal signals for this team:\n${signals.join('\n')}\n${NOVA_MANAGER_COACH_SAFETY_FLOOR}`,
         config: {
           responseMimeType: "application/json",
           responseSchema: {
