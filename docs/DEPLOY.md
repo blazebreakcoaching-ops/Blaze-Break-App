@@ -20,7 +20,7 @@ app. Set them on the Cloud Run service (or any host).
 |---|---|---|
 | `NODE_ENV` | `production` | **Critical.** The strict CSP (helmet), **App Check enforcement**, and static-file serving of the built frontend ALL gate on `NODE_ENV === "production"`. If it's unset, App Check turns off, security headers vanish, and the frontend won't be served. |
 | `PORT` | injected by host | The server now reads `process.env.PORT` (Cloud Run injects `8080`). No action needed beyond letting the host set it. |
-| `APP_CHECK_DOMAIN` | your live domain (no scheme) | Added to the CORS allowlist as `https://<domain>`. Without it, the browser origin for your real domain isn't trusted. |
+| `APP_CHECK_DOMAIN` | your live domain(s), no scheme, comma-separated for more than one | Each is added to the CORS allowlist as `https://<domain>`. Without it, the browser origin for your real domain isn't trusted. A custom domain plus its `www.` subdomain need both listed, e.g. `blazebreak.app,www.blazebreak.app` - the original `*.run.app` URL stays trusted regardless, since it's a separate hardcoded entry. |
 | Request timeout | **≥ 900s** | Nova voice sessions are capped at 15 min; Cloud Run's default 5-min timeout would cut calls off. |
 | Session affinity | **on** | Keeps a live-voice WebSocket pinned to one instance. |
 
@@ -212,3 +212,45 @@ environment with real credentials:
   cross-call continuity greeting.
 - **Guardian alert / Twilio** actually delivering an SMS to a real phone.
 - **Vertex AI** path (depends on ADC + IAM being correct on the host).
+
+---
+
+## 8. Connecting a custom domain
+
+The app runs on Cloud Run behind its `*.run.app` URL; a custom domain is
+layered on top via a Firebase Hosting rewrite (`firebase.json`'s
+`hosting.rewrites` block already points `**` at the `blaze-break` Cloud
+Run service) rather than Cloud Run's own domain-mapping feature, since
+Firebase Hosting's domain UI is friendlier for DNS setup and comes with
+a managed SSL cert and CDN for free. `firebase.json`'s `hosting.public`
+deliberately points at an intentionally-empty placeholder directory
+(`firebase-hosting-public/`), not `dist/` - if it pointed at `dist/`,
+Firebase Hosting would serve its own (potentially stale, deployed on a
+different schedule than Cloud Run) copy of the built assets for any
+exact-path match, silently reintroducing the same class of "stale
+cached build" bug already fixed once for the service worker. With an
+empty public dir, literally every request falls through to the `**`
+rewrite, so Cloud Run's own `server.ts` - with its already-correct
+cache headers - stays the single source of truth.
+
+Once DNS is pointed at Firebase Hosting (via its own guided "Add custom
+domain" flow in the Firebase Console), a custom domain needs to be
+added in three *more* places or specific features silently break on
+that domain while continuing to work fine on the original `*.run.app`
+URL:
+
+1. **`APP_CHECK_DOMAIN`** (Cloud Run env var) - add the new domain(s),
+   comma-separated alongside anything already there. Without this, the
+   browser's `Origin` header for the new domain fails the CORS check on
+   every `/api/*` call.
+2. **Firebase Console → Authentication → Settings → Authorized domains**
+   - add the new domain. Without this, Google sign-in's popup flow
+   fails with an "unauthorized domain" error on the new domain
+   specifically.
+3. **Google Cloud Console → Security → reCAPTCHA Enterprise → the site
+   key named by `VITE_RECAPTCHA_ENTERPRISE_SITE_KEY` → Edit → Domains**
+   - add the new domain. reCAPTCHA Enterprise keys are domain-restricted;
+   without this, App Check silently fails to produce a token on the new
+   domain, which cascades into every Firestore read/write looking like a
+   permissions error there (see the CSP comment in `server.ts` for the
+   same failure mode already documented once).

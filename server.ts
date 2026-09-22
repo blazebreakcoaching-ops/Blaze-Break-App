@@ -102,8 +102,18 @@ if (process.env.NODE_ENV !== "production") {
     "http://127.0.0.1:8081",
   );
 }
+// Comma-separated so a real production deploy can trust both the
+// original *.run.app URL and a custom domain (or a bare domain plus its
+// www. subdomain) at once - a single value still works exactly as
+// before, since split(',') on a string with no comma just returns that
+// one value.
 if (process.env.APP_CHECK_DOMAIN) {
-  allowedOrigins.push(`https://${process.env.APP_CHECK_DOMAIN}`);
+  allowedOrigins.push(
+    ...process.env.APP_CHECK_DOMAIN.split(',')
+      .map((d) => d.trim())
+      .filter(Boolean)
+      .map((d) => `https://${d}`)
+  );
 }
 
 // Production-only: Vite's dev-mode HMR client injects its own inline
