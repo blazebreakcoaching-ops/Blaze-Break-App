@@ -28,6 +28,7 @@ import { toClaudeTools, GeminiStyleToolDeclaration } from './nova-claude-tools';
 import { computeClimateStrain, computeClimateStrainByDimension, computeMoodStrain, computeOverallStrain, computeTrend } from './org-risk-trend';
 import { suggestRecognitionPrompts } from './positive-reinforcement';
 import { isRealGuardian, isValidGuardianPhone, buildGuardianCallRequestMessage, extractFirstName, nudgeSchedulerIsEnabled, guardianAlertsEnabled } from './guardian-alert';
+import { guardianSupportInvitationEnabled, validateGuardianSupportOffer, isValidGuardianSupportEventType, isValidGuardianSupportTemplateId, buildGuardianSupportMessage } from './guardian-support-invitation';
 import { collectionsForExport, collectionsForErasure } from './user-data-collections';
 import { htmlToPlainTextFallback, buildEmailVerificationEmail, buildPasswordResetEmail, buildPasswordChangedEmail, buildMfaEnabledEmail, buildMfaDisabledEmail } from './brevo-templates';
 import { generateTotpSecret, buildOtpauthUri, verifyTotpCode, generateRecoveryCodes, hashRecoveryCode, encryptSecret as encryptTotpSecret, decryptSecret as decryptTotpSecret, isTotpLockedOut, nextLockoutState } from './totp-mfa';
@@ -797,7 +798,57 @@ app.post("/api/twilio/send", smsLimiter, verifyAppCheck, authenticateFirebaseUse
 // this is a read of non-sensitive, non-per-user config, same trust level
 // as any other UI-gating flag check in this app.
 app.get("/api/guardian/config", authenticateFirebaseUser, async (_req, res) => {
-  res.json({ alertsEnabled: guardianAlertsEnabled(process.env.GUARDIAN_ALERTS_ENABLED) });
+  res.json({
+    alertsEnabled: guardianAlertsEnabled(process.env.GUARDIAN_ALERTS_ENABLED),
+    // Separate from alertsEnabled: that one gates whether a guardian alert
+    // can be SENT at all (Tier 1, live since before this flag existed, so
+    // it defaults on). This one gates whether Nova/the UI ever OFFERS the
+    // Guardian Support Invitation card in the first place - a newer,
+    // not-yet-specialist-reviewed surface, so it defaults off. Turning
+    // this off never removes a user's ability to manually reach their
+    // Guardian via the existing Ally tab or the always-available crisis
+    // button - only the proactive offer.
+    invitationEnabled: guardianSupportInvitationEnabled(process.env.GUARDIAN_SUPPORT_INVITATION_ENABLED),
+  });
+});
+
+// ============ Guardian Support Invitation — privacy-preserving analytics ============
+// Deliberately the only write path for these events (no direct client
+// Firestore write) so the closed-enum validation is enforced in one place
+// server-side, matching the "never trust the client's own claim about
+// shape" pattern used throughout this file. Event types are a fixed list
+// (guardian-support-invitation.ts) - there is no field here, or anywhere
+// in this payload, that could carry chat content, an inferred emotional
+// state, or anything resembling a risk label; see
+// docs/GUARDIAN_SUPPORT_INVITATION.md for the full list and what each one
+// means.
+const GuardianSupportEventSchema = z.object({
+  eventType: z.string(),
+  contactId: z.string().max(200).optional(),
+  channel: z.enum(['sms', 'whatsapp', 'call']).optional(),
+}).strict();
+
+app.post("/api/guardian/support-event", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const parsed = GuardianSupportEventSchema.safeParse(req.body);
+    if (!parsed.success || !isValidGuardianSupportEventType(parsed.data.eventType)) {
+      return res.status(400).json({ error: "Invalid or unrecognised event type." });
+    }
+    const uid = requireAuth(req).uid;
+    const db = getDb();
+    await db.collection("users").doc(uid).collection("guardian_support_events").add({
+      eventType: parsed.data.eventType,
+      contactId: parsed.data.contactId || null,
+      channel: parsed.data.channel || null,
+      createdAt: new Date().toISOString(),
+    });
+    res.json({ recorded: true });
+  } catch (error: any) {
+    // Non-fatal by design on the client side (this is analytics, not a
+    // safety-critical write) - but still a real server error if it does fail.
+    console.error("[Guardian support event] error:", error?.message || error);
+    res.status(500).json({ error: "Could not record that." });
+  }
 });
 
 // ============ Guardian Support — Tier 1: one-tap guardian call request ============
@@ -843,12 +894,20 @@ app.post("/api/guardian/alert", guardianAlertLimiter, verifyAppCheck, authentica
   const uid = requireAuth(req).uid; // uid from the verified token only - never from req.body
   let inFlightKey: string | null = null;
   try {
-    const { contactId, idempotencyKey } = req.body || {};
+    const { contactId, idempotencyKey, templateId } = req.body || {};
     if (typeof contactId !== "string" || !contactId) {
       return res.status(400).json({ error: "Missing contactId." });
     }
     if (typeof idempotencyKey !== "string" || idempotencyKey.length < 8) {
       return res.status(400).json({ error: "Missing or invalid idempotencyKey." });
+    }
+    // Optional, and deliberately a closed enum (guardian-support-invitation.ts)
+    // rather than freeform text - see that file's header comment on why
+    // message wording stays pre-approved-templates-only for now. Omitting
+    // it keeps every existing caller (NovaGuardianRelay.tsx, CrisisSupport.tsx)
+    // working exactly as before, on the original fixed template.
+    if (templateId !== undefined && !isValidGuardianSupportTemplateId(templateId)) {
+      return res.status(400).json({ error: "Invalid templateId." });
     }
 
     inFlightKey = uid;
@@ -944,7 +1003,10 @@ app.post("/api/guardian/alert", guardianAlertLimiter, verifyAppCheck, authentica
     // Persist as 'queued' before the provider call, so a crash between here
     // and the send is visible in history rather than silently lost.
     const userStats = statsSnap.exists ? statsSnap.data() : null;
-    const message = buildGuardianCallRequestMessage(extractFirstName(userStats?.profile?.fullName));
+    const firstName = extractFirstName(userStats?.profile?.fullName);
+    const message = templateId
+      ? buildGuardianSupportMessage(templateId, { guardianFirstName: extractFirstName(contact.name), senderFirstName: firstName })
+      : buildGuardianCallRequestMessage(firstName);
 
     await existingRef.set({
       contactId,
@@ -2026,6 +2088,17 @@ const NOVA_TOOLS: any[] = [
       required: ["featureId", "reason"],
     },
   },
+  {
+    name: "offer_guardian_support",
+    description: "Offer the user an OPTIONAL, dismissible on-screen card letting them choose to contact a trusted person they've already set up (their Guardian) - never sends anything, never decides anything, never claims to know how the user is doing. Call this when the user directly asks to contact their Guardian or says they want to reach someone they trust, OR when what they've shared suggests they're feeling overwhelmed, alone, unsafe, or in need of real human support and offering this option would be genuinely supportive right now - the same conservative judgement you'd use offering any other real, optional next step, never a diagnosis or a classification of their state. Do not call this reflexively, more than once without the user raising it again, or as a substitute for actually responding to what they said - offer it alongside a real reply, not instead of one. This tool has no ability to contact anyone; it only shows an optional card the user may or may not act on.",
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        reason: { type: Type.STRING, description: "A short, specific reason tied to what the user just said - under 200 characters, not generic, never a diagnosis or risk claim." },
+      },
+      required: ["reason"],
+    },
+  },
 ];
 
 // Mirrors the exact permission check and category filtering already
@@ -2109,6 +2182,26 @@ async function executeRememberAboutUser(uid: string, firestoreDb: any, args: Rec
   return { saved: true };
 }
 
+// Pure gate-plus-validate, no I/O of its own - mirrors executeSuggestFeature
+// exactly. The flag check lives HERE (inside the tool's own execute
+// function, not in whether the tool is declared to the model) so this
+// follows the same self-gating pattern every other consent/flag-aware tool
+// in this file already uses (see executeSearchNovaMemories's
+// memoryToolIsAllowed check) - the tool is always declared, but silently
+// returns "not offered" when the feature is off, so a client that somehow
+// still asks never gets a way to distinguish "off" from "not warranted"
+// from the model's answer alone.
+function executeOfferGuardianSupport(args: Record<string, unknown>): { offered: boolean; reason?: string; error?: string } {
+  if (!guardianSupportInvitationEnabled(process.env.GUARDIAN_SUPPORT_INVITATION_ENABLED)) {
+    return { offered: false };
+  }
+  const validation = validateGuardianSupportOffer(args);
+  if (!validation.valid) {
+    return { offered: false, error: validation.error };
+  }
+  return { offered: true, reason: args.reason as string };
+}
+
 async function executeNovaTool(name: string, args: Record<string, unknown>, uid: string | undefined, firestoreDb: any): Promise<Record<string, unknown>> {
   if (!uid) return { error: "No authenticated user for this tool call." };
   try {
@@ -2121,6 +2214,8 @@ async function executeNovaTool(name: string, args: Record<string, unknown>, uid:
         return executeSuggestFeature(args);
       case "remember_about_user":
         return await executeRememberAboutUser(uid, firestoreDb, args);
+      case "offer_guardian_support":
+        return executeOfferGuardianSupport(args);
       default:
         return { error: `Unknown tool: ${name}` };
     }
@@ -10007,6 +10102,22 @@ if (process.env.TEST_MODE !== 'true') {
                         try {
                           clientWs.send(JSON.stringify({
                             featureSuggestion: { featureId: output.featureId, label: output.label, reason: output.reason },
+                          }));
+                        } catch (e) {
+                          // Best-effort - the call continues even if this relay fails.
+                        }
+                      }
+                      // Same relay pattern for the Guardian Support
+                      // Invitation - the card is rendered from this
+                      // WebSocket message alone. Nova's spoken reply never
+                      // needs to (and must not) say the guardian's name or
+                      // read out message content; only this visual card,
+                      // populated client-side from the user's own saved
+                      // contacts, ever shows that.
+                      if (name === "offer_guardian_support" && output.offered) {
+                        try {
+                          clientWs.send(JSON.stringify({
+                            guardianSupportOffer: { reason: output.reason },
                           }));
                         } catch (e) {
                           // Best-effort - the call continues even if this relay fails.

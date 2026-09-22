@@ -222,6 +222,19 @@ service cloud.firestore {
         allow read, write: if false;
       }
 
+      // guardian_support_events: privacy-preserving analytics for the
+      // Guardian Support Invitation (see guardian-support-invitation.ts and
+      // docs/GUARDIAN_SUPPORT_INVITATION.md) — written only by
+      // POST /api/guardian/support-event via the Admin SDK, which enforces
+      // the closed eventType enum server-side. Same fully-locked pattern as
+      // guardian_alerts above: no direct client read or write, since
+      // nothing here needs client access and every field is already
+      // content-free (event type + optional contact/channel reference,
+      // never chat content or an inferred state).
+      match /guardian_support_events/{eventId} {
+        allow read, write: if false;
+      }
+
       // pulse_status is what the scheduled push-notification check reads —
       // no reason for the client to read this back directly since it's a
       // copy of data already computed client-side.

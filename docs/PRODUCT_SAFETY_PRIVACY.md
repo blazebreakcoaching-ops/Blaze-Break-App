@@ -249,6 +249,23 @@ System" in its heading while its own body copy said "no automatic
 monitoring... just a fast, private way to ask for help." Retitled to
 "One-Tap Guardian Support" so the heading stops contradicting the body.
 
+**A new, related feature: the Guardian Support Invitation.** Nova can now
+optionally offer (never send) a Guardian contact card during a
+conversation - full design, consent boundaries, and the "requires
+specialist review before expansion" list in
+`docs/GUARDIAN_SUPPORT_INVITATION.md`. In short: an `offer_guardian_support`
+tool that only ever returns a boolean UI-rendering decision (no Firestore
+access, no send capability), reuses the existing hardened
+`POST /api/guardian/alert` for the actual dispatch (two new pre-approved
+message templates, still no freeform text), ships behind a new
+`GUARDIAN_SUPPORT_INVITATION_ENABLED` flag that **defaults off** (unlike
+`GUARDIAN_ALERTS_ENABLED`, which predates its own flag), and updates the
+existing "This is entirely manual" copy in `NovaGuardianRelay.tsx` to
+"Nova can help you reach out... it will never contact someone for you
+unless you choose and confirm that action" - true both before and after
+this change, since nothing about who gets contacted or what gets sent is
+ever decided by Nova.
+
 ## 5. The employer privacy firewall
 
 Every `/api/org/...` and `/api/admin/...` route was checked for whether it

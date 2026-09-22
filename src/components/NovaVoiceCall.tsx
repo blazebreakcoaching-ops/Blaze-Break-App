@@ -4,6 +4,19 @@ import { Sparkles, Mic, MicOff, PhoneOff, RefreshCw, Loader2, AlertCircle, Targe
 import { cn } from '../lib/utils';
 import { useFocusTrap } from '../lib/useFocusTrap';
 import { useNovaLiveVoice } from '../lib/useNovaLiveVoice';
+import { GuardianSupportInvitation } from './GuardianSupportInvitation';
+
+// Same ad-hoc "read blaze_profile directly" pattern NovaChat.tsx uses for
+// the same purpose - only needed the rare time the Guardian Support
+// Invitation actually renders, so not worth its own state slot.
+function readStoredFullNameForVoice(): string | undefined {
+  try {
+    const raw = localStorage.getItem("blaze_profile");
+    return raw ? JSON.parse(raw)?.fullName : undefined;
+  } catch {
+    return undefined;
+  }
+}
 
 interface NovaVoiceCallProps {
   isOpen: boolean;
@@ -35,7 +48,8 @@ export const NovaVoiceCall = ({ isOpen, onClose, buildInitialPrompt, onNavigate,
   const transcriptEndRef = useRef<HTMLDivElement | null>(null);
   const {
     status, error, isNovaSpeaking, isMuted, transcript, elapsedMs,
-    featureSuggestion, dismissFeatureSuggestion, start, stop, toggleMute,
+    featureSuggestion, dismissFeatureSuggestion,
+    guardianSupportOffer, dismissGuardianSupportOffer, start, stop, toggleMute,
   } = useNovaLiveVoice({ buildInitialPrompt });
 
   // Auto-start the call when the screen opens; tear it down when it closes.
@@ -203,6 +217,21 @@ export const NovaVoiceCall = ({ isOpen, onClose, buildInitialPrompt, onNavigate,
                     </div>
                   </div>
                 </motion.div>
+              )}
+            </AnimatePresence>
+
+            {/* Guardian Support Invitation - Nova's spoken reply never names
+                the guardian or reads message content; only this visual card
+                does, populated client-side from the user's own saved
+                contacts. Reuses the exact same card and confirm-sheet
+                NovaChat.tsx uses for text, so the two surfaces can never
+                drift apart. */}
+            <AnimatePresence>
+              {guardianSupportOffer && (
+                <GuardianSupportInvitation
+                  userName={readStoredFullNameForVoice()}
+                  onDismiss={dismissGuardianSupportOffer}
+                />
               )}
             </AnimatePresence>
 

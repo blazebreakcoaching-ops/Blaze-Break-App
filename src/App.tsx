@@ -1062,6 +1062,18 @@ export default function App() {
   const [showSettings, setShowSettings] = useState(false);
   const [showWalkthrough, setShowWalkthrough] = useState(false);
   const [showCrisisSupport, setShowCrisisSupport] = useState(false);
+
+  // Same 'navigate_tab' pattern above, for the same reason: components
+  // several layers deep (the Guardian Support Invitation card, rendered
+  // inside NovaChat and the voice call UI) need to open the existing
+  // crisis-support modal without threading a callback prop through every
+  // intermediate layer. "Explore other support" in that card dispatches
+  // this instead of duplicating CrisisSupportModal's content a third time.
+  useEffect(() => {
+    const handleOpenCrisisSupport = () => setShowCrisisSupport(true);
+    window.addEventListener('open_crisis_support', handleOpenCrisisSupport);
+    return () => window.removeEventListener('open_crisis_support', handleOpenCrisisSupport);
+  }, []);
   const [showLauncher, setShowLauncher] = useState(false);
   // Walkthrough and CommandPalette are both always-mounted with `isOpen` as
   // a prop (not a JSX conditional), like SomaticResetOverlay above, so they

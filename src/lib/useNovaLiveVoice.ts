@@ -25,6 +25,10 @@ export interface VoiceFeatureSuggestion {
   reason: string;
 }
 
+export interface VoiceGuardianSupportOffer {
+  reason: string;
+}
+
 export interface UseNovaLiveVoiceOptions {
   // Optional context to prime the session with before the person speaks
   // (burnout fingerprint, recent chat, preferred tone). Saved-memory content
@@ -59,6 +63,13 @@ export function useNovaLiveVoice(options: UseNovaLiveVoiceOptions = {}) {
   const [transcript, setTranscript] = useState<TranscriptLine[]>([]);
   const [elapsedMs, setElapsedMs] = useState(0);
   const [featureSuggestion, setFeatureSuggestion] = useState<VoiceFeatureSuggestion | null>(null);
+  // Guardian Support Invitation, offered by Nova during a live voice call.
+  // Deliberately just { reason } - Nova's spoken reply never names the
+  // guardian or reads out message content; only the visual card the UI
+  // renders from this state does, populated client-side from the user's
+  // own saved contacts (see GuardianSupportInvitation.tsx).
+  const [guardianSupportOffer, setGuardianSupportOffer] = useState<VoiceGuardianSupportOffer | null>(null);
+  const guardianOfferShownRef = useRef(false);
 
   const wsRef = useRef<WebSocket | null>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
@@ -181,6 +192,8 @@ export function useNovaLiveVoice(options: UseNovaLiveVoiceOptions = {}) {
     setError(null);
     setTranscript([]);
     setFeatureSuggestion(null);
+    setGuardianSupportOffer(null);
+    guardianOfferShownRef.current = false;
     lastTranscriptRoleRef.current = null;
     setStatus('connecting');
 
@@ -273,6 +286,12 @@ export function useNovaLiveVoice(options: UseNovaLiveVoiceOptions = {}) {
           if (msg.userTranscript) appendTranscript('user', msg.userTranscript);
           if (msg.novaTranscript) appendTranscript('nova', msg.novaTranscript);
           if (msg.featureSuggestion) setFeatureSuggestion(msg.featureSuggestion);
+          // Same "shown once per call unless the user raises it again" rule
+          // as the text-chat side (NovaChat.tsx's guardianOfferShownRef).
+          if (msg.guardianSupportOffer && !guardianOfferShownRef.current) {
+            guardianOfferShownRef.current = true;
+            setGuardianSupportOffer(msg.guardianSupportOffer);
+          }
           if (msg.turnComplete) { lastTranscriptRoleRef.current = null; turnCountRef.current += 1; }
           if (msg.error) {
             setError(msg.error);
@@ -323,6 +342,7 @@ export function useNovaLiveVoice(options: UseNovaLiveVoiceOptions = {}) {
   }, []);
 
   const dismissFeatureSuggestion = useCallback(() => setFeatureSuggestion(null), []);
+  const dismissGuardianSupportOffer = useCallback(() => setGuardianSupportOffer(null), []);
 
   // Tear everything down if the host component unmounts mid-call.
   useEffect(() => () => {
@@ -332,5 +352,5 @@ export function useNovaLiveVoice(options: UseNovaLiveVoiceOptions = {}) {
     cleanupAudio();
   }, [cleanupAudio, recordSession]);
 
-  return { status, error, isNovaSpeaking, isMuted, transcript, elapsedMs, featureSuggestion, dismissFeatureSuggestion, start, stop, toggleMute };
+  return { status, error, isNovaSpeaking, isMuted, transcript, elapsedMs, featureSuggestion, dismissFeatureSuggestion, guardianSupportOffer, dismissGuardianSupportOffer, start, stop, toggleMute };
 }

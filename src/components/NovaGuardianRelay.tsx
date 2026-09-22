@@ -501,7 +501,7 @@ export const NovaGuardianRelay = ({ contacts, onAdd, onRemove, userName }: NovaG
                 </div>
                 <div className="space-y-2.5">
                   <h5 className="text-xs font-black uppercase tracking-widest text-success dark:text-[#4ade80]">How It Works</h5>
-                  <p className="text-[11px] leading-relaxed text-text-muted">This is entirely manual. Nova does not monitor you or decide when to alert anyone - your guardian is only ever contacted when you choose to reach out.</p>
+                  <p className="text-[11px] leading-relaxed text-text-muted">Nova can help you reach out - offering a shortcut if it seems like it might help, or if you ask for one. It will never contact someone for you unless you choose and confirm that action yourself.</p>
                 </div>
              </div>
           </div>
