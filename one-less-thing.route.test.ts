@@ -32,7 +32,7 @@ vi.mock('@google/genai', () => ({
 
 import request from 'supertest';
 import { app } from './server';
-import { resetStore } from './test/fake-firestore';
+import { resetStore, seedDoc } from './test/fake-firestore';
 
 const USER = 'user_owner';
 const auth = (uid: string) => ({ Authorization: `Bearer ${uid}` });
@@ -81,5 +81,34 @@ describe('POST /api/nova/one-less-thing', () => {
     const res = await request(app).post('/api/nova/one-less-thing').set(auth(USER)).send({ task: 'something' });
     expect(res.status).toBe(500);
     expect(res.body.error).toBeTruthy();
+  });
+});
+
+// This is a one-shot triage decision put directly to the user (pick one of
+// four actions on the thing they named), so it's one of the two "APPLY"
+// surfaces for the style-TONE module (getNovaStyleToneAddendum) - not the
+// questioning-cadence module, since no question is ever asked here. See
+// the AUDIT comment above getNovaStyleToneAddendum in server.ts.
+describe('POST /api/nova/one-less-thing — style tone', () => {
+  it('adds no style tone text when the user has never chosen a style (default, unchanged behaviour)', async () => {
+    await request(app).post('/api/nova/one-less-thing').set(auth(USER)).send({ task: 'the 3pm review' });
+    const promptText = h.generateContent.mock.calls[0][0].contents.parts[0].text as string;
+    expect(promptText).not.toContain('NOVA STYLE');
+  });
+
+  it("adds the user's chosen style tone block", async () => {
+    seedDoc(`users/${USER}/user_stats/core`, { profile: { questioningStyle: 'board_member' } });
+    await request(app).post('/api/nova/one-less-thing').set(auth(USER)).send({ task: 'the 3pm review' });
+    const promptText = h.generateContent.mock.calls[0][0].contents.parts[0].text as string;
+    expect(promptText).toContain('TONE: BOARD MEMBER');
+    expect(promptText).not.toContain('TONE: OPERATOR');
+  });
+
+  it('ignores an invalid stored style rather than erroring', async () => {
+    seedDoc(`users/${USER}/user_stats/core`, { profile: { questioningStyle: 'therapist_mode' } });
+    const res = await request(app).post('/api/nova/one-less-thing').set(auth(USER)).send({ task: 'the 3pm review' });
+    expect(res.status).toBe(200);
+    const promptText = h.generateContent.mock.calls[0][0].contents.parts[0].text as string;
+    expect(promptText).not.toContain('NOVA STYLE');
   });
 });

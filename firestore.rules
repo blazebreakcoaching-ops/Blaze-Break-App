@@ -782,7 +782,17 @@ service cloud.firestore {
             && (!('committedActionIds' in request.resource.data) || (request.resource.data.committedActionIds is list && request.resource.data.committedActionIds.size() <= 500))
             && (!('supportCircle' in request.resource.data) || (request.resource.data.supportCircle is list && request.resource.data.supportCircle.size() <= 20))
             && (!('debts' in request.resource.data) || (request.resource.data.debts is list && request.resource.data.debts.size() <= 20))
-            && (!('profile' in request.resource.data) || (request.resource.data.profile is map && !('subscription' in request.resource.data.profile)))
+            && (!('profile' in request.resource.data) || (request.resource.data.profile is map && !('subscription' in request.resource.data.profile)
+                  // questioningStyle changes HOW Nova asks/writes, never
+                  // WHO she is or WHAT she says beyond tone - it must stay
+                  // a closed enum a client picks from, never freeform text,
+                  // since the server folds this value straight into
+                  // Nova's own prompt (see buildNovaQuestioningStyleModule
+                  // in server.ts). A raw string here would be a direct
+                  // prompt-injection path into Nova's own instructions.
+                  && (!('questioningStyle' in request.resource.data.profile)
+                      || request.resource.data.profile.questioningStyle == null
+                      || request.resource.data.profile.questioningStyle in ['operator', 'board_member', 'mentor', 'pre_mortem'])))
             && (!('fingerprint' in request.resource.data) || request.resource.data.fingerprint is map || request.resource.data.fingerprint == null);
       }
 

@@ -105,6 +105,66 @@ was **not changed** in this pass - it needs a product decision (does §0.1
 bind this feature too?) rather than a unilateral code change, and is
 listed as an open item below.
 
+**Nova Questioning Style - a user-selectable lens on HOW Nova asks or
+writes, never WHO she is.** Four styles, stored as a closed enum
+(`'operator' | 'board_member' | 'mentor' | 'pre_mortem'`, or
+`null`/absent for the default) at
+`users/{uid}/user_stats/core.profile.questioningStyle` - the same
+document and pattern the sibling `novaTone` field already uses, read
+fresh from Firestore server-side on every request rather than trusted
+from the client. `firestore.rules` restricts the field to exactly those
+four strings or `null`; a bare "is a string" check would have let a
+client write arbitrary text straight into Nova's own prompt, since the
+server folds the value in as instruction text
+(`buildNovaQuestioningStyleModule` / `buildNovaStyleToneModule` in
+`server.ts`).
+
+- **Operator** - fast, blunt, names the real constraint. **Board
+  Member** - strategic, cost/consequence-framed. **Mentor** - warmer,
+  still direct, reflects back before challenging. **Pre-Mortem** -
+  stress-tests a plan, no reassurance layered on.
+- **Default (no style chosen): unchanged Nova behaviour.** No module is
+  added to the prompt at all when the field is unset - this was a
+  deliberate ship-date requirement, since `NOVA_SYSTEM_PROMPT` is already
+  direct and un-soft by default, so "off" and "closest to Operator" are
+  the same observable behaviour without needing to hardcode a default
+  choice. No existing user experiences an unannounced personality shift.
+- **Two modules, not one, because Nova has two shapes of surface.**
+  `getNovaQuestioningStyleAddendum` shapes HOW Nova asks a question -
+  wired into `/api/nova/chat` and the Nova Live voice route, the only two
+  surfaces holding a live, turn-by-turn conversation. `getNovaStyleToneAddendum`
+  is a tone-only reinterpretation of the same four styles for surfaces
+  that write one statement or decision and never ask anything - wired
+  into the diagnose-narrative generator and `/api/nova/one-less-thing`.
+  Deliberately **not** wired into voice-journal, resentment-analysis,
+  the executive-report generator, or `NOVA_MANAGER_COACH_PROMPT`: the
+  first two are Nova analysing what the user already said rather than
+  asking or deciding anything, and the last two are written for the
+  user's manager/an aggregate, where an individual's personal style
+  preference doesn't apply. Each decision is recorded in-code as an
+  explicit AUDIT comment above `getNovaStyleToneAddendum` in `server.ts`,
+  not left to be inferred from omission.
+- **The safety floor is unconditional and style-independent.** Both
+  style modules end with an explicit deference clause, and on the two
+  conversational surfaces `NOVA_SAFETY_INSTRUCTIONS` is still
+  unconditionally concatenated last regardless of which style (or none)
+  is active - no style, and no code path, can weaken or skip it.
+  Behaviourally regression-tested in `nova-questioning-style.route.test.ts`
+  (a crisis-signalling message still reaches the model with the real
+  safety floor present, alongside an active style).
+- **A pre-existing, separate gap, only partly closed:** none of the six
+  one-shot generators above originally had any crisis-safety instruction
+  at all (unlike the two conversational surfaces). Per explicit product
+  sign-off, voice-journal and resentment-analysis - the two most exposed
+  to raw personal free-text/audio - now get `NOVA_ONE_SHOT_SAFETY_FLOOR`
+  appended to their prompts, mirroring `NOVA_SAFETY_INSTRUCTIONS`'
+  pattern (a standing instruction, not a canned string - the model
+  generates its own supportive wording). The diagnose-narrative,
+  one-less-thing, executive-report, and manager-coach generators still
+  have no safety floor; this remains open, lower-priority (they process
+  a short task label, numeric aggregates, or scores already computed
+  deterministically, not open-ended personal disclosure).
+
 ## 4. Safety without surveillance (Guardian)
 
 The Guardian trusted-contact system's actual send path,

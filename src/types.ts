@@ -160,7 +160,7 @@ export interface UserProfileData {
   // How Nova asks questions, not how it sounds (novaTone above) - a
   // separate axis the user opts into. Unset/undefined means the default
   // behaviour: no style module is added to Nova's prompt at all.
-  questioningStyle?: 'operator' | 'board_member' | 'mentor' | 'pre_mortem';
+  questioningStyle?: 'operator' | 'board_member' | 'mentor' | 'pre_mortem' | null;
   primaryDrain?: string;
   authRole?: AuthRole;
   authScope?: AuthScope;

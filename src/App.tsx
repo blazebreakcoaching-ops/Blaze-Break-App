@@ -2278,7 +2278,12 @@ export default function App() {
                   onStyleChange={(style) =>
                     setStats((prev) =>
                       prev.profile
-                        ? { ...prev, profile: { ...prev.profile, questioningStyle: style } }
+                        // Firestore's client SDK rejects an explicit `undefined`
+                        // field value outright (setDoc throws), so "Off" has to
+                        // persist as `null` - writing `style` as-is here would
+                        // silently fail to save the moment someone switches back
+                        // to the default after trying a style.
+                        ? { ...prev, profile: { ...prev.profile, questioningStyle: style ?? null } }
                         : prev,
                     )
                   }
