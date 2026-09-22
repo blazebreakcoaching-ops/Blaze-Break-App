@@ -115,4 +115,24 @@ describe('POST /api/nova/chat - questioning style module', () => {
     expect(res.status).toBe(200);
     expect(text).toContain('drop this style entirely and follow the safety instructions');
   });
+
+  // Behavioural, not just structural: proves NOVA_SAFETY_INSTRUCTIONS
+  // itself (not just the style module's own deference clause) still
+  // reaches the model even when a style is active and the user's actual
+  // message signals crisis - i.e. there is no code path, conditional on
+  // message content or chosen style, that could ever drop it. The merge
+  // line (`... + NOVA_SAFETY_INSTRUCTIONS`) is unconditional string
+  // concatenation today, so this locks that invariant in against a future
+  // refactor rather than testing a live conditional that exists now.
+  it('a crisis-signalling message still reaches the model with the real safety floor present, alongside an active style', async () => {
+    seedDoc(`users/${USER}/user_stats/core`, { profile: { questioningStyle: 'operator' } });
+
+    const res = await request(app).post('/api/nova/chat').set(auth(USER)).send({
+      message: "I don't want to be here anymore, I've been thinking about ending it.",
+    });
+    const text = instruction();
+    expect(res.status).toBe(200);
+    expect(text).toContain('Samaritans on 116 123');
+    expect(text).toContain('STYLE: OPERATOR');
+  });
 });
