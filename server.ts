@@ -1378,6 +1378,41 @@ async function getNovaQuestioningStyleAddendum(uid: string, firestoreDb: any): P
   }
 }
 
+// AUDIT (per-surface decision, recorded explicitly rather than by
+// omission): every place in this file that builds a "You are Nova" prompt
+// was checked against whether the questioning-style module belongs there.
+// getNovaQuestioningStyleAddendum is wired into exactly two call sites -
+// /api/nova/chat and the Nova Live voice route - because those are the
+// only two surfaces where Nova is holding a live, turn-by-turn
+// conversation and genuinely asking the user anything. Every other
+// "You are Nova" surface is a one-shot generator producing a fixed-shape
+// analysis or report, never asking the user a question at all, so a
+// "questioning style" has nothing to attach to there:
+//   - the diagnose-narrative generator (~line 2358: 3-4 sentence coaching
+//     analysis from diagnostic scores)
+//   - /api/nova/voice-journal (~line 2572: transcription + fixed-shape
+//     JSON analysis of a voice memo)
+//   - /api/nova/one-less-thing (~line 2668: single triage decision + JSON)
+//   - /api/nova/resentment-analysis (~line 9439: structured pattern
+//     extraction from raw venting text, fixed JSON shape)
+//   - /api/signals/executive-report (~line 9534: 2-3 sentence report
+//     summary from numeric aggregates only, no free text)
+//   - NOVA_MANAGER_COACH_PROMPT (~line 7072: one-shot manager coaching
+//     from k-anonymised aggregate signals, never an individual's content)
+// SEPARATE, PRE-EXISTING FINDING (not fixed here, per explicit scope -
+// this task is the questioning-style feature, not a safety-floor sweep):
+// none of the six one-shot generators above ever append
+// NOVA_SAFETY_INSTRUCTIONS - each calls ai.models.generateContent with
+// the persona text folded directly into `contents`, with no
+// `systemInstruction` and no safety floor at all. The two most exposed
+// to genuinely raw personal content are voice-journal (a spoken diary
+// entry) and resentment-analysis (explicitly-invited "unprofessional,
+// petty" venting) - both process free-text/audio a person could plausibly
+// use to disclose real distress, with nothing in the prompt telling the
+// model what to do if they did. This predates the questioning-style work
+// and needs a product decision on remediation, not a unilateral fix
+// bundled into this change.
+
 async function getNovaContextAndMetadata(uid: string, firestoreDb: any): Promise<{ systemInstructionsAddendum: string; metadata: NovaConsentMetadata }> {
   const metadata: NovaConsentMetadata = {
     contextTriggered: false,
