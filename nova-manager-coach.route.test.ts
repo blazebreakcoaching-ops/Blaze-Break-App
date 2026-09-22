@@ -91,6 +91,30 @@ describe('GET /api/org/:orgId/manager-coach — k-anonymity gate', () => {
   });
 });
 
+// This surface previously had no safety floor at all, unlike every
+// conversational surface. It never sees an individual's own words - only
+// pre-aggregated team numbers - so there's no message to read distress out
+// of and the crisis-line pointer the other one-shot generators' safety
+// floor gives doesn't apply here. What this floor guards against instead:
+// presenting an aggregate as a clinical judgement, or nudging a manager to
+// act on a specific unnamed person from a team average.
+describe('GET /api/org/:orgId/manager-coach — safety floor', () => {
+  it('always includes the safety floor in the prompt sent to the model', async () => {
+    seedOrg(3, 3);
+    await request(app).get(`/api/org/${ORG}/manager-coach`).set(auth(ADMIN));
+    const callArg = h.generateContent.mock.calls[0][0];
+    expect(callArg.contents).toContain('Do not make medical or clinical claims');
+    expect(callArg.contents).toContain('real HR, EAP, or safeguarding process');
+  });
+
+  it('forbids treating an aggregate number as grounds to single out an individual', async () => {
+    seedOrg(3, 3);
+    await request(app).get(`/api/org/${ORG}/manager-coach`).set(auth(ADMIN));
+    const callArg = h.generateContent.mock.calls[0][0];
+    expect(callArg.contents).toContain('Never suggest the manager try to identify, single out, or personally intervene');
+  });
+});
+
 describe('GET /api/org/:orgId/manager-coach — quota and failure handling', () => {
   it('enforces the daily quota once exhausted', async () => {
     seedOrg(3, 3);
