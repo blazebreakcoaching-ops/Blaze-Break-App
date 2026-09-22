@@ -107,8 +107,8 @@ export const AuthActionPage = () => {
         className="bg-surface border border-border rounded-xl p-8 max-w-md w-full shadow-lg space-y-6"
       >
         <div className="w-12 h-12 bg-primary/10 rounded-2xl flex items-center justify-center">
-          <img src="/brand/flame-icon-light.png" alt="" className="w-6 h-6 dark:hidden" />
-          <img src="/brand/flame-icon-dark.png" alt="" className="w-6 h-6 hidden dark:block" />
+          <img src="/brand/flame-mark-light.png" alt="" className="w-6 h-6 dark:hidden" />
+          <img src="/brand/flame-mark-dark.png" alt="" className="w-6 h-6 hidden dark:block" />
         </div>
 
         {stage === 'loading' && (
