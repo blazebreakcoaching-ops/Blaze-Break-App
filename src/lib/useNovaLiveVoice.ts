@@ -239,7 +239,15 @@ export function useNovaLiveVoice(options: UseNovaLiveVoiceOptions = {}) {
       let usingWorklet = false;
       if (ctx.audioWorklet) {
         try {
-          await ctx.audioWorklet.addModule(new URL('./pcm-capture-processor.js', import.meta.url));
+          // '?no-inline' forces Vite to always emit this as a real,
+          // same-origin file instead of a base64 data: URI - the default
+          // for any asset under its 4KB inline threshold (this file is
+          // ~1.7KB). Without it, addModule() was loading a data: script,
+          // which the production CSP's script-src (deliberately 'self'
+          // plus a short allowlist, no 'data:') rejects outright - so
+          // every voice call silently fell back to the deprecated,
+          // main-thread ScriptProcessorNode instead of the worklet.
+          await ctx.audioWorklet.addModule(new URL('./pcm-capture-processor.js?no-inline', import.meta.url));
           const node = new AudioWorkletNode(ctx, 'pcm-capture-processor');
           node.port.onmessage = (ev: MessageEvent) => sendPcm(ev.data as ArrayBuffer);
           source.connect(node);

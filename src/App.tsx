@@ -1261,7 +1261,15 @@ export default function App() {
     // The server-side scheduled check (low score sustained, or check-in gone
     // stale) has nothing to look at without this — report on every score
     // computation so that check reflects reality, not stale data.
-    if (user) {
+    //
+    // Guarded on `typeof === "number"` because `stats` starts with no
+    // recoveryScore field at all (see its useState initializer above) -
+    // this effect used to fire the moment `user` became truthy, before the
+    // real value ever loaded from Firestore, sending `{score: undefined}`.
+    // JSON.stringify silently drops an undefined property, so the server
+    // received an empty body and correctly 400'd on every sign-in - a real
+    // request that never had anything useful to report in the first place.
+    if (user && typeof stats.recoveryScore === "number") {
       reportPulseStatus(stats.recoveryScore);
     }
   }, [stats.recoveryScore, user]);
