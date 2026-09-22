@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { ArrowRight, ShieldCheck, BatteryLow, MessageSquareText, LogIn, ArrowLeft, Loader2, Mail, Lock, Sun, Moon } from 'lucide-react';
+import { ArrowRight, ShieldCheck, BatteryLow, MessageSquareText, LogIn, ArrowLeft, Loader2, Mail, Lock, Sun, Moon, Briefcase, TrendingUp, Users } from 'lucide-react';
 import { useAuth } from '../lib/auth';
 import { useFocusTrap } from '../lib/useFocusTrap';
 import { secureApiFetch } from '../lib/secure-api';
@@ -145,8 +145,8 @@ export const LandingPage = ({ onStart, onOpenTrustCentre, darkMode, setDarkMode 
       <nav className="fixed top-0 w-full z-50 px-8 py-6 flex justify-between items-center backdrop-blur-xl bg-background/70 border-b border-white/[0.04]">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 flex items-center justify-center shadow-xl shadow-primary/20">
-            <img src="/brand/flame-mark-light.png" alt="" className="w-10 h-10 dark:hidden" />
-            <img src="/brand/flame-mark-dark.png" alt="" className="w-10 h-10 hidden dark:block" />
+            <img src="/brand/flame-icon-light.png" alt="" className="w-10 h-10 dark:hidden" />
+            <img src="/brand/flame-icon-dark.png" alt="" className="w-10 h-10 hidden dark:block" />
           </div>
           <div className="flex flex-col">
             <h1 className="font-serif font-black text-lg tracking-tight text-text-main leading-none">Blaze Break</h1>
@@ -240,11 +240,57 @@ export const LandingPage = ({ onStart, onOpenTrustCentre, darkMode, setDarkMode 
         </div>
       </section>
 
+      {/* Who it's for - names the audience explicitly rather than leaving
+          "high performers" as the only signal, so a specific reader sees
+          themselves described rather than a generic pitch. */}
+      <section className="py-16 px-6 max-w-7xl mx-auto relative z-10">
+        <div className="text-center max-w-2xl mx-auto mb-12 space-y-4">
+          <span className="inline-block px-4 py-1.5 bg-accent/10 border border-accent/20 text-[#9a3412] dark:text-accent rounded-full text-xs uppercase tracking-[0.2em] font-black">
+            Who this is built for
+          </span>
+          <h2 className="text-3xl sm:text-4xl font-light tracking-tight text-text-main">
+            For people who can't just <span className="italic font-serif">"switch off."</span>
+          </h2>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+          <div className="bg-surface/60 border border-white/[0.04] p-8 rounded-2xl space-y-4 shadow-lg">
+            <div className="w-12 h-12 bg-accent/10 border border-accent/20 rounded-xl flex items-center justify-center text-[#9a3412] dark:text-accent">
+              <TrendingUp className="w-6 h-6" />
+            </div>
+            <h3 className="text-lg font-bold text-text-main tracking-wide">Founders &amp; Operators</h3>
+            <p className="text-text-muted text-xs leading-relaxed">
+              Building something from nothing, on a clock that never really stops. You've normalised exhaustion because stopping feels like losing ground you can't get back.
+            </p>
+          </div>
+          <div className="bg-surface/60 border border-white/[0.04] p-8 rounded-2xl space-y-4 shadow-lg">
+            <div className="w-12 h-12 bg-accent/10 border border-accent/20 rounded-xl flex items-center justify-center text-[#9a3412] dark:text-accent">
+              <Briefcase className="w-6 h-6" />
+            </div>
+            <h3 className="text-lg font-bold text-text-main tracking-wide">Senior Leaders &amp; Executives</h3>
+            <p className="text-text-muted text-xs leading-relaxed">
+              Carrying decisions other people never see, in a role where "I'm running on empty" isn't really something you get to say out loud.
+            </p>
+          </div>
+          <div className="bg-surface/60 border border-white/[0.04] p-8 rounded-2xl space-y-4 shadow-lg">
+            <div className="w-12 h-12 bg-accent/10 border border-accent/20 rounded-xl flex items-center justify-center text-[#9a3412] dark:text-accent">
+              <Users className="w-6 h-6" />
+            </div>
+            <h3 className="text-lg font-bold text-text-main tracking-wide">High-Stakes Professionals</h3>
+            <p className="text-text-muted text-xs leading-relaxed">
+              Consultants, clinicians, partners, anyone whose output is tied directly to hours they don't actually have left to give.
+            </p>
+          </div>
+        </div>
+        <p className="text-center text-text-muted text-sm max-w-xl mx-auto mt-12 leading-relaxed">
+          If your job has ever made someone say <span className="italic">"must be nice"</span> about a burnout you couldn't talk about - this was built with you specifically in mind, not as a generic wellness app repurposed for anyone.
+        </p>
+      </section>
+
       {/* Footer */}
       <footer className="py-16 border-t border-white/[0.03] mt-20 text-center opacity-70">
         <div className="flex items-center justify-center gap-3 mb-4">
-          <img src="/brand/flame-mark-light.png" alt="" className="w-8 h-8 dark:hidden" />
-          <img src="/brand/flame-mark-dark.png" alt="" className="w-8 h-8 hidden dark:block" />
+          <img src="/brand/flame-icon-light.png" alt="" className="w-8 h-8 dark:hidden" />
+          <img src="/brand/flame-icon-dark.png" alt="" className="w-8 h-8 hidden dark:block" />
           <p className="font-bold text-sm tracking-tight text-text-main">Blaze Break</p>
         </div>
         <p className="text-[11px] uppercase tracking-[0.3em] font-black text-text-muted">
@@ -290,8 +336,8 @@ export const LandingPage = ({ onStart, onOpenTrustCentre, darkMode, setDarkMode 
 
               <div className="text-left pt-4">
                 <div className="w-12 h-12 bg-primary/10 rounded-2xl flex items-center justify-center mb-4">
-                  <img src="/brand/flame-mark-light.png" alt="" className="w-6 h-6 dark:hidden" />
-                  <img src="/brand/flame-mark-dark.png" alt="" className="w-6 h-6 hidden dark:block" />
+                  <img src="/brand/flame-icon-light.png" alt="" className="w-6 h-6 dark:hidden" />
+                  <img src="/brand/flame-icon-dark.png" alt="" className="w-6 h-6 hidden dark:block" />
                 </div>
                 <h3 id="auth-modal-title" className="text-2xl font-bold text-text-main tracking-tight">
                   {authMode === 'forgot' ? 'Reset your password' : authMode === 'signup' ? 'Create your account' : 'Access Account'}

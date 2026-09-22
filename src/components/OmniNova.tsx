@@ -234,12 +234,12 @@ export const OmniNova = ({ activeTab, fingerprint, stats }: OmniNovaProps) => {
             name; a non-empty alt would announce redundant image text to
             screen reader users on top of that label. */}
         <img
-          src="/brand/flame-mark-light.png"
+          src="/brand/flame-icon-light.png"
           alt=""
           className="w-7 h-7 dark:hidden group-hover:rotate-12 transition-transform"
         />
         <img
-          src="/brand/flame-mark-dark.png"
+          src="/brand/flame-icon-dark.png"
           alt=""
           className="w-7 h-7 hidden dark:block group-hover:rotate-12 transition-transform"
         />
