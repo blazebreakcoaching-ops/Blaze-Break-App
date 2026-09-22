@@ -23,6 +23,7 @@ import { db } from '../lib/firestore';
 import { doc, getDoc } from "firebase/firestore";
 import { NovaVoiceCall } from "./NovaVoiceCall";
 import { NovaToneControl } from "./NovaToneControl";
+import { NovaStyleControl, QUESTIONING_STYLE_OPTIONS, NovaQuestioningStyle } from "./NovaStyleControl";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { getFeatureFlags } from "../lib/feature-flags";
 
@@ -60,6 +61,7 @@ export const NovaChat = ({
   onAwardPoints,
   onNavigate,
   onToneChange,
+  onStyleChange,
 }: {
   systemInstruction?: string;
   initialMessage?: string;
@@ -67,6 +69,7 @@ export const NovaChat = ({
   onAwardPoints?: (amount: number, reason: string) => void;
   onNavigate?: (tab: string) => void;
   onToneChange?: (tone: string) => void;
+  onStyleChange?: (style: NovaQuestioningStyle | undefined) => void;
 }) => {
   // How Nova should sound, re-tunable at any time. Source of truth for the
   // chat's own context is localStorage's blaze_profile (what getDynamicContext
@@ -90,6 +93,31 @@ export const NovaChat = ({
       // Non-fatal - the in-session context below still uses the new value.
     }
     onToneChange?.(tone);
+  };
+  // How Nova questions the user - a separate, opt-in axis from tone above.
+  // Purely a server-side concern (the chosen style is read fresh from
+  // Firestore by both /api/nova/chat and the Nova Live voice route), so
+  // unlike novaTone this never needs to be threaded into getDynamicContext
+  // or the client-built systemInstruction below - only persisted.
+  const readStyle = (): NovaQuestioningStyle | undefined => {
+    try {
+      const p = localStorage.getItem("blaze_profile");
+      const style = p ? JSON.parse(p).questioningStyle : undefined;
+      return QUESTIONING_STYLE_OPTIONS.some((s) => s.value === style) ? style : undefined;
+    } catch {
+      return undefined;
+    }
+  };
+  const [questioningStyle, setQuestioningStyle] = useState<NovaQuestioningStyle | undefined>(readStyle);
+  const handleStyleChange = (style: NovaQuestioningStyle | undefined) => {
+    setQuestioningStyle(style);
+    try {
+      const p = JSON.parse(localStorage.getItem("blaze_profile") || "{}");
+      localStorage.setItem("blaze_profile", JSON.stringify({ ...p, questioningStyle: style }));
+    } catch {
+      // Non-fatal - onStyleChange below still updates the canonical profile.
+    }
+    onStyleChange?.(style);
   };
   const [messages, setMessages] = useState<Message[]>(() => {
     const saved = localStorage.getItem("nova_chat_history");
@@ -685,6 +713,7 @@ We are now in real-time voice mode. Be concise and conversational, you don't nee
         </div>
         <div className="flex items-center gap-2">
           <NovaToneControl value={novaTone} onChange={handleToneChange} />
+          <NovaStyleControl value={questioningStyle} onChange={handleStyleChange} />
           {voiceFeatureEnabled && (
             <button
               onClick={() => setIsVoiceEnabled(!isVoiceEnabled)}

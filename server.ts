@@ -1304,6 +1304,80 @@ interface NovaConsentMetadata {
 // would be (see docs/AI_COST_CONTROL.md).
 const NOVA_CONTEXT_RECENT_LIMIT = 60;
 
+// Nova Questioning Style - a user-chosen lens on HOW Nova asks, never on
+// WHO Nova is. Genuinely opt-in (unset = today's unchanged behaviour, no
+// module added at all) and orthogonal to novaTone (word choice/register) -
+// this is about interaction pattern instead. Read fresh from Firestore by
+// getNovaQuestioningStyleAddendum below and reaches every surface that
+// talks to Nova (text chat and Nova Live voice) because both call sites
+// call that one function, the same "single place, not duplicated per
+// surface" pattern getNovaContextAndMetadata already established.
+type NovaQuestioningStyle = "operator" | "board_member" | "mentor" | "pre_mortem";
+
+const NOVA_QUESTIONING_STYLE_BLOCKS: Record<NovaQuestioningStyle, string> = {
+  operator: `STYLE: OPERATOR
+Fast, blunt, constraint-focused. Assume the user is time-poor and wants the shortest real path to the actual blocker, not a tour of the problem.
+- Open with a question that names the likely real constraint, not a generic "how are you feeling" opener.
+- If the user gives a vague or diplomatic answer, name that it was vague and ask again more specifically. Do not accept a non-answer twice.
+- Favour questions with a forced choice over open-ended ones where useful: "Is this a capacity problem or a boundary problem?" beats "tell me more."`,
+  board_member: `STYLE: BOARD MEMBER
+Strategic, second-order, outcome-focused. Ask as if evaluating a decision someone else will have to live with the consequences of.
+- Ask about cost and consequence before asking about feelings: what does the status quo cost them, who else is absorbing the cost, what does "still true in six months" look like.
+- Push toward a decision or a named trade-off, not just insight.`,
+  mentor: `STYLE: MENTOR
+Warmer, still direct, asks "why" before "what." Suited to someone who needs to be met before being challenged.
+- Open by reflecting back what they said in one honest sentence before asking the next question - earn the challenge, don't skip to it.
+- Still refuse to validate a self-limiting or powerlessness narrative; the warmth is in tone, not in agreement.`,
+  pre_mortem: `STYLE: PRE-MORTEM
+Stress-tests a plan or decision before it happens.
+- Ask what would have to be true for the current plan to fail.
+- Ask what the user is currently avoiding looking at directly.
+- Do not soften this style with reassurance - its entire value is discomfort surfaced early, safely, before a real failure would.`,
+};
+
+function buildNovaQuestioningStyleModule(style: unknown): string {
+  if (typeof style !== "string" || !(style in NOVA_QUESTIONING_STYLE_BLOCKS)) return "";
+  const block = NOVA_QUESTIONING_STYLE_BLOCKS[style as NovaQuestioningStyle];
+  return `
+--- NOVA QUESTIONING STYLE (CHOSEN BY THE USER) ---
+This changes HOW you ask, not WHO you are - you remain Nova. The style is a lens, not a costume change.
+
+${block}
+
+HOW TO ASK, REGARDLESS OF STYLE (this is what makes it feel like a real conversation instead of a script):
+1. One question at a time. Never stack two questions in one message.
+2. Every question must be built from what the user JUST said, not from a generic bank. If they mention a specific person, deadline, or number, your next question references that specific detail - never a templated follow-up that would fit any answer.
+3. If an answer is surface-level, don't move on - ask one level deeper before advancing ("that's what happened - what did you actually do in the moment?").
+4. Vary sentence length and rhythm like a real person would - not every line is a question; sometimes a single flat observation lands harder than another question.
+5. Never ask a question you could answer yourself from context already given this session.
+
+BOUNDARIES THAT APPLY TO THIS STYLE, NO EXCEPTIONS:
+- This style may not probe for, infer, or imply a mental-health diagnosis, risk level, or clinical judgement about the user.
+- "Advanced reasoning" here means well-sequenced, adaptive questioning - not claiming clinical insight, predicting outcomes you can't know, or fabricating certainty you don't have.
+- If at any point the user's answer signals real distress or crisis, drop this style entirely and follow the safety instructions that govern this conversation - no style is worth continuing past that.
+--------------------------------------------------------------`;
+}
+
+// Reads the user's chosen style fresh from Firestore rather than trusting
+// a client-supplied value, same reasoning as every other prompt-shaping
+// signal in this file (getNovaContextAndMetadata's consent reads, etc.) -
+// keeps it out of the client's control and consistent across every device
+// someone is signed into. Deliberately its own function, not folded into
+// getNovaContextAndMetadata: that one is gated behind the user having a
+// nova_permissions doc at all (no doc = no context, by design), but a
+// self-chosen interaction style isn't recovery data being shared under
+// consent - it should still apply even for an account with no permissions
+// doc yet.
+async function getNovaQuestioningStyleAddendum(uid: string, firestoreDb: any): Promise<string> {
+  try {
+    const statsSnap = await firestoreDb.collection("users").doc(uid).collection("user_stats").doc("core").get();
+    const style = statsSnap.exists ? statsSnap.data()?.profile?.questioningStyle : undefined;
+    return buildNovaQuestioningStyleModule(style);
+  } catch {
+    return "";
+  }
+}
+
 async function getNovaContextAndMetadata(uid: string, firestoreDb: any): Promise<{ systemInstructionsAddendum: string; metadata: NovaConsentMetadata }> {
   const metadata: NovaConsentMetadata = {
     contextTriggered: false,
@@ -2087,8 +2161,11 @@ app.post("/api/nova/chat", novaChatLimiter, verifyAppCheck, authenticateFirebase
     if (uid) {
       try {
         const db = getDb();
-        const contextResult = await getNovaContextAndMetadata(uid, db);
-        contextAddendum = contextResult.systemInstructionsAddendum;
+        const [contextResult, styleAddendum] = await Promise.all([
+          getNovaContextAndMetadata(uid, db),
+          getNovaQuestioningStyleAddendum(uid, db),
+        ]);
+        contextAddendum = contextResult.systemInstructionsAddendum + styleAddendum;
         contextMetadata = contextResult.metadata;
       } catch (e) {
         console.warn("Nova context build failed - continuing without it.", e);
@@ -9638,8 +9715,14 @@ if (process.env.TEST_MODE !== 'true') {
       // mood pulses, derived recovery trends, saved memories. Best-effort by
       // design (the function itself already degrades to "" on any failure),
       // so a Firestore hiccup here never blocks the call from starting.
-      const contextResult = await getNovaContextAndMetadata(uid, db);
-      const liveSystemInstruction = NOVA_LIVE_VOICE_PERSONA + contextResult.systemInstructionsAddendum;
+      // getNovaQuestioningStyleAddendum alongside it means a chosen
+      // questioning style applies to voice too, not just text - same
+      // Firestore-sourced value, so it's consistent across both.
+      const [contextResult, styleAddendum] = await Promise.all([
+        getNovaContextAndMetadata(uid, db),
+        getNovaQuestioningStyleAddendum(uid, db),
+      ]);
+      const liveSystemInstruction = NOVA_LIVE_VOICE_PERSONA + contextResult.systemInstructionsAddendum + styleAddendum;
 
       // Real per-second cost here (audio in + audio out), so a hard ceiling
       // matters even for a legitimate, authenticated user — 15 minutes

@@ -6,6 +6,7 @@ import { NotificationSettingsView } from './NotificationSettingsView';
 import { FeatureFlagsView } from './FeatureFlagsView';
 import { FeedbackForm } from './FeedbackForm';
 import { SecuritySettingsView } from './SecuritySettingsView';
+import { NovaStyleControl } from './NovaStyleControl';
 import { cn } from '../lib/utils';
 import { useFocusTrap } from '../lib/useFocusTrap';
 import { secureApiFetch } from '../lib/secure-api';
@@ -444,6 +445,24 @@ export const SettingsModal = ({ profile, onSave, onClose, onOpenPrivacyCentre }:
                      </button>
                    </div>
                    <p className="text-xs text-text-muted">Receive supportive reminders.</p>
+                 </div>
+
+                 {/* Card 5 - Nova Questioning Style */}
+                 <div className="col-span-1 md:col-span-2 border border-border dark:border-border rounded-xl p-4 space-y-3">
+                   <div className="flex items-center justify-between gap-4 flex-wrap">
+                     <div>
+                       <h4 className="text-sm font-bold text-text-main">Nova's Questioning Style</h4>
+                       <p className="text-xs text-text-muted mt-1">Changes how Nova asks - never who Nova is. Off by default; applies to text chat and voice.</p>
+                     </div>
+                     <NovaStyleControl
+                       value={formData.questioningStyle}
+                       onChange={(style) => {
+                         const next = { ...formData, questioningStyle: style };
+                         setFormData(next);
+                         onSave(next);
+                       }}
+                     />
+                   </div>
                  </div>
 
                  {/* Support / Data Deletion */}
