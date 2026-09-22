@@ -33,6 +33,12 @@ const CAPABILITY_CLAIMING_STRINGS: { file: string; text: string }[] = [
   { file: 'src/components/NovaGuardianRelay.tsx', text: 'One-Touch Alert' },
   { file: 'src/components/NovaGuardianRelay.tsx', text: 'Manual SOS' },
   { file: 'src/components/CrisisSupport.tsx', text: 'Sends a text asking them to call you right now' },
+  // Guardian Support Invitation's own review sheet - reuses the same send
+  // capability, so its own "Send it now" claim needs the same gate. Call,
+  // copy, and "open my messaging app" are deliberately NOT in this list:
+  // they hand off to the device's own dialer/clipboard/SMS app rather than
+  // this product's Twilio pipeline, so alertsEnabled has no bearing on them.
+  { file: 'src/components/GuardianConfirmSheet.tsx', text: 'Send it now' },
 ];
 
 const conditionMentionsAlertsEnabled = (node: ts.Node): boolean => {

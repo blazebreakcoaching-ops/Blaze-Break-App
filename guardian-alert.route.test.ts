@@ -415,6 +415,46 @@ describe('Guardian alerts flag (§E.7)', () => {
   });
 });
 
+// The Guardian Support Invitation card is a separate, newer surface from
+// Tier 1 alert sending, so it gets its own independent flag - defaulting
+// OFF, unlike alertsEnabled above (which defaults on only because Tier 1
+// predates its own flag). Turning invitationEnabled off must never affect
+// whether an alert can still be SENT once a user reaches the flow some
+// other way (e.g. the always-available Ally tab) - the two flags are
+// deliberately orthogonal.
+describe('Guardian Support Invitation flag (independent of alertsEnabled)', () => {
+  const ORIGINAL_ENV = process.env.GUARDIAN_SUPPORT_INVITATION_ENABLED;
+  afterEach(() => {
+    if (ORIGINAL_ENV === undefined) delete process.env.GUARDIAN_SUPPORT_INVITATION_ENABLED;
+    else process.env.GUARDIAN_SUPPORT_INVITATION_ENABLED = ORIGINAL_ENV;
+  });
+
+  it('GET /api/guardian/config reports invitationEnabled=false by default (new, unreviewed surface)', async () => {
+    delete process.env.GUARDIAN_SUPPORT_INVITATION_ENABLED;
+    const res = await request(app).get('/api/guardian/config').set(auth(USER));
+    expect(res.status).toBe(200);
+    expect(res.body.invitationEnabled).toBe(false);
+    // Independent of alertsEnabled, which stays on by default regardless.
+    expect(res.body.alertsEnabled).toBe(true);
+  });
+
+  it('GET /api/guardian/config reports invitationEnabled=true only when explicitly turned on', async () => {
+    process.env.GUARDIAN_SUPPORT_INVITATION_ENABLED = 'true';
+    const res = await request(app).get('/api/guardian/config').set(auth(USER));
+    expect(res.body.invitationEnabled).toBe(true);
+  });
+
+  it('turning invitationEnabled off never blocks an actual send through this route', async () => {
+    delete process.env.GUARDIAN_SUPPORT_INVITATION_ENABLED;
+    seedUserWithGuardian(USER);
+    const res = await request(app)
+      .post('/api/guardian/alert').set(auth(USER))
+      .send({ contactId: 'guardian_1', idempotencyKey: 'idem_invitation_off_still_sends' });
+    expect(res.status).toBe(200);
+    expect(h.twilioCreate).toHaveBeenCalledTimes(1);
+  });
+});
+
 // Guardian contacts now persist to a validated support_circle subcollection
 // (src/lib/support-circle.ts) instead of the unvalidated user_stats/core
 // .supportCircle array - the tests above all still exercise the legacy-
@@ -460,6 +500,56 @@ describe('POST /api/guardian/alert — reads from the validated support_circle s
       .send({ contactId: 'peer_1', idempotencyKey: 'subcollection_non_guardian_key' });
     expect(res.status).toBe(403);
     expect(res.body.error).toBe('not_a_guardian');
+    expect(h.twilioCreate).not.toHaveBeenCalled();
+  });
+});
+
+// The Guardian Support Invitation flow (docs/GUARDIAN_SUPPORT_INVITATION.md)
+// reuses this exact endpoint rather than building a second send path - it
+// adds one new optional field, templateId, selecting between the two
+// pre-approved message templates in guardian-support-invitation.ts. Every
+// existing caller (NovaGuardianRelay.tsx, CrisisSupport.tsx) omits it
+// entirely and must keep working exactly as before.
+describe('POST /api/guardian/alert — templateId (Guardian Support Invitation)', () => {
+  it('omitting templateId still uses the original fixed template, unchanged', async () => {
+    seedUserWithGuardian(USER);
+    const res = await request(app)
+      .post('/api/guardian/alert').set(auth(USER))
+      .send({ contactId: 'guardian_1', idempotencyKey: 'idem_no_template_01' });
+    expect(res.status).toBe(200);
+    const sentBody = h.twilioCreate.mock.calls[0][0].body;
+    expect(sentBody).toContain('has asked you to call them');
+    expect(sentBody).toContain('Blaze Break');
+  });
+
+  it('a valid templateId selects the new message, greeting the guardian by name and identifying the sender', async () => {
+    seedUserWithGuardian(USER);
+    const res = await request(app)
+      .post('/api/guardian/alert').set(auth(USER))
+      .send({ contactId: 'guardian_1', idempotencyKey: 'idem_standard_template_01', templateId: 'standard' });
+    expect(res.status).toBe(200);
+    const sentBody = h.twilioCreate.mock.calls[0][0].body;
+    expect(sentBody).toContain('Hi Sam,');       // guardian's first name
+    expect(sentBody).toContain("it's Jordan.");  // sender's first name
+    expect(sentBody).toContain('Blaze Break');
+  });
+
+  it('the more_urgent template is available and distinct from standard', async () => {
+    seedUserWithGuardian(USER);
+    const res = await request(app)
+      .post('/api/guardian/alert').set(auth(USER))
+      .send({ contactId: 'guardian_1', idempotencyKey: 'idem_urgent_template_01', templateId: 'more_urgent' });
+    expect(res.status).toBe(200);
+    const sentBody = h.twilioCreate.mock.calls[0][0].body;
+    expect(sentBody).toContain('overwhelmed');
+  });
+
+  it('rejects an invalid templateId rather than falling back silently', async () => {
+    seedUserWithGuardian(USER);
+    const res = await request(app)
+      .post('/api/guardian/alert').set(auth(USER))
+      .send({ contactId: 'guardian_1', idempotencyKey: 'idem_bad_template_01', templateId: 'emergency_now' });
+    expect(res.status).toBe(400);
     expect(h.twilioCreate).not.toHaveBeenCalled();
   });
 });

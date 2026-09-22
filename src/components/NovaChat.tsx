@@ -26,6 +26,9 @@ import { NovaToneControl } from "./NovaToneControl";
 import { NovaStyleControl, QUESTIONING_STYLE_OPTIONS, NovaQuestioningStyle } from "./NovaStyleControl";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { getFeatureFlags } from "../lib/feature-flags";
+import { GuardianSupportInvitation } from "./GuardianSupportInvitation";
+import { useGuardianSupportInvitationEnabled } from "../lib/useGuardianSupportInvitationEnabled";
+import { logGuardianSupportEvent } from "../lib/guardian-support-analytics";
 
 // The server's ChatRequestSchema (server.ts) caps history at 50 entries
 // and systemInstruction at 3000 characters, and rejects the whole request
@@ -38,6 +41,21 @@ import { getFeatureFlags } from "../lib/feature-flags";
 // happens now, so it can't be duplicated or bypass the consent gate.
 const NOVA_CHAT_HISTORY_LIMIT = 20;
 const NOVA_SYSTEM_INSTRUCTION_LIMIT = 2800;
+
+// Read fresh on each render rather than held in component state - this is
+// only needed the rare time a Guardian Support Invitation is actually
+// shown, so it's not worth a dedicated state slot kept in sync with
+// localStorage for the entire component's lifetime, matching the existing
+// ad-hoc "read blaze_profile directly" pattern already used elsewhere in
+// this file (readStyle, the initial-greeting effect).
+function readStoredFullName(): string | undefined {
+  try {
+    const raw = localStorage.getItem("blaze_profile");
+    return raw ? JSON.parse(raw)?.fullName : undefined;
+  } catch {
+    return undefined;
+  }
+}
 
 interface Message {
   role: "user" | "model";
@@ -252,6 +270,15 @@ export const NovaChat = ({
     tab?: string;
     description: string;
   } | null>(null);
+  // Guardian Support Invitation: whether Nova has offered it in THIS
+  // session already - never re-offered more than once in a conversation
+  // unless the user raises it again themselves (matches
+  // docs/GUARDIAN_SUPPORT_SPEC.md §C.2's own rule for its own guardian
+  // offer). Session-scoped in-memory state is enough here; this doesn't
+  // need to survive a reload.
+  const [activeGuardianOffer, setActiveGuardianOffer] = useState<{ reason: string } | null>(null);
+  const guardianOfferShownRef = useRef(false);
+  const guardianInvitationEnabled = useGuardianSupportInvitationEnabled();
   const scrollRef = useRef<HTMLDivElement>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const recognitionRef = useRef<any>(null);
@@ -666,6 +693,19 @@ We are now in real-time voice mode. Be concise and conversational, you don't nee
         });
       } else {
         setActiveToolSuggestion(null);
+      }
+
+      // Guardian Support Invitation: same planTrace pattern as
+      // suggest_feature above, but only ever shown once per session unless
+      // the user raises it again - offer_guardian_support already
+      // self-gates on the server flag (executeOfferGuardianSupport in
+      // server.ts), so `offered` only comes back true when the feature is
+      // actually on.
+      const guardianOfferCall = (data.planTrace || []).find((t: any) => t.tool === 'offer_guardian_support' && t.result?.offered);
+      if (guardianOfferCall && guardianInvitationEnabled && !guardianOfferShownRef.current) {
+        guardianOfferShownRef.current = true;
+        setActiveGuardianOffer({ reason: guardianOfferCall.result.reason });
+        logGuardianSupportEvent('invitation_shown');
       }
 
       const newMessages = [...messages, userMsg, botMessage];
@@ -1103,6 +1143,17 @@ We are now in real-time voice mode. Be concise and conversational, you don't nee
                           </button>
                         </div>
                       </motion.div>
+                    )}
+
+                  {activeGuardianOffer &&
+                    i === messages.length - 1 &&
+                    msg.role === "model" && (
+                      <div className="relative z-10 pt-1">
+                        <GuardianSupportInvitation
+                          userName={readStoredFullName()}
+                          onDismiss={() => setActiveGuardianOffer(null)}
+                        />
+                      </div>
                     )}
                 </div>
               </div>
