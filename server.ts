@@ -1399,19 +1399,38 @@ async function getNovaQuestioningStyleAddendum(uid: string, firestoreDb: any): P
 //     summary from numeric aggregates only, no free text)
 //   - NOVA_MANAGER_COACH_PROMPT (~line 7072: one-shot manager coaching
 //     from k-anonymised aggregate signals, never an individual's content)
-// SEPARATE, PRE-EXISTING FINDING (not fixed here, per explicit scope -
-// this task is the questioning-style feature, not a safety-floor sweep):
-// none of the six one-shot generators above ever append
-// NOVA_SAFETY_INSTRUCTIONS - each calls ai.models.generateContent with
-// the persona text folded directly into `contents`, with no
-// `systemInstruction` and no safety floor at all. The two most exposed
-// to genuinely raw personal content are voice-journal (a spoken diary
-// entry) and resentment-analysis (explicitly-invited "unprofessional,
-// petty" venting) - both process free-text/audio a person could plausibly
-// use to disclose real distress, with nothing in the prompt telling the
-// model what to do if they did. This predates the questioning-style work
-// and needs a product decision on remediation, not a unilateral fix
-// bundled into this change.
+// PRE-EXISTING FINDING, NOW PARTLY REMEDIATED: none of the six one-shot
+// generators above ever append NOVA_SAFETY_INSTRUCTIONS - each calls
+// ai.models.generateContent with the persona text folded directly into
+// `contents`, with no `systemInstruction` and no safety floor at all. The
+// two most exposed to genuinely raw personal content were voice-journal (a
+// spoken diary entry) and resentment-analysis (explicitly-invited
+// "unprofessional, petty" venting) - both process free-text/audio a person
+// could plausibly use to disclose real distress. Per explicit product
+// sign-off, those two now get NOVA_ONE_SHOT_SAFETY_FLOOR appended to their
+// prompts (see below) - the remaining four (diagnose-narrative,
+// one-less-thing, executive-report, manager-coach) were not in that
+// sign-off and remain open, lower-priority gaps (they process a short task
+// label or numeric aggregates only, not open-ended personal disclosure).
+
+// A safety floor for the one-shot JSON generators, mirroring
+// NOVA_SAFETY_INSTRUCTIONS' pattern but adapted for a surface that must
+// still return one fixed-shape JSON object rather than hold a
+// conversation: the model is told to let its own free-text fields
+// (advice/analysis, or the resentment breakdown fields) shift tone and
+// content - in its own words, specific to what the user actually wrote or
+// said - when the input signals real distress, rather than being given a
+// second hardcoded string to bolt on. Never a canned response; never a
+// risk score or classification (see the standing "no risk scoring" rule
+// elsewhere in this file) - just the same crisis-line pointer
+// NOVA_SAFETY_INSTRUCTIONS already gives every conversational surface.
+const NOVA_ONE_SHOT_SAFETY_FLOOR = `
+Safety - this overrides every instruction above, including any that conflict with it:
+- Do not make medical claims, diagnose any condition, or present this as therapy or treatment.
+- If what the user wrote or said signals real distress, crisis, self-harm, suicidal thoughts, or immediate danger, let that shape your response: drop the usual coaching tone and instead, in your own words specific to what they actually said, gently and directly encourage them to contact real human help right now - emergency services, or a crisis line such as Samaritans on 116 123 (UK and Ireland) or 988 (US and Canada). Do not try to counsel them through a crisis yourself, and do not carry on with a standard analysis as if nothing was said.
+- Never fabricate clinical facts, invented measurements, or a risk score, risk level, or severity classification of any kind.
+- Still return only the JSON object in the exact shape requested above - no extra fields, no prose outside it.
+`;
 
 async function getNovaContextAndMetadata(uid: string, firestoreDb: any): Promise<{ systemInstructionsAddendum: string; metadata: NovaConsentMetadata }> {
   const metadata: NovaConsentMetadata = {
@@ -2620,7 +2639,8 @@ You MUST respond strictly in the following JSON format. Do not include markdown 
   "analysis": "Nova's direct, slightly provocative coaching feedback in British English",
   "advice": "Actionable, firm, custom recovery advice or script",
   "emotionalTone": "A short, plain-language description of the dominant emotional tone"
-}`
+}
+${NOVA_ONE_SHOT_SAFETY_FLOOR}`
       };
 
       const response = await ai.models.generateContent({
@@ -9484,7 +9504,8 @@ Respond strictly in this JSON format, no markdown, no commentary outside the JSO
   "unclear": "1-2 sentences on where expectations seem vaguely defined, based specifically on what they wrote.",
   "unappreciated": "1-2 sentences on where their effort seems to be going unrecognized, based specifically on what they wrote.",
   "missingBoundary": "A short, concrete boundary statement (under 20 words) they could have used, grounded in their actual situation - not a generic template."
-}`;
+}
+${NOVA_ONE_SHOT_SAFETY_FLOOR}`;
 
     const response = await ai.models.generateContent({
       model: "gemini-3.5-flash",

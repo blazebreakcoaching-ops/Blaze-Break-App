@@ -11,7 +11,7 @@ const h = vi.hoisted(() => {
   process.env.NODE_ENV = 'test';
   process.env.GEMINI_API_KEY = 'test-key-not-a-placeholder';
   return {
-    generateContent: vi.fn(async () => ({
+    generateContent: vi.fn(async (_req: any) => ({
       text: JSON.stringify({
         yesMeantNo: 'They agreed to cover the shift when they meant to say no.',
         unclear: 'The deadline was never actually confirmed in writing.',
@@ -121,5 +121,36 @@ describe('POST /api/nova/resentment-analysis — quota and failure handling', ()
     const res = await request(app).post('/api/nova/resentment-analysis').set(auth('person_8')).send({ log: 'venting text' });
     expect(res.status).toBe(500);
     expect(res.body.error).toBeTruthy();
+  });
+});
+
+// Behavioural coverage for NOVA_ONE_SHOT_SAFETY_FLOOR: this route is a
+// one-shot generator, not a conversation, so the safety floor is
+// unconditional prompt text appended to every request - the model, not the
+// server, decides whether the user's venting warrants a different response.
+// This locks in that the instruction always reaches the model regardless of
+// what was actually vented about, mirroring how NOVA_SAFETY_INSTRUCTIONS is
+// unconditionally concatenated on the conversational surfaces.
+describe('POST /api/nova/resentment-analysis — safety floor', () => {
+  it('always includes the crisis-line safety floor in the prompt sent to the model', async () => {
+    await request(app).post('/api/nova/resentment-analysis').set(auth('person_9')).send({ log: 'my manager keeps piling on extra work' });
+    const call = h.generateContent.mock.calls[0][0];
+    expect(call.contents).toContain('Samaritans on 116 123');
+    expect(call.contents).toContain('988');
+  });
+
+  it('the safety floor forbids fabricating a risk score or clinical classification', async () => {
+    await request(app).post('/api/nova/resentment-analysis').set(auth('person_10')).send({ log: 'venting text' });
+    const call = h.generateContent.mock.calls[0][0];
+    expect(call.contents).toContain('Never fabricate clinical facts');
+    expect(call.contents).toContain('risk score, risk level, or severity classification');
+  });
+
+  it('still includes the safety floor when the vented content itself signals distress', async () => {
+    await request(app).post('/api/nova/resentment-analysis').set(auth('person_11')).send({
+      log: "I don't see the point anymore, I just want it all to stop.",
+    });
+    const call = h.generateContent.mock.calls[0][0];
+    expect(call.contents).toContain('Samaritans on 116 123');
   });
 });
