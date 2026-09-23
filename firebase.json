@@ -4,6 +4,11 @@
     "rules": "firestore.rules",
     "indexes": "firestore.indexes.json"
   },
+  "functions": {
+    "source": "functions",
+    "ignore": ["node_modules", ".git", "*.test.ts", "firebase-debug.log", "firebase-debug.*.log", "*.local"],
+    "predeploy": ["npm --prefix \"$RESOURCE_DIR\" run build"]
+  },
   "hosting": {
     "public": "firebase-hosting-public",
     "rewrites": [
@@ -19,6 +24,9 @@
   "emulators": {
     "auth": {
       "port": 9099
+    },
+    "functions": {
+      "port": 5001
     },
     "firestore": {
       "port": 8080
