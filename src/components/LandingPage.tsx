@@ -24,7 +24,7 @@ interface LandingPageProps {
 type AuthMode = 'signin' | 'signup' | 'forgot';
 
 export const LandingPage = ({ onStart, onOpenTrustCentre, darkMode, setDarkMode }: LandingPageProps) => {
-  const { user, signIn, signUpWithEmail, signInWithEmail, sendPasswordReset } = useAuth();
+  const { user, signIn, signInWithMicrosoft, signInWithFacebook, signUpWithEmail, signInWithEmail, sendPasswordReset } = useAuth();
   const [showAuthModal, setShowAuthModal] = useState(false);
   const authDialogRef = useFocusTrap(showAuthModal);
 
@@ -34,7 +34,11 @@ export const LandingPage = ({ onStart, onOpenTrustCentre, darkMode, setDarkMode 
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [showAuthModal]);
-  const [signingIn, setSigningIn] = useState(false);
+  // Which social provider's popup is currently in flight, if any - tracked
+  // per-provider (not one shared boolean) so only the button actually
+  // clicked shows its spinner, while all three still disable together to
+  // prevent stacking multiple OAuth popups at once.
+  const [signingInProvider, setSigningInProvider] = useState<'google' | 'microsoft' | 'facebook' | null>(null);
 
   // Email/password sign-up, sign-in, and forgot-password all share this one
   // modal - `authMode` picks which form is showing. Reset to a clean slate
@@ -100,14 +104,40 @@ export const LandingPage = ({ onStart, onOpenTrustCentre, darkMode, setDarkMode 
 
   const handleGoogleSignIn = async () => {
     try {
-      setSigningIn(true);
+      setSigningInProvider('google');
       await signIn();
       setShowAuthModal(false);
       onStart();
     } catch (e) {
       console.error("Sign up failed:", e);
     } finally {
-      setSigningIn(false);
+      setSigningInProvider(null);
+    }
+  };
+
+  const handleMicrosoftSignIn = async () => {
+    try {
+      setSigningInProvider('microsoft');
+      await signInWithMicrosoft();
+      setShowAuthModal(false);
+      onStart();
+    } catch (e) {
+      console.error("Sign up failed:", e);
+    } finally {
+      setSigningInProvider(null);
+    }
+  };
+
+  const handleFacebookSignIn = async () => {
+    try {
+      setSigningInProvider('facebook');
+      await signInWithFacebook();
+      setShowAuthModal(false);
+      onStart();
+    } catch (e) {
+      console.error("Sign up failed:", e);
+    } finally {
+      setSigningInProvider(null);
     }
   };
 
@@ -445,15 +475,39 @@ export const LandingPage = ({ onStart, onOpenTrustCentre, darkMode, setDarkMode 
                   <div className="space-y-3 pt-2">
                     <button
                       onClick={handleGoogleSignIn}
-                      disabled={signingIn}
+                      disabled={signingInProvider !== null}
                       className="w-full flex items-center justify-center gap-3 bg-text-main text-surface font-bold text-xs uppercase tracking-widest py-4.5 rounded-2xl hover:scale-[1.02] active:scale-95 transition-all shadow-lg shadow-text-main/15 disabled:opacity-50"
                     >
-                      {signingIn ? (
+                      {signingInProvider === 'google' ? (
                         <Loader2 className="w-4 h-4 animate-spin" />
                       ) : (
                         <LogIn className="w-4 h-4" />
                       )}
-                      <span role="status" aria-live="polite">{signingIn ? 'Initialising...' : 'Continue with Google'}</span>
+                      <span role="status" aria-live="polite">{signingInProvider === 'google' ? 'Initialising...' : 'Continue with Google'}</span>
+                    </button>
+                    <button
+                      onClick={handleMicrosoftSignIn}
+                      disabled={signingInProvider !== null}
+                      className="w-full flex items-center justify-center gap-3 bg-surface dark:bg-card border border-border text-text-main font-bold text-xs uppercase tracking-widest py-4.5 rounded-2xl hover:scale-[1.02] active:scale-95 transition-all disabled:opacity-50"
+                    >
+                      {signingInProvider === 'microsoft' ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <LogIn className="w-4 h-4" />
+                      )}
+                      <span role="status" aria-live="polite">{signingInProvider === 'microsoft' ? 'Initialising...' : 'Continue with Microsoft'}</span>
+                    </button>
+                    <button
+                      onClick={handleFacebookSignIn}
+                      disabled={signingInProvider !== null}
+                      className="w-full flex items-center justify-center gap-3 bg-surface dark:bg-card border border-border text-text-main font-bold text-xs uppercase tracking-widest py-4.5 rounded-2xl hover:scale-[1.02] active:scale-95 transition-all disabled:opacity-50"
+                    >
+                      {signingInProvider === 'facebook' ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <LogIn className="w-4 h-4" />
+                      )}
+                      <span role="status" aria-live="polite">{signingInProvider === 'facebook' ? 'Initialising...' : 'Continue with Facebook'}</span>
                     </button>
                   </div>
 
