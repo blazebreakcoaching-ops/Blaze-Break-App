@@ -573,16 +573,11 @@ export const NovaGuardianRelay = ({ contacts, onAdd, onRemove, userName }: NovaG
                     </div>
 
                     <div className="space-y-2">
-                       <label htmlFor="guardian-contact-method" className="text-[11px] font-black uppercase tracking-widest text-text-muted ml-1">Contact Method</label>
-                       <select
-                         id="guardian-contact-method"
-                         value={newContact.notificationPreference}
-                         onChange={e => setNewContact({...newContact, notificationPreference: e.target.value as any})}
-                         className="w-full bg-surface dark:bg-surface border border-border rounded-xl px-4 py-3.5 text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30 transition-all"
-                       >
-                         <option value="sms">SMS</option>
-                         <option value="whatsapp">WhatsApp</option>
-                       </select>
+                       <label className="text-[11px] font-black uppercase tracking-widest text-text-muted ml-1">Contact Method</label>
+                       <div className="w-full bg-surface dark:bg-surface border border-border rounded-xl px-4 py-3.5 text-sm text-text-main">
+                         Text message (SMS)
+                       </div>
+                       <p className="text-[10px] text-text-muted ml-1">WhatsApp alerts aren't available yet - coming once WhatsApp support is fully set up.</p>
                     </div>
 
                     <div className="space-y-2 md:col-span-2">
