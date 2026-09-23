@@ -494,7 +494,7 @@ export const SettingsModal = ({ profile, onSave, onClose, onOpenPrivacyCentre }:
                      <p role="status" className="text-xs font-semibold text-success dark:text-[#4ade80]">Request sent securely. You'll receive an email shortly.</p>
                    )}
                    {deletionRequestStatus === 'error' && (
-                     <p role="alert" className="text-xs font-semibold text-destructive dark:text-[#f87171]">Couldn't send that request. You can also email us directly at support@blazebreak.com</p>
+                     <p role="alert" className="text-xs font-semibold text-destructive dark:text-[#f87171]">Couldn't send that request. You can also email us directly at support@blazebreak.app</p>
                    )}
                  </div>
               </div>
