@@ -109,6 +109,18 @@ describe('POST /api/auth/verify-email/send', () => {
     const res = await request(app).post('/api/auth/verify-email/send');
     expect(res.status).toBe(401);
   });
+
+  it('does not send an email or generate a link for an already-verified account (e.g. a social sign-in)', async () => {
+    // A Google/Microsoft sign-in arrives with email_verified already true -
+    // this route must never re-verify or re-email one, whoever calls it.
+    h.claimsStore.set('social_user', { email_verified: true });
+    const res = await request(app).post('/api/auth/verify-email/send').set(auth('social_user'));
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ success: true, alreadyVerified: true });
+    expect(h.generateEmailVerificationLink).not.toHaveBeenCalled();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
 });
 
 describe('POST /api/auth/password-reset/request — no-enumeration guarantee', () => {

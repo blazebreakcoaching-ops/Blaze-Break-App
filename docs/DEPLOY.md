@@ -254,3 +254,47 @@ URL:
    domain, which cascades into every Firestore read/write looking like a
    permissions error there (see the CSP comment in `server.ts` for the
    same failure mode already documented once).
+
+---
+
+## 9. Auth Blocking Functions — a separate Cloud Functions deployment
+
+`functions/` holds Firebase Auth Blocking Functions (`beforeSignIn`,
+`beforeCreate` - see `docs/AUTH_HARDENING_AND_SOCIAL_LOGIN.md` for what
+they do and why). This is a genuinely separate deployment target from everything
+else in this doc: its own `package.json`, its own `node_modules`, its
+own build step, deployed via the Firebase CLI, **not** `gcloud run
+deploy` and **not** covered by `npm run build`/`npm start` in §5.
+
+```
+cd functions
+npm install --legacy-peer-deps   # first time / after a dependency change - see the
+                                  # npm arborist note below for why --legacy-peer-deps
+npm run build                    # tsc -> functions/lib/ (gitignored, not committed)
+npm test                         # vitest - pure logic only, no live Firebase needed
+cd ..
+firebase deploy --only functions
+```
+
+- **`npm install` inside `functions/` may fail with `Cannot read
+  properties of null (reading 'edgesOut')`** on some npm 10.x versions -
+  a known npm/arborist bug resolving vitest's peer-dependency graph, not
+  a problem with this codebase. `npm install --legacy-peer-deps` works
+  around it.
+- **This is this Firebase project's first-ever Cloud Functions
+  deployment.** Cloud Functions requires the Blaze (pay-as-you-go) plan
+  - almost certainly already active here since Cloud Run itself needs
+  it, but if `firebase deploy --only functions` fails with a
+  billing-plan error, that's the fix (Firebase Console → upgrade to
+  Blaze).
+- **Blocking Functions specifically also need one extra one-time step**
+  that a normal Cloud Function deploy doesn't: Firebase Console →
+  Authentication → Settings → "Blocking functions" (or the CLI prompts
+  for this automatically on first deploy) → register `beforeSignIn`/
+  `beforeCreate` as the active blocking functions for those events. Until
+  that registration exists, the functions are deployed but Firebase
+  never actually calls them.
+- **Redeploy after ANY change** to `functions/src/**` - unlike the main
+  app, there is no single combined deploy command; forgetting
+  `firebase deploy --only functions` after a functions/ change leaves
+  the old version live indefinitely with no error anywhere to notice by.

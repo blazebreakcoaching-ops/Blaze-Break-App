@@ -17,7 +17,16 @@ import { cn } from '../lib/utils';
 
 type ViewState = 'loading' | 'off' | 'enrolling' | 'confirmCode' | 'recoveryCodes' | 'on' | 'disabledSignOut' | 'loadError';
 
-export const SecuritySettingsView = () => {
+interface SecuritySettingsViewProps {
+  // Fired once enrollment completes (right as the recovery codes are
+  // shown) - optional, and unused by the existing Settings usage of this
+  // component. Lets a caller like LandingPage.tsx's post-signup step know
+  // enrollment succeeded, e.g. to reveal a "Continue" button, without this
+  // component needing to know anything about where it's being rendered.
+  onEnabled?: () => void;
+}
+
+export const SecuritySettingsView = ({ onEnabled }: SecuritySettingsViewProps = {}) => {
   const { logOut } = useAuth();
   const [state, setState] = useState<ViewState>('loading');
   const [enrolledAt, setEnrolledAt] = useState<string | null>(null);
@@ -93,6 +102,7 @@ export const SecuritySettingsView = () => {
       }
       setEnrolledAt(new Date().toISOString());
       setState('recoveryCodes');
+      onEnabled?.();
     } catch (e: any) {
       setError(e?.message || "That code didn't work. Please try again.");
     } finally {

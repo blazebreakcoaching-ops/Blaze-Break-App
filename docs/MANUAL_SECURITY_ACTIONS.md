@@ -73,6 +73,70 @@ meant to be worked through and checked off, not read for explanation.
       `docs/DEPLOY.md` §6 and `docs/OUTSTANDING_SECURITY_ITEMS.md`, not
       urgent today, worth revisiting as usage grows.
 
+## Sign-in hardening & social auth (see `docs/AUTH_HARDENING_AND_SOCIAL_LOGIN.md`)
+
+- [ ] **Register an Azure AD app for Microsoft sign-in:**
+  1. Go to **https://portal.azure.com** → search **"App registrations"** →
+     **New registration**.
+  2. Name it (e.g. "Blaze Break"), leave "Supported account types" at its
+     default (or choose "Accounts in any organizational directory and
+     personal Microsoft accounts" for the broadest sign-in coverage),
+     and for **Redirect URI** choose **Web** and enter the OAuth
+     redirect URI Firebase Console shows in the next step (format:
+     `https://<project-id>.firebaseapp.com/__/auth/handler`).
+  3. After creating it, copy the **Application (client) ID** from the
+     app's Overview page.
+  4. Go to **Certificates & secrets** → **New client secret** → copy the
+     **Value** immediately (shown once).
+  5. In **Firebase Console → Authentication → Sign-in method → Add new
+     provider → Microsoft**, paste the Application (client) ID and the
+     client secret, then **Save**.
+- [ ] **Register a Meta for Developers app for Facebook sign-in:**
+  1. Go to **https://developers.facebook.com/apps** → **Create App** →
+     choose a use case that includes "Facebook Login" (e.g. "Consumer" or
+     "Other" → "Authenticate and request data from users with Facebook
+     Login").
+  2. Once created, go to the app's **Facebook Login → Settings** and add
+     the OAuth redirect URI Firebase Console shows (format:
+     `https://<project-id>.firebaseapp.com/__/auth/handler`) under
+     **Valid OAuth Redirect URIs**.
+  3. Go to **App Settings → Basic** and copy the **App ID** and **App
+     Secret** (click "Show" and re-enter your Meta password).
+  4. In **Firebase Console → Authentication → Sign-in method → Add new
+     provider → Facebook**, paste the App ID and App Secret, then
+     **Save**.
+  5. Note: a newly-created Meta app starts in "Development Mode," which
+     only allows sign-in from accounts with a role on the app (Admin/
+     Developer/Tester) — submit it for **App Review** (requesting the
+     `email` and `public_profile` permissions) before real users can sign
+     in with Facebook.
+- [ ] **Check/set Firebase Password Policy:** Firebase Console →
+      Authentication → Settings → Password Policy. Check what's
+      currently configured first (this session couldn't verify Console
+      state). Recommended, to match `src/lib/password-strength.ts`:
+      Enforcement mode "Require," minimum length **10**, and require at
+      least (uppercase, lowercase, numeric, non-alphanumeric) — Firebase
+      lets you require each category independently rather than "N of 4,"
+      so requiring all four is the closest match and is stricter than
+      this app's own client-side check, which is fine (Console is the
+      real enforcement point; the client check just can't be laxer than
+      it without confusing users who pass the UI check then fail at
+      Firebase).
+- [ ] **Check/enable App Check enforcement for Authentication:**
+      Firebase Console → App Check → APIs tab → Authentication →
+      **Enforce**. App Check is already initialized client-side
+      (`src/lib/firebase.ts`) and Firebase Auth automatically attaches
+      tokens once it's initialized — this Console toggle is the only
+      remaining step, and this session couldn't verify whether it's
+      currently on.
+- [ ] **Deploy the new `functions/` Cloud Functions** (`beforeSignIn`/
+      `beforeCreate`) — see `docs/DEPLOY.md` §9 for the exact commands.
+      On first deploy, Firebase will prompt to register them as the
+      active blocking functions for those events (or do it manually via
+      Authentication → Settings → Blocking functions) — until that
+      registration exists, the functions are deployed but never actually
+      called.
+
 ## What this checklist deliberately does not include
 
 Application-level fixes (code, Firestore rules, tests) are not manual

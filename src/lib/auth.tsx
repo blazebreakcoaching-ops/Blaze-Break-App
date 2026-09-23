@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { User, signInWithPopup, signInAnonymously, linkWithPopup, linkWithCredential, signInWithCredential, signInWithEmailAndPassword, createUserWithEmailAndPassword, EmailAuthProvider, GoogleAuthProvider, signOut, onAuthStateChanged } from 'firebase/auth';
+import { User, Auth as FirebaseAuth, signInWithPopup, signInAnonymously, linkWithPopup, linkWithCredential, signInWithCredential, signInWithEmailAndPassword, createUserWithEmailAndPassword, EmailAuthProvider, GoogleAuthProvider, OAuthProvider, FacebookAuthProvider, getAdditionalUserInfo, signOut, onAuthStateChanged } from 'firebase/auth';
 import { auth, getDb } from './firebase';
 import { secureApiFetch } from './secure-api';
 import { getMfaSessionToken, setMfaSessionToken, clearMfaSessionToken } from './mfa-session';
@@ -14,8 +14,16 @@ interface AuthContextType {
   // verified it this session - App.tsx renders MfaChallenge instead of the
   // app while this is true. Always false for anonymous sessions.
   mfaPending: boolean;
-  signIn: () => Promise<void>;
+  // isNewUser reflects whether this operation just created the account
+  // (including the anonymous-session-upgrade case, which Firebase also
+  // reports as isNewUser: true) - used by LandingPage.tsx to decide
+  // whether to offer the optional post-signup 2FA step, since that step
+  // should only ever appear right after a genuine signup, never on a
+  // returning sign-in.
+  signIn: () => Promise<{ isNewUser: boolean }>;
   signInWithCalendar: () => Promise<string | null>;
+  signInWithMicrosoft: () => Promise<{ isNewUser: boolean }>;
+  signInWithFacebook: () => Promise<{ isNewUser: boolean }>;
   signUpWithEmail: (email: string, password: string) => Promise<void>;
   signInWithEmail: (email: string, password: string) => Promise<void>;
   sendPasswordReset: (email: string) => Promise<void>;
@@ -30,8 +38,10 @@ const AuthContext = createContext<AuthContextType>({
   loading: true,
   accessToken: null,
   mfaPending: false,
-  signIn: async () => {},
+  signIn: async () => ({ isNewUser: false }),
   signInWithCalendar: async () => null,
+  signInWithMicrosoft: async () => ({ isNewUser: false }),
+  signInWithFacebook: async () => ({ isNewUser: false }),
   signUpWithEmail: async () => {},
   signInWithEmail: async () => {},
   sendPasswordReset: async () => {},
@@ -41,6 +51,99 @@ const AuthContext = createContext<AuthContextType>({
 });
 
 export const useAuth = () => useContext(AuthContext);
+
+// Standalone, unit-testable versions of every provider's three-step
+// sign-in pattern: if the current session is anonymous, link the
+// provider to it so the person keeps their existing UID/data; otherwise
+// sign in directly; if linking collides with an existing real account
+// (auth/credential-already-in-use), sign into that real account instead,
+// deliberately abandoning the anonymous session's data. Each provider
+// gets its own named function - never a single function parameterised by
+// provider name - matching how signInWithGoogle/signInWithGoogleCalendar
+// already diverge (calendar scopes are Google-specific, not a generic
+// concept every provider needs). These take `authInstance` as a
+// parameter rather than importing the live `auth` singleton directly, so
+// tests can pass a fake Auth object instead of touching Firebase for
+// real. AuthProvider below calls these with the real `auth` singleton
+// and layers the Google-specific accessToken side effect on top.
+export async function signInWithGoogle(authInstance: FirebaseAuth) {
+  const provider = new GoogleAuthProvider();
+  try {
+    if (authInstance.currentUser?.isAnonymous) {
+      return await linkWithPopup(authInstance.currentUser, provider);
+    }
+    return await signInWithPopup(authInstance, provider);
+  } catch (e: any) {
+    if (e?.code === 'auth/credential-already-in-use') {
+      const existingCredential = GoogleAuthProvider.credentialFromError(e);
+      if (existingCredential) {
+        return await signInWithCredential(authInstance, existingCredential);
+      }
+    }
+    throw e;
+  }
+}
+
+export async function signInWithGoogleCalendar(authInstance: FirebaseAuth) {
+  const provider = new GoogleAuthProvider();
+  provider.addScope('https://www.googleapis.com/auth/calendar.readonly');
+  provider.addScope('https://www.googleapis.com/auth/calendar.events');
+  provider.addScope('https://www.googleapis.com/auth/gmail.readonly');
+  try {
+    if (authInstance.currentUser?.isAnonymous) {
+      return await linkWithPopup(authInstance.currentUser, provider);
+    }
+    return await signInWithPopup(authInstance, provider);
+  } catch (e: any) {
+    if (e?.code === 'auth/credential-already-in-use') {
+      const existingCredential = GoogleAuthProvider.credentialFromError(e);
+      if (existingCredential) {
+        return await signInWithCredential(authInstance, existingCredential);
+      }
+    }
+    throw e;
+  }
+}
+
+// Firebase has no dedicated MicrosoftAuthProvider class - the generic
+// OAuthProvider('microsoft.com') exposes the same static
+// credentialFromResult/credentialFromError methods GoogleAuthProvider
+// does, so the pattern transfers exactly.
+export async function signInWithMicrosoft(authInstance: FirebaseAuth) {
+  const provider = new OAuthProvider('microsoft.com');
+  try {
+    if (authInstance.currentUser?.isAnonymous) {
+      return await linkWithPopup(authInstance.currentUser, provider);
+    }
+    return await signInWithPopup(authInstance, provider);
+  } catch (e: any) {
+    if (e?.code === 'auth/credential-already-in-use') {
+      const existingCredential = OAuthProvider.credentialFromError(e);
+      if (existingCredential) {
+        return await signInWithCredential(authInstance, existingCredential);
+      }
+    }
+    throw e;
+  }
+}
+
+export async function signInWithFacebook(authInstance: FirebaseAuth) {
+  const provider = new FacebookAuthProvider();
+  try {
+    if (authInstance.currentUser?.isAnonymous) {
+      return await linkWithPopup(authInstance.currentUser, provider);
+    }
+    return await signInWithPopup(authInstance, provider);
+  } catch (e: any) {
+    if (e?.code === 'auth/credential-already-in-use') {
+      const existingCredential = FacebookAuthProvider.credentialFromError(e);
+      if (existingCredential) {
+        return await signInWithCredential(authInstance, existingCredential);
+      }
+    }
+    throw e;
+  }
+}
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
@@ -175,85 +278,43 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return unsubscribe;
   }, []);
 
+  // Thin context wrappers around the standalone, unit-tested functions
+  // above (signInWithGoogle et al.) - they hold the actual three-step
+  // OAuth logic; this layer just threads through the live `auth`
+  // singleton and the React-state side effects (accessToken) that only
+  // make sense inside this component.
   const signIn = async () => {
-    const provider = new GoogleAuthProvider();
-    try {
-      // If the current session is anonymous, link Google to it so the
-      // person keeps the same UID (and therefore all their existing data)
-      // instead of ending up on a brand-new, separate account.
-      if (auth.currentUser?.isAnonymous) {
-        const result = await linkWithPopup(auth.currentUser, provider);
-        const credential = GoogleAuthProvider.credentialFromResult(result);
-        if (credential?.accessToken) {
-          setAccessToken(credential.accessToken);
-        }
-        return;
-      }
-      const result = await signInWithPopup(auth, provider);
-      const credential = GoogleAuthProvider.credentialFromResult(result);
-      if (credential?.accessToken) {
-        setAccessToken(credential.accessToken);
-      }
-    } catch (e: any) {
-      // That Google account already has its own real Firebase account from
-      // a previous session (e.g. they used the app before, then later
-      // browsed anonymously on a different device/browser). Linking can't
-      // merge two separate accounts, so sign them into their real,
-      // pre-existing one instead - the anonymous session's data is
-      // abandoned, but that's correct: it was never really theirs to keep,
-      // just a placeholder until they proved who they are.
-      if (e?.code === 'auth/credential-already-in-use') {
-        const existingCredential = GoogleAuthProvider.credentialFromError(e);
-        if (existingCredential) {
-          const result = await signInWithCredential(auth, existingCredential);
-          const credential = GoogleAuthProvider.credentialFromResult(result);
-          if (credential?.accessToken) {
-            setAccessToken(credential.accessToken);
-          }
-          return;
-        }
-      }
-      throw e;
+    const result = await signInWithGoogle(auth);
+    const credential = GoogleAuthProvider.credentialFromResult(result);
+    if (credential?.accessToken) {
+      setAccessToken(credential.accessToken);
     }
+    return { isNewUser: getAdditionalUserInfo(result)?.isNewUser ?? false };
   };
 
   const signInWithCalendar = async () => {
-    const provider = new GoogleAuthProvider();
-    provider.addScope('https://www.googleapis.com/auth/calendar.readonly');
-    provider.addScope('https://www.googleapis.com/auth/calendar.events');
-    provider.addScope('https://www.googleapis.com/auth/gmail.readonly');
-    try {
-      if (auth.currentUser?.isAnonymous) {
-        const result = await linkWithPopup(auth.currentUser, provider);
-        const credential = GoogleAuthProvider.credentialFromResult(result);
-        if (credential?.accessToken) {
-          setAccessToken(credential.accessToken);
-          return credential.accessToken;
-        }
-        return null;
-      }
-      const result = await signInWithPopup(auth, provider);
-      const credential = GoogleAuthProvider.credentialFromResult(result);
-      if (credential?.accessToken) {
-        setAccessToken(credential.accessToken);
-        return credential.accessToken;
-      }
-      return null;
-    } catch (e: any) {
-      if (e?.code === 'auth/credential-already-in-use') {
-        const existingCredential = GoogleAuthProvider.credentialFromError(e);
-        if (existingCredential) {
-          const result = await signInWithCredential(auth, existingCredential);
-          const credential = GoogleAuthProvider.credentialFromResult(result);
-          if (credential?.accessToken) {
-            setAccessToken(credential.accessToken);
-            return credential.accessToken;
-          }
-        }
-        return null;
-      }
-      throw e;
+    const result = await signInWithGoogleCalendar(auth);
+    const credential = GoogleAuthProvider.credentialFromResult(result);
+    if (credential?.accessToken) {
+      setAccessToken(credential.accessToken);
+      return credential.accessToken;
     }
+    return null;
+  };
+
+  // Deliberately does NOT populate the shared `accessToken` state - that
+  // field is consumed elsewhere (CalendarDefenseView.tsx, gmail-signals.ts,
+  // etc.) specifically as a Google Calendar/Gmail API token; storing a
+  // Microsoft Graph or Facebook Graph token there would silently corrupt
+  // those features.
+  const handleMicrosoftSignIn = async () => {
+    const result = await signInWithMicrosoft(auth);
+    return { isNewUser: getAdditionalUserInfo(result)?.isNewUser ?? false };
+  };
+
+  const handleFacebookSignIn = async () => {
+    const result = await signInWithFacebook(auth);
+    return { isNewUser: getAdditionalUserInfo(result)?.isNewUser ?? false };
   };
 
   // Same anonymous-upgrade pattern as signIn()/signInWithCalendar() above,
@@ -346,7 +407,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   return (
-    <AuthContext.Provider value={{ user, appRole, loading, accessToken, mfaPending, signIn, signInWithCalendar, signUpWithEmail, signInWithEmail, sendPasswordReset, verifyMfaAtSignIn, logOut, hasRole }}>
+    <AuthContext.Provider value={{ user, appRole, loading, accessToken, mfaPending, signIn, signInWithCalendar, signInWithMicrosoft: handleMicrosoftSignIn, signInWithFacebook: handleFacebookSignIn, signUpWithEmail, signInWithEmail, sendPasswordReset, verifyMfaAtSignIn, logOut, hasRole }}>
       {children}
     </AuthContext.Provider>
   );

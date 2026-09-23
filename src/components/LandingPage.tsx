@@ -1,9 +1,15 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, lazy, Suspense } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { ArrowRight, ShieldCheck, BatteryLow, MessageSquareText, LogIn, ArrowLeft, Loader2, Mail, Lock, Sun, Moon, Briefcase, TrendingUp, Users } from 'lucide-react';
+import { ArrowRight, ShieldCheck, BatteryLow, MessageSquareText, LogIn, ArrowLeft, Loader2, Mail, Lock, Sun, Moon, Briefcase, TrendingUp, Users, Wand2, Copy, Check } from 'lucide-react';
 import { useAuth } from '../lib/auth';
 import { useFocusTrap } from '../lib/useFocusTrap';
 import { secureApiFetch } from '../lib/secure-api';
+import { checkPasswordStrength, generateStrongPassword, PASSWORD_REQUIREMENT_TEXT, PASSWORD_MIN_LENGTH } from '../lib/password-strength';
+
+// Lazy - this pulls in the `qrcode` library, which has no reason to load
+// for every anonymous landing-page visitor when only the small fraction
+// who actually complete a fresh signup ever reach this step.
+const SecuritySettingsView = lazy(() => import('./SecuritySettingsView').then(m => ({ default: m.SecuritySettingsView })));
 
 interface LandingPageProps {
   onStart: () => void;
@@ -23,7 +29,7 @@ interface LandingPageProps {
 type AuthMode = 'signin' | 'signup' | 'forgot';
 
 export const LandingPage = ({ onStart, onOpenTrustCentre, darkMode, setDarkMode }: LandingPageProps) => {
-  const { user, signIn, signUpWithEmail, signInWithEmail, sendPasswordReset } = useAuth();
+  const { user, signIn, signInWithMicrosoft, signInWithFacebook, signUpWithEmail, signInWithEmail, sendPasswordReset } = useAuth();
   const [showAuthModal, setShowAuthModal] = useState(false);
   const authDialogRef = useFocusTrap(showAuthModal);
 
@@ -33,7 +39,11 @@ export const LandingPage = ({ onStart, onOpenTrustCentre, darkMode, setDarkMode 
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [showAuthModal]);
-  const [signingIn, setSigningIn] = useState(false);
+  // Which social provider's popup is currently in flight, if any - tracked
+  // per-provider (not one shared boolean) so only the button actually
+  // clicked shows its spinner, while all three still disable together to
+  // prevent stacking multiple OAuth popups at once.
+  const [signingInProvider, setSigningInProvider] = useState<'google' | 'microsoft' | 'facebook' | null>(null);
 
   // Email/password sign-up, sign-in, and forgot-password all share this one
   // modal - `authMode` picks which form is showing. Reset to a clean slate
@@ -46,6 +56,19 @@ export const LandingPage = ({ onStart, onOpenTrustCentre, darkMode, setDarkMode 
   const [authError, setAuthError] = useState<string | null>(null);
   const [emailAuthSubmitting, setEmailAuthSubmitting] = useState(false);
   const [resetLinkSent, setResetLinkSent] = useState(false);
+  // True once "Generate a strong password" has been used this signup
+  // attempt - switches the password fields to plain text (a generated
+  // password the user can't see or copy defeats the point) and shows the
+  // copy button. Reset alongside everything else when the modal closes.
+  const [generatedPasswordVisible, setGeneratedPasswordVisible] = useState(false);
+  const [copiedGeneratedPassword, setCopiedGeneratedPassword] = useState(false);
+  // Shown in place of the normal sign-in/sign-up forms right after a
+  // successful signup (any provider) - a skippable, optional invitation to
+  // set up 2FA before entering the app. Never shown for a returning
+  // sign-in. Reuses SecuritySettingsView (the exact same component/
+  // endpoints Settings uses) rather than a second enrollment flow.
+  const [showPostSignupMfaStep, setShowPostSignupMfaStep] = useState(false);
+  const [mfaJustEnabled, setMfaJustEnabled] = useState(false);
 
   useEffect(() => {
     if (showAuthModal) return;
@@ -55,7 +78,43 @@ export const LandingPage = ({ onStart, onOpenTrustCentre, darkMode, setDarkMode 
     setConfirmPassword('');
     setAuthError(null);
     setResetLinkSent(false);
+    setGeneratedPasswordVisible(false);
+    setCopiedGeneratedPassword(false);
+    setShowPostSignupMfaStep(false);
+    setMfaJustEnabled(false);
   }, [showAuthModal]);
+
+  // The shared "finish onboarding" action, reached either by skipping the
+  // optional 2FA step or by completing it - both land in the app the same
+  // way, since 2FA here is genuinely optional, not a gate.
+  const finishOnboarding = () => {
+    setShowAuthModal(false);
+    onStart();
+  };
+
+  // Client-side only, via the Web Crypto API (see password-strength.ts) -
+  // never sent anywhere before the person has seen and accepted it, and
+  // never stored or logged.
+  const handleGeneratePassword = () => {
+    const generated = generateStrongPassword();
+    setPassword(generated);
+    setConfirmPassword(generated);
+    setGeneratedPasswordVisible(true);
+    setCopiedGeneratedPassword(false);
+    setAuthError(null);
+  };
+
+  const handleCopyGeneratedPassword = async () => {
+    try {
+      await navigator.clipboard.writeText(password);
+      setCopiedGeneratedPassword(true);
+      setTimeout(() => setCopiedGeneratedPassword(false), 2000);
+    } catch {
+      // Clipboard access can fail (permissions, insecure context) - the
+      // password is already visible in the field either way, so this is
+      // a silent no-op rather than an alarming error for a cosmetic miss.
+    }
+  };
 
   const handleStartRequest = () => {
     if (user) {
@@ -67,14 +126,49 @@ export const LandingPage = ({ onStart, onOpenTrustCentre, darkMode, setDarkMode 
 
   const handleGoogleSignIn = async () => {
     try {
-      setSigningIn(true);
-      await signIn();
-      setShowAuthModal(false);
-      onStart();
+      setSigningInProvider('google');
+      const { isNewUser } = await signIn();
+      if (isNewUser) {
+        setShowPostSignupMfaStep(true);
+      } else {
+        finishOnboarding();
+      }
     } catch (e) {
       console.error("Sign up failed:", e);
     } finally {
-      setSigningIn(false);
+      setSigningInProvider(null);
+    }
+  };
+
+  const handleMicrosoftSignIn = async () => {
+    try {
+      setSigningInProvider('microsoft');
+      const { isNewUser } = await signInWithMicrosoft();
+      if (isNewUser) {
+        setShowPostSignupMfaStep(true);
+      } else {
+        finishOnboarding();
+      }
+    } catch (e) {
+      console.error("Sign up failed:", e);
+    } finally {
+      setSigningInProvider(null);
+    }
+  };
+
+  const handleFacebookSignIn = async () => {
+    try {
+      setSigningInProvider('facebook');
+      const { isNewUser } = await signInWithFacebook();
+      if (isNewUser) {
+        setShowPostSignupMfaStep(true);
+      } else {
+        finishOnboarding();
+      }
+    } catch (e) {
+      console.error("Sign up failed:", e);
+    } finally {
+      setSigningInProvider(null);
     }
   };
 
@@ -85,9 +179,16 @@ export const LandingPage = ({ onStart, onOpenTrustCentre, darkMode, setDarkMode 
       setAuthError("Those passwords don't match.");
       return;
     }
-    if (password.length < 8) {
-      setAuthError('Password must be at least 8 characters.');
-      return;
+    // Strength is only enforced when creating a new password - re-checking
+    // it at sign-in would reject legitimate existing users whose password
+    // predates this stricter policy. Firebase's own sign-in call is the
+    // correct arbiter of whether an existing password is right or wrong.
+    if (authMode === 'signup') {
+      const strength = checkPasswordStrength(password);
+      if (!strength.valid) {
+        setAuthError(`Password needs: ${strength.reasons.join('; ')}.`);
+        return;
+      }
     }
     try {
       setEmailAuthSubmitting(true);
@@ -95,11 +196,14 @@ export const LandingPage = ({ onStart, onOpenTrustCentre, darkMode, setDarkMode 
         await signUpWithEmail(email, password);
         // Best-effort - never block getting into the app on this succeeding.
         secureApiFetch('/api/auth/verify-email/send', { method: 'POST' }).catch(() => {});
+        // Email signup is always a genuine new account (no isNewUser check
+        // needed, unlike the social providers) - always offer the
+        // optional 2FA step here, same as after a fresh social signup.
+        setShowPostSignupMfaStep(true);
       } else {
         await signInWithEmail(email, password);
+        finishOnboarding();
       }
-      setShowAuthModal(false);
-      onStart();
     } catch (err: any) {
       setAuthError(err?.message || 'Something went wrong. Please try again.');
     } finally {
@@ -340,16 +444,45 @@ export const LandingPage = ({ onStart, onOpenTrustCentre, darkMode, setDarkMode 
                   <img src="/brand/flame-mark-dark.png" alt="" className="w-6 h-6 hidden dark:block" />
                 </div>
                 <h3 id="auth-modal-title" className="text-2xl font-bold text-text-main tracking-tight">
-                  {authMode === 'forgot' ? 'Reset your password' : authMode === 'signup' ? 'Create your account' : 'Access Account'}
+                  {showPostSignupMfaStep ? 'Secure your account' : authMode === 'forgot' ? 'Reset your password' : authMode === 'signup' ? 'Create your account' : 'Access Account'}
                 </h3>
-                {authMode !== 'forgot' && (
+                {showPostSignupMfaStep ? (
+                  <p className="text-text-muted text-sm mt-1 leading-relaxed">
+                    Your account is ready. Adding two-factor authentication now is entirely optional - skip it and turn it on anytime later from Settings.
+                  </p>
+                ) : authMode !== 'forgot' && (
                   <p className="text-text-muted text-sm mt-1 leading-relaxed">
                     Register or login. Blaze Break is in controlled early access. Features may evolve. Data tools are for coaching support, not medical diagnosis. Optional Nova AI is a recovery coach, not a therapist.
                   </p>
                 )}
               </div>
 
-              {authMode === 'forgot' ? (
+              {showPostSignupMfaStep ? (
+                <div className="space-y-4 pt-2">
+                  <Suspense fallback={null}>
+                    <SecuritySettingsView onEnabled={() => setMfaJustEnabled(true)} />
+                  </Suspense>
+                  <div className="pt-2 border-t border-border">
+                    {mfaJustEnabled ? (
+                      <button
+                        type="button"
+                        onClick={finishOnboarding}
+                        className="w-full flex items-center justify-center gap-3 bg-primary text-white font-bold text-xs uppercase tracking-widest py-4 rounded-2xl hover:scale-[1.02] active:scale-95 transition-all shadow-lg shadow-primary/15"
+                      >
+                        Continue to Blaze Break
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={finishOnboarding}
+                        className="w-full text-center text-xs font-bold text-text-muted hover:text-text-main transition-colors py-2"
+                      >
+                        Skip for now
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ) : authMode === 'forgot' ? (
                 resetLinkSent ? (
                   <div className="space-y-4 pt-2">
                     <p className="text-sm text-text-main leading-relaxed">
@@ -405,15 +538,39 @@ export const LandingPage = ({ onStart, onOpenTrustCentre, darkMode, setDarkMode 
                   <div className="space-y-3 pt-2">
                     <button
                       onClick={handleGoogleSignIn}
-                      disabled={signingIn}
+                      disabled={signingInProvider !== null}
                       className="w-full flex items-center justify-center gap-3 bg-text-main text-surface font-bold text-xs uppercase tracking-widest py-4.5 rounded-2xl hover:scale-[1.02] active:scale-95 transition-all shadow-lg shadow-text-main/15 disabled:opacity-50"
                     >
-                      {signingIn ? (
+                      {signingInProvider === 'google' ? (
                         <Loader2 className="w-4 h-4 animate-spin" />
                       ) : (
                         <LogIn className="w-4 h-4" />
                       )}
-                      <span role="status" aria-live="polite">{signingIn ? 'Initialising...' : 'Continue with Google'}</span>
+                      <span role="status" aria-live="polite">{signingInProvider === 'google' ? 'Initialising...' : 'Continue with Google'}</span>
+                    </button>
+                    <button
+                      onClick={handleMicrosoftSignIn}
+                      disabled={signingInProvider !== null}
+                      className="w-full flex items-center justify-center gap-3 bg-surface dark:bg-card border border-border text-text-main font-bold text-xs uppercase tracking-widest py-4.5 rounded-2xl hover:scale-[1.02] active:scale-95 transition-all disabled:opacity-50"
+                    >
+                      {signingInProvider === 'microsoft' ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <LogIn className="w-4 h-4" />
+                      )}
+                      <span role="status" aria-live="polite">{signingInProvider === 'microsoft' ? 'Initialising...' : 'Continue with Microsoft'}</span>
+                    </button>
+                    <button
+                      onClick={handleFacebookSignIn}
+                      disabled={signingInProvider !== null}
+                      className="w-full flex items-center justify-center gap-3 bg-surface dark:bg-card border border-border text-text-main font-bold text-xs uppercase tracking-widest py-4.5 rounded-2xl hover:scale-[1.02] active:scale-95 transition-all disabled:opacity-50"
+                    >
+                      {signingInProvider === 'facebook' ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <LogIn className="w-4 h-4" />
+                      )}
+                      <span role="status" aria-live="polite">{signingInProvider === 'facebook' ? 'Initialising...' : 'Continue with Facebook'}</span>
                     </button>
                   </div>
 
@@ -439,26 +596,49 @@ export const LandingPage = ({ onStart, onOpenTrustCentre, darkMode, setDarkMode 
                     <div className="relative">
                       <Lock className="w-4 h-4 text-text-muted absolute left-4 top-1/2 -translate-y-1/2" aria-hidden="true" />
                       <input
-                        type="password"
+                        type={generatedPasswordVisible ? 'text' : 'password'}
                         required
                         autoComplete={authMode === 'signup' ? 'new-password' : 'current-password'}
-                        minLength={8}
+                        minLength={authMode === 'signup' ? PASSWORD_MIN_LENGTH : undefined}
                         value={password}
-                        onChange={(e) => setPassword(e.target.value)}
+                        onChange={(e) => { setPassword(e.target.value); setGeneratedPasswordVisible(false); }}
                         placeholder="Password"
-                        className="w-full bg-background border border-border rounded-xl pl-11 pr-4 py-3.5 text-sm text-text-main placeholder:text-text-muted focus:outline-none focus:border-primary/50 transition-colors"
+                        className={`w-full bg-background border border-border rounded-xl pl-11 ${generatedPasswordVisible ? 'pr-11' : 'pr-4'} py-3.5 text-sm text-text-main placeholder:text-text-muted focus:outline-none focus:border-primary/50 transition-colors`}
                       />
+                      {generatedPasswordVisible && (
+                        <button
+                          type="button"
+                          onClick={handleCopyGeneratedPassword}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 text-text-muted hover:text-text-main transition-colors p-1"
+                          aria-label={copiedGeneratedPassword ? 'Copied' : 'Copy generated password'}
+                          title={copiedGeneratedPassword ? 'Copied' : 'Copy password'}
+                        >
+                          {copiedGeneratedPassword ? <Check className="w-4 h-4 text-success dark:text-[#4ade80]" aria-hidden="true" /> : <Copy className="w-4 h-4" aria-hidden="true" />}
+                        </button>
+                      )}
                     </div>
+                    {authMode === 'signup' && (
+                      <div className="flex items-center justify-between -mt-1 px-1">
+                        <p className="text-[10px] text-text-muted leading-relaxed">{PASSWORD_REQUIREMENT_TEXT}</p>
+                        <button
+                          type="button"
+                          onClick={handleGeneratePassword}
+                          className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-primary hover:text-primary/80 transition-colors whitespace-nowrap ml-3"
+                        >
+                          <Wand2 className="w-3 h-3" aria-hidden="true" /> Generate
+                        </button>
+                      </div>
+                    )}
                     {authMode === 'signup' && (
                       <div className="relative">
                         <Lock className="w-4 h-4 text-text-muted absolute left-4 top-1/2 -translate-y-1/2" aria-hidden="true" />
                         <input
-                          type="password"
+                          type={generatedPasswordVisible ? 'text' : 'password'}
                           required
                           autoComplete="new-password"
-                          minLength={8}
+                          minLength={PASSWORD_MIN_LENGTH}
                           value={confirmPassword}
-                          onChange={(e) => setConfirmPassword(e.target.value)}
+                          onChange={(e) => { setConfirmPassword(e.target.value); setGeneratedPasswordVisible(false); }}
                           placeholder="Confirm password"
                           className="w-full bg-background border border-border rounded-xl pl-11 pr-4 py-3.5 text-sm text-text-main placeholder:text-text-muted focus:outline-none focus:border-primary/50 transition-colors"
                         />

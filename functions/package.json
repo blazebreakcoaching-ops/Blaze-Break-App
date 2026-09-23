@@ -1,0 +1,22 @@
+{
+  "name": "blaze-break-functions",
+  "private": true,
+  "description": "Firebase Auth Blocking Functions for Blaze Break - a separate Cloud Functions deployment from the main Cloud Run app (see ../docs/DEPLOY.md and ../MANUAL_SECURITY_ACTIONS.md). Deployed with `firebase deploy --only functions`, not part of `gcloud run deploy`.",
+  "main": "lib/index.js",
+  "engines": {
+    "node": "20"
+  },
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run --run",
+    "serve": "npm run build && firebase emulators:start --only functions"
+  },
+  "dependencies": {
+    "firebase-admin": "^12.7.0",
+    "firebase-functions": "^6.3.1"
+  },
+  "devDependencies": {
+    "typescript": "~5.8.2",
+    "vitest": "^4.1.10"
+  }
+}

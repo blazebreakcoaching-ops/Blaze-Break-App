@@ -887,5 +887,20 @@ service cloud.firestore {
       allow read: if isSignedIn() && request.auth.token.admin == true;
       allow write: if false; // Server-only
     }
+
+    // Sign-in IP-velocity tracking for the beforeSignIn Auth Blocking
+    // Function (functions/src/index.ts) - written only by that function
+    // via the Firebase Admin SDK (a separate deployment from the main
+    // Cloud Run app, but Admin SDK either way, so these rules are never
+    // consulted for its own writes - this block exists purely so every
+    // collection in this file gets an explicit, documented rule rather
+    // than relying on unmatched-path default-deny). Never read or
+    // written by any client, or even by server.ts.
+    match /signin_ip_velocity/{ip} {
+      allow read, write: if false;
+      match /events/{eventId} {
+        allow read, write: if false;
+      }
+    }
   }
 }
