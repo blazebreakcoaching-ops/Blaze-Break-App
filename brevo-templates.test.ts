@@ -5,6 +5,7 @@ import {
   buildPasswordChangedEmail,
   buildMfaEnabledEmail,
   buildMfaDisabledEmail,
+  buildSupportRequestReceivedEmail,
   htmlToPlainTextFallback,
 } from './brevo-templates';
 
@@ -33,6 +34,12 @@ describe('email template builders', () => {
     expect(buildMfaDisabledEmail().html).toMatch(/didn't do this/i);
   });
 
+  it('support request received email does not overstate response time or make it sound automatic-only', () => {
+    const { subject, html } = buildSupportRequestReceivedEmail();
+    expect(subject).toMatch(/received/i);
+    expect(html).toMatch(/controlled early access/i);
+  });
+
   it('every template produces a non-empty subject and a full HTML document', () => {
     for (const build of [
       () => buildPasswordResetEmail('https://x/y'),
@@ -40,6 +47,7 @@ describe('email template builders', () => {
       buildPasswordChangedEmail,
       buildMfaEnabledEmail,
       buildMfaDisabledEmail,
+      buildSupportRequestReceivedEmail,
     ]) {
       const { subject, html } = build();
       expect(subject.length).toBeGreaterThan(0);
@@ -66,6 +74,7 @@ describe('htmlToPlainTextFallback', () => {
       buildPasswordChangedEmail,
       buildMfaEnabledEmail,
       buildMfaDisabledEmail,
+      buildSupportRequestReceivedEmail,
     ]) {
       const text = htmlToPlainTextFallback(build().html);
       expect(text.length).toBeGreaterThan(20);

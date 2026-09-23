@@ -30,7 +30,7 @@ import { suggestRecognitionPrompts } from './positive-reinforcement';
 import { isRealGuardian, isValidGuardianPhone, buildGuardianCallRequestMessage, extractFirstName, nudgeSchedulerIsEnabled, guardianAlertsEnabled } from './guardian-alert';
 import { guardianSupportInvitationEnabled, validateGuardianSupportOffer, isValidGuardianSupportEventType, isValidGuardianSupportTemplateId, buildGuardianSupportMessage } from './guardian-support-invitation';
 import { collectionsForExport, collectionsForErasure } from './user-data-collections';
-import { htmlToPlainTextFallback, buildEmailVerificationEmail, buildPasswordResetEmail, buildPasswordChangedEmail, buildMfaEnabledEmail, buildMfaDisabledEmail } from './brevo-templates';
+import { htmlToPlainTextFallback, buildEmailVerificationEmail, buildPasswordResetEmail, buildPasswordChangedEmail, buildMfaEnabledEmail, buildMfaDisabledEmail, buildSupportRequestReceivedEmail } from './brevo-templates';
 import { generateTotpSecret, buildOtpauthUri, verifyTotpCode, generateRecoveryCodes, hashRecoveryCode, encryptSecret as encryptTotpSecret, decryptSecret as decryptTotpSecret, isTotpLockedOut, nextLockoutState } from './totp-mfa';
 import { isValidGad7Answers, scoreGad7, interpretGad7 } from './gad7';
 import { OrgRole, isOrgRole, hasOrgPermission, canAssignRole, OrgPermission, ORG_ROLE_PERMISSIONS } from './org-rbac';
@@ -608,12 +608,10 @@ Details: ${details || 'No details provided'}
     // Send to admin
     await sendBrevoEmail("support@blazebreak.app", subject, body);
     
-    // Auto-reply to user
-    await sendBrevoEmail(
-      email, 
-      "Blaze Break - Request Received", 
-      "We have received your request. Blaze Break is in controlled early access, so our team will process this manually and be in touch soon. \n\nNote: This email is unmonitored."
-    );
+    // Auto-reply to user - branded HTML, unlike the plain-text admin copy
+    // above, since this one actually reaches a real client's inbox.
+    const { subject: replySubject, html: replyHtml } = buildSupportRequestReceivedEmail();
+    await sendBrevoHtmlEmail(email, replySubject, replyHtml);
 
     res.json({ success: true });
   } catch (err: any) {
