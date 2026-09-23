@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { ArrowRight, ShieldCheck, BatteryLow, MessageSquareText, LogIn, ArrowLeft, Loader2, Mail, Lock, Sun, Moon, Briefcase, TrendingUp, Users } from 'lucide-react';
+import { ArrowRight, ShieldCheck, BatteryLow, MessageSquareText, LogIn, ArrowLeft, Loader2, Mail, Lock, Sun, Moon, Briefcase, TrendingUp, Users, Wand2, Copy, Check } from 'lucide-react';
 import { useAuth } from '../lib/auth';
 import { useFocusTrap } from '../lib/useFocusTrap';
 import { secureApiFetch } from '../lib/secure-api';
+import { checkPasswordStrength, generateStrongPassword, PASSWORD_REQUIREMENT_TEXT, PASSWORD_MIN_LENGTH } from '../lib/password-strength';
 
 interface LandingPageProps {
   onStart: () => void;
@@ -46,6 +47,12 @@ export const LandingPage = ({ onStart, onOpenTrustCentre, darkMode, setDarkMode 
   const [authError, setAuthError] = useState<string | null>(null);
   const [emailAuthSubmitting, setEmailAuthSubmitting] = useState(false);
   const [resetLinkSent, setResetLinkSent] = useState(false);
+  // True once "Generate a strong password" has been used this signup
+  // attempt - switches the password fields to plain text (a generated
+  // password the user can't see or copy defeats the point) and shows the
+  // copy button. Reset alongside everything else when the modal closes.
+  const [generatedPasswordVisible, setGeneratedPasswordVisible] = useState(false);
+  const [copiedGeneratedPassword, setCopiedGeneratedPassword] = useState(false);
 
   useEffect(() => {
     if (showAuthModal) return;
@@ -55,7 +62,33 @@ export const LandingPage = ({ onStart, onOpenTrustCentre, darkMode, setDarkMode 
     setConfirmPassword('');
     setAuthError(null);
     setResetLinkSent(false);
+    setGeneratedPasswordVisible(false);
+    setCopiedGeneratedPassword(false);
   }, [showAuthModal]);
+
+  // Client-side only, via the Web Crypto API (see password-strength.ts) -
+  // never sent anywhere before the person has seen and accepted it, and
+  // never stored or logged.
+  const handleGeneratePassword = () => {
+    const generated = generateStrongPassword();
+    setPassword(generated);
+    setConfirmPassword(generated);
+    setGeneratedPasswordVisible(true);
+    setCopiedGeneratedPassword(false);
+    setAuthError(null);
+  };
+
+  const handleCopyGeneratedPassword = async () => {
+    try {
+      await navigator.clipboard.writeText(password);
+      setCopiedGeneratedPassword(true);
+      setTimeout(() => setCopiedGeneratedPassword(false), 2000);
+    } catch {
+      // Clipboard access can fail (permissions, insecure context) - the
+      // password is already visible in the field either way, so this is
+      // a silent no-op rather than an alarming error for a cosmetic miss.
+    }
+  };
 
   const handleStartRequest = () => {
     if (user) {
@@ -85,9 +118,16 @@ export const LandingPage = ({ onStart, onOpenTrustCentre, darkMode, setDarkMode 
       setAuthError("Those passwords don't match.");
       return;
     }
-    if (password.length < 8) {
-      setAuthError('Password must be at least 8 characters.');
-      return;
+    // Strength is only enforced when creating a new password - re-checking
+    // it at sign-in would reject legitimate existing users whose password
+    // predates this stricter policy. Firebase's own sign-in call is the
+    // correct arbiter of whether an existing password is right or wrong.
+    if (authMode === 'signup') {
+      const strength = checkPasswordStrength(password);
+      if (!strength.valid) {
+        setAuthError(`Password needs: ${strength.reasons.join('; ')}.`);
+        return;
+      }
     }
     try {
       setEmailAuthSubmitting(true);
@@ -439,26 +479,49 @@ export const LandingPage = ({ onStart, onOpenTrustCentre, darkMode, setDarkMode 
                     <div className="relative">
                       <Lock className="w-4 h-4 text-text-muted absolute left-4 top-1/2 -translate-y-1/2" aria-hidden="true" />
                       <input
-                        type="password"
+                        type={generatedPasswordVisible ? 'text' : 'password'}
                         required
                         autoComplete={authMode === 'signup' ? 'new-password' : 'current-password'}
-                        minLength={8}
+                        minLength={authMode === 'signup' ? PASSWORD_MIN_LENGTH : undefined}
                         value={password}
-                        onChange={(e) => setPassword(e.target.value)}
+                        onChange={(e) => { setPassword(e.target.value); setGeneratedPasswordVisible(false); }}
                         placeholder="Password"
-                        className="w-full bg-background border border-border rounded-xl pl-11 pr-4 py-3.5 text-sm text-text-main placeholder:text-text-muted focus:outline-none focus:border-primary/50 transition-colors"
+                        className={`w-full bg-background border border-border rounded-xl pl-11 ${generatedPasswordVisible ? 'pr-11' : 'pr-4'} py-3.5 text-sm text-text-main placeholder:text-text-muted focus:outline-none focus:border-primary/50 transition-colors`}
                       />
+                      {generatedPasswordVisible && (
+                        <button
+                          type="button"
+                          onClick={handleCopyGeneratedPassword}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 text-text-muted hover:text-text-main transition-colors p-1"
+                          aria-label={copiedGeneratedPassword ? 'Copied' : 'Copy generated password'}
+                          title={copiedGeneratedPassword ? 'Copied' : 'Copy password'}
+                        >
+                          {copiedGeneratedPassword ? <Check className="w-4 h-4 text-success dark:text-[#4ade80]" aria-hidden="true" /> : <Copy className="w-4 h-4" aria-hidden="true" />}
+                        </button>
+                      )}
                     </div>
+                    {authMode === 'signup' && (
+                      <div className="flex items-center justify-between -mt-1 px-1">
+                        <p className="text-[10px] text-text-muted leading-relaxed">{PASSWORD_REQUIREMENT_TEXT}</p>
+                        <button
+                          type="button"
+                          onClick={handleGeneratePassword}
+                          className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-primary hover:text-primary/80 transition-colors whitespace-nowrap ml-3"
+                        >
+                          <Wand2 className="w-3 h-3" aria-hidden="true" /> Generate
+                        </button>
+                      </div>
+                    )}
                     {authMode === 'signup' && (
                       <div className="relative">
                         <Lock className="w-4 h-4 text-text-muted absolute left-4 top-1/2 -translate-y-1/2" aria-hidden="true" />
                         <input
-                          type="password"
+                          type={generatedPasswordVisible ? 'text' : 'password'}
                           required
                           autoComplete="new-password"
-                          minLength={8}
+                          minLength={PASSWORD_MIN_LENGTH}
                           value={confirmPassword}
-                          onChange={(e) => setConfirmPassword(e.target.value)}
+                          onChange={(e) => { setConfirmPassword(e.target.value); setGeneratedPasswordVisible(false); }}
                           placeholder="Confirm password"
                           className="w-full bg-background border border-border rounded-xl pl-11 pr-4 py-3.5 text-sm text-text-main placeholder:text-text-muted focus:outline-none focus:border-primary/50 transition-colors"
                         />
