@@ -149,6 +149,17 @@ if (process.env.NODE_ENV === "production") {
           "https://*.googleapis.com",   // Firebase Auth/Firestore + the direct Google Calendar API calls
           "https://*.firebaseio.com",
           "wss://*.firebaseio.com",
+          // reCAPTCHA Enterprise's own script (allowed in scriptSrc above)
+          // makes its own background network calls to this same host once
+          // loaded (e.g. the /recaptcha/enterprise/clr risk-telemetry
+          // call) - without it here too, those calls are blocked by this
+          // policy, and App Check silently can't produce a token, which
+          // cascades into every gated fetch (secure-api.ts's
+          // getAppCheckToken) hanging/retrying instead of failing fast -
+          // the same "looks offline/stuck loading" failure mode already
+          // documented for scriptSrc above, just one directive short of
+          // actually being fixed by it.
+          "https://www.google.com",
           "ws:", "wss:",                // same-origin WebSocket (Nova live voice) — scheme itself, not a host, since it's same-origin
         ],
         // Firebase Auth's popup-based sign-in relays the OAuth result back to
