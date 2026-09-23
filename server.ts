@@ -567,7 +567,7 @@ const postToBrevoEmail = async (payload: Record<string, unknown>): Promise<boole
 
 const sendBrevoEmail = (toEmail: string, subject: string, textContent: string) =>
   postToBrevoEmail({
-    sender: { name: "Blaze Break Support", email: "support@blazebreak.com" },
+    sender: { name: "Blaze Break Support", email: "support@blazebreak.app" },
     to: [{ email: toEmail }],
     subject,
     textContent
@@ -580,7 +580,7 @@ const sendBrevoEmail = (toEmail: string, subject: string, textContent: string) =
 // clickable link and a bit of branding rather than a raw URL in plaintext.
 const sendBrevoHtmlEmail = (toEmail: string, subject: string, htmlContent: string) =>
   postToBrevoEmail({
-    sender: { name: "Blaze Break Support", email: "support@blazebreak.com" },
+    sender: { name: "Blaze Break Support", email: "support@blazebreak.app" },
     to: [{ email: toEmail }],
     subject,
     htmlContent,
@@ -606,7 +606,7 @@ Details: ${details || 'No details provided'}
     `.trim();
 
     // Send to admin
-    await sendBrevoEmail("support@blazebreak.com", subject, body);
+    await sendBrevoEmail("support@blazebreak.app", subject, body);
     
     // Auto-reply to user
     await sendBrevoEmail(
@@ -666,7 +666,7 @@ Public-use consent: ${consentToRecord ? 'yes' : 'no'}
 Message:
 ${message}
     `.trim();
-    await sendBrevoEmail("support@blazebreak.com", subject, body);
+    await sendBrevoEmail("support@blazebreak.app", subject, body);
 
     res.json({ success: true, id: docRef.id });
   } catch (err: any) {

@@ -174,7 +174,7 @@ export const FeedbackForm = () => {
         )}
         {status === 'error' && (
           <p role="alert" className="text-xs font-semibold text-destructive dark:text-[#f87171]">
-            Couldn't send that just now. You can also email us directly at support@blazebreak.com
+            Couldn't send that just now. You can also email us directly at support@blazebreak.app
           </p>
         )}
       </form>
