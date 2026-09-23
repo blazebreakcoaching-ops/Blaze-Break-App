@@ -1,9 +1,10 @@
-// Pure HTML-builder functions for this app's account-security emails - no
+// Pure HTML-builder functions for this app's client-facing emails - no
 // network/Firestore I/O, so they're unit-testable like guardian-alert.ts
 // and totp-mfa.ts. server.ts owns actually sending these via Brevo
-// (sendBrevoHtmlEmail). These are the app's first HTML emails - every
-// existing sendBrevoEmail call site (support requests, org invites, ally
-// invites) stays plain-text and untouched.
+// (sendBrevoHtmlEmail). Internal-only notifications (the admin copy of a
+// support/feedback submission, sent to support@blazebreak.app) stay
+// plain-text via sendBrevoEmail, since nobody outside the team ever sees
+// those - only mail a real user receives goes through these templates.
 //
 // Kept deliberately plain: one accent colour (#9a3412, this app's existing
 // flame-mark colour from LandingPage.tsx), a text-first layout, and the
@@ -91,6 +92,14 @@ export const buildMfaDisabledEmail = (): { subject: string; html: string } => ({
     'Two-factor authentication disabled',
     `<p>The extra sign-in step (authenticator app) on your Blaze Break account has been turned off.</p>
      <p>If you didn't do this, please contact us through the app right away and reset your password.</p>`
+  ),
+});
+
+export const buildSupportRequestReceivedEmail = (): { subject: string; html: string } => ({
+  subject: 'Blaze Break - Request Received',
+  html: wrapEmail(
+    'Request received',
+    `<p>We've received your request. Blaze Break is in controlled early access, so our team will process this manually and be in touch soon.</p>`
   ),
 });
 
