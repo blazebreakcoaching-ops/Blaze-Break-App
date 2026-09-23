@@ -3167,6 +3167,15 @@ app.post("/api/auth/verify-email/send", verifyAppCheck, authenticateFirebaseUser
     if (!user.email) {
       return res.status(400).json({ error: "This account has no email address to verify." });
     }
+    // A social sign-in (Google/Microsoft/Facebook) arrives with
+    // email_verified already true when the provider itself vouches for
+    // the address - LandingPage.tsx never calls this route for a social
+    // sign-in in the first place, but this guard makes that true
+    // regardless of caller, so a pre-verified account is never sent a
+    // pointless "please verify" email.
+    if (user.email_verified) {
+      return res.json({ success: true, alreadyVerified: true });
+    }
     try {
       const link = await getAuth().generateEmailVerificationLink(user.email, {
         url: authActionUrl(),
