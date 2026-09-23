@@ -12,6 +12,23 @@ import { buildContinuityPreamble, VoiceSessionRecord } from '../../voice-continu
 // AudioWorklet capture, streamed playback, barge-in handling, live transcript,
 // and calm in-UI errors (never a browser alert()).
 
+// Firebase Hosting's rewrite-to-Cloud-Run proxy (firebase.json's
+// hosting.rewrites, used to serve the custom domain) proxies ordinary
+// HTTP request/response only - it does not support the WebSocket
+// protocol upgrade. A live-voice connection opened while the page is
+// loaded from the custom domain would otherwise fail at the connection
+// level before this app's own server ever sees it (the browser just
+// reports "WebSocket connection ... failed", with no further detail,
+// since the rewrite layer itself never completes the handshake).
+// Cloud Run supports WebSockets natively, so this connects directly to
+// the Cloud Run service's own URL for just this one real-time
+// connection, bypassing Hosting entirely - every other request (page
+// load, all other API calls) keeps using the custom domain as normal.
+// Falls back to the current origin unchanged when already on the direct
+// Cloud Run URL or in local dev, so neither of those paths change.
+export const CLOUD_RUN_DIRECT_HOST = 'blaze-break-220686314556.europe-west2.run.app';
+export const isServedViaHostingRewrite = (host: string) => host !== CLOUD_RUN_DIRECT_HOST && !host.endsWith('.run.app') && !host.startsWith('localhost') && !host.startsWith('127.0.0.1');
+
 export type VoiceStatus = 'idle' | 'connecting' | 'live' | 'error';
 
 export interface TranscriptLine {
@@ -214,8 +231,10 @@ export function useNovaLiveVoice(options: UseNovaLiveVoiceOptions = {}) {
         }
       } catch { /* proceed without continuity */ }
 
-      const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
-      const wsUrl = `${proto}://${window.location.host}/api/nova/live?token=${encodeURIComponent(idToken)}&appCheckToken=${encodeURIComponent(appCheckToken)}`;
+      const viaHostingRewrite = isServedViaHostingRewrite(window.location.host);
+      const wsHost = viaHostingRewrite ? CLOUD_RUN_DIRECT_HOST : window.location.host;
+      const proto = viaHostingRewrite || window.location.protocol === 'https:' ? 'wss' : 'ws';
+      const wsUrl = `${proto}://${wsHost}/api/nova/live?token=${encodeURIComponent(idToken)}&appCheckToken=${encodeURIComponent(appCheckToken)}`;
       const ws = new WebSocket(wsUrl);
       wsRef.current = ws;
 
