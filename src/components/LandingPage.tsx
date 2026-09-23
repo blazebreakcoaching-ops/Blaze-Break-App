@@ -1,10 +1,15 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, lazy, Suspense } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { ArrowRight, ShieldCheck, BatteryLow, MessageSquareText, LogIn, ArrowLeft, Loader2, Mail, Lock, Sun, Moon, Briefcase, TrendingUp, Users, Wand2, Copy, Check } from 'lucide-react';
 import { useAuth } from '../lib/auth';
 import { useFocusTrap } from '../lib/useFocusTrap';
 import { secureApiFetch } from '../lib/secure-api';
 import { checkPasswordStrength, generateStrongPassword, PASSWORD_REQUIREMENT_TEXT, PASSWORD_MIN_LENGTH } from '../lib/password-strength';
+
+// Lazy - this pulls in the `qrcode` library, which has no reason to load
+// for every anonymous landing-page visitor when only the small fraction
+// who actually complete a fresh signup ever reach this step.
+const SecuritySettingsView = lazy(() => import('./SecuritySettingsView').then(m => ({ default: m.SecuritySettingsView })));
 
 interface LandingPageProps {
   onStart: () => void;
@@ -57,6 +62,13 @@ export const LandingPage = ({ onStart, onOpenTrustCentre, darkMode, setDarkMode 
   // copy button. Reset alongside everything else when the modal closes.
   const [generatedPasswordVisible, setGeneratedPasswordVisible] = useState(false);
   const [copiedGeneratedPassword, setCopiedGeneratedPassword] = useState(false);
+  // Shown in place of the normal sign-in/sign-up forms right after a
+  // successful signup (any provider) - a skippable, optional invitation to
+  // set up 2FA before entering the app. Never shown for a returning
+  // sign-in. Reuses SecuritySettingsView (the exact same component/
+  // endpoints Settings uses) rather than a second enrollment flow.
+  const [showPostSignupMfaStep, setShowPostSignupMfaStep] = useState(false);
+  const [mfaJustEnabled, setMfaJustEnabled] = useState(false);
 
   useEffect(() => {
     if (showAuthModal) return;
@@ -68,7 +80,17 @@ export const LandingPage = ({ onStart, onOpenTrustCentre, darkMode, setDarkMode 
     setResetLinkSent(false);
     setGeneratedPasswordVisible(false);
     setCopiedGeneratedPassword(false);
+    setShowPostSignupMfaStep(false);
+    setMfaJustEnabled(false);
   }, [showAuthModal]);
+
+  // The shared "finish onboarding" action, reached either by skipping the
+  // optional 2FA step or by completing it - both land in the app the same
+  // way, since 2FA here is genuinely optional, not a gate.
+  const finishOnboarding = () => {
+    setShowAuthModal(false);
+    onStart();
+  };
 
   // Client-side only, via the Web Crypto API (see password-strength.ts) -
   // never sent anywhere before the person has seen and accepted it, and
@@ -105,9 +127,12 @@ export const LandingPage = ({ onStart, onOpenTrustCentre, darkMode, setDarkMode 
   const handleGoogleSignIn = async () => {
     try {
       setSigningInProvider('google');
-      await signIn();
-      setShowAuthModal(false);
-      onStart();
+      const { isNewUser } = await signIn();
+      if (isNewUser) {
+        setShowPostSignupMfaStep(true);
+      } else {
+        finishOnboarding();
+      }
     } catch (e) {
       console.error("Sign up failed:", e);
     } finally {
@@ -118,9 +143,12 @@ export const LandingPage = ({ onStart, onOpenTrustCentre, darkMode, setDarkMode 
   const handleMicrosoftSignIn = async () => {
     try {
       setSigningInProvider('microsoft');
-      await signInWithMicrosoft();
-      setShowAuthModal(false);
-      onStart();
+      const { isNewUser } = await signInWithMicrosoft();
+      if (isNewUser) {
+        setShowPostSignupMfaStep(true);
+      } else {
+        finishOnboarding();
+      }
     } catch (e) {
       console.error("Sign up failed:", e);
     } finally {
@@ -131,9 +159,12 @@ export const LandingPage = ({ onStart, onOpenTrustCentre, darkMode, setDarkMode 
   const handleFacebookSignIn = async () => {
     try {
       setSigningInProvider('facebook');
-      await signInWithFacebook();
-      setShowAuthModal(false);
-      onStart();
+      const { isNewUser } = await signInWithFacebook();
+      if (isNewUser) {
+        setShowPostSignupMfaStep(true);
+      } else {
+        finishOnboarding();
+      }
     } catch (e) {
       console.error("Sign up failed:", e);
     } finally {
@@ -165,11 +196,14 @@ export const LandingPage = ({ onStart, onOpenTrustCentre, darkMode, setDarkMode 
         await signUpWithEmail(email, password);
         // Best-effort - never block getting into the app on this succeeding.
         secureApiFetch('/api/auth/verify-email/send', { method: 'POST' }).catch(() => {});
+        // Email signup is always a genuine new account (no isNewUser check
+        // needed, unlike the social providers) - always offer the
+        // optional 2FA step here, same as after a fresh social signup.
+        setShowPostSignupMfaStep(true);
       } else {
         await signInWithEmail(email, password);
+        finishOnboarding();
       }
-      setShowAuthModal(false);
-      onStart();
     } catch (err: any) {
       setAuthError(err?.message || 'Something went wrong. Please try again.');
     } finally {
@@ -410,16 +444,45 @@ export const LandingPage = ({ onStart, onOpenTrustCentre, darkMode, setDarkMode 
                   <img src="/brand/flame-mark-dark.png" alt="" className="w-6 h-6 hidden dark:block" />
                 </div>
                 <h3 id="auth-modal-title" className="text-2xl font-bold text-text-main tracking-tight">
-                  {authMode === 'forgot' ? 'Reset your password' : authMode === 'signup' ? 'Create your account' : 'Access Account'}
+                  {showPostSignupMfaStep ? 'Secure your account' : authMode === 'forgot' ? 'Reset your password' : authMode === 'signup' ? 'Create your account' : 'Access Account'}
                 </h3>
-                {authMode !== 'forgot' && (
+                {showPostSignupMfaStep ? (
+                  <p className="text-text-muted text-sm mt-1 leading-relaxed">
+                    Your account is ready. Adding two-factor authentication now is entirely optional - skip it and turn it on anytime later from Settings.
+                  </p>
+                ) : authMode !== 'forgot' && (
                   <p className="text-text-muted text-sm mt-1 leading-relaxed">
                     Register or login. Blaze Break is in controlled early access. Features may evolve. Data tools are for coaching support, not medical diagnosis. Optional Nova AI is a recovery coach, not a therapist.
                   </p>
                 )}
               </div>
 
-              {authMode === 'forgot' ? (
+              {showPostSignupMfaStep ? (
+                <div className="space-y-4 pt-2">
+                  <Suspense fallback={null}>
+                    <SecuritySettingsView onEnabled={() => setMfaJustEnabled(true)} />
+                  </Suspense>
+                  <div className="pt-2 border-t border-border">
+                    {mfaJustEnabled ? (
+                      <button
+                        type="button"
+                        onClick={finishOnboarding}
+                        className="w-full flex items-center justify-center gap-3 bg-primary text-white font-bold text-xs uppercase tracking-widest py-4 rounded-2xl hover:scale-[1.02] active:scale-95 transition-all shadow-lg shadow-primary/15"
+                      >
+                        Continue to Blaze Break
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={finishOnboarding}
+                        className="w-full text-center text-xs font-bold text-text-muted hover:text-text-main transition-colors py-2"
+                      >
+                        Skip for now
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ) : authMode === 'forgot' ? (
                 resetLinkSent ? (
                   <div className="space-y-4 pt-2">
                     <p className="text-sm text-text-main leading-relaxed">

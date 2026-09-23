@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { User, Auth as FirebaseAuth, signInWithPopup, signInAnonymously, linkWithPopup, linkWithCredential, signInWithCredential, signInWithEmailAndPassword, createUserWithEmailAndPassword, EmailAuthProvider, GoogleAuthProvider, OAuthProvider, FacebookAuthProvider, signOut, onAuthStateChanged } from 'firebase/auth';
+import { User, Auth as FirebaseAuth, signInWithPopup, signInAnonymously, linkWithPopup, linkWithCredential, signInWithCredential, signInWithEmailAndPassword, createUserWithEmailAndPassword, EmailAuthProvider, GoogleAuthProvider, OAuthProvider, FacebookAuthProvider, getAdditionalUserInfo, signOut, onAuthStateChanged } from 'firebase/auth';
 import { auth, getDb } from './firebase';
 import { secureApiFetch } from './secure-api';
 import { getMfaSessionToken, setMfaSessionToken, clearMfaSessionToken } from './mfa-session';
@@ -14,10 +14,16 @@ interface AuthContextType {
   // verified it this session - App.tsx renders MfaChallenge instead of the
   // app while this is true. Always false for anonymous sessions.
   mfaPending: boolean;
-  signIn: () => Promise<void>;
+  // isNewUser reflects whether this operation just created the account
+  // (including the anonymous-session-upgrade case, which Firebase also
+  // reports as isNewUser: true) - used by LandingPage.tsx to decide
+  // whether to offer the optional post-signup 2FA step, since that step
+  // should only ever appear right after a genuine signup, never on a
+  // returning sign-in.
+  signIn: () => Promise<{ isNewUser: boolean }>;
   signInWithCalendar: () => Promise<string | null>;
-  signInWithMicrosoft: () => Promise<void>;
-  signInWithFacebook: () => Promise<void>;
+  signInWithMicrosoft: () => Promise<{ isNewUser: boolean }>;
+  signInWithFacebook: () => Promise<{ isNewUser: boolean }>;
   signUpWithEmail: (email: string, password: string) => Promise<void>;
   signInWithEmail: (email: string, password: string) => Promise<void>;
   sendPasswordReset: (email: string) => Promise<void>;
@@ -32,10 +38,10 @@ const AuthContext = createContext<AuthContextType>({
   loading: true,
   accessToken: null,
   mfaPending: false,
-  signIn: async () => {},
+  signIn: async () => ({ isNewUser: false }),
   signInWithCalendar: async () => null,
-  signInWithMicrosoft: async () => {},
-  signInWithFacebook: async () => {},
+  signInWithMicrosoft: async () => ({ isNewUser: false }),
+  signInWithFacebook: async () => ({ isNewUser: false }),
   signUpWithEmail: async () => {},
   signInWithEmail: async () => {},
   sendPasswordReset: async () => {},
@@ -283,6 +289,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (credential?.accessToken) {
       setAccessToken(credential.accessToken);
     }
+    return { isNewUser: getAdditionalUserInfo(result)?.isNewUser ?? false };
   };
 
   const signInWithCalendar = async () => {
@@ -301,11 +308,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // Microsoft Graph or Facebook Graph token there would silently corrupt
   // those features.
   const handleMicrosoftSignIn = async () => {
-    await signInWithMicrosoft(auth);
+    const result = await signInWithMicrosoft(auth);
+    return { isNewUser: getAdditionalUserInfo(result)?.isNewUser ?? false };
   };
 
   const handleFacebookSignIn = async () => {
-    await signInWithFacebook(auth);
+    const result = await signInWithFacebook(auth);
+    return { isNewUser: getAdditionalUserInfo(result)?.isNewUser ?? false };
   };
 
   // Same anonymous-upgrade pattern as signIn()/signInWithCalendar() above,
