@@ -40,6 +40,11 @@ export const LegalDocumentModal = ({ docType, onClose }: { docType: LegalDocumen
         const data = await res.json();
         if (!cancelled) setDoc(data);
       } catch (e) {
+        // Logged, not swallowed - this was previously showing the same
+        // generic message for every failure (a missing sign-in, an App
+        // Check failure, a genuine server error), making it impossible to
+        // tell them apart from a bug report alone.
+        console.error('[LegalDocumentModal] Failed to load document:', docType, e);
         if (!cancelled) setError('Could not load this document right now. Please try again shortly.');
       } finally {
         if (!cancelled) setLoading(false);
