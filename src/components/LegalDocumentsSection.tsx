@@ -34,6 +34,7 @@ export const LegalDocumentsSection = () => {
       } catch (e) {
         // Leaves the list empty - the section still renders a graceful
         // "couldn't load" state rather than crashing the Policies tab.
+        console.error('[LegalDocumentsSection] Failed to load document list:', e);
       } finally {
         if (!cancelled) setLoading(false);
       }
