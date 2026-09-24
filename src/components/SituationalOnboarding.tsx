@@ -13,16 +13,19 @@ import {
   Activity,
   Briefcase,
   BatteryLow,
+  LogOut,
 } from "lucide-react";
 import { UserProfileData } from "../types";
 import { cn } from "../lib/utils";
 import { logAuditAction } from "../lib/audit-logger";
+import { useAuth } from "../lib/auth";
 
 interface OnboardingProps {
   onComplete: (profile: UserProfileData) => void;
 }
 
 export const SituationalOnboarding = ({ onComplete }: OnboardingProps) => {
+  const { logOut } = useAuth();
   const [step, setStep] = useState(0);
 
   const [profile, setProfile] = useState<UserProfileData>({
@@ -484,6 +487,19 @@ export const SituationalOnboarding = ({ onComplete }: OnboardingProps) => {
             </div>
           </motion.div>
         </AnimatePresence>
+
+        {/* Escape hatch - if this is showing for the wrong account, or
+            someone just isn't ready to answer these questions right now,
+            they can leave instead of feeling stuck completing a form to
+            get out. Same pattern/placement as MfaChallenge.tsx's own
+            "Not you? Sign out" link. */}
+        <button
+          type="button"
+          onClick={() => { logOut(); }}
+          className="w-full mt-6 flex items-center justify-center gap-2 text-xs font-bold uppercase tracking-widest text-text-muted hover:text-text-main transition-colors py-1"
+        >
+          <LogOut className="w-3.5 h-3.5" /> Not you? Sign out
+        </button>
       </div>
     </div>
   );
