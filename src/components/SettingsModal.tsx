@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { X, Upload, CheckCircle2, User, Sliders, Settings2, MessageSquare, ShieldCheck } from 'lucide-react';
+import { X, Upload, CheckCircle2, User, Sliders, Settings2, MessageSquare, ShieldCheck, LogOut } from 'lucide-react';
 import { UserProfileData } from '../types';
 import { NotificationSettingsView } from './NotificationSettingsView';
 import { FeatureFlagsView } from './FeatureFlagsView';
@@ -10,6 +10,7 @@ import { NovaStyleControl } from './NovaStyleControl';
 import { cn } from '../lib/utils';
 import { useFocusTrap } from '../lib/useFocusTrap';
 import { secureApiFetch } from '../lib/secure-api';
+import { useAuth } from '../lib/auth';
 
 interface SettingsModalProps {
   profile: UserProfileData | undefined;
@@ -19,6 +20,7 @@ interface SettingsModalProps {
 }
 
 export const SettingsModal = ({ profile, onSave, onClose, onOpenPrivacyCentre }: SettingsModalProps) => {
+  const { logOut } = useAuth();
   const [activeTab, setActiveTab] = useState<'profile' | 'notifications' | 'security' | 'experiments' | 'consent' | 'feedback'>('profile');
   const [formData, setFormData] = useState<UserProfileData>(profile || {
     fullName: '',
@@ -508,6 +510,21 @@ export const SettingsModal = ({ profile, onSave, onClose, onOpenPrivacyCentre }:
               <FeedbackForm />
             </div>
           )}
+        </div>
+
+        {/* Persistent, always-visible regardless of which tab is open -
+            there was previously no way to sign out of the app on demand
+            anywhere in Settings (only narrow, conditional cases elsewhere
+            like right after disabling 2FA), which made it impossible to
+            cleanly switch accounts. */}
+        <div className="shrink-0 pt-4 mt-2 border-t border-border dark:border-border">
+          <button
+            type="button"
+            onClick={() => { logOut(); onClose(); }}
+            className="w-full flex items-center justify-center gap-2 text-xs font-bold uppercase tracking-widest text-text-muted hover:text-text-main transition-colors py-1"
+          >
+            <LogOut className="w-3.5 h-3.5" /> Sign Out
+          </button>
         </div>
       </motion.div>
     </div>
