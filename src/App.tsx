@@ -2273,6 +2273,7 @@ export default function App() {
                 onUpdateOperationalMetrics={handleUpdateOperationalMetrics}
                 onUpdatePulseHistory={handleUpdatePulseHistory}
                 onLogJourney={logJourney}
+                isDemoSession={isDemoSession}
               />
             )}
 

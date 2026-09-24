@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { isDemoUser, DEMO_FINGERPRINT, DEMO_STATS } from './demo-data';
+import { isDemoUser, DEMO_FINGERPRINT, DEMO_STATS, DEMO_VELOCITY_MAP } from './demo-data';
 import { BurnoutProfile } from '../types';
 
 // The exact, real archetype names this app uses - kept as a literal list
@@ -59,5 +59,23 @@ describe('DEMO_STATS', () => {
 
   it('starts with an empty support circle, so no sample contact ever reaches Firestore via migrateSupportCircleIfNeeded', () => {
     expect(DEMO_STATS.supportCircle).toEqual([]);
+  });
+});
+
+describe('DEMO_VELOCITY_MAP', () => {
+  it('has a two-week span of realistic 0-100 output/recovery values', () => {
+    expect(DEMO_VELOCITY_MAP.length).toBe(14);
+    for (const day of DEMO_VELOCITY_MAP) {
+      expect(day.energyOutput).toBeGreaterThan(0);
+      expect(day.energyOutput).toBeLessThanOrEqual(100);
+      expect(day.recoveryInput).toBeGreaterThan(0);
+      expect(day.recoveryInput).toBeLessThanOrEqual(100);
+    }
+  });
+
+  it('narrows toward balance by the end, consistent with DEMO_PULSE_HISTORY\'s upward trend', () => {
+    const first = DEMO_VELOCITY_MAP[0];
+    const last = DEMO_VELOCITY_MAP[DEMO_VELOCITY_MAP.length - 1];
+    expect(first.energyOutput - first.recoveryInput).toBeGreaterThan(last.energyOutput - last.recoveryInput);
   });
 });

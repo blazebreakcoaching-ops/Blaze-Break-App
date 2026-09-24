@@ -90,6 +90,28 @@ export const DEMO_PULSE_HISTORY: { date: string; score: number }[] = [
 export const DEMO_ENERGY_LEVEL = 66;
 export const DEMO_BURNOUT_RISK = "Moderate";
 
+// Matches RecoveryVelocityMap.tsx's own /api/recovery/velocity-map response
+// shape (date + the two raw inputs it derives balance/notes from itself via
+// annotateDay) - same 14-day window and narrowing trend as
+// DEMO_PULSE_HISTORY above, so the two charts tell one consistent story: a
+// high-output, low-recovery start that's gradually closing the gap.
+export const DEMO_VELOCITY_MAP: { date: string; energyOutput: number; recoveryInput: number }[] = [
+  { date: "Sep 9", energyOutput: 82, recoveryInput: 38 },
+  { date: "Sep 10", energyOutput: 80, recoveryInput: 40 },
+  { date: "Sep 11", energyOutput: 79, recoveryInput: 42 },
+  { date: "Sep 12", energyOutput: 78, recoveryInput: 45 },
+  { date: "Sep 13", energyOutput: 76, recoveryInput: 48 },
+  { date: "Sep 14", energyOutput: 75, recoveryInput: 50 },
+  { date: "Sep 15", energyOutput: 74, recoveryInput: 52 },
+  { date: "Sep 16", energyOutput: 73, recoveryInput: 55 },
+  { date: "Sep 17", energyOutput: 71, recoveryInput: 58 },
+  { date: "Sep 18", energyOutput: 70, recoveryInput: 60 },
+  { date: "Sep 19", energyOutput: 68, recoveryInput: 62 },
+  { date: "Sep 20", energyOutput: 67, recoveryInput: 64 },
+  { date: "Sep 21", energyOutput: 66, recoveryInput: 66 },
+  { date: "Sep 22", energyOutput: 65, recoveryInput: 68 },
+];
+
 // The single source of truth for "is this a demo session" - App.tsx
 // derives isDemoSession from this on every render (not stored as
 // separate state), so it flips back to false automatically the instant

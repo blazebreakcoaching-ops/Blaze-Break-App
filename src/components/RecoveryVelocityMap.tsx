@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { secureApiFetch } from '../lib/secure-api';
+import { DEMO_VELOCITY_MAP } from '../lib/demo-data';
 
 interface DayData {
   date: string;
@@ -104,13 +105,26 @@ const CustomTooltip = ({ active, payload }: any) => {
   return null;
 };
 
-export const RecoveryVelocityMap = () => {
+export const RecoveryVelocityMap = ({ isDemoSession }: { isDemoSession?: boolean }) => {
   const [data, setData] = useState<DayData[]>([]);
   const [loading, setLoading] = useState(true);
   const [hasAnyData, setHasAnyData] = useState(false);
   const [viewMode, setViewMode] = useState<'all' | 'recovery' | 'energy'>('all');
 
   useEffect(() => {
+    // A demo session never has real logged activity to show, so skip the
+    // fetch entirely and seed from the same illustrative dataset the Home
+    // tab uses - never written back anywhere, just rendered.
+    if (isDemoSession) {
+      const mapped: DayData[] = DEMO_VELOCITY_MAP.map((d) => ({
+        ...annotateDay(d.energyOutput, d.recoveryInput),
+        date: d.date,
+      }));
+      setData(mapped);
+      setHasAnyData(true);
+      setLoading(false);
+      return;
+    }
     const load = async () => {
       try {
         const res = await secureApiFetch('/api/recovery/velocity-map');
@@ -129,7 +143,7 @@ export const RecoveryVelocityMap = () => {
       setLoading(false);
     };
     load();
-  }, []);
+  }, [isDemoSession]);
 
   // Only days with genuinely logged activity count toward these averages -
   // a day with no real signal isn't a "0", it's simply unknown.
