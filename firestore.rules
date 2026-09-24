@@ -476,6 +476,17 @@ service cloud.firestore {
         allow write: if false;
       }
 
+      // Legal document acceptance records - server-authoritative by
+      // design (spec: "acceptance records are server-authoritative").
+      // Written only by POST /api/legal/documents/:docType/accept in
+      // server.ts (always req.user.uid, never client-supplied), so a
+      // user can read their own acceptance history but can never write
+      // or forge one, for themselves or anyone else.
+      match /legal_acceptances/{docType} {
+        allow read: if isOwner(uid);
+        allow write: if false;
+      }
+
       // L. nova_memories
       // Was previously "allow read, write: if isOwner(uid)" with no field
       // validation at all - any owner could write any fields, any values,
@@ -901,6 +912,23 @@ service cloud.firestore {
       allow read, write: if false;
       match /events/{eventId} {
         allow read, write: if false;
+      }
+    }
+
+    // Legal document registry (Terms, Privacy Notice, etc.) - published
+    // only by the admin-only POST /api/admin/legal/:docType/publish
+    // route in server.ts (requireAdmin-gated). Public read is required:
+    // an anonymous visitor must be able to see Terms/Privacy before
+    // they even have an account. Content itself is served through
+    // server.ts's GET /api/legal/documents routes rather than read
+    // directly by the client SDK, but the rule is written to be
+    // correct either way.
+    match /legal_documents/{docType} {
+      allow read: if true;
+      allow write: if false;
+      match /versions/{version} {
+        allow read: if true;
+        allow write: if false;
       }
     }
   }
