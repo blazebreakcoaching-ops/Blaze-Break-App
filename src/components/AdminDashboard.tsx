@@ -474,8 +474,8 @@ export const AdminDashboard = () => {
     }
   };
 
-  const filteredUsers = users.filter(u => 
-    u.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
+  const filteredUsers = users.filter(u =>
+    (u.email || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
     u.uid.includes(searchQuery)
   );
 
