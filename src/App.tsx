@@ -2412,6 +2412,7 @@ export default function App() {
                   onAwardPoints={awardPoints}
                   committedActionIds={stats.committedActionIds}
                   onCommitAction={handleCommitAction}
+                  isDemoSession={isDemoSession}
                 />
                 <ResentmentTracker
                   fingerprint={fingerprint}

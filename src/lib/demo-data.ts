@@ -220,6 +220,41 @@ export const DEMO_DERIVED_SUMMARIES: Record<string, {
   },
 };
 
+// Matches DailyVoiceJournal.tsx's own VoiceJournalEntry shape (its
+// voice_journal_entries Firestore subcollection) - what an already-analysed
+// entry looks like, so a demo visitor can see the payoff without recording
+// anything themselves. The real record-and-analyse flow (a live, paid Nova
+// call) stays untouched and fully click-triggered - these are never fed
+// into it, only rendered.
+export const DEMO_VOICE_JOURNAL_ENTRIES: {
+  id: string;
+  date: string;
+  transcription: string;
+  themes: string[];
+  analysis: string;
+  advice: string;
+  emotionalTone: string;
+}[] = [
+  {
+    id: "demo-vj-1",
+    date: "22 Sep, 09:14",
+    transcription: "I said yes to covering the stand-up again this week even though I'd already blocked that time for deep work. I don't think anyone would've minded if I'd said I was busy, but I just... didn't.",
+    themes: ["Over-committing", "Boundary avoidance", "Protected time lost"],
+    analysis: "This is a familiar pattern for a high-functioning exhausted profile: the cost of saying yes felt smaller in the moment than the discomfort of saying no, even though the actual cost - lost deep-work time - was real and recurring.",
+    advice: "Next time this comes up, try naming the trade-off out loud before agreeing: \"If I cover this, I'm giving up my focus block - is that the right call today?\" Making the cost visible to yourself first makes it easier to decline when it isn't.",
+    emotionalTone: "Resigned",
+  },
+  {
+    id: "demo-vj-2",
+    date: "19 Sep, 18:40",
+    transcription: "Actually had a good day. Pushed back on a Friday deadline and it landed fine - nobody pushed back. Small win but it felt big.",
+    themes: ["Successful boundary", "Underestimated pushback risk"],
+    analysis: "Worth noticing: the anticipated conflict didn't materialise. That's useful evidence against the belief that boundaries always cost something socially - one data point isn't proof, but it's a start.",
+    advice: "Write this one down somewhere you'll see it next time you're hesitating to set a boundary - it's easy to forget the wins and only remember the close calls.",
+    emotionalTone: "Encouraged",
+  },
+];
+
 export const isDemoUser = (
   isAnonymous: boolean | undefined,
   profileFullName: string | undefined,

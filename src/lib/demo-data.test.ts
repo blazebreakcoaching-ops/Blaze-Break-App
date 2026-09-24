@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { isDemoUser, DEMO_FINGERPRINT, DEMO_STATS, DEMO_VELOCITY_MAP, DEMO_ENERGY_COMMITMENTS, DEMO_DERIVED_SUMMARIES } from './demo-data';
+import { isDemoUser, DEMO_FINGERPRINT, DEMO_STATS, DEMO_VELOCITY_MAP, DEMO_ENERGY_COMMITMENTS, DEMO_DERIVED_SUMMARIES, DEMO_VOICE_JOURNAL_ENTRIES } from './demo-data';
 import { BurnoutProfile } from '../types';
 
 // The exact, real archetype names this app uses - kept as a literal list
@@ -104,6 +104,18 @@ describe('DEMO_DERIVED_SUMMARIES', () => {
       expect(summary.type).toBe(type);
       expect(summary.status).toBe('available');
       expect(summary.value).toBeGreaterThan(0);
+    }
+  });
+});
+
+describe('DEMO_VOICE_JOURNAL_ENTRIES', () => {
+  it('has at least one fully-analysed sample entry', () => {
+    expect(DEMO_VOICE_JOURNAL_ENTRIES.length).toBeGreaterThan(0);
+    for (const entry of DEMO_VOICE_JOURNAL_ENTRIES) {
+      expect(entry.transcription.length).toBeGreaterThan(0);
+      expect(entry.themes.length).toBeGreaterThan(0);
+      expect(entry.analysis.length).toBeGreaterThan(0);
+      expect(entry.advice.length).toBeGreaterThan(0);
     }
   });
 });

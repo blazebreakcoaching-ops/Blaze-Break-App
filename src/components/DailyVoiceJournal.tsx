@@ -7,6 +7,7 @@ import { db } from '../lib/firestore';
 import { secureApiFetch } from "../lib/secure-api";
 import { addNovaMemory } from "../lib/nova-brain";
 import { cn } from "../lib/utils";
+import { DEMO_VOICE_JOURNAL_ENTRIES } from "../lib/demo-data";
 
 interface VoiceJournalEntry {
   id: string;
@@ -20,8 +21,10 @@ interface VoiceJournalEntry {
 
 export const DailyVoiceJournal = ({
   onAwardPoints,
+  isDemoSession,
 }: {
   onAwardPoints: (amount: number, reason: string) => void;
+  isDemoSession?: boolean;
 }) => {
   const [isRecording, setIsRecording] = useState(false);
   const [recordingDuration, setRecordingDuration] = useState(0);
@@ -42,6 +45,14 @@ export const DailyVoiceJournal = ({
   const [isPlayingNova, setIsPlayingNova] = useState(false);
 
   const fetchEntries = async () => {
+    // A demo session has no real journal history to read - seed the
+    // illustrative sample entries so a visitor can see what an already-
+    // analysed entry looks like without recording anything themselves.
+    if (isDemoSession) {
+      setEntries(DEMO_VOICE_JOURNAL_ENTRIES);
+      setActiveEntry((prev) => prev ?? DEMO_VOICE_JOURNAL_ENTRIES[0] ?? null);
+      return;
+    }
     const uid = auth.currentUser?.uid;
     if (!uid) return;
     try {
@@ -58,7 +69,7 @@ export const DailyVoiceJournal = ({
   // Load saved entries on mount
   useEffect(() => {
     fetchEntries();
-  }, []);
+  }, [isDemoSession]);
 
   // Clean up Web Audio on unmount
   useEffect(() => {
@@ -440,6 +451,11 @@ export const DailyVoiceJournal = ({
                       <p className="text-xs text-text-muted leading-relaxed">
                         Nova listens, transcribes, and extracts recurring stress & boundaries loops automatically.
                       </p>
+                      {isDemoSession && (
+                        <p className="text-[10px] font-bold text-text-muted/80 pt-1">
+                          This works for real right now - sign up to keep what you record permanently.
+                        </p>
+                      )}
                     </div>
                   )}
 

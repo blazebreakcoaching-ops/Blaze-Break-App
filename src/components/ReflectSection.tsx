@@ -112,14 +112,16 @@ const chapters: Chapter[] = [
   },
 ];
 
-export const ReflectSection = ({ 
-  onAwardPoints, 
-  committedActionIds = [], 
-  onCommitAction 
-}: { 
+export const ReflectSection = ({
+  onAwardPoints,
+  committedActionIds = [],
+  onCommitAction,
+  isDemoSession,
+}: {
   onAwardPoints: (amount: number, reason: string) => void,
   committedActionIds?: string[],
-  onCommitAction?: (actionId: string) => void
+  onCommitAction?: (actionId: string) => void,
+  isDemoSession?: boolean,
 }) => {
   const [selected, setSelected] = useState<Chapter | null>(null);
   const [view, setView] = useState<'content' | 'action'>('content');
@@ -517,7 +519,7 @@ export const ReflectSection = ({
       </div>
 
       {/* Daily Voice Journal */}
-      <DailyVoiceJournal onAwardPoints={onAwardPoints} />
+      <DailyVoiceJournal onAwardPoints={onAwardPoints} isDemoSession={isDemoSession} />
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
         {/* Navigation Sidebar */}
