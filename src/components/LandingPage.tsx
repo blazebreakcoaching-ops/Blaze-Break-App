@@ -76,6 +76,12 @@ export const LandingPage = ({ onStart, onOpenTrustCentre, darkMode, setDarkMode 
   // Which legal document (Terms/Privacy) the "By continuing..." line's
   // links currently have open, if any - null means neither is open.
   const [legalDocOpen, setLegalDocOpen] = useState<LegalDocumentType | null>(null);
+  // Gates every sign-in/sign-up button (email and social) - previously
+  // the Terms/Privacy line was just informational text next to the
+  // buttons, so nothing actually stopped someone continuing without
+  // reading or agreeing to it. Required, unticked by default, every time
+  // the modal opens - it never carries over between visits.
+  const [legalAgreed, setLegalAgreed] = useState(false);
 
   useEffect(() => {
     if (showAuthModal) return;
@@ -89,6 +95,7 @@ export const LandingPage = ({ onStart, onOpenTrustCentre, darkMode, setDarkMode 
     setCopiedGeneratedPassword(false);
     setShowPostSignupMfaStep(false);
     setMfaJustEnabled(false);
+    setLegalAgreed(false);
   }, [showAuthModal]);
 
   // The shared "finish onboarding" action, reached either by skipping the
@@ -563,10 +570,38 @@ export const LandingPage = ({ onStart, onOpenTrustCentre, darkMode, setDarkMode 
                 )
               ) : (
                 <>
+                  {/* Required, not just informational - previously this was
+                      a passive line of text below the buttons ("By
+                      continuing, you agree to...") that never actually
+                      stopped anyone continuing without reading or agreeing
+                      to it. Placed above every sign-in/sign-up option (not
+                      just the email form) so it gates all of them the same
+                      way, and reset to unticked every time the modal opens
+                      (see the effect above) so it can never carry over. */}
+                  <label className="flex items-start gap-3 p-3 rounded-xl border border-border bg-background cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={legalAgreed}
+                      onChange={(e) => setLegalAgreed(e.target.checked)}
+                      className="mt-0.5 w-4 h-4 shrink-0 accent-primary cursor-pointer"
+                    />
+                    <span className="text-xs text-text-muted leading-normal">
+                      I agree to the Blaze Break{' '}
+                      <button type="button" onClick={(e) => { e.preventDefault(); setLegalDocOpen('TERMS'); }} className="underline hover:text-text-main transition-colors">
+                        Terms &amp; Conditions
+                      </button>
+                      {' '}and acknowledge the{' '}
+                      <button type="button" onClick={(e) => { e.preventDefault(); setLegalDocOpen('PRIVACY'); }} className="underline hover:text-text-main transition-colors">
+                        Privacy Notice
+                      </button>
+                      .
+                    </span>
+                  </label>
+
                   <div className="space-y-3 pt-2">
                     <button
                       onClick={handleGoogleSignIn}
-                      disabled={signingInProvider !== null}
+                      disabled={signingInProvider !== null || !legalAgreed}
                       className="w-full flex items-center justify-center gap-3 bg-text-main text-surface font-bold text-xs uppercase tracking-widest py-4.5 rounded-2xl hover:scale-[1.02] active:scale-95 transition-all shadow-lg shadow-text-main/15 disabled:opacity-50"
                     >
                       {signingInProvider === 'google' ? (
@@ -578,7 +613,7 @@ export const LandingPage = ({ onStart, onOpenTrustCentre, darkMode, setDarkMode 
                     </button>
                     <button
                       onClick={handleMicrosoftSignIn}
-                      disabled={signingInProvider !== null}
+                      disabled={signingInProvider !== null || !legalAgreed}
                       className="w-full flex items-center justify-center gap-3 bg-surface dark:bg-card border border-border text-text-main font-bold text-xs uppercase tracking-widest py-4.5 rounded-2xl hover:scale-[1.02] active:scale-95 transition-all disabled:opacity-50"
                     >
                       {signingInProvider === 'microsoft' ? (
@@ -590,7 +625,7 @@ export const LandingPage = ({ onStart, onOpenTrustCentre, darkMode, setDarkMode 
                     </button>
                     <button
                       onClick={handleFacebookSignIn}
-                      disabled={signingInProvider !== null}
+                      disabled={signingInProvider !== null || !legalAgreed}
                       className="w-full flex items-center justify-center gap-3 bg-surface dark:bg-card border border-border text-text-main font-bold text-xs uppercase tracking-widest py-4.5 rounded-2xl hover:scale-[1.02] active:scale-95 transition-all disabled:opacity-50"
                     >
                       {signingInProvider === 'facebook' ? (
@@ -688,7 +723,7 @@ export const LandingPage = ({ onStart, onOpenTrustCentre, darkMode, setDarkMode 
                     )}
                     <button
                       type="submit"
-                      disabled={emailAuthSubmitting}
+                      disabled={emailAuthSubmitting || !legalAgreed}
                       className="w-full flex items-center justify-center gap-3 bg-primary text-white font-bold text-xs uppercase tracking-widest py-4.5 rounded-2xl hover:scale-[1.02] active:scale-95 transition-all shadow-lg shadow-primary/15 disabled:opacity-50"
                     >
                       {emailAuthSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
@@ -704,18 +739,6 @@ export const LandingPage = ({ onStart, onOpenTrustCentre, darkMode, setDarkMode 
                       {authMode === 'signup' ? 'Already have an account? Sign in' : "Don't have an account? Sign up"}
                     </button>
                   </form>
-
-                  <p className="text-xs text-text-muted text-center leading-normal">
-                    By continuing, you agree to the Blaze Break{' '}
-                    <button type="button" onClick={() => setLegalDocOpen('TERMS')} className="underline hover:text-text-main transition-colors">
-                      Terms &amp; Conditions
-                    </button>
-                    {' '}and acknowledge the{' '}
-                    <button type="button" onClick={() => setLegalDocOpen('PRIVACY')} className="underline hover:text-text-main transition-colors">
-                      Privacy Notice
-                    </button>
-                    .
-                  </p>
 
                   <p className="text-xs text-text-muted text-center leading-normal">
                     Guardian, SMS/WhatsApp, and payments are currently disabled. Do not use for urgent or emergency support.
