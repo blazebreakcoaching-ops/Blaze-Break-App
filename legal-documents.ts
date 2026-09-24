@@ -41,7 +41,14 @@ export interface LegalDocumentVersion {
   content: string;
 }
 
-const TODAY = '2026-01-01';
+// The date these default documents actually first went live - not a
+// placeholder. Deliberately a fixed string, not `new Date()`, so the
+// "effective date" shown to users doesn't silently drift forward on
+// every server restart; a real update requires actually publishing a
+// new version via POST /api/admin/legal/:docType/publish (or, before
+// that route has ever been used for a given document type, editing
+// this constant deliberately).
+const TODAY = '2026-09-24';
 
 export const DEFAULT_LEGAL_DOCUMENTS: Record<LegalDocumentType, LegalDocumentVersion> = {
   TERMS: {
