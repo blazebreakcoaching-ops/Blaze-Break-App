@@ -7,6 +7,7 @@ import { CheckCircle2, TrendingDown, Crosshair, Activity, ArchiveX, BatteryWarni
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { cn } from '../lib/utils';
 import { updateNovaMemoryBySourceAndType } from '../lib/nova-brain';
+import { DEMO_ENERGY_COMMITMENTS } from '../lib/demo-data';
 
 interface Commitment {
   id: string;
@@ -16,9 +17,13 @@ interface Commitment {
   status: 'active' | 'dropped' | 'delegated' | 'restructured';
   createdAt?: string;
   updatedAt?: string;
+  // Only ever set on the illustrative DEMO_ENERGY_COMMITMENTS seeded during
+  // a demo session - never on anything the visitor actually typed in, and
+  // never written to Firestore. Gates addCommitment/handleAction below.
+  isSample?: boolean;
 }
 
-export const EnergyBudgetMatrix = ({ onPointsEarned }: { onPointsEarned: (pts: number, reason: string) => void }) => {
+export const EnergyBudgetMatrix = ({ onPointsEarned, isDemoSession }: { onPointsEarned: (pts: number, reason: string) => void; isDemoSession?: boolean }) => {
   const [commitments, setCommitments] = useState<Commitment[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -30,6 +35,13 @@ export const EnergyBudgetMatrix = ({ onPointsEarned }: { onPointsEarned: (pts: n
   const uid = auth.currentUser?.uid;
 
   const fetchCommitments = async () => {
+    // Seed from the illustrative sample set instead of reading Firestore -
+    // a fresh demo session never has real commitments logged yet anyway.
+    if (isDemoSession) {
+      setCommitments(DEMO_ENERGY_COMMITMENTS);
+      setLoading(false);
+      return;
+    }
     if (!uid) return;
     setLoading(true);
     try {
@@ -41,7 +53,7 @@ export const EnergyBudgetMatrix = ({ onPointsEarned }: { onPointsEarned: (pts: n
     }
     setLoading(false);
   };
-  useEffect(() => { fetchCommitments(); }, [uid]);
+  useEffect(() => { fetchCommitments(); }, [uid, isDemoSession]);
 
   const addCommitment = async () => {
     if (!input.trim() || !uid) return;
@@ -81,7 +93,15 @@ export const EnergyBudgetMatrix = ({ onPointsEarned }: { onPointsEarned: (pts: n
 
   const handleAction = async (id: string, action: Commitment['status']) => {
     const commitment = commitments.find(c => c.id === id);
-    if (!commitment || !uid) return;
+    if (!commitment) return;
+    // A sample card has no real Firestore doc behind it - update the local
+    // view only, no points, no write, so the illustrative dataset can be
+    // interacted with safely without pretending it's the visitor's own.
+    if (commitment.isSample) {
+      setCommitments(prev => prev.map(c => c.id === id ? { ...c, status: action } : c));
+      return;
+    }
+    if (!uid) return;
     onPointsEarned(action === 'dropped' ? 20 : 10, `Energy ${action}: ${commitment.name}`);
     setCommitments(prev => prev.map(c => c.id === id ? { ...c, status: action } : c));
     try {
@@ -327,6 +347,9 @@ export const EnergyBudgetMatrix = ({ onPointsEarned }: { onPointsEarned: (pts: n
                         <h5 className="font-bold text-text-main tracking-tight">{commitment.name}</h5>
                         <div className="flex items-center gap-2 mt-1.5">
                            <span className="text-[11px] uppercase tracking-widest text-text-muted font-black">{commitment.type}</span>
+                           {commitment.isSample && (
+                             <span className="text-[10px] uppercase tracking-widest font-black text-[#9a3412] dark:text-primary bg-primary/10 border border-primary/20 px-1.5 py-0.5 rounded">Sample</span>
+                           )}
                         </div>
                       </div>
                     </div>

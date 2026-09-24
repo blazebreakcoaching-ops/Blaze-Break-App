@@ -209,6 +209,7 @@ export const HomeSection = ({
   onUpdateOperationalMetrics,
   onUpdatePulseHistory,
   onLogJourney,
+  isDemoSession,
 }: {
   onChatRequest: () => void;
   onEnergyRequest: () => void;
@@ -226,6 +227,7 @@ export const HomeSection = ({
   onUpdateOperationalMetrics: (energy: number, risk: string) => void;
   onUpdatePulseHistory: (date: string, score: number) => void;
   onLogJourney: (action: string, details: string) => void;
+  isDemoSession?: boolean;
 }) => {
   // Friendly names for every widget, used by the "Add widget" menu below.
   const WIDGET_LIBRARY: Record<string, string> = {
@@ -946,7 +948,7 @@ export const HomeSection = ({
     velocity: (
       <SmartCard id="velocity" key="velocity" title="Recovery Velocity Map" energyDrain="low" onDragStart={handleDragStart} onDragOver={handleDragOver} onDrop={(e, id) => handleDrop(e, id, 'left')} onMoveUp={handleMoveUp} onMoveDown={handleMoveDown} isFirst={isFirstInCol('velocity')} isLast={isLastInCol('velocity')} className="p-6">
         <Suspense fallback={<ChartCardFallback />}>
-          <RecoveryVelocityMap />
+          <RecoveryVelocityMap isDemoSession={isDemoSession} />
         </Suspense>
       </SmartCard>
     ),

@@ -2,10 +2,13 @@ import React, { useState } from 'react';
 import { Calendar, AlertTriangle, ShieldCheck, Clock, CheckCircle2, ChevronRight, Zap } from 'lucide-react';
 import { useAuth } from '../lib/auth';
 
-export const CalendarDefenseView = () => {
+export const CalendarDefenseView = ({ isDemoSession }: { isDemoSession?: boolean }) => {
   const { accessToken, signInWithCalendar } = useAuth();
   const [isScanning, setIsScanning] = useState(false);
-  const [hasScanned, setHasScanned] = useState(false);
+  // A demo visitor sees the populated Red Zone cards immediately - no
+  // real calendar to scan, and clicking "Scan" first would just be an
+  // extra step in front of the same illustrative content everyone gets.
+  const [hasScanned, setHasScanned] = useState(!!isDemoSession);
 
   const handleScan = () => {
     if (!accessToken) {
