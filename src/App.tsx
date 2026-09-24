@@ -2392,7 +2392,7 @@ export default function App() {
                   </div>
                 </div>
                 <DigitalBoundaryShield
-                  fingerprint={fingerprint}
+                  fingerprint={isDemoSession ? DEMO_FINGERPRINT : fingerprint}
                   onAwardPoints={awardPoints}
                 />
                 {featureFlags.enable_overload_shield && (
@@ -2582,7 +2582,7 @@ export default function App() {
                   onTriggerSync={handleTriggerGlobalSync}
                   onAwardPoints={awardPoints}
                 />
-                <CalendarDefenseView />
+                <CalendarDefenseView isDemoSession={isDemoSession} />
                 <IntegrationsDashboard />
               </div>
             )}
