@@ -431,7 +431,7 @@ service cloud.firestore {
         allow read: if isOwner(uid);
         allow delete: if isOwner(uid);
         allow create, update: if isOwner(uid)
-            && hasOnly(['allowCheckins', 'allowEnergyBudgets', 'allowMoodPulses', 'allowBodyCheckins', 'allowWins', 'allowWeeklyReviews', 'allowBoundaryScripts', 'allowGoals', 'allowRecoveryDebt', 'allowRecoveryVelocity', 'allowEnergyTrend', 'allowMoodTrend', 'allowCalendarSignals', 'allowFingerprint', 'allowRecoveryPlanProgress', 'allowDiagnosisProgress', 'allowEnergyCommitments', 'allowStressTriggers', 'allowHabitCycles', 'allowFuelLogs', 'allowFocusSessions', 'allowSomaticResets', 'allowRecoveryAlly', 'allowNovaMemory', 'allowNovaUseSavedMemories', 'updatedAt'])
+            && hasOnly(['allowCheckins', 'allowEnergyBudgets', 'allowMoodPulses', 'allowBodyCheckins', 'allowWins', 'allowWeeklyReviews', 'allowBoundaryScripts', 'allowGoals', 'allowRecoveryDebt', 'allowRecoveryVelocity', 'allowEnergyTrend', 'allowMoodTrend', 'allowCalendarSignals', 'allowFingerprint', 'allowOnboardingProfile', 'allowRecoveryPlanProgress', 'allowDiagnosisProgress', 'allowEnergyCommitments', 'allowStressTriggers', 'allowHabitCycles', 'allowFuelLogs', 'allowFocusSessions', 'allowSomaticResets', 'allowRecoveryAlly', 'allowNovaMemory', 'allowNovaUseSavedMemories', 'updatedAt'])
             && hasAll(['allowCheckins', 'allowEnergyBudgets', 'allowMoodPulses', 'allowBodyCheckins', 'allowWins', 'allowWeeklyReviews', 'allowBoundaryScripts', 'allowGoals', 'allowRecoveryDebt', 'allowRecoveryVelocity', 'allowEnergyTrend', 'allowMoodTrend', 'allowNovaMemory', 'allowNovaUseSavedMemories'])
             && request.resource.data.allowCheckins is bool
             && request.resource.data.allowEnergyBudgets is bool
@@ -447,6 +447,7 @@ service cloud.firestore {
             && request.resource.data.allowMoodTrend is bool
             && (!('allowCalendarSignals' in request.resource.data) || request.resource.data.allowCalendarSignals is bool)
             && (!('allowFingerprint' in request.resource.data) || request.resource.data.allowFingerprint is bool)
+            && (!('allowOnboardingProfile' in request.resource.data) || request.resource.data.allowOnboardingProfile is bool)
             && (!('allowRecoveryPlanProgress' in request.resource.data) || request.resource.data.allowRecoveryPlanProgress is bool)
             && (!('allowDiagnosisProgress' in request.resource.data) || request.resource.data.allowDiagnosisProgress is bool)
             && (!('allowEnergyCommitments' in request.resource.data) || request.resource.data.allowEnergyCommitments is bool)

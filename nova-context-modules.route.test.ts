@@ -84,6 +84,59 @@ describe('POST /api/nova/chat - expanded module context', () => {
     expect(instruction()).not.toContain('Over-Giver');
   });
 
+  it('surfaces the onboarding profile (goal, work context, drain, tone) when permitted, defaulting on for an account with no explicit flag set', async () => {
+    // Deliberately does NOT set allowOnboardingProfile - proves a
+    // pre-existing permissions doc that predates this field still gets it.
+    seedDoc(`users/${USER}/nova_permissions/current`, { allowNovaMemory: false });
+    seedDoc(`users/${USER}/user_stats/core`, {
+      profile: {
+        fullName: 'Jordan Smith',
+        role: 'Engineering Manager',
+        organization: 'Acme Corp',
+        pathway: 'Leading a team through a reorg',
+        purpose: 'Stop dreading Mondays',
+        primaryDrain: 'Constant context-switching between meetings',
+        novaTone: 'direct',
+        questioningStyle: 'mentor',
+      },
+    });
+
+    const res = await chat();
+    expect(res.status).toBe(200);
+    const text = instruction();
+    expect(text).toContain('Onboarding Profile');
+    expect(text).toContain('Engineering Manager');
+    expect(text).toContain('Acme Corp');
+    expect(text).toContain('Leading a team through a reorg');
+    expect(text).toContain('Stop dreading Mondays');
+    expect(text).toContain('Constant context-switching between meetings');
+    expect(text).toContain('direct');
+    expect(text).toContain('mentor');
+    // fullName has its own dedicated consent toggle (useNameInGreetings) -
+    // this always-on block must never bypass it.
+    expect(text).not.toContain('Jordan Smith');
+  });
+
+  it('excludes the onboarding profile when the account explicitly opted out', async () => {
+    seedDoc(`users/${USER}/nova_permissions/current`, { allowNovaMemory: false, allowOnboardingProfile: false });
+    seedDoc(`users/${USER}/user_stats/core`, {
+      profile: { role: 'Engineering Manager', purpose: 'Stop dreading Mondays' },
+    });
+
+    const res = await chat();
+    expect(res.status).toBe(200);
+    expect(instruction()).not.toContain('Onboarding Profile');
+  });
+
+  it('omits the onboarding profile block entirely when no profile fields were ever answered', async () => {
+    seedDoc(`users/${USER}/nova_permissions/current`, { allowNovaMemory: false });
+    seedDoc(`users/${USER}/user_stats/core`, { profile: { fullName: '', role: '', organization: '' } });
+
+    const res = await chat();
+    expect(res.status).toBe(200);
+    expect(instruction()).not.toContain('Onboarding Profile');
+  });
+
   it('summarizes Recovery Plan progress as a completion count, never raw journal text', async () => {
     seedDoc(`users/${USER}/nova_permissions/current`, { allowNovaMemory: false });
     seedDoc(`users/${USER}/recovery_plan_progress/state`, {
