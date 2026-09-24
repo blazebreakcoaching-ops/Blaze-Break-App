@@ -424,6 +424,13 @@ export const LandingPage = ({ onStart, onOpenTrustCentre, darkMode, setDarkMode 
         <p className="text-[10px] tracking-[0.2em] font-medium text-text-muted mt-3">
           Created by Tourae Martin
         </p>
+        <div className="flex items-center justify-center gap-4 mt-6 text-[10px] font-bold uppercase tracking-widest text-text-muted">
+          <button type="button" onClick={() => setLegalDocOpen('TERMS')} className="hover:text-text-main transition-colors">Terms</button>
+          <button type="button" onClick={() => setLegalDocOpen('PRIVACY')} className="hover:text-text-main transition-colors">Privacy</button>
+          <button type="button" onClick={() => setLegalDocOpen('REFUND')} className="hover:text-text-main transition-colors">Refunds</button>
+          <button type="button" onClick={() => setLegalDocOpen('COOKIE_NOTICE')} className="hover:text-text-main transition-colors">Cookies</button>
+          <button type="button" onClick={onOpenTrustCentre} className="hover:text-text-main transition-colors">Security</button>
+        </div>
       </footer>
 
       {/* Sleek Authentication Modal Overlay */}
