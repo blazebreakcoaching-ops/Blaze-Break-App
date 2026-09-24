@@ -1,39 +1,52 @@
 import React from 'react';
 import { ShieldCheck, Lock, FileText, ArrowLeft, Brain, Database, Server, Building, Users } from 'lucide-react';
 import { RecommendationLedger } from './RecommendationLedger.tsx';
+import { cn } from '../lib/utils';
 
 interface TrustCentrePageProps {
   onBack: () => void;
+  // True when rendered inline inside the authenticated app's own Privacy
+  // tab (alongside PrivacyVault/AssuranceCentre/IntegrationsDashboard),
+  // rather than as its own standalone pre-auth page reached from the
+  // landing page. That embedded usage previously still rendered this
+  // component's own fixed top nav (a second "Blaze Break" logo bar,
+  // competing for the same fixed position as the app's real header) with
+  // a "Back" button wired to a no-op onBack - a real, confusing bug, not
+  // just an unused prop. Embedded mode hides that nav/header entirely and
+  // drops the top padding reserved for it, so the content reads as one
+  // section of the tab instead of a second, broken page-within-a-page.
+  embedded?: boolean;
 }
 
-export const TrustCentrePage = ({ onBack }: TrustCentrePageProps) => {
+export const TrustCentrePage = ({ onBack, embedded = false }: TrustCentrePageProps) => {
   return (
-    <div className="min-h-screen bg-background selection:bg-primary/20 selection:text-[#9a3412] dark:selection:text-primary relative overflow-hidden text-text-main pb-32">
+    <div className={cn("bg-background selection:bg-primary/20 selection:text-[#9a3412] dark:selection:text-primary relative overflow-hidden text-text-main", embedded ? "" : "min-h-screen pb-32")}>
       {/* Premium Glow Aura Backdrops */}
       <div className="absolute top-0 left-1/4 w-[500px] h-[500px] bg-primary/5 rounded-full blur-[140px] pointer-events-none" />
       <div className="absolute inset-0 bg-[linear-gradient(to_right,#161f30_1px,transparent_1px),linear-gradient(to_bottom,#161f30_1px,transparent_1px)] bg-[size:4rem_4rem] [mask-image:radial-gradient(ellipse_60%_50%_at_50%_0%,#000_70%,transparent_100%)] opacity-25" />
 
-      {/* Navigation */}
-      <nav className="fixed top-0 w-full z-50 px-8 py-6 flex justify-between items-center backdrop-blur-xl bg-background/70 border-b border-primary/10">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 bg-gradient-to-tr from-primary to-primary/70 rounded-xl flex items-center justify-center text-primary-foreground shadow-lg shadow-primary/20">
-            <ShieldCheck className="w-5 h-5" />
+      {!embedded && (
+        <nav className="fixed top-0 w-full z-50 px-8 py-6 flex justify-between items-center backdrop-blur-xl bg-background/70 border-b border-primary/10">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-gradient-to-tr from-primary to-primary/70 rounded-xl flex items-center justify-center text-primary-foreground shadow-lg shadow-primary/20">
+              <ShieldCheck className="w-5 h-5" />
+            </div>
+            <div className="flex flex-col">
+              <h1 className="font-display font-black text-lg tracking-tight text-text-main leading-none">Blaze Break</h1>
+              <span className="text-[10px] font-black uppercase tracking-[0.2em] text-[#9a3412] dark:text-primary mt-1">Trust Centre</span>
+            </div>
           </div>
-          <div className="flex flex-col">
-            <h1 className="font-display font-black text-lg tracking-tight text-text-main leading-none">Blaze Break</h1>
-            <span className="text-[10px] font-black uppercase tracking-[0.2em] text-[#9a3412] dark:text-primary mt-1">Trust Centre</span>
-          </div>
-        </div>
-        <button
-          onClick={onBack}
-          className="text-xs uppercase tracking-widest px-6 py-3 rounded-full flex items-center gap-2 bg-surface border border-border hover:border-primary/50 hover:text-primary transition-colors font-bold text-text-main shadow-sm"
-        >
-          <ArrowLeft className="w-4 h-4" /> Back
-        </button>
-      </nav>
+          <button
+            onClick={onBack}
+            className="text-xs uppercase tracking-widest px-6 py-3 rounded-full flex items-center gap-2 bg-surface border border-border hover:border-primary/50 hover:text-primary transition-colors font-bold text-text-main shadow-sm"
+          >
+            <ArrowLeft className="w-4 h-4" /> Back
+          </button>
+        </nav>
+      )}
 
-      <main className="relative z-10 pt-40 px-6 max-w-4xl mx-auto space-y-24">
-        
+      <main className={cn("relative z-10 px-6 max-w-4xl mx-auto space-y-24", embedded ? "" : "pt-40")}>
+
         {/* Hero */}
         <section className="text-center space-y-6">
           <h2 className="text-4xl md:text-6xl font-light tracking-tight text-text-main leading-tight">
