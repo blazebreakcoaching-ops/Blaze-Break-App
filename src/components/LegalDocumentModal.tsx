@@ -3,6 +3,7 @@ import ReactMarkdown from 'react-markdown';
 import { X, Loader2 } from 'lucide-react';
 import { secureApiFetch, SecureApiError } from '../lib/secure-api';
 import { useFocusTrap } from '../lib/useFocusTrap';
+import { useAuth } from '../lib/auth';
 
 // Legal document type ids, kept as a local, duplicated string union rather
 // than importing legal-documents.ts (the server-side registry/content
@@ -26,12 +27,22 @@ interface LegalDocument {
 // published registry (GET /api/legal/documents/:docType), never
 // hardcoded here.
 export const LegalDocumentModal = ({ docType, onClose }: { docType: LegalDocumentType; onClose: () => void }) => {
+  const { loading: authLoading } = useAuth();
   const [doc, setDoc] = useState<LegalDocument | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const modalRef = useFocusTrap(true);
 
   useEffect(() => {
+    // Every visitor gets signed in automatically (anonymously, if they
+    // haven't signed up yet) on page load - but that sign-in is async, and
+    // this modal can mount before it resolves (e.g. a landing-page
+    // visitor clicking a footer link right away). Firing the fetch before
+    // auth.currentUser exists produced the exact "Unauthorized: User not
+    // signed in." error being reported - waiting for the auth context to
+    // finish resolving first, and retrying once it does, fixes that at
+    // the source instead of surfacing a false failure.
+    if (authLoading) return;
     let cancelled = false;
     const load = async () => {
       try {
@@ -56,7 +67,7 @@ export const LegalDocumentModal = ({ docType, onClose }: { docType: LegalDocumen
     };
     load();
     return () => { cancelled = true; };
-  }, [docType]);
+  }, [docType, authLoading]);
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
