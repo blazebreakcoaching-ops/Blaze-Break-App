@@ -30,7 +30,8 @@ import {
   RotateCw,
   ArrowUp,
   ArrowDown,
-  Minus
+  Minus,
+  FileText
 } from 'lucide-react';
 import { buildPrimaryIndicators, buildDimensionIndicators, sortByAttention, LeadingIndicator } from '../../org-leading-indicators';
 import { cn } from '../lib/utils';
@@ -1202,6 +1203,35 @@ export const OrgDashboard = () => {
                   })}
                 </div>
               )}
+            </div>
+
+            <div className="card space-y-4">
+              <h4 className="font-bold text-text-main flex items-center gap-2"><FileText className="w-4 h-4 text-primary" /> Legal &amp; Trust</h4>
+              <p className="text-xs text-text-muted">
+                Blaze Break's enterprise contracting documents are still being finalised - the sections below reflect that honestly rather than claiming something signed exists yet.
+              </p>
+              <div className="space-y-2">
+                {[
+                  { label: 'Master Services Agreement', status: 'Not yet available - contact us to discuss enterprise terms' },
+                  { label: 'Data Processing Agreement', status: 'Not yet available - contact us to discuss enterprise terms' },
+                  { label: 'Service Levels & Support', status: 'Draft targets only - no signed commitment yet' },
+                ].map((item) => (
+                  <div key={item.label} className="flex items-center justify-between gap-4 p-3 bg-surface dark:bg-surface/50 border border-border rounded-lg text-xs">
+                    <span className="font-bold text-text-main">{item.label}</span>
+                    <span className="text-text-muted text-right">{item.status}</span>
+                  </div>
+                ))}
+              </div>
+              <div className="pt-2 space-y-1.5 text-xs text-text-muted">
+                <p><strong className="text-text-main">Sub-processors:</strong> Google Cloud/Firebase (hosting, database), Google Gemini (Nova's AI), Twilio (SMS), Brevo (email) - contact us for the full, current list.</p>
+                <p><strong className="text-text-main">Security:</strong> Firebase Authentication, App Check bot protection, and per-account Firestore access rules protect this organisation's data. Individual employee wellbeing content is never exposed to this dashboard - see Roles &amp; Permissions above and your Privacy Notice.</p>
+              </div>
+              <a
+                href="mailto:support@blazebreak.app?subject=Enterprise%20agreement%20enquiry"
+                className="inline-flex items-center gap-2 text-xs font-bold text-[#9a3412] dark:text-primary hover:underline"
+              >
+                <Mail className="w-3.5 h-3.5" /> Contact us about enterprise agreements
+              </a>
             </div>
           </motion.div>
         )}
