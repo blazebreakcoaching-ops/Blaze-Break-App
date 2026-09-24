@@ -66,8 +66,18 @@ export const useAuth = () => useContext(AuthContext);
 // tests can pass a fake Auth object instead of touching Firebase for
 // real. AuthProvider below calls these with the real `auth` singleton
 // and layers the Google-specific accessToken side effect on top.
+// Without this, signInWithPopup silently reuses whatever Google/
+// Microsoft/Facebook session is already active in the browser instead of
+// showing an account picker - so someone who signs out and tries to sign
+// into a DIFFERENT account with the same provider gets silently
+// re-authenticated into the account the browser already had open, with
+// no way to choose. Forcing the picker every time is the fix; it costs
+// one extra click for the common case (only ever using one account) and
+// prevents a genuinely confusing "I can't switch accounts" bug for
+// anyone who uses more than one.
 export async function signInWithGoogle(authInstance: FirebaseAuth) {
   const provider = new GoogleAuthProvider();
+  provider.setCustomParameters({ prompt: 'select_account' });
   try {
     if (authInstance.currentUser?.isAnonymous) {
       return await linkWithPopup(authInstance.currentUser, provider);
@@ -89,6 +99,7 @@ export async function signInWithGoogleCalendar(authInstance: FirebaseAuth) {
   provider.addScope('https://www.googleapis.com/auth/calendar.readonly');
   provider.addScope('https://www.googleapis.com/auth/calendar.events');
   provider.addScope('https://www.googleapis.com/auth/gmail.readonly');
+  provider.setCustomParameters({ prompt: 'select_account' });
   try {
     if (authInstance.currentUser?.isAnonymous) {
       return await linkWithPopup(authInstance.currentUser, provider);
@@ -111,6 +122,7 @@ export async function signInWithGoogleCalendar(authInstance: FirebaseAuth) {
 // does, so the pattern transfers exactly.
 export async function signInWithMicrosoft(authInstance: FirebaseAuth) {
   const provider = new OAuthProvider('microsoft.com');
+  provider.setCustomParameters({ prompt: 'select_account' });
   try {
     if (authInstance.currentUser?.isAnonymous) {
       return await linkWithPopup(authInstance.currentUser, provider);
@@ -129,6 +141,11 @@ export async function signInWithMicrosoft(authInstance: FirebaseAuth) {
 
 export async function signInWithFacebook(authInstance: FirebaseAuth) {
   const provider = new FacebookAuthProvider();
+  // Facebook's OAuth dialog doesn't honour `prompt: 'select_account'` -
+  // its own equivalent for forcing the login dialog (instead of silently
+  // reusing the browser's active Facebook session) is `auth_type:
+  // 'reauthenticate'`.
+  provider.setCustomParameters({ auth_type: 'reauthenticate' });
   try {
     if (authInstance.currentUser?.isAnonymous) {
       return await linkWithPopup(authInstance.currentUser, provider);
