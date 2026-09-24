@@ -24,11 +24,11 @@ export const TrustCentrePage = ({ onBack }: TrustCentrePageProps) => {
             <span className="text-[10px] font-black uppercase tracking-[0.2em] text-[#9a3412] dark:text-primary mt-1">Trust Centre</span>
           </div>
         </div>
-        <button 
+        <button
           onClick={onBack}
-          className="text-xs uppercase tracking-widest px-6 py-3 rounded-xl flex items-center gap-2 hover:bg-white/[0.05] transition-colors font-bold text-text-muted"
+          className="text-xs uppercase tracking-widest px-6 py-3 rounded-full flex items-center gap-2 bg-surface border border-border hover:border-primary/50 hover:text-primary transition-colors font-bold text-text-main shadow-sm"
         >
-          <ArrowLeft className="w-4 h-4" /> Return
+          <ArrowLeft className="w-4 h-4" /> Back
         </button>
       </nav>
 

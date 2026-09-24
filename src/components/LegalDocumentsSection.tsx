@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect, useState } from 'react';
 import { FileText, ChevronRight, Mail } from 'lucide-react';
-import { secureApiFetch } from '../lib/secure-api';
+import { secureApiFetch, SecureApiError } from '../lib/secure-api';
 import type { LegalDocumentType } from './LegalDocumentModal';
 
 const LegalDocumentModal = lazy(() => import('./LegalDocumentModal').then(m => ({ default: m.LegalDocumentModal })));
@@ -21,6 +21,7 @@ interface LegalDocumentSummary {
 export const LegalDocumentsSection = () => {
   const [documents, setDocuments] = useState<LegalDocumentSummary[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [openDoc, setOpenDoc] = useState<LegalDocumentType | null>(null);
 
   useEffect(() => {
@@ -33,8 +34,14 @@ export const LegalDocumentsSection = () => {
         if (!cancelled) setDocuments(data.documents || []);
       } catch (e) {
         // Leaves the list empty - the section still renders a graceful
-        // "couldn't load" state rather than crashing the Policies tab.
+        // "couldn't load" state rather than crashing the Policies tab -
+        // but shows the real reason on screen (not just the console) so
+        // a non-technical user reporting the bug can just read it off,
+        // rather than being asked to open DevTools.
         console.error('[LegalDocumentsSection] Failed to load document list:', e);
+        if (!cancelled) {
+          setLoadError(e instanceof SecureApiError ? e.message : (e instanceof Error ? e.message : String(e)));
+        }
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -53,7 +60,9 @@ export const LegalDocumentsSection = () => {
       {loading ? (
         <p className="text-xs text-text-muted">Loading…</p>
       ) : documents.length === 0 ? (
-        <p className="text-xs text-text-muted">Couldn't load legal documents right now. Please try again shortly.</p>
+        <p className="text-xs text-text-muted">
+          Couldn't load legal documents right now.{loadError ? ` (${loadError})` : ' Please try again shortly.'}
+        </p>
       ) : (
         <div className="space-y-2">
           {documents.map((doc) => (

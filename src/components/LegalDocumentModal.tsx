@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import { X, Loader2 } from 'lucide-react';
-import { secureApiFetch } from '../lib/secure-api';
+import { secureApiFetch, SecureApiError } from '../lib/secure-api';
 import { useFocusTrap } from '../lib/useFocusTrap';
 
 // Legal document type ids, kept as a local, duplicated string union rather
@@ -40,12 +40,16 @@ export const LegalDocumentModal = ({ docType, onClose }: { docType: LegalDocumen
         const data = await res.json();
         if (!cancelled) setDoc(data);
       } catch (e) {
-        // Logged, not swallowed - this was previously showing the same
-        // generic message for every failure (a missing sign-in, an App
-        // Check failure, a genuine server error), making it impossible to
-        // tell them apart from a bug report alone.
+        // Shown on screen, not just logged to the console - the generic
+        // message previously shown here for every failure (a missing
+        // sign-in, an App Check failure, a genuine server error) made it
+        // impossible to tell them apart without opening DevTools, which
+        // wasn't a reasonable ask of a non-technical user reporting a bug.
         console.error('[LegalDocumentModal] Failed to load document:', docType, e);
-        if (!cancelled) setError('Could not load this document right now. Please try again shortly.');
+        if (!cancelled) {
+          const detail = e instanceof SecureApiError ? e.message : (e instanceof Error ? e.message : String(e));
+          setError(`Could not load this document right now. (${detail})`);
+        }
       } finally {
         if (!cancelled) setLoading(false);
       }
