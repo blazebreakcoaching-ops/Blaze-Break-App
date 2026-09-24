@@ -41,6 +41,7 @@ import { auth } from '../lib/firebase';
 import { db } from '../lib/firestore';
 import { doc, setDoc } from "firebase/firestore";
 import { secureApiFetch } from "../lib/secure-api";
+import { isBrandNewUser, buildNewUserLayout, applyUnlock } from "../lib/home-widget-tiers";
 import { ActivityLog } from "./ActivityLog.tsx";
 import { SmartCard } from "./SmartCard.tsx";
 import { DailyGoal } from "./DailyGoal.tsx";
@@ -275,6 +276,21 @@ export const HomeSection = ({
   const DEFAULT_HIDDEN = ['stats', 'streakCalendar', 'anxietyResetCard', 'somaticAccelerator', 'velocity', 'daily', 'micro', 'activity', 'weeklyRecap', 'quests', 'network', 'radar', 'archetypeBlend'];
   const LAYOUT_STORAGE_KEY = 'blaze_home_dashboard_layout_v2';
 
+  // Someone who hasn't engaged at all yet - not even one check-in or
+  // completed recommendation since onboarding - starts with only Nova's
+  // single suggestion visible, nothing else. A beta tester's very first
+  // login showed the Recovery Score, Points/Badges, Recovery Hub, and
+  // Recovery Trends widgets all at once, moments after finishing
+  // onboarding while still in a high-stress state, and found it
+  // overwhelming. Everything else unlocks automatically, once, the first
+  // time they earn any points at all (their first real check-in or
+  // completed recommendation) - see the unlock effect below - rather than
+  // being dumped on them up front. They can always add anything sooner
+  // themselves via "Add widget".
+  const NEW_USER_LEFT = ['directive'];
+  const NEW_USER_RIGHT: string[] = [];
+  const NEW_USER_UNLOCK_FLAG_KEY = 'blaze_home_dashboard_unlocked_v1';
+
   // Real recommendation, computed server-side from actual cross-module
   // signals (recent stress triggers, active energy load, time since last
   // reset/rehearsal/check-in) - replaces what used to be static copy shown
@@ -350,6 +366,13 @@ export const HomeSection = ({
     loadWeeklyRecap();
   }, []);
 
+  // No engagement recorded anywhere yet - points and streak both start at
+  // exactly 0 and only ever move once something real has happened
+  // (handleClaimDaily and friends). Captured once, at mount, in the ref
+  // below - a returning, already-established account's layout must never
+  // be touched by this, no matter what its points happen to be later.
+  const brandNewUser = isBrandNewUser(stats.points, stats.streak);
+
   const loadLayout = (): { left: string[]; right: string[]; hidden: string[] } => {
     try {
       const stored = localStorage.getItem(LAYOUT_STORAGE_KEY);
@@ -362,6 +385,9 @@ export const HomeSection = ({
     } catch (e) {
       // Corrupted storage - fall back to defaults rather than crashing.
     }
+    if (brandNewUser) {
+      return buildNewUserLayout(Object.keys(WIDGET_LIBRARY), NEW_USER_LEFT, NEW_USER_RIGHT);
+    }
     return { left: DEFAULT_LEFT, right: DEFAULT_RIGHT, hidden: DEFAULT_HIDDEN };
   };
 
@@ -369,6 +395,7 @@ export const HomeSection = ({
   const [leftOrder, setLeftOrder] = useState<string[]>(initialLayout.left);
   const [rightOrder, setRightOrder] = useState<string[]>(initialLayout.right);
   const [hiddenWidgets, setHiddenWidgets] = useState<string[]>(initialLayout.hidden);
+  const startedAsNewUserRef = useRef(brandNewUser);
   const [showAddWidgetMenu, setShowAddWidgetMenu] = useState(false);
   const [homeRefreshKey, setHomeRefreshKey] = useState(0);
   // Streak calendar state - lives here, not inside the streakCalendar widget's
@@ -472,6 +499,32 @@ export const HomeSection = ({
       setHiddenWidgets((prev) => [...prev, ...newlyIntroduced]);
     }
   }, []);
+
+  // The one-time "you've earned it" unlock: once someone who started this
+  // account in the minimal, brand-new-user layout above earns their first
+  // points at all (their first real check-in or completed recommendation),
+  // bring the rest of the default dashboard into view - gated on
+  // startedAsNewUserRef so this never touches an established account's own
+  // layout, no matter what its points value is. Fires once, ever, per
+  // browser (tracked via NEW_USER_UNLOCK_FLAG_KEY) - it's a one-off
+  // "welcome back, here's more" moment, not a rule that keeps re-adding
+  // widgets someone has since deliberately hidden.
+  useEffect(() => {
+    if (!startedAsNewUserRef.current) return;
+    if (stats.points <= 0) return;
+    try {
+      if (localStorage.getItem(NEW_USER_UNLOCK_FLAG_KEY) === 'true') return;
+      localStorage.setItem(NEW_USER_UNLOCK_FLAG_KEY, 'true');
+    } catch (e) {
+      // Can't reliably track "already unlocked" without storage - skip
+      // rather than risk re-running this every render.
+      return;
+    }
+    const toUnlock = [...DEFAULT_LEFT, ...DEFAULT_RIGHT];
+    const result = applyUnlock({ left: leftOrder, right: rightOrder, hidden: hiddenWidgets }, toUnlock);
+    setLeftOrder(result.left);
+    setHiddenWidgets(result.hidden);
+  }, [stats.points]);
 
   const [quickNoteOpen, setQuickNoteOpen] = useState(false);
   const [quickTriggerText, setQuickTriggerText] = useState("");
