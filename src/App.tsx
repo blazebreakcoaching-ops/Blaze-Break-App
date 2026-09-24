@@ -2510,7 +2510,7 @@ export default function App() {
                   onTriggerSync={handleTriggerGlobalSync}
                   onAwardPoints={awardPoints}
                 />
-                <TrustCentrePage onBack={() => {}} />
+                <TrustCentrePage onBack={() => {}} embedded />
                 <AssuranceCentre />
                 <IntegrationsDashboard />
               </div>
