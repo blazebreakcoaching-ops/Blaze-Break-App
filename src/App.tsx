@@ -2425,15 +2425,19 @@ export default function App() {
             {activeTab === "nova" && (
               <div className="space-y-32">
                 <NovaChat
-                  fingerprint={fingerprint}
-                  systemInstruction={`You are Nova, the recovery coach. 
-                  User's current stats: Points: ${stats.points}.
-                  Recovery Debt Profile: ${JSON.stringify(stats.debts || [])}.
+                  fingerprint={isDemoSession ? DEMO_FINGERPRINT : fingerprint}
+                  systemInstruction={`You are Nova, the recovery coach.
+                  User's current stats: Points: ${isDemoSession ? DEMO_STATS.points : stats.points}.
+                  Recovery Debt Profile: ${JSON.stringify((isDemoSession ? DEMO_STATS.debts : stats.debts) || [])}.
                   Use this data to provide surgical advice. If Sleep Debt is high, recommend rest. If Neural Fatigue is high, recommend deep work blocks or blackout.
-                  Match the user's preferred communication tone when it's provided in the context below; if the tone ever seems to be landing wrong, it's fine to gently offer to adjust it. Use the user's Burnout Fingerprint archetypes if available.`}
+                  Match the user's preferred communication tone when it's provided in the context below; if the tone ever seems to be landing wrong, it's fine to gently offer to adjust it. Use the user's Burnout Fingerprint archetypes if available.${
+                    isDemoSession
+                      ? " This visitor is previewing a sample account before signing up - the stats above are illustrative example data, not their own real progress. It's fine to naturally mention signing up, but never claim these sample numbers are the visitor's own history."
+                      : ""
+                  }`}
                   initialMessage={
-                    fingerprint
-                      ? `Hey! As a "${fingerprint.profile}", today's recovery is critical. How can I help you set boundaries?`
+                    (isDemoSession ? DEMO_FINGERPRINT : fingerprint)
+                      ? `Hey! As a "${(isDemoSession ? DEMO_FINGERPRINT : fingerprint)!.profile}", today's recovery is critical. How can I help you set boundaries?`
                       : "I'm Nova. I help high achievers recover without losing their ambition. What's draining you today?"
                   }
                   onAwardPoints={awardPoints}
