@@ -25,7 +25,7 @@ interface OnboardingProps {
 }
 
 export const SituationalOnboarding = ({ onComplete }: OnboardingProps) => {
-  const { logOut } = useAuth();
+  const { logOut, user } = useAuth();
   const [step, setStep] = useState(0);
 
   const [profile, setProfile] = useState<UserProfileData>({
@@ -488,6 +488,18 @@ export const SituationalOnboarding = ({ onComplete }: OnboardingProps) => {
           </motion.div>
         </AnimatePresence>
 
+        {/* States which account triggered this screen, in plain text - so
+            "why am I seeing onboarding again" is answerable by reading
+            this line instead of guessing. Anonymous sessions have no
+            email at all (Firebase's own model), which is itself a useful
+            signal: it means nobody has actually signed into a real
+            account yet in this browser/tab. */}
+        <p className="w-full mt-6 text-center text-[11px] text-text-muted">
+          {user?.email
+            ? `Signed in as ${user.email}`
+            : "Signed in anonymously — no account created yet"}
+        </p>
+
         {/* Escape hatch - if this is showing for the wrong account, or
             someone just isn't ready to answer these questions right now,
             they can leave instead of feeling stuck completing a form to
@@ -496,7 +508,7 @@ export const SituationalOnboarding = ({ onComplete }: OnboardingProps) => {
         <button
           type="button"
           onClick={() => { logOut(); }}
-          className="w-full mt-6 flex items-center justify-center gap-2 text-xs font-bold uppercase tracking-widest text-text-muted hover:text-text-main transition-colors py-1"
+          className="w-full mt-2 flex items-center justify-center gap-2 text-xs font-bold uppercase tracking-widest text-text-muted hover:text-text-main transition-colors py-1"
         >
           <LogOut className="w-3.5 h-3.5" /> Not you? Sign out
         </button>
