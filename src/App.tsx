@@ -897,15 +897,20 @@ const Header = ({
     </div>
     <div className="flex items-end flex-wrap gap-2 sm:gap-4 shrink-0">
       {onOpenTour && (
-        <button
-          onClick={onOpenTour}
-          className="h-12 flex items-center gap-2 px-4 bg-primary/10 hover:bg-primary/20 text-primary dark:text-primary border border-primary/20 rounded-full text-xs font-bold uppercase tracking-wider transition-all scale-[1] hover:scale-[1.03] active:scale-95 cursor-pointer shadow-sm"
-          title="Interactive System Walkthrough"
-          aria-label="Recovery Tour: Interactive System Walkthrough"
-        >
-          <Compass className="w-3.5 h-3.5" aria-hidden="true" />
-          <span className="sr-only">Recovery Tour</span>
-        </button>
+        <div className="relative group">
+          <button
+            onClick={onOpenTour}
+            className="h-12 flex items-center gap-2 px-4 bg-primary/10 hover:bg-primary/20 text-primary dark:text-primary border border-primary/20 rounded-full text-xs font-bold uppercase tracking-wider transition-all scale-[1] hover:scale-[1.03] active:scale-95 cursor-pointer shadow-sm"
+            title="Interactive System Walkthrough"
+            aria-label="Recovery Tour: Interactive System Walkthrough"
+          >
+            <Compass className="w-3.5 h-3.5" aria-hidden="true" />
+            <span className="sr-only">Recovery Tour</span>
+          </button>
+          <div className="pointer-events-none absolute left-1/2 -translate-x-1/2 bottom-full mb-2 px-3 py-1.5 bg-card text-text-main text-[11px] font-bold rounded-lg border border-border shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all whitespace-nowrap z-50">
+            Recovery Tour — Interactive System Walkthrough
+          </div>
+        </div>
       )}
       {onSomaticReset && (
         <div className="flex flex-col items-center gap-1">
@@ -926,31 +931,41 @@ const Header = ({
               descriptive on its own, but neither mentions why these two
               specific buttons are grouped together. */}
           <div role="group" aria-labelledby="header-support-caption" className="flex items-center gap-2">
-          <button
-            onClick={handleGuardianPing}
-            className={cn(
-              "h-12 flex items-center gap-2 px-4 border rounded-full text-xs font-black uppercase tracking-widest transition-all hover:scale-[1.03] active:scale-95 cursor-pointer shadow-sm",
-              guardianPingActive
-                ? "bg-warning text-text-main border-warning shadow-[0_0_15px_rgba(245,158,11,0.5)] animate-pulse"
-                : "bg-warning/10 hover:bg-warning/20 text-warning dark:text-warning border-warning/20"
-            )}
-            title="Ping Support Circle"
-            aria-label={guardianPingActive ? "Ping Active: Guardian Ping to Support Circle" : "Guardian Ping: alert your Support Circle"}
-          >
-            <Shield className="w-4 h-4" aria-hidden="true" />
-            <span className="sr-only">
-              {guardianPingActive ? "Ping Active" : "Guardian Ping"}
-            </span>
-          </button>
-          <button
-            onClick={onSomaticReset}
-            className="h-12 flex items-center gap-2 px-4 bg-destructive/10 hover:bg-destructive/20 text-destructive dark:text-destructive border border-destructive/20 rounded-full text-xs font-black uppercase tracking-widest transition-all hover:scale-[1.03] active:scale-95 cursor-pointer shadow-sm"
-            title="Somatic Reset (60s)"
-            aria-label="Somatic Reset, 60 seconds"
-          >
-            <HeartPulse className="w-4 h-4 animate-pulse" aria-hidden="true" />
-            <span className="sr-only">Somatic Reset</span>
-          </button>
+          <div className="relative group">
+            <button
+              onClick={handleGuardianPing}
+              className={cn(
+                "h-12 flex items-center gap-2 px-4 border rounded-full text-xs font-black uppercase tracking-widest transition-all hover:scale-[1.03] active:scale-95 cursor-pointer shadow-sm",
+                guardianPingActive
+                  ? "bg-warning text-text-main border-warning shadow-[0_0_15px_rgba(245,158,11,0.5)] animate-pulse"
+                  : "bg-warning/10 hover:bg-warning/20 text-warning dark:text-warning border-warning/20"
+              )}
+              title="Ping Support Circle"
+              aria-label={guardianPingActive ? "Ping Active: Guardian Ping to Support Circle" : "Guardian Ping: alert your Support Circle"}
+            >
+              <Shield className="w-4 h-4" aria-hidden="true" />
+              <span className="sr-only">
+                {guardianPingActive ? "Ping Active" : "Guardian Ping"}
+              </span>
+            </button>
+            <div className="pointer-events-none absolute left-1/2 -translate-x-1/2 bottom-full mb-2 px-3 py-1.5 bg-card text-text-main text-[11px] font-bold rounded-lg border border-border shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all whitespace-nowrap z-50">
+              {guardianPingActive ? "Ping Active — alerting your Support Circle" : "Guardian Ping — alert your Support Circle"}
+            </div>
+          </div>
+          <div className="relative group">
+            <button
+              onClick={onSomaticReset}
+              className="h-12 flex items-center gap-2 px-4 bg-destructive/10 hover:bg-destructive/20 text-destructive dark:text-destructive border border-destructive/20 rounded-full text-xs font-black uppercase tracking-widest transition-all hover:scale-[1.03] active:scale-95 cursor-pointer shadow-sm"
+              title="Somatic Reset (60s)"
+              aria-label="Somatic Reset, 60 seconds"
+            >
+              <HeartPulse className="w-4 h-4 animate-pulse" aria-hidden="true" />
+              <span className="sr-only">Somatic Reset</span>
+            </button>
+            <div className="pointer-events-none absolute left-1/2 -translate-x-1/2 bottom-full mb-2 px-3 py-1.5 bg-card text-text-main text-[11px] font-bold rounded-lg border border-border shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all whitespace-nowrap z-50">
+              Somatic Reset — a 60-second guided reset
+            </div>
+          </div>
           </div>
         </div>
       )}
@@ -966,6 +981,8 @@ const Header = ({
       <button
         onClick={onOpenSettings}
         className="h-12 group relative flex items-center gap-3 p-1 pr-4 bg-surface dark:bg-card border border-border rounded-full hover:border-primary/50 transition-all"
+        title="Profile & Settings"
+        aria-label="Open profile and settings"
       >
         <div className="w-10 h-10 rounded-full bg-border dark:bg-surface overflow-hidden shrink-0 border-2 border-transparent group-hover:border-primary transition-all">
           {profile?.avatarBase64 ? (
@@ -985,6 +1002,9 @@ const Header = ({
           <span className="text-[11px] font-black uppercase tracking-widest text-text-muted ">
             {profile?.role || "Update Now"}
           </span>
+        </div>
+        <div className="pointer-events-none absolute right-0 top-full mt-2 px-3 py-1.5 bg-card text-text-main text-[11px] font-bold rounded-lg border border-border shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all whitespace-nowrap z-50 2xl:hidden">
+          Profile &amp; Settings{profile?.fullName ? ` — ${profile.fullName}` : ""}
         </div>
       </button>
     </div>
