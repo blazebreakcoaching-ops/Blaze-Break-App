@@ -17,6 +17,14 @@ const LegalDocumentModal = lazy(() => import('./LegalDocumentModal').then(m => (
 
 interface LandingPageProps {
   onStart: () => void;
+  // Jumps straight to a populated sample dashboard (real feature, fake
+  // data, clearly labeled) - a deliberate, optional choice, never
+  // triggered automatically. Onboarding never routes here on its own;
+  // App.tsx's routing effect only ever leaves a fresh anonymous visitor
+  // on "landing" until they click something, precisely so nobody who
+  // just wants to read the Terms/Privacy or look around gets swept into
+  // either onboarding or this demo without asking.
+  onViewDemo: () => void;
   onOpenTrustCentre: () => void;
   // Optional because App.tsx's dark mode state already defaults every
   // visitor to their system preference before this component ever
@@ -44,7 +52,7 @@ interface LandingPageProps {
 
 type AuthMode = 'signin' | 'signup' | 'forgot';
 
-export const LandingPage = ({ onStart, onOpenTrustCentre, darkMode, setDarkMode, initialAuthModalOpen, onInitialAuthModalOpened }: LandingPageProps) => {
+export const LandingPage = ({ onStart, onViewDemo, onOpenTrustCentre, darkMode, setDarkMode, initialAuthModalOpen, onInitialAuthModalOpened }: LandingPageProps) => {
   const { user, signIn, signInWithMicrosoft, signInWithFacebook, signUpWithEmail, signInWithEmail, sendPasswordReset } = useAuth();
   const [showAuthModal, setShowAuthModal] = useState(false);
   const authDialogRef = useFocusTrap(showAuthModal);
@@ -357,11 +365,18 @@ export const LandingPage = ({ onStart, onOpenTrustCentre, darkMode, setDarkMode,
             Stop optimising your exhaustion. Blaze Break maps your personal burnout fingerprint - from a self-assessment, not a biometric scan - to rebuild real recovery into your hyper-scale workload.
           </p>
           <div className="pt-8 flex flex-col sm:flex-row items-center justify-center gap-4">
-            <button 
+            <button
               onClick={handleStartRequest}
               className="px-10 py-5 bg-white text-text-main hover:bg-surface dark:bg-card rounded-xl font-bold uppercase tracking-[0.2em] text-xs transition-all shadow-lg flex items-center gap-4 group"
             >
-              Get Burnout Fingerprint 
+              Get Burnout Fingerprint
+              <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+            </button>
+            <button
+              onClick={onViewDemo}
+              className="px-10 py-5 bg-transparent border border-border text-text-main hover:border-primary/50 hover:text-primary rounded-xl font-bold uppercase tracking-[0.2em] text-xs transition-all flex items-center gap-4 group"
+            >
+              See a live demo
               <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
             </button>
           </div>

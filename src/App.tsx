@@ -1513,17 +1513,22 @@ export default function App() {
       if (user) {
         if (flowRef.current === "landing") {
           if (loadedStats?.profile?.fullName) {
+            // A returning, already-onboarded account (real or an
+            // anonymous session that's already been through onboarding
+            // itself) - skip straight to the real app.
             setFlow("app");
-          } else if (user.isAnonymous) {
-            // Demo session - skip onboarding entirely and land straight on
-            // a sample dashboard (see isDemoSession below). loadedStats
-            // itself stays the honest, empty defaults - only what gets
-            // PASSED to HomeSection as props is swapped for sample
-            // content, never this real state.
-            setFlow("app");
-          } else {
-            setFlow("onboarding");
           }
+          // Otherwise (no saved profile - a fresh anonymous visitor, or a
+          // real account that started but never finished onboarding):
+          // deliberately stay on "landing". The invisible anonymous
+          // sign-in that just completed in the background is a technical
+          // bootstrap, not something that should ever navigate someone
+          // away from the marketing page on its own - a visitor reading
+          // the Terms/Privacy links in the footer, or just looking
+          // around, must never be swept into onboarding (or the sample
+          // dashboard) without clicking something. "Get Started" and
+          // "See a live demo" on LandingPage are the only two paths out
+          // of "landing" from here - see onStart/onViewDemo below.
         }
       } else {
         // Return back to landing only if they signed out intentionally
@@ -1972,6 +1977,7 @@ export default function App() {
       <>
         <LandingPage
           onStart={() => setFlow("onboarding")}
+          onViewDemo={() => setFlow("app")}
           onOpenTrustCentre={() => setFlow("trust-centre")}
           darkMode={darkMode}
           setDarkMode={setDarkMode}

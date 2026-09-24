@@ -1,7 +1,6 @@
 import { lazy, Suspense, useEffect, useState } from 'react';
 import { FileText, ChevronRight, Mail } from 'lucide-react';
-import { secureApiFetch, SecureApiError } from '../lib/secure-api';
-import { useAuth } from '../lib/auth';
+import { publicApiFetch, SecureApiError } from '../lib/secure-api';
 import type { LegalDocumentType } from './LegalDocumentModal';
 
 const LegalDocumentModal = lazy(() => import('./LegalDocumentModal').then(m => ({ default: m.LegalDocumentModal })));
@@ -20,21 +19,19 @@ interface LegalDocumentSummary {
 // links to, so there is exactly one place this content is ever defined -
 // see legal-documents.ts.
 export const LegalDocumentsSection = () => {
-  const { loading: authLoading } = useAuth();
   const [documents, setDocuments] = useState<LegalDocumentSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [openDoc, setOpenDoc] = useState<LegalDocumentType | null>(null);
 
   useEffect(() => {
-    // See the matching comment in LegalDocumentModal.tsx - waits for the
-    // auth context to finish resolving before fetching, so this never
-    // races auth.currentUser being briefly null.
-    if (authLoading) return;
+    // See the matching comment in LegalDocumentModal.tsx - publicApiFetch,
+    // not secureApiFetch, since reading these documents must never depend
+    // on any account existing.
     let cancelled = false;
     const load = async () => {
       try {
-        const res = await secureApiFetch('/api/legal/documents');
+        const res = await publicApiFetch('/api/legal/documents');
         if (!res.ok) throw new Error('Could not load legal documents.');
         const data = await res.json();
         if (!cancelled) setDocuments(data.documents || []);
@@ -54,7 +51,7 @@ export const LegalDocumentsSection = () => {
     };
     load();
     return () => { cancelled = true; };
-  }, [authLoading]);
+  }, []);
 
   return (
     <div className="space-y-3">
