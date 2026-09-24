@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { isDemoUser, DEMO_FINGERPRINT, DEMO_STATS, DEMO_VELOCITY_MAP, DEMO_ENERGY_COMMITMENTS } from './demo-data';
+import { isDemoUser, DEMO_FINGERPRINT, DEMO_STATS, DEMO_VELOCITY_MAP, DEMO_ENERGY_COMMITMENTS, DEMO_DERIVED_SUMMARIES } from './demo-data';
 import { BurnoutProfile } from '../types';
 
 // The exact, real archetype names this app uses - kept as a literal list
@@ -91,5 +91,19 @@ describe('DEMO_ENERGY_COMMITMENTS', () => {
   it('has at least one active and one resolved commitment, for a populated-looking ledger', () => {
     expect(DEMO_ENERGY_COMMITMENTS.some(c => c.status === 'active')).toBe(true);
     expect(DEMO_ENERGY_COMMITMENTS.some(c => c.status !== 'active')).toBe(true);
+  });
+});
+
+describe('DEMO_DERIVED_SUMMARIES', () => {
+  const EXPECTED_TYPES = ['recovery_debt', 'recovery_velocity', 'energy_trend', 'mood_trend'];
+
+  it('has all four card types, each marked available with a real value', () => {
+    for (const type of EXPECTED_TYPES) {
+      const summary = DEMO_DERIVED_SUMMARIES[type];
+      expect(summary).toBeTruthy();
+      expect(summary.type).toBe(type);
+      expect(summary.status).toBe('available');
+      expect(summary.value).toBeGreaterThan(0);
+    }
   });
 });

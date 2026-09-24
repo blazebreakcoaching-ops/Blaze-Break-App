@@ -140,6 +140,86 @@ export const DEMO_ENERGY_COMMITMENTS: {
   { id: "demo-4", name: "Coordinating the offsite logistics", energyDrain: 35, type: "logistical", status: "delegated", createdAt: "2026-09-17T09:00:00.000Z", updatedAt: "2026-09-21T09:00:00.000Z", isSample: true },
 ];
 
+// Matches RecoveryIntelligenceLayer.tsx's own local DerivedSummary shape
+// (its users/{uid}/derived/{type} docs, server-written only). Not imported
+// from that component - this module stays free of component/React
+// dependencies, and the object below is structurally compatible with that
+// interface either way. Consistent with the other demo constants: a
+// moderate, improving picture, matching DEMO_PULSE_HISTORY and
+// DEMO_VELOCITY_MAP's own narrowing-deficit trend over the same 14-day
+// window (Sep 9 - Sep 22, 2026).
+export const DEMO_DERIVED_SUMMARIES: Record<string, {
+  type: 'recovery_debt' | 'recovery_velocity' | 'energy_trend' | 'mood_trend';
+  status: 'available';
+  value: number;
+  direction: 'rising' | 'falling' | 'stable';
+  confidenceLevel: 'medium' | 'high';
+  sourceCount: number;
+  periodStart: string;
+  periodEnd: string;
+  formulaVersion: string;
+  explanation: string;
+  sourcesUsed: string[];
+  calculatedAt: string;
+}> = {
+  recovery_debt: {
+    type: 'recovery_debt',
+    status: 'available',
+    value: 62,
+    direction: 'falling',
+    confidenceLevel: 'high',
+    sourceCount: 24,
+    periodStart: '2026-09-08',
+    periodEnd: '2026-09-22',
+    formulaVersion: 'v1_nonclinical',
+    explanation: 'Pressure has been consistently higher than rest input, though the gap has been closing over the last two weeks.',
+    sourcesUsed: ['checkins', 'energy_budgets', 'mood_pulses', 'wins'],
+    calculatedAt: '2026-09-22T09:00:00.000Z',
+  },
+  recovery_velocity: {
+    type: 'recovery_velocity',
+    status: 'available',
+    value: 47,
+    direction: 'rising',
+    confidenceLevel: 'medium',
+    sourceCount: 18,
+    periodStart: '2026-09-08',
+    periodEnd: '2026-09-22',
+    formulaVersion: 'v1_nonclinical',
+    explanation: 'Boundary and energy recovery progress is trending upward, picking up pace over the most recent check-ins.',
+    sourcesUsed: ['checkins', 'wins', 'goals'],
+    calculatedAt: '2026-09-22T09:00:00.000Z',
+  },
+  energy_trend: {
+    type: 'energy_trend',
+    status: 'available',
+    value: 58,
+    direction: 'rising',
+    confidenceLevel: 'high',
+    sourceCount: 20,
+    periodStart: '2026-09-08',
+    periodEnd: '2026-09-22',
+    formulaVersion: 'v1_nonclinical',
+    explanation: 'Self-reported recovery capacity has been steadily climbing, matching the pulse history trend on the Home tab.',
+    sourcesUsed: ['checkins', 'energy_budgets'],
+    calculatedAt: '2026-09-22T09:00:00.000Z',
+  },
+  mood_trend: {
+    type: 'mood_trend',
+    status: 'available',
+    value: 51,
+    direction: 'stable',
+    confidenceLevel: 'medium',
+    sourceCount: 15,
+    periodStart: '2026-09-08',
+    periodEnd: '2026-09-22',
+    formulaVersion: 'v1_nonclinical',
+    explanation: 'Mood has held roughly steady, without the sharp pressure-driven dips seen in a typical high-output week.',
+    sourcesUsed: ['mood_pulses'],
+    calculatedAt: '2026-09-22T09:00:00.000Z',
+  },
+};
+
 export const isDemoUser = (
   isAnonymous: boolean | undefined,
   profileFullName: string | undefined,

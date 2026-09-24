@@ -22,10 +22,12 @@ HeartPulse, Star, Wind, RefreshCw, TrendingUp, TrendingDown, Target, FileText,
 import { cn } from '../lib/utils';
 import { updateNovaMemoryBySourceAndType } from '../lib/nova-brain';
 import { secureApiFetch } from '../lib/secure-api';
+import { DEMO_DERIVED_SUMMARIES } from '../lib/demo-data';
 
 interface RecoveryIntelligenceProps {
   onAwardPoints: (amount: number, reason: string) => void;
   fingerprint?: any;
+  isDemoSession?: boolean;
 }
 
 // Sub-components internal data structure
@@ -51,7 +53,7 @@ interface WinLogData {
   description: string;
 }
 
-export const RecoveryIntelligenceLayer = ({ onAwardPoints, fingerprint }: RecoveryIntelligenceProps) => {
+export const RecoveryIntelligenceLayer = ({ onAwardPoints, fingerprint, isDemoSession }: RecoveryIntelligenceProps) => {
   const [activeRoom, setActiveRoom] = useState<string>('velocity');
 
   // Load States from Firestore/Sync
@@ -167,6 +169,13 @@ export const RecoveryIntelligenceLayer = ({ onAwardPoints, fingerprint }: Recove
   }, [user, socialBattery, isFocusShieldActive, rtwPhase, meetingLimit, bodySymptoms]);
 
   const fetchDerivedSummaries = async () => {
+    // A demo session has no real logged history for the server to
+    // calculate from - seed the illustrative sample set instead of
+    // reading Firestore, never written back anywhere.
+    if (isDemoSession) {
+      setSummaries(DEMO_DERIVED_SUMMARIES);
+      return;
+    }
     if (!user) return;
     setLoadingSummaries(true);
     try {
@@ -189,6 +198,11 @@ export const RecoveryIntelligenceLayer = ({ onAwardPoints, fingerprint }: Recove
   };
 
   const handleRecalculate = async () => {
+    // A real click here would overwrite the illustrative cards with the
+    // demo session's genuinely-empty result, visibly breaking the demo
+    // mid-session - the button is disabled during a demo session too, but
+    // this is the actual guard.
+    if (isDemoSession) return;
     if (!user) return;
     setRecalculating(true);
     setRecalculateError(null);
@@ -243,7 +257,7 @@ export const RecoveryIntelligenceLayer = ({ onAwardPoints, fingerprint }: Recove
     if (user) {
       fetchDerivedSummaries();
     }
-  }, [user]);
+  }, [user, isDemoSession]);
 
   // Somatic Micro-Interventions Timer States & Presets
   const [activePresetId, setActivePresetId] = useState<string | null>(null);
@@ -817,28 +831,36 @@ export const RecoveryIntelligenceLayer = ({ onAwardPoints, fingerprint }: Recove
                     </div>
                   </div>
 
-                  <button
-                    onClick={handleRecalculate}
-                    disabled={recalculating}
-                    id="recalculate_trends_button"
-                    className={cn(
-                      "px-6 py-3 rounded-xl font-black text-xs uppercase tracking-widest transition-all duration-250 flex items-center gap-2 group shrink-0 cursor-pointer self-start md:self-auto",
-                      recalculating
-                        ? "bg-text-main/20 text-text-muted/75 cursor-not-allowed"
-                        : recalculateSuccess
-                        ? "bg-success/10 text-[#166534] dark:text-[#4ade80] border border-success/30"
-                        : "bg-text-main text-surface hover:scale-[1.02] shadow-lg shadow-text-main/5 active:scale-[0.98]"
+                  <div className="flex flex-col items-start md:items-end gap-1.5 self-start md:self-auto">
+                    <button
+                      onClick={handleRecalculate}
+                      disabled={recalculating || isDemoSession}
+                      title={isDemoSession ? "Sign up to run your own analysis" : undefined}
+                      id="recalculate_trends_button"
+                      className={cn(
+                        "px-6 py-3 rounded-xl font-black text-xs uppercase tracking-widest transition-all duration-250 flex items-center gap-2 group shrink-0",
+                        isDemoSession
+                          ? "bg-text-main/10 text-text-muted/60 cursor-not-allowed"
+                          : recalculating
+                          ? "bg-text-main/20 text-text-muted/75 cursor-not-allowed"
+                          : recalculateSuccess
+                          ? "bg-success/10 text-[#166534] dark:text-[#4ade80] border border-success/30"
+                          : "bg-text-main text-surface hover:scale-[1.02] shadow-lg shadow-text-main/5 active:scale-[0.98] cursor-pointer"
+                      )}
+                    >
+                      {recalculating ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : recalculateSuccess ? (
+                        <Check className="w-4 h-4 text-success" />
+                      ) : (
+                        <RefreshCw className={cn("w-4 h-4 transition-transform", !isDemoSession && "group-hover:rotate-45")} />
+                      )}
+                      {recalculating ? "Recalculating..." : recalculateSuccess ? "Recalculated!" : "Recalculate Trends"}
+                    </button>
+                    {isDemoSession && (
+                      <span className="text-[10px] font-bold text-text-muted">Sign up to run your own analysis</span>
                     )}
-                  >
-                    {recalculating ? (
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                    ) : recalculateSuccess ? (
-                      <Check className="w-4 h-4 text-success" />
-                    ) : (
-                      <RefreshCw className="w-4 h-4 transition-transform group-hover:rotate-45" />
-                    )}
-                    {recalculating ? "Recalculating..." : recalculateSuccess ? "Recalculated!" : "Recalculate Trends"}
-                  </button>
+                  </div>
                 </div>
 
                 {/* Status Feeback Alerts */}

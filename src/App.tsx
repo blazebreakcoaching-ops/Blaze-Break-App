@@ -2593,6 +2593,7 @@ export default function App() {
                 <RecoveryIntelligenceLayer
                   fingerprint={fingerprint}
                   onAwardPoints={awardPoints}
+                  isDemoSession={isDemoSession}
                 />
               </div>
             )}
