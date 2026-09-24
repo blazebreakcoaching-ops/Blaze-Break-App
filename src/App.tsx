@@ -97,8 +97,10 @@ const SettingsModal = lazy(() => import("./components/SettingsModal.tsx").then(m
 const FutureSelfSimulator = lazy(() => import("./components/FutureSelfSimulator.tsx").then(m => ({ default: m.FutureSelfSimulator })));
 const AssuranceCentre = lazy(() => import("./components/AssuranceCentre.tsx").then(m => ({ default: m.AssuranceCentre })));
 import { AuthStatusTracker } from "./lib/sync.tsx";
+import { AccountStatusBanner } from "./components/AccountStatusBanner.tsx";
 import { initNovaBrain, clearNovaBrainCache, ensureNovaPermissionsExist, isCalendarSignalConsentGranted } from "./lib/nova-brain";
 import { migrateSupportCircleIfNeeded, addSupportCircleContact, removeSupportCircleContact } from "./lib/support-circle";
+import { isDemoUser, DEMO_STATS, DEMO_FINGERPRINT, DEMO_PULSE_HISTORY, DEMO_ENERGY_LEVEL, DEMO_BURNOUT_RISK } from "./lib/demo-data";
 import { useAuth } from "./lib/auth.tsx";
 const IntegrationsDashboard = lazy(() => import("./components/IntegrationsDashboard.tsx").then(m => ({ default: m.IntegrationsDashboard })));
 const AdminDashboard = lazy(() => import("./components/AdminDashboard.tsx").then(m => ({ default: m.AdminDashboard })));
@@ -1133,6 +1135,13 @@ export default function App() {
   const [showSettings, setShowSettings] = useState(false);
   const [showWalkthrough, setShowWalkthrough] = useState(false);
   const [showCrisisSupport, setShowCrisisSupport] = useState(false);
+  // One-shot flag consumed by LandingPage's own initialAuthModalOpen
+  // effect - set true right before routing a demo session back to
+  // "landing" via AccountStatusBanner's "Sign up free" CTA, so the
+  // sign-up modal opens directly instead of silently starting onboarding
+  // again (LandingPage's own handleStartRequest can't tell the
+  // difference, since a demo session already has a live anonymous user).
+  const [landingInitialAuthOpen, setLandingInitialAuthOpen] = useState(false);
 
   // Same 'navigate_tab' pattern above, for the same reason: components
   // several layers deep (the Guardian Support Invitation card, rendered
@@ -1267,6 +1276,17 @@ export default function App() {
   // letting the same-day double-claim guard get bypassed by a refresh.
   const todayStr = new Date().toISOString().split("T")[0];
   const hasClaimedDaily = stats.lastEngagementDate === todayStr;
+
+  // True for a fresh anonymous visitor who hasn't saved a real profile yet
+  // (see loadStats()'s routing effect, which sends them straight to "app"
+  // instead of "onboarding"). Derived on every render from state that
+  // already exists - not its own useState/ref - so it flips back to false
+  // automatically the instant a real profile.fullName is saved (real
+  // onboarding completed, or a linked real account's saved profile
+  // loads), with no manual reset logic anywhere. `stats` itself is never
+  // set to demo content - only what gets passed to <HomeSection> below is
+  // swapped for sample data when this is true.
+  const isDemoSession = isDemoUser(user?.isAnonymous, stats.profile?.fullName);
 
   // Pulse Alert System
   useEffect(() => {
@@ -1493,6 +1513,13 @@ export default function App() {
       if (user) {
         if (flowRef.current === "landing") {
           if (loadedStats?.profile?.fullName) {
+            setFlow("app");
+          } else if (user.isAnonymous) {
+            // Demo session - skip onboarding entirely and land straight on
+            // a sample dashboard (see isDemoSession below). loadedStats
+            // itself stays the honest, empty defaults - only what gets
+            // PASSED to HomeSection as props is swapped for sample
+            // content, never this real state.
             setFlow("app");
           } else {
             setFlow("onboarding");
@@ -1948,6 +1975,8 @@ export default function App() {
           onOpenTrustCentre={() => setFlow("trust-centre")}
           darkMode={darkMode}
           setDarkMode={setDarkMode}
+          initialAuthModalOpen={landingInitialAuthOpen}
+          onInitialAuthModalOpened={() => setLandingInitialAuthOpen(false)}
         />
         <button
           onClick={() => setShowCrisisSupport(true)}
@@ -2092,6 +2121,12 @@ export default function App() {
           isSidebarCollapsed ? "md:ml-32" : "md:ml-72",
         )}
       >
+        <AccountStatusBanner
+          isDemoSession={isDemoSession}
+          onSignUp={() => { setFlow("landing"); setLandingInitialAuthOpen(true); }}
+          onNavigateUpgrade={() => safeSetActiveTab("subscription")}
+        />
+
         {/* Reward Notification */}
         <AnimatePresence>
           {showRewardNotification && (
@@ -2214,15 +2249,19 @@ export default function App() {
               <HomeSection
                 onChatRequest={() => setActiveTab("nova")}
                 onEnergyRequest={() => setActiveTab("recover")}
-                fingerprint={fingerprint}
-                stats={stats}
+                // Only these five are swapped for sample content during a
+                // demo session - everything below (callbacks, badges,
+                // etc.) stays wired to the visitor's real, honest, empty
+                // account. See isDemoSession above and demo-data.ts.
+                fingerprint={isDemoSession ? DEMO_FINGERPRINT : fingerprint}
+                stats={isDemoSession ? DEMO_STATS : stats}
                 onClaimDaily={handleClaimDaily}
                 hasClaimedDaily={hasClaimedDaily}
                 shipStage={shipStage}
-                energyLevel={energyLevel}
-                burnoutRisk={burnoutRisk}
+                energyLevel={isDemoSession ? DEMO_ENERGY_LEVEL : energyLevel}
+                burnoutRisk={isDemoSession ? DEMO_BURNOUT_RISK : burnoutRisk}
                 onOpenCheckIn={() => setShowCheckIn(true)}
-                pulseHistory={pulseHistory}
+                pulseHistory={isDemoSession ? DEMO_PULSE_HISTORY : pulseHistory}
                 onAwardPoints={awardPoints}
                 onIncrementStreak={() => setStats((prev) => ({ ...prev, streak: (prev.streak || 0) + 1 }))}
                 onUpdateOperationalMetrics={handleUpdateOperationalMetrics}
@@ -2563,7 +2602,7 @@ export default function App() {
         </AnimatePresence>
 
         <AnimatePresence>
-          {user && showCheckIn && (
+          {user && showCheckIn && !isDemoSession && (
             <Suspense fallback={null}>
               <ConnectedDailyCheckIn
                 onClose={() => setShowCheckIn(false)}

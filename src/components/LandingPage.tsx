@@ -28,11 +28,23 @@ interface LandingPageProps {
   // level even though App.tsx always passes both in practice.
   darkMode?: boolean;
   setDarkMode?: (d: boolean) => void;
+  // True when App.tsx routed here specifically to open the sign-up modal
+  // (e.g. a demo session's "Sign up free" banner). Every visitor already
+  // has a live anonymous session by the time this component mounts, so
+  // the ordinary "Get Started" flow (handleStartRequest below) never
+  // opens this modal on its own - it just starts onboarding anonymously.
+  // This prop is the one path that actually forces it open.
+  initialAuthModalOpen?: boolean;
+  // Called once, right after initialAuthModalOpen has been consumed - lets
+  // App.tsx reset its one-shot flag back to false, so a later, ordinary
+  // visit to "landing" (e.g. ending a real session) doesn't also force
+  // this modal open.
+  onInitialAuthModalOpened?: () => void;
 }
 
 type AuthMode = 'signin' | 'signup' | 'forgot';
 
-export const LandingPage = ({ onStart, onOpenTrustCentre, darkMode, setDarkMode }: LandingPageProps) => {
+export const LandingPage = ({ onStart, onOpenTrustCentre, darkMode, setDarkMode, initialAuthModalOpen, onInitialAuthModalOpened }: LandingPageProps) => {
   const { user, signIn, signInWithMicrosoft, signInWithFacebook, signUpWithEmail, signInWithEmail, sendPasswordReset } = useAuth();
   const [showAuthModal, setShowAuthModal] = useState(false);
   const authDialogRef = useFocusTrap(showAuthModal);
@@ -43,6 +55,7 @@ export const LandingPage = ({ onStart, onOpenTrustCentre, darkMode, setDarkMode 
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [showAuthModal]);
+
   // Which social provider's popup is currently in flight, if any - tracked
   // per-provider (not one shared boolean) so only the button actually
   // clicked shows its spinner, while all three still disable together to
@@ -54,6 +67,20 @@ export const LandingPage = ({ onStart, onOpenTrustCentre, darkMode, setDarkMode 
   // every time the modal opens, so a previous attempt's typed password or
   // error message never lingers into the next visit.
   const [authMode, setAuthMode] = useState<AuthMode>('signin');
+
+  useEffect(() => {
+    if (initialAuthModalOpen) {
+      setAuthMode('signup');
+      setShowAuthModal(true);
+      onInitialAuthModalOpened?.();
+    }
+    // Deliberately no cleanup/reset - this component only ever mounts
+    // fresh (App.tsx renders it only when flow === "landing"), so there's
+    // no stale-prop state to reset on unmount. Only initialAuthModalOpen
+    // is a dependency on purpose - onInitialAuthModalOpened is a stable
+    // one-shot callback that shouldn't re-trigger this effect on its own.
+  }, [initialAuthModalOpen]);
+
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
