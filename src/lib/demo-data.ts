@@ -19,7 +19,7 @@
 // fingerprint state, never persisted to Firestore) - see App.tsx's
 // `isDemoSession` usage at the <HomeSection> call site.
 
-import { UserStats, BurnoutFingerprint } from "../types";
+import { UserStats, BurnoutFingerprint, SupportContact } from "../types";
 
 export const DEMO_STATS: UserStats = {
   points: 1450,
@@ -253,6 +253,21 @@ export const DEMO_VOICE_JOURNAL_ENTRIES: {
     advice: "Write this one down somewhere you'll see it next time you're hesitating to set a boundary - it's easy to forget the wins and only remember the close calls.",
     emotionalTone: "Encouraged",
   },
+];
+
+// Matches NovaGuardianRelay.tsx's own SupportContact shape - illustrative
+// Guardian Relay cards so a demo visitor can see what a configured support
+// network looks like. Both use the +1-202-555-01xx block NANP reserves for
+// fiction (never a real subscriber number), and both are tagged isSample -
+// NovaGuardianRelay.tsx checks that flag before every real-world send path
+// (the Twilio test ping and the Guardian alert dispatch), so a sample card
+// can never trigger an actual SMS or phone-based alert. This is a stricter
+// version of the isSample write-guard DEMO_ENERGY_COMMITMENTS already uses
+// - here the risk isn't a stray Firestore write, it's a real message to a
+// real phone number, so the guard has to be airtight, not best-effort.
+export const DEMO_GUARDIANS: SupportContact[] = [
+  { id: "demo-guardian-1", name: "Jordan (Partner)", role: "primary_guardian", isGuardian: true, contactMethod: "+12025550142", relation: "Partner", notificationPreference: "sms", isSample: true },
+  { id: "demo-guardian-2", name: "Sam (Close Friend)", role: "backup_guardian", isGuardian: true, contactMethod: "+12025550187", relation: "Friend", notificationPreference: "sms", isSample: true },
 ];
 
 export const isDemoUser = (

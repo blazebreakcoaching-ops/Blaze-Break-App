@@ -100,7 +100,7 @@ import { AuthStatusTracker } from "./lib/sync.tsx";
 import { AccountStatusBanner } from "./components/AccountStatusBanner.tsx";
 import { initNovaBrain, clearNovaBrainCache, ensureNovaPermissionsExist, isCalendarSignalConsentGranted } from "./lib/nova-brain";
 import { migrateSupportCircleIfNeeded, addSupportCircleContact, removeSupportCircleContact } from "./lib/support-circle";
-import { isDemoUser, DEMO_STATS, DEMO_FINGERPRINT, DEMO_PULSE_HISTORY, DEMO_ENERGY_LEVEL, DEMO_BURNOUT_RISK } from "./lib/demo-data";
+import { isDemoUser, DEMO_STATS, DEMO_FINGERPRINT, DEMO_PULSE_HISTORY, DEMO_ENERGY_LEVEL, DEMO_BURNOUT_RISK, DEMO_GUARDIANS } from "./lib/demo-data";
 import { useAuth } from "./lib/auth.tsx";
 const IntegrationsDashboard = lazy(() => import("./components/IntegrationsDashboard.tsx").then(m => ({ default: m.IntegrationsDashboard })));
 const AdminDashboard = lazy(() => import("./components/AdminDashboard.tsx").then(m => ({ default: m.AdminDashboard })));
@@ -2529,7 +2529,15 @@ export default function App() {
               <div className="space-y-32">
                 <RecoveryAlly />
                 <NovaGuardianRelay
-                  contacts={stats.supportCircle || []}
+                  // Sample cards are shown alongside (never in place of) any
+                  // real contacts the visitor has already added - a real
+                  // add/remove during a demo session still works normally
+                  // (Rule 2: genuine visitor action, not fabrication). Kept
+                  // out of AllyNudgeScheduler below on purpose - that
+                  // component schedules real, recurring server-side SMS
+                  // sends, which a fabricated contact must never be able to
+                  // trigger.
+                  contacts={isDemoSession ? [...DEMO_GUARDIANS, ...(stats.supportCircle || [])] : (stats.supportCircle || [])}
                   onAdd={handleAddContact}
                   onRemove={handleRemoveContact}
                   userName={stats.profile?.fullName}

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { isDemoUser, DEMO_FINGERPRINT, DEMO_STATS, DEMO_VELOCITY_MAP, DEMO_ENERGY_COMMITMENTS, DEMO_DERIVED_SUMMARIES, DEMO_VOICE_JOURNAL_ENTRIES } from './demo-data';
+import { isDemoUser, DEMO_FINGERPRINT, DEMO_STATS, DEMO_VELOCITY_MAP, DEMO_ENERGY_COMMITMENTS, DEMO_DERIVED_SUMMARIES, DEMO_VOICE_JOURNAL_ENTRIES, DEMO_GUARDIANS } from './demo-data';
 import { BurnoutProfile } from '../types';
 
 // The exact, real archetype names this app uses - kept as a literal list
@@ -116,6 +116,29 @@ describe('DEMO_VOICE_JOURNAL_ENTRIES', () => {
       expect(entry.themes.length).toBeGreaterThan(0);
       expect(entry.analysis.length).toBeGreaterThan(0);
       expect(entry.advice.length).toBeGreaterThan(0);
+    }
+  });
+});
+
+describe('DEMO_GUARDIANS', () => {
+  it('is every entry tagged isSample so NovaGuardianRelay never sends a real alert to it', () => {
+    expect(DEMO_GUARDIANS.length).toBeGreaterThan(0);
+    for (const g of DEMO_GUARDIANS) {
+      expect(g.isSample).toBe(true);
+    }
+  });
+
+  it('uses only the NANP fictional-use block (+1-202-555-01xx), never a real-looking number', () => {
+    for (const g of DEMO_GUARDIANS) {
+      expect(g.contactMethod).toMatch(/^\+12025550\d{3}$/);
+    }
+  });
+
+  it('has unique ids distinct from anything a real contact could get (Date.now()-based)', () => {
+    const ids = DEMO_GUARDIANS.map(g => g.id);
+    expect(new Set(ids).size).toBe(ids.length);
+    for (const id of ids) {
+      expect(id.startsWith('demo-guardian-')).toBe(true);
     }
   });
 });

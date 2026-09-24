@@ -163,6 +163,11 @@ const GuardianCard = ({
            )}>
              {contact.role.replace('_', ' ')}
            </span>
+           {contact.isSample && (
+             <span className="text-[11px] uppercase font-black tracking-widest px-2.5 py-1 rounded-md bg-primary/10 text-[#9a3412] dark:text-primary border border-primary/20">
+               Sample
+             </span>
+           )}
         </div>
       </div>
 
@@ -186,8 +191,10 @@ const GuardianCard = ({
                 anyone else). Previously these buttons rendered for every
                 contact regardless of role, relying only on a disabled
                 &lt;option&gt; in the add-contact form to keep non-guardians
-                out - not a real enforcement point. */}
-            {isRealGuardian(contact) && alertsEnabled ? (
+                out - not a real enforcement point. A sample contact is
+                never a real phone number, so it never gets a live send
+                button either - see the isSample note on SupportContact. */}
+            {isRealGuardian(contact) && alertsEnabled && !contact.isSample ? (
               <button
                 onClick={() => onActivateSOS(contact.id)}
                 className="col-span-1 py-3 text-[11px] font-black uppercase tracking-widest rounded-xl transition-all shadow-sm bg-destructive hover:bg-destructive text-destructive-foreground"
@@ -206,7 +213,11 @@ const GuardianCard = ({
             </button>
 
             {/* Quick Relay */}
-            {isRealGuardian(contact) && alertsEnabled ? (
+            {contact.isSample ? (
+              <p className="col-span-2 py-3 text-center text-[11px] text-text-muted">
+                This is a sample contact - sign up and add a real guardian to activate alerts.
+              </p>
+            ) : isRealGuardian(contact) && alertsEnabled ? (
               <button
                 onClick={handleQuickRelay}
                 className={cn(
@@ -255,6 +266,20 @@ export const NovaGuardianRelay = ({ contacts, onAdd, onRemove, userName }: NovaG
   const [sendSuccess, setSendSuccess] = useState<string | null>(null);
   const sosDialogRef = useFocusTrap(!!activeSOS);
   const alertsEnabled = useGuardianAlertsEnabled();
+  // A sample card isn't backed by a real contact doc, so "removing" one is
+  // purely a local view preference - never call the real onRemove (which
+  // would fire a Firestore delete for the visitor's real anonymous UID
+  // against an id that was never actually written there).
+  const [hiddenSampleIds, setHiddenSampleIds] = useState<Set<string>>(new Set());
+  const visibleContacts = contacts.filter(c => !hiddenSampleIds.has(c.id));
+  const handleRemoveOrHide = (id: string) => {
+    const contact = contacts.find(c => c.id === id);
+    if (contact?.isSample) {
+      setHiddenSampleIds(prev => new Set(prev).add(id));
+      return;
+    }
+    onRemove(id);
+  };
 
   useEffect(() => {
     if (!activeSOS) return;
@@ -280,6 +305,13 @@ export const NovaGuardianRelay = ({ contacts, onAdd, onRemove, userName }: NovaG
   // state honestly, rather than assuming success or updating a timestamp
   // unrelated to what actually happened.
   const sendTestAlert = async (contact: SupportContact): Promise<boolean> => {
+    // A sample contact has no real phone number behind it - never reach
+    // the network, no matter what the Ping Status button says elsewhere.
+    if (contact.isSample) {
+      setSendSuccess(`${contact.name} is a sample contact - sign up and add a real guardian to test this for real.`);
+      setTimeout(() => setSendSuccess(null), 4000);
+      return false;
+    }
     if (!/^\+[1-9]\d{6,14}$/.test(contact.contactMethod)) {
       setSendSuccess(`${contact.name}'s number isn't in a valid format - edit it and try again.`);
       setTimeout(() => setSendSuccess(null), 4000);
@@ -316,6 +348,21 @@ export const NovaGuardianRelay = ({ contacts, onAdd, onRemove, userName }: NovaG
   // idempotencyKey per call is intentional (matching CrisisSupport.tsx's
   // own pattern) - each tap is a new, distinct request for that dispatch.
   const sendRealAlert = async (contact: SupportContact) => {
+    // A sample contact has no real Firestore doc behind it - the server
+    // would 403 this anyway (it only ever looks up the caller's own
+    // stored support_circle contact, never the client's copy), but
+    // guarding here avoids burning the real per-contact cooldown/daily cap
+    // on a request that could never succeed, and gives a clearer message.
+    if (contact.isSample) {
+      setIsSending(true);
+      setSendSuccess(`${contact.name} is a sample contact - sign up and add a real guardian to send a real alert.`);
+      setTimeout(() => {
+        setSendSuccess(null);
+        setActiveSOS(null);
+        setIsSending(false);
+      }, 3000);
+      return;
+    }
     setIsSending(true);
     const idempotencyKey = `${contact.id}_${Date.now()}_${Math.random().toString(36).slice(2)}`;
 
@@ -399,16 +446,16 @@ export const NovaGuardianRelay = ({ contacts, onAdd, onRemove, userName }: NovaG
         <div className="xl:col-span-8 space-y-6">
           <div className="flex items-center justify-between">
             <h3 className="text-xs font-black uppercase tracking-[0.2em] text-text-muted">Active Guardian Nodes</h3>
-            <span className="text-xs font-mono text-text-muted bg-surface dark:bg-surface px-3 py-1 rounded-full">{contacts.length} Configured</span>
+            <span className="text-xs font-mono text-text-muted bg-surface dark:bg-surface px-3 py-1 rounded-full">{visibleContacts.length} Configured</span>
           </div>
-          
+
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <AnimatePresence mode="popLayout">
-              {contacts.map((contact) => (
+              {visibleContacts.map((contact) => (
                 <GuardianCard
                   key={contact.id}
                   contact={contact}
-                  onRemove={onRemove}
+                  onRemove={handleRemoveOrHide}
                   onSendTest={() => sendTestAlert(contact)}
                   onTriggerRelay={() => triggerLiveRelay(contact)}
                   onActivateSOS={setActiveSOS}
@@ -417,7 +464,7 @@ export const NovaGuardianRelay = ({ contacts, onAdd, onRemove, userName }: NovaG
               ))}
             </AnimatePresence>
 
-            {contacts.length === 0 && !isAdding && (
+            {visibleContacts.length === 0 && !isAdding && (
                <div className="col-span-full py-16 flex flex-col items-center justify-center text-center border border-dashed border-border rounded-xl bg-surface dark:bg-card/50">
                  <Shield className="w-12 h-12 text-text-muted mb-6" />
                  <h4 className="font-bold text-text-main mb-2 text-lg">Infrastructure Offline</h4>
@@ -485,7 +532,10 @@ export const NovaGuardianRelay = ({ contacts, onAdd, onRemove, userName }: NovaG
                </div>
              </div>
              <div className="relative z-10 pt-2">
-                <CrisisSupportContent guardians={contacts} />
+                {/* Sample cards deliberately excluded here - CrisisSupport.tsx
+                    doesn't know about isSample, and this "Ask them to call
+                    me" shortcut is a real dispatch path, not just display. */}
+                <CrisisSupportContent guardians={visibleContacts.filter(c => !c.isSample)} />
              </div>
           </div>
           <div className="card p-8 border border-border bg-card text-text-main relative overflow-hidden space-y-6 shadow-lg">
@@ -643,7 +693,7 @@ export const NovaGuardianRelay = ({ contacts, onAdd, onRemove, userName }: NovaG
                   <div className="text-center space-y-3">
                      <h3 id="sos-dialog-title" className="text-2xl font-bold font-display line-clamp-1 text-text-main tracking-tight">Manual Dispatch</h3>
                      <p className="text-sm text-text-muted px-4 leading-relaxed">
-                       Sending an alert to <strong className="text-text-main">"{contacts.find(c => c.id === activeSOS)?.name}"</strong>. They'll be asked to reach out to you as soon as possible.
+                       Sending an alert to <strong className="text-text-main">"{visibleContacts.find(c => c.id === activeSOS)?.name}"</strong>. They'll be asked to reach out to you as soon as possible.
                      </p>
                   </div>
 
@@ -672,7 +722,7 @@ export const NovaGuardianRelay = ({ contacts, onAdd, onRemove, userName }: NovaG
                       </button>
                       <button 
                         onClick={() => {
-                           const c = contacts.find(c => c.id === activeSOS);
+                           const c = visibleContacts.find(c => c.id === activeSOS);
                            if (c) triggerLiveRelay(c);
                         }}
                         disabled={isSending}

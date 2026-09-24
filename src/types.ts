@@ -78,6 +78,12 @@ export interface SupportContact {
   contactMethod: string;
   relation?: string;
   notificationPreference?: 'sms' | 'whatsapp';
+  // Only ever set on an illustrative demo-data.ts contact seeded during a
+  // demo session - never on a real contact the visitor added. Gates every
+  // real-world send path (Twilio test ping, Guardian alert dispatch) in
+  // NovaGuardianRelay.tsx, since a sample contact has no real phone number
+  // behind it and must never trigger an actual SMS.
+  isSample?: boolean;
 }
 
 export interface OrgTrends {
