@@ -1,9 +1,8 @@
 import { useEffect, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import { X, Loader2 } from 'lucide-react';
-import { secureApiFetch, SecureApiError } from '../lib/secure-api';
+import { publicApiFetch, SecureApiError } from '../lib/secure-api';
 import { useFocusTrap } from '../lib/useFocusTrap';
-import { useAuth } from '../lib/auth';
 
 // Legal document type ids, kept as a local, duplicated string union rather
 // than importing legal-documents.ts (the server-side registry/content
@@ -27,26 +26,25 @@ interface LegalDocument {
 // published registry (GET /api/legal/documents/:docType), never
 // hardcoded here.
 export const LegalDocumentModal = ({ docType, onClose }: { docType: LegalDocumentType; onClose: () => void }) => {
-  const { loading: authLoading } = useAuth();
   const [doc, setDoc] = useState<LegalDocument | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const modalRef = useFocusTrap(true);
 
   useEffect(() => {
-    // Every visitor gets signed in automatically (anonymously, if they
-    // haven't signed up yet) on page load - but that sign-in is async, and
-    // this modal can mount before it resolves (e.g. a landing-page
-    // visitor clicking a footer link right away). Firing the fetch before
-    // auth.currentUser exists produced the exact "Unauthorized: User not
-    // signed in." error being reported - waiting for the auth context to
-    // finish resolving first, and retrying once it does, fixes that at
-    // the source instead of surfacing a false failure.
-    if (authLoading) return;
+    // Deliberately uses publicApiFetch, not secureApiFetch - reading a
+    // legal document must never depend on any account existing, not even
+    // the invisible anonymous session every visitor gets automatically.
+    // A visitor should be able to read the Terms/Privacy before that
+    // session is even created, exactly like any legitimate site's policy
+    // pages. The server route itself has never required a signed-in user
+    // (verifyAppCheck only, see server.ts) - this was purely a client-
+    // side requirement that produced the "Unauthorized: User not signed
+    // in." error being reported, and is now removed at the source.
     let cancelled = false;
     const load = async () => {
       try {
-        const res = await secureApiFetch(`/api/legal/documents/${docType}`);
+        const res = await publicApiFetch(`/api/legal/documents/${docType}`);
         if (!res.ok) throw new Error('Could not load this document.');
         const data = await res.json();
         if (!cancelled) setDoc(data);
@@ -67,7 +65,7 @@ export const LegalDocumentModal = ({ docType, onClose }: { docType: LegalDocumen
     };
     load();
     return () => { cancelled = true; };
-  }, [docType, authLoading]);
+  }, [docType]);
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };

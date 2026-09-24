@@ -132,3 +132,45 @@ export async function secureApiFetch(path: string, options: SecureApiOptions = {
   
   throw new SecureApiError(errorMessage, status, errorDetails);
 }
+
+// For the small set of genuinely public server routes (currently just the
+// legal document reads, GET /api/legal/documents and
+// /api/legal/documents/:docType) that only require verifyAppCheck server-
+// side, never authenticateFirebaseUser - see server.ts. secureApiFetch
+// above deliberately throws if nobody's signed in yet, even anonymously,
+// because every other route it's used for genuinely does need a real
+// user. Reading the Terms & Conditions or Privacy Notice must never
+// depend on ANY account existing, not even the invisible anonymous
+// session every visitor gets automatically - someone should be able to
+// read what they'd be agreeing to before that session is even created,
+// the same way they'd expect from any legitimate site's policy pages.
+export async function publicApiFetch(path: string): Promise<Response> {
+  const appCheckToken = await getAppCheckToken();
+  const headers = new Headers();
+  if (appCheckToken) {
+    headers.set('X-Firebase-AppCheck', appCheckToken);
+  } else if ((import.meta as any).env.DEV) {
+    headers.set('X-Firebase-AppCheck', "dev-bypass");
+  }
+
+  let response: Response;
+  try {
+    response = await fetch(path, { headers });
+  } catch (error: any) {
+    throw new SecureApiError(`Network error: ${error.message}`, 0);
+  }
+
+  if (response.ok) {
+    return response;
+  }
+
+  const status = response.status;
+  let errorMessage = `API Error ${status}`;
+  try {
+    const errorData = await response.json();
+    if (errorData.error) errorMessage = errorData.error;
+  } catch (e) {
+    errorMessage = await response.text() || errorMessage;
+  }
+  throw new SecureApiError(errorMessage, status);
+}
