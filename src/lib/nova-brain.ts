@@ -82,6 +82,7 @@ const NOVA_PERMISSION_DEFAULTS = {
   // aggregate-only treatment as every category above. Each gates one more
   // module's summary in server.ts's getNovaContextAndMetadata.
   allowFingerprint: true,
+  allowOnboardingProfile: true,
   allowRecoveryPlanProgress: true,
   allowDiagnosisProgress: true,
   allowEnergyCommitments: true,

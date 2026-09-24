@@ -1848,6 +1848,37 @@ async function getNovaContextAndMetadata(uid: string, firestoreDb: any): Promise
       }
     }
 
+    // Onboarding profile - the goal, work context, main energy drain, and
+    // preferred coaching tone/style the person gave at onboarding.
+    // Previously this only ever reached Nova through one-off memory
+    // entries that competed with every other feature's memory writes for
+    // one of 5 "most recent" slots in nova_memories - it silently fell out
+    // of context as soon as a handful of newer memories were saved, and
+    // Nova went back to generic advice with no signal anything was
+    // missing. Read directly from the stable profile doc instead, exactly
+    // like the Fingerprint block above, so it's always present. fullName
+    // is deliberately excluded here - name usage has its own dedicated
+    // consent toggle (useNameInGreetings) and mixing it into this always-
+    // on block would bypass that.
+    if (perms.allowOnboardingProfile !== false) {
+      const profileSnap = await firestoreDb.collection('users').doc(uid).collection('user_stats').doc('core').get();
+      if (profileSnap.exists) {
+        const profile = profileSnap.data()?.profile;
+        if (profile && (profile.purpose || profile.pathway || profile.primaryDrain || profile.role || profile.novaTone || profile.questioningStyle)) {
+          const profileLines: string[] = [];
+          if (profile.role) profileLines.push(`- Role: ${profile.role}`);
+          if (profile.organization) profileLines.push(`- Organisation: ${profile.organization}`);
+          if (profile.pathway) profileLines.push(`- Work context: ${profile.pathway}`);
+          if (profile.purpose) profileLines.push(`- Stated goal for using Blaze Break: ${profile.purpose}`);
+          if (profile.primaryDrain) profileLines.push(`- Main energy drain they identified: ${profile.primaryDrain}`);
+          if (profile.novaTone) profileLines.push(`- Preferred coaching tone: ${profile.novaTone}`);
+          if (profile.questioningStyle) profileLines.push(`- Preferred questioning style: ${profile.questioningStyle}`);
+          infoParts.push(`Onboarding Profile:\n${profileLines.join("\n")}`);
+          used.push("onboarding_profile");
+        }
+      }
+    }
+
     // Recovery Plan progress - completion only, never the submitted journal text.
     if (perms.allowRecoveryPlanProgress !== false) {
       const planSnap = await firestoreDb.collection('users').doc(uid).collection('recovery_plan_progress').doc('state').get();
@@ -2015,6 +2046,7 @@ RESPONSE CONSTRAINTS (MANDATORY):
 4. Do NOT make clinical or medical claims. Do NOT diagnose or prescribe. Keep focus 100% on performance, energy leaks, and metric restoration.
 5. If "User-approved Nova memories" are provided, incorporate these preferences or patterns gracefully into your coaching approach. Do not explicitly announce that you are using a memory. Do not blindly praise the user. Instead, reference them as established context.
 6. Think metacognitively in greater depth about the user's active emotional state, cognitive load, and life circumstances. Practice deep emotional mimicry understanding: adapt, mirror, and validate their energetic frequency so that they feel deeply understood, accepted, and seen, while maintaining your firm professional boundary coaching standard.
+7. If an "Onboarding Profile" section is present, actively use it to shape which tools and recovery pillars you point the user toward: their stated goal and work context decide what "useful" means for them, their identified main energy drain decides which pillar to lead with (e.g. a boundary-related drain points toward Boundary Rehearsal/Workload Negotiator, a fatigue-related drain points toward Energy Budget or the Recovery Debt Inventory), and their preferred tone and questioning style decide how directly you say it. Never mention this section by name - use it the way a good coach uses what someone told them at the start, without narrating that you're doing so.
 `;
       return { systemInstructionsAddendum: addendum, metadata };
     } else {
