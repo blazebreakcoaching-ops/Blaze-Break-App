@@ -5,11 +5,15 @@ import { useAuth } from '../lib/auth';
 import { useFocusTrap } from '../lib/useFocusTrap';
 import { secureApiFetch } from '../lib/secure-api';
 import { checkPasswordStrength, generateStrongPassword, PASSWORD_REQUIREMENT_TEXT, PASSWORD_MIN_LENGTH } from '../lib/password-strength';
+import type { LegalDocumentType } from './LegalDocumentModal';
 
 // Lazy - this pulls in the `qrcode` library, which has no reason to load
 // for every anonymous landing-page visitor when only the small fraction
 // who actually complete a fresh signup ever reach this step.
 const SecuritySettingsView = lazy(() => import('./SecuritySettingsView').then(m => ({ default: m.SecuritySettingsView })));
+// Lazy for the same reason - pulls in react-markdown, only needed if
+// someone actually opens the Terms or Privacy Notice.
+const LegalDocumentModal = lazy(() => import('./LegalDocumentModal').then(m => ({ default: m.LegalDocumentModal })));
 
 interface LandingPageProps {
   onStart: () => void;
@@ -69,6 +73,9 @@ export const LandingPage = ({ onStart, onOpenTrustCentre, darkMode, setDarkMode 
   // endpoints Settings uses) rather than a second enrollment flow.
   const [showPostSignupMfaStep, setShowPostSignupMfaStep] = useState(false);
   const [mfaJustEnabled, setMfaJustEnabled] = useState(false);
+  // Which legal document (Terms/Privacy) the "By continuing..." line's
+  // links currently have open, if any - null means neither is open.
+  const [legalDocOpen, setLegalDocOpen] = useState<LegalDocumentType | null>(null);
 
   useEffect(() => {
     if (showAuthModal) return;
@@ -124,11 +131,22 @@ export const LandingPage = ({ onStart, onOpenTrustCentre, darkMode, setDarkMode 
     }
   };
 
+  // Records that this account just agreed to the current Terms/Privacy
+  // versions - called the moment a genuine new account is confirmed
+  // (isNewUser, or a fresh email signup), never on a returning sign-in.
+  // Best-effort, same reasoning as the verify-email/send call below:
+  // never block getting into the app on this succeeding.
+  const recordLegalAcceptance = () => {
+    secureApiFetch('/api/legal/documents/TERMS/accept', { method: 'POST' }).catch(() => {});
+    secureApiFetch('/api/legal/documents/PRIVACY/accept', { method: 'POST' }).catch(() => {});
+  };
+
   const handleGoogleSignIn = async () => {
     try {
       setSigningInProvider('google');
       const { isNewUser } = await signIn();
       if (isNewUser) {
+        recordLegalAcceptance();
         setShowPostSignupMfaStep(true);
       } else {
         finishOnboarding();
@@ -145,6 +163,7 @@ export const LandingPage = ({ onStart, onOpenTrustCentre, darkMode, setDarkMode 
       setSigningInProvider('microsoft');
       const { isNewUser } = await signInWithMicrosoft();
       if (isNewUser) {
+        recordLegalAcceptance();
         setShowPostSignupMfaStep(true);
       } else {
         finishOnboarding();
@@ -161,6 +180,7 @@ export const LandingPage = ({ onStart, onOpenTrustCentre, darkMode, setDarkMode 
       setSigningInProvider('facebook');
       const { isNewUser } = await signInWithFacebook();
       if (isNewUser) {
+        recordLegalAcceptance();
         setShowPostSignupMfaStep(true);
       } else {
         finishOnboarding();
@@ -199,6 +219,7 @@ export const LandingPage = ({ onStart, onOpenTrustCentre, darkMode, setDarkMode 
         // Email signup is always a genuine new account (no isNewUser check
         // needed, unlike the social providers) - always offer the
         // optional 2FA step here, same as after a fresh social signup.
+        recordLegalAcceptance();
         setShowPostSignupMfaStep(true);
       } else {
         await signInWithEmail(email, password);
@@ -678,6 +699,18 @@ export const LandingPage = ({ onStart, onOpenTrustCentre, darkMode, setDarkMode 
                   </form>
 
                   <p className="text-xs text-text-muted text-center leading-normal">
+                    By continuing, you agree to the Blaze Break{' '}
+                    <button type="button" onClick={() => setLegalDocOpen('TERMS')} className="underline hover:text-text-main transition-colors">
+                      Terms &amp; Conditions
+                    </button>
+                    {' '}and acknowledge the{' '}
+                    <button type="button" onClick={() => setLegalDocOpen('PRIVACY')} className="underline hover:text-text-main transition-colors">
+                      Privacy Notice
+                    </button>
+                    .
+                  </p>
+
+                  <p className="text-xs text-text-muted text-center leading-normal">
                     Guardian, SMS/WhatsApp, and payments are currently disabled. Do not use for urgent or emergency support.
                   </p>
                 </>
@@ -686,6 +719,11 @@ export const LandingPage = ({ onStart, onOpenTrustCentre, darkMode, setDarkMode 
           </div>
         )}
       </AnimatePresence>
+      {legalDocOpen && (
+        <Suspense fallback={null}>
+          <LegalDocumentModal docType={legalDocOpen} onClose={() => setLegalDocOpen(null)} />
+        </Suspense>
+      )}
     </div>
   );
 };

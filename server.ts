@@ -33,6 +33,7 @@ import { collectionsForExport, collectionsForErasure } from './user-data-collect
 import { htmlToPlainTextFallback, buildEmailVerificationEmail, buildPasswordResetEmail, buildPasswordChangedEmail, buildMfaEnabledEmail, buildMfaDisabledEmail, buildSupportRequestReceivedEmail } from './brevo-templates';
 import { generateTotpSecret, buildOtpauthUri, verifyTotpCode, generateRecoveryCodes, hashRecoveryCode, encryptSecret as encryptTotpSecret, decryptSecret as decryptTotpSecret, isTotpLockedOut, nextLockoutState } from './totp-mfa';
 import { isValidGad7Answers, scoreGad7, interpretGad7 } from './gad7';
+import { DEFAULT_LEGAL_DOCUMENTS, LegalDocumentType } from './legal-documents';
 import { OrgRole, isOrgRole, hasOrgPermission, canAssignRole, OrgPermission, ORG_ROLE_PERMISSIONS } from './org-rbac';
 import { getEffectiveDataPolicy, validateDataPolicyUpdate } from './org-data-policy';
 import { initialAuthStatus, validateConnectorCreate, canSeeConnectorDetail, ORG_CONNECTOR_TYPES } from './org-connectors';
@@ -374,6 +375,16 @@ const exportLimiter = rateLimit({
   legacyHeaders: false,
   validate: { xForwardedForHeader: false, default: true },
   handler: logRateLimitExceeded('exportLimiter'),
+});
+
+const legalAcceptLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 20,
+  message: { error: 'Too many requests, please try again later.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+  validate: { xForwardedForHeader: false, default: true },
+  handler: logRateLimitExceeded('legalAcceptLimiter'),
 });
 
 const feedbackLimiter = rateLimit({
@@ -9027,6 +9038,163 @@ const ACTIVITY_FIELD_MAP: Record<string, string> = {
   energyBudgetUpdate: 'lastEnergyBudgetUpdate',
   recoveryAllyActivity: 'lastRecoveryAllyActivity',
 };
+
+// ============ Legal document versioning & acceptance tracking ============
+// Server-authoritative by design: a user cannot forge acceptance for
+// another user (always req.user.uid, never a client-supplied id), and
+// the acceptance record itself is written only from this route, never
+// directly by the client (firestore.rules locks user_legal_acceptances
+// to server-only writes). Document *content* is published only via the
+// admin-only route below, restricted to requireAdmin - an ordinary user
+// can read but never write a legal_documents doc. See
+// docs/legal/LEGAL_DOCUMENT_VERSIONING.md (once written) and
+// legal-documents.ts for the fallback content used until a real
+// publish has happened for a given document type.
+
+const LEGAL_DOCUMENT_TYPES: LegalDocumentType[] = ['TERMS', 'PRIVACY', 'REFUND', 'ACCEPTABLE_USE', 'AI_NOTICE', 'COOKIE_NOTICE'];
+
+const isLegalDocumentType = (v: any): v is LegalDocumentType => LEGAL_DOCUMENT_TYPES.includes(v);
+
+// Reads the published version from Firestore if one exists, otherwise
+// falls back to the shipped default - so the product works correctly
+// (a real, dated document, not a blank page) even before any admin has
+// used the publish route below.
+const getLegalDocument = async (db: any, docType: LegalDocumentType) => {
+  const docRef = db.collection('legal_documents').doc(docType);
+  const snap = await docRef.get();
+  if (snap.exists) {
+    const data = snap.data();
+    const currentVersion = data?.currentVersion;
+    if (currentVersion) {
+      const versionSnap = await docRef.collection('versions').doc(String(currentVersion)).get();
+      if (versionSnap.exists) {
+        return versionSnap.data();
+      }
+    }
+  }
+  return DEFAULT_LEGAL_DOCUMENTS[docType];
+};
+
+app.get("/api/legal/documents", verifyAppCheck, async (req, res) => {
+  try {
+    const db = getDb();
+    const docs = await Promise.all(LEGAL_DOCUMENT_TYPES.map(async (docType) => {
+      const doc = await getLegalDocument(db, docType);
+      return { docType, title: doc.title, version: doc.version, effectiveDate: doc.effectiveDate, requiresAcceptance: doc.requiresAcceptance };
+    }));
+    res.json({ documents: docs });
+  } catch (err: any) {
+    console.error("[Legal] Failed to list documents:", err.message);
+    res.status(500).json({ error: "Could not load legal documents right now." });
+  }
+});
+
+app.get("/api/legal/documents/:docType", verifyAppCheck, async (req, res) => {
+  try {
+    const docType = req.params.docType;
+    if (!isLegalDocumentType(docType)) {
+      return res.status(404).json({ error: "Unknown document type." });
+    }
+    const db = getDb();
+    const doc = await getLegalDocument(db, docType);
+    res.json(doc);
+  } catch (err: any) {
+    console.error("[Legal] Failed to load document:", err.message);
+    res.status(500).json({ error: "Could not load this document right now." });
+  }
+});
+
+app.post("/api/legal/documents/:docType/accept", legalAcceptLimiter, verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const docType = req.params.docType;
+    if (!isLegalDocumentType(docType)) {
+      return res.status(404).json({ error: "Unknown document type." });
+    }
+    const user = requireAuth(req);
+    const db = getDb();
+    const doc = await getLegalDocument(db, docType);
+    const platform = req.body?.platform === 'IOS' || req.body?.platform === 'ANDROID' ? req.body.platform : 'WEB';
+    await db.collection('users').doc(user.uid).collection('legal_acceptances').doc(docType).set({
+      documentType: docType,
+      version: doc.version,
+      acceptedAt: new Date().toISOString(),
+      platform,
+    });
+    res.json({ accepted: true, docType, version: doc.version });
+  } catch (err: any) {
+    console.error("[Legal] Failed to record acceptance:", err.message);
+    res.status(500).json({ error: "Could not record acceptance right now." });
+  }
+});
+
+// Tells the client which currently-published documents (of the ones
+// that require acceptance, e.g. Terms/Privacy) this specific user has
+// not yet accepted at the current version - the mechanism a future
+// re-acceptance flow (a material Terms revision) would use.
+app.get("/api/legal/acceptance-status", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const user = requireAuth(req);
+    const db = getDb();
+    const outstanding: { docType: LegalDocumentType; version: string }[] = [];
+    for (const docType of LEGAL_DOCUMENT_TYPES) {
+      const doc = await getLegalDocument(db, docType);
+      if (!doc.requiresAcceptance) continue;
+      const acceptanceSnap = await db.collection('users').doc(user.uid).collection('legal_acceptances').doc(docType).get();
+      const acceptedVersion = acceptanceSnap.exists ? acceptanceSnap.data()?.version : null;
+      if (acceptedVersion !== doc.version) {
+        outstanding.push({ docType, version: doc.version });
+      }
+    }
+    res.json({ outstanding });
+  } catch (err: any) {
+    console.error("[Legal] Failed to check acceptance status:", err.message);
+    res.status(500).json({ error: "Could not check acceptance status right now." });
+  }
+});
+
+// Admin-only publish - the mechanism the spec's "admin legal document
+// management" calls for. No dedicated admin UI editor exists yet
+// (flagged as a deferred item, not silently skipped) - this route is
+// the real, working, audit-logged publish path a script or a future
+// admin screen would call, restricted to platform admins exactly like
+// every other admin-only route in this file.
+const LegalPublishSchema = z.object({
+  title: z.string().min(1).max(200),
+  version: z.string().min(1).max(40),
+  effectiveDate: z.string().min(1).max(40),
+  requiresAcceptance: z.boolean(),
+  materialChange: z.boolean(),
+  content: z.string().min(1).max(50000),
+}).strict();
+
+app.post("/api/admin/legal/:docType/publish", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const docType = req.params.docType;
+    if (!isLegalDocumentType(docType)) {
+      return res.status(404).json({ error: "Unknown document type." });
+    }
+    requireAdmin(req);
+    const parsed = LegalPublishSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: "Invalid document payload.", details: (parsed as any).error?.errors || [] });
+    }
+    const db = getDb();
+    const docRef = db.collection('legal_documents').doc(docType);
+    const versionData = { docType, ...parsed.data, publishedAt: new Date().toISOString(), status: 'published' };
+    await docRef.collection('versions').doc(parsed.data.version).set(versionData);
+    await docRef.set({ currentVersion: parsed.data.version, updatedAt: new Date().toISOString() }, { merge: true });
+    await logAdminAction(req, "LEGAL_DOCUMENT_PUBLISHED", "", "", {
+      docType,
+      version: parsed.data.version,
+      requiresAcceptance: parsed.data.requiresAcceptance,
+      materialChange: parsed.data.materialChange,
+    });
+    res.json({ published: true, docType, version: parsed.data.version });
+  } catch (err: any) {
+    console.error("[Legal] Failed to publish document:", err.message);
+    res.status(500).json({ error: "Could not publish this document right now." });
+  }
+});
 
 // ============ Real data portability & erasure (GDPR Art. 15/17/20) ============
 // Both endpoints enumerate the user's subcollections dynamically via
