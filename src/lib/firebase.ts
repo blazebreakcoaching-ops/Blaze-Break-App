@@ -1,11 +1,39 @@
 import { initializeApp } from 'firebase/app';
-import { getAuth } from 'firebase/auth';
+import { getAuth, setPersistence, browserLocalPersistence, browserSessionPersistence, inMemoryPersistence } from 'firebase/auth';
 import { initializeAppCheck, ReCaptchaEnterpriseProvider, getToken } from 'firebase/app-check';
 import firebaseConfig from '../../firebase-applet-config.json';
 import type { Firestore } from 'firebase/firestore';
 
 export const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
+
+// getAuth(app) alone relies on Firebase's implicit default (IndexedDB-backed
+// local persistence) with no visible fallback - if IndexedDB is unavailable
+// in the browser context (blocked storage, some private-browsing modes,
+// partitioned/embedded iframe contexts), the SDK silently degrades to an
+// in-memory session with no error. That means the signed-in session doesn't
+// survive a reload at all: every app open looks like a brand-new visitor,
+// a fresh anonymous account gets created, and onboarding (gated on finding
+// a saved profile) shows every single time. Setting persistence explicitly,
+// with an explicit fallback chain, makes the app actually keep working
+// (session for the tab, at worst) instead of failing invisibly.
+async function configurePersistence() {
+  try {
+    await setPersistence(auth, browserLocalPersistence);
+  } catch {
+    try {
+      await setPersistence(auth, browserSessionPersistence);
+    } catch {
+      try {
+        await setPersistence(auth, inMemoryPersistence);
+      } catch {
+        // Nothing left to fall back to - auth proceeds with whatever
+        // persistence the SDK already defaulted to.
+      }
+    }
+  }
+}
+export const authPersistenceReady = configurePersistence();
 
 // Firestore is this app's single largest JS dependency (~480KB) and used to
 // be initialized eagerly here, forcing every page load - including the
