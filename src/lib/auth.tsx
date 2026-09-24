@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { User, Auth as FirebaseAuth, signInWithPopup, signInAnonymously, linkWithPopup, linkWithCredential, signInWithCredential, signInWithEmailAndPassword, createUserWithEmailAndPassword, EmailAuthProvider, GoogleAuthProvider, OAuthProvider, FacebookAuthProvider, getAdditionalUserInfo, signOut, onAuthStateChanged } from 'firebase/auth';
-import { auth, getDb } from './firebase';
+import { auth, authPersistenceReady, getDb } from './firebase';
 import { secureApiFetch } from './secure-api';
 import { getMfaSessionToken, setMfaSessionToken, clearMfaSessionToken } from './mfa-session';
 import { AuthRole } from '../types';
@@ -176,7 +176,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const explicitSignOutRef = React.useRef(false);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (userRecord) => {
+    let unsubscribe: (() => void) | null = null;
+    let cancelled = false;
+
+    // Persistence must be settled before the listener attaches - otherwise
+    // a fast-firing initial callback can run against whatever the SDK's
+    // still-implicit default is, defeating the explicit fallback chain in
+    // firebase.ts.
+    authPersistenceReady.then(() => {
+      if (cancelled) return;
+      unsubscribe = onAuthStateChanged(auth, async (userRecord) => {
       if (userRecord) {
         (window as any).__ACTIVE_USER_EMAIL__ = userRecord.email;
         
@@ -290,9 +299,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setAccessToken(null);
       }
       setLoading(false);
+      });
     });
 
-    return unsubscribe;
+    return () => {
+      cancelled = true;
+      if (unsubscribe) unsubscribe();
+    };
   }, []);
 
   // Thin context wrappers around the standalone, unit-tested functions
