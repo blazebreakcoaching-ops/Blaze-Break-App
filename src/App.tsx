@@ -1967,12 +1967,33 @@ export default function App() {
     return (
       <>
         <SituationalOnboarding
-          onComplete={(profile) => {
+          onComplete={async (profile) => {
             setStats((prev) => ({ ...prev, profile }));
             localStorage.setItem("blaze_profile", JSON.stringify(profile));
             setFlow("app");
             setActiveTab("home");
             setPostOnboardingProfile(profile);
+
+            // Saved immediately, not via the debounced stats-sync effect
+            // further up - that effect is keyed on `user`, so a sign-out
+            // in the next 800ms tears down its pending write before it
+            // ever reaches Firestore. profile.fullName is exactly the
+            // field the routing logic checks to decide whether to show
+            // onboarding again, so losing this write silently forced
+            // onboarding to repeat on the next sign-in.
+            if (user) {
+              try {
+                const db = await getDb();
+                const { doc, setDoc } = await import("firebase/firestore");
+                await setDoc(doc(db, "users", user.uid, "user_stats", "core"), {
+                  profile,
+                  updatedAt: new Date().toISOString(),
+                }, { merge: true });
+              } catch {
+                // Non-fatal - the debounced stats-sync effect still retries
+                // this shortly after, as long as the person stays signed in.
+              }
+            }
 
             // Creates the users/{uid}/nova_permissions/current doc Nova's
             // server-side context builder requires to have any context at
