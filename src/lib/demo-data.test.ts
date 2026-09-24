@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { isDemoUser, DEMO_FINGERPRINT, DEMO_STATS, DEMO_VELOCITY_MAP } from './demo-data';
+import { isDemoUser, DEMO_FINGERPRINT, DEMO_STATS, DEMO_VELOCITY_MAP, DEMO_ENERGY_COMMITMENTS } from './demo-data';
 import { BurnoutProfile } from '../types';
 
 // The exact, real archetype names this app uses - kept as a literal list
@@ -77,5 +77,19 @@ describe('DEMO_VELOCITY_MAP', () => {
     const first = DEMO_VELOCITY_MAP[0];
     const last = DEMO_VELOCITY_MAP[DEMO_VELOCITY_MAP.length - 1];
     expect(first.energyOutput - first.recoveryInput).toBeGreaterThan(last.energyOutput - last.recoveryInput);
+  });
+});
+
+describe('DEMO_ENERGY_COMMITMENTS', () => {
+  it('is every entry tagged isSample so EnergyBudgetMatrix never writes them to Firestore', () => {
+    expect(DEMO_ENERGY_COMMITMENTS.length).toBeGreaterThan(0);
+    for (const c of DEMO_ENERGY_COMMITMENTS) {
+      expect(c.isSample).toBe(true);
+    }
+  });
+
+  it('has at least one active and one resolved commitment, for a populated-looking ledger', () => {
+    expect(DEMO_ENERGY_COMMITMENTS.some(c => c.status === 'active')).toBe(true);
+    expect(DEMO_ENERGY_COMMITMENTS.some(c => c.status !== 'active')).toBe(true);
   });
 });

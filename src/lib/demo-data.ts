@@ -117,6 +117,29 @@ export const DEMO_VELOCITY_MAP: { date: string; energyOutput: number; recoveryIn
 // separate state), so it flips back to false automatically the instant
 // a real profile.fullName is saved (real onboarding completed, or a
 // linked real account's saved profile loads).
+// Matches EnergyBudgetMatrix.tsx's own Commitment shape (its
+// energy_commitments Firestore subcollection). `isSample: true` lets that
+// component tell these apart from anything the visitor genuinely typed
+// into "Inject into Audit" during the same session - its action buttons
+// (Delegate/Boundary/Drop) check this flag and update local state only for
+// a sample card, never call updateDoc/setDoc, so a click can never fire a
+// Firestore write against a doc that was never created.
+export const DEMO_ENERGY_COMMITMENTS: {
+  id: string;
+  name: string;
+  energyDrain: number;
+  type: 'professional' | 'social' | 'emotional' | 'logistical';
+  status: 'active' | 'dropped' | 'delegated' | 'restructured';
+  createdAt: string;
+  updatedAt?: string;
+  isSample: true;
+}[] = [
+  { id: "demo-1", name: "Leading the weekly ops stand-up for 3 teams", energyDrain: 70, type: "professional", status: "active", createdAt: "2026-09-22T09:00:00.000Z", isSample: true },
+  { id: "demo-2", name: "Covering a direct report's on-call rotation", energyDrain: 55, type: "professional", status: "active", createdAt: "2026-09-20T09:00:00.000Z", isSample: true },
+  { id: "demo-3", name: "Smoothing tension between two stakeholders", energyDrain: 60, type: "emotional", status: "active", createdAt: "2026-09-19T09:00:00.000Z", isSample: true },
+  { id: "demo-4", name: "Coordinating the offsite logistics", energyDrain: 35, type: "logistical", status: "delegated", createdAt: "2026-09-17T09:00:00.000Z", updatedAt: "2026-09-21T09:00:00.000Z", isSample: true },
+];
+
 export const isDemoUser = (
   isAnonymous: boolean | undefined,
   profileFullName: string | undefined,

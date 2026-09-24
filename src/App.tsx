@@ -2313,7 +2313,7 @@ export default function App() {
             {activeTab === "recover" && (
               <div className="space-y-32">
                 <WeeklyGoalTracker onAwardPoints={awardPoints} />
-                <EnergyBudgetMatrix onPointsEarned={awardPoints} />
+                <EnergyBudgetMatrix onPointsEarned={awardPoints} isDemoSession={isDemoSession} />
                 <FocusZone
                   onAwardPoints={awardPoints}
                   isFocusActive={isFocusActive}
