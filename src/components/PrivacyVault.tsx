@@ -27,6 +27,7 @@ import { getAuditLogs, AuditLogEntry, logAuditAction } from '../lib/audit-logger
 import { UserProfileData } from '../types.ts';
 import { DataPrivacyDashboard } from './DataPrivacyDashboard.tsx';
 import { PrivacyPolicyAccordion } from './PrivacyPolicyAccordion.tsx';
+import { LegalDocumentsSection } from './LegalDocumentsSection.tsx';
 
 import { ConnectedNovaPermissions } from './ConnectedRecoveryModules.tsx';
 import { MemoryCentre } from './MemoryCentre.tsx';
@@ -372,6 +373,8 @@ export const PrivacyVault = ({
           {activeTab === 'policies' && (
             <div className="space-y-6">
               <PrivacyPolicyAccordion />
+              <div className="h-px bg-border" />
+              <LegalDocumentsSection />
             </div>
           )}
 
