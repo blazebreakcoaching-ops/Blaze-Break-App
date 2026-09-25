@@ -2511,7 +2511,7 @@ export default function App() {
                     <span className="font-display font-bold text-text-main">BLAME Reset</span>
                   </div>
                   <p className="text-xs text-text-muted leading-relaxed">
-                    A 30-90 second interrupt for the moment you're about to react instead of respond &mdash; Breathe, Locate, Accept, Manage, Empower.
+                    A short interrupt for the moment you're about to react instead of respond &mdash; Breathe, Locate, Accept, Manage, Empower, at your own pace, with Nova alongside you for Locate and Accept.
                   </p>
                   <button
                     onClick={() => setShowBlameReset(true)}
