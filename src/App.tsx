@@ -45,6 +45,7 @@ import {
   Badge,
   BADGES,
   UserProfileData,
+  SHIPStage,
 } from "./types.ts";
 import { cn, fireConfetti } from "./lib/utils.ts";
 import { useFocusTrap } from "./lib/useFocusTrap";
@@ -118,6 +119,7 @@ import { hasSubscriptionEntitlement } from "./lib/entitlement.ts";
 const RecoveryAlly = lazy(() => import("./components/RecoveryAlly.tsx").then(m => ({ default: m.RecoveryAlly })));
 const UserGuide = lazy(() => import("./components/UserGuide.tsx").then(m => ({ default: m.UserGuide })));
 const SomaticResetOverlay = lazy(() => import("./components/SomaticResetOverlay.tsx").then(m => ({ default: m.SomaticResetOverlay })));
+const BLAMEResetOverlay = lazy(() => import("./components/BLAMEResetOverlay.tsx").then(m => ({ default: m.BLAMEResetOverlay })));
 const RecoveryPlan = lazy(() => import("./components/RecoveryPlan.tsx").then(m => ({ default: m.RecoveryPlan })));
 const FocusZone = lazy(() => import("./components/FocusZone.tsx").then(m => ({ default: m.FocusZone })));
 import { SubscriptionTier } from "./types.ts";
@@ -131,7 +133,6 @@ import { logAuditAction } from "./lib/audit-logger";
 
 type AppFlow = "landing" | "onboarding" | "app" | "trust-centre" | "admin";
 
-type SHIPStage = "Safety" | "Habits" | "Identity" | "Purpose";
 type ActiveTab =
   | "home"
   | "diagnose"
@@ -1243,6 +1244,12 @@ export default function App() {
   useEffect(() => {
     if (showSomaticReset) setSomaticReadyToMount(true);
   }, [showSomaticReset]);
+  // Same lazy "sticky mount" pattern as SomaticResetOverlay above.
+  const [showBlameReset, setShowBlameReset] = useState(false);
+  const [blameReadyToMount, setBlameReadyToMount] = useState(false);
+  useEffect(() => {
+    if (showBlameReset) setBlameReadyToMount(true);
+  }, [showBlameReset]);
   const [showRewardNotification, setShowRewardNotification] = useState<{
     points: number;
     reason: string;
@@ -2233,6 +2240,12 @@ export default function App() {
           </Suspense>
         )}
 
+        {blameReadyToMount && (
+          <Suspense fallback={null}>
+            <BLAMEResetOverlay isOpen={showBlameReset} onClose={() => setShowBlameReset(false)} onAwardPoints={awardPoints} />
+          </Suspense>
+        )}
+
         <AnimatePresence mode="wait">
           <motion.div
             layout
@@ -2276,6 +2289,7 @@ export default function App() {
                 onUpdatePulseHistory={handleUpdatePulseHistory}
                 onLogJourney={logJourney}
                 isDemoSession={isDemoSession}
+                onShipStageChange={setShipStage}
               />
             )}
 
@@ -2491,6 +2505,21 @@ export default function App() {
                 <RuminationFurnace
                   onCleared={() => awardPoints(20, "Rumination Cleared")}
                 />
+                <div className="p-6 rounded-2xl border border-border bg-surface dark:bg-card/40 flex flex-col gap-3">
+                  <div className="flex items-center gap-3">
+                    <Zap className="w-5 h-5 text-primary" />
+                    <span className="font-display font-bold text-text-main">BLAME Reset</span>
+                  </div>
+                  <p className="text-xs text-text-muted leading-relaxed">
+                    A 30-90 second interrupt for the moment you're about to react instead of respond &mdash; Breathe, Locate, Accept, Manage, Empower.
+                  </p>
+                  <button
+                    onClick={() => setShowBlameReset(true)}
+                    className="btn-primary py-3 px-6 text-xs font-black uppercase tracking-widest self-start"
+                  >
+                    Start BLAME Reset
+                  </button>
+                </div>
                 <NervousSystemReset fingerprint={fingerprint} onAwardPoints={awardPoints} />
                 <SleepBuilder
                   fingerprint={fingerprint}

@@ -370,6 +370,147 @@ export const ConnectedBodyCheckIn = () => {
   );
 };
 
+// 3b. Connected SPARK Check - a 60-second daily scan across Sleep,
+// Performance, Aches, Reactions, Kindness. Modal shape follows
+// ConnectedDailyCheckIn (focus-trapped, Escape-to-close); the
+// award-points/mark-activity/logJourney trio follows the pattern every
+// other tool uses (ConnectedBodyCheckIn above is missing it - that gap
+// is deliberately not repeated here).
+type SparkKey = 'sleep' | 'performance' | 'aches' | 'reactions' | 'kindness';
+
+const SPARK_ITEMS: { key: SparkKey; label: string; helper: string }[] = [
+  { key: 'sleep', label: 'Sleep', helper: 'Did you get adequate rest, and do you feel restored?' },
+  { key: 'performance', label: 'Performance', helper: 'Is your thinking clear and energy steady, or scattered?' },
+  { key: 'aches', label: 'Aches', helper: 'Any physical tension, headaches, or discomfort?' },
+  { key: 'reactions', label: 'Reactions', helper: "Responding with your usual patience, or a short fuse?" },
+  { key: 'kindness', label: 'Kindness', helper: 'Treating yourself and others with real compassion today?' },
+];
+
+// Which existing tool to point toward when an item scores low, and which
+// tab it lives on - reuses the existing navigate_tab mechanism, never a
+// new one.
+const SPARK_NUDGE_TARGET: Record<SparkKey, { tool: string; tab: string }> = {
+  sleep: { tool: 'Sleep Builder', tab: 'reset' },
+  performance: { tool: 'BLAME Reset', tab: 'reset' },
+  aches: { tool: 'Nervous System Reset', tab: 'reset' },
+  reactions: { tool: 'Nervous System Reset', tab: 'reset' },
+  kindness: { tool: 'Boundary Rehearsal', tab: 'communicate' },
+};
+
+export const ConnectedSparkCheck = ({ onClose, onAwardPoints }: { onClose: () => void, onAwardPoints?: (amount: number, reason: string) => void }) => {
+  const dialogRef = useFocusTrap(true);
+
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [onClose]);
+
+  const [ratings, setRatings] = useState<Record<SparkKey, number>>({
+    sleep: 3, performance: 3, aches: 3, reactions: 3, kindness: 3,
+  });
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [nudgeKey, setNudgeKey] = useState<SparkKey | null>(null);
+
+  const uid = auth.currentUser?.uid;
+
+  const handleSubmit = async () => {
+    if (!uid) return;
+    setLoading(true); setError('');
+    try {
+      const offCount = SPARK_ITEMS.filter(item => ratings[item.key] <= 2).length;
+      await setDoc(doc(db, 'users', uid, 'spark_checks', Date.now().toString()), {
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        ...ratings,
+        offCount,
+        source: 'user',
+      });
+      onAwardPoints?.(10, 'Completed SPARK Check');
+      secureApiFetch('/api/user/mark-activity', {
+        method: 'POST',
+        data: { activity: 'sparkCheck' },
+      }).catch(() => {
+        // Non-fatal - only affects the home recommendation engine's freshness.
+      });
+      logJourney('SPARK Check logged', `Sleep ${ratings.sleep}/5, Performance ${ratings.performance}/5, Aches ${ratings.aches}/5, Reactions ${ratings.reactions}/5, Kindness ${ratings.kindness}/5.`);
+
+      if (offCount >= 2) {
+        // Point at whichever single item scored lowest - never more than
+        // one suggestion, matching the app's one-clear-next-step rule.
+        const lowest = SPARK_ITEMS.reduce((a, b) => (ratings[b.key] < ratings[a.key] ? b : a));
+        setNudgeKey(lowest.key);
+      } else {
+        onClose();
+      }
+    } catch (e: any) {
+      setError('This entry could not be saved.');
+    }
+    setLoading(false);
+  };
+
+  const handleGoToNudge = () => {
+    if (!nudgeKey) return;
+    window.dispatchEvent(new CustomEvent('navigate_tab', { detail: SPARK_NUDGE_TARGET[nudgeKey].tab }));
+    onClose();
+  };
+
+  return (
+    <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-card/60 backdrop-blur-sm" onClick={onClose} />
+      <div ref={dialogRef as any} role="dialog" aria-modal="true" aria-labelledby="spark-check-title" tabIndex={-1} className="relative w-full max-w-md bg-card rounded-xl shadow-lg overflow-hidden max-h-[90vh] flex flex-col">
+        <div className="p-6 border-b border-border flex items-center justify-between shrink-0">
+          <div className="flex items-center gap-2">
+            <Sparkles className="w-5 h-5 text-primary" />
+            <h3 id="spark-check-title" className="font-bold text-text-main">SPARK Check</h3>
+          </div>
+          <button onClick={onClose} aria-label="Close" className="p-2 hover:bg-surface rounded-full text-text-muted"><X className="w-5 h-5" /></button>
+        </div>
+
+        <div className="p-6 overflow-y-auto flex-1">
+          {!nudgeKey ? (
+            <div className="space-y-6">
+              <p className="text-xs text-text-muted">A 60-second scan across five areas. Rate each honestly - 1 is struggling, 5 is great.</p>
+              <ErrorMessage msg={error} />
+              {SPARK_ITEMS.map(item => (
+                <div key={item.key} className="space-y-2">
+                  <label className="text-xs font-bold text-text-muted">{item.label}</label>
+                  <p className="text-[10px] text-text-muted">{item.helper}</p>
+                  <input
+                    type="range" min="1" max="5" value={ratings[item.key]}
+                    onChange={e => setRatings(prev => ({ ...prev, [item.key]: parseInt(e.target.value) }))}
+                    aria-label={item.label} aria-valuetext={`${ratings[item.key]} out of 5`}
+                    className="w-full"
+                  />
+                  <div className="text-center text-sm font-bold text-[#9a3412] dark:text-primary">{ratings[item.key]}/5</div>
+                </div>
+              ))}
+              <button onClick={handleSubmit} disabled={loading} className="w-full btn-primary py-3 rounded-xl text-sm font-bold">
+                {loading ? 'Saving...' : 'Save SPARK Check'}
+              </button>
+            </div>
+          ) : (
+            <div className="space-y-4 text-center">
+              <CheckCircle className="w-10 h-10 text-primary mx-auto" />
+              <p className="text-sm text-text-main font-bold">A couple of areas look low today.</p>
+              <p className="text-xs text-text-muted leading-relaxed">
+                {SPARK_NUDGE_TARGET[nudgeKey].tool} might help before it stacks up - entirely up to you.
+              </p>
+              <div className="flex gap-3">
+                <button onClick={onClose} className="flex-1 py-3 text-sm font-bold text-text-muted">No thanks</button>
+                <button onClick={handleGoToNudge} className="flex-[2] btn-primary py-3 rounded-xl text-sm font-bold">
+                  Go to {SPARK_NUDGE_TARGET[nudgeKey].tool}
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
 // 4. Connected Wins Log
 export const ConnectedWinsLog = () => {
   const [history, setHistory] = useState<any[]>([]);

@@ -333,7 +333,40 @@ service cloud.firestore {
             && (!('sharedToWall' in request.resource.data) || request.resource.data.sharedToWall is bool)
             && (request.method == 'create' ? true : checkCreatedAtUnchanged());
       }
-      
+
+      // blame_resets - BLAME Reset Tool completion log (Breathe, Locate,
+      // Accept, Manage, Empower). Matches BLAMEResetOverlay.tsx's write.
+      match /blame_resets/{resetId} {
+        allow read: if isOwner(uid);
+        allow delete: if isOwner(uid);
+        allow create, update: if isOwner(uid)
+            && hasOnly(['createdAt', 'updatedAt', 'speed', 'durationSeconds', 'manageChoice', 'source'])
+            && hasAll(['createdAt', 'updatedAt', 'speed', 'durationSeconds', 'source'])
+            && request.resource.data.speed in ['mini', 'full']
+            && request.resource.data.durationSeconds is number && request.resource.data.durationSeconds >= 0 && request.resource.data.durationSeconds <= 120
+            && (!('manageChoice' in request.resource.data) || request.resource.data.manageChoice == null || request.resource.data.manageChoice in ['delete', 'delegate', 'do'])
+            && request.resource.data.source == 'user'
+            && (request.method == 'create' ? true : checkCreatedAtUnchanged());
+      }
+
+      // spark_checks - SPARK Check daily scan (Sleep, Performance, Aches,
+      // Reactions, Kindness). Matches ConnectedSparkCheck's write.
+      match /spark_checks/{checkId} {
+        allow read: if isOwner(uid);
+        allow delete: if isOwner(uid);
+        allow create, update: if isOwner(uid)
+            && hasOnly(['createdAt', 'updatedAt', 'sleep', 'performance', 'aches', 'reactions', 'kindness', 'offCount', 'source'])
+            && hasAll(['createdAt', 'updatedAt', 'sleep', 'performance', 'aches', 'reactions', 'kindness', 'offCount', 'source'])
+            && request.resource.data.sleep is number && request.resource.data.sleep >= 1 && request.resource.data.sleep <= 5
+            && request.resource.data.performance is number && request.resource.data.performance >= 1 && request.resource.data.performance <= 5
+            && request.resource.data.aches is number && request.resource.data.aches >= 1 && request.resource.data.aches <= 5
+            && request.resource.data.reactions is number && request.resource.data.reactions >= 1 && request.resource.data.reactions <= 5
+            && request.resource.data.kindness is number && request.resource.data.kindness >= 1 && request.resource.data.kindness <= 5
+            && request.resource.data.offCount is number && request.resource.data.offCount >= 0 && request.resource.data.offCount <= 5
+            && request.resource.data.source == 'user'
+            && (request.method == 'create' ? true : checkCreatedAtUnchanged());
+      }
+
       // G. weekly_reviews
       match /weekly_reviews/{reviewId} {
         allow read: if isOwner(uid);

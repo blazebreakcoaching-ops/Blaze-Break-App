@@ -9046,7 +9046,54 @@ const ACTIVITY_FIELD_MAP: Record<string, string> = {
   moodPulse: 'lastMoodPulse',
   energyBudgetUpdate: 'lastEnergyBudgetUpdate',
   recoveryAllyActivity: 'lastRecoveryAllyActivity',
+  blameReset: 'lastBlameReset',
+  sparkCheck: 'lastSparkCheck',
 };
+
+// The product's own 4-phase recovery framework (Safety -> Habits ->
+// Identity -> Purpose - see ShipJourney.tsx/OmniBrainMap.tsx, already
+// user-facing) computed from real signals instead of the permanently
+// frozen "Safety" default it shipped with. Deliberately a recovery
+// *phase* label, never a severity/risk score - it never gates access to
+// anything and is only ever used (see /api/user/recommendation below) to
+// break a tie between two already-safe, already-verified suggestions.
+// Evaluated top-down, same if/else style as the recommendation chain
+// itself just below - not a weighted model, matching this app's "simple
+// scoring before AI" rule.
+type ServerShipStage = 'Safety' | 'Habits' | 'Identity' | 'Purpose';
+
+function deriveShipStage(params: {
+  recentHighSeverity: boolean;
+  checkInsCount: number;
+  hoursSinceCheckIn: number;
+  hasBoundaryRehearsal: boolean;
+  activeLoad: number;
+  hasFingerprint: boolean;
+  fingerprintScores?: { boundaries?: number; peoplePleasing?: number } | null;
+}): ServerShipStage {
+  const { recentHighSeverity, checkInsCount, hoursSinceCheckIn, hasBoundaryRehearsal, activeLoad, hasFingerprint, fingerprintScores } = params;
+
+  // Safety: something acute just happened, or there isn't even a basic
+  // baseline of check-ins yet to know anything else about this person.
+  if (recentHighSeverity || checkInsCount < 3) return 'Safety';
+
+  // Habits: logging is happening, but boundary practice either hasn't
+  // started yet or the active load is still heavy enough that habits
+  // (not identity/meaning work) are the honest next focus.
+  if (hoursSinceCheckIn < 48 && (!hasBoundaryRehearsal || activeLoad >= 60)) return 'Habits';
+
+  // Identity: the person knows their archetype and has real boundary-
+  // rehearsal history, but the fingerprint's own boundary/people-pleasing
+  // scores are still elevated - archetype-specific identity work is what
+  // the data says is left.
+  const boundaryScore = fingerprintScores?.boundaries ?? 0;
+  const peoplePleasingScore = fingerprintScores?.peoplePleasing ?? 0;
+  if (hasFingerprint && hasBoundaryRehearsal && (boundaryScore >= 60 || peoplePleasingScore >= 60)) return 'Identity';
+
+  // Purpose: stable habits, real boundary work done, nothing acute -
+  // the default for an established, stable user.
+  return 'Purpose';
+}
 
 // ============ Legal document versioning & acceptance tracking ============
 // Server-authoritative by design: a user cannot forge acceptance for
@@ -9534,6 +9581,107 @@ app.get("/api/user/recommendation", verifyAppCheck, authenticateFirebaseUser, as
     const hasEnergyBudgetHistory = !(await db.collection("users").doc(user.uid).collection("energy_budgets").limit(1).get()).empty;
     const hasAllyHistory = !(await db.collection("users").doc(user.uid).collection("ally_shared_goals").limit(1).get()).empty;
 
+    // Pulled up from the guardrail check further down (which also needs
+    // this exact query) so the SHIP stage derivation below can use it too -
+    // one read, two consumers, instead of querying it twice.
+    const checkInsSnap = await db.collection("users").doc(user.uid).collection("checkins").limit(3).get();
+
+    // Cheap single-doc read (same path already read elsewhere, e.g. the
+    // admin user-detail route) - only used to know whether a fingerprint
+    // exists yet and, if so, its boundary/people-pleasing scores.
+    const fingerprintDoc = await db.collection("users").doc(user.uid).collection("recovery").doc("fingerprint").get();
+    const fingerprintData = fingerprintDoc.exists ? fingerprintDoc.data() : null;
+
+    const shipStage = deriveShipStage({
+      recentHighSeverity: !!recentHighSeverity,
+      checkInsCount: checkInsSnap.size,
+      hoursSinceCheckIn: hoursSince(stats.lastCheckIn),
+      hasBoundaryRehearsal: !!stats.lastBoundaryRehearsal,
+      activeLoad,
+      hasFingerprint: !!fingerprintData,
+      fingerprintScores: fingerprintData?.scores || null,
+    });
+    // Non-fatal, fire-and-forget - the recommendation itself never blocks
+    // on this write succeeding, same pattern as the ledger write below.
+    db.collection("users").doc(user.uid).collection("derived").doc("stats").set({
+      shipStage,
+      shipStageComputedAt: new Date().toISOString(),
+    }, { merge: true }).catch(() => {});
+
+    // Recovery Intelligence's own derived trend summaries (recovery_debt,
+    // recovery_velocity, energy_trend, mood_trend - computed by
+    // POST /api/recovery/recalculate, only ever manually triggered by the
+    // "Recalculate Trends" button) previously fed nothing back into this
+    // engine at all - two separate cross-tool synthesis systems that never
+    // talked to each other. 4 cheap single-doc reads, same bounded-read
+    // discipline as everywhere else in this route (no collection scans).
+    // A summary only ever influences the chain below if it's genuinely
+    // usable - status "available" (not "not_enough_data"/"early_signal")
+    // and calculated within the last 14 days (generous on purpose, since
+    // recalculation is manual-only today - a tight window would make this
+    // data almost never usable). Anything else means this contributes
+    // nothing and the chain runs exactly as it always has.
+    const isUsableDerivedSummary = (doc: any): boolean => {
+      if (!doc || doc.status !== 'available') return false;
+      const calculatedAtMs = doc.calculatedAt ? new Date(doc.calculatedAt).getTime() : NaN;
+      if (Number.isNaN(calculatedAtMs)) return false;
+      return (now - calculatedAtMs) / (1000 * 60 * 60 * 24) <= 14;
+    };
+    const [recoveryDebtDoc, recoveryVelocityDoc, energyTrendDoc, moodTrendDoc] = await Promise.all([
+      db.collection("users").doc(user.uid).collection("derived").doc("recovery_debt").get(),
+      db.collection("users").doc(user.uid).collection("derived").doc("recovery_velocity").get(),
+      db.collection("users").doc(user.uid).collection("derived").doc("energy_trend").get(),
+      db.collection("users").doc(user.uid).collection("derived").doc("mood_trend").get(),
+    ]);
+    const recoveryDebt = recoveryDebtDoc.exists ? recoveryDebtDoc.data() : null;
+    const recoveryVelocity = recoveryVelocityDoc.exists ? recoveryVelocityDoc.data() : null;
+    const energyTrend = energyTrendDoc.exists ? energyTrendDoc.data() : null;
+    const moodTrend = moodTrendDoc.exists ? moodTrendDoc.data() : null;
+    const recoveryDebtUsable = isUsableDerivedSummary(recoveryDebt);
+    const recoveryVelocityUsable = isUsableDerivedSummary(recoveryVelocity);
+    const energyTrendUsable = isUsableDerivedSummary(energyTrend);
+    const moodTrendUsable = isUsableDerivedSummary(moodTrend);
+    // Tie-breaker only - never a new branch condition on its own. When a
+    // falling energy/mood trend is genuinely known, it breaks the
+    // otherwise-fixed priority between "stale check-in" and "heavy active
+    // load" toward Energy Budget; with no usable trend data (the common
+    // case today), the chain's order is completely unchanged.
+    const trendFavorsEnergyBudget =
+      (energyTrendUsable && energyTrend!.direction === 'falling') ||
+      (moodTrendUsable && moodTrend!.direction === 'falling');
+
+    const staleCheckIn = hoursSince(stats.lastCheckIn) > 20 && hoursSince(stats.lastMoodPulse) > 20;
+    const highActiveLoad = activeLoad >= 60;
+    const staleBoundaryRehearsal = hoursSince(stats.lastBoundaryRehearsal) > 24 * 7 && activeLoad > 0;
+    const staleNervousSystemReset = hoursSince(stats.lastNervousSystemReset) > 48;
+    const staleEnergyBudget = hasEnergyBudgetHistory && hoursSince(stats.lastEnergyBudgetUpdate) > 24 * 10;
+    const staleAlly = hasAllyHistory && hoursSince(stats.lastRecoveryAllyActivity) > 24 * 10;
+    const buildEnergyBudgetHeavyLoad = () => ({
+      tool: 'Energy Budget', tab: 'recover', title: "Your active load looks heavy",
+      message: `You've got ${activeLoad} units of active energy commitments logged right now. Worth reviewing what can be delegated or dropped before it adds up.`,
+      points: 20, sourcesUsed: ['energy_commitments'], type: 'recovery_reminder',
+    });
+    const buildNervousSystemResetStale = () => ({
+      tool: 'Nervous System Reset', tab: 'reset', title: "A reset might help",
+      message: "It's been a couple of days since your last nervous system reset. Even five minutes of breathing work adds up.",
+      points: 15, sourcesUsed: ['derived_stats.lastNervousSystemReset'], type: 'recovery_reminder',
+    });
+    const buildRecoveryAllyStale = () => ({
+      tool: 'Recovery Ally', tab: 'ally', title: "Your support circle hasn't heard from you",
+      message: "It's been over a week since you checked in on a shared recovery goal. A quick update keeps the people supporting you actually in the loop.",
+      points: 15, sourcesUsed: ['derived_stats.lastRecoveryAllyActivity', 'ally_shared_goals'], type: 'recovery_reminder',
+    });
+    // Stage-aware tiebreaks only - same mechanism as the trend tiebreak
+    // above, never a new branch condition, never reordering away the acute
+    // recentHighSeverity branch. SHIP stage (from the derivation above) is
+    // a recovery-*phase* label already in the product's own vocabulary
+    // (Safety/Habits/Identity/Purpose, already user-facing in
+    // ShipJourney.tsx/OmniBrainMap.tsx) - it only ever decides which of two
+    // already-safe, already-verified suggestions wins when both are
+    // simultaneously eligible, never gates access or classifies risk.
+    const stageFavorsNervousSystemReset = shipStage === 'Safety';
+    const stageFavorsRecoveryAlly = shipStage === 'Purpose';
+
     let recommendation: { tool: string; tab: string; title: string; message: string; points: number; sourcesUsed: string[]; type: string };
 
     if (recentHighSeverity) {
@@ -9549,7 +9697,27 @@ app.get("/api/user/recommendation", verifyAppCheck, authenticateFirebaseUser, as
         sourcesUsed: ['stress_triggers'],
         type: 'overload_warning',
       };
-    } else if (hoursSince(stats.lastCheckIn) > 20 && hoursSince(stats.lastMoodPulse) > 20) {
+    } else if (recoveryDebtUsable && recoveryDebt!.direction === 'rising' && (recoveryDebt!.value || 0) >= 65) {
+      // Recovery debt has been genuinely climbing - point at whichever of
+      // Energy Budget / Nervous System Reset is the staler of the two,
+      // rather than always defaulting to one.
+      const energyStalerThanReset = hoursSince(stats.lastEnergyBudgetUpdate) >= hoursSince(stats.lastNervousSystemReset);
+      recommendation = energyStalerThanReset ? {
+        tool: 'Energy Budget', tab: 'recover',
+        title: "Your recovery debt trend has been climbing",
+        message: "Your recovery debt has been trending upward recently. Reviewing your energy budget is a good place to start closing that gap.",
+        points: 20, sourcesUsed: ['derived.recovery_debt', 'derived_stats.lastEnergyBudgetUpdate'], type: 'recovery_reminder',
+      } : {
+        tool: 'Nervous System Reset', tab: 'reset',
+        title: "Your recovery debt trend has been climbing",
+        message: "Your recovery debt has been trending upward recently. A nervous system reset is a good place to start closing that gap.",
+        points: 20, sourcesUsed: ['derived.recovery_debt', 'derived_stats.lastNervousSystemReset'], type: 'recovery_reminder',
+      };
+    } else if (trendFavorsEnergyBudget && highActiveLoad) {
+      // Tie-break: a falling energy/mood trend nudges a simultaneously-true
+      // "stale check-in" vs. "heavy active load" toward Energy Budget.
+      recommendation = buildEnergyBudgetHeavyLoad();
+    } else if (staleCheckIn) {
       recommendation = {
         tool: 'Pulse Check-In',
         tab: 'home',
@@ -9559,17 +9727,14 @@ app.get("/api/user/recommendation", verifyAppCheck, authenticateFirebaseUser, as
         sourcesUsed: ['derived_stats.lastCheckIn', 'derived_stats.lastMoodPulse'],
         type: 'recovery_reminder',
       };
-    } else if (activeLoad >= 60) {
-      recommendation = {
-        tool: 'Energy Budget',
-        tab: 'recover',
-        title: "Your active load looks heavy",
-        message: `You've got ${activeLoad} units of active energy commitments logged right now. Worth reviewing what can be delegated or dropped before it adds up.`,
-        points: 20,
-        sourcesUsed: ['energy_commitments'],
-        type: 'recovery_reminder',
-      };
-    } else if (hoursSince(stats.lastBoundaryRehearsal) > 24 * 7 && activeLoad > 0) {
+    } else if (highActiveLoad) {
+      recommendation = buildEnergyBudgetHeavyLoad();
+    } else if (stageFavorsNervousSystemReset && staleNervousSystemReset) {
+      // Stage tiebreak: in Safety stage, a stale reset wins over a
+      // simultaneously-stale boundary rehearsal (the default order below
+      // otherwise always favors Boundary Rehearsal).
+      recommendation = buildNervousSystemResetStale();
+    } else if (staleBoundaryRehearsal) {
       recommendation = {
         tool: 'Boundary Rehearsal',
         tab: 'communicate',
@@ -9579,17 +9744,14 @@ app.get("/api/user/recommendation", verifyAppCheck, authenticateFirebaseUser, as
         sourcesUsed: ['derived_stats.lastBoundaryRehearsal', 'energy_commitments'],
         type: 'recovery_reminder',
       };
-    } else if (hoursSince(stats.lastNervousSystemReset) > 48) {
-      recommendation = {
-        tool: 'Nervous System Reset',
-        tab: 'reset',
-        title: "A reset might help",
-        message: "It's been a couple of days since your last nervous system reset. Even five minutes of breathing work adds up.",
-        points: 15,
-        sourcesUsed: ['derived_stats.lastNervousSystemReset'],
-        type: 'recovery_reminder',
-      };
-    } else if (hasEnergyBudgetHistory && hoursSince(stats.lastEnergyBudgetUpdate) > 24 * 10) {
+    } else if (staleNervousSystemReset) {
+      recommendation = buildNervousSystemResetStale();
+    } else if (stageFavorsRecoveryAlly && staleAlly) {
+      // Stage tiebreak: in Purpose stage, a stale ally check-in wins over a
+      // simultaneously-stale energy budget (the default order below
+      // otherwise always favors Energy Budget).
+      recommendation = buildRecoveryAllyStale();
+    } else if (staleEnergyBudget) {
       recommendation = {
         tool: 'Energy Budget',
         tab: 'recover',
@@ -9599,15 +9761,25 @@ app.get("/api/user/recommendation", verifyAppCheck, authenticateFirebaseUser, as
         sourcesUsed: ['derived_stats.lastEnergyBudgetUpdate', 'energy_budgets'],
         type: 'recovery_reminder',
       };
-    } else if (hasAllyHistory && hoursSince(stats.lastRecoveryAllyActivity) > 24 * 10) {
+    } else if (staleAlly) {
+      recommendation = buildRecoveryAllyStale();
+    } else if (recoveryVelocityUsable && recoveryVelocity!.direction === 'falling') {
+      // Lowest-priority trend-based nudge - nothing acute or stale enough
+      // matched above, but the trend says re-engagement is worth a nudge.
+      // Points at whichever of the 4 core recurring tools has gone longest
+      // without genuine engagement.
+      const candidates = [
+        { tool: 'Pulse Check-In', tab: 'home', hours: hoursSince(stats.lastCheckIn) },
+        { tool: 'Energy Budget', tab: 'recover', hours: hoursSince(stats.lastEnergyBudgetUpdate) },
+        { tool: 'Boundary Rehearsal', tab: 'communicate', hours: hoursSince(stats.lastBoundaryRehearsal) },
+        { tool: 'Nervous System Reset', tab: 'reset', hours: hoursSince(stats.lastNervousSystemReset) },
+      ];
+      const leastEngaged = candidates.reduce((a, b) => (b.hours > a.hours ? b : a));
       recommendation = {
-        tool: 'Recovery Ally',
-        tab: 'ally',
-        title: "Your support circle hasn't heard from you",
-        message: "It's been over a week since you checked in on a shared recovery goal. A quick update keeps the people supporting you actually in the loop.",
-        points: 15,
-        sourcesUsed: ['derived_stats.lastRecoveryAllyActivity', 'ally_shared_goals'],
-        type: 'recovery_reminder',
+        tool: leastEngaged.tool, tab: leastEngaged.tab,
+        title: "Your recovery velocity has been slipping",
+        message: `Your recovery velocity trend has been falling recently. Re-engaging with ${leastEngaged.tool} could help nudge it back up.`,
+        points: 15, sourcesUsed: ['derived.recovery_velocity'], type: 'recovery_reminder',
       };
     } else {
       recommendation = {
@@ -9629,7 +9801,7 @@ app.get("/api/user/recommendation", verifyAppCheck, authenticateFirebaseUser, as
     // timestamp across all three) as if they were real audit evidence.
     let verificationStatus: 'verified' | 'rejected' = 'verified';
     let verificationExplanation = 'Verified: Passed all guardrail checks.';
-    const checkInsSnap = await db.collection("users").doc(user.uid).collection("checkins").limit(3).get();
+    // checkInsSnap already fetched above (also feeds the SHIP stage derivation).
     if (checkInsSnap.size < 3 && recommendation.message.toLowerCase().includes('pattern')) {
       verificationStatus = 'rejected';
       verificationExplanation = 'Rejected: Attempted to claim a pattern with fewer than 3 check-ins.';
@@ -9653,15 +9825,18 @@ app.get("/api/user/recommendation", verifyAppCheck, authenticateFirebaseUser, as
 
     if (verificationStatus === 'rejected') {
       // A genuinely rejected recommendation doesn't reach the user - fall
-      // back to the honest, always-safe default instead.
+      // back to the honest, always-safe default instead. shipStage is
+      // still included - it was independently derived and verified
+      // (recovery-phase label, not a recommendation claim), so a rejected
+      // recommendation is no reason to withhold it.
       return res.json({
         tab: 'nova', title: "You're on track",
         message: "Nothing urgent flagged right now based on what you've logged. If something's on your mind, Nova's a good place to think it through.",
-        points: 10, tool: 'Nova Coach',
+        points: 10, tool: 'Nova Coach', shipStage,
       });
     }
 
-    res.json(recommendation);
+    res.json({ ...recommendation, shipStage });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }

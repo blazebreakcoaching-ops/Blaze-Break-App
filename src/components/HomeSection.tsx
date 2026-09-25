@@ -47,6 +47,7 @@ import { SmartCard } from "./SmartCard.tsx";
 import { DailyGoal } from "./DailyGoal.tsx";
 import { MicroInterventions } from "./MicroInterventions.tsx";
 import { SomaticCheckInCard } from "./SomaticCheckInCard.tsx";
+const ConnectedSparkCheck = lazy(() => import("./ConnectedRecoveryModules.tsx").then(m => ({ default: m.ConnectedSparkCheck })));
 // Both of these render recharts charts (recharts is a large, d3-backed
 // dependency). They're the only two default home-screen cards that pull it
 // in, so loading them lazily keeps recharts out of the initial home-screen
@@ -210,6 +211,7 @@ export const HomeSection = ({
   onUpdatePulseHistory,
   onLogJourney,
   isDemoSession,
+  onShipStageChange,
 }: {
   onChatRequest: () => void;
   onEnergyRequest: () => void;
@@ -228,6 +230,10 @@ export const HomeSection = ({
   onUpdatePulseHistory: (date: string, score: number) => void;
   onLogJourney: (action: string, details: string) => void;
   isDemoSession?: boolean;
+  // Server-derived (see /api/user/recommendation's shipStage field) -
+  // replaces the SHIP stage prop's previous permanently-frozen "Safety"
+  // default the moment a real recommendation fetch resolves.
+  onShipStageChange?: (stage: SHIPStage) => void;
 }) => {
   // Friendly names for every widget, used by the "Add widget" menu below.
   const WIDGET_LIBRARY: Record<string, string> = {
@@ -249,6 +255,7 @@ export const HomeSection = ({
     quests: "Milestones",
     network: "Guardian Network",
     radar: "Relapse Radar",
+    sparkCheck: "SPARK Check",
   };
 
   // A small, focused set by default: your score, one clear next step, one
@@ -275,7 +282,7 @@ export const HomeSection = ({
   // column actually holds.
   const DEFAULT_LEFT = ['hero', 'gamification', 'hub'];
   const DEFAULT_RIGHT = ['directive', 'trends'];
-  const DEFAULT_HIDDEN = ['stats', 'streakCalendar', 'anxietyResetCard', 'somaticAccelerator', 'velocity', 'daily', 'micro', 'activity', 'weeklyRecap', 'quests', 'network', 'radar', 'archetypeBlend'];
+  const DEFAULT_HIDDEN = ['stats', 'streakCalendar', 'anxietyResetCard', 'somaticAccelerator', 'velocity', 'daily', 'micro', 'activity', 'weeklyRecap', 'quests', 'network', 'radar', 'archetypeBlend', 'sparkCheck'];
   const LAYOUT_STORAGE_KEY = 'blaze_home_dashboard_layout_v2';
 
   // Someone who hasn't engaged at all yet - not even one check-in or
@@ -329,7 +336,9 @@ export const HomeSection = ({
         }
         const res = await secureApiFetch('/api/user/recommendation');
         if (res.ok) {
-          setRecommendation(await res.json());
+          const data = await res.json();
+          setRecommendation(data);
+          if (data.shipStage) onShipStageChange?.(data.shipStage);
         }
       } catch (e) {
         // Leaves recommendation null - the card below shows a graceful
@@ -528,6 +537,7 @@ export const HomeSection = ({
     setHiddenWidgets(result.hidden);
   }, [stats.points]);
 
+  const [showSparkCheck, setShowSparkCheck] = useState(false);
   const [quickNoteOpen, setQuickNoteOpen] = useState(false);
   const [quickTriggerText, setQuickTriggerText] = useState("");
   const [quickSeverity, setQuickSeverity] = useState(7);
@@ -987,6 +997,34 @@ export const HomeSection = ({
         onUpdatePulseHistory={onUpdatePulseHistory}
         onLogJourney={onLogJourney}
       />
+    ),
+    sparkCheck: (
+      <SmartCard
+        id="sparkCheck"
+        key="sparkCheck"
+        title={
+          <div className="flex items-center gap-3">
+            <Zap className="w-5 h-5 text-primary" />
+            <span className="font-display font-bold text-text-main">SPARK Check</span>
+          </div>
+        }
+        energyDrain="low"
+        onDragStart={handleDragStart}
+        onDragOver={handleDragOver}
+        onDrop={(e, id) => handleDrop(e, id, 'left')}
+        onMoveUp={handleMoveUp}
+        onMoveDown={handleMoveDown}
+        isFirst={isFirstInCol('sparkCheck')}
+        isLast={isLastInCol('sparkCheck')}
+        className="space-y-4 p-6"
+      >
+        <p className="text-xs text-text-muted leading-relaxed">
+          A 60-second daily scan across Sleep, Performance, Aches, Reactions, and Kindness.
+        </p>
+        <button onClick={() => setShowSparkCheck(true)} className="btn-primary w-full py-2 text-xs">
+          Start SPARK Check
+        </button>
+      </SmartCard>
     ),
     daily: <DailyGoal key="daily" shipStage={shipStage} />,
     micro: <MicroInterventions key="micro" shipStage={shipStage} id="micro" onDragStart={handleDragStart} onDragOver={handleDragOver} onDrop={(e, id) => handleDrop(e, id, 'left')} onMoveUp={handleMoveUp} onMoveDown={handleMoveDown} isFirst={isFirstInCol('micro')} isLast={isLastInCol('micro')} />,
@@ -1610,6 +1648,12 @@ export const HomeSection = ({
           <span className="text-xs font-black uppercase tracking-widest pr-1 hidden sm:inline">Log Trigger</span>
         </button>
       </div>
+
+      {showSparkCheck && (
+        <Suspense fallback={null}>
+          <ConnectedSparkCheck onClose={() => setShowSparkCheck(false)} onAwardPoints={onAwardPoints} />
+        </Suspense>
+      )}
     </div>
   );
 };
