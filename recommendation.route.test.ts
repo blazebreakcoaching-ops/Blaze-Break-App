@@ -204,3 +204,83 @@ describe('GET /api/user/recommendation - derived trend summaries (Phase B0)', ()
     expect(res.body.tool).toBe('Nova Coach');
   });
 });
+
+// Phase C - SHIP stage becomes a tiebreaker between two simultaneously
+// eligible branches (never a new branch condition, never reordering away
+// the acute recentHighSeverity branch). The two spots in the chain where
+// this can actually matter: Safety vs. a stale boundary rehearsal, and
+// Purpose vs. a stale energy budget - both fixtured below with, and
+// without, the stage that should flip the default winner.
+describe('GET /api/user/recommendation - stage-aware tiebreaking (Phase C)', () => {
+  const recentIso = () => new Date().toISOString();
+
+  it('Safety stage: a stale reset wins over a simultaneously-stale boundary rehearsal', async () => {
+    seedCheckIns(USER, 2); // < 3 check-ins -> Safety stage
+    seedDoc(`users/${USER}/derived/stats`, { lastCheckIn: recentIso(), lastMoodPulse: recentIso() });
+    seedDoc(`users/${USER}/energy_commitments/c1`, { status: 'active', energyDrain: 10 }); // activeLoad > 0, < 60
+    const res = await request(app).get('/api/user/recommendation').set(auth(USER));
+    expect(res.body.shipStage).toBe('Safety');
+    expect(res.body.tool).toBe('Nervous System Reset');
+  });
+
+  it('non-Safety stage: the same simultaneously-stale conditions default to Boundary Rehearsal (unchanged order)', async () => {
+    seedCheckIns(USER, 3);
+    seedDoc(`users/${USER}/derived/stats`, {
+      lastCheckIn: new Date(Date.now() - 20 * 24 * 60 * 60 * 1000).toISOString(), // stale -> not Habits stage
+      lastMoodPulse: recentIso(), // keeps staleCheckIn branch from firing first
+    });
+    seedDoc(`users/${USER}/energy_commitments/c1`, { status: 'active', energyDrain: 10 });
+    const res = await request(app).get('/api/user/recommendation').set(auth(USER));
+    expect(res.body.shipStage).not.toBe('Safety');
+    expect(res.body.tool).toBe('Boundary Rehearsal');
+  });
+
+  it('Purpose stage: a stale ally check-in wins over a simultaneously-stale energy budget', async () => {
+    seedCheckIns(USER, 3);
+    seedDoc(`users/${USER}/derived/stats`, {
+      lastCheckIn: recentIso(),
+      lastMoodPulse: recentIso(),
+      lastBoundaryRehearsal: recentIso(), // avoids the Habits stage (boundary work has started)
+      lastNervousSystemReset: recentIso(),
+      lastEnergyBudgetUpdate: new Date(Date.now() - 20 * 24 * 60 * 60 * 1000).toISOString(),
+      lastRecoveryAllyActivity: new Date(Date.now() - 20 * 24 * 60 * 60 * 1000).toISOString(),
+    });
+    // No active energy_commitments -> activeLoad 0, so the boundary-rehearsal
+    // tiebreak stays inapplicable and this only exercises the Purpose one.
+    seedDoc(`users/${USER}/energy_budgets/b1`, { createdAt: recentIso() });
+    seedDoc(`users/${USER}/ally_shared_goals/g1`, { createdAt: recentIso() });
+    const res = await request(app).get('/api/user/recommendation').set(auth(USER));
+    expect(res.body.shipStage).toBe('Purpose');
+    expect(res.body.tool).toBe('Recovery Ally');
+  });
+
+  it('non-Purpose stage: the same simultaneously-stale conditions default to Energy Budget (unchanged order)', async () => {
+    seedCheckIns(USER, 2); // < 3 check-ins -> Safety stage, not Purpose
+    seedDoc(`users/${USER}/derived/stats`, {
+      lastCheckIn: recentIso(),
+      lastMoodPulse: recentIso(),
+      lastNervousSystemReset: recentIso(), // keeps the Safety reset tiebreak from firing first
+      lastEnergyBudgetUpdate: new Date(Date.now() - 20 * 24 * 60 * 60 * 1000).toISOString(),
+      lastRecoveryAllyActivity: new Date(Date.now() - 20 * 24 * 60 * 60 * 1000).toISOString(),
+    });
+    seedDoc(`users/${USER}/energy_budgets/b1`, { createdAt: recentIso() });
+    seedDoc(`users/${USER}/ally_shared_goals/g1`, { createdAt: recentIso() });
+    const res = await request(app).get('/api/user/recommendation').set(auth(USER));
+    expect(res.body.shipStage).not.toBe('Purpose');
+    expect(res.body.tool).toBe('Energy Budget');
+  });
+
+  it('recentHighSeverity always wins outright, regardless of stage or any other stale/tiebreak condition', async () => {
+    seedCheckIns(USER, 3);
+    seedDoc(`users/${USER}/stress_triggers/t1`, { createdAt: recentIso(), severity: 9, text: 'hard day' });
+    seedDoc(`users/${USER}/derived/stats`, {
+      lastEnergyBudgetUpdate: new Date(Date.now() - 20 * 24 * 60 * 60 * 1000).toISOString(),
+      lastRecoveryAllyActivity: new Date(Date.now() - 20 * 24 * 60 * 60 * 1000).toISOString(),
+    });
+    seedDoc(`users/${USER}/energy_budgets/b1`, { createdAt: recentIso() });
+    seedDoc(`users/${USER}/ally_shared_goals/g1`, { createdAt: recentIso() });
+    const res = await request(app).get('/api/user/recommendation').set(auth(USER));
+    expect(res.body.tool).toBe('Nervous System Reset');
+    expect(res.body.type).toBe('overload_warning');
+  });
+});

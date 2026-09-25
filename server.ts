@@ -9650,11 +9650,35 @@ app.get("/api/user/recommendation", verifyAppCheck, authenticateFirebaseUser, as
 
     const staleCheckIn = hoursSince(stats.lastCheckIn) > 20 && hoursSince(stats.lastMoodPulse) > 20;
     const highActiveLoad = activeLoad >= 60;
+    const staleBoundaryRehearsal = hoursSince(stats.lastBoundaryRehearsal) > 24 * 7 && activeLoad > 0;
+    const staleNervousSystemReset = hoursSince(stats.lastNervousSystemReset) > 48;
+    const staleEnergyBudget = hasEnergyBudgetHistory && hoursSince(stats.lastEnergyBudgetUpdate) > 24 * 10;
+    const staleAlly = hasAllyHistory && hoursSince(stats.lastRecoveryAllyActivity) > 24 * 10;
     const buildEnergyBudgetHeavyLoad = () => ({
       tool: 'Energy Budget', tab: 'recover', title: "Your active load looks heavy",
       message: `You've got ${activeLoad} units of active energy commitments logged right now. Worth reviewing what can be delegated or dropped before it adds up.`,
       points: 20, sourcesUsed: ['energy_commitments'], type: 'recovery_reminder',
     });
+    const buildNervousSystemResetStale = () => ({
+      tool: 'Nervous System Reset', tab: 'reset', title: "A reset might help",
+      message: "It's been a couple of days since your last nervous system reset. Even five minutes of breathing work adds up.",
+      points: 15, sourcesUsed: ['derived_stats.lastNervousSystemReset'], type: 'recovery_reminder',
+    });
+    const buildRecoveryAllyStale = () => ({
+      tool: 'Recovery Ally', tab: 'ally', title: "Your support circle hasn't heard from you",
+      message: "It's been over a week since you checked in on a shared recovery goal. A quick update keeps the people supporting you actually in the loop.",
+      points: 15, sourcesUsed: ['derived_stats.lastRecoveryAllyActivity', 'ally_shared_goals'], type: 'recovery_reminder',
+    });
+    // Stage-aware tiebreaks only - same mechanism as the trend tiebreak
+    // above, never a new branch condition, never reordering away the acute
+    // recentHighSeverity branch. SHIP stage (from the derivation above) is
+    // a recovery-*phase* label already in the product's own vocabulary
+    // (Safety/Habits/Identity/Purpose, already user-facing in
+    // ShipJourney.tsx/OmniBrainMap.tsx) - it only ever decides which of two
+    // already-safe, already-verified suggestions wins when both are
+    // simultaneously eligible, never gates access or classifies risk.
+    const stageFavorsNervousSystemReset = shipStage === 'Safety';
+    const stageFavorsRecoveryAlly = shipStage === 'Purpose';
 
     let recommendation: { tool: string; tab: string; title: string; message: string; points: number; sourcesUsed: string[]; type: string };
 
@@ -9703,7 +9727,12 @@ app.get("/api/user/recommendation", verifyAppCheck, authenticateFirebaseUser, as
       };
     } else if (highActiveLoad) {
       recommendation = buildEnergyBudgetHeavyLoad();
-    } else if (hoursSince(stats.lastBoundaryRehearsal) > 24 * 7 && activeLoad > 0) {
+    } else if (stageFavorsNervousSystemReset && staleNervousSystemReset) {
+      // Stage tiebreak: in Safety stage, a stale reset wins over a
+      // simultaneously-stale boundary rehearsal (the default order below
+      // otherwise always favors Boundary Rehearsal).
+      recommendation = buildNervousSystemResetStale();
+    } else if (staleBoundaryRehearsal) {
       recommendation = {
         tool: 'Boundary Rehearsal',
         tab: 'communicate',
@@ -9713,17 +9742,14 @@ app.get("/api/user/recommendation", verifyAppCheck, authenticateFirebaseUser, as
         sourcesUsed: ['derived_stats.lastBoundaryRehearsal', 'energy_commitments'],
         type: 'recovery_reminder',
       };
-    } else if (hoursSince(stats.lastNervousSystemReset) > 48) {
-      recommendation = {
-        tool: 'Nervous System Reset',
-        tab: 'reset',
-        title: "A reset might help",
-        message: "It's been a couple of days since your last nervous system reset. Even five minutes of breathing work adds up.",
-        points: 15,
-        sourcesUsed: ['derived_stats.lastNervousSystemReset'],
-        type: 'recovery_reminder',
-      };
-    } else if (hasEnergyBudgetHistory && hoursSince(stats.lastEnergyBudgetUpdate) > 24 * 10) {
+    } else if (staleNervousSystemReset) {
+      recommendation = buildNervousSystemResetStale();
+    } else if (stageFavorsRecoveryAlly && staleAlly) {
+      // Stage tiebreak: in Purpose stage, a stale ally check-in wins over a
+      // simultaneously-stale energy budget (the default order below
+      // otherwise always favors Energy Budget).
+      recommendation = buildRecoveryAllyStale();
+    } else if (staleEnergyBudget) {
       recommendation = {
         tool: 'Energy Budget',
         tab: 'recover',
@@ -9733,16 +9759,8 @@ app.get("/api/user/recommendation", verifyAppCheck, authenticateFirebaseUser, as
         sourcesUsed: ['derived_stats.lastEnergyBudgetUpdate', 'energy_budgets'],
         type: 'recovery_reminder',
       };
-    } else if (hasAllyHistory && hoursSince(stats.lastRecoveryAllyActivity) > 24 * 10) {
-      recommendation = {
-        tool: 'Recovery Ally',
-        tab: 'ally',
-        title: "Your support circle hasn't heard from you",
-        message: "It's been over a week since you checked in on a shared recovery goal. A quick update keeps the people supporting you actually in the loop.",
-        points: 15,
-        sourcesUsed: ['derived_stats.lastRecoveryAllyActivity', 'ally_shared_goals'],
-        type: 'recovery_reminder',
-      };
+    } else if (staleAlly) {
+      recommendation = buildRecoveryAllyStale();
     } else if (recoveryVelocityUsable && recoveryVelocity!.direction === 'falling') {
       // Lowest-priority trend-based nudge - nothing acute or stale enough
       // matched above, but the trend says re-engagement is worth a nudge.
