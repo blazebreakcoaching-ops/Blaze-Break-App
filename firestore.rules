@@ -349,6 +349,24 @@ service cloud.firestore {
             && (request.method == 'create' ? true : checkCreatedAtUnchanged());
       }
 
+      // spark_checks - SPARK Check daily scan (Sleep, Performance, Aches,
+      // Reactions, Kindness). Matches ConnectedSparkCheck's write.
+      match /spark_checks/{checkId} {
+        allow read: if isOwner(uid);
+        allow delete: if isOwner(uid);
+        allow create, update: if isOwner(uid)
+            && hasOnly(['createdAt', 'updatedAt', 'sleep', 'performance', 'aches', 'reactions', 'kindness', 'offCount', 'source'])
+            && hasAll(['createdAt', 'updatedAt', 'sleep', 'performance', 'aches', 'reactions', 'kindness', 'offCount', 'source'])
+            && request.resource.data.sleep is number && request.resource.data.sleep >= 1 && request.resource.data.sleep <= 5
+            && request.resource.data.performance is number && request.resource.data.performance >= 1 && request.resource.data.performance <= 5
+            && request.resource.data.aches is number && request.resource.data.aches >= 1 && request.resource.data.aches <= 5
+            && request.resource.data.reactions is number && request.resource.data.reactions >= 1 && request.resource.data.reactions <= 5
+            && request.resource.data.kindness is number && request.resource.data.kindness >= 1 && request.resource.data.kindness <= 5
+            && request.resource.data.offCount is number && request.resource.data.offCount >= 0 && request.resource.data.offCount <= 5
+            && request.resource.data.source == 'user'
+            && (request.method == 'create' ? true : checkCreatedAtUnchanged());
+      }
+
       // G. weekly_reviews
       match /weekly_reviews/{reviewId} {
         allow read: if isOwner(uid);

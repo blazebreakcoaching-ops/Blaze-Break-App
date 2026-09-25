@@ -3,9 +3,9 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 // Route tests for POST /api/user/mark-activity - the generic completion
 // endpoint every tool's client-side completion trio calls. Confirms a
 // known ACTIVITY_FIELD_MAP key merges the right timestamp field into
-// derived/stats, an unknown key still 400s, and specifically that the key
-// added for the new BLAME Reset tool is wired correctly (regression guard
-// against an ACTIVITY_FIELD_MAP typo).
+// derived/stats, an unknown key still 400s, and specifically that the two
+// keys added for the new BLAME Reset and SPARK Check tools are wired
+// correctly (regression guard against an ACTIVITY_FIELD_MAP typo).
 const h = vi.hoisted(() => {
   process.env.TEST_MODE = 'true';
   process.env.NODE_ENV = 'test';
@@ -48,5 +48,12 @@ describe('POST /api/user/mark-activity', () => {
     expect(res.status).toBe(200);
     const stored = getDocRaw(`users/${USER}/derived/stats`);
     expect(typeof stored?.lastBlameReset).toBe('string');
+  });
+
+  it('merges lastSparkCheck into derived/stats for the sparkCheck activity', async () => {
+    const res = await request(app).post('/api/user/mark-activity').set(auth(USER)).send({ activity: 'sparkCheck' });
+    expect(res.status).toBe(200);
+    const stored = getDocRaw(`users/${USER}/derived/stats`);
+    expect(typeof stored?.lastSparkCheck).toBe('string');
   });
 });
