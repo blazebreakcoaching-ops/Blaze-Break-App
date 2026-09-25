@@ -14,6 +14,11 @@ import { formatFeedbackCategory } from '../lib/feedback-format';
 interface AdminUser {
   uid: string;
   email: string;
+  // Firebase Auth's own record - true automatically for social sign-ins
+  // (Google/Microsoft/Facebook already vouch for the address), only true
+  // for an email/password account once the person has clicked the link
+  // from the verification email.
+  emailVerified: boolean;
   createdAt: string;
   lastSignIn: string;
   accessStatus: 'active' | 'disabled';
@@ -107,6 +112,7 @@ export const AdminDashboard = () => {
 
   // Forms State
   const [searchQuery, setSearchQuery] = useState('');
+  const [verifiedFilter, setVerifiedFilter] = useState<'all' | 'verified' | 'unverified'>('all');
   const [selectedUser, setSelectedUser] = useState<AdminUser | null>(null);
   const [selectedUserRole, setSelectedUserRole] = useState('user');
   const [pendingAction, setPendingAction] = useState<
@@ -475,8 +481,9 @@ export const AdminDashboard = () => {
   };
 
   const filteredUsers = users.filter(u =>
-    (u.email || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-    u.uid.includes(searchQuery)
+    ((u.email || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+    u.uid.includes(searchQuery)) &&
+    (verifiedFilter === 'all' || (verifiedFilter === 'verified') === u.emailVerified)
   );
 
   if (!isAdmin) {
@@ -729,16 +736,28 @@ export const AdminDashboard = () => {
         {activeTab === 'users' && (
           <div className="space-y-6">
             <div className="flex flex-col md:flex-row gap-4 items-center justify-between">
-              <div className="relative w-full md:max-w-md">
-                <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" />
-                <input
-                  type="text"
-                  aria-label="Query accounts by Email or UID"
-                  placeholder="Query accounts by Email or UID..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full pl-10 pr-4 py-2.5 bg-surface dark:bg-card border border-border rounded-xl text-sm text-text-main placeholder:text-text-muted focus:outline-none focus:border-primary transition-colors"
-                />
+              <div className="flex flex-col sm:flex-row gap-3 w-full md:max-w-2xl">
+                <div className="relative flex-1">
+                  <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" />
+                  <input
+                    type="text"
+                    aria-label="Query accounts by Email or UID"
+                    placeholder="Query accounts by Email or UID..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="w-full pl-10 pr-4 py-2.5 bg-surface dark:bg-card border border-border rounded-xl text-sm text-text-main placeholder:text-text-muted focus:outline-none focus:border-primary transition-colors"
+                  />
+                </div>
+                <select
+                  aria-label="Filter by email verification status"
+                  value={verifiedFilter}
+                  onChange={(e) => setVerifiedFilter(e.target.value as 'all' | 'verified' | 'unverified')}
+                  className="px-3 py-2.5 bg-surface dark:bg-card border border-border rounded-xl text-sm text-text-main focus:outline-none focus:border-primary transition-colors shrink-0"
+                >
+                  <option value="all">Any email status</option>
+                  <option value="verified">Verified only</option>
+                  <option value="unverified">Unverified only</option>
+                </select>
               </div>
               <div className="text-xs uppercase tracking-wider font-black text-text-muted">
                 Displaying {filteredUsers.length} of {users.length}{usersCapped ? '+' : ''} registered
@@ -815,6 +834,7 @@ export const AdminDashboard = () => {
                       <tr className="border-b border-white/5">
                         <th scope="col" className="pb-3 text-xs font-black uppercase tracking-widest text-text-muted">User ID</th>
                         <th scope="col" className="pb-3 text-xs font-black uppercase tracking-widest text-text-muted">Email Address</th>
+                        <th scope="col" className="pb-3 text-xs font-black uppercase tracking-widest text-text-muted">Email Status</th>
                         <th scope="col" className="pb-3 text-xs font-black uppercase tracking-widest text-text-muted">Date Joined</th>
                         <th scope="col" className="pb-3 text-xs font-black uppercase tracking-widest text-text-muted">Last Active</th>
                         <th scope="col" className="pb-3 text-xs font-black uppercase tracking-widest text-text-muted text-right">Actions</th>
@@ -825,6 +845,15 @@ export const AdminDashboard = () => {
                         <tr key={u.uid} className="border-b border-white/[0.02] hover:bg-white/5 transition-colors">
                           <td className="py-4 text-text-muted font-mono text-[10px] truncate max-w-[110px]" title={u.uid}>{u.uid}</td>
                           <td className="py-4 font-bold text-text-main">{u.email}</td>
+                          <td className="py-4">
+                            <span className={`px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-widest ${
+                              u.emailVerified
+                                ? 'bg-success/10 text-success dark:text-[#4ade80]'
+                                : 'bg-warning/10 text-[#9a3412] dark:text-warning'
+                            }`}>
+                              {u.emailVerified ? 'Verified' : 'Unverified'}
+                            </span>
+                          </td>
                           <td className="py-4 text-text-muted text-xs">{new Date(u.createdAt).toLocaleDateString()}</td>
                           <td className="py-4 text-text-muted text-xs">{new Date(u.lastSignIn).toLocaleDateString()}</td>
                           <td className="py-4 text-right flex items-center justify-end gap-3">
@@ -872,7 +901,7 @@ export const AdminDashboard = () => {
                       ))}
                       {filteredUsers.length === 0 && (
                         <tr>
-                          <td colSpan={5} className="py-12 text-center text-text-muted text-sm italic">
+                          <td colSpan={6} className="py-12 text-center text-text-muted text-sm italic">
                             No matching user accounts registered on this node.
                           </td>
                         </tr>
