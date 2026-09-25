@@ -111,3 +111,96 @@ describe('GET /api/user/recommendation', () => {
     expect(['Safety', 'Habits', 'Purpose']).toContain(res.body.shipStage);
   });
 });
+
+// Phase B0 - Recovery Intelligence's derived trend summaries
+// (recovery_debt/recovery_velocity/energy_trend/mood_trend) feeding into
+// the chain above. The core requirement: when a summary is missing,
+// stale, or not yet "available", the chain must behave byte-identically
+// to before this pass - never worse than today.
+describe('GET /api/user/recommendation - derived trend summaries (Phase B0)', () => {
+  const recentIso = () => new Date().toISOString();
+  const staleIso = () => new Date(Date.now() - 20 * 24 * 60 * 60 * 1000).toISOString(); // 20 days ago
+
+  it('degrades gracefully when recovery_debt has never been calculated', async () => {
+    seedCheckIns(USER, 3);
+    // No stress_triggers, no derived/stats -> falls to the pre-existing
+    // "stale check-in" default, exactly as before this pass.
+    const res = await request(app).get('/api/user/recommendation').set(auth(USER));
+    expect(res.body.tool).toBe('Pulse Check-In');
+  });
+
+  it('degrades gracefully when recovery_debt exists but status is not_enough_data', async () => {
+    seedCheckIns(USER, 3);
+    seedDoc(`users/${USER}/derived/recovery_debt`, { status: 'not_enough_data', direction: 'rising', value: 90, calculatedAt: recentIso() });
+    const res = await request(app).get('/api/user/recommendation').set(auth(USER));
+    expect(res.body.tool).toBe('Pulse Check-In');
+  });
+
+  it('degrades gracefully when recovery_debt is available but stale (older than the 14-day window)', async () => {
+    seedCheckIns(USER, 3);
+    seedDoc(`users/${USER}/derived/recovery_debt`, { status: 'available', direction: 'rising', value: 90, calculatedAt: staleIso() });
+    const res = await request(app).get('/api/user/recommendation').set(auth(USER));
+    expect(res.body.tool).toBe('Pulse Check-In');
+  });
+
+  it('fires the recovery-debt branch when the trend is genuinely fresh, available, rising, and high', async () => {
+    seedCheckIns(USER, 3);
+    seedDoc(`users/${USER}/derived/stats`, { lastNervousSystemReset: recentIso() }); // reset less stale than energy budget
+    seedDoc(`users/${USER}/derived/recovery_debt`, { status: 'available', direction: 'rising', value: 80, calculatedAt: recentIso() });
+    const res = await request(app).get('/api/user/recommendation').set(auth(USER));
+    expect(res.body.type).toBe('recovery_reminder');
+    expect(res.body.sourcesUsed).toContain('derived.recovery_debt');
+    expect(res.body.tool).toBe('Energy Budget'); // energy budget never logged (Infinity) - staler than the just-reset nervous system
+  });
+
+  it('never fires the recovery-debt branch when direction is falling, even if value is high', async () => {
+    seedCheckIns(USER, 3);
+    seedDoc(`users/${USER}/derived/recovery_debt`, { status: 'available', direction: 'falling', value: 90, calculatedAt: recentIso() });
+    const res = await request(app).get('/api/user/recommendation').set(auth(USER));
+    expect(res.body.sourcesUsed).not.toContain('derived.recovery_debt');
+  });
+
+  it('without a usable energy/mood trend, preserves the original branch order (stale check-in wins over heavy active load)', async () => {
+    seedCheckIns(USER, 3);
+    seedDoc(`users/${USER}/derived/stats`, { lastCheckIn: staleIso() });
+    seedDoc(`users/${USER}/energy_commitments/c1`, { status: 'active', energyDrain: 80 });
+    const res = await request(app).get('/api/user/recommendation').set(auth(USER));
+    expect(res.body.tool).toBe('Pulse Check-In');
+  });
+
+  it('with a fresh falling energy_trend, breaks the stale-check-in vs heavy-active-load tie toward Energy Budget', async () => {
+    seedCheckIns(USER, 3);
+    seedDoc(`users/${USER}/derived/stats`, { lastCheckIn: staleIso() });
+    seedDoc(`users/${USER}/energy_commitments/c1`, { status: 'active', energyDrain: 80 });
+    seedDoc(`users/${USER}/derived/energy_trend`, { status: 'available', direction: 'falling', value: 30, calculatedAt: recentIso() });
+    const res = await request(app).get('/api/user/recommendation').set(auth(USER));
+    expect(res.body.tool).toBe('Energy Budget');
+  });
+
+  it('fires the recovery-velocity branch as the lowest-priority nudge when nothing else in the chain matches', async () => {
+    seedCheckIns(USER, 3);
+    seedDoc(`users/${USER}/derived/stats`, {
+      lastCheckIn: recentIso(),
+      lastMoodPulse: recentIso(),
+      lastBoundaryRehearsal: recentIso(),
+      lastNervousSystemReset: recentIso(),
+    });
+    seedDoc(`users/${USER}/derived/recovery_velocity`, { status: 'available', direction: 'falling', value: 20, calculatedAt: recentIso() });
+    const res = await request(app).get('/api/user/recommendation').set(auth(USER));
+    expect(res.body.sourcesUsed).toContain('derived.recovery_velocity');
+    expect(res.body.tool).toBe('Energy Budget'); // never logged (Infinity hours) - the least-engaged of the 4 candidates
+  });
+
+  it('never fires the recovery-velocity branch when the trend is stable, falling back to the honest default', async () => {
+    seedCheckIns(USER, 3);
+    seedDoc(`users/${USER}/derived/stats`, {
+      lastCheckIn: recentIso(),
+      lastMoodPulse: recentIso(),
+      lastBoundaryRehearsal: recentIso(),
+      lastNervousSystemReset: recentIso(),
+    });
+    seedDoc(`users/${USER}/derived/recovery_velocity`, { status: 'available', direction: 'stable', value: 60, calculatedAt: recentIso() });
+    const res = await request(app).get('/api/user/recommendation').set(auth(USER));
+    expect(res.body.tool).toBe('Nova Coach');
+  });
+});

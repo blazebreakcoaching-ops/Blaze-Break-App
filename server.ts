@@ -9606,6 +9606,56 @@ app.get("/api/user/recommendation", verifyAppCheck, authenticateFirebaseUser, as
       shipStageComputedAt: new Date().toISOString(),
     }, { merge: true }).catch(() => {});
 
+    // Recovery Intelligence's own derived trend summaries (recovery_debt,
+    // recovery_velocity, energy_trend, mood_trend - computed by
+    // POST /api/recovery/recalculate, only ever manually triggered by the
+    // "Recalculate Trends" button) previously fed nothing back into this
+    // engine at all - two separate cross-tool synthesis systems that never
+    // talked to each other. 4 cheap single-doc reads, same bounded-read
+    // discipline as everywhere else in this route (no collection scans).
+    // A summary only ever influences the chain below if it's genuinely
+    // usable - status "available" (not "not_enough_data"/"early_signal")
+    // and calculated within the last 14 days (generous on purpose, since
+    // recalculation is manual-only today - a tight window would make this
+    // data almost never usable). Anything else means this contributes
+    // nothing and the chain runs exactly as it always has.
+    const isUsableDerivedSummary = (doc: any): boolean => {
+      if (!doc || doc.status !== 'available') return false;
+      const calculatedAtMs = doc.calculatedAt ? new Date(doc.calculatedAt).getTime() : NaN;
+      if (Number.isNaN(calculatedAtMs)) return false;
+      return (now - calculatedAtMs) / (1000 * 60 * 60 * 24) <= 14;
+    };
+    const [recoveryDebtDoc, recoveryVelocityDoc, energyTrendDoc, moodTrendDoc] = await Promise.all([
+      db.collection("users").doc(user.uid).collection("derived").doc("recovery_debt").get(),
+      db.collection("users").doc(user.uid).collection("derived").doc("recovery_velocity").get(),
+      db.collection("users").doc(user.uid).collection("derived").doc("energy_trend").get(),
+      db.collection("users").doc(user.uid).collection("derived").doc("mood_trend").get(),
+    ]);
+    const recoveryDebt = recoveryDebtDoc.exists ? recoveryDebtDoc.data() : null;
+    const recoveryVelocity = recoveryVelocityDoc.exists ? recoveryVelocityDoc.data() : null;
+    const energyTrend = energyTrendDoc.exists ? energyTrendDoc.data() : null;
+    const moodTrend = moodTrendDoc.exists ? moodTrendDoc.data() : null;
+    const recoveryDebtUsable = isUsableDerivedSummary(recoveryDebt);
+    const recoveryVelocityUsable = isUsableDerivedSummary(recoveryVelocity);
+    const energyTrendUsable = isUsableDerivedSummary(energyTrend);
+    const moodTrendUsable = isUsableDerivedSummary(moodTrend);
+    // Tie-breaker only - never a new branch condition on its own. When a
+    // falling energy/mood trend is genuinely known, it breaks the
+    // otherwise-fixed priority between "stale check-in" and "heavy active
+    // load" toward Energy Budget; with no usable trend data (the common
+    // case today), the chain's order is completely unchanged.
+    const trendFavorsEnergyBudget =
+      (energyTrendUsable && energyTrend!.direction === 'falling') ||
+      (moodTrendUsable && moodTrend!.direction === 'falling');
+
+    const staleCheckIn = hoursSince(stats.lastCheckIn) > 20 && hoursSince(stats.lastMoodPulse) > 20;
+    const highActiveLoad = activeLoad >= 60;
+    const buildEnergyBudgetHeavyLoad = () => ({
+      tool: 'Energy Budget', tab: 'recover', title: "Your active load looks heavy",
+      message: `You've got ${activeLoad} units of active energy commitments logged right now. Worth reviewing what can be delegated or dropped before it adds up.`,
+      points: 20, sourcesUsed: ['energy_commitments'], type: 'recovery_reminder',
+    });
+
     let recommendation: { tool: string; tab: string; title: string; message: string; points: number; sourcesUsed: string[]; type: string };
 
     if (recentHighSeverity) {
@@ -9621,7 +9671,27 @@ app.get("/api/user/recommendation", verifyAppCheck, authenticateFirebaseUser, as
         sourcesUsed: ['stress_triggers'],
         type: 'overload_warning',
       };
-    } else if (hoursSince(stats.lastCheckIn) > 20 && hoursSince(stats.lastMoodPulse) > 20) {
+    } else if (recoveryDebtUsable && recoveryDebt!.direction === 'rising' && (recoveryDebt!.value || 0) >= 65) {
+      // Recovery debt has been genuinely climbing - point at whichever of
+      // Energy Budget / Nervous System Reset is the staler of the two,
+      // rather than always defaulting to one.
+      const energyStalerThanReset = hoursSince(stats.lastEnergyBudgetUpdate) >= hoursSince(stats.lastNervousSystemReset);
+      recommendation = energyStalerThanReset ? {
+        tool: 'Energy Budget', tab: 'recover',
+        title: "Your recovery debt trend has been climbing",
+        message: "Your recovery debt has been trending upward recently. Reviewing your energy budget is a good place to start closing that gap.",
+        points: 20, sourcesUsed: ['derived.recovery_debt', 'derived_stats.lastEnergyBudgetUpdate'], type: 'recovery_reminder',
+      } : {
+        tool: 'Nervous System Reset', tab: 'reset',
+        title: "Your recovery debt trend has been climbing",
+        message: "Your recovery debt has been trending upward recently. A nervous system reset is a good place to start closing that gap.",
+        points: 20, sourcesUsed: ['derived.recovery_debt', 'derived_stats.lastNervousSystemReset'], type: 'recovery_reminder',
+      };
+    } else if (trendFavorsEnergyBudget && highActiveLoad) {
+      // Tie-break: a falling energy/mood trend nudges a simultaneously-true
+      // "stale check-in" vs. "heavy active load" toward Energy Budget.
+      recommendation = buildEnergyBudgetHeavyLoad();
+    } else if (staleCheckIn) {
       recommendation = {
         tool: 'Pulse Check-In',
         tab: 'home',
@@ -9631,16 +9701,8 @@ app.get("/api/user/recommendation", verifyAppCheck, authenticateFirebaseUser, as
         sourcesUsed: ['derived_stats.lastCheckIn', 'derived_stats.lastMoodPulse'],
         type: 'recovery_reminder',
       };
-    } else if (activeLoad >= 60) {
-      recommendation = {
-        tool: 'Energy Budget',
-        tab: 'recover',
-        title: "Your active load looks heavy",
-        message: `You've got ${activeLoad} units of active energy commitments logged right now. Worth reviewing what can be delegated or dropped before it adds up.`,
-        points: 20,
-        sourcesUsed: ['energy_commitments'],
-        type: 'recovery_reminder',
-      };
+    } else if (highActiveLoad) {
+      recommendation = buildEnergyBudgetHeavyLoad();
     } else if (hoursSince(stats.lastBoundaryRehearsal) > 24 * 7 && activeLoad > 0) {
       recommendation = {
         tool: 'Boundary Rehearsal',
@@ -9680,6 +9742,24 @@ app.get("/api/user/recommendation", verifyAppCheck, authenticateFirebaseUser, as
         points: 15,
         sourcesUsed: ['derived_stats.lastRecoveryAllyActivity', 'ally_shared_goals'],
         type: 'recovery_reminder',
+      };
+    } else if (recoveryVelocityUsable && recoveryVelocity!.direction === 'falling') {
+      // Lowest-priority trend-based nudge - nothing acute or stale enough
+      // matched above, but the trend says re-engagement is worth a nudge.
+      // Points at whichever of the 4 core recurring tools has gone longest
+      // without genuine engagement.
+      const candidates = [
+        { tool: 'Pulse Check-In', tab: 'home', hours: hoursSince(stats.lastCheckIn) },
+        { tool: 'Energy Budget', tab: 'recover', hours: hoursSince(stats.lastEnergyBudgetUpdate) },
+        { tool: 'Boundary Rehearsal', tab: 'communicate', hours: hoursSince(stats.lastBoundaryRehearsal) },
+        { tool: 'Nervous System Reset', tab: 'reset', hours: hoursSince(stats.lastNervousSystemReset) },
+      ];
+      const leastEngaged = candidates.reduce((a, b) => (b.hours > a.hours ? b : a));
+      recommendation = {
+        tool: leastEngaged.tool, tab: leastEngaged.tab,
+        title: "Your recovery velocity has been slipping",
+        message: `Your recovery velocity trend has been falling recently. Re-engaging with ${leastEngaged.tool} could help nudge it back up.`,
+        points: 15, sourcesUsed: ['derived.recovery_velocity'], type: 'recovery_reminder',
       };
     } else {
       recommendation = {
