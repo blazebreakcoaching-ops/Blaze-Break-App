@@ -340,11 +340,18 @@ service cloud.firestore {
         allow read: if isOwner(uid);
         allow delete: if isOwner(uid);
         allow create, update: if isOwner(uid)
-            && hasOnly(['createdAt', 'updatedAt', 'speed', 'durationSeconds', 'manageChoice', 'source'])
+            && hasOnly(['createdAt', 'updatedAt', 'speed', 'durationSeconds', 'manageChoice', 'source', 'exchangeMode', 'exchangeTurns'])
             && hasAll(['createdAt', 'updatedAt', 'speed', 'durationSeconds', 'source'])
             && request.resource.data.speed in ['mini', 'full']
-            && request.resource.data.durationSeconds is number && request.resource.data.durationSeconds >= 0 && request.resource.data.durationSeconds <= 120
+            // durationSeconds is now real measured elapsed time (Locate+Accept
+            // is self-paced, not a fixed 30s/90s constant) - the 1800s ceiling
+            // is a generous sanity bound (a capped text exchange, or up to a
+            // 15-minute Nova Live voice call, plus the rest of the flow), not
+            // a real behavioural limit.
+            && request.resource.data.durationSeconds is number && request.resource.data.durationSeconds >= 0 && request.resource.data.durationSeconds <= 1800
             && (!('manageChoice' in request.resource.data) || request.resource.data.manageChoice == null || request.resource.data.manageChoice in ['delete', 'delegate', 'do'])
+            && (!('exchangeMode' in request.resource.data) || request.resource.data.exchangeMode == null || request.resource.data.exchangeMode in ['text', 'voice', 'skipped'])
+            && (!('exchangeTurns' in request.resource.data) || request.resource.data.exchangeTurns == null || (request.resource.data.exchangeTurns is number && request.resource.data.exchangeTurns >= 0 && request.resource.data.exchangeTurns <= 3))
             && request.resource.data.source == 'user'
             && (request.method == 'create' ? true : checkCreatedAtUnchanged());
       }

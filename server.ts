@@ -3741,7 +3741,7 @@ app.get("/api/entitlements/me", verifyAppCheck, authenticateFirebaseUser, async 
     const dailyUsage = dailySnap.data() || {};
     const monthlyUsage = monthlySnap.data() || {};
     const capabilities: Record<string, { enabled: boolean; limit: number | null; resetPeriod?: string; unit?: string; used: number }> = {};
-    (['nova_text', 'nova_voice', 'nova_voice_minutes', 'diagnose', 'exports', 'resentment_analysis', 'executive_report', 'sms_nudges', 'nova_manager_coach'] as CapabilityId[]).forEach((id) => {
+    (['nova_text', 'nova_voice', 'nova_voice_minutes', 'blame_voice', 'diagnose', 'exports', 'resentment_analysis', 'executive_report', 'sms_nudges', 'nova_manager_coach'] as CapabilityId[]).forEach((id) => {
       const cap = getCapability(plan, id);
       const usageData = cap.resetPeriod === 'monthly' ? monthlyUsage : dailyUsage;
       capabilities[id] = { enabled: cap.enabled, limit: cap.limit, resetPeriod: cap.resetPeriod, unit: cap.unit, used: Number(usageData[id]) || 0 };
@@ -10327,6 +10327,13 @@ if (process.env.TEST_MODE !== 'true') {
       const url = new URL(req.url || "", `http://${req.headers.host}`);
       const idToken = url.searchParams.get("token");
       const appCheckToken = url.searchParams.get("appCheckToken");
+      // Selects which capability gates this connection - never a trust
+      // boundary by itself, since the check below is always run
+      // server-authoritatively against the caller's real uid regardless
+      // of what this param says. A Free account passing context=blame
+      // gets blame_voice.enabled===false and is rejected exactly as if
+      // they'd tried nova_voice and failed it.
+      const isBlameContext = url.searchParams.get("context") === "blame";
 
       // Same fix as the main verifyAppCheck middleware: no magic bypass
       // string here, since anyone can read it out of the shipped client
@@ -10378,12 +10385,18 @@ if (process.env.TEST_MODE !== 'true') {
       let liveQuota: Awaited<ReturnType<typeof checkAndReserveCapability>>;
       let minutesQuota: Awaited<ReturnType<typeof checkCapabilityQuota>>;
       try {
-        liveQuota = await checkAndReserveCapability(uid, 'nova_voice');
+        // BLAME's voice mode is a separate, hard binary gate (blame_voice)
+        // - NOT stacked on top of nova_voice's general daily session-count
+        // throttle, which would silently reintroduce a cap this feature is
+        // deliberately uncapped-for-paid against.
+        liveQuota = await checkAndReserveCapability(uid, isBlameContext ? 'blame_voice' : 'nova_voice');
         // Separate from the daily session-COUNT check above: this is the
         // monthly cumulative-MINUTES allowance (docs/AI_COST_CONTROL.md).
         // Checked (not reserved) here - the real minutes used are only
         // known once the session actually ends, recorded via
-        // recordCapabilityUsage in endSession below.
+        // recordCapabilityUsage in endSession below. Still applies to a
+        // BLAME voice session too, since real Gemini Live spend is the
+        // same regardless of entry point.
         minutesQuota = await checkCapabilityQuota(uid, 'nova_voice_minutes');
       } catch (e) {
         clientWs.send(JSON.stringify({ error: "Couldn't verify your Nova voice access right now. Please try again, or continue with Nova by text." }));
@@ -10391,9 +10404,11 @@ if (process.env.TEST_MODE !== 'true') {
       }
       if (!liveQuota.allowed) {
         clientWs.send(JSON.stringify({
-          error: liveQuota.plan === 'free'
-            ? "You've used today's free Nova voice session. Upgrade for many more, or continue with Nova by text."
-            : "You've reached today's Nova voice fair-use limit. It resets tomorrow - continue with Nova by text for now.",
+          error: isBlameContext
+            ? "Voice mode for BLAME Reset is a paid feature. Continue by typing, or upgrade for voice."
+            : (liveQuota.plan === 'free'
+                ? "You've used today's free Nova voice session. Upgrade for many more, or continue with Nova by text."
+                : "You've reached today's Nova voice fair-use limit. It resets tomorrow - continue with Nova by text for now."),
         }));
         return clientWs.close();
       }

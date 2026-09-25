@@ -29,6 +29,9 @@ interface NovaVoiceCallProps {
   // NovaChat already uses for its own suggest_feature card.
   onNavigate?: (tab: string) => void;
   onAwardPoints?: (amount: number, reason: string) => void;
+  // Selects which server-side capability gates this call - see
+  // useNovaLiveVoice's UseNovaLiveVoiceOptions.
+  sessionContext?: 'blame';
 }
 
 function formatElapsed(ms: number): string {
@@ -43,14 +46,14 @@ function formatElapsed(ms: number): string {
 // reconnect - rather than the inline mic toggle. Everything real-time lives in
 // the shared useNovaLiveVoice hook; this component is only presentation and
 // call lifecycle.
-export const NovaVoiceCall = ({ isOpen, onClose, buildInitialPrompt, onNavigate, onAwardPoints }: NovaVoiceCallProps) => {
+export const NovaVoiceCall = ({ isOpen, onClose, buildInitialPrompt, onNavigate, onAwardPoints, sessionContext }: NovaVoiceCallProps) => {
   const dialogRef = useFocusTrap(isOpen);
   const transcriptEndRef = useRef<HTMLDivElement | null>(null);
   const {
     status, error, isNovaSpeaking, isMuted, transcript, elapsedMs,
     featureSuggestion, dismissFeatureSuggestion,
     guardianSupportOffer, dismissGuardianSupportOffer, start, stop, toggleMute,
-  } = useNovaLiveVoice({ buildInitialPrompt });
+  } = useNovaLiveVoice({ buildInitialPrompt, sessionContext });
 
   // Auto-start the call when the screen opens; tear it down when it closes.
   useEffect(() => {

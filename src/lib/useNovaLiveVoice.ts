@@ -58,6 +58,11 @@ export interface UseNovaLiveVoiceOptions {
   // Called once when the session ends for any reason, so a host component can
   // reset its own UI. Optional.
   onEnded?: () => void;
+  // Selects which server-side capability gates this connection (see the
+  // `context` query param branch in the /api/nova/live WS handler).
+  // Omitted for the ordinary nova_voice-gated call; 'blame' for BLAME
+  // Reset's paid-only voice mode (blame_voice).
+  sessionContext?: 'blame';
 }
 
 const CAPTURE_SAMPLE_RATE = 16000; // what the Gemini Live API expects for input
@@ -71,7 +76,7 @@ function base64FromArrayBuffer(buffer: ArrayBuffer): string {
 }
 
 export function useNovaLiveVoice(options: UseNovaLiveVoiceOptions = {}) {
-  const { buildInitialPrompt, onEnded } = options;
+  const { buildInitialPrompt, onEnded, sessionContext } = options;
 
   const [status, setStatus] = useState<VoiceStatus>('idle');
   const [error, setError] = useState<string | null>(null);
@@ -234,7 +239,8 @@ export function useNovaLiveVoice(options: UseNovaLiveVoiceOptions = {}) {
       const viaHostingRewrite = isServedViaHostingRewrite(window.location.host);
       const wsHost = viaHostingRewrite ? CLOUD_RUN_DIRECT_HOST : window.location.host;
       const proto = viaHostingRewrite || window.location.protocol === 'https:' ? 'wss' : 'ws';
-      const wsUrl = `${proto}://${wsHost}/api/nova/live?token=${encodeURIComponent(idToken)}&appCheckToken=${encodeURIComponent(appCheckToken)}`;
+      const wsUrl = `${proto}://${wsHost}/api/nova/live?token=${encodeURIComponent(idToken)}&appCheckToken=${encodeURIComponent(appCheckToken)}` +
+        (sessionContext ? `&context=${encodeURIComponent(sessionContext)}` : '');
       const ws = new WebSocket(wsUrl);
       wsRef.current = ws;
 
@@ -361,7 +367,7 @@ export function useNovaLiveVoice(options: UseNovaLiveVoiceOptions = {}) {
       }
       setStatus('error');
     }
-  }, [status, buildInitialPrompt, playChunk, handleInterrupt, appendTranscript, cleanupAudio, recordSession]);
+  }, [status, buildInitialPrompt, sessionContext, playChunk, handleInterrupt, appendTranscript, cleanupAudio, recordSession]);
 
   const toggleMute = useCallback(() => {
     mutedRef.current = !mutedRef.current;

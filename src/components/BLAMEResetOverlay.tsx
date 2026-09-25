@@ -1,12 +1,13 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Wind, Compass, CheckCircle2, ListChecks, Sparkles, X, Check, Award, Zap } from 'lucide-react';
+import { Wind, Compass, ListChecks, Sparkles, X, Check, Zap } from 'lucide-react';
 import { auth } from '../lib/firebase';
 import { db } from '../lib/firestore';
 import { addDoc, collection } from 'firebase/firestore';
 import { secureApiFetch } from '../lib/secure-api';
 import { logJourney } from '../lib/nova-brain';
 import { useFocusTrap } from '../lib/useFocusTrap';
+import { BlameLocateAcceptExchange, BlameExchangeSummary } from './BlameLocateAcceptExchange';
 
 interface BLAMEResetOverlayProps {
   isOpen: boolean;
@@ -16,7 +17,7 @@ interface BLAMEResetOverlayProps {
 
 type Speed = 'mini' | 'full';
 type ManageChoice = 'delete' | 'delegate' | 'do';
-type StepKey = 'breathe' | 'locate' | 'accept' | 'manage' | 'empower' | 'locateAccept' | 'manageEmpower';
+type StepKey = 'breathe' | 'locateAccept' | 'manage' | 'empower' | 'manageEmpower';
 
 interface BlameStep {
   key: StepKey;
@@ -24,15 +25,18 @@ interface BlameStep {
   title: string;
   instruction: string;
   prompt: string;
-  duration: number;
+  duration: number; // only meaningful for 'breathe' - the one step a clock is honest for
   hasChoice?: boolean;
   icon: React.ComponentType<{ className?: string }>;
 }
 
 // The book's own step order and prompts, verbatim - Breathe/Locate/Accept/
-// Manage/Empower. Full BLAME runs all 5 at their canonical 20/20/10/30/10s
-// timings; Mini BLAME collapses them into 3 stages at ~10s each for a
-// Green/Amber moment that doesn't need the full 90-second version.
+// Manage/Empower. Only Breathe auto-advances on a timer (a physiological
+// sigh has a real duration); every other step waits for the person to
+// signal they're ready, never a clock. Locate+Accept is a self-paced,
+// Nova-assisted exchange (see BlameLocateAcceptExchange) rather than a
+// static prompt - it's the step nobody can genuinely do alone mid-
+// activation.
 const FULL_STEPS: BlameStep[] = [
   {
     key: 'breathe', letter: 'B', title: 'Breathe and Become Aware',
@@ -41,28 +45,22 @@ const FULL_STEPS: BlameStep[] = [
     duration: 20, icon: Wind,
   },
   {
-    key: 'locate', letter: 'L', title: 'Locate the Root Cause',
-    instruction: 'Name the actual trigger, underneath the surface reaction.',
-    prompt: 'What am I actually reacting to?',
-    duration: 20, icon: Compass,
-  },
-  {
-    key: 'accept', letter: 'A', title: "Accept What You Can't Control",
-    instruction: 'Acknowledge it in plain language, without fighting it.',
-    prompt: "What's true right now, even if I don't like it?",
-    duration: 10, icon: CheckCircle2,
+    key: 'locateAccept', letter: 'L · A', title: 'Locate + Accept',
+    instruction: 'Name the trigger, then acknowledge it without fighting it.',
+    prompt: "What am I actually reacting to — and what's true right now, even if I don't like it?",
+    duration: 0, icon: Compass,
   },
   {
     key: 'manage', letter: 'M', title: 'Manage What You Can',
-    instruction: 'Choose exactly one.',
+    instruction: 'Choose exactly one, whenever you’re ready.',
     prompt: "What's the smallest move that helps?",
-    duration: 30, hasChoice: true, icon: ListChecks,
+    duration: 0, hasChoice: true, icon: ListChecks,
   },
   {
     key: 'empower', letter: 'E', title: 'Empower Yourself to Evolve',
     instruction: 'Take the action, then ask:',
     prompt: 'What would the upgraded version of me do next?',
-    duration: 10, icon: Sparkles,
+    duration: 0, icon: Sparkles,
   },
 ];
 
@@ -77,13 +75,13 @@ const MINI_STEPS: BlameStep[] = [
     key: 'locateAccept', letter: 'L · A', title: 'Locate + Accept',
     instruction: 'Name the trigger, then acknowledge it without fighting it.',
     prompt: "What am I actually reacting to — and what's true right now, even if I don't like it?",
-    duration: 10, icon: Compass,
+    duration: 0, icon: Compass,
   },
   {
     key: 'manageEmpower', letter: 'M · E', title: 'Manage + Empower',
-    instruction: 'Choose one, then act.',
+    instruction: 'Choose one, then act, whenever you’re ready.',
     prompt: "What's the smallest move that helps?",
-    duration: 10, hasChoice: true, icon: ListChecks,
+    duration: 0, hasChoice: true, icon: ListChecks,
   },
 ];
 
@@ -95,14 +93,26 @@ const MANAGE_CHOICES: { key: ManageChoice; label: string; description: string }[
 
 export const BLAMEResetOverlay = ({ isOpen, onClose, onAwardPoints }: BLAMEResetOverlayProps) => {
   const dialogRef = useFocusTrap(isOpen);
-  const [phase, setPhase] = useState<'intro' | 'active' | 'complete'>('intro');
+  const [phase, setPhase] = useState<'intro' | 'step' | 'exchange' | 'complete'>('intro');
   const [speed, setSpeed] = useState<Speed | null>(null);
   const [stepIndex, setStepIndex] = useState(0);
   const [timeLeft, setTimeLeft] = useState(0);
   const [manageChoice, setManageChoice] = useState<ManageChoice | null>(null);
+  const [blameVoiceEnabled, setBlameVoiceEnabled] = useState(false);
+  const [exchangeSummary, setExchangeSummary] = useState<BlameExchangeSummary | null>(null);
+  const openedAtRef = useRef(0);
 
   const steps = speed === 'mini' ? MINI_STEPS : FULL_STEPS;
-  const totalDuration = speed === 'mini' ? 30 : 90;
+
+  // Fail-closed by default - the voice option only ever appears once this
+  // resolves to true from a real, current entitlement check.
+  useEffect(() => {
+    if (!isOpen || !auth.currentUser) return;
+    secureApiFetch('/api/entitlements/me')
+      .then(r => (r.ok ? r.json() : null))
+      .then(data => setBlameVoiceEnabled(!!data?.capabilities?.blame_voice?.enabled))
+      .catch(() => setBlameVoiceEnabled(false));
+  }, [isOpen]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -118,28 +128,23 @@ export const BLAMEResetOverlay = ({ isOpen, onClose, onAwardPoints }: BLAMEReset
       setStepIndex(0);
       setTimeLeft(0);
       setManageChoice(null);
+      setExchangeSummary(null);
     }
   }, [isOpen]);
 
-  // Per-step countdown - advances to the next step automatically, and to
-  // 'complete' once the last step finishes. The Manage/Manage+Empower
-  // step's Delete/Delegate/Do choice is optional within the window, same
-  // as the grounding checklist in SomaticResetOverlay - it's not gated on
-  // making a choice, since forcing one would fight the book's own framing
-  // of Manage as a real, sometimes-slow decision, not a quiz answer.
+  // Only Breathe auto-advances on a timer. Every other step's countdown
+  // has already resolved (duration 0) by the time this would matter, so
+  // this effect is a no-op for them.
   useEffect(() => {
-    if (!isOpen || phase !== 'active') return;
+    if (!isOpen || phase !== 'step') return;
+    const current = steps[stepIndex];
+    if (current.key !== 'breathe') return;
 
     const timer = setInterval(() => {
       setTimeLeft(prev => {
         if (prev <= 1) {
           clearInterval(timer);
-          if (stepIndex >= steps.length - 1) {
-            setPhase('complete');
-          } else {
-            setStepIndex(i => i + 1);
-            setTimeLeft(steps[stepIndex + 1].duration);
-          }
+          advanceTo(stepIndex + 1);
           return 0;
         }
         return prev - 1;
@@ -151,12 +156,33 @@ export const BLAMEResetOverlay = ({ isOpen, onClose, onAwardPoints }: BLAMEReset
 
   if (!isOpen) return null;
 
+  const advanceTo = (nextIndex: number) => {
+    if (nextIndex >= steps.length) {
+      setPhase('complete');
+      return;
+    }
+    setStepIndex(nextIndex);
+    const next = steps[nextIndex];
+    if (next.key === 'locateAccept') {
+      setPhase('exchange');
+    } else {
+      setPhase('step');
+      setTimeLeft(next.duration);
+    }
+  };
+
   const handleSelectSpeed = (s: Speed) => {
     const stepList = s === 'mini' ? MINI_STEPS : FULL_STEPS;
     setSpeed(s);
     setStepIndex(0);
     setTimeLeft(stepList[0].duration);
-    setPhase('active');
+    setPhase('step');
+    openedAtRef.current = Date.now();
+  };
+
+  const handleExchangeContinue = (summary: BlameExchangeSummary) => {
+    setExchangeSummary(summary);
+    advanceTo(stepIndex + 1);
   };
 
   const handleCompleteReset = () => {
@@ -165,14 +191,19 @@ export const BLAMEResetOverlay = ({ isOpen, onClose, onAwardPoints }: BLAMEReset
       onAwardPoints(points, `Completed ${speed === 'full' ? 'Full' : 'Mini'} BLAME Reset`);
     }
 
+    const elapsed = openedAtRef.current ? Math.round((Date.now() - openedAtRef.current) / 1000) : 0;
+    const durationSeconds = Math.min(Math.max(elapsed, 0), 1800);
+
     if (auth.currentUser) {
       addDoc(collection(db, 'users', auth.currentUser.uid, 'blame_resets'), {
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
         speed,
-        durationSeconds: totalDuration,
+        durationSeconds,
         manageChoice,
         source: 'user',
+        exchangeMode: exchangeSummary?.mode ?? null,
+        exchangeTurns: exchangeSummary?.mode === 'text' ? exchangeSummary.turns : null,
       }).catch(() => {
         // Non-fatal - the completion still counts for this session even if the write fails.
       });
@@ -192,7 +223,10 @@ export const BLAMEResetOverlay = ({ isOpen, onClose, onAwardPoints }: BLAMEReset
   };
 
   const currentStep = steps[stepIndex];
-  const progressPercent = phase === 'active' ? ((stepIndex + (steps[stepIndex].duration - timeLeft) / steps[stepIndex].duration) / steps.length) * 100 : 0;
+  const isBreatheActive = phase === 'step' && currentStep?.key === 'breathe';
+  const progressPercent = isBreatheActive
+    ? ((stepIndex + (currentStep.duration - timeLeft) / currentStep.duration) / steps.length) * 100
+    : ((stepIndex) / steps.length) * 100;
 
   return (
     <AnimatePresence>
@@ -237,7 +271,8 @@ export const BLAMEResetOverlay = ({ isOpen, onClose, onAwardPoints }: BLAMEReset
                   <h3 className="text-3xl font-display font-bold text-text-main tracking-tight leading-tight">Stop the spiral</h3>
                   <p className="text-sm text-text-muted leading-relaxed">
                     A short interrupt for the moment you're about to react instead of respond —
-                    Breathe, Locate, Accept, Manage, Empower. Not a personality change. Just a brake.
+                    Breathe, Locate, Accept, Manage, Empower. Not a personality change. Just a brake,
+                    at your own pace.
                   </p>
                 </div>
 
@@ -246,22 +281,22 @@ export const BLAMEResetOverlay = ({ isOpen, onClose, onAwardPoints }: BLAMEReset
                     onClick={() => handleSelectSpeed('mini')}
                     className="w-full p-4 bg-surface dark:bg-card/50 rounded-2xl border border-border hover:border-primary/40 text-left transition-all cursor-pointer"
                   >
-                    <p className="text-xs font-bold text-text-main">Mini BLAME — 30 seconds</p>
-                    <p className="text-[10px] text-text-muted font-medium mt-0.5">For tension that's building but hasn't reached crisis mode.</p>
+                    <p className="text-xs font-bold text-text-main">Quick Reset</p>
+                    <p className="text-[10px] text-text-muted font-medium mt-0.5">For tension that's building but hasn't reached crisis mode — Manage and Empower merged into one step.</p>
                   </button>
 
                   <button
                     onClick={() => handleSelectSpeed('full')}
                     className="w-full p-4 bg-surface dark:bg-card/50 rounded-2xl border border-border hover:border-primary/40 text-left transition-all cursor-pointer"
                   >
-                    <p className="text-xs font-bold text-text-main">Full BLAME — 90 seconds</p>
+                    <p className="text-xs font-bold text-text-main">Full Reset</p>
                     <p className="text-[10px] text-text-muted font-medium mt-0.5">For a genuine spike — all five steps, unhurried.</p>
                   </button>
                 </div>
               </motion.div>
             )}
 
-            {phase === 'active' && currentStep && (
+            {phase === 'step' && currentStep && (
               <motion.div
                 key={`step-${stepIndex}`}
                 initial={{ opacity: 0 }}
@@ -276,13 +311,15 @@ export const BLAMEResetOverlay = ({ isOpen, onClose, onAwardPoints }: BLAMEReset
                 <div className="relative w-32 h-32 flex items-center justify-center">
                   <svg className="w-full h-full transform -rotate-90">
                     <circle cx="64" cy="64" r="56" className="stroke-border fill-none" strokeWidth="6" />
-                    <circle
-                      cx="64" cy="64" r="56"
-                      className="stroke-primary fill-none transition-all duration-1000"
-                      strokeWidth="6"
-                      strokeDasharray={2 * Math.PI * 56}
-                      strokeDashoffset={(2 * Math.PI * 56) * (1 - (currentStep.duration - timeLeft) / currentStep.duration)}
-                    />
+                    {isBreatheActive && (
+                      <circle
+                        cx="64" cy="64" r="56"
+                        className="stroke-primary fill-none transition-all duration-1000"
+                        strokeWidth="6"
+                        strokeDasharray={2 * Math.PI * 56}
+                        strokeDashoffset={(2 * Math.PI * 56) * (1 - (currentStep.duration - timeLeft) / currentStep.duration)}
+                      />
+                    )}
                   </svg>
                   <div className="absolute flex flex-col items-center">
                     <currentStep.icon className="w-7 h-7 text-primary mb-1" />
@@ -292,7 +329,7 @@ export const BLAMEResetOverlay = ({ isOpen, onClose, onAwardPoints }: BLAMEReset
 
                 <div className="space-y-2 max-w-xs text-center">
                   <span className="text-[10px] font-black uppercase tracking-widest text-[#9a3412] dark:text-primary font-mono block">
-                    Step {stepIndex + 1} of {steps.length} · {timeLeft}s
+                    Step {stepIndex + 1} of {steps.length}{isBreatheActive ? ` · ${timeLeft}s` : ''}
                   </span>
                   <h3 className="text-2xl font-display font-extrabold text-text-main tracking-tight">
                     {currentStep.title}
@@ -334,6 +371,36 @@ export const BLAMEResetOverlay = ({ isOpen, onClose, onAwardPoints }: BLAMEReset
                     })}
                   </div>
                 )}
+
+                {!isBreatheActive && (
+                  <button
+                    onClick={() => advanceTo(stepIndex + 1)}
+                    className="w-full btn-primary py-3 font-black text-xs uppercase tracking-widest cursor-pointer"
+                  >
+                    Continue
+                  </button>
+                )}
+              </motion.div>
+            )}
+
+            {phase === 'exchange' && currentStep && (
+              <motion.div
+                key="exchange"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="w-full"
+              >
+                <div className="h-1.5 w-full bg-border rounded-full overflow-hidden mb-6">
+                  <div className="h-full bg-primary transition-all duration-1000" style={{ width: `${progressPercent}%` }} />
+                </div>
+                <BlameLocateAcceptExchange
+                  title={currentStep.title}
+                  instruction={currentStep.instruction}
+                  prompt={currentStep.prompt}
+                  voiceEligible={blameVoiceEnabled}
+                  onContinue={handleExchangeContinue}
+                />
               </motion.div>
             )}
 
@@ -344,45 +411,24 @@ export const BLAMEResetOverlay = ({ isOpen, onClose, onAwardPoints }: BLAMEReset
                 animate={{ scale: 1, opacity: 1 }}
                 className="space-y-6 text-center w-full"
               >
-                <div className="relative w-24 h-24 bg-success/10 rounded-xl border border-success/30 text-success dark:text-[#4ade80] flex items-center justify-center mx-auto mb-6">
-                  <div className="absolute inset-0 bg-success/5 rounded-xl animate-ping pointer-events-none" style={{ animationDuration: '3s' }} />
-                  <Sparkles className="w-12 h-12 stroke-[1.5]" />
+                <div className="w-16 h-16 bg-surface dark:bg-card/40 rounded-full border border-border text-text-main flex items-center justify-center mx-auto">
+                  <Check className="w-7 h-7 stroke-[1.5]" />
                 </div>
 
                 <div className="space-y-2">
-                  <span className="text-[10px] font-black uppercase tracking-widest text-success dark:text-[#4ade80] font-mono block">
-                    Choice Restored
-                  </span>
-                  <h3 className="text-3xl font-display font-black text-text-main tracking-tight">You're back in control</h3>
+                  <h3 className="text-2xl font-display font-bold text-text-main tracking-tight">That's it</h3>
                   <p className="text-xs text-text-muted leading-relaxed max-w-xs mx-auto">
                     {manageChoice
-                      ? `You chose to ${manageChoice}. Go do that next.`
+                      ? `You chose to ${manageChoice}. Go do that next, whenever you're ready.`
                       : "Whatever comes next, it comes from choice — not activation."}
                   </p>
                 </div>
 
-                <div className="bg-surface dark:bg-card/40 p-4 rounded-2xl border border-border text-left space-y-2.5 max-w-xs mx-auto">
-                  <div className="flex justify-between text-xs">
-                    <span className="text-text-muted font-bold">Reset:</span>
-                    <span className="font-mono text-text-main font-bold">{speed === 'full' ? 'Full' : 'Mini'} BLAME</span>
-                  </div>
-                  <div className="flex justify-between text-xs">
-                    <span className="text-text-muted font-bold">Duration:</span>
-                    <span className="font-mono text-text-main font-bold">{totalDuration}s</span>
-                  </div>
-                  <div className="flex justify-between text-xs items-center">
-                    <span className="text-text-muted font-bold">Stability points:</span>
-                    <span className="text-[#166534] dark:text-[#4ade80] text-xs font-black uppercase tracking-widest font-mono bg-success/15 px-2 py-0.5 rounded border border-success/20 flex items-center gap-1">
-                      <Award className="w-3.5 h-3.5" /> +{speed === 'full' ? 25 : 15} XP
-                    </span>
-                  </div>
-                </div>
-
                 <button
                   onClick={handleCompleteReset}
-                  className="w-full btn-primary py-4 font-black text-xs uppercase tracking-widest shadow-xl shadow-primary/20 flex items-center justify-center gap-2 group"
+                  className="w-full btn-primary py-4 font-black text-xs uppercase tracking-widest flex items-center justify-center gap-2 cursor-pointer"
                 >
-                  Return to Dashboard <Check className="w-4 h-4 stroke-[3px]" />
+                  Done
                 </button>
               </motion.div>
             )}
