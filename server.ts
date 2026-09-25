@@ -9048,6 +9048,51 @@ const ACTIVITY_FIELD_MAP: Record<string, string> = {
   recoveryAllyActivity: 'lastRecoveryAllyActivity',
 };
 
+// The product's own 4-phase recovery framework (Safety -> Habits ->
+// Identity -> Purpose - see ShipJourney.tsx/OmniBrainMap.tsx, already
+// user-facing) computed from real signals instead of the permanently
+// frozen "Safety" default it shipped with. Deliberately a recovery
+// *phase* label, never a severity/risk score - it never gates access to
+// anything and is only ever used (see /api/user/recommendation below) to
+// break a tie between two already-safe, already-verified suggestions.
+// Evaluated top-down, same if/else style as the recommendation chain
+// itself just below - not a weighted model, matching this app's "simple
+// scoring before AI" rule.
+type ServerShipStage = 'Safety' | 'Habits' | 'Identity' | 'Purpose';
+
+function deriveShipStage(params: {
+  recentHighSeverity: boolean;
+  checkInsCount: number;
+  hoursSinceCheckIn: number;
+  hasBoundaryRehearsal: boolean;
+  activeLoad: number;
+  hasFingerprint: boolean;
+  fingerprintScores?: { boundaries?: number; peoplePleasing?: number } | null;
+}): ServerShipStage {
+  const { recentHighSeverity, checkInsCount, hoursSinceCheckIn, hasBoundaryRehearsal, activeLoad, hasFingerprint, fingerprintScores } = params;
+
+  // Safety: something acute just happened, or there isn't even a basic
+  // baseline of check-ins yet to know anything else about this person.
+  if (recentHighSeverity || checkInsCount < 3) return 'Safety';
+
+  // Habits: logging is happening, but boundary practice either hasn't
+  // started yet or the active load is still heavy enough that habits
+  // (not identity/meaning work) are the honest next focus.
+  if (hoursSinceCheckIn < 48 && (!hasBoundaryRehearsal || activeLoad >= 60)) return 'Habits';
+
+  // Identity: the person knows their archetype and has real boundary-
+  // rehearsal history, but the fingerprint's own boundary/people-pleasing
+  // scores are still elevated - archetype-specific identity work is what
+  // the data says is left.
+  const boundaryScore = fingerprintScores?.boundaries ?? 0;
+  const peoplePleasingScore = fingerprintScores?.peoplePleasing ?? 0;
+  if (hasFingerprint && hasBoundaryRehearsal && (boundaryScore >= 60 || peoplePleasingScore >= 60)) return 'Identity';
+
+  // Purpose: stable habits, real boundary work done, nothing acute -
+  // the default for an established, stable user.
+  return 'Purpose';
+}
+
 // ============ Legal document versioning & acceptance tracking ============
 // Server-authoritative by design: a user cannot forge acceptance for
 // another user (always req.user.uid, never a client-supplied id), and
@@ -9534,6 +9579,33 @@ app.get("/api/user/recommendation", verifyAppCheck, authenticateFirebaseUser, as
     const hasEnergyBudgetHistory = !(await db.collection("users").doc(user.uid).collection("energy_budgets").limit(1).get()).empty;
     const hasAllyHistory = !(await db.collection("users").doc(user.uid).collection("ally_shared_goals").limit(1).get()).empty;
 
+    // Pulled up from the guardrail check further down (which also needs
+    // this exact query) so the SHIP stage derivation below can use it too -
+    // one read, two consumers, instead of querying it twice.
+    const checkInsSnap = await db.collection("users").doc(user.uid).collection("checkins").limit(3).get();
+
+    // Cheap single-doc read (same path already read elsewhere, e.g. the
+    // admin user-detail route) - only used to know whether a fingerprint
+    // exists yet and, if so, its boundary/people-pleasing scores.
+    const fingerprintDoc = await db.collection("users").doc(user.uid).collection("recovery").doc("fingerprint").get();
+    const fingerprintData = fingerprintDoc.exists ? fingerprintDoc.data() : null;
+
+    const shipStage = deriveShipStage({
+      recentHighSeverity: !!recentHighSeverity,
+      checkInsCount: checkInsSnap.size,
+      hoursSinceCheckIn: hoursSince(stats.lastCheckIn),
+      hasBoundaryRehearsal: !!stats.lastBoundaryRehearsal,
+      activeLoad,
+      hasFingerprint: !!fingerprintData,
+      fingerprintScores: fingerprintData?.scores || null,
+    });
+    // Non-fatal, fire-and-forget - the recommendation itself never blocks
+    // on this write succeeding, same pattern as the ledger write below.
+    db.collection("users").doc(user.uid).collection("derived").doc("stats").set({
+      shipStage,
+      shipStageComputedAt: new Date().toISOString(),
+    }, { merge: true }).catch(() => {});
+
     let recommendation: { tool: string; tab: string; title: string; message: string; points: number; sourcesUsed: string[]; type: string };
 
     if (recentHighSeverity) {
@@ -9629,7 +9701,7 @@ app.get("/api/user/recommendation", verifyAppCheck, authenticateFirebaseUser, as
     // timestamp across all three) as if they were real audit evidence.
     let verificationStatus: 'verified' | 'rejected' = 'verified';
     let verificationExplanation = 'Verified: Passed all guardrail checks.';
-    const checkInsSnap = await db.collection("users").doc(user.uid).collection("checkins").limit(3).get();
+    // checkInsSnap already fetched above (also feeds the SHIP stage derivation).
     if (checkInsSnap.size < 3 && recommendation.message.toLowerCase().includes('pattern')) {
       verificationStatus = 'rejected';
       verificationExplanation = 'Rejected: Attempted to claim a pattern with fewer than 3 check-ins.';
@@ -9653,15 +9725,18 @@ app.get("/api/user/recommendation", verifyAppCheck, authenticateFirebaseUser, as
 
     if (verificationStatus === 'rejected') {
       // A genuinely rejected recommendation doesn't reach the user - fall
-      // back to the honest, always-safe default instead.
+      // back to the honest, always-safe default instead. shipStage is
+      // still included - it was independently derived and verified
+      // (recovery-phase label, not a recommendation claim), so a rejected
+      // recommendation is no reason to withhold it.
       return res.json({
         tab: 'nova', title: "You're on track",
         message: "Nothing urgent flagged right now based on what you've logged. If something's on your mind, Nova's a good place to think it through.",
-        points: 10, tool: 'Nova Coach',
+        points: 10, tool: 'Nova Coach', shipStage,
       });
     }
 
-    res.json(recommendation);
+    res.json({ ...recommendation, shipStage });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }

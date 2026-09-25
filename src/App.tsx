@@ -45,6 +45,7 @@ import {
   Badge,
   BADGES,
   UserProfileData,
+  SHIPStage,
 } from "./types.ts";
 import { cn, fireConfetti } from "./lib/utils.ts";
 import { useFocusTrap } from "./lib/useFocusTrap";
@@ -131,7 +132,6 @@ import { logAuditAction } from "./lib/audit-logger";
 
 type AppFlow = "landing" | "onboarding" | "app" | "trust-centre" | "admin";
 
-type SHIPStage = "Safety" | "Habits" | "Identity" | "Purpose";
 type ActiveTab =
   | "home"
   | "diagnose"
@@ -2276,6 +2276,7 @@ export default function App() {
                 onUpdatePulseHistory={handleUpdatePulseHistory}
                 onLogJourney={logJourney}
                 isDemoSession={isDemoSession}
+                onShipStageChange={setShipStage}
               />
             )}
 

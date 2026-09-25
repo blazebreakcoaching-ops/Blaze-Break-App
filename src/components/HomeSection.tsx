@@ -210,6 +210,7 @@ export const HomeSection = ({
   onUpdatePulseHistory,
   onLogJourney,
   isDemoSession,
+  onShipStageChange,
 }: {
   onChatRequest: () => void;
   onEnergyRequest: () => void;
@@ -228,6 +229,10 @@ export const HomeSection = ({
   onUpdatePulseHistory: (date: string, score: number) => void;
   onLogJourney: (action: string, details: string) => void;
   isDemoSession?: boolean;
+  // Server-derived (see /api/user/recommendation's shipStage field) -
+  // replaces the SHIP stage prop's previous permanently-frozen "Safety"
+  // default the moment a real recommendation fetch resolves.
+  onShipStageChange?: (stage: SHIPStage) => void;
 }) => {
   // Friendly names for every widget, used by the "Add widget" menu below.
   const WIDGET_LIBRARY: Record<string, string> = {
@@ -329,7 +334,9 @@ export const HomeSection = ({
         }
         const res = await secureApiFetch('/api/user/recommendation');
         if (res.ok) {
-          setRecommendation(await res.json());
+          const data = await res.json();
+          setRecommendation(data);
+          if (data.shipStage) onShipStageChange?.(data.shipStage);
         }
       } catch (e) {
         // Leaves recommendation null - the card below shows a graceful
