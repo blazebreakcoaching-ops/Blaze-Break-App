@@ -150,7 +150,7 @@ describe('plan tier ordering / upgrade-downgrade', () => {
 
 describe('capability matrix', () => {
   it('every real capability id used by a route resolves for every plan without throwing', () => {
-    const realCapabilities = ['nova_text', 'nova_voice', 'nova_voice_minutes', 'diagnose', 'exports', 'nova_manager_coach', 'resentment_analysis', 'executive_report', 'sms_nudges'] as const;
+    const realCapabilities = ['nova_text', 'nova_voice', 'nova_voice_minutes', 'blame_voice', 'diagnose', 'exports', 'nova_manager_coach', 'resentment_analysis', 'executive_report', 'sms_nudges'] as const;
     for (const id of realCapabilities) {
       for (const plan of ENTITLEMENT_PLANS) {
         const cap = getCapability(plan, id);
@@ -232,6 +232,17 @@ describe('capability matrix', () => {
     expect(CAPABILITIES.predictive_insights.executive.enabled).toBe(true);
     expect(CAPABILITIES.early_access.executive.enabled).toBe(true);
     expect(CAPABILITIES.early_access.performance.enabled).toBe(false);
+  });
+
+  it('blame_voice is a hard binary gate: Free disabled, every paid tier (including legacy_premium) enabled and uncapped', () => {
+    expect(CAPABILITIES.blame_voice.free.enabled).toBe(false);
+    expect(CAPABILITIES.blame_voice.free.limit).toBe(0);
+    expect(canUser('free', 'blame_voice')).toBe(false);
+    for (const plan of ['core', 'performance', 'executive', 'legacy_premium'] as const) {
+      expect(CAPABILITIES.blame_voice[plan].enabled).toBe(true);
+      expect(CAPABILITIES.blame_voice[plan].limit).toBeNull();
+      expect(canUser(plan, 'blame_voice')).toBe(true);
+    }
   });
 
   it('coaching_benefits is Executive-only and never implies automatic human coaching inclusion beyond a declared benefit flag', () => {

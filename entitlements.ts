@@ -271,6 +271,9 @@ export type CapabilityId =
   // infrastructure - see docs/FREE_PREMIUM_ENTITLEMENTS.md):
   | 'nova_voice_minutes'
   | 'sms_nudges'
+  // BLAME Reset's optional voice mode - a genuinely new, paid-only hard
+  // binary gate (see the CAPABILITIES entry below for why).
+  | 'blame_voice'
   // Declared/tier-differentiated, not yet independently enforced - see
   // the honesty note above:
   | 'core_tools'
@@ -352,6 +355,26 @@ export const CAPABILITIES: Record<CapabilityId, CapabilityConfig> = {
     performance: { enabled: true, limit: 240, resetPeriod: 'monthly', unit: 'minutes' },
     executive: { enabled: true, limit: 600, resetPeriod: 'monthly', unit: 'minutes' },
     legacy_premium: { enabled: true, limit: null, resetPeriod: 'monthly', unit: 'minutes' },
+  },
+  // BLAME Reset's optional "talk it through by voice" mode for the merged
+  // Locate+Accept step - a genuinely new, PAID-ONLY hard binary gate
+  // (never throttled-but-visible for Free, unlike nova_voice above).
+  // Deliberately its own capability rather than overloading nova_voice
+  // (whose Free tier is enabled:true with a small daily throttle) -
+  // reusing it would mean scattering a special-case "actually disabled
+  // for this one feature" check against this file's own single-source-
+  // of-truth model. See BlameLocateAcceptExchange.tsx and the
+  // `context=blame` branch in the Nova Live WS handler in server.ts.
+  // Actual voice MINUTES used during a BLAME voice session are still
+  // recorded against nova_voice_minutes for cost-visibility/reporting
+  // consistency with every other Gemini Live usage - this capability
+  // only ever gates ACCESS, never usage accounting.
+  blame_voice: {
+    free: { enabled: false, limit: 0 },
+    core: { enabled: true, limit: null },
+    performance: { enabled: true, limit: null },
+    executive: { enabled: true, limit: null },
+    legacy_premium: { enabled: true, limit: null },
   },
   diagnose: {
     free: { enabled: true, limit: 5, resetPeriod: 'daily' },
