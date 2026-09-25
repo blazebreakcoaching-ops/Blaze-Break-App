@@ -9046,6 +9046,7 @@ const ACTIVITY_FIELD_MAP: Record<string, string> = {
   moodPulse: 'lastMoodPulse',
   energyBudgetUpdate: 'lastEnergyBudgetUpdate',
   recoveryAllyActivity: 'lastRecoveryAllyActivity',
+  blameReset: 'lastBlameReset',
 };
 
 // The product's own 4-phase recovery framework (Safety -> Habits ->
