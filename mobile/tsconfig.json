@@ -1,0 +1,16 @@
+{
+  "extends": "expo/tsconfig.base",
+  "compilerOptions": {
+    "strict": true
+  },
+  "include": [
+    "**/*.ts",
+    "**/*.tsx",
+    "../entitlements.ts",
+    "../notification-router.ts",
+    "../archetype-scoring.ts",
+    "../weekly-goal-tracker.ts",
+    "../dashboard-greeting.ts",
+    "../cost-estimates.ts"
+  ]
+}
