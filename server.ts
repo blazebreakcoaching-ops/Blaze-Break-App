@@ -5585,6 +5585,14 @@ app.get("/api/admin/users", verifyAppCheck, authenticateFirebaseUser, async (req
         return {
           uid: doc.id,
           email: authUser.email || null,
+          // Firebase Auth's own record, not a self-reported flag - true
+          // automatically for Google/Microsoft/Facebook sign-ins (those
+          // providers already vouch for the address), and only becomes
+          // true for an email/password account once they've clicked the
+          // link from /api/auth/verify-email/send. Anonymous demo
+          // sessions have no email at all, so this is always false/moot
+          // for them.
+          emailVerified: authUser.emailVerified,
           createdAt: authUser.metadata.creationTime,
           lastSignIn: authUser.metadata.lastSignInTime,
           accessStatus: authUser.disabled ? "disabled" : "active",
@@ -5593,7 +5601,7 @@ app.get("/api/admin/users", verifyAppCheck, authenticateFirebaseUser, async (req
         // A Firestore doc with no matching live Auth account (e.g.
         // deleted directly in the Auth console) - surfaced honestly
         // rather than papered over with a fabricated email/date.
-        return { uid: doc.id, email: null, createdAt: null, lastSignIn: null, accessStatus: "unknown" };
+        return { uid: doc.id, email: null, emailVerified: false, createdAt: null, lastSignIn: null, accessStatus: "unknown" };
       }
     }));
     // This route has always been capped at ADMIN_USERS_PAGE_LIMIT with no
@@ -5621,6 +5629,7 @@ app.get("/api/admin/users/:uid", verifyAppCheck, authenticateFirebaseUser, async
     res.json({
       uid: targetUid,
       email: authUser.email,
+      emailVerified: authUser.emailVerified,
       displayName: authUser.displayName,
       createdAt: authUser.metadata.creationTime,
       lastSignIn: authUser.metadata.lastSignInTime,

@@ -98,6 +98,7 @@ const FutureSelfSimulator = lazy(() => import("./components/FutureSelfSimulator.
 const AssuranceCentre = lazy(() => import("./components/AssuranceCentre.tsx").then(m => ({ default: m.AssuranceCentre })));
 import { AuthStatusTracker } from "./lib/sync.tsx";
 import { AccountStatusBanner } from "./components/AccountStatusBanner.tsx";
+import { EmailVerificationBanner } from "./components/EmailVerificationBanner.tsx";
 import { initNovaBrain, clearNovaBrainCache, ensureNovaPermissionsExist, isCalendarSignalConsentGranted } from "./lib/nova-brain";
 import { migrateSupportCircleIfNeeded, addSupportCircleContact, removeSupportCircleContact } from "./lib/support-circle";
 import { isDemoUser, DEMO_STATS, DEMO_FINGERPRINT, DEMO_PULSE_HISTORY, DEMO_ENERGY_LEVEL, DEMO_BURNOUT_RISK, DEMO_GUARDIANS } from "./lib/demo-data";
@@ -2132,6 +2133,7 @@ export default function App() {
           onSignUp={() => { setFlow("landing"); setLandingInitialAuthOpen(true); }}
           onNavigateUpgrade={() => safeSetActiveTab("subscription")}
         />
+        <EmailVerificationBanner />
 
         {/* Reward Notification */}
         <AnimatePresence>

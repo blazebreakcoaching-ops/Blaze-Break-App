@@ -13,6 +13,7 @@ const h = vi.hoisted(() => {
     getUser: vi.fn(async (uid: string) => ({
       uid,
       email: `${uid}@test.dev`,
+      emailVerified: uid !== 'unverified_user',
       disabled: false,
       metadata: { creationTime: '2026-01-01T00:00:00.000Z', lastSignInTime: '2026-01-02T00:00:00.000Z' },
     })),
@@ -64,5 +65,23 @@ describe('GET /api/admin/users', () => {
     expect(res.status).toBe(200);
     expect(res.body.users).toHaveLength(100);
     expect(res.body.capped).toBe(true);
+  });
+
+  it('surfaces each account\'s real emailVerified status from Firebase Auth', async () => {
+    seedDoc('users/verified_user', {});
+    seedDoc('users/unverified_user', {});
+    const res = await request(app).get('/api/admin/users').set(auth(OWNER));
+    expect(res.status).toBe(200);
+    const byUid = Object.fromEntries(res.body.users.map((u: any) => [u.uid, u]));
+    expect(byUid.verified_user.emailVerified).toBe(true);
+    expect(byUid.unverified_user.emailVerified).toBe(false);
+  });
+
+  it('defaults emailVerified to false for a Firestore doc with no matching live Auth account', async () => {
+    h.getUser.mockImplementationOnce(async () => { throw new Error('no such user'); });
+    seedDoc('users/ghost_user', {});
+    const res = await request(app).get('/api/admin/users').set(auth(OWNER));
+    expect(res.status).toBe(200);
+    expect(res.body.users[0]).toMatchObject({ uid: 'ghost_user', emailVerified: false, accessStatus: 'unknown' });
   });
 });

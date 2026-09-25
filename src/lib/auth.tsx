@@ -10,6 +10,18 @@ interface AuthContextType {
   appRole: AuthRole;
   loading: boolean;
   accessToken: string | null;
+  // Mirrors user.emailVerified, but as its own piece of state rather than
+  // read directly off the Firebase User object - that object's identity
+  // doesn't change when reload() mutates it in place, so relying on it
+  // directly would never re-render a banner watching this value. Always
+  // false for an anonymous session (never meaningful there).
+  emailVerified: boolean;
+  // Re-checks emailVerified against Firebase right now, rather than
+  // waiting for the next full auth-state refresh - used after someone
+  // says they've clicked the verification link, and on window focus (see
+  // EmailVerificationBanner.tsx), since the actual verification happens
+  // via a link opened in a different tab/window.
+  refreshEmailVerified: () => Promise<void>;
   // True once a signed-in, non-anonymous user with 2FA enabled hasn't yet
   // verified it this session - App.tsx renders MfaChallenge instead of the
   // app while this is true. Always false for anonymous sessions.
@@ -37,6 +49,8 @@ const AuthContext = createContext<AuthContextType>({
   appRole: 'individual',
   loading: true,
   accessToken: null,
+  emailVerified: false,
+  refreshEmailVerified: async () => {},
   mfaPending: false,
   signIn: async () => ({ isNewUser: false }),
   signInWithCalendar: async () => null,
@@ -168,6 +182,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [accessToken, setAccessToken] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [mfaPending, setMfaPending] = useState(false);
+  const [emailVerified, setEmailVerified] = useState(false);
   // Set right before signOut() and consumed the next time onAuthStateChanged
   // fires with no user. Without this, an explicit sign-out was indistinguishable
   // from a brand-new visitor, so it immediately spun up a fresh, blank
@@ -295,6 +310,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
       }
       setUser(userRecord);
+      setEmailVerified(userRecord?.emailVerified ?? false);
       if (!userRecord) {
         setAccessToken(null);
       }
@@ -418,6 +434,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setMfaPending(false);
   };
 
+  const refreshEmailVerified = async () => {
+    if (!auth.currentUser) return;
+    try {
+      await auth.currentUser.reload();
+      setEmailVerified(auth.currentUser.emailVerified);
+    } catch (e) {
+      // Non-fatal - the banner just keeps showing until the next
+      // successful check (next focus, or the person reloading the page).
+    }
+  };
+
   const logOut = async () => {
     explicitSignOutRef.current = true;
     if (user) {
@@ -437,7 +464,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   return (
-    <AuthContext.Provider value={{ user, appRole, loading, accessToken, mfaPending, signIn, signInWithCalendar, signInWithMicrosoft: handleMicrosoftSignIn, signInWithFacebook: handleFacebookSignIn, signUpWithEmail, signInWithEmail, sendPasswordReset, verifyMfaAtSignIn, logOut, hasRole }}>
+    <AuthContext.Provider value={{ user, appRole, loading, accessToken, emailVerified, refreshEmailVerified, mfaPending, signIn, signInWithCalendar, signInWithMicrosoft: handleMicrosoftSignIn, signInWithFacebook: handleFacebookSignIn, signUpWithEmail, signInWithEmail, sendPasswordReset, verifyMfaAtSignIn, logOut, hasRole }}>
       {children}
     </AuthContext.Provider>
   );
