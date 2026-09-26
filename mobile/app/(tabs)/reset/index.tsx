@@ -1,15 +1,26 @@
-// Reset picker - three tools (BLAME Reset, Nervous System Reset, Sleep &
-// Wind-Down Builder). Full flows are a separate build (see task #188 /
-// plan's "Reset stack" section); this establishes the route and the
-// picker UI.
+// Reset picker - three real tools now (BLAME Reset, Nervous System
+// Reset, Sleep & Wind-Down Builder), replacing the earlier stub.
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-const TOOLS = [
-  { title: 'BLAME Reset', subtitle: "A short interrupt for the moment you're about to react instead of respond." },
-  { title: 'Nervous System Reset', subtitle: 'Breathing and grounding techniques for when you feel wired or overloaded.' },
-  { title: 'Sleep & Wind-Down Builder', subtitle: 'A short ritual to help you switch off before bed.' },
+const TOOLS: { title: string; subtitle: string; route: string }[] = [
+  {
+    title: 'BLAME Reset',
+    subtitle: "A short interrupt for the moment you're about to react instead of respond, with Nova alongside you for Locate + Accept.",
+    route: '/(tabs)/reset/blame',
+  },
+  {
+    title: 'Nervous System Reset',
+    subtitle: 'Breathing and grounding techniques for when you feel wired or overloaded.',
+    route: '/(tabs)/reset/nervous-system',
+  },
+  {
+    title: 'Sleep & Wind-Down Builder',
+    subtitle: 'A short ritual to help you switch off before bed.',
+    route: '/(tabs)/reset/sleep',
+  },
 ];
 
 export default function ResetPickerScreen() {
@@ -19,12 +30,11 @@ export default function ResetPickerScreen() {
         <Text style={styles.title}>Reset</Text>
         <Text style={styles.subtitle}>Short, guided techniques for calming down when you&apos;re wired or overloaded.</Text>
         {TOOLS.map((tool) => (
-          <TouchableOpacity key={tool.title} style={styles.toolCard} disabled>
+          <TouchableOpacity key={tool.title} style={styles.toolCard} onPress={() => router.push(tool.route as never)}>
             <Text style={styles.toolTitle}>{tool.title}</Text>
             <Text style={styles.toolSubtitle}>{tool.subtitle}</Text>
           </TouchableOpacity>
         ))}
-        <Text style={styles.comingSoon}>These tools are coming in the next build.</Text>
       </View>
     </SafeAreaView>
   );
@@ -42,9 +52,7 @@ const styles = StyleSheet.create({
     borderColor: '#eee',
     padding: 18,
     marginBottom: 12,
-    opacity: 0.6,
   },
   toolTitle: { fontSize: 16, fontWeight: '700' },
-  toolSubtitle: { fontSize: 13, color: '#777', marginTop: 4 },
-  comingSoon: { fontSize: 12, color: '#999', textAlign: 'center', marginTop: 16 },
+  toolSubtitle: { fontSize: 13, color: '#777', marginTop: 4, lineHeight: 18 },
 });
