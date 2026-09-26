@@ -1,7 +1,7 @@
 // Reset picker - three real tools now (BLAME Reset, Nervous System
 // Reset, Sleep & Wind-Down Builder), replacing the earlier stub.
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
 import { router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -26,7 +26,7 @@ const TOOLS: { title: string; subtitle: string; route: string }[] = [
 export default function ResetPickerScreen() {
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
-      <View style={styles.container}>
+      <ScrollView contentContainerStyle={styles.container}>
         <Text style={styles.title}>Reset</Text>
         <Text style={styles.subtitle}>Short, guided techniques for calming down when you&apos;re wired or overloaded.</Text>
         {TOOLS.map((tool) => (
@@ -35,7 +35,7 @@ export default function ResetPickerScreen() {
             <Text style={styles.toolSubtitle}>{tool.subtitle}</Text>
           </TouchableOpacity>
         ))}
-      </View>
+      </ScrollView>
     </SafeAreaView>
   );
 }

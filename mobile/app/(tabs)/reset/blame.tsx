@@ -5,7 +5,7 @@
 // BlameLocateAcceptExchange.tsx's own note) - no entitlement fetch, no
 // voice button, nothing to gate.
 import React, { useEffect, useRef, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, KeyboardAvoidingView, Platform } from 'react-native';
 import { router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { addDoc, collection } from 'firebase/firestore';
@@ -203,16 +203,27 @@ export default function BlameResetScreen() {
   }
 
   if (phase === 'exchange' && currentStep) {
+    // This is the Nova crisis-support text exchange - the single most
+    // safety-critical screen in the app. Without KeyboardAvoidingView,
+    // the software keyboard can cover the input row and Send button on
+    // smaller devices, right when someone is mid-activation and least
+    // equipped to fight the UI to reply.
     return (
       <SafeAreaView style={styles.safeArea} edges={['top']}>
-        <ScrollView contentContainerStyle={styles.container}>
-          <BlameLocateAcceptExchange
-            title={currentStep.title}
-            instruction={currentStep.instruction}
-            prompt={currentStep.prompt}
-            onContinue={handleExchangeContinue}
-          />
-        </ScrollView>
+        <KeyboardAvoidingView
+          style={styles.flex}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? 60 : 0}
+        >
+          <ScrollView contentContainerStyle={styles.container}>
+            <BlameLocateAcceptExchange
+              title={currentStep.title}
+              instruction={currentStep.instruction}
+              prompt={currentStep.prompt}
+              onContinue={handleExchangeContinue}
+            />
+          </ScrollView>
+        </KeyboardAvoidingView>
       </SafeAreaView>
     );
   }
@@ -220,7 +231,7 @@ export default function BlameResetScreen() {
   if (phase === 'complete') {
     return (
       <SafeAreaView style={styles.safeArea} edges={['top']}>
-        <View style={styles.centered}>
+        <ScrollView contentContainerStyle={styles.centered}>
           <Text style={styles.completeTitle}>That&apos;s it</Text>
           <Text style={styles.completeBody}>
             {manageChoice
@@ -230,15 +241,17 @@ export default function BlameResetScreen() {
           <TouchableOpacity style={styles.doneButton} onPress={handleCompleteReset}>
             <Text style={styles.doneButtonText}>Done</Text>
           </TouchableOpacity>
-        </View>
+        </ScrollView>
       </SafeAreaView>
     );
   }
 
-  // phase === 'step'
+  // phase === 'step'. ScrollView (not a plain View) for the same reason
+  // as the other phases - the Manage step's 3 choice cards plus prompt
+  // text can overflow a small screen or larger accessibility text size.
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
-      <View style={styles.centered}>
+      <ScrollView contentContainerStyle={styles.centered}>
         <Text style={styles.stepMeta}>
           Step {stepIndex + 1} of {steps.length}
           {isBreatheActive ? ` · ${timeLeft}s` : ''}
@@ -271,15 +284,16 @@ export default function BlameResetScreen() {
             <Text style={styles.continueButtonText}>Continue</Text>
           </TouchableOpacity>
         )}
-      </View>
+      </ScrollView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: '#fff' },
+  flex: { flex: 1 },
   container: { padding: 24, paddingTop: 32 },
-  centered: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24, gap: 12 },
+  centered: { flexGrow: 1, alignItems: 'center', justifyContent: 'center', padding: 24, gap: 12 },
   eyebrow: { fontSize: 11, fontWeight: '800', color: '#9a3412', textTransform: 'uppercase', letterSpacing: 2, marginBottom: 12 },
   title: { fontSize: 28, fontWeight: '800', marginBottom: 12 },
   subtitle: { fontSize: 14, color: '#666', lineHeight: 20, marginBottom: 28 },

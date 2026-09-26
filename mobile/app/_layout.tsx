@@ -1,17 +1,35 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { View, ActivityIndicator, StyleSheet } from 'react-native';
-import { Stack } from 'expo-router';
+import { Stack, router } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { AuthProvider, useAuth } from '../src/lib/auth-context';
 
 // The anonymous-first pattern means `user` is set as soon as loading
-// finishes (even for a brand-new visitor - see auth-context.tsx), so
-// sign-in/sign-up are NOT a blocking gate in front of the tabs the way a
-// typical "logged out" screen would be. They're reachable as modal routes
-// (see app/sign-in.tsx, app/sign-up.tsx) from a banner/button on Pulse,
-// same as the web app's own anonymous-session-upgrade model.
+// finishes for essentially everyone (even a brand-new visitor - see
+// auth-context.tsx), so sign-in/sign-up are NOT a blocking gate in front
+// of the tabs the way a typical "logged out" screen would be. They're
+// reachable as modal routes (see app/sign-in.tsx, app/sign-up.tsx) from a
+// banner/button on Pulse, same as the web app's own anonymous-session-
+// upgrade model.
+//
+// `user` CAN still be null after loading, though: right after an explicit
+// sign-out (auth-context.tsx's explicitSignOutRef path), on purpose -
+// re-anonymizing immediately would silently hand back a blank new
+// identity, which is more confusing than useful right after someone
+// deliberately signed out. Without handling that state here, every tab
+// screen's Firestore/API calls would just silently fail (most already
+// swallow errors into a graceful-looking empty state) with nothing on
+// screen telling the person they're signed out at all. Redirect to
+// sign-in instead - the same real "you're logged out" moment web's own
+// App.tsx handles by falling back to LandingPage when `!user`.
 function RootNavigator() {
-  const { loading } = useAuth();
+  const { loading, user } = useAuth();
+
+  useEffect(() => {
+    if (!loading && !user) {
+      router.replace('/sign-in');
+    }
+  }, [loading, user]);
 
   if (loading) {
     return (

@@ -24,6 +24,12 @@ export default function NervousSystemResetScreen() {
   const [completedSteps, setCompletedSteps] = useState<number[]>([]);
   const pulse = useMemo(() => new Animated.Value(1), []);
   const sessionStartRef = useRef<number | null>(null);
+  // Total accumulated playing time across pause/resume cycles for the
+  // current technique, in ms. Without this, pausing and resuming reset
+  // the clock instead of adding to it - someone doing several short
+  // play/pause cycles that individually never reach 60s continuous, but
+  // add up to well over a minute in total, would never get credit.
+  const accumulatedMsRef = useRef(0);
   const completionFiredRef = useRef(false);
 
   const markResetComplete = () => {
@@ -49,9 +55,10 @@ export default function NervousSystemResetScreen() {
   const handlePlayPause = () => {
     if (!isPlaying) {
       sessionStartRef.current = Date.now();
-    } else if (sessionStartRef.current && !completionFiredRef.current) {
-      const elapsedSec = (Date.now() - sessionStartRef.current) / 1000;
-      if (elapsedSec >= 60) {
+    } else if (sessionStartRef.current) {
+      accumulatedMsRef.current += Date.now() - sessionStartRef.current;
+      sessionStartRef.current = null;
+      if (!completionFiredRef.current && accumulatedMsRef.current >= 60000) {
         completionFiredRef.current = true;
         markResetComplete();
       }
@@ -76,6 +83,7 @@ export default function NervousSystemResetScreen() {
     setIsPlaying(false);
     completionFiredRef.current = false;
     sessionStartRef.current = null;
+    accumulatedMsRef.current = 0;
   };
 
   const selectGrounding = (key: GroundingModeKey) => {

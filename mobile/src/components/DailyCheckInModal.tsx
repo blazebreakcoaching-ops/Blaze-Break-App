@@ -5,7 +5,7 @@
 // from. Deliberately just the 4-slider submit flow, not history/edit/
 // delete - those aren't part of Pulse's "one clear next step" loop.
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Modal } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Modal, ScrollView } from 'react-native';
 import Slider from '@react-native-community/slider';
 import { doc, setDoc } from 'firebase/firestore';
 import { getDb, auth } from '../lib/firebase';
@@ -57,7 +57,7 @@ export function DailyCheckInModal({ visible, onClose, onComplete }: DailyCheckIn
 
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
-      <View style={styles.container}>
+      <ScrollView style={styles.scroll} contentContainerStyle={styles.container}>
         <Text style={styles.title}>Claim your Pulse</Text>
         <Text style={styles.subtitle}>Four quick sliders - takes about 30 seconds.</Text>
         {SLIDERS.map((s) => (
@@ -87,13 +87,14 @@ export function DailyCheckInModal({ visible, onClose, onComplete }: DailyCheckIn
         <TouchableOpacity onPress={onClose} disabled={saving}>
           <Text style={styles.cancel}>Not now</Text>
         </TouchableOpacity>
-      </View>
+      </ScrollView>
     </Modal>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: 24, paddingTop: 32, backgroundColor: '#fff' },
+  scroll: { flex: 1, backgroundColor: '#fff' },
+  container: { padding: 24, paddingTop: 32, paddingBottom: 40 },
   title: { fontSize: 22, fontWeight: '700', textAlign: 'center' },
   subtitle: { fontSize: 13, color: '#666', textAlign: 'center', marginTop: 4, marginBottom: 24 },
   sliderRow: { marginBottom: 20 },

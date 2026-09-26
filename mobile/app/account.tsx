@@ -15,7 +15,10 @@ export default function AccountScreen() {
     setSigningOut(true);
     try {
       await logOut();
-      router.replace('/(tabs)');
+      // No manual navigation here - the root layout's own effect (see
+      // app/_layout.tsx) reacts to `user` becoming null and redirects to
+      // /sign-in. Navigating from both places risks a race between two
+      // different destinations.
     } catch (e: unknown) {
       Alert.alert('Could not sign out', e instanceof Error ? e.message : 'Something went wrong.');
     } finally {

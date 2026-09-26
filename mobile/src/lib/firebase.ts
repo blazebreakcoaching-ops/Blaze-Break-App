@@ -18,7 +18,7 @@ import { initializeApp, getApps, getApp } from 'firebase/app';
 // at a dedicated RN build that does export it - confirmed by reading
 // node_modules/@firebase/auth/dist/rn/index.rn.d.ts directly rather than
 // trusting training data, per this project's own AGENTS.md guidance.
-import { initializeAuth, type Auth, type Persistence } from '@firebase/auth';
+import { initializeAuth, getAuth, type Auth, type Persistence } from '@firebase/auth';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { Firestore } from 'firebase/firestore';
 import firebaseConfig from '../../../firebase-applet-config.json';
@@ -45,9 +45,24 @@ const { getReactNativePersistence } = require('@firebase/auth') as {
 // getAuth(app) alone does not persist sessions across app restarts in React
 // Native - unlike the web SDK, there's no IndexedDB-backed default. This is
 // the RN-specific equivalent of web firebase.ts's configurePersistence().
-export const auth: Auth = initializeAuth(app, {
-  persistence: getReactNativePersistence(AsyncStorage),
-});
+//
+// initializeAuth() throws if Auth was already initialized for this app
+// instance - it's a one-shot call, unlike getAuth() which is idempotent.
+// In production this module only ever evaluates once, but Metro Fast
+// Refresh can re-execute a file's top-level code on save during
+// development without tearing down the underlying native app/JS engine
+// state, which would otherwise crash the whole app on every edit to this
+// file. Falling back to getAuth() (which returns the already-initialized
+// instance, persistence and all) makes that safe.
+let _auth: Auth;
+try {
+  _auth = initializeAuth(app, {
+    persistence: getReactNativePersistence(AsyncStorage),
+  });
+} catch {
+  _auth = getAuth(app);
+}
+export const auth: Auth = _auth;
 
 let _db: Firestore | null = null;
 let _dbPromise: Promise<Firestore> | null = null;

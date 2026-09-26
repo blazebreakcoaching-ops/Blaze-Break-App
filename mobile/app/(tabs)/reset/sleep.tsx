@@ -8,7 +8,17 @@
 // (the ritual itself, its persistence, the points award) is intact;
 // only the memory summary is deferred.
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView, Switch } from 'react-native';
+import {
+  View,
+  Text,
+  StyleSheet,
+  TextInput,
+  TouchableOpacity,
+  ScrollView,
+  Switch,
+  KeyboardAvoidingView,
+  Platform,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { getDb, auth } from '../../../src/lib/firebase';
@@ -82,8 +92,14 @@ export default function SleepBuilderScreen() {
     setBedtime(formatted);
   };
 
+  // firestore.rules caps parkingList at 30 entries as part of validating
+  // the WHOLE merged preferences/sleep_builder document - past that, not
+  // just this field but every field in the same debounced write (bedtime,
+  // toggles, mental unload) would start silently failing to save. Capping
+  // client-side keeps that failure mode unreachable rather than just rare.
+  const MAX_PARKED_ITEMS = 30;
   const handleParkItem = () => {
-    if (parkedItem.trim()) {
+    if (parkedItem.trim() && parkingList.length < MAX_PARKED_ITEMS) {
       setParkingList([...parkingList, parkedItem.trim()]);
       setParkedItem('');
     }
@@ -100,7 +116,12 @@ export default function SleepBuilderScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
-      <ScrollView contentContainerStyle={styles.container}>
+      <KeyboardAvoidingView
+        style={styles.flex}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
+      >
+      <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
         <Text style={styles.title}>Sleep & Wind-Down Builder</Text>
         <Text style={styles.subtitle}>
           &ldquo;Burnout recovery without sleep support is like trying to charge your phone with a shoelace.&rdquo;
@@ -154,10 +175,17 @@ export default function SleepBuilderScreen() {
               placeholder="Task or worry..."
               onSubmitEditing={handleParkItem}
             />
-            <TouchableOpacity style={styles.parkButton} onPress={handleParkItem}>
+            <TouchableOpacity
+              style={[styles.parkButton, parkingList.length >= MAX_PARKED_ITEMS && styles.parkButtonDisabled]}
+              onPress={handleParkItem}
+              disabled={parkingList.length >= MAX_PARKED_ITEMS}
+            >
               <Text style={styles.parkButtonText}>Park it</Text>
             </TouchableOpacity>
           </View>
+          {parkingList.length >= MAX_PARKED_ITEMS && (
+            <Text style={styles.cardHint}>That&apos;s the most you can park at once - clear a few off tomorrow.</Text>
+          )}
           {parkingList.length === 0 ? (
             <Text style={styles.emptyText}>No items parked yet.</Text>
           ) : (
@@ -182,12 +210,14 @@ export default function SleepBuilderScreen() {
           </Text>
         </TouchableOpacity>
       </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: '#fff' },
+  flex: { flex: 1 },
   container: { padding: 20, paddingBottom: 40 },
   title: { fontSize: 26, fontWeight: '800', marginBottom: 8 },
   subtitle: { fontSize: 13, fontStyle: 'italic', color: '#666', lineHeight: 19, marginBottom: 24 },
@@ -201,6 +231,7 @@ const styles = StyleSheet.create({
   parkRow: { flexDirection: 'row', gap: 8, marginBottom: 12 },
   parkInput: { flex: 1, borderWidth: 1, borderColor: '#eee', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, fontSize: 14 },
   parkButton: { backgroundColor: '#ea580c', borderRadius: 10, paddingHorizontal: 16, justifyContent: 'center' },
+  parkButtonDisabled: { backgroundColor: '#fed7aa' },
   parkButtonText: { color: '#fff', fontWeight: '700', fontSize: 13 },
   emptyText: { fontSize: 13, color: '#999', fontStyle: 'italic', textAlign: 'center', paddingVertical: 12 },
   parkedItem: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#fff', borderRadius: 10, borderWidth: 1, borderColor: '#eee', padding: 12, marginBottom: 8 },

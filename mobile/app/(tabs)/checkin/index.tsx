@@ -193,11 +193,16 @@ export default function CheckInScreen() {
     );
   }
 
-  // Question loop (mode === 'quick' | 'full')
+  // Question loop (mode === 'quick' | 'full'). Wrapped in a ScrollView, not
+  // a plain View - the full 14-question path has some long question texts
+  // plus 4 answer options each, which can genuinely overflow a small
+  // screen or a larger accessibility text size; a plain View would just
+  // clip the bottom answers/Go back link instead of letting them scroll
+  // into view.
   const question = activeQuestions[step];
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
-      <View style={styles.container}>
+      <ScrollView contentContainerStyle={styles.container}>
         <View style={styles.progressRow}>
           <Text style={styles.progressText}>
             Question {step + 1} of {activeQuestions.length}
@@ -219,7 +224,7 @@ export default function CheckInScreen() {
             <Text style={styles.backLink}>Go back</Text>
           </TouchableOpacity>
         )}
-      </View>
+      </ScrollView>
     </SafeAreaView>
   );
 }
