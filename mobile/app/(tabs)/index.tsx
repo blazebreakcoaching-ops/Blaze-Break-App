@@ -9,6 +9,7 @@ import React, { useCallback, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, RefreshControl } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../src/lib/auth-context';
 import { secureApiFetch } from '../../src/lib/secure-api';
 import { DailyCheckInModal } from '../../src/components/DailyCheckInModal';
@@ -107,7 +108,12 @@ export default function PulseScreen() {
         contentContainerStyle={styles.container}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />}
       >
-        <Text style={styles.header}>Pulse</Text>
+        <View style={styles.headerRow}>
+          <Text style={styles.header}>Pulse</Text>
+          <TouchableOpacity onPress={() => router.push('/account')} accessibilityLabel="Account" hitSlop={12}>
+            <Ionicons name="person-circle-outline" size={28} color="#9a3412" />
+          </TouchableOpacity>
+        </View>
 
         {user?.isAnonymous && (
           <TouchableOpacity style={styles.signUpBanner} onPress={() => router.push('/sign-up')}>
@@ -168,7 +174,8 @@ export default function PulseScreen() {
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: '#fff' },
   container: { padding: 20, paddingBottom: 40 },
-  header: { fontSize: 28, fontWeight: '800', marginBottom: 16 },
+  headerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 },
+  header: { fontSize: 28, fontWeight: '800' },
   signUpBanner: {
     backgroundColor: '#fff7ed',
     borderRadius: 12,

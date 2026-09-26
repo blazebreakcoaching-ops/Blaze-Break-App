@@ -26,6 +26,7 @@ function RootNavigator() {
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
       <Stack.Screen name="sign-in" options={{ presentation: 'modal', title: 'Sign in' }} />
       <Stack.Screen name="sign-up" options={{ presentation: 'modal', title: 'Create account' }} />
+      <Stack.Screen name="account" options={{ presentation: 'modal', title: 'Account' }} />
     </Stack>
   );
 }
