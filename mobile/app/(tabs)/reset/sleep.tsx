@@ -69,6 +69,19 @@ export default function SleepBuilderScreen() {
     return () => clearTimeout(t);
   }, [bedtime, caffeineCutoff, phoneOff, mentalUnload, parkingList, loaded]);
 
+  // Web's <input type="time"> structurally can't produce anything but a
+  // valid HH:MM string. A plain RN TextInput has no such constraint, and
+  // firestore.rules caps bedtime at 5 characters (isStringWithMax(...,
+  // 5)) - without this, someone typing a longer value would have their
+  // change silently rejected by the write (the debounced save's catch
+  // block is intentionally non-fatal, so nothing would visibly tell
+  // them). This auto-inserts the colon and hard-caps at 5 digits/colon.
+  const handleBedtimeChange = (raw: string) => {
+    const digits = raw.replace(/[^0-9]/g, '').slice(0, 4);
+    const formatted = digits.length > 2 ? `${digits.slice(0, 2)}:${digits.slice(2)}` : digits;
+    setBedtime(formatted);
+  };
+
   const handleParkItem = () => {
     if (parkedItem.trim()) {
       setParkingList([...parkingList, parkedItem.trim()]);
@@ -95,7 +108,14 @@ export default function SleepBuilderScreen() {
 
         <View style={styles.card}>
           <Text style={styles.cardLabel}>Bedtime target</Text>
-          <TextInput style={styles.bedtimeInput} value={bedtime} onChangeText={setBedtime} placeholder="22:30" />
+          <TextInput
+            style={styles.bedtimeInput}
+            value={bedtime}
+            onChangeText={handleBedtimeChange}
+            placeholder="22:30"
+            keyboardType="number-pad"
+            maxLength={5}
+          />
         </View>
 
         <View style={styles.card}>
