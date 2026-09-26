@@ -50,7 +50,9 @@ same way Expo Go does, and the real backend calls will work.
 in (`@react-native-firebase/app` + `@react-native-firebase/app-check`, plus a real iOS
 and Android app registered in the Firebase Console — those produce
 `GoogleService-Info.plist` / `google-services.json`, which this repo doesn't have yet).
-That's a one-time setup step, not something that needs redoing per build.
+That's a one-time setup step, not something that needs redoing per build — see
+[`docs/CONSOLE_SETUP.md`](./docs/CONSOLE_SETUP.md) for the exact steps (also covers
+the separate one-time setup for native Google Sign-In).
 
 ## Commands
 
