@@ -10418,7 +10418,12 @@ if (process.env.TEST_MODE !== 'true') {
         }));
         return clientWs.close();
       }
-      const novaLiveSessionStartedAt = Date.now();
+      // Set for real once Gemini's own session actually opens (inside
+      // liveSession's onopen callback below) - NOT here. Setting it here,
+      // before ai.live.connect() is even attempted, used to bill the
+      // entire auth/quota/context-fetch/connect setup window as real
+      // voice-minute usage, even though no conversation could happen yet.
+      let novaLiveSessionStartedAt = 0;
 
       const db = getDb();
 
@@ -10478,8 +10483,14 @@ if (process.env.TEST_MODE !== 'true') {
         // several timer/callback paths) but never silently dropped: an
         // async failure here would otherwise mean an account's real usage
         // just doesn't count against its monthly minutes, forever.
-        recordCapabilityUsage(uid, 'nova_voice_minutes', liveQuota.plan, minutesUsedForSession(Date.now() - novaLiveSessionStartedAt))
-          .catch((e) => console.error(`[Nova Live] failed to record voice minutes for uid ${uid}:`, e?.message || e));
+        // Guarded on novaLiveSessionStartedAt > 0: it's only set once
+        // Gemini's session actually opened (onopen above) - if endSession
+        // is somehow reached before that (e.g. the upstream session
+        // errored before ever opening), there's no real usage to bill.
+        if (novaLiveSessionStartedAt > 0) {
+          recordCapabilityUsage(uid, 'nova_voice_minutes', liveQuota.plan, minutesUsedForSession(Date.now() - novaLiveSessionStartedAt))
+            .catch((e) => console.error(`[Nova Live] failed to record voice minutes for uid ${uid}:`, e?.message || e));
+        }
         try {
           liveSession?.close();
         } catch (e) {
@@ -10492,6 +10503,47 @@ if (process.env.TEST_MODE !== 'true') {
           // Best-effort - the socket may already be closed.
         }
       };
+
+      // The client starts capturing and streaming mic audio the instant
+      // ITS OWN socket to us opens - it has no way to know we still need
+      // to verify tokens, check quotas, fetch Firestore context, and
+      // open the actual upstream Gemini session (ai.live.connect below),
+      // all of which take real time. Registering this listener only
+      // AFTER that setup used to mean every word spoken during it was
+      // silently dropped: no listener existed yet to catch it. This is
+      // registered immediately instead, and queues anything that
+      // arrives before liveSession exists rather than losing it - drained
+      // in order once the real session opens (see onopen below).
+      const pendingClientMessages: string[] = [];
+      const MAX_PENDING_CLIENT_MESSAGES = 300; // a few seconds of 16kHz PCM chunks - bounds memory if connect() never resolves
+
+      const processClientMessage = (raw: string) => {
+        try {
+          const parsed = JSON.parse(raw);
+          if (parsed.initialPrompt) {
+            // Prefill context (fingerprint, recent chat, Nova's memory) without
+            // expecting an immediate reply — turnComplete:false per the SDK's
+            // own guidance for priming a conversation before real input starts.
+            liveSession.sendClientContent({ turns: parsed.initialPrompt, turnComplete: false });
+          }
+          if (parsed.audio) {
+            liveSession.sendRealtimeInput({ audio: { data: parsed.audio, mimeType: "audio/pcm;rate=16000" } });
+          }
+        } catch (e: any) {
+          console.error("[Nova Live] client message parse error:", e?.message || e);
+        }
+      };
+
+      clientWs.on("message", (data) => {
+        if (sessionEnded) return;
+        const raw = data.toString();
+        if (!liveSession) {
+          if (pendingClientMessages.length < MAX_PENDING_CLIENT_MESSAGES) pendingClientMessages.push(raw);
+          return;
+        }
+        resetIdleTimer();
+        processClientMessage(raw);
+      });
 
       try {
         liveSession = await ai.live.connect({
@@ -10519,6 +10571,21 @@ if (process.env.TEST_MODE !== 'true') {
           callbacks: {
             onopen: () => {
               console.log(`[Nova Live] session opened for uid ${uid}`);
+              // This is the one true "Nova can actually hear and respond
+              // now" signal - billing, idle-timeout accounting, and the
+              // client's own "live" UI state all key off it instead of
+              // the much earlier moment our own socket accepted the
+              // connection (see the comment above pendingClientMessages).
+              novaLiveSessionStartedAt = Date.now();
+              resetIdleTimer();
+              try {
+                clientWs.send(JSON.stringify({ ready: true }));
+              } catch (e) {
+                // Best-effort - the socket may already be gone.
+              }
+              while (pendingClientMessages.length > 0) {
+                processClientMessage(pendingClientMessages.shift()!);
+              }
             },
             onmessage: (message: LiveServerMessage) => {
               if (sessionEnded) return;
@@ -10629,27 +10696,9 @@ if (process.env.TEST_MODE !== 'true') {
         return clientWs.close();
       }
 
+      // resetIdleTimer()'s first call now happens inside onopen above,
+      // the same real-ready moment everything else keys off - not here.
       sessionTimeout = setTimeout(() => endSession("This voice session has reached its time limit."), MAX_SESSION_MS);
-      resetIdleTimer();
-
-      clientWs.on("message", (data) => {
-        if (sessionEnded) return;
-        resetIdleTimer();
-        try {
-          const parsed = JSON.parse(data.toString());
-          if (parsed.initialPrompt) {
-            // Prefill context (fingerprint, recent chat, Nova's memory) without
-            // expecting an immediate reply — turnComplete:false per the SDK's
-            // own guidance for priming a conversation before real input starts.
-            liveSession.sendClientContent({ turns: parsed.initialPrompt, turnComplete: false });
-          }
-          if (parsed.audio) {
-            liveSession.sendRealtimeInput({ audio: { data: parsed.audio, mimeType: "audio/pcm;rate=16000" } });
-          }
-        } catch (e: any) {
-          console.error("[Nova Live] client message parse error:", e?.message || e);
-        }
-      });
 
       clientWs.on("close", () => endSession());
       clientWs.on("error", (e) => {

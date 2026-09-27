@@ -1,10 +1,12 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Sparkles, Mic, MicOff, PhoneOff, RefreshCw, Loader2, AlertCircle, Target, X } from 'lucide-react';
+import { Sparkles, Mic, MicOff, PhoneOff, RefreshCw, AlertCircle, Target, X } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { useFocusTrap } from '../lib/useFocusTrap';
 import { useNovaLiveVoice } from '../lib/useNovaLiveVoice';
 import { GuardianSupportInvitation } from './GuardianSupportInvitation';
+import { NovaVoiceOrb } from './NovaVoiceOrb';
+import { secureApiFetch } from '../lib/secure-api';
 
 // Same ad-hoc "read blaze_profile directly" pattern NovaChat.tsx uses for
 // the same purpose - only needed the rare time the Guardian Support
@@ -41,6 +43,24 @@ function formatElapsed(ms: number): string {
   return `${m}:${s.toString().padStart(2, '0')}`;
 }
 
+interface VoiceMinutesInfo {
+  used: number;
+  limit: number | null;
+}
+
+// Matches usageCounterMonthKey()'s calendar-month semantics (server.ts) -
+// nova_voice_minutes is a monthly usage COUNTER, a separate concept from
+// a paid plan's billing-cycle renewalDate (shown elsewhere, e.g.
+// SubscriptionCentre.tsx), so "resets" here always means the 1st of next
+// UTC calendar month regardless of plan.
+function startOfNextUtcMonth(now = new Date()): Date {
+  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1));
+}
+
+function formatResetDate(d: Date): string {
+  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
+
 // A purpose-built, full-screen voice-call experience with Nova - a live
 // transcript, a speaking indicator, mute, elapsed time, and graceful
 // reconnect - rather than the inline mic toggle. Everything real-time lives in
@@ -54,6 +74,7 @@ export const NovaVoiceCall = ({ isOpen, onClose, buildInitialPrompt, onNavigate,
     featureSuggestion, dismissFeatureSuggestion,
     guardianSupportOffer, dismissGuardianSupportOffer, start, stop, toggleMute,
   } = useNovaLiveVoice({ buildInitialPrompt, sessionContext });
+  const [voiceMinutes, setVoiceMinutes] = useState<VoiceMinutesInfo | null>(null);
 
   // Auto-start the call when the screen opens; tear it down when it closes.
   useEffect(() => {
@@ -61,6 +82,28 @@ export const NovaVoiceCall = ({ isOpen, onClose, buildInitialPrompt, onNavigate,
     return () => { if (isOpen) stop(); };
     // start/stop are stable enough for this lifecycle; re-running on their
     // identity would restart the call on every render.
+  }, [isOpen]);
+
+  // Purely informational - fetched once per call, non-blocking, and
+  // never shown at all if it fails (never worth erroring or delaying the
+  // call over). Same /api/entitlements/me data SubscriptionCentre.tsx
+  // already reads for the same capability, so the two surfaces can't
+  // disagree with each other.
+  useEffect(() => {
+    if (!isOpen) { setVoiceMinutes(null); return; }
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await secureApiFetch('/api/entitlements/me');
+        if (!res.ok) return;
+        const data = await res.json();
+        const cap = data?.capabilities?.nova_voice_minutes;
+        if (!cancelled && cap) setVoiceMinutes({ used: Number(cap.used) || 0, limit: cap.limit === null ? null : Number(cap.limit) });
+      } catch {
+        // Non-fatal - the line just doesn't show.
+      }
+    })();
+    return () => { cancelled = true; };
   }, [isOpen]);
 
   // Close on Escape, ending the call first.
@@ -78,11 +121,11 @@ export const NovaVoiceCall = ({ isOpen, onClose, buildInitialPrompt, onNavigate,
   const handleEnd = () => { stop(); onClose(); };
 
   const statusLabel =
-    status === 'connecting' ? 'Connecting…' :
+    status === 'connecting' ? 'Getting Nova ready…' :
     status === 'error' ? 'Call ended' :
     isNovaSpeaking ? 'Nova is speaking' :
     isMuted ? 'Muted — Nova is listening when you unmute' :
-    'Listening…';
+    "Nova's ready — go ahead and talk";
 
   return (
     <AnimatePresence>
@@ -99,29 +142,16 @@ export const NovaVoiceCall = ({ isOpen, onClose, buildInitialPrompt, onNavigate,
           <div ref={dialogRef as React.RefObject<HTMLDivElement>} className="w-full max-w-md flex flex-col items-center gap-8 py-8">
             {/* Nova presence + speaking indicator */}
             <div className="flex flex-col items-center gap-5">
-              <div className="relative flex items-center justify-center">
-                <AnimatePresence>
-                  {isNovaSpeaking && (
-                    <motion.span
-                      key="pulse"
-                      className="absolute inset-0 rounded-full bg-primary/30"
-                      initial={{ scale: 1, opacity: 0.6 }}
-                      animate={{ scale: 1.8, opacity: 0 }}
-                      exit={{ opacity: 0 }}
-                      transition={{ duration: 1.4, repeat: Infinity, ease: 'easeOut' }}
-                      aria-hidden="true"
-                    />
-                  )}
-                </AnimatePresence>
-                <div className={cn(
-                  'relative z-10 w-24 h-24 rounded-full flex items-center justify-center shadow-xl transition-colors',
-                  isNovaSpeaking ? 'bg-primary text-primary-foreground' : 'bg-card border border-border text-primary'
-                )}>
-                  {status === 'connecting'
-                    ? <Loader2 className="w-9 h-9 animate-spin" aria-hidden="true" />
-                    : <Sparkles className="w-9 h-9" aria-hidden="true" />}
-                </div>
-              </div>
+              <NovaVoiceOrb
+                size={112}
+                phase={
+                  status === 'connecting' ? 'connecting' :
+                  status === 'error' ? 'error' :
+                  isMuted ? 'muted' :
+                  isNovaSpeaking ? 'speaking' :
+                  'listening'
+                }
+              />
               <div className="text-center space-y-1">
                 <h2 className="text-xl font-display font-bold text-text-main">Nova</h2>
                 <p className="text-sm text-text-muted" aria-live="polite">{statusLabel}</p>
@@ -129,6 +159,15 @@ export const NovaVoiceCall = ({ isOpen, onClose, buildInitialPrompt, onNavigate,
                   <p className="text-xs font-mono text-text-muted tabular-nums" aria-label={`Call duration ${formatElapsed(elapsedMs)}`}>
                     {formatElapsed(elapsedMs)}
                   </p>
+                )}
+                {voiceMinutes && (
+                  voiceMinutes.limit === null ? (
+                    <p className="text-[11px] text-text-muted">Unlimited Nova voice minutes</p>
+                  ) : (
+                    <p className="text-[11px] text-text-muted">
+                      {Math.max(0, voiceMinutes.limit - voiceMinutes.used)} min left this month · resets {formatResetDate(startOfNextUtcMonth())}
+                    </p>
+                  )
                 )}
               </div>
             </div>
@@ -156,7 +195,7 @@ export const NovaVoiceCall = ({ isOpen, onClose, buildInitialPrompt, onNavigate,
             >
               {transcript.length === 0 ? (
                 <p className="text-xs text-text-muted text-center py-6">
-                  {status === 'connecting' ? 'Getting the line ready…' : 'Say hello when you’re ready — Nova is listening.'}
+                  {status === 'connecting' ? 'Getting Nova ready…' : 'Say hello when you’re ready — Nova is listening.'}
                 </p>
               ) : (
                 transcript.map((line, i) => (
