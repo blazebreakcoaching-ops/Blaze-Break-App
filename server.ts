@@ -2501,7 +2501,18 @@ app.post("/api/nova/chat", novaChatLimiter, verifyAppCheck, authenticateFirebase
       }
     }
 
-    const mergedSystemPrompt = (systemInstruction || NOVA_SYSTEM_PROMPT) + contextAddendum + NOVA_SAFETY_INSTRUCTIONS;
+    // NOVA_SYSTEM_PROMPT (persona, coaching style, the full knowledge base -
+    // methodology, creator knowledge, coaching philosophy, founder Q&A) must
+    // always be present, not just when the caller happens to omit its own
+    // systemInstruction. NovaChat.tsx always sends a non-empty
+    // systemInstruction (fingerprint + per-conversation context + tone
+    // override), so `systemInstruction || NOVA_SYSTEM_PROMPT` silently threw
+    // away the entire knowledge base on every real request - the caller's
+    // context was meant to be ADDED on top of Nova's persona, not replace it
+    // outright. Same category of bug as the one the comment above
+    // NOVA_SAFETY_INSTRUCTIONS already fixed for the safety floor; this
+    // closes it for the knowledge base too.
+    const mergedSystemPrompt = NOVA_SYSTEM_PROMPT + (systemInstruction ? `\n\n${systemInstruction}` : "") + contextAddendum + NOVA_SAFETY_INSTRUCTIONS;
 
     const abortController = new AbortController();
     const timeoutId = setTimeout(() => abortController.abort(), 25000); // 25s timeout - raised from 15s to accommodate one or more tool-call round-trips
