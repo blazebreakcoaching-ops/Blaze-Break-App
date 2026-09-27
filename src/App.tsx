@@ -47,6 +47,7 @@ import {
   UserProfileData,
   SHIPStage,
 } from "./types.ts";
+import type { NovaQuestioningStyle } from "./components/NovaStyleControl";
 import { cn, fireConfetti } from "./lib/utils.ts";
 import { useFocusTrap } from "./lib/useFocusTrap";
 import { auth, getDb } from "./lib/firebase.ts";
@@ -1721,6 +1722,30 @@ export default function App() {
     setTimeout(() => setShowRewardNotification(null), 4000);
   };
 
+  // Shared by every surface that embeds a NovaChat instance (the main Nova
+  // tab, Boundary Rehearsal, Reflect) so a tone/style change made from any
+  // of them writes to the same canonical stats.profile - and therefore the
+  // same Firestore doc via the debounced autosave below - instead of each
+  // embed only reaching its own local component state.
+  const handleNovaToneChange = (tone: string) =>
+    setStats((prev) =>
+      prev.profile
+        ? { ...prev, profile: { ...prev.profile, novaTone: tone } }
+        : prev,
+    );
+
+  const handleNovaStyleChange = (style: NovaQuestioningStyle | undefined) =>
+    setStats((prev) =>
+      prev.profile
+        // Firestore's client SDK rejects an explicit `undefined` field
+        // value outright (setDoc throws), so "Off" has to persist as
+        // `null` - writing `style` as-is here would silently fail to save
+        // the moment someone switches back to the default after trying a
+        // style.
+        ? { ...prev, profile: { ...prev.profile, questioningStyle: style ?? null } }
+        : prev,
+    );
+
   const incrementRehearsal = () => {
     setStats((prev) => {
       const updated = {
@@ -2375,6 +2400,9 @@ export default function App() {
                     <BoundaryRehearsal
                       onAwardPoints={awardPoints}
                       onRehearsalComplete={incrementRehearsal}
+                      profile={isDemoSession ? undefined : stats.profile}
+                      onToneChange={handleNovaToneChange}
+                      onStyleChange={handleNovaStyleChange}
                     />
                     <BoundaryAutopilot />
                   </div>
@@ -2441,6 +2469,9 @@ export default function App() {
                   committedActionIds={stats.committedActionIds}
                   onCommitAction={handleCommitAction}
                   isDemoSession={isDemoSession}
+                  profile={isDemoSession ? undefined : stats.profile}
+                  onToneChange={handleNovaToneChange}
+                  onStyleChange={handleNovaStyleChange}
                 />
                 <ResentmentTracker
                   fingerprint={fingerprint}
@@ -2454,6 +2485,7 @@ export default function App() {
               <div className="space-y-32">
                 <NovaChat
                   fingerprint={isDemoSession ? DEMO_FINGERPRINT : fingerprint}
+                  profile={isDemoSession ? undefined : stats.profile}
                   systemInstruction={`You are Nova, the recovery coach.
                   User's current stats: Points: ${isDemoSession ? DEMO_STATS.points : stats.points}.
                   Recovery Debt Profile: ${JSON.stringify((isDemoSession ? DEMO_STATS.debts : stats.debts) || [])}.
@@ -2470,25 +2502,8 @@ export default function App() {
                   }
                   onAwardPoints={awardPoints}
                   onNavigate={safeSetActiveTab as any}
-                  onToneChange={(tone) =>
-                    setStats((prev) =>
-                      prev.profile
-                        ? { ...prev, profile: { ...prev.profile, novaTone: tone } }
-                        : prev,
-                    )
-                  }
-                  onStyleChange={(style) =>
-                    setStats((prev) =>
-                      prev.profile
-                        // Firestore's client SDK rejects an explicit `undefined`
-                        // field value outright (setDoc throws), so "Off" has to
-                        // persist as `null` - writing `style` as-is here would
-                        // silently fail to save the moment someone switches back
-                        // to the default after trying a style.
-                        ? { ...prev, profile: { ...prev.profile, questioningStyle: style ?? null } }
-                        : prev,
-                    )
-                  }
+                  onToneChange={handleNovaToneChange}
+                  onStyleChange={handleNovaStyleChange}
                   autoOpenVoice={novaAutoVoiceRequested}
                   onVoiceAutoOpened={() => setNovaAutoVoiceRequested(false)}
                 />
