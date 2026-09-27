@@ -80,6 +80,8 @@ export const NovaChat = ({
   onNavigate,
   onToneChange,
   onStyleChange,
+  autoOpenVoice,
+  onVoiceAutoOpened,
 }: {
   systemInstruction?: string;
   initialMessage?: string;
@@ -88,6 +90,14 @@ export const NovaChat = ({
   onNavigate?: (tab: string) => void;
   onToneChange?: (tone: string) => void;
   onStyleChange?: (style: NovaQuestioningStyle | undefined) => void;
+  // Set by a caller that already promised voice specifically (e.g. the
+  // Nova check-in nudge's "Talk with Nova"), so the live call opens
+  // immediately instead of requiring a second click on the mic button
+  // below. onVoiceAutoOpened lets the caller clear its own flag once
+  // consumed, so returning to this tab later doesn't reopen the call
+  // unprompted.
+  autoOpenVoice?: boolean;
+  onVoiceAutoOpened?: () => void;
 }) => {
   // How Nova should sound, re-tunable at any time. Source of truth for the
   // chat's own context is localStorage's blaze_profile (what getDynamicContext
@@ -465,6 +475,16 @@ We are now in real-time voice mode. Be concise and conversational, you don't nee
   };
 
   const openVoiceCall = () => setShowVoiceCall(true);
+
+  // Only auto-opens once the voice feature flag is confirmed on, matching
+  // the same gate the manual mic button (below) is rendered behind - if
+  // voice isn't available, this just leaves the person in text chat
+  // rather than opening a call surface that doesn't apply to them.
+  useEffect(() => {
+    if (!autoOpenVoice) return;
+    if (voiceFeatureEnabled) openVoiceCall();
+    onVoiceAutoOpened?.();
+  }, [autoOpenVoice, voiceFeatureEnabled, onVoiceAutoOpened]);
 
   useEffect(() => {
     return () => {

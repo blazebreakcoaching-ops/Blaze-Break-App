@@ -1066,6 +1066,15 @@ export default function App() {
 
   const [flow, setFlow] = useState<AppFlow>("landing");
   const [activeTab, setActiveTab] = useState<ActiveTab>("home");
+  // The Nova check-in nudge (NovaCheckinNudge.tsx) explicitly promises
+  // voice - "A couple of minutes by voice, whenever you're ready" - but
+  // switching to the nova tab alone only opens the text chat; the live
+  // voice call is a separate button inside NovaChat the person would
+  // then have to find and click again. This flag lets the nudge's
+  // "Talk with Nova" request the voice call open automatically once the
+  // tab switch lands, without changing the plain "Connect with Nova"
+  // recommendation button's existing text-only behaviour.
+  const [novaAutoVoiceRequested, setNovaAutoVoiceRequested] = useState(false);
   // Validated wrapper around setActiveTab for any navigation request that
   // didn't originate from a hardcoded, statically-known-valid string in
   // this file - the 'navigate_tab' window event (dispatched from several
@@ -2268,7 +2277,10 @@ export default function App() {
             <>
             {activeTab === "home" && (
               <HomeSection
-                onChatRequest={() => setActiveTab("nova")}
+                onChatRequest={(voice) => {
+                  setActiveTab("nova");
+                  if (voice) setNovaAutoVoiceRequested(true);
+                }}
                 onEnergyRequest={() => setActiveTab("recover")}
                 // Only these five are swapped for sample content during a
                 // demo session - everything below (callbacks, badges,
@@ -2477,6 +2489,8 @@ export default function App() {
                         : prev,
                     )
                   }
+                  autoOpenVoice={novaAutoVoiceRequested}
+                  onVoiceAutoOpened={() => setNovaAutoVoiceRequested(false)}
                 />
               </div>
             )}
