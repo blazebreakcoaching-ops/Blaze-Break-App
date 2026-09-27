@@ -48,6 +48,7 @@ import {
   SHIPStage,
 } from "./types.ts";
 import type { NovaQuestioningStyle } from "./components/NovaStyleControl";
+import { SHIP_QUEST_IDS_BY_STAGE } from "./components/ShipJourney";
 import { cn, fireConfetti } from "./lib/utils.ts";
 import { useFocusTrap } from "./lib/useFocusTrap";
 import { auth, getDb } from "./lib/firebase.ts";
@@ -1584,6 +1585,29 @@ export default function App() {
     if (currentStats.rehearsalCount >= 15 && !newBadges.includes("master_boundaries"))
       newBadges.push("master_boundaries");
 
+    // SHIP journey: one badge per phase (all 3 of that phase's quests
+    // done), plus the full-voyage badge once every phase is. Reads the
+    // exact same quest-id lists ShipJourney.tsx exports, so these two
+    // never drift apart.
+    const shipPhaseBadgeIds: Record<SHIPStage, string> = {
+      Safety: 'ship_safety_complete',
+      Habits: 'ship_habits_complete',
+      Identity: 'ship_identity_complete',
+      Purpose: 'ship_purpose_complete',
+    };
+    let allShipPhasesComplete = true;
+    (Object.keys(SHIP_QUEST_IDS_BY_STAGE) as SHIPStage[]).forEach((stage) => {
+      const questIds = SHIP_QUEST_IDS_BY_STAGE[stage];
+      const phaseComplete = questIds.every((id) => currentStats.committedActionIds.includes(id));
+      if (phaseComplete && !newBadges.includes(shipPhaseBadgeIds[stage])) {
+        newBadges.push(shipPhaseBadgeIds[stage]);
+      }
+      if (!phaseComplete) allShipPhasesComplete = false;
+    });
+    if (allShipPhasesComplete && !newBadges.includes('ship_voyage_complete')) {
+      newBadges.push('ship_voyage_complete');
+    }
+
     return newBadges;
   };
 
@@ -2377,6 +2401,9 @@ export default function App() {
                   onAwardPoints={awardPoints}
                   currentStage={shipStage}
                   debts={stats.debts || []}
+                  committedActionIds={stats.committedActionIds}
+                  onCommitAction={handleCommitAction}
+                  onNavigate={safeSetActiveTab}
                 />
                 <MicroRecovery
                   fingerprint={fingerprint}
