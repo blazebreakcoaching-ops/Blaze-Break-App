@@ -318,6 +318,44 @@ Protect the human. Reduce unnecessary burden. Fix the architecture. Keep it prac
 When founder context is relevant, Nova should ultimately bring the conversation back to the user. The founder story exists to explain the philosophy - it should never become more important than the person asking for help.
 `;
 
+// The real map of what's actually in the app - every tab, every tool
+// inside a multi-tool tab, and what each one is for - transcribed from
+// src/components/UserGuide.tsx (the same content shown to users on the
+// in-app User Guide page), not invented separately. Keeping this as one
+// shared source between the human-facing guide and Nova's own knowledge
+// means the two can never describe a feature differently - if the guide
+// changes, this should change with it. Relevance-gated like the founder
+// content above: this is reference material for "what does X do" or
+// "how do I use Y" questions, not something to recite unprompted, and
+// never a substitute for actually using suggest_feature/onNavigate to
+// send someone to the real tool.
+export const NOVA_APP_GUIDE = `
+## NOVA — THE APP'S OWN FEATURE GUIDE
+Nova should draw on this when someone asks what a specific screen, tool, or widget in Blaze Break is, what it's for, or how to use it - or when it would genuinely help to name the specific tool that does what they need, not just the general tab. Keep answers short and conversational, the way a good product guide would explain something in passing, not a read-out of this whole list. This never overrides suggest_feature - if a real navigation link is possible, use it; this content is for the surrounding explanation.
+
+## START HERE (the essentials, for anyone new)
+- Pulse (home tab): the screen someone lands on every time they open the app - one suggested action for today, their recovery stage, and their trend over time. Not a to-do list. Includes a Weekly Recovery Recap, a "pick up where you left off" prompt (only shown if there's something genuinely unfinished), and an optional 60-second daily SPARK Check someone can add via "Add widget". Recovery Velocity is the specific term for which direction someone's recovery is trending right now and how fast - not where they are today, but whether things are improving, holding steady, or slipping.
+- Check-in (diagnose tab): a short, honest self-assessment - not a medical test - that builds someone's personal Burnout Fingerprint. Most of the rest of the app is quietly built around this result.
+- Recovery Plan (plan tab): a small, specific starting point based on the Check-in - practical next steps, not a rigid programme, and it updates as the Check-in and the week change. Recovery Debt is the specific term for the single running score combining sustained stress, low energy, and skipped rest into one number - the higher it is, the more recovery is "owed," never a measure of how little someone got done.
+
+## DAY-TO-DAY RECOVERY TOOLS
+- Energy budget (recover tab): where someone's energy is actually going this week, and where to protect some back. Energy Budget is the specific term for this - a budget, but for capacity instead of money. Contains: 7-Day Recovery Cycle, Energy Delta Management, Nova Focus Zone, Energy & Capacity, Micro-Recovery Menu, the "One Less Thing" Button, Workload Reality Check, and the SHIP Journey - someone's longer-term recovery phase (Safety, Habits, Identity, Purpose), with real, checkable quests that each link straight to the tool that does them, not just a status display.
+- Recovery fuel (fuel tab): simple, low-effort food ideas for days when cooking is one decision too many.
+- Reset (reset tab): short, guided techniques for calming down when wired or overloaded. Contains: the Rumination Furnace, BLAME Reset (with Nova alongside for the Locate + Accept step), Nervous System Reset Studio, Sleep & Wind-Down Builder, Movement Snacks, the Decompression Doorway, Recovery Recipes, Faith & Values Grounding, the Resource Library, and quick micro-interventions (breathing, movement, and more).
+- In-the-moment relief (anxiety_reset tab): quick tools for when anxiety spikes and something is needed right now, not a plan.
+- GAD-7 (wellbeing tab): a short, well-established seven-question anxiety self-check, so someone can notice a pattern before it builds up - not a diagnosis, and only they ever see it.
+
+## WHEN SOMEONE NEEDS TO TALK
+- Workload negotiator (communicate tab): generates a ready-to-send script for the awkward conversation, so someone isn't writing it from scratch while stressed. Contains: Boundary Rehearsal, Boundary Autopilot, Workload Negotiator, Hard Talk Prep, Digital Boundary Shield, and Nova Overload Shield.
+- Talk it through (nova tab): this is Nova herself - text or voice, whichever someone prefers, with memory of their context so they don't have to re-explain themselves every time. Questioning style is the specific term for how Nova prefers to ask things, not what she knows - a person can pick Operator, Board Member, Mentor, or Pre-Mortem in Settings → Nova Style to match how they like to think things through. It's purely a style choice; it never changes what Nova can see or do.
+
+## REFLECTION & SAFETY NET
+- Weekly review (reflect tab): a few minutes at the end of the week to notice what actually helped, in someone's own words. Contains a daily reflection journal and the Resentment Tracker.
+- Someone in your corner (ally tab): invite a trusted friend, mentor, or partner to check in - the person chooses exactly what they see, and can turn any of it off any time. Guardian Protocol is the specific term for the one-tap way to ask a trusted, pre-chosen contact to reach out - always started by the person themselves; the app never watches for risk or sends anything without them tapping the button first.
+- Privacy Centre (privacy tab): see exactly what is stored, export it, or delete it - always on, nothing to go looking for.
+- Plan & Billing (subscription tab): current plan, what's included, usage this month, and change or cancel any time.
+`;
+
 export const NOVA_KNOWLEDGE_BASE = `
 # BLAZE BREAK - DEEP KNOWLEDGE & METHODOLOGY
 
@@ -328,6 +366,8 @@ ${NOVA_COACHING_PHILOSOPHY}
 ${NOVA_FAMILIAR_KNOWLEDGE}
 
 ${NOVA_FOUNDER_QA}
+
+${NOVA_APP_GUIDE}
 
 ## PRODUCT AND BRAND POSITIONING
 - Program: "Extinguish the Burnout, Ignite Sustainable Performance: The Blaze Break Signature Course" / "BLAME-to-Brilliance Method".

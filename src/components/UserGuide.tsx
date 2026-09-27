@@ -95,7 +95,7 @@ const DAILY_TOOLS: GuideFeature[] = [
   {
     tab: 'recover', tag: 'Recover', title: 'Energy budget', description: 'See where your energy is actually going this week, and where to protect some back.', icon: BatteryFull,
     definition: { term: 'Energy Budget', text: "Where your energy actually goes each day and each week, and how much you have left before you're overdrawn - a budget, but for capacity instead of money." },
-    subTools: ['7-Day Recovery Cycle', 'Energy Delta Management', 'Nova Focus Zone', 'Energy & Capacity', 'Micro-Recovery Menu', 'The "One Less Thing" Button', 'Workload Reality Check'],
+    subTools: ['7-Day Recovery Cycle', 'Energy Delta Management', 'Nova Focus Zone', 'Energy & Capacity', 'Micro-Recovery Menu', 'The "One Less Thing" Button', 'Workload Reality Check', 'SHIP Journey (your longer-term recovery phase, with real, checkable quests linking out to the tool that does each one)'],
   },
   { tab: 'fuel', tag: 'Nutrition', title: 'Recovery fuel', description: 'Simple, low-effort food ideas for days when cooking is one decision too many.', icon: Apple },
   {
