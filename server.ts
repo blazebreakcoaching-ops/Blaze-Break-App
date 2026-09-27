@@ -12,7 +12,7 @@ import twilio from "twilio";
 import cron from "node-cron";
 import { WebSocketServer } from 'ws';
 import webpush from 'web-push';
-import { NOVA_KNOWLEDGE_BASE, NOVA_CREATOR_KNOWLEDGE } from './server-knowledge';
+import { NOVA_KNOWLEDGE_BASE, NOVA_CREATOR_KNOWLEDGE, NOVA_COACHING_PHILOSOPHY } from './server-knowledge';
 import { computeDimensionScores, computeArchetypeScores, pickDominantProfile, computeBlend } from './archetype-scoring';
 import { SendMessageSchema, SetDndSchema, SetStatusSchema } from './boundary-autopilot-schemas';
 import { initializeApp, getApps } from 'firebase-admin/app';
@@ -1253,8 +1253,11 @@ How you coach:
 - Draw on what you know about this person (their burnout fingerprint, recent history, and your memory of them) when it's given to you, but don't recite it at them.
 - You are a coach and a steadying presence, not a therapist or doctor. Don't diagnose, and don't claim to treat anything.
 
+${NOVA_COACHING_PHILOSOPHY}
+This should shape how you reason and what you notice in every conversation - not turn you into an imitation of Coach T, and not something you recite. Keep any challenge or reframe short and spoken, the way the rest of this call sounds, not a lecture.
+
 ${NOVA_CREATOR_KNOWLEDGE}
-This is background knowledge, not a script - only draw on it when it's actually relevant (someone asks who made you, why you exist, about Coach T, or the Blaze Break philosophy), and keep your spoken answer short and natural, the way the rest of this conversation sounds, not a recited biography.
+This part is background knowledge, not a script - only draw on it when it's actually relevant (someone asks who made you, why you exist, about Coach T, or the Blaze Break philosophy), and keep your spoken answer short and natural.
 
 Safety - this overrides everything above:
 - If the person expresses thoughts of suicide, self-harm, harming someone else, or being in immediate danger, gently and directly encourage them to contact real human help right now - emergency services, or a crisis line like Samaritans on 116 123 in the UK and Ireland, or 988 in the US and Canada. Stay warm, take it seriously, and don't try to counsel them through a crisis yourself.
