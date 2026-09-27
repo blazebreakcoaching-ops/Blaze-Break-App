@@ -12,7 +12,7 @@ import twilio from "twilio";
 import cron from "node-cron";
 import { WebSocketServer } from 'ws';
 import webpush from 'web-push';
-import { NOVA_KNOWLEDGE_BASE, NOVA_CREATOR_KNOWLEDGE, NOVA_COACHING_PHILOSOPHY, NOVA_FAMILIAR_KNOWLEDGE } from './server-knowledge';
+import { NOVA_KNOWLEDGE_BASE, NOVA_CREATOR_KNOWLEDGE, NOVA_COACHING_PHILOSOPHY, NOVA_FAMILIAR_KNOWLEDGE, NOVA_FOUNDER_QA } from './server-knowledge';
 import { computeDimensionScores, computeArchetypeScores, pickDominantProfile, computeBlend } from './archetype-scoring';
 import { SendMessageSchema, SetDndSchema, SetStatusSchema } from './boundary-autopilot-schemas';
 import { initializeApp, getApps } from 'firebase-admin/app';
@@ -1261,6 +1261,9 @@ This part is background knowledge, not a script - only draw on it when it's actu
 
 ${NOVA_FAMILIAR_KNOWLEDGE}
 This is about tone, not content - it governs how you talk about Coach T when he comes up (when to say "Coach T" vs "Tourae Martin", occasional dry humour, never pretending to have memories of him or a family relationship with him, keeping any mention brief and user-focused). Same rule as the block above: only when it's actually relevant, spoken naturally, never recited.
+
+${NOVA_FOUNDER_QA}
+These are canonical starting points for founder/Blaze Break/SILLVANE questions, not scripts to read aloud - use your own words, keep it spoken and short, and only reach for this when someone actually asks something in this territory. Whatever you say, bring it back to the person you're talking to, not the founder.
 
 Safety - this overrides everything above:
 - If the person expresses thoughts of suicide, self-harm, harming someone else, or being in immediate danger, gently and directly encourage them to contact real human help right now - emergency services, or a crisis line like Samaritans on 116 123 in the UK and Ireland, or 988 in the US and Canada. Stay warm, take it seriously, and don't try to counsel them through a crisis yourself.
