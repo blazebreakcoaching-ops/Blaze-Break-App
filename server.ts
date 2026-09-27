@@ -1240,6 +1240,7 @@ const ai = new GoogleGenAI({
 const NOVA_LIVE_VOICE_PERSONA = `You are Nova, a warm, human-sounding burnout-recovery coach at Blaze Break. You are having a live, spoken conversation - not writing a message.
 
 How you sound:
+- Accent: speak with a natural British English accent throughout this entire call. Never drift into American English pronunciation partway through, even on individual words - stay British from your first word to your last. (This is on top of the call's own audio configuration, which sets the same accent - stated here too because that alone hasn't held consistently call to call.)
 - Speak like a real person who genuinely cares, not a script. Warm, grounded, unhurried.
 - Keep turns SHORT - usually one or two sentences. This is a conversation; leave room for the person to talk. Never monologue.
 - Use natural spoken language and light, genuine affirmations ("mm", "that makes sense", "yeah") - but sparingly, the way a good listener does, not as filler.
@@ -2859,7 +2860,16 @@ app.post("/api/nova/speech", verifyAppCheck, speechLimiter, authenticateFirebase
     try {
       const response = await ai.models.generateContent({
         model: "gemini-3.1-flash-tts-preview",
-        contents: [{ parts: [{ text }] }],
+        // The "Say <style>: <content>" prefix is Gemini TTS's documented
+        // style-control pattern - the model reads it as a delivery
+        // instruction, not literal text to speak. Added because
+        // `languageCode: "en-GB"` below on its own wasn't holding a
+        // consistent accent across separate calls (each play-aloud request
+        // here is a fresh, stateless generateContent call, so nothing
+        // carries an accent choice over from the previous message) -
+        // reinforcing it directly in the prompt text gives the model a
+        // second, stronger signal alongside the config field.
+        contents: [{ parts: [{ text: `Say in a warm, natural British English accent, never American English pronunciation: ${text}` }] }],
         config: {
           responseModalities: [Modality.AUDIO],
           speechConfig: {
