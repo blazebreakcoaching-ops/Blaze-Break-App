@@ -4,7 +4,6 @@ import path from "path";
 import fs from "fs";
 import crypto from "crypto";
 import dns from "dns";
-import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, Type, Modality, LiveServerMessage } from "@google/genai";
 import Anthropic from "@anthropic-ai/sdk";
 import OpenAI from "openai";
@@ -10260,6 +10259,15 @@ const applyMemorySafetyFilter = (text: string) => {
 // Vite middleware for development
 async function setupVite() {
   if (process.env.NODE_ENV !== "production") {
+    // Dynamic, not a top-level static import: `vite` is a devDependency,
+    // pruned from node_modules by a production install (Cloud Run's
+    // buildpack-based deploy, for one). A static `import ... from "vite"`
+    // at the top of this file gets bundled by esbuild into an
+    // unconditional `require("vite")` that runs on every startup
+    // regardless of this NODE_ENV check - it would crash the production
+    // server before it ever got here. This import only actually executes
+    // when this branch runs, i.e. never in production.
+    const { createServer: createViteServer } = await import("vite");
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa",
