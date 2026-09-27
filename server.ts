@@ -5612,6 +5612,14 @@ app.get("/api/admin/users", verifyAppCheck, authenticateFirebaseUser, async (req
     // an account that genuinely exists, the same source
     // GET /api/admin/users/:uid already uses correctly for one account.
     const users = await Promise.all(usersSnap.docs.map(async (doc) => {
+      // Same effectivePlan()/getEffectiveEntitlement() path every other
+      // surface (SubscriptionCentre, /api/entitlements/me) uses to decide
+      // what plan someone is actually on right now - an admin choosing
+      // what to grant next needs to see the same real, computed value,
+      // not the raw stored `plan` field (which could be stale/expired).
+      const entitlementSnap = await db.collection("users").doc(doc.id).collection("entitlements").doc("status").get();
+      const entitlement = getEffectiveEntitlement(entitlementSnap.exists ? entitlementSnap.data() : undefined);
+      const plan = effectivePlan(entitlement);
       try {
         const authUser = await getAuth().getUser(doc.id);
         return {
@@ -5628,12 +5636,14 @@ app.get("/api/admin/users", verifyAppCheck, authenticateFirebaseUser, async (req
           createdAt: authUser.metadata.creationTime,
           lastSignIn: authUser.metadata.lastSignInTime,
           accessStatus: authUser.disabled ? "disabled" : "active",
+          plan,
+          entitlementStatus: entitlement.status,
         };
       } catch (e) {
         // A Firestore doc with no matching live Auth account (e.g.
         // deleted directly in the Auth console) - surfaced honestly
         // rather than papered over with a fabricated email/date.
-        return { uid: doc.id, email: null, emailVerified: false, createdAt: null, lastSignIn: null, accessStatus: "unknown" };
+        return { uid: doc.id, email: null, emailVerified: false, createdAt: null, lastSignIn: null, accessStatus: "unknown", plan, entitlementStatus: entitlement.status };
       }
     }));
     // This route has always been capped at ADMIN_USERS_PAGE_LIMIT with no

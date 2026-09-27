@@ -22,6 +22,13 @@ interface AdminUser {
   createdAt: string;
   lastSignIn: string;
   accessStatus: 'active' | 'disabled';
+  // The account's real, computed entitlement (server.ts's effectivePlan) -
+  // not a raw stored field, so an expired time-limited grant already
+  // shows as 'free' here rather than whatever plan string was last
+  // written. Optional only because older cached responses (before this
+  // was added) wouldn't have it.
+  plan?: 'free' | 'core' | 'performance' | 'executive' | 'legacy_premium';
+  entitlementStatus?: 'active' | 'trial' | 'grace' | 'past_due' | 'cancelled' | 'expired';
 }
 
 interface PlatformAdmin {
@@ -76,6 +83,37 @@ const ROLE_HIERARCHY = [
   { value: 'user', label: 'Standard User' }
 ];
 
+// Mirrors entitlements.ts's PURCHASABLE_PLANS/ENTITLEMENT_STATUSES exactly -
+// same static-mirror convention ROLE_HIERARCHY above already uses for the
+// server's own role enums. `legacy_premium` is deliberately excluded here
+// too: entitlements.ts's validateAdminGrant() rejects it outright (it's a
+// read-path migration outcome, never something to grant going forward -
+// an admin who wants Premium-equivalent access for someone grants
+// 'performance', which legacy_premium is tier-aligned with).
+const GRANTABLE_PLANS: { value: 'free' | 'core' | 'performance' | 'executive'; label: string }[] = [
+  { value: 'free', label: 'Free' },
+  { value: 'core', label: 'Core' },
+  { value: 'performance', label: 'Performance' },
+  { value: 'executive', label: 'Executive' },
+];
+
+const GRANTABLE_STATUSES: { value: 'active' | 'trial' | 'grace' | 'past_due' | 'cancelled' | 'expired'; label: string }[] = [
+  { value: 'active', label: 'Active' },
+  { value: 'trial', label: 'Trial' },
+  { value: 'grace', label: 'Grace period' },
+  { value: 'past_due', label: 'Past due' },
+  { value: 'cancelled', label: 'Cancelled' },
+  { value: 'expired', label: 'Expired' },
+];
+
+const PLAN_LABELS: Record<string, string> = {
+  free: 'Free',
+  core: 'Core',
+  performance: 'Performance',
+  executive: 'Executive',
+  legacy_premium: 'Legacy Premium',
+};
+
 export const AdminDashboard = () => {
   const { appRole, user: authUser } = useAuth();
   const [simulatedRole, setSimulatedRole] = useState<string | null>(
@@ -122,6 +160,16 @@ export const AdminDashboard = () => {
   >(null);
   const [isUpdatingRole, setIsUpdatingRole] = useState(false);
   const [grantingEntitlementUid, setGrantingEntitlementUid] = useState<string | null>(null);
+  // The "choose any tier" picker - separate from selectedUser/selectedUserRole
+  // above (that pair is for the Edit Claims/role panel, a different action
+  // on a different field entirely).
+  const [entitlementTargetUser, setEntitlementTargetUser] = useState<AdminUser | null>(null);
+  const [grantPlanChoice, setGrantPlanChoice] = useState<'free' | 'core' | 'performance' | 'executive'>('performance');
+  const [grantStatusChoice, setGrantStatusChoice] = useState<'active' | 'trial' | 'grace' | 'past_due' | 'cancelled' | 'expired'>('active');
+  // Kept as the raw input string (not a number) so an empty field can mean
+  // "no fixed end" without fighting an empty-string-to-0 coercion - parsed
+  // to a real number only at submit time, in handleGrantEntitlement.
+  const [grantDurationDays, setGrantDurationDays] = useState('');
 
   // New Admin User Form State
   const [newAdminEmail, setNewAdminEmail] = useState('');
@@ -373,20 +421,30 @@ export const AdminDashboard = () => {
   // Grants or clears a paid entitlement directly - the same "admin comp"
   // path server.ts documents as the one real way to give an account paid
   // access today, pending a live Stripe/Apple/Google integration (beta
-  // testers, support cases, or the founder's own account). No fixed end
-  // date is set, so it stays in effect until changed here again.
-  // 'performance' is the admin-comp equivalent of the old single Premium
-  // tier (docs/FREE_PREMIUM_ENTITLEMENTS.md) - 'legacy_premium' is never
-  // an admin-assignable value, only a read-path outcome for accounts that
-  // predate the multi-tier model (docs/LEGACY_CUSTOMER_MIGRATION.md).
-  const handleGrantEntitlement = async (uid: string, plan: 'performance' | 'free') => {
+  // testers, support cases, or the founder's own account). `plan` is any
+  // of entitlements.ts's PURCHASABLE_PLANS (free/core/performance/
+  // executive) - this used to only ever be called with 'performance' or
+  // 'free' hardcoded, even though the server route always supported the
+  // full set; the picker panel below is what actually exposes that choice
+  // now. `durationDays` omitted/undefined means no fixed end, matching
+  // the server's own "omitted or null = stays in effect until changed
+  // here again" behaviour. 'legacy_premium' is never an admin-assignable
+  // value, only a read-path outcome for accounts that predate the
+  // multi-tier model (docs/LEGACY_CUSTOMER_MIGRATION.md) - the picker
+  // never offers it, and the server rejects it outright either way.
+  const handleGrantEntitlement = async (
+    uid: string,
+    plan: 'free' | 'core' | 'performance' | 'executive',
+    status: 'active' | 'trial' | 'grace' | 'past_due' | 'cancelled' | 'expired' = 'active',
+    durationDays?: number,
+  ) => {
     try {
       setGrantingEntitlementUid(uid);
       setError(null);
       const res = await secureApiFetch(`/api/admin/users/${uid}/entitlement`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ plan, status: 'active' })
+        body: JSON.stringify({ plan, status, ...(durationDays ? { durationDays } : {}) })
       });
 
       if (!res.ok) {
@@ -394,7 +452,13 @@ export const AdminDashboard = () => {
         throw new Error(errorData.error || "Couldn't update that account's plan.");
       }
 
-      showSuccess(plan === 'performance' ? 'Account upgraded to Performance.' : 'Account reverted to Free.');
+      showSuccess(
+        plan === 'free'
+          ? 'Account reverted to Free.'
+          : `Account granted ${PLAN_LABELS[plan]} (${GRANTABLE_STATUSES.find((s) => s.value === status)?.label || status})${durationDays ? ` for ${durationDays} day${durationDays === 1 ? '' : 's'}` : ''}.`
+      );
+      setEntitlementTargetUser(null);
+      await loadAllData();
     } catch (e: any) {
       setError(e.message);
     } finally {
@@ -821,6 +885,100 @@ export const AdminDashboard = () => {
               )}
             </AnimatePresence>
 
+            {/* Grant Access panel - choose any tier, status, and optional
+                duration, instead of the two hardcoded "Grant Performance" /
+                "Revert to Free" buttons this used to be limited to. */}
+            <AnimatePresence>
+              {entitlementTargetUser && (
+                <motion.div
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: 'auto' }}
+                  exit={{ opacity: 0, height: 0 }}
+                  className="p-6 bg-success/5 rounded-2xl border border-success/20 space-y-4 overflow-hidden"
+                >
+                  <h4 className="font-display text-lg font-bold text-text-main flex items-center gap-2">
+                    <CreditCard className="w-4 h-4 text-success dark:text-[#4ade80]" /> Grant Access
+                  </h4>
+                  <p className="text-xs text-text-muted">
+                    Sets this account's plan directly (admin comp - no billing involved). This is recorded in the Auditor Event log with the previous plan and whether it's an upgrade, downgrade, or lateral change.
+                  </p>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-end">
+                    <div className="md:col-span-2">
+                      <label className="block text-xs font-black uppercase tracking-wider text-text-muted mb-2">Target Account</label>
+                      <div className="p-3 bg-surface border border-border rounded-xl text-sm font-mono text-text-main select-all">
+                        {entitlementTargetUser.email} ({entitlementTargetUser.uid})
+                        {entitlementTargetUser.plan && (
+                          <span className="ml-2 font-sans text-xs text-text-muted not-italic">
+                            - currently {PLAN_LABELS[entitlementTargetUser.plan] || entitlementTargetUser.plan}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    <div>
+                      <label htmlFor="admin-grant-plan" className="block text-xs font-black uppercase tracking-wider text-text-muted mb-2">Plan</label>
+                      <select
+                        id="admin-grant-plan"
+                        value={grantPlanChoice}
+                        onChange={(e) => setGrantPlanChoice(e.target.value as typeof grantPlanChoice)}
+                        className="w-full p-3 bg-surface border border-border rounded-xl text-sm text-text-main focus:outline-none focus:border-primary"
+                      >
+                        {GRANTABLE_PLANS.map((p) => (
+                          <option key={p.value} value={p.value}>{p.label}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label htmlFor="admin-grant-status" className="block text-xs font-black uppercase tracking-wider text-text-muted mb-2">Status</label>
+                      <select
+                        id="admin-grant-status"
+                        value={grantStatusChoice}
+                        onChange={(e) => setGrantStatusChoice(e.target.value as typeof grantStatusChoice)}
+                        className="w-full p-3 bg-surface border border-border rounded-xl text-sm text-text-main focus:outline-none focus:border-primary"
+                      >
+                        {GRANTABLE_STATUSES.map((s) => (
+                          <option key={s.value} value={s.value}>{s.label}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="md:col-span-2">
+                      <label htmlFor="admin-grant-duration" className="block text-xs font-black uppercase tracking-wider text-text-muted mb-2">
+                        Duration (days, optional)
+                      </label>
+                      <input
+                        id="admin-grant-duration"
+                        type="number"
+                        min={1}
+                        max={3650}
+                        placeholder="Leave blank for no fixed end"
+                        value={grantDurationDays}
+                        onChange={(e) => setGrantDurationDays(e.target.value)}
+                        className="w-full p-3 bg-surface border border-border rounded-xl text-sm text-text-main placeholder:text-text-muted focus:outline-none focus:border-primary"
+                      />
+                    </div>
+                  </div>
+                  <div className="flex gap-3 justify-end mt-4">
+                    <button
+                      onClick={() => setEntitlementTargetUser(null)}
+                      className="px-4 py-2 bg-transparent text-text-muted hover:text-text-main text-xs font-bold uppercase tracking-wider transition-colors"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={() => {
+                        const parsedDuration = grantDurationDays.trim() === '' ? undefined : Number(grantDurationDays);
+                        handleGrantEntitlement(entitlementTargetUser.uid, grantPlanChoice, grantStatusChoice, parsedDuration);
+                      }}
+                      disabled={grantingEntitlementUid === entitlementTargetUser.uid}
+                      className="px-5 py-2.5 bg-success hover:opacity-90 text-white text-xs font-bold uppercase tracking-wider rounded-xl transition-all flex items-center gap-2 disabled:opacity-50"
+                    >
+                      {grantingEntitlementUid === entitlementTargetUser.uid ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CreditCard className="w-3.5 h-3.5" />}
+                      Grant {PLAN_LABELS[grantPlanChoice]}
+                    </button>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
             {loading ? (
               <div className="flex flex-col items-center justify-center py-24 gap-4">
                 <Loader2 className="w-8 h-8 animate-spin text-primary" />
@@ -835,6 +993,7 @@ export const AdminDashboard = () => {
                         <th scope="col" className="pb-3 text-xs font-black uppercase tracking-widest text-text-muted">User ID</th>
                         <th scope="col" className="pb-3 text-xs font-black uppercase tracking-widest text-text-muted">Email Address</th>
                         <th scope="col" className="pb-3 text-xs font-black uppercase tracking-widest text-text-muted">Email Status</th>
+                        <th scope="col" className="pb-3 text-xs font-black uppercase tracking-widest text-text-muted">Plan</th>
                         <th scope="col" className="pb-3 text-xs font-black uppercase tracking-widest text-text-muted">Date Joined</th>
                         <th scope="col" className="pb-3 text-xs font-black uppercase tracking-widest text-text-muted">Last Active</th>
                         <th scope="col" className="pb-3 text-xs font-black uppercase tracking-widest text-text-muted text-right">Actions</th>
@@ -854,6 +1013,20 @@ export const AdminDashboard = () => {
                               {u.emailVerified ? 'Verified' : 'Unverified'}
                             </span>
                           </td>
+                          <td className="py-4">
+                            <span className={`px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-widest ${
+                              u.plan === 'executive' ? 'bg-primary/10 text-primary'
+                              : u.plan === 'performance' ? 'bg-success/10 text-success dark:text-[#4ade80]'
+                              : u.plan === 'core' ? 'bg-info/10 text-info'
+                              : u.plan === 'legacy_premium' ? 'bg-warning/10 text-[#9a3412] dark:text-warning'
+                              : 'bg-surface text-text-muted'
+                            }`}>
+                              {u.plan ? PLAN_LABELS[u.plan] || u.plan : 'Unknown'}
+                            </span>
+                            {u.entitlementStatus && u.entitlementStatus !== 'active' && u.plan !== 'free' && (
+                              <span className="block text-[10px] text-text-muted mt-1 normal-case">{u.entitlementStatus}</span>
+                            )}
+                          </td>
                           <td className="py-4 text-text-muted text-xs">{new Date(u.createdAt).toLocaleDateString()}</td>
                           <td className="py-4 text-text-muted text-xs">{new Date(u.lastSignIn).toLocaleDateString()}</td>
                           <td className="py-4 text-right flex items-center justify-end gap-3">
@@ -869,17 +1042,31 @@ export const AdminDashboard = () => {
                               Edit Claims
                             </button>
                             <button
-                              onClick={() => handleGrantEntitlement(u.uid, 'performance')}
+                              onClick={() => {
+                                setEntitlementTargetUser(u);
+                                // Prefill with the account's current plan/status
+                                // where that's a valid choice for the picker,
+                                // so opening it to just glance/confirm doesn't
+                                // default to overwriting a Core or Executive
+                                // account back down to Performance.
+                                setGrantPlanChoice(
+                                  u.plan && GRANTABLE_PLANS.some((p) => p.value === u.plan)
+                                    ? (u.plan as typeof grantPlanChoice)
+                                    : 'performance'
+                                );
+                                setGrantStatusChoice(u.entitlementStatus && u.entitlementStatus !== 'expired' ? u.entitlementStatus : 'active');
+                                setGrantDurationDays('');
+                              }}
                               disabled={grantingEntitlementUid === u.uid}
-                              title="Grant this account the Performance plan (admin comp - no billing involved)"
+                              title="Choose a plan, status, and optional duration to grant this account (admin comp - no billing involved)"
                               className="px-3 py-1.5 bg-success/10 hover:bg-success/20 text-success dark:text-[#4ade80] text-[10px] font-black uppercase tracking-widest rounded-lg transition-all disabled:opacity-50 flex items-center gap-1.5"
                             >
                               {grantingEntitlementUid === u.uid ? <Loader2 className="w-3 h-3 animate-spin" /> : <CreditCard className="w-3 h-3" />}
-                              Grant Performance
+                              Grant Access
                             </button>
                             <button
                               onClick={() => handleGrantEntitlement(u.uid, 'free')}
-                              disabled={grantingEntitlementUid === u.uid}
+                              disabled={grantingEntitlementUid === u.uid || u.plan === 'free'}
                               title="Revert this account to the Free plan"
                               className="px-3 py-1.5 bg-surface hover:bg-border text-text-muted text-[10px] font-black uppercase tracking-widest rounded-lg transition-all disabled:opacity-50 flex items-center gap-1.5"
                             >
@@ -901,7 +1088,7 @@ export const AdminDashboard = () => {
                       ))}
                       {filteredUsers.length === 0 && (
                         <tr>
-                          <td colSpan={6} className="py-12 text-center text-text-muted text-sm italic">
+                          <td colSpan={7} className="py-12 text-center text-text-muted text-sm italic">
                             No matching user accounts registered on this node.
                           </td>
                         </tr>
