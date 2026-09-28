@@ -1254,6 +1254,15 @@ export default function App() {
   const [burnoutRisk, setBurnoutRisk] = useState("Not yet assessed");
   const [showCheckIn, setShowCheckIn] = useState(false);
 
+  // Same 'open_crisis_support' pattern above: InAppNudge's check-in
+  // reminder needs to open the actual check-in flow, not just switch tabs
+  // and leave the person to find the button themselves.
+  useEffect(() => {
+    const handleOpenDailyCheckIn = () => setShowCheckIn(true);
+    window.addEventListener('open_daily_check_in', handleOpenDailyCheckIn);
+    return () => window.removeEventListener('open_daily_check_in', handleOpenDailyCheckIn);
+  }, []);
+
   // 30-Day Recovery Pulse History - real entries only, added one at a time
   // as the user actually checks in (see handleCheckInComplete /
   // handleUpdatePulseHistory below). A brand-new user with no saved history

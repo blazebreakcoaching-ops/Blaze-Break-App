@@ -19,6 +19,33 @@ const getFirestoreApi = async () => {
   return { db, ...mod };
 };
 
+// Where each nudge's "Action" button should actually take the person,
+// keyed by category - resolved client-side at click time rather than
+// stored on the nudge itself, since nudge_history documents are locked to
+// an exact field allow-list in firestore.rules (adding an unlisted field
+// to that write would fail permission-denied, silently, the same failure
+// mode already hit once by this file's source/status fields). Not a plain
+// tab-navigation map: check_in_reminder opens the check-in flow directly
+// (see the 'open_daily_check_in' handling below) rather than just
+// dropping the person on the Pulse tab and hoping they find the button -
+// someone who is already overwhelmed shouldn't have to hunt for it.
+const NUDGE_CATEGORY_TABS: Record<string, string> = {
+  recovery_action_reminder: 'recover',
+  boundary_practice_reminder: 'communicate',
+  weekly_review_reminder: 'reflect',
+  goal_follow_up: 'home',
+  climate_survey_reminder: 'privacy',
+};
+
+const NUDGE_CATEGORY_LABELS: Record<string, string> = {
+  check_in_reminder: 'Check In',
+  recovery_action_reminder: 'Open Recover',
+  boundary_practice_reminder: 'Open Communicate',
+  weekly_review_reminder: 'Open Reflect',
+  goal_follow_up: "View Today's Goal",
+  climate_survey_reminder: 'Take Survey',
+};
+
 export const InAppNudge = () => {
   const { user } = useAuth();
   const [preferences, setPreferences] = useState<any>(null);
@@ -364,14 +391,23 @@ export const InAppNudge = () => {
               <div className="flex items-center gap-2">
                 <button
                   onClick={() => {
-                    if (currentNudge.category === 'climate_survey_reminder') {
-                      window.dispatchEvent(new CustomEvent('navigate_tab', { detail: 'privacy' }));
+                    // Actually take the person to where the action happens -
+                    // clicking this used to just dismiss the nudge and log it
+                    // as "acted_on" with nothing real done, which both lied
+                    // about their activity and left the same reminder to
+                    // resurface (or worse, silently stop, since the app now
+                    // believed it was handled).
+                    if (currentNudge.category === 'check_in_reminder') {
+                      window.dispatchEvent(new CustomEvent('open_daily_check_in'));
+                    } else {
+                      const tab = NUDGE_CATEGORY_TABS[currentNudge.category];
+                      if (tab) window.dispatchEvent(new CustomEvent('navigate_tab', { detail: tab }));
                     }
                     dismiss("action_taken");
                   }}
                   className="flex-1 px-3 py-2 bg-primary/10 hover:bg-primary/20 text-[#9a3412] dark:text-primary rounded-xl text-xs font-bold uppercase tracking-wider transition-colors flex items-center justify-center gap-1"
                 >
-                  {currentNudge.category === 'climate_survey_reminder' ? 'Take Survey' : 'Action'} <ChevronRight className="w-3 h-3" />
+                  {NUDGE_CATEGORY_LABELS[currentNudge.category] || 'Action'} <ChevronRight className="w-3 h-3" />
                 </button>
               </div>
             </div>
