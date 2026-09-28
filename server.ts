@@ -11300,7 +11300,7 @@ ${NOVA_ONE_SHOT_SAFETY_FLOOR}`;
 // fixed allowlist server-side, never free text. Mirrors /api/guardian/
 // support-event's shape and reasoning exactly.
 const GroundingAnalyticsEventSchema = z.object({
-  eventType: z.enum(['grounding_session_completed', 'pattern_explored', 'pattern_feedback_given', 'community_connection_opened', 'carrying_exercise_completed', 'monthly_reflection_viewed', 'aligned_action_created', 'aligned_action_followed_up']),
+  eventType: z.enum(['grounding_session_completed', 'pattern_explored', 'pattern_feedback_given', 'community_connection_opened', 'carrying_exercise_completed', 'monthly_reflection_viewed', 'aligned_action_created', 'aligned_action_followed_up', 'routine_completed', 'routine_created']),
   category: z.enum(['control_responsibility', 'self_expectation', 'boundaries_people', 'connection_support', 'rest_guilt', 'practical_pressures', 'uncertainty_acceptance', 'values_meaning']).optional(),
   lens: z.enum(['secular', 'values', 'faith', 'islamic']).optional(),
 }).strict();

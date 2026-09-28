@@ -32,6 +32,7 @@ import { GroundingCarryingExercise } from './GroundingCarryingExercise';
 import { GroundingCommunityBridge } from './GroundingCommunityBridge';
 import { GroundingMonthlyReflection } from './GroundingMonthlyReflection';
 import { GroundingResetFlow } from './GroundingResetFlow';
+import { GroundingRoutines } from './GroundingRoutines';
 import {
   GroundingProfile, SessionDepth, CapacityState, SESSION_DEPTH_LABELS, CAPACITY_LABELS,
   SessionDepthRecommendation,
@@ -128,6 +129,7 @@ export const FaithValuesMode = (_props: FaithValuesModeProps) => {
 
   const [sessionDocId, setSessionDocId] = useState<string | null>(null);
   const [showCommunityBridge, setShowCommunityBridge] = useState(false);
+  const [showRoutines, setShowRoutines] = useState(false);
   const [connectionPrompt] = useState(() => HUMAN_CONNECTION_PROMPTS[Math.floor(Math.random() * HUMAN_CONNECTION_PROMPTS.length)]);
   const [chosenNextAction, setChosenNextAction] = useState<NextActionId | null>(null);
 
@@ -596,6 +598,7 @@ export const FaithValuesMode = (_props: FaithValuesModeProps) => {
           onAlignedActionFollowUp={handleAlignedActionFollowUp}
           allAlignedActions={allAlignedActions}
           onOpenMonthlyReflection={() => setShowMonthlyReflection(true)}
+          onOpenRoutines={() => setShowRoutines(true)}
           groundingProfile={groundingProfile}
           onProfileToggle={handleProfileToggle}
           confirmingPersonalisationReset={confirmingPersonalisationReset}
@@ -1153,6 +1156,18 @@ export const FaithValuesMode = (_props: FaithValuesModeProps) => {
           onClose={() => setShowMonthlyReflection(false)}
         />
       )}
+      {showRoutines && (
+        <GroundingRoutines
+          onClose={() => setShowRoutines(false)}
+          onStartCustomSession={(depth, customLens) => {
+            resetSession();
+            setSessionDepth(depth);
+            setLens(customLens);
+            setStage('arrive');
+            setView('session');
+          }}
+        />
+      )}
     </div>
   );
 };
@@ -1161,7 +1176,7 @@ const GroundingJourneyView = ({
   sessions, sessionsLoaded, visiblePatterns, patternAnalysisEnabled, onTogglePatternAnalysis,
   confirmingDelete, onConfirmingDeleteChange, onDeleteHistory, onStartSession,
   onExplorePattern, onPatternFeedback, onPausePattern, onOpenCarryingExercise,
-  mostRecentAlignedAction, onAlignedActionFollowUp, allAlignedActions, onOpenMonthlyReflection,
+  mostRecentAlignedAction, onAlignedActionFollowUp, allAlignedActions, onOpenMonthlyReflection, onOpenRoutines,
   groundingProfile, onProfileToggle, confirmingPersonalisationReset, onConfirmingPersonalisationResetChange, onResetPersonalisation,
 }: {
   sessions: GroundingSessionRecord[];
@@ -1181,6 +1196,7 @@ const GroundingJourneyView = ({
   onAlignedActionFollowUp: (status: 'went_well' | 'still_working_on_it' | 'didnt_happen') => void;
   allAlignedActions: { chosenValue: string; createdAt: string }[];
   onOpenMonthlyReflection: () => void;
+  onOpenRoutines: () => void;
   groundingProfile: GroundingProfile | null;
   onProfileToggle: (field: keyof GroundingProfile, value: boolean) => void;
   confirmingPersonalisationReset: boolean;
@@ -1335,6 +1351,16 @@ const GroundingJourneyView = ({
           <p className="text-[11px] text-text-muted mt-0.5">A focused exercise to sort what's genuinely yours from what isn't.</p>
         </div>
         <button onClick={onOpenCarryingExercise} className="px-4 py-2.5 border border-border/40 rounded-xl text-[11px] font-black uppercase tracking-widest text-text-muted hover:text-text-main hover:bg-surface/30 shrink-0">
+          Open
+        </button>
+      </div>
+
+      <div className="p-5 rounded-2xl border border-border/20 bg-white/40 dark:bg-card/40 flex items-center justify-between gap-4">
+        <div>
+          <h4 className="text-sm font-bold text-text-main">Your Grounding Routines</h4>
+          <p className="text-[11px] text-text-muted mt-0.5">Morning Grounding, End-of-Day Release, and routines of your own.</p>
+        </div>
+        <button onClick={onOpenRoutines} className="px-4 py-2.5 border border-border/40 rounded-xl text-[11px] font-black uppercase tracking-widest text-text-muted hover:text-text-main hover:bg-surface/30 shrink-0">
           Open
         </button>
       </div>

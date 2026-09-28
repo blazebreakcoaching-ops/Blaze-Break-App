@@ -1037,7 +1037,7 @@ service cloud.firestore {
         allow create: if isOwner(uid)
             && hasOnly(['eventType', 'category', 'lens', 'createdAt'])
             && hasAll(['eventType', 'createdAt'])
-            && request.resource.data.eventType in ['grounding_session_completed', 'pattern_explored', 'pattern_feedback_given', 'community_connection_opened', 'carrying_exercise_completed', 'monthly_reflection_viewed', 'aligned_action_created', 'aligned_action_followed_up']
+            && request.resource.data.eventType in ['grounding_session_completed', 'pattern_explored', 'pattern_feedback_given', 'community_connection_opened', 'carrying_exercise_completed', 'monthly_reflection_viewed', 'aligned_action_created', 'aligned_action_followed_up', 'routine_completed', 'routine_created']
             && (!('category' in request.resource.data) || request.resource.data.category in ['control_responsibility', 'self_expectation', 'boundaries_people', 'connection_support', 'rest_guilt', 'practical_pressures', 'uncertainty_acceptance', 'values_meaning'])
             && (!('lens' in request.resource.data) || request.resource.data.lens in ['secular', 'values', 'faith', 'islamic']);
       }
@@ -1127,7 +1127,7 @@ service cloud.firestore {
       match /groundingRoutines/{routineId} {
         allow read, delete: if isOwner(uid);
         allow create, update: if isOwner(uid)
-            && hasOnly(['name', 'type', 'sessionDepth', 'lens', 'closingStyle', 'preferredPromptKeys', 'reminderEnabled', 'reminderTime', 'reminderDays', 'createdAt', 'updatedAt'])
+            && hasOnly(['name', 'type', 'sessionDepth', 'lens', 'closingStyle', 'preferredPromptKeys', 'reminderEnabled', 'reminderTime', 'reminderDays', 'lastCompletedAt', 'createdAt', 'updatedAt'])
             && hasAll(['name', 'type', 'createdAt', 'updatedAt'])
             && isStringWithMax(request.resource.data.name, 60)
             && request.resource.data.type in ['morning', 'evening', 'before_difficult', 'after_difficult', 'custom']
@@ -1138,6 +1138,14 @@ service cloud.firestore {
             && (!('reminderEnabled' in request.resource.data) || request.resource.data.reminderEnabled is bool)
             && isOptionalStringWithMax(request.resource.data, 'reminderTime', 10)
             && (!('reminderDays' in request.resource.data) || (request.resource.data.reminderDays is list && request.resource.data.reminderDays.size() <= 7))
+            // No push/SMS delivery is wired for routine reminders (section
+            // 28's "only if the app already supports reminders" - the
+            // existing notification-router.ts is category/frequency-based,
+            // not time-of-day precise, so a new scheduler would be needed
+            // for that and is out of scope here). reminderEnabled/Time/Days
+            // instead drive a gentle in-app "due" card in the Journey view,
+            // computed client-side against lastCompletedAt on load.
+            && isOptionalStringWithMax(request.resource.data, 'lastCompletedAt', 40)
             && (request.method == 'create' ? true : checkCreatedAtUnchanged());
       }
 

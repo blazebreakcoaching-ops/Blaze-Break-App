@@ -10,7 +10,8 @@ import { secureApiFetch } from './secure-api';
 export type GroundingEventType =
   | 'grounding_session_completed' | 'pattern_explored' | 'pattern_feedback_given'
   | 'community_connection_opened' | 'carrying_exercise_completed' | 'monthly_reflection_viewed'
-  | 'aligned_action_created' | 'aligned_action_followed_up';
+  | 'aligned_action_created' | 'aligned_action_followed_up'
+  | 'routine_completed' | 'routine_created';
 
 export const logGroundingEvent = (
   eventType: GroundingEventType,
