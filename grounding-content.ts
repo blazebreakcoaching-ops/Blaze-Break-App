@@ -68,10 +68,41 @@ export const UNCONTROLLABLE_EXAMPLES = [
 
 export type IslamicThemeId = 'tawakkul' | 'sabr' | 'shukr' | 'qadr' | 'rahmah' | 'salah' | 'dua' | 'ummah' | 'niyyah' | 'ihsan';
 
+// Phase 3 section 20's "distinct verified-content layer." Deliberately a
+// pure-data enrichment of the existing reference/translation/translator/
+// scholarReviewed shape - server.ts's GroundingReflectResponseSchema and
+// the client's reflection.verse.scholarReviewed check only ever see
+// those four original fields (zod strips the rest), so this content-
+// governance metadata never leaves the server. AI-generated text must
+// NEVER be stored here as verified content - every entry in
+// ISLAMIC_THEMES below is hand-authored/curated, never model output.
 export interface CuratedVerse {
+  title: string;
+  sourceType: 'quran' | 'hadith';
+  // The Arabic original - left undefined for every entry below, same
+  // reasoning as the empty Hadith slots elsewhere in this file: exact
+  // source text is higher-risk to get wrong than an attributed
+  // translation, and stays empty until a qualified scholar supplies and
+  // verifies it, rather than this codebase (or a model) reproducing it
+  // from memory.
+  originalText?: string;
   reference: string;
   translation: string;
   translator: string;
+  reviewerStatus: 'pending' | 'approved' | 'rejected';
+  reviewerName?: string;
+  reviewDate?: string;
+  // Pattern-taxonomy dimension ids (grounding-patterns-taxonomy.ts) this
+  // verse is relevant to - drives DIMENSION_TO_ISLAMIC_THEMES rather than
+  // duplicating that mapping per-verse; kept here too so a future
+  // content-admin view has the full picture on the verse record itself.
+  usageContexts: string[];
+  // A verse can be retired (e.g. a reviewer rejects it) without deleting
+  // the record and losing its review history.
+  active: boolean;
+  // Derived from reviewerStatus, never set independently - kept as its
+  // own field only because the existing wire format/UI already depend on
+  // this exact boolean.
   scholarReviewed: boolean;
 }
 
@@ -96,9 +127,14 @@ export const ISLAMIC_THEMES: Record<IslamicThemeId, IslamicTheme> = {
     label: 'Tawakkul (Trust & Effort)',
     framing: 'Tawakkul means taking appropriate action without demanding ownership of the outcome.',
     verses: [{
+      title: 'On relying upon Allah after taking the means',
+      sourceType: 'quran',
       reference: "Qur'an 65:3",
       translation: '"...And whoever relies upon Allah - then He is sufficient for him. Indeed, Allah will accomplish His purpose..."',
       translator: 'Saheeh International',
+      reviewerStatus: 'pending',
+      usageContexts: ['control', 'over_responsibility', 'uncertainty', 'difficulty_accepting_outcomes', 'work_identity', 'trust'],
+      active: true,
       scholarReviewed: false,
     }],
     prompt: 'What have you genuinely done that was within your responsibility today?',
@@ -109,9 +145,14 @@ export const ISLAMIC_THEMES: Record<IslamicThemeId, IslamicTheme> = {
     label: 'Sabr (Patience & Perseverance)',
     framing: 'Sabr is not passive suffering - it is maintaining steadiness while navigating real difficulty.',
     verses: [{
+      title: 'On seeking help through patience and prayer',
+      sourceType: 'quran',
       reference: "Qur'an 2:153",
       translation: '"O you who have believed, seek help through patience and prayer. Indeed, Allah is with the patient."',
       translator: 'Saheeh International',
+      reviewerStatus: 'pending',
+      usageContexts: ['guilt_about_rest', 'boundary_difficulty', 'patience', 'overcommitment'],
+      active: true,
       scholarReviewed: false,
     }],
     prompt: 'Where has patience felt hardest to hold onto right now?',
@@ -122,9 +163,14 @@ export const ISLAMIC_THEMES: Record<IslamicThemeId, IslamicTheme> = {
     label: 'Shukr (Gratitude)',
     framing: 'Shukr is noticing and naming what is still steady, even in the middle of difficulty.',
     verses: [{
+      title: 'On gratitude increasing what is given',
+      sourceType: 'quran',
       reference: "Qur'an 14:7",
       translation: '"...If you are grateful, I will surely increase you [in favor]..."',
       translator: 'Saheeh International',
+      reviewerStatus: 'pending',
+      usageContexts: ['gratitude'],
+      active: true,
       scholarReviewed: false,
     }],
     prompt: 'What is one thing, however small, that is still steady for you right now?',
@@ -135,9 +181,14 @@ export const ISLAMIC_THEMES: Record<IslamicThemeId, IslamicTheme> = {
     label: 'Qadr (Divine Decree)',
     framing: 'Qadr holds both genuine effort and the honest limits of what any one person can control.',
     verses: [{
+      title: 'On what is already written before it happens',
+      sourceType: 'quran',
       reference: "Qur'an 57:22",
       translation: '"No disaster strikes upon the earth or among yourselves except that it is in a register before We bring it into being..."',
       translator: 'Saheeh International',
+      reviewerStatus: 'pending',
+      usageContexts: ['control', 'uncertainty', 'difficulty_accepting_outcomes'],
+      active: true,
       scholarReviewed: false,
     }],
     prompt: 'What real effort have you already put into this?',
@@ -148,9 +199,14 @@ export const ISLAMIC_THEMES: Record<IslamicThemeId, IslamicTheme> = {
     label: 'Rahmah (Mercy)',
     framing: 'Rahmah is extending the same mercy inward that would be offered to someone else.',
     verses: [{
+      title: 'On Allah\'s mercy and forgiveness',
+      sourceType: 'quran',
       reference: "Qur'an 39:53",
       translation: '"...Indeed, Allah forgives all sins. Indeed, it is He who is the Forgiving, the Merciful."',
       translator: 'Saheeh International',
+      reviewerStatus: 'pending',
+      usageContexts: ['guilt_about_rest', 'self_criticism', 'compassion'],
+      active: true,
       scholarReviewed: false,
     }],
     prompt: 'If a close friend were carrying exactly what you are carrying, what would you say to them?',
@@ -161,9 +217,14 @@ export const ISLAMIC_THEMES: Record<IslamicThemeId, IslamicTheme> = {
     label: 'Salah (Prayer)',
     framing: 'Salah is a structured, protected pause away from the demands of the material world.',
     verses: [{
+      title: 'On prayer as a protected pause',
+      sourceType: 'quran',
       reference: "Qur'an 29:45",
       translation: '"...Indeed, prayer prohibits immorality and wrongdoing, and the remembrance of Allah is greater..."',
       translator: 'Saheeh International',
+      reviewerStatus: 'pending',
+      usageContexts: ['overcommitment'],
+      active: true,
       scholarReviewed: false,
     }],
     prompt: 'When did you last take a real pause today, away from screens and demands?',
@@ -174,9 +235,14 @@ export const ISLAMIC_THEMES: Record<IslamicThemeId, IslamicTheme> = {
     label: "Du'a (Supplication)",
     framing: "Du'a is speaking honestly, without needing to find the \"right\" words first.",
     verses: [{
+      title: 'On Allah being near to the one who calls',
+      sourceType: 'quran',
       reference: "Qur'an 2:186",
       translation: '"...I am near. I respond to the invocation of the supplicant when he calls upon Me..."',
       translator: 'Saheeh International',
+      reviewerStatus: 'pending',
+      usageContexts: ['reluctance_to_ask_for_support'],
+      active: true,
       scholarReviewed: false,
     }],
     prompt: "If you spoke honestly right now, without needing the \"right\" words, what would you actually say?",
@@ -187,9 +253,14 @@ export const ISLAMIC_THEMES: Record<IslamicThemeId, IslamicTheme> = {
     label: 'Community / Ummah',
     framing: 'Carrying difficulty was never meant to happen entirely alone.',
     verses: [{
+      title: 'On the believers as brothers to one another',
+      sourceType: 'quran',
       reference: "Qur'an 49:10",
       translation: '"The believers are but brothers, so make settlement between your brothers..."',
       translator: 'Saheeh International',
+      reviewerStatus: 'pending',
+      usageContexts: ['isolation', 'reluctance_to_ask_for_support', 'connection'],
+      active: true,
       scholarReviewed: false,
     }],
     prompt: 'Who could genuinely share part of this weight with you, if you let them?',
@@ -200,9 +271,14 @@ export const ISLAMIC_THEMES: Record<IslamicThemeId, IslamicTheme> = {
     label: 'Niyyah (Intention)',
     framing: 'Niyyah is returning attention to intention, rather than measuring your worth solely through outcomes.',
     verses: [{
+      title: 'On sincerity of intention',
+      sourceType: 'quran',
       reference: "Qur'an 98:5",
       translation: '"And they were not commanded except to worship Allah, [being] sincere to Him in religion..."',
       translator: 'Saheeh International',
+      reviewerStatus: 'pending',
+      usageContexts: ['over_responsibility', 'excessive_self_expectation', 'work_identity'],
+      active: true,
       scholarReviewed: false,
     }],
     prompt: 'What was your intention when you started this, before the outcome became uncertain?',
@@ -213,9 +289,14 @@ export const ISLAMIC_THEMES: Record<IslamicThemeId, IslamicTheme> = {
     label: 'Ihsan (Excellence)',
     framing: 'Ihsan is choosing excellence of action without demanding perfection of outcome.',
     verses: [{
+      title: 'On good being repaid with good',
+      sourceType: 'quran',
       reference: "Qur'an 55:60",
       translation: '"Is the reward for good [ihsan] anything but good [ihsan]?"',
       translator: 'Saheeh International',
+      reviewerStatus: 'pending',
+      usageContexts: ['perfectionism', 'excessive_self_expectation', 'difficulty_accepting_unfinished_work', 'work_identity'],
+      active: true,
       scholarReviewed: false,
     }],
     prompt: 'Where did you genuinely bring your best effort, even if the result wasn\'t perfect?',
@@ -243,13 +324,21 @@ export const DIMENSION_TO_ISLAMIC_THEMES: Partial<Record<string, IslamicThemeId[
   excessive_self_expectation: ['ihsan', 'niyyah'],
   difficulty_accepting_outcomes: ['qadr', 'tawakkul'],
   difficulty_accepting_unfinished_work: ['ihsan'],
-  work_identity: ['niyyah', 'ihsan'],
+  // Section 21's worked example is "Obsession with results -> Niyyah +
+  // Tawakkul" - work_identity ("worth tied to output") is the closest
+  // taxonomy match, so it carries both.
+  work_identity: ['niyyah', 'tawakkul', 'ihsan'],
   boundary_difficulty: ['sabr'],
   connection: ['ummah'],
   gratitude: ['shukr'],
   patience: ['sabr'],
   trust: ['tawakkul'],
   compassion: ['rahmah'],
+  // Section 21's "Constant doing -> Salah + presence" - overcommitment
+  // ("saying yes past capacity") is this taxonomy's closest match to
+  // "constant doing." Without this, salah was unreachable through
+  // relevance ranking at all - nothing else mapped to it.
+  overcommitment: ['salah', 'sabr'],
 };
 
 export const rankIslamicThemesByRelevance = (recentPatternKeys: string[]): IslamicThemeId[] => {

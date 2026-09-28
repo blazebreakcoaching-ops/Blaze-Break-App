@@ -123,7 +123,16 @@ describe('POST /api/grounding/reflect — islamic lens curated-content lock-in',
     const theme = ISLAMIC_THEMES.tawakkul;
     expect(res.body.firstQuestion).toBe(theme.prompt);
     expect(res.body.secondQuestion).toBe(theme.followUp);
-    expect(res.body.verse).toEqual(theme.verses[0]);
+    // The wire response only ever carries the 4 fields the client
+    // renders - GroundingReflectResponseSchema strips the rest of the
+    // curated verse record's content-governance metadata (reviewerName,
+    // usageContexts, etc.) before it ever reaches the client.
+    expect(res.body.verse).toEqual({
+      reference: theme.verses[0]!.reference,
+      translation: theme.verses[0]!.translation,
+      translator: theme.verses[0]!.translator,
+      scholarReviewed: theme.verses[0]!.scholarReviewed,
+    });
   });
 
   it('still returns the curated questions/verse even if the model tries to return its own fabricated ones', async () => {
@@ -144,7 +153,12 @@ describe('POST /api/grounding/reflect — islamic lens curated-content lock-in',
     const theme = ISLAMIC_THEMES.sabr;
     expect(res.body.firstQuestion).toBe(theme.prompt);
     expect(res.body.secondQuestion).toBe(theme.followUp);
-    expect(res.body.verse).toEqual(theme.verses[0]);
+    expect(res.body.verse).toEqual({
+      reference: theme.verses[0]!.reference,
+      translation: theme.verses[0]!.translation,
+      translator: theme.verses[0]!.translator,
+      scholarReviewed: theme.verses[0]!.scholarReviewed,
+    });
     expect(res.body.verse.reference).not.toBe('Made up 1:1');
   });
 

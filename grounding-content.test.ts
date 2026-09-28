@@ -5,6 +5,7 @@ import {
   BURDEN_OPTIONS,
   NEXT_ACTION_OPTIONS,
   rankIslamicThemesByRelevance,
+  DIMENSION_TO_ISLAMIC_THEMES,
 } from './grounding-content';
 
 describe('ISLAMIC_THEMES curated content', () => {
@@ -44,6 +45,59 @@ describe('ISLAMIC_THEMES curated content', () => {
       expect(theme.prompt.trim().endsWith('?')).toBe(true);
       expect(theme.followUp.trim().endsWith('?')).toBe(true);
     }
+  });
+});
+
+describe('ISLAMIC_THEMES verified-content governance fields (Phase 3 section 20)', () => {
+  it('marks every verse as reviewerStatus "pending" - never "approved" without a real reviewer', () => {
+    for (const themeId of ISLAMIC_THEME_ORDER) {
+      for (const verse of ISLAMIC_THEMES[themeId].verses) {
+        expect(verse.reviewerStatus).toBe('pending');
+        expect(verse.reviewerName).toBeUndefined();
+        expect(verse.reviewDate).toBeUndefined();
+      }
+    }
+  });
+
+  it('never stores Arabic source text this codebase has not had scholar-verified, same as the empty Hadith slots', () => {
+    for (const themeId of ISLAMIC_THEME_ORDER) {
+      for (const verse of ISLAMIC_THEMES[themeId].verses) {
+        expect(verse.originalText).toBeUndefined();
+      }
+    }
+  });
+
+  it('marks every verse sourceType as quran - matches the "no Hadith text yet" reference check above', () => {
+    for (const themeId of ISLAMIC_THEME_ORDER) {
+      for (const verse of ISLAMIC_THEMES[themeId].verses) {
+        expect(verse.sourceType).toBe('quran');
+      }
+    }
+  });
+
+  it('gives every verse a title and at least one usage context, and defaults every verse to active', () => {
+    for (const themeId of ISLAMIC_THEME_ORDER) {
+      for (const verse of ISLAMIC_THEMES[themeId].verses) {
+        expect(verse.title.length).toBeGreaterThan(0);
+        expect(verse.usageContexts.length).toBeGreaterThan(0);
+        expect(verse.active).toBe(true);
+      }
+    }
+  });
+});
+
+describe('DIMENSION_TO_ISLAMIC_THEMES (Phase 3 section 21)', () => {
+  it('every one of the 10 curated themes is reachable through relevance ranking - none is a dead end', () => {
+    const reachable = new Set(Object.values(DIMENSION_TO_ISLAMIC_THEMES).flat());
+    for (const themeId of ISLAMIC_THEME_ORDER) {
+      expect(reachable.has(themeId)).toBe(true);
+    }
+  });
+
+  it('matches the brief\'s worked examples: feeling alone -> ummah, harsh self-judgment -> rahmah, constant doing -> salah', () => {
+    expect(rankIslamicThemesByRelevance(['isolation'])[0]).toBe('ummah');
+    expect(rankIslamicThemesByRelevance(['self_criticism'])[0]).toBe('rahmah');
+    expect(rankIslamicThemesByRelevance(['overcommitment'])).toContain('salah');
   });
 });
 
