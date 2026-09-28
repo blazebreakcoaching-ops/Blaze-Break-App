@@ -84,14 +84,17 @@ describe('GET /api/org/:orgId/hr-dashboard — sees every qualifying team at onc
   });
 
   it('a team below threshold is silently omitted, same rule as risk-trend', async () => {
+    // Team A (3) clears the threshold with a safe complement (x1, x2, b1 -
+    // 3 more consenting members, also clearing threshold). Team B (1) is
+    // below the threshold on its own and is omitted regardless.
     seedOrg(ORG, {
       adminUids: ['owner_1'],
-      memberUids: ['owner_1', 'hr_1', 'a1', 'a2', 'a3', 'b1'],
+      memberUids: ['owner_1', 'hr_1', 'a1', 'a2', 'a3', 'b1', 'x1', 'x2'],
       memberTeams: { a1: 'Team A', a2: 'Team A', a3: 'Team A', b1: 'Team B' },
       hrViewerUids: ['hr_1'],
       privacyThreshold: 3,
     });
-    ['a1', 'a2', 'a3', 'b1'].forEach(consenting);
+    ['a1', 'a2', 'a3', 'b1', 'x1', 'x2'].forEach(consenting);
 
     const res = await request(app).get(`/api/org/${ORG}/hr-dashboard`).set(auth('hr_1'));
     const teamNames = res.body.teams.map((t: any) => t.team);

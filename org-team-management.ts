@@ -96,6 +96,15 @@ export interface QualifyingTeamGroups {
 // as locked would itself reveal more about its size than this feature
 // should ever expose (the same reasoning the original risk-trend route
 // was built on).
+//
+// A team only qualifies if BOTH it, and the rest of the org once it's
+// excluded (the "complement"), clear the threshold. Team size alone is not
+// enough: whoever calls this can typically also see the org-wide aggregate
+// from another route (risk-trend, hr-dashboard), so a team sized
+// total-minus-one lets that one excluded person's own aggregate be
+// recovered by subtraction - collapsing the "aggregate >= threshold"
+// guarantee to an effectively single-person cohort. Team labels are
+// admin-assigned and reassignable at any time, so this isn't hypothetical.
 export const computeQualifyingTeamGroups = (
   consentingUids: string[],
   memberTeams: Record<string, string> | null | undefined,
@@ -112,7 +121,9 @@ export const computeQualifyingTeamGroups = (
   });
   const qualifying: Record<string, string[]> = {};
   Object.entries(groups).forEach(([team, uids]) => {
-    if (uids.length >= threshold) qualifying[team] = uids;
+    if (uids.length < threshold) return;
+    const complementSize = consentingUids.length - uids.length;
+    if (complementSize === 0 || complementSize >= threshold) qualifying[team] = uids;
   });
   return { qualifying };
 };

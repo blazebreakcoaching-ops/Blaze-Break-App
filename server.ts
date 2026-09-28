@@ -7381,7 +7381,16 @@ app.get("/api/org/:orgId/team-dashboard", verifyAppCheck, authenticateFirebaseUs
 
     const teams = await Promise.all(managedTeams.map(async (team) => {
       const teamConsentingUids = consentingUids.filter((uid) => memberTeams[uid] === team);
-      if (teamConsentingUids.length < threshold) {
+      // Same complement check computeQualifyingTeamGroups applies to the
+      // org-wide breakdown: a caller who can also see the org-wide
+      // aggregate (an admin who happens to manage this team, or a manager
+      // who is later given org-admin access) could otherwise recover the
+      // excluded remainder's own signal by subtracting this team's
+      // snapshot from the org total. Locking here doesn't leak anything
+      // new - it's the manager's own team, so they already know its size.
+      const complementSize = consentingUids.length - teamConsentingUids.length;
+      const complementSafe = complementSize === 0 || complementSize >= threshold;
+      if (teamConsentingUids.length < threshold || !complementSafe) {
         return { team, locked: true, cohortSize: teamConsentingUids.length, threshold };
       }
       const snapshot = await computeStrainSnapshotForCohort(db, teamConsentingUids);

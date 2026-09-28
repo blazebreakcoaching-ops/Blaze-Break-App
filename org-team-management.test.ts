@@ -104,11 +104,12 @@ describe('validateHrViewerList', () => {
 });
 
 describe('computeQualifyingTeamGroups', () => {
-  it('groups consenting uids by team and keeps only teams at or above threshold', () => {
-    const memberTeams = { u1: 'A', u2: 'A', u3: 'A', u4: 'B' };
-    const result = computeQualifyingTeamGroups(['u1', 'u2', 'u3', 'u4'], memberTeams, 3);
-    expect(result.qualifying).toEqual({ A: ['u1', 'u2', 'u3'] });
-    expect(result.qualifying.B).toBeUndefined();
+  it('groups consenting uids by team and keeps a team whose complement also clears the threshold', () => {
+    // 6 total, team A has 3 (threshold), complement is the other 3 - also
+    // clears the threshold, so team A is genuinely safe to show.
+    const memberTeams = { u1: 'A', u2: 'A', u3: 'A', u4: 'B', u5: 'B', u6: 'B' };
+    const result = computeQualifyingTeamGroups(['u1', 'u2', 'u3', 'u4', 'u5', 'u6'], memberTeams, 3);
+    expect(result.qualifying).toEqual({ A: ['u1', 'u2', 'u3'], B: ['u4', 'u5', 'u6'] });
   });
 
   it('a team below threshold is silently absent, not present with a locked flag', () => {
@@ -117,10 +118,30 @@ describe('computeQualifyingTeamGroups', () => {
     expect(Object.keys(result.qualifying)).toEqual([]);
   });
 
+  // Re-identification-by-subtraction: a team that clears the threshold on
+  // its own is still excluded if the rest of the org (its complement)
+  // would fall below threshold - otherwise the excluded remainder's own
+  // aggregate could be recovered by subtracting this team's snapshot from
+  // the org-wide one, which any caller of this helper can also see.
+  it('excludes a team whose complement would fall below threshold, even though the team itself clears it', () => {
+    const memberTeams = { u1: 'A', u2: 'A', u3: 'A', u4: 'B' };
+    const result = computeQualifyingTeamGroups(['u1', 'u2', 'u3', 'u4'], memberTeams, 3);
+    expect(result.qualifying).toEqual({});
+  });
+
+  it('still includes a team that is the entire consenting population - no residual group to isolate', () => {
+    const memberTeams = { u1: 'A', u2: 'A', u3: 'A' };
+    const result = computeQualifyingTeamGroups(['u1', 'u2', 'u3'], memberTeams, 3);
+    expect(result.qualifying).toEqual({ A: ['u1', 'u2', 'u3'] });
+  });
+
   it('a consenting uid with no team label is simply not counted toward any team', () => {
     const memberTeams = { u1: 'A', u2: 'A' };
     const result = computeQualifyingTeamGroups(['u1', 'u2', 'u3_no_team'], memberTeams, 2);
-    expect(result.qualifying).toEqual({ A: ['u1', 'u2'] });
+    // Team A (2) clears the threshold, but its complement is the other 1
+    // consenting member (the untagged u3_no_team) - below threshold, so A
+    // is excluded too.
+    expect(result.qualifying).toEqual({});
   });
 
   it('handles a missing memberTeams map without throwing', () => {
