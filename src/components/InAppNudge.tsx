@@ -4,6 +4,7 @@ import { Sparkles, X, ChevronRight } from "lucide-react";
 import { useAuth } from '../lib/auth';
 import { getDb } from '../lib/firebase';
 import { secureApiFetch } from '../lib/secure-api';
+import { detectFuelPatterns, FUEL_PATTERN_COPY, FuelLogEntry } from '../../recovery-fuel-patterns';
 
 // InAppNudge is always mounted from app start (it polls every 60s), not a
 // modal with an open/close trigger, so unlike the lazy-loaded modals
@@ -35,6 +36,7 @@ const NUDGE_CATEGORY_TABS: Record<string, string> = {
   weekly_review_reminder: 'reflect',
   goal_follow_up: 'home',
   climate_survey_reminder: 'privacy',
+  fuel_pattern_reminder: 'fuel',
 };
 
 const NUDGE_CATEGORY_LABELS: Record<string, string> = {
@@ -44,6 +46,7 @@ const NUDGE_CATEGORY_LABELS: Record<string, string> = {
   weekly_review_reminder: 'Open Reflect',
   goal_follow_up: "View Today's Goal",
   climate_survey_reminder: 'Take Survey',
+  fuel_pattern_reminder: 'Open Fuel Log',
 };
 
 export const InAppNudge = () => {
@@ -209,6 +212,42 @@ export const InAppNudge = () => {
     }
   };
 
+  const checkFuelPatternDue = async (): Promise<{ category: string; message: string } | null> => {
+    if (!user) return null;
+    try {
+      const { db, collection, getDocs, query, orderBy, limit } = await getFirestoreApi();
+      const logsSnap = await getDocs(
+        query(collection(db, 'users', user.uid, 'recovery_fuel_logs'), orderBy('createdAt', 'desc'), limit(7))
+      );
+      const logs = logsSnap.docs.map((d) => d.data() as FuelLogEntry);
+      // Same age toggle RecoveryFuelEngine.tsx reads/writes, so alcohol
+      // is only ever considered a pattern for the same accounts that see
+      // alcohol tracking at all.
+      const isAdult = localStorage.getItem('blaze_user_is_adult') === 'true';
+      const patterns = detectFuelPatterns(logs, { includeAlcohol: isAdult });
+      if (patterns.length === 0) return null;
+
+      // Don't re-surface this more than about twice a week - fuel logging
+      // can shift day to day, so this checks back sooner than the
+      // once-a-week climate survey reminder does.
+      const recentSnap = await getDocs(
+        query(collection(db, 'users', user.uid, 'nudge_history'), orderBy('createdAt', 'desc'), limit(30))
+      );
+      const lastFuelNudge = recentSnap.docs.map((d) => d.data()).find((n) => n.category === 'fuel_pattern_reminder');
+      if (lastFuelNudge) {
+        const daysSinceNudge = (Date.now() - new Date(lastFuelNudge.createdAt).getTime()) / (1000 * 60 * 60 * 24);
+        if (daysSinceNudge < 4) return null;
+      }
+
+      // detectFuelPatterns returns patterns in a fixed, most-significant-
+      // first order - only ever surface the single most relevant one.
+      const top = patterns[0];
+      return { category: 'fuel_pattern_reminder', message: FUEL_PATTERN_COPY[top.id].nudgeMessage(top) };
+    } catch (e) {
+      return null;
+    }
+  };
+
   const evaluateNudges = async () => {
     if (!user || !preferences || !preferences.notificationsEnabled) return;
     if (currentNudge) return; // already showing one
@@ -265,7 +304,7 @@ export const InAppNudge = () => {
       cat = climateNudge.category;
       text = climateNudge.message;
     } else {
-      // These reads span up to five collections, so they're throttled
+      // These reads span up to six collections, so they're throttled
       // independently of the "nudge already shown" gate above - otherwise,
       // on a day where nothing is due yet, this would re-run all five
       // queries every single 60-second tick.
@@ -285,6 +324,7 @@ export const InAppNudge = () => {
         boundary_practice_reminder: checkBoundaryPracticeDue,
         weekly_review_reminder: checkWeeklyReviewDue,
         goal_follow_up: checkGoalFollowUpDue,
+        fuel_pattern_reminder: checkFuelPatternDue,
       };
       const cats: string[] = preferences.allowedNudgeCategories || ['check_in_reminder'];
       const results = await Promise.all(
