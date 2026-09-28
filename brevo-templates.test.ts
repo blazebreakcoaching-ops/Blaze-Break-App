@@ -6,6 +6,7 @@ import {
   buildMfaEnabledEmail,
   buildMfaDisabledEmail,
   buildSupportRequestReceivedEmail,
+  buildInactivityWarningEmail,
   htmlToPlainTextFallback,
 } from './brevo-templates';
 
@@ -40,6 +41,14 @@ describe('email template builders', () => {
     expect(html).toMatch(/controlled early access/i);
   });
 
+  it('inactivity warning embeds the sign-in link and is clear that signing in cancels the deletion', () => {
+    const { subject, html } = buildInactivityWarningEmail('https://blazebreak.example/app');
+    expect(subject).toMatch(/delet/i);
+    expect(html).toContain('https://blazebreak.example/app');
+    expect(html).toMatch(/sign back in/i);
+    expect(html).toMatch(/cancel the deletion/i);
+  });
+
   it('every template produces a non-empty subject and a full HTML document', () => {
     for (const build of [
       () => buildPasswordResetEmail('https://x/y'),
@@ -48,6 +57,7 @@ describe('email template builders', () => {
       buildMfaEnabledEmail,
       buildMfaDisabledEmail,
       buildSupportRequestReceivedEmail,
+      () => buildInactivityWarningEmail('https://x/y'),
     ]) {
       const { subject, html } = build();
       expect(subject.length).toBeGreaterThan(0);
@@ -75,6 +85,7 @@ describe('htmlToPlainTextFallback', () => {
       buildMfaEnabledEmail,
       buildMfaDisabledEmail,
       buildSupportRequestReceivedEmail,
+      () => buildInactivityWarningEmail('https://x/y'),
     ]) {
       const text = htmlToPlainTextFallback(build().html);
       expect(text.length).toBeGreaterThan(20);

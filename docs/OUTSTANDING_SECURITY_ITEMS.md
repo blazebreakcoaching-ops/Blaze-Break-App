@@ -14,13 +14,12 @@ what's still open.
 
 ## Needs a human decision, not more code
 
-- **Data retention window.** No automated retention/deletion exists
-  today beyond user-initiated account deletion — see
-  `docs/DATA_RETENTION.md` for the real options (A: keep indefinitely
-  and document that as the deliberate choice, B: inactivity-based
-  expiry, C: category-specific windows with derived-data persisting).
-  This document does not pick one; someone with product/legal authority
-  needs to.
+- ~~**Data retention window.**~~ **Resolved 2026-09-28** — Option B
+  (12-month inactivity expiry) decided and implemented. See
+  `docs/DATA_RETENTION.md` for the decision record and
+  `data-retention.ts`/`processInactivityRetentionSweep()` in `server.ts`
+  for the implementation. Off by default until `RETENTION_SWEEP_ENABLED`
+  is deliberately set in a given environment.
 - **Environment separation.** Nothing in this codebase or its docs
   describes a separate staging environment/GCP project distinct from
   production — every reference (`docs/DEPLOY.md`, `firebase.json`)

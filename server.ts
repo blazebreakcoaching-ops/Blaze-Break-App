@@ -30,7 +30,8 @@ import { suggestRecognitionPrompts } from './positive-reinforcement';
 import { isRealGuardian, isValidGuardianPhone, buildGuardianCallRequestMessage, extractFirstName, nudgeSchedulerIsEnabled, guardianAlertsEnabled } from './guardian-alert';
 import { guardianSupportInvitationEnabled, validateGuardianSupportOffer, isValidGuardianSupportEventType, isValidGuardianSupportTemplateId, buildGuardianSupportMessage } from './guardian-support-invitation';
 import { collectionsForExport, collectionsForErasure } from './user-data-collections';
-import { htmlToPlainTextFallback, buildEmailVerificationEmail, buildPasswordResetEmail, buildPasswordChangedEmail, buildMfaEnabledEmail, buildMfaDisabledEmail, buildSupportRequestReceivedEmail } from './brevo-templates';
+import { htmlToPlainTextFallback, buildEmailVerificationEmail, buildPasswordResetEmail, buildPasswordChangedEmail, buildMfaEnabledEmail, buildMfaDisabledEmail, buildSupportRequestReceivedEmail, buildInactivityWarningEmail } from './brevo-templates';
+import { evaluateRetentionAction, retentionSweepIsEnabled, RetentionCandidate } from './data-retention';
 import { generateTotpSecret, buildOtpauthUri, verifyTotpCode, generateRecoveryCodes, hashRecoveryCode, encryptSecret as encryptTotpSecret, decryptSecret as decryptTotpSecret, isTotpLockedOut, nextLockoutState } from './totp-mfa';
 import { isValidGad7Answers, scoreGad7, interpretGad7 } from './gad7';
 import { DEFAULT_LEGAL_DOCUMENTS, LegalDocumentType } from './legal-documents';
@@ -8533,6 +8534,91 @@ if (process.env.TEST_MODE !== 'true') {
   cron.schedule('*/5 * * * *', processNudgeSchedules);
 }
 
+// Inactivity-based data retention sweep - docs/DATA_RETENTION.md, Option
+// B (decided): warn an inactive account, then delete it 30 days later if
+// it's still inactive. Same off-by-default kill-switch pattern as
+// NUDGE_SCHEDULER_ENABLED above - a job that deletes accounts must be
+// turned on deliberately per environment, never just by merging code.
+const RETENTION_SWEEP_ENABLED = retentionSweepIsEnabled(process.env.RETENTION_SWEEP_ENABLED);
+
+async function processInactivityRetentionSweep() {
+  if (!RETENTION_SWEEP_ENABLED) return; // Kill switch - see RETENTION_SWEEP_ENABLED above.
+  let db;
+  try {
+    db = getDb();
+  } catch (e) {
+    return; // Firestore not configured in this environment - nothing to do.
+  }
+
+  let warned = 0;
+  let deleted = 0;
+  let pageToken: string | undefined;
+
+  try {
+    do {
+      // Firebase Auth is the source of truth for "last active" - it
+      // already tracks lastSignInTime natively, so this sweep needs no
+      // new per-user activity-tracking field to work.
+      const page = await getAuth().listUsers(1000, pageToken);
+      pageToken = page.pageToken || undefined;
+
+      // Batch-read each user's retentionWarningSentAt from Firestore
+      // rather than one read per user in the loop below.
+      const refs = page.users.map(u => db.collection("users").doc(u.uid));
+      const snaps = refs.length ? await db.getAll(...refs) : [];
+      const warningByUid = new Map<string, string | null>();
+      snaps.forEach((snap: any, i: number) => {
+        warningByUid.set(page.users[i].uid, snap.exists ? (snap.data()?.retentionWarningSentAt ?? null) : null);
+      });
+
+      for (const authUser of page.users) {
+        const candidate: RetentionCandidate = {
+          uid: authUser.uid,
+          lastSignInTime: authUser.metadata.lastSignInTime || null,
+          creationTime: authUser.metadata.creationTime,
+          retentionWarningSentAt: warningByUid.get(authUser.uid) ?? null,
+        };
+        const decision = evaluateRetentionAction(candidate);
+
+        try {
+          if (decision.action === 'warn') {
+            if (authUser.email) {
+              const appBase = (process.env.APP_URL || "").replace(/\/$/, "");
+              const { subject, html } = buildInactivityWarningEmail(appBase || "https://blazebreak.app");
+              await sendBrevoHtmlEmail(authUser.email, subject, html);
+            }
+            await db.collection("users").doc(authUser.uid).set({
+              retentionWarningSentAt: new Date().toISOString(),
+            }, { merge: true });
+            warned++;
+          } else if (decision.action === 'delete') {
+            await eraseUserAccount(authUser.uid);
+            deleted++;
+          }
+        } catch (innerErr: any) {
+          console.error(`[Retention] Failed processing uid ${authUser.uid}:`, innerErr?.message || innerErr);
+        }
+      }
+    } while (pageToken);
+
+    if (warned || deleted) {
+      console.log(`[Retention] Sweep complete - warned ${warned}, deleted ${deleted}.`);
+    }
+  } catch (err: any) {
+    console.error("[Retention] Sweep failed:", err?.message || err);
+  }
+}
+
+// Runs once a day - this is a slow-moving, month-scale process, unlike
+// the 5-minute nudge scheduler above, so a daily cadence is more than
+// enough and keeps the listUsers()/Firestore read volume low. Same
+// TEST_MODE guard as the nudge scheduler's registration, for the same
+// reason (a real, if kill-switched, timer must not be left running on
+// every test-file import).
+if (process.env.TEST_MODE !== 'true') {
+  cron.schedule('0 3 * * *', processInactivityRetentionSweep);
+}
+
 // Public - the ally doesn't have an account. Access is entirely gated by
 // possession of an unguessable 48-character token, and the response only
 // ever includes what the owner explicitly toggled on.
@@ -9310,74 +9396,87 @@ app.get("/api/user/export", exportLimiter, verifyAppCheck, authenticateFirebaseU
   }
 });
 
+// The one real account-erasure routine in the app. Originally inline in
+// the /api/user/delete-account handler below; extracted so the
+// inactivity retention sweep (processInactivityRetentionSweep, see the
+// scheduled-jobs section) can delete an account through the exact same
+// code path a self-serve deletion uses, rather than a second
+// hand-maintained copy that could silently drift out of sync with what
+// "fully erased" actually means (see user-data-collections.ts's own
+// history of collections that were missed once already).
+async function eraseUserAccount(uid: string): Promise<{ authDeleted: boolean }> {
+  const db = getDb();
+  const userRef = db.collection("users").doc(uid);
+
+  // Remove this user from any organisation they belong to first, so a
+  // deleted account can't linger in an org's memberUids/adminUids and
+  // count toward its aggregate dashboards after the person is gone.
+  try {
+    const rootSnap = await userRef.get();
+    const orgId = rootSnap.exists ? (rootSnap.data() as any)?.organisationId : null;
+    if (orgId) {
+      await db.collection("organisations").doc(orgId).update({
+        memberUids: FieldValue.arrayRemove(uid),
+        adminUids: FieldValue.arrayRemove(uid),
+        [`memberTeams.${uid}`]: FieldValue.delete(),
+      });
+      // Clean up the granular Enterprise role record too - see
+      // /api/org/leave for why this matters.
+      await db.collection("organisations").doc(orgId).collection("members").doc(uid).delete();
+      // Same reasoning for any desktop-deployment device this user
+      // registered under the org (organisations/{orgId}/devices, keyed by
+      // ownerUid) - otherwise a device record carrying this user's uid and
+      // deviceName would silently outlive the account it belongs to,
+      // exactly the class of bug the member-record cleanup above exists
+      // to prevent.
+      const devicesSnap = await db.collection("organisations").doc(orgId).collection("devices")
+        .where("ownerUid", "==", uid).get();
+      await Promise.all(devicesSnap.docs.map((d: any) => d.ref.delete()));
+    }
+  } catch (e) {
+    // Non-fatal - if the org record is already gone or malformed, the
+    // user's own data should still be deleted below rather than the
+    // whole request failing over org bookkeeping.
+  }
+
+  // recursiveDelete removes the user document and every subcollection
+  // beneath it, at any depth - the actual erasure the Privacy Vault's
+  // copy promises.
+  await db.recursiveDelete(userRef);
+
+  // Top-level collections keyed by userId rather than nested under the
+  // user document - recursiveDelete above cannot reach these, so they
+  // have to be handled explicitly or the data survives a deletion that
+  // claims to remove everything. Single source of truth in
+  // user-data-collections.ts. Note this list is deliberately a subset of
+  // the export list: audit_logs is exported but NOT erased, because a
+  // compliance trail must outlive the account it records (see the reason
+  // field there). The classification lives in one place, guarded by a
+  // test, rather than as two hand-maintained arrays that can drift.
+  const strayCollections = collectionsForErasure();
+  for (const colName of strayCollections) {
+    const snap = await db.collection(colName).where("userId", "==", uid).get();
+    await Promise.all(snap.docs.map(d => d.ref.delete()));
+  }
+
+  // Delete the auth account itself last. If this fails, the personal
+  // data is already gone, which is the part that actually matters for
+  // erasure - but report it honestly rather than claiming full success.
+  let authDeleted = true;
+  try {
+    await getAuth().deleteUser(uid);
+  } catch (e: any) {
+    authDeleted = false;
+    console.error("[Delete] auth account deletion failed:", e?.message || e);
+  }
+
+  return { authDeleted };
+}
+
 app.post("/api/user/delete-account", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
   try {
     const user = requireAuth(req);
-    const db = getDb();
-    const userRef = db.collection("users").doc(user.uid);
-
-    // Remove this user from any organisation they belong to first, so a
-    // deleted account can't linger in an org's memberUids/adminUids and
-    // count toward its aggregate dashboards after the person is gone.
-    try {
-      const rootSnap = await userRef.get();
-      const orgId = rootSnap.exists ? (rootSnap.data() as any)?.organisationId : null;
-      if (orgId) {
-        await db.collection("organisations").doc(orgId).update({
-          memberUids: FieldValue.arrayRemove(user.uid),
-          adminUids: FieldValue.arrayRemove(user.uid),
-          [`memberTeams.${user.uid}`]: FieldValue.delete(),
-        });
-        // Clean up the granular Enterprise role record too - see
-        // /api/org/leave for why this matters.
-        await db.collection("organisations").doc(orgId).collection("members").doc(user.uid).delete();
-        // Same reasoning for any desktop-deployment device this user
-        // registered under the org (organisations/{orgId}/devices, keyed by
-        // ownerUid) - otherwise a device record carrying this user's uid and
-        // deviceName would silently outlive the account it belongs to,
-        // exactly the class of bug the member-record cleanup above exists
-        // to prevent.
-        const devicesSnap = await db.collection("organisations").doc(orgId).collection("devices")
-          .where("ownerUid", "==", user.uid).get();
-        await Promise.all(devicesSnap.docs.map((d: any) => d.ref.delete()));
-      }
-    } catch (e) {
-      // Non-fatal - if the org record is already gone or malformed, the
-      // user's own data should still be deleted below rather than the
-      // whole request failing over org bookkeeping.
-    }
-
-    // recursiveDelete removes the user document and every subcollection
-    // beneath it, at any depth - the actual erasure the Privacy Vault's
-    // copy promises.
-    await db.recursiveDelete(userRef);
-
-    // Top-level collections keyed by userId rather than nested under the
-    // user document - recursiveDelete above cannot reach these, so they
-    // have to be handled explicitly or the data survives a deletion that
-    // claims to remove everything. Single source of truth in
-    // user-data-collections.ts. Note this list is deliberately a subset of
-    // the export list: audit_logs is exported but NOT erased, because a
-    // compliance trail must outlive the account it records (see the reason
-    // field there). The classification lives in one place, guarded by a
-    // test, rather than as two hand-maintained arrays that can drift.
-    const strayCollections = collectionsForErasure();
-    for (const colName of strayCollections) {
-      const snap = await db.collection(colName).where("userId", "==", user.uid).get();
-      await Promise.all(snap.docs.map(d => d.ref.delete()));
-    }
-
-    // Delete the auth account itself last. If this fails, the personal
-    // data is already gone, which is the part that actually matters for
-    // erasure - but report it honestly rather than claiming full success.
-    let authDeleted = true;
-    try {
-      await getAuth().deleteUser(user.uid);
-    } catch (e: any) {
-      authDeleted = false;
-      console.error("[Delete] auth account deletion failed:", e?.message || e);
-    }
-
+    const { authDeleted } = await eraseUserAccount(user.uid);
     res.json({ success: true, authDeleted });
   } catch (err: any) {
     console.error("[Delete] failed:", err?.message || err);
