@@ -6392,7 +6392,12 @@ app.get("/api/org/me", verifyAppCheck, authenticateFirebaseUser, async (req, res
       privacyThreshold: isOrgAdmin ? (org.privacyThreshold || 5) : undefined,
       shareAnonymizedDataWithOrg: userDoc.data()?.shareAnonymizedDataWithOrg === true,
       managedTeams: managedTeamsFor(org.teamManagers, user.uid),
-      isHrViewer: isHrViewer(org.hrViewerUids, user.uid),
+      // Matches GET /api/org/:orgId/hr-dashboard's own access check exactly
+      // (isHrViewer(...) OR admin) - otherwise an org admin has real,
+      // working access to that data through the API but no nav entry to
+      // ever reach it, since the hrViewerUids allow-list is a separate,
+      // additive grant an admin isn't automatically added to.
+      isHrViewer: isHrViewer(org.hrViewerUids, user.uid) || isOrgAdmin,
     });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
