@@ -213,6 +213,12 @@ export interface UserStats {
   // The What's New changelog version this account has already acknowledged
   // - lets the modal stay dismissed across devices, not just this browser.
   lastSeenChangelogVersion?: string;
+  // Stamped only when a SHIP Journey quest is actually committed (see
+  // handleCommitAction in App.tsx), deliberately separate from the write
+  // timestamp on the doc as a whole - that one touches on every stats
+  // change, so it can't tell the resume-prompt route in server.ts when
+  // SHIP Journey specifically was last worked on.
+  shipJourneyLastCommittedAt?: string;
 }
 
 export const BADGES: Badge[] = [

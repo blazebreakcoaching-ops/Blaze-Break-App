@@ -16,6 +16,7 @@ import { NOVA_KNOWLEDGE_BASE, NOVA_CREATOR_KNOWLEDGE, NOVA_COACHING_PHILOSOPHY, 
 import { computeDimensionScores, computeArchetypeScores, pickDominantProfile, computeBlend } from './archetype-scoring';
 import { SendMessageSchema, SetDndSchema, SetStatusSchema } from './boundary-autopilot-schemas';
 import { getIsoWeekId } from './weekly-goal-tracker';
+import { findInProgressShipStage } from './ship-stages';
 import { initializeApp, getApps } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
@@ -10305,6 +10306,31 @@ app.get("/api/user/resume-prompt", verifyAppCheck, authenticateFirebaseUser, asy
           title: "Pick up where you left off",
           message: "Whenever you're ready - you've still got recovery goals to finish this week.",
           updatedAt: data.startedAt,
+        });
+      }
+    }
+
+    // SHIP Journey (Recover tab): only ever surfaced for a stage the
+    // person has genuinely started (at least one quest already committed
+    // in it) but not finished - every stage exists structurally from day
+    // one, so "not all done" alone would nag someone who's never engaged
+    // with that stage at all. shipJourneyLastCommittedAt is stamped only
+    // when a SHIP quest is actually committed (handleCommitAction in
+    // App.tsx) - the doc's own generic updatedAt touches on every stats
+    // change and would make this look "freshly touched" almost constantly,
+    // breaking the recency ordering below.
+    const shipStatsSnap = await db.collection("users").doc(user.uid).collection("user_stats").doc("core").get();
+    if (shipStatsSnap.exists) {
+      const data = shipStatsSnap.data()!;
+      const committedActionIds: string[] = Array.isArray(data.committedActionIds) ? data.committedActionIds : [];
+      const inProgressStage = findInProgressShipStage(committedActionIds);
+      if (inProgressStage && typeof data.shipJourneyLastCommittedAt === 'string') {
+        candidates.push({
+          tool: 'SHIP Journey',
+          tab: 'recover',
+          title: "Pick up where you left off",
+          message: `Whenever you're ready - your SHIP Journey's ${inProgressStage} phase is partway through. It's exactly as you left it.`,
+          updatedAt: data.shipJourneyLastCommittedAt,
         });
       }
     }

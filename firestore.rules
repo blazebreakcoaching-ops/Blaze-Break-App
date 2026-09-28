@@ -838,8 +838,15 @@ service cloud.firestore {
               'points', 'streak', 'rehearsalCount', 'lastEngagementDate',
               'unlockedBadges', 'supportCircle', 'committedActionIds',
               'weeklyGoalsComplete', 'level', 'profile', 'debts',
-              'recoveryScore', 'fingerprint', 'lastSeenChangelogVersion', 'updatedAt'
+              'recoveryScore', 'fingerprint', 'lastSeenChangelogVersion', 'updatedAt',
+              'shipJourneyLastCommittedAt'
             ])
+            // Stamped only when a SHIP Journey quest is actually committed
+            // (see handleCommitAction in App.tsx) - deliberately separate
+            // from the generic `updatedAt` above, which touches on every
+            // stats change and so can't tell the resume-prompt route in
+            // server.ts when SHIP Journey specifically was last worked on.
+            && (!('shipJourneyLastCommittedAt' in request.resource.data) || isStringWithMax(request.resource.data.shipJourneyLastCommittedAt, 40))
             && (!('lastSeenChangelogVersion' in request.resource.data) || isStringWithMax(request.resource.data.lastSeenChangelogVersion, 100))
             && (!('points' in request.resource.data) || (request.resource.data.points is number && request.resource.data.points >= 0))
             && (!('streak' in request.resource.data) || (request.resource.data.streak is number && request.resource.data.streak >= 0))

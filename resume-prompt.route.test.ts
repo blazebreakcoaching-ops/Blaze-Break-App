@@ -183,7 +183,59 @@ describe('GET /api/user/resume-prompt', () => {
     expect(res.body).toEqual({ hasIncomplete: false });
   });
 
-  it('picks whichever of all four sources was most recently touched', async () => {
+  it('surfaces a genuinely in-progress SHIP Journey stage, using its own dedicated timestamp', async () => {
+    seedDoc(`users/${USER}/user_stats/core`, {
+      committedActionIds: ['ship_safety_boundary_script'], // 1 of 3 Safety quests
+      shipJourneyLastCommittedAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2099-01-01T00:00:00.000Z', // deliberately far off - must NOT be used for ordering
+    });
+    const res = await request(app).get('/api/user/resume-prompt').set(auth(USER));
+    expect(res.body.hasIncomplete).toBe(true);
+    expect(res.body.tool).toBe('SHIP Journey');
+    expect(res.body.tab).toBe('recover');
+    expect(res.body.message).toContain('Safety');
+    // Same low-pressure register as the other four sources - never a hint
+    // that anything was owed or missed, which matters more here than
+    // anywhere else in the app: this is a burnout-recovery tool, and a
+    // nudge that reads as guilt-tripping would work directly against what
+    // it exists to do.
+    expect(res.body.message.toLowerCase()).not.toMatch(/streak|overdue|behind|forgot|should|must/);
+  });
+
+  it('never surfaces SHIP Journey for a stage that has never been touched at all, even if the doc exists', async () => {
+    seedDoc(`users/${USER}/user_stats/core`, {
+      committedActionIds: [], // nothing committed anywhere
+      shipJourneyLastCommittedAt: '2026-01-01T00:00:00.000Z',
+    });
+    const res = await request(app).get('/api/user/resume-prompt').set(auth(USER));
+    expect(res.body).toEqual({ hasIncomplete: false });
+  });
+
+  it('never surfaces SHIP Journey once every quest is committed', async () => {
+    seedDoc(`users/${USER}/user_stats/core`, {
+      committedActionIds: [
+        'ship_safety_boundary_script', 'ship_safety_blame_reset', 'ship_safety_digital_blackout',
+        'ship_habits_sleep_debt', 'ship_habits_movement_snack', 'ship_habits_checkin_streak',
+        'ship_identity_reflect_action', 'ship_identity_fingerprint_recheck', 'ship_identity_resentment_log',
+        'ship_purpose_reality_check', 'ship_purpose_weekly_goal', 'ship_purpose_support_circle',
+      ],
+      shipJourneyLastCommittedAt: '2026-01-01T00:00:00.000Z',
+    });
+    const res = await request(app).get('/api/user/resume-prompt').set(auth(USER));
+    expect(res.body).toEqual({ hasIncomplete: false });
+  });
+
+  it('never surfaces SHIP Journey without its own dedicated timestamp, even with real partial progress', async () => {
+    seedDoc(`users/${USER}/user_stats/core`, {
+      committedActionIds: ['ship_safety_boundary_script'],
+      // shipJourneyLastCommittedAt missing - e.g. an old stats doc written
+      // before this field existed.
+    });
+    const res = await request(app).get('/api/user/resume-prompt').set(auth(USER));
+    expect(res.body).toEqual({ hasIncomplete: false });
+  });
+
+  it('picks whichever of all five sources was most recently touched', async () => {
     seedDoc(`users/${USER}/recovery_plan_progress/state`, {
       allActionIds: ['a', 'b'], completedIds: [], updatedAt: '2026-01-01T00:00:00.000Z',
     });
@@ -195,7 +247,11 @@ describe('GET /api/user/resume-prompt', () => {
       weekId, startedAt: '2026-02-01T00:00:00.000Z',
       goals: [{ id: 'g1', label: 'Sleep', target: 5, progress: 1, xpAwarded: false }],
     });
+    seedDoc(`users/${USER}/user_stats/core`, {
+      committedActionIds: ['ship_safety_boundary_script'],
+      shipJourneyLastCommittedAt: '2026-04-01T00:00:00.000Z',
+    });
     const res = await request(app).get('/api/user/resume-prompt').set(auth(USER));
-    expect(res.body.tool).toBe('Workload Reality Check'); // the most recent of the three
+    expect(res.body.tool).toBe('SHIP Journey'); // the most recent of the four seeded here
   });
 });

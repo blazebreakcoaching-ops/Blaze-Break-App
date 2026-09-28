@@ -162,13 +162,13 @@ export const SHIP_STAGES: ShipStageConfig[] = [
   },
 ];
 
-// Exported so App.tsx's badge logic (checkBadges) can check phase/voyage
-// completion against the exact same quest ids defined here - one source
-// of truth, never two lists that can silently drift apart.
-export const SHIP_QUEST_IDS_BY_STAGE: Record<SHIPStage, string[]> = SHIP_STAGES.reduce(
-  (acc, stage) => ({ ...acc, [stage.id]: stage.quests.map((q) => q.id) }),
-  {} as Record<SHIPStage, string[]>,
-);
+// Re-exported from the shared, framework-free ship-stages.ts (not derived
+// from SHIP_STAGES above) so App.tsx's badge logic AND server.ts's resume-
+// prompt route both work from the exact same quest ids - one real source
+// of truth, never two lists that can silently drift apart. See
+// ship-stages.ts's own header comment for why the ids live there instead
+// of being computed here as before.
+export { SHIP_QUEST_IDS_BY_STAGE } from '../../ship-stages';
 
 const COLOR_BG: Record<ShipStageConfig['color'], string> = {
   amber: 'bg-warning',

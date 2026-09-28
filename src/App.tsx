@@ -1908,12 +1908,19 @@ export default function App() {
   };
 
   const handleCommitAction = (actionId: string) => {
+    // A SHIP Journey quest specifically (as opposed to any other
+    // committable action elsewhere in the app) gets its own timestamp -
+    // see shipJourneyLastCommittedAt's own comment in types.ts for why the
+    // generic updatedAt on this doc can't be reused for the resume-prompt
+    // route to know when SHIP Journey itself was last worked on.
+    const isShipQuest = Object.values(SHIP_QUEST_IDS_BY_STAGE).some((ids) => ids.includes(actionId));
     setStats((prev) => {
       if (prev.committedActionIds.includes(actionId)) return prev;
       const updated = {
         ...prev,
         committedActionIds: [...prev.committedActionIds, actionId],
         points: prev.points + 50,
+        ...(isShipQuest ? { shipJourneyLastCommittedAt: new Date().toISOString() } : {}),
       };
       return {
         ...updated,
