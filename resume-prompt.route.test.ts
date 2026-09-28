@@ -31,6 +31,7 @@ vi.mock('@google/genai', () => ({
 import request from 'supertest';
 import { app } from './server';
 import { seedDoc, resetStore } from './test/fake-firestore';
+import { getIsoWeekId } from './weekly-goal-tracker';
 
 const USER = 'user_owner';
 const auth = (uid: string) => ({ Authorization: `Bearer ${uid}` });
@@ -111,5 +112,90 @@ describe('GET /api/user/resume-prompt', () => {
     });
     const res = await request(app).get('/api/user/resume-prompt').set(auth(USER));
     expect(res.body.message.toLowerCase()).not.toMatch(/streak|overdue|behind|forgot/);
+  });
+
+  it('surfaces a genuinely interrupted Workload Reality Check', async () => {
+    seedDoc(`users/${USER}/workload_reality_check/state`, {
+      answers: { q1: 'yes' },
+      tasks: [],
+      completed: false,
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    });
+    const res = await request(app).get('/api/user/resume-prompt').set(auth(USER));
+    expect(res.body.hasIncomplete).toBe(true);
+    expect(res.body.tool).toBe('Workload Reality Check');
+    expect(res.body.tab).toBe('recover');
+  });
+
+  it('does not surface a completed Workload Reality Check', async () => {
+    seedDoc(`users/${USER}/workload_reality_check/state`, {
+      answers: { q1: 'yes' },
+      tasks: [],
+      completed: true,
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    });
+    const res = await request(app).get('/api/user/resume-prompt').set(auth(USER));
+    expect(res.body).toEqual({ hasIncomplete: false });
+  });
+
+  it('does not surface a Workload Reality Check with nothing entered yet, even if not marked completed', async () => {
+    seedDoc(`users/${USER}/workload_reality_check/state`, {
+      answers: {}, tasks: [], completed: false, updatedAt: '2026-01-01T00:00:00.000Z',
+    });
+    const res = await request(app).get('/api/user/resume-prompt').set(auth(USER));
+    expect(res.body).toEqual({ hasIncomplete: false });
+  });
+
+  it('surfaces this week\'s Weekly Goal Tracker cycle when a real goal is unmet', async () => {
+    const weekId = getIsoWeekId(new Date());
+    seedDoc(`users/${USER}/weekly_habit_cycles/${weekId}`, {
+      weekId,
+      startedAt: '2026-01-01T00:00:00.000Z',
+      goals: [
+        { id: 'g1', label: 'Sleep', target: 5, progress: 5, xpAwarded: true },
+        { id: 'g2', label: 'Movement', target: 3, progress: 1, xpAwarded: false },
+      ],
+    });
+    const res = await request(app).get('/api/user/resume-prompt').set(auth(USER));
+    expect(res.body.hasIncomplete).toBe(true);
+    expect(res.body.tool).toBe('Weekly Goal Tracker');
+    expect(res.body.tab).toBe('recover');
+  });
+
+  it('does not surface a Weekly Goal Tracker cycle where every goal is already met', async () => {
+    const weekId = getIsoWeekId(new Date());
+    seedDoc(`users/${USER}/weekly_habit_cycles/${weekId}`, {
+      weekId,
+      startedAt: '2026-01-01T00:00:00.000Z',
+      goals: [{ id: 'g1', label: 'Sleep', target: 5, progress: 5, xpAwarded: true }],
+    });
+    const res = await request(app).get('/api/user/resume-prompt').set(auth(USER));
+    expect(res.body).toEqual({ hasIncomplete: false });
+  });
+
+  it('never treats a stale, lapsed week\'s cycle as resumable, even with an unmet goal', async () => {
+    seedDoc(`users/${USER}/weekly_habit_cycles/2020-W01`, {
+      weekId: '2020-W01',
+      startedAt: '2020-01-01T00:00:00.000Z',
+      goals: [{ id: 'g1', label: 'Sleep', target: 5, progress: 1, xpAwarded: false }],
+    });
+    const res = await request(app).get('/api/user/resume-prompt').set(auth(USER));
+    expect(res.body).toEqual({ hasIncomplete: false });
+  });
+
+  it('picks whichever of all four sources was most recently touched', async () => {
+    seedDoc(`users/${USER}/recovery_plan_progress/state`, {
+      allActionIds: ['a', 'b'], completedIds: [], updatedAt: '2026-01-01T00:00:00.000Z',
+    });
+    seedDoc(`users/${USER}/workload_reality_check/state`, {
+      answers: { q1: 'yes' }, tasks: [], completed: false, updatedAt: '2026-03-01T00:00:00.000Z',
+    });
+    const weekId = getIsoWeekId(new Date());
+    seedDoc(`users/${USER}/weekly_habit_cycles/${weekId}`, {
+      weekId, startedAt: '2026-02-01T00:00:00.000Z',
+      goals: [{ id: 'g1', label: 'Sleep', target: 5, progress: 1, xpAwarded: false }],
+    });
+    const res = await request(app).get('/api/user/resume-prompt').set(auth(USER));
+    expect(res.body.tool).toBe('Workload Reality Check'); // the most recent of the three
   });
 });

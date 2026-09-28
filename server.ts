@@ -15,6 +15,7 @@ import webpush from 'web-push';
 import { NOVA_KNOWLEDGE_BASE, NOVA_CREATOR_KNOWLEDGE, NOVA_COACHING_PHILOSOPHY, NOVA_FAMILIAR_KNOWLEDGE, NOVA_FOUNDER_QA, NOVA_APP_GUIDE } from './server-knowledge';
 import { computeDimensionScores, computeArchetypeScores, pickDominantProfile, computeBlend } from './archetype-scoring';
 import { SendMessageSchema, SetDndSchema, SetStatusSchema } from './boundary-autopilot-schemas';
+import { getIsoWeekId } from './weekly-goal-tracker';
 import { initializeApp, getApps } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
@@ -10261,6 +10262,49 @@ app.get("/api/user/resume-prompt", verifyAppCheck, authenticateFirebaseUser, asy
           title: "Pick up where you left off",
           message: "Whenever you're ready - you left some of your recovery actions unfinished. They're exactly as you left them.",
           updatedAt: data.updatedAt,
+        });
+      }
+    }
+
+    // Workload Reality Check (Recover tab): a genuinely interrupted
+    // multi-step questionnaire, not a one-shot form - autosaved on every
+    // answer via merge:true, so `completed: false` with something already
+    // in it means the person left partway through, not that they never
+    // started.
+    const workloadSnap = await db.collection("users").doc(user.uid).collection("workload_reality_check").doc("state").get();
+    if (workloadSnap.exists) {
+      const data = workloadSnap.data()!;
+      const hasAnswers = data.answers && typeof data.answers === 'object' && Object.keys(data.answers).length > 0;
+      const hasTasks = Array.isArray(data.tasks) && data.tasks.length > 0;
+      if (data.completed !== true && (hasAnswers || hasTasks) && typeof data.updatedAt === 'string') {
+        candidates.push({
+          tool: 'Workload Reality Check',
+          tab: 'recover',
+          title: "Pick up where you left off",
+          message: "Whenever you're ready - your Workload Reality Check is partway through. It's exactly as you left it.",
+          updatedAt: data.updatedAt,
+        });
+      }
+    }
+
+    // Weekly Goal Tracker (Recover tab): only ever checks THIS real ISO
+    // week's cycle - an old, lapsed week isn't something to "resume".
+    // `startedAt` is rewritten to now() on every save (not just when the
+    // week starts - see WeeklyGoalTracker.tsx's persist()), so despite the
+    // name it's a genuine last-touched timestamp here.
+    const weekId = getIsoWeekId(new Date());
+    const weeklyGoalsSnap = await db.collection("users").doc(user.uid).collection("weekly_habit_cycles").doc(weekId).get();
+    if (weeklyGoalsSnap.exists) {
+      const data = weeklyGoalsSnap.data()!;
+      const goals: { progress?: number; target?: number }[] = Array.isArray(data.goals) ? data.goals : [];
+      const hasUnmetGoal = goals.some((g) => typeof g.progress === 'number' && typeof g.target === 'number' && g.progress < g.target);
+      if (data.weekId === weekId && hasUnmetGoal && typeof data.startedAt === 'string') {
+        candidates.push({
+          tool: 'Weekly Goal Tracker',
+          tab: 'recover',
+          title: "Pick up where you left off",
+          message: "Whenever you're ready - you've still got recovery goals to finish this week.",
+          updatedAt: data.startedAt,
         });
       }
     }
