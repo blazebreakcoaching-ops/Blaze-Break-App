@@ -30,7 +30,7 @@ import { isRealGuardian, isValidGuardianPhone, buildGuardianCallRequestMessage, 
 import { guardianSupportInvitationEnabled, validateGuardianSupportOffer, isValidGuardianSupportEventType, isValidGuardianSupportTemplateId, buildGuardianSupportMessage } from './guardian-support-invitation';
 import { buildPrimaryIndicators, sortByAttention } from './org-leading-indicators';
 import { collectionsForExport, collectionsForErasure } from './user-data-collections';
-import { htmlToPlainTextFallback, buildEmailVerificationEmail, buildPasswordResetEmail, buildPasswordChangedEmail, buildMfaEnabledEmail, buildMfaDisabledEmail, buildSupportRequestReceivedEmail } from './brevo-templates';
+import { htmlToPlainTextFallback, buildEmailVerificationEmail, buildPasswordResetEmail, buildPasswordChangedEmail, buildMfaEnabledEmail, buildMfaDisabledEmail, buildSupportRequestReceivedEmail, buildAllyInviteEmail } from './brevo-templates';
 import { generateTotpSecret, buildOtpauthUri, verifyTotpCode, generateRecoveryCodes, hashRecoveryCode, encryptSecret as encryptTotpSecret, decryptSecret as decryptTotpSecret, isTotpLockedOut, nextLockoutState } from './totp-mfa';
 import { isValidGad7Answers, scoreGad7, interpretGad7 } from './gad7';
 import { DEFAULT_LEGAL_DOCUMENTS, LegalDocumentType } from './legal-documents';
@@ -597,11 +597,14 @@ const sendBrevoEmail = (toEmail: string, subject: string, textContent: string) =
     textContent
   });
 
-// This app's first HTML email sender - every other transactional email
-// (support auto-reply, org invites, ally invites) stays plain-text via
-// sendBrevoEmail above, untouched. Used for account-security emails
-// (password reset, email verification, MFA change notices) that need a
-// clickable link and a bit of branding rather than a raw URL in plaintext.
+// This app's first HTML email sender - most other transactional email
+// (support auto-reply, org invites) stays plain-text via sendBrevoEmail
+// above, untouched. Used for account-security emails (password reset,
+// email verification, MFA change notices) and now the Recovery Ally
+// invite (server.ts, POST /api/ally/invite) that need a real, clickable
+// link and a bit of branding rather than a raw URL in plaintext - a raw
+// unlinked URL in an unbranded plain-text email is also a real spam-
+// filter signal, which is part of why the ally invite moved here.
 const sendBrevoHtmlEmail = (toEmail: string, subject: string, htmlContent: string) =>
   postToBrevoEmail({
     sender: { name: "Blaze Break Support", email: "support@blazebreak.app" },
@@ -9079,12 +9082,33 @@ app.post("/api/ally/invite", verifyAppCheck, authenticateFirebaseUser, async (re
     });
 
     const appBase = (process.env.APP_URL || "").replace(/\/$/, "");
+    if (!appBase) {
+      // Matches getOAuthRedirectUri's own hard-fail on a missing APP_URL -
+      // silently falling back to "" here used to produce a bare relative
+      // /ally/<token> link with no domain, which is exactly the kind of
+      // "nonsensical link" a recipient can't click.
+      console.error("[Ally Invite] APP_URL is not configured on the server - cannot build a real invite link.");
+      return res.status(500).json({ error: "Could not build the invite link. Please try again shortly." });
+    }
     const link = `${appBase}/ally/${shareToken}`;
-    const emailSent = await sendBrevoEmail(
-      allyEmail,
-      "You've been invited as a Recovery Ally",
-      `Someone you know is using Blaze Break to work on burnout recovery, and asked you to be their accountability ally.\n\nYou can see what they've chosen to share and leave them an encouraging note here, no account needed:\n\n${link}\n\nThis is just for everyday accountability, not a crisis service.`
-    );
+
+    // The invite should come from a real, recognisable person, not "Someone
+    // you know" - a stranger-sounding subject/body reads as phishing and is
+    // exactly why the tester didn't trust it enough to click. Same
+    // displayName/preferredName lookup the org recognition wall already
+    // uses, falling back to the Auth profile name, then the local part of
+    // their own email (still a real, specific handle - never a generic
+    // phrase) before the last-resort generic wording.
+    const userDoc = await db.collection("users").doc(user.uid).get();
+    const inviterName =
+      userDoc.data()?.displayName ||
+      userDoc.data()?.preferredName ||
+      user.name ||
+      (user.email ? user.email.split('@')[0] : null) ||
+      "Someone close to you";
+
+    const { subject, html } = buildAllyInviteEmail(inviterName, link);
+    const emailSent = await sendBrevoHtmlEmail(allyEmail, subject, html);
 
     res.json({ success: true, emailSent, shareToken });
   } catch (err: any) {

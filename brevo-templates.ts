@@ -47,6 +47,13 @@ const wrapEmail = (title: string, bodyHtml: string): string => `<!DOCTYPE html>
 const button = (href: string, label: string): string =>
   `<a href="${href}" style="display:inline-block;margin:20px 0;padding:12px 24px;background-color:${ACCENT};color:#ffffff;text-decoration:none;border-radius:8px;font-weight:700;font-size:14px;">${label}</a>`;
 
+// Every template above interpolates only fixed copy - this is the first
+// one to interpolate a real person's own name (Recovery Ally invite,
+// below), so this is the first place that name needs escaping before it
+// lands in HTML.
+const escapeHtml = (s: string): string =>
+  s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
 export const buildPasswordResetEmail = (resetLink: string): { subject: string; html: string } => ({
   subject: 'Reset your Blaze Break password',
   html: wrapEmail(
@@ -94,6 +101,30 @@ export const buildMfaDisabledEmail = (): { subject: string; html: string } => ({
      <p>If you didn't do this, please contact us through the app right away and reset your password.</p>`
   ),
 });
+
+// Named, real, and clickable - fixing three real reported problems at
+// once: (1) this used to be plain text with a bare URL, which many mail
+// clients don't auto-linkify, especially right after a line break -
+// wrapEmail/button below give it a real <a href>; (2) a raw hex-token URL
+// in an unbranded plain-text email is itself a spam signal - this gives it
+// the same branded HTML shape as every other transactional email; (3) it
+// used to say "Someone you know" with no real name at all, which reads as
+// phishing to the recipient - inviterName is now the actual person's own
+// name (see the route in server.ts for the real-name lookup/fallback
+// chain), HTML-escaped since it's real user-entered text.
+export const buildAllyInviteEmail = (inviterName: string, link: string): { subject: string; html: string } => {
+  const safeName = escapeHtml(inviterName);
+  return {
+    subject: `${safeName} invited you to be their Recovery Ally on Blaze Break`,
+    html: wrapEmail(
+      "You've been invited as a Recovery Ally",
+      `<p><strong>${safeName}</strong> is using Blaze Break to work on burnout recovery, and has personally asked you to be their accountability ally.</p>
+       <p>You can see what ${safeName} has chosen to share and leave them an encouraging note - no account needed.</p>
+       ${button(link, `Open ${safeName}'s invite`)}
+       <p>This is just for everyday accountability and encouragement, not a crisis service.</p>`
+    ),
+  };
+};
 
 export const buildSupportRequestReceivedEmail = (): { subject: string; html: string } => ({
   subject: 'Blaze Break - Request Received',
