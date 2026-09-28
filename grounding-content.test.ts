@@ -54,8 +54,10 @@ describe('BURDEN_OPTIONS / NEXT_ACTION_OPTIONS', () => {
     expect(BURDEN_OPTIONS.map((o) => o.id)).toContain('other');
   });
 
-  it('never offers a fabricated "Community conversation" option - no such feature exists', () => {
-    expect(NEXT_ACTION_OPTIONS.map((o) => o.id)).toEqual(['nova', 'trusted_person', 'practical_action', 'rest']);
+  it('offers the Phase 2 Reconnect option set in order', () => {
+    expect(NEXT_ACTION_OPTIONS.map((o) => o.id)).toEqual([
+      'sit_with_this', 'next_step', 'continue_with_nova', 'trusted_person', 'community', 'return_to_blaze_break',
+    ]);
   });
 });
 

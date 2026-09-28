@@ -27,6 +27,17 @@ import {
 import { logGroundingEvent } from '../lib/grounding-analytics';
 import { GroundingExploreThis } from './GroundingExploreThis';
 import { GroundingCarryingExercise } from './GroundingCarryingExercise';
+import { GroundingCommunityBridge } from './GroundingCommunityBridge';
+
+// Section 18's gentle human-connection prompts, shown alongside the
+// "Reach out to someone I trust" Reconnect option - never forced, always
+// escapable via "I want to keep this private".
+const HUMAN_CONNECTION_PROMPTS = [
+  "Who knows you're carrying this?",
+  'Is there someone who could help without needing to fix it?',
+  'What would asking for support look like?',
+  'Would sharing part of this make it lighter?',
+];
 
 // Templated, not AI-generated - a first, deterministic pass at "a pattern
 // Nova has noticed" so this ships without adding a second AI-generation
@@ -91,6 +102,8 @@ export const FaithValuesMode = (_props: FaithValuesModeProps) => {
   const holdTimeoutRef = useRef<number | null>(null);
 
   const [sessionDocId, setSessionDocId] = useState<string | null>(null);
+  const [showCommunityBridge, setShowCommunityBridge] = useState(false);
+  const [connectionPrompt] = useState(() => HUMAN_CONNECTION_PROMPTS[Math.floor(Math.random() * HUMAN_CONNECTION_PROMPTS.length)]);
   const [chosenNextAction, setChosenNextAction] = useState<NextActionId | null>(null);
 
   const [sessions, setSessions] = useState<GroundingSessionRecord[]>([]);
@@ -289,6 +302,7 @@ export const FaithValuesMode = (_props: FaithValuesModeProps) => {
     setReleased(false);
     setSessionDocId(null);
     setChosenNextAction(null);
+    setShowCommunityBridge(false);
   };
 
   const toggleBurden = (id: BurdenId) => {
@@ -405,19 +419,33 @@ export const FaithValuesMode = (_props: FaithValuesModeProps) => {
       }).catch(() => {});
       setSessions((prev) => prev.map((s) => (s.id === sessionDocId ? { ...s, nextAction: action } : s)));
     }
-    if (action === 'nova') {
+    if (action === 'continue_with_nova') {
       window.dispatchEvent(new CustomEvent('open_nova_launcher'));
     } else if (action === 'trusted_person') {
-      window.dispatchEvent(new CustomEvent('navigate_tab', { detail: 'ally' }));
-    } else if (action === 'practical_action') {
-      try {
-        const res = await secureApiFetch('/api/user/resume-prompt');
-        const result = await res.json();
-        window.dispatchEvent(new CustomEvent('navigate_tab', { detail: result.hasIncomplete ? result.tab : 'recover' }));
-      } catch (e) {
+      // Handled by the trusted-person prompt UI below, which navigates on
+      // to Ally only once the person actively continues (see
+      // handleTrustedPersonContinue) - this branch just records the choice.
+    } else if (action === 'next_step') {
+      if (mostRecentAlignedAction) {
         window.dispatchEvent(new CustomEvent('navigate_tab', { detail: 'recover' }));
+      } else {
+        try {
+          const res = await secureApiFetch('/api/user/resume-prompt');
+          const result = await res.json();
+          window.dispatchEvent(new CustomEvent('navigate_tab', { detail: result.hasIncomplete ? result.tab : 'recover' }));
+        } catch (e) {
+          window.dispatchEvent(new CustomEvent('navigate_tab', { detail: 'recover' }));
+        }
       }
+    } else if (action === 'community') {
+      setShowCommunityBridge(true);
+    } else if (action === 'return_to_blaze_break') {
+      window.dispatchEvent(new CustomEvent('navigate_tab', { detail: 'home' }));
     }
+  };
+
+  const handleTrustedPersonContinue = () => {
+    window.dispatchEvent(new CustomEvent('navigate_tab', { detail: 'ally' }));
   };
 
   const deleteHistory = async () => {
@@ -825,11 +853,23 @@ export const FaithValuesMode = (_props: FaithValuesModeProps) => {
                       </button>
                     ))}
                   </div>
+                ) : chosenNextAction === 'trusted_person' ? (
+                  <div className="bg-surface dark:bg-surface p-8 rounded-2xl border border-border/40 text-center space-y-5">
+                    <p className="text-base text-text-main italic">"{connectionPrompt}"</p>
+                    <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
+                      <button onClick={handleTrustedPersonContinue} className="px-6 py-2.5 bg-primary text-primary-foreground rounded-xl text-xs font-black uppercase tracking-widest">
+                        Continue to my Recovery Ally circle
+                      </button>
+                      <button onClick={resetSession} className="px-6 py-2.5 border border-border/40 rounded-xl text-xs font-black uppercase tracking-widest text-text-muted hover:text-text-main">
+                        I want to keep this private
+                      </button>
+                    </div>
+                  </div>
                 ) : (
                   <div className="bg-success/5 border border-success/20 p-8 rounded-2xl text-center space-y-4">
                     <CheckCircle2 className="w-8 h-8 text-success dark:text-[#4ade80] mx-auto" />
                     <p className="text-sm text-text-muted">
-                      {chosenNextAction === 'rest' ? 'That\'s enough for now.' : 'Taking you there now.'}
+                      {chosenNextAction === 'sit_with_this' ? "That's enough for now." : 'Taking you there now.'}
                     </p>
                     <button onClick={resetSession} className="px-6 py-2.5 border border-border/40 rounded-xl text-xs font-black uppercase tracking-widest text-text-muted hover:text-text-main hover:bg-surface/30 transition-all">
                       Start a new grounding session
@@ -861,6 +901,14 @@ export const FaithValuesMode = (_props: FaithValuesModeProps) => {
       )}
       {showCarryingExercise && (
         <GroundingCarryingExercise onClose={() => setShowCarryingExercise(false)} />
+      )}
+      {showCommunityBridge && (
+        <GroundingCommunityBridge
+          burdenLabels={[...burdenIds.map((id) => BURDEN_LABELS[id]), customBurden].filter(Boolean) as string[]}
+          topPatternLabel={derivedPatterns[0] ? PATTERN_DIMENSIONS[derivedPatterns[0].patternKey].label : undefined}
+          topPatternTopicSlug={derivedPatterns[0] ? PATTERN_DIMENSIONS[derivedPatterns[0].patternKey].communityTopicSlug : undefined}
+          onClose={() => setShowCommunityBridge(false)}
+        />
       )}
     </div>
   );

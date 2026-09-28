@@ -19,6 +19,7 @@ import { getIsoWeekId } from './weekly-goal-tracker';
 import { findInProgressShipStage } from './ship-stages';
 import { ISLAMIC_THEMES, GROUNDING_LENSES, GroundingLens, IslamicThemeId } from './grounding-content';
 import { PATTERN_DIMENSION_ORDER, PatternDimensionId, PATTERN_DIMENSIONS } from './grounding-patterns-taxonomy';
+import { CommunityConfig } from './community-config';
 import { initializeApp, getApps } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
@@ -11322,6 +11323,90 @@ app.post("/api/grounding/analytics-event", verifyAppCheck, authenticateFirebaseU
   } catch (error: any) {
     console.error("[Grounding analytics event] error:", error?.message || error);
     res.status(500).json({ error: "Could not record that." });
+  }
+});
+
+// Section 14's "central community configuration/service" - the ONLY
+// place that reads whether/where the external community lives.
+// COMMUNITY_BASE_URL is unset in this environment (no Replicants
+// integration exists yet), so this correctly and honestly reports
+// disabled rather than fabricating a working connection.
+app.get("/api/community/config", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  const baseUrl = process.env.COMMUNITY_BASE_URL || null;
+  const config: CommunityConfig = { enabled: !!baseUrl, baseUrl };
+  res.json(config);
+});
+
+// Section 16: "Create the service/interface now even if the community
+// API is not yet available. Use mocked/empty states rather than
+// fabricating community content." No provider is wired up, so this is
+// an honest empty list - never invented discussions, posts, or FAQs.
+app.get("/api/community/resources", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  res.json({ resources: [] });
+});
+
+// Section 15's "Ask the Community" composer draft. Deliberately built
+// from STRUCTURED fields only (burden labels, at most one pattern label)
+// - never the user's raw private reflection text, so there's no path by
+// which anything they wrote privately can leak into a community-facing
+// draft even before they've reviewed it. The draft is always shown to
+// the user for explicit edit/approval before anything is posted or
+// copied anywhere (see GroundingCommunityBridge.tsx) - this route never
+// posts anything itself.
+const CommunityDraftRequestSchema = z.object({
+  burdenLabels: z.array(z.string().max(40)).max(10),
+  patternLabel: z.string().max(60).optional(),
+}).strict();
+
+const CommunityDraftResponseSchema = z.object({ draftText: z.string().max(400) });
+
+app.post("/api/grounding/community-draft", groundingReflectLimiter, verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const parsed = CommunityDraftRequestSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: "Invalid request.", details: (parsed as any).error?.errors || [] });
+    }
+    const { burdenLabels, patternLabel } = parsed.data;
+
+    const user = requireAuth(req);
+    const quota = await checkAndReserveCapability(user.uid, 'nova_text');
+    if (!quota.allowed) {
+      return res.status(429).json({
+        error: quota.plan === 'free'
+          ? "You've reached today's free limit for this. It resets tomorrow, or upgrade to Blaze Break Premium for more."
+          : "You've reached today's fair-use limit for this. It resets tomorrow.",
+        code: 'capability_limit_reached',
+        capability: 'nova_text',
+      });
+    }
+
+    const themeText = [...burdenLabels, ...(patternLabel ? [patternLabel] : [])].join(', ') || 'a moment of overwhelm';
+    const prompt = `Write a short (2-3 sentence), neutral, anonymised DRAFT for a community forum post, based ONLY on these general themes: ${themeText}. This is a draft someone will review and may edit before deciding whether to post it publicly - do not address the reader directly, do not invent any specific personal details, names, employers, or events beyond the general theme given. End with an open question inviting others to share how they've approached something similar.
+
+Respond strictly in this JSON format, no markdown, no commentary outside the JSON:
+{
+  "draftText": "your 2-3 sentence neutral draft"
+}
+${NOVA_ONE_SHOT_SAFETY_FLOOR}`;
+
+    const response = await ai.models.generateContent({
+      model: "gemini-3.5-flash",
+      contents: prompt,
+      config: { responseMimeType: "application/json" },
+    });
+
+    const text = response.text;
+    if (!text) throw new Error("Empty response from Gemini model.");
+    const raw = JSON.parse(text);
+    const validated = CommunityDraftResponseSchema.safeParse(raw);
+    if (!validated.success) {
+      throw new Error(`Model returned an unexpected shape: ${validated.error.message}`);
+    }
+
+    res.json(validated.data);
+  } catch (err: any) {
+    console.error("[Grounding] community draft error:", err.message);
+    res.status(500).json({ error: "Could not draft that right now." });
   }
 });
 

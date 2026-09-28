@@ -264,19 +264,23 @@ export const rankIslamicThemesByRelevance = (recentPatternKeys: string[]): Islam
 
 // ---------- Stage 5 - RECONNECT ----------
 
-// "Join a relevant Community conversation" from the original brief is
-// deliberately not included here: this app has no peer community/social
-// feature to route it to (confirmed by search - only an org-facing "wins
-// wall" exists, which is a different, B2B-only thing). Inventing one would
-// be a much larger, separate feature. The remaining four options are all
-// real, existing surfaces.
-export type NextActionId = 'nova' | 'trusted_person' | 'practical_action' | 'rest';
+// Phase 2's upgraded Reconnect option set (brief section 17), replacing
+// Phase 1's simpler 4-option list. 'nova'/'practical_action'/'rest' are
+// kept as valid VALUES (not offered in the UI any more) purely so
+// already-written Phase 1 session docs remain readable/re-saveable - see
+// firestore.rules' grounding_sessions.nextAction enum, which accepts
+// both sets for the same reason.
+export type NextActionId =
+  | 'sit_with_this' | 'next_step' | 'continue_with_nova' | 'trusted_person' | 'community' | 'return_to_blaze_break'
+  | 'nova' | 'practical_action' | 'rest';
 
 export const NEXT_ACTION_OPTIONS: { id: NextActionId; label: string; description: string }[] = [
-  { id: 'nova', label: 'Talk privately with Nova', description: 'Open a private conversation.' },
-  { id: 'trusted_person', label: 'Speak to someone I trust', description: 'Open your Recovery Ally / Guardian circle.' },
-  { id: 'practical_action', label: 'Take one small practical action', description: "Pick up where you've been working." },
-  { id: 'rest', label: 'Rest for now', description: 'No further action needed.' },
+  { id: 'sit_with_this', label: 'Sit with this', description: 'Nothing more right now.' },
+  { id: 'next_step', label: 'Take my next step', description: 'Open the aligned action I just chose.' },
+  { id: 'continue_with_nova', label: 'Continue privately with Nova', description: 'Explore the reflection further.' },
+  { id: 'trusted_person', label: 'Reach out to someone I trust', description: 'Open your Recovery Ally / Guardian circle.' },
+  { id: 'community', label: 'Connect with the community', description: 'Open relevant community discussion or resources.' },
+  { id: 'return_to_blaze_break', label: 'Return to Blaze Break', description: 'Continue your personal recovery journey.' },
 ];
 
 // ---------- Grounding session record shape ----------
