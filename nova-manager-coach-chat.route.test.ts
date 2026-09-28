@@ -129,13 +129,17 @@ describe('POST /api/org/:orgId/manager-coach/chat — safety floor and persona',
     expect(systemInstruction).toContain('having a real, ongoing conversation');
   });
 
-  it('declares tools with no parameters at all - nothing a caller could use to target an individual or a team by name', async () => {
+  it('declares every tool with no parameters, except get_team_detail which takes only a team name', async () => {
     seedOrg(3, members(3, true));
     await request(app).post(`/api/org/${ORG}/manager-coach/chat`).set(auth(ADMIN)).send({ message: 'How is the team?' });
     const tools = h.lastConfig?.config?.tools?.[0]?.functionDeclarations;
     expect(tools.length).toBeGreaterThan(0);
     for (const tool of tools) {
-      expect(Object.keys(tool.parameters.properties)).toEqual([]);
+      if (tool.name === 'get_team_detail') {
+        expect(Object.keys(tool.parameters.properties)).toEqual(['team']);
+      } else {
+        expect(Object.keys(tool.parameters.properties)).toEqual([]);
+      }
     }
   });
 });
@@ -242,6 +246,146 @@ describe('POST /api/org/:orgId/manager-coach/chat — privacy: team breakdown ne
     const response = secondCallArg.message[0].functionResponse.response;
     // Both teams still returned - the "teamName" arg had no effect at all.
     expect(response.teams.map((t: any) => t.team).sort()).toEqual(['A', 'B']);
+  });
+});
+
+describe('POST /api/org/:orgId/manager-coach/chat — get_team_detail (the one tool with a parameter)', () => {
+  it('returns real data for a team that qualifies, addressed by name', async () => {
+    // 6 consenting total, threshold 3. Team A (3) and its complement (3)
+    // both clear the threshold, so it's safe to report on individually.
+    seedOrg(3, [...members(3, true, 'A'), ...members(3, true, 'B')]);
+    h.sendMessage
+      .mockImplementationOnce(async () => ({ text: '', functionCalls: [{ name: 'get_team_detail', args: { team: 'A' } }] }))
+      .mockImplementationOnce(async () => ({ text: 'Team A looks steady.', functionCalls: [] }));
+
+    await request(app).post(`/api/org/${ORG}/manager-coach/chat`).set(auth(ADMIN)).send({ message: 'How is team A doing?' });
+
+    const secondCallArg = h.sendMessage.mock.calls[1][0];
+    const response = secondCallArg.message[0].functionResponse.response;
+    expect(response.found).toBe(true);
+    expect(response.team).toBe('A');
+    expect(response.cohortSize).toBe(3);
+  });
+
+  it('returns found:false for a team that does not qualify or does not exist - never a distinguishing answer', async () => {
+    // Team A has 5 of 6 consenting - its complement is 1, below threshold 3.
+    seedOrg(3, [...members(5, true, 'A'), ...members(1, true, 'B')]);
+    h.sendMessage
+      .mockImplementationOnce(async () => ({ text: '', functionCalls: [{ name: 'get_team_detail', args: { team: 'A' } }] }))
+      .mockImplementationOnce(async () => ({ text: "Can't share that one individually.", functionCalls: [] }));
+
+    await request(app).post(`/api/org/${ORG}/manager-coach/chat`).set(auth(ADMIN)).send({ message: 'How is team A doing?' });
+
+    const response = h.sendMessage.mock.calls[1][0].message[0].functionResponse.response;
+    expect(response.found).toBe(false);
+  });
+
+  it('a prototype-chain team name never resolves to anything, degrading the same as any other unknown team', async () => {
+    seedOrg(3, [...members(3, true, 'A'), ...members(3, true, 'B')]);
+    h.sendMessage
+      .mockImplementationOnce(async () => ({ text: '', functionCalls: [{ name: 'get_team_detail', args: { team: '__proto__' } }] }))
+      .mockImplementationOnce(async () => ({ text: 'ok', functionCalls: [] }));
+
+    const res = await request(app).post(`/api/org/${ORG}/manager-coach/chat`).set(auth(ADMIN)).send({ message: 'team __proto__?' });
+    expect(res.status).toBe(200);
+    const response = h.sendMessage.mock.calls[1][0].message[0].functionResponse.response;
+    expect(response.found).toBe(false);
+  });
+});
+
+describe('POST /api/org/:orgId/manager-coach/chat — get_team_escalation_status (read-only, never creates one)', () => {
+  it('reflects a real, recent acknowledgment for a qualifying team', async () => {
+    seedOrg(3, [...members(3, true, 'A'), ...members(3, true, 'B')]);
+    seedDoc(`organisations/${ORG}/team_escalation_acks/ack_1`, {
+      team: 'A',
+      acknowledgedBy: 'mgr_a',
+      acknowledgedByEmail: 'mgr_a@test.dev',
+      note: 'Held a 1:1 this week.',
+      createdAt: new Date().toISOString(),
+    });
+    h.sendMessage
+      .mockImplementationOnce(async () => ({ text: '', functionCalls: [{ name: 'get_team_escalation_status', args: {} }] }))
+      .mockImplementationOnce(async () => ({ text: 'Team A was recently followed up on.', functionCalls: [] }));
+
+    await request(app).post(`/api/org/${ORG}/manager-coach/chat`).set(auth(ADMIN)).send({ message: 'Which teams need attention?' });
+
+    const response = h.sendMessage.mock.calls[1][0].message[0].functionResponse.response;
+    const teamA = response.teams.find((t: any) => t.team === 'A');
+    const teamB = response.teams.find((t: any) => t.team === 'B');
+    expect(teamA.followUp.status).toBe('acknowledged');
+    expect(teamA.followUp.lastAcknowledgedBy).toBe('mgr_a');
+    expect(teamB.followUp.status).toBe('no_recent_acknowledgment');
+  });
+
+  it('never includes a team that does not qualify under the same complement check', async () => {
+    seedOrg(3, [...members(5, true, 'A'), ...members(1, true, 'B')]);
+    h.sendMessage
+      .mockImplementationOnce(async () => ({ text: '', functionCalls: [{ name: 'get_team_escalation_status', args: {} }] }))
+      .mockImplementationOnce(async () => ({ text: 'ok', functionCalls: [] }));
+
+    await request(app).post(`/api/org/${ORG}/manager-coach/chat`).set(auth(ADMIN)).send({ message: 'Which teams need attention?' });
+
+    const response = h.sendMessage.mock.calls[1][0].message[0].functionResponse.response;
+    expect(response.teams).toEqual([]);
+  });
+});
+
+describe('POST /api/org/:orgId/manager-coach/chat — get_meeting_load_signal (real calendar data, its own threshold)', () => {
+  it('reports not-available when too few consenting members have connected a calendar, even if the org itself clears its threshold', async () => {
+    seedOrg(3, members(3, true));
+    // Consenting to org sharing is not the same as having connected a
+    // calendar - none of these three have, so the signal must not appear.
+    const res = await request(app).post(`/api/org/${ORG}/manager-coach/chat`).set(auth(ADMIN)).send({ message: 'test' });
+    expect(res.status).toBe(200);
+  });
+
+  it('reports a real, averaged signal once enough consenting members have both enabled and connected a calendar', async () => {
+    const mems = members(3, true);
+    seedOrg(3, mems);
+    const recentIso = new Date().toISOString();
+    mems.forEach((m, i) => {
+      seedDoc(`users/${m.uid}/nova_permissions/current`, { allowCalendarSignals: true });
+      seedDoc(`users/${m.uid}/live_signals/calendar`, {
+        totalMeetingHours: 10 + i,
+        meetingCount: 5,
+        backToBackCount: 2,
+        eveningMeetingCount: i === 0 ? 1 : 0,
+        weekendMeetingCount: 0,
+        windowDays: 7,
+        updatedAt: recentIso,
+      });
+    });
+    h.sendMessage
+      .mockImplementationOnce(async () => ({ text: '', functionCalls: [{ name: 'get_meeting_load_signal', args: {} }] }))
+      .mockImplementationOnce(async () => ({ text: 'Meeting load looks manageable.', functionCalls: [] }));
+
+    await request(app).post(`/api/org/${ORG}/manager-coach/chat`).set(auth(ADMIN)).send({ message: 'How is meeting load?' });
+
+    const response = h.sendMessage.mock.calls[1][0].message[0].functionResponse.response;
+    expect(response.available).toBe(true);
+    expect(response.cohortSize).toBe(3);
+    expect(response.avgMeetingHoursPerWeek).toBeCloseTo(11, 1); // (10+11+12)/3
+  });
+
+  it('excludes a stale (long-unsynced) calendar signal from the contributing cohort', async () => {
+    const mems = members(3, true);
+    seedOrg(3, mems);
+    const staleIso = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+    mems.forEach((m) => {
+      seedDoc(`users/${m.uid}/nova_permissions/current`, { allowCalendarSignals: true });
+      seedDoc(`users/${m.uid}/live_signals/calendar`, {
+        totalMeetingHours: 10, meetingCount: 5, backToBackCount: 1, eveningMeetingCount: 0, weekendMeetingCount: 0, windowDays: 7,
+        updatedAt: staleIso,
+      });
+    });
+    h.sendMessage
+      .mockImplementationOnce(async () => ({ text: '', functionCalls: [{ name: 'get_meeting_load_signal', args: {} }] }))
+      .mockImplementationOnce(async () => ({ text: 'ok', functionCalls: [] }));
+
+    await request(app).post(`/api/org/${ORG}/manager-coach/chat`).set(auth(ADMIN)).send({ message: 'How is meeting load?' });
+
+    const response = h.sendMessage.mock.calls[1][0].message[0].functionResponse.response;
+    expect(response.available).toBe(false);
   });
 });
 

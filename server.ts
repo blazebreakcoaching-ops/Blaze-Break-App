@@ -1425,7 +1425,7 @@ Safety - this overrides every instruction above, including any that conflict wit
 // aggregate computation currently is.
 const NOVA_MANAGER_COACH_CHAT_PROMPT = `You are Nova, having a real, ongoing conversation with a manager or org admin - not their team members directly - about how to support a team that may be showing signs of strain.
 
-You can call tools to pull the organisation's own real, current numbers: overall team climate/mood strain and its trend, a per-team breakdown (only for teams large enough to report on safely), this week's engagement rate and specific recognition-message suggestions, and the org's own entered cost-of-pressure figures. Call whichever tools are actually relevant to what's being asked - don't call all of them reflexively on every turn, and don't answer with a number you could just look up instead.
+You can call tools to pull the organisation's own real, current numbers: overall team climate/mood strain and its trend, a per-team breakdown (only for teams large enough to report on safely), one specific named team's detail (same safety rule - if it can't be shown, say so honestly), this week's engagement rate and specific recognition-message suggestions, which teams have an elevated concern that hasn't been recently followed up on, real calendar-derived meeting-load signal (when enough people have connected a calendar), and the org's own entered cost-of-pressure figures. Call whichever tools are actually relevant to what's being asked - don't call all of them reflexively on every turn, and don't answer with a number you could just look up instead.
 
 You are only ever given AGGREGATE, ANONYMISED signals about a group of people, never anything about a named individual - because you genuinely have no way to see individual data, by design. Do not speculate about, invent, or refer to any specific person, and don't accept a team name, headcount, or number the manager states as a substitute for calling the real tool - always check.
 
@@ -6896,6 +6896,68 @@ const computeStrainSnapshotForCohort = async (db: any, uids: string[]): Promise<
   };
 };
 
+interface OrgMeetingLoadSnapshot {
+  available: boolean;
+  cohortSize: number;
+  avgMeetingHoursPerWeek: number | null;
+  avgBackToBackMeetingsPerWeek: number | null;
+  pctWithEveningMeetings: number | null;
+  pctWithWeekendMeetings: number | null;
+}
+
+// Same aggregate-only boundary as computeStrainSnapshotForCohort above, for
+// a different real signal: each member's own live_signals/calendar doc
+// (src/lib/calendar-signals.ts, synced client-side from their own Google
+// Calendar with their own OAuth token - see POST /api/signals/calendar).
+// That signal already only ever exists for a member who both opted into
+// org sharing (shareAnonymizedDataWithOrg, same gate as every other org
+// aggregate) AND separately enabled allowCalendarSignals for themselves -
+// two independent, real consent checks, not one flag standing in for both.
+// The contributing cohort is usually smaller than the org's full consenting
+// membership (fewer people have connected a calendar at all), so it gets
+// its OWN threshold check here rather than assuming the org-wide count
+// already covers it.
+const computeMeetingLoadSnapshotForCohort = async (
+  db: any,
+  uids: string[],
+  threshold: number,
+): Promise<OrgMeetingLoadSnapshot> => {
+  const fourteenDaysAgo = Date.now() - 14 * 24 * 60 * 60 * 1000;
+  const contributing: { totalMeetingHours: number; backToBackCount: number; eveningMeetingCount: number; weekendMeetingCount: number }[] = [];
+  await Promise.all(uids.map(async (uid) => {
+    const permDoc = await db.collection("users").doc(uid).collection("nova_permissions").doc("current").get();
+    if (!permDoc.exists || permDoc.data()?.allowCalendarSignals !== true) return;
+    const calDoc = await db.collection("users").doc(uid).collection("live_signals").doc("calendar").get();
+    if (!calDoc.exists) return;
+    const data = calDoc.data() || {};
+    // Stale (not synced recently) is treated as no signal, not a zero -
+    // an empty calendar and an unsynced browser tab must never look alike.
+    if (!data.updatedAt || new Date(data.updatedAt).getTime() < fourteenDaysAgo) return;
+    contributing.push({
+      totalMeetingHours: typeof data.totalMeetingHours === 'number' ? data.totalMeetingHours : 0,
+      backToBackCount: typeof data.backToBackCount === 'number' ? data.backToBackCount : 0,
+      eveningMeetingCount: typeof data.eveningMeetingCount === 'number' ? data.eveningMeetingCount : 0,
+      weekendMeetingCount: typeof data.weekendMeetingCount === 'number' ? data.weekendMeetingCount : 0,
+    });
+  }));
+  if (contributing.length < threshold) {
+    return { available: false, cohortSize: contributing.length, avgMeetingHoursPerWeek: null, avgBackToBackMeetingsPerWeek: null, pctWithEveningMeetings: null, pctWithWeekendMeetings: null };
+  }
+  const n = contributing.length;
+  const avgMeetingHoursPerWeek = contributing.reduce((sum, c) => sum + c.totalMeetingHours, 0) / n;
+  const avgBackToBackMeetingsPerWeek = contributing.reduce((sum, c) => sum + c.backToBackCount, 0) / n;
+  const pctWithEveningMeetings = Math.round((contributing.filter((c) => c.eveningMeetingCount > 0).length / n) * 100);
+  const pctWithWeekendMeetings = Math.round((contributing.filter((c) => c.weekendMeetingCount > 0).length / n) * 100);
+  return {
+    available: true,
+    cohortSize: n,
+    avgMeetingHoursPerWeek: Math.round(avgMeetingHoursPerWeek * 10) / 10,
+    avgBackToBackMeetingsPerWeek: Math.round(avgBackToBackMeetingsPerWeek * 10) / 10,
+    pctWithEveningMeetings,
+    pctWithWeekendMeetings,
+  };
+};
+
 // The cohort-level "did people actually use the app" signal - extracted
 // from the original /api/org/:orgId/dashboard route so the same real
 // engagement math can be reused per-team (team-dashboard, hr-dashboard)
@@ -7851,8 +7913,14 @@ app.get("/api/org/:orgId/manager-coach", managerCoachLimiter, verifyAppCheck, au
 });
 
 // Tool declarations for the conversational Nova Manager Coach below. See the
-// comment above NOVA_MANAGER_COACH_CHAT_PROMPT for why every one of these
-// takes no parameters at all.
+// comment above NOVA_MANAGER_COACH_CHAT_PROMPT for why every one of these -
+// with the sole exception of get_team_detail - takes no parameters at all.
+// get_team_detail takes a team NAME (never a uid, headcount, or anything
+// else that could target a person), and applies the exact same
+// qualifying-team check as get_team_breakdown before ever returning
+// anything for it - so even a compromised/hallucinating model passing an
+// arbitrary team name can only ever get back a team that was already safe
+// to show in the full breakdown, never a narrower or looser answer.
 const NOVA_ORG_COACH_TOOLS = [
   {
     name: "get_team_climate_trend",
@@ -7865,6 +7933,17 @@ const NOVA_ORG_COACH_TOOLS = [
     parameters: { type: Type.OBJECT, properties: {} },
   },
   {
+    name: "get_team_detail",
+    description: "Get climate/mood strain and this week's engagement for ONE specific team by name, if (and only if) that team currently has enough consenting members to report on safely without risking anonymity. Use this when the manager names a specific team; if it can't be safely reported on individually, say so honestly rather than guessing or inventing a number.",
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        team: { type: Type.STRING, description: "The exact team name as it appears in the organisation's own team list." },
+      },
+      required: ["team"],
+    },
+  },
+  {
     name: "get_engagement_and_recognition_signal",
     description: "Get this week's real engagement rate (the percentage of consenting members who logged any check-in), how it compares to the prior week, and specific, grounded recognition-message suggestions a manager could genuinely post to the team wall this week.",
     parameters: { type: Type.OBJECT, properties: {} },
@@ -7872,6 +7951,16 @@ const NOVA_ORG_COACH_TOOLS = [
   {
     name: "get_cost_of_pressure_snapshot",
     description: "Get the organisation's own entered cost-of-pressure figures (headcount, average daily cost per employee, annual sickness days) and recent history, if the org admin has entered any yet. Use this for anything about budget, ROI, or the business case for investing in recovery support.",
+    parameters: { type: Type.OBJECT, properties: {} },
+  },
+  {
+    name: "get_team_escalation_status",
+    description: "Get, for each team that currently qualifies to report on safely, its real strain level and whether a manager has logged addressing it recently (an honest follow-up trail, not a verified fact or a score on the manager). Use this for anything about which teams need attention or whether elevated concerns have actually been followed up on. Never suggests identifying or contacting a specific person - for a real safeguarding concern, the org's own HR/EAP process is the right next step, not this tool.",
+    parameters: { type: Type.OBJECT, properties: {} },
+  },
+  {
+    name: "get_meeting_load_signal",
+    description: "Get the organisation's real, aggregate meeting-load signal (average weekly meeting hours, back-to-back meetings, and how many people have evening or weekend meetings), computed only from members who have both opted into org sharing and separately connected their own calendar. Often not enough people have connected a calendar yet for this to be safe to report on - if so, say that honestly rather than guessing. Use this for anything about calendar load, meeting overload, or time pressure.",
     parameters: { type: Type.OBJECT, properties: {} },
   },
 ];
@@ -7885,6 +7974,7 @@ const NOVA_ORG_COACH_TOOLS = [
 // pattern for individual Nova.
 async function executeOrgCoachTool(
   name: string,
+  args: Record<string, unknown>,
   db: any,
   orgId: string,
   org: any,
@@ -7916,29 +8006,45 @@ async function executeOrgCoachTool(
       }
       case "get_team_breakdown": {
         const memberTeams: Record<string, string> = org.memberTeams || {};
-        const teamGroups: Record<string, string[]> = {};
-        consentingUids.forEach((uid) => {
-          const team = memberTeams[uid];
-          if (team) {
-            if (!teamGroups[team]) teamGroups[team] = [];
-            teamGroups[team].push(uid);
-          }
-        });
-        // Same complement-size check as GET /api/org/:orgId/risk-trend - see
-        // that route's comment for the subtraction-attack this closes.
-        const qualifyingTeams = Object.entries(teamGroups).filter(([, uids]) => {
-          if (uids.length < threshold) return false;
-          const complementSize = consentingUids.length - uids.length;
-          return complementSize === 0 || complementSize >= threshold;
-        });
-        if (qualifyingTeams.length === 0) {
+        // Same shared helper (and the same complement-size check) as
+        // GET /api/org/:orgId/risk-trend and the HR/team-welfare dashboards -
+        // see computeQualifyingTeamGroups' own comment for the subtraction-
+        // attack this closes.
+        const { qualifying: teamGroups } = computeQualifyingTeamGroups(consentingUids, memberTeams, threshold);
+        const qualifyingEntries = Object.entries(teamGroups);
+        if (qualifyingEntries.length === 0) {
           return { teams: [], note: "No individual team currently has enough consenting members to report on safely without risking anonymity - this doesn't mean every team is fine, just that none can be safely broken out yet." };
         }
-        const teams = await Promise.all(qualifyingTeams.map(async ([team, uids]) => {
+        const teams = await Promise.all(qualifyingEntries.map(async ([team, uids]) => {
           const snap = await computeStrainSnapshotForCohort(db, uids);
           return { team, cohortSize: snap.cohortSize, overallStrain: snap.overallConcern };
         }));
         return { teams, note: "Scores are 0-100, 0 = no strain, 100 = high strain. Only teams with enough consenting members to protect anonymity are included." };
+      }
+      case "get_team_detail": {
+        const requestedTeam = typeof args?.team === 'string' ? args.team : '';
+        const memberTeams: Record<string, string> = org.memberTeams || {};
+        const { qualifying: teamGroups } = computeQualifyingTeamGroups(consentingUids, memberTeams, threshold);
+        // hasOwnProperty guard: teamGroups is a plain object, and a
+        // hallucinating model could in principle pass a prototype-chain
+        // name like "__proto__" as a team - this makes sure only a team
+        // this org actually has and that genuinely qualifies is ever found.
+        const uids = Object.prototype.hasOwnProperty.call(teamGroups, requestedTeam) ? teamGroups[requestedTeam] : undefined;
+        if (!uids) {
+          return { found: false, note: "That team either doesn't exist, or doesn't currently have enough consenting members to report on safely without risking anonymity - this doesn't necessarily mean anything is wrong, just that it can't be shown individually yet." };
+        }
+        const snap = await computeStrainSnapshotForCohort(db, uids);
+        const engagementRate = await computeEngagementRate(db, uids, 7);
+        return {
+          found: true,
+          team: requestedTeam,
+          cohortSize: snap.cohortSize,
+          moodStrain: snap.moodConcern,
+          climateStrain: snap.climateConcern,
+          overallStrain: snap.overallConcern,
+          engagementRate,
+          note: "Scores are 0-100, 0 = no strain, 100 = high strain.",
+        };
       }
       case "get_engagement_and_recognition_signal": {
         const countActiveInWindow = async (sinceIso: string, untilIso: string): Promise<number> => {
@@ -7980,6 +8086,42 @@ async function executeOrgCoachTool(
           .orderBy("enteredAt", "desc").limit(6).get();
         const history = historySnap.docs.map((d: any) => d.data());
         return { available: true, costInputs, recentHistory: history };
+      }
+      case "get_team_escalation_status": {
+        const memberTeams: Record<string, string> = org.memberTeams || {};
+        const { qualifying: teamGroups } = computeQualifyingTeamGroups(consentingUids, memberTeams, threshold);
+        const qualifyingEntries = Object.entries(teamGroups);
+        if (qualifyingEntries.length === 0) {
+          return { teams: [], note: "No individual team currently has enough consenting members to report on safely without risking anonymity." };
+        }
+        const now = new Date();
+        const teams = await Promise.all(qualifyingEntries.map(async ([team, uids]) => {
+          const snap = await computeStrainSnapshotForCohort(db, uids);
+          const acksSnap = await db.collection("organisations").doc(orgId).collection("team_escalation_acks")
+            .where("team", "==", team).orderBy("createdAt", "desc").limit(5).get();
+          const acks = acksSnap.docs.map((d: any) => d.data());
+          const followUp = describeFollowUp(acks, now);
+          return { team, cohortSize: snap.cohortSize, overallStrain: snap.overallConcern, followUp };
+        }));
+        return {
+          teams,
+          note: "Scores are 0-100, 0 = no strain, 100 = high strain. followUp.status reflects a manager's own logged acknowledgment, not a verified fact - there is no way to confirm a real conversation happened. Never suggest identifying, contacting, or escalating a specific unnamed person - for a real safeguarding concern, the org's own HR/EAP process is the right next step, not this data.",
+        };
+      }
+      case "get_meeting_load_signal": {
+        const snapshot = await computeMeetingLoadSnapshotForCohort(db, consentingUids, threshold);
+        if (!snapshot.available) {
+          return { available: false, cohortSize: snapshot.cohortSize, note: "Not enough consenting members have connected their own calendar yet for this to be safe to report on without risking anonymity. This says nothing about whether meeting load is actually a problem - just that there isn't yet a safe enough sample to show." };
+        }
+        return {
+          available: true,
+          cohortSize: snapshot.cohortSize,
+          avgMeetingHoursPerWeek: snapshot.avgMeetingHoursPerWeek,
+          avgBackToBackMeetingsPerWeek: snapshot.avgBackToBackMeetingsPerWeek,
+          pctWithEveningMeetings: snapshot.pctWithEveningMeetings,
+          pctWithWeekendMeetings: snapshot.pctWithWeekendMeetings,
+          note: "From real, live calendar data members have chosen to connect and share with the org - not every consenting member necessarily has, so this reflects only those who have.",
+        };
       }
       default:
         return { error: `Unknown tool: ${name}` };
@@ -8060,7 +8202,7 @@ app.post("/api/org/:orgId/manager-coach/chat", managerCoachLimiter, verifyAppChe
         toolCallRounds++;
         const responseParts = await Promise.all(
           result.functionCalls.map(async (call) => {
-            const output = await executeOrgCoachTool(call.name || "", db, orgId, org, consentingUids, threshold);
+            const output = await executeOrgCoachTool(call.name || "", call.args || {}, db, orgId, org, consentingUids, threshold);
             planTrace.push({ tool: call.name || "unknown", args: call.args || {}, result: output });
             return { functionResponse: { name: call.name, response: output } };
           })

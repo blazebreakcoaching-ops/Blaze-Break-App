@@ -21,8 +21,11 @@ interface Message {
 const TOOL_LABELS: Record<string, string> = {
   get_team_climate_trend: 'team climate trend',
   get_team_breakdown: 'per-team breakdown',
+  get_team_detail: 'team detail',
   get_engagement_and_recognition_signal: 'engagement & recognition',
   get_cost_of_pressure_snapshot: 'cost of pressure',
+  get_team_escalation_status: 'escalation follow-up status',
+  get_meeting_load_signal: 'meeting load',
 };
 
 const HISTORY_LIMIT = 20;
