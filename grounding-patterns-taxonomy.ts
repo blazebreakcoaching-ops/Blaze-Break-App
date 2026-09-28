@@ -271,6 +271,54 @@ export const computeDerivedPatterns = (sessions: SessionForPatternDerivation[]):
   return results.sort((a, b) => b.occurrenceCount - a.occurrenceCount);
 };
 
+// ---------- Monthly Deep Reflection: "what changed" ----------
+// Batch 5 deliberately has no dedicated AI route at all - every section
+// of the monthly reflection (heaviest theme, recurring themes, what
+// helped, what changed) is computed from data already loaded client-side
+// (sessions, derived patterns), keeping this feature's token usage at
+// zero rather than adding a seventh AI-generation surface for a
+// once-a-month summary. This is the one comparison that needs real logic
+// rather than a simple count: which theme shifted the most between the
+// earlier and later half of the reflection window.
+
+export const compareThemeShift = (
+  earlierSessions: SessionForPatternDerivation[],
+  laterSessions: SessionForPatternDerivation[]
+): { patternKey: PatternDimensionId; direction: 'increasing' | 'decreasing' } | null => {
+  // Too little on either side to say anything honest about a shift.
+  if (earlierSessions.length < 2 || laterSessions.length < 2) return null;
+
+  const countThemes = (sessions: SessionForPatternDerivation[]) => {
+    const counts = new Map<PatternDimensionId, number>();
+    sessions.forEach((s) => {
+      (s.detectedThemes || []).forEach((raw) => {
+        if (!(raw in PATTERN_DIMENSIONS)) return;
+        const key = raw as PatternDimensionId;
+        counts.set(key, (counts.get(key) || 0) + 1);
+      });
+    });
+    return counts;
+  };
+
+  const earlierCounts = countThemes(earlierSessions);
+  const laterCounts = countThemes(laterSessions);
+  const allKeys = new Set([...earlierCounts.keys(), ...laterCounts.keys()]);
+
+  let best: { patternKey: PatternDimensionId; direction: 'increasing' | 'decreasing'; delta: number } | null = null;
+  for (const key of allKeys) {
+    const earlierCount = earlierCounts.get(key) || 0;
+    const laterCount = laterCounts.get(key) || 0;
+    const delta = Math.abs(laterCount - earlierCount);
+    if (delta === 0) continue;
+    if (!best || delta > best.delta) {
+      best = { patternKey: key, direction: laterCount > earlierCount ? 'increasing' : 'decreasing', delta };
+    }
+  }
+  return best ? { patternKey: best.patternKey, direction: best.direction } : null;
+};
+
+export const MIN_SESSIONS_FOR_MONTHLY_REFLECTION = 4;
+
 // ---------- Explore This: question sets grouped by category ----------
 // Not 27 bespoke question sets - one progressive, reusable set per
 // category, with the specific pattern's own description/label woven into

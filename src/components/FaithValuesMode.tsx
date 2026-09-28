@@ -23,11 +23,13 @@ import {
 } from '../../grounding-content';
 import {
   DerivedPattern, computeDerivedPatterns, PATTERN_DIMENSIONS, CONFIDENCE_COPY,
+  MIN_SESSIONS_FOR_MONTHLY_REFLECTION,
 } from '../../grounding-patterns-taxonomy';
 import { logGroundingEvent } from '../lib/grounding-analytics';
 import { GroundingExploreThis } from './GroundingExploreThis';
 import { GroundingCarryingExercise } from './GroundingCarryingExercise';
 import { GroundingCommunityBridge } from './GroundingCommunityBridge';
+import { GroundingMonthlyReflection } from './GroundingMonthlyReflection';
 
 // Section 18's gentle human-connection prompts, shown alongside the
 // "Reach out to someone I trust" Reconnect option - never forced, always
@@ -120,6 +122,7 @@ export const FaithValuesMode = (_props: FaithValuesModeProps) => {
   const [patternFeedback, setPatternFeedback] = useState<Record<string, PatternFeedbackState>>({});
   const [exploringPattern, setExploringPattern] = useState<DerivedPattern | null>(null);
   const [showCarryingExercise, setShowCarryingExercise] = useState(false);
+  const [showMonthlyReflection, setShowMonthlyReflection] = useState(false);
   const [mostRecentAlignedAction, setMostRecentAlignedAction] = useState<{ id: string; chosenValue: string; nextAlignedAction: string; followUpStatus: string | null; createdAt: string } | null>(null);
   const [allAlignedActions, setAllAlignedActions] = useState<{ chosenValue: string; createdAt: string }[]>([]);
 
@@ -529,6 +532,7 @@ export const FaithValuesMode = (_props: FaithValuesModeProps) => {
           mostRecentAlignedAction={mostRecentAlignedAction}
           onAlignedActionFollowUp={handleAlignedActionFollowUp}
           allAlignedActions={allAlignedActions}
+          onOpenMonthlyReflection={() => setShowMonthlyReflection(true)}
         />
       ) : (
         <>
@@ -910,6 +914,13 @@ export const FaithValuesMode = (_props: FaithValuesModeProps) => {
           onClose={() => setShowCommunityBridge(false)}
         />
       )}
+      {showMonthlyReflection && (
+        <GroundingMonthlyReflection
+          sessions={sessions}
+          derivedPatterns={derivedPatterns}
+          onClose={() => setShowMonthlyReflection(false)}
+        />
+      )}
     </div>
   );
 };
@@ -918,7 +929,7 @@ const GroundingJourneyView = ({
   sessions, sessionsLoaded, visiblePatterns, patternAnalysisEnabled, onTogglePatternAnalysis,
   confirmingDelete, onConfirmingDeleteChange, onDeleteHistory, onStartSession,
   onExplorePattern, onPatternFeedback, onPausePattern, onOpenCarryingExercise,
-  mostRecentAlignedAction, onAlignedActionFollowUp, allAlignedActions,
+  mostRecentAlignedAction, onAlignedActionFollowUp, allAlignedActions, onOpenMonthlyReflection,
 }: {
   sessions: GroundingSessionRecord[];
   sessionsLoaded: boolean;
@@ -936,6 +947,7 @@ const GroundingJourneyView = ({
   mostRecentAlignedAction: { id: string; chosenValue: string; nextAlignedAction: string } | null;
   onAlignedActionFollowUp: (status: 'went_well' | 'still_working_on_it' | 'didnt_happen') => void;
   allAlignedActions: { chosenValue: string; createdAt: string }[];
+  onOpenMonthlyReflection: () => void;
 }) => {
   const [notRelevantNoteFor, setNotRelevantNoteFor] = useState<string | null>(null);
   const [notRelevantNote, setNotRelevantNote] = useState('');
@@ -1088,6 +1100,18 @@ const GroundingJourneyView = ({
           Open
         </button>
       </div>
+
+      {sessions.length >= MIN_SESSIONS_FOR_MONTHLY_REFLECTION && (
+        <div className="p-5 rounded-2xl border border-primary/20 bg-primary/5 flex items-center justify-between gap-4">
+          <div>
+            <h4 className="text-sm font-bold text-text-main">Ready for a deeper look back?</h4>
+            <p className="text-[11px] text-text-muted mt-0.5">A slower reflection on what's stood out, what's shifted, and what you want to carry forward.</p>
+          </div>
+          <button onClick={onOpenMonthlyReflection} className="px-4 py-2.5 bg-primary text-primary-foreground rounded-xl text-[11px] font-black uppercase tracking-widest shrink-0">
+            Reflect on this month
+          </button>
+        </div>
+      )}
 
       <div className="space-y-6">
         <h4 className="text-xs uppercase font-black tracking-widest text-text-muted">Looking back</h4>

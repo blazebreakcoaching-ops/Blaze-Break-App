@@ -3,6 +3,7 @@ import {
   computeConfidence, CONFIDENCE_COPY, PATTERN_DIMENSIONS, PATTERN_DIMENSION_ORDER,
   PATTERN_CATEGORIES, EXPLORE_QUESTION_SETS, VALUES_LIST, computeDerivedPatterns,
   EMERGING_MIN_COUNT, RECURRING_MIN_COUNT, ESTABLISHED_MIN_COUNT, ESTABLISHED_MIN_SPAN_DAYS,
+  compareThemeShift,
 } from './grounding-patterns-taxonomy';
 
 describe('computeConfidence', () => {
@@ -152,6 +153,40 @@ describe('computeDerivedPatterns', () => {
       { detectedThemes: ['control'], lens: 'secular', createdAt: day(2) },
     ];
     expect(computeDerivedPatterns(sessions)).toEqual([]);
+  });
+});
+
+describe('compareThemeShift', () => {
+  const s = (themes: string[]): { detectedThemes: string[]; lens: string; createdAt: string } => ({ detectedThemes: themes, lens: 'secular', createdAt: '2026-01-01' });
+
+  it('returns null with too little data on either side', () => {
+    expect(compareThemeShift([s(['control'])], [s(['control']), s(['control'])])).toBeNull();
+  });
+
+  it('detects a theme that decreased between the two halves', () => {
+    const earlier = [s(['guilt_about_rest']), s(['guilt_about_rest']), s(['guilt_about_rest'])];
+    const later = [s([]), s([]), s([])];
+    const result = compareThemeShift(earlier, later);
+    expect(result).toEqual({ patternKey: 'guilt_about_rest', direction: 'decreasing' });
+  });
+
+  it('detects a theme that increased between the two halves', () => {
+    const earlier = [s([]), s([])];
+    const later = [s(['isolation']), s(['isolation']), s(['isolation'])];
+    const result = compareThemeShift(earlier, later);
+    expect(result).toEqual({ patternKey: 'isolation', direction: 'increasing' });
+  });
+
+  it('returns null when nothing shifted at all', () => {
+    const earlier = [s(['control']), s(['control'])];
+    const later = [s(['control']), s(['control'])];
+    expect(compareThemeShift(earlier, later)).toBeNull();
+  });
+
+  it('ignores unrecognised theme strings', () => {
+    const earlier = [s(['fabricated']), s(['fabricated'])];
+    const later = [s([]), s([])];
+    expect(compareThemeShift(earlier, later)).toBeNull();
   });
 });
 
