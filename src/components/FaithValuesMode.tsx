@@ -23,16 +23,22 @@ import {
 } from '../../grounding-content';
 import {
   DerivedPattern, computeDerivedPatterns, PATTERN_DIMENSIONS, CONFIDENCE_COPY,
-  MIN_SESSIONS_FOR_MONTHLY_REFLECTION,
+  MIN_SESSIONS_FOR_MONTHLY_REFLECTION, MEANING_PROMPTS_GENERAL, MEANING_PROMPTS_FAITH_EXTRA,
+  MEANING_MAKING_INTRO, MEANING_MAKING_INTRO_ISLAMIC,
 } from '../../grounding-patterns-taxonomy';
 import { logGroundingEvent } from '../lib/grounding-analytics';
 import { GroundingExploreThis } from './GroundingExploreThis';
 import { GroundingCarryingExercise } from './GroundingCarryingExercise';
 import { GroundingCommunityBridge } from './GroundingCommunityBridge';
 import { GroundingMonthlyReflection } from './GroundingMonthlyReflection';
-import { GroundingProfile } from '../../grounding-adaptive';
+import { GroundingResetFlow } from './GroundingResetFlow';
+import {
+  GroundingProfile, SessionDepth, CapacityState, SESSION_DEPTH_LABELS, CAPACITY_LABELS,
+  SessionDepthRecommendation,
+} from '../../grounding-adaptive';
 import {
   loadGroundingProfile, updateGroundingProfile, resetGroundingPersonalisation,
+  getGroundingRecommendation, getPreferredClosing,
 } from '../lib/grounding-personalisation';
 
 // Section 18's gentle human-connection prompts, shown alongside the
@@ -66,15 +72,18 @@ interface FaithValuesModeProps {
   onAwardPoints?: (amount: number, reason: string) => void;
 }
 
-type Stage = 'lens' | 'arrive' | 'separate' | 'reflect' | 'release' | 'reconnect';
+type Stage = 'depth' | 'capacity' | 'lens' | 'arrive' | 'separate' | 'reflect' | 'meaning' | 'release' | 'reconnect';
 type ViewMode = 'session' | 'journey';
 
 const LENS_ICONS: Record<GroundingLens, any> = { secular: Globe, values: Compass, faith: Feather, islamic: MoonStar };
 
+// 'meaning' only appears for a 'deep' session - see the STAGE_ORDER
+// usage below, which filters it out otherwise.
 const STAGE_ORDER: { id: Stage; label: string }[] = [
   { id: 'arrive', label: 'Arrive' },
   { id: 'separate', label: 'Separate' },
   { id: 'reflect', label: 'Reflect' },
+  { id: 'meaning', label: 'Meaning' },
   { id: 'release', label: 'Release' },
   { id: 'reconnect', label: 'Reconnect' },
 ];
@@ -83,8 +92,18 @@ const HOLD_DURATION_MS = 2200;
 
 export const FaithValuesMode = (_props: FaithValuesModeProps) => {
   const [view, setView] = useState<ViewMode>('session');
-  const [stage, setStage] = useState<Stage>('lens');
+  const [stage, setStage] = useState<Stage>('depth');
   const [lens, setLens] = useState<GroundingLens | null>(null);
+
+  // Phase 3's session-depth entry point (section 2/40) - chosen before
+  // the lens, since Reset skips lens choice entirely (GroundingResetFlow
+  // is rendered in its place, see the early-return in the JSX below).
+  const [sessionDepth, setSessionDepth] = useState<SessionDepth | null>(null);
+  const [capacityState, setCapacityState] = useState<CapacityState | null>(null);
+  const [depthRecommendation, setDepthRecommendation] = useState<SessionDepthRecommendation | 'none' | null>(null);
+  const [loadingRecommendation, setLoadingRecommendation] = useState(false);
+  const [meaningPrompt, setMeaningPrompt] = useState<string | null>(null);
+  const [meaningAnswer, setMeaningAnswer] = useState('');
 
   const [burdenIds, setBurdenIds] = useState<BurdenId[]>([]);
   const [customBurden, setCustomBurden] = useState('');
@@ -315,7 +334,12 @@ export const FaithValuesMode = (_props: FaithValuesModeProps) => {
   };
 
   const resetSession = () => {
-    setStage('lens');
+    setStage('depth');
+    setSessionDepth(null);
+    setCapacityState(null);
+    setDepthRecommendation(null);
+    setMeaningPrompt(null);
+    setMeaningAnswer('');
     setLens(null);
     setBurdenIds([]);
     setCustomBurden('');
@@ -398,13 +422,16 @@ export const FaithValuesMode = (_props: FaithValuesModeProps) => {
       const now = new Date().toISOString();
       const record: Record<string, unknown> = {
         lens, burdenIds, controllableItems, uncontrollableItems, createdAt: now, updatedAt: now,
+        sessionDepth: sessionDepth || 'ground',
       };
+      if (capacityState) record.capacityState = capacityState;
       if (customBurden.trim()) record.customBurden = customBurden.trim().slice(0, 80);
       if (typeof intensity === 'number') record.intensity = intensity;
       if (lens === 'islamic' && islamicThemeId) record.islamicThemeId = islamicThemeId;
       const answers: ReflectionAnswer[] = [];
       if (reflection && firstAnswer.trim()) answers.push({ question: reflection.firstQuestion, answer: firstAnswer.trim().slice(0, 400) });
       if (reflection && secondAnswer.trim()) answers.push({ question: reflection.secondQuestion, answer: secondAnswer.trim().slice(0, 400) });
+      if (meaningAnswer.trim() && meaningPrompt) answers.push({ question: meaningPrompt, answer: meaningAnswer.trim().slice(0, 400) });
       if (answers.length > 0) record.reflectionAnswers = answers;
       if (reflection?.detectedThemes && reflection.detectedThemes.length > 0) record.detectedThemes = reflection.detectedThemes;
 
@@ -516,6 +543,7 @@ export const FaithValuesMode = (_props: FaithValuesModeProps) => {
 
   const canContinueArrive = burdenIds.length > 0 || customBurden.trim().length > 0;
   const canContinueSeparate = controllableItems.length > 0 && uncontrollableItems.length > 0;
+  const isLowCapacity = capacityState === 'running_on_empty' || capacityState === 'low_capacity';
 
   return (
     <div className="space-y-12 pb-24">
@@ -574,13 +602,19 @@ export const FaithValuesMode = (_props: FaithValuesModeProps) => {
           onConfirmingPersonalisationResetChange={setConfirmingPersonalisationReset}
           onResetPersonalisation={handleResetPersonalisation}
         />
+      ) : sessionDepth === 'reset' ? (
+        <GroundingResetFlow
+          derivedPatterns={derivedPatterns}
+          onBack={() => { setSessionDepth(null); setStage('depth'); }}
+          onComplete={() => { resetSession(); setView('journey'); loadSessions(); }}
+        />
       ) : (
         <>
-          {stage !== 'lens' && lens && (
+          {stage !== 'lens' && stage !== 'depth' && stage !== 'capacity' && lens && (
             <div className="flex items-center justify-between max-w-2xl">
               <div className="flex items-center gap-3">
-                {STAGE_ORDER.map((s, idx) => {
-                  const currentIdx = STAGE_ORDER.findIndex((x) => x.id === stage);
+                {STAGE_ORDER.filter((s) => s.id !== 'meaning' || sessionDepth === 'deep').map((s, idx, visible) => {
+                  const currentIdx = visible.findIndex((x) => x.id === stage);
                   const isDone = idx < currentIdx;
                   const isCurrent = idx === currentIdx;
                   return (
@@ -600,6 +634,120 @@ export const FaithValuesMode = (_props: FaithValuesModeProps) => {
           )}
 
           <AnimatePresence mode="wait">
+            {stage === 'depth' && (
+              <motion.div key="depth" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-6 max-w-2xl">
+                <h4 className="text-2xl font-display font-bold text-text-main">What do you need right now?</h4>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {(['reset', 'ground', 'deep'] as SessionDepth[]).map((depth) => (
+                    <button
+                      key={depth}
+                      onClick={() => { setSessionDepth(depth); setStage(depth === 'reset' ? 'depth' : 'capacity'); }}
+                      className="p-6 rounded-2xl border border-border/50 hover:border-primary/30 text-left hover:bg-surface dark:hover:bg-surface transition-all"
+                    >
+                      <h5 className="font-display font-bold text-lg mb-1">{SESSION_DEPTH_LABELS[depth].label}</h5>
+                      <p className="text-xs font-medium leading-relaxed text-text-muted">{SESSION_DEPTH_LABELS[depth].description}</p>
+                    </button>
+                  ))}
+                  <button
+                    onClick={async () => {
+                      if (!auth.currentUser) { setSessionDepth('ground'); setStage('capacity'); return; }
+                      setLoadingRecommendation(true);
+                      const top = derivedPatterns[0];
+                      const rec = await getGroundingRecommendation(auth.currentUser.uid, {
+                        capacity: null, recentPatternKey: top?.patternKey || null, recentSameThemeSessionCount: top?.occurrenceCount || 0,
+                      });
+                      setLoadingRecommendation(false);
+                      setDepthRecommendation(rec || 'none');
+                    }}
+                    className="p-6 rounded-2xl border border-dashed border-border/50 hover:border-primary/30 text-left hover:bg-surface dark:hover:bg-surface transition-all"
+                  >
+                    <h5 className="font-display font-bold text-lg mb-1 flex items-center gap-2"><Sparkles className="w-4 h-4 text-primary" /> Let Nova choose</h5>
+                    <p className="text-xs font-medium leading-relaxed text-text-muted">Nova recommends a depth from what it's noticed.</p>
+                  </button>
+                </div>
+
+                {loadingRecommendation && <p className="text-xs text-text-muted">Thinking...</p>}
+
+                {depthRecommendation && depthRecommendation !== 'none' && (
+                  <div className="bg-primary/5 border border-primary/20 p-6 rounded-2xl space-y-4">
+                    <p className="text-sm text-text-main italic">"{depthRecommendation.reason}"</p>
+                    <div className="flex flex-wrap gap-3">
+                      <button
+                        onClick={() => { setSessionDepth(depthRecommendation.depth); setDepthRecommendation(null); setStage(depthRecommendation.depth === 'reset' ? 'depth' : 'capacity'); }}
+                        className="px-5 py-2.5 bg-primary text-primary-foreground rounded-xl text-xs font-black uppercase tracking-widest"
+                      >
+                        Start {SESSION_DEPTH_LABELS[depthRecommendation.depth].label}
+                      </button>
+                      <button onClick={() => setDepthRecommendation(null)} className="px-5 py-2.5 border border-border/40 rounded-xl text-xs font-black uppercase tracking-widest text-text-muted hover:text-text-main">
+                        Choose something else
+                      </button>
+                    </div>
+                  </div>
+                )}
+                {depthRecommendation === 'none' && (
+                  <div className="bg-surface/30 p-6 rounded-2xl space-y-4">
+                    <p className="text-sm text-text-muted">Nothing stands out right now - Ground is a good place to start.</p>
+                    <div className="flex flex-wrap gap-3">
+                      <button
+                        onClick={() => { setSessionDepth('ground'); setDepthRecommendation(null); setStage('capacity'); }}
+                        className="px-5 py-2.5 bg-primary text-primary-foreground rounded-xl text-xs font-black uppercase tracking-widest"
+                      >
+                        Start Ground
+                      </button>
+                      <button onClick={() => setDepthRecommendation(null)} className="px-5 py-2.5 border border-border/40 rounded-xl text-xs font-black uppercase tracking-widest text-text-muted hover:text-text-main">
+                        Choose something else
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </motion.div>
+            )}
+
+            {stage === 'capacity' && sessionDepth && (
+              <motion.div key="capacity" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-6 max-w-xl">
+                <div>
+                  <h4 className="text-2xl font-display font-bold text-text-main">How much capacity do you have right now?</h4>
+                  <p className="text-sm text-text-muted mt-2">Optional - this just helps shape how much the session asks of you.</p>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {(['running_on_empty', 'low_capacity', 'some_space', 'ready_to_reflect'] as CapacityState[]).map((cap) => (
+                    <button
+                      key={cap}
+                      onClick={() => setCapacityState(cap)}
+                      aria-pressed={capacityState === cap}
+                      className={cn('p-4 rounded-xl border text-left text-sm font-bold transition-all',
+                        capacityState === cap ? 'bg-primary/10 border-primary/45 text-[#9a3412] dark:text-primary' : 'bg-white dark:bg-surface border-border/40 text-text-main')}
+                    >
+                      {CAPACITY_LABELS[cap]}
+                    </button>
+                  ))}
+                </div>
+
+                {capacityState === 'running_on_empty' && (
+                  <div className="bg-primary/5 border border-primary/20 p-5 rounded-2xl space-y-3">
+                    <p className="text-sm text-text-main">You're running on empty right now - a short reset may be more useful than a longer session.</p>
+                    <div className="flex flex-wrap gap-3">
+                      <button onClick={() => { setSessionDepth('reset'); setStage('depth'); }} className="px-5 py-2.5 bg-primary text-primary-foreground rounded-xl text-xs font-black uppercase tracking-widest">
+                        Switch to Reset
+                      </button>
+                      <button onClick={() => setStage('lens')} className="px-5 py-2.5 border border-border/40 rounded-xl text-xs font-black uppercase tracking-widest text-text-muted hover:text-text-main">
+                        Continue with {SESSION_DEPTH_LABELS[sessionDepth].label} anyway
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                <div className="flex justify-between">
+                  <button onClick={() => setStage('depth')} className="px-4 py-3 text-text-muted hover:text-text-main text-xs font-black uppercase tracking-widest flex items-center gap-2"><ArrowLeft className="w-4 h-4" /> Back</button>
+                  {capacityState !== 'running_on_empty' && (
+                    <button onClick={() => setStage('lens')} className="px-6 py-3 bg-primary text-primary-foreground rounded-xl text-xs font-black uppercase tracking-widest flex items-center gap-2">
+                      {capacityState ? 'Continue' : 'Skip'} <ArrowRight className="w-4 h-4" />
+                    </button>
+                  )}
+                </div>
+              </motion.div>
+            )}
+
             {stage === 'lens' && (
               <motion.div key="lens" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-6">
                 <p className="text-sm text-text-muted max-w-xl">Choose the lens for this session. You can change it any time by starting a new session.</p>
@@ -796,7 +944,15 @@ export const FaithValuesMode = (_props: FaithValuesModeProps) => {
                       />
                       {!showSecondQuestion && (
                         <div className="flex justify-end">
-                          <button onClick={() => setShowSecondQuestion(true)} className="px-6 py-3 bg-primary text-primary-foreground rounded-xl text-xs font-black uppercase tracking-widest flex items-center gap-2">
+                          <button
+                            onClick={() => {
+                              // Section 3: a depleted user never has to complete
+                              // a second reflection question.
+                              if (isLowCapacity) setStage(sessionDepth === 'deep' ? 'meaning' : 'release');
+                              else setShowSecondQuestion(true);
+                            }}
+                            className="px-6 py-3 bg-primary text-primary-foreground rounded-xl text-xs font-black uppercase tracking-widest flex items-center gap-2"
+                          >
                             Continue <ArrowRight className="w-4 h-4" />
                           </button>
                         </div>
@@ -814,7 +970,7 @@ export const FaithValuesMode = (_props: FaithValuesModeProps) => {
                         />
                         <div className="flex justify-between">
                           <button onClick={() => setStage('separate')} className="px-4 py-3 text-text-muted hover:text-text-main text-xs font-black uppercase tracking-widest flex items-center gap-2"><ArrowLeft className="w-4 h-4" /> Back</button>
-                          <button onClick={() => setStage('release')} className="px-6 py-3 bg-primary text-primary-foreground rounded-xl text-xs font-black uppercase tracking-widest flex items-center gap-2">
+                          <button onClick={() => setStage(sessionDepth === 'deep' ? 'meaning' : 'release')} className="px-6 py-3 bg-primary text-primary-foreground rounded-xl text-xs font-black uppercase tracking-widest flex items-center gap-2">
                             Continue <ArrowRight className="w-4 h-4" />
                           </button>
                         </div>
@@ -822,6 +978,42 @@ export const FaithValuesMode = (_props: FaithValuesModeProps) => {
                     )}
                   </div>
                 ) : null}
+              </motion.div>
+            )}
+
+            {stage === 'meaning' && lens && (
+              <motion.div key="meaning" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-8 max-w-2xl">
+                <div>
+                  <h4 className="text-2xl font-display font-bold text-text-main">Making sense of it</h4>
+                  <p className="text-sm text-text-muted mt-2">{lens === 'islamic' ? MEANING_MAKING_INTRO_ISLAMIC : MEANING_MAKING_INTRO}</p>
+                </div>
+                {!meaningPrompt ? (
+                  <div className="grid grid-cols-1 gap-3">
+                    {[...MEANING_PROMPTS_GENERAL, ...(lens === 'faith' || lens === 'islamic' ? MEANING_PROMPTS_FAITH_EXTRA : [])].map((p) => (
+                      <button key={p.id} onClick={() => setMeaningPrompt(p.label)}
+                        className="p-4 rounded-xl border border-border/40 hover:border-primary/40 text-left bg-white dark:bg-surface transition-all text-sm font-bold text-text-main">
+                        {p.label}
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    <h5 className="text-sm font-bold text-text-main">{meaningPrompt}</h5>
+                    <textarea
+                      value={meaningAnswer}
+                      onChange={(e) => setMeaningAnswer(e.target.value.slice(0, 400))}
+                      rows={4}
+                      placeholder="Take your time..."
+                      className="w-full p-4 rounded-xl border border-border/40 bg-white dark:bg-surface text-sm text-text-main"
+                    />
+                    <div className="flex justify-between">
+                      <button onClick={() => setMeaningPrompt(null)} className="px-4 py-3 text-text-muted hover:text-text-main text-xs font-black uppercase tracking-widest flex items-center gap-2"><ArrowLeft className="w-4 h-4" /> Choose a different question</button>
+                      <button onClick={() => setStage('release')} className="px-6 py-3 bg-primary text-primary-foreground rounded-xl text-xs font-black uppercase tracking-widest flex items-center gap-2">
+                        Continue <ArrowRight className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                )}
               </motion.div>
             )}
 
@@ -913,7 +1105,7 @@ export const FaithValuesMode = (_props: FaithValuesModeProps) => {
                   <div className="bg-success/5 border border-success/20 p-8 rounded-2xl text-center space-y-4">
                     <CheckCircle2 className="w-8 h-8 text-success dark:text-[#4ade80] mx-auto" />
                     <p className="text-sm text-text-muted">
-                      {chosenNextAction === 'sit_with_this' ? "That's enough for now." : 'Taking you there now.'}
+                      {chosenNextAction === 'sit_with_this' ? getPreferredClosing(groundingProfile || { updatedAt: new Date().toISOString() }, lens || 'secular') : 'Taking you there now.'}
                     </p>
                     <button onClick={resetSession} className="px-6 py-2.5 border border-border/40 rounded-xl text-xs font-black uppercase tracking-widest text-text-muted hover:text-text-main hover:bg-surface/30 transition-all">
                       Start a new grounding session

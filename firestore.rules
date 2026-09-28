@@ -919,7 +919,7 @@ service cloud.firestore {
       match /grounding_sessions/{sessionId} {
         allow read, delete: if isOwner(uid);
         allow create, update: if isOwner(uid)
-            && hasOnly(['lens', 'burdenIds', 'customBurden', 'intensity', 'controllableItems', 'uncontrollableItems', 'islamicThemeId', 'reflectionAnswers', 'detectedThemes', 'nextAction', 'createdAt', 'updatedAt'])
+            && hasOnly(['lens', 'burdenIds', 'customBurden', 'intensity', 'controllableItems', 'uncontrollableItems', 'islamicThemeId', 'reflectionAnswers', 'detectedThemes', 'nextAction', 'sessionDepth', 'capacityState', 'createdAt', 'updatedAt'])
             && hasAll(['lens', 'createdAt', 'updatedAt'])
             && request.resource.data.lens in ['secular', 'values', 'faith', 'islamic']
             && (!('burdenIds' in request.resource.data) || (request.resource.data.burdenIds is list && request.resource.data.burdenIds.size() <= 10))
@@ -943,6 +943,11 @@ service cloud.firestore {
             // valid here too so already-written sessions remain readable/
             // re-saveable rather than breaking on old data.
             && (!('nextAction' in request.resource.data) || request.resource.data.nextAction in ['nova', 'trusted_person', 'practical_action', 'rest', 'sit_with_this', 'next_step', 'continue_with_nova', 'community', 'return_to_blaze_break'])
+            // Phase 3's session depths (section 1) - absent means a
+            // pre-Phase-3 session, treated as 'ground' (the standard
+            // experience) by the client, never re-migrated here.
+            && (!('sessionDepth' in request.resource.data) || request.resource.data.sessionDepth in ['reset', 'ground', 'deep'])
+            && (!('capacityState' in request.resource.data) || request.resource.data.capacityState in ['running_on_empty', 'low_capacity', 'some_space', 'ready_to_reflect'])
             && (request.method == 'create' ? true : checkCreatedAtUnchanged());
       }
 

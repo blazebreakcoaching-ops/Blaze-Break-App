@@ -76,6 +76,26 @@ describe('firestore.rules — every Phase 3 collection is owner-deletable', () =
   }
 });
 
+describe('firestore.rules — grounding_sessions accepts Phase 3\'s new sessionDepth/capacityState fields', () => {
+  const block = extractBlock('match /grounding_sessions/{sessionId} {');
+
+  it('constrains sessionDepth to exactly the 3 real session depths', () => {
+    expect(extractEnumValues(block, 'sessionDepth in')).toEqual(['reset', 'ground', 'deep']);
+  });
+
+  it('constrains capacityState to exactly the 4 real capacity states', () => {
+    expect(extractEnumValues(block, 'capacityState in')).toEqual(['running_on_empty', 'low_capacity', 'some_space', 'ready_to_reflect']);
+  });
+
+  it('both new fields are in the write allowlist', () => {
+    const hasOnlyMatch = block.match(/hasOnly\(\[([^\]]*)\]\)/);
+    expect(hasOnlyMatch).toBeTruthy();
+    const fields = hasOnlyMatch![1].split(',').map((s) => s.trim().replace(/^['"]|['"]$/g, ''));
+    expect(fields).toContain('sessionDepth');
+    expect(fields).toContain('capacityState');
+  });
+});
+
 describe('firestore.rules — groundingFeedback has no free-text field beyond one short optional note', () => {
   it('the write allowlist is selectedOptions/helpfulNote/sessionDepth/createdAt only', () => {
     const block = extractBlock('match /groundingFeedback/{feedbackId} {');

@@ -17,6 +17,8 @@
 // never permitted to generate its own Qur'an or Hadith text - see
 // buildIslamicReflectionPrompt's caller for the exact constraint.
 
+import { SessionDepth, CapacityState } from './grounding-adaptive';
+
 export type GroundingLens = 'secular' | 'values' | 'faith' | 'islamic';
 
 export const GROUNDING_LENSES: Record<GroundingLens, { label: string; description: string }> = {
@@ -308,6 +310,11 @@ export interface GroundingSessionRecord {
   // that, not something rendered directly.
   detectedThemes?: string[];
   nextAction?: NextActionId;
+  // Phase 3: which of the 3 session depths this was, and the person's
+  // self-reported capacity at the time, if they gave one. Absent means a
+  // pre-Phase-3 session - the client treats that as 'ground'.
+  sessionDepth?: SessionDepth;
+  capacityState?: CapacityState;
   createdAt: string;
   updatedAt: string;
 }
