@@ -1203,6 +1203,14 @@ export default function App() {
     return () => window.removeEventListener('open_crisis_support', handleOpenCrisisSupport);
   }, []);
   const [showLauncher, setShowLauncher] = useState(false);
+  // Same 'open_crisis_support'/'open_daily_check_in' window-event pattern -
+  // Faith & Values Grounding's Stage 5 "Talk privately with Nova" option
+  // needs to open the real launcher, not just dismiss itself.
+  useEffect(() => {
+    const handleOpenNovaLauncher = () => setShowLauncher(true);
+    window.addEventListener('open_nova_launcher', handleOpenNovaLauncher);
+    return () => window.removeEventListener('open_nova_launcher', handleOpenNovaLauncher);
+  }, []);
   // Walkthrough and CommandPalette are both always-mounted with `isOpen` as
   // a prop (not a JSX conditional), like SomaticResetOverlay above, so they
   // can play their own internal open/close animations - same "sticky mount"

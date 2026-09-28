@@ -902,6 +902,48 @@ service cloud.firestore {
             && (!('feedbackText' in request.resource.data) || request.resource.data.feedbackText == null || isStringWithMax(request.resource.data.feedbackText, 1000));
       }
 
+      // AE. grounding_sessions - Faith & Values Grounding's 5-stage
+      // journey (Arrive/Separate/Reflect/Release/Reconnect). Written
+      // directly by the client, same as every other reflection-style
+      // collection above (recovery_fuel_logs, boundary_scripts) - only
+      // the AI-generated Stage 3 reflection text itself goes through a
+      // server route (POST /api/grounding/reflect), since that's the only
+      // part that needs the Gemini API key and quota enforcement. Pattern
+      // detection (detectGroundingPatterns in grounding-content.ts) is
+      // recomputed client-side from these session docs on the fly rather
+      // than persisted, so there's no separate derived-pattern data to
+      // keep in sync or leak. reflectionAnswers is deliberately capped
+      // small (at most 2 question/answer pairs per session by the app's
+      // own flow) to keep free-text storage minimal, per the feature's
+      // explicit "minimise unnecessary sensitive free-text" requirement.
+      match /grounding_sessions/{sessionId} {
+        allow read, delete: if isOwner(uid);
+        allow create, update: if isOwner(uid)
+            && hasOnly(['lens', 'burdenIds', 'customBurden', 'intensity', 'controllableItems', 'uncontrollableItems', 'islamicThemeId', 'reflectionAnswers', 'nextAction', 'createdAt', 'updatedAt'])
+            && hasAll(['lens', 'createdAt', 'updatedAt'])
+            && request.resource.data.lens in ['secular', 'values', 'faith', 'islamic']
+            && (!('burdenIds' in request.resource.data) || (request.resource.data.burdenIds is list && request.resource.data.burdenIds.size() <= 10))
+            && isOptionalStringWithMax(request.resource.data, 'customBurden', 80)
+            && (!('intensity' in request.resource.data) || (request.resource.data.intensity is number && request.resource.data.intensity >= 1 && request.resource.data.intensity <= 5))
+            && (!('controllableItems' in request.resource.data) || (request.resource.data.controllableItems is list && request.resource.data.controllableItems.size() <= 12))
+            && (!('uncontrollableItems' in request.resource.data) || (request.resource.data.uncontrollableItems is list && request.resource.data.uncontrollableItems.size() <= 12))
+            && (!('islamicThemeId' in request.resource.data) || request.resource.data.islamicThemeId in ['tawakkul', 'sabr', 'shukr', 'qadr', 'rahmah', 'salah', 'dua', 'ummah'])
+            && (!('reflectionAnswers' in request.resource.data) || (request.resource.data.reflectionAnswers is list && request.resource.data.reflectionAnswers.size() <= 4))
+            && (!('nextAction' in request.resource.data) || request.resource.data.nextAction in ['nova', 'trusted_person', 'practical_action', 'rest'])
+            && (request.method == 'create' ? true : checkCreatedAtUnchanged());
+      }
+
+      // AF. preferences/grounding - the explicit, user-controlled opt-out
+      // for "Your Grounding Journey"'s pattern analysis, kept as its own
+      // small preferences doc rather than a field on user_stats/core,
+      // matching the fuel_reminders/notifications preferences convention.
+      match /preferences/grounding {
+        allow read: if isOwner(uid);
+        allow write: if isOwner(uid)
+            && hasOnly(['patternAnalysisEnabled', 'updatedAt'])
+            && (!('patternAnalysisEnabled' in request.resource.data) || request.resource.data.patternAnalysisEnabled is bool);
+      }
+
     }
 
     // F. public_feature_flags/{featureId}

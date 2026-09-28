@@ -17,6 +17,7 @@ import { computeDimensionScores, computeArchetypeScores, pickDominantProfile, co
 import { SendMessageSchema, SetDndSchema, SetStatusSchema } from './boundary-autopilot-schemas';
 import { getIsoWeekId } from './weekly-goal-tracker';
 import { findInProgressShipStage } from './ship-stages';
+import { ISLAMIC_THEMES, GROUNDING_LENSES, GroundingLens, IslamicThemeId } from './grounding-content';
 import { initializeApp, getApps } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
@@ -346,6 +347,18 @@ const resentmentAnalysisLimiter = rateLimit({
   legacyHeaders: false,
   validate: { xForwardedForHeader: false, default: true },
   handler: logRateLimitExceeded('resentmentAnalysisLimiter'),
+});
+
+// Same shape again - Faith & Values Grounding's Stage 3 reflection is a
+// comparable single-shot Gemini call from structured user input.
+const groundingReflectLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 15,
+  message: { error: 'Too many requests, please try again shortly.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+  validate: { xForwardedForHeader: false, default: true },
+  handler: logRateLimitExceeded('groundingReflectLimiter'),
 });
 
 // Same shape again - the executive report and manager coach are each a
@@ -11027,6 +11040,161 @@ ${NOVA_ONE_SHOT_SAFETY_FLOOR}`;
   } catch (err: any) {
     console.error("[Nova] resentment analysis error:", err.message);
     res.status(500).json({ error: "Could not analyze that right now." });
+  }
+});
+
+// Faith & Values Grounding, Stage 3 (REFLECT). Session CRUD and pattern
+// detection are plain client-side Firestore reads/writes (see
+// firestore.rules' grounding_sessions block) - this is the one part of
+// the feature that genuinely needs a server route, since it's the only
+// part touching the Gemini API key.
+//
+// For the islamic lens specifically, this route is deliberately
+// conservative about what the model is allowed to generate: the Qur'an
+// reference/translation and the two reflective questions always come
+// verbatim from the curated ISLAMIC_THEMES pool in grounding-content.ts,
+// never from the model. The model only ever writes a short (2-3 sentence)
+// contextual framing paragraph connecting the curated theme to the
+// user's own stated burden/controllable/uncontrollable answers - it is
+// explicitly forbidden from adding any Qur'an or Hadith text beyond what
+// it's given, claiming to know why Allah caused a specific event, or
+// issuing a ruling/fatwa. This satisfies the product requirement that no
+// AI-fabricated scripture or ruling can ever reach a user.
+const GroundingReflectRequestSchema = z.object({
+  lens: z.enum(['secular', 'values', 'faith', 'islamic']),
+  burdenLabels: z.array(z.string().max(40)).max(10),
+  customBurden: z.string().max(80).optional(),
+  controllableItems: z.array(z.string().max(60)).max(12),
+  uncontrollableItems: z.array(z.string().max(60)).max(12),
+  islamicThemeId: z.enum(['tawakkul', 'sabr', 'shukr', 'qadr', 'rahmah', 'salah', 'dua', 'ummah']).optional(),
+  // Structured pattern LABELS only (e.g. "Releasing control") computed
+  // client-side by detectGroundingPatterns - never raw prior reflection
+  // text, per the feature's explicit architecture requirement, and only
+  // ever sent when the user has pattern analysis enabled (the client
+  // simply omits this field otherwise).
+  recentPatterns: z.array(z.string().max(60)).max(5).optional(),
+}).strict();
+
+const GroundingReflectResponseSchema = z.object({
+  reflectionText: z.string().max(600),
+  firstQuestion: z.string().max(200),
+  secondQuestion: z.string().max(200),
+  // Only ever populated for the islamic lens, straight from curated data
+  // - present in the response so the client can render it without
+  // needing a second lookup, but the server is the one attaching it, not
+  // the model.
+  verse: z.object({
+    reference: z.string(),
+    translation: z.string(),
+    translator: z.string(),
+    scholarReviewed: z.boolean(),
+  }).optional(),
+});
+
+app.post("/api/grounding/reflect", groundingReflectLimiter, verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const parsed = GroundingReflectRequestSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: "Invalid request.", details: (parsed as any).error?.errors || [] });
+    }
+    const { lens, burdenLabels, customBurden, controllableItems, uncontrollableItems, islamicThemeId, recentPatterns } = parsed.data;
+
+    const user = requireAuth(req);
+    const quota = await checkAndReserveCapability(user.uid, 'nova_text');
+    if (!quota.allowed) {
+      return res.status(429).json({
+        error: quota.plan === 'free'
+          ? "You've reached today's free limit for this. It resets tomorrow, or upgrade to Blaze Break Premium for more."
+          : "You've reached today's fair-use limit for this. It resets tomorrow.",
+        code: 'capability_limit_reached',
+        capability: 'nova_text',
+      });
+    }
+
+    const burdenText = [...burdenLabels, ...(customBurden ? [customBurden] : [])].join(', ') || 'something they did not name specifically';
+    const controllableText = controllableItems.join(', ') || 'nothing specified';
+    const uncontrollableText = uncontrollableItems.join(', ') || 'nothing specified';
+    const patternContext = recentPatterns && recentPatterns.length > 0
+      ? `\nAcross their recent grounding sessions (a structured pattern, not their words), they've often been working on: ${recentPatterns.join(', ')}. Only mention this if it's genuinely relevant - never manufacture a connection.`
+      : '';
+
+    let prompt: string;
+    let verse: { reference: string; translation: string; translator: string; scholarReviewed: boolean } | undefined;
+
+    if (lens === 'islamic') {
+      if (!islamicThemeId) {
+        return res.status(400).json({ error: "An Islamic Reflection theme is required for this lens." });
+      }
+      const theme = ISLAMIC_THEMES[islamicThemeId as IslamicThemeId];
+      verse = theme.verses[0];
+      prompt = `You are Nova, a calm, respectful recovery-grounding coach at Blaze Break, writing a short reflection for the Islamic Reflection lens. You are NOT a scholar and must never act like one.
+
+The user is grounding through the theme of ${theme.label}: "${theme.framing}"
+The curated reference for this theme (already verified as an exact, attributed reference - do not alter it, and do not add any other Qur'an or Hadith text or reference of your own): ${verse.reference} (trans. ${verse.translator}) - ${verse.translation}
+
+What they said they're carrying: ${burdenText}.
+What they identified as within their responsibility: ${controllableText}.
+What they identified as beyond their control: ${uncontrollableText}.${patternContext}
+
+Write a short (2-3 sentence) reflection connecting the theme above to their specific situation, in a warm, grounded, non-preachy voice. Rules that override everything else:
+- Do not quote, paraphrase, or reference any Qur'an verse or Hadith other than the one given to you above.
+- Do not claim to know why Allah caused any specific event in their life.
+- Do not issue a religious ruling, fatwa, or tell them what they religiously must or must not do.
+- Do not suggest that hardship, abuse, danger, exploitation, or unsafe working conditions should simply be tolerated as a matter of faith.
+- Do not present yourself as a religious authority - you are contextualising a reference a scholar has curated, nothing more.
+
+Respond strictly in this JSON format, no markdown, no commentary outside the JSON:
+{
+  "reflectionText": "your 2-3 sentence reflection, grounded in their specific situation"
+}
+${NOVA_ONE_SHOT_SAFETY_FLOOR}`;
+    } else {
+      const lensLabel = GROUNDING_LENSES[lens as GroundingLens].label;
+      prompt = `You are Nova, a calm, grounded recovery coach at Blaze Break, writing a short reflection for someone using the "${lensLabel}" lens to process a moment of overwhelm.
+
+What they said they're carrying: ${burdenText}.
+What they identified as within their responsibility: ${controllableText}.
+What they identified as beyond their control: ${uncontrollableText}.${patternContext}
+
+Write a short (2-3 sentence) reflection grounded ONLY in what they actually told you above - do not invent specifics they didn't mention. Then write two short, genuinely reflective QUESTIONS (not advice, not statements) that help them move from overwhelm toward perspective and appropriate action: a first question about what's genuinely within their responsibility, and a second question (to be shown only after they answer the first) about what they're still trying to control that isn't theirs to control.
+
+Respond strictly in this JSON format, no markdown, no commentary outside the JSON:
+{
+  "reflectionText": "your 2-3 sentence reflection",
+  "firstQuestion": "a single reflective question about what's within their responsibility",
+  "secondQuestion": "a single reflective question about what they're still trying to control"
+}
+${NOVA_ONE_SHOT_SAFETY_FLOOR}`;
+    }
+
+    const response = await ai.models.generateContent({
+      model: "gemini-3.5-flash",
+      contents: prompt,
+      config: { responseMimeType: "application/json" },
+    });
+
+    const text = response.text;
+    if (!text) throw new Error("Empty response from Gemini model.");
+    const rawReflection = JSON.parse(text);
+
+    const merged = lens === 'islamic' && islamicThemeId
+      ? {
+          reflectionText: rawReflection.reflectionText,
+          firstQuestion: ISLAMIC_THEMES[islamicThemeId as IslamicThemeId].prompt,
+          secondQuestion: ISLAMIC_THEMES[islamicThemeId as IslamicThemeId].followUp,
+          verse,
+        }
+      : rawReflection;
+
+    const validated = GroundingReflectResponseSchema.safeParse(merged);
+    if (!validated.success) {
+      throw new Error(`Model returned an unexpected shape: ${validated.error.message}`);
+    }
+
+    res.json(validated.data);
+  } catch (err: any) {
+    console.error("[Grounding] reflect error:", err.message);
+    res.status(500).json({ error: "Could not build that reflection right now." });
   }
 });
 

@@ -1,144 +1,791 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Compass, Globe, MoonStar, ArrowRight, ShieldCheck, CheckCircle2, Feather } from 'lucide-react';
+import {
+  Compass, Globe, MoonStar, Feather, ArrowRight, ArrowLeft, CheckCircle2,
+  ShieldCheck, Sparkles, Trash2, Hand, X, Plus, Loader2, BookOpen,
+} from 'lucide-react';
 import { cn } from '../lib/utils';
 import { BurnoutFingerprint } from '../types';
 import { updateNovaMemoryBySourceAndType } from '../lib/nova-brain';
+import { auth } from '../lib/firebase';
+import { db } from '../lib/firestore';
+import { secureApiFetch } from '../lib/secure-api';
+import {
+  collection, query, orderBy, limit, getDocs, addDoc, updateDoc, doc, getDoc, setDoc, writeBatch,
+} from 'firebase/firestore';
+import {
+  GroundingLens, GROUNDING_LENSES, GROUNDING_LENS_ORDER,
+  BurdenId, BURDEN_OPTIONS, BURDEN_LABELS,
+  CONTROLLABLE_EXAMPLES, UNCONTROLLABLE_EXAMPLES,
+  IslamicThemeId, ISLAMIC_THEMES, ISLAMIC_THEME_ORDER,
+  NextActionId, NEXT_ACTION_OPTIONS,
+  GroundingSessionRecord, ReflectionAnswer,
+  detectGroundingPatterns, GroundingPattern,
+} from '../../grounding-content';
 
 interface FaithValuesModeProps {
   fingerprint: BurnoutFingerprint | null;
+  // Deliberately unused in this component - completing a grounding
+  // session never awards points, badges, or a streak. Kept in the props
+  // interface only for call-site compatibility with App.tsx.
   onAwardPoints?: (amount: number, reason: string) => void;
 }
 
-type GroundingMode = 'secular' | 'values' | 'faith' | 'islamic';
+type Stage = 'lens' | 'arrive' | 'separate' | 'reflect' | 'release' | 'reconnect';
+type ViewMode = 'session' | 'journey';
 
-const MODES: Record<GroundingMode, { label: string, icon: any, description: string }> = {
-  secular: { label: 'Secular / Biological', icon: Globe, description: 'Focus on physiology, neuroscience, and psychology.' },
-  values: { label: 'Values-Driven', icon: Compass, description: 'Focus on ethics, core principles, and personal integrity.' },
-  faith: { label: 'Faith-Friendly', icon: Feather, description: 'General spiritual grounding, gratitude, and trust.' },
-  islamic: { label: 'Islamic Reflection', icon: MoonStar, description: 'Tawakkul (trust), Sabr (patience), and prayer integration.' }
+const LENS_ICONS: Record<GroundingLens, any> = { secular: Globe, values: Compass, faith: Feather, islamic: MoonStar };
+
+const STAGE_ORDER: { id: Stage; label: string }[] = [
+  { id: 'arrive', label: 'Arrive' },
+  { id: 'separate', label: 'Separate' },
+  { id: 'reflect', label: 'Reflect' },
+  { id: 'release', label: 'Release' },
+  { id: 'reconnect', label: 'Reconnect' },
+];
+
+const HOLD_DURATION_MS = 2200;
+
+// Templated, not AI-generated - a first, deterministic pass at "a pattern
+// Nova has noticed" so this ships without adding a second AI-generation
+// surface to review. A live Gemini-authored version is a reasonable
+// future enhancement, but the brief explicitly prioritises the complete
+// end-to-end journey over "advanced pattern intelligence" for this pass.
+const NOVA_INSIGHT_COPY: Record<GroundingPattern['id'], string> = {
+  releasing_control: 'You often take responsibility for outcomes that also depend on other people, timing, or circumstances beyond your control.',
+  rest_without_guilt: "Guilt often shows up alongside your hardest weeks - and choosing to rest still made the list anyway.",
+  asking_for_support: "Asking for help keeps showing up as something genuinely within your control, even when it's hard to do.",
 };
 
-const REFLECTIONS: Record<GroundingMode, Array<{title: string; content: string}>> = {
-  secular: [
-    { title: 'The Limits of Physiology', content: 'Your body is not a machine. It requires downtime to consolidate memory and repair cellular damage. Honouring this limit is logical, not lazy.' },
-    { title: 'Circle of Control', content: 'You can only control your actions and your immediate responses. Everything else is external. Release the external.' },
-  ],
-  values: [
-    { title: 'Integrity Check', content: 'Are your current commitments aligned with what you actually value, or are you operating out of obligation to others\' priorities?' },
-    { title: 'The Virtue of Rest', content: 'Rest is not a reward for surviving burnout; it is a fundamental human right. Protecting your peace is an act of self-respect.' },
-  ],
-  faith: [
-    { title: 'Release What Is Not Yours', content: 'You are responsible for the effort, not the outcome. Do your work with integrity, and release the results to a higher power.' },
-    { title: 'Gratitude Anchor', content: 'In the midst of chaos, find three things that are holding you steady. Give thanks for the breath in your lungs and the strength you have been given.' },
-  ],
-  islamic: [
-    { title: 'Tawakkul (Trust & Effort)', content: 'Tie your camel, then trust in Allah. You have put in the effort today. Now, step back and leave the outcome to the Most Merciful.' },
-    { title: 'Sabr (Patience & Perseverance)', content: 'Patience is not passive suffering; it is maintaining your spiritual composure while navigating difficulty. Your endurance is recorded and rewarded.' },
-    { title: 'Prayer Break Reminder', content: 'Salah is the ultimate boundary. It forces a complete pause from the material world to reconnect with the eternal. Guard your prayers, and they will guard you.' }
-  ]
-};
+export const FaithValuesMode = (_props: FaithValuesModeProps) => {
+  const [view, setView] = useState<ViewMode>('session');
+  const [stage, setStage] = useState<Stage>('lens');
+  const [lens, setLens] = useState<GroundingLens | null>(null);
 
-export const FaithValuesMode = ({ fingerprint, onAwardPoints }: FaithValuesModeProps) => {
-  const [activeMode, setActiveMode] = useState<GroundingMode>('secular');
-  const [completedReflection, setCompletedReflection] = useState<number | null>(null);
+  const [burdenIds, setBurdenIds] = useState<BurdenId[]>([]);
+  const [customBurden, setCustomBurden] = useState('');
+  const [intensity, setIntensity] = useState<number | null>(null);
 
-  const handleComplete = (idx: number) => {
-    setCompletedReflection(idx);
-    if (onAwardPoints) onAwardPoints(10, 'Completed Grounding Reflection');
-    updateNovaMemoryBySourceAndType('Grounding Mode', 'preference', {
-      content: `Grounding mode: ${MODES[activeMode].label}. Last reflection completed: "${REFLECTIONS[activeMode][idx]?.title || 'N/A'}".`,
-      confidence: 'verified',
-      canEdit: true,
-    });
-    setTimeout(() => {
-      setCompletedReflection(null);
-    }, 3000);
+  const [controllableItems, setControllableItems] = useState<string[]>([]);
+  const [uncontrollableItems, setUncontrollableItems] = useState<string[]>([]);
+  const [customControllable, setCustomControllable] = useState('');
+  const [customUncontrollable, setCustomUncontrollable] = useState('');
+
+  const [islamicThemeId, setIslamicThemeId] = useState<IslamicThemeId | null>(null);
+  const [reflectLoading, setReflectLoading] = useState(false);
+  const [reflectError, setReflectError] = useState<string | null>(null);
+  const [reflection, setReflection] = useState<{ reflectionText: string; firstQuestion: string; secondQuestion: string; verse?: { reference: string; translation: string; translator: string; scholarReviewed: boolean } } | null>(null);
+  const [firstAnswer, setFirstAnswer] = useState('');
+  const [secondAnswer, setSecondAnswer] = useState('');
+  const [showSecondQuestion, setShowSecondQuestion] = useState(false);
+
+  const [holding, setHolding] = useState(false);
+  const [released, setReleased] = useState(false);
+  const holdTimeoutRef = useRef<number | null>(null);
+
+  const [sessionDocId, setSessionDocId] = useState<string | null>(null);
+  const [chosenNextAction, setChosenNextAction] = useState<NextActionId | null>(null);
+
+  const [sessions, setSessions] = useState<GroundingSessionRecord[]>([]);
+  const [sessionsLoaded, setSessionsLoaded] = useState(false);
+  const [patternAnalysisEnabled, setPatternAnalysisEnabled] = useState(true);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+
+  const loadSessions = async () => {
+    if (!auth.currentUser) { setSessionsLoaded(true); return; }
+    try {
+      const [sessionsSnap, prefSnap] = await Promise.all([
+        getDocs(query(collection(db, 'users', auth.currentUser.uid, 'grounding_sessions'), orderBy('createdAt', 'desc'), limit(20))),
+        getDoc(doc(db, 'users', auth.currentUser.uid, 'preferences', 'grounding')),
+      ]);
+      setSessions(sessionsSnap.docs.map((d) => ({ id: d.id, ...(d.data() as GroundingSessionRecord) })));
+      if (prefSnap.exists() && typeof prefSnap.data()?.patternAnalysisEnabled === 'boolean') {
+        setPatternAnalysisEnabled(prefSnap.data()!.patternAnalysisEnabled);
+      }
+    } catch (e) {
+      // Leaves the honest empty state in place rather than guessing at history.
+    }
+    setSessionsLoaded(true);
   };
+
+  useEffect(() => { loadSessions(); }, []);
+
+  const patterns = useMemo(
+    () => (patternAnalysisEnabled ? detectGroundingPatterns(sessions) : []),
+    [sessions, patternAnalysisEnabled]
+  );
+
+  const togglePatternAnalysis = (val: boolean) => {
+    setPatternAnalysisEnabled(val);
+    if (auth.currentUser) {
+      setDoc(doc(db, 'users', auth.currentUser.uid, 'preferences', 'grounding'), {
+        patternAnalysisEnabled: val,
+        updatedAt: new Date().toISOString(),
+      }, { merge: true }).catch(() => {});
+    }
+  };
+
+  const resetSession = () => {
+    setStage('lens');
+    setLens(null);
+    setBurdenIds([]);
+    setCustomBurden('');
+    setIntensity(null);
+    setControllableItems([]);
+    setUncontrollableItems([]);
+    setCustomControllable('');
+    setCustomUncontrollable('');
+    setIslamicThemeId(null);
+    setReflection(null);
+    setReflectError(null);
+    setFirstAnswer('');
+    setSecondAnswer('');
+    setShowSecondQuestion(false);
+    setHolding(false);
+    setReleased(false);
+    setSessionDocId(null);
+    setChosenNextAction(null);
+  };
+
+  const toggleBurden = (id: BurdenId) => {
+    setBurdenIds((prev) => (prev.includes(id) ? prev.filter((b) => b !== id) : [...prev, id]));
+  };
+
+  const toggleControllable = (item: string) => {
+    setControllableItems((prev) => (prev.includes(item) ? prev.filter((i) => i !== item) : [...prev, item]));
+  };
+  const toggleUncontrollable = (item: string) => {
+    setUncontrollableItems((prev) => (prev.includes(item) ? prev.filter((i) => i !== item) : [...prev, item]));
+  };
+  const addCustomControllable = () => {
+    const val = customControllable.trim().slice(0, 60);
+    if (val && !controllableItems.includes(val)) setControllableItems((prev) => [...prev, val]);
+    setCustomControllable('');
+  };
+  const addCustomUncontrollable = () => {
+    const val = customUncontrollable.trim().slice(0, 60);
+    if (val && !uncontrollableItems.includes(val)) setUncontrollableItems((prev) => [...prev, val]);
+    setCustomUncontrollable('');
+  };
+
+  const callReflect = async () => {
+    if (!lens) return;
+    setReflectLoading(true);
+    setReflectError(null);
+    try {
+      const body: Record<string, unknown> = {
+        lens,
+        burdenLabels: burdenIds.map((id) => BURDEN_LABELS[id]),
+        controllableItems,
+        uncontrollableItems,
+      };
+      if (customBurden.trim()) body.customBurden = customBurden.trim().slice(0, 80);
+      if (lens === 'islamic' && islamicThemeId) body.islamicThemeId = islamicThemeId;
+      if (patternAnalysisEnabled && patterns.length > 0) body.recentPatterns = patterns.map((p) => p.label);
+
+      const res = await secureApiFetch('/api/grounding/reflect', { method: 'POST', data: body });
+      if (!res.ok) {
+        const errBody = await res.json().catch(() => ({}));
+        throw new Error(errBody.error || 'Could not build that reflection right now.');
+      }
+      const result = await res.json();
+      setReflection(result);
+    } catch (e: any) {
+      setReflectError(e.message || 'Could not build that reflection right now.');
+    } finally {
+      setReflectLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (stage !== 'reflect' || reflection || reflectLoading) return;
+    if (lens === 'islamic' && !islamicThemeId) return; // waits for theme choice first
+    callReflect();
+  }, [stage, lens, islamicThemeId]);
+
+  const finalizeRelease = async () => {
+    if (auth.currentUser && lens) {
+      const now = new Date().toISOString();
+      const record: Record<string, unknown> = {
+        lens, burdenIds, controllableItems, uncontrollableItems, createdAt: now, updatedAt: now,
+      };
+      if (customBurden.trim()) record.customBurden = customBurden.trim().slice(0, 80);
+      if (typeof intensity === 'number') record.intensity = intensity;
+      if (lens === 'islamic' && islamicThemeId) record.islamicThemeId = islamicThemeId;
+      const answers: ReflectionAnswer[] = [];
+      if (reflection && firstAnswer.trim()) answers.push({ question: reflection.firstQuestion, answer: firstAnswer.trim().slice(0, 400) });
+      if (reflection && secondAnswer.trim()) answers.push({ question: reflection.secondQuestion, answer: secondAnswer.trim().slice(0, 400) });
+      if (answers.length > 0) record.reflectionAnswers = answers;
+
+      try {
+        const ref = await addDoc(collection(db, 'users', auth.currentUser.uid, 'grounding_sessions'), record);
+        setSessionDocId(ref.id);
+        setSessions((prev) => [{ id: ref.id, ...(record as any) }, ...prev].slice(0, 20));
+        updateNovaMemoryBySourceAndType('Faith & Values Grounding', 'state', {
+          content: `Last grounding session used the ${GROUNDING_LENSES[lens].label} lens. Carrying: ${[...burdenIds.map((id) => BURDEN_LABELS[id]), customBurden].filter(Boolean).join(', ') || 'unspecified'}.`,
+          canEdit: false,
+          confidence: 'medium',
+        });
+      } catch (e) {
+        // Non-fatal - the release still proceeds even if the save failed;
+        // the person's experience isn't gated on persistence succeeding.
+      }
+    }
+    setReleased(true);
+    setTimeout(() => setStage('reconnect'), 900);
+  };
+
+  const onHoldStart = () => {
+    if (released) return;
+    setHolding(true);
+    holdTimeoutRef.current = window.setTimeout(() => { finalizeRelease(); }, HOLD_DURATION_MS);
+  };
+  const onHoldEnd = () => {
+    if (released) return;
+    setHolding(false);
+    if (holdTimeoutRef.current) { window.clearTimeout(holdTimeoutRef.current); holdTimeoutRef.current = null; }
+  };
+
+  const handleNextAction = async (action: NextActionId) => {
+    setChosenNextAction(action);
+    if (sessionDocId && auth.currentUser) {
+      updateDoc(doc(db, 'users', auth.currentUser.uid, 'grounding_sessions', sessionDocId), {
+        nextAction: action, updatedAt: new Date().toISOString(),
+      }).catch(() => {});
+      setSessions((prev) => prev.map((s) => (s.id === sessionDocId ? { ...s, nextAction: action } : s)));
+    }
+    if (action === 'nova') {
+      window.dispatchEvent(new CustomEvent('open_nova_launcher'));
+    } else if (action === 'trusted_person') {
+      window.dispatchEvent(new CustomEvent('navigate_tab', { detail: 'ally' }));
+    } else if (action === 'practical_action') {
+      try {
+        const res = await secureApiFetch('/api/user/resume-prompt');
+        const result = await res.json();
+        window.dispatchEvent(new CustomEvent('navigate_tab', { detail: result.hasIncomplete ? result.tab : 'recover' }));
+      } catch (e) {
+        window.dispatchEvent(new CustomEvent('navigate_tab', { detail: 'recover' }));
+      }
+    }
+  };
+
+  const deleteHistory = async () => {
+    if (!auth.currentUser) return;
+    try {
+      const snap = await getDocs(collection(db, 'users', auth.currentUser.uid, 'grounding_sessions'));
+      const batch = writeBatch(db);
+      snap.docs.forEach((d) => batch.delete(d.ref));
+      await batch.commit();
+      setSessions([]);
+    } catch (e) {
+      // Leaves the list as-is if the delete failed - no false "cleared" state.
+    }
+    setConfirmingDelete(false);
+  };
+
+  const canContinueArrive = burdenIds.length > 0 || customBurden.trim().length > 0;
+  const canContinueSeparate = controllableItems.length > 0 && uncontrollableItems.length > 0;
 
   return (
     <div className="space-y-12 pb-24">
       <div className="max-w-4xl">
         <div className="flex items-center gap-4 mb-4">
-           <div className="tag">Section 19 / Grounding</div>
-           <div className="h-px flex-1 bg-border/40" />
+          <div className="tag">Section 19 / Grounding</div>
+          <div className="h-px flex-1 bg-border/40" />
         </div>
         <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-6">
           <div className="space-y-4">
             <h3 className="text-5xl font-display font-bold text-text-main tracking-tight">Faith & Values Grounding</h3>
-            <p className="text-xl text-text-muted font-medium  max-w-2xl">
+            <p className="text-xl text-text-muted font-medium max-w-2xl">
               "Burnout isolates us from our core. Choose the lens through which you want to process your recovery."
             </p>
           </div>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        {(Object.keys(MODES) as GroundingMode[]).map((mode) => {
-           const Icon = MODES[mode].icon;
-           const isSelected = activeMode === mode;
-           return (
-             <button
-               key={mode}
-               onClick={() => setActiveMode(mode)}
-               className={cn(
-                 "p-6 rounded-2xl border transition-all text-left group",
-                 isSelected 
-                   ? "bg-primary border-primary text-primary-foreground shadow-xl shadow-primary/20 scale-[1.02]" 
-                   : "border border-border/50 hover:border-primary/30 text-text-main hover:bg-surface dark:hover:bg-surface"
-               )}
-             >
-               <div className={cn("w-10 h-10 rounded-full flex items-center justify-center mb-4 transition-colors", isSelected ? "bg-white/20" : "bg-surface dark:bg-surface text-text-muted group-hover:text-primary")}>
-                 <Icon className="w-5 h-5" />
-               </div>
-               <h4 className="font-display font-bold text-lg mb-1">{MODES[mode].label}</h4>
-               <p className={cn("text-xs font-medium leading-relaxed", isSelected ? "text-primary-foreground" : "text-text-muted")}>
-                 {MODES[mode].description}
-               </p>
-             </button>
-           );
-        })}
+      <div className="flex items-center gap-2 bg-surface/30 p-1.5 rounded-2xl border border-border/20 max-w-sm">
+        {([['session', 'Ground Yourself'], ['journey', 'Your Grounding Journey']] as [ViewMode, string][]).map(([id, label]) => (
+          <button
+            key={id}
+            onClick={() => setView(id)}
+            className={cn(
+              'flex-1 py-2.5 px-3 rounded-xl text-xs uppercase font-black tracking-widest transition-all cursor-pointer',
+              view === id ? 'bg-white dark:bg-card text-[#9a3412] dark:text-primary shadow-md border border-border/30' : 'text-text-muted hover:text-text-main'
+            )}
+          >
+            {label}
+          </button>
+        ))}
       </div>
 
-      <div className="mt-12">
-        <div className="flex items-center gap-3 mb-6">
-          <ShieldCheck className="w-6 h-6 text-primary" />
-          <h3 className="text-2xl font-display font-bold text-text-main">Your {MODES[activeMode].label} Reflections</h3>
-        </div>
+      {view === 'journey' ? (
+        <GroundingJourneyView
+          sessions={sessions}
+          sessionsLoaded={sessionsLoaded}
+          patterns={patterns}
+          patternAnalysisEnabled={patternAnalysisEnabled}
+          onTogglePatternAnalysis={togglePatternAnalysis}
+          confirmingDelete={confirmingDelete}
+          onConfirmingDeleteChange={setConfirmingDelete}
+          onDeleteHistory={deleteHistory}
+          onStartSession={() => { setView('session'); resetSession(); }}
+        />
+      ) : (
+        <>
+          {stage !== 'lens' && lens && (
+            <div className="flex items-center justify-between max-w-2xl">
+              <div className="flex items-center gap-3">
+                {STAGE_ORDER.map((s, idx) => {
+                  const currentIdx = STAGE_ORDER.findIndex((x) => x.id === stage);
+                  const isDone = idx < currentIdx;
+                  const isCurrent = idx === currentIdx;
+                  return (
+                    <div key={s.id} className="flex items-center gap-2">
+                      <div className={cn(
+                        'w-2 h-2 rounded-full transition-all',
+                        isCurrent ? 'bg-primary scale-125' : isDone ? 'bg-primary/50' : 'bg-border'
+                      )} />
+                      <span className={cn('text-[10px] uppercase font-black tracking-widest', isCurrent ? 'text-primary' : 'text-text-muted/50')}>
+                        {s.label}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <AnimatePresence mode="popLayout">
-            {REFLECTIONS[activeMode].map((ref, idx) => (
-              <motion.div
-                key={ref.title}
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, scale: 0.95 }}
-                className="card border border-primary/10 p-8 flex flex-col justify-between"
-              >
+          <AnimatePresence mode="wait">
+            {stage === 'lens' && (
+              <motion.div key="lens" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-6">
+                <p className="text-sm text-text-muted max-w-xl">Choose the lens for this session. You can change it any time by starting a new session.</p>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                  {GROUNDING_LENS_ORDER.map((id) => {
+                    const Icon = LENS_ICONS[id];
+                    return (
+                      <button
+                        key={id}
+                        onClick={() => { setLens(id); setStage('arrive'); }}
+                        className="p-6 rounded-2xl border border-border/50 hover:border-primary/30 text-left group hover:bg-surface dark:hover:bg-surface transition-all"
+                      >
+                        <div className="w-10 h-10 rounded-full flex items-center justify-center mb-4 bg-surface dark:bg-surface text-text-muted group-hover:text-primary transition-colors">
+                          <Icon className="w-5 h-5" />
+                        </div>
+                        <h4 className="font-display font-bold text-lg mb-1">{GROUNDING_LENSES[id].label}</h4>
+                        <p className="text-xs font-medium leading-relaxed text-text-muted">{GROUNDING_LENSES[id].description}</p>
+                      </button>
+                    );
+                  })}
+                </div>
+              </motion.div>
+            )}
+
+            {stage === 'arrive' && lens && (
+              <motion.div key="arrive" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-8 max-w-2xl">
+                <h4 className="text-2xl font-display font-bold text-text-main">What are you carrying right now?</h4>
+                <div className="flex flex-wrap gap-2">
+                  {BURDEN_OPTIONS.map((o) => (
+                    <button
+                      key={o.id}
+                      onClick={() => toggleBurden(o.id)}
+                      aria-pressed={burdenIds.includes(o.id)}
+                      className={cn(
+                        'px-4 py-2.5 rounded-xl text-xs font-bold border transition-all cursor-pointer',
+                        burdenIds.includes(o.id) ? 'bg-primary/10 border-primary/45 text-[#9a3412] dark:text-primary' : 'bg-white dark:bg-surface border-border/40 text-text-muted hover:border-border'
+                      )}
+                    >
+                      {o.label}
+                    </button>
+                  ))}
+                </div>
+                {burdenIds.includes('other') && (
+                  <input
+                    value={customBurden}
+                    onChange={(e) => setCustomBurden(e.target.value.slice(0, 80))}
+                    placeholder="In your own words..."
+                    className="w-full p-4 rounded-xl border border-border/40 bg-white dark:bg-surface text-sm text-text-main"
+                  />
+                )}
+                <div className="space-y-3">
+                  <label className="text-xs font-bold text-text-muted uppercase tracking-wider">How much is this weighing on you right now? (optional)</label>
+                  <div className="flex items-center gap-2">
+                    {[1, 2, 3, 4, 5].map((n) => (
+                      <button
+                        key={n}
+                        onClick={() => setIntensity(intensity === n ? null : n)}
+                        aria-pressed={intensity === n}
+                        className={cn(
+                          'flex-1 py-3 rounded-xl text-xs font-bold border transition-all cursor-pointer',
+                          intensity === n ? 'bg-text-main/10 border-text-main/40 text-text-main' : 'bg-white dark:bg-surface border-border/40 text-text-muted'
+                        )}
+                      >
+                        {n === 1 ? 'A little' : n === 5 ? 'A lot' : n}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className="flex justify-end">
+                  <button
+                    disabled={!canContinueArrive}
+                    onClick={() => setStage('separate')}
+                    className="px-6 py-3 bg-primary text-primary-foreground rounded-xl text-xs font-black uppercase tracking-widest flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+                  >
+                    Continue <ArrowRight className="w-4 h-4" />
+                  </button>
+                </div>
+              </motion.div>
+            )}
+
+            {stage === 'separate' && lens && (
+              <motion.div key="separate" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-8 max-w-3xl">
                 <div>
-                  <h4 className="text-xl font-bold text-text-main mb-3">{ref.title}</h4>
-                  <p className="text-text-muted font-medium leading-relaxed mb-6">
-                    "{ref.content}"
+                  <h4 className="text-2xl font-display font-bold text-text-main">What belongs to you — and what doesn't?</h4>
+                  <p className="text-sm text-text-muted mt-2">Responsible action means doing your part fully, then letting go of what was never yours to carry.</p>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="space-y-4 bg-surface/20 p-6 rounded-2xl border border-border/20">
+                    <h5 className="text-xs font-black uppercase tracking-widest text-text-muted">Within my influence</h5>
+                    <div className="flex flex-wrap gap-2">
+                      {CONTROLLABLE_EXAMPLES.map((item) => (
+                        <button key={item} onClick={() => toggleControllable(item)} aria-pressed={controllableItems.includes(item)}
+                          className={cn('px-3 py-2 rounded-lg text-xs font-bold border transition-all cursor-pointer',
+                            controllableItems.includes(item) ? 'bg-primary/10 border-primary/45 text-[#9a3412] dark:text-primary' : 'bg-white dark:bg-surface border-border/40 text-text-muted')}>
+                          {item}
+                        </button>
+                      ))}
+                      {controllableItems.filter((i) => !CONTROLLABLE_EXAMPLES.includes(i)).map((item) => (
+                        <button key={item} onClick={() => toggleControllable(item)} className="px-3 py-2 rounded-lg text-xs font-bold border bg-primary/10 border-primary/45 text-[#9a3412] dark:text-primary flex items-center gap-1">
+                          {item} <X className="w-3 h-3" />
+                        </button>
+                      ))}
+                    </div>
+                    <div className="flex gap-2">
+                      <input value={customControllable} onChange={(e) => setCustomControllable(e.target.value)}
+                        onKeyDown={(e) => e.key === 'Enter' && addCustomControllable()}
+                        placeholder="Add your own..." className="flex-1 p-2.5 rounded-lg border border-border/40 bg-white dark:bg-surface text-xs" />
+                      <button onClick={addCustomControllable} className="p-2.5 rounded-lg border border-border/40 text-text-muted hover:text-primary"><Plus className="w-4 h-4" /></button>
+                    </div>
+                  </div>
+                  <div className="space-y-4 bg-surface/20 p-6 rounded-2xl border border-border/20">
+                    <h5 className="text-xs font-black uppercase tracking-widest text-text-muted">Beyond my control</h5>
+                    <div className="flex flex-wrap gap-2">
+                      {UNCONTROLLABLE_EXAMPLES.map((item) => (
+                        <button key={item} onClick={() => toggleUncontrollable(item)} aria-pressed={uncontrollableItems.includes(item)}
+                          className={cn('px-3 py-2 rounded-lg text-xs font-bold border transition-all cursor-pointer',
+                            uncontrollableItems.includes(item) ? 'bg-text-main/10 border-text-main/40 text-text-main' : 'bg-white dark:bg-surface border-border/40 text-text-muted')}>
+                          {item}
+                        </button>
+                      ))}
+                      {uncontrollableItems.filter((i) => !UNCONTROLLABLE_EXAMPLES.includes(i)).map((item) => (
+                        <button key={item} onClick={() => toggleUncontrollable(item)} className="px-3 py-2 rounded-lg text-xs font-bold border bg-text-main/10 border-text-main/40 text-text-main flex items-center gap-1">
+                          {item} <X className="w-3 h-3" />
+                        </button>
+                      ))}
+                    </div>
+                    <div className="flex gap-2">
+                      <input value={customUncontrollable} onChange={(e) => setCustomUncontrollable(e.target.value)}
+                        onKeyDown={(e) => e.key === 'Enter' && addCustomUncontrollable()}
+                        placeholder="Add your own..." className="flex-1 p-2.5 rounded-lg border border-border/40 bg-white dark:bg-surface text-xs" />
+                      <button onClick={addCustomUncontrollable} className="p-2.5 rounded-lg border border-border/40 text-text-muted hover:text-primary"><Plus className="w-4 h-4" /></button>
+                    </div>
+                  </div>
+                </div>
+                <div className="flex justify-between">
+                  <button onClick={() => setStage('arrive')} className="px-4 py-3 text-text-muted hover:text-text-main text-xs font-black uppercase tracking-widest flex items-center gap-2"><ArrowLeft className="w-4 h-4" /> Back</button>
+                  <button disabled={!canContinueSeparate} onClick={() => setStage('reflect')}
+                    className="px-6 py-3 bg-primary text-primary-foreground rounded-xl text-xs font-black uppercase tracking-widest flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed transition-all">
+                    Continue <ArrowRight className="w-4 h-4" />
+                  </button>
+                </div>
+              </motion.div>
+            )}
+
+            {stage === 'reflect' && lens && (
+              <motion.div key="reflect" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-8 max-w-2xl">
+                {lens === 'islamic' && !islamicThemeId ? (
+                  <div className="space-y-6">
+                    <h4 className="text-2xl font-display font-bold text-text-main">Which theme fits where you are?</h4>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      {ISLAMIC_THEME_ORDER.map((id) => (
+                        <button key={id} onClick={() => setIslamicThemeId(id)}
+                          className="p-4 rounded-xl border border-border/40 hover:border-primary/40 text-left bg-white dark:bg-surface transition-all">
+                          <h5 className="text-sm font-bold text-text-main">{ISLAMIC_THEMES[id].label}</h5>
+                          <p className="text-xs text-text-muted mt-1">{ISLAMIC_THEMES[id].framing}</p>
+                        </button>
+                      ))}
+                    </div>
+                    <button onClick={() => setStage('separate')} className="px-4 py-3 text-text-muted hover:text-text-main text-xs font-black uppercase tracking-widest flex items-center gap-2"><ArrowLeft className="w-4 h-4" /> Back</button>
+                  </div>
+                ) : reflectLoading ? (
+                  <div className="flex flex-col items-center justify-center py-16 gap-4">
+                    <Loader2 className="w-6 h-6 text-primary animate-spin" />
+                    <p className="text-sm text-text-muted">Building your reflection...</p>
+                  </div>
+                ) : reflectError ? (
+                  <div className="space-y-4 bg-destructive/5 border border-destructive/20 p-6 rounded-2xl">
+                    <p className="text-sm text-text-main">{reflectError}</p>
+                    <button onClick={callReflect} className="px-4 py-2 bg-primary text-primary-foreground rounded-xl text-xs font-black uppercase tracking-widest">Try again</button>
+                  </div>
+                ) : reflection ? (
+                  <div className="space-y-8">
+                    {reflection.verse && (
+                      <div className="bg-surface/30 p-5 rounded-2xl border border-border/20 space-y-2">
+                        <div className="flex items-center gap-2">
+                          <BookOpen className="w-3.5 h-3.5 text-primary" />
+                          <span className="text-[10px] font-black uppercase tracking-widest text-text-muted">{reflection.verse.reference} · trans. {reflection.verse.translator}</span>
+                        </div>
+                        <p className="text-sm text-text-main italic">{reflection.verse.translation}</p>
+                        {!reflection.verse.scholarReviewed && (
+                          <p className="text-[10px] text-text-muted">Given for independent verification · pending scholarly review</p>
+                        )}
+                      </div>
+                    )}
+                    <p className="text-lg text-text-main font-medium leading-relaxed">{reflection.reflectionText}</p>
+                    <div className="space-y-4">
+                      <h5 className="text-sm font-bold text-text-main">{reflection.firstQuestion}</h5>
+                      <textarea
+                        value={firstAnswer}
+                        onChange={(e) => setFirstAnswer(e.target.value.slice(0, 400))}
+                        rows={3}
+                        placeholder="Take your time..."
+                        className="w-full p-4 rounded-xl border border-border/40 bg-white dark:bg-surface text-sm text-text-main"
+                      />
+                      {!showSecondQuestion && (
+                        <div className="flex justify-end">
+                          <button onClick={() => setShowSecondQuestion(true)} className="px-6 py-3 bg-primary text-primary-foreground rounded-xl text-xs font-black uppercase tracking-widest flex items-center gap-2">
+                            Continue <ArrowRight className="w-4 h-4" />
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                    {showSecondQuestion && (
+                      <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-4">
+                        <h5 className="text-sm font-bold text-text-main">{reflection.secondQuestion}</h5>
+                        <textarea
+                          value={secondAnswer}
+                          onChange={(e) => setSecondAnswer(e.target.value.slice(0, 400))}
+                          rows={3}
+                          placeholder="Take your time..."
+                          className="w-full p-4 rounded-xl border border-border/40 bg-white dark:bg-surface text-sm text-text-main"
+                        />
+                        <div className="flex justify-between">
+                          <button onClick={() => setStage('separate')} className="px-4 py-3 text-text-muted hover:text-text-main text-xs font-black uppercase tracking-widest flex items-center gap-2"><ArrowLeft className="w-4 h-4" /> Back</button>
+                          <button onClick={() => setStage('release')} className="px-6 py-3 bg-primary text-primary-foreground rounded-xl text-xs font-black uppercase tracking-widest flex items-center gap-2">
+                            Continue <ArrowRight className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </motion.div>
+                    )}
+                  </div>
+                ) : null}
+              </motion.div>
+            )}
+
+            {stage === 'release' && lens && (
+              <motion.div key="release" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-10 max-w-xl">
+                <div className="space-y-6">
+                  <div>
+                    <p className="text-xs font-black uppercase tracking-widest text-text-muted">I have taken responsibility for:</p>
+                    <div className="flex flex-wrap gap-2 mt-2">
+                      {controllableItems.map((i) => (
+                        <span key={i} className="px-3 py-1.5 rounded-lg text-xs font-bold bg-primary/10 text-[#9a3412] dark:text-primary">{i}</span>
+                      ))}
+                    </div>
+                  </div>
+                  <div>
+                    <p className="text-xs font-black uppercase tracking-widest text-text-muted">I am releasing:</p>
+                    <div className="flex flex-wrap gap-2 mt-2">
+                      {uncontrollableItems.map((i) => (
+                        <span key={i} className="px-3 py-1.5 rounded-lg text-xs font-bold bg-text-main/10 text-text-main">{i}</span>
+                      ))}
+                    </div>
+                  </div>
+                  {lens === 'islamic' && (
+                    <p className="text-sm italic text-text-muted border-l-2 border-primary/30 pl-4">
+                      I have taken the means available to me. The outcome is not mine to command.
+                    </p>
+                  )}
+                </div>
+
+                <div className="flex flex-col items-center gap-4 py-8">
+                  <button
+                    onPointerDown={onHoldStart}
+                    onPointerUp={onHoldEnd}
+                    onPointerLeave={onHoldEnd}
+                    disabled={released}
+                    className="relative w-40 h-40 rounded-full border-2 border-primary/30 flex items-center justify-center overflow-hidden select-none cursor-pointer disabled:cursor-default"
+                  >
+                    <div
+                      className="absolute inset-0 bg-primary/20 rounded-full origin-bottom"
+                      style={{
+                        transform: holding || released ? 'scaleY(1)' : 'scaleY(0)',
+                        transition: holding ? `transform ${HOLD_DURATION_MS}ms linear` : 'transform 200ms ease-out',
+                      }}
+                    />
+                    <div className="relative z-10 flex flex-col items-center gap-2">
+                      {released ? <CheckCircle2 className="w-8 h-8 text-primary" /> : <Hand className="w-8 h-8 text-text-muted" />}
+                    </div>
+                  </button>
+                  <p className="text-sm text-text-muted text-center max-w-xs">
+                    {released ? 'Released.' : 'Hold to release what isn\'t yours to carry'}
                   </p>
                 </div>
-                
-                {completedReflection !== idx ? (
-                  <button 
-                    onClick={() => handleComplete(idx)}
-                    className="flex w-full justify-center items-center gap-2 p-4 rounded-xl border border-border/50 hover:bg-primary hover:text-primary-foreground transition-colors group text-text-main font-bold"
-                  >
-                    Acknowledge & Release <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
-                  </button>
+
+                {lens === 'islamic' && !released && (
+                  <p className="text-xs text-text-muted text-center italic">Take a quiet moment for du'a, dhikr, or prayer.</p>
+                )}
+              </motion.div>
+            )}
+
+            {stage === 'reconnect' && (
+              <motion.div key="reconnect" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-8 max-w-2xl">
+                <div>
+                  <h4 className="text-2xl font-display font-bold text-text-main">You don't have to carry everything alone.</h4>
+                  <p className="text-sm text-text-muted mt-2">What would support look like now?</p>
+                </div>
+                {!chosenNextAction ? (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {NEXT_ACTION_OPTIONS.map((opt) => (
+                      <button key={opt.id} onClick={() => handleNextAction(opt.id)}
+                        className="p-5 rounded-2xl border border-border/40 hover:border-primary/40 text-left bg-white dark:bg-surface transition-all">
+                        <h5 className="text-sm font-bold text-text-main">{opt.label}</h5>
+                        <p className="text-xs text-text-muted mt-1">{opt.description}</p>
+                      </button>
+                    ))}
+                  </div>
                 ) : (
-                  <div className="flex w-full justify-center items-center gap-2 p-4 rounded-xl bg-success text-white font-bold transition-all">
-                    <CheckCircle2 className="w-5 h-5" /> Grounded
+                  <div className="bg-success/5 border border-success/20 p-8 rounded-2xl text-center space-y-4">
+                    <CheckCircle2 className="w-8 h-8 text-success dark:text-[#4ade80] mx-auto" />
+                    <p className="text-sm text-text-muted">
+                      {chosenNextAction === 'rest' ? 'That\'s enough for now.' : 'Taking you there now.'}
+                    </p>
+                    <button onClick={resetSession} className="px-6 py-2.5 border border-border/40 rounded-xl text-xs font-black uppercase tracking-widest text-text-muted hover:text-text-main hover:bg-surface/30 transition-all">
+                      Start a new grounding session
+                    </button>
                   </div>
                 )}
               </motion.div>
-            ))}
+            )}
           </AnimatePresence>
+        </>
+      )}
+
+      <div className="bg-surface/30 px-5 py-4 rounded-2xl border border-border/20 flex items-start gap-4 text-left">
+        <ShieldCheck className="w-5 h-5 text-text-muted shrink-0 mt-0.5" />
+        <div>
+          <span className="text-[11px] uppercase font-black tracking-wider text-text-muted">Safe Grounding Boundary</span>
+          <p className="text-xs text-text-muted leading-relaxed mt-0.5">
+            This is reflection and grounding support, not diagnosis or professional treatment. It never suggests that hardship, abuse, or unsafe conditions should simply be endured as a matter of faith.
+          </p>
         </div>
+      </div>
+    </div>
+  );
+};
+
+const GroundingJourneyView = ({
+  sessions, sessionsLoaded, patterns, patternAnalysisEnabled, onTogglePatternAnalysis,
+  confirmingDelete, onConfirmingDeleteChange, onDeleteHistory, onStartSession,
+}: {
+  sessions: GroundingSessionRecord[];
+  sessionsLoaded: boolean;
+  patterns: GroundingPattern[];
+  patternAnalysisEnabled: boolean;
+  onTogglePatternAnalysis: (v: boolean) => void;
+  confirmingDelete: boolean;
+  onConfirmingDeleteChange: (v: boolean) => void;
+  onDeleteHistory: () => void;
+  onStartSession: () => void;
+}) => {
+  if (!sessionsLoaded) {
+    return <div className="py-16 text-center text-sm text-text-muted">Loading your grounding journey...</div>;
+  }
+
+  if (sessions.length === 0) {
+    return (
+      <div className="py-16 text-center space-y-4 max-w-md mx-auto">
+        <Sparkles className="w-8 h-8 text-primary mx-auto" />
+        <p className="text-sm text-text-muted">Start your first grounding session to begin building a picture over time.</p>
+        <button onClick={onStartSession} className="px-6 py-3 bg-primary text-primary-foreground rounded-xl text-xs font-black uppercase tracking-widest">
+          Ground yourself now
+        </button>
+      </div>
+    );
+  }
+
+  const topPattern = patterns[0];
+
+  return (
+    <div className="space-y-8 max-w-3xl">
+      <div className="flex items-center justify-between p-4 bg-surface/20 rounded-2xl border border-border/20">
+        <div>
+          <p className="text-xs font-bold text-text-main">Let Nova look for patterns across your sessions</p>
+          <p className="text-[11px] text-text-muted mt-0.5">Only ever computed from your own structured choices, never shared, and you can turn it off any time.</p>
+        </div>
+        <button
+          onClick={() => onTogglePatternAnalysis(!patternAnalysisEnabled)}
+          role="switch"
+          aria-checked={patternAnalysisEnabled}
+          className={cn('px-3 py-1.5 rounded-lg text-[11px] font-black uppercase tracking-wider border transition-all shrink-0',
+            patternAnalysisEnabled ? 'bg-text-main text-background border-text-main' : 'bg-transparent text-text-muted border-border/40')}
+        >
+          {patternAnalysisEnabled ? 'On' : 'Off'}
+        </button>
+      </div>
+
+      {patternAnalysisEnabled && patterns.length > 0 && (
+        <div className="bg-surface dark:bg-surface p-6 rounded-2xl border border-border/40 space-y-4">
+          <h4 className="text-xs uppercase font-black tracking-widest text-text-muted">You've been working on</h4>
+          <div className="flex flex-wrap gap-2">
+            {patterns.map((p) => (
+              <span key={p.id} className="px-3 py-1.5 rounded-lg text-xs font-bold bg-primary/10 text-[#9a3412] dark:text-primary">{p.label}</span>
+            ))}
+          </div>
+          {topPattern && (
+            <div className="bg-white/40 dark:bg-card/40 p-4 rounded-xl border border-border/10 space-y-2">
+              <div className="flex items-center gap-1.5">
+                <Sparkles className="w-3.5 h-3.5 text-primary" />
+                <span className="text-[11px] uppercase font-black tracking-wider text-[#9a3412] dark:text-primary">A pattern Nova has noticed</span>
+              </div>
+              <p className="text-sm text-text-main italic">"{NOVA_INSIGHT_COPY[topPattern.id]}"</p>
+              <button
+                onClick={() => window.dispatchEvent(new CustomEvent('open_nova_launcher'))}
+                className="text-xs font-bold text-primary hover:opacity-80"
+              >
+                Explore this
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
+      <div className="space-y-3">
+        <h4 className="text-xs uppercase font-black tracking-widest text-text-muted">Recent sessions</h4>
+        {sessions.map((s) => (
+          <div key={s.id} className="p-4 rounded-xl border border-border/20 bg-white/40 dark:bg-card/40 flex items-center justify-between gap-4">
+            <div>
+              <p className="text-xs font-bold text-text-main">{GROUNDING_LENSES[s.lens].label}</p>
+              <p className="text-[11px] text-text-muted mt-0.5">
+                {[...s.burdenIds.map((id) => BURDEN_LABELS[id]), s.customBurden].filter(Boolean).join(', ') || 'No burden named'}
+              </p>
+            </div>
+            <span className="text-[10px] text-text-muted shrink-0">{new Date(s.createdAt).toLocaleDateString()}</span>
+          </div>
+        ))}
+      </div>
+
+      <div className="pt-4 border-t border-border/20">
+        {!confirmingDelete ? (
+          <button onClick={() => onConfirmingDeleteChange(true)} className="text-xs font-bold text-text-muted hover:text-destructive flex items-center gap-1.5">
+            <Trash2 className="w-3.5 h-3.5" /> Delete my grounding history
+          </button>
+        ) : (
+          <div className="flex items-center gap-3">
+            <span className="text-xs text-text-main">This can't be undone. Delete all grounding history?</span>
+            <button onClick={onDeleteHistory} className="px-3 py-1.5 bg-destructive text-destructive-foreground rounded-lg text-[11px] font-black uppercase tracking-wider">Delete</button>
+            <button onClick={() => onConfirmingDeleteChange(false)} className="px-3 py-1.5 border border-border/40 rounded-lg text-[11px] font-black uppercase tracking-wider text-text-muted">Cancel</button>
+          </div>
+        )}
       </div>
     </div>
   );
