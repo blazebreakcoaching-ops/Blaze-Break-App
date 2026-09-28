@@ -205,6 +205,72 @@ export const computeConfidence = (occurrenceCount: number, spanDays: number): Pa
   return null;
 };
 
+// ---------- Deriving patterns from session history ----------
+// reflection_patterns docs are a recomputed cache, not an incrementally-
+// updated counter: every time this runs (after a session completes, or
+// when the Journey view loads), it re-derives occurrenceCount/status/
+// dates fresh from the session history itself. This means a pattern only
+// ever gets a Firestore doc once it has genuinely reached "emerging" -
+// there's no "count: 1, status: null" state to represent, which keeps
+// the confidence model honest by construction rather than by convention.
+// User-controlled fields (userFeedback, paused, suppressed) are never
+// touched here - the caller merges this output with whatever's already
+// stored for those fields.
+
+export interface DerivedPattern {
+  patternKey: PatternDimensionId;
+  category: PatternCategoryId;
+  occurrenceCount: number;
+  firstSeenAt: string;
+  lastSeenAt: string;
+  status: PatternConfidence;
+  lensAssociations: string[];
+}
+
+export interface SessionForPatternDerivation {
+  detectedThemes?: string[];
+  lens: string;
+  createdAt: string;
+}
+
+export const computeDerivedPatterns = (sessions: SessionForPatternDerivation[]): DerivedPattern[] => {
+  const byKey = new Map<PatternDimensionId, { dates: string[]; lenses: Set<string> }>();
+  for (const session of sessions) {
+    if (!session.detectedThemes) continue;
+    for (const raw of session.detectedThemes) {
+      if (!(raw in PATTERN_DIMENSIONS)) continue; // never trust an unrecognised theme string
+      const key = raw as PatternDimensionId;
+      if (!byKey.has(key)) byKey.set(key, { dates: [], lenses: new Set() });
+      const entry = byKey.get(key)!;
+      entry.dates.push(session.createdAt);
+      entry.lenses.add(session.lens);
+    }
+  }
+
+  const results: DerivedPattern[] = [];
+  for (const [key, { dates, lenses }] of byKey.entries()) {
+    const sorted = [...dates].sort();
+    const firstSeenAt = sorted[0]!;
+    const lastSeenAt = sorted[sorted.length - 1]!;
+    const spanDays = (new Date(lastSeenAt).getTime() - new Date(firstSeenAt).getTime()) / (1000 * 60 * 60 * 24);
+    const status = computeConfidence(dates.length, spanDays);
+    if (!status) continue; // hasn't reached "emerging" yet - stays invisible, no doc, no card
+    results.push({
+      patternKey: key,
+      category: PATTERN_DIMENSIONS[key].category,
+      occurrenceCount: dates.length,
+      firstSeenAt,
+      lastSeenAt,
+      status,
+      lensAssociations: [...lenses],
+    });
+  }
+
+  // Most-occurring first, so callers can slice to "1-3 cards maximum"
+  // straight off this array without a separate sort step.
+  return results.sort((a, b) => b.occurrenceCount - a.occurrenceCount);
+};
+
 // ---------- Explore This: question sets grouped by category ----------
 // Not 27 bespoke question sets - one progressive, reusable set per
 // category, with the specific pattern's own description/label woven into

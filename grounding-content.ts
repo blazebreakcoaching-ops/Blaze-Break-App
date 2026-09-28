@@ -296,64 +296,21 @@ export interface GroundingSessionRecord {
   uncontrollableItems: string[];
   islamicThemeId?: IslamicThemeId;
   reflectionAnswers?: ReflectionAnswer[];
+  // Phase 2's Nova Pattern Engine: up to 3 taxonomy dimension ids
+  // (grounding-patterns-taxonomy.ts) the reflect route detected this
+  // session touches on, allowlist-validated server-side before ever
+  // reaching here. Feeds computeDerivedPatterns, which is what "Your
+  // Grounding Journey" actually reads - this field is the raw input to
+  // that, not something rendered directly.
+  detectedThemes?: string[];
   nextAction?: NextActionId;
   createdAt: string;
   updatedAt: string;
 }
 
-// ---------- Pattern detection (Your Grounding Journey) ----------
-// Structured-fields-only, same "genuine repetition" bar as
-// recovery-fuel-patterns.ts: a pattern only qualifies once it shows up on
-// strictly more than half of a person's recent sessions, with a minimum
-// number of sessions before anything is surfaced at all.
-
-export type GroundingPatternId = 'releasing_control' | 'rest_without_guilt' | 'asking_for_support';
-
-export interface GroundingPattern {
-  id: GroundingPatternId;
-  label: string;
-  sessionsAffected: number;
-  totalSessions: number;
-}
-
-const MIN_SESSIONS_FOR_PATTERN = 3;
-
-const qualifies = (count: number, total: number) => count > total / 2;
-
-export const GROUNDING_PATTERN_LABELS: Record<GroundingPatternId, string> = {
-  releasing_control: 'Releasing control',
-  rest_without_guilt: 'Rest without guilt',
-  asking_for_support: 'Asking for support',
-};
-
-export const detectGroundingPatterns = (
-  sessions: Pick<GroundingSessionRecord, 'burdenIds' | 'controllableItems' | 'uncontrollableItems' | 'nextAction'>[]
-): GroundingPattern[] => {
-  const total = sessions.length;
-  if (total < MIN_SESSIONS_FOR_PATTERN) return [];
-
-  const patterns: GroundingPattern[] = [];
-
-  const releasingControl = sessions.filter((s) =>
-    s.uncontrollableItems.some((item) =>
-      ['The final outcome', "Other people's reactions", 'Timing'].includes(item)
-    )
-  ).length;
-  if (qualifies(releasingControl, total)) {
-    patterns.push({ id: 'releasing_control', label: GROUNDING_PATTERN_LABELS.releasing_control, sessionsAffected: releasingControl, totalSessions: total });
-  }
-
-  const restWithoutGuilt = sessions.filter((s) => s.burdenIds.includes('guilt') && s.nextAction === 'rest').length;
-  if (qualifies(restWithoutGuilt, total)) {
-    patterns.push({ id: 'rest_without_guilt', label: GROUNDING_PATTERN_LABELS.rest_without_guilt, sessionsAffected: restWithoutGuilt, totalSessions: total });
-  }
-
-  const askingForSupport = sessions.filter((s) =>
-    s.controllableItems.includes('Asking for help') || s.nextAction === 'trusted_person'
-  ).length;
-  if (qualifies(askingForSupport, total)) {
-    patterns.push({ id: 'asking_for_support', label: GROUNDING_PATTERN_LABELS.asking_for_support, sessionsAffected: askingForSupport, totalSessions: total });
-  }
-
-  return patterns;
-};
+// Phase 1 shipped a small 3-pattern client-side detector here
+// (detectGroundingPatterns). Phase 2 supersedes it entirely with the
+// taxonomy-driven engine in grounding-patterns-taxonomy.ts
+// (computeDerivedPatterns + PATTERN_DIMENSIONS), which covers the same
+// ground plus the other 24 taxonomy dimensions - keeping both would have
+// meant two parallel "what pattern is this" systems on one feature.
