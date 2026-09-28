@@ -1,0 +1,6 @@
+{
+  "projects": {
+    "production": "gen-lang-client-0537893432",
+    "staging": "blaze-break-staging"
+  }
+}

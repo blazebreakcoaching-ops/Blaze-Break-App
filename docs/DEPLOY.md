@@ -298,3 +298,101 @@ firebase deploy --only functions
   app, there is no single combined deploy command; forgetting
   `firebase deploy --only functions` after a functions/ change leaves
   the old version live indefinitely with no error anywhere to notice by.
+
+---
+
+## 10. Staging environment
+
+**Decided 2026-09-28:** a genuinely separate Firebase/GCP project, not a
+`NODE_ENV` flag on the production project. Before this, local dev
+(`NODE_ENV` unset) only relaxed CORS/CSP - it still pointed at the real
+production Firebase project and the real production Firestore database.
+That meant there was never actually an isolated place to test a schema
+change, a Firestore rules change, or a rules/indexes deploy against real
+data without touching production.
+
+`.firebaserc` now declares two named project aliases:
+
+```json
+{ "projects": { "production": "gen-lang-client-0537893432", "staging": "blaze-break-staging" } }
+```
+
+Switch between them with `firebase use production` / `firebase use
+staging`. `firebase.json` itself is shared between both - the Firestore
+database ID it names (`ai-studio-67723f85-0bfc-4690-ac83-580d6face1fc`)
+is only unique *within* a project, so the staging project creates its
+own Firestore database using that exact same ID string; `firebase
+deploy --only firestore:rules,firestore:indexes` then works unchanged
+against whichever project `firebase use` currently points at, with zero
+risk of the command silently landing on the wrong project's database
+because the id happens to differ.
+
+### One-time staging setup (run once, from a real terminal with `gcloud`/`firebase` access - not from this codebase's CI)
+
+```bash
+# 1. Create the project and link billing (Cloud Run + Firestore both need
+#    an active billing account; use the same one production is on, or a
+#    dedicated one if you want staging spend tracked separately).
+gcloud projects create blaze-break-staging --name="Blaze Break (Staging)"
+gcloud billing projects link blaze-break-staging --billing-account=YOUR_BILLING_ACCOUNT_ID
+
+# 2. Enable the same APIs production uses.
+gcloud services enable firestore.googleapis.com run.googleapis.com \
+  firebase.googleapis.com identitytoolkit.googleapis.com \
+  secretmanager.googleapis.com aiplatform.googleapis.com \
+  --project=blaze-break-staging
+
+# 3. Add Firebase to the project (turns a plain GCP project into a
+#    Firebase one - needed for Auth, App Check, Hosting).
+firebase projects:addfirebase blaze-break-staging
+
+# 4. Create the Firestore database - same edition/type/region as
+#    production (see docs/DEPLOY.md's Firestore Enterprise edition
+#    notes above for why the edition flag matters), same database ID
+#    string as production for firebase.json to work unchanged.
+gcloud firestore databases create \
+  --project=blaze-break-staging \
+  --database=ai-studio-67723f85-0bfc-4690-ac83-580d6face1fc \
+  --location=europe-west2 \
+  --type=firestore-native \
+  --edition=enterprise
+
+# 5. Deploy rules/indexes to it.
+firebase use staging
+firebase deploy --only firestore:rules,firestore:indexes
+
+# 6. Grant the staging Cloud Run runtime service account the same
+#    least-privilege roles §3 above lists for production (NOT
+#    roles/editor - see the IAM hardening this same pass did on
+#    production for why). The default compute SA's email follows the
+#    same pattern with staging's own project number, printed by:
+gcloud iam service-accounts list --project=blaze-break-staging
+
+# 7. Create staging's own copies of every secret in §2 above (Secret
+#    Manager secrets are project-scoped - production's secrets are not
+#    visible to the staging project at all, which is exactly the
+#    isolation this is for). Use TEST-mode/sandbox credentials where a
+#    provider offers them (Twilio, Stripe once built) rather than
+#    reusing production credentials against a staging environment.
+
+# 8. Deploy the app itself as its own Cloud Run service.
+gcloud run deploy blaze-break-staging \
+  --project=blaze-break-staging \
+  --region=europe-west2 \
+  --source=. \
+  --set-env-vars=NODE_ENV=production \
+  --set-secrets=GEMINI_API_KEY=GEMINI_API_KEY:latest,...  # every secret from step 7
+```
+
+### Using it day to day
+
+- `firebase use staging` before any rules/indexes work you want to test
+  before it touches production; `firebase use production` to go back.
+  Get in the habit of checking which one is active
+  (`firebase use` with no args prints the current alias) before running
+  any `firebase deploy`.
+- Nothing in application code needs to know which environment it's in
+  beyond `NODE_ENV=production` (§1) - the isolation is entirely at the
+  infrastructure layer (separate project, separate database, separate
+  secrets, separate Cloud Run service), which is what actually prevents
+  a staging mistake from touching real user data.
