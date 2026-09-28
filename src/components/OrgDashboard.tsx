@@ -4,6 +4,7 @@ import { secureApiFetch } from '../lib/secure-api';
 import { auth } from '../lib/firebase';
 import { RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, ResponsiveContainer, Tooltip, LineChart, Line, XAxis, YAxis, CartesianGrid } from 'recharts';
 import { useFocusTrap } from '../lib/useFocusTrap';
+import { OrgManagerCoachChat } from './OrgManagerCoachChat';
 
 
 import {
@@ -107,6 +108,10 @@ export const OrgDashboard = () => {
   } | null>(null);
 
   const [suggestions, setSuggestions] = useState<{ id: string; message: string }[]>([]);
+  // Lets the Manager Action Library cards (climate tab) ask Nova a real
+  // question on the admin's behalf instead of being a static, unclickable
+  // reference list - see OrgManagerCoachChat's seedMessage prop.
+  const [managerCoachSeed, setManagerCoachSeed] = useState<string | null>(null);
 
   const [members, setMembers] = useState<{ uid: string; email: string | null; displayName: string | null; isAdmin: boolean; team: string | null }[]>([]);
   const [editingTeamUid, setEditingTeamUid] = useState<string | null>(null);
@@ -157,32 +162,6 @@ export const OrgDashboard = () => {
   const [auditLogs, setAuditLogs] = useState<{ id: string; actorEmail: string; action: string; targetResourceType: string; targetResourceId: string; createdAt: any }[]>([]);
   const [auditLogsLoading, setAuditLogsLoading] = useState(false);
   const [auditLogsError, setAuditLogsError] = useState('');
-
-  // Nova Manager Coach - manual refresh only, never automatic, to keep the
-  // real per-call AI cost bounded to when an admin actually wants it.
-  const [managerCoachSuggestions, setManagerCoachSuggestions] = useState<string[] | null>(null);
-  const [managerCoachLoading, setManagerCoachLoading] = useState(false);
-  const [managerCoachError, setManagerCoachError] = useState('');
-
-  const fetchManagerCoach = async () => {
-    if (!orgStatus?.organisationId) return;
-    setManagerCoachLoading(true);
-    setManagerCoachError('');
-    try {
-      const res = await secureApiFetch(`/api/org/${orgStatus.organisationId}/manager-coach`);
-      const data = await res.json();
-      if (!res.ok) {
-        setManagerCoachError(data.error || "Could not get Nova's suggestions right now.");
-      } else if (data.locked) {
-        setManagerCoachError('Not enough opted-in teammates yet for Nova to see any real signal.');
-      } else {
-        setManagerCoachSuggestions(data.suggestions || []);
-      }
-    } catch (e) {
-      setManagerCoachError("Could not get Nova's suggestions right now.");
-    }
-    setManagerCoachLoading(false);
-  };
 
   const fetchGovernance = async (currentOrgId: string) => {
     setGovernanceLoading(true);
@@ -712,34 +691,13 @@ export const OrgDashboard = () => {
               )}
             </div>
 
-            <div className="card space-y-4">
-              <div className="flex items-center justify-between gap-4 flex-wrap">
-                <div>
-                  <h4 className="font-bold text-text-main flex items-center gap-2"><Sparkles className="w-5 h-5 text-primary" /> Nova's Suggestions For Your Team</h4>
-                  <p className="text-xs text-text-muted max-w-xl leading-relaxed">
-                    Fed only the real, aggregate numbers above - never a named individual. Nova sees exactly what you see, nothing more.
-                  </p>
-                </div>
-                <button
-                  onClick={fetchManagerCoach}
-                  disabled={managerCoachLoading}
-                  className="px-4 py-2 bg-primary text-primary-foreground rounded-xl text-xs font-bold hover:opacity-90 transition-colors disabled:opacity-50 flex items-center gap-2 shrink-0"
-                >
-                  {managerCoachLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
-                  {managerCoachSuggestions ? 'Refresh suggestions' : "Get Nova's suggestions"}
-                </button>
-              </div>
-              {managerCoachError && (
-                <div role="alert" className="p-3 bg-destructive/10 border border-destructive/20 text-destructive dark:text-[#f87171] text-xs rounded-xl">{managerCoachError}</div>
-              )}
-              {managerCoachSuggestions && managerCoachSuggestions.length > 0 && (
-                <div className="space-y-2">
-                  {managerCoachSuggestions.map((s, i) => (
-                    <div key={i} className="p-3 bg-surface dark:bg-card/40 border border-border rounded-xl text-sm text-text-main leading-relaxed">{s}</div>
-                  ))}
-                </div>
-              )}
-            </div>
+            {orgStatus?.organisationId && (
+              <OrgManagerCoachChat
+                orgId={orgStatus.organisationId}
+                seedMessage={managerCoachSeed}
+                onSeedConsumed={() => setManagerCoachSeed(null)}
+              />
+            )}
 
             {riskTrendData && !riskTrendData.locked && (
               <div className="card space-y-6">
@@ -1089,16 +1047,27 @@ export const OrgDashboard = () => {
                       <Sparkles className="w-5 h-5 text-primary" /> Manager Action Library
                     </h4>
                   </div>
+                  <p className="text-xs text-text-muted mb-4 -mt-2">
+                    A reference library of action ideas, not a personalised readout - tap one to ask Nova whether it actually fits what's happening on your team right now.
+                  </p>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     {ACTIONS.map(action => (
-                      <div key={action.id} className="p-4 rounded-xl bg-card/50 hover:bg-card border border-border transition-colors cursor-pointer group">
+                      <button
+                        key={action.id}
+                        type="button"
+                        onClick={() => {
+                          setManagerCoachSeed(`Tell me about "${action.title}" (${action.category}) - does this actually fit what's happening on my team right now, based on the real numbers?`);
+                          setActiveSubTab('pulse');
+                        }}
+                        className="p-4 rounded-xl bg-card/50 hover:bg-card border border-border transition-colors cursor-pointer group text-left w-full"
+                      >
                         <span className="text-[11px] uppercase tracking-widest font-black text-text-muted block mb-1">{action.category}</span>
                         <p className="text-xs font-bold text-text-main mb-3 group-hover:text-[#9a3412] dark:group-hover:text-primary transition-colors">{action.title}</p>
                         <div className="flex gap-2">
                           <span className={cn("text-[11px] px-1.5 py-0.5 rounded", action.impact === 'High' ? "bg-success/20 text-[#166534] dark:text-[#4ade80]" : "bg-surface text-text-muted")}>Impact: {action.impact}</span>
                           <span className={cn("text-[11px] px-1.5 py-0.5 rounded bg-surface text-text-muted")}>Effort: {action.effort}</span>
                         </div>
-                      </div>
+                      </button>
                     ))}
                   </div>
                 </div>

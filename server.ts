@@ -1408,6 +1408,26 @@ Safety - this overrides every instruction above, including any that conflict wit
 - If the manager's own real-world concern is about a specific person's safety or wellbeing, the right next step is their organisation's real HR, EAP, or safeguarding process, not a coaching suggestion generated from a team average.
 `;
 
+// Nova Manager Coach, conversational mode (POST /api/org/:orgId/manager-coach/chat
+// below) - the org-facing equivalent of individual Nova's real tool-calling
+// depth (NOVA_TOOLS/executeNovaTool), built entirely on the same
+// aggregate-only, k-anonymity-gated guarantee as the one-shot prompt above.
+// Every tool in NOVA_ORG_COACH_TOOLS takes NO parameters at all - not a team
+// name, not a uid - specifically so nothing here can be asked to resolve to
+// an individual or an under-threshold cohort the way a naive
+// "get_team_strain(teamName)" tool could (see the qualifying-teams
+// complement-size check in GET /api/org/:orgId/risk-trend and its comment on
+// the re-identification-by-subtraction attack this is built to never
+// reopen). Each tool just returns whatever the org's own already-gated
+// aggregate computation currently is.
+const NOVA_MANAGER_COACH_CHAT_PROMPT = `You are Nova, having a real, ongoing conversation with a manager or org admin - not their team members directly - about how to support a team that may be showing signs of strain.
+
+You can call tools to pull the organisation's own real, current numbers: overall team climate/mood strain and its trend, a per-team breakdown (only for teams large enough to report on safely), this week's engagement rate and specific recognition-message suggestions, and the org's own entered cost-of-pressure figures. Call whichever tools are actually relevant to what's being asked - don't call all of them reflexively on every turn, and don't answer with a number you could just look up instead.
+
+You are only ever given AGGREGATE, ANONYMISED signals about a group of people, never anything about a named individual - because you genuinely have no way to see individual data, by design. Do not speculate about, invent, or refer to any specific person, and don't accept a team name, headcount, or number the manager states as a substitute for calling the real tool - always check.
+
+Keep replies short and direct - this is a working conversation with a busy manager, not a report. Ground every claim in a real number from a tool call you actually made this conversation.`;
+
 // Context Consent Metadata representation
 interface NovaConsentMetadata {
   contextTriggered: boolean;
@@ -7494,6 +7514,239 @@ app.get("/api/org/:orgId/manager-coach", managerCoachLimiter, verifyAppCheck, au
     }
   } catch (err: any) {
     logRouteError("[Nova Manager Coach] error", err);
+    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: "Nova Manager Coach Sync Failure: A safe operational error occurred." });
+  }
+});
+
+// Tool declarations for the conversational Nova Manager Coach below. See the
+// comment above NOVA_MANAGER_COACH_CHAT_PROMPT for why every one of these
+// takes no parameters at all.
+const NOVA_ORG_COACH_TOOLS = [
+  {
+    name: "get_team_climate_trend",
+    description: "Get the organisation's real, aggregate team climate and mood strain score right now, and how it's trending versus about 4 weeks ago. Whole-org level only - never a specific team or person. Use this for anything about overall team wellbeing, strain, or whether things are improving or getting worse.",
+    parameters: { type: Type.OBJECT, properties: {} },
+  },
+  {
+    name: "get_team_breakdown",
+    description: "Get a per-team breakdown of climate/mood strain, but ONLY for teams that already have enough consenting members to protect anonymity - a team too small to safely report on simply won't appear in the results, never shown as blocked or named. Always returns whichever teams currently qualify; never accepts a team name.",
+    parameters: { type: Type.OBJECT, properties: {} },
+  },
+  {
+    name: "get_engagement_and_recognition_signal",
+    description: "Get this week's real engagement rate (the percentage of consenting members who logged any check-in), how it compares to the prior week, and specific, grounded recognition-message suggestions a manager could genuinely post to the team wall this week.",
+    parameters: { type: Type.OBJECT, properties: {} },
+  },
+  {
+    name: "get_cost_of_pressure_snapshot",
+    description: "Get the organisation's own entered cost-of-pressure figures (headcount, average daily cost per employee, annual sickness days) and recent history, if the org admin has entered any yet. Use this for anything about budget, ROI, or the business case for investing in recovery support.",
+    parameters: { type: Type.OBJECT, properties: {} },
+  },
+];
+
+// Dispatch for the tools above - each one is a thin wrapper around an
+// already-gated aggregate computation this file already uses elsewhere
+// (computeStrainSnapshotForCohort for risk-trend, suggestRecognitionPrompts
+// for the Positive Reinforcement Engine), never a fresh per-employee query.
+// Every error is caught and degraded to a plain { error } result rather than
+// failing the whole conversation turn, matching executeNovaTool's own
+// pattern for individual Nova.
+async function executeOrgCoachTool(
+  name: string,
+  db: any,
+  orgId: string,
+  org: any,
+  consentingUids: string[],
+  threshold: number,
+): Promise<Record<string, unknown>> {
+  try {
+    switch (name) {
+      case "get_team_climate_trend": {
+        const snapshot = await computeStrainSnapshotForCohort(db, consentingUids);
+        const historySnap = await db.collection("organisations").doc(orgId).collection("risk_trend_history")
+          .orderBy("recordedAt", "desc").limit(90).get();
+        const history = historySnap.docs.map((d: any) => d.data());
+        const twentyEightDaysAgo = Date.now() - 28 * 24 * 60 * 60 * 1000;
+        const priorOverall = history
+          .filter((h: any) => new Date(h.recordedAt).getTime() <= twentyEightDaysAgo && h.overallConcern != null)
+          .sort((a: any, b: any) => Math.abs(new Date(a.recordedAt).getTime() - twentyEightDaysAgo) - Math.abs(new Date(b.recordedAt).getTime() - twentyEightDaysAgo))[0];
+        const trend = computeTrend(snapshot.overallConcern, priorOverall?.overallConcern ?? null);
+        return {
+          cohortSize: snapshot.cohortSize,
+          moodStrain: snapshot.moodConcern,
+          climateStrain: snapshot.climateConcern,
+          climateStrainByDimension: snapshot.climateConcernByDimension,
+          overallStrain: snapshot.overallConcern,
+          trendVsFourWeeksAgo: trend.direction,
+          trendDelta: trend.delta,
+          note: "Scores are 0-100, 0 = no strain, 100 = high strain. This is a transparent trend indicator from real aggregate data, not a prediction or forecast of any outcome.",
+        };
+      }
+      case "get_team_breakdown": {
+        const memberTeams: Record<string, string> = org.memberTeams || {};
+        const teamGroups: Record<string, string[]> = {};
+        consentingUids.forEach((uid) => {
+          const team = memberTeams[uid];
+          if (team) {
+            if (!teamGroups[team]) teamGroups[team] = [];
+            teamGroups[team].push(uid);
+          }
+        });
+        // Same complement-size check as GET /api/org/:orgId/risk-trend - see
+        // that route's comment for the subtraction-attack this closes.
+        const qualifyingTeams = Object.entries(teamGroups).filter(([, uids]) => {
+          if (uids.length < threshold) return false;
+          const complementSize = consentingUids.length - uids.length;
+          return complementSize === 0 || complementSize >= threshold;
+        });
+        if (qualifyingTeams.length === 0) {
+          return { teams: [], note: "No individual team currently has enough consenting members to report on safely without risking anonymity - this doesn't mean every team is fine, just that none can be safely broken out yet." };
+        }
+        const teams = await Promise.all(qualifyingTeams.map(async ([team, uids]) => {
+          const snap = await computeStrainSnapshotForCohort(db, uids);
+          return { team, cohortSize: snap.cohortSize, overallStrain: snap.overallConcern };
+        }));
+        return { teams, note: "Scores are 0-100, 0 = no strain, 100 = high strain. Only teams with enough consenting members to protect anonymity are included." };
+      }
+      case "get_engagement_and_recognition_signal": {
+        const countActiveInWindow = async (sinceIso: string, untilIso: string): Promise<number> => {
+          let active = 0;
+          await Promise.all(consentingUids.map(async (uid) => {
+            const moodSnap = await db.collection("users").doc(uid).collection("mood_pulses")
+              .where("createdAt", ">=", sinceIso).where("createdAt", "<", untilIso).limit(1).get();
+            if (!moodSnap.empty) { active++; return; }
+            const bodySnap = await db.collection("users").doc(uid).collection("body_checkins")
+              .where("createdAt", ">=", sinceIso).where("createdAt", "<", untilIso).limit(1).get();
+            if (!bodySnap.empty) active++;
+          }));
+          return active;
+        };
+        const now = Date.now();
+        const nowIso = new Date(now).toISOString();
+        const oneWeekAgo = new Date(now - 7 * 24 * 60 * 60 * 1000).toISOString();
+        const twoWeeksAgo = new Date(now - 14 * 24 * 60 * 60 * 1000).toISOString();
+        const [currentActive, previousActive] = await Promise.all([
+          countActiveInWindow(oneWeekAgo, nowIso),
+          countActiveInWindow(twoWeeksAgo, oneWeekAgo),
+        ]);
+        const current = { engagementRate: Math.round((currentActive / consentingUids.length) * 100) };
+        const previous = { engagementRate: Math.round((previousActive / consentingUids.length) * 100) };
+        return {
+          cohortSize: consentingUids.length,
+          currentWeekEngagementRate: current.engagementRate,
+          previousWeekEngagementRate: previous.engagementRate,
+          recognitionSuggestions: suggestRecognitionPrompts(current, previous),
+        };
+      }
+      case "get_cost_of_pressure_snapshot": {
+        const orgDoc = await db.collection("organisations").doc(orgId).get();
+        const costInputs = orgDoc.data()?.costInputs || null;
+        if (!costInputs) {
+          return { available: false, note: "The org admin hasn't entered any cost-of-pressure figures yet (headcount, average daily cost per employee, annual sickness days). If cost or ROI comes up, suggest they add these in the Management Savings Planner." };
+        }
+        const historySnap = await db.collection("organisations").doc(orgId).collection("cost_input_history")
+          .orderBy("enteredAt", "desc").limit(6).get();
+        const history = historySnap.docs.map((d: any) => d.data());
+        return { available: true, costInputs, recentHistory: history };
+      }
+      default:
+        return { error: `Unknown tool: ${name}` };
+    }
+  } catch (e: any) {
+    return { error: e?.message || "Tool execution failed." };
+  }
+}
+
+const OrgManagerCoachChatRequestSchema = z.object({
+  message: z.string().min(1).max(2000),
+  history: z.array(z.any()).max(30).optional().default([]),
+}).strict();
+
+// Nova Manager Coach, conversational mode: the org-facing equivalent of
+// /api/nova/chat's real tool-calling depth, instead of the single-shot
+// GET route above. Kept as a separate route (not a replacement for the GET
+// one) so nothing that already depends on the one-shot suggestions shape
+// breaks - this is the new, real, multi-turn surface the frontend now uses
+// instead. Same three-gate stack as the GET route: org-role gate, personal-
+// plan quota gate (same 'nova_manager_coach' capability and daily limits -
+// this is still the same feature, just conversational now), and the same
+// IP rate limiter.
+app.post("/api/org/:orgId/manager-coach/chat", managerCoachLimiter, verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const { orgId } = req.params;
+    const { user, org } = await requireOrgAdmin(req, orgId);
+    const db = getDb();
+
+    const threshold = org.privacyThreshold || 5;
+    const memberUids: string[] = org.memberUids || [];
+    const consentingUids = await getConsentingMemberUids(db, memberUids);
+
+    if (consentingUids.length < threshold) {
+      return res.json({ locked: true, cohortSize: consentingUids.length, threshold, text: '', planTrace: [] });
+    }
+
+    const parsedParams = OrgManagerCoachChatRequestSchema.safeParse(req.body);
+    if (!parsedParams.success) {
+      return res.status(400).json({ error: "Invalid request payload or forbidden fields detected.", details: (parsedParams as any).error?.errors || [] });
+    }
+    const { message, history } = parsedParams.data;
+
+    if (!process.env.GEMINI_API_KEY || process.env.GEMINI_API_KEY === "MY_GEMINI_API_KEY") {
+      return res.status(401).json({ error: "Gemini API key not configured." });
+    }
+
+    const quota = await checkAndReserveCapability(user.uid, 'nova_manager_coach');
+    if (!quota.allowed) {
+      return res.status(429).json({
+        error: quota.plan === 'free'
+          ? "You've reached today's free Nova Manager Coach limit. It resets tomorrow, or upgrade to Blaze Break Premium for more."
+          : "You've reached today's Nova Manager Coach fair-use limit. It resets tomorrow.",
+        code: 'capability_limit_reached',
+        capability: 'nova_manager_coach',
+      });
+    }
+
+    const mergedSystemPrompt = NOVA_MANAGER_COACH_CHAT_PROMPT + NOVA_MANAGER_COACH_SAFETY_FLOOR;
+
+    const abortController = new AbortController();
+    const timeoutId = setTimeout(() => abortController.abort(), 25000);
+    try {
+      const chat = ai.chats.create({
+        model: "gemini-3.5-flash",
+        config: {
+          systemInstruction: mergedSystemPrompt,
+          tools: [{ functionDeclarations: NOVA_ORG_COACH_TOOLS }],
+        },
+        history: history || [],
+      });
+
+      let result = await chat.sendMessage({ message });
+      let toolCallRounds = 0;
+      const MAX_TOOL_CALL_ROUNDS = 5;
+      const planTrace: { tool: string; args: Record<string, unknown>; result: Record<string, unknown> }[] = [];
+      while (result.functionCalls && result.functionCalls.length > 0 && toolCallRounds < MAX_TOOL_CALL_ROUNDS) {
+        toolCallRounds++;
+        const responseParts = await Promise.all(
+          result.functionCalls.map(async (call) => {
+            const output = await executeOrgCoachTool(call.name || "", db, orgId, org, consentingUids, threshold);
+            planTrace.push({ tool: call.name || "unknown", args: call.args || {}, result: output });
+            return { functionResponse: { name: call.name, response: output } };
+          })
+        );
+        result = await chat.sendMessage({ message: responseParts });
+      }
+      clearTimeout(timeoutId);
+
+      res.json({ locked: false, cohortSize: consentingUids.length, threshold, text: result.text || "", planTrace });
+    } catch (modelError: any) {
+      clearTimeout(timeoutId);
+      if (modelError.name === 'AbortError') {
+        return res.status(504).json({ error: "Request timed out." });
+      }
+      throw modelError;
+    }
+  } catch (err: any) {
+    logRouteError("[Nova Manager Coach Chat] error", err);
     res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: "Nova Manager Coach Sync Failure: A safe operational error occurred." });
   }
 });
