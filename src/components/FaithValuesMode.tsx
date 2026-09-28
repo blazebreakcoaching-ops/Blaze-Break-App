@@ -458,16 +458,22 @@ export const FaithValuesMode = (_props: FaithValuesModeProps) => {
       // too (section 20) - reflection_patterns and aligned_actions only
       // exist as a function of the sessions they were computed from, so
       // leaving them behind after the sessions are gone would strand
-      // stale, unexplainable data.
-      const [sessionsSnap, patternsSnap, actionsSnap] = await Promise.all([
+      // stale, unexplainable data. grounding_analytics_events is included
+      // for the same reason, even though individual events carry no
+      // reflection content - "delete all grounding history" should leave
+      // no trail of the history it names, not just the reflections
+      // themselves.
+      const [sessionsSnap, patternsSnap, actionsSnap, eventsSnap] = await Promise.all([
         getDocs(collection(db, 'users', auth.currentUser.uid, 'grounding_sessions')),
         getDocs(collection(db, 'users', auth.currentUser.uid, 'reflection_patterns')),
         getDocs(collection(db, 'users', auth.currentUser.uid, 'aligned_actions')),
+        getDocs(collection(db, 'users', auth.currentUser.uid, 'grounding_analytics_events')),
       ]);
       const batch = writeBatch(db);
       sessionsSnap.docs.forEach((d) => batch.delete(d.ref));
       patternsSnap.docs.forEach((d) => batch.delete(d.ref));
       actionsSnap.docs.forEach((d) => batch.delete(d.ref));
+      eventsSnap.docs.forEach((d) => batch.delete(d.ref));
       await batch.commit();
       setSessions([]);
       setPatternFeedback({});

@@ -1039,8 +1039,12 @@ service cloud.firestore {
 
       // AK. monthly_reflections - Batch 5's optional, user-triggered
       // monthly deep reflection. One doc per calendar month, holding only
-      // the structured output (never regenerated automatically - see
-      // POST /api/grounding/monthly-reflection's eligibility gate).
+      // the structured output. Computed entirely client-side from
+      // grounding_sessions/reflection_patterns already in the client's
+      // hands (GroundingMonthlyReflection.tsx) - deliberately no AI route,
+      // so this feature costs zero extra tokens. MIN_SESSIONS_FOR_MONTHLY_
+      // REFLECTION in grounding-patterns-taxonomy.ts gates when the
+      // client even offers this.
       match /monthly_reflections/{monthId} {
         allow read, delete: if isOwner(uid);
         allow create, update: if isOwner(uid)
