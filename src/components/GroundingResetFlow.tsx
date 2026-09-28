@@ -10,6 +10,7 @@ import { DerivedPattern } from '../../grounding-patterns-taxonomy';
 import { AdaptivePrompt } from '../../grounding-adaptive';
 import { getAdaptivePromptSet } from '../lib/grounding-personalisation';
 import { logGroundingEvent } from '../lib/grounding-analytics';
+import { GroundingVoiceControls } from './GroundingVoiceControls';
 
 // Phase 3's Reset mode (section 1) - "approximately 1-2 minutes", the
 // short path for very low capacity, an explicit quick choice, or a
@@ -29,9 +30,10 @@ interface GroundingResetFlowProps {
   derivedPatterns: DerivedPattern[];
   onBack: () => void;
   onComplete: () => void;
+  voiceEnabled?: boolean;
 }
 
-export const GroundingResetFlow = ({ derivedPatterns, onBack, onComplete }: GroundingResetFlowProps) => {
+export const GroundingResetFlow = ({ derivedPatterns, onBack, onComplete, voiceEnabled = false }: GroundingResetFlowProps) => {
   const [step, setStep] = useState<ResetStep>('heaviest');
   const [burdenIds, setBurdenIds] = useState<BurdenId[]>([]);
   const [controlAnswer, setControlAnswer] = useState('');
@@ -101,7 +103,10 @@ export const GroundingResetFlow = ({ derivedPatterns, onBack, onComplete }: Grou
       <AnimatePresence mode="wait">
         {step === 'heaviest' && (
           <motion.div key="heaviest" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-6">
-            <h4 className="text-2xl font-display font-bold text-text-main">What feels heaviest right now?</h4>
+            <div className="flex items-center justify-between gap-3">
+              <h4 className="text-2xl font-display font-bold text-text-main">What feels heaviest right now?</h4>
+              <GroundingVoiceControls text="What feels heaviest right now?" enabled={voiceEnabled} />
+            </div>
             <div className="flex flex-wrap gap-2">
               {BURDEN_OPTIONS.filter((o) => o.id !== 'other').map((o) => (
                 <button key={o.id} onClick={() => toggleBurden(o.id)} aria-pressed={burdenIds.includes(o.id)}
@@ -122,7 +127,10 @@ export const GroundingResetFlow = ({ derivedPatterns, onBack, onComplete }: Grou
 
         {step === 'control' && (
           <motion.div key="control" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-6">
-            <h4 className="text-2xl font-display font-bold text-text-main">What is actually within your control?</h4>
+            <div className="flex items-center justify-between gap-3">
+              <h4 className="text-2xl font-display font-bold text-text-main">What is actually within your control?</h4>
+              <GroundingVoiceControls text="What is actually within your control?" enabled={voiceEnabled} />
+            </div>
             <textarea value={controlAnswer} onChange={(e) => setControlAnswer(e.target.value.slice(0, 400))} rows={3}
               placeholder="In a few words..." autoFocus
               className="w-full p-4 rounded-xl border border-border/40 bg-white dark:bg-surface text-sm text-text-main" />
@@ -138,7 +146,10 @@ export const GroundingResetFlow = ({ derivedPatterns, onBack, onComplete }: Grou
           <motion.div key="reflect" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-6">
             {prompt ? (
               <>
-                <h4 className="text-2xl font-display font-bold text-text-main">{prompt.text}</h4>
+                <div className="flex items-center justify-between gap-3">
+                  <h4 className="text-2xl font-display font-bold text-text-main">{prompt.text}</h4>
+                  <GroundingVoiceControls text={prompt.text} enabled={voiceEnabled} />
+                </div>
                 <textarea value={reflectAnswer} onChange={(e) => setReflectAnswer(e.target.value.slice(0, 400))} rows={3}
                   placeholder="Take a moment..." autoFocus
                   className="w-full p-4 rounded-xl border border-border/40 bg-white dark:bg-surface text-sm text-text-main" />

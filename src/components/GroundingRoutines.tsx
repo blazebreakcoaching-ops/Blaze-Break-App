@@ -42,9 +42,10 @@ const isDueToday = (r: RoutineDoc): boolean => {
 interface GroundingRoutinesProps {
   onClose: () => void;
   onStartCustomSession: (depth: SessionDepth, lens: GroundingLens) => void;
+  voiceEnabled?: boolean;
 }
 
-export const GroundingRoutines = ({ onClose, onStartCustomSession }: GroundingRoutinesProps) => {
+export const GroundingRoutines = ({ onClose, onStartCustomSession, voiceEnabled = false }: GroundingRoutinesProps) => {
   const [routines, setRoutines] = useState<RoutineDoc[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [running, setRunning] = useState<{ routineId: string | null; name: string; prompts: string[]; finishPrompt?: string; closingStyle: ClosingStyle; lens: GroundingLens } | null>(null);
@@ -107,7 +108,7 @@ export const GroundingRoutines = ({ onClose, onStartCustomSession }: GroundingRo
   };
 
   if (running) {
-    return <GroundingRoutineRun {...running} onClose={() => { setRunning(null); load(); }} />;
+    return <GroundingRoutineRun {...running} onClose={() => { setRunning(null); load(); }} voiceEnabled={voiceEnabled} />;
   }
 
   return (

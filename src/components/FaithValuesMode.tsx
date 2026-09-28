@@ -685,6 +685,7 @@ export const FaithValuesMode = (_props: FaithValuesModeProps) => {
           derivedPatterns={derivedPatterns}
           onBack={() => { setSessionDepth(null); setStage('depth'); }}
           onComplete={() => { resetSession(); setView('journey'); loadSessions(); }}
+          voiceEnabled={groundingProfile?.voiceGuidanceEnabled === true}
         />
       ) : (
         <>
@@ -1261,6 +1262,7 @@ export const FaithValuesMode = (_props: FaithValuesModeProps) => {
             setStage('arrive');
             setView('session');
           }}
+          voiceEnabled={groundingProfile?.voiceGuidanceEnabled === true}
         />
       )}
       {showOverthinkingInterrupt && (
@@ -1277,6 +1279,7 @@ export const FaithValuesMode = (_props: FaithValuesModeProps) => {
           closingStyle="values"
           lens={decisionLens}
           onClose={() => setShowDecisionGrounding(false)}
+          voiceEnabled={groundingProfile?.voiceGuidanceEnabled === true}
         />
       )}
     </div>

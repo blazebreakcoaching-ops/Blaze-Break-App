@@ -8,6 +8,7 @@ import { GroundingLens } from '../../grounding-content';
 import { ClosingStyle, CLOSING_STYLES } from '../../grounding-adaptive';
 import { EVENING_ISLAMIC_CLOSING } from '../../grounding-routines';
 import { logGroundingEvent } from '../lib/grounding-analytics';
+import { GroundingVoiceControls } from './GroundingVoiceControls';
 
 // Generic run-through for any routine - the 4 presets and a custom
 // routine all reduce to the same shape (a short prompt sequence + a
@@ -21,9 +22,10 @@ interface GroundingRoutineRunProps {
   closingStyle: ClosingStyle;
   lens: GroundingLens;
   onClose: () => void;
+  voiceEnabled?: boolean;
 }
 
-export const GroundingRoutineRun = ({ routineId, name, prompts, finishPrompt, closingStyle, lens, onClose }: GroundingRoutineRunProps) => {
+export const GroundingRoutineRun = ({ routineId, name, prompts, finishPrompt, closingStyle, lens, onClose, voiceEnabled = false }: GroundingRoutineRunProps) => {
   const allPrompts = finishPrompt ? [...prompts, finishPrompt] : prompts;
   const [index, setIndex] = useState(0);
   const [answers, setAnswers] = useState<string[]>(Array(allPrompts.length).fill(''));
@@ -66,7 +68,10 @@ export const GroundingRoutineRun = ({ routineId, name, prompts, finishPrompt, cl
         ) : (
           <AnimatePresence mode="wait">
             <motion.div key={index} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-4">
-              <h4 className="text-lg font-display font-bold text-text-main">{allPrompts[index]}</h4>
+              <div className="flex items-center justify-between gap-3">
+                <h4 className="text-lg font-display font-bold text-text-main">{allPrompts[index]}</h4>
+                <GroundingVoiceControls text={allPrompts[index]!} enabled={voiceEnabled} />
+              </div>
               <textarea
                 value={answers[index]}
                 onChange={(e) => setAnswer(e.target.value.slice(0, 400))}
