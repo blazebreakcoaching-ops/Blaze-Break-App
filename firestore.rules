@@ -1058,6 +1058,102 @@ service cloud.firestore {
             && (request.method == 'create' ? true : checkCreatedAtUnchanged());
       }
 
+      // AL. groundingProfile/main - Phase 3's adaptive-grounding personal
+      // profile (section 30). Deliberately a single fixed doc id ('main'),
+      // not a growing collection - this is one small, derived preference
+      // record per person, recomputed/merged by
+      // src/lib/grounding-personalisation.ts, never containing raw
+      // reflection text.
+      match /groundingProfile/{docId} {
+        allow read, delete: if isOwner(uid);
+        allow create, update: if isOwner(uid)
+            && docId == 'main'
+            && hasOnly(['personalisationEnabled', 'useHistoryForPersonalisation', 'followUpOnPreviousActions', 'usePreferredLens', 'voiceGuidanceEnabled', 'preferredSessionDepth', 'commonCapacityState', 'helpfulPromptFamilies', 'unhelpfulPromptFamilies', 'helpfulGroundingThemes', 'preferredLens', 'preferredClosingStyle', 'frequentlySkippedElements', 'updatedAt'])
+            && hasAll(['updatedAt'])
+            && (!('personalisationEnabled' in request.resource.data) || request.resource.data.personalisationEnabled is bool)
+            && (!('useHistoryForPersonalisation' in request.resource.data) || request.resource.data.useHistoryForPersonalisation is bool)
+            && (!('followUpOnPreviousActions' in request.resource.data) || request.resource.data.followUpOnPreviousActions is bool)
+            && (!('usePreferredLens' in request.resource.data) || request.resource.data.usePreferredLens is bool)
+            && (!('voiceGuidanceEnabled' in request.resource.data) || request.resource.data.voiceGuidanceEnabled is bool)
+            && (!('preferredSessionDepth' in request.resource.data) || request.resource.data.preferredSessionDepth in ['reset', 'ground', 'deep'])
+            && (!('commonCapacityState' in request.resource.data) || request.resource.data.commonCapacityState in ['running_on_empty', 'low_capacity', 'some_space', 'ready_to_reflect'])
+            && (!('helpfulPromptFamilies' in request.resource.data) || (request.resource.data.helpfulPromptFamilies is list && request.resource.data.helpfulPromptFamilies.size() <= 27))
+            && (!('unhelpfulPromptFamilies' in request.resource.data) || (request.resource.data.unhelpfulPromptFamilies is list && request.resource.data.unhelpfulPromptFamilies.size() <= 27))
+            && (!('helpfulGroundingThemes' in request.resource.data) || (request.resource.data.helpfulGroundingThemes is list && request.resource.data.helpfulGroundingThemes.size() <= 20))
+            && (!('preferredLens' in request.resource.data) || request.resource.data.preferredLens in ['secular', 'values', 'faith', 'islamic'])
+            && (!('preferredClosingStyle' in request.resource.data) || request.resource.data.preferredClosingStyle in ['practical', 'compassionate', 'values', 'faith_friendly', 'islamic'])
+            && (!('frequentlySkippedElements' in request.resource.data) || (request.resource.data.frequentlySkippedElements is list && request.resource.data.frequentlySkippedElements.size() <= 20));
+      }
+
+      // AM. groundingPromptHistory/{promptId} - question-fatigue tracking
+      // (section 5). Doc id is the promptKey itself, so a repeat write is
+      // always an update to the same doc rather than an ever-growing log.
+      match /groundingPromptHistory/{promptId} {
+        allow read, delete: if isOwner(uid);
+        allow create, update: if isOwner(uid)
+            && hasOnly(['promptKey', 'patternKey', 'lastShownAt', 'timesShown', 'userEngaged', 'userSkipped', 'helpfulRating', 'createdAt', 'updatedAt'])
+            && hasAll(['promptKey', 'lastShownAt', 'timesShown', 'createdAt', 'updatedAt'])
+            && isStringWithMax(request.resource.data.promptKey, 80)
+            && (!('patternKey' in request.resource.data) || request.resource.data.patternKey in ['control', 'uncertainty', 'over_responsibility', 'perfectionism', 'guilt_about_rest', 'boundary_difficulty', 'fear_of_disappointing', 'people_pleasing', 'isolation', 'reluctance_to_ask_for_support', 'excessive_self_expectation', 'work_identity', 'financial_pressure', 'family_responsibility', 'conflict_avoidance', 'overcommitment', 'comparison', 'self_criticism', 'difficulty_accepting_unfinished_work', 'difficulty_accepting_outcomes', 'gratitude', 'patience', 'trust', 'compassion', 'connection', 'purpose', 'values_conflict'])
+            && request.resource.data.timesShown is number && request.resource.data.timesShown >= 0
+            && (!('userEngaged' in request.resource.data) || (request.resource.data.userEngaged is number && request.resource.data.userEngaged >= 0))
+            && (!('userSkipped' in request.resource.data) || (request.resource.data.userSkipped is number && request.resource.data.userSkipped >= 0))
+            && (!('helpfulRating' in request.resource.data) || request.resource.data.helpfulRating == null || request.resource.data.helpfulRating in ['helpful', 'not_helpful'])
+            && (request.method == 'create' ? true : checkCreatedAtUnchanged());
+      }
+
+      // AN. groundingFeedback/{feedbackId} - the "What helped?" learning
+      // loop (section 6). A closed set of structured outcome labels only -
+      // no free-text field beyond one short optional note, so this can
+      // never carry raw reflection content either.
+      match /groundingFeedback/{feedbackId} {
+        allow read, delete: if isOwner(uid);
+        allow create: if isOwner(uid)
+            && hasOnly(['selectedOptions', 'helpfulNote', 'sessionDepth', 'createdAt'])
+            && hasAll(['selectedOptions', 'createdAt'])
+            && request.resource.data.selectedOptions is list && request.resource.data.selectedOptions.size() <= 8
+            && isOptionalStringWithMax(request.resource.data, 'helpfulNote', 200)
+            && (!('sessionDepth' in request.resource.data) || request.resource.data.sessionDepth in ['reset', 'ground', 'deep']);
+      }
+
+      // AO. groundingRoutines/{routineId} - personal + custom routines
+      // (sections 8-9): Morning Grounding, End-of-Day Release, Before/
+      // After Something Difficult, or a fully custom one.
+      match /groundingRoutines/{routineId} {
+        allow read, delete: if isOwner(uid);
+        allow create, update: if isOwner(uid)
+            && hasOnly(['name', 'type', 'sessionDepth', 'lens', 'closingStyle', 'preferredPromptKeys', 'reminderEnabled', 'reminderTime', 'reminderDays', 'createdAt', 'updatedAt'])
+            && hasAll(['name', 'type', 'createdAt', 'updatedAt'])
+            && isStringWithMax(request.resource.data.name, 60)
+            && request.resource.data.type in ['morning', 'evening', 'before_difficult', 'after_difficult', 'custom']
+            && (!('sessionDepth' in request.resource.data) || request.resource.data.sessionDepth in ['reset', 'ground', 'deep'])
+            && (!('lens' in request.resource.data) || request.resource.data.lens in ['secular', 'values', 'faith', 'islamic'])
+            && (!('closingStyle' in request.resource.data) || request.resource.data.closingStyle in ['practical', 'compassionate', 'values', 'faith_friendly', 'islamic'])
+            && (!('preferredPromptKeys' in request.resource.data) || (request.resource.data.preferredPromptKeys is list && request.resource.data.preferredPromptKeys.size() <= 10))
+            && (!('reminderEnabled' in request.resource.data) || request.resource.data.reminderEnabled is bool)
+            && isOptionalStringWithMax(request.resource.data, 'reminderTime', 10)
+            && (!('reminderDays' in request.resource.data) || (request.resource.data.reminderDays is list && request.resource.data.reminderDays.size() <= 7))
+            && (request.method == 'create' ? true : checkCreatedAtUnchanged());
+      }
+
+      // AP. savedReflections/{reflectionId} - "Reflections worth keeping"
+      // (section 17) and personal grounding statements (section 18). The
+      // user always decides what gets saved here - nothing is
+      // automatically labelled profound. isUserCreated distinguishes a
+      // person's own words from something they saved out of a session
+      // (e.g. a curated Islamic reflection), so the UI never mislabels
+      // user-written text as verified religious content.
+      match /savedReflections/{reflectionId} {
+        allow read, delete: if isOwner(uid);
+        allow create: if isOwner(uid)
+            && hasOnly(['type', 'text', 'sourceLens', 'isUserCreated', 'createdAt'])
+            && hasAll(['type', 'text', 'isUserCreated', 'createdAt'])
+            && request.resource.data.type in ['question', 'insight', 'value', 'aligned_action', 'grounding_statement', 'faith_reflection']
+            && isStringWithMax(request.resource.data.text, 400)
+            && (!('sourceLens' in request.resource.data) || request.resource.data.sourceLens in ['secular', 'values', 'faith', 'islamic'])
+            && request.resource.data.isUserCreated is bool;
+      }
+
     }
 
     // F. public_feature_flags/{featureId}

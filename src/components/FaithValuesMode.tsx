@@ -30,6 +30,10 @@ import { GroundingExploreThis } from './GroundingExploreThis';
 import { GroundingCarryingExercise } from './GroundingCarryingExercise';
 import { GroundingCommunityBridge } from './GroundingCommunityBridge';
 import { GroundingMonthlyReflection } from './GroundingMonthlyReflection';
+import { GroundingProfile } from '../../grounding-adaptive';
+import {
+  loadGroundingProfile, updateGroundingProfile, resetGroundingPersonalisation,
+} from '../lib/grounding-personalisation';
 
 // Section 18's gentle human-connection prompts, shown alongside the
 // "Reach out to someone I trust" Reconnect option - never forced, always
@@ -125,6 +129,31 @@ export const FaithValuesMode = (_props: FaithValuesModeProps) => {
   const [showMonthlyReflection, setShowMonthlyReflection] = useState(false);
   const [mostRecentAlignedAction, setMostRecentAlignedAction] = useState<{ id: string; chosenValue: string; nextAlignedAction: string; followUpStatus: string | null; createdAt: string } | null>(null);
   const [allAlignedActions, setAllAlignedActions] = useState<{ chosenValue: string; createdAt: string }[]>([]);
+
+  // Phase 3's adaptive-grounding personal profile (section 30/37) - loaded
+  // once, separately from the session-history load above, since it's a
+  // different concern (derived personalisation preferences, not
+  // reflection history) with its own reset action.
+  const [groundingProfile, setGroundingProfile] = useState<GroundingProfile | null>(null);
+  const [confirmingPersonalisationReset, setConfirmingPersonalisationReset] = useState(false);
+
+  useEffect(() => {
+    if (!auth.currentUser) return;
+    loadGroundingProfile(auth.currentUser.uid).then(setGroundingProfile);
+  }, []);
+
+  const handleProfileToggle = (field: keyof GroundingProfile, value: boolean) => {
+    setGroundingProfile((prev) => ({ ...(prev || { updatedAt: new Date().toISOString() }), [field]: value }));
+    if (auth.currentUser) updateGroundingProfile(auth.currentUser.uid, { [field]: value }).catch(() => {});
+  };
+
+  const handleResetPersonalisation = async () => {
+    if (auth.currentUser) {
+      await resetGroundingPersonalisation(auth.currentUser.uid).catch(() => {});
+    }
+    setGroundingProfile({ updatedAt: new Date().toISOString() });
+    setConfirmingPersonalisationReset(false);
+  };
 
   const loadSessions = async () => {
     if (!auth.currentUser) { setSessionsLoaded(true); return; }
@@ -539,6 +568,11 @@ export const FaithValuesMode = (_props: FaithValuesModeProps) => {
           onAlignedActionFollowUp={handleAlignedActionFollowUp}
           allAlignedActions={allAlignedActions}
           onOpenMonthlyReflection={() => setShowMonthlyReflection(true)}
+          groundingProfile={groundingProfile}
+          onProfileToggle={handleProfileToggle}
+          confirmingPersonalisationReset={confirmingPersonalisationReset}
+          onConfirmingPersonalisationResetChange={setConfirmingPersonalisationReset}
+          onResetPersonalisation={handleResetPersonalisation}
         />
       ) : (
         <>
@@ -936,6 +970,7 @@ const GroundingJourneyView = ({
   confirmingDelete, onConfirmingDeleteChange, onDeleteHistory, onStartSession,
   onExplorePattern, onPatternFeedback, onPausePattern, onOpenCarryingExercise,
   mostRecentAlignedAction, onAlignedActionFollowUp, allAlignedActions, onOpenMonthlyReflection,
+  groundingProfile, onProfileToggle, confirmingPersonalisationReset, onConfirmingPersonalisationResetChange, onResetPersonalisation,
 }: {
   sessions: GroundingSessionRecord[];
   sessionsLoaded: boolean;
@@ -954,6 +989,11 @@ const GroundingJourneyView = ({
   onAlignedActionFollowUp: (status: 'went_well' | 'still_working_on_it' | 'didnt_happen') => void;
   allAlignedActions: { chosenValue: string; createdAt: string }[];
   onOpenMonthlyReflection: () => void;
+  groundingProfile: GroundingProfile | null;
+  onProfileToggle: (field: keyof GroundingProfile, value: boolean) => void;
+  confirmingPersonalisationReset: boolean;
+  onConfirmingPersonalisationResetChange: (v: boolean) => void;
+  onResetPersonalisation: () => void;
 }) => {
   const [notRelevantNoteFor, setNotRelevantNoteFor] = useState<string | null>(null);
   const [notRelevantNote, setNotRelevantNote] = useState('');
@@ -1153,6 +1193,51 @@ const GroundingJourneyView = ({
             </div>
           );
         })}
+      </div>
+
+      <div className="space-y-4 p-5 rounded-2xl border border-border/20 bg-white/40 dark:bg-card/40">
+        <div>
+          <h4 className="text-xs uppercase font-black tracking-widest text-text-muted">Grounding Personalisation</h4>
+          <p className="text-[11px] text-text-muted mt-1 leading-relaxed">
+            When personalisation is on, Blaze Break can remember which kinds of grounding have been useful and adapt future sessions. You stay in control and can reset this at any time.
+          </p>
+        </div>
+        {([
+          ['personalisationEnabled', 'Let Nova personalise my grounding'],
+          ['useHistoryForPersonalisation', 'Use previous grounding themes'],
+          ['followUpOnPreviousActions', 'Follow up on previous actions'],
+          ['usePreferredLens', 'Use my preferred reflection lens'],
+          ['voiceGuidanceEnabled', 'Voice-guided grounding'],
+        ] as [keyof GroundingProfile, string][]).map(([field, label]) => {
+          const enabled = groundingProfile ? groundingProfile[field] !== false : true;
+          return (
+            <div key={field} className="flex items-center justify-between gap-4">
+              <span className="text-xs font-bold text-text-main">{label}</span>
+              <button
+                onClick={() => onProfileToggle(field, !enabled)}
+                role="switch"
+                aria-checked={enabled}
+                className={cn('px-3 py-1.5 rounded-lg text-[11px] font-black uppercase tracking-wider border transition-all shrink-0',
+                  enabled ? 'bg-text-main text-background border-text-main' : 'bg-transparent text-text-muted border-border/40')}
+              >
+                {enabled ? 'On' : 'Off'}
+              </button>
+            </div>
+          );
+        })}
+        <div className="pt-2">
+          {!confirmingPersonalisationReset ? (
+            <button onClick={() => onConfirmingPersonalisationResetChange(true)} className="text-[11px] font-bold text-text-muted hover:text-text-main">
+              Reset my grounding personalisation
+            </button>
+          ) : (
+            <div className="flex items-center gap-3">
+              <span className="text-[11px] text-text-main">This clears what Nova has learned, but keeps your reflection history.</span>
+              <button onClick={onResetPersonalisation} className="px-3 py-1.5 bg-text-main text-background rounded-lg text-[11px] font-black uppercase tracking-wider">Reset</button>
+              <button onClick={() => onConfirmingPersonalisationResetChange(false)} className="px-3 py-1.5 border border-border/40 rounded-lg text-[11px] font-black uppercase tracking-wider text-text-muted">Cancel</button>
+            </div>
+          )}
+        </div>
       </div>
 
       <div className="pt-4 border-t border-border/20">
