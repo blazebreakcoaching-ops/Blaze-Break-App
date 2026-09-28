@@ -4,6 +4,7 @@ import {
   ISLAMIC_THEME_ORDER,
   BURDEN_OPTIONS,
   NEXT_ACTION_OPTIONS,
+  rankIslamicThemesByRelevance,
 } from './grounding-content';
 
 describe('ISLAMIC_THEMES curated content', () => {
@@ -55,5 +56,25 @@ describe('BURDEN_OPTIONS / NEXT_ACTION_OPTIONS', () => {
 
   it('never offers a fabricated "Community conversation" option - no such feature exists', () => {
     expect(NEXT_ACTION_OPTIONS.map((o) => o.id)).toEqual(['nova', 'trusted_person', 'practical_action', 'rest']);
+  });
+});
+
+describe('rankIslamicThemesByRelevance', () => {
+  it('falls back to the fixed order when there is no pattern context', () => {
+    expect(rankIslamicThemesByRelevance([])).toEqual(ISLAMIC_THEME_ORDER);
+  });
+
+  it('surfaces the most relevant theme first once pattern context exists', () => {
+    const ranked = rankIslamicThemesByRelevance(['isolation']);
+    expect(ranked[0]).toBe('ummah');
+  });
+
+  it('never drops any theme, even when reordering', () => {
+    const ranked = rankIslamicThemesByRelevance(['control', 'guilt_about_rest']);
+    expect([...ranked].sort()).toEqual([...ISLAMIC_THEME_ORDER].sort());
+  });
+
+  it('ignores an unrecognised pattern key rather than throwing', () => {
+    expect(() => rankIslamicThemesByRelevance(['not_a_real_pattern'])).not.toThrow();
   });
 });

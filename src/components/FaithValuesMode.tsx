@@ -17,7 +17,7 @@ import {
   GroundingLens, GROUNDING_LENSES, GROUNDING_LENS_ORDER,
   BurdenId, BURDEN_OPTIONS, BURDEN_LABELS,
   CONTROLLABLE_EXAMPLES, UNCONTROLLABLE_EXAMPLES,
-  IslamicThemeId, ISLAMIC_THEMES, ISLAMIC_THEME_ORDER,
+  IslamicThemeId, ISLAMIC_THEMES, rankIslamicThemesByRelevance,
   NextActionId, NEXT_ACTION_OPTIONS,
   GroundingSessionRecord, ReflectionAnswer,
 } from '../../grounding-content';
@@ -155,6 +155,16 @@ export const FaithValuesMode = (_props: FaithValuesModeProps) => {
   const visiblePatterns = useMemo(
     () => derivedPatterns.filter((p) => !patternFeedback[p.patternKey]?.paused && !patternFeedback[p.patternKey]?.suppressed).slice(0, 3),
     [derivedPatterns, patternFeedback]
+  );
+
+  // Section 6's "intelligently select relevant grounding themes" - a
+  // purely deterministic ranking (no AI) from whatever patterns are
+  // currently confirmed, so the Islamic theme picker surfaces the most
+  // relevant themes first once there's real pattern context, and falls
+  // back to the fixed order for a first-time or pattern-analysis-off user.
+  const rankedIslamicThemes = useMemo(
+    () => rankIslamicThemesByRelevance(derivedPatterns.map((p) => p.patternKey)),
+    [derivedPatterns]
   );
 
   const togglePatternAnalysis = (val: boolean) => {
@@ -668,7 +678,7 @@ export const FaithValuesMode = (_props: FaithValuesModeProps) => {
                   <div className="space-y-6">
                     <h4 className="text-2xl font-display font-bold text-text-main">Which theme fits where you are?</h4>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                      {ISLAMIC_THEME_ORDER.map((id) => (
+                      {rankedIslamicThemes.map((id) => (
                         <button key={id} onClick={() => setIslamicThemeId(id)}
                           className="p-4 rounded-xl border border-border/40 hover:border-primary/40 text-left bg-white dark:bg-surface transition-all">
                           <h5 className="text-sm font-bold text-text-main">{ISLAMIC_THEMES[id].label}</h5>
