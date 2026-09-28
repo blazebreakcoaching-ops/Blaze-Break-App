@@ -3,7 +3,7 @@ import {
   computeConfidence, CONFIDENCE_COPY, PATTERN_DIMENSIONS, PATTERN_DIMENSION_ORDER,
   PATTERN_CATEGORIES, EXPLORE_QUESTION_SETS, VALUES_LIST, computeDerivedPatterns,
   EMERGING_MIN_COUNT, RECURRING_MIN_COUNT, ESTABLISHED_MIN_COUNT, ESTABLISHED_MIN_SPAN_DAYS,
-  compareThemeShift,
+  compareThemeShift, computePatternLifecycleState, QUIET_THRESHOLD_DAYS, DORMANT_THRESHOLD_DAYS,
 } from './grounding-patterns-taxonomy';
 
 describe('computeConfidence', () => {
@@ -187,6 +187,25 @@ describe('compareThemeShift', () => {
     const earlier = [s(['fabricated']), s(['fabricated'])];
     const later = [s([]), s([])];
     expect(compareThemeShift(earlier, later)).toBeNull();
+  });
+});
+
+describe('computePatternLifecycleState', () => {
+  const now = new Date(2026, 5, 15);
+
+  it('is active for something seen recently', () => {
+    const recent = new Date(now.getTime() - 2 * 86400000).toISOString();
+    expect(computePatternLifecycleState(recent, now)).toBe('active');
+  });
+
+  it('is quieter once it crosses the quiet threshold but not the dormant one', () => {
+    const at = new Date(now.getTime() - QUIET_THRESHOLD_DAYS * 86400000).toISOString();
+    expect(computePatternLifecycleState(at, now)).toBe('quieter');
+  });
+
+  it('is dormant once it crosses the dormant threshold', () => {
+    const at = new Date(now.getTime() - DORMANT_THRESHOLD_DAYS * 86400000).toISOString();
+    expect(computePatternLifecycleState(at, now)).toBe('dormant');
   });
 });
 

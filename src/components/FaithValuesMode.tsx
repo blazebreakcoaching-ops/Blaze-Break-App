@@ -24,7 +24,7 @@ import {
 import {
   DerivedPattern, computeDerivedPatterns, PATTERN_DIMENSIONS, CONFIDENCE_COPY,
   MIN_SESSIONS_FOR_MONTHLY_REFLECTION, MEANING_PROMPTS_GENERAL, MEANING_PROMPTS_FAITH_EXTRA,
-  MEANING_MAKING_INTRO, MEANING_MAKING_INTRO_ISLAMIC,
+  MEANING_MAKING_INTRO, MEANING_MAKING_INTRO_ISLAMIC, computePatternLifecycleState,
 } from '../../grounding-patterns-taxonomy';
 import { logGroundingEvent } from '../lib/grounding-analytics';
 import { GroundingExploreThis } from './GroundingExploreThis';
@@ -33,6 +33,10 @@ import { GroundingCommunityBridge } from './GroundingCommunityBridge';
 import { GroundingMonthlyReflection } from './GroundingMonthlyReflection';
 import { GroundingResetFlow } from './GroundingResetFlow';
 import { GroundingRoutines } from './GroundingRoutines';
+import { GroundingRoutineRun } from './GroundingRoutineRun';
+import { GroundingOverthinkingInterrupt } from './GroundingOverthinkingInterrupt';
+import { GroundingSavedReflections } from './GroundingSavedReflections';
+import { DECISION_GROUNDING_PROMPTS, DECISION_GROUNDING_ISLAMIC_ADDENDUM } from '../../grounding-routines';
 import {
   GroundingProfile, SessionDepth, CapacityState, SESSION_DEPTH_LABELS, CAPACITY_LABELS,
   SessionDepthRecommendation,
@@ -63,6 +67,8 @@ interface PatternFeedbackState {
   userFeedback?: 'resonates' | 'not_really';
   paused?: boolean;
   suppressed?: boolean;
+  resolved?: boolean;
+  resolvedAtOccurrenceCount?: number;
 }
 
 interface FaithValuesModeProps {
@@ -106,6 +112,17 @@ export const FaithValuesMode = (_props: FaithValuesModeProps) => {
   const [meaningPrompt, setMeaningPrompt] = useState<string | null>(null);
   const [meaningAnswer, setMeaningAnswer] = useState('');
 
+  // Section 26's "Enough for today" - Nova noticing a session has run
+  // long, not a hard cutoff. Checked only at render time (no ticking
+  // timer) since an actual reflection session naturally re-renders often
+  // enough (typing) for this to show up promptly without extra machinery.
+  const [sessionStartedAt, setSessionStartedAt] = useState<number | null>(null);
+  const [enoughForTodayDismissed, setEnoughForTodayDismissed] = useState(false);
+  const ENOUGH_FOR_TODAY_MS = 8 * 60 * 1000;
+  useEffect(() => {
+    if (stage === 'arrive' && !sessionStartedAt) setSessionStartedAt(Date.now());
+  }, [stage, sessionStartedAt]);
+
   const [burdenIds, setBurdenIds] = useState<BurdenId[]>([]);
   const [customBurden, setCustomBurden] = useState('');
   const [intensity, setIntensity] = useState<number | null>(null);
@@ -130,6 +147,11 @@ export const FaithValuesMode = (_props: FaithValuesModeProps) => {
   const [sessionDocId, setSessionDocId] = useState<string | null>(null);
   const [showCommunityBridge, setShowCommunityBridge] = useState(false);
   const [showRoutines, setShowRoutines] = useState(false);
+  const [showOverthinkingInterrupt, setShowOverthinkingInterrupt] = useState(false);
+  const [showSavedReflections, setShowSavedReflections] = useState(false);
+  const [savedInsight, setSavedInsight] = useState(false);
+  const [showDecisionGrounding, setShowDecisionGrounding] = useState(false);
+  const [decisionLens, setDecisionLens] = useState<GroundingLens>('secular');
   const [connectionPrompt] = useState(() => HUMAN_CONNECTION_PROMPTS[Math.floor(Math.random() * HUMAN_CONNECTION_PROMPTS.length)]);
   const [chosenNextAction, setChosenNextAction] = useState<NextActionId | null>(null);
 
@@ -192,7 +214,10 @@ export const FaithValuesMode = (_props: FaithValuesModeProps) => {
       const feedback: Record<string, PatternFeedbackState> = {};
       patternsSnap.docs.forEach((d) => {
         const data = d.data();
-        feedback[d.id] = { userFeedback: data.userFeedback || undefined, paused: data.paused === true, suppressed: data.suppressed === true };
+        feedback[d.id] = {
+          userFeedback: data.userFeedback || undefined, paused: data.paused === true, suppressed: data.suppressed === true,
+          resolved: data.resolved === true, resolvedAtOccurrenceCount: typeof data.resolvedAtOccurrenceCount === 'number' ? data.resolvedAtOccurrenceCount : undefined,
+        };
       });
       setPatternFeedback(feedback);
       const actions = actionsSnap.docs.map((d) => ({ id: d.id, ...(d.data() as any) }));
@@ -219,7 +244,16 @@ export const FaithValuesMode = (_props: FaithValuesModeProps) => {
   // ones, which stay computed (so they can resurface if un-paused) but
   // never rendered.
   const visiblePatterns = useMemo(
-    () => derivedPatterns.filter((p) => !patternFeedback[p.patternKey]?.paused && !patternFeedback[p.patternKey]?.suppressed).slice(0, 3),
+    () => derivedPatterns.filter((p) => {
+      const fb = patternFeedback[p.patternKey];
+      if (fb?.paused || fb?.suppressed) return false;
+      // A resolved pattern stays hidden unless it's genuinely returning
+      // (occurred again since it was marked "moved through") - section
+      // 16's returning-theme framing, never a plain re-appearance of a
+      // card the person already dismissed as resolved.
+      if (fb?.resolved && !(p.occurrenceCount > (fb.resolvedAtOccurrenceCount ?? Infinity))) return false;
+      return true;
+    }).slice(0, 3),
     [derivedPatterns, patternFeedback]
   );
 
@@ -326,6 +360,37 @@ export const FaithValuesMode = (_props: FaithValuesModeProps) => {
     }, { merge: true }).catch(() => {});
   };
 
+  // Section 15's "Mark as something I've moved through" - never
+  // "resolved"/"fixed" in the UI copy, and never permanent: if the theme
+  // genuinely returns (occurrenceCount grows past this snapshot), it
+  // resurfaces with the returning-theme framing rather than staying
+  // hidden forever.
+  const handleResolvePattern = async (patternKey: string) => {
+    const p = derivedPatterns.find((d) => d.patternKey === patternKey);
+    if (!p) return;
+    setPatternFeedback((prev) => ({ ...prev, [patternKey]: { ...prev[patternKey], resolved: true, resolvedAtOccurrenceCount: p.occurrenceCount } }));
+    logGroundingEvent('pattern_feedback_given', { category: p.category });
+    if (!auth.currentUser) return;
+    setDoc(doc(db, 'users', auth.currentUser.uid, 'reflection_patterns', patternKey), {
+      patternKey: p.patternKey, category: p.category, firstSeenAt: p.firstSeenAt, lastSeenAt: p.lastSeenAt,
+      occurrenceCount: p.occurrenceCount, status: p.status, lensAssociations: p.lensAssociations.slice(0, 4),
+      resolved: true, resolvedAtOccurrenceCount: p.occurrenceCount,
+      ...(patternFeedback[patternKey] ? {} : { createdAt: new Date().toISOString() }),
+      updatedAt: new Date().toISOString(),
+    }, { merge: true }).catch(() => {});
+  };
+
+  // Sections 17-18's "Reflections worth keeping" - the person explicitly
+  // chooses to save a specific piece of a session, never an automatic
+  // "this seemed important" guess.
+  const saveReflectionItem = async (type: 'question' | 'insight', text: string) => {
+    setSavedInsight(true);
+    if (!auth.currentUser) return;
+    addDoc(collection(db, 'users', auth.currentUser.uid, 'savedReflections'), {
+      type, text: text.slice(0, 400), isUserCreated: false, createdAt: new Date().toISOString(),
+    }).catch(() => {});
+  };
+
   const handleAlignedActionFollowUp = async (status: 'went_well' | 'still_working_on_it' | 'didnt_happen') => {
     if (!mostRecentAlignedAction || !auth.currentUser) return;
     setMostRecentAlignedAction(null);
@@ -342,6 +407,9 @@ export const FaithValuesMode = (_props: FaithValuesModeProps) => {
     setDepthRecommendation(null);
     setMeaningPrompt(null);
     setMeaningAnswer('');
+    setSavedInsight(false);
+    setSessionStartedAt(null);
+    setEnoughForTodayDismissed(false);
     setLens(null);
     setBurdenIds([]);
     setCustomBurden('');
@@ -593,12 +661,19 @@ export const FaithValuesMode = (_props: FaithValuesModeProps) => {
           onExplorePattern={(p) => { setExploringPattern(p); logGroundingEvent('pattern_explored', { category: p.category }); }}
           onPatternFeedback={handlePatternFeedback}
           onPausePattern={handlePausePattern}
+          onResolvePattern={handleResolvePattern}
+          patternFeedback={patternFeedback}
           onOpenCarryingExercise={() => setShowCarryingExercise(true)}
           mostRecentAlignedAction={mostRecentAlignedAction}
           onAlignedActionFollowUp={handleAlignedActionFollowUp}
           allAlignedActions={allAlignedActions}
           onOpenMonthlyReflection={() => setShowMonthlyReflection(true)}
           onOpenRoutines={() => setShowRoutines(true)}
+          onOpenOverthinkingInterrupt={() => setShowOverthinkingInterrupt(true)}
+          onOpenDecisionGrounding={() => setShowDecisionGrounding(true)}
+          onOpenSavedReflections={() => setShowSavedReflections(true)}
+          decisionLens={decisionLens}
+          onDecisionLensChange={setDecisionLens}
           groundingProfile={groundingProfile}
           onProfileToggle={handleProfileToggle}
           confirmingPersonalisationReset={confirmingPersonalisationReset}
@@ -897,6 +972,19 @@ export const FaithValuesMode = (_props: FaithValuesModeProps) => {
 
             {stage === 'reflect' && lens && (
               <motion.div key="reflect" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-8 max-w-2xl">
+                {sessionStartedAt && Date.now() - sessionStartedAt > ENOUGH_FOR_TODAY_MS && !enoughForTodayDismissed && (
+                  <div className="bg-surface/30 p-5 rounded-2xl border border-border/20 space-y-3">
+                    <p className="text-sm text-text-main">You've done useful thinking here. More reflection may not give you more clarity tonight.</p>
+                    <div className="flex flex-wrap gap-3">
+                      <button onClick={() => { resetSession(); setView('journey'); }} className="px-4 py-2 bg-primary text-primary-foreground rounded-xl text-[11px] font-black uppercase tracking-widest">
+                        Close the session
+                      </button>
+                      <button onClick={() => setEnoughForTodayDismissed(true)} className="px-4 py-2 border border-border/40 rounded-xl text-[11px] font-black uppercase tracking-widest text-text-muted hover:text-text-main">
+                        One final thought
+                      </button>
+                    </div>
+                  </div>
+                )}
                 {lens === 'islamic' && !islamicThemeId ? (
                   <div className="space-y-6">
                     <h4 className="text-2xl font-display font-bold text-text-main">Which theme fits where you are?</h4>
@@ -936,6 +1024,13 @@ export const FaithValuesMode = (_props: FaithValuesModeProps) => {
                       </div>
                     )}
                     <p className="text-lg text-text-main font-medium leading-relaxed">{reflection.reflectionText}</p>
+                    <button
+                      onClick={() => saveReflectionItem('insight', reflection.reflectionText)}
+                      disabled={savedInsight}
+                      className="text-[11px] font-bold text-text-muted hover:text-text-main disabled:text-primary disabled:cursor-default"
+                    >
+                      {savedInsight ? 'Saved to Reflections worth keeping' : 'Save this insight'}
+                    </button>
                     <div className="space-y-4">
                       <h5 className="text-sm font-bold text-text-main">{reflection.firstQuestion}</h5>
                       <textarea
@@ -1168,6 +1263,22 @@ export const FaithValuesMode = (_props: FaithValuesModeProps) => {
           }}
         />
       )}
+      {showOverthinkingInterrupt && (
+        <GroundingOverthinkingInterrupt onClose={() => setShowOverthinkingInterrupt(false)} />
+      )}
+      {showSavedReflections && (
+        <GroundingSavedReflections onClose={() => setShowSavedReflections(false)} />
+      )}
+      {showDecisionGrounding && (
+        <GroundingRoutineRun
+          routineId={null}
+          name="Facing a decision"
+          prompts={decisionLens === 'islamic' ? [...DECISION_GROUNDING_PROMPTS, ...DECISION_GROUNDING_ISLAMIC_ADDENDUM] : DECISION_GROUNDING_PROMPTS}
+          closingStyle="values"
+          lens={decisionLens}
+          onClose={() => setShowDecisionGrounding(false)}
+        />
+      )}
     </div>
   );
 };
@@ -1175,8 +1286,9 @@ export const FaithValuesMode = (_props: FaithValuesModeProps) => {
 const GroundingJourneyView = ({
   sessions, sessionsLoaded, visiblePatterns, patternAnalysisEnabled, onTogglePatternAnalysis,
   confirmingDelete, onConfirmingDeleteChange, onDeleteHistory, onStartSession,
-  onExplorePattern, onPatternFeedback, onPausePattern, onOpenCarryingExercise,
+  onExplorePattern, onPatternFeedback, onPausePattern, onResolvePattern, patternFeedback, onOpenCarryingExercise,
   mostRecentAlignedAction, onAlignedActionFollowUp, allAlignedActions, onOpenMonthlyReflection, onOpenRoutines,
+  onOpenOverthinkingInterrupt, onOpenDecisionGrounding, decisionLens, onDecisionLensChange, onOpenSavedReflections,
   groundingProfile, onProfileToggle, confirmingPersonalisationReset, onConfirmingPersonalisationResetChange, onResetPersonalisation,
 }: {
   sessions: GroundingSessionRecord[];
@@ -1191,12 +1303,19 @@ const GroundingJourneyView = ({
   onExplorePattern: (p: DerivedPattern) => void;
   onPatternFeedback: (patternKey: string, feedback: 'resonates' | 'not_really', note?: string) => void;
   onPausePattern: (patternKey: string) => void;
+  onResolvePattern: (patternKey: string) => void;
+  patternFeedback: Record<string, PatternFeedbackState>;
   onOpenCarryingExercise: () => void;
   mostRecentAlignedAction: { id: string; chosenValue: string; nextAlignedAction: string } | null;
   onAlignedActionFollowUp: (status: 'went_well' | 'still_working_on_it' | 'didnt_happen') => void;
   allAlignedActions: { chosenValue: string; createdAt: string }[];
   onOpenMonthlyReflection: () => void;
   onOpenRoutines: () => void;
+  onOpenOverthinkingInterrupt: () => void;
+  onOpenDecisionGrounding: () => void;
+  decisionLens: GroundingLens;
+  onDecisionLensChange: (l: GroundingLens) => void;
+  onOpenSavedReflections: () => void;
   groundingProfile: GroundingProfile | null;
   onProfileToggle: (field: keyof GroundingProfile, value: boolean) => void;
   confirmingPersonalisationReset: boolean;
@@ -1295,22 +1414,45 @@ const GroundingJourneyView = ({
           <h4 className="text-xs uppercase font-black tracking-widest text-text-muted">Patterns Nova has noticed</h4>
           {visiblePatterns.map((p) => {
             const dimension = PATTERN_DIMENSIONS[p.patternKey];
+            const fb = patternFeedback[p.patternKey];
+            const isReturning = !!fb?.resolved && p.occurrenceCount > (fb.resolvedAtOccurrenceCount ?? Infinity);
+            const lifecycle = computePatternLifecycleState(p.lastSeenAt);
             return (
               <div key={p.patternKey} className="bg-surface dark:bg-surface p-6 rounded-2xl border border-border/40 space-y-3">
                 <div className="flex items-center gap-1.5">
                   <Sparkles className="w-3.5 h-3.5 text-primary" />
                   <span className="text-[11px] uppercase font-black tracking-wider text-[#9a3412] dark:text-primary">{dimension.label}</span>
+                  {!isReturning && lifecycle !== 'active' && (
+                    <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest bg-surface/50 text-text-muted border border-border/40">
+                      {lifecycle === 'dormant' ? "Hasn't appeared much recently" : 'Quieter lately'}
+                    </span>
+                  )}
                   <span className="text-[10px] text-text-muted ml-auto">Appeared in {p.occurrenceCount} reflections</span>
                 </div>
-                <p className="text-xs text-text-muted italic">{CONFIDENCE_COPY[p.status]}</p>
-                <p className="text-sm text-text-main">{dimension.description}</p>
+                {isReturning ? (
+                  <>
+                    <p className="text-xs text-text-muted italic">This is something you've worked with before. Would it help to revisit what supported you last time?</p>
+                  </>
+                ) : (
+                  <>
+                    <p className="text-xs text-text-muted italic">{CONFIDENCE_COPY[p.status]}</p>
+                    <p className="text-sm text-text-main">{dimension.description}</p>
+                  </>
+                )}
                 <div className="flex flex-wrap items-center gap-2 pt-2">
                   <button onClick={() => onExplorePattern(p)} className="px-4 py-2 bg-primary/10 text-[#9a3412] dark:text-primary rounded-xl text-[11px] font-black uppercase tracking-widest">
-                    Explore this
+                    {isReturning ? 'See what helped before' : 'Explore this'}
                   </button>
-                  <button onClick={() => onPatternFeedback(p.patternKey, 'resonates')} className="text-[11px] font-bold text-text-muted hover:text-text-main">This resonates</button>
-                  <button onClick={() => setNotRelevantNoteFor(notRelevantNoteFor === p.patternKey ? null : p.patternKey)} className="text-[11px] font-bold text-text-muted hover:text-text-main">Not really</button>
-                  <button onClick={() => onPausePattern(p.patternKey)} className="text-[11px] font-bold text-text-muted hover:text-text-main">Pause this insight</button>
+                  {!isReturning && (
+                    <>
+                      <button onClick={() => onPatternFeedback(p.patternKey, 'resonates')} className="text-[11px] font-bold text-text-muted hover:text-text-main">This resonates</button>
+                      <button onClick={() => setNotRelevantNoteFor(notRelevantNoteFor === p.patternKey ? null : p.patternKey)} className="text-[11px] font-bold text-text-muted hover:text-text-main">Not really</button>
+                      <button onClick={() => onPausePattern(p.patternKey)} className="text-[11px] font-bold text-text-muted hover:text-text-main">Pause this insight</button>
+                      {lifecycle === 'dormant' && (
+                        <button onClick={() => onResolvePattern(p.patternKey)} className="text-[11px] font-bold text-text-muted hover:text-text-main">Mark as something I've moved through</button>
+                      )}
+                    </>
+                  )}
                 </div>
                 {notRelevantNoteFor === p.patternKey && (
                   <div className="flex gap-2 pt-1">
@@ -1363,6 +1505,42 @@ const GroundingJourneyView = ({
         <button onClick={onOpenRoutines} className="px-4 py-2.5 border border-border/40 rounded-xl text-[11px] font-black uppercase tracking-widest text-text-muted hover:text-text-main hover:bg-surface/30 shrink-0">
           Open
         </button>
+      </div>
+
+      <div className="p-5 rounded-2xl border border-border/20 bg-white/40 dark:bg-card/40 flex items-center justify-between gap-4">
+        <div>
+          <h4 className="text-sm font-bold text-text-main">Reflections worth keeping</h4>
+          <p className="text-[11px] text-text-muted mt-0.5">Saved insights, questions, and your own grounding statements.</p>
+        </div>
+        <button onClick={onOpenSavedReflections} className="px-4 py-2.5 border border-border/40 rounded-xl text-[11px] font-black uppercase tracking-widest text-text-muted hover:text-text-main hover:bg-surface/30 shrink-0">
+          Open
+        </button>
+      </div>
+
+      <div className="p-5 rounded-2xl border border-border/20 bg-white/40 dark:bg-card/40 flex items-center justify-between gap-4">
+        <div>
+          <h4 className="text-sm font-bold text-text-main">Thought about this enough?</h4>
+          <p className="text-[11px] text-text-muted mt-0.5">A short interrupt for a repeating mental loop.</p>
+        </div>
+        <button onClick={onOpenOverthinkingInterrupt} className="px-4 py-2.5 border border-border/40 rounded-xl text-[11px] font-black uppercase tracking-widest text-text-muted hover:text-text-main hover:bg-surface/30 shrink-0">
+          Open
+        </button>
+      </div>
+
+      <div className="p-5 rounded-2xl border border-border/20 bg-white/40 dark:bg-card/40 flex items-center justify-between gap-4">
+        <div>
+          <h4 className="text-sm font-bold text-text-main">Facing a decision?</h4>
+          <p className="text-[11px] text-text-muted mt-0.5">A grounded way to think it through - not a decision made for you.</p>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          <select value={decisionLens} onChange={(e) => onDecisionLensChange(e.target.value as GroundingLens)}
+            className="p-2 rounded-lg border border-border/40 bg-white dark:bg-surface text-[11px] text-text-main">
+            {GROUNDING_LENS_ORDER.map((l) => <option key={l} value={l}>{GROUNDING_LENSES[l].label}</option>)}
+          </select>
+          <button onClick={onOpenDecisionGrounding} className="px-4 py-2.5 border border-border/40 rounded-xl text-[11px] font-black uppercase tracking-widest text-text-muted hover:text-text-main hover:bg-surface/30">
+            Open
+          </button>
+        </div>
       </div>
 
       {sessions.length >= MIN_SESSIONS_FOR_MONTHLY_REFLECTION && (

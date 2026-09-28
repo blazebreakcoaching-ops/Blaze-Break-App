@@ -979,7 +979,7 @@ service cloud.firestore {
       match /reflection_patterns/{patternId} {
         allow read, delete: if isOwner(uid);
         allow create, update: if isOwner(uid)
-            && hasOnly(['patternKey', 'category', 'firstSeenAt', 'lastSeenAt', 'occurrenceCount', 'status', 'userFeedback', 'userFeedbackNote', 'lensAssociations', 'relatedValues', 'helpfulApproaches', 'paused', 'suppressed', 'createdAt', 'updatedAt'])
+            && hasOnly(['patternKey', 'category', 'firstSeenAt', 'lastSeenAt', 'occurrenceCount', 'status', 'userFeedback', 'userFeedbackNote', 'lensAssociations', 'relatedValues', 'helpfulApproaches', 'paused', 'suppressed', 'resolved', 'resolvedAtOccurrenceCount', 'createdAt', 'updatedAt'])
             && hasAll(['patternKey', 'category', 'firstSeenAt', 'lastSeenAt', 'occurrenceCount', 'status', 'createdAt', 'updatedAt'])
             && request.resource.data.patternKey in ['control', 'uncertainty', 'over_responsibility', 'perfectionism', 'guilt_about_rest', 'boundary_difficulty', 'fear_of_disappointing', 'people_pleasing', 'isolation', 'reluctance_to_ask_for_support', 'excessive_self_expectation', 'work_identity', 'financial_pressure', 'family_responsibility', 'conflict_avoidance', 'overcommitment', 'comparison', 'self_criticism', 'difficulty_accepting_unfinished_work', 'difficulty_accepting_outcomes', 'gratitude', 'patience', 'trust', 'compassion', 'connection', 'purpose', 'values_conflict']
             && request.resource.data.category in ['control_responsibility', 'self_expectation', 'boundaries_people', 'connection_support', 'rest_guilt', 'practical_pressures', 'uncertainty_acceptance', 'values_meaning']
@@ -992,6 +992,14 @@ service cloud.firestore {
             && (!('helpfulApproaches' in request.resource.data) || (request.resource.data.helpfulApproaches is list && request.resource.data.helpfulApproaches.size() <= 10))
             && (!('paused' in request.resource.data) || request.resource.data.paused is bool)
             && (!('suppressed' in request.resource.data) || request.resource.data.suppressed is bool)
+            // Phase 3's theme resolution (section 15/16): the person can
+            // mark a quiet/dormant pattern as "something I've moved
+            // through" - resolvedAtOccurrenceCount snapshots the count at
+            // that moment, so a later occurrenceCount increase (a
+            // returning theme) can be told apart from "still resolved"
+            // without a separate history read.
+            && (!('resolved' in request.resource.data) || request.resource.data.resolved is bool)
+            && (!('resolvedAtOccurrenceCount' in request.resource.data) || (request.resource.data.resolvedAtOccurrenceCount is number && request.resource.data.resolvedAtOccurrenceCount >= 0))
             && (request.method == 'create' ? true : checkCreatedAtUnchanged());
       }
 

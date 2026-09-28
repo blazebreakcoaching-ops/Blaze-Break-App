@@ -205,6 +205,27 @@ export const computeConfidence = (occurrenceCount: number, spanDays: number): Pa
   return null;
 };
 
+// ---------- Theme resolution (Phase 3, section 15/16) ----------
+// A separate, purely display-layer concept from PatternConfidence above -
+// confidence describes how STRONGLY established a pattern is; lifecycle
+// describes how RECENTLY it's shown up. A pattern can be "established"
+// confidence and still be "dormant" lifecycle if it hasn't appeared in
+// months. Never "resolved"/"fixed" here - that word is reserved for the
+// person's own explicit "I've moved through this" action (section 15's
+// "Do not declare it fixed").
+
+export type PatternLifecycleState = 'active' | 'quieter' | 'dormant';
+
+export const QUIET_THRESHOLD_DAYS = 21;
+export const DORMANT_THRESHOLD_DAYS = 45;
+
+export const computePatternLifecycleState = (lastSeenAt: string, now: Date = new Date()): PatternLifecycleState => {
+  const daysSince = (now.getTime() - new Date(lastSeenAt).getTime()) / (24 * 60 * 60 * 1000);
+  if (daysSince >= DORMANT_THRESHOLD_DAYS) return 'dormant';
+  if (daysSince >= QUIET_THRESHOLD_DAYS) return 'quieter';
+  return 'active';
+};
+
 // ---------- Deriving patterns from session history ----------
 // reflection_patterns docs are a recomputed cache, not an incrementally-
 // updated counter: every time this runs (after a session completes, or

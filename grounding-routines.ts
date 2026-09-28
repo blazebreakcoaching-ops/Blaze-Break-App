@@ -67,6 +67,27 @@ export const PRESET_ROUTINES: Record<PresetRoutineType, PresetRoutine> = {
 
 export const PRESET_ROUTINE_ORDER: PresetRoutineType[] = ['morning', 'evening', 'before_difficult', 'after_difficult'];
 
+// Section 24's decision-grounding mode - not a decision oracle, never
+// makes the decision for the person. Reuses the same generic run-through
+// as the preset routines (GroundingRoutineRun) rather than a bespoke
+// flow. The two Islamic addendum questions are appended only when the
+// session's lens is Islamic, and stop short of anything resembling a
+// religious ruling.
+export const DECISION_GROUNDING_PROMPTS: string[] = [
+  'What decision are you facing?',
+  'What facts do you know?',
+  'What are you assuming?',
+  'What is within your influence?',
+  'What value matters most here?',
+  'What are you afraid will happen?',
+  'What would a responsible next step look like?',
+];
+
+export const DECISION_GROUNDING_ISLAMIC_ADDENDUM: string[] = [
+  'Have you taken the reasonable means available to you?',
+  'What part now requires trust rather than more mental rehearsal?',
+];
+
 // End-of-Day Release's optional Islamic closing (section 8) - shown only
 // when the routine's lens is 'islamic', and only ever this exact,
 // non-declarative offer - never a generated prayer, never framed as
