@@ -11,7 +11,7 @@ const h = vi.hoisted(() => {
   process.env.NODE_ENV = 'test';
   process.env.GEMINI_API_KEY = 'test-key-not-a-placeholder';
   return {
-    generateContent: vi.fn(async () => ({
+    generateContent: vi.fn(async (_req: any) => ({
       text: JSON.stringify({
         reflectionText: 'A grounded reflection tied to what they actually said.',
         firstQuestion: 'What is genuinely within your responsibility here?',
@@ -94,7 +94,7 @@ describe('POST /api/grounding/reflect — non-islamic lenses', () => {
 
   it('never fabricates specifics the user did not mention - prompt is grounded only in the submitted fields', async () => {
     await request(app).post('/api/grounding/reflect').set(auth('p4')).send(baseBody);
-    const call = h.generateContent.mock.calls[0][0];
+    const call = h.generateContent.mock.calls[0]![0];
     expect(call.contents).toContain('Work');
     expect(call.contents).toContain('do not invent specifics they didn\'t mention');
   });
@@ -108,7 +108,7 @@ describe('POST /api/grounding/reflect — non-islamic lenses', () => {
 
   it('always includes the crisis-line safety floor in the prompt', async () => {
     await request(app).post('/api/grounding/reflect').set(auth('p6')).send(baseBody);
-    const call = h.generateContent.mock.calls[0][0];
+    const call = h.generateContent.mock.calls[0]![0];
     expect(call.contents).toContain('Samaritans on 116 123');
     expect(call.contents).toContain('988');
   });
@@ -152,7 +152,7 @@ describe('POST /api/grounding/reflect — islamic lens curated-content lock-in',
     await request(app).post('/api/grounding/reflect').set(auth('p9')).send({
       ...baseBody, lens: 'islamic', islamicThemeId: 'shukr',
     });
-    const call = h.generateContent.mock.calls[0][0];
+    const call = h.generateContent.mock.calls[0]![0];
     expect(call.contents).toContain('"reflectionText"');
     expect(call.contents).not.toContain('"firstQuestion"');
     expect(call.contents).not.toContain('"secondQuestion"');
@@ -162,7 +162,7 @@ describe('POST /api/grounding/reflect — islamic lens curated-content lock-in',
     await request(app).post('/api/grounding/reflect').set(auth('p10')).send({
       ...baseBody, lens: 'islamic', islamicThemeId: 'qadr',
     });
-    const call = h.generateContent.mock.calls[0][0];
+    const call = h.generateContent.mock.calls[0]![0];
     expect(call.contents).toContain('Do not quote, paraphrase, or reference any Qur\'an verse or Hadith other than the one given');
     expect(call.contents).toContain('Do not claim to know why Allah caused any specific event');
     expect(call.contents).toContain('Do not issue a religious ruling, fatwa');
@@ -172,7 +172,7 @@ describe('POST /api/grounding/reflect — islamic lens curated-content lock-in',
     await request(app).post('/api/grounding/reflect').set(auth('p11')).send({
       ...baseBody, lens: 'islamic', islamicThemeId: 'rahmah',
     });
-    const call = h.generateContent.mock.calls[0][0];
+    const call = h.generateContent.mock.calls[0]![0];
     expect(call.contents).toMatch(/abuse, danger, exploitation, or unsafe working conditions/);
   });
 

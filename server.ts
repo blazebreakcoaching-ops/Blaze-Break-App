@@ -18,6 +18,7 @@ import { SendMessageSchema, SetDndSchema, SetStatusSchema } from './boundary-aut
 import { getIsoWeekId } from './weekly-goal-tracker';
 import { findInProgressShipStage } from './ship-stages';
 import { ISLAMIC_THEMES, GROUNDING_LENSES, GroundingLens, IslamicThemeId } from './grounding-content';
+import { PATTERN_DIMENSION_ORDER, PatternDimensionId, PATTERN_DIMENSIONS } from './grounding-patterns-taxonomy';
 import { initializeApp, getApps } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
@@ -11066,7 +11067,7 @@ const GroundingReflectRequestSchema = z.object({
   customBurden: z.string().max(80).optional(),
   controllableItems: z.array(z.string().max(60)).max(12),
   uncontrollableItems: z.array(z.string().max(60)).max(12),
-  islamicThemeId: z.enum(['tawakkul', 'sabr', 'shukr', 'qadr', 'rahmah', 'salah', 'dua', 'ummah']).optional(),
+  islamicThemeId: z.enum(['tawakkul', 'sabr', 'shukr', 'qadr', 'rahmah', 'salah', 'dua', 'ummah', 'niyyah', 'ihsan']).optional(),
   // Structured pattern LABELS only (e.g. "Releasing control") computed
   // client-side by detectGroundingPatterns - never raw prior reflection
   // text, per the feature's explicit architecture requirement, and only
@@ -11074,6 +11075,12 @@ const GroundingReflectRequestSchema = z.object({
   // simply omits this field otherwise).
   recentPatterns: z.array(z.string().max(60)).max(5).optional(),
 }).strict();
+
+// The allowlist Phase 2's Nova Pattern Engine tags sessions from - the
+// model is only ever allowed to pick from this fixed list, never invent
+// its own theme string, so grounding_sessions.detectedThemes can never
+// silently drift from grounding-patterns-taxonomy.ts.
+const PatternDimensionEnum = z.enum(PATTERN_DIMENSION_ORDER as [PatternDimensionId, ...PatternDimensionId[]]);
 
 const GroundingReflectResponseSchema = z.object({
   reflectionText: z.string().max(600),
@@ -11089,7 +11096,68 @@ const GroundingReflectResponseSchema = z.object({
     translator: z.string(),
     scholarReviewed: z.boolean(),
   }).optional(),
+  // Up to 3 themes the model believes this reflection touches on, from
+  // the fixed taxonomy only - validated here before ever reaching the
+  // client, per the "use allowlists, validate before writing to
+  // Firestore" requirement. Invalid/unrecognised values are dropped
+  // rather than failing the whole response, since this is a secondary
+  // enrichment, not the reflection itself.
+  detectedThemes: z.array(z.string()).max(3).optional(),
 });
+
+// Phase 2's "dedicated context-building layer" (section 21): the one
+// place that reads a user's derived Grounding state from Firestore and
+// hands back a small, structured object - never the full reflection
+// archive, never raw free text. Used by the reflect route below (to
+// source server-verified confirmed patterns rather than trusting
+// whatever the client claims) and by the monthly reflection route
+// (Batch 5). Deliberately reads only reflection_patterns (derived
+// counters), aligned_actions (structured), and preferences/grounding -
+// never grounding_sessions.reflectionAnswers.
+interface GroundingContext {
+  preferredLens: GroundingLens | null;
+  patternAnalysisEnabled: boolean;
+  confirmedPatterns: { patternKey: PatternDimensionId; label: string; status: string }[];
+  mostRecentAlignedAction: { chosenValue: string; nextAlignedAction: string; followUpStatus: string | null } | null;
+  sessionCount: number;
+}
+
+async function buildGroundingContext(uid: string): Promise<GroundingContext> {
+  const db = getDb();
+  const [prefSnap, patternsSnap, actionsSnap, sessionsSnap] = await Promise.all([
+    db.collection("users").doc(uid).collection("preferences").doc("grounding").get(),
+    // Filtered in-process rather than with a Firestore "in" query - a
+    // user has at most 27 possible pattern docs (one per taxonomy
+    // dimension), so fetching all of them and filtering here is simpler
+    // and cheaper than a compound query for this volume.
+    db.collection("users").doc(uid).collection("reflection_patterns").get(),
+    db.collection("users").doc(uid).collection("aligned_actions").orderBy("createdAt", "desc").limit(1).get(),
+    db.collection("users").doc(uid).collection("grounding_sessions").get(),
+  ]);
+
+  const prefs = prefSnap.exists ? prefSnap.data()! : {};
+  const patternAnalysisEnabled = typeof prefs.patternAnalysisEnabled === 'boolean' ? prefs.patternAnalysisEnabled : true;
+
+  const confirmedPatterns = patternAnalysisEnabled
+    ? patternsSnap.docs
+        .map((d) => d.data())
+        .filter((p) => (p.status === 'recurring' || p.status === 'established') && p.paused !== true && p.suppressed !== true && PATTERN_DIMENSIONS[p.patternKey as PatternDimensionId])
+        .map((p) => ({ patternKey: p.patternKey as PatternDimensionId, label: PATTERN_DIMENSIONS[p.patternKey as PatternDimensionId].label, status: p.status }))
+    : [];
+
+  const actionDoc = actionsSnap.docs[0]?.data();
+  const mostRecentAlignedAction = actionDoc
+    ? { chosenValue: actionDoc.chosenValue, nextAlignedAction: actionDoc.nextAlignedAction, followUpStatus: actionDoc.followUpStatus || null }
+    : null;
+
+  return {
+    preferredLens: (typeof prefs.preferredLens === 'string' ? prefs.preferredLens : null) as GroundingLens | null,
+    patternAnalysisEnabled,
+    confirmedPatterns,
+    mostRecentAlignedAction,
+    sessionCount: sessionsSnap.size,
+  };
+}
 
 app.post("/api/grounding/reflect", groundingReflectLimiter, verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
   try {
@@ -11098,6 +11166,9 @@ app.post("/api/grounding/reflect", groundingReflectLimiter, verifyAppCheck, auth
       return res.status(400).json({ error: "Invalid request.", details: (parsed as any).error?.errors || [] });
     }
     const { lens, burdenLabels, customBurden, controllableItems, uncontrollableItems, islamicThemeId, recentPatterns } = parsed.data;
+    if (lens === 'islamic' && !islamicThemeId) {
+      return res.status(400).json({ error: "An Islamic Reflection theme is required for this lens." });
+    }
 
     const user = requireAuth(req);
     const quota = await checkAndReserveCapability(user.uid, 'nova_text');
@@ -11114,17 +11185,28 @@ app.post("/api/grounding/reflect", groundingReflectLimiter, verifyAppCheck, auth
     const burdenText = [...burdenLabels, ...(customBurden ? [customBurden] : [])].join(', ') || 'something they did not name specifically';
     const controllableText = controllableItems.join(', ') || 'nothing specified';
     const uncontrollableText = uncontrollableItems.join(', ') || 'nothing specified';
-    const patternContext = recentPatterns && recentPatterns.length > 0
-      ? `\nAcross their recent grounding sessions (a structured pattern, not their words), they've often been working on: ${recentPatterns.join(', ')}. Only mention this if it's genuinely relevant - never manufacture a connection.`
+
+    // Server-verified confirmed patterns (Phase 2's Nova Pattern Engine)
+    // take priority over the client-sent labels (Phase 1's lighter
+    // client-computed patterns) when both are present, since the former
+    // is backed by real confidence thresholds rather than a client claim.
+    const context = await buildGroundingContext(user.uid);
+    const patternLabels = context.confirmedPatterns.length > 0
+      ? context.confirmedPatterns.map((p) => p.label)
+      : (recentPatterns || []);
+    const patternContext = patternLabels.length > 0
+      ? `\nAcross their recent grounding sessions (a structured pattern, not their words), they've often been working on: ${patternLabels.join(', ')}. Only mention this if it's genuinely relevant - never manufacture a connection.`
       : '';
+
+    // Phase 2's Nova Pattern Engine: the closed list the model must choose
+    // detectedThemes from - never a theme string it invents itself.
+    const themeAllowlistText = PATTERN_DIMENSION_ORDER.map((id) => `${id} (${PATTERN_DIMENSIONS[id].label})`).join(', ');
+    const themeInstruction = `\n\nSeparately, pick at most 3 themes from this exact list that this specific reflection genuinely touches on - use the id exactly as written, and only include a theme if it's clearly present, never to pad the list out: ${themeAllowlistText}`;
 
     let prompt: string;
     let verse: { reference: string; translation: string; translator: string; scholarReviewed: boolean } | undefined;
 
     if (lens === 'islamic') {
-      if (!islamicThemeId) {
-        return res.status(400).json({ error: "An Islamic Reflection theme is required for this lens." });
-      }
       const theme = ISLAMIC_THEMES[islamicThemeId as IslamicThemeId];
       verse = theme.verses[0];
       prompt = `You are Nova, a calm, respectful recovery-grounding coach at Blaze Break, writing a short reflection for the Islamic Reflection lens. You are NOT a scholar and must never act like one.
@@ -11143,9 +11225,12 @@ Write a short (2-3 sentence) reflection connecting the theme above to their spec
 - Do not suggest that hardship, abuse, danger, exploitation, or unsafe working conditions should simply be tolerated as a matter of faith.
 - Do not present yourself as a religious authority - you are contextualising a reference a scholar has curated, nothing more.
 
+${themeInstruction}
+
 Respond strictly in this JSON format, no markdown, no commentary outside the JSON:
 {
-  "reflectionText": "your 2-3 sentence reflection, grounded in their specific situation"
+  "reflectionText": "your 2-3 sentence reflection, grounded in their specific situation",
+  "detectedThemes": ["theme_id_1", "theme_id_2"]
 }
 ${NOVA_ONE_SHOT_SAFETY_FLOOR}`;
     } else {
@@ -11158,11 +11243,14 @@ What they identified as beyond their control: ${uncontrollableText}.${patternCon
 
 Write a short (2-3 sentence) reflection grounded ONLY in what they actually told you above - do not invent specifics they didn't mention. Then write two short, genuinely reflective QUESTIONS (not advice, not statements) that help them move from overwhelm toward perspective and appropriate action: a first question about what's genuinely within their responsibility, and a second question (to be shown only after they answer the first) about what they're still trying to control that isn't theirs to control.
 
+${themeInstruction}
+
 Respond strictly in this JSON format, no markdown, no commentary outside the JSON:
 {
   "reflectionText": "your 2-3 sentence reflection",
   "firstQuestion": "a single reflective question about what's within their responsibility",
-  "secondQuestion": "a single reflective question about what they're still trying to control"
+  "secondQuestion": "a single reflective question about what they're still trying to control",
+  "detectedThemes": ["theme_id_1", "theme_id_2"]
 }
 ${NOVA_ONE_SHOT_SAFETY_FLOOR}`;
     }
@@ -11177,14 +11265,22 @@ ${NOVA_ONE_SHOT_SAFETY_FLOOR}`;
     if (!text) throw new Error("Empty response from Gemini model.");
     const rawReflection = JSON.parse(text);
 
+    // Drop anything not on the allowlist rather than failing the whole
+    // response - a model hallucinating one bad theme id shouldn't cost
+    // the user their reflection.
+    const sanitizedThemes = Array.isArray(rawReflection.detectedThemes)
+      ? rawReflection.detectedThemes.filter((t: unknown) => PatternDimensionEnum.safeParse(t).success).slice(0, 3)
+      : undefined;
+
     const merged = lens === 'islamic' && islamicThemeId
       ? {
           reflectionText: rawReflection.reflectionText,
           firstQuestion: ISLAMIC_THEMES[islamicThemeId as IslamicThemeId].prompt,
           secondQuestion: ISLAMIC_THEMES[islamicThemeId as IslamicThemeId].followUp,
           verse,
+          detectedThemes: sanitizedThemes,
         }
-      : rawReflection;
+      : { ...rawReflection, detectedThemes: sanitizedThemes };
 
     const validated = GroundingReflectResponseSchema.safeParse(merged);
     if (!validated.success) {
@@ -11195,6 +11291,37 @@ ${NOVA_ONE_SHOT_SAFETY_FLOOR}`;
   } catch (err: any) {
     console.error("[Grounding] reflect error:", err.message);
     res.status(500).json({ error: "Could not build that reflection right now." });
+  }
+});
+
+// Abstract, privacy-preserving Grounding analytics (section 20) - an
+// event NAME plus at most a taxonomy category/lens, validated against a
+// fixed allowlist server-side, never free text. Mirrors /api/guardian/
+// support-event's shape and reasoning exactly.
+const GroundingAnalyticsEventSchema = z.object({
+  eventType: z.enum(['grounding_session_completed', 'pattern_explored', 'pattern_feedback_given', 'community_connection_opened', 'carrying_exercise_completed', 'monthly_reflection_viewed', 'aligned_action_created', 'aligned_action_followed_up']),
+  category: z.enum(['control_responsibility', 'self_expectation', 'boundaries_people', 'connection_support', 'rest_guilt', 'practical_pressures', 'uncertainty_acceptance', 'values_meaning']).optional(),
+  lens: z.enum(['secular', 'values', 'faith', 'islamic']).optional(),
+}).strict();
+
+app.post("/api/grounding/analytics-event", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const parsed = GroundingAnalyticsEventSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: "Invalid or unrecognised event." });
+    }
+    const uid = requireAuth(req).uid;
+    const db = getDb();
+    await db.collection("users").doc(uid).collection("grounding_analytics_events").add({
+      eventType: parsed.data.eventType,
+      category: parsed.data.category || null,
+      lens: parsed.data.lens || null,
+      createdAt: new Date().toISOString(),
+    });
+    res.json({ recorded: true });
+  } catch (error: any) {
+    console.error("[Grounding analytics event] error:", error?.message || error);
+    res.status(500).json({ error: "Could not record that." });
   }
 });
 

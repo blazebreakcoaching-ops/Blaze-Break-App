@@ -35,8 +35,8 @@ describe('ISLAMIC_THEMES curated content', () => {
     }
   });
 
-  it('has all 8 required curated themes', () => {
-    expect(ISLAMIC_THEME_ORDER).toEqual(['tawakkul', 'sabr', 'shukr', 'qadr', 'rahmah', 'salah', 'dua', 'ummah']);
+  it('has all 10 required curated themes (Phase 1\'s 8 plus Phase 2\'s Niyyah and Ihsan)', () => {
+    expect(ISLAMIC_THEME_ORDER).toEqual(['tawakkul', 'sabr', 'shukr', 'qadr', 'rahmah', 'salah', 'dua', 'ummah', 'niyyah', 'ihsan']);
   });
 
   it('gives every theme exactly one prompt and one follow-up question, not advice statements', () => {

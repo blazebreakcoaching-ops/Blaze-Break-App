@@ -64,7 +64,7 @@ export const UNCONTROLLABLE_EXAMPLES = [
 
 // ---------- Stage 3 - REFLECT: Islamic curated themes ----------
 
-export type IslamicThemeId = 'tawakkul' | 'sabr' | 'shukr' | 'qadr' | 'rahmah' | 'salah' | 'dua' | 'ummah';
+export type IslamicThemeId = 'tawakkul' | 'sabr' | 'shukr' | 'qadr' | 'rahmah' | 'salah' | 'dua' | 'ummah' | 'niyyah' | 'ihsan';
 
 export interface CuratedVerse {
   reference: string;
@@ -193,9 +193,74 @@ export const ISLAMIC_THEMES: Record<IslamicThemeId, IslamicTheme> = {
     prompt: 'Who could genuinely share part of this weight with you, if you let them?',
     followUp: 'What is stopping you from reaching out to them today?',
   },
+  niyyah: {
+    id: 'niyyah',
+    label: 'Niyyah (Intention)',
+    framing: 'Niyyah is returning attention to intention, rather than measuring your worth solely through outcomes.',
+    verses: [{
+      reference: "Qur'an 98:5",
+      translation: '"And they were not commanded except to worship Allah, [being] sincere to Him in religion..."',
+      translator: 'Saheeh International',
+      scholarReviewed: false,
+    }],
+    prompt: 'What was your intention when you started this, before the outcome became uncertain?',
+    followUp: 'Does that intention still hold, regardless of how this turns out?',
+  },
+  ihsan: {
+    id: 'ihsan',
+    label: 'Ihsan (Excellence)',
+    framing: 'Ihsan is choosing excellence of action without demanding perfection of outcome.',
+    verses: [{
+      reference: "Qur'an 55:60",
+      translation: '"Is the reward for good [ihsan] anything but good [ihsan]?"',
+      translator: 'Saheeh International',
+      scholarReviewed: false,
+    }],
+    prompt: 'Where did you genuinely bring your best effort, even if the result wasn\'t perfect?',
+    followUp: 'What would it look like to let that effort be enough?',
+  },
 };
 
-export const ISLAMIC_THEME_ORDER: IslamicThemeId[] = ['tawakkul', 'sabr', 'shukr', 'qadr', 'rahmah', 'salah', 'dua', 'ummah'];
+export const ISLAMIC_THEME_ORDER: IslamicThemeId[] = ['tawakkul', 'sabr', 'shukr', 'qadr', 'rahmah', 'salah', 'dua', 'ummah', 'niyyah', 'ihsan'];
+
+// Phase 2's "intelligent theme selection" (section 6): a light, purely
+// deterministic relevance map from pattern-taxonomy dimensions to the
+// Islamic themes most likely to speak to them - no AI involved, just a
+// lookup, so the Stage 3 theme picker can put the most relevant themes
+// first instead of a fixed order. Falls back to ISLAMIC_THEME_ORDER
+// untouched when no pattern context is available (e.g. a first session).
+export const DIMENSION_TO_ISLAMIC_THEMES: Partial<Record<string, IslamicThemeId[]>> = {
+  control: ['tawakkul', 'qadr'],
+  over_responsibility: ['tawakkul', 'niyyah'],
+  uncertainty: ['tawakkul', 'qadr'],
+  guilt_about_rest: ['sabr', 'rahmah'],
+  isolation: ['ummah'],
+  reluctance_to_ask_for_support: ['ummah', 'dua'],
+  self_criticism: ['rahmah'],
+  perfectionism: ['ihsan'],
+  excessive_self_expectation: ['ihsan', 'niyyah'],
+  difficulty_accepting_outcomes: ['qadr', 'tawakkul'],
+  difficulty_accepting_unfinished_work: ['ihsan'],
+  work_identity: ['niyyah', 'ihsan'],
+  boundary_difficulty: ['sabr'],
+  connection: ['ummah'],
+  gratitude: ['shukr'],
+  patience: ['sabr'],
+  trust: ['tawakkul'],
+  compassion: ['rahmah'],
+};
+
+export const rankIslamicThemesByRelevance = (recentPatternKeys: string[]): IslamicThemeId[] => {
+  if (recentPatternKeys.length === 0) return ISLAMIC_THEME_ORDER;
+  const scores = new Map<IslamicThemeId, number>();
+  ISLAMIC_THEME_ORDER.forEach((id) => scores.set(id, 0));
+  recentPatternKeys.forEach((key) => {
+    const themes = DIMENSION_TO_ISLAMIC_THEMES[key];
+    if (!themes) return;
+    themes.forEach((id, idx) => scores.set(id, (scores.get(id) || 0) + (themes.length - idx)));
+  });
+  return [...ISLAMIC_THEME_ORDER].sort((a, b) => (scores.get(b) || 0) - (scores.get(a) || 0));
+};
 
 // ---------- Stage 5 - RECONNECT ----------
 
