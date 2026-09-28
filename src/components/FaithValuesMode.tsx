@@ -306,6 +306,15 @@ export const FaithValuesMode = (_props: FaithValuesModeProps) => {
           ...(existing?.userFeedbackNote ? { userFeedbackNote: existing.userFeedbackNote } : {}),
           ...(existing?.paused === true ? { paused: true } : {}),
           ...(existing?.suppressed === true ? { suppressed: true } : {}),
+          // A full batch.set replaces the whole document, so any field not
+          // explicitly carried forward here is silently lost the next time
+          // any session completes - resolved/resolvedAtOccurrenceCount (the
+          // "moved through" state from handleResolvePattern) needs the same
+          // carry-forward treatment as userFeedback/paused/suppressed above.
+          ...(existing?.resolved === true ? {
+            resolved: true,
+            ...(typeof existing.resolvedAtOccurrenceCount === 'number' ? { resolvedAtOccurrenceCount: existing.resolvedAtOccurrenceCount } : {}),
+          } : {}),
           createdAt: existing?.createdAt || now,
           updatedAt: now,
         });
@@ -314,7 +323,11 @@ export const FaithValuesMode = (_props: FaithValuesModeProps) => {
       const feedback: Record<string, PatternFeedbackState> = {};
       derived.forEach((p) => {
         const existing = existingByKey.get(p.patternKey);
-        feedback[p.patternKey] = { userFeedback: existing?.userFeedback, paused: existing?.paused === true, suppressed: existing?.suppressed === true };
+        feedback[p.patternKey] = {
+          userFeedback: existing?.userFeedback, paused: existing?.paused === true, suppressed: existing?.suppressed === true,
+          resolved: existing?.resolved === true,
+          resolvedAtOccurrenceCount: typeof existing?.resolvedAtOccurrenceCount === 'number' ? existing.resolvedAtOccurrenceCount : undefined,
+        };
       });
       setPatternFeedback((prev) => ({ ...prev, ...feedback }));
     } catch (e) {
