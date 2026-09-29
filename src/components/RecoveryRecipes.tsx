@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   ArrowLeft, ArrowRight, CheckCircle2, Clock, ChevronRight, X,
@@ -48,6 +48,7 @@ export const RecoveryRecipes = ({ fingerprint: _fingerprint, onAwardPoints }: Re
   const [completedStepTypes, setCompletedStepTypes] = useState<RecipeStepType[]>([]);
   const [skippedStepTypes, setSkippedStepTypes] = useState<RecipeStepType[]>([]);
   const [preferredLens, setPreferredLens] = useState<GroundingLens | undefined>(undefined);
+  const rootRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!auth.currentUser) return;
@@ -166,6 +167,39 @@ export const RecoveryRecipes = ({ fingerprint: _fingerprint, onAwardPoints }: Re
     }
   };
 
+  // Section 14's deep-link: reuse the real Movement Snacks component
+  // (already mounted alongside this one in the Reset tab) rather than
+  // reimplementing any physical step. Dispatches once per movement step
+  // landed on, never on unrelated re-renders.
+  useEffect(() => {
+    if (view !== 'player' || !currentStep || currentStep.type !== 'movement' || !currentStep.movementId) return;
+    window.dispatchEvent(new CustomEvent('recovery_recipe_launch_movement', { detail: { movementId: currentStep.movementId } }));
+    // Deliberately narrow deps - re-dispatching whenever anything else on
+    // this component re-renders would re-launch the same movement
+    // repeatedly instead of only when the player actually reaches a new
+    // movement step.
+  }, [view, currentStep?.id]);
+
+  // Section 14's "return from Movement" - Movement Snacks reports back here
+  // once the deep-linked session resolves (finished or stopped), so the
+  // recipe advances on its own without the person needing to do anything
+  // in this card. The manual fallback buttons below still work if this
+  // event is ever missed (Movement Snacks unavailable/unmounted).
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent<{ movementId?: string; completed?: boolean }>).detail;
+      if (!detail || !currentStep || currentStep.type !== 'movement' || currentStep.movementId !== detail.movementId) return;
+      advanceStep(!detail.completed);
+      rootRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    };
+    window.addEventListener('recovery_recipe_movement_done', handler);
+    return () => window.removeEventListener('recovery_recipe_movement_done', handler);
+    // No dependency array - this deliberately re-subscribes on every
+    // render so the handler's closure always reads the current step and
+    // stepIndex; the listener itself is cheap to add/remove and this
+    // avoids a stale-closure bug from a narrowed dependency list.
+  });
+
   const groundingText = (step: RecipeStep): string =>
     (preferredLens && step.groundingExcerptByLens?.[preferredLens]) || step.groundingExcerpt || '';
 
@@ -175,7 +209,7 @@ export const RecoveryRecipes = ({ fingerprint: _fingerprint, onAwardPoints }: Re
   const entryCards = useMemo(() => SITUATION_ORDER, []);
 
   return (
-    <div className="space-y-12 pb-24">
+    <div ref={rootRef} className="space-y-12 pb-24">
       <div className="max-w-4xl">
         <div className="flex items-center gap-4 mb-4">
           <div className="tag">Section 18 / Practices</div>
@@ -347,6 +381,12 @@ export const RecoveryRecipes = ({ fingerprint: _fingerprint, onAwardPoints }: Re
               </button>
             </div>
 
+            <div className="flex gap-1.5" role="progressbar" aria-valuemin={1} aria-valuemax={recipe.steps.length} aria-valuenow={stepIndex + 1}>
+              {recipe.steps.map((s, i) => (
+                <div key={s.id} className={cn('h-1.5 flex-1 rounded-full', i < stepIndex ? 'bg-primary' : i === stepIndex ? 'bg-primary/50' : 'bg-border/40')} />
+              ))}
+            </div>
+
             <div className="text-center py-6 space-y-4">
               <h4 className="text-3xl sm:text-4xl font-display font-bold text-text-main">
                 {currentStep.type === 'movement' && movementTitle(currentStep.movementId) ? movementTitle(currentStep.movementId) : currentStep.title}
@@ -357,6 +397,11 @@ export const RecoveryRecipes = ({ fingerprint: _fingerprint, onAwardPoints }: Re
               ))}
               {currentStep.type === 'grounding' && groundingText(currentStep) && (
                 <p className="text-lg text-text-main font-medium max-w-lg mx-auto italic">{groundingText(currentStep)}</p>
+              )}
+              {currentStep.type === 'movement' && currentStep.movementId && (
+                <p className="text-sm text-text-muted font-medium max-w-lg mx-auto">
+                  Continuing in Movement Snacks - follow along there, and this recipe picks back up automatically when you finish.
+                </p>
               )}
               {currentStep.choices && (
                 <div className="flex flex-wrap justify-center gap-3 pt-2">
@@ -381,7 +426,7 @@ export const RecoveryRecipes = ({ fingerprint: _fingerprint, onAwardPoints }: Re
                   </button>
                 )}
                 <button onClick={() => advanceStep(false)} className="btn-primary bg-primary hover:bg-primary border-primary text-primary-foreground">
-                  {stepIndex < recipe.steps.length - 1 ? 'Continue' : 'Finish'}
+                  {currentStep.type === 'movement' ? "I've done this" : stepIndex < recipe.steps.length - 1 ? 'Continue' : 'Finish'}
                 </button>
               </div>
             )}

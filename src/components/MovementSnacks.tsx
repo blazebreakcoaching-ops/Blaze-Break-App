@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   Activity, ArrowLeft, CheckCircle2, Star, Zap, Armchair, ChevronRight, Timer,
@@ -57,6 +57,11 @@ export const MovementSnacks = ({ fingerprint: _fingerprint, onAwardPoints }: Mov
   const [closingChoicePicked, setClosingChoicePicked] = useState<'needs_action' | 'nothing' | null>(null);
   const [closingNote, setClosingNote] = useState('');
   const [showAfterWorkFlow, setShowAfterWorkFlow] = useState(false);
+  // True while the current movement was launched by Recovery Recipes
+  // (section 14's deep-link) rather than picked normally - drives whether
+  // this component reports back to it when the session resolves.
+  const [launchedFromRecipe, setLaunchedFromRecipe] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!auth.currentUser) return;
@@ -67,6 +72,33 @@ export const MovementSnacks = ({ fingerprint: _fingerprint, onAwardPoints }: Mov
       setAudioEnabled(prefs.audioPreference === true);
     });
   }, []);
+
+  // Recovery Recipes' deep-link (section 14) - reuses this real component
+  // rather than reimplementing any physical step. Jumps straight to the
+  // requested movement's detail screen and brings it into view, since both
+  // components already live on the same Reset-tab page.
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const movementId = (e as CustomEvent<{ movementId?: string }>).detail?.movementId;
+      if (!movementId || !MOVEMENT_SNACKS[movementId]) return;
+      setLaunchedFromRecipe(true);
+      goToDetail(movementId, null);
+      rootRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    };
+    window.addEventListener('recovery_recipe_launch_movement', handler);
+    return () => window.removeEventListener('recovery_recipe_launch_movement', handler);
+    // Deliberately empty deps - this subscribes once for the component's
+    // lifetime; goToDetail only sets state and closing over the initial
+    // reference is fine, so there is nothing here that needs to
+    // re-subscribe on every render.
+  }, []);
+
+  const notifyRecipeIfLaunched = (completed: boolean) => {
+    if (launchedFromRecipe && activeMovementId) {
+      window.dispatchEvent(new CustomEvent('recovery_recipe_movement_done', { detail: { movementId: activeMovementId, completed } }));
+    }
+    setLaunchedFromRecipe(false);
+  };
 
   const activeMovement = activeMovementId ? MOVEMENT_SNACKS[activeMovementId] : null;
   const currentStep = activeMovement ? activeMovement.steps[stepIndex] : null;
@@ -140,6 +172,7 @@ export const MovementSnacks = ({ fingerprint: _fingerprint, onAwardPoints }: Mov
       logMovementEvent('movement_skipped', { movementId: activeMovement.id, category: activeMovement.category });
       recordMovementHistory(auth.currentUser.uid, { movementId: activeMovement.id, context: activeContext || undefined, skipped: true }).catch(() => {});
     }
+    notifyRecipeIfLaunched(false);
     setView('entry');
   };
 
@@ -203,6 +236,7 @@ export const MovementSnacks = ({ fingerprint: _fingerprint, onAwardPoints }: Mov
   // intervention, and this app never auto-starts a conversation just
   // because a movement finished. Only the third option actually opens Nova.
   const handleCloseComplete = (choice: 'enough' | 'continue' | 'nova') => {
+    notifyRecipeIfLaunched(true);
     setView('entry');
     setActiveMovementId(null);
     if (choice === 'continue') window.dispatchEvent(new CustomEvent('navigate_tab', { detail: 'home' }));
@@ -253,7 +287,7 @@ export const MovementSnacks = ({ fingerprint: _fingerprint, onAwardPoints }: Mov
   }, [seatedOnly]);
 
   return (
-    <div className="space-y-12 pb-24">
+    <div ref={rootRef} className="space-y-12 pb-24">
       <div className="max-w-4xl">
         <div className="flex items-center gap-4 mb-4">
           <div className="tag">Section 12 / Movement</div>
@@ -619,7 +653,12 @@ export const MovementSnacks = ({ fingerprint: _fingerprint, onAwardPoints }: Mov
 
       {showAfterWorkFlow && (
         <AfterWorkDecompression
-          onClose={() => { setShowAfterWorkFlow(false); setView('entry'); setActiveMovementId(null); }}
+          onClose={(completed) => {
+            notifyRecipeIfLaunched(completed);
+            setShowAfterWorkFlow(false);
+            setView('entry');
+            setActiveMovementId(null);
+          }}
           onAwardPoints={onAwardPoints}
           voiceEnabled={flags.enable_movement_voice_guidance && audioEnabled}
         />
