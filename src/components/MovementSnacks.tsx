@@ -20,6 +20,7 @@ import {
 } from '../lib/movement-snacks-service';
 import { logMovementEvent } from '../lib/movement-analytics';
 import { MovementVoiceControls } from './MovementVoiceControls';
+import { AfterWorkDecompression } from './AfterWorkDecompression';
 
 interface MovementSnacksProps {
   fingerprint: BurnoutFingerprint | null;
@@ -55,6 +56,7 @@ export const MovementSnacks = ({ fingerprint: _fingerprint, onAwardPoints }: Mov
   const [audioEnabled, setAudioEnabled] = useState(false);
   const [closingChoicePicked, setClosingChoicePicked] = useState<'needs_action' | 'nothing' | null>(null);
   const [closingNote, setClosingNote] = useState('');
+  const [showAfterWorkFlow, setShowAfterWorkFlow] = useState(false);
 
   useEffect(() => {
     if (!auth.currentUser) return;
@@ -120,6 +122,10 @@ export const MovementSnacks = ({ fingerprint: _fingerprint, onAwardPoints }: Mov
 
   const handleBegin = () => {
     if (!activeMovement) return;
+    if (activeMovement.id === 'after_work' && flags.enable_movement_after_work_decompression) {
+      setShowAfterWorkFlow(true);
+      return;
+    }
     logMovementEvent('movement_started', { movementId: activeMovement.id, category: activeMovement.category });
     if (auth.currentUser) {
       recordMovementHistory(auth.currentUser.uid, { movementId: activeMovement.id, context: activeContext || undefined, skipped: false }).catch(() => {});
@@ -505,6 +511,14 @@ export const MovementSnacks = ({ fingerprint: _fingerprint, onAwardPoints }: Mov
           </motion.div>
         )}
       </AnimatePresence>
+
+      {showAfterWorkFlow && (
+        <AfterWorkDecompression
+          onClose={() => { setShowAfterWorkFlow(false); setView('entry'); setActiveMovementId(null); }}
+          onAwardPoints={onAwardPoints}
+          voiceEnabled={flags.enable_movement_voice_guidance && audioEnabled}
+        />
+      )}
     </div>
   );
 };
