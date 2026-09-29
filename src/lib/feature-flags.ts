@@ -39,7 +39,14 @@ export type FeatureFlag =
   | 'enable_blaze_bright_moments'
   | 'compliance_gdpr_active'
   | 'compliance_cyber_essentials'
-  | 'compliance_iso_27001';
+  | 'compliance_iso_27001'
+  | 'enable_movement_contextual_recommendations'
+  | 'enable_movement_nova_suggestions'
+  | 'enable_movement_voice_guidance'
+  | 'enable_movement_feedback'
+  | 'enable_movement_after_work_decompression'
+  | 'enable_movement_favourites'
+  | 'enable_movement_history';
 
 const DEFAULT_FLAGS: Record<FeatureFlag, boolean> = {
   enable_nova_voice: true,
@@ -80,7 +87,14 @@ const DEFAULT_FLAGS: Record<FeatureFlag, boolean> = {
   enable_blaze_bright_moments: true,
   compliance_gdpr_active: true,
   compliance_cyber_essentials: true,
-  compliance_iso_27001: true
+  compliance_iso_27001: true,
+  enable_movement_contextual_recommendations: true,
+  enable_movement_nova_suggestions: true,
+  enable_movement_voice_guidance: true,
+  enable_movement_feedback: true,
+  enable_movement_after_work_decompression: true,
+  enable_movement_favourites: true,
+  enable_movement_history: true
 };
 
 export const getFeatureFlags = (): Record<FeatureFlag, boolean> => {

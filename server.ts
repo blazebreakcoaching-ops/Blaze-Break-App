@@ -11425,6 +11425,42 @@ app.post("/api/grounding/analytics-event", verifyAppCheck, authenticateFirebaseU
   }
 });
 
+// Abstract, privacy-preserving Movement Snacks analytics (section 28) - an
+// event NAME plus at most the movement id/category, validated server-side
+// against a fixed allowlist, never feedback value or free text. Mirrors
+// /api/grounding/analytics-event exactly.
+const MovementAnalyticsEventSchema = z.object({
+  eventType: z.enum(['movement_started', 'movement_completed', 'movement_skipped', 'movement_feedback_selected']),
+  movementId: z.enum([
+    'neck_shoulder', 'hand_wrist', 'jaw_face', 'upper_body_shake',
+    'desk_stretch', 'posture_reset', 'walk_3min', 'look_away',
+    'shake_meeting', 'after_work', 'end_of_day_walk',
+    'sunlight_walk', 'whole_body_shake', 'fresh_air_reset',
+  ]).optional(),
+  category: z.enum(['release', 'reset', 'transition', 'energise']).optional(),
+}).strict();
+
+app.post("/api/movement/analytics-event", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const parsed = MovementAnalyticsEventSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: "Invalid or unrecognised event." });
+    }
+    const uid = requireAuth(req).uid;
+    const db = getDb();
+    await db.collection("users").doc(uid).collection("movement_analytics_events").add({
+      eventType: parsed.data.eventType,
+      movementId: parsed.data.movementId || null,
+      category: parsed.data.category || null,
+      createdAt: new Date().toISOString(),
+    });
+    res.json({ recorded: true });
+  } catch (error: any) {
+    console.error("[Movement analytics event] error:", error?.message || error);
+    res.status(500).json({ error: "Could not record that." });
+  }
+});
+
 // Section 14's "central community configuration/service" - the ONLY
 // place that reads whether/where the external community lives.
 // COMMUNITY_BASE_URL is unset in this environment (no Replicants

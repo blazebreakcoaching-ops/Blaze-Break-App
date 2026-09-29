@@ -1175,6 +1175,53 @@ service cloud.firestore {
             && request.resource.data.isUserCreated is bool;
       }
 
+      // AQ. movementPreferences/main - Movement Snacks' personal
+      // preferences (Foundation batch, section 27). Single fixed doc id,
+      // same reasoning as groundingProfile/main - one small preference
+      // record, never containing movement history itself.
+      match /movementPreferences/{docId} {
+        allow read, delete: if isOwner(uid);
+        allow create, update: if isOwner(uid)
+            && docId == 'main'
+            && hasOnly(['favourites', 'seatedPreference', 'audioPreference', 'postMovementFeedbackEnabled', 'preferredAfterWorkCue', 'updatedAt'])
+            && hasAll(['updatedAt'])
+            && (!('favourites' in request.resource.data) || (request.resource.data.favourites is list && request.resource.data.favourites.size() <= 20))
+            && (!('seatedPreference' in request.resource.data) || request.resource.data.seatedPreference is bool)
+            && (!('audioPreference' in request.resource.data) || request.resource.data.audioPreference is bool)
+            && (!('postMovementFeedbackEnabled' in request.resource.data) || request.resource.data.postMovementFeedbackEnabled is bool)
+            && isOptionalStringWithMax(request.resource.data, 'preferredAfterWorkCue', 60);
+      }
+
+      // AR. movementHistory/{entryId} - section 18's "avoid repetition"
+      // tracking. Deliberately minimal: which movement, whether it was
+      // skipped, and the optional structured check-out feedback (section
+      // 5) - never reflection text, location, or anything beyond what the
+      // recommendation engine and favourites screen need.
+      match /movementHistory/{entryId} {
+        allow read, delete: if isOwner(uid);
+        allow create: if isOwner(uid)
+            && hasOnly(['movementId', 'context', 'skipped', 'feedback', 'createdAt'])
+            && hasAll(['movementId', 'skipped', 'createdAt'])
+            && isStringWithMax(request.resource.data.movementId, 60)
+            && request.resource.data.skipped is bool
+            && (!('context' in request.resource.data) || request.resource.data.context in ['sitting_too_long', 'neck_shoulders_tight', 'meeting_lingering', 'switch_off_work', 'need_air_daylight', 'restless_stuck', 'quick'])
+            && (!('feedback' in request.resource.data) || request.resource.data.feedback in ['looser', 'more_settled', 'more_awake', 'about_the_same', 'more_uncomfortable']);
+      }
+
+      // AS. movement_analytics_events - abstract, non-sensitive product
+      // events only (section 28): an event NAME plus at most the movement
+      // id/category, never feedback value or free text. Mirrors
+      // grounding_analytics_events' write-once, no-free-text shape.
+      match /movement_analytics_events/{eventId} {
+        allow read, delete: if isOwner(uid);
+        allow create: if isOwner(uid)
+            && hasOnly(['eventType', 'movementId', 'category', 'createdAt'])
+            && hasAll(['eventType', 'createdAt'])
+            && request.resource.data.eventType in ['movement_started', 'movement_completed', 'movement_skipped', 'movement_feedback_selected']
+            && (!('movementId' in request.resource.data) || isStringWithMax(request.resource.data.movementId, 60))
+            && (!('category' in request.resource.data) || request.resource.data.category in ['release', 'reset', 'transition', 'energise']);
+      }
+
     }
 
     // F. public_feature_flags/{featureId}
