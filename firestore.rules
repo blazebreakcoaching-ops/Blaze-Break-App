@@ -1222,6 +1222,86 @@ service cloud.firestore {
             && (!('category' in request.resource.data) || request.resource.data.category in ['release', 'reset', 'transition', 'energise']);
       }
 
+      // AT. recipePreferences/main - Recovery Recipes' personal preferences
+      // (Recovery Recipes upgrade, Batch 1, section 26). Single fixed doc
+      // id, same reasoning as movementPreferences/main.
+      match /recipePreferences/{docId} {
+        allow read, delete: if isOwner(uid);
+        allow create, update: if isOwner(uid)
+            && docId == 'main'
+            && hasOnly(['preferredDurationCategory', 'helpfulStepTypes', 'skippedStepTypes', 'preferredLens', 'favouriteRecipeIds', 'feedbackEnabled', 'adaptSavedRecipes', 'updatedAt'])
+            && hasAll(['updatedAt'])
+            && (!('preferredDurationCategory' in request.resource.data) || request.resource.data.preferredDurationCategory in ['quick', 'short', 'standard', 'deep'])
+            && (!('helpfulStepTypes' in request.resource.data) || (request.resource.data.helpfulStepTypes is list && request.resource.data.helpfulStepTypes.size() <= 10))
+            && (!('skippedStepTypes' in request.resource.data) || (request.resource.data.skippedStepTypes is list && request.resource.data.skippedStepTypes.size() <= 10))
+            && (!('preferredLens' in request.resource.data) || request.resource.data.preferredLens in ['secular', 'values', 'faith', 'islamic'])
+            && (!('favouriteRecipeIds' in request.resource.data) || (request.resource.data.favouriteRecipeIds is list && request.resource.data.favouriteRecipeIds.size() <= 20))
+            && (!('feedbackEnabled' in request.resource.data) || request.resource.data.feedbackEnabled is bool)
+            && (!('adaptSavedRecipes' in request.resource.data) || request.resource.data.adaptSavedRecipes is bool);
+      }
+
+      // AU. recoveryRecipes/{recipeId} - user-saved recipes ("My Recipes",
+      // section 18). Stores which situation/capacity it was built for and
+      // the step ids included at save time, so "Use as before" can replay
+      // it faithfully while "Adapt for today" rebuilds fresh from the
+      // deterministic engine (section 20).
+      match /recoveryRecipes/{recipeId} {
+        allow read, delete: if isOwner(uid);
+        allow create, update: if isOwner(uid)
+            && hasOnly(['name', 'situationKey', 'capacity', 'stepIds', 'createdAt', 'lastUsedAt'])
+            && hasAll(['name', 'situationKey', 'stepIds', 'createdAt'])
+            && isStringWithMax(request.resource.data.name, 60)
+            && request.resource.data.situationKey in [
+                 'slept_badly', 'hard_meeting', 'guilty_resting', 'angry', 'numb', 'cannot_focus',
+                 'need_switch_off', 'over_capacity', 'everything_urgent', 'cant_stop_thinking',
+                 'taken_on_too_much', 'waiting_uncontrollable', 'difficult_conversation', 'setback',
+                 'feel_behind', 'just_need_reset'
+               ]
+            && (!('capacity' in request.resource.data) || request.resource.data.capacity in ['almost_nothing', 'a_little', 'some_space', 'can_go_deeper'])
+            && request.resource.data.stepIds is list && request.resource.data.stepIds.size() <= 20
+            && isOptionalStringWithMax(request.resource.data, 'lastUsedAt', 40)
+            && (request.method == 'create' ? true : checkCreatedAtUnchanged());
+      }
+
+      // AV. recipeHistory/{entryId} - section 25's lightweight completion
+      // tracking. Deliberately minimal: situation, capacity, duration, and
+      // step TYPES (never step content or any free text typed during a
+      // step) - raw private text stays governed by the existing Nova-memory
+      // mechanism, never written here.
+      match /recipeHistory/{entryId} {
+        allow read, delete: if isOwner(uid);
+        allow create: if isOwner(uid)
+            && hasOnly(['situationKey', 'capacity', 'durationMinutes', 'completedStepTypes', 'skippedStepTypes', 'feedback', 'helpfulPart', 'saved', 'createdAt'])
+            && hasAll(['situationKey', 'createdAt'])
+            && request.resource.data.situationKey in [
+                 'slept_badly', 'hard_meeting', 'guilty_resting', 'angry', 'numb', 'cannot_focus',
+                 'need_switch_off', 'over_capacity', 'everything_urgent', 'cant_stop_thinking',
+                 'taken_on_too_much', 'waiting_uncontrollable', 'difficult_conversation', 'setback',
+                 'feel_behind', 'just_need_reset'
+               ]
+            && (!('capacity' in request.resource.data) || request.resource.data.capacity in ['almost_nothing', 'a_little', 'some_space', 'can_go_deeper'])
+            && (!('durationMinutes' in request.resource.data) || (request.resource.data.durationMinutes is number && request.resource.data.durationMinutes >= 0 && request.resource.data.durationMinutes <= 60))
+            && (!('completedStepTypes' in request.resource.data) || (request.resource.data.completedStepTypes is list && request.resource.data.completedStepTypes.size() <= 10))
+            && (!('skippedStepTypes' in request.resource.data) || (request.resource.data.skippedStepTypes is list && request.resource.data.skippedStepTypes.size() <= 10))
+            && (!('feedback' in request.resource.data) || request.resource.data.feedback in ['yes', 'some', 'not_really'])
+            && (!('helpfulPart' in request.resource.data) || request.resource.data.helpfulPart in ['movement', 'reflection', 'simplifying_tasks', 'release', 'nova', 'grounding', 'stopping'])
+            && (!('saved' in request.resource.data) || request.resource.data.saved is bool);
+      }
+
+      // AW. recovery_recipes_analytics_events - abstract, non-sensitive
+      // product events only (section 36): an event NAME plus at most the
+      // situation/step type, never feedback value or free text. Mirrors
+      // movement_analytics_events' write-once, no-free-text shape.
+      match /recovery_recipes_analytics_events/{eventId} {
+        allow read, delete: if isOwner(uid);
+        allow create: if isOwner(uid)
+            && hasOnly(['eventType', 'situationKey', 'stepType', 'createdAt'])
+            && hasAll(['eventType', 'createdAt'])
+            && request.resource.data.eventType in ['recipe_started', 'recipe_completed', 'recipe_abandoned', 'recipe_step_skipped', 'recipe_saved', 'recipe_feedback']
+            && (!('situationKey' in request.resource.data) || isStringWithMax(request.resource.data.situationKey, 60))
+            && (!('stepType' in request.resource.data) || request.resource.data.stepType in ['movement', 'nova_reflection', 'grounding', 'practical_action', 'release', 'connection', 'rest']);
+      }
+
     }
 
     // F. public_feature_flags/{featureId}

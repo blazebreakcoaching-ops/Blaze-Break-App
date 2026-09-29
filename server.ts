@@ -11461,6 +11461,43 @@ app.post("/api/movement/analytics-event", verifyAppCheck, authenticateFirebaseUs
   }
 });
 
+// Abstract, privacy-preserving Recovery Recipes analytics (Recovery Recipes
+// upgrade, section 36) - an event NAME plus at most the situation/step type,
+// validated server-side against a fixed allowlist. Mirrors
+// /api/movement/analytics-event exactly - never raw emotional text, private
+// Nova content, faith preference or journal content.
+const RecoveryRecipeAnalyticsEventSchema = z.object({
+  eventType: z.enum(['recipe_started', 'recipe_completed', 'recipe_abandoned', 'recipe_step_skipped', 'recipe_saved', 'recipe_feedback']),
+  situationKey: z.enum([
+    'slept_badly', 'hard_meeting', 'guilty_resting', 'angry', 'numb', 'cannot_focus',
+    'need_switch_off', 'over_capacity', 'everything_urgent', 'cant_stop_thinking',
+    'taken_on_too_much', 'waiting_uncontrollable', 'difficult_conversation', 'setback',
+    'feel_behind', 'just_need_reset',
+  ]).optional(),
+  stepType: z.enum(['movement', 'nova_reflection', 'grounding', 'practical_action', 'release', 'connection', 'rest']).optional(),
+}).strict();
+
+app.post("/api/recovery-recipes/analytics-event", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const parsed = RecoveryRecipeAnalyticsEventSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: "Invalid or unrecognised event." });
+    }
+    const uid = requireAuth(req).uid;
+    const db = getDb();
+    await db.collection("users").doc(uid).collection("recovery_recipes_analytics_events").add({
+      eventType: parsed.data.eventType,
+      situationKey: parsed.data.situationKey || null,
+      stepType: parsed.data.stepType || null,
+      createdAt: new Date().toISOString(),
+    });
+    res.json({ recorded: true });
+  } catch (error: any) {
+    console.error("[Recovery Recipes analytics event] error:", error?.message || error);
+    res.status(500).json({ error: "Could not record that." });
+  }
+});
+
 // Section 14's "central community configuration/service" - the ONLY
 // place that reads whether/where the external community lives.
 // COMMUNITY_BASE_URL is unset in this environment (no Replicants
