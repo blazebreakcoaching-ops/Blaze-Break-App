@@ -29,12 +29,12 @@ export const MovementVoiceControls = ({ text, enabled }: MovementVoiceControlsPr
   return (
     <div className="flex items-center justify-center gap-2 text-text-muted">
       {isSpeaking && !isPaused ? (
-        <button onClick={pause} aria-label="Pause narration" className="p-1.5 hover:text-text-main"><Pause className="w-3.5 h-3.5" /></button>
+        <button onClick={pause} aria-label="Pause narration" className="p-2.5 rounded-full hover:text-text-main hover:bg-surface"><Pause className="w-3.5 h-3.5" /></button>
       ) : isPaused ? (
-        <button onClick={resume} aria-label="Resume narration" className="p-1.5 hover:text-text-main"><Volume2 className="w-3.5 h-3.5" /></button>
+        <button onClick={resume} aria-label="Resume narration" className="p-2.5 rounded-full hover:text-text-main hover:bg-surface"><Volume2 className="w-3.5 h-3.5" /></button>
       ) : null}
-      <button onClick={() => speak(text)} aria-label="Replay narration" className="p-1.5 hover:text-text-main"><RotateCcw className="w-3.5 h-3.5" /></button>
-      <button onClick={stop} aria-label="Stop narration" className="p-1.5 hover:text-text-main"><VolumeX className="w-3.5 h-3.5" /></button>
+      <button onClick={() => speak(text)} aria-label="Replay narration" className="p-2.5 rounded-full hover:text-text-main hover:bg-surface"><RotateCcw className="w-3.5 h-3.5" /></button>
+      <button onClick={stop} aria-label="Stop narration" className="p-2.5 rounded-full hover:text-text-main hover:bg-surface"><VolumeX className="w-3.5 h-3.5" /></button>
     </div>
   );
 };

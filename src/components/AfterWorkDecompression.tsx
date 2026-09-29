@@ -50,9 +50,12 @@ export const AfterWorkDecompression = ({ onClose, onAwardPoints, voiceEnabled }:
   const [savedPreviousCue, setSavedPreviousCue] = useState<string | null>(null);
 
   useEffect(() => {
+    // Only the analytics event and the saved-cue lookup happen here - the
+    // history write happens once, in handleComplete, so a person who exits
+    // early (handleStop) never ends up with a "completed" record sitting
+    // alongside their "skipped" one for the same session.
     logMovementEvent('movement_started', { movementId: 'after_work', category: 'transition' });
     if (auth.currentUser) {
-      recordMovementHistory(auth.currentUser.uid, { movementId: 'after_work', context: 'switch_off_work', skipped: false }).catch(() => {});
       getDoc(doc(db, 'users', auth.currentUser.uid, 'movementPreferences', 'main')).then((snap) => {
         const cue = snap.exists() ? (snap.data().preferredAfterWorkCue as string | undefined) : undefined;
         if (cue) setSavedPreviousCue(cue);
@@ -106,6 +109,9 @@ export const AfterWorkDecompression = ({ onClose, onAwardPoints, voiceEnabled }:
 
   const handleComplete = () => {
     logMovementEvent('movement_completed', { movementId: 'after_work', category: 'transition' });
+    if (auth.currentUser) {
+      recordMovementHistory(auth.currentUser.uid, { movementId: 'after_work', context: 'switch_off_work', skipped: false }).catch(() => {});
+    }
     if (onAwardPoints) onAwardPoints(10, 'Completed After-Work Decompression');
     updateNovaMemoryBySourceAndType('Movement Snacks', 'state', {
       content: 'Completed After-Work Decompression - the physical boundary between work and the rest of the day.',

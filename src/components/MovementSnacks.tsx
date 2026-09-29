@@ -126,10 +126,11 @@ export const MovementSnacks = ({ fingerprint: _fingerprint, onAwardPoints }: Mov
       setShowAfterWorkFlow(true);
       return;
     }
+    // Only the analytics event fires here - no history write yet. History is
+    // written exactly once, at the point the session actually resolves
+    // (finished or stopped early), so an abandoned session can never leave
+    // behind a "completed" record (section 31's history-accuracy concern).
     logMovementEvent('movement_started', { movementId: activeMovement.id, category: activeMovement.category });
-    if (auth.currentUser) {
-      recordMovementHistory(auth.currentUser.uid, { movementId: activeMovement.id, context: activeContext || undefined, skipped: false }).catch(() => {});
-    }
     setStepIndex(0);
     setView('player');
   };
@@ -143,12 +144,24 @@ export const MovementSnacks = ({ fingerprint: _fingerprint, onAwardPoints }: Mov
   };
 
   const handleFinishSteps = () => {
-    setView(flags.enable_movement_feedback ? 'checkout' : 'complete');
+    if (flags.enable_movement_feedback) setView('checkout');
+    else finishMovement();
   };
 
-  const finishMovement = () => {
+  // The single place a completed session is written to history (once,
+  // skipped: false) and gets its completion side-effects - reached either
+  // straight from the player (feedback disabled) or via the checkout
+  // screen's feedback pick / "Skip this" (section 31: completion must not
+  // depend on the feedback flag being on).
+  const finishMovement = (feedbackChoice?: MovementFeedback) => {
     if (!activeMovement) return;
     logMovementEvent('movement_completed', { movementId: activeMovement.id, category: activeMovement.category });
+    if (auth.currentUser) {
+      recordMovementHistory(auth.currentUser.uid, {
+        movementId: activeMovement.id, context: activeContext || undefined, skipped: false,
+        ...(feedbackChoice ? { feedback: feedbackChoice } : {}),
+      }).catch(() => {});
+    }
     if (onAwardPoints) onAwardPoints(10, 'Completed a Movement Snack');
     updateNovaMemoryBySourceAndType('Movement Snacks', 'state', {
       content: `Completed a movement reset: "${activeMovement.title}".`,
@@ -161,10 +174,18 @@ export const MovementSnacks = ({ fingerprint: _fingerprint, onAwardPoints }: Mov
   const handleFeedbackPick = (choice: MovementFeedback) => {
     setFeedback(choice);
     logMovementEvent('movement_feedback_selected', { movementId: activeMovementId || undefined, category: activeMovement?.category });
-    if (auth.currentUser && activeMovementId) {
-      recordMovementHistory(auth.currentUser.uid, { movementId: activeMovementId, context: activeContext || undefined, skipped: false, feedback: choice }).catch(() => {});
+    if (choice === 'more_uncomfortable') {
+      // The movement was genuinely done, so the feedback still needs to
+      // reach history for future recommendation ranking (section 6) - it
+      // just isn't treated as a rewarded "completion" (no points, no
+      // Nova memory, no complete screen - the person is offered a gentler
+      // alternative instead).
+      if (auth.currentUser && activeMovementId) {
+        recordMovementHistory(auth.currentUser.uid, { movementId: activeMovementId, context: activeContext || undefined, skipped: false, feedback: choice }).catch(() => {});
+      }
+    } else {
+      finishMovement(choice);
     }
-    if (choice !== 'more_uncomfortable') finishMovement();
   };
 
   const handleSaveClosingNote = () => {
@@ -513,7 +534,7 @@ export const MovementSnacks = ({ fingerprint: _fingerprint, onAwardPoints }: Mov
                     </button>
                   ))}
                 </div>
-                <button onClick={finishMovement} className="text-xs font-black uppercase tracking-widest text-text-muted hover:text-text-main">
+                <button onClick={() => finishMovement()} className="text-xs font-black uppercase tracking-widest text-text-muted hover:text-text-main">
                   Skip this
                 </button>
               </>
