@@ -1,11 +1,52 @@
-# Data retention — current state and the decision still needed
+# Data retention — decided: Option B, 12-month inactivity expiry
 
-**This document does not pick retention windows.** That's a product/
-legal decision for the business owner to make, not something to infer
-from code. What follows is an honest description of what actually
-happens to data today (mostly: it doesn't expire), and the real options
-for closing that gap, with their tradeoffs — so the decision can be made
-deliberately instead of by default.
+**Decision (2026-09-28):** Option B below — inactivity-based account
+expiry. An account with no Firebase Auth sign-in for 12 months is
+deleted, with a warning email sent 30 days beforehand so a returning
+user only has to sign in once to cancel it. Chosen over Option A (no
+change) because it closes the "abandoned account holds data forever"
+gap — the weakest part of the previous no-op state — for proportionate
+engineering effort, without touching any active user's data or trend
+features. Option C (category-specific windows with derived data
+persisting) is a legitimate future evolution once the product and
+revenue justify that larger rewrite, but wasn't judged worth doing
+pre-revenue.
+
+## Implementation
+
+- `data-retention.ts` — pure decision logic (`evaluateRetentionAction`),
+  unit-tested in `data-retention.test.ts`.
+- `processInactivityRetentionSweep()` in `server.ts` — the actual I/O:
+  pages through Firebase Auth's own `listUsers()` (which already tracks
+  `lastSignInTime` natively — no new per-user activity field needed),
+  evaluates each account, sends the warning email
+  (`buildInactivityWarningEmail`, `brevo-templates.ts`) or deletes via
+  `eraseUserAccount()` — the same routine
+  `POST /api/user/delete-account` uses, so there is exactly one deletion
+  code path in the app.
+- Runs daily via `node-cron`, gated by the `RETENTION_SWEEP_ENABLED` env
+  var (defaults **off** — same kill-switch pattern as
+  `NUDGE_SCHEDULER_ENABLED`; must be turned on deliberately per
+  environment, never just by merging code). Also respects `TEST_MODE`
+  the same way the nudge scheduler's own cron registration does.
+- The warning timestamp (`users/{uid}.retentionWarningSentAt`) is
+  admin-SDK-only — `firestore.rules`'s client `update` rule on
+  `users/{uid}` already uses a strict field allowlist that excludes it,
+  so no rules change was needed for this to be safe from client
+  tampering.
+- `audit_logs` is untouched by this sweep, consistent with account
+  deletion generally (see "What actually happens today" below) — it's a
+  compliance trail that must outlive the account it records.
+
+**Before turning `RETENTION_SWEEP_ENABLED` on in production:** confirm
+`APP_URL` is set (used to build the sign-in link in the warning email)
+and that Brevo is configured, or the warning email step will silently
+no-op for accounts without a deliverable email.
+
+---
+
+*The rest of this document is preserved as the original options analysis
+that led to the decision above.*
 
 ## What actually happens today
 

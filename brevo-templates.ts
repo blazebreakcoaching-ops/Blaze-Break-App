@@ -134,6 +134,21 @@ export const buildSupportRequestReceivedEmail = (): { subject: string; html: str
   ),
 });
 
+// Inactivity retention warning (docs/DATA_RETENTION.md, Option B) - sent
+// once, ~30 days before an inactive account is deleted. Deliberately
+// low-key rather than alarmist: signing back in is enough to cancel it,
+// and that's the one thing this email needs to communicate clearly.
+export const buildInactivityWarningEmail = (appUrl: string): { subject: string; html: string } => ({
+  subject: "We'll be deleting your inactive Blaze Break account soon",
+  html: wrapEmail(
+    'Your account is inactive',
+    `<p>We haven't seen you in Blaze Break for a while, so in line with our data retention policy, this account and its data are scheduled for deletion in 30 days.</p>
+     <p>If you'd like to keep it, simply sign back in before then - that's all it takes to cancel the deletion.</p>
+     ${button(appUrl, 'Sign in to Blaze Break')}
+     <p>If you meant to leave and don't need to do anything, no action is needed - the account will be removed automatically.</p>`
+  ),
+});
+
 // Brevo requires a textContent fallback alongside htmlContent - this is a
 // deliberately simple tag-stripper, not a general HTML-to-text converter,
 // since every template above is built from the fixed set of tags used by

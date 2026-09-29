@@ -1,5 +1,7 @@
 {
   "projects": {
-    "default": "gen-lang-client-0537893432"
+    "default": "gen-lang-client-0537893432",
+    "production": "gen-lang-client-0537893432",
+    "staging": "blaze-break-staging"
   }
 }

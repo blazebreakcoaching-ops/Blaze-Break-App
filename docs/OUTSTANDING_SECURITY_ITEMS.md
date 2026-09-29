@@ -14,25 +14,21 @@ what's still open.
 
 ## Needs a human decision, not more code
 
-- **Data retention window.** No automated retention/deletion exists
-  today beyond user-initiated account deletion — see
-  `docs/DATA_RETENTION.md` for the real options (A: keep indefinitely
-  and document that as the deliberate choice, B: inactivity-based
-  expiry, C: category-specific windows with derived-data persisting).
-  This document does not pick one; someone with product/legal authority
-  needs to.
-- **Environment separation.** Nothing in this codebase or its docs
-  describes a separate staging environment/GCP project distinct from
-  production — every reference (`docs/DEPLOY.md`, `firebase.json`)
-  points at one named Firestore database. Either a staging environment
-  genuinely doesn't exist yet (in which case: is that an acceptable risk
-  for this app's current stage, or worth setting up before the next
-  major schema/rules change?), or one exists but isn't documented (in
-  which case: document it, and confirm it isn't accidentally pointed at
-  the same Firestore database or running with `NODE_ENV=production`
-  settings that assume it's the real production deploy). This needs
-  someone who actually knows the current GCP project layout to answer —
-  it cannot be determined from the code alone.
+- ~~**Data retention window.**~~ **Resolved 2026-09-28** — Option B
+  (12-month inactivity expiry) decided and implemented. See
+  `docs/DATA_RETENTION.md` for the decision record and
+  `data-retention.ts`/`processInactivityRetentionSweep()` in `server.ts`
+  for the implementation. Off by default until `RETENTION_SWEEP_ENABLED`
+  is deliberately set in a given environment.
+- ~~**Environment separation.**~~ **In progress, 2026-09-28** — confirmed
+  there genuinely was no staging environment (local dev pointed at the
+  real production project/database). Decision made: a fully separate
+  Firebase/GCP project. Repo side is done — `.firebaserc` now declares
+  `production`/`staging` project aliases, and `docs/DEPLOY.md` §10 has
+  the complete one-time setup procedure (project creation, Firestore
+  database, IAM, secrets, Cloud Run deploy). **Still open:** actually
+  running that provisioning (steps 1–8 in §10) — needs GCP console/
+  billing access this pass didn't have.
 
 ## Needs GCP Console/CLI access this session did not have
 
