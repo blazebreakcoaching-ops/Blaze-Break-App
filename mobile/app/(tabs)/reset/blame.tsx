@@ -125,7 +125,9 @@ export default function BlameResetScreen() {
       });
     }, 1000);
     return () => clearInterval(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // Deliberately keyed only on phase/stepIndex - advanceTo is stable
+    // enough for this lifecycle, and re-running the timer setup whenever
+    // its identity changes would restart the countdown mid-breath.
   }, [phase, stepIndex]);
 
   const handleSelectSpeed = (s: Speed) => {
