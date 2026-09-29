@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   Activity, ArrowLeft, CheckCircle2, Star, Zap, Armchair, ChevronRight, Timer,
+  Pause, Play, SkipForward, Volume2, VolumeX,
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { auth } from '../lib/firebase';
@@ -14,10 +15,11 @@ import {
 } from '../../movement-snacks-content';
 import { getMovementRecommendation, getQuickReset, getGentlerAlternative } from '../../movement-snacks-recommendation';
 import {
-  loadMovementPreferences, toggleFavourite as toggleFavouriteService, recordMovementHistory,
+  loadMovementPreferences, updateMovementPreferences, toggleFavourite as toggleFavouriteService, recordMovementHistory,
   loadRecentMovementHistory, computeUsageFromHistory,
 } from '../lib/movement-snacks-service';
 import { logMovementEvent } from '../lib/movement-analytics';
+import { MovementVoiceControls } from './MovementVoiceControls';
 
 interface MovementSnacksProps {
   fingerprint: BurnoutFingerprint | null;
@@ -48,6 +50,9 @@ export const MovementSnacks = ({ fingerprint: _fingerprint, onAwardPoints }: Mov
   const [favourites, setFavourites] = useState<string[]>([]);
   const [usage, setUsage] = useState<ReturnType<typeof computeUsageFromHistory>>([]);
   const [feedback, setFeedback] = useState<MovementFeedback | null>(null);
+  const [paused, setPaused] = useState(false);
+  const [secondsRemaining, setSecondsRemaining] = useState<number | null>(null);
+  const [audioEnabled, setAudioEnabled] = useState(false);
 
   useEffect(() => {
     if (!auth.currentUser) return;
@@ -55,10 +60,41 @@ export const MovementSnacks = ({ fingerprint: _fingerprint, onAwardPoints }: Mov
     Promise.all([loadMovementPreferences(uid), loadRecentMovementHistory(uid)]).then(([prefs, history]) => {
       setFavourites(prefs.favourites || []);
       setUsage(computeUsageFromHistory(history, prefs.favourites || []));
+      setAudioEnabled(prefs.audioPreference === true);
     });
   }, []);
 
   const activeMovement = activeMovementId ? MOVEMENT_SNACKS[activeMovementId] : null;
+  const currentStep = activeMovement ? activeMovement.steps[stepIndex] : null;
+
+  // Resets the per-step countdown whenever the step changes - a fresh
+  // clock for a fresh instruction (section 4's "Timing").
+  useEffect(() => {
+    if (view !== 'player' || !currentStep) return;
+    setSecondsRemaining(currentStep.durationSeconds ?? null);
+    setPaused(false);
+  }, [stepIndex, view]);
+
+  // The actual countdown tick, only while a step has a duration and isn't
+  // paused. Deliberately gentle, not "aggressive" (section 4): reaching
+  // zero moves on to the next step on its own, but Pause/Skip/Previous stay
+  // available throughout, and it never forces the LAST step to finish -
+  // the person still has to press Finish themselves.
+  useEffect(() => {
+    if (view !== 'player' || paused || secondsRemaining === null || !activeMovement) return;
+    if (secondsRemaining <= 0) {
+      if (stepIndex < activeMovement.steps.length - 1) setStepIndex((i) => i + 1);
+      return;
+    }
+    const t = window.setTimeout(() => setSecondsRemaining((s) => (s === null ? null : s - 1)), 1000);
+    return () => window.clearTimeout(t);
+  }, [secondsRemaining, paused, view, stepIndex, activeMovement]);
+
+  const toggleAudio = () => {
+    const next = !audioEnabled;
+    setAudioEnabled(next);
+    if (auth.currentUser) updateMovementPreferences(auth.currentUser.uid, { audioPreference: next }).catch(() => {});
+  };
 
   const goToDetail = (movementId: string, context: MovementContext | null) => {
     setActiveMovementId(movementId);
@@ -282,16 +318,32 @@ export const MovementSnacks = ({ fingerprint: _fingerprint, onAwardPoints }: Mov
           </motion.div>
         )}
 
-        {view === 'player' && activeMovement && (
-          <motion.div key="player" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="card border border-success/20 bg-success/5 p-6 sm:p-8 md:p-10 space-y-10">
-            <div className="flex items-center justify-between">
+        {view === 'player' && activeMovement && currentStep && (
+          <motion.div key="player" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="card border border-success/20 bg-success/5 p-6 sm:p-8 md:p-10 space-y-8">
+            <div className="flex items-center justify-between flex-wrap gap-y-2">
               <span className="text-xs font-black uppercase tracking-widest text-text-muted">
                 Step {stepIndex + 1} of {activeMovement.steps.length}
               </span>
-              <button onClick={handleStopNow} className="text-xs font-black uppercase tracking-widest text-text-muted hover:text-text-main">
-                Stop
-              </button>
+              <div className="flex items-center gap-4">
+                {flags.enable_movement_voice_guidance && (
+                  <button onClick={toggleAudio} aria-label={audioEnabled ? 'Turn off spoken guidance' : 'Turn on spoken guidance'} aria-pressed={audioEnabled} className="text-text-muted hover:text-text-main">
+                    {audioEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
+                  </button>
+                )}
+                <button onClick={handleStopNow} className="text-xs font-black uppercase tracking-widest text-text-muted hover:text-text-main">
+                  Stop
+                </button>
+              </div>
             </div>
+
+            {currentStep.durationSeconds && (
+              <div className="h-1 w-full rounded-full bg-border/40 overflow-hidden" role="progressbar" aria-valuemin={0} aria-valuemax={currentStep.durationSeconds} aria-valuenow={currentStep.durationSeconds - (secondsRemaining ?? 0)}>
+                <div
+                  className="h-full bg-success transition-all duration-1000 ease-linear"
+                  style={{ width: `${((currentStep.durationSeconds - (secondsRemaining ?? 0)) / currentStep.durationSeconds) * 100}%` }}
+                />
+              </div>
+            )}
 
             <AnimatePresence mode="wait">
               <motion.div
@@ -299,15 +351,21 @@ export const MovementSnacks = ({ fingerprint: _fingerprint, onAwardPoints }: Mov
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0 }}
-                className="text-center py-10 space-y-4"
+                className="text-center py-6 space-y-4"
               >
                 <h4 className="text-3xl sm:text-4xl font-display font-bold text-text-main">
-                  {activeMovement.steps[stepIndex]!.instruction}
+                  {currentStep.instruction}
                 </h4>
-                {activeMovement.steps[stepIndex]!.supportingText && (
+                {currentStep.supportingText && (
                   <p className="text-lg text-text-muted font-medium max-w-lg mx-auto">
-                    {activeMovement.steps[stepIndex]!.supportingText}
+                    {currentStep.supportingText}
                   </p>
+                )}
+                {flags.enable_movement_voice_guidance && (
+                  <MovementVoiceControls
+                    text={[currentStep.instruction, currentStep.supportingText].filter(Boolean).join('. ')}
+                    enabled={audioEnabled}
+                  />
                 )}
               </motion.div>
             </AnimatePresence>
@@ -324,15 +382,22 @@ export const MovementSnacks = ({ fingerprint: _fingerprint, onAwardPoints }: Mov
               >
                 Previous
               </button>
-              {stepIndex < activeMovement.steps.length - 1 ? (
-                <button onClick={() => setStepIndex((i) => i + 1)} className="btn-primary bg-success hover:bg-success border-success text-white">
-                  Next
-                </button>
-              ) : (
-                <button onClick={handleFinishSteps} className="btn-primary bg-primary hover:bg-primary border-primary text-primary-foreground">
-                  <CheckCircle2 className="w-4 h-4" /> Finish
-                </button>
-              )}
+              <div className="flex items-center gap-3">
+                {currentStep.durationSeconds && (
+                  <button onClick={() => setPaused((p) => !p)} aria-label={paused ? 'Resume' : 'Pause'} className="p-2.5 rounded-full text-text-muted hover:text-text-main hover:bg-surface">
+                    {paused ? <Play className="w-4 h-4" /> : <Pause className="w-4 h-4" />}
+                  </button>
+                )}
+                {stepIndex < activeMovement.steps.length - 1 ? (
+                  <button onClick={() => setStepIndex((i) => i + 1)} className="btn-primary bg-success hover:bg-success border-success text-white">
+                    {currentStep.durationSeconds && (secondsRemaining ?? 0) > 0 ? <><SkipForward className="w-4 h-4" /> Skip</> : 'Next'}
+                  </button>
+                ) : (
+                  <button onClick={handleFinishSteps} className="btn-primary bg-primary hover:bg-primary border-primary text-primary-foreground">
+                    <CheckCircle2 className="w-4 h-4" /> Finish
+                  </button>
+                )}
+              </div>
             </div>
           </motion.div>
         )}
