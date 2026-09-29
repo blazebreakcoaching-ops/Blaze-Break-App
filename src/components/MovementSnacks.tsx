@@ -178,6 +178,16 @@ export const MovementSnacks = ({ fingerprint: _fingerprint, onAwardPoints }: Mov
     setClosingNote('');
   };
 
+  // Section 16's handoff back to Nova - movement is sometimes the whole
+  // intervention, and this app never auto-starts a conversation just
+  // because a movement finished. Only the third option actually opens Nova.
+  const handleCloseComplete = (choice: 'enough' | 'continue' | 'nova') => {
+    setView('entry');
+    setActiveMovementId(null);
+    if (choice === 'continue') window.dispatchEvent(new CustomEvent('navigate_tab', { detail: 'home' }));
+    else if (choice === 'nova') window.dispatchEvent(new CustomEvent('open_nova_launcher'));
+  };
+
   const handleChooseGentler = () => {
     if (!activeMovementId) return;
     const gentler = getGentlerAlternative(activeMovementId);
@@ -497,16 +507,26 @@ export const MovementSnacks = ({ fingerprint: _fingerprint, onAwardPoints }: Mov
                   className="w-full p-3 rounded-xl border border-border/40 bg-white dark:bg-surface text-sm text-text-main"
                 />
                 <button
-                  onClick={() => { handleSaveClosingNote(); setView('entry'); setActiveMovementId(null); }}
+                  onClick={() => { handleSaveClosingNote(); handleCloseComplete('enough'); }}
                   className="btn-primary bg-primary hover:bg-primary border-primary text-primary-foreground"
                 >
                   <Zap className="w-4 h-4" /> Done
                 </button>
               </div>
             ) : (
-              <button onClick={() => { setView('entry'); setActiveMovementId(null); }} className="btn-primary bg-primary hover:bg-primary border-primary text-primary-foreground">
-                <Zap className="w-4 h-4" /> Done
-              </button>
+              <div className="space-y-3">
+                <button onClick={() => handleCloseComplete('enough')} className="btn-primary bg-primary hover:bg-primary border-primary text-primary-foreground">
+                  <Zap className="w-4 h-4" /> That's enough for now
+                </button>
+                <div className="flex flex-wrap justify-center gap-4 pt-1">
+                  <button onClick={() => handleCloseComplete('continue')} className="text-xs font-black uppercase tracking-widest text-text-muted hover:text-text-main">
+                    Continue with my day
+                  </button>
+                  <button onClick={() => handleCloseComplete('nova')} className="text-xs font-black uppercase tracking-widest text-text-muted hover:text-text-main">
+                    I still need to work through something
+                  </button>
+                </div>
+              </div>
             )}
           </motion.div>
         )}

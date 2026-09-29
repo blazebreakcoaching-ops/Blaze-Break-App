@@ -7,6 +7,7 @@ import {
 import { cn } from '../lib/utils';
 import { BurnoutFingerprint } from '../types';
 import { updateNovaMemoryBySourceAndType } from '../lib/nova-brain';
+import { useFeatureFlags } from '../lib/feature-flags';
 import { auth } from '../lib/firebase';
 import { db } from '../lib/firestore';
 import { secureApiFetch } from '../lib/secure-api';
@@ -98,6 +99,7 @@ const STAGE_ORDER: { id: Stage; label: string }[] = [
 const HOLD_DURATION_MS = 2200;
 
 export const FaithValuesMode = (_props: FaithValuesModeProps) => {
+  const flags = useFeatureFlags();
   const [view, setView] = useState<ViewMode>('session');
   const [stage, setStage] = useState<Stage>('depth');
   const [lens, setLens] = useState<GroundingLens | null>(null);
@@ -154,6 +156,7 @@ export const FaithValuesMode = (_props: FaithValuesModeProps) => {
   const [decisionLens, setDecisionLens] = useState<GroundingLens>('secular');
   const [connectionPrompt] = useState(() => HUMAN_CONNECTION_PROMPTS[Math.floor(Math.random() * HUMAN_CONNECTION_PROMPTS.length)]);
   const [chosenNextAction, setChosenNextAction] = useState<NextActionId | null>(null);
+  const [movementNudgeDismissed, setMovementNudgeDismissed] = useState(false);
 
   const [sessions, setSessions] = useState<GroundingSessionRecord[]>([]);
   const [sessionsLoaded, setSessionsLoaded] = useState(false);
@@ -442,6 +445,7 @@ export const FaithValuesMode = (_props: FaithValuesModeProps) => {
     setSessionDocId(null);
     setChosenNextAction(null);
     setShowCommunityBridge(false);
+    setMovementNudgeDismissed(false);
   };
 
   const toggleBurden = (id: BurdenId) => {
@@ -1222,6 +1226,26 @@ export const FaithValuesMode = (_props: FaithValuesModeProps) => {
                     <button onClick={resetSession} className="px-6 py-2.5 border border-border/40 rounded-xl text-xs font-black uppercase tracking-widest text-text-muted hover:text-text-main hover:bg-surface/30 transition-all">
                       Start a new grounding session
                     </button>
+                  </div>
+                )}
+
+                {/* Section 15's Movement Snacks bridge - complementary to
+                    Grounding, never repeating the session itself, and only
+                    offered after a real reflection (not a quick Reset). */}
+                {flags.enable_movement_nova_suggestions && sessionDepth && !movementNudgeDismissed && (
+                  <div className="bg-surface/40 dark:bg-surface/40 p-6 rounded-2xl border border-border/30 text-center space-y-4">
+                    <p className="text-sm text-text-main font-medium">You've done enough reflecting for now. Want to finish with a 2-minute physical reset?</p>
+                    <div className="flex items-center justify-center gap-3">
+                      <button
+                        onClick={() => { setMovementNudgeDismissed(true); window.dispatchEvent(new CustomEvent('navigate_tab', { detail: 'reset' })); }}
+                        className="px-5 py-2.5 bg-primary text-primary-foreground rounded-xl text-xs font-black uppercase tracking-widest"
+                      >
+                        Yes, give me something
+                      </button>
+                      <button onClick={() => setMovementNudgeDismissed(true)} className="text-xs font-black uppercase tracking-widest text-text-muted hover:text-text-main">
+                        Not now
+                      </button>
+                    </div>
                   </div>
                 )}
               </motion.div>
