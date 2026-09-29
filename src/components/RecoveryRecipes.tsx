@@ -1,315 +1,409 @@
-import { useState } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Moon, Zap, Shield, Flame, CloudFog, Crosshair, Power, AlertTriangle, Wind, Brain, Activity, ArrowRight, ShieldCheck, CheckCircle2 } from 'lucide-react';
+import {
+  ArrowLeft, ArrowRight, CheckCircle2, Clock, ChevronRight, X,
+} from 'lucide-react';
 import { cn } from '../lib/utils';
+import { auth } from '../lib/firebase';
 import { BurnoutFingerprint } from '../types';
 import { updateNovaMemoryBySourceAndType } from '../lib/nova-brain';
+import { useFeatureFlags } from '../lib/feature-flags';
+import {
+  SituationKey, SITUATION_ORDER, SITUATION_LABELS, Capacity, CAPACITY_ORDER, CAPACITY_LABELS,
+  DURATION_CATEGORY_LABELS, RecipeStep, RecipeStepType,
+} from '../../recovery-recipes-content';
+import { buildRecoveryRecipe, adaptRecoveryRecipe, BuiltRecoveryRecipe } from '../../recovery-recipes-engine';
+import { loadRecipePreferences, recordRecipeHistory } from '../lib/recovery-recipes-service';
+import { logRecipeEvent } from '../lib/recovery-recipes-analytics';
+import { MOVEMENT_SNACKS } from '../../movement-snacks-content';
+import { GroundingLens } from '../../grounding-content';
 
 interface RecoveryRecipesProps {
   fingerprint: BurnoutFingerprint | null;
   onAwardPoints?: (amount: number, reason: string) => void;
 }
 
-type RecipeId = 'sleep' | 'meeting' | 'guilty' | 'angry' | 'numb' | 'focus' | 'switch_off' | 'capacity';
+// Section 21's "how much time" chips - kept to a handful of common budgets
+// plus an unconstrained option, never a free-typed number (over-engineering
+// the setup screen the brief explicitly warns against).
+const TIME_OPTIONS: { minutes: number | null; label: string }[] = [
+  { minutes: 2, label: '2 min' },
+  { minutes: 5, label: '5 min' },
+  { minutes: 10, label: '10 min' },
+  { minutes: null, label: 'I have time' },
+];
 
-interface Recipe {
-  id: RecipeId;
-  trigger: string;
-  breathwork: string;
-  thoughtReset: string;
-  bodyReset: string;
-  action: string;
-  boundary: string;
-  icon: any;
-  colorClass: string;
-  borderClass: string;
-  bgTintClass: string;
-  bgColorClass: string;
-  fgClass: string;
-}
+type View = 'entry' | 'setup' | 'preview' | 'player' | 'complete';
 
-const RECIPES: Record<RecipeId, Recipe> = {
-  sleep: {
-    id: 'sleep',
-    trigger: 'I slept badly',
-    breathwork: 'Box Breathing: 4s inhale, 4s hold, 4s exhale, 4s hold. (Activates stability).',
-    thoughtReset: '"My only goal today is to operate safely at 40% capacity. Perfection is not on the menu."',
-    bodyReset: 'Drink 16oz of cold water immediately. Step outside into natural light for 5 minutes.',
-    action: 'Scan your task list and immediately drop or delegate one non-critical item.',
-    boundary: 'Tell your team: "I am operating on low battery today, so my response times will be slower."',
-    icon: Moon,
-    colorClass: 'text-primary',
-    bgColorClass: 'bg-primary',
-    fgClass: 'text-primary-foreground',
-    borderClass: 'border-l-primary',
-    bgTintClass: 'bg-primary/5'
-  },
-  meeting: {
-    id: 'meeting',
-    trigger: 'I had a hard meeting',
-    breathwork: 'Physiological Sigh: Double inhale through the nose, long exhale through the mouth. Repeat 3 times.',
-    thoughtReset: '"Their urgency or frustration is entirely theirs. I do not have to absorb their panic."',
-    bodyReset: 'Stand up. Shake your hands rapidly for 10 seconds. Shake the adrenaline out.',
-    action: 'Do not reply to any follow-up emails for at least 30 minutes. Let the physiological spike pass.',
-    boundary: 'If asked to jump on another call: "I need 15 minutes to process the last meeting before pivoting."',
-    icon: Zap,
-    colorClass: 'text-[#9a3412] dark:text-warning',
-    bgColorClass: 'bg-warning',
-    fgClass: 'text-warning-foreground',
-    borderClass: 'border-l-warning',
-    bgTintClass: 'bg-warning/5'
-  },
-  guilty: {
-    id: 'guilty',
-    trigger: 'I feel guilty resting',
-    breathwork: 'Deep belly breathing. Place hand on stomach, ensure only the stomach rises.',
-    thoughtReset: '"Recovery is a biological requirement for performance. I am not lazy; I am reloading."',
-    bodyReset: 'Lie flat on the floor for 3 minutes. Surrender your physical weight entirely.',
-    action: 'Do a zero-output activity for 10 minutes (watch a video, read fiction). Do not optimise it.',
-    boundary: 'Put your phone in Do Not Disturb Mode for the next hour.',
-    icon: Shield,
-    colorClass: 'text-[#166534] dark:text-[#4ade80]',
-    bgColorClass: 'bg-success',
-    fgClass: 'text-success-foreground',
-    borderClass: 'border-l-success',
-    bgTintClass: 'bg-success/5'
-  },
-  angry: {
-    id: 'angry',
-    trigger: 'I am angry',
-    breathwork: 'Lions Breath: Inhale deeply, exhale forcefully with mouth wide open and tongue out.',
-    thoughtReset: '"Anger is a signal that a boundary has been crossed. It is giving me information, not a directive to strike."',
-    bodyReset: 'Tense every muscle in your body for 5 seconds, then release completely. Repeat twice.',
-    action: 'Write down exactly what you want to say to the person. Then delete it immediately without sending.',
-    boundary: '"I am not in a productive headspace to discuss this right now. We will revisit this tomorrow at 10 AM."',
-    icon: Flame,
-    colorClass: 'text-destructive',
-    bgColorClass: 'bg-destructive',
-    fgClass: 'text-destructive-foreground',
-    borderClass: 'border-l-destructive',
-    bgTintClass: 'bg-destructive/5'
-  },
-  numb: {
-    id: 'numb',
-    trigger: 'I am numb',
-    breathwork: 'Rapid nasal inhales (breath of fire) for 15 seconds to wake the sympathetic system up gently.',
-    thoughtReset: '"Numbness is simply my nervous system pulling the circuit breaker to protect me from overload."',
-    bodyReset: 'Splash freezing cold water on your face, or hold an ice cube. Force a sensory reset.',
-    action: 'Do one tiny, mechanical task that requires no thought (wipe the desk, organise a folder).',
-    boundary: 'Decline all optional social interactions today. Protect the shell.',
-    icon: CloudFog,
-    colorClass: 'text-text-muted',
-    bgColorClass: 'bg-surface',
-    fgClass: 'text-text-main',
-    borderClass: 'border-l-border',
-    bgTintClass: 'bg-surface'
-  },
-  focus: {
-    id: 'focus',
-    trigger: 'I cannot focus',
-    breathwork: 'Alternate nostril breathing. Balances left/right hemisphere activation.',
-    thoughtReset: '"My brain is resisting because the task is either too big or too vague. I need to shrink the scope."',
-    bodyReset: 'Stand up and do 10 squats or stretch your arms straight up. Get blood flowing.',
-    action: 'Write down ONLY the very next physical action (e.g., "open the document"). Do nothing else.',
-    boundary: 'Close all tabs except the one you need. Put the phone in another room.',
-    icon: Crosshair,
-    colorClass: 'text-primary',
-    bgColorClass: 'bg-primary',
-    fgClass: 'text-primary-foreground',
-    borderClass: 'border-l-primary',
-    bgTintClass: 'bg-primary/5'
-  },
-  switch_off: {
-    id: 'switch_off',
-    trigger: 'I need to switch off',
-    breathwork: 'Extended exhale: Inhale for 4, exhale for 8. Signals safety to the brainstem.',
-    thoughtReset: '"There is no remaining crisis that will be solved by me staring at this screen for another hour."',
-    bodyReset: 'Physically close the laptop. Step into a different room or take a walk outside the building.',
-    action: 'Change your clothes. Create a physical transition away from your "work uniform".',
-    boundary: 'Turn off Slack/Email notifications until tomorrow morning. State: "I am offline until tomorrow."',
-    icon: Power,
-    colorClass: 'text-primary',
-    bgColorClass: 'bg-primary',
-    fgClass: 'text-primary-foreground',
-    borderClass: 'border-l-primary',
-    bgTintClass: 'bg-primary/5'
-  },
-  capacity: {
-    id: 'capacity',
-    trigger: 'I am over capacity',
-    breathwork: 'Inhale and audibly sigh on the exhale. A loud, vocalised drop of tension.',
-    thoughtReset: '"If everything is urgent, nothing is urgent. System failure is imminent if I do not drop load."',
-    bodyReset: 'Sit down, put your head between your knees, and breathe for 60 seconds.',
-    action: 'Cancel or reschedule the next thing on your calendar today. No apologies, just a logistical update.',
-    boundary: '"I am currently over capacity and cannot take this on without dropping an existing priority. Which should I drop?"',
-    icon: AlertTriangle,
-    colorClass: 'text-destructive',
-    bgColorClass: 'bg-destructive',
-    fgClass: 'text-destructive-foreground',
-    borderClass: 'border-l-destructive',
-    bgTintClass: 'bg-destructive/5'
-  }
-};
+export const RecoveryRecipes = ({ fingerprint: _fingerprint, onAwardPoints }: RecoveryRecipesProps) => {
+  const flags = useFeatureFlags();
+  const [view, setView] = useState<View>('entry');
+  const [somethingElseOpen, setSomethingElseOpen] = useState(false);
+  const [somethingElseText, setSomethingElseText] = useState('');
+  const [selectedSituation, setSelectedSituation] = useState<SituationKey | null>(null);
+  const [capacity, setCapacity] = useState<Capacity | undefined>(undefined);
+  const [timeAvailableMinutes, setTimeAvailableMinutes] = useState<number | undefined>(undefined);
+  const [recipe, setRecipe] = useState<BuiltRecoveryRecipe | null>(null);
+  const [stepIndex, setStepIndex] = useState(0);
+  const [completedStepTypes, setCompletedStepTypes] = useState<RecipeStepType[]>([]);
+  const [skippedStepTypes, setSkippedStepTypes] = useState<RecipeStepType[]>([]);
+  const [preferredLens, setPreferredLens] = useState<GroundingLens | undefined>(undefined);
 
-export const RecoveryRecipes = ({ fingerprint, onAwardPoints }: RecoveryRecipesProps) => {
-  const [activeRecipe, setActiveRecipe] = useState<RecipeId | null>(null);
+  useEffect(() => {
+    if (!auth.currentUser) return;
+    loadRecipePreferences(auth.currentUser.uid).then((prefs) => {
+      if (prefs.preferredLens) setPreferredLens(prefs.preferredLens);
+    });
+  }, []);
 
-  const handleSelectRecipe = (id: RecipeId) => {
-    setActiveRecipe(id);
-    if (onAwardPoints) onAwardPoints(5, 'Engaged Recovery Recipe');
+  const resetToEntry = () => {
+    setView('entry');
+    setSelectedSituation(null);
+    setSomethingElseOpen(false);
+    setSomethingElseText('');
+    setCapacity(undefined);
+    setTimeAvailableMinutes(undefined);
+    setRecipe(null);
+    setStepIndex(0);
+    setCompletedStepTypes([]);
+    setSkippedStepTypes([]);
   };
 
-  const recipe = activeRecipe ? RECIPES[activeRecipe] : null;
+  const handlePickSituation = (situation: SituationKey) => {
+    setSelectedSituation(situation);
+    setSomethingElseOpen(false);
+    setView('setup');
+  };
+
+  const handleSomethingElse = () => {
+    // The deterministic engine can't classify free text, so this always
+    // resolves to the universal reset recipe (section 29's "must work
+    // without AI") - the note itself is kept for Nova's own memory, never
+    // sent to analytics (section 36's exclusion list).
+    if (somethingElseText.trim()) {
+      updateNovaMemoryBySourceAndType('Recovery Recipes', 'state', {
+        content: `Described a situation in their own words before a Recovery Recipe: "${somethingElseText.trim().slice(0, 200)}"`,
+        confidence: 'medium',
+        canEdit: true,
+      });
+    }
+    setSelectedSituation('just_need_reset');
+    setView('setup');
+  };
+
+  const buildAndPreview = () => {
+    if (!selectedSituation) return;
+    const built = buildRecoveryRecipe({ situationKey: selectedSituation, capacity, timeAvailableMinutes });
+    setRecipe(built);
+    setStepIndex(0);
+    setCompletedStepTypes([]);
+    setSkippedStepTypes([]);
+    setView('preview');
+  };
+
+  const handleMakeShorter = () => {
+    if (!selectedSituation) return;
+    const shortened = adaptRecoveryRecipe({ situationKey: selectedSituation, capacity, timeAvailableMinutes }, { type: 'shorten' });
+    setRecipe(shortened);
+    setCapacity('almost_nothing');
+  };
+
+  const handleBegin = () => {
+    if (!recipe || !selectedSituation) return;
+    logRecipeEvent('recipe_started', { situationKey: selectedSituation });
+    setStepIndex(0);
+    setView('player');
+  };
+
+  const finishRecipe = () => {
+    if (!recipe || !selectedSituation) return;
+    logRecipeEvent('recipe_completed', { situationKey: selectedSituation });
+    if (auth.currentUser) {
+      recordRecipeHistory(auth.currentUser.uid, {
+        situationKey: selectedSituation,
+        capacity,
+        durationMinutes: recipe.estimatedDurationMinutes,
+        completedStepTypes,
+        skippedStepTypes,
+      }).catch(() => {});
+    }
+    if (onAwardPoints) onAwardPoints(15, `Completed Recipe: ${recipe.recipeTitle}`);
+    updateNovaMemoryBySourceAndType('Recovery Recipes', 'trigger', {
+      content: `Completed a Recovery Recipe for "${SITUATION_LABELS[selectedSituation]}".`,
+      confidence: 'verified',
+      canEdit: true,
+    });
+    setView('complete');
+  };
+
+  const handleStopRecipe = () => {
+    if (recipe && selectedSituation) {
+      logRecipeEvent('recipe_abandoned', { situationKey: selectedSituation });
+      if (auth.currentUser && (completedStepTypes.length > 0 || skippedStepTypes.length > 0)) {
+        recordRecipeHistory(auth.currentUser.uid, {
+          situationKey: selectedSituation, capacity, durationMinutes: recipe.estimatedDurationMinutes,
+          completedStepTypes, skippedStepTypes,
+        }).catch(() => {});
+      }
+    }
+    resetToEntry();
+  };
+
+  const currentStep: RecipeStep | null = recipe ? recipe.steps[stepIndex] ?? null : null;
+
+  const advanceStep = (wasSkipped: boolean) => {
+    if (!currentStep) return;
+    if (wasSkipped) {
+      logRecipeEvent('recipe_step_skipped', { situationKey: selectedSituation || undefined, stepType: currentStep.type });
+      setSkippedStepTypes((prev) => [...prev, currentStep.type]);
+    } else {
+      setCompletedStepTypes((prev) => [...prev, currentStep.type]);
+    }
+    if (recipe && stepIndex < recipe.steps.length - 1) {
+      setStepIndex((i) => i + 1);
+    } else {
+      finishRecipe();
+    }
+  };
+
+  const groundingText = (step: RecipeStep): string =>
+    (preferredLens && step.groundingExcerptByLens?.[preferredLens]) || step.groundingExcerpt || '';
+
+  const movementTitle = (movementId?: string): string | null =>
+    movementId ? MOVEMENT_SNACKS[movementId]?.title ?? null : null;
+
+  const entryCards = useMemo(() => SITUATION_ORDER, []);
 
   return (
     <div className="space-y-12 pb-24">
       <div className="max-w-4xl">
         <div className="flex items-center gap-4 mb-4">
-           <div className="tag">Section 18 / Practices</div>
-           <div className="h-px flex-1 bg-border/40" />
+          <div className="tag">Section 18 / Practices</div>
+          <div className="h-px flex-1 bg-border/40" />
         </div>
         <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-6">
           <div className="space-y-4">
             <h3 className="text-5xl font-display font-bold text-text-main tracking-tight">Recovery Recipes</h3>
-            <p className="text-xl text-text-muted font-medium  max-w-2xl">
-              "Like a personalised playlist, but for burnout recovery. Simple. Repeatable. Effective."
+            <p className="text-xl text-text-muted font-medium max-w-2xl">
+              "Like a personalised playlist for difficult moments. Simple, repeatable, built around what you need right now."
             </p>
           </div>
         </div>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        {(Object.values(RECIPES)).map((r) => (
-          <button
-            key={r.id}
-            onClick={() => handleSelectRecipe(r.id)}
-            aria-pressed={activeRecipe === r.id}
-            className={cn(
-               "p-6 rounded-2xl border text-left transition-all group flex flex-col items-center sm:items-start text-center sm:text-left h-full",
-               activeRecipe === r.id
-                 ? "bg-primary/10 border-primary scale-[1.02] shadow-xl shadow-primary/10"
-                 : "border border-transparent hover:border-primary/30 hover:bg-surface dark:hover:bg-surface"
-            )}
-          >
-             <div className={cn("w-12 h-12 rounded-full flex items-center justify-center mb-4 transition-colors", activeRecipe === r.id ? r.bgColorClass + " " + r.fgClass : `bg-surface dark:bg-surface ${r.colorClass}`)}>
-                <r.icon className="w-6 h-6" />
-             </div>
-             <span className="font-display font-bold text-lg text-text-main leading-tight">{r.trigger}</span>
-          </button>
-        ))}
-      </div>
-
       <AnimatePresence mode="wait">
-        {recipe && (
+        {view === 'entry' && (
+          <motion.div key="entry" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-6">
+            <h4 className="text-2xl font-display font-bold text-text-main">What is happening right now?</h4>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              {entryCards.map((situation) => (
+                <button
+                  key={situation}
+                  onClick={() => handlePickSituation(situation)}
+                  className="p-5 rounded-2xl border border-border hover:border-primary/50 hover:bg-surface dark:hover:bg-surface text-left transition-all flex items-center justify-between gap-3 group"
+                >
+                  <span className="text-base font-bold text-text-main">{SITUATION_LABELS[situation]}</span>
+                  <ChevronRight className="w-4 h-4 text-text-muted group-hover:text-primary shrink-0" />
+                </button>
+              ))}
+              <button
+                onClick={() => setSomethingElseOpen((v) => !v)}
+                aria-pressed={somethingElseOpen}
+                className={cn(
+                  'p-5 rounded-2xl border text-left transition-all flex items-center justify-between gap-3',
+                  somethingElseOpen ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/50 hover:bg-surface dark:hover:bg-surface'
+                )}
+              >
+                <span className="text-base font-bold text-text-main">Something else</span>
+                <ChevronRight className="w-4 h-4 text-text-muted shrink-0" />
+              </button>
+            </div>
+
+            {somethingElseOpen && (
+              <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} className="space-y-3 max-w-xl">
+                <input
+                  type="text"
+                  value={somethingElseText}
+                  onChange={(e) => setSomethingElseText(e.target.value.slice(0, 200))}
+                  placeholder="Describe what's going on, in your own words (optional)"
+                  className="w-full p-3 rounded-xl border border-border/40 bg-white dark:bg-surface text-sm text-text-main"
+                />
+                <button onClick={handleSomethingElse} className="btn-primary bg-primary hover:bg-primary border-primary text-primary-foreground">
+                  <ArrowRight className="w-4 h-4" /> Build a recipe
+                </button>
+              </motion.div>
+            )}
+          </motion.div>
+        )}
+
+        {view === 'setup' && selectedSituation && (
+          <motion.div key="setup" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="card border border-border/40 p-6 sm:p-8 space-y-8">
+            <button onClick={() => setView('entry')} className="flex items-center gap-2 text-xs font-black uppercase tracking-widest text-text-muted hover:text-text-main">
+              <ArrowLeft className="w-3.5 h-3.5" /> Back
+            </button>
+
+            <div className="space-y-3">
+              <h5 className="text-lg font-display font-bold text-text-main">How much can you deal with right now?</h5>
+              <div className="flex flex-wrap gap-3">
+                {CAPACITY_ORDER.map((c) => (
+                  <button
+                    key={c}
+                    onClick={() => setCapacity(c)}
+                    aria-pressed={capacity === c}
+                    className={cn(
+                      'px-5 py-3 rounded-xl text-sm font-bold border transition-all',
+                      capacity === c ? 'bg-primary border-primary text-primary-foreground' : 'border-border hover:border-primary/50 text-text-main'
+                    )}
+                  >
+                    {CAPACITY_LABELS[c]}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              <h5 className="text-lg font-display font-bold text-text-main">How much time do you have?</h5>
+              <div className="flex flex-wrap gap-3">
+                {TIME_OPTIONS.map((t) => (
+                  <button
+                    key={t.label}
+                    onClick={() => setTimeAvailableMinutes(t.minutes ?? undefined)}
+                    aria-pressed={timeAvailableMinutes === (t.minutes ?? undefined)}
+                    className={cn(
+                      'px-4 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest flex items-center gap-2 border transition-all',
+                      timeAvailableMinutes === (t.minutes ?? undefined) ? 'bg-primary border-primary text-primary-foreground' : 'border-border hover:border-primary/50 text-text-muted'
+                    )}
+                  >
+                    <Clock className="w-3.5 h-3.5" /> {t.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-4 pt-2 border-t border-border/40">
+              <button onClick={buildAndPreview} className="btn-primary bg-primary hover:bg-primary border-primary text-primary-foreground mt-4">
+                <ArrowRight className="w-4 h-4" /> Build my recipe
+              </button>
+              <button onClick={buildAndPreview} className="text-xs font-black uppercase tracking-widest text-text-muted hover:text-text-main mt-4">
+                Skip this
+              </button>
+            </div>
+          </motion.div>
+        )}
+
+        {view === 'preview' && recipe && (
+          <motion.div key="preview" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="card border border-primary/20 bg-primary/5 p-6 sm:p-8 md:p-10 space-y-8">
+            <div className="space-y-2">
+              <div className="text-xs font-black uppercase tracking-widest text-text-muted">Your Recovery Recipe</div>
+              <h4 className="text-3xl font-display font-bold text-text-main">{recipe.recipeTitle}</h4>
+              <p className="text-sm font-bold text-text-muted uppercase tracking-widest">
+                {DURATION_CATEGORY_LABELS[recipe.durationCategory]} · About {recipe.estimatedDurationMinutes} min{recipe.estimatedDurationMinutes === 1 ? '' : 's'}
+              </p>
+            </div>
+
+            <ol className="space-y-2">
+              {recipe.steps.map((step, i) => (
+                <li key={step.id} className="flex items-start gap-3 p-4 rounded-xl bg-white/50 dark:bg-surface/50 border border-border/40">
+                  <span className="w-6 h-6 rounded-full bg-primary/10 text-primary text-xs font-black flex items-center justify-center shrink-0 mt-0.5">{i + 1}</span>
+                  <span className="text-sm font-bold text-text-main">
+                    {step.type === 'movement' && movementTitle(step.movementId) ? movementTitle(step.movementId) : step.title}
+                  </span>
+                </li>
+              ))}
+              <li className="flex items-start gap-3 p-4 rounded-xl bg-white/30 dark:bg-surface/30 border border-border/20">
+                <span className="w-6 h-6 rounded-full bg-surface text-text-muted text-xs font-black flex items-center justify-center shrink-0 mt-0.5">
+                  {recipe.steps.length + 1}
+                </span>
+                <span className="text-sm font-bold text-text-muted">{recipe.closingAction}</span>
+              </li>
+            </ol>
+
+            <p className="text-sm text-text-muted italic">{recipe.reason}</p>
+
+            <div className="flex flex-wrap items-center gap-4 pt-2 border-t border-border/40">
+              <button onClick={handleBegin} className="btn-primary bg-primary hover:bg-primary border-primary text-primary-foreground mt-4">
+                <ArrowRight className="w-4 h-4" /> Start Recipe
+              </button>
+              {flags.enable_recovery_recipes_dynamic_sequencing && recipe.durationCategory !== 'quick' && (
+                <button onClick={handleMakeShorter} className="text-xs font-black uppercase tracking-widest text-text-muted hover:text-text-main mt-4">
+                  Make it shorter
+                </button>
+              )}
+              <button onClick={() => setView('entry')} className="text-xs font-black uppercase tracking-widest text-text-muted hover:text-text-main mt-4">
+                Choose another
+              </button>
+            </div>
+          </motion.div>
+        )}
+
+        {view === 'player' && recipe && currentStep && (
+          <motion.div key="player" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="card border border-primary/20 bg-primary/5 p-6 sm:p-8 md:p-10 space-y-8">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-black uppercase tracking-widest text-text-muted">
+                Step {stepIndex + 1} of {recipe.steps.length}
+              </span>
+              <button onClick={handleStopRecipe} aria-label="Stop recipe" className="text-text-muted hover:text-text-main flex items-center gap-1.5 text-xs font-black uppercase tracking-widest">
+                <X className="w-3.5 h-3.5" /> Stop
+              </button>
+            </div>
+
+            <div className="text-center py-6 space-y-4">
+              <h4 className="text-3xl sm:text-4xl font-display font-bold text-text-main">
+                {currentStep.type === 'movement' && movementTitle(currentStep.movementId) ? movementTitle(currentStep.movementId) : currentStep.title}
+              </h4>
+              {currentStep.instruction && <p className="text-lg text-text-muted font-medium max-w-lg mx-auto">{currentStep.instruction}</p>}
+              {currentStep.reflectionQuestions?.map((q) => (
+                <p key={q} className="text-lg text-text-main font-medium max-w-lg mx-auto italic">{q}</p>
+              ))}
+              {currentStep.type === 'grounding' && groundingText(currentStep) && (
+                <p className="text-lg text-text-main font-medium max-w-lg mx-auto italic">{groundingText(currentStep)}</p>
+              )}
+              {currentStep.choices && (
+                <div className="flex flex-wrap justify-center gap-3 pt-2">
+                  {currentStep.choices.map((choice) => (
+                    <button
+                      key={choice.id}
+                      onClick={() => advanceStep(false)}
+                      className="px-5 py-3 rounded-xl border border-border hover:border-primary/50 hover:bg-surface dark:hover:bg-surface text-sm font-bold text-text-main transition-all"
+                    >
+                      {choice.label}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {!currentStep.choices && (
+              <div className="flex items-center justify-center gap-3 pt-6 border-t border-border/50">
+                {currentStep.skippable && (
+                  <button onClick={() => advanceStep(true)} className="text-xs font-black uppercase tracking-widest text-text-muted hover:text-text-main">
+                    Skip
+                  </button>
+                )}
+                <button onClick={() => advanceStep(false)} className="btn-primary bg-primary hover:bg-primary border-primary text-primary-foreground">
+                  {stepIndex < recipe.steps.length - 1 ? 'Continue' : 'Finish'}
+                </button>
+              </div>
+            )}
+          </motion.div>
+        )}
+
+        {view === 'complete' && recipe && (
           <motion.div
-            key={recipe.id}
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -20 }}
-            className={cn("card border-l-4 p-8 md:p-12 mt-8", recipe.borderClass, activeRecipe ? recipe.bgTintClass : '')}
+            key="complete"
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            role="status"
+            aria-live="polite"
+            className="card border border-primary/20 bg-primary/5 p-6 sm:p-8 md:p-10 flex flex-col items-center justify-center text-center py-20 space-y-6"
           >
-            <div className="flex items-center gap-4 mb-10">
-              <div className={cn("w-16 h-16 rounded-xl flex items-center justify-center shadow-lg", recipe.bgColorClass, recipe.fgClass)}>
-                <recipe.icon className="w-8 h-8" />
-              </div>
-              <div>
-                <h3 className="text-3xl font-display font-bold text-text-main">"{recipe.trigger}"</h3>
-                <p className="text-text-muted font-medium uppercase tracking-widest text-sm mt-1">Recovery Steps</p>
-              </div>
+            <div className="w-20 h-20 bg-primary rounded-full flex items-center justify-center text-primary-foreground shadow-xl shadow-primary/20">
+              <CheckCircle2 className="w-10 h-10" />
             </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-               <div className="space-y-8">
-                  {/* Breathwork */}
-                  <div className="space-y-3 relative group">
-                    <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-full bg-primary/10 text-[#9a3412] dark:text-primary flex items-center justify-center">
-                        <Wind className="w-4 h-4" />
-                      </div>
-                      <h4 className="font-bold text-text-main uppercase tracking-widest text-sm">One Breathwork Reset</h4>
-                    </div>
-                    <div className="p-5 bg-white/50 dark:bg-surface/50 rounded-2xl border border-border/50 text-text-main font-medium leading-relaxed group-hover:border-primary/30 transition-colors">
-                      {recipe.breathwork}
-                    </div>
-                  </div>
-
-                  {/* Body Reset */}
-                  <div className="space-y-3 relative group">
-                    <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-full bg-success/10 text-[#166534] dark:text-[#4ade80] flex items-center justify-center">
-                        <Activity className="w-4 h-4" />
-                      </div>
-                      <h4 className="font-bold text-text-main uppercase tracking-widest text-sm">One Body Reset</h4>
-                    </div>
-                    <div className="p-5 bg-white/50 dark:bg-surface/50 rounded-2xl border border-border/50 text-text-main font-medium leading-relaxed group-hover:border-success/30 transition-colors">
-                      {recipe.bodyReset}
-                    </div>
-                  </div>
-               </div>
-
-               <div className="space-y-8">
-                   {/* Thought Reset */}
-                  <div className="space-y-3 relative group">
-                    <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-full bg-primary/10 text-[#9a3412] dark:text-primary flex items-center justify-center">
-                        <Brain className="w-4 h-4" />
-                      </div>
-                      <h4 className="font-bold text-text-main uppercase tracking-widest text-sm">One Thought Reset</h4>
-                    </div>
-                    <div className="p-5 bg-white/50 dark:bg-surface/50 rounded-2xl border border-border/50 text-text-main font-medium italic leading-relaxed group-hover:border-primary/30 transition-colors">
-                      {recipe.thoughtReset}
-                    </div>
-                  </div>
-
-                  {/* Action */}
-                  <div className="space-y-3 relative group">
-                    <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-full bg-warning/10 text-[#9a3412] dark:text-warning flex items-center justify-center">
-                        <ArrowRight className="w-4 h-4" />
-                      </div>
-                      <h4 className="font-bold text-text-main uppercase tracking-widest text-sm">One Action</h4>
-                    </div>
-                    <div className="p-5 bg-white/50 dark:bg-surface/50 rounded-2xl border border-border/50 text-text-main font-medium leading-relaxed group-hover:border-warning/30 transition-colors">
-                      {recipe.action}
-                    </div>
-                  </div>
-               </div>
-            </div>
-
-            <div className="mt-8 pt-8 border-t border-border/50">
-               {/* Boundary */}
-               <div className="space-y-3 relative group max-w-2xl">
-                 <div className="flex items-center gap-3">
-                   <div className="w-8 h-8 rounded-full bg-destructive/10 text-destructive flex items-center justify-center">
-                     <ShieldCheck className="w-4 h-4" />
-                   </div>
-                   <h4 className="font-bold text-text-main uppercase tracking-widest text-sm">One Boundary</h4>
-                 </div>
-                 <div className="p-5 bg-white/50 dark:bg-surface/50 rounded-2xl border border-border/50 text-text-main font-bold leading-relaxed border-l-4 border-l-destructive group-hover:bg-destructive/5 transition-colors">
-                   {recipe.boundary}
-                 </div>
-               </div>
-            </div>
-
-            <div className="flex justify-end mt-8">
-               <button 
-                 onMouseEnter={() => {}}
-                 className={cn("btn-primary", recipe.bgColorClass, recipe.fgClass)}
-                 onClick={() => {
-                   if (onAwardPoints) onAwardPoints(15, `Completed Recipe: ${recipe.trigger}`);
-                   updateNovaMemoryBySourceAndType('Recovery Recipes', 'trigger', {
-                     content: `Completed recovery recipe for trigger "${recipe.trigger}".`,
-                     confidence: 'verified',
-                     canEdit: true,
-                   });
-                   setActiveRecipe(null);
-                 }}
-               >
-                 <CheckCircle2 className="w-5 h-5 mr-2" />
-                 Got It
-               </button>
-            </div>
-
+            <h4 className="text-3xl font-display font-bold text-text-main max-w-lg">{recipe.closingAction}</h4>
+            <button onClick={resetToEntry} className="btn-primary bg-primary hover:bg-primary border-primary text-primary-foreground">
+              Done
+            </button>
           </motion.div>
         )}
       </AnimatePresence>
