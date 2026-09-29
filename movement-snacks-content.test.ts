@@ -123,6 +123,24 @@ describe('MOVEMENT_SNACKS content', () => {
     expect(MOVEMENT_FEEDBACK_OPTIONS[MOVEMENT_FEEDBACK_OPTIONS.length - 1]!.id).toBe('more_uncomfortable');
   });
 
+  it('Shake Off the Meeting has the section 9 "reset perspective" closing choice, never a full reflection', () => {
+    const choice = MOVEMENT_SNACKS.shake_meeting!.closingChoice;
+    expect(choice).toBeTruthy();
+    expect(choice!.prompt.length).toBeGreaterThan(0);
+    expect(choice!.actionLabel.length).toBeGreaterThan(0);
+    expect(choice!.nothingLabel.length).toBeGreaterThan(0);
+  });
+
+  it('every closingChoice everywhere is well-formed (never an empty label)', () => {
+    for (const id of MOVEMENT_ORDER) {
+      const choice = MOVEMENT_SNACKS[id]!.closingChoice;
+      if (!choice) continue;
+      expect(choice.prompt.length).toBeGreaterThan(0);
+      expect(choice.actionLabel.length).toBeGreaterThan(0);
+      expect(choice.nothingLabel.length).toBeGreaterThan(0);
+    }
+  });
+
   it('alternativeMovementIds never references a missing or self movement', () => {
     for (const id of MOVEMENT_ORDER) {
       for (const altId of MOVEMENT_SNACKS[id]!.alternativeMovementIds || []) {

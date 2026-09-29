@@ -65,6 +65,12 @@ export interface MovementSnack {
   supportedPositions: MovementPosition[];
   steps: MovementStep[];
   closingPrompt: string;
+  // Section 9's "reset perspective" pattern: an optional two-option choice
+  // shown on the completion screen, e.g. Shake Off the Meeting's "what
+  // needs action, and what can stay there?" - never a full Nova
+  // reflection, just a plain either/or with an optional one-line note if
+  // something genuinely needs following up.
+  closingChoice?: { prompt: string; actionLabel: string; nothingLabel: string };
   safetyNotes?: string;
   voiceEnabled: boolean;
   active: boolean;
@@ -261,7 +267,8 @@ export const MOVEMENT_SNACKS: Record<string, MovementSnack> = {
       { id: 's3', instruction: 'Shake out your hands and arms', supportingText: 'Or your whole body, if that\'s comfortable.', durationSeconds: 12 },
       { id: 's4', instruction: 'Take one or two longer breaths out', supportingText: 'No need to hold anything - just exhale a little longer than usual.', durationSeconds: 12 },
     ],
-    closingPrompt: 'That interaction has ended. What needs action, and what can stay there?',
+    closingPrompt: 'That interaction has ended.',
+    closingChoice: { prompt: 'What needs action, and what can stay there?', actionLabel: 'Something needs action', nothingLabel: 'Nothing right now' },
     safetyNotes: COMFORTABLE_RANGE_NOTE,
     voiceEnabled: true,
     active: true,

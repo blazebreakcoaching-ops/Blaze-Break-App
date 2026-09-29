@@ -53,6 +53,8 @@ export const MovementSnacks = ({ fingerprint: _fingerprint, onAwardPoints }: Mov
   const [paused, setPaused] = useState(false);
   const [secondsRemaining, setSecondsRemaining] = useState<number | null>(null);
   const [audioEnabled, setAudioEnabled] = useState(false);
+  const [closingChoicePicked, setClosingChoicePicked] = useState<'needs_action' | 'nothing' | null>(null);
+  const [closingNote, setClosingNote] = useState('');
 
   useEffect(() => {
     if (!auth.currentUser) return;
@@ -101,6 +103,8 @@ export const MovementSnacks = ({ fingerprint: _fingerprint, onAwardPoints }: Mov
     setActiveContext(context);
     setStepIndex(0);
     setFeedback(null);
+    setClosingChoicePicked(null);
+    setClosingNote('');
     setView('detail');
   };
 
@@ -155,6 +159,17 @@ export const MovementSnacks = ({ fingerprint: _fingerprint, onAwardPoints }: Mov
       recordMovementHistory(auth.currentUser.uid, { movementId: activeMovementId, context: activeContext || undefined, skipped: false, feedback: choice }).catch(() => {});
     }
     if (choice !== 'more_uncomfortable') finishMovement();
+  };
+
+  const handleSaveClosingNote = () => {
+    if (closingNote.trim()) {
+      updateNovaMemoryBySourceAndType('Movement Snacks', 'state', {
+        content: `After a movement reset, noted something still needing attention: "${closingNote.trim().slice(0, 200)}"`,
+        confidence: 'medium',
+        canEdit: true,
+      });
+    }
+    setClosingNote('');
   };
 
   const handleChooseGentler = () => {
@@ -453,9 +468,40 @@ export const MovementSnacks = ({ fingerprint: _fingerprint, onAwardPoints }: Mov
             <div className="space-y-2">
               <h4 className="text-3xl font-display font-bold text-text-main">{activeMovement.closingPrompt}</h4>
             </div>
-            <button onClick={() => { setView('entry'); setActiveMovementId(null); }} className="btn-primary bg-primary hover:bg-primary border-primary text-primary-foreground">
-              <Zap className="w-4 h-4" /> Done
-            </button>
+
+            {activeMovement.closingChoice && closingChoicePicked === null ? (
+              <div className="space-y-4">
+                <p className="text-lg text-text-muted font-medium">{activeMovement.closingChoice.prompt}</p>
+                <div className="flex flex-wrap justify-center gap-3">
+                  <button onClick={() => setClosingChoicePicked('needs_action')} className="px-5 py-3 rounded-xl border border-border hover:border-success/50 hover:bg-surface dark:hover:bg-surface text-sm font-bold text-text-main transition-all">
+                    {activeMovement.closingChoice.actionLabel}
+                  </button>
+                  <button onClick={() => setClosingChoicePicked('nothing')} className="px-5 py-3 rounded-xl border border-border hover:border-success/50 hover:bg-surface dark:hover:bg-surface text-sm font-bold text-text-main transition-all">
+                    {activeMovement.closingChoice.nothingLabel}
+                  </button>
+                </div>
+              </div>
+            ) : closingChoicePicked === 'needs_action' ? (
+              <div className="w-full max-w-md space-y-3">
+                <input
+                  type="text"
+                  value={closingNote}
+                  onChange={(e) => setClosingNote(e.target.value.slice(0, 200))}
+                  placeholder="One short note, if it helps (optional)"
+                  className="w-full p-3 rounded-xl border border-border/40 bg-white dark:bg-surface text-sm text-text-main"
+                />
+                <button
+                  onClick={() => { handleSaveClosingNote(); setView('entry'); setActiveMovementId(null); }}
+                  className="btn-primary bg-primary hover:bg-primary border-primary text-primary-foreground"
+                >
+                  <Zap className="w-4 h-4" /> Done
+                </button>
+              </div>
+            ) : (
+              <button onClick={() => { setView('entry'); setActiveMovementId(null); }} className="btn-primary bg-primary hover:bg-primary border-primary text-primary-foreground">
+                <Zap className="w-4 h-4" /> Done
+              </button>
+            )}
           </motion.div>
         )}
       </AnimatePresence>
