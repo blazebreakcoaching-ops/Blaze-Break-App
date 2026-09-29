@@ -202,6 +202,27 @@ export const MovementSnacks = ({ fingerprint: _fingerprint, onAwardPoints }: Mov
     if (auth.currentUser) toggleFavouriteService(auth.currentUser.uid, movementId, !isFav).catch(() => {});
   };
 
+  // Section 19's "Your go-to resets" - one-tap access to whatever the
+  // person has explicitly starred, in the order they starred them (most
+  // recent favourite first), not re-sorted by any usage signal.
+  const favouriteMovements = useMemo(
+    () => [...favourites].reverse().filter((id) => MOVEMENT_SNACKS[id]?.active),
+    [favourites]
+  );
+
+  // "Recently done" - surfaces real completions, most recent first, deduped
+  // per movement. Capped at 4 so this stays a quick-glance strip, not a
+  // second Browse screen.
+  const recentlyDoneMovements = useMemo(
+    () =>
+      usage
+        .filter((u) => u.lastCompletedAt && MOVEMENT_SNACKS[u.movementId]?.active)
+        .sort((a, b) => (b.lastCompletedAt! > a.lastCompletedAt! ? 1 : -1))
+        .slice(0, 4)
+        .map((u) => u.movementId),
+    [usage]
+  );
+
   const browseMovements = useMemo(() => {
     const filterSeated = (ids: string[]) => (seatedOnly ? ids.filter((id) => MOVEMENT_SNACKS[id]!.supportedPositions.includes('seated')) : ids);
     return MOVEMENT_CATEGORY_ORDER.map((category) => ({
@@ -245,6 +266,49 @@ export const MovementSnacks = ({ fingerprint: _fingerprint, onAwardPoints }: Mov
                 ))}
               </div>
             </div>
+
+            {flags.enable_movement_favourites && favouriteMovements.length > 0 && (
+              <div className="space-y-3">
+                <h5 className="text-xs uppercase font-black tracking-widest text-text-muted">Your go-to resets</h5>
+                <div className="flex flex-wrap gap-3">
+                  {favouriteMovements.map((id) => {
+                    const m = MOVEMENT_SNACKS[id]!;
+                    return (
+                      <button
+                        key={id}
+                        onClick={() => goToDetail(id, null)}
+                        className="px-4 py-2.5 rounded-xl border border-border hover:border-primary/50 hover:bg-surface dark:hover:bg-surface flex items-center gap-2 transition-all"
+                      >
+                        <Star className="w-3.5 h-3.5 fill-primary text-primary shrink-0" />
+                        <span className="text-sm font-bold text-text-main">{m.title}</span>
+                        <span className="text-xs text-text-muted">{formatDuration(m.durationSeconds)}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {flags.enable_movement_history && recentlyDoneMovements.length > 0 && (
+              <div className="space-y-3">
+                <h5 className="text-xs uppercase font-black tracking-widest text-text-muted">Recently done</h5>
+                <div className="flex flex-wrap gap-3">
+                  {recentlyDoneMovements.map((id) => {
+                    const m = MOVEMENT_SNACKS[id]!;
+                    return (
+                      <button
+                        key={id}
+                        onClick={() => goToDetail(id, null)}
+                        className="px-4 py-2.5 rounded-xl border border-border hover:border-success/50 hover:bg-surface dark:hover:bg-surface flex items-center gap-2 transition-all"
+                      >
+                        <span className="text-sm font-bold text-text-main">{m.title}</span>
+                        <span className="text-xs text-text-muted">{formatDuration(m.durationSeconds)}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
 
             <div className="space-y-3">
               <h5 className="text-xs uppercase font-black tracking-widest text-text-muted">Just give me something quick</h5>

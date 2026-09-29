@@ -49,6 +49,21 @@ describe('getMovementRecommendation', () => {
     expect(rec).toBeTruthy();
   });
 
+  it('deprioritises a movement last marked "more uncomfortable" below everything else, but never excludes it', () => {
+    const usage: MovementUsageEntry[] = [{ movementId: 'desk_stretch', completionCount: 1, recentlyUncomfortable: true }];
+    const rec = getMovementRecommendation({ context: 'sitting_too_long', usage });
+    expect(rec!.movementId).not.toBe('desk_stretch');
+  });
+
+  it('a movement marked "more uncomfortable" is still reachable when it is the only match for a context', () => {
+    // shake_meeting is meeting_lingering's sole context match (confirmed by
+    // the "seatedOnly" test above) - flagging it must not make the
+    // recommendation disappear, only rank it last among candidates.
+    const usage: MovementUsageEntry[] = [{ movementId: 'shake_meeting', completionCount: 1, recentlyUncomfortable: true }];
+    const rec = getMovementRecommendation({ context: 'meeting_lingering', usage });
+    expect(rec?.movementId).toBe('shake_meeting');
+  });
+
   it('always includes a plain-language reason, never empty', () => {
     for (const ctx of ['sitting_too_long', 'neck_shoulders_tight', 'meeting_lingering', 'switch_off_work', 'need_air_daylight', 'restless_stuck', 'quick'] as const) {
       const rec = getMovementRecommendation({ context: ctx });

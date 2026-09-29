@@ -16,6 +16,10 @@ export interface MovementUsageEntry {
   completionCount: number;
   lastSkippedAt?: string;
   favourite?: boolean;
+  // Section 6's "more uncomfortable" check-out was the most recent feedback
+  // for this movement - a real signal to deprioritise it (never exclude it
+  // outright; the person can still reach it via Browse all).
+  recentlyUncomfortable?: boolean;
 }
 
 export interface MovementRecommendationInput {
@@ -41,14 +45,19 @@ const RECENCY_COOLDOWN_HOURS = 20;
 const hoursSince = (iso: string | undefined, now: number): number =>
   iso ? (now - new Date(iso).getTime()) / (60 * 60 * 1000) : Infinity;
 
-// Ranks candidates for a context: on cooldown (recently shown) sinks to the
-// bottom, never-tried and least-recently-used rise to the top. Deterministic
+// Ranks candidates for a context: a movement last marked "more
+// uncomfortable" sinks lowest of all (never excluded outright - Browse all
+// still reaches it), on-cooldown (recently shown) sinks next, and among the
+// rest, never-tried and least-recently-used rise to the top. Deterministic
 // given the same usage history and current time.
 const rankCandidates = (candidateIds: string[], usage: MovementUsageEntry[], now: number): string[] => {
   const usageById = new Map(usage.map((u) => [u.movementId, u]));
   return [...candidateIds].sort((a, b) => {
     const ua = usageById.get(a);
     const ub = usageById.get(b);
+    const aUncomfortable = ua?.recentlyUncomfortable === true;
+    const bUncomfortable = ub?.recentlyUncomfortable === true;
+    if (aUncomfortable !== bUncomfortable) return aUncomfortable ? 1 : -1;
     const aOnCooldown = ua ? hoursSince(ua.lastCompletedAt, now) < RECENCY_COOLDOWN_HOURS : false;
     const bOnCooldown = ub ? hoursSince(ub.lastCompletedAt, now) < RECENCY_COOLDOWN_HOURS : false;
     if (aOnCooldown !== bOnCooldown) return aOnCooldown ? 1 : -1;

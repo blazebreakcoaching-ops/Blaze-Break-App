@@ -97,6 +97,7 @@ export const loadRecentMovementHistory = async (uid: string): Promise<MovementHi
 // Firestore-shaped assumptions and is trivially unit-testable on its own.
 export const computeUsageFromHistory = (entries: MovementHistoryEntry[], favourites: string[] = []): MovementUsageEntry[] => {
   const byMovement = new Map<string, MovementUsageEntry>();
+  const latestFeedbackAt = new Map<string, string>();
   for (const entry of entries) {
     const existing = byMovement.get(entry.movementId) || { movementId: entry.movementId, completionCount: 0 };
     if (entry.skipped) {
@@ -104,6 +105,14 @@ export const computeUsageFromHistory = (entries: MovementHistoryEntry[], favouri
     } else {
       existing.completionCount += 1;
       existing.lastCompletedAt = existing.lastCompletedAt && existing.lastCompletedAt > entry.createdAt ? existing.lastCompletedAt : entry.createdAt;
+    }
+    // Whichever feedback is most recent for this movement wins - a later
+    // "looser"/"more settled" should un-flag an earlier "more uncomfortable"
+    // (section 6), not leave it permanently deprioritised.
+    const priorFeedbackAt = latestFeedbackAt.get(entry.movementId);
+    if (entry.feedback && (!priorFeedbackAt || entry.createdAt > priorFeedbackAt)) {
+      latestFeedbackAt.set(entry.movementId, entry.createdAt);
+      existing.recentlyUncomfortable = entry.feedback === 'more_uncomfortable';
     }
     byMovement.set(entry.movementId, existing);
   }

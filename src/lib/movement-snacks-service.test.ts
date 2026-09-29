@@ -108,4 +108,24 @@ describe('computeUsageFromHistory', () => {
   it('returns an empty array for a brand-new user with no history and no favourites', () => {
     expect(computeUsageFromHistory([], [])).toEqual([]);
   });
+
+  it('flags a movement whose most recent feedback was "more uncomfortable"', () => {
+    const usage = computeUsageFromHistory([
+      entry('neck_shoulder', '2026-01-01T00:00:00.000Z', false, 'more_uncomfortable'),
+    ]);
+    expect(usage.find((u) => u.movementId === 'neck_shoulder')?.recentlyUncomfortable).toBe(true);
+  });
+
+  it('a later, gentler feedback clears an earlier "more uncomfortable" flag rather than sticking permanently', () => {
+    const usage = computeUsageFromHistory([
+      entry('neck_shoulder', '2026-01-01T00:00:00.000Z', false, 'more_uncomfortable'),
+      entry('neck_shoulder', '2026-01-05T00:00:00.000Z', false, 'looser'),
+    ]);
+    expect(usage.find((u) => u.movementId === 'neck_shoulder')?.recentlyUncomfortable).toBe(false);
+  });
+
+  it('does not flag a movement that has never received "more uncomfortable" feedback', () => {
+    const usage = computeUsageFromHistory([entry('desk_stretch', '2026-01-01T00:00:00.000Z', false, 'more_awake')]);
+    expect(usage.find((u) => u.movementId === 'desk_stretch')?.recentlyUncomfortable).toBe(false);
+  });
 });
