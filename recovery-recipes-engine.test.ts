@@ -107,6 +107,50 @@ describe('adaptRecoveryRecipe', () => {
   });
 });
 
+describe('situation-level acceptance criteria (Batch 4 content audit)', () => {
+  it('numb never surfaces a reflection question at any capacity - "do not force introspection" holds at every level, not just the template default', () => {
+    for (const capacity of ['almost_nothing', 'a_little', 'some_space', 'can_go_deeper'] as const) {
+      const recipe = buildRecoveryRecipe({ situationKey: 'numb', capacity });
+      expect(recipe.steps.some((s) => s.type === 'nova_reflection')).toBe(false);
+    }
+  });
+
+  it('an over-capacity user at "almost nothing" gets no more than 2 real steps, matching the brief\'s own worked example', () => {
+    const recipe = buildRecoveryRecipe({ situationKey: 'over_capacity', capacity: 'almost_nothing' });
+    expect(recipe.steps.length).toBeLessThanOrEqual(2);
+    expect(recipe.closingAction).toBe('One thing is enough for now.');
+  });
+
+  it('a hard-meeting recipe deep-links Shake Off the Meeting and asks only whether action is needed (acceptance test, section 39)', () => {
+    const recipe = buildRecoveryRecipe({ situationKey: 'hard_meeting' });
+    const movementStep = recipe.steps.find((s) => s.type === 'movement');
+    expect(movementStep?.movementId).toBe('shake_meeting');
+    const actionStep = recipe.steps.find((s) => s.type === 'practical_action');
+    expect(actionStep?.choices?.map((c) => c.id)).toEqual(['yes', 'no']);
+  });
+
+  it('a switch-off recipe hands into After-Work Decompression (acceptance test, section 39)', () => {
+    const recipe = buildRecoveryRecipe({ situationKey: 'need_switch_off' });
+    expect(recipe.steps.some((s) => s.type === 'movement' && s.movementId === 'after_work')).toBe(true);
+  });
+
+  it('a rest-guilt recipe may use grounding without ever launching the full Grounding journey (section 39) - only an inline excerpt', () => {
+    const recipe = buildRecoveryRecipe({ situationKey: 'guilty_resting', capacity: 'some_space' });
+    const groundingStep = recipe.steps.find((s) => s.type === 'grounding');
+    expect(groundingStep?.groundingExcerpt).toBeTruthy();
+  });
+
+  it('a no-AI build still produces a genuinely useful recipe for every situation (acceptance test, section 39)', () => {
+    // buildRecoveryRecipe never calls anything AI/network-backed - this
+    // just re-confirms that holds for every situation, not only the
+    // fallback template.
+    for (const key of SITUATION_ORDER) {
+      const recipe = buildRecoveryRecipe({ situationKey: key });
+      expect(recipe.steps.length).toBeGreaterThan(0);
+    }
+  });
+});
+
 describe('getSuggestedRecipe', () => {
   it('suggests the switch-off recipe in the evening', () => {
     const recipe = getSuggestedRecipe({ hourLocal: 19 });

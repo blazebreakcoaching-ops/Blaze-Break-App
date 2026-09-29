@@ -43,6 +43,12 @@ export const RecoveryRecipes = ({ fingerprint: _fingerprint, onAwardPoints }: Re
   const [selectedSituation, setSelectedSituation] = useState<SituationKey | null>(null);
   const [capacity, setCapacity] = useState<Capacity | undefined>(undefined);
   const [timeAvailableMinutes, setTimeAvailableMinutes] = useState<number | undefined>(undefined);
+  // Tracks which time chip was actually clicked, separately from
+  // timeAvailableMinutes - both "nothing picked yet" and "I have time"
+  // picked resolve to an unconstrained (undefined) budget for the engine,
+  // but they must not look the same on screen: without this, the "I have
+  // time" chip would render pre-selected before anyone touched it.
+  const [timeChipSelected, setTimeChipSelected] = useState<number | 'unconstrained' | null>(null);
   const [recipe, setRecipe] = useState<BuiltRecoveryRecipe | null>(null);
   const [stepIndex, setStepIndex] = useState(0);
   const [completedStepTypes, setCompletedStepTypes] = useState<RecipeStepType[]>([]);
@@ -64,6 +70,7 @@ export const RecoveryRecipes = ({ fingerprint: _fingerprint, onAwardPoints }: Re
     setSomethingElseText('');
     setCapacity(undefined);
     setTimeAvailableMinutes(undefined);
+    setTimeChipSelected(null);
     setRecipe(null);
     setStepIndex(0);
     setCompletedStepTypes([]);
@@ -301,11 +308,11 @@ export const RecoveryRecipes = ({ fingerprint: _fingerprint, onAwardPoints }: Re
                 {TIME_OPTIONS.map((t) => (
                   <button
                     key={t.label}
-                    onClick={() => setTimeAvailableMinutes(t.minutes ?? undefined)}
-                    aria-pressed={timeAvailableMinutes === (t.minutes ?? undefined)}
+                    onClick={() => { setTimeAvailableMinutes(t.minutes ?? undefined); setTimeChipSelected(t.minutes ?? 'unconstrained'); }}
+                    aria-pressed={timeChipSelected === (t.minutes ?? 'unconstrained')}
                     className={cn(
                       'px-4 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest flex items-center gap-2 border transition-all',
-                      timeAvailableMinutes === (t.minutes ?? undefined) ? 'bg-primary border-primary text-primary-foreground' : 'border-border hover:border-primary/50 text-text-muted'
+                      timeChipSelected === (t.minutes ?? 'unconstrained') ? 'bg-primary border-primary text-primary-foreground' : 'border-border hover:border-primary/50 text-text-muted'
                     )}
                   >
                     <Clock className="w-3.5 h-3.5" /> {t.label}
