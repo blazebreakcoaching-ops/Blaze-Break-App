@@ -1,0 +1,71 @@
+name: Deploy
+
+# Ships the app to the already-running Cloud Run service (see docs/DEPLOY.md)
+# whenever main changes, or on demand via the "Run workflow" button - so
+# "going live" never again means running gcloud/firebase commands by hand in
+# Cloud Shell. Builds straight from source using Cloud Run's own buildpacks
+# support (no Dockerfile needed - Node.js is auto-detected from
+# package.json's "engines"/"scripts" fields), then deploys the current
+# Firestore rules and indexes alongside it.
+#
+# Deliberately does NOT touch the Cloud Run service's env vars/secrets/IAM -
+# those were configured once during the original manual setup (see
+# docs/DEPLOY.md sections 1-3) and are left exactly as they are on every
+# redeploy. This workflow only ever ships new code.
+#
+# One-time setup required before this can run (see docs/DEPLOY.md section 0
+# for the full walkthrough): a GCP service account with deploy permissions,
+# with its JSON key pasted into this repo's GCP_SA_KEY secret
+# (Settings -> Secrets and variables -> Actions).
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+env:
+  GCP_PROJECT_ID: gen-lang-client-0537893432
+  CLOUD_RUN_SERVICE: blaze-break
+  CLOUD_RUN_REGION: europe-west2
+
+jobs:
+  deploy:
+    name: Deploy to Cloud Run + Firestore rules
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Set up gcloud
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ env.GCP_PROJECT_ID }}
+
+      # --source builds the container via Cloud Build + Buildpacks on
+      # Google's side - nothing to build or push locally in this job.
+      - name: Deploy to Cloud Run
+        run: |
+          gcloud run deploy "$CLOUD_RUN_SERVICE" \
+            --source . \
+            --region "$CLOUD_RUN_REGION" \
+            --project "$GCP_PROJECT_ID" \
+            --quiet
+
+      - name: Set up Node.js (for the Firebase CLI)
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      # Authenticates via the same service-account credentials from the
+      # "Authenticate to Google Cloud" step above (firebase-tools picks up
+      # GOOGLE_APPLICATION_CREDENTIALS automatically) - no separate Firebase
+      # login/token needed.
+      - name: Deploy Firestore rules + indexes
+        run: npx firebase-tools@latest deploy --only firestore:rules,firestore:indexes --project "$GCP_PROJECT_ID" --non-interactive
