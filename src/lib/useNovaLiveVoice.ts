@@ -67,6 +67,12 @@ export interface UseNovaLiveVoiceOptions {
 
 const CAPTURE_SAMPLE_RATE = 16000; // what the Gemini Live API expects for input
 const PLAYBACK_SAMPLE_RATE = 24000; // what the model streams back
+// How long to wait for the server's `ready` message (sent only once its
+// own auth/quota checks, Firestore context fetch, and the real upstream
+// Gemini connection have all completed) before giving up with a clear
+// error, rather than leaving the person staring at an indefinite
+// "Getting Nova ready…" state with no idea whether it's stuck.
+const NOVA_LIVE_READY_TIMEOUT_MS = 15000;
 
 function base64FromArrayBuffer(buffer: ArrayBuffer): string {
   const bytes = new Uint8Array(buffer);
@@ -115,10 +121,22 @@ export function useNovaLiveVoice(options: UseNovaLiveVoiceOptions = {}) {
   // The role of the last transcript fragment, so incremental fragments extend
   // the current line and a change of speaker starts a new one.
   const lastTranscriptRoleRef = useRef<'user' | 'nova' | null>(null);
+  // Bounds the wait for the server's `ready` message (see ws.onopen/
+  // onmessage below) - if the server's own auth/quota/context-fetch/
+  // Gemini-connect setup takes unusually long or hangs, this surfaces a
+  // clear error instead of leaving the person in an indefinite,
+  // ambiguous "Getting Nova ready…" state with no way to know it's stuck.
+  const readyTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const cleanupAudio = useCallback(() => {
     if (speakingTimerRef.current) { clearTimeout(speakingTimerRef.current); speakingTimerRef.current = null; }
     if (elapsedTimerRef.current) { clearInterval(elapsedTimerRef.current); elapsedTimerRef.current = null; }
+    // Every real teardown path (error, onerror, onclose, stop(), unmount)
+    // already calls this, so clearing the ready-timeout here - rather
+    // than separately in each of those - guarantees it can never fire a
+    // spurious "taking longer than usual" error after the call has
+    // already ended some other way.
+    if (readyTimeoutRef.current) { clearTimeout(readyTimeoutRef.current); readyTimeoutRef.current = null; }
     scheduledSourcesRef.current.forEach((s) => { try { s.stop(); } catch { /* already stopped */ } });
     scheduledSourcesRef.current = [];
     if (workletRef.current) { try { workletRef.current.disconnect(); } catch { /* noop */ } workletRef.current.port.onmessage = null; workletRef.current = null; }
@@ -300,20 +318,40 @@ export function useNovaLiveVoice(options: UseNovaLiveVoiceOptions = {}) {
         legacyProcessorRef.current = processor;
       }
 
+      // This only means OUR socket to the server opened - it says nothing
+      // about whether Nova's own upstream session is ready yet (that's a
+      // much later, server-driven `ready` message handled in onmessage
+      // below). Flipping to 'live' and starting the elapsed/billing clock
+      // here used to happen well before Nova could actually hear or
+      // respond to anything - the person would see "Listening…" and start
+      // talking into a connection nothing was consuming yet.
       ws.onopen = () => {
-        setStatus('live');
-        connectedRef.current = true;
-        startedAtRef.current = Date.now();
-        setElapsedMs(0);
-        elapsedTimerRef.current = setInterval(() => setElapsedMs(Date.now() - startedAtRef.current), 1000);
-        // Continuity preamble (if any) leads, then the caller's own context.
-        const initial = [continuityPreambleRef.current, buildInitialPrompt?.() || ''].filter(Boolean).join('\n\n');
-        if (initial) ws.send(JSON.stringify({ initialPrompt: initial }));
+        readyTimeoutRef.current = setTimeout(() => {
+          setError('Nova is taking longer than usual to connect. Please try again.');
+          setStatus('error');
+          cleanupAudio();
+          try { ws.close(); } catch { /* already closing */ }
+        }, NOVA_LIVE_READY_TIMEOUT_MS);
       };
 
       ws.onmessage = (event) => {
         try {
           const msg = JSON.parse(event.data);
+          // The one true "Nova can actually hear and respond now" signal -
+          // see server.ts's onopen callback for the matching upstream-side
+          // fix. Everything that used to happen at ws.onopen (far too
+          // early) happens here instead.
+          if (msg.ready) {
+            if (readyTimeoutRef.current) { clearTimeout(readyTimeoutRef.current); readyTimeoutRef.current = null; }
+            connectedRef.current = true;
+            setStatus('live');
+            startedAtRef.current = Date.now();
+            setElapsedMs(0);
+            elapsedTimerRef.current = setInterval(() => setElapsedMs(Date.now() - startedAtRef.current), 1000);
+            // Continuity preamble (if any) leads, then the caller's own context.
+            const initial = [continuityPreambleRef.current, buildInitialPrompt?.() || ''].filter(Boolean).join('\n\n');
+            if (initial) ws.send(JSON.stringify({ initialPrompt: initial }));
+          }
           if (msg.audio) playChunk(msg.audio);
           if (msg.interrupted) handleInterrupt();
           if (msg.userTranscript) appendTranscript('user', msg.userTranscript);

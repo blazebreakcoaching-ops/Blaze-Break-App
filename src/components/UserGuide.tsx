@@ -79,7 +79,7 @@ const START_HERE: GuideFeature[] = [
   {
     tab: 'home', tag: 'Pulse', title: 'Your daily Pulse', description: "Where you land every time you open the app. One suggested action for today, your recovery stage, and your trend over time - not a to-do list.", icon: Home,
     definition: { term: 'Recovery Velocity', text: "Which direction your recovery is trending right now, and how fast - not where you are today, but whether things are getting better, holding steady, or slipping." },
-    subTools: ['Weekly Recovery Recap', '"Pick up where you left off" prompt (shows only if you have something genuinely unfinished)'],
+    subTools: ['Weekly Recovery Recap', '"Pick up where you left off" prompt (shows only if you have something genuinely unfinished)', 'SPARK Check (a 60-second daily scan - optional, add it via "Add widget")'],
   },
   {
     tab: 'diagnose', tag: 'Check-in', title: 'Check-in', description: "A short, honest self-assessment (not a medical test) that builds your personal burnout picture. The rest of the app is quietly built around it.", icon: MapPin,
@@ -95,12 +95,12 @@ const DAILY_TOOLS: GuideFeature[] = [
   {
     tab: 'recover', tag: 'Recover', title: 'Energy budget', description: 'See where your energy is actually going this week, and where to protect some back.', icon: BatteryFull,
     definition: { term: 'Energy Budget', text: "Where your energy actually goes each day and each week, and how much you have left before you're overdrawn - a budget, but for capacity instead of money." },
-    subTools: ['7-Day Recovery Cycle', 'Energy Delta Management', 'Nova Focus Zone', 'Energy & Capacity', 'Micro-Recovery Menu', 'The "One Less Thing" Button', 'Workload Reality Check'],
+    subTools: ['7-Day Recovery Cycle', 'Energy Delta Management', 'Nova Focus Zone', 'Energy & Capacity', 'Micro-Recovery Menu', 'The "One Less Thing" Button', 'Workload Reality Check', 'SHIP Journey (your longer-term recovery phase, with real, checkable quests linking out to the tool that does each one)'],
   },
   { tab: 'fuel', tag: 'Nutrition', title: 'Recovery fuel', description: 'Simple, low-effort food ideas for days when cooking is one decision too many.', icon: Apple },
   {
     tab: 'reset', tag: 'Nervous System', title: 'Reset', description: "Short, guided techniques for calming down when you're wired or overloaded.", icon: Wind,
-    subTools: ['The Rumination Furnace', 'Nervous System Reset Studio', 'Sleep & Wind-Down Builder', 'Movement Snacks', 'The Decompression Doorway', 'Recovery Recipes', 'Faith & Values Grounding', 'Resource Library', 'Quick micro-interventions (breathing, movement, and more)'],
+    subTools: ['The Rumination Furnace', 'BLAME Reset (with Nova alongside you for the Locate + Accept step)', 'Nervous System Reset Studio', 'Sleep & Wind-Down Builder', 'Movement Snacks', 'The Decompression Doorway', 'Recovery Recipes', 'Faith & Values Grounding', 'Resource Library', 'Quick micro-interventions (breathing, movement, and more)'],
   },
   { tab: 'anxiety_reset', tag: 'Anxiety Reset', title: 'In-the-moment relief', description: 'Quick tools for when anxiety spikes and you need something right now, not a plan.', icon: HeartPulse },
   {

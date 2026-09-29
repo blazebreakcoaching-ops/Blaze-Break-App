@@ -15,16 +15,18 @@ import {
   ArrowRight,
   Wine,
   Activity,
-  Lightbulb
+  Lightbulb,
+  TrendingUp
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { updateNovaMemoryBySourceAndType } from '../lib/nova-brain';
 import { useAuth } from '../lib/auth';
 import { auth } from '../lib/firebase';
 import { db } from '../lib/firestore';
-import { doc, getDoc, setDoc, deleteDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc, deleteDoc, collection, query, orderBy, limit, getDocs } from 'firebase/firestore';
 
 import { SHIPStage } from '../types';
+import { detectFuelPatterns, FUEL_PATTERN_COPY, FuelLogEntry } from '../../recovery-fuel-patterns';
 
 interface RecoveryFuelEngineProps {
   fingerprint?: any;
@@ -126,6 +128,54 @@ export const RecoveryFuelEngine = ({
   };
 
 
+  // Last 7 logged days (not necessarily 7 calendar days - gaps in logging
+  // are normal), used to detect genuine multi-day patterns rather than
+  // over-reacting to any single day. Feeds both the Insights tab's "This
+  // Week's Pattern" section below and the Nova memory write further down.
+  const [recentLogs, setRecentLogs] = useState<(FuelLogEntry & { id: string })[]>([]);
+  const weeklyPatternMemoryWrittenRef = useRef(false);
+
+  useEffect(() => {
+    const loadRecentLogs = async () => {
+      if (!auth.currentUser) return;
+      try {
+        const snap = await getDocs(
+          query(
+            collection(db, 'users', auth.currentUser.uid, 'recovery_fuel_logs'),
+            orderBy('createdAt', 'desc'),
+            limit(7)
+          )
+        );
+        setRecentLogs(snap.docs.map((d) => ({ id: d.id, ...(d.data() as FuelLogEntry) })));
+      } catch (e) {
+        // Leaves recentLogs empty - the weekly pattern section just won't
+        // show anything rather than guessing at history it couldn't load.
+      }
+    };
+    loadRecentLogs();
+  }, []);
+
+  const weeklyPatterns = detectFuelPatterns(recentLogs, { includeAlcohol: isAdult });
+
+  // Only ever writes once a genuine pattern is actually present, and only
+  // once per mount - this is a background signal for Nova to draw on in
+  // conversation, not something that should refire on every re-render.
+  useEffect(() => {
+    if (weeklyPatternMemoryWrittenRef.current) return;
+    if (weeklyPatterns.length === 0) return;
+    weeklyPatternMemoryWrittenRef.current = true;
+    const top = weeklyPatterns[0];
+    updateNovaMemoryBySourceAndType(
+      'Recovery Fuel Engine - Weekly Pattern',
+      'state',
+      {
+        content: `Recurring fuel pattern detected: ${FUEL_PATTERN_COPY[top.id].nudgeMessage(top)}`,
+        canEdit: false,
+        confidence: 'medium',
+      }
+    );
+  }, [weeklyPatterns]);
+
   // Load check-in state if saved for today
   useEffect(() => {
     const loadTodayFuelLog = async () => {
@@ -179,6 +229,16 @@ export const RecoveryFuelEngine = ({
       });
     }
     setIsCheckInSubmitted(true);
+
+    // Keep the weekly pattern view in sync with what was just saved,
+    // without a network round-trip - replaces today's entry if it was
+    // already in the fetched window (editing an existing log), otherwise
+    // adds it as the newest, identified by date id rather than position.
+    setRecentLogs((prev) => {
+      const { timestamp: _timestamp, ...todaysEntry } = fuelData;
+      const withoutToday = prev.filter((l) => l.id !== today);
+      return [{ id: today, ...todaysEntry } as FuelLogEntry & { id: string }, ...withoutToday].slice(0, 7);
+    });
 
     // Build specific feedback context for Nova memory baseline
     let contextStr = "Recovery Fuel state updated: ";
@@ -1224,6 +1284,39 @@ export const RecoveryFuelEngine = ({
                 “Your emotional resilience might not be failing today. If you skipped lunch, slept poorly, and ran on high caffeine, you are physically unstable. Fuel your body before judging your boundaries.”
               </div>
             </div>
+
+            {/* This Week's Pattern - genuine multi-day trends, only shown
+                when real repetition exists (recovery-fuel-patterns.ts
+                requires more than half of logged days), so this section
+                simply doesn't render on a stable week or with too little
+                history yet rather than manufacturing something to say. */}
+            {weeklyPatterns.length > 0 && (
+              <div className="bg-surface dark:bg-surface p-6 rounded-2xl border border-border/40 space-y-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center text-primary">
+                    <TrendingUp className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-xs uppercase font-black tracking-wider text-[#9a3412] dark:text-primary">This Week's Pattern</h3>
+                    <p className="text-xs text-text-muted mt-0.5">Based on your last {recentLogs.length} logged days, not just today</p>
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {weeklyPatterns.map((pattern) => {
+                    const copy = FUEL_PATTERN_COPY[pattern.id];
+                    return (
+                      <div key={pattern.id} className="bg-white/40 dark:bg-card/40 p-4 rounded-xl border border-border/10 space-y-2">
+                        <h4 className="text-xs font-black text-text-main">{copy.title}</h4>
+                        <p className="text-[11px] text-text-muted leading-relaxed">{copy.description}</p>
+                        <p className="text-[11px] font-medium leading-normal text-[#9a3412] dark:text-primary italic">
+                          "{copy.coaching}"
+                        </p>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               {getDynamicInsights().map((insight, idx) => (

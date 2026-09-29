@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Shield, Bell, Moon, Clock, Settings, Brain, Activity, Heart, Bookmark, Eye } from 'lucide-react';
+import { Shield, Bell, Moon, Clock, Settings, Brain, Activity, Heart, Bookmark, Eye, Apple } from 'lucide-react';
 import { useAuth } from '../lib/auth';
 import { cn } from '../lib/utils';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
@@ -22,7 +22,8 @@ export const NotificationSettingsView = ({ onSaveSuccess }: { onSaveSuccess?: ()
     quietHoursEnd: '08:00',
     allowedNudgeCategories: [
       'check_in_reminder', 'recovery_action_reminder', 'energy_budget_reflection',
-      'boundary_practice_reminder', 'weekly_review_reminder', 'memory_review_reminder', 'goal_follow_up'
+      'boundary_practice_reminder', 'weekly_review_reminder', 'memory_review_reminder', 'goal_follow_up',
+      'fuel_pattern_reminder'
     ]
   });
   const [loading, setLoading] = useState(true);
@@ -151,7 +152,8 @@ export const NotificationSettingsView = ({ onSaveSuccess }: { onSaveSuccess?: ()
               { id: 'boundary_practice_reminder', label: 'Boundaries', icon: Shield, desc: 'Practising limits.' },
               { id: 'weekly_review_reminder', label: 'Weekly Reviews', icon: Bookmark, desc: 'Reflect on the past week.' },
               { id: 'memory_review_reminder', label: 'Memory Reviews', icon: Brain, desc: 'Review what Nova knows.' },
-              { id: 'goal_follow_up', label: 'Goals', icon: Eye, desc: 'Optional gentle follow-ups.' }
+              { id: 'goal_follow_up', label: 'Goals', icon: Eye, desc: 'Optional gentle follow-ups.' },
+              { id: 'fuel_pattern_reminder', label: 'Fuel Patterns', icon: Apple, desc: 'When a real weekly pattern shows up in your fuel log.' }
             ].map(cat => (
               <div key={cat.id} className="flex flex-col gap-1 p-3 border border-border rounded-lg bg-background">
                 <div className="flex items-center justify-between">

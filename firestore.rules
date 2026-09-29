@@ -565,7 +565,7 @@ service cloud.firestore {
         allow read: if isOwner(uid);
         allow create, update: if isOwner(uid) &&
             hasOnly(['category', 'message', 'createdAt', 'shownAt', 'dismissedAt', 'actionTakenAt', 'status', 'reasonCategory', 'source', 'expiresAt', 'updatedAt']) &&
-            request.resource.data.category in ['check_in_reminder', 'recovery_action_reminder', 'energy_budget_reflection', 'boundary_practice_reminder', 'weekly_review_reminder', 'memory_review_reminder', 'goal_follow_up', 'climate_survey_reminder'] &&
+            request.resource.data.category in ['check_in_reminder', 'recovery_action_reminder', 'energy_budget_reflection', 'boundary_practice_reminder', 'weekly_review_reminder', 'memory_review_reminder', 'goal_follow_up', 'climate_survey_reminder', 'fuel_pattern_reminder'] &&
             request.resource.data.source == 'in_app_nova' &&
             request.resource.data.status in ['shown', 'dismissed', 'acted_on'];
       }
@@ -838,8 +838,15 @@ service cloud.firestore {
               'points', 'streak', 'rehearsalCount', 'lastEngagementDate',
               'unlockedBadges', 'supportCircle', 'committedActionIds',
               'weeklyGoalsComplete', 'level', 'profile', 'debts',
-              'recoveryScore', 'fingerprint', 'lastSeenChangelogVersion', 'updatedAt'
+              'recoveryScore', 'fingerprint', 'lastSeenChangelogVersion', 'updatedAt',
+              'shipJourneyLastCommittedAt'
             ])
+            // Stamped only when a SHIP Journey quest is actually committed
+            // (see handleCommitAction in App.tsx) - deliberately separate
+            // from the generic `updatedAt` above, which touches on every
+            // stats change and so can't tell the resume-prompt route in
+            // server.ts when SHIP Journey specifically was last worked on.
+            && (!('shipJourneyLastCommittedAt' in request.resource.data) || isStringWithMax(request.resource.data.shipJourneyLastCommittedAt, 40))
             && (!('lastSeenChangelogVersion' in request.resource.data) || isStringWithMax(request.resource.data.lastSeenChangelogVersion, 100))
             && (!('points' in request.resource.data) || (request.resource.data.points is number && request.resource.data.points >= 0))
             && (!('streak' in request.resource.data) || (request.resource.data.streak is number && request.resource.data.streak >= 0))
@@ -893,6 +900,279 @@ service cloud.firestore {
             && request.resource.data.rating is number
             && request.resource.data.rating >= 1 && request.resource.data.rating <= 5
             && (!('feedbackText' in request.resource.data) || request.resource.data.feedbackText == null || isStringWithMax(request.resource.data.feedbackText, 1000));
+      }
+
+      // AE. grounding_sessions - Faith & Values Grounding's 5-stage
+      // journey (Arrive/Separate/Reflect/Release/Reconnect). Written
+      // directly by the client, same as every other reflection-style
+      // collection above (recovery_fuel_logs, boundary_scripts) - only
+      // the AI-generated Stage 3 reflection text itself goes through a
+      // server route (POST /api/grounding/reflect), since that's the only
+      // part that needs the Gemini API key and quota enforcement. Pattern
+      // detection (detectGroundingPatterns in grounding-content.ts) is
+      // recomputed client-side from these session docs on the fly rather
+      // than persisted, so there's no separate derived-pattern data to
+      // keep in sync or leak. reflectionAnswers is deliberately capped
+      // small (at most 2 question/answer pairs per session by the app's
+      // own flow) to keep free-text storage minimal, per the feature's
+      // explicit "minimise unnecessary sensitive free-text" requirement.
+      match /grounding_sessions/{sessionId} {
+        allow read, delete: if isOwner(uid);
+        allow create, update: if isOwner(uid)
+            && hasOnly(['lens', 'burdenIds', 'customBurden', 'intensity', 'controllableItems', 'uncontrollableItems', 'islamicThemeId', 'reflectionAnswers', 'detectedThemes', 'nextAction', 'sessionDepth', 'capacityState', 'createdAt', 'updatedAt'])
+            && hasAll(['lens', 'createdAt', 'updatedAt'])
+            && request.resource.data.lens in ['secular', 'values', 'faith', 'islamic']
+            && (!('burdenIds' in request.resource.data) || (request.resource.data.burdenIds is list && request.resource.data.burdenIds.size() <= 10))
+            && isOptionalStringWithMax(request.resource.data, 'customBurden', 80)
+            && (!('intensity' in request.resource.data) || (request.resource.data.intensity is number && request.resource.data.intensity >= 1 && request.resource.data.intensity <= 5))
+            && (!('controllableItems' in request.resource.data) || (request.resource.data.controllableItems is list && request.resource.data.controllableItems.size() <= 12))
+            && (!('uncontrollableItems' in request.resource.data) || (request.resource.data.uncontrollableItems is list && request.resource.data.uncontrollableItems.size() <= 12))
+            && (!('islamicThemeId' in request.resource.data) || request.resource.data.islamicThemeId in ['tawakkul', 'sabr', 'shukr', 'qadr', 'rahmah', 'salah', 'dua', 'ummah', 'niyyah', 'ihsan'])
+            && (!('reflectionAnswers' in request.resource.data) || (request.resource.data.reflectionAnswers is list && request.resource.data.reflectionAnswers.size() <= 4))
+            // Phase 2's Nova Pattern Engine tags each session with up to 5
+            // themes from the fixed taxonomy (grounding-patterns-taxonomy.ts).
+            // The server route that generates these already validates them
+            // against the same allowlist before ever returning them to the
+            // client (see GroundingReflectResponseSchema) - this is shallow
+            // defense-in-depth, matching this file's existing convention for
+            // other list fields (weekly_habit_cycles.goals, workload_reality_
+            // check.tasks) rather than spelling out a 27-item enum here too.
+            && (!('detectedThemes' in request.resource.data) || (request.resource.data.detectedThemes is list && request.resource.data.detectedThemes.size() <= 5))
+            // Phase 2's Reconnect upgrade (section 17) replaces the four
+            // Phase 1 options with six new ones; the four legacy values stay
+            // valid here too so already-written sessions remain readable/
+            // re-saveable rather than breaking on old data.
+            && (!('nextAction' in request.resource.data) || request.resource.data.nextAction in ['nova', 'trusted_person', 'practical_action', 'rest', 'sit_with_this', 'next_step', 'continue_with_nova', 'community', 'return_to_blaze_break'])
+            // Phase 3's session depths (section 1) - absent means a
+            // pre-Phase-3 session, treated as 'ground' (the standard
+            // experience) by the client, never re-migrated here.
+            && (!('sessionDepth' in request.resource.data) || request.resource.data.sessionDepth in ['reset', 'ground', 'deep'])
+            && (!('capacityState' in request.resource.data) || request.resource.data.capacityState in ['running_on_empty', 'low_capacity', 'some_space', 'ready_to_reflect'])
+            && (request.method == 'create' ? true : checkCreatedAtUnchanged());
+      }
+
+      // AF. preferences/grounding - explicit, user-controlled Grounding
+      // settings, kept as its own small preferences doc rather than a
+      // field on user_stats/core, matching the fuel_reminders/
+      // notifications preferences convention. Extended in Phase 2 with
+      // the additional consent/visibility toggles section 19 calls for -
+      // still one doc, not a new collection, since these are all just
+      // more facets of the same "how Grounding behaves for me" settings.
+      match /preferences/grounding {
+        allow read: if isOwner(uid);
+        allow write: if isOwner(uid)
+            && hasOnly(['patternAnalysisEnabled', 'preferredLens', 'communitySuggestionsEnabled', 'monthlyReflectionEnabled', 'patternHistoryVisible', 'updatedAt'])
+            && (!('patternAnalysisEnabled' in request.resource.data) || request.resource.data.patternAnalysisEnabled is bool)
+            && (!('preferredLens' in request.resource.data) || request.resource.data.preferredLens in ['secular', 'values', 'faith', 'islamic'])
+            && (!('communitySuggestionsEnabled' in request.resource.data) || request.resource.data.communitySuggestionsEnabled is bool)
+            && (!('monthlyReflectionEnabled' in request.resource.data) || request.resource.data.monthlyReflectionEnabled is bool)
+            && (!('patternHistoryVisible' in request.resource.data) || request.resource.data.patternHistoryVisible is bool);
+      }
+
+      // AG. reflection_patterns - Phase 2's Nova Pattern Engine. One doc
+      // per taxonomy dimension (grounding-patterns-taxonomy.ts) that has
+      // ever qualified for a user, holding only derived counters/status -
+      // never raw reflection text. Recomputed by the client from
+      // grounding_sessions' detectedThemes after each session; this is the
+      // "derived pattern data" section 20 requires get removed when
+      // pattern history is cleared.
+      match /reflection_patterns/{patternId} {
+        allow read, delete: if isOwner(uid);
+        allow create, update: if isOwner(uid)
+            && hasOnly(['patternKey', 'category', 'firstSeenAt', 'lastSeenAt', 'occurrenceCount', 'status', 'userFeedback', 'userFeedbackNote', 'lensAssociations', 'relatedValues', 'helpfulApproaches', 'paused', 'suppressed', 'resolved', 'resolvedAtOccurrenceCount', 'createdAt', 'updatedAt'])
+            && hasAll(['patternKey', 'category', 'firstSeenAt', 'lastSeenAt', 'occurrenceCount', 'status', 'createdAt', 'updatedAt'])
+            && request.resource.data.patternKey in ['control', 'uncertainty', 'over_responsibility', 'perfectionism', 'guilt_about_rest', 'boundary_difficulty', 'fear_of_disappointing', 'people_pleasing', 'isolation', 'reluctance_to_ask_for_support', 'excessive_self_expectation', 'work_identity', 'financial_pressure', 'family_responsibility', 'conflict_avoidance', 'overcommitment', 'comparison', 'self_criticism', 'difficulty_accepting_unfinished_work', 'difficulty_accepting_outcomes', 'gratitude', 'patience', 'trust', 'compassion', 'connection', 'purpose', 'values_conflict']
+            && request.resource.data.category in ['control_responsibility', 'self_expectation', 'boundaries_people', 'connection_support', 'rest_guilt', 'practical_pressures', 'uncertainty_acceptance', 'values_meaning']
+            && request.resource.data.occurrenceCount is number && request.resource.data.occurrenceCount >= 0
+            && request.resource.data.status in ['emerging', 'recurring', 'established']
+            && (!('userFeedback' in request.resource.data) || request.resource.data.userFeedback == null || request.resource.data.userFeedback in ['resonates', 'not_really'])
+            && isOptionalStringWithMax(request.resource.data, 'userFeedbackNote', 200)
+            && (!('lensAssociations' in request.resource.data) || (request.resource.data.lensAssociations is list && request.resource.data.lensAssociations.size() <= 4))
+            && (!('relatedValues' in request.resource.data) || (request.resource.data.relatedValues is list && request.resource.data.relatedValues.size() <= 10))
+            && (!('helpfulApproaches' in request.resource.data) || (request.resource.data.helpfulApproaches is list && request.resource.data.helpfulApproaches.size() <= 10))
+            && (!('paused' in request.resource.data) || request.resource.data.paused is bool)
+            && (!('suppressed' in request.resource.data) || request.resource.data.suppressed is bool)
+            // Phase 3's theme resolution (section 15/16): the person can
+            // mark a quiet/dormant pattern as "something I've moved
+            // through" - resolvedAtOccurrenceCount snapshots the count at
+            // that moment, so a later occurrenceCount increase (a
+            // returning theme) can be told apart from "still resolved"
+            // without a separate history read.
+            && (!('resolved' in request.resource.data) || request.resource.data.resolved is bool)
+            && (!('resolvedAtOccurrenceCount' in request.resource.data) || (request.resource.data.resolvedAtOccurrenceCount is number && request.resource.data.resolvedAtOccurrenceCount >= 0))
+            && (request.method == 'create' ? true : checkCreatedAtUnchanged());
+      }
+
+      // AH. aligned_actions - the Values Bridge's "next aligned action",
+      // gently followed up on in a later session (never nagged - see
+      // FaithValuesMode.tsx's follow-up logic for the recency/dismissal
+      // rules that live in application code, not here).
+      match /aligned_actions/{actionId} {
+        allow read, delete: if isOwner(uid);
+        allow create, update: if isOwner(uid)
+            && hasOnly(['chosenValue', 'nextAlignedAction', 'patternKey', 'followUpStatus', 'followedUpAt', 'createdAt', 'updatedAt'])
+            && hasAll(['chosenValue', 'nextAlignedAction', 'createdAt', 'updatedAt'])
+            && isStringWithMax(request.resource.data.chosenValue, 40)
+            && isStringWithMax(request.resource.data.nextAlignedAction, 200)
+            && (!('patternKey' in request.resource.data) || request.resource.data.patternKey in ['control', 'uncertainty', 'over_responsibility', 'perfectionism', 'guilt_about_rest', 'boundary_difficulty', 'fear_of_disappointing', 'people_pleasing', 'isolation', 'reluctance_to_ask_for_support', 'excessive_self_expectation', 'work_identity', 'financial_pressure', 'family_responsibility', 'conflict_avoidance', 'overcommitment', 'comparison', 'self_criticism', 'difficulty_accepting_unfinished_work', 'difficulty_accepting_outcomes', 'gratitude', 'patience', 'trust', 'compassion', 'connection', 'purpose', 'values_conflict'])
+            && (!('followUpStatus' in request.resource.data) || request.resource.data.followUpStatus == null || request.resource.data.followUpStatus in ['went_well', 'still_working_on_it', 'didnt_happen'])
+            && isOptionalStringWithMax(request.resource.data, 'followedUpAt', 40)
+            && (request.method == 'create' ? true : checkCreatedAtUnchanged());
+      }
+
+      // AI. carrying_items - "What am I carrying that isn't mine?", a
+      // standalone exercise (section 7) distinct from a full grounding
+      // session: one doc per burden the person classified.
+      match /carrying_items/{itemId} {
+        allow read, delete: if isOwner(uid);
+        allow create, update: if isOwner(uid)
+            && hasOnly(['burdenText', 'classification', 'genuinelyMineText', 'notMineText', 'releaseWithoutAbandoningText', 'createdAt', 'updatedAt'])
+            && hasAll(['burdenText', 'classification', 'createdAt', 'updatedAt'])
+            && isStringWithMax(request.resource.data.burdenText, 80)
+            && request.resource.data.classification in ['mine_to_act_on', 'mine_to_influence', 'shared_responsibility', 'outside_control', 'not_sure']
+            && isOptionalStringWithMax(request.resource.data, 'genuinelyMineText', 300)
+            && isOptionalStringWithMax(request.resource.data, 'notMineText', 300)
+            && isOptionalStringWithMax(request.resource.data, 'releaseWithoutAbandoningText', 300)
+            && (request.method == 'create' ? true : checkCreatedAtUnchanged());
+      }
+
+      // AJ. grounding_analytics_events - abstract, non-sensitive product
+      // events only (section 20): an event NAME plus at most a taxonomy
+      // category/lens, never reflection text. Mirrors guardian_support_
+      // events' write-once, no-free-text shape.
+      match /grounding_analytics_events/{eventId} {
+        allow read, delete: if isOwner(uid);
+        allow create: if isOwner(uid)
+            && hasOnly(['eventType', 'category', 'lens', 'createdAt'])
+            && hasAll(['eventType', 'createdAt'])
+            && request.resource.data.eventType in ['grounding_session_completed', 'pattern_explored', 'pattern_feedback_given', 'community_connection_opened', 'carrying_exercise_completed', 'monthly_reflection_viewed', 'aligned_action_created', 'aligned_action_followed_up', 'routine_completed', 'routine_created']
+            && (!('category' in request.resource.data) || request.resource.data.category in ['control_responsibility', 'self_expectation', 'boundaries_people', 'connection_support', 'rest_guilt', 'practical_pressures', 'uncertainty_acceptance', 'values_meaning'])
+            && (!('lens' in request.resource.data) || request.resource.data.lens in ['secular', 'values', 'faith', 'islamic']);
+      }
+
+      // AK. monthly_reflections - Batch 5's optional, user-triggered
+      // monthly deep reflection. One doc per calendar month, holding only
+      // the structured output. Computed entirely client-side from
+      // grounding_sessions/reflection_patterns already in the client's
+      // hands (GroundingMonthlyReflection.tsx) - deliberately no AI route,
+      // so this feature costs zero extra tokens. MIN_SESSIONS_FOR_MONTHLY_
+      // REFLECTION in grounding-patterns-taxonomy.ts gates when the
+      // client even offers this.
+      match /monthly_reflections/{monthId} {
+        allow read, delete: if isOwner(uid);
+        allow create, update: if isOwner(uid)
+            && hasOnly(['heaviestTheme', 'recurringThemes', 'whatChanged', 'whatHelped', 'carryForwardValue', 'createdAt', 'updatedAt'])
+            && hasAll(['createdAt', 'updatedAt'])
+            && isOptionalStringWithMax(request.resource.data, 'heaviestTheme', 300)
+            && (!('recurringThemes' in request.resource.data) || (request.resource.data.recurringThemes is list && request.resource.data.recurringThemes.size() <= 10))
+            && isOptionalStringWithMax(request.resource.data, 'whatChanged', 400)
+            && isOptionalStringWithMax(request.resource.data, 'whatHelped', 400)
+            && isOptionalStringWithMax(request.resource.data, 'carryForwardValue', 40)
+            && (request.method == 'create' ? true : checkCreatedAtUnchanged());
+      }
+
+      // AL. groundingProfile/main - Phase 3's adaptive-grounding personal
+      // profile (section 30). Deliberately a single fixed doc id ('main'),
+      // not a growing collection - this is one small, derived preference
+      // record per person, recomputed/merged by
+      // src/lib/grounding-personalisation.ts, never containing raw
+      // reflection text.
+      match /groundingProfile/{docId} {
+        allow read, delete: if isOwner(uid);
+        allow create, update: if isOwner(uid)
+            && docId == 'main'
+            && hasOnly(['personalisationEnabled', 'useHistoryForPersonalisation', 'followUpOnPreviousActions', 'usePreferredLens', 'voiceGuidanceEnabled', 'preferredSessionDepth', 'commonCapacityState', 'helpfulPromptFamilies', 'unhelpfulPromptFamilies', 'helpfulGroundingThemes', 'preferredLens', 'preferredClosingStyle', 'frequentlySkippedElements', 'updatedAt'])
+            && hasAll(['updatedAt'])
+            && (!('personalisationEnabled' in request.resource.data) || request.resource.data.personalisationEnabled is bool)
+            && (!('useHistoryForPersonalisation' in request.resource.data) || request.resource.data.useHistoryForPersonalisation is bool)
+            && (!('followUpOnPreviousActions' in request.resource.data) || request.resource.data.followUpOnPreviousActions is bool)
+            && (!('usePreferredLens' in request.resource.data) || request.resource.data.usePreferredLens is bool)
+            && (!('voiceGuidanceEnabled' in request.resource.data) || request.resource.data.voiceGuidanceEnabled is bool)
+            && (!('preferredSessionDepth' in request.resource.data) || request.resource.data.preferredSessionDepth in ['reset', 'ground', 'deep'])
+            && (!('commonCapacityState' in request.resource.data) || request.resource.data.commonCapacityState in ['running_on_empty', 'low_capacity', 'some_space', 'ready_to_reflect'])
+            && (!('helpfulPromptFamilies' in request.resource.data) || (request.resource.data.helpfulPromptFamilies is list && request.resource.data.helpfulPromptFamilies.size() <= 27))
+            && (!('unhelpfulPromptFamilies' in request.resource.data) || (request.resource.data.unhelpfulPromptFamilies is list && request.resource.data.unhelpfulPromptFamilies.size() <= 27))
+            && (!('helpfulGroundingThemes' in request.resource.data) || (request.resource.data.helpfulGroundingThemes is list && request.resource.data.helpfulGroundingThemes.size() <= 20))
+            && (!('preferredLens' in request.resource.data) || request.resource.data.preferredLens in ['secular', 'values', 'faith', 'islamic'])
+            && (!('preferredClosingStyle' in request.resource.data) || request.resource.data.preferredClosingStyle in ['practical', 'compassionate', 'values', 'faith_friendly', 'islamic'])
+            && (!('frequentlySkippedElements' in request.resource.data) || (request.resource.data.frequentlySkippedElements is list && request.resource.data.frequentlySkippedElements.size() <= 20));
+      }
+
+      // AM. groundingPromptHistory/{promptId} - question-fatigue tracking
+      // (section 5). Doc id is the promptKey itself, so a repeat write is
+      // always an update to the same doc rather than an ever-growing log.
+      match /groundingPromptHistory/{promptId} {
+        allow read, delete: if isOwner(uid);
+        allow create, update: if isOwner(uid)
+            && hasOnly(['promptKey', 'patternKey', 'lastShownAt', 'timesShown', 'userEngaged', 'userSkipped', 'helpfulRating', 'createdAt', 'updatedAt'])
+            && hasAll(['promptKey', 'lastShownAt', 'timesShown', 'createdAt', 'updatedAt'])
+            && isStringWithMax(request.resource.data.promptKey, 80)
+            && (!('patternKey' in request.resource.data) || request.resource.data.patternKey in ['control', 'uncertainty', 'over_responsibility', 'perfectionism', 'guilt_about_rest', 'boundary_difficulty', 'fear_of_disappointing', 'people_pleasing', 'isolation', 'reluctance_to_ask_for_support', 'excessive_self_expectation', 'work_identity', 'financial_pressure', 'family_responsibility', 'conflict_avoidance', 'overcommitment', 'comparison', 'self_criticism', 'difficulty_accepting_unfinished_work', 'difficulty_accepting_outcomes', 'gratitude', 'patience', 'trust', 'compassion', 'connection', 'purpose', 'values_conflict'])
+            && request.resource.data.timesShown is number && request.resource.data.timesShown >= 0
+            && (!('userEngaged' in request.resource.data) || (request.resource.data.userEngaged is number && request.resource.data.userEngaged >= 0))
+            && (!('userSkipped' in request.resource.data) || (request.resource.data.userSkipped is number && request.resource.data.userSkipped >= 0))
+            && (!('helpfulRating' in request.resource.data) || request.resource.data.helpfulRating == null || request.resource.data.helpfulRating in ['helpful', 'not_helpful'])
+            && (request.method == 'create' ? true : checkCreatedAtUnchanged());
+      }
+
+      // AN. groundingFeedback/{feedbackId} - the "What helped?" learning
+      // loop (section 6). A closed set of structured outcome labels only -
+      // no free-text field beyond one short optional note, so this can
+      // never carry raw reflection content either.
+      match /groundingFeedback/{feedbackId} {
+        allow read, delete: if isOwner(uid);
+        allow create: if isOwner(uid)
+            && hasOnly(['selectedOptions', 'helpfulNote', 'sessionDepth', 'createdAt'])
+            && hasAll(['selectedOptions', 'createdAt'])
+            && request.resource.data.selectedOptions is list && request.resource.data.selectedOptions.size() <= 8
+            && isOptionalStringWithMax(request.resource.data, 'helpfulNote', 200)
+            && (!('sessionDepth' in request.resource.data) || request.resource.data.sessionDepth in ['reset', 'ground', 'deep']);
+      }
+
+      // AO. groundingRoutines/{routineId} - personal + custom routines
+      // (sections 8-9): Morning Grounding, End-of-Day Release, Before/
+      // After Something Difficult, or a fully custom one.
+      match /groundingRoutines/{routineId} {
+        allow read, delete: if isOwner(uid);
+        allow create, update: if isOwner(uid)
+            && hasOnly(['name', 'type', 'sessionDepth', 'lens', 'closingStyle', 'preferredPromptKeys', 'reminderEnabled', 'reminderTime', 'reminderDays', 'lastCompletedAt', 'createdAt', 'updatedAt'])
+            && hasAll(['name', 'type', 'createdAt', 'updatedAt'])
+            && isStringWithMax(request.resource.data.name, 60)
+            && request.resource.data.type in ['morning', 'evening', 'before_difficult', 'after_difficult', 'custom']
+            && (!('sessionDepth' in request.resource.data) || request.resource.data.sessionDepth in ['reset', 'ground', 'deep'])
+            && (!('lens' in request.resource.data) || request.resource.data.lens in ['secular', 'values', 'faith', 'islamic'])
+            && (!('closingStyle' in request.resource.data) || request.resource.data.closingStyle in ['practical', 'compassionate', 'values', 'faith_friendly', 'islamic'])
+            && (!('preferredPromptKeys' in request.resource.data) || (request.resource.data.preferredPromptKeys is list && request.resource.data.preferredPromptKeys.size() <= 10))
+            && (!('reminderEnabled' in request.resource.data) || request.resource.data.reminderEnabled is bool)
+            && isOptionalStringWithMax(request.resource.data, 'reminderTime', 10)
+            && (!('reminderDays' in request.resource.data) || (request.resource.data.reminderDays is list && request.resource.data.reminderDays.size() <= 7))
+            // No push/SMS delivery is wired for routine reminders (section
+            // 28's "only if the app already supports reminders" - the
+            // existing notification-router.ts is category/frequency-based,
+            // not time-of-day precise, so a new scheduler would be needed
+            // for that and is out of scope here). reminderEnabled/Time/Days
+            // instead drive a gentle in-app "due" card in the Journey view,
+            // computed client-side against lastCompletedAt on load.
+            && isOptionalStringWithMax(request.resource.data, 'lastCompletedAt', 40)
+            && (request.method == 'create' ? true : checkCreatedAtUnchanged());
+      }
+
+      // AP. savedReflections/{reflectionId} - "Reflections worth keeping"
+      // (section 17) and personal grounding statements (section 18). The
+      // user always decides what gets saved here - nothing is
+      // automatically labelled profound. isUserCreated distinguishes a
+      // person's own words from something they saved out of a session
+      // (e.g. a curated Islamic reflection), so the UI never mislabels
+      // user-written text as verified religious content.
+      match /savedReflections/{reflectionId} {
+        allow read, delete: if isOwner(uid);
+        allow create: if isOwner(uid)
+            && hasOnly(['type', 'text', 'sourceLens', 'isUserCreated', 'createdAt'])
+            && hasAll(['type', 'text', 'isUserCreated', 'createdAt'])
+            && request.resource.data.type in ['question', 'insight', 'value', 'aligned_action', 'grounding_statement', 'faith_reflection']
+            && isStringWithMax(request.resource.data.text, 400)
+            && (!('sourceLens' in request.resource.data) || request.resource.data.sourceLens in ['secular', 'values', 'faith', 'islamic'])
+            && request.resource.data.isUserCreated is bool;
       }
 
     }

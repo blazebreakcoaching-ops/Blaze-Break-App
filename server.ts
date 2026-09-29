@@ -4,7 +4,6 @@ import path from "path";
 import fs from "fs";
 import crypto from "crypto";
 import dns from "dns";
-import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, Type, Modality, LiveServerMessage } from "@google/genai";
 import Anthropic from "@anthropic-ai/sdk";
 import OpenAI from "openai";
@@ -13,9 +12,14 @@ import twilio from "twilio";
 import cron from "node-cron";
 import { WebSocketServer } from 'ws';
 import webpush from 'web-push';
-import { NOVA_KNOWLEDGE_BASE } from './server-knowledge';
+import { NOVA_KNOWLEDGE_BASE, NOVA_CREATOR_KNOWLEDGE, NOVA_COACHING_PHILOSOPHY, NOVA_FAMILIAR_KNOWLEDGE, NOVA_FOUNDER_QA, NOVA_APP_GUIDE } from './server-knowledge';
 import { computeDimensionScores, computeArchetypeScores, pickDominantProfile, computeBlend } from './archetype-scoring';
 import { SendMessageSchema, SetDndSchema, SetStatusSchema } from './boundary-autopilot-schemas';
+import { getIsoWeekId } from './weekly-goal-tracker';
+import { findInProgressShipStage } from './ship-stages';
+import { ISLAMIC_THEMES, GROUNDING_LENSES, GroundingLens, IslamicThemeId } from './grounding-content';
+import { PATTERN_DIMENSION_ORDER, PatternDimensionId, PATTERN_DIMENSIONS } from './grounding-patterns-taxonomy';
+import { CommunityConfig } from './community-config';
 import { initializeApp, getApps } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
@@ -29,8 +33,9 @@ import { computeClimateStrain, computeClimateStrainByDimension, computeMoodStrai
 import { suggestRecognitionPrompts } from './positive-reinforcement';
 import { isRealGuardian, isValidGuardianPhone, buildGuardianCallRequestMessage, extractFirstName, nudgeSchedulerIsEnabled, guardianAlertsEnabled } from './guardian-alert';
 import { guardianSupportInvitationEnabled, validateGuardianSupportOffer, isValidGuardianSupportEventType, isValidGuardianSupportTemplateId, buildGuardianSupportMessage } from './guardian-support-invitation';
+import { buildPrimaryIndicators, sortByAttention } from './org-leading-indicators';
 import { collectionsForExport, collectionsForErasure } from './user-data-collections';
-import { htmlToPlainTextFallback, buildEmailVerificationEmail, buildPasswordResetEmail, buildPasswordChangedEmail, buildMfaEnabledEmail, buildMfaDisabledEmail, buildSupportRequestReceivedEmail, buildInactivityWarningEmail } from './brevo-templates';
+import { htmlToPlainTextFallback, buildEmailVerificationEmail, buildPasswordResetEmail, buildPasswordChangedEmail, buildMfaEnabledEmail, buildMfaDisabledEmail, buildSupportRequestReceivedEmail, buildAllyInviteEmail, buildInactivityWarningEmail } from './brevo-templates';
 import { evaluateRetentionAction, retentionSweepIsEnabled, RetentionCandidate } from './data-retention';
 import { generateTotpSecret, buildOtpauthUri, verifyTotpCode, generateRecoveryCodes, hashRecoveryCode, encryptSecret as encryptTotpSecret, decryptSecret as decryptTotpSecret, isTotpLockedOut, nextLockoutState } from './totp-mfa';
 import { isValidGad7Answers, scoreGad7, interpretGad7 } from './gad7';
@@ -54,6 +59,8 @@ import {
 } from './sms-guardrails';
 import { getEffectiveNotificationPreferences, routeNotification } from './notification-router';
 import { UsageTotals, estimateCost } from './cost-estimates';
+import { managedTeamsFor, isTeamManager, isHrViewer, validateTeamAssignment, validateHrViewerList, computeQualifyingTeamGroups } from './org-team-management';
+import { validateAckInput, describeFollowUp } from './team-escalation';
 
 dotenv.config();
 
@@ -345,6 +352,18 @@ const resentmentAnalysisLimiter = rateLimit({
   handler: logRateLimitExceeded('resentmentAnalysisLimiter'),
 });
 
+// Same shape again - Faith & Values Grounding's Stage 3 reflection is a
+// comparable single-shot Gemini call from structured user input.
+const groundingReflectLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 15,
+  message: { error: 'Too many requests, please try again shortly.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+  validate: { xForwardedForHeader: false, default: true },
+  handler: logRateLimitExceeded('groundingReflectLimiter'),
+});
+
 // Same shape again - the executive report and manager coach are each a
 // comparable single-shot Gemini call, and previously had no rate limiter
 // at all (unlike nova/chat, diagnose, and every other AI-backed route).
@@ -596,11 +615,14 @@ const sendBrevoEmail = (toEmail: string, subject: string, textContent: string) =
     textContent
   });
 
-// This app's first HTML email sender - every other transactional email
-// (support auto-reply, org invites, ally invites) stays plain-text via
-// sendBrevoEmail above, untouched. Used for account-security emails
-// (password reset, email verification, MFA change notices) that need a
-// clickable link and a bit of branding rather than a raw URL in plaintext.
+// This app's first HTML email sender - most other transactional email
+// (support auto-reply, org invites) stays plain-text via sendBrevoEmail
+// above, untouched. Used for account-security emails (password reset,
+// email verification, MFA change notices) and now the Recovery Ally
+// invite (server.ts, POST /api/ally/invite) that need a real, clickable
+// link and a bit of branding rather than a raw URL in plaintext - a raw
+// unlinked URL in an unbranded plain-text email is also a real spam-
+// filter signal, which is part of why the ally invite moved here.
 const sendBrevoHtmlEmail = (toEmail: string, subject: string, htmlContent: string) =>
   postToBrevoEmail({
     sender: { name: "Blaze Break Support", email: "support@blazebreak.app" },
@@ -1242,6 +1264,7 @@ const ai = new GoogleGenAI({
 const NOVA_LIVE_VOICE_PERSONA = `You are Nova, a warm, human-sounding burnout-recovery coach at Blaze Break. You are having a live, spoken conversation - not writing a message.
 
 How you sound:
+- Accent: speak with a natural British English accent throughout this entire call. Never drift into American English pronunciation partway through, even on individual words - stay British from your first word to your last. (This is on top of the call's own audio configuration, which sets the same accent - stated here too because that alone hasn't held consistently call to call.)
 - Speak like a real person who genuinely cares, not a script. Warm, grounded, unhurried.
 - Keep turns SHORT - usually one or two sentences. This is a conversation; leave room for the person to talk. Never monologue.
 - Use natural spoken language and light, genuine affirmations ("mm", "that makes sense", "yeah") - but sparingly, the way a good listener does, not as filler.
@@ -1254,6 +1277,21 @@ How you coach:
 - Favour one small, doable next step over a plan. Recovery is built from tiny, real actions.
 - Draw on what you know about this person (their burnout fingerprint, recent history, and your memory of them) when it's given to you, but don't recite it at them.
 - You are a coach and a steadying presence, not a therapist or doctor. Don't diagnose, and don't claim to treat anything.
+
+${NOVA_COACHING_PHILOSOPHY}
+This should shape how you reason and what you notice in every conversation - not turn you into an imitation of Coach T, and not something you recite. Keep any challenge or reframe short and spoken, the way the rest of this call sounds, not a lecture.
+
+${NOVA_CREATOR_KNOWLEDGE}
+This part is background knowledge, not a script - only draw on it when it's actually relevant (someone asks who made you, why you exist, about Coach T, or the Blaze Break philosophy), and keep your spoken answer short and natural.
+
+${NOVA_FAMILIAR_KNOWLEDGE}
+This is about tone, not content - it governs how you talk about Coach T when he comes up (when to say "Coach T" vs "Tourae Martin", occasional dry humour, never pretending to have memories of him or a family relationship with him, keeping any mention brief and user-focused). Same rule as the block above: only when it's actually relevant, spoken naturally, never recited.
+
+${NOVA_FOUNDER_QA}
+These are canonical starting points for founder/Blaze Break/SILLVANE questions, not scripts to read aloud - use your own words, keep it spoken and short, and only reach for this when someone actually asks something in this territory. Whatever you say, bring it back to the person you're talking to, not the founder.
+
+${NOVA_APP_GUIDE}
+This is the real map of what's in the app - use it when someone asks what a specific screen or tool does, or how to use it, so you can answer accurately instead of guessing. Say it like you'd explain it out loud in passing, not a read-out of a list. If a real navigation link is possible, this is still just the explanation around it, not a replacement for actually sending them there.
 
 Safety - this overrides everything above:
 - If the person expresses thoughts of suicide, self-harm, harming someone else, or being in immediate danger, gently and directly encourage them to contact real human help right now - emergency services, or a crisis line like Samaritans on 116 123 in the UK and Ireland, or 988 in the US and Canada. Stay warm, take it seriously, and don't try to counsel them through a crisis yourself.
@@ -1393,6 +1431,26 @@ Safety - this overrides every instruction above, including any that conflict wit
 - Never suggest the manager try to identify, single out, or personally intervene with a specific unnamed team member based on this aggregate data - you were not given anything that could support that, and this data was never designed to identify anyone.
 - If the manager's own real-world concern is about a specific person's safety or wellbeing, the right next step is their organisation's real HR, EAP, or safeguarding process, not a coaching suggestion generated from a team average.
 `;
+
+// Nova Manager Coach, conversational mode (POST /api/org/:orgId/manager-coach/chat
+// below) - the org-facing equivalent of individual Nova's real tool-calling
+// depth (NOVA_TOOLS/executeNovaTool), built entirely on the same
+// aggregate-only, k-anonymity-gated guarantee as the one-shot prompt above.
+// Every tool in NOVA_ORG_COACH_TOOLS takes NO parameters at all - not a team
+// name, not a uid - specifically so nothing here can be asked to resolve to
+// an individual or an under-threshold cohort the way a naive
+// "get_team_strain(teamName)" tool could (see the qualifying-teams
+// complement-size check in GET /api/org/:orgId/risk-trend and its comment on
+// the re-identification-by-subtraction attack this is built to never
+// reopen). Each tool just returns whatever the org's own already-gated
+// aggregate computation currently is.
+const NOVA_MANAGER_COACH_CHAT_PROMPT = `You are Nova, having a real, ongoing conversation with a manager or org admin - not their team members directly - about how to support a team that may be showing signs of strain.
+
+You can call tools to pull the organisation's own real, current numbers: overall team climate/mood strain and its trend, a per-team breakdown (only for teams large enough to report on safely), one specific named team's detail (same safety rule - if it can't be shown, say so honestly), this week's engagement rate and specific recognition-message suggestions, which teams have an elevated concern that hasn't been recently followed up on, real calendar-derived meeting-load signal (when enough people have connected a calendar), and the org's own entered cost-of-pressure figures. Call whichever tools are actually relevant to what's being asked - don't call all of them reflexively on every turn, and don't answer with a number you could just look up instead.
+
+You are only ever given AGGREGATE, ANONYMISED signals about a group of people, never anything about a named individual - because you genuinely have no way to see individual data, by design. Do not speculate about, invent, or refer to any specific person, and don't accept a team name, headcount, or number the manager states as a substitute for calling the real tool - always check.
+
+Keep replies short and direct - this is a working conversation with a busy manager, not a report. Ground every claim in a real number from a tool call you actually made this conversation.`;
 
 // Context Consent Metadata representation
 interface NovaConsentMetadata {
@@ -2491,7 +2549,18 @@ app.post("/api/nova/chat", novaChatLimiter, verifyAppCheck, authenticateFirebase
       }
     }
 
-    const mergedSystemPrompt = (systemInstruction || NOVA_SYSTEM_PROMPT) + contextAddendum + NOVA_SAFETY_INSTRUCTIONS;
+    // NOVA_SYSTEM_PROMPT (persona, coaching style, the full knowledge base -
+    // methodology, creator knowledge, coaching philosophy, founder Q&A) must
+    // always be present, not just when the caller happens to omit its own
+    // systemInstruction. NovaChat.tsx always sends a non-empty
+    // systemInstruction (fingerprint + per-conversation context + tone
+    // override), so `systemInstruction || NOVA_SYSTEM_PROMPT` silently threw
+    // away the entire knowledge base on every real request - the caller's
+    // context was meant to be ADDED on top of Nova's persona, not replace it
+    // outright. Same category of bug as the one the comment above
+    // NOVA_SAFETY_INSTRUCTIONS already fixed for the safety floor; this
+    // closes it for the knowledge base too.
+    const mergedSystemPrompt = NOVA_SYSTEM_PROMPT + (systemInstruction ? `\n\n${systemInstruction}` : "") + contextAddendum + NOVA_SAFETY_INSTRUCTIONS;
 
     const abortController = new AbortController();
     const timeoutId = setTimeout(() => abortController.abort(), 25000); // 25s timeout - raised from 15s to accommodate one or more tool-call round-trips
@@ -2838,7 +2907,16 @@ app.post("/api/nova/speech", verifyAppCheck, speechLimiter, authenticateFirebase
     try {
       const response = await ai.models.generateContent({
         model: "gemini-3.1-flash-tts-preview",
-        contents: [{ parts: [{ text }] }],
+        // The "Say <style>: <content>" prefix is Gemini TTS's documented
+        // style-control pattern - the model reads it as a delivery
+        // instruction, not literal text to speak. Added because
+        // `languageCode: "en-GB"` below on its own wasn't holding a
+        // consistent accent across separate calls (each play-aloud request
+        // here is a fresh, stateless generateContent call, so nothing
+        // carries an accent choice over from the previous message) -
+        // reinforcing it directly in the prompt text gives the model a
+        // second, stronger signal alongside the config field.
+        contents: [{ parts: [{ text: `Say in a warm, natural British English accent, never American English pronunciation: ${text}` }] }],
         config: {
           responseModalities: [Modality.AUDIO],
           speechConfig: {
@@ -5581,6 +5659,14 @@ app.get("/api/admin/users", verifyAppCheck, authenticateFirebaseUser, async (req
     // an account that genuinely exists, the same source
     // GET /api/admin/users/:uid already uses correctly for one account.
     const users = await Promise.all(usersSnap.docs.map(async (doc) => {
+      // Same effectivePlan()/getEffectiveEntitlement() path every other
+      // surface (SubscriptionCentre, /api/entitlements/me) uses to decide
+      // what plan someone is actually on right now - an admin choosing
+      // what to grant next needs to see the same real, computed value,
+      // not the raw stored `plan` field (which could be stale/expired).
+      const entitlementSnap = await db.collection("users").doc(doc.id).collection("entitlements").doc("status").get();
+      const entitlement = getEffectiveEntitlement(entitlementSnap.exists ? entitlementSnap.data() : undefined);
+      const plan = effectivePlan(entitlement);
       try {
         const authUser = await getAuth().getUser(doc.id);
         return {
@@ -5597,12 +5683,14 @@ app.get("/api/admin/users", verifyAppCheck, authenticateFirebaseUser, async (req
           createdAt: authUser.metadata.creationTime,
           lastSignIn: authUser.metadata.lastSignInTime,
           accessStatus: authUser.disabled ? "disabled" : "active",
+          plan,
+          entitlementStatus: entitlement.status,
         };
       } catch (e) {
         // A Firestore doc with no matching live Auth account (e.g.
         // deleted directly in the Auth console) - surfaced honestly
         // rather than papered over with a fabricated email/date.
-        return { uid: doc.id, email: null, emailVerified: false, createdAt: null, lastSignIn: null, accessStatus: "unknown" };
+        return { uid: doc.id, email: null, emailVerified: false, createdAt: null, lastSignIn: null, accessStatus: "unknown", plan, entitlementStatus: entitlement.status };
       }
     }));
     // This route has always been capped at ADMIN_USERS_PAGE_LIMIT with no
@@ -6321,6 +6409,13 @@ app.get("/api/org/me", verifyAppCheck, authenticateFirebaseUser, async (req, res
       joinCode: isOrgAdmin ? org.joinCode : undefined,
       privacyThreshold: isOrgAdmin ? (org.privacyThreshold || 5) : undefined,
       shareAnonymizedDataWithOrg: userDoc.data()?.shareAnonymizedDataWithOrg === true,
+      managedTeams: managedTeamsFor(org.teamManagers, user.uid),
+      // Matches GET /api/org/:orgId/hr-dashboard's own access check exactly
+      // (isHrViewer(...) OR admin) - otherwise an org admin has real,
+      // working access to that data through the API but no nav entry to
+      // ever reach it, since the hrViewerUids allow-list is a separate,
+      // additive grant an admin isn't automatically added to.
+      isHrViewer: isHrViewer(org.hrViewerUids, user.uid) || isOrgAdmin,
     });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
@@ -6827,6 +6922,186 @@ const computeStrainSnapshotForCohort = async (db: any, uids: string[]): Promise<
   };
 };
 
+interface OrgMeetingLoadSnapshot {
+  available: boolean;
+  cohortSize: number;
+  avgMeetingHoursPerWeek: number | null;
+  avgBackToBackMeetingsPerWeek: number | null;
+  pctWithEveningMeetings: number | null;
+  pctWithWeekendMeetings: number | null;
+}
+
+// Same aggregate-only boundary as computeStrainSnapshotForCohort above, for
+// a different real signal: each member's own live_signals/calendar doc
+// (src/lib/calendar-signals.ts, synced client-side from their own Google
+// Calendar with their own OAuth token - see POST /api/signals/calendar).
+// That signal already only ever exists for a member who both opted into
+// org sharing (shareAnonymizedDataWithOrg, same gate as every other org
+// aggregate) AND separately enabled allowCalendarSignals for themselves -
+// two independent, real consent checks, not one flag standing in for both.
+// The contributing cohort is usually smaller than the org's full consenting
+// membership (fewer people have connected a calendar at all), so it gets
+// its OWN threshold check here rather than assuming the org-wide count
+// already covers it.
+const computeMeetingLoadSnapshotForCohort = async (
+  db: any,
+  uids: string[],
+  threshold: number,
+): Promise<OrgMeetingLoadSnapshot> => {
+  const fourteenDaysAgo = Date.now() - 14 * 24 * 60 * 60 * 1000;
+  const contributing: { totalMeetingHours: number; backToBackCount: number; eveningMeetingCount: number; weekendMeetingCount: number }[] = [];
+  await Promise.all(uids.map(async (uid) => {
+    const permDoc = await db.collection("users").doc(uid).collection("nova_permissions").doc("current").get();
+    if (!permDoc.exists || permDoc.data()?.allowCalendarSignals !== true) return;
+    const calDoc = await db.collection("users").doc(uid).collection("live_signals").doc("calendar").get();
+    if (!calDoc.exists) return;
+    const data = calDoc.data() || {};
+    // Stale (not synced recently) is treated as no signal, not a zero -
+    // an empty calendar and an unsynced browser tab must never look alike.
+    if (!data.updatedAt || new Date(data.updatedAt).getTime() < fourteenDaysAgo) return;
+    contributing.push({
+      totalMeetingHours: typeof data.totalMeetingHours === 'number' ? data.totalMeetingHours : 0,
+      backToBackCount: typeof data.backToBackCount === 'number' ? data.backToBackCount : 0,
+      eveningMeetingCount: typeof data.eveningMeetingCount === 'number' ? data.eveningMeetingCount : 0,
+      weekendMeetingCount: typeof data.weekendMeetingCount === 'number' ? data.weekendMeetingCount : 0,
+    });
+  }));
+  if (contributing.length < threshold) {
+    return { available: false, cohortSize: contributing.length, avgMeetingHoursPerWeek: null, avgBackToBackMeetingsPerWeek: null, pctWithEveningMeetings: null, pctWithWeekendMeetings: null };
+  }
+  const n = contributing.length;
+  const avgMeetingHoursPerWeek = contributing.reduce((sum, c) => sum + c.totalMeetingHours, 0) / n;
+  const avgBackToBackMeetingsPerWeek = contributing.reduce((sum, c) => sum + c.backToBackCount, 0) / n;
+  const pctWithEveningMeetings = Math.round((contributing.filter((c) => c.eveningMeetingCount > 0).length / n) * 100);
+  const pctWithWeekendMeetings = Math.round((contributing.filter((c) => c.weekendMeetingCount > 0).length / n) * 100);
+  return {
+    available: true,
+    cohortSize: n,
+    avgMeetingHoursPerWeek: Math.round(avgMeetingHoursPerWeek * 10) / 10,
+    avgBackToBackMeetingsPerWeek: Math.round(avgBackToBackMeetingsPerWeek * 10) / 10,
+    pctWithEveningMeetings,
+    pctWithWeekendMeetings,
+  };
+};
+
+// The cohort-level "did people actually use the app" signal - extracted
+// from the original /api/org/:orgId/dashboard route so the same real
+// engagement math can be reused per-team (team-dashboard, hr-dashboard)
+// without duplicating it. Deliberately never returns anything about a
+// specific uid - only how many of `uids` had any activity, so a caller
+// can only ever learn a percentage, never who.
+const computeEngagementRate = async (db: any, uids: string[], windowDays: number): Promise<number> => {
+  if (uids.length === 0) return 0;
+  const sinceIso = new Date(Date.now() - windowDays * 24 * 60 * 60 * 1000).toISOString();
+  let activeCount = 0;
+  await Promise.all(uids.map(async (uid) => {
+    const moodSnap = await db.collection("users").doc(uid).collection("mood_pulses")
+      .where("createdAt", ">=", sinceIso).limit(1).get();
+    if (!moodSnap.empty) { activeCount++; return; }
+    const bodySnap = await db.collection("users").doc(uid).collection("body_checkins")
+      .where("createdAt", ">=", sinceIso).limit(1).get();
+    if (!bodySnap.empty) activeCount++;
+  }));
+  return Math.round((activeCount / uids.length) * 100);
+};
+
+// Reads organisations/{orgId}/risk_trend_history, and - only when
+// `writeSnapshot` is true - writes today's snapshot if none has been
+// recorded yet today (idempotent - once per UTC day regardless of how
+// many routes/times this is called), then derives every trend (org-wide +
+// per-signal + per-team) against whichever prior snapshot sits closest to
+// ~28 days back. Extracted so risk-trend and hr-dashboard read and write
+// the exact same history and can never drift into disagreeing about what
+// "the trend" is for the same underlying data.
+//
+// `writeSnapshot` MUST be false whenever `orgSnapshot` isn't genuinely the
+// whole org's snapshot - e.g. team-dashboard, which only ever has ONE
+// manager's own team's data. Writing there would corrupt the shared daily
+// history: it would mislabel that one team's strain as the org-wide
+// number, and silently drop every other team's concern for that day
+// (including ones that separately qualify) - whichever route happens to
+// run first each day currently "wins" the write, so this MUST stay
+// read-only for any caller that doesn't have the complete picture.
+interface TrendHistoryResult {
+  orgTrend: ReturnType<typeof computeTrend>;
+  moodTrend: ReturnType<typeof computeTrend>;
+  climateTrend: ReturnType<typeof computeTrend>;
+  comparedAgainst: string | null;
+  history: { recordedAt: string; overallConcern: number | null }[];
+  teamTrends: Record<string, ReturnType<typeof computeTrend>>;
+}
+
+const computeTrendHistory = async (
+  db: any,
+  orgId: string,
+  orgSnapshot: OrgStrainSnapshot,
+  teamSnapshots: Record<string, OrgStrainSnapshot>,
+  writeSnapshot: boolean = true
+): Promise<TrendHistoryResult> => {
+  // Read history first so today's write (if any) doesn't contaminate the
+  // "previous" comparison computed just below.
+  const historySnap = await db.collection("organisations").doc(orgId).collection("risk_trend_history")
+    .orderBy("recordedAt", "desc").limit(90).get();
+  const history = historySnap.docs.map((d: any) => d.data() as {
+    recordedAt: string;
+    overallConcern: number | null;
+    moodConcern: number | null;
+    climateConcern: number | null;
+    teamConcerns?: Record<string, number | null>;
+  });
+
+  const todayUtc = new Date().toISOString().slice(0, 10);
+  const alreadySnapshottedToday = history.some((h: any) => h.recordedAt.slice(0, 10) === todayUtc);
+  if (writeSnapshot && !alreadySnapshottedToday && orgSnapshot.overallConcern !== null) {
+    const teamConcerns: Record<string, number | null> = {};
+    Object.entries(teamSnapshots).forEach(([team, snap]) => { teamConcerns[team] = snap.overallConcern; });
+    await db.collection("organisations").doc(orgId).collection("risk_trend_history").add({
+      recordedAt: new Date().toISOString(),
+      overallConcern: orgSnapshot.overallConcern,
+      moodConcern: orgSnapshot.moodConcern,
+      climateConcern: orgSnapshot.climateConcern,
+      teamConcerns,
+    });
+  }
+
+  // Compare against whichever snapshot sits closest to ~28 days back - a
+  // genuine month-over-month read, not noisy day-to-day movement in a
+  // signal built on overlapping 7-day windows.
+  const twentyEightDaysAgo = Date.now() - 28 * 24 * 60 * 60 * 1000;
+  const findClosestPrior = (getValue: (h: any) => number | null | undefined) => history
+    .filter((h: any) => new Date(h.recordedAt).getTime() <= twentyEightDaysAgo && getValue(h) != null)
+    .sort((a: any, b: any) => Math.abs(new Date(a.recordedAt).getTime() - twentyEightDaysAgo) - Math.abs(new Date(b.recordedAt).getTime() - twentyEightDaysAgo))[0];
+
+  const priorOrgSnapshot = findClosestPrior((h: any) => h.overallConcern);
+  const orgTrend = computeTrend(orgSnapshot.overallConcern, priorOrgSnapshot?.overallConcern ?? null);
+
+  // Per-signal direction of travel, for the leading-indicators view. Mood
+  // and climate move at different speeds (mood is the faster, more
+  // volatile early signal), so showing each one's trend separately is the
+  // point - "mood is worsening while climate holds steady" is exactly the
+  // kind of early, structural read this view exists to surface. Aggregate
+  // only; never per person.
+  const priorMood = findClosestPrior((h: any) => h.moodConcern);
+  const moodTrend = computeTrend(orgSnapshot.moodConcern, priorMood?.moodConcern ?? null);
+  const priorClimate = findClosestPrior((h: any) => h.climateConcern);
+  const climateTrend = computeTrend(orgSnapshot.climateConcern, priorClimate?.climateConcern ?? null);
+
+  const teamTrends: Record<string, ReturnType<typeof computeTrend>> = {};
+  Object.entries(teamSnapshots).forEach(([team, snap]) => {
+    const priorTeamSnapshot = findClosestPrior((h: any) => h.teamConcerns?.[team]);
+    teamTrends[team] = computeTrend(snap.overallConcern, priorTeamSnapshot?.teamConcerns?.[team] ?? null);
+  });
+
+  return {
+    orgTrend,
+    moodTrend,
+    climateTrend,
+    comparedAgainst: priorOrgSnapshot?.recordedAt || null,
+    history: history.slice().reverse().map((h: any) => ({ recordedAt: h.recordedAt, overallConcern: h.overallConcern })),
+    teamTrends,
+  };
+};
+
 app.get("/api/org/:orgId/risk-trend", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
   try {
     const { orgId } = req.params;
@@ -6851,14 +7126,6 @@ app.get("/api/org/:orgId/risk-trend", verifyAppCheck, authenticateFirebaseUser, 
     // in teamBreakdown at all - not shown as "locked", simply absent,
     // since listing a locked team by name would itself say more about a
     // small team's participation than this feature should ever reveal.
-    const teamGroups: Record<string, string[]> = {};
-    consentingUids.forEach((uid) => {
-      const team = memberTeams[uid];
-      if (team) {
-        if (!teamGroups[team]) teamGroups[team] = [];
-        teamGroups[team].push(uid);
-      }
-    });
     // A team only qualifies for its own breakdown entry if BOTH it, and
     // the rest of the org once it's excluded (the "complement"), clear the
     // threshold. Checking team size alone is not enough: the org-wide
@@ -6874,69 +7141,21 @@ app.get("/api/org/:orgId/risk-trend", verifyAppCheck, authenticateFirebaseUser, 
     // purpose. This check closes that specific, demonstrated attack; it
     // does not (yet) defend against a slower attack built from many
     // overlapping team combinations - see docs/PRODUCT_SAFETY_PRIVACY.md.
-    const qualifyingTeams = Object.entries(teamGroups).filter(([, uids]) => {
-      if (uids.length < threshold) return false;
-      const complementSize = consentingUids.length - uids.length;
-      return complementSize === 0 || complementSize >= threshold;
-    });
+    // (computeQualifyingTeamGroups is the same shared helper the manager
+    // and HR team-welfare dashboards use, so this rule can never drift
+    // between routes.)
+    const { qualifying: teamGroups } = computeQualifyingTeamGroups(consentingUids, memberTeams, threshold);
     const teamSnapshots: Record<string, OrgStrainSnapshot> = {};
-    await Promise.all(qualifyingTeams.map(async ([team, uids]) => {
+    await Promise.all(Object.entries(teamGroups).map(async ([team, uids]) => {
       teamSnapshots[team] = await computeStrainSnapshotForCohort(db, uids);
     }));
 
-    // Snapshot handling: read history first so today's write (if any)
-    // doesn't contaminate the "previous" comparison, and only ever write
-    // once per UTC day regardless of how many times this is loaded.
-    const historySnap = await db.collection("organisations").doc(orgId).collection("risk_trend_history")
-      .orderBy("recordedAt", "desc").limit(90).get();
-    const history = historySnap.docs.map((d: any) => d.data() as {
-      recordedAt: string;
-      overallConcern: number | null;
-      moodConcern: number | null;
-      climateConcern: number | null;
-      teamConcerns?: Record<string, number | null>;
-    });
-
-    const todayUtc = new Date().toISOString().slice(0, 10);
-    const alreadySnapshottedToday = history.some((h: any) => h.recordedAt.slice(0, 10) === todayUtc);
-    if (!alreadySnapshottedToday && orgSnapshot.overallConcern !== null) {
-      const teamConcerns: Record<string, number | null> = {};
-      Object.entries(teamSnapshots).forEach(([team, snap]) => { teamConcerns[team] = snap.overallConcern; });
-      await db.collection("organisations").doc(orgId).collection("risk_trend_history").add({
-        recordedAt: new Date().toISOString(),
-        overallConcern: orgSnapshot.overallConcern,
-        moodConcern: orgSnapshot.moodConcern,
-        climateConcern: orgSnapshot.climateConcern,
-        teamConcerns,
-      });
-    }
-
-    // Compare against whichever snapshot sits closest to ~28 days back -
-    // a genuine month-over-month read, not noisy day-to-day movement in
-    // a signal built on overlapping 7-day windows.
-    const twentyEightDaysAgo = Date.now() - 28 * 24 * 60 * 60 * 1000;
-    const findClosestPrior = (getValue: (h: any) => number | null | undefined) => history
-      .filter((h: any) => new Date(h.recordedAt).getTime() <= twentyEightDaysAgo && getValue(h) != null)
-      .sort((a: any, b: any) => Math.abs(new Date(a.recordedAt).getTime() - twentyEightDaysAgo) - Math.abs(new Date(b.recordedAt).getTime() - twentyEightDaysAgo))[0];
-
-    const priorOrgSnapshot = findClosestPrior((h: any) => h.overallConcern);
-    const orgTrend = computeTrend(orgSnapshot.overallConcern, priorOrgSnapshot?.overallConcern ?? null);
-
-    // Per-signal direction of travel, for the leading-indicators view. Mood
-    // and climate move at different speeds (mood is the faster, more
-    // volatile early signal), so showing each one's trend separately is the
-    // point - "mood is worsening while climate holds steady" is exactly the
-    // kind of early, structural read this view exists to surface. Aggregate
-    // only; never per person.
-    const priorMood = findClosestPrior((h: any) => h.moodConcern);
-    const moodTrend = computeTrend(orgSnapshot.moodConcern, priorMood?.moodConcern ?? null);
-    const priorClimate = findClosestPrior((h: any) => h.climateConcern);
-    const climateTrend = computeTrend(orgSnapshot.climateConcern, priorClimate?.climateConcern ?? null);
+    const { orgTrend, moodTrend, climateTrend, comparedAgainst, history, teamTrends } =
+      await computeTrendHistory(db, orgId, orgSnapshot, teamSnapshots);
 
     const teamBreakdown: Record<string, OrgStrainSnapshot & { trend: ReturnType<typeof computeTrend> }> = {};
     Object.entries(teamSnapshots).forEach(([team, snap]) => {
-      const priorTeamSnapshot = findClosestPrior((h: any) => h.teamConcerns?.[team]);
-      teamBreakdown[team] = { ...snap, trend: computeTrend(snap.overallConcern, priorTeamSnapshot?.teamConcerns?.[team] ?? null) };
+      teamBreakdown[team] = { ...snap, trend: teamTrends[team] };
     });
 
     res.json({
@@ -6950,8 +7169,8 @@ app.get("/api/org/:orgId/risk-trend", verifyAppCheck, authenticateFirebaseUser, 
       trend: orgTrend,
       moodTrend,
       climateTrend,
-      comparedAgainst: priorOrgSnapshot?.recordedAt || null,
-      history: history.slice().reverse().map((h: any) => ({ recordedAt: h.recordedAt, overallConcern: h.overallConcern })),
+      comparedAgainst,
+      history,
       teamBreakdown,
     });
   } catch (err: any) {
@@ -7060,6 +7279,7 @@ app.get("/api/org/:orgId/members", verifyAppCheck, authenticateFirebaseUser, asy
     const memberTeams: Record<string, string> = org.memberTeams || {};
 
     const members = await Promise.all(memberUids.map(async (uid) => {
+      const managesTeams = managedTeamsFor(org.teamManagers, uid);
       try {
         const authUser = await getAuth().getUser(uid);
         return {
@@ -7068,13 +7288,14 @@ app.get("/api/org/:orgId/members", verifyAppCheck, authenticateFirebaseUser, asy
           displayName: authUser.displayName || null,
           isAdmin: adminUids.includes(uid),
           team: memberTeams[uid] || null,
+          managesTeams,
         };
       } catch (e) {
-        return { uid, email: null, displayName: null, isAdmin: adminUids.includes(uid), team: memberTeams[uid] || null };
+        return { uid, email: null, displayName: null, isAdmin: adminUids.includes(uid), team: memberTeams[uid] || null, managesTeams };
       }
     }));
 
-    res.json({ members });
+    res.json({ members, existingTeams: Array.from(new Set(Object.values(memberTeams))), hrViewerUids: org.hrViewerUids || [] });
   } catch (err: any) {
     res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
   }
@@ -7148,6 +7369,269 @@ app.post("/api/org/:orgId/members/:memberUid/team", verifyAppCheck, authenticate
     res.json({ success: true });
   } catch (err: any) {
     res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
+  }
+});
+
+// ============ Team-welfare dashboards: manager & HR designation ============
+// See org-team-management.ts and docs/TEAM_WELFARE_DASHBOARDS.md. Being a
+// team manager or an HR viewer is orthogonal to org-rbac.ts's org-wide
+// role table - a plain 'member' can manage a team, and neither
+// designation grants any of the org-wide ORG_PERMISSIONS. Both are simple
+// admin-curated allow-lists, assignable only by an org owner/admin, same
+// gate as the memberTeams assignment route just above.
+
+// Full-replace (send the whole intended team list), not an incremental
+// patch - same "no partial updates" reasoning as org-data-policy.ts.
+app.post("/api/org/:orgId/members/:memberUid/manage-teams", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const { orgId, memberUid } = req.params;
+    const { org } = await requireOrgAdmin(req, orgId);
+    if (!(org.memberUids || []).includes(memberUid)) {
+      return res.status(400).json({ error: "That person isn't a member of this organisation." });
+    }
+    const existingTeams = Array.from(new Set(Object.values(org.memberTeams || {}) as string[]));
+    const validation = validateTeamAssignment(req.body, existingTeams);
+    if (!validation.valid) {
+      return res.status(400).json({ error: validation.error });
+    }
+    const { teams } = req.body;
+    const db = getDb();
+    const before = { teams: managedTeamsFor(org.teamManagers, memberUid) };
+    const fieldPath = `teamManagers.${memberUid}`;
+    await db.collection("organisations").doc(orgId).update({
+      [fieldPath]: teams.length > 0 ? teams : FieldValue.delete(),
+    });
+    await logOrgAuditAction(req, orgId, "assign_team_manager", "team_manager", memberUid, before, { teams });
+    res.json({ success: true, teams });
+  } catch (err: any) {
+    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("not found") ? 404 : 500).json({ error: err.message });
+  }
+});
+
+app.get("/api/org/:orgId/hr-viewers", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const { orgId } = req.params;
+    const { org } = await requireOrgAdmin(req, orgId);
+    res.json({ uids: org.hrViewerUids || [] });
+  } catch (err: any) {
+    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("not found") ? 404 : 500).json({ error: err.message });
+  }
+});
+
+app.post("/api/org/:orgId/hr-viewers", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const { orgId } = req.params;
+    const { org } = await requireOrgAdmin(req, orgId);
+    const validation = validateHrViewerList(req.body);
+    if (!validation.valid) {
+      return res.status(400).json({ error: validation.error });
+    }
+    const { uids } = req.body;
+    // Every uid must be a real member of this org - an HR viewer allow-list
+    // is not a place to grant access to an outsider.
+    const memberUids: string[] = org.memberUids || [];
+    const unknownUid = uids.find((uid: string) => !memberUids.includes(uid));
+    if (unknownUid) {
+      return res.status(400).json({ error: `"${unknownUid}" isn't a member of this organisation.` });
+    }
+    const db = getDb();
+    const before = { uids: org.hrViewerUids || [] };
+    await db.collection("organisations").doc(orgId).update({ hrViewerUids: uids });
+    await logOrgAuditAction(req, orgId, "update_hr_viewers", "hr_viewers", orgId, before, { uids });
+    res.json({ success: true, uids });
+  } catch (err: any) {
+    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("not found") ? 404 : 500).json({ error: err.message });
+  }
+});
+
+// The manager's own view: resolves the caller's managed team(s) from
+// org.teamManagers[uid] - no :team param, since a manager only ever sees
+// their own. An org owner/admin is also let through even if they manage no
+// team themselves (for support purposes), rather than being hard-blocked;
+// same per-team k-anonymity rule as risk-trend applies to every team
+// returned, so a manager of a too-small team sees an explicit "not enough
+// people yet" (unlike the org-wide multi-team view, a manager already
+// knows who's on their own team, so this is honest UX, not a leak).
+app.get("/api/org/:orgId/team-dashboard", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const { orgId } = req.params;
+    const { user, db, org, role } = await loadOrgAndCallerRole(req, orgId);
+    const isAdmin = role === 'owner' || role === 'admin';
+    const managedTeams = managedTeamsFor(org.teamManagers, user.uid);
+    if (managedTeams.length === 0 && !isAdmin) {
+      return res.status(403).json({ error: "Forbidden: you don't manage any team in this organisation." });
+    }
+
+    const threshold = org.privacyThreshold || 5;
+    const memberUids: string[] = org.memberUids || [];
+    const memberTeams: Record<string, string> = org.memberTeams || {};
+    const consentingUids = await getConsentingMemberUids(db, memberUids);
+
+    const teams = await Promise.all(managedTeams.map(async (team) => {
+      const teamConsentingUids = consentingUids.filter((uid) => memberTeams[uid] === team);
+      // Same complement check computeQualifyingTeamGroups applies to the
+      // org-wide breakdown: a caller who can also see the org-wide
+      // aggregate (an admin who happens to manage this team, or a manager
+      // who is later given org-admin access) could otherwise recover the
+      // excluded remainder's own signal by subtracting this team's
+      // snapshot from the org total. Locking here doesn't leak anything
+      // new - it's the manager's own team, so they already know its size.
+      const complementSize = consentingUids.length - teamConsentingUids.length;
+      const complementSafe = complementSize === 0 || complementSize >= threshold;
+      if (teamConsentingUids.length < threshold || !complementSafe) {
+        return { team, locked: true, cohortSize: teamConsentingUids.length, threshold };
+      }
+      const snapshot = await computeStrainSnapshotForCohort(db, teamConsentingUids);
+      const engagementRate = await computeEngagementRate(db, teamConsentingUids, 7);
+      // Read-only: this route only ever has ONE team's data, never the
+      // whole org's, so it must never write the shared daily snapshot -
+      // see computeTrendHistory's own docstring for why.
+      const { teamTrends } = await computeTrendHistory(db, orgId, snapshot, { [team]: snapshot }, false);
+      const indicators = sortByAttention(buildPrimaryIndicators({
+        overall: snapshot.overallConcern,
+        mood: snapshot.moodConcern,
+        climate: snapshot.climateConcern,
+        overallTrend: teamTrends[team],
+      }));
+      // The Nova nudge: only surfaced when the top-attention indicator
+      // actually warrants one - never invented when things look fine.
+      const topIndicator = indicators[0];
+      const nudge = topIndicator && (topIndicator.severity === 'elevated' || topIndicator.direction === 'worsening')
+        ? { title: 'Consider a team check-in', message: topIndicator.note }
+        : null;
+      return {
+        team,
+        locked: false,
+        cohortSize: teamConsentingUids.length,
+        threshold,
+        overallConcern: snapshot.overallConcern,
+        moodConcern: snapshot.moodConcern,
+        climateConcern: snapshot.climateConcern,
+        engagementRate,
+        indicators,
+        nudge,
+      };
+    }));
+
+    res.json({ teams });
+  } catch (err: any) {
+    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("not found") ? 404 : 500).json({ error: err.message });
+  }
+});
+
+// A manager logging that they addressed an elevated signal - a factual
+// follow-through record for HR to read (see team-escalation.ts), never a
+// verified fact (there's no way to confirm a real conversation happened)
+// and never a score computed on the manager. The caller must actually
+// manage :team (or be an org admin) - this isn't a general-purpose note
+// anyone can leave on any team.
+app.post("/api/org/:orgId/team-dashboard/:team/acknowledge", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const { orgId, team } = req.params;
+    const { user, db, org, role } = await loadOrgAndCallerRole(req, orgId);
+    const isAdmin = role === 'owner' || role === 'admin';
+    if (!isTeamManager(org.teamManagers, user.uid, team) && !isAdmin) {
+      return res.status(403).json({ error: "Forbidden: you don't manage this team." });
+    }
+    const validation = validateAckInput(req.body);
+    if (!validation.valid) {
+      return res.status(400).json({ error: validation.error });
+    }
+    const note: string | null = req.body?.note || null;
+
+    // Best-effort context for HR - the team's current strain at the moment
+    // of acknowledgment, if enough consenting members exist to compute one.
+    // Never blocks the ack itself if this comes back null (e.g. the team
+    // is below the k-anonymity threshold right now).
+    const memberTeams: Record<string, string> = org.memberTeams || {};
+    const memberUids: string[] = org.memberUids || [];
+    const consentingUids = await getConsentingMemberUids(db, memberUids);
+    const teamConsentingUids = consentingUids.filter((uid) => memberTeams[uid] === team);
+    const overallConcernAtAck = teamConsentingUids.length >= (org.privacyThreshold || 5)
+      ? (await computeStrainSnapshotForCohort(db, teamConsentingUids)).overallConcern
+      : null;
+
+    const record = {
+      team,
+      acknowledgedBy: user.uid,
+      acknowledgedByEmail: user.email || null,
+      note,
+      overallConcernAtAck,
+      createdAt: new Date().toISOString(),
+    };
+    await db.collection("organisations").doc(orgId).collection("team_escalation_acks").add(record);
+    // Never log the note text itself - only whether one was provided -
+    // matching the existing "structured diffs, never raw content" rule.
+    await logOrgAuditAction(req, orgId, "acknowledge_team_signal", "team_escalation_ack", team, null, { notePresent: !!note });
+    res.json({ success: true, ack: record });
+  } catch (err: any) {
+    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("not found") ? 404 : 500).json({ error: err.message });
+  }
+});
+
+// HR's view: every qualifying team at once (unlike the manager's own view,
+// which only ever sees the team(s) they manage), same aggregate data a
+// manager sees, plus each team's real follow-up status - never a computed
+// score on the manager, just whether a recent acknowledgment exists (see
+// team-escalation.ts). Gated to the hrViewerUids allow-list or org admin -
+// deliberately not a new OrgRole, matching the same reasoning teamManagers
+// itself uses (see org-team-management.ts's header comment).
+app.get("/api/org/:orgId/hr-dashboard", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const { orgId } = req.params;
+    const { user, db, org, role } = await loadOrgAndCallerRole(req, orgId);
+    const isAdmin = role === 'owner' || role === 'admin';
+    if (!isHrViewer(org.hrViewerUids, user.uid) && !isAdmin) {
+      return res.status(403).json({ error: "Forbidden: you don't have HR viewer access to this organisation." });
+    }
+
+    const threshold = org.privacyThreshold || 5;
+    const memberUids: string[] = org.memberUids || [];
+    const memberTeams: Record<string, string> = org.memberTeams || {};
+    const consentingUids = await getConsentingMemberUids(db, memberUids);
+
+    if (consentingUids.length < threshold) {
+      return res.json({ locked: true, cohortSize: consentingUids.length, threshold, teams: [] });
+    }
+
+    const orgSnapshot = await computeStrainSnapshotForCohort(db, consentingUids);
+    const { qualifying: teamGroups } = computeQualifyingTeamGroups(consentingUids, memberTeams, threshold);
+    const teamSnapshots: Record<string, OrgStrainSnapshot> = {};
+    const engagementRates: Record<string, number> = {};
+    await Promise.all(Object.entries(teamGroups).map(async ([team, uids]) => {
+      teamSnapshots[team] = await computeStrainSnapshotForCohort(db, uids);
+      engagementRates[team] = await computeEngagementRate(db, uids, 7);
+    }));
+
+    const { teamTrends } = await computeTrendHistory(db, orgId, orgSnapshot, teamSnapshots);
+
+    const now = new Date();
+    const teams = await Promise.all(Object.entries(teamSnapshots).map(async ([team, snap]) => {
+      const acksSnap = await db.collection("organisations").doc(orgId).collection("team_escalation_acks")
+        .where("team", "==", team).orderBy("createdAt", "desc").limit(5).get();
+      const acks = acksSnap.docs.map((d: any) => d.data());
+      const followUp = describeFollowUp(acks, now);
+      const indicators = sortByAttention(buildPrimaryIndicators({
+        overall: snap.overallConcern,
+        mood: snap.moodConcern,
+        climate: snap.climateConcern,
+        overallTrend: teamTrends[team],
+      }));
+      return {
+        team,
+        cohortSize: teamGroups[team].length,
+        overallConcern: snap.overallConcern,
+        moodConcern: snap.moodConcern,
+        climateConcern: snap.climateConcern,
+        engagementRate: engagementRates[team],
+        indicators,
+        followUp,
+      };
+    }));
+
+    res.json({ locked: false, cohortSize: consentingUids.length, threshold, teams });
+  } catch (err: any) {
+    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("not found") ? 404 : 500).json({ error: err.message });
   }
 });
 
@@ -7450,6 +7934,319 @@ app.get("/api/org/:orgId/manager-coach", managerCoachLimiter, verifyAppCheck, au
     }
   } catch (err: any) {
     logRouteError("[Nova Manager Coach] error", err);
+    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: "Nova Manager Coach Sync Failure: A safe operational error occurred." });
+  }
+});
+
+// Tool declarations for the conversational Nova Manager Coach below. See the
+// comment above NOVA_MANAGER_COACH_CHAT_PROMPT for why every one of these -
+// with the sole exception of get_team_detail - takes no parameters at all.
+// get_team_detail takes a team NAME (never a uid, headcount, or anything
+// else that could target a person), and applies the exact same
+// qualifying-team check as get_team_breakdown before ever returning
+// anything for it - so even a compromised/hallucinating model passing an
+// arbitrary team name can only ever get back a team that was already safe
+// to show in the full breakdown, never a narrower or looser answer.
+const NOVA_ORG_COACH_TOOLS = [
+  {
+    name: "get_team_climate_trend",
+    description: "Get the organisation's real, aggregate team climate and mood strain score right now, and how it's trending versus about 4 weeks ago. Whole-org level only - never a specific team or person. Use this for anything about overall team wellbeing, strain, or whether things are improving or getting worse.",
+    parameters: { type: Type.OBJECT, properties: {} },
+  },
+  {
+    name: "get_team_breakdown",
+    description: "Get a per-team breakdown of climate/mood strain, but ONLY for teams that already have enough consenting members to protect anonymity - a team too small to safely report on simply won't appear in the results, never shown as blocked or named. Always returns whichever teams currently qualify; never accepts a team name.",
+    parameters: { type: Type.OBJECT, properties: {} },
+  },
+  {
+    name: "get_team_detail",
+    description: "Get climate/mood strain and this week's engagement for ONE specific team by name, if (and only if) that team currently has enough consenting members to report on safely without risking anonymity. Use this when the manager names a specific team; if it can't be safely reported on individually, say so honestly rather than guessing or inventing a number.",
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        team: { type: Type.STRING, description: "The exact team name as it appears in the organisation's own team list." },
+      },
+      required: ["team"],
+    },
+  },
+  {
+    name: "get_engagement_and_recognition_signal",
+    description: "Get this week's real engagement rate (the percentage of consenting members who logged any check-in), how it compares to the prior week, and specific, grounded recognition-message suggestions a manager could genuinely post to the team wall this week.",
+    parameters: { type: Type.OBJECT, properties: {} },
+  },
+  {
+    name: "get_cost_of_pressure_snapshot",
+    description: "Get the organisation's own entered cost-of-pressure figures (headcount, average daily cost per employee, annual sickness days) and recent history, if the org admin has entered any yet. Use this for anything about budget, ROI, or the business case for investing in recovery support.",
+    parameters: { type: Type.OBJECT, properties: {} },
+  },
+  {
+    name: "get_team_escalation_status",
+    description: "Get, for each team that currently qualifies to report on safely, its real strain level and whether a manager has logged addressing it recently (an honest follow-up trail, not a verified fact or a score on the manager). Use this for anything about which teams need attention or whether elevated concerns have actually been followed up on. Never suggests identifying or contacting a specific person - for a real safeguarding concern, the org's own HR/EAP process is the right next step, not this tool.",
+    parameters: { type: Type.OBJECT, properties: {} },
+  },
+  {
+    name: "get_meeting_load_signal",
+    description: "Get the organisation's real, aggregate meeting-load signal (average weekly meeting hours, back-to-back meetings, and how many people have evening or weekend meetings), computed only from members who have both opted into org sharing and separately connected their own calendar. Often not enough people have connected a calendar yet for this to be safe to report on - if so, say that honestly rather than guessing. Use this for anything about calendar load, meeting overload, or time pressure.",
+    parameters: { type: Type.OBJECT, properties: {} },
+  },
+];
+
+// Dispatch for the tools above - each one is a thin wrapper around an
+// already-gated aggregate computation this file already uses elsewhere
+// (computeStrainSnapshotForCohort for risk-trend, suggestRecognitionPrompts
+// for the Positive Reinforcement Engine), never a fresh per-employee query.
+// Every error is caught and degraded to a plain { error } result rather than
+// failing the whole conversation turn, matching executeNovaTool's own
+// pattern for individual Nova.
+async function executeOrgCoachTool(
+  name: string,
+  args: Record<string, unknown>,
+  db: any,
+  orgId: string,
+  org: any,
+  consentingUids: string[],
+  threshold: number,
+): Promise<Record<string, unknown>> {
+  try {
+    switch (name) {
+      case "get_team_climate_trend": {
+        const snapshot = await computeStrainSnapshotForCohort(db, consentingUids);
+        const historySnap = await db.collection("organisations").doc(orgId).collection("risk_trend_history")
+          .orderBy("recordedAt", "desc").limit(90).get();
+        const history = historySnap.docs.map((d: any) => d.data());
+        const twentyEightDaysAgo = Date.now() - 28 * 24 * 60 * 60 * 1000;
+        const priorOverall = history
+          .filter((h: any) => new Date(h.recordedAt).getTime() <= twentyEightDaysAgo && h.overallConcern != null)
+          .sort((a: any, b: any) => Math.abs(new Date(a.recordedAt).getTime() - twentyEightDaysAgo) - Math.abs(new Date(b.recordedAt).getTime() - twentyEightDaysAgo))[0];
+        const trend = computeTrend(snapshot.overallConcern, priorOverall?.overallConcern ?? null);
+        return {
+          cohortSize: snapshot.cohortSize,
+          moodStrain: snapshot.moodConcern,
+          climateStrain: snapshot.climateConcern,
+          climateStrainByDimension: snapshot.climateConcernByDimension,
+          overallStrain: snapshot.overallConcern,
+          trendVsFourWeeksAgo: trend.direction,
+          trendDelta: trend.delta,
+          note: "Scores are 0-100, 0 = no strain, 100 = high strain. This is a transparent trend indicator from real aggregate data, not a prediction or forecast of any outcome.",
+        };
+      }
+      case "get_team_breakdown": {
+        const memberTeams: Record<string, string> = org.memberTeams || {};
+        // Same shared helper (and the same complement-size check) as
+        // GET /api/org/:orgId/risk-trend and the HR/team-welfare dashboards -
+        // see computeQualifyingTeamGroups' own comment for the subtraction-
+        // attack this closes.
+        const { qualifying: teamGroups } = computeQualifyingTeamGroups(consentingUids, memberTeams, threshold);
+        const qualifyingEntries = Object.entries(teamGroups);
+        if (qualifyingEntries.length === 0) {
+          return { teams: [], note: "No individual team currently has enough consenting members to report on safely without risking anonymity - this doesn't mean every team is fine, just that none can be safely broken out yet." };
+        }
+        const teams = await Promise.all(qualifyingEntries.map(async ([team, uids]) => {
+          const snap = await computeStrainSnapshotForCohort(db, uids);
+          return { team, cohortSize: snap.cohortSize, overallStrain: snap.overallConcern };
+        }));
+        return { teams, note: "Scores are 0-100, 0 = no strain, 100 = high strain. Only teams with enough consenting members to protect anonymity are included." };
+      }
+      case "get_team_detail": {
+        const requestedTeam = typeof args?.team === 'string' ? args.team : '';
+        const memberTeams: Record<string, string> = org.memberTeams || {};
+        const { qualifying: teamGroups } = computeQualifyingTeamGroups(consentingUids, memberTeams, threshold);
+        // hasOwnProperty guard: teamGroups is a plain object, and a
+        // hallucinating model could in principle pass a prototype-chain
+        // name like "__proto__" as a team - this makes sure only a team
+        // this org actually has and that genuinely qualifies is ever found.
+        const uids = Object.prototype.hasOwnProperty.call(teamGroups, requestedTeam) ? teamGroups[requestedTeam] : undefined;
+        if (!uids) {
+          return { found: false, note: "That team either doesn't exist, or doesn't currently have enough consenting members to report on safely without risking anonymity - this doesn't necessarily mean anything is wrong, just that it can't be shown individually yet." };
+        }
+        const snap = await computeStrainSnapshotForCohort(db, uids);
+        const engagementRate = await computeEngagementRate(db, uids, 7);
+        return {
+          found: true,
+          team: requestedTeam,
+          cohortSize: snap.cohortSize,
+          moodStrain: snap.moodConcern,
+          climateStrain: snap.climateConcern,
+          overallStrain: snap.overallConcern,
+          engagementRate,
+          note: "Scores are 0-100, 0 = no strain, 100 = high strain.",
+        };
+      }
+      case "get_engagement_and_recognition_signal": {
+        const countActiveInWindow = async (sinceIso: string, untilIso: string): Promise<number> => {
+          let active = 0;
+          await Promise.all(consentingUids.map(async (uid) => {
+            const moodSnap = await db.collection("users").doc(uid).collection("mood_pulses")
+              .where("createdAt", ">=", sinceIso).where("createdAt", "<", untilIso).limit(1).get();
+            if (!moodSnap.empty) { active++; return; }
+            const bodySnap = await db.collection("users").doc(uid).collection("body_checkins")
+              .where("createdAt", ">=", sinceIso).where("createdAt", "<", untilIso).limit(1).get();
+            if (!bodySnap.empty) active++;
+          }));
+          return active;
+        };
+        const now = Date.now();
+        const nowIso = new Date(now).toISOString();
+        const oneWeekAgo = new Date(now - 7 * 24 * 60 * 60 * 1000).toISOString();
+        const twoWeeksAgo = new Date(now - 14 * 24 * 60 * 60 * 1000).toISOString();
+        const [currentActive, previousActive] = await Promise.all([
+          countActiveInWindow(oneWeekAgo, nowIso),
+          countActiveInWindow(twoWeeksAgo, oneWeekAgo),
+        ]);
+        const current = { engagementRate: Math.round((currentActive / consentingUids.length) * 100) };
+        const previous = { engagementRate: Math.round((previousActive / consentingUids.length) * 100) };
+        return {
+          cohortSize: consentingUids.length,
+          currentWeekEngagementRate: current.engagementRate,
+          previousWeekEngagementRate: previous.engagementRate,
+          recognitionSuggestions: suggestRecognitionPrompts(current, previous),
+        };
+      }
+      case "get_cost_of_pressure_snapshot": {
+        const orgDoc = await db.collection("organisations").doc(orgId).get();
+        const costInputs = orgDoc.data()?.costInputs || null;
+        if (!costInputs) {
+          return { available: false, note: "The org admin hasn't entered any cost-of-pressure figures yet (headcount, average daily cost per employee, annual sickness days). If cost or ROI comes up, suggest they add these in the Management Savings Planner." };
+        }
+        const historySnap = await db.collection("organisations").doc(orgId).collection("cost_input_history")
+          .orderBy("enteredAt", "desc").limit(6).get();
+        const history = historySnap.docs.map((d: any) => d.data());
+        return { available: true, costInputs, recentHistory: history };
+      }
+      case "get_team_escalation_status": {
+        const memberTeams: Record<string, string> = org.memberTeams || {};
+        const { qualifying: teamGroups } = computeQualifyingTeamGroups(consentingUids, memberTeams, threshold);
+        const qualifyingEntries = Object.entries(teamGroups);
+        if (qualifyingEntries.length === 0) {
+          return { teams: [], note: "No individual team currently has enough consenting members to report on safely without risking anonymity." };
+        }
+        const now = new Date();
+        const teams = await Promise.all(qualifyingEntries.map(async ([team, uids]) => {
+          const snap = await computeStrainSnapshotForCohort(db, uids);
+          const acksSnap = await db.collection("organisations").doc(orgId).collection("team_escalation_acks")
+            .where("team", "==", team).orderBy("createdAt", "desc").limit(5).get();
+          const acks = acksSnap.docs.map((d: any) => d.data());
+          const followUp = describeFollowUp(acks, now);
+          return { team, cohortSize: snap.cohortSize, overallStrain: snap.overallConcern, followUp };
+        }));
+        return {
+          teams,
+          note: "Scores are 0-100, 0 = no strain, 100 = high strain. followUp.status reflects a manager's own logged acknowledgment, not a verified fact - there is no way to confirm a real conversation happened. Never suggest identifying, contacting, or escalating a specific unnamed person - for a real safeguarding concern, the org's own HR/EAP process is the right next step, not this data.",
+        };
+      }
+      case "get_meeting_load_signal": {
+        const snapshot = await computeMeetingLoadSnapshotForCohort(db, consentingUids, threshold);
+        if (!snapshot.available) {
+          return { available: false, cohortSize: snapshot.cohortSize, note: "Not enough consenting members have connected their own calendar yet for this to be safe to report on without risking anonymity. This says nothing about whether meeting load is actually a problem - just that there isn't yet a safe enough sample to show." };
+        }
+        return {
+          available: true,
+          cohortSize: snapshot.cohortSize,
+          avgMeetingHoursPerWeek: snapshot.avgMeetingHoursPerWeek,
+          avgBackToBackMeetingsPerWeek: snapshot.avgBackToBackMeetingsPerWeek,
+          pctWithEveningMeetings: snapshot.pctWithEveningMeetings,
+          pctWithWeekendMeetings: snapshot.pctWithWeekendMeetings,
+          note: "From real, live calendar data members have chosen to connect and share with the org - not every consenting member necessarily has, so this reflects only those who have.",
+        };
+      }
+      default:
+        return { error: `Unknown tool: ${name}` };
+    }
+  } catch (e: any) {
+    return { error: e?.message || "Tool execution failed." };
+  }
+}
+
+const OrgManagerCoachChatRequestSchema = z.object({
+  message: z.string().min(1).max(2000),
+  history: z.array(z.any()).max(30).optional().default([]),
+}).strict();
+
+// Nova Manager Coach, conversational mode: the org-facing equivalent of
+// /api/nova/chat's real tool-calling depth, instead of the single-shot
+// GET route above. Kept as a separate route (not a replacement for the GET
+// one) so nothing that already depends on the one-shot suggestions shape
+// breaks - this is the new, real, multi-turn surface the frontend now uses
+// instead. Same three-gate stack as the GET route: org-role gate, personal-
+// plan quota gate (same 'nova_manager_coach' capability and daily limits -
+// this is still the same feature, just conversational now), and the same
+// IP rate limiter.
+app.post("/api/org/:orgId/manager-coach/chat", managerCoachLimiter, verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const { orgId } = req.params;
+    const { user, org } = await requireOrgAdmin(req, orgId);
+    const db = getDb();
+
+    const threshold = org.privacyThreshold || 5;
+    const memberUids: string[] = org.memberUids || [];
+    const consentingUids = await getConsentingMemberUids(db, memberUids);
+
+    if (consentingUids.length < threshold) {
+      return res.json({ locked: true, cohortSize: consentingUids.length, threshold, text: '', planTrace: [] });
+    }
+
+    const parsedParams = OrgManagerCoachChatRequestSchema.safeParse(req.body);
+    if (!parsedParams.success) {
+      return res.status(400).json({ error: "Invalid request payload or forbidden fields detected.", details: (parsedParams as any).error?.errors || [] });
+    }
+    const { message, history } = parsedParams.data;
+
+    if (!process.env.GEMINI_API_KEY || process.env.GEMINI_API_KEY === "MY_GEMINI_API_KEY") {
+      return res.status(401).json({ error: "Gemini API key not configured." });
+    }
+
+    const quota = await checkAndReserveCapability(user.uid, 'nova_manager_coach');
+    if (!quota.allowed) {
+      return res.status(429).json({
+        error: quota.plan === 'free'
+          ? "You've reached today's free Nova Manager Coach limit. It resets tomorrow, or upgrade to Blaze Break Premium for more."
+          : "You've reached today's Nova Manager Coach fair-use limit. It resets tomorrow.",
+        code: 'capability_limit_reached',
+        capability: 'nova_manager_coach',
+      });
+    }
+
+    const mergedSystemPrompt = NOVA_MANAGER_COACH_CHAT_PROMPT + NOVA_MANAGER_COACH_SAFETY_FLOOR;
+
+    const abortController = new AbortController();
+    const timeoutId = setTimeout(() => abortController.abort(), 25000);
+    try {
+      const chat = ai.chats.create({
+        model: "gemini-3.5-flash",
+        config: {
+          systemInstruction: mergedSystemPrompt,
+          tools: [{ functionDeclarations: NOVA_ORG_COACH_TOOLS }],
+        },
+        history: history || [],
+      });
+
+      let result = await chat.sendMessage({ message });
+      let toolCallRounds = 0;
+      const MAX_TOOL_CALL_ROUNDS = 5;
+      const planTrace: { tool: string; args: Record<string, unknown>; result: Record<string, unknown> }[] = [];
+      while (result.functionCalls && result.functionCalls.length > 0 && toolCallRounds < MAX_TOOL_CALL_ROUNDS) {
+        toolCallRounds++;
+        const responseParts = await Promise.all(
+          result.functionCalls.map(async (call) => {
+            const output = await executeOrgCoachTool(call.name || "", call.args || {}, db, orgId, org, consentingUids, threshold);
+            planTrace.push({ tool: call.name || "unknown", args: call.args || {}, result: output });
+            return { functionResponse: { name: call.name, response: output } };
+          })
+        );
+        result = await chat.sendMessage({ message: responseParts });
+      }
+      clearTimeout(timeoutId);
+
+      res.json({ locked: false, cohortSize: consentingUids.length, threshold, text: result.text || "", planTrace });
+    } catch (modelError: any) {
+      clearTimeout(timeoutId);
+      if (modelError.name === 'AbortError') {
+        return res.status(504).json({ error: "Request timed out." });
+      }
+      throw modelError;
+    }
+  } catch (err: any) {
+    logRouteError("[Nova Manager Coach Chat] error", err);
     res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: "Nova Manager Coach Sync Failure: A safe operational error occurred." });
   }
 });
@@ -8308,12 +9105,33 @@ app.post("/api/ally/invite", verifyAppCheck, authenticateFirebaseUser, async (re
     });
 
     const appBase = (process.env.APP_URL || "").replace(/\/$/, "");
+    if (!appBase) {
+      // Matches getOAuthRedirectUri's own hard-fail on a missing APP_URL -
+      // silently falling back to "" here used to produce a bare relative
+      // /ally/<token> link with no domain, which is exactly the kind of
+      // "nonsensical link" a recipient can't click.
+      console.error("[Ally Invite] APP_URL is not configured on the server - cannot build a real invite link.");
+      return res.status(500).json({ error: "Could not build the invite link. Please try again shortly." });
+    }
     const link = `${appBase}/ally/${shareToken}`;
-    const emailSent = await sendBrevoEmail(
-      allyEmail,
-      "You've been invited as a Recovery Ally",
-      `Someone you know is using Blaze Break to work on burnout recovery, and asked you to be their accountability ally.\n\nYou can see what they've chosen to share and leave them an encouraging note here, no account needed:\n\n${link}\n\nThis is just for everyday accountability, not a crisis service.`
-    );
+
+    // The invite should come from a real, recognisable person, not "Someone
+    // you know" - a stranger-sounding subject/body reads as phishing and is
+    // exactly why the tester didn't trust it enough to click. Same
+    // displayName/preferredName lookup the org recognition wall already
+    // uses, falling back to the Auth profile name, then the local part of
+    // their own email (still a real, specific handle - never a generic
+    // phrase) before the last-resort generic wording.
+    const userDoc = await db.collection("users").doc(user.uid).get();
+    const inviterName =
+      userDoc.data()?.displayName ||
+      userDoc.data()?.preferredName ||
+      user.name ||
+      (user.email ? user.email.split('@')[0] : null) ||
+      "Someone close to you";
+
+    const { subject, html } = buildAllyInviteEmail(inviterName, link);
+    const emailSent = await sendBrevoHtmlEmail(allyEmail, subject, html);
 
     res.json({ success: true, emailSent, shareToken });
   } catch (err: any) {
@@ -9563,6 +10381,74 @@ app.get("/api/user/resume-prompt", verifyAppCheck, authenticateFirebaseUser, asy
       }
     }
 
+    // Workload Reality Check (Recover tab): a genuinely interrupted
+    // multi-step questionnaire, not a one-shot form - autosaved on every
+    // answer via merge:true, so `completed: false` with something already
+    // in it means the person left partway through, not that they never
+    // started.
+    const workloadSnap = await db.collection("users").doc(user.uid).collection("workload_reality_check").doc("state").get();
+    if (workloadSnap.exists) {
+      const data = workloadSnap.data()!;
+      const hasAnswers = data.answers && typeof data.answers === 'object' && Object.keys(data.answers).length > 0;
+      const hasTasks = Array.isArray(data.tasks) && data.tasks.length > 0;
+      if (data.completed !== true && (hasAnswers || hasTasks) && typeof data.updatedAt === 'string') {
+        candidates.push({
+          tool: 'Workload Reality Check',
+          tab: 'recover',
+          title: "Pick up where you left off",
+          message: "Whenever you're ready - your Workload Reality Check is partway through. It's exactly as you left it.",
+          updatedAt: data.updatedAt,
+        });
+      }
+    }
+
+    // Weekly Goal Tracker (Recover tab): only ever checks THIS real ISO
+    // week's cycle - an old, lapsed week isn't something to "resume".
+    // `startedAt` is rewritten to now() on every save (not just when the
+    // week starts - see WeeklyGoalTracker.tsx's persist()), so despite the
+    // name it's a genuine last-touched timestamp here.
+    const weekId = getIsoWeekId(new Date());
+    const weeklyGoalsSnap = await db.collection("users").doc(user.uid).collection("weekly_habit_cycles").doc(weekId).get();
+    if (weeklyGoalsSnap.exists) {
+      const data = weeklyGoalsSnap.data()!;
+      const goals: { progress?: number; target?: number }[] = Array.isArray(data.goals) ? data.goals : [];
+      const hasUnmetGoal = goals.some((g) => typeof g.progress === 'number' && typeof g.target === 'number' && g.progress < g.target);
+      if (data.weekId === weekId && hasUnmetGoal && typeof data.startedAt === 'string') {
+        candidates.push({
+          tool: 'Weekly Goal Tracker',
+          tab: 'recover',
+          title: "Pick up where you left off",
+          message: "Whenever you're ready - you've still got recovery goals to finish this week.",
+          updatedAt: data.startedAt,
+        });
+      }
+    }
+
+    // SHIP Journey (Recover tab): only ever surfaced for a stage the
+    // person has genuinely started (at least one quest already committed
+    // in it) but not finished - every stage exists structurally from day
+    // one, so "not all done" alone would nag someone who's never engaged
+    // with that stage at all. shipJourneyLastCommittedAt is stamped only
+    // when a SHIP quest is actually committed (handleCommitAction in
+    // App.tsx) - the doc's own generic updatedAt touches on every stats
+    // change and would make this look "freshly touched" almost constantly,
+    // breaking the recency ordering below.
+    const shipStatsSnap = await db.collection("users").doc(user.uid).collection("user_stats").doc("core").get();
+    if (shipStatsSnap.exists) {
+      const data = shipStatsSnap.data()!;
+      const committedActionIds: string[] = Array.isArray(data.committedActionIds) ? data.committedActionIds : [];
+      const inProgressStage = findInProgressShipStage(committedActionIds);
+      if (inProgressStage && typeof data.shipJourneyLastCommittedAt === 'string') {
+        candidates.push({
+          tool: 'SHIP Journey',
+          tab: 'recover',
+          title: "Pick up where you left off",
+          message: `Whenever you're ready - your SHIP Journey's ${inProgressStage} phase is partway through. It's exactly as you left it.`,
+          updatedAt: data.shipJourneyLastCommittedAt,
+        });
+      }
+    }
+
     if (candidates.length === 0) {
       return res.json({ hasIncomplete: false });
     }
@@ -10258,6 +11144,371 @@ ${NOVA_ONE_SHOT_SAFETY_FLOOR}`;
   }
 });
 
+// Faith & Values Grounding, Stage 3 (REFLECT). Session CRUD and pattern
+// detection are plain client-side Firestore reads/writes (see
+// firestore.rules' grounding_sessions block) - this is the one part of
+// the feature that genuinely needs a server route, since it's the only
+// part touching the Gemini API key.
+//
+// For the islamic lens specifically, this route is deliberately
+// conservative about what the model is allowed to generate: the Qur'an
+// reference/translation and the two reflective questions always come
+// verbatim from the curated ISLAMIC_THEMES pool in grounding-content.ts,
+// never from the model. The model only ever writes a short (2-3 sentence)
+// contextual framing paragraph connecting the curated theme to the
+// user's own stated burden/controllable/uncontrollable answers - it is
+// explicitly forbidden from adding any Qur'an or Hadith text beyond what
+// it's given, claiming to know why Allah caused a specific event, or
+// issuing a ruling/fatwa. This satisfies the product requirement that no
+// AI-fabricated scripture or ruling can ever reach a user.
+const GroundingReflectRequestSchema = z.object({
+  lens: z.enum(['secular', 'values', 'faith', 'islamic']),
+  burdenLabels: z.array(z.string().max(40)).max(10),
+  customBurden: z.string().max(80).optional(),
+  controllableItems: z.array(z.string().max(60)).max(12),
+  uncontrollableItems: z.array(z.string().max(60)).max(12),
+  islamicThemeId: z.enum(['tawakkul', 'sabr', 'shukr', 'qadr', 'rahmah', 'salah', 'dua', 'ummah', 'niyyah', 'ihsan']).optional(),
+  // Structured pattern LABELS only (e.g. "Releasing control") computed
+  // client-side by detectGroundingPatterns - never raw prior reflection
+  // text, per the feature's explicit architecture requirement, and only
+  // ever sent when the user has pattern analysis enabled (the client
+  // simply omits this field otherwise).
+  recentPatterns: z.array(z.string().max(60)).max(5).optional(),
+}).strict();
+
+// The allowlist Phase 2's Nova Pattern Engine tags sessions from - the
+// model is only ever allowed to pick from this fixed list, never invent
+// its own theme string, so grounding_sessions.detectedThemes can never
+// silently drift from grounding-patterns-taxonomy.ts.
+const PatternDimensionEnum = z.enum(PATTERN_DIMENSION_ORDER as [PatternDimensionId, ...PatternDimensionId[]]);
+
+const GroundingReflectResponseSchema = z.object({
+  reflectionText: z.string().max(600),
+  firstQuestion: z.string().max(200),
+  secondQuestion: z.string().max(200),
+  // Only ever populated for the islamic lens, straight from curated data
+  // - present in the response so the client can render it without
+  // needing a second lookup, but the server is the one attaching it, not
+  // the model.
+  verse: z.object({
+    reference: z.string(),
+    translation: z.string(),
+    translator: z.string(),
+    scholarReviewed: z.boolean(),
+  }).optional(),
+  // Up to 3 themes the model believes this reflection touches on, from
+  // the fixed taxonomy only - validated here before ever reaching the
+  // client, per the "use allowlists, validate before writing to
+  // Firestore" requirement. Invalid/unrecognised values are dropped
+  // rather than failing the whole response, since this is a secondary
+  // enrichment, not the reflection itself.
+  detectedThemes: z.array(z.string()).max(3).optional(),
+});
+
+// Phase 2's "dedicated context-building layer" (section 21): the one
+// place that reads a user's derived Grounding state from Firestore and
+// hands back a small, structured object - never the full reflection
+// archive, never raw free text. Used by the reflect route below (to
+// source server-verified confirmed patterns rather than trusting
+// whatever the client claims) and by the monthly reflection route
+// (Batch 5). Deliberately reads only reflection_patterns (derived
+// counters), aligned_actions (structured), and preferences/grounding -
+// never grounding_sessions.reflectionAnswers.
+interface GroundingContext {
+  preferredLens: GroundingLens | null;
+  patternAnalysisEnabled: boolean;
+  confirmedPatterns: { patternKey: PatternDimensionId; label: string; status: string }[];
+  mostRecentAlignedAction: { chosenValue: string; nextAlignedAction: string; followUpStatus: string | null } | null;
+  sessionCount: number;
+}
+
+async function buildGroundingContext(uid: string): Promise<GroundingContext> {
+  const db = getDb();
+  const [prefSnap, patternsSnap, actionsSnap, sessionsSnap] = await Promise.all([
+    db.collection("users").doc(uid).collection("preferences").doc("grounding").get(),
+    // Filtered in-process rather than with a Firestore "in" query - a
+    // user has at most 27 possible pattern docs (one per taxonomy
+    // dimension), so fetching all of them and filtering here is simpler
+    // and cheaper than a compound query for this volume.
+    db.collection("users").doc(uid).collection("reflection_patterns").get(),
+    db.collection("users").doc(uid).collection("aligned_actions").orderBy("createdAt", "desc").limit(1).get(),
+    db.collection("users").doc(uid).collection("grounding_sessions").get(),
+  ]);
+
+  const prefs = prefSnap.exists ? prefSnap.data()! : {};
+  const patternAnalysisEnabled = typeof prefs.patternAnalysisEnabled === 'boolean' ? prefs.patternAnalysisEnabled : true;
+
+  const confirmedPatterns = patternAnalysisEnabled
+    ? patternsSnap.docs
+        .map((d) => d.data())
+        .filter((p) => (p.status === 'recurring' || p.status === 'established') && p.paused !== true && p.suppressed !== true && PATTERN_DIMENSIONS[p.patternKey as PatternDimensionId])
+        .map((p) => ({ patternKey: p.patternKey as PatternDimensionId, label: PATTERN_DIMENSIONS[p.patternKey as PatternDimensionId].label, status: p.status }))
+    : [];
+
+  const actionDoc = actionsSnap.docs[0]?.data();
+  const mostRecentAlignedAction = actionDoc
+    ? { chosenValue: actionDoc.chosenValue, nextAlignedAction: actionDoc.nextAlignedAction, followUpStatus: actionDoc.followUpStatus || null }
+    : null;
+
+  return {
+    preferredLens: (typeof prefs.preferredLens === 'string' ? prefs.preferredLens : null) as GroundingLens | null,
+    patternAnalysisEnabled,
+    confirmedPatterns,
+    mostRecentAlignedAction,
+    sessionCount: sessionsSnap.size,
+  };
+}
+
+app.post("/api/grounding/reflect", groundingReflectLimiter, verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const parsed = GroundingReflectRequestSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: "Invalid request.", details: (parsed as any).error?.errors || [] });
+    }
+    const { lens, burdenLabels, customBurden, controllableItems, uncontrollableItems, islamicThemeId, recentPatterns } = parsed.data;
+    if (lens === 'islamic' && !islamicThemeId) {
+      return res.status(400).json({ error: "An Islamic Reflection theme is required for this lens." });
+    }
+
+    const user = requireAuth(req);
+    const quota = await checkAndReserveCapability(user.uid, 'nova_text');
+    if (!quota.allowed) {
+      return res.status(429).json({
+        error: quota.plan === 'free'
+          ? "You've reached today's free limit for this. It resets tomorrow, or upgrade to Blaze Break Premium for more."
+          : "You've reached today's fair-use limit for this. It resets tomorrow.",
+        code: 'capability_limit_reached',
+        capability: 'nova_text',
+      });
+    }
+
+    const burdenText = [...burdenLabels, ...(customBurden ? [customBurden] : [])].join(', ') || 'something they did not name specifically';
+    const controllableText = controllableItems.join(', ') || 'nothing specified';
+    const uncontrollableText = uncontrollableItems.join(', ') || 'nothing specified';
+
+    // Server-verified confirmed patterns (Phase 2's Nova Pattern Engine)
+    // take priority over the client-sent labels (Phase 1's lighter
+    // client-computed patterns) when both are present, since the former
+    // is backed by real confidence thresholds rather than a client claim.
+    const context = await buildGroundingContext(user.uid);
+    const patternLabels = context.confirmedPatterns.length > 0
+      ? context.confirmedPatterns.map((p) => p.label)
+      : (recentPatterns || []);
+    const patternContext = patternLabels.length > 0
+      ? `\nAcross their recent grounding sessions (a structured pattern, not their words), they've often been working on: ${patternLabels.join(', ')}. Only mention this if it's genuinely relevant - never manufacture a connection.`
+      : '';
+
+    // Phase 2's Nova Pattern Engine: the closed list the model must choose
+    // detectedThemes from - never a theme string it invents itself.
+    const themeAllowlistText = PATTERN_DIMENSION_ORDER.map((id) => `${id} (${PATTERN_DIMENSIONS[id].label})`).join(', ');
+    const themeInstruction = `\n\nSeparately, pick at most 3 themes from this exact list that this specific reflection genuinely touches on - use the id exactly as written, and only include a theme if it's clearly present, never to pad the list out: ${themeAllowlistText}`;
+
+    let prompt: string;
+    let verse: { reference: string; translation: string; translator: string; scholarReviewed: boolean } | undefined;
+
+    if (lens === 'islamic') {
+      const theme = ISLAMIC_THEMES[islamicThemeId as IslamicThemeId];
+      verse = theme.verses[0];
+      prompt = `You are Nova, a calm, respectful recovery-grounding coach at Blaze Break, writing a short reflection for the Islamic Reflection lens. You are NOT a scholar and must never act like one.
+
+The user is grounding through the theme of ${theme.label}: "${theme.framing}"
+The curated reference for this theme (already verified as an exact, attributed reference - do not alter it, and do not add any other Qur'an or Hadith text or reference of your own): ${verse.reference} (trans. ${verse.translator}) - ${verse.translation}
+
+What they said they're carrying: ${burdenText}.
+What they identified as within their responsibility: ${controllableText}.
+What they identified as beyond their control: ${uncontrollableText}.${patternContext}
+
+Write a short (2-3 sentence) reflection connecting the theme above to their specific situation, in a warm, grounded, non-preachy voice. Rules that override everything else:
+- Do not quote, paraphrase, or reference any Qur'an verse or Hadith other than the one given to you above.
+- Do not claim to know why Allah caused any specific event in their life.
+- Do not issue a religious ruling, fatwa, or tell them what they religiously must or must not do.
+- Do not suggest that hardship, abuse, danger, exploitation, or unsafe working conditions should simply be tolerated as a matter of faith.
+- Do not present yourself as a religious authority - you are contextualising a reference a scholar has curated, nothing more.
+
+${themeInstruction}
+
+Respond strictly in this JSON format, no markdown, no commentary outside the JSON:
+{
+  "reflectionText": "your 2-3 sentence reflection, grounded in their specific situation",
+  "detectedThemes": ["theme_id_1", "theme_id_2"]
+}
+${NOVA_ONE_SHOT_SAFETY_FLOOR}`;
+    } else {
+      const lensLabel = GROUNDING_LENSES[lens as GroundingLens].label;
+      prompt = `You are Nova, a calm, grounded recovery coach at Blaze Break, writing a short reflection for someone using the "${lensLabel}" lens to process a moment of overwhelm.
+
+What they said they're carrying: ${burdenText}.
+What they identified as within their responsibility: ${controllableText}.
+What they identified as beyond their control: ${uncontrollableText}.${patternContext}
+
+Write a short (2-3 sentence) reflection grounded ONLY in what they actually told you above - do not invent specifics they didn't mention. Then write two short, genuinely reflective QUESTIONS (not advice, not statements) that help them move from overwhelm toward perspective and appropriate action: a first question about what's genuinely within their responsibility, and a second question (to be shown only after they answer the first) about what they're still trying to control that isn't theirs to control.
+
+${themeInstruction}
+
+Respond strictly in this JSON format, no markdown, no commentary outside the JSON:
+{
+  "reflectionText": "your 2-3 sentence reflection",
+  "firstQuestion": "a single reflective question about what's within their responsibility",
+  "secondQuestion": "a single reflective question about what they're still trying to control",
+  "detectedThemes": ["theme_id_1", "theme_id_2"]
+}
+${NOVA_ONE_SHOT_SAFETY_FLOOR}`;
+    }
+
+    const response = await ai.models.generateContent({
+      model: "gemini-3.5-flash",
+      contents: prompt,
+      config: { responseMimeType: "application/json" },
+    });
+
+    const text = response.text;
+    if (!text) throw new Error("Empty response from Gemini model.");
+    const rawReflection = JSON.parse(text);
+
+    // Drop anything not on the allowlist rather than failing the whole
+    // response - a model hallucinating one bad theme id shouldn't cost
+    // the user their reflection.
+    const sanitizedThemes = Array.isArray(rawReflection.detectedThemes)
+      ? rawReflection.detectedThemes.filter((t: unknown) => PatternDimensionEnum.safeParse(t).success).slice(0, 3)
+      : undefined;
+
+    const merged = lens === 'islamic' && islamicThemeId
+      ? {
+          reflectionText: rawReflection.reflectionText,
+          firstQuestion: ISLAMIC_THEMES[islamicThemeId as IslamicThemeId].prompt,
+          secondQuestion: ISLAMIC_THEMES[islamicThemeId as IslamicThemeId].followUp,
+          verse,
+          detectedThemes: sanitizedThemes,
+        }
+      : { ...rawReflection, detectedThemes: sanitizedThemes };
+
+    const validated = GroundingReflectResponseSchema.safeParse(merged);
+    if (!validated.success) {
+      throw new Error(`Model returned an unexpected shape: ${validated.error.message}`);
+    }
+
+    res.json(validated.data);
+  } catch (err: any) {
+    console.error("[Grounding] reflect error:", err.message);
+    res.status(500).json({ error: "Could not build that reflection right now." });
+  }
+});
+
+// Abstract, privacy-preserving Grounding analytics (section 20) - an
+// event NAME plus at most a taxonomy category/lens, validated against a
+// fixed allowlist server-side, never free text. Mirrors /api/guardian/
+// support-event's shape and reasoning exactly.
+const GroundingAnalyticsEventSchema = z.object({
+  eventType: z.enum(['grounding_session_completed', 'pattern_explored', 'pattern_feedback_given', 'community_connection_opened', 'carrying_exercise_completed', 'monthly_reflection_viewed', 'aligned_action_created', 'aligned_action_followed_up', 'routine_completed', 'routine_created']),
+  category: z.enum(['control_responsibility', 'self_expectation', 'boundaries_people', 'connection_support', 'rest_guilt', 'practical_pressures', 'uncertainty_acceptance', 'values_meaning']).optional(),
+  lens: z.enum(['secular', 'values', 'faith', 'islamic']).optional(),
+}).strict();
+
+app.post("/api/grounding/analytics-event", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const parsed = GroundingAnalyticsEventSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: "Invalid or unrecognised event." });
+    }
+    const uid = requireAuth(req).uid;
+    const db = getDb();
+    await db.collection("users").doc(uid).collection("grounding_analytics_events").add({
+      eventType: parsed.data.eventType,
+      category: parsed.data.category || null,
+      lens: parsed.data.lens || null,
+      createdAt: new Date().toISOString(),
+    });
+    res.json({ recorded: true });
+  } catch (error: any) {
+    console.error("[Grounding analytics event] error:", error?.message || error);
+    res.status(500).json({ error: "Could not record that." });
+  }
+});
+
+// Section 14's "central community configuration/service" - the ONLY
+// place that reads whether/where the external community lives.
+// COMMUNITY_BASE_URL is unset in this environment (no Replicants
+// integration exists yet), so this correctly and honestly reports
+// disabled rather than fabricating a working connection.
+app.get("/api/community/config", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  const baseUrl = process.env.COMMUNITY_BASE_URL || null;
+  const config: CommunityConfig = { enabled: !!baseUrl, baseUrl };
+  res.json(config);
+});
+
+// Section 16: "Create the service/interface now even if the community
+// API is not yet available. Use mocked/empty states rather than
+// fabricating community content." No provider is wired up, so this is
+// an honest empty list - never invented discussions, posts, or FAQs.
+app.get("/api/community/resources", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  res.json({ resources: [] });
+});
+
+// Section 15's "Ask the Community" composer draft. Deliberately built
+// from STRUCTURED fields only (burden labels, at most one pattern label)
+// - never the user's raw private reflection text, so there's no path by
+// which anything they wrote privately can leak into a community-facing
+// draft even before they've reviewed it. The draft is always shown to
+// the user for explicit edit/approval before anything is posted or
+// copied anywhere (see GroundingCommunityBridge.tsx) - this route never
+// posts anything itself.
+const CommunityDraftRequestSchema = z.object({
+  burdenLabels: z.array(z.string().max(40)).max(10),
+  patternLabel: z.string().max(60).optional(),
+}).strict();
+
+const CommunityDraftResponseSchema = z.object({ draftText: z.string().max(400) });
+
+app.post("/api/grounding/community-draft", groundingReflectLimiter, verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const parsed = CommunityDraftRequestSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: "Invalid request.", details: (parsed as any).error?.errors || [] });
+    }
+    const { burdenLabels, patternLabel } = parsed.data;
+
+    const user = requireAuth(req);
+    const quota = await checkAndReserveCapability(user.uid, 'nova_text');
+    if (!quota.allowed) {
+      return res.status(429).json({
+        error: quota.plan === 'free'
+          ? "You've reached today's free limit for this. It resets tomorrow, or upgrade to Blaze Break Premium for more."
+          : "You've reached today's fair-use limit for this. It resets tomorrow.",
+        code: 'capability_limit_reached',
+        capability: 'nova_text',
+      });
+    }
+
+    const themeText = [...burdenLabels, ...(patternLabel ? [patternLabel] : [])].join(', ') || 'a moment of overwhelm';
+    const prompt = `Write a short (2-3 sentence), neutral, anonymised DRAFT for a community forum post, based ONLY on these general themes: ${themeText}. This is a draft someone will review and may edit before deciding whether to post it publicly - do not address the reader directly, do not invent any specific personal details, names, employers, or events beyond the general theme given. End with an open question inviting others to share how they've approached something similar.
+
+Respond strictly in this JSON format, no markdown, no commentary outside the JSON:
+{
+  "draftText": "your 2-3 sentence neutral draft"
+}
+${NOVA_ONE_SHOT_SAFETY_FLOOR}`;
+
+    const response = await ai.models.generateContent({
+      model: "gemini-3.5-flash",
+      contents: prompt,
+      config: { responseMimeType: "application/json" },
+    });
+
+    const text = response.text;
+    if (!text) throw new Error("Empty response from Gemini model.");
+    const raw = JSON.parse(text);
+    const validated = CommunityDraftResponseSchema.safeParse(raw);
+    if (!validated.success) {
+      throw new Error(`Model returned an unexpected shape: ${validated.error.message}`);
+    }
+
+    res.json(validated.data);
+  } catch (err: any) {
+    console.error("[Grounding] community draft error:", err.message);
+    res.status(500).json({ error: "Could not draft that right now." });
+  }
+});
+
 app.get("/api/signals/executive-report", executiveReportLimiter, verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
   try {
     const user = requireAuth(req);
@@ -10359,6 +11610,15 @@ const applyMemorySafetyFilter = (text: string) => {
 // Vite middleware for development
 async function setupVite() {
   if (process.env.NODE_ENV !== "production") {
+    // Dynamic, not a top-level static import: `vite` is a devDependency,
+    // pruned from node_modules by a production install (Cloud Run's
+    // buildpack-based deploy, for one). A static `import ... from "vite"`
+    // at the top of this file gets bundled by esbuild into an
+    // unconditional `require("vite")` that runs on every startup
+    // regardless of this NODE_ENV check - it would crash the production
+    // server before it ever got here. This import only actually executes
+    // when this branch runs, i.e. never in production.
+    const { createServer: createViteServer } = await import("vite");
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa",
@@ -10517,7 +11777,12 @@ if (process.env.TEST_MODE !== 'true') {
         }));
         return clientWs.close();
       }
-      const novaLiveSessionStartedAt = Date.now();
+      // Set for real once Gemini's own session actually opens (inside
+      // liveSession's onopen callback below) - NOT here. Setting it here,
+      // before ai.live.connect() is even attempted, used to bill the
+      // entire auth/quota/context-fetch/connect setup window as real
+      // voice-minute usage, even though no conversation could happen yet.
+      let novaLiveSessionStartedAt = 0;
 
       const db = getDb();
 
@@ -10577,8 +11842,14 @@ if (process.env.TEST_MODE !== 'true') {
         // several timer/callback paths) but never silently dropped: an
         // async failure here would otherwise mean an account's real usage
         // just doesn't count against its monthly minutes, forever.
-        recordCapabilityUsage(uid, 'nova_voice_minutes', liveQuota.plan, minutesUsedForSession(Date.now() - novaLiveSessionStartedAt))
-          .catch((e) => console.error(`[Nova Live] failed to record voice minutes for uid ${uid}:`, e?.message || e));
+        // Guarded on novaLiveSessionStartedAt > 0: it's only set once
+        // Gemini's session actually opened (onopen above) - if endSession
+        // is somehow reached before that (e.g. the upstream session
+        // errored before ever opening), there's no real usage to bill.
+        if (novaLiveSessionStartedAt > 0) {
+          recordCapabilityUsage(uid, 'nova_voice_minutes', liveQuota.plan, minutesUsedForSession(Date.now() - novaLiveSessionStartedAt))
+            .catch((e) => console.error(`[Nova Live] failed to record voice minutes for uid ${uid}:`, e?.message || e));
+        }
         try {
           liveSession?.close();
         } catch (e) {
@@ -10591,6 +11862,47 @@ if (process.env.TEST_MODE !== 'true') {
           // Best-effort - the socket may already be closed.
         }
       };
+
+      // The client starts capturing and streaming mic audio the instant
+      // ITS OWN socket to us opens - it has no way to know we still need
+      // to verify tokens, check quotas, fetch Firestore context, and
+      // open the actual upstream Gemini session (ai.live.connect below),
+      // all of which take real time. Registering this listener only
+      // AFTER that setup used to mean every word spoken during it was
+      // silently dropped: no listener existed yet to catch it. This is
+      // registered immediately instead, and queues anything that
+      // arrives before liveSession exists rather than losing it - drained
+      // in order once the real session opens (see onopen below).
+      const pendingClientMessages: string[] = [];
+      const MAX_PENDING_CLIENT_MESSAGES = 300; // a few seconds of 16kHz PCM chunks - bounds memory if connect() never resolves
+
+      const processClientMessage = (raw: string) => {
+        try {
+          const parsed = JSON.parse(raw);
+          if (parsed.initialPrompt) {
+            // Prefill context (fingerprint, recent chat, Nova's memory) without
+            // expecting an immediate reply — turnComplete:false per the SDK's
+            // own guidance for priming a conversation before real input starts.
+            liveSession.sendClientContent({ turns: parsed.initialPrompt, turnComplete: false });
+          }
+          if (parsed.audio) {
+            liveSession.sendRealtimeInput({ audio: { data: parsed.audio, mimeType: "audio/pcm;rate=16000" } });
+          }
+        } catch (e: any) {
+          console.error("[Nova Live] client message parse error:", e?.message || e);
+        }
+      };
+
+      clientWs.on("message", (data) => {
+        if (sessionEnded) return;
+        const raw = data.toString();
+        if (!liveSession) {
+          if (pendingClientMessages.length < MAX_PENDING_CLIENT_MESSAGES) pendingClientMessages.push(raw);
+          return;
+        }
+        resetIdleTimer();
+        processClientMessage(raw);
+      });
 
       try {
         liveSession = await ai.live.connect({
@@ -10618,6 +11930,21 @@ if (process.env.TEST_MODE !== 'true') {
           callbacks: {
             onopen: () => {
               console.log(`[Nova Live] session opened for uid ${uid}`);
+              // This is the one true "Nova can actually hear and respond
+              // now" signal - billing, idle-timeout accounting, and the
+              // client's own "live" UI state all key off it instead of
+              // the much earlier moment our own socket accepted the
+              // connection (see the comment above pendingClientMessages).
+              novaLiveSessionStartedAt = Date.now();
+              resetIdleTimer();
+              try {
+                clientWs.send(JSON.stringify({ ready: true }));
+              } catch (e) {
+                // Best-effort - the socket may already be gone.
+              }
+              while (pendingClientMessages.length > 0) {
+                processClientMessage(pendingClientMessages.shift()!);
+              }
             },
             onmessage: (message: LiveServerMessage) => {
               if (sessionEnded) return;
@@ -10728,27 +12055,9 @@ if (process.env.TEST_MODE !== 'true') {
         return clientWs.close();
       }
 
+      // resetIdleTimer()'s first call now happens inside onopen above,
+      // the same real-ready moment everything else keys off - not here.
       sessionTimeout = setTimeout(() => endSession("This voice session has reached its time limit."), MAX_SESSION_MS);
-      resetIdleTimer();
-
-      clientWs.on("message", (data) => {
-        if (sessionEnded) return;
-        resetIdleTimer();
-        try {
-          const parsed = JSON.parse(data.toString());
-          if (parsed.initialPrompt) {
-            // Prefill context (fingerprint, recent chat, Nova's memory) without
-            // expecting an immediate reply — turnComplete:false per the SDK's
-            // own guidance for priming a conversation before real input starts.
-            liveSession.sendClientContent({ turns: parsed.initialPrompt, turnComplete: false });
-          }
-          if (parsed.audio) {
-            liveSession.sendRealtimeInput({ audio: { data: parsed.audio, mimeType: "audio/pcm;rate=16000" } });
-          }
-        } catch (e: any) {
-          console.error("[Nova Live] client message parse error:", e?.message || e);
-        }
-      });
 
       clientWs.on("close", () => endSession());
       clientWs.on("error", (e) => {

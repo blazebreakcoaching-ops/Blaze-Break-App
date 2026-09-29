@@ -36,6 +36,7 @@ import {
   HeartPulse,
   HelpCircle,
   CreditCard,
+  ClipboardCheck,
 } from "lucide-react";
 
 import {
@@ -47,6 +48,8 @@ import {
   UserProfileData,
   SHIPStage,
 } from "./types.ts";
+import type { NovaQuestioningStyle } from "./components/NovaStyleControl";
+import { SHIP_QUEST_IDS_BY_STAGE } from "./components/ShipJourney";
 import { cn, fireConfetti } from "./lib/utils.ts";
 import { useFocusTrap } from "./lib/useFocusTrap";
 import { auth, getDb } from "./lib/firebase.ts";
@@ -149,6 +152,8 @@ type ActiveTab =
   | "privacy"
   | "subscription"
   | "org"
+  | "myteam"
+  | "hr_escalation"
   | "evolution"
   | "intelligence"
   | "executive"
@@ -157,6 +162,8 @@ type ActiveTab =
 
 // Components
 const HomeSection = lazy(() => import("./components/HomeSection.tsx").then(m => ({ default: m.HomeSection })));
+const TeamDashboard = lazy(() => import("./components/TeamDashboard.tsx").then(m => ({ default: m.TeamDashboard })));
+const HrEscalationDashboard = lazy(() => import("./components/HrEscalationDashboard.tsx").then(m => ({ default: m.HrEscalationDashboard })));
 
 export const ALL_TABS: {
   id: ActiveTab;
@@ -348,6 +355,8 @@ const Sidebar = ({
   setIsCollapsed,
   onOpenCrisisSupport,
   onOpenLauncher,
+  hasManagedTeam,
+  isHrViewer,
 }: {
   activeTab: string;
   setActiveTab: (t: string) => void;
@@ -359,6 +368,8 @@ const Sidebar = ({
   setIsCollapsed: (v: boolean | ((prev: boolean) => boolean)) => void;
   onOpenCrisisSupport: () => void;
   onOpenLauncher: () => void;
+  hasManagedTeam: boolean;
+  isHrViewer: boolean;
 }) => {
   const [pendingTasksCount, setPendingTasksCount] = useState(0);
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
@@ -404,6 +415,15 @@ const Sidebar = ({
   }, []);
 
   const tabs = ALL_TABS.filter((t) => isTabVisible(t, authRole, currentTier));
+  // "My Team" is gated on a real, admin-assigned backend fact (teamManagers),
+  // not the authRole self-selection every other tab above uses - so it's
+  // appended here rather than folded into ALL_TABS' static role list.
+  if (hasManagedTeam) {
+    tabs.push({ id: "myteam" as ActiveTab, icon: Users, label: "My Team", roles: [] });
+  }
+  if (isHrViewer) {
+    tabs.push({ id: "hr_escalation" as ActiveTab, icon: ClipboardCheck, label: "HR Escalation", roles: [] });
+  }
 
   const sidebarVariants = {
     expanded: { width: "16rem", padding: "2rem" },
@@ -1064,8 +1084,34 @@ export default function App() {
     return () => clearInterval(slackTickInterval);
   }, [user, accessToken]);
 
+  // Whether this person manages a team (org-rbac.ts's teamManagers, distinct
+  // from the coarse authRole self-selection above) - drives whether the "My
+  // Team" nav entry appears at all. Not gated on effectiveRole, since a real
+  // team manager designation is a live, admin-assigned fact from the org
+  // backend, not something inferred from onboarding's role picker.
+  const [managedTeams, setManagedTeams] = useState<string[]>([]);
+  const [isHrViewer, setIsHrViewer] = useState(false);
+  useEffect(() => {
+    if (!user) return;
+    secureApiFetch('/api/org/me').then(res => res.json()).then(data => {
+      setManagedTeams(data.managedTeams || []);
+      setIsHrViewer(data.isHrViewer === true);
+    }).catch(() => {
+      // Non-critical - the "My Team"/"HR" nav entries just stay hidden if this fails.
+    });
+  }, [user]);
+
   const [flow, setFlow] = useState<AppFlow>("landing");
   const [activeTab, setActiveTab] = useState<ActiveTab>("home");
+  // The Nova check-in nudge (NovaCheckinNudge.tsx) explicitly promises
+  // voice - "A couple of minutes by voice, whenever you're ready" - but
+  // switching to the nova tab alone only opens the text chat; the live
+  // voice call is a separate button inside NovaChat the person would
+  // then have to find and click again. This flag lets the nudge's
+  // "Talk with Nova" request the voice call open automatically once the
+  // tab switch lands, without changing the plain "Connect with Nova"
+  // recommendation button's existing text-only behaviour.
+  const [novaAutoVoiceRequested, setNovaAutoVoiceRequested] = useState(false);
   // Validated wrapper around setActiveTab for any navigation request that
   // didn't originate from a hardcoded, statically-known-valid string in
   // this file - the 'navigate_tab' window event (dispatched from several
@@ -1157,6 +1203,14 @@ export default function App() {
     return () => window.removeEventListener('open_crisis_support', handleOpenCrisisSupport);
   }, []);
   const [showLauncher, setShowLauncher] = useState(false);
+  // Same 'open_crisis_support'/'open_daily_check_in' window-event pattern -
+  // Faith & Values Grounding's Stage 5 "Talk privately with Nova" option
+  // needs to open the real launcher, not just dismiss itself.
+  useEffect(() => {
+    const handleOpenNovaLauncher = () => setShowLauncher(true);
+    window.addEventListener('open_nova_launcher', handleOpenNovaLauncher);
+    return () => window.removeEventListener('open_nova_launcher', handleOpenNovaLauncher);
+  }, []);
   // Walkthrough and CommandPalette are both always-mounted with `isOpen` as
   // a prop (not a JSX conditional), like SomaticResetOverlay above, so they
   // can play their own internal open/close animations - same "sticky mount"
@@ -1207,6 +1261,15 @@ export default function App() {
   const [energyLevel, setEnergyLevel] = useState(42);
   const [burnoutRisk, setBurnoutRisk] = useState("Not yet assessed");
   const [showCheckIn, setShowCheckIn] = useState(false);
+
+  // Same 'open_crisis_support' pattern above: InAppNudge's check-in
+  // reminder needs to open the actual check-in flow, not just switch tabs
+  // and leave the person to find the button themselves.
+  useEffect(() => {
+    const handleOpenDailyCheckIn = () => setShowCheckIn(true);
+    window.addEventListener('open_daily_check_in', handleOpenDailyCheckIn);
+    return () => window.removeEventListener('open_daily_check_in', handleOpenDailyCheckIn);
+  }, []);
 
   // 30-Day Recovery Pulse History - real entries only, added one at a time
   // as the user actually checks in (see handleCheckInComplete /
@@ -1574,6 +1637,29 @@ export default function App() {
     if (currentStats.rehearsalCount >= 15 && !newBadges.includes("master_boundaries"))
       newBadges.push("master_boundaries");
 
+    // SHIP journey: one badge per phase (all 3 of that phase's quests
+    // done), plus the full-voyage badge once every phase is. Reads the
+    // exact same quest-id lists ShipJourney.tsx exports, so these two
+    // never drift apart.
+    const shipPhaseBadgeIds: Record<SHIPStage, string> = {
+      Safety: 'ship_safety_complete',
+      Habits: 'ship_habits_complete',
+      Identity: 'ship_identity_complete',
+      Purpose: 'ship_purpose_complete',
+    };
+    let allShipPhasesComplete = true;
+    (Object.keys(SHIP_QUEST_IDS_BY_STAGE) as SHIPStage[]).forEach((stage) => {
+      const questIds = SHIP_QUEST_IDS_BY_STAGE[stage];
+      const phaseComplete = questIds.every((id) => currentStats.committedActionIds.includes(id));
+      if (phaseComplete && !newBadges.includes(shipPhaseBadgeIds[stage])) {
+        newBadges.push(shipPhaseBadgeIds[stage]);
+      }
+      if (!phaseComplete) allShipPhasesComplete = false;
+    });
+    if (allShipPhasesComplete && !newBadges.includes('ship_voyage_complete')) {
+      newBadges.push('ship_voyage_complete');
+    }
+
     return newBadges;
   };
 
@@ -1712,6 +1798,30 @@ export default function App() {
     setTimeout(() => setShowRewardNotification(null), 4000);
   };
 
+  // Shared by every surface that embeds a NovaChat instance (the main Nova
+  // tab, Boundary Rehearsal, Reflect) so a tone/style change made from any
+  // of them writes to the same canonical stats.profile - and therefore the
+  // same Firestore doc via the debounced autosave below - instead of each
+  // embed only reaching its own local component state.
+  const handleNovaToneChange = (tone: string) =>
+    setStats((prev) =>
+      prev.profile
+        ? { ...prev, profile: { ...prev.profile, novaTone: tone } }
+        : prev,
+    );
+
+  const handleNovaStyleChange = (style: NovaQuestioningStyle | undefined) =>
+    setStats((prev) =>
+      prev.profile
+        // Firestore's client SDK rejects an explicit `undefined` field
+        // value outright (setDoc throws), so "Off" has to persist as
+        // `null` - writing `style` as-is here would silently fail to save
+        // the moment someone switches back to the default after trying a
+        // style.
+        ? { ...prev, profile: { ...prev.profile, questioningStyle: style ?? null } }
+        : prev,
+    );
+
   const incrementRehearsal = () => {
     setStats((prev) => {
       const updated = {
@@ -1806,12 +1916,19 @@ export default function App() {
   };
 
   const handleCommitAction = (actionId: string) => {
+    // A SHIP Journey quest specifically (as opposed to any other
+    // committable action elsewhere in the app) gets its own timestamp -
+    // see shipJourneyLastCommittedAt's own comment in types.ts for why the
+    // generic updatedAt on this doc can't be reused for the resume-prompt
+    // route to know when SHIP Journey itself was last worked on.
+    const isShipQuest = Object.values(SHIP_QUEST_IDS_BY_STAGE).some((ids) => ids.includes(actionId));
     setStats((prev) => {
       if (prev.committedActionIds.includes(actionId)) return prev;
       const updated = {
         ...prev,
         committedActionIds: [...prev.committedActionIds, actionId],
         points: prev.points + 50,
+        ...(isShipQuest ? { shipJourneyLastCommittedAt: new Date().toISOString() } : {}),
       };
       return {
         ...updated,
@@ -2122,6 +2239,8 @@ export default function App() {
         setIsCollapsed={setIsSidebarCollapsed}
         onOpenCrisisSupport={() => setShowCrisisSupport(true)}
         onOpenLauncher={() => setShowLauncher(true)}
+        hasManagedTeam={managedTeams.length > 0}
+        isHrViewer={isHrViewer}
       />
 
       <motion.main
@@ -2268,7 +2387,10 @@ export default function App() {
             <>
             {activeTab === "home" && (
               <HomeSection
-                onChatRequest={() => setActiveTab("nova")}
+                onChatRequest={(voice) => {
+                  setActiveTab("nova");
+                  if (voice) setNovaAutoVoiceRequested(true);
+                }}
                 onEnergyRequest={() => setActiveTab("recover")}
                 // Only these five are swapped for sample content during a
                 // demo session - everything below (callbacks, badges,
@@ -2340,6 +2462,9 @@ export default function App() {
                   onAwardPoints={awardPoints}
                   currentStage={shipStage}
                   debts={stats.debts || []}
+                  committedActionIds={stats.committedActionIds}
+                  onCommitAction={handleCommitAction}
+                  onNavigate={safeSetActiveTab}
                 />
                 <MicroRecovery
                   fingerprint={fingerprint}
@@ -2363,6 +2488,9 @@ export default function App() {
                     <BoundaryRehearsal
                       onAwardPoints={awardPoints}
                       onRehearsalComplete={incrementRehearsal}
+                      profile={isDemoSession ? undefined : stats.profile}
+                      onToneChange={handleNovaToneChange}
+                      onStyleChange={handleNovaStyleChange}
                     />
                     <BoundaryAutopilot />
                   </div>
@@ -2429,6 +2557,9 @@ export default function App() {
                   committedActionIds={stats.committedActionIds}
                   onCommitAction={handleCommitAction}
                   isDemoSession={isDemoSession}
+                  profile={isDemoSession ? undefined : stats.profile}
+                  onToneChange={handleNovaToneChange}
+                  onStyleChange={handleNovaStyleChange}
                 />
                 <ResentmentTracker
                   fingerprint={fingerprint}
@@ -2442,6 +2573,7 @@ export default function App() {
               <div className="space-y-32">
                 <NovaChat
                   fingerprint={isDemoSession ? DEMO_FINGERPRINT : fingerprint}
+                  profile={isDemoSession ? undefined : stats.profile}
                   systemInstruction={`You are Nova, the recovery coach.
                   User's current stats: Points: ${isDemoSession ? DEMO_STATS.points : stats.points}.
                   Recovery Debt Profile: ${JSON.stringify((isDemoSession ? DEMO_STATS.debts : stats.debts) || [])}.
@@ -2458,25 +2590,10 @@ export default function App() {
                   }
                   onAwardPoints={awardPoints}
                   onNavigate={safeSetActiveTab as any}
-                  onToneChange={(tone) =>
-                    setStats((prev) =>
-                      prev.profile
-                        ? { ...prev, profile: { ...prev.profile, novaTone: tone } }
-                        : prev,
-                    )
-                  }
-                  onStyleChange={(style) =>
-                    setStats((prev) =>
-                      prev.profile
-                        // Firestore's client SDK rejects an explicit `undefined`
-                        // field value outright (setDoc throws), so "Off" has to
-                        // persist as `null` - writing `style` as-is here would
-                        // silently fail to save the moment someone switches back
-                        // to the default after trying a style.
-                        ? { ...prev, profile: { ...prev.profile, questioningStyle: style ?? null } }
-                        : prev,
-                    )
-                  }
+                  onToneChange={handleNovaToneChange}
+                  onStyleChange={handleNovaStyleChange}
+                  autoOpenVoice={novaAutoVoiceRequested}
+                  onVoiceAutoOpened={() => setNovaAutoVoiceRequested(false)}
                 />
               </div>
             )}
@@ -2511,7 +2628,7 @@ export default function App() {
                     <span className="font-display font-bold text-text-main">BLAME Reset</span>
                   </div>
                   <p className="text-xs text-text-muted leading-relaxed">
-                    A 30-90 second interrupt for the moment you're about to react instead of respond &mdash; Breathe, Locate, Accept, Manage, Empower.
+                    A short interrupt for the moment you're about to react instead of respond &mdash; Breathe, Locate, Accept, Manage, Empower, at your own pace, with Nova alongside you for Locate and Accept.
                   </p>
                   <button
                     onClick={() => setShowBlameReset(true)}
@@ -2610,6 +2727,18 @@ export default function App() {
               <div className="space-y-32">
                 <OrgDashboard />
                 <OutcomeTracker fingerprint={fingerprint} />
+              </div>
+            )}
+
+            {activeTab === "myteam" && (
+              <div className="space-y-32">
+                <TeamDashboard />
+              </div>
+            )}
+
+            {activeTab === "hr_escalation" && (
+              <div className="space-y-32">
+                <HrEscalationDashboard />
               </div>
             )}
 

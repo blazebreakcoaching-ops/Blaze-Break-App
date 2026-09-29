@@ -27,6 +27,8 @@ import {
   Volume2
 } from 'lucide-react';
 import { NovaChat } from './NovaChat';
+import type { NovaQuestioningStyle } from './NovaStyleControl';
+import type { UserProfileData } from '../types';
 import { cn } from '../lib/utils';
 
 interface Script {
@@ -140,7 +142,24 @@ const scriptGroups: ScriptGroup[] = [
   }
 ];
 
-export const BoundaryRehearsal = ({ onAwardPoints, onRehearsalComplete }: { onAwardPoints: (amount: number, reason: string) => void, onRehearsalComplete: () => void }) => {
+export const BoundaryRehearsal = ({
+  onAwardPoints,
+  onRehearsalComplete,
+  profile,
+  onToneChange,
+  onStyleChange,
+}: {
+  onAwardPoints: (amount: number, reason: string) => void,
+  onRehearsalComplete: () => void,
+  // Threaded through to the embedded NovaChat below so its Tone/Style
+  // controls read and persist the same canonical preference as the main
+  // Nova tab, instead of a second, disconnected copy that only ever
+  // reaches this device's localStorage (see NovaChat.tsx for the full
+  // reasoning - same gap, same fix, applied here too).
+  profile?: UserProfileData,
+  onToneChange?: (tone: string) => void,
+  onStyleChange?: (style: NovaQuestioningStyle | undefined) => void,
+}) => {
   const [selected, setSelected] = useState<Script | null>(null);
   const [activeCategory, setActiveCategory] = useState(scriptGroups[0].category);
   const [isPractising, setIsPractising] = useState(false);
@@ -712,13 +731,16 @@ export const BoundaryRehearsal = ({ onAwardPoints, onRehearsalComplete }: { onAw
                 </div>
                 <div className="flex-1 relative z-10 pb-16">
                   <div className="absolute inset-0">
-                    <NovaChat 
-                      systemInstruction={`You are Nova, an AI recovery coach. Help the user practice setting boundaries for this specific scenario: "${selected?.situation}". 
+                    <NovaChat
+                      systemInstruction={`You are Nova, an AI recovery coach. Help the user practice setting boundaries for this specific scenario: "${selected?.situation}".
                       The user wants to use this script: "${selected?.script}".
                       ROLEPLAY: You are the manager, client, or family member. BE TOUGH. Push back slightly. Ask 'Why?' or 'Can't you just squeeze it in?'.
                       CRITIQUE: After they reply, give them a one-sentence critique if they apologized or sounded weak.
                       GOAL: Help them deliver the line with zero apology and maximum professionalism. Executive tone.`}
                       initialMessage={`"Alright, let's practise. I'll play the other side of this conversation and push back a little — that's the point. Here goes: 'Hey, I know you're at capacity, but I really need this handled by tonight. Can you just make it happen?'"`}
+                      profile={profile}
+                      onToneChange={onToneChange}
+                      onStyleChange={onStyleChange}
                     />
                   </div>
                 </div>

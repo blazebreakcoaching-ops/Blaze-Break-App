@@ -213,7 +213,7 @@ export const HomeSection = ({
   isDemoSession,
   onShipStageChange,
 }: {
-  onChatRequest: () => void;
+  onChatRequest: (voice?: boolean) => void;
   onEnergyRequest: () => void;
   fingerprint: BurnoutFingerprint | null;
   stats: UserStats;
@@ -1444,7 +1444,7 @@ export const HomeSection = ({
       </div>
       <div style={{ transform: `translateY(${isPullRefreshing ? 0 : pullDistance}px)`, transition: isDragging ? "none" : "transform 0.2s ease-out" }}>
         <div className="pb-6">
-          <NovaCheckinNudge onTalk={onChatRequest} />
+          <NovaCheckinNudge onTalk={() => onChatRequest(true)} />
         </div>
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-10 pb-20">
       <div

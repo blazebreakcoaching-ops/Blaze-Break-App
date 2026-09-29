@@ -213,6 +213,12 @@ export interface UserStats {
   // The What's New changelog version this account has already acknowledged
   // - lets the modal stay dismissed across devices, not just this browser.
   lastSeenChangelogVersion?: string;
+  // Stamped only when a SHIP Journey quest is actually committed (see
+  // handleCommitAction in App.tsx), deliberately separate from the write
+  // timestamp on the doc as a whole - that one touches on every stats
+  // change, so it can't tell the resume-prompt route in server.ts when
+  // SHIP Journey specifically was last worked on.
+  shipJourneyLastCommittedAt?: string;
 }
 
 export const BADGES: Badge[] = [
@@ -225,4 +231,9 @@ export const BADGES: Badge[] = [
   { id: 'master_healer', name: 'Master Healer', description: 'Reach 2,500 total points.', icon: 'Award', category: 'points' },
   { id: 'consistent_sleep', name: 'Consistent Sleep', description: 'Maintain sleep debt below 4 hours.', icon: 'Moon', category: 'milestone' },
   { id: 'master_boundaries', name: 'Master of Boundaries', description: 'Rehearse 15 boundary scripts with precision.', icon: 'ShieldCheck', category: 'milestone' },
+  { id: 'ship_safety_complete', name: 'Safety Secured', description: 'Complete every Safety-phase quest in your SHIP journey.', icon: 'ShieldAlert', category: 'milestone' },
+  { id: 'ship_habits_complete', name: 'Habit Anchor', description: 'Complete every Habits-phase quest in your SHIP journey.', icon: 'Battery', category: 'milestone' },
+  { id: 'ship_identity_complete', name: 'Identity Shift', description: 'Complete every Identity-phase quest in your SHIP journey.', icon: 'Waves', category: 'milestone' },
+  { id: 'ship_purpose_complete', name: 'Purpose Aligned', description: 'Complete every Purpose-phase quest in your SHIP journey.', icon: 'Zap', category: 'milestone' },
+  { id: 'ship_voyage_complete', name: 'The Full Voyage', description: 'Complete all twelve quests across every SHIP phase.', icon: 'Award', category: 'milestone' },
 ];

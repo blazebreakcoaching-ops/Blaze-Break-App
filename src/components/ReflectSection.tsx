@@ -6,6 +6,8 @@ import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Book, CheckCircle2, ChevronRight, Sparkles, Zap, ArrowRight, BookOpen, Activity, LayoutTemplate, Brain, AlertTriangle, TrendingUp, X, Clock, HelpCircle, Loader2 } from 'lucide-react';
 import { NovaChat } from './NovaChat';
+import type { NovaQuestioningStyle } from './NovaStyleControl';
+import type { UserProfileData } from '../types';
 import { DailyVoiceJournal } from './DailyVoiceJournal.tsx';
 import { cn } from '../lib/utils';
 import { useFocusTrap } from '../lib/useFocusTrap';
@@ -117,11 +119,22 @@ export const ReflectSection = ({
   committedActionIds = [],
   onCommitAction,
   isDemoSession,
+  profile,
+  onToneChange,
+  onStyleChange,
 }: {
   onAwardPoints: (amount: number, reason: string) => void,
   committedActionIds?: string[],
   onCommitAction?: (actionId: string) => void,
   isDemoSession?: boolean,
+  // Threaded through to the embedded NovaChat below so its Tone/Style
+  // controls read and persist the same canonical preference as the main
+  // Nova tab, instead of a second, disconnected copy that only ever
+  // reaches this device's localStorage (see NovaChat.tsx for the full
+  // reasoning - same gap, same fix, applied here too).
+  profile?: UserProfileData,
+  onToneChange?: (tone: string) => void,
+  onStyleChange?: (style: NovaQuestioningStyle | undefined) => void,
 }) => {
   const [selected, setSelected] = useState<Chapter | null>(null);
   const [view, setView] = useState<'content' | 'action'>('content');
@@ -736,9 +749,12 @@ export const ReflectSection = ({
                             </div>
                             <div className="flex-1 bg-surface/30 relative">
                               <div className="absolute inset-0 pb-16">
-                                <NovaChat 
+                                <NovaChat
                                   systemInstruction={`You are Nova. The user is reflecting on Chapter: ${selected.title}. Goal: Turn theory into ONE specific action today. Reject generic plans. Challenge them if their plan is too vague. Profile: ${selected.snippet}. Keep it very brief, executive tone.`}
                                   initialMessage={`"I see you're processing '${selected.title}'. Based on your burnout profile, why is allocating time for this specific insight difficult in your current environment?"`}
+                                  profile={profile}
+                                  onToneChange={onToneChange}
+                                  onStyleChange={onStyleChange}
                                 />
                               </div>
                             </div>

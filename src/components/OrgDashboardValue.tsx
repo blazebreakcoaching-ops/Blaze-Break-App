@@ -12,7 +12,7 @@ interface CostInputs {
 }
 
 export const OrgDashboardValue = ({ onNavigateToTrend }: { onNavigateToTrend?: () => void } = {}) => {
-  const [activeTab, setActiveTab] = useState<'cost' | 'planner' | 'predictor'>('cost');
+  const [activeTab, setActiveTab] = useState<'cost' | 'planner'>('cost');
 
   const [orgId, setOrgId] = useState<string | null>(null);
   const [isOrgAdmin, setIsOrgAdmin] = useState(false);
@@ -138,7 +138,6 @@ export const OrgDashboardValue = ({ onNavigateToTrend }: { onNavigateToTrend?: (
           <div className="flex flex-wrap gap-2">
             {[
               { id: 'cost', label: 'Cost of Pressure' },
-              { id: 'predictor', label: 'Absence Prediction' },
               { id: 'planner', label: 'Management Savings Planner' }
             ].map(tab => (
               <button
@@ -425,25 +424,6 @@ export const OrgDashboardValue = ({ onNavigateToTrend }: { onNavigateToTrend?: (
 
                   </div>
                 </div>
-              </div>
-            </motion.div>
-          )}
-
-          {activeTab === 'predictor' && (
-            <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-8">
-              <div className="card border border-dashed border-border bg-surface/50 space-y-3">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-surface text-text-muted flex items-center justify-center shrink-0">
-                    <Lock className="w-5 h-5" />
-                  </div>
-                  <h4 className="font-bold text-text-main text-lg">Absence Prediction — Not Yet Available</h4>
-                </div>
-                <p className="text-sm text-text-muted leading-relaxed max-w-2xl">
-                  A genuine version of per-team absence prediction would need actual historical absence records broken down by team, and a real statistical model built and validated against that history — not a plausible-sounding guess. Neither exists yet, so rather than show invented department names and made-up risk percentages, this space stays honestly empty.
-                </p>
-                <p className="text-sm text-text-muted leading-relaxed max-w-2xl">
-                  What we <strong className="text-text-main">do</strong> show is the honest, defensible alternative: the <strong className="text-text-main">Leading Indicators</strong> on the main dashboard. These are aggregate, anonymised, team-level signals of working conditions — each with its current level and which way it's moving — that tend to shift <em>before</em> hard outcomes. They're a prompt to look at workload and support early, not a prediction of who will be absent, and they're never shown per person.
-                </p>
               </div>
             </motion.div>
           )}

@@ -4,6 +4,7 @@ import { secureApiFetch } from '../lib/secure-api';
 import { auth } from '../lib/firebase';
 import { RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, ResponsiveContainer, Tooltip, LineChart, Line, XAxis, YAxis, CartesianGrid } from 'recharts';
 import { useFocusTrap } from '../lib/useFocusTrap';
+import { OrgManagerCoachChat } from './OrgManagerCoachChat';
 
 
 import {
@@ -31,7 +32,9 @@ import {
   ArrowUp,
   ArrowDown,
   Minus,
-  FileText
+  FileText,
+  ClipboardList,
+  Eye
 } from 'lucide-react';
 import { buildPrimaryIndicators, buildDimensionIndicators, sortByAttention, LeadingIndicator } from '../../org-leading-indicators';
 import { cn } from '../lib/utils';
@@ -107,11 +110,20 @@ export const OrgDashboard = () => {
   } | null>(null);
 
   const [suggestions, setSuggestions] = useState<{ id: string; message: string }[]>([]);
+  // Lets the Manager Action Library cards (climate tab) ask Nova a real
+  // question on the admin's behalf instead of being a static, unclickable
+  // reference list - see OrgManagerCoachChat's seedMessage prop.
+  const [managerCoachSeed, setManagerCoachSeed] = useState<string | null>(null);
 
-  const [members, setMembers] = useState<{ uid: string; email: string | null; displayName: string | null; isAdmin: boolean; team: string | null }[]>([]);
+  const [members, setMembers] = useState<{ uid: string; email: string | null; displayName: string | null; isAdmin: boolean; team: string | null; managesTeams: string[] }[]>([]);
   const [editingTeamUid, setEditingTeamUid] = useState<string | null>(null);
   const [teamInputValue, setTeamInputValue] = useState('');
   const [savingTeamUid, setSavingTeamUid] = useState<string | null>(null);
+  const [hrViewerUids, setHrViewerUids] = useState<string[]>([]);
+  const [editingManagesUid, setEditingManagesUid] = useState<string | null>(null);
+  const [managesInputValue, setManagesInputValue] = useState('');
+  const [savingManagesUid, setSavingManagesUid] = useState<string | null>(null);
+  const [savingHrViewerUid, setSavingHrViewerUid] = useState<string | null>(null);
   const [membersLoading, setMembersLoading] = useState(false);
   const [membersError, setMembersError] = useState('');
   const [memberActionUid, setMemberActionUid] = useState<string | null>(null);
@@ -157,32 +169,6 @@ export const OrgDashboard = () => {
   const [auditLogs, setAuditLogs] = useState<{ id: string; actorEmail: string; action: string; targetResourceType: string; targetResourceId: string; createdAt: any }[]>([]);
   const [auditLogsLoading, setAuditLogsLoading] = useState(false);
   const [auditLogsError, setAuditLogsError] = useState('');
-
-  // Nova Manager Coach - manual refresh only, never automatic, to keep the
-  // real per-call AI cost bounded to when an admin actually wants it.
-  const [managerCoachSuggestions, setManagerCoachSuggestions] = useState<string[] | null>(null);
-  const [managerCoachLoading, setManagerCoachLoading] = useState(false);
-  const [managerCoachError, setManagerCoachError] = useState('');
-
-  const fetchManagerCoach = async () => {
-    if (!orgStatus?.organisationId) return;
-    setManagerCoachLoading(true);
-    setManagerCoachError('');
-    try {
-      const res = await secureApiFetch(`/api/org/${orgStatus.organisationId}/manager-coach`);
-      const data = await res.json();
-      if (!res.ok) {
-        setManagerCoachError(data.error || "Could not get Nova's suggestions right now.");
-      } else if (data.locked) {
-        setManagerCoachError('Not enough opted-in teammates yet for Nova to see any real signal.');
-      } else {
-        setManagerCoachSuggestions(data.suggestions || []);
-      }
-    } catch (e) {
-      setManagerCoachError("Could not get Nova's suggestions right now.");
-    }
-    setManagerCoachLoading(false);
-  };
 
   const fetchGovernance = async (currentOrgId: string) => {
     setGovernanceLoading(true);
@@ -281,6 +267,7 @@ export const OrgDashboard = () => {
         setMembersError(data.error || 'Could not load your team roster.');
       } else {
         setMembers(data.members || []);
+        setHrViewerUids(data.hrViewerUids || []);
       }
     } catch (e) {
       setMembersError('Could not load your team roster.');
@@ -363,6 +350,54 @@ export const OrgDashboard = () => {
       setMembersError("Could not save that person's team.");
     }
     setSavingTeamUid(null);
+  };
+
+  const handleSetManagesTeams = async (memberUid: string, teams: string[]) => {
+    if (!orgStatus?.organisationId) return;
+    setSavingManagesUid(memberUid);
+    setMembersError('');
+    try {
+      const res = await secureApiFetch(`/api/org/${orgStatus.organisationId}/members/${memberUid}/manage-teams`, {
+        method: 'POST',
+        data: { teams },
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setMembersError(data.error || "Could not save which teams this person manages.");
+      } else {
+        setMembers(prev => prev.map(m => m.uid === memberUid ? { ...m, managesTeams: teams } : m));
+        setEditingManagesUid(null);
+      }
+    } catch (e) {
+      setMembersError("Could not save which teams this person manages.");
+    }
+    setSavingManagesUid(null);
+  };
+
+  // hrViewerUids is a full-replace list (see docs/TEAM_WELFARE_DASHBOARDS.md) -
+  // toggling one person means sending the whole intended list, not a patch.
+  const handleToggleHrViewer = async (memberUid: string) => {
+    if (!orgStatus?.organisationId) return;
+    const nextUids = hrViewerUids.includes(memberUid)
+      ? hrViewerUids.filter(uid => uid !== memberUid)
+      : [...hrViewerUids, memberUid];
+    setSavingHrViewerUid(memberUid);
+    setMembersError('');
+    try {
+      const res = await secureApiFetch(`/api/org/${orgStatus.organisationId}/hr-viewers`, {
+        method: 'POST',
+        data: { uids: nextUids },
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setMembersError(data.error || "Could not update HR viewer access.");
+      } else {
+        setHrViewerUids(nextUids);
+      }
+    } catch (e) {
+      setMembersError("Could not update HR viewer access.");
+    }
+    setSavingHrViewerUid(null);
   };
 
   const handleSaveSettings = async () => {
@@ -712,34 +747,13 @@ export const OrgDashboard = () => {
               )}
             </div>
 
-            <div className="card space-y-4">
-              <div className="flex items-center justify-between gap-4 flex-wrap">
-                <div>
-                  <h4 className="font-bold text-text-main flex items-center gap-2"><Sparkles className="w-5 h-5 text-primary" /> Nova's Suggestions For Your Team</h4>
-                  <p className="text-xs text-text-muted max-w-xl leading-relaxed">
-                    Fed only the real, aggregate numbers above - never a named individual. Nova sees exactly what you see, nothing more.
-                  </p>
-                </div>
-                <button
-                  onClick={fetchManagerCoach}
-                  disabled={managerCoachLoading}
-                  className="px-4 py-2 bg-primary text-primary-foreground rounded-xl text-xs font-bold hover:opacity-90 transition-colors disabled:opacity-50 flex items-center gap-2 shrink-0"
-                >
-                  {managerCoachLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
-                  {managerCoachSuggestions ? 'Refresh suggestions' : "Get Nova's suggestions"}
-                </button>
-              </div>
-              {managerCoachError && (
-                <div role="alert" className="p-3 bg-destructive/10 border border-destructive/20 text-destructive dark:text-[#f87171] text-xs rounded-xl">{managerCoachError}</div>
-              )}
-              {managerCoachSuggestions && managerCoachSuggestions.length > 0 && (
-                <div className="space-y-2">
-                  {managerCoachSuggestions.map((s, i) => (
-                    <div key={i} className="p-3 bg-surface dark:bg-card/40 border border-border rounded-xl text-sm text-text-main leading-relaxed">{s}</div>
-                  ))}
-                </div>
-              )}
-            </div>
+            {orgStatus?.organisationId && (
+              <OrgManagerCoachChat
+                orgId={orgStatus.organisationId}
+                seedMessage={managerCoachSeed}
+                onSeedConsumed={() => setManagerCoachSeed(null)}
+              />
+            )}
 
             {riskTrendData && !riskTrendData.locked && (
               <div className="card space-y-6">
@@ -1089,16 +1103,27 @@ export const OrgDashboard = () => {
                       <Sparkles className="w-5 h-5 text-primary" /> Manager Action Library
                     </h4>
                   </div>
+                  <p className="text-xs text-text-muted mb-4 -mt-2">
+                    A reference library of action ideas, not a personalised readout - tap one to ask Nova whether it actually fits what's happening on your team right now.
+                  </p>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     {ACTIONS.map(action => (
-                      <div key={action.id} className="p-4 rounded-xl bg-card/50 hover:bg-card border border-border transition-colors cursor-pointer group">
+                      <button
+                        key={action.id}
+                        type="button"
+                        onClick={() => {
+                          setManagerCoachSeed(`Tell me about "${action.title}" (${action.category}) - does this actually fit what's happening on my team right now, based on the real numbers?`);
+                          setActiveSubTab('pulse');
+                        }}
+                        className="p-4 rounded-xl bg-card/50 hover:bg-card border border-border transition-colors cursor-pointer group text-left w-full"
+                      >
                         <span className="text-[11px] uppercase tracking-widest font-black text-text-muted block mb-1">{action.category}</span>
                         <p className="text-xs font-bold text-text-main mb-3 group-hover:text-[#9a3412] dark:group-hover:text-primary transition-colors">{action.title}</p>
                         <div className="flex gap-2">
                           <span className={cn("text-[11px] px-1.5 py-0.5 rounded", action.impact === 'High' ? "bg-success/20 text-[#166534] dark:text-[#4ade80]" : "bg-surface text-text-muted")}>Impact: {action.impact}</span>
                           <span className={cn("text-[11px] px-1.5 py-0.5 rounded bg-surface text-text-muted")}>Effort: {action.effort}</span>
                         </div>
-                      </div>
+                      </button>
                     ))}
                   </div>
                 </div>
@@ -1307,8 +1332,57 @@ export const OrgDashboard = () => {
                               {member.team ? `Team: ${member.team}` : '+ Add team'}
                             </button>
                           )}
+                          {editingManagesUid === member.uid ? (
+                            <div className="flex items-center gap-1.5 mt-1.5">
+                              <input
+                                type="text"
+                                value={managesInputValue}
+                                onChange={(e) => setManagesInputValue(e.target.value)}
+                                onKeyDown={(e) => {
+                                  const parsed = managesInputValue.split(',').map(t => t.trim()).filter(Boolean);
+                                  if (e.key === 'Enter') handleSetManagesTeams(member.uid, parsed);
+                                  if (e.key === 'Escape') setEditingManagesUid(null);
+                                }}
+                                list="org-team-names"
+                                placeholder="e.g. Engineering, Sales"
+                                aria-label={`Teams ${member.displayName || member.email || 'this person'} manages, comma-separated`}
+                                autoFocus
+                                className="text-xs bg-surface border border-border rounded-lg px-2 py-1 w-40 focus:outline-none focus:border-primary/50"
+                              />
+                              <button
+                                onClick={() => handleSetManagesTeams(member.uid, managesInputValue.split(',').map(t => t.trim()).filter(Boolean))}
+                                disabled={savingManagesUid === member.uid}
+                                aria-label="Save managed teams"
+                                className="text-xs font-bold text-[#9a3412] dark:text-primary hover:opacity-70 disabled:opacity-50"
+                              >
+                                {savingManagesUid === member.uid ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Save'}
+                              </button>
+                              <button onClick={() => setEditingManagesUid(null)} aria-label="Cancel editing managed teams" className="text-xs text-text-muted hover:text-text-main">
+                                Cancel
+                              </button>
+                            </div>
+                          ) : (
+                            <button
+                              onClick={() => { setEditingManagesUid(member.uid); setManagesInputValue(member.managesTeams.join(', ')); }}
+                              className="flex items-center gap-1 text-xs text-text-muted hover:text-[#9a3412] dark:hover:text-primary mt-1 transition-colors"
+                              aria-label={member.managesTeams.length > 0 ? `Edit teams ${member.displayName || member.email || 'this person'} manages: ${member.managesTeams.join(', ')}` : `Designate ${member.displayName || member.email || 'this person'} as a team manager`}
+                            >
+                              <ClipboardList className="w-3 h-3" aria-hidden="true" />
+                              {member.managesTeams.length > 0 ? `Manages: ${member.managesTeams.join(', ')}` : '+ Manages a team'}
+                            </button>
+                          )}
                         </div>
                         <div className="flex items-center gap-2 shrink-0">
+                          <button
+                            onClick={() => handleToggleHrViewer(member.uid)}
+                            disabled={savingHrViewerUid === member.uid}
+                            aria-label={hrViewerUids.includes(member.uid) ? `Revoke HR viewer access for ${member.displayName || member.email || 'this person'}` : `Grant HR viewer access to ${member.displayName || member.email || 'this person'}`}
+                            title="HR viewer access to team-welfare escalation data"
+                            className={`text-xs font-bold transition-opacity flex items-center gap-1 disabled:opacity-50 ${hrViewerUids.includes(member.uid) ? 'text-[#9a3412] dark:text-primary hover:opacity-70' : 'text-text-muted hover:text-[#9a3412] dark:hover:text-primary'}`}
+                          >
+                            {savingHrViewerUid === member.uid ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Eye className="w-3.5 h-3.5" aria-hidden="true" />}
+                            {hrViewerUids.includes(member.uid) ? 'HR Viewer' : 'Grant HR'}
+                          </button>
                           {isSelf ? (
                             <span className="text-xs font-bold uppercase tracking-widest text-text-muted bg-surface px-2 py-1 rounded">You</span>
                           ) : member.isAdmin ? (

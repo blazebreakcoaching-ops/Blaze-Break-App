@@ -1,144 +1,1669 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Compass, Globe, MoonStar, ArrowRight, ShieldCheck, CheckCircle2, Feather } from 'lucide-react';
+import {
+  Compass, Globe, MoonStar, Feather, ArrowRight, ArrowLeft, CheckCircle2,
+  ShieldCheck, Sparkles, Trash2, Hand, X, Plus, Loader2, BookOpen,
+} from 'lucide-react';
 import { cn } from '../lib/utils';
 import { BurnoutFingerprint } from '../types';
 import { updateNovaMemoryBySourceAndType } from '../lib/nova-brain';
+import { auth } from '../lib/firebase';
+import { db } from '../lib/firestore';
+import { secureApiFetch } from '../lib/secure-api';
+import {
+  collection, query, orderBy, limit, getDocs, addDoc, updateDoc, doc, getDoc, setDoc, writeBatch,
+} from 'firebase/firestore';
+import {
+  GroundingLens, GROUNDING_LENSES, GROUNDING_LENS_ORDER,
+  BurdenId, BURDEN_OPTIONS, BURDEN_LABELS,
+  CONTROLLABLE_EXAMPLES, UNCONTROLLABLE_EXAMPLES,
+  IslamicThemeId, ISLAMIC_THEMES, rankIslamicThemesByRelevance,
+  NextActionId, NEXT_ACTION_OPTIONS,
+  GroundingSessionRecord, ReflectionAnswer,
+} from '../../grounding-content';
+import {
+  DerivedPattern, computeDerivedPatterns, PATTERN_DIMENSIONS, CONFIDENCE_COPY,
+  MIN_SESSIONS_FOR_MONTHLY_REFLECTION, MEANING_PROMPTS_GENERAL, MEANING_PROMPTS_FAITH_EXTRA,
+  MEANING_MAKING_INTRO, MEANING_MAKING_INTRO_ISLAMIC, computePatternLifecycleState,
+} from '../../grounding-patterns-taxonomy';
+import { logGroundingEvent } from '../lib/grounding-analytics';
+import { GroundingExploreThis } from './GroundingExploreThis';
+import { GroundingCarryingExercise } from './GroundingCarryingExercise';
+import { GroundingCommunityBridge } from './GroundingCommunityBridge';
+import { GroundingMonthlyReflection } from './GroundingMonthlyReflection';
+import { GroundingResetFlow } from './GroundingResetFlow';
+import { GroundingRoutines } from './GroundingRoutines';
+import { GroundingRoutineRun } from './GroundingRoutineRun';
+import { GroundingOverthinkingInterrupt } from './GroundingOverthinkingInterrupt';
+import { GroundingSavedReflections } from './GroundingSavedReflections';
+import { DECISION_GROUNDING_PROMPTS, DECISION_GROUNDING_ISLAMIC_ADDENDUM } from '../../grounding-routines';
+import {
+  GroundingProfile, SessionDepth, CapacityState, SESSION_DEPTH_LABELS, CAPACITY_LABELS,
+  SessionDepthRecommendation,
+} from '../../grounding-adaptive';
+import {
+  loadGroundingProfile, updateGroundingProfile, resetGroundingPersonalisation,
+  getGroundingRecommendation, getPreferredClosing,
+} from '../lib/grounding-personalisation';
+
+// Section 18's gentle human-connection prompts, shown alongside the
+// "Reach out to someone I trust" Reconnect option - never forced, always
+// escapable via "I want to keep this private".
+const HUMAN_CONNECTION_PROMPTS = [
+  "Who knows you're carrying this?",
+  'Is there someone who could help without needing to fix it?',
+  'What would asking for support look like?',
+  'Would sharing part of this make it lighter?',
+];
+
+// Templated, not AI-generated - a first, deterministic pass at "a pattern
+// Nova has noticed" so this ships without adding a second AI-generation
+// surface to review, keyed by taxonomy dimension id. A live Gemini-
+// authored version is a reasonable future enhancement, but the brief
+// explicitly prioritises the complete end-to-end journey over "advanced
+// pattern intelligence" for this pass. Reuses PATTERN_DIMENSIONS'
+// description field directly rather than duplicating similar copy here.
+interface PatternFeedbackState {
+  userFeedback?: 'resonates' | 'not_really';
+  paused?: boolean;
+  suppressed?: boolean;
+  resolved?: boolean;
+  resolvedAtOccurrenceCount?: number;
+}
 
 interface FaithValuesModeProps {
   fingerprint: BurnoutFingerprint | null;
+  // Deliberately unused in this component - completing a grounding
+  // session never awards points, badges, or a streak. Kept in the props
+  // interface only for call-site compatibility with App.tsx.
   onAwardPoints?: (amount: number, reason: string) => void;
 }
 
-type GroundingMode = 'secular' | 'values' | 'faith' | 'islamic';
+type Stage = 'depth' | 'capacity' | 'lens' | 'arrive' | 'separate' | 'reflect' | 'meaning' | 'release' | 'reconnect';
+type ViewMode = 'session' | 'journey';
 
-const MODES: Record<GroundingMode, { label: string, icon: any, description: string }> = {
-  secular: { label: 'Secular / Biological', icon: Globe, description: 'Focus on physiology, neuroscience, and psychology.' },
-  values: { label: 'Values-Driven', icon: Compass, description: 'Focus on ethics, core principles, and personal integrity.' },
-  faith: { label: 'Faith-Friendly', icon: Feather, description: 'General spiritual grounding, gratitude, and trust.' },
-  islamic: { label: 'Islamic Reflection', icon: MoonStar, description: 'Tawakkul (trust), Sabr (patience), and prayer integration.' }
-};
+const LENS_ICONS: Record<GroundingLens, any> = { secular: Globe, values: Compass, faith: Feather, islamic: MoonStar };
 
-const REFLECTIONS: Record<GroundingMode, Array<{title: string; content: string}>> = {
-  secular: [
-    { title: 'The Limits of Physiology', content: 'Your body is not a machine. It requires downtime to consolidate memory and repair cellular damage. Honouring this limit is logical, not lazy.' },
-    { title: 'Circle of Control', content: 'You can only control your actions and your immediate responses. Everything else is external. Release the external.' },
-  ],
-  values: [
-    { title: 'Integrity Check', content: 'Are your current commitments aligned with what you actually value, or are you operating out of obligation to others\' priorities?' },
-    { title: 'The Virtue of Rest', content: 'Rest is not a reward for surviving burnout; it is a fundamental human right. Protecting your peace is an act of self-respect.' },
-  ],
-  faith: [
-    { title: 'Release What Is Not Yours', content: 'You are responsible for the effort, not the outcome. Do your work with integrity, and release the results to a higher power.' },
-    { title: 'Gratitude Anchor', content: 'In the midst of chaos, find three things that are holding you steady. Give thanks for the breath in your lungs and the strength you have been given.' },
-  ],
-  islamic: [
-    { title: 'Tawakkul (Trust & Effort)', content: 'Tie your camel, then trust in Allah. You have put in the effort today. Now, step back and leave the outcome to the Most Merciful.' },
-    { title: 'Sabr (Patience & Perseverance)', content: 'Patience is not passive suffering; it is maintaining your spiritual composure while navigating difficulty. Your endurance is recorded and rewarded.' },
-    { title: 'Prayer Break Reminder', content: 'Salah is the ultimate boundary. It forces a complete pause from the material world to reconnect with the eternal. Guard your prayers, and they will guard you.' }
-  ]
-};
+// 'meaning' only appears for a 'deep' session - see the STAGE_ORDER
+// usage below, which filters it out otherwise.
+const STAGE_ORDER: { id: Stage; label: string }[] = [
+  { id: 'arrive', label: 'Arrive' },
+  { id: 'separate', label: 'Separate' },
+  { id: 'reflect', label: 'Reflect' },
+  { id: 'meaning', label: 'Meaning' },
+  { id: 'release', label: 'Release' },
+  { id: 'reconnect', label: 'Reconnect' },
+];
 
-export const FaithValuesMode = ({ fingerprint, onAwardPoints }: FaithValuesModeProps) => {
-  const [activeMode, setActiveMode] = useState<GroundingMode>('secular');
-  const [completedReflection, setCompletedReflection] = useState<number | null>(null);
+const HOLD_DURATION_MS = 2200;
 
-  const handleComplete = (idx: number) => {
-    setCompletedReflection(idx);
-    if (onAwardPoints) onAwardPoints(10, 'Completed Grounding Reflection');
-    updateNovaMemoryBySourceAndType('Grounding Mode', 'preference', {
-      content: `Grounding mode: ${MODES[activeMode].label}. Last reflection completed: "${REFLECTIONS[activeMode][idx]?.title || 'N/A'}".`,
-      confidence: 'verified',
-      canEdit: true,
-    });
-    setTimeout(() => {
-      setCompletedReflection(null);
-    }, 3000);
+export const FaithValuesMode = (_props: FaithValuesModeProps) => {
+  const [view, setView] = useState<ViewMode>('session');
+  const [stage, setStage] = useState<Stage>('depth');
+  const [lens, setLens] = useState<GroundingLens | null>(null);
+
+  // Phase 3's session-depth entry point (section 2/40) - chosen before
+  // the lens, since Reset skips lens choice entirely (GroundingResetFlow
+  // is rendered in its place, see the early-return in the JSX below).
+  const [sessionDepth, setSessionDepth] = useState<SessionDepth | null>(null);
+  const [capacityState, setCapacityState] = useState<CapacityState | null>(null);
+  const [depthRecommendation, setDepthRecommendation] = useState<SessionDepthRecommendation | 'none' | null>(null);
+  const [loadingRecommendation, setLoadingRecommendation] = useState(false);
+  const [meaningPrompt, setMeaningPrompt] = useState<string | null>(null);
+  const [meaningAnswer, setMeaningAnswer] = useState('');
+
+  // Section 26's "Enough for today" - Nova noticing a session has run
+  // long, not a hard cutoff. Checked only at render time (no ticking
+  // timer) since an actual reflection session naturally re-renders often
+  // enough (typing) for this to show up promptly without extra machinery.
+  const [sessionStartedAt, setSessionStartedAt] = useState<number | null>(null);
+  const [enoughForTodayDismissed, setEnoughForTodayDismissed] = useState(false);
+  const ENOUGH_FOR_TODAY_MS = 8 * 60 * 1000;
+  useEffect(() => {
+    if (stage === 'arrive' && !sessionStartedAt) setSessionStartedAt(Date.now());
+  }, [stage, sessionStartedAt]);
+
+  const [burdenIds, setBurdenIds] = useState<BurdenId[]>([]);
+  const [customBurden, setCustomBurden] = useState('');
+  const [intensity, setIntensity] = useState<number | null>(null);
+
+  const [controllableItems, setControllableItems] = useState<string[]>([]);
+  const [uncontrollableItems, setUncontrollableItems] = useState<string[]>([]);
+  const [customControllable, setCustomControllable] = useState('');
+  const [customUncontrollable, setCustomUncontrollable] = useState('');
+
+  const [islamicThemeId, setIslamicThemeId] = useState<IslamicThemeId | null>(null);
+  const [reflectLoading, setReflectLoading] = useState(false);
+  const [reflectError, setReflectError] = useState<string | null>(null);
+  const [reflection, setReflection] = useState<{ reflectionText: string; firstQuestion: string; secondQuestion: string; verse?: { reference: string; translation: string; translator: string; scholarReviewed: boolean }; detectedThemes?: string[] } | null>(null);
+  const [firstAnswer, setFirstAnswer] = useState('');
+  const [secondAnswer, setSecondAnswer] = useState('');
+  const [showSecondQuestion, setShowSecondQuestion] = useState(false);
+
+  const [holding, setHolding] = useState(false);
+  const [released, setReleased] = useState(false);
+  const holdTimeoutRef = useRef<number | null>(null);
+
+  const [sessionDocId, setSessionDocId] = useState<string | null>(null);
+  const [showCommunityBridge, setShowCommunityBridge] = useState(false);
+  const [showRoutines, setShowRoutines] = useState(false);
+  const [showOverthinkingInterrupt, setShowOverthinkingInterrupt] = useState(false);
+  const [showSavedReflections, setShowSavedReflections] = useState(false);
+  const [savedInsight, setSavedInsight] = useState(false);
+  const [showDecisionGrounding, setShowDecisionGrounding] = useState(false);
+  const [decisionLens, setDecisionLens] = useState<GroundingLens>('secular');
+  const [connectionPrompt] = useState(() => HUMAN_CONNECTION_PROMPTS[Math.floor(Math.random() * HUMAN_CONNECTION_PROMPTS.length)]);
+  const [chosenNextAction, setChosenNextAction] = useState<NextActionId | null>(null);
+
+  const [sessions, setSessions] = useState<GroundingSessionRecord[]>([]);
+  const [sessionsLoaded, setSessionsLoaded] = useState(false);
+  const [patternAnalysisEnabled, setPatternAnalysisEnabled] = useState(true);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+
+  // Phase 2's Nova Pattern Engine state. patternFeedback holds only the
+  // user-controlled fields (resonates/not_really/paused/suppressed) keyed
+  // by patternKey - the core stats (occurrenceCount/status/dates) are
+  // never trusted from a stale Firestore read, they're recomputed fresh
+  // by computeDerivedPatterns every time sessions changes (see
+  // syncReflectionPatterns below).
+  const [patternFeedback, setPatternFeedback] = useState<Record<string, PatternFeedbackState>>({});
+  const [exploringPattern, setExploringPattern] = useState<DerivedPattern | null>(null);
+  const [showCarryingExercise, setShowCarryingExercise] = useState(false);
+  const [showMonthlyReflection, setShowMonthlyReflection] = useState(false);
+  const [mostRecentAlignedAction, setMostRecentAlignedAction] = useState<{ id: string; chosenValue: string; nextAlignedAction: string; followUpStatus: string | null; createdAt: string } | null>(null);
+  const [allAlignedActions, setAllAlignedActions] = useState<{ chosenValue: string; createdAt: string }[]>([]);
+
+  // Phase 3's adaptive-grounding personal profile (section 30/37) - loaded
+  // once, separately from the session-history load above, since it's a
+  // different concern (derived personalisation preferences, not
+  // reflection history) with its own reset action.
+  const [groundingProfile, setGroundingProfile] = useState<GroundingProfile | null>(null);
+  const [confirmingPersonalisationReset, setConfirmingPersonalisationReset] = useState(false);
+
+  useEffect(() => {
+    if (!auth.currentUser) return;
+    loadGroundingProfile(auth.currentUser.uid).then(setGroundingProfile);
+  }, []);
+
+  const handleProfileToggle = (field: keyof GroundingProfile, value: boolean) => {
+    setGroundingProfile((prev) => ({ ...(prev || { updatedAt: new Date().toISOString() }), [field]: value }));
+    if (auth.currentUser) updateGroundingProfile(auth.currentUser.uid, { [field]: value }).catch(() => {});
   };
+
+  const handleResetPersonalisation = async () => {
+    if (auth.currentUser) {
+      await resetGroundingPersonalisation(auth.currentUser.uid).catch(() => {});
+    }
+    setGroundingProfile({ updatedAt: new Date().toISOString() });
+    setConfirmingPersonalisationReset(false);
+  };
+
+  const loadSessions = async () => {
+    if (!auth.currentUser) { setSessionsLoaded(true); return; }
+    try {
+      const [sessionsSnap, prefSnap, patternsSnap, actionsSnap] = await Promise.all([
+        getDocs(query(collection(db, 'users', auth.currentUser.uid, 'grounding_sessions'), orderBy('createdAt', 'desc'), limit(20))),
+        getDoc(doc(db, 'users', auth.currentUser.uid, 'preferences', 'grounding')),
+        getDocs(collection(db, 'users', auth.currentUser.uid, 'reflection_patterns')),
+        getDocs(query(collection(db, 'users', auth.currentUser.uid, 'aligned_actions'), orderBy('createdAt', 'desc'), limit(20))),
+      ]);
+      setSessions(sessionsSnap.docs.map((d) => ({ id: d.id, ...(d.data() as GroundingSessionRecord) })));
+      if (prefSnap.exists() && typeof prefSnap.data()?.patternAnalysisEnabled === 'boolean') {
+        setPatternAnalysisEnabled(prefSnap.data()!.patternAnalysisEnabled);
+      }
+      const feedback: Record<string, PatternFeedbackState> = {};
+      patternsSnap.docs.forEach((d) => {
+        const data = d.data();
+        feedback[d.id] = {
+          userFeedback: data.userFeedback || undefined, paused: data.paused === true, suppressed: data.suppressed === true,
+          resolved: data.resolved === true, resolvedAtOccurrenceCount: typeof data.resolvedAtOccurrenceCount === 'number' ? data.resolvedAtOccurrenceCount : undefined,
+        };
+      });
+      setPatternFeedback(feedback);
+      const actions = actionsSnap.docs.map((d) => ({ id: d.id, ...(d.data() as any) }));
+      setAllAlignedActions(actions);
+      // Only ever surfaced once, and only if genuinely still open - never
+      // re-asked once acknowledged, and never for anything older than a
+      // few weeks (that's not a gentle follow-up any more, it's a stale one).
+      const openAction = actions.find((a) => !a.followUpStatus && (Date.now() - new Date(a.createdAt).getTime()) < 21 * 24 * 60 * 60 * 1000);
+      setMostRecentAlignedAction(openAction || null);
+    } catch (e) {
+      // Leaves the honest empty state in place rather than guessing at history.
+    }
+    setSessionsLoaded(true);
+  };
+
+  useEffect(() => { loadSessions(); }, []);
+
+  const derivedPatterns = useMemo(
+    () => (patternAnalysisEnabled ? computeDerivedPatterns(sessions) : []),
+    [sessions, patternAnalysisEnabled]
+  );
+
+  // "1-3 cards maximum" (brief, section 25) - never paused or suppressed
+  // ones, which stay computed (so they can resurface if un-paused) but
+  // never rendered.
+  const visiblePatterns = useMemo(
+    () => derivedPatterns.filter((p) => {
+      const fb = patternFeedback[p.patternKey];
+      if (fb?.paused || fb?.suppressed) return false;
+      // A resolved pattern stays hidden unless it's genuinely returning
+      // (occurred again since it was marked "moved through") - section
+      // 16's returning-theme framing, never a plain re-appearance of a
+      // card the person already dismissed as resolved.
+      if (fb?.resolved && !(p.occurrenceCount > (fb.resolvedAtOccurrenceCount ?? Infinity))) return false;
+      return true;
+    }).slice(0, 3),
+    [derivedPatterns, patternFeedback]
+  );
+
+  // Section 6's "intelligently select relevant grounding themes" - a
+  // purely deterministic ranking (no AI) from whatever patterns are
+  // currently confirmed, so the Islamic theme picker surfaces the most
+  // relevant themes first once there's real pattern context, and falls
+  // back to the fixed order for a first-time or pattern-analysis-off user.
+  const rankedIslamicThemes = useMemo(
+    () => rankIslamicThemesByRelevance(derivedPatterns.map((p) => p.patternKey)),
+    [derivedPatterns]
+  );
+
+  const togglePatternAnalysis = (val: boolean) => {
+    setPatternAnalysisEnabled(val);
+    if (auth.currentUser) {
+      setDoc(doc(db, 'users', auth.currentUser.uid, 'preferences', 'grounding'), {
+        patternAnalysisEnabled: val,
+        updatedAt: new Date().toISOString(),
+      }, { merge: true }).catch(() => {});
+    }
+  };
+
+  // Recomputes reflection_patterns from the actual session history and
+  // writes it back, preserving whatever feedback/paused/suppressed state
+  // was already there - this collection is a derived cache, not an
+  // incrementally-updated counter, so it can never drift out of sync with
+  // the sessions it's derived from.
+  const syncReflectionPatterns = async (allSessions: GroundingSessionRecord[]) => {
+    if (!auth.currentUser || !patternAnalysisEnabled) return;
+    const derived = computeDerivedPatterns(allSessions);
+    if (derived.length === 0) return;
+    try {
+      const existingSnap = await getDocs(collection(db, 'users', auth.currentUser.uid, 'reflection_patterns'));
+      const existingByKey = new Map(existingSnap.docs.map((d) => [d.id, d.data()]));
+      const batch = writeBatch(db);
+      const now = new Date().toISOString();
+      for (const p of derived) {
+        const existing = existingByKey.get(p.patternKey);
+        const ref = doc(db, 'users', auth.currentUser.uid, 'reflection_patterns', p.patternKey);
+        batch.set(ref, {
+          patternKey: p.patternKey,
+          category: p.category,
+          firstSeenAt: p.firstSeenAt,
+          lastSeenAt: p.lastSeenAt,
+          occurrenceCount: p.occurrenceCount,
+          status: p.status,
+          lensAssociations: p.lensAssociations.slice(0, 4),
+          ...(existing?.userFeedback ? { userFeedback: existing.userFeedback } : {}),
+          ...(existing?.userFeedbackNote ? { userFeedbackNote: existing.userFeedbackNote } : {}),
+          ...(existing?.paused === true ? { paused: true } : {}),
+          ...(existing?.suppressed === true ? { suppressed: true } : {}),
+          // A full batch.set replaces the whole document, so any field not
+          // explicitly carried forward here is silently lost the next time
+          // any session completes - resolved/resolvedAtOccurrenceCount (the
+          // "moved through" state from handleResolvePattern) needs the same
+          // carry-forward treatment as userFeedback/paused/suppressed above.
+          ...(existing?.resolved === true ? {
+            resolved: true,
+            ...(typeof existing.resolvedAtOccurrenceCount === 'number' ? { resolvedAtOccurrenceCount: existing.resolvedAtOccurrenceCount } : {}),
+          } : {}),
+          createdAt: existing?.createdAt || now,
+          updatedAt: now,
+        });
+      }
+      await batch.commit();
+      const feedback: Record<string, PatternFeedbackState> = {};
+      derived.forEach((p) => {
+        const existing = existingByKey.get(p.patternKey);
+        feedback[p.patternKey] = {
+          userFeedback: existing?.userFeedback, paused: existing?.paused === true, suppressed: existing?.suppressed === true,
+          resolved: existing?.resolved === true,
+          resolvedAtOccurrenceCount: typeof existing?.resolvedAtOccurrenceCount === 'number' ? existing.resolvedAtOccurrenceCount : undefined,
+        };
+      });
+      setPatternFeedback((prev) => ({ ...prev, ...feedback }));
+    } catch (e) {
+      // Non-fatal - cards just won't reflect the newest session's themes
+      // until the next successful sync (e.g. the next Journey view load).
+    }
+  };
+
+  const handlePatternFeedback = async (patternKey: string, feedback: 'resonates' | 'not_really', note?: string) => {
+    setPatternFeedback((prev) => ({ ...prev, [patternKey]: { ...prev[patternKey], userFeedback: feedback, suppressed: feedback === 'not_really' } }));
+    logGroundingEvent('pattern_feedback_given', { category: PATTERN_DIMENSIONS[patternKey as keyof typeof PATTERN_DIMENSIONS]?.category });
+    if (!auth.currentUser) return;
+    const p = derivedPatterns.find((d) => d.patternKey === patternKey);
+    if (!p) return;
+    const ref = doc(db, 'users', auth.currentUser.uid, 'reflection_patterns', patternKey);
+    setDoc(ref, {
+      patternKey: p.patternKey, category: p.category, firstSeenAt: p.firstSeenAt, lastSeenAt: p.lastSeenAt,
+      occurrenceCount: p.occurrenceCount, status: p.status, lensAssociations: p.lensAssociations.slice(0, 4),
+      userFeedback: feedback, suppressed: feedback === 'not_really',
+      ...(note ? { userFeedbackNote: note.slice(0, 200) } : {}),
+      // Firestore's SDK throws client-side on an explicit `undefined`
+      // field value - only ever included when this is genuinely new.
+      ...(patternFeedback[patternKey] ? {} : { createdAt: new Date().toISOString() }),
+      updatedAt: new Date().toISOString(),
+    }, { merge: true }).catch(() => {});
+  };
+
+  const handlePausePattern = async (patternKey: string) => {
+    setPatternFeedback((prev) => ({ ...prev, [patternKey]: { ...prev[patternKey], paused: true } }));
+    if (!auth.currentUser) return;
+    const p = derivedPatterns.find((d) => d.patternKey === patternKey);
+    if (!p) return;
+    setDoc(doc(db, 'users', auth.currentUser.uid, 'reflection_patterns', patternKey), {
+      patternKey: p.patternKey, category: p.category, firstSeenAt: p.firstSeenAt, lastSeenAt: p.lastSeenAt,
+      occurrenceCount: p.occurrenceCount, status: p.status, lensAssociations: p.lensAssociations.slice(0, 4),
+      paused: true,
+      // See handlePatternFeedback's identical guard - createdAt is
+      // required by firestore.rules on create, and Firestore's SDK
+      // throws client-side on an explicit `undefined` value, so it's
+      // only ever included when this doc is genuinely new.
+      ...(patternFeedback[patternKey] ? {} : { createdAt: new Date().toISOString() }),
+      updatedAt: new Date().toISOString(),
+    }, { merge: true }).catch(() => {});
+  };
+
+  // Section 15's "Mark as something I've moved through" - never
+  // "resolved"/"fixed" in the UI copy, and never permanent: if the theme
+  // genuinely returns (occurrenceCount grows past this snapshot), it
+  // resurfaces with the returning-theme framing rather than staying
+  // hidden forever.
+  const handleResolvePattern = async (patternKey: string) => {
+    const p = derivedPatterns.find((d) => d.patternKey === patternKey);
+    if (!p) return;
+    setPatternFeedback((prev) => ({ ...prev, [patternKey]: { ...prev[patternKey], resolved: true, resolvedAtOccurrenceCount: p.occurrenceCount } }));
+    logGroundingEvent('pattern_feedback_given', { category: p.category });
+    if (!auth.currentUser) return;
+    setDoc(doc(db, 'users', auth.currentUser.uid, 'reflection_patterns', patternKey), {
+      patternKey: p.patternKey, category: p.category, firstSeenAt: p.firstSeenAt, lastSeenAt: p.lastSeenAt,
+      occurrenceCount: p.occurrenceCount, status: p.status, lensAssociations: p.lensAssociations.slice(0, 4),
+      resolved: true, resolvedAtOccurrenceCount: p.occurrenceCount,
+      ...(patternFeedback[patternKey] ? {} : { createdAt: new Date().toISOString() }),
+      updatedAt: new Date().toISOString(),
+    }, { merge: true }).catch(() => {});
+  };
+
+  // Sections 17-18's "Reflections worth keeping" - the person explicitly
+  // chooses to save a specific piece of a session, never an automatic
+  // "this seemed important" guess.
+  const saveReflectionItem = async (type: 'question' | 'insight', text: string) => {
+    setSavedInsight(true);
+    if (!auth.currentUser) return;
+    addDoc(collection(db, 'users', auth.currentUser.uid, 'savedReflections'), {
+      type, text: text.slice(0, 400), isUserCreated: false, createdAt: new Date().toISOString(),
+    }).catch(() => {});
+  };
+
+  const handleAlignedActionFollowUp = async (status: 'went_well' | 'still_working_on_it' | 'didnt_happen') => {
+    if (!mostRecentAlignedAction || !auth.currentUser) return;
+    setMostRecentAlignedAction(null);
+    updateDoc(doc(db, 'users', auth.currentUser.uid, 'aligned_actions', mostRecentAlignedAction.id), {
+      followUpStatus: status, followedUpAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+    }).catch(() => {});
+    logGroundingEvent('aligned_action_followed_up');
+  };
+
+  const resetSession = () => {
+    setStage('depth');
+    setSessionDepth(null);
+    setCapacityState(null);
+    setDepthRecommendation(null);
+    setMeaningPrompt(null);
+    setMeaningAnswer('');
+    setSavedInsight(false);
+    setSessionStartedAt(null);
+    setEnoughForTodayDismissed(false);
+    setLens(null);
+    setBurdenIds([]);
+    setCustomBurden('');
+    setIntensity(null);
+    setControllableItems([]);
+    setUncontrollableItems([]);
+    setCustomControllable('');
+    setCustomUncontrollable('');
+    setIslamicThemeId(null);
+    setReflection(null);
+    setReflectError(null);
+    setFirstAnswer('');
+    setSecondAnswer('');
+    setShowSecondQuestion(false);
+    setHolding(false);
+    setReleased(false);
+    setSessionDocId(null);
+    setChosenNextAction(null);
+    setShowCommunityBridge(false);
+  };
+
+  const toggleBurden = (id: BurdenId) => {
+    setBurdenIds((prev) => (prev.includes(id) ? prev.filter((b) => b !== id) : [...prev, id]));
+  };
+
+  const toggleControllable = (item: string) => {
+    setControllableItems((prev) => (prev.includes(item) ? prev.filter((i) => i !== item) : [...prev, item]));
+  };
+  const toggleUncontrollable = (item: string) => {
+    setUncontrollableItems((prev) => (prev.includes(item) ? prev.filter((i) => i !== item) : [...prev, item]));
+  };
+  const addCustomControllable = () => {
+    const val = customControllable.trim().slice(0, 60);
+    if (val && !controllableItems.includes(val)) setControllableItems((prev) => [...prev, val]);
+    setCustomControllable('');
+  };
+  const addCustomUncontrollable = () => {
+    const val = customUncontrollable.trim().slice(0, 60);
+    if (val && !uncontrollableItems.includes(val)) setUncontrollableItems((prev) => [...prev, val]);
+    setCustomUncontrollable('');
+  };
+
+  const callReflect = async () => {
+    if (!lens) return;
+    setReflectLoading(true);
+    setReflectError(null);
+    try {
+      const body: Record<string, unknown> = {
+        lens,
+        burdenLabels: burdenIds.map((id) => BURDEN_LABELS[id]),
+        controllableItems,
+        uncontrollableItems,
+      };
+      if (customBurden.trim()) body.customBurden = customBurden.trim().slice(0, 80);
+      if (lens === 'islamic' && islamicThemeId) body.islamicThemeId = islamicThemeId;
+      if (patternAnalysisEnabled && derivedPatterns.length > 0) body.recentPatterns = derivedPatterns.slice(0, 5).map((p) => PATTERN_DIMENSIONS[p.patternKey].label);
+
+      const res = await secureApiFetch('/api/grounding/reflect', { method: 'POST', data: body });
+      if (!res.ok) {
+        const errBody = await res.json().catch(() => ({}));
+        throw new Error(errBody.error || 'Could not build that reflection right now.');
+      }
+      const result = await res.json();
+      setReflection(result);
+    } catch (e: any) {
+      setReflectError(e.message || 'Could not build that reflection right now.');
+    } finally {
+      setReflectLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (stage !== 'reflect' || reflection || reflectLoading) return;
+    if (lens === 'islamic' && !islamicThemeId) return; // waits for theme choice first
+    callReflect();
+  }, [stage, lens, islamicThemeId]);
+
+  const finalizeRelease = async () => {
+    if (auth.currentUser && lens) {
+      const now = new Date().toISOString();
+      const record: Record<string, unknown> = {
+        lens, burdenIds, controllableItems, uncontrollableItems, createdAt: now, updatedAt: now,
+        sessionDepth: sessionDepth || 'ground',
+      };
+      if (capacityState) record.capacityState = capacityState;
+      if (customBurden.trim()) record.customBurden = customBurden.trim().slice(0, 80);
+      if (typeof intensity === 'number') record.intensity = intensity;
+      if (lens === 'islamic' && islamicThemeId) record.islamicThemeId = islamicThemeId;
+      const answers: ReflectionAnswer[] = [];
+      if (reflection && firstAnswer.trim()) answers.push({ question: reflection.firstQuestion, answer: firstAnswer.trim().slice(0, 400) });
+      if (reflection && secondAnswer.trim()) answers.push({ question: reflection.secondQuestion, answer: secondAnswer.trim().slice(0, 400) });
+      if (meaningAnswer.trim() && meaningPrompt) answers.push({ question: meaningPrompt, answer: meaningAnswer.trim().slice(0, 400) });
+      if (answers.length > 0) record.reflectionAnswers = answers;
+      if (reflection?.detectedThemes && reflection.detectedThemes.length > 0) record.detectedThemes = reflection.detectedThemes;
+
+      try {
+        const ref = await addDoc(collection(db, 'users', auth.currentUser.uid, 'grounding_sessions'), record);
+        setSessionDocId(ref.id);
+        const updatedSessions = [{ id: ref.id, ...(record as any) }, ...sessions].slice(0, 20);
+        setSessions(updatedSessions);
+        updateNovaMemoryBySourceAndType('Faith & Values Grounding', 'state', {
+          content: `Last grounding session used the ${GROUNDING_LENSES[lens].label} lens. Carrying: ${[...burdenIds.map((id) => BURDEN_LABELS[id]), customBurden].filter(Boolean).join(', ') || 'unspecified'}.`,
+          canEdit: false,
+          confidence: 'medium',
+        });
+        logGroundingEvent('grounding_session_completed', { lens });
+        // Best-effort, non-blocking - the release/reconnect flow never
+        // waits on this, it just keeps the Journey view's pattern cards
+        // current for next time.
+        syncReflectionPatterns(updatedSessions);
+      } catch (e) {
+        // Non-fatal - the release still proceeds even if the save failed;
+        // the person's experience isn't gated on persistence succeeding.
+      }
+    }
+    setReleased(true);
+    setTimeout(() => setStage('reconnect'), 900);
+  };
+
+  const onHoldStart = () => {
+    if (released) return;
+    setHolding(true);
+    holdTimeoutRef.current = window.setTimeout(() => { finalizeRelease(); }, HOLD_DURATION_MS);
+  };
+  const onHoldEnd = () => {
+    if (released) return;
+    setHolding(false);
+    if (holdTimeoutRef.current) { window.clearTimeout(holdTimeoutRef.current); holdTimeoutRef.current = null; }
+  };
+
+  const handleNextAction = async (action: NextActionId) => {
+    setChosenNextAction(action);
+    if (sessionDocId && auth.currentUser) {
+      updateDoc(doc(db, 'users', auth.currentUser.uid, 'grounding_sessions', sessionDocId), {
+        nextAction: action, updatedAt: new Date().toISOString(),
+      }).catch(() => {});
+      setSessions((prev) => prev.map((s) => (s.id === sessionDocId ? { ...s, nextAction: action } : s)));
+    }
+    if (action === 'continue_with_nova') {
+      window.dispatchEvent(new CustomEvent('open_nova_launcher'));
+    } else if (action === 'trusted_person') {
+      // Handled by the trusted-person prompt UI below, which navigates on
+      // to Ally only once the person actively continues (see
+      // handleTrustedPersonContinue) - this branch just records the choice.
+    } else if (action === 'next_step') {
+      if (mostRecentAlignedAction) {
+        window.dispatchEvent(new CustomEvent('navigate_tab', { detail: 'recover' }));
+      } else {
+        try {
+          const res = await secureApiFetch('/api/user/resume-prompt');
+          const result = await res.json();
+          window.dispatchEvent(new CustomEvent('navigate_tab', { detail: result.hasIncomplete ? result.tab : 'recover' }));
+        } catch (e) {
+          window.dispatchEvent(new CustomEvent('navigate_tab', { detail: 'recover' }));
+        }
+      }
+    } else if (action === 'community') {
+      setShowCommunityBridge(true);
+    } else if (action === 'return_to_blaze_break') {
+      window.dispatchEvent(new CustomEvent('navigate_tab', { detail: 'home' }));
+    }
+  };
+
+  const handleTrustedPersonContinue = () => {
+    window.dispatchEvent(new CustomEvent('navigate_tab', { detail: 'ally' }));
+  };
+
+  const deleteHistory = async () => {
+    if (!auth.currentUser) return;
+    try {
+      // Clearing pattern history means clearing the DERIVED pattern data
+      // too (section 20) - reflection_patterns and aligned_actions only
+      // exist as a function of the sessions they were computed from, so
+      // leaving them behind after the sessions are gone would strand
+      // stale, unexplainable data. grounding_analytics_events is included
+      // for the same reason, even though individual events carry no
+      // reflection content - "delete all grounding history" should leave
+      // no trail of the history it names, not just the reflections
+      // themselves.
+      const [sessionsSnap, patternsSnap, actionsSnap, eventsSnap] = await Promise.all([
+        getDocs(collection(db, 'users', auth.currentUser.uid, 'grounding_sessions')),
+        getDocs(collection(db, 'users', auth.currentUser.uid, 'reflection_patterns')),
+        getDocs(collection(db, 'users', auth.currentUser.uid, 'aligned_actions')),
+        getDocs(collection(db, 'users', auth.currentUser.uid, 'grounding_analytics_events')),
+      ]);
+      const batch = writeBatch(db);
+      sessionsSnap.docs.forEach((d) => batch.delete(d.ref));
+      patternsSnap.docs.forEach((d) => batch.delete(d.ref));
+      actionsSnap.docs.forEach((d) => batch.delete(d.ref));
+      eventsSnap.docs.forEach((d) => batch.delete(d.ref));
+      await batch.commit();
+      setSessions([]);
+      setPatternFeedback({});
+      setMostRecentAlignedAction(null);
+      setAllAlignedActions([]);
+    } catch (e) {
+      // Leaves the list as-is if the delete failed - no false "cleared" state.
+    }
+    setConfirmingDelete(false);
+  };
+
+  const canContinueArrive = burdenIds.length > 0 || customBurden.trim().length > 0;
+  const canContinueSeparate = controllableItems.length > 0 && uncontrollableItems.length > 0;
+  const isLowCapacity = capacityState === 'running_on_empty' || capacityState === 'low_capacity';
 
   return (
     <div className="space-y-12 pb-24">
       <div className="max-w-4xl">
         <div className="flex items-center gap-4 mb-4">
-           <div className="tag">Section 19 / Grounding</div>
-           <div className="h-px flex-1 bg-border/40" />
+          <div className="tag">Section 19 / Grounding</div>
+          <div className="h-px flex-1 bg-border/40" />
         </div>
         <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-6">
           <div className="space-y-4">
             <h3 className="text-5xl font-display font-bold text-text-main tracking-tight">Faith & Values Grounding</h3>
-            <p className="text-xl text-text-muted font-medium  max-w-2xl">
+            <p className="text-xl text-text-muted font-medium max-w-2xl">
               "Burnout isolates us from our core. Choose the lens through which you want to process your recovery."
             </p>
           </div>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        {(Object.keys(MODES) as GroundingMode[]).map((mode) => {
-           const Icon = MODES[mode].icon;
-           const isSelected = activeMode === mode;
-           return (
-             <button
-               key={mode}
-               onClick={() => setActiveMode(mode)}
-               className={cn(
-                 "p-6 rounded-2xl border transition-all text-left group",
-                 isSelected 
-                   ? "bg-primary border-primary text-primary-foreground shadow-xl shadow-primary/20 scale-[1.02]" 
-                   : "border border-border/50 hover:border-primary/30 text-text-main hover:bg-surface dark:hover:bg-surface"
-               )}
-             >
-               <div className={cn("w-10 h-10 rounded-full flex items-center justify-center mb-4 transition-colors", isSelected ? "bg-white/20" : "bg-surface dark:bg-surface text-text-muted group-hover:text-primary")}>
-                 <Icon className="w-5 h-5" />
-               </div>
-               <h4 className="font-display font-bold text-lg mb-1">{MODES[mode].label}</h4>
-               <p className={cn("text-xs font-medium leading-relaxed", isSelected ? "text-primary-foreground" : "text-text-muted")}>
-                 {MODES[mode].description}
-               </p>
-             </button>
-           );
-        })}
+      <div className="flex items-center gap-2 bg-surface/30 p-1.5 rounded-2xl border border-border/20 max-w-sm">
+        {([['session', 'Ground Yourself'], ['journey', 'Your Grounding Journey']] as [ViewMode, string][]).map(([id, label]) => (
+          <button
+            key={id}
+            onClick={() => setView(id)}
+            className={cn(
+              'flex-1 py-2.5 px-3 rounded-xl text-xs uppercase font-black tracking-widest transition-all cursor-pointer',
+              view === id ? 'bg-white dark:bg-card text-[#9a3412] dark:text-primary shadow-md border border-border/30' : 'text-text-muted hover:text-text-main'
+            )}
+          >
+            {label}
+          </button>
+        ))}
       </div>
 
-      <div className="mt-12">
-        <div className="flex items-center gap-3 mb-6">
-          <ShieldCheck className="w-6 h-6 text-primary" />
-          <h3 className="text-2xl font-display font-bold text-text-main">Your {MODES[activeMode].label} Reflections</h3>
-        </div>
+      {view === 'journey' ? (
+        <GroundingJourneyView
+          sessions={sessions}
+          sessionsLoaded={sessionsLoaded}
+          visiblePatterns={visiblePatterns}
+          patternAnalysisEnabled={patternAnalysisEnabled}
+          onTogglePatternAnalysis={togglePatternAnalysis}
+          confirmingDelete={confirmingDelete}
+          onConfirmingDeleteChange={setConfirmingDelete}
+          onDeleteHistory={deleteHistory}
+          onStartSession={() => { setView('session'); resetSession(); }}
+          onExplorePattern={(p) => { setExploringPattern(p); logGroundingEvent('pattern_explored', { category: p.category }); }}
+          onPatternFeedback={handlePatternFeedback}
+          onPausePattern={handlePausePattern}
+          onResolvePattern={handleResolvePattern}
+          patternFeedback={patternFeedback}
+          onOpenCarryingExercise={() => setShowCarryingExercise(true)}
+          mostRecentAlignedAction={mostRecentAlignedAction}
+          onAlignedActionFollowUp={handleAlignedActionFollowUp}
+          allAlignedActions={allAlignedActions}
+          onOpenMonthlyReflection={() => setShowMonthlyReflection(true)}
+          onOpenRoutines={() => setShowRoutines(true)}
+          onOpenOverthinkingInterrupt={() => setShowOverthinkingInterrupt(true)}
+          onOpenDecisionGrounding={() => setShowDecisionGrounding(true)}
+          onOpenSavedReflections={() => setShowSavedReflections(true)}
+          decisionLens={decisionLens}
+          onDecisionLensChange={setDecisionLens}
+          groundingProfile={groundingProfile}
+          onProfileToggle={handleProfileToggle}
+          confirmingPersonalisationReset={confirmingPersonalisationReset}
+          onConfirmingPersonalisationResetChange={setConfirmingPersonalisationReset}
+          onResetPersonalisation={handleResetPersonalisation}
+        />
+      ) : sessionDepth === 'reset' ? (
+        <GroundingResetFlow
+          derivedPatterns={derivedPatterns}
+          onBack={() => { setSessionDepth(null); setStage('depth'); }}
+          onComplete={() => { resetSession(); setView('journey'); loadSessions(); }}
+          voiceEnabled={groundingProfile?.voiceGuidanceEnabled === true}
+        />
+      ) : (
+        <>
+          {stage !== 'lens' && stage !== 'depth' && stage !== 'capacity' && lens && (
+            <div className="flex items-center justify-between max-w-2xl">
+              <div className="flex items-center gap-3">
+                {STAGE_ORDER.filter((s) => s.id !== 'meaning' || sessionDepth === 'deep').map((s, idx, visible) => {
+                  const currentIdx = visible.findIndex((x) => x.id === stage);
+                  const isDone = idx < currentIdx;
+                  const isCurrent = idx === currentIdx;
+                  return (
+                    <div key={s.id} className="flex items-center gap-2">
+                      <div className={cn(
+                        'w-2 h-2 rounded-full transition-all',
+                        isCurrent ? 'bg-primary scale-125' : isDone ? 'bg-primary/50' : 'bg-border'
+                      )} />
+                      <span className={cn('text-[10px] uppercase font-black tracking-widest', isCurrent ? 'text-primary' : 'text-text-muted/50')}>
+                        {s.label}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <AnimatePresence mode="popLayout">
-            {REFLECTIONS[activeMode].map((ref, idx) => (
-              <motion.div
-                key={ref.title}
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, scale: 0.95 }}
-                className="card border border-primary/10 p-8 flex flex-col justify-between"
-              >
-                <div>
-                  <h4 className="text-xl font-bold text-text-main mb-3">{ref.title}</h4>
-                  <p className="text-text-muted font-medium leading-relaxed mb-6">
-                    "{ref.content}"
-                  </p>
-                </div>
-                
-                {completedReflection !== idx ? (
-                  <button 
-                    onClick={() => handleComplete(idx)}
-                    className="flex w-full justify-center items-center gap-2 p-4 rounded-xl border border-border/50 hover:bg-primary hover:text-primary-foreground transition-colors group text-text-main font-bold"
+          <AnimatePresence mode="wait">
+            {stage === 'depth' && (
+              <motion.div key="depth" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-6 max-w-2xl">
+                <h4 className="text-2xl font-display font-bold text-text-main">What do you need right now?</h4>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {(['reset', 'ground', 'deep'] as SessionDepth[]).map((depth) => (
+                    <button
+                      key={depth}
+                      onClick={() => { setSessionDepth(depth); setStage(depth === 'reset' ? 'depth' : 'capacity'); }}
+                      className="p-6 rounded-2xl border border-border/50 hover:border-primary/30 text-left hover:bg-surface dark:hover:bg-surface transition-all"
+                    >
+                      <h5 className="font-display font-bold text-lg mb-1">{SESSION_DEPTH_LABELS[depth].label}</h5>
+                      <p className="text-xs font-medium leading-relaxed text-text-muted">{SESSION_DEPTH_LABELS[depth].description}</p>
+                    </button>
+                  ))}
+                  <button
+                    onClick={async () => {
+                      if (!auth.currentUser) { setSessionDepth('ground'); setStage('capacity'); return; }
+                      setLoadingRecommendation(true);
+                      const top = derivedPatterns[0];
+                      const rec = await getGroundingRecommendation(auth.currentUser.uid, {
+                        capacity: null, recentPatternKey: top?.patternKey || null, recentSameThemeSessionCount: top?.occurrenceCount || 0,
+                      });
+                      setLoadingRecommendation(false);
+                      setDepthRecommendation(rec || 'none');
+                    }}
+                    className="p-6 rounded-2xl border border-dashed border-border/50 hover:border-primary/30 text-left hover:bg-surface dark:hover:bg-surface transition-all"
                   >
-                    Acknowledge & Release <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+                    <h5 className="font-display font-bold text-lg mb-1 flex items-center gap-2"><Sparkles className="w-4 h-4 text-primary" /> Let Nova choose</h5>
+                    <p className="text-xs font-medium leading-relaxed text-text-muted">Nova recommends a depth from what it's noticed.</p>
                   </button>
-                ) : (
-                  <div className="flex w-full justify-center items-center gap-2 p-4 rounded-xl bg-success text-white font-bold transition-all">
-                    <CheckCircle2 className="w-5 h-5" /> Grounded
+                </div>
+
+                {loadingRecommendation && <p className="text-xs text-text-muted">Thinking...</p>}
+
+                {depthRecommendation && depthRecommendation !== 'none' && (
+                  <div className="bg-primary/5 border border-primary/20 p-6 rounded-2xl space-y-4">
+                    <p className="text-sm text-text-main italic">"{depthRecommendation.reason}"</p>
+                    <div className="flex flex-wrap gap-3">
+                      <button
+                        onClick={() => { setSessionDepth(depthRecommendation.depth); setDepthRecommendation(null); setStage(depthRecommendation.depth === 'reset' ? 'depth' : 'capacity'); }}
+                        className="px-5 py-2.5 bg-primary text-primary-foreground rounded-xl text-xs font-black uppercase tracking-widest"
+                      >
+                        Start {SESSION_DEPTH_LABELS[depthRecommendation.depth].label}
+                      </button>
+                      <button onClick={() => setDepthRecommendation(null)} className="px-5 py-2.5 border border-border/40 rounded-xl text-xs font-black uppercase tracking-widest text-text-muted hover:text-text-main">
+                        Choose something else
+                      </button>
+                    </div>
+                  </div>
+                )}
+                {depthRecommendation === 'none' && (
+                  <div className="bg-surface/30 p-6 rounded-2xl space-y-4">
+                    <p className="text-sm text-text-muted">Nothing stands out right now - Ground is a good place to start.</p>
+                    <div className="flex flex-wrap gap-3">
+                      <button
+                        onClick={() => { setSessionDepth('ground'); setDepthRecommendation(null); setStage('capacity'); }}
+                        className="px-5 py-2.5 bg-primary text-primary-foreground rounded-xl text-xs font-black uppercase tracking-widest"
+                      >
+                        Start Ground
+                      </button>
+                      <button onClick={() => setDepthRecommendation(null)} className="px-5 py-2.5 border border-border/40 rounded-xl text-xs font-black uppercase tracking-widest text-text-muted hover:text-text-main">
+                        Choose something else
+                      </button>
+                    </div>
                   </div>
                 )}
               </motion.div>
-            ))}
+            )}
+
+            {stage === 'capacity' && sessionDepth && (
+              <motion.div key="capacity" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-6 max-w-xl">
+                <div>
+                  <h4 className="text-2xl font-display font-bold text-text-main">How much capacity do you have right now?</h4>
+                  <p className="text-sm text-text-muted mt-2">Optional - this just helps shape how much the session asks of you.</p>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {(['running_on_empty', 'low_capacity', 'some_space', 'ready_to_reflect'] as CapacityState[]).map((cap) => (
+                    <button
+                      key={cap}
+                      onClick={() => setCapacityState(cap)}
+                      aria-pressed={capacityState === cap}
+                      className={cn('p-4 rounded-xl border text-left text-sm font-bold transition-all',
+                        capacityState === cap ? 'bg-primary/10 border-primary/45 text-[#9a3412] dark:text-primary' : 'bg-white dark:bg-surface border-border/40 text-text-main')}
+                    >
+                      {CAPACITY_LABELS[cap]}
+                    </button>
+                  ))}
+                </div>
+
+                {capacityState === 'running_on_empty' && (
+                  <div className="bg-primary/5 border border-primary/20 p-5 rounded-2xl space-y-3">
+                    <p className="text-sm text-text-main">You're running on empty right now - a short reset may be more useful than a longer session.</p>
+                    <div className="flex flex-wrap gap-3">
+                      <button onClick={() => { setSessionDepth('reset'); setStage('depth'); }} className="px-5 py-2.5 bg-primary text-primary-foreground rounded-xl text-xs font-black uppercase tracking-widest">
+                        Switch to Reset
+                      </button>
+                      <button onClick={() => setStage('lens')} className="px-5 py-2.5 border border-border/40 rounded-xl text-xs font-black uppercase tracking-widest text-text-muted hover:text-text-main">
+                        Continue with {SESSION_DEPTH_LABELS[sessionDepth].label} anyway
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                <div className="flex justify-between">
+                  <button onClick={() => setStage('depth')} className="px-4 py-3 text-text-muted hover:text-text-main text-xs font-black uppercase tracking-widest flex items-center gap-2"><ArrowLeft className="w-4 h-4" /> Back</button>
+                  {capacityState !== 'running_on_empty' && (
+                    <button onClick={() => setStage('lens')} className="px-6 py-3 bg-primary text-primary-foreground rounded-xl text-xs font-black uppercase tracking-widest flex items-center gap-2">
+                      {capacityState ? 'Continue' : 'Skip'} <ArrowRight className="w-4 h-4" />
+                    </button>
+                  )}
+                </div>
+              </motion.div>
+            )}
+
+            {stage === 'lens' && (
+              <motion.div key="lens" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-6">
+                <p className="text-sm text-text-muted max-w-xl">Choose the lens for this session. You can change it any time by starting a new session.</p>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                  {GROUNDING_LENS_ORDER.map((id) => {
+                    const Icon = LENS_ICONS[id];
+                    return (
+                      <button
+                        key={id}
+                        onClick={() => { setLens(id); setStage('arrive'); }}
+                        className="p-6 rounded-2xl border border-border/50 hover:border-primary/30 text-left group hover:bg-surface dark:hover:bg-surface transition-all"
+                      >
+                        <div className="w-10 h-10 rounded-full flex items-center justify-center mb-4 bg-surface dark:bg-surface text-text-muted group-hover:text-primary transition-colors">
+                          <Icon className="w-5 h-5" />
+                        </div>
+                        <h4 className="font-display font-bold text-lg mb-1">{GROUNDING_LENSES[id].label}</h4>
+                        <p className="text-xs font-medium leading-relaxed text-text-muted">{GROUNDING_LENSES[id].description}</p>
+                      </button>
+                    );
+                  })}
+                </div>
+              </motion.div>
+            )}
+
+            {stage === 'arrive' && lens && (
+              <motion.div key="arrive" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-8 max-w-2xl">
+                <h4 className="text-2xl font-display font-bold text-text-main">What are you carrying right now?</h4>
+                <div className="flex flex-wrap gap-2">
+                  {BURDEN_OPTIONS.map((o) => (
+                    <button
+                      key={o.id}
+                      onClick={() => toggleBurden(o.id)}
+                      aria-pressed={burdenIds.includes(o.id)}
+                      className={cn(
+                        'px-4 py-2.5 rounded-xl text-xs font-bold border transition-all cursor-pointer',
+                        burdenIds.includes(o.id) ? 'bg-primary/10 border-primary/45 text-[#9a3412] dark:text-primary' : 'bg-white dark:bg-surface border-border/40 text-text-muted hover:border-border'
+                      )}
+                    >
+                      {o.label}
+                    </button>
+                  ))}
+                </div>
+                {burdenIds.includes('other') && (
+                  <input
+                    value={customBurden}
+                    onChange={(e) => setCustomBurden(e.target.value.slice(0, 80))}
+                    placeholder="In your own words..."
+                    className="w-full p-4 rounded-xl border border-border/40 bg-white dark:bg-surface text-sm text-text-main"
+                  />
+                )}
+                <div className="space-y-3">
+                  <label className="text-xs font-bold text-text-muted uppercase tracking-wider">How much is this weighing on you right now? (optional)</label>
+                  <div className="flex items-center gap-2">
+                    {[1, 2, 3, 4, 5].map((n) => (
+                      <button
+                        key={n}
+                        onClick={() => setIntensity(intensity === n ? null : n)}
+                        aria-pressed={intensity === n}
+                        className={cn(
+                          'flex-1 py-3 rounded-xl text-xs font-bold border transition-all cursor-pointer',
+                          intensity === n ? 'bg-text-main/10 border-text-main/40 text-text-main' : 'bg-white dark:bg-surface border-border/40 text-text-muted'
+                        )}
+                      >
+                        {n === 1 ? 'A little' : n === 5 ? 'A lot' : n}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className="flex justify-end">
+                  <button
+                    disabled={!canContinueArrive}
+                    onClick={() => setStage('separate')}
+                    className="px-6 py-3 bg-primary text-primary-foreground rounded-xl text-xs font-black uppercase tracking-widest flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+                  >
+                    Continue <ArrowRight className="w-4 h-4" />
+                  </button>
+                </div>
+              </motion.div>
+            )}
+
+            {stage === 'separate' && lens && (
+              <motion.div key="separate" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-8 max-w-3xl">
+                <div>
+                  <h4 className="text-2xl font-display font-bold text-text-main">What belongs to you — and what doesn't?</h4>
+                  <p className="text-sm text-text-muted mt-2">Responsible action means doing your part fully, then letting go of what was never yours to carry.</p>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="space-y-4 bg-surface/20 p-6 rounded-2xl border border-border/20">
+                    <h5 className="text-xs font-black uppercase tracking-widest text-text-muted">Within my influence</h5>
+                    <div className="flex flex-wrap gap-2">
+                      {CONTROLLABLE_EXAMPLES.map((item) => (
+                        <button key={item} onClick={() => toggleControllable(item)} aria-pressed={controllableItems.includes(item)}
+                          className={cn('px-3 py-2 rounded-lg text-xs font-bold border transition-all cursor-pointer',
+                            controllableItems.includes(item) ? 'bg-primary/10 border-primary/45 text-[#9a3412] dark:text-primary' : 'bg-white dark:bg-surface border-border/40 text-text-muted')}>
+                          {item}
+                        </button>
+                      ))}
+                      {controllableItems.filter((i) => !CONTROLLABLE_EXAMPLES.includes(i)).map((item) => (
+                        <button key={item} onClick={() => toggleControllable(item)} className="px-3 py-2 rounded-lg text-xs font-bold border bg-primary/10 border-primary/45 text-[#9a3412] dark:text-primary flex items-center gap-1">
+                          {item} <X className="w-3 h-3" />
+                        </button>
+                      ))}
+                    </div>
+                    <div className="flex gap-2">
+                      <input value={customControllable} onChange={(e) => setCustomControllable(e.target.value)}
+                        onKeyDown={(e) => e.key === 'Enter' && addCustomControllable()}
+                        placeholder="Add your own..." className="flex-1 p-2.5 rounded-lg border border-border/40 bg-white dark:bg-surface text-xs" />
+                      <button onClick={addCustomControllable} className="p-2.5 rounded-lg border border-border/40 text-text-muted hover:text-primary"><Plus className="w-4 h-4" /></button>
+                    </div>
+                  </div>
+                  <div className="space-y-4 bg-surface/20 p-6 rounded-2xl border border-border/20">
+                    <h5 className="text-xs font-black uppercase tracking-widest text-text-muted">Beyond my control</h5>
+                    <div className="flex flex-wrap gap-2">
+                      {UNCONTROLLABLE_EXAMPLES.map((item) => (
+                        <button key={item} onClick={() => toggleUncontrollable(item)} aria-pressed={uncontrollableItems.includes(item)}
+                          className={cn('px-3 py-2 rounded-lg text-xs font-bold border transition-all cursor-pointer',
+                            uncontrollableItems.includes(item) ? 'bg-text-main/10 border-text-main/40 text-text-main' : 'bg-white dark:bg-surface border-border/40 text-text-muted')}>
+                          {item}
+                        </button>
+                      ))}
+                      {uncontrollableItems.filter((i) => !UNCONTROLLABLE_EXAMPLES.includes(i)).map((item) => (
+                        <button key={item} onClick={() => toggleUncontrollable(item)} className="px-3 py-2 rounded-lg text-xs font-bold border bg-text-main/10 border-text-main/40 text-text-main flex items-center gap-1">
+                          {item} <X className="w-3 h-3" />
+                        </button>
+                      ))}
+                    </div>
+                    <div className="flex gap-2">
+                      <input value={customUncontrollable} onChange={(e) => setCustomUncontrollable(e.target.value)}
+                        onKeyDown={(e) => e.key === 'Enter' && addCustomUncontrollable()}
+                        placeholder="Add your own..." className="flex-1 p-2.5 rounded-lg border border-border/40 bg-white dark:bg-surface text-xs" />
+                      <button onClick={addCustomUncontrollable} className="p-2.5 rounded-lg border border-border/40 text-text-muted hover:text-primary"><Plus className="w-4 h-4" /></button>
+                    </div>
+                  </div>
+                </div>
+                <div className="flex justify-between">
+                  <button onClick={() => setStage('arrive')} className="px-4 py-3 text-text-muted hover:text-text-main text-xs font-black uppercase tracking-widest flex items-center gap-2"><ArrowLeft className="w-4 h-4" /> Back</button>
+                  <button disabled={!canContinueSeparate} onClick={() => setStage('reflect')}
+                    className="px-6 py-3 bg-primary text-primary-foreground rounded-xl text-xs font-black uppercase tracking-widest flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed transition-all">
+                    Continue <ArrowRight className="w-4 h-4" />
+                  </button>
+                </div>
+              </motion.div>
+            )}
+
+            {stage === 'reflect' && lens && (
+              <motion.div key="reflect" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-8 max-w-2xl">
+                {sessionStartedAt && Date.now() - sessionStartedAt > ENOUGH_FOR_TODAY_MS && !enoughForTodayDismissed && (
+                  <div className="bg-surface/30 p-5 rounded-2xl border border-border/20 space-y-3">
+                    <p className="text-sm text-text-main">You've done useful thinking here. More reflection may not give you more clarity tonight.</p>
+                    <div className="flex flex-wrap gap-3">
+                      <button onClick={() => { resetSession(); setView('journey'); }} className="px-4 py-2 bg-primary text-primary-foreground rounded-xl text-[11px] font-black uppercase tracking-widest">
+                        Close the session
+                      </button>
+                      <button onClick={() => setEnoughForTodayDismissed(true)} className="px-4 py-2 border border-border/40 rounded-xl text-[11px] font-black uppercase tracking-widest text-text-muted hover:text-text-main">
+                        One final thought
+                      </button>
+                    </div>
+                  </div>
+                )}
+                {lens === 'islamic' && !islamicThemeId ? (
+                  <div className="space-y-6">
+                    <h4 className="text-2xl font-display font-bold text-text-main">Which theme fits where you are?</h4>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      {rankedIslamicThemes.map((id) => (
+                        <button key={id} onClick={() => setIslamicThemeId(id)}
+                          className="p-4 rounded-xl border border-border/40 hover:border-primary/40 text-left bg-white dark:bg-surface transition-all">
+                          <h5 className="text-sm font-bold text-text-main">{ISLAMIC_THEMES[id].label}</h5>
+                          <p className="text-xs text-text-muted mt-1">{ISLAMIC_THEMES[id].framing}</p>
+                        </button>
+                      ))}
+                    </div>
+                    <button onClick={() => setStage('separate')} className="px-4 py-3 text-text-muted hover:text-text-main text-xs font-black uppercase tracking-widest flex items-center gap-2"><ArrowLeft className="w-4 h-4" /> Back</button>
+                  </div>
+                ) : reflectLoading ? (
+                  <div className="flex flex-col items-center justify-center py-16 gap-4">
+                    <Loader2 className="w-6 h-6 text-primary animate-spin" />
+                    <p className="text-sm text-text-muted">Building your reflection...</p>
+                  </div>
+                ) : reflectError ? (
+                  <div className="space-y-4 bg-destructive/5 border border-destructive/20 p-6 rounded-2xl">
+                    <p className="text-sm text-text-main">{reflectError}</p>
+                    <button onClick={callReflect} className="px-4 py-2 bg-primary text-primary-foreground rounded-xl text-xs font-black uppercase tracking-widest">Try again</button>
+                  </div>
+                ) : reflection ? (
+                  <div className="space-y-8">
+                    {reflection.verse && (
+                      <div className="bg-surface/30 p-5 rounded-2xl border border-border/20 space-y-2">
+                        <div className="flex items-center gap-2">
+                          <BookOpen className="w-3.5 h-3.5 text-primary" />
+                          <span className="text-[10px] font-black uppercase tracking-widest text-text-muted">{reflection.verse.reference} · trans. {reflection.verse.translator}</span>
+                        </div>
+                        <p className="text-sm text-text-main italic">{reflection.verse.translation}</p>
+                        {!reflection.verse.scholarReviewed && (
+                          <p className="text-[10px] text-text-muted">Given for independent verification · pending scholarly review</p>
+                        )}
+                      </div>
+                    )}
+                    <p className="text-lg text-text-main font-medium leading-relaxed">{reflection.reflectionText}</p>
+                    <button
+                      onClick={() => saveReflectionItem('insight', reflection.reflectionText)}
+                      disabled={savedInsight}
+                      className="text-[11px] font-bold text-text-muted hover:text-text-main disabled:text-primary disabled:cursor-default"
+                    >
+                      {savedInsight ? 'Saved to Reflections worth keeping' : 'Save this insight'}
+                    </button>
+                    <div className="space-y-4">
+                      <h5 className="text-sm font-bold text-text-main">{reflection.firstQuestion}</h5>
+                      <textarea
+                        value={firstAnswer}
+                        onChange={(e) => setFirstAnswer(e.target.value.slice(0, 400))}
+                        rows={3}
+                        placeholder="Take your time..."
+                        className="w-full p-4 rounded-xl border border-border/40 bg-white dark:bg-surface text-sm text-text-main"
+                      />
+                      {!showSecondQuestion && (
+                        <div className="flex justify-end">
+                          <button
+                            onClick={() => {
+                              // Section 3: a depleted user never has to complete
+                              // a second reflection question.
+                              if (isLowCapacity) setStage(sessionDepth === 'deep' ? 'meaning' : 'release');
+                              else setShowSecondQuestion(true);
+                            }}
+                            className="px-6 py-3 bg-primary text-primary-foreground rounded-xl text-xs font-black uppercase tracking-widest flex items-center gap-2"
+                          >
+                            Continue <ArrowRight className="w-4 h-4" />
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                    {showSecondQuestion && (
+                      <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-4">
+                        <h5 className="text-sm font-bold text-text-main">{reflection.secondQuestion}</h5>
+                        <textarea
+                          value={secondAnswer}
+                          onChange={(e) => setSecondAnswer(e.target.value.slice(0, 400))}
+                          rows={3}
+                          placeholder="Take your time..."
+                          className="w-full p-4 rounded-xl border border-border/40 bg-white dark:bg-surface text-sm text-text-main"
+                        />
+                        <div className="flex justify-between">
+                          <button onClick={() => setStage('separate')} className="px-4 py-3 text-text-muted hover:text-text-main text-xs font-black uppercase tracking-widest flex items-center gap-2"><ArrowLeft className="w-4 h-4" /> Back</button>
+                          <button onClick={() => setStage(sessionDepth === 'deep' ? 'meaning' : 'release')} className="px-6 py-3 bg-primary text-primary-foreground rounded-xl text-xs font-black uppercase tracking-widest flex items-center gap-2">
+                            Continue <ArrowRight className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </motion.div>
+                    )}
+                  </div>
+                ) : null}
+              </motion.div>
+            )}
+
+            {stage === 'meaning' && lens && (
+              <motion.div key="meaning" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-8 max-w-2xl">
+                <div>
+                  <h4 className="text-2xl font-display font-bold text-text-main">Making sense of it</h4>
+                  <p className="text-sm text-text-muted mt-2">{lens === 'islamic' ? MEANING_MAKING_INTRO_ISLAMIC : MEANING_MAKING_INTRO}</p>
+                </div>
+                {!meaningPrompt ? (
+                  <div className="grid grid-cols-1 gap-3">
+                    {[...MEANING_PROMPTS_GENERAL, ...(lens === 'faith' || lens === 'islamic' ? MEANING_PROMPTS_FAITH_EXTRA : [])].map((p) => (
+                      <button key={p.id} onClick={() => setMeaningPrompt(p.label)}
+                        className="p-4 rounded-xl border border-border/40 hover:border-primary/40 text-left bg-white dark:bg-surface transition-all text-sm font-bold text-text-main">
+                        {p.label}
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    <h5 className="text-sm font-bold text-text-main">{meaningPrompt}</h5>
+                    <textarea
+                      value={meaningAnswer}
+                      onChange={(e) => setMeaningAnswer(e.target.value.slice(0, 400))}
+                      rows={4}
+                      placeholder="Take your time..."
+                      className="w-full p-4 rounded-xl border border-border/40 bg-white dark:bg-surface text-sm text-text-main"
+                    />
+                    <div className="flex justify-between">
+                      <button onClick={() => setMeaningPrompt(null)} className="px-4 py-3 text-text-muted hover:text-text-main text-xs font-black uppercase tracking-widest flex items-center gap-2"><ArrowLeft className="w-4 h-4" /> Choose a different question</button>
+                      <button onClick={() => setStage('release')} className="px-6 py-3 bg-primary text-primary-foreground rounded-xl text-xs font-black uppercase tracking-widest flex items-center gap-2">
+                        Continue <ArrowRight className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </motion.div>
+            )}
+
+            {stage === 'release' && lens && (
+              <motion.div key="release" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-10 max-w-xl">
+                <div className="space-y-6">
+                  <div>
+                    <p className="text-xs font-black uppercase tracking-widest text-text-muted">I have taken responsibility for:</p>
+                    <div className="flex flex-wrap gap-2 mt-2">
+                      {controllableItems.map((i) => (
+                        <span key={i} className="px-3 py-1.5 rounded-lg text-xs font-bold bg-primary/10 text-[#9a3412] dark:text-primary">{i}</span>
+                      ))}
+                    </div>
+                  </div>
+                  <div>
+                    <p className="text-xs font-black uppercase tracking-widest text-text-muted">I am releasing:</p>
+                    <div className="flex flex-wrap gap-2 mt-2">
+                      {uncontrollableItems.map((i) => (
+                        <span key={i} className="px-3 py-1.5 rounded-lg text-xs font-bold bg-text-main/10 text-text-main">{i}</span>
+                      ))}
+                    </div>
+                  </div>
+                  {lens === 'islamic' && (
+                    <p className="text-sm italic text-text-muted border-l-2 border-primary/30 pl-4">
+                      I have taken the means available to me. The outcome is not mine to command.
+                    </p>
+                  )}
+                </div>
+
+                <div className="flex flex-col items-center gap-4 py-8">
+                  <button
+                    onPointerDown={onHoldStart}
+                    onPointerUp={onHoldEnd}
+                    onPointerLeave={onHoldEnd}
+                    disabled={released}
+                    className="relative w-40 h-40 rounded-full border-2 border-primary/30 flex items-center justify-center overflow-hidden select-none cursor-pointer disabled:cursor-default"
+                  >
+                    <div
+                      className="absolute inset-0 bg-primary/20 rounded-full origin-bottom"
+                      style={{
+                        transform: holding || released ? 'scaleY(1)' : 'scaleY(0)',
+                        transition: holding ? `transform ${HOLD_DURATION_MS}ms linear` : 'transform 200ms ease-out',
+                      }}
+                    />
+                    <div className="relative z-10 flex flex-col items-center gap-2">
+                      {released ? <CheckCircle2 className="w-8 h-8 text-primary" /> : <Hand className="w-8 h-8 text-text-muted" />}
+                    </div>
+                  </button>
+                  <p className="text-sm text-text-muted text-center max-w-xs">
+                    {released ? 'Released.' : 'Hold to release what isn\'t yours to carry'}
+                  </p>
+                </div>
+
+                {lens === 'islamic' && !released && (
+                  <p className="text-xs text-text-muted text-center italic">Take a quiet moment for du'a, dhikr, or prayer.</p>
+                )}
+              </motion.div>
+            )}
+
+            {stage === 'reconnect' && (
+              <motion.div key="reconnect" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-8 max-w-2xl">
+                <div>
+                  <h4 className="text-2xl font-display font-bold text-text-main">You don't have to carry everything alone.</h4>
+                  <p className="text-sm text-text-muted mt-2">What would support look like now?</p>
+                </div>
+                {!chosenNextAction ? (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {NEXT_ACTION_OPTIONS.map((opt) => (
+                      <button key={opt.id} onClick={() => handleNextAction(opt.id)}
+                        className="p-5 rounded-2xl border border-border/40 hover:border-primary/40 text-left bg-white dark:bg-surface transition-all">
+                        <h5 className="text-sm font-bold text-text-main">{opt.label}</h5>
+                        <p className="text-xs text-text-muted mt-1">{opt.description}</p>
+                      </button>
+                    ))}
+                  </div>
+                ) : chosenNextAction === 'trusted_person' ? (
+                  <div className="bg-surface dark:bg-surface p-8 rounded-2xl border border-border/40 text-center space-y-5">
+                    <p className="text-base text-text-main italic">"{connectionPrompt}"</p>
+                    <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
+                      <button onClick={handleTrustedPersonContinue} className="px-6 py-2.5 bg-primary text-primary-foreground rounded-xl text-xs font-black uppercase tracking-widest">
+                        Continue to my Recovery Ally circle
+                      </button>
+                      <button onClick={resetSession} className="px-6 py-2.5 border border-border/40 rounded-xl text-xs font-black uppercase tracking-widest text-text-muted hover:text-text-main">
+                        I want to keep this private
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="bg-success/5 border border-success/20 p-8 rounded-2xl text-center space-y-4">
+                    <CheckCircle2 className="w-8 h-8 text-success dark:text-[#4ade80] mx-auto" />
+                    <p className="text-sm text-text-muted">
+                      {chosenNextAction === 'sit_with_this' ? getPreferredClosing(groundingProfile || { updatedAt: new Date().toISOString() }, lens || 'secular') : 'Taking you there now.'}
+                    </p>
+                    <button onClick={resetSession} className="px-6 py-2.5 border border-border/40 rounded-xl text-xs font-black uppercase tracking-widest text-text-muted hover:text-text-main hover:bg-surface/30 transition-all">
+                      Start a new grounding session
+                    </button>
+                  </div>
+                )}
+              </motion.div>
+            )}
           </AnimatePresence>
+        </>
+      )}
+
+      <div className="bg-surface/30 px-5 py-4 rounded-2xl border border-border/20 flex items-start gap-4 text-left">
+        <ShieldCheck className="w-5 h-5 text-text-muted shrink-0 mt-0.5" />
+        <div>
+          <span className="text-[11px] uppercase font-black tracking-wider text-text-muted">Safe Grounding Boundary</span>
+          <p className="text-xs text-text-muted leading-relaxed mt-0.5">
+            This is reflection and grounding support, not diagnosis or professional treatment. It never suggests that hardship, abuse, or unsafe conditions should simply be endured as a matter of faith.
+          </p>
         </div>
+      </div>
+
+      {exploringPattern && (
+        <GroundingExploreThis
+          pattern={exploringPattern}
+          lens={lens || 'secular'}
+          onClose={() => setExploringPattern(null)}
+        />
+      )}
+      {showCarryingExercise && (
+        <GroundingCarryingExercise onClose={() => setShowCarryingExercise(false)} />
+      )}
+      {showCommunityBridge && (
+        <GroundingCommunityBridge
+          burdenLabels={[...burdenIds.map((id) => BURDEN_LABELS[id]), customBurden].filter(Boolean) as string[]}
+          topPatternLabel={derivedPatterns[0] ? PATTERN_DIMENSIONS[derivedPatterns[0].patternKey].label : undefined}
+          topPatternTopicSlug={derivedPatterns[0] ? PATTERN_DIMENSIONS[derivedPatterns[0].patternKey].communityTopicSlug : undefined}
+          onClose={() => setShowCommunityBridge(false)}
+        />
+      )}
+      {showMonthlyReflection && (
+        <GroundingMonthlyReflection
+          sessions={sessions}
+          derivedPatterns={derivedPatterns}
+          onClose={() => setShowMonthlyReflection(false)}
+        />
+      )}
+      {showRoutines && (
+        <GroundingRoutines
+          onClose={() => setShowRoutines(false)}
+          onStartCustomSession={(depth, customLens) => {
+            resetSession();
+            setSessionDepth(depth);
+            setLens(customLens);
+            setStage('arrive');
+            setView('session');
+          }}
+          voiceEnabled={groundingProfile?.voiceGuidanceEnabled === true}
+        />
+      )}
+      {showOverthinkingInterrupt && (
+        <GroundingOverthinkingInterrupt onClose={() => setShowOverthinkingInterrupt(false)} />
+      )}
+      {showSavedReflections && (
+        <GroundingSavedReflections onClose={() => setShowSavedReflections(false)} />
+      )}
+      {showDecisionGrounding && (
+        <GroundingRoutineRun
+          routineId={null}
+          name="Facing a decision"
+          prompts={decisionLens === 'islamic' ? [...DECISION_GROUNDING_PROMPTS, ...DECISION_GROUNDING_ISLAMIC_ADDENDUM] : DECISION_GROUNDING_PROMPTS}
+          closingStyle="values"
+          lens={decisionLens}
+          onClose={() => setShowDecisionGrounding(false)}
+          voiceEnabled={groundingProfile?.voiceGuidanceEnabled === true}
+        />
+      )}
+    </div>
+  );
+};
+
+const GroundingJourneyView = ({
+  sessions, sessionsLoaded, visiblePatterns, patternAnalysisEnabled, onTogglePatternAnalysis,
+  confirmingDelete, onConfirmingDeleteChange, onDeleteHistory, onStartSession,
+  onExplorePattern, onPatternFeedback, onPausePattern, onResolvePattern, patternFeedback, onOpenCarryingExercise,
+  mostRecentAlignedAction, onAlignedActionFollowUp, allAlignedActions, onOpenMonthlyReflection, onOpenRoutines,
+  onOpenOverthinkingInterrupt, onOpenDecisionGrounding, decisionLens, onDecisionLensChange, onOpenSavedReflections,
+  groundingProfile, onProfileToggle, confirmingPersonalisationReset, onConfirmingPersonalisationResetChange, onResetPersonalisation,
+}: {
+  sessions: GroundingSessionRecord[];
+  sessionsLoaded: boolean;
+  visiblePatterns: DerivedPattern[];
+  patternAnalysisEnabled: boolean;
+  onTogglePatternAnalysis: (v: boolean) => void;
+  confirmingDelete: boolean;
+  onConfirmingDeleteChange: (v: boolean) => void;
+  onDeleteHistory: () => void;
+  onStartSession: () => void;
+  onExplorePattern: (p: DerivedPattern) => void;
+  onPatternFeedback: (patternKey: string, feedback: 'resonates' | 'not_really', note?: string) => void;
+  onPausePattern: (patternKey: string) => void;
+  onResolvePattern: (patternKey: string) => void;
+  patternFeedback: Record<string, PatternFeedbackState>;
+  onOpenCarryingExercise: () => void;
+  mostRecentAlignedAction: { id: string; chosenValue: string; nextAlignedAction: string } | null;
+  onAlignedActionFollowUp: (status: 'went_well' | 'still_working_on_it' | 'didnt_happen') => void;
+  allAlignedActions: { chosenValue: string; createdAt: string }[];
+  onOpenMonthlyReflection: () => void;
+  onOpenRoutines: () => void;
+  onOpenOverthinkingInterrupt: () => void;
+  onOpenDecisionGrounding: () => void;
+  decisionLens: GroundingLens;
+  onDecisionLensChange: (l: GroundingLens) => void;
+  onOpenSavedReflections: () => void;
+  groundingProfile: GroundingProfile | null;
+  onProfileToggle: (field: keyof GroundingProfile, value: boolean) => void;
+  confirmingPersonalisationReset: boolean;
+  onConfirmingPersonalisationResetChange: (v: boolean) => void;
+  onResetPersonalisation: () => void;
+}) => {
+  const [notRelevantNoteFor, setNotRelevantNoteFor] = useState<string | null>(null);
+  const [notRelevantNote, setNotRelevantNote] = useState('');
+
+  if (!sessionsLoaded) {
+    return <div className="py-16 text-center text-sm text-text-muted">Loading your grounding journey...</div>;
+  }
+
+  if (sessions.length === 0) {
+    return (
+      <div className="py-16 text-center space-y-4 max-w-md mx-auto">
+        <Sparkles className="w-8 h-8 text-primary mx-auto" />
+        <h4 className="text-lg font-display font-bold text-text-main">Your journey will take shape here</h4>
+        <p className="text-sm text-text-muted leading-relaxed">
+          As you use Grounding, Nova can help you notice themes that return over time. Nothing needs to be solved today.
+        </p>
+        <button onClick={onStartSession} className="px-6 py-3 bg-primary text-primary-foreground rounded-xl text-xs font-black uppercase tracking-widest">
+          Begin a grounding reflection
+        </button>
+      </div>
+    );
+  }
+
+  const valuesReturnedTo = [...new Set(allAlignedActions.map((a) => a.chosenValue))].slice(0, 8);
+  const burdensCarried = [...new Set(sessions.flatMap((s) => [...s.burdenIds.map((id) => BURDEN_LABELS[id]), s.customBurden]).filter(Boolean))].slice(0, 10) as string[];
+
+  // Section 11's Reflection Timeline - grouped by calendar month, capped
+  // to the 3 most recent months with any activity so this stays a calm
+  // overview rather than a full historical dump ("do not overwhelm users
+  // with every historical insight", section 25).
+  const monthKey = (iso: string) => new Date(iso).toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
+  const monthOrder: string[] = [];
+  const monthData: Record<string, { themes: Set<string>; approaches: Set<string>; released: Set<string> }> = {};
+  for (const s of sessions) {
+    const key = monthKey(s.createdAt);
+    if (!monthData[key]) { monthData[key] = { themes: new Set(), approaches: new Set(), released: new Set() }; monthOrder.push(key); }
+    [...s.burdenIds.map((id) => BURDEN_LABELS[id]), s.customBurden].filter(Boolean).forEach((t) => monthData[key]!.themes.add(t as string));
+    if (s.islamicThemeId) monthData[key]!.approaches.add(ISLAMIC_THEMES[s.islamicThemeId].label);
+    if (s.nextAction === 'trusted_person') monthData[key]!.approaches.add('Talking to someone');
+    if (s.nextAction === 'practical_action') monthData[key]!.approaches.add('Taking one practical action');
+    s.uncontrollableItems.forEach((i) => monthData[key]!.released.add(i));
+  }
+  const uniqueMonths = [...new Set(monthOrder)].slice(0, 3);
+
+  return (
+    <div className="space-y-8 max-w-3xl">
+      {mostRecentAlignedAction && (
+        <div className="p-5 rounded-2xl border border-primary/20 bg-primary/5 space-y-3">
+          <p className="text-sm text-text-main">
+            Last time you chose <span className="font-bold">{mostRecentAlignedAction.chosenValue}</span> and wanted to: "{mostRecentAlignedAction.nextAlignedAction}". How did that go?
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <button onClick={() => onAlignedActionFollowUp('went_well')} className="px-3 py-1.5 rounded-lg text-[11px] font-black uppercase tracking-wider bg-primary/10 text-[#9a3412] dark:text-primary">Went well</button>
+            <button onClick={() => onAlignedActionFollowUp('still_working_on_it')} className="px-3 py-1.5 rounded-lg text-[11px] font-black uppercase tracking-wider border border-border/40 text-text-muted">Still working on it</button>
+            <button onClick={() => onAlignedActionFollowUp('didnt_happen')} className="px-3 py-1.5 rounded-lg text-[11px] font-black uppercase tracking-wider border border-border/40 text-text-muted">Didn't happen</button>
+          </div>
+        </div>
+      )}
+
+      <div className="flex items-center justify-between p-4 bg-surface/20 rounded-2xl border border-border/20">
+        <div>
+          <p className="text-xs font-bold text-text-main">Allow Nova to notice patterns in my reflections</p>
+          <p className="text-[11px] text-text-muted mt-0.5">
+            When enabled, Nova can use themes from your grounding sessions to help you notice patterns over time. Your private reflections are never posted to the community.
+          </p>
+        </div>
+        <button
+          onClick={() => onTogglePatternAnalysis(!patternAnalysisEnabled)}
+          role="switch"
+          aria-checked={patternAnalysisEnabled}
+          className={cn('px-3 py-1.5 rounded-lg text-[11px] font-black uppercase tracking-wider border transition-all shrink-0',
+            patternAnalysisEnabled ? 'bg-text-main text-background border-text-main' : 'bg-transparent text-text-muted border-border/40')}
+        >
+          {patternAnalysisEnabled ? 'On' : 'Off'}
+        </button>
+      </div>
+
+      {burdensCarried.length > 0 && (
+        <div className="space-y-3">
+          <h4 className="text-xs uppercase font-black tracking-widest text-text-muted">What you've been carrying</h4>
+          <div className="flex flex-wrap gap-2">
+            {burdensCarried.map((b) => (
+              <span key={b} className="px-3 py-1.5 rounded-lg text-xs font-bold bg-surface text-text-muted">{b}</span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {patternAnalysisEnabled && visiblePatterns.length > 0 && (
+        <div className="space-y-4">
+          <h4 className="text-xs uppercase font-black tracking-widest text-text-muted">Patterns Nova has noticed</h4>
+          {visiblePatterns.map((p) => {
+            const dimension = PATTERN_DIMENSIONS[p.patternKey];
+            const fb = patternFeedback[p.patternKey];
+            const isReturning = !!fb?.resolved && p.occurrenceCount > (fb.resolvedAtOccurrenceCount ?? Infinity);
+            const lifecycle = computePatternLifecycleState(p.lastSeenAt);
+            return (
+              <div key={p.patternKey} className="bg-surface dark:bg-surface p-6 rounded-2xl border border-border/40 space-y-3">
+                <div className="flex items-center gap-1.5">
+                  <Sparkles className="w-3.5 h-3.5 text-primary" />
+                  <span className="text-[11px] uppercase font-black tracking-wider text-[#9a3412] dark:text-primary">{dimension.label}</span>
+                  {!isReturning && lifecycle !== 'active' && (
+                    <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest bg-surface/50 text-text-muted border border-border/40">
+                      {lifecycle === 'dormant' ? "Hasn't appeared much recently" : 'Quieter lately'}
+                    </span>
+                  )}
+                  <span className="text-[10px] text-text-muted ml-auto">Appeared in {p.occurrenceCount} reflections</span>
+                </div>
+                {isReturning ? (
+                  <>
+                    <p className="text-xs text-text-muted italic">This is something you've worked with before. Would it help to revisit what supported you last time?</p>
+                  </>
+                ) : (
+                  <>
+                    <p className="text-xs text-text-muted italic">{CONFIDENCE_COPY[p.status]}</p>
+                    <p className="text-sm text-text-main">{dimension.description}</p>
+                  </>
+                )}
+                <div className="flex flex-wrap items-center gap-2 pt-2">
+                  <button onClick={() => onExplorePattern(p)} className="px-4 py-2 bg-primary/10 text-[#9a3412] dark:text-primary rounded-xl text-[11px] font-black uppercase tracking-widest">
+                    {isReturning ? 'See what helped before' : 'Explore this'}
+                  </button>
+                  {!isReturning && (
+                    <>
+                      <button onClick={() => onPatternFeedback(p.patternKey, 'resonates')} className="text-[11px] font-bold text-text-muted hover:text-text-main">This resonates</button>
+                      <button onClick={() => setNotRelevantNoteFor(notRelevantNoteFor === p.patternKey ? null : p.patternKey)} className="text-[11px] font-bold text-text-muted hover:text-text-main">Not really</button>
+                      <button onClick={() => onPausePattern(p.patternKey)} className="text-[11px] font-bold text-text-muted hover:text-text-main">Pause this insight</button>
+                      {lifecycle === 'dormant' && (
+                        <button onClick={() => onResolvePattern(p.patternKey)} className="text-[11px] font-bold text-text-muted hover:text-text-main">Mark as something I've moved through</button>
+                      )}
+                    </>
+                  )}
+                </div>
+                {notRelevantNoteFor === p.patternKey && (
+                  <div className="flex gap-2 pt-1">
+                    <input
+                      value={notRelevantNote}
+                      onChange={(e) => setNotRelevantNote(e.target.value.slice(0, 200))}
+                      placeholder="What feels more accurate? (optional)"
+                      className="flex-1 p-2.5 rounded-lg border border-border/40 bg-white dark:bg-card text-xs text-text-main"
+                    />
+                    <button
+                      onClick={() => { onPatternFeedback(p.patternKey, 'not_really', notRelevantNote.trim() || undefined); setNotRelevantNoteFor(null); setNotRelevantNote(''); }}
+                      className="px-3 py-2 bg-text-main text-background rounded-lg text-[11px] font-black uppercase tracking-wider"
+                    >
+                      Submit
+                    </button>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {valuesReturnedTo.length > 0 && (
+        <div className="space-y-3">
+          <h4 className="text-xs uppercase font-black tracking-widest text-text-muted">Values you've returned to</h4>
+          <div className="flex flex-wrap gap-2">
+            {valuesReturnedTo.map((v) => (
+              <span key={v} className="px-3 py-1.5 rounded-lg text-xs font-bold bg-primary/10 text-[#9a3412] dark:text-primary">{v}</span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="p-5 rounded-2xl border border-border/20 bg-white/40 dark:bg-card/40 flex items-center justify-between gap-4">
+        <div>
+          <h4 className="text-sm font-bold text-text-main">What am I carrying that isn't mine?</h4>
+          <p className="text-[11px] text-text-muted mt-0.5">A focused exercise to sort what's genuinely yours from what isn't.</p>
+        </div>
+        <button onClick={onOpenCarryingExercise} className="px-4 py-2.5 border border-border/40 rounded-xl text-[11px] font-black uppercase tracking-widest text-text-muted hover:text-text-main hover:bg-surface/30 shrink-0">
+          Open
+        </button>
+      </div>
+
+      <div className="p-5 rounded-2xl border border-border/20 bg-white/40 dark:bg-card/40 flex items-center justify-between gap-4">
+        <div>
+          <h4 className="text-sm font-bold text-text-main">Your Grounding Routines</h4>
+          <p className="text-[11px] text-text-muted mt-0.5">Morning Grounding, End-of-Day Release, and routines of your own.</p>
+        </div>
+        <button onClick={onOpenRoutines} className="px-4 py-2.5 border border-border/40 rounded-xl text-[11px] font-black uppercase tracking-widest text-text-muted hover:text-text-main hover:bg-surface/30 shrink-0">
+          Open
+        </button>
+      </div>
+
+      <div className="p-5 rounded-2xl border border-border/20 bg-white/40 dark:bg-card/40 flex items-center justify-between gap-4">
+        <div>
+          <h4 className="text-sm font-bold text-text-main">Reflections worth keeping</h4>
+          <p className="text-[11px] text-text-muted mt-0.5">Saved insights, questions, and your own grounding statements.</p>
+        </div>
+        <button onClick={onOpenSavedReflections} className="px-4 py-2.5 border border-border/40 rounded-xl text-[11px] font-black uppercase tracking-widest text-text-muted hover:text-text-main hover:bg-surface/30 shrink-0">
+          Open
+        </button>
+      </div>
+
+      <div className="p-5 rounded-2xl border border-border/20 bg-white/40 dark:bg-card/40 flex items-center justify-between gap-4">
+        <div>
+          <h4 className="text-sm font-bold text-text-main">Thought about this enough?</h4>
+          <p className="text-[11px] text-text-muted mt-0.5">A short interrupt for a repeating mental loop.</p>
+        </div>
+        <button onClick={onOpenOverthinkingInterrupt} className="px-4 py-2.5 border border-border/40 rounded-xl text-[11px] font-black uppercase tracking-widest text-text-muted hover:text-text-main hover:bg-surface/30 shrink-0">
+          Open
+        </button>
+      </div>
+
+      <div className="p-5 rounded-2xl border border-border/20 bg-white/40 dark:bg-card/40 flex items-center justify-between gap-4">
+        <div>
+          <h4 className="text-sm font-bold text-text-main">Facing a decision?</h4>
+          <p className="text-[11px] text-text-muted mt-0.5">A grounded way to think it through - not a decision made for you.</p>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          <select value={decisionLens} onChange={(e) => onDecisionLensChange(e.target.value as GroundingLens)}
+            className="p-2 rounded-lg border border-border/40 bg-white dark:bg-surface text-[11px] text-text-main">
+            {GROUNDING_LENS_ORDER.map((l) => <option key={l} value={l}>{GROUNDING_LENSES[l].label}</option>)}
+          </select>
+          <button onClick={onOpenDecisionGrounding} className="px-4 py-2.5 border border-border/40 rounded-xl text-[11px] font-black uppercase tracking-widest text-text-muted hover:text-text-main hover:bg-surface/30">
+            Open
+          </button>
+        </div>
+      </div>
+
+      {sessions.length >= MIN_SESSIONS_FOR_MONTHLY_REFLECTION && (
+        <div className="p-5 rounded-2xl border border-primary/20 bg-primary/5 flex items-center justify-between gap-4">
+          <div>
+            <h4 className="text-sm font-bold text-text-main">Ready for a deeper look back?</h4>
+            <p className="text-[11px] text-text-muted mt-0.5">A slower reflection on what's stood out, what's shifted, and what you want to carry forward.</p>
+          </div>
+          <button onClick={onOpenMonthlyReflection} className="px-4 py-2.5 bg-primary text-primary-foreground rounded-xl text-[11px] font-black uppercase tracking-widest shrink-0">
+            Reflect on this month
+          </button>
+        </div>
+      )}
+
+      <div className="space-y-6">
+        <h4 className="text-xs uppercase font-black tracking-widest text-text-muted">Looking back</h4>
+        {uniqueMonths.map((month) => {
+          const data = monthData[month]!;
+          return (
+            <div key={month} className="p-5 rounded-2xl border border-border/20 bg-white/40 dark:bg-card/40 space-y-3">
+              <h5 className="text-sm font-display font-bold text-text-main">{month}</h5>
+              {data.themes.size > 0 && (
+                <div className="space-y-1.5">
+                  <p className="text-[10px] uppercase font-black tracking-wider text-text-muted">Themes you've explored</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {[...data.themes].map((t) => <span key={t} className="px-2.5 py-1 rounded-md text-[11px] font-bold bg-surface text-text-muted">{t}</span>)}
+                  </div>
+                </div>
+              )}
+              {data.approaches.size > 0 && (
+                <div className="space-y-1.5">
+                  <p className="text-[10px] uppercase font-black tracking-wider text-text-muted">Grounding approaches that helped</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {[...data.approaches].map((a) => <span key={a} className="px-2.5 py-1 rounded-md text-[11px] font-bold bg-primary/10 text-[#9a3412] dark:text-primary">{a}</span>)}
+                  </div>
+                </div>
+              )}
+              {data.released.size > 0 && (
+                <div className="space-y-1.5">
+                  <p className="text-[10px] uppercase font-black tracking-wider text-text-muted">Things you've begun releasing</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {[...data.released].map((r) => <span key={r} className="px-2.5 py-1 rounded-md text-[11px] font-bold bg-text-main/10 text-text-main">{r}</span>)}
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="space-y-4 p-5 rounded-2xl border border-border/20 bg-white/40 dark:bg-card/40">
+        <div>
+          <h4 className="text-xs uppercase font-black tracking-widest text-text-muted">Grounding Personalisation</h4>
+          <p className="text-[11px] text-text-muted mt-1 leading-relaxed">
+            When personalisation is on, Blaze Break can remember which kinds of grounding have been useful and adapt future sessions. You stay in control and can reset this at any time.
+          </p>
+        </div>
+        {([
+          ['personalisationEnabled', 'Let Nova personalise my grounding'],
+          ['useHistoryForPersonalisation', 'Use previous grounding themes'],
+          ['followUpOnPreviousActions', 'Follow up on previous actions'],
+          ['usePreferredLens', 'Use my preferred reflection lens'],
+          ['voiceGuidanceEnabled', 'Voice-guided grounding'],
+        ] as [keyof GroundingProfile, string][]).map(([field, label]) => {
+          const enabled = groundingProfile ? groundingProfile[field] !== false : true;
+          return (
+            <div key={field} className="flex items-center justify-between gap-4">
+              <span className="text-xs font-bold text-text-main">{label}</span>
+              <button
+                onClick={() => onProfileToggle(field, !enabled)}
+                role="switch"
+                aria-checked={enabled}
+                className={cn('px-3 py-1.5 rounded-lg text-[11px] font-black uppercase tracking-wider border transition-all shrink-0',
+                  enabled ? 'bg-text-main text-background border-text-main' : 'bg-transparent text-text-muted border-border/40')}
+              >
+                {enabled ? 'On' : 'Off'}
+              </button>
+            </div>
+          );
+        })}
+        <div className="pt-2">
+          {!confirmingPersonalisationReset ? (
+            <button onClick={() => onConfirmingPersonalisationResetChange(true)} className="text-[11px] font-bold text-text-muted hover:text-text-main">
+              Reset my grounding personalisation
+            </button>
+          ) : (
+            <div className="flex items-center gap-3">
+              <span className="text-[11px] text-text-main">This clears what Nova has learned, but keeps your reflection history.</span>
+              <button onClick={onResetPersonalisation} className="px-3 py-1.5 bg-text-main text-background rounded-lg text-[11px] font-black uppercase tracking-wider">Reset</button>
+              <button onClick={() => onConfirmingPersonalisationResetChange(false)} className="px-3 py-1.5 border border-border/40 rounded-lg text-[11px] font-black uppercase tracking-wider text-text-muted">Cancel</button>
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="pt-4 border-t border-border/20">
+        {!confirmingDelete ? (
+          <button onClick={() => onConfirmingDeleteChange(true)} className="text-xs font-bold text-text-muted hover:text-destructive flex items-center gap-1.5">
+            <Trash2 className="w-3.5 h-3.5" /> Delete my grounding history
+          </button>
+        ) : (
+          <div className="flex items-center gap-3">
+            <span className="text-xs text-text-main">This can't be undone. Delete all grounding history?</span>
+            <button onClick={onDeleteHistory} className="px-3 py-1.5 bg-destructive text-destructive-foreground rounded-lg text-[11px] font-black uppercase tracking-wider">Delete</button>
+            <button onClick={() => onConfirmingDeleteChange(false)} className="px-3 py-1.5 border border-border/40 rounded-lg text-[11px] font-black uppercase tracking-wider text-text-muted">Cancel</button>
+          </div>
+        )}
       </div>
     </div>
   );

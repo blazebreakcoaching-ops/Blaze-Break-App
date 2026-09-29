@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import { cn } from "../lib/utils";
+import type { UserProfileData } from "../types";
 import { addNovaMemory } from "../lib/nova-brain";
 import { secureApiFetch } from "../lib/secure-api";
 import { auth } from '../lib/firebase';
@@ -76,23 +77,45 @@ export const NovaChat = ({
   systemInstruction,
   initialMessage,
   fingerprint,
+  profile,
   onAwardPoints,
   onNavigate,
   onToneChange,
   onStyleChange,
+  autoOpenVoice,
+  onVoiceAutoOpened,
 }: {
   systemInstruction?: string;
   initialMessage?: string;
   fingerprint?: any;
+  // The canonical, Firestore-loaded profile (App.tsx's stats.profile) -
+  // used only to seed/resync novaTone and questioningStyle below on a
+  // browser or device where localStorage's blaze_profile was never
+  // written (a fresh device, a cleared cache, or a preference set from
+  // elsewhere before this device ever opened Settings). Without this,
+  // NovaChat had no way to learn about a preference that genuinely was
+  // saved - it would just look reset because the only place it read from
+  // was this device's own localStorage.
+  profile?: UserProfileData;
   onAwardPoints?: (amount: number, reason: string) => void;
   onNavigate?: (tab: string) => void;
   onToneChange?: (tone: string) => void;
   onStyleChange?: (style: NovaQuestioningStyle | undefined) => void;
+  // Set by a caller that already promised voice specifically (e.g. the
+  // Nova check-in nudge's "Talk with Nova"), so the live call opens
+  // immediately instead of requiring a second click on the mic button
+  // below. onVoiceAutoOpened lets the caller clear its own flag once
+  // consumed, so returning to this tab later doesn't reopen the call
+  // unprompted.
+  autoOpenVoice?: boolean;
+  onVoiceAutoOpened?: () => void;
 }) => {
   // How Nova should sound, re-tunable at any time. Source of truth for the
   // chat's own context is localStorage's blaze_profile (what getDynamicContext
   // reads); changing it here updates that immediately AND bubbles up via
-  // onToneChange so the canonical Firestore profile stays in sync.
+  // onToneChange so the canonical Firestore profile stays in sync. The
+  // `profile` prop (read first, below) covers the device/cache-miss case
+  // where localStorage itself was never populated.
   const readTone = (): string => {
     try {
       const p = localStorage.getItem("blaze_profile");
@@ -101,7 +124,7 @@ export const NovaChat = ({
       return "";
     }
   };
-  const [novaTone, setNovaTone] = useState<string>(readTone);
+  const [novaTone, setNovaTone] = useState<string>(() => profile?.novaTone || readTone());
   const handleToneChange = (tone: string) => {
     setNovaTone(tone);
     try {
@@ -112,11 +135,31 @@ export const NovaChat = ({
     }
     onToneChange?.(tone);
   };
+  // If the canonical profile only becomes available (or changes to a real
+  // value) after this component already mounted with an empty localStorage
+  // read - e.g. Firestore's load resolving, or App.tsx's stats being
+  // populated on a device this preference was never saved to locally -
+  // adopt it once. Never overwrites a tone the person has already chosen
+  // on THIS device in THIS session (that would fight their own most recent
+  // action), only fills a genuine local gap.
+  useEffect(() => {
+    if (profile?.novaTone && !novaTone) {
+      setNovaTone(profile.novaTone);
+      try {
+        const p = JSON.parse(localStorage.getItem("blaze_profile") || "{}");
+        localStorage.setItem("blaze_profile", JSON.stringify({ ...p, novaTone: profile.novaTone }));
+      } catch {
+        // Non-fatal - novaTone state above is already updated either way.
+      }
+    }
+  }, [profile?.novaTone]);
   // How Nova questions the user - a separate, opt-in axis from tone above.
   // Purely a server-side concern (the chosen style is read fresh from
   // Firestore by both /api/nova/chat and the Nova Live voice route), so
   // unlike novaTone this never needs to be threaded into getDynamicContext
-  // or the client-built systemInstruction below - only persisted.
+  // or the client-built systemInstruction below - only persisted (and kept
+  // in sync locally purely so this component's own controls show the
+  // right selection).
   const readStyle = (): NovaQuestioningStyle | undefined => {
     try {
       const p = localStorage.getItem("blaze_profile");
@@ -126,7 +169,11 @@ export const NovaChat = ({
       return undefined;
     }
   };
-  const [questioningStyle, setQuestioningStyle] = useState<NovaQuestioningStyle | undefined>(readStyle);
+  const [questioningStyle, setQuestioningStyle] = useState<NovaQuestioningStyle | undefined>(
+    () => (QUESTIONING_STYLE_OPTIONS.some((s) => s.value === profile?.questioningStyle)
+      ? (profile?.questioningStyle as NovaQuestioningStyle)
+      : readStyle()),
+  );
   const handleStyleChange = (style: NovaQuestioningStyle | undefined) => {
     setQuestioningStyle(style);
     try {
@@ -137,6 +184,22 @@ export const NovaChat = ({
     }
     onStyleChange?.(style);
   };
+  // Same resync reasoning as novaTone above, for the same class of gap.
+  useEffect(() => {
+    if (
+      !questioningStyle &&
+      QUESTIONING_STYLE_OPTIONS.some((s) => s.value === profile?.questioningStyle)
+    ) {
+      const style = profile!.questioningStyle as NovaQuestioningStyle;
+      setQuestioningStyle(style);
+      try {
+        const p = JSON.parse(localStorage.getItem("blaze_profile") || "{}");
+        localStorage.setItem("blaze_profile", JSON.stringify({ ...p, questioningStyle: style }));
+      } catch {
+        // Non-fatal - questioningStyle state above is already updated either way.
+      }
+    }
+  }, [profile?.questioningStyle]);
   const [messages, setMessages] = useState<Message[]>(() => {
     const saved = localStorage.getItem("nova_chat_history");
     if (saved) {
@@ -379,26 +442,31 @@ export const NovaChat = ({
     return () => clearInterval(interval);
   }, [loading]);
 
-  const [situationalContext, setSituationalContext] = useState<string>("");
-
-  useEffect(() => {
+  // Read fresh at send-time, not cached in state computed once at mount -
+  // this used to be a useEffect(..., []) that ran exactly once, so a tone
+  // or style change made mid-session (via the controls below, or from
+  // Settings in another tab) never reached the next text message until the
+  // whole component remounted. novaTone/questioningStyle state above is
+  // kept live by handleToneChange/handleStyleChange, so reading them
+  // directly here (rather than re-parsing localStorage) always reflects
+  // the person's current choice, matching NovaToneControl's own promise
+  // that "Nova switches straightaway."
+  const buildSituationalContext = (): string => {
     try {
       const profileStr = localStorage.getItem("blaze_profile");
-      if (profileStr) {
-        const profile = JSON.parse(profileStr);
-        let ctx = `\n[SITUATIONAL ONBOARDING CONTEXT]\n`;
-        if (profile.purpose) ctx += `- Primary Goal: ${profile.purpose}\n`;
-        if (profile.primaryDrain)
-          ctx += `- Current Pressure Point: ${profile.primaryDrain}\n`;
-        if (profile.pathway) ctx += `- Environment: ${profile.pathway}\n`;
-        if (profile.novaTone)
-          ctx += `- Preferred Nova Tone: ${profile.novaTone}\n`;
-        setSituationalContext(ctx);
-      }
+      const profile = profileStr ? JSON.parse(profileStr) : {};
+      let ctx = `\n[SITUATIONAL ONBOARDING CONTEXT]\n`;
+      let hasAny = false;
+      if (profile.purpose) { ctx += `- Primary Goal: ${profile.purpose}\n`; hasAny = true; }
+      if (profile.primaryDrain) { ctx += `- Current Pressure Point: ${profile.primaryDrain}\n`; hasAny = true; }
+      if (profile.pathway) { ctx += `- Environment: ${profile.pathway}\n`; hasAny = true; }
+      if (novaTone) { ctx += `- Preferred Nova Tone: ${novaTone}\n`; hasAny = true; }
+      return hasAny ? ctx : "";
     } catch (e) {
       console.error(e);
+      return "";
     }
-  }, []);
+  };
 
   useEffect(() => {
     localStorage.setItem("nova_chat_history", JSON.stringify(messages));
@@ -465,6 +533,16 @@ We are now in real-time voice mode. Be concise and conversational, you don't nee
   };
 
   const openVoiceCall = () => setShowVoiceCall(true);
+
+  // Only auto-opens once the voice feature flag is confirmed on, matching
+  // the same gate the manual mic button (below) is rendered behind - if
+  // voice isn't available, this just leaves the person in text chat
+  // rather than opening a call surface that doesn't apply to them.
+  useEffect(() => {
+    if (!autoOpenVoice) return;
+    if (voiceFeatureEnabled) openVoiceCall();
+    onVoiceAutoOpened?.();
+  }, [autoOpenVoice, voiceFeatureEnabled, onVoiceAutoOpened]);
 
   useEffect(() => {
     return () => {
@@ -569,9 +647,7 @@ We are now in real-time voice mode. Be concise and conversational, you don't nee
   const getDynamicContext = async () => {
     let contextStr = "";
 
-    if (situationalContext) {
-      contextStr += situationalContext;
-    }
+    contextStr += buildSituationalContext();
 
     // Saved-memory content used to be assembled here directly from
     // getNovaBrain() - unfiltered, with no consent check, and duplicated

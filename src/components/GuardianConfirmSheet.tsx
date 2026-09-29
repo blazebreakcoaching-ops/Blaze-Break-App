@@ -55,7 +55,19 @@ export const GuardianConfirmSheet = ({ userName, onClose }: GuardianConfirmSheet
   const [step, setStep] = useState<Step>('loading');
   const [guardians, setGuardians] = useState<SupportContact[]>([]);
   const [selected, setSelected] = useState<SupportContact | null>(null);
-  const [templateId, setTemplateId] = useState<GuardianSupportTemplateId>('standard');
+  // Nova only ever offers this sheet because something real prompted it
+  // (validateGuardianSupportOffer requires a specific reason tied to the
+  // conversation) - so the softest wording ("call or message me when you
+  // can") shouldn't be what a guardian receives by default. 'more_urgent'
+  // already exists as a pre-approved, non-emergency-framed template (see
+  // guardian-support-invitation.ts's header comment on hazard #18 - it
+  // deliberately avoids implying emergency, which could push a guardian to
+  // call 999 on the user's behalf without the user choosing that), so
+  // defaulting to it here doesn't introduce new, unreviewed wording - it
+  // just stops this flow from quietly downgrading to the option least
+  // likely to convey that a reply is actually needed. The dropdown still
+  // lets the user pick 'standard' instead before anything sends.
+  const [templateId, setTemplateId] = useState<GuardianSupportTemplateId>('more_urgent');
   const [copied, setCopied] = useState(false);
   const [resultMessage, setResultMessage] = useState<string | null>(null);
 

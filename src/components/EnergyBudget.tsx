@@ -24,14 +24,23 @@ import { RelapseRadar } from './RelapseRadar';
 import { DebtTracker } from './DebtTracker';
 import { SHIPStage } from '../types';
 
-export const EnergyBudgetTool = ({ 
-  onAwardPoints, 
+export const EnergyBudgetTool = ({
+  onAwardPoints,
   currentStage = 'Safety',
-  debts = []
-}: { 
-  onAwardPoints: (amount: number, reason: string) => void, 
+  debts = [],
+  committedActionIds = [],
+  onCommitAction,
+  onNavigate,
+}: {
+  onAwardPoints: (amount: number, reason: string) => void,
   currentStage?: SHIPStage,
-  debts?: any[]
+  debts?: any[],
+  // Threaded straight through to ShipJourney below - see that file for
+  // why quest completion reuses this existing field/callback rather than
+  // a new Firestore collection.
+  committedActionIds?: string[],
+  onCommitAction?: (actionId: string) => void,
+  onNavigate?: (tab: string) => void,
 }) => {
   const STAGE_MAP: Record<SHIPStage, 'Safety' | 'Habits' | 'Identity' | 'Purpose'> = {
     Safety: 'Safety',
@@ -287,7 +296,12 @@ export const EnergyBudgetTool = ({
 
       {/* SHIP Journey Phase */}
       <div className="relative">
-        <ShipJourney currentStage={currentStage as any} />
+        <ShipJourney
+          currentStage={currentStage as any}
+          committedActionIds={committedActionIds}
+          onCommitAction={onCommitAction || (() => {})}
+          onNavigate={onNavigate}
+        />
       </div>
 
       {/* Layout Grid */}

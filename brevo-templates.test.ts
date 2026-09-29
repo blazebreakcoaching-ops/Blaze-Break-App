@@ -6,6 +6,7 @@ import {
   buildMfaEnabledEmail,
   buildMfaDisabledEmail,
   buildSupportRequestReceivedEmail,
+  buildAllyInviteEmail,
   buildInactivityWarningEmail,
   htmlToPlainTextFallback,
 } from './brevo-templates';
@@ -41,6 +42,32 @@ describe('email template builders', () => {
     expect(html).toMatch(/controlled early access/i);
   });
 
+  describe('buildAllyInviteEmail', () => {
+    it('embeds a real clickable <a href> for the invite link, never a bare URL', () => {
+      const { html } = buildAllyInviteEmail('Sam Taylor', 'https://blazebreak.example/ally/abc123token');
+      expect(html).toContain('<a href="https://blazebreak.example/ally/abc123token"');
+    });
+
+    it('uses the real inviter name in both the subject and body, never a generic "someone" placeholder', () => {
+      const { subject, html } = buildAllyInviteEmail('Sam Taylor', 'https://blazebreak.example/ally/abc123token');
+      expect(subject).toContain('Sam Taylor');
+      expect(html).toContain('Sam Taylor');
+      expect(subject.toLowerCase()).not.toContain('someone you know');
+      expect(html.toLowerCase()).not.toContain('someone you know');
+    });
+
+    it('HTML-escapes the inviter name, since it is real user-entered text', () => {
+      const { html } = buildAllyInviteEmail('<script>alert(1)</script>', 'https://blazebreak.example/ally/x');
+      expect(html).not.toContain('<script>alert(1)</script>');
+      expect(html).toContain('&lt;script&gt;');
+    });
+
+    it('is honest that this is not a crisis service', () => {
+      const { html } = buildAllyInviteEmail('Sam Taylor', 'https://blazebreak.example/ally/x');
+      expect(html).toMatch(/not a crisis service/i);
+    });
+  });
+
   it('inactivity warning embeds the sign-in link and is clear that signing in cancels the deletion', () => {
     const { subject, html } = buildInactivityWarningEmail('https://blazebreak.example/app');
     expect(subject).toMatch(/delet/i);
@@ -57,6 +84,7 @@ describe('email template builders', () => {
       buildMfaEnabledEmail,
       buildMfaDisabledEmail,
       buildSupportRequestReceivedEmail,
+      () => buildAllyInviteEmail('Sam Taylor', 'https://x/y'),
       () => buildInactivityWarningEmail('https://x/y'),
     ]) {
       const { subject, html } = build();
@@ -85,6 +113,7 @@ describe('htmlToPlainTextFallback', () => {
       buildMfaEnabledEmail,
       buildMfaDisabledEmail,
       buildSupportRequestReceivedEmail,
+      () => buildAllyInviteEmail('Sam Taylor', 'https://x/y'),
       () => buildInactivityWarningEmail('https://x/y'),
     ]) {
       const text = htmlToPlainTextFallback(build().html);
