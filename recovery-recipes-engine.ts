@@ -206,6 +206,11 @@ export interface SuggestedRecipeContext {
   capacity?: Capacity;
   timeAvailableMinutes?: number;
   movementUsage?: MovementUsageEntry[];
+  // Most-recent-first, deduped (src/lib/recovery-recipes-service.ts's
+  // getRecentSituations) - used only to avoid immediately re-suggesting
+  // the single most recently used situation, section 22's "contextual
+  // recipe recommendations" without requiring the AI route at all.
+  recentSituations?: SituationKey[];
 }
 
 // A default suggestion for when the person hasn't picked a situation yet
@@ -218,7 +223,53 @@ export const getSuggestedRecipe = (context: SuggestedRecipeContext): BuiltRecove
   if (typeof context.hourLocal === 'number' && context.hourLocal >= 17 && context.hourLocal < 23) {
     situationKey = 'need_switch_off';
   }
+  // Batch 7 (section 22's "contextual recipe recommendations") - if the
+  // time-of-day heuristic's own pick is itself the single most recently
+  // used situation, offer the universal reset instead of repeating it
+  // again straight away. Deliberately only ever steps back to
+  // just_need_reset (never picks some other specific situation out of
+  // thin air) - this stays a safe, explainable nudge, not a guess.
+  if (context.recentSituations?.[0] === situationKey && situationKey !== 'just_need_reset') {
+    situationKey = 'just_need_reset';
+  }
   return buildRecoveryRecipe({
     situationKey, capacity: context.capacity, timeAvailableMinutes: context.timeAvailableMinutes, movementUsage: context.movementUsage,
   });
+};
+
+// ---------- Batch 7: Nova intelligence (section 30) ----------
+
+// What the AI enhancement route (server.ts's /api/recovery-recipes/enhance)
+// is allowed to hand back - wording only, plus a reordering of step TYPES
+// that are already present in the recipe. Never a new step, never changed
+// step content/structure, never a changed template. src/lib/recovery-
+// recipes-ai.ts defensively re-validates this shape again client-side
+// before it ever reaches applyRecipeEnhancement below.
+export interface RecipeEnhancement {
+  reason: string;
+  reflectionQuestion?: string;
+  preferredStepOrder?: RecipeStepType[];
+}
+
+// Pure, additive refinement of an already-valid deterministic recipe -
+// never required (getRecipeFallback/buildRecoveryRecipe already produced a
+// complete recipe before this is ever called), and never able to add,
+// remove, or restructure a step. Reuses the exact same safe stable-sort
+// mechanism Batch 6 built for helpfulStepTypes, just applied to the
+// enhancement's preferredStepOrder instead.
+export const applyRecipeEnhancement = (recipe: BuiltRecoveryRecipe, enhancement: RecipeEnhancement): BuiltRecoveryRecipe => {
+  let optionalSteps = recipe.optionalSteps;
+  if (enhancement.preferredStepOrder?.length) {
+    const rank = new Map(enhancement.preferredStepOrder.map((t, i) => [t, i]));
+    optionalSteps = [...optionalSteps].sort((a, b) => (rank.get(a.type) ?? Infinity) - (rank.get(b.type) ?? Infinity));
+  }
+  const steps = enhancement.reflectionQuestion
+    ? recipe.steps.map((s) => (s.type === 'nova_reflection' ? { ...s, reflectionQuestions: [enhancement.reflectionQuestion!] } : s))
+    : recipe.steps;
+  return {
+    ...recipe,
+    reason: enhancement.reason || recipe.reason,
+    steps,
+    optionalSteps,
+  };
 };

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildRecoveryRecipe, getRecipeFallback, adaptRecoveryRecipe, getSuggestedRecipe } from './recovery-recipes-engine';
+import { buildRecoveryRecipe, getRecipeFallback, adaptRecoveryRecipe, getSuggestedRecipe, applyRecipeEnhancement } from './recovery-recipes-engine';
 import { RECIPE_TEMPLATES, SITUATION_ORDER } from './recovery-recipes-content';
 import { MovementUsageEntry } from './movement-snacks-recommendation';
 
@@ -165,6 +165,57 @@ describe('getSuggestedRecipe', () => {
   it('works with zero context at all (Firebase/Nova unavailable - section 31)', () => {
     const recipe = getSuggestedRecipe({});
     expect(recipe.steps.length).toBeGreaterThan(0);
+  });
+
+  it('steps back to the universal reset rather than repeating the single most recently used situation (Batch 7, section 22)', () => {
+    const recipe = getSuggestedRecipe({ hourLocal: 19, recentSituations: ['need_switch_off', 'hard_meeting'] });
+    expect(recipe.templateId).toBe('just_need_reset');
+  });
+
+  it('still suggests the time-of-day pick when it is not the most recent situation', () => {
+    const recipe = getSuggestedRecipe({ hourLocal: 19, recentSituations: ['hard_meeting', 'need_switch_off'] });
+    expect(recipe.templateId).toBe('need_switch_off');
+  });
+});
+
+describe('applyRecipeEnhancement (Batch 7 - Nova intelligence, section 30)', () => {
+  it('overwrites only the reason, never the steps or closingAction', () => {
+    const recipe = buildRecoveryRecipe({ situationKey: 'hard_meeting' });
+    const enhanced = applyRecipeEnhancement(recipe, { reason: 'A personalised reason.' });
+    expect(enhanced.reason).toBe('A personalised reason.');
+    expect(enhanced.steps).toEqual(recipe.steps);
+    expect(enhanced.closingAction).toBe(recipe.closingAction);
+  });
+
+  it('reorders optionalSteps by preferredStepOrder without dropping or adding anything, same guarantee as helpfulStepTypes', () => {
+    const recipe = buildRecoveryRecipe({ situationKey: 'slept_badly', capacity: 'almost_nothing' });
+    const expandedId = RECIPE_TEMPLATES.slept_badly.expandedSteps[0]!.id;
+    const deepId = RECIPE_TEMPLATES.slept_badly.deepStep!.id;
+    expect(recipe.optionalSteps.map((s) => s.id)).toEqual([expandedId, deepId]);
+
+    const enhanced = applyRecipeEnhancement(recipe, { reason: recipe.reason, preferredStepOrder: ['nova_reflection', 'release'] });
+    expect(enhanced.optionalSteps.map((s) => s.id)).toEqual([deepId, expandedId]);
+    expect(enhanced.steps.map((s) => s.id)).toEqual(recipe.steps.map((s) => s.id));
+  });
+
+  it('replaces a nova_reflection step\'s question with reflectionQuestion, never adding or removing a step', () => {
+    const recipe = buildRecoveryRecipe({ situationKey: 'guilty_resting' });
+    const enhanced = applyRecipeEnhancement(recipe, { reason: recipe.reason, reflectionQuestion: 'A personalised question?' });
+    const reflectionStep = enhanced.steps.find((s) => s.type === 'nova_reflection');
+    expect(reflectionStep?.reflectionQuestions).toEqual(['A personalised question?']);
+    expect(enhanced.steps.length).toBe(recipe.steps.length);
+  });
+
+  it('leaves a recipe with no nova_reflection step completely unchanged when reflectionQuestion is given anyway', () => {
+    const recipe = buildRecoveryRecipe({ situationKey: 'numb' });
+    const enhanced = applyRecipeEnhancement(recipe, { reason: recipe.reason, reflectionQuestion: 'Should never attach anywhere.' });
+    expect(enhanced.steps).toEqual(recipe.steps);
+  });
+
+  it('is a genuine no-op beyond wording/order when the enhancement supplies nothing extra', () => {
+    const recipe = buildRecoveryRecipe({ situationKey: 'over_capacity' });
+    const enhanced = applyRecipeEnhancement(recipe, { reason: recipe.reason });
+    expect(enhanced).toEqual(recipe);
   });
 });
 

@@ -13,13 +13,14 @@ import {
   DURATION_CATEGORY_LABELS, DurationCategory, RecipeStep, RecipeStepType, RecipeFeedback, HelpfulPartId,
   RECIPE_FEEDBACK_OPTIONS, HELPFUL_PART_OPTIONS, getStepsByIds,
 } from '../../recovery-recipes-content';
-import { buildRecoveryRecipe, adaptRecoveryRecipe, BuiltRecoveryRecipe } from '../../recovery-recipes-engine';
+import { buildRecoveryRecipe, adaptRecoveryRecipe, applyRecipeEnhancement, BuiltRecoveryRecipe } from '../../recovery-recipes-engine';
 import {
   loadRecipePreferences, updateRecipePreferences, recordRecipeHistory, loadRecentRecipeHistory,
   deriveStepTypePreferences, saveRecoveryRecipe, loadSavedRecipes, markRecipeUsed, toggleFavouriteRecipe,
   SavedRecoveryRecipe,
 } from '../lib/recovery-recipes-service';
 import { logRecipeEvent } from '../lib/recovery-recipes-analytics';
+import { getRecipeEnhancement } from '../lib/recovery-recipes-ai';
 import { MOVEMENT_SNACKS } from '../../movement-snacks-content';
 import { GroundingLens } from '../../grounding-content';
 
@@ -79,6 +80,33 @@ export const RecoveryRecipes = ({ fingerprint: _fingerprint, onAwardPoints }: Re
   // how many optional steps get added on afterward.
   const [historyWritten, setHistoryWritten] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
+  // Batch 7's Nova intelligence (section 30) - identifies which enhancement
+  // request is the current one, so a slow response for a recipe the person
+  // has already moved past (picked another situation, started over) never
+  // overwrites whatever's actually on screen by the time it resolves.
+  const enhancementRequestIdRef = useRef(0);
+
+  // Fires a non-blocking request to personalise the reason/reflection
+  // wording and reorder optionalSteps by likely relevance - the recipe
+  // shown is already complete and valid without this (buildRecoveryRecipe
+  // ran synchronously above), so nothing here is ever awaited before the
+  // preview/player renders, and a failure (see getRecipeEnhancement) is
+  // simply a no-op.
+  const requestEnhancement = (built: BuiltRecoveryRecipe, situationKey: SituationKey, situationCapacity?: Capacity) => {
+    if (!flags.enable_recovery_recipes_dynamic_sequencing) return;
+    const requestId = ++enhancementRequestIdRef.current;
+    const optionalStepTypes = [...new Set(built.optionalSteps.map((s) => s.type))];
+    const hasReflectionStep = built.steps.some((s) => s.type === 'nova_reflection');
+    getRecipeEnhancement({
+      situationKey,
+      capacity: situationCapacity,
+      optionalStepTypes: optionalStepTypes.length > 0 ? optionalStepTypes : undefined,
+      hasReflectionStep: hasReflectionStep || undefined,
+    }).then((enhancement) => {
+      if (!enhancement || enhancementRequestIdRef.current !== requestId) return;
+      setRecipe((current) => (current ? applyRecipeEnhancement(current, enhancement) : current));
+    });
+  };
 
   useEffect(() => {
     if (!auth.currentUser) return;
@@ -111,6 +139,7 @@ export const RecoveryRecipes = ({ fingerprint: _fingerprint, onAwardPoints }: Re
       setSkippedStepTypes([]);
       setHistoryWritten(false);
       setView('preview');
+      requestEnhancement(built, detail.situationKey, detail.capacity);
       rootRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     };
     window.addEventListener('open_recovery_recipe', handler);
@@ -168,6 +197,7 @@ export const RecoveryRecipes = ({ fingerprint: _fingerprint, onAwardPoints }: Re
     setSkippedStepTypes([]);
     setHistoryWritten(false);
     setView('preview');
+    requestEnhancement(built, selectedSituation, capacity);
   };
 
   const handleMakeShorter = () => {
@@ -183,7 +213,9 @@ export const RecoveryRecipes = ({ fingerprint: _fingerprint, onAwardPoints }: Re
     setCapacity(saved.capacity);
     if (auth.currentUser) markRecipeUsed(auth.currentUser.uid, saved.id).catch(() => {});
     if (adapt) {
-      setRecipe(buildRecoveryRecipe({ situationKey: saved.situationKey, capacity: saved.capacity, preferredDurationCategory, helpfulStepTypes }));
+      const built = buildRecoveryRecipe({ situationKey: saved.situationKey, capacity: saved.capacity, preferredDurationCategory, helpfulStepTypes });
+      setRecipe(built);
+      requestEnhancement(built, saved.situationKey, saved.capacity);
     } else {
       const base = buildRecoveryRecipe({ situationKey: saved.situationKey, capacity: saved.capacity });
       const resolvedSteps = getStepsByIds(saved.stepIds);
