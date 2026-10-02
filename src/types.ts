@@ -43,11 +43,13 @@ export interface BurnoutFingerprint {
 export interface EnergyCredit {
   id: string;
   task: string;
+  // Derived from `priority` via a fixed severity->value mapping (Today's
+  // Capacity Plan's load math), never a user-chosen arbitrary number.
   cost: number;
   priority: 'High' | 'Medium' | 'Low';
   type: 'Executive' | 'Emotional' | 'Physical' | 'Social';
   shipStage?: 'Safety' | 'Habits' | 'Identity' | 'Purpose';
-  action?: 'keep' | 'delegate' | 'defer';
+  action?: 'keep' | 'reduce' | 'delegate' | 'defer' | 'drop';
 }
 
 export interface DayPlan {

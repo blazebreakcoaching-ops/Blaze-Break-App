@@ -1,9 +1,9 @@
 import { auth } from '../lib/firebase';
 import { db } from '../lib/firestore';
-import { collection, doc, setDoc, getDoc, getDocs, updateDoc, deleteDoc, deleteField, query, orderBy } from 'firebase/firestore';
+import { collection, doc, setDoc, getDocs, updateDoc, deleteDoc, deleteField, query, orderBy } from 'firebase/firestore';
 import { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Plus, Minus, BatteryFull, Zap, Waves, Users, X, AlertCircle, History, CheckCircle2, PieChart, Loader2 } from 'lucide-react';
+import { Plus, BatteryFull, Zap, Waves, Users, X, AlertCircle, History, CheckCircle2, PieChart, Loader2 } from 'lucide-react';
 import { useFocusTrap } from '../lib/useFocusTrap';
 import {
   BarChart,
@@ -23,6 +23,36 @@ import { ShipJourney } from './ShipJourney';
 import { RelapseRadar } from './RelapseRadar';
 import { DebtTracker } from './DebtTracker';
 import { SHIPStage } from '../types';
+import { loadLatestCapacityCheckIn } from '../lib/energy-delta-service';
+import { saturate } from '../../energy-delta-engine';
+import { DEMO_PLANNED_TASKS, DEMO_CAPACITY_CHECKIN } from '../lib/demo-data';
+
+// Today's Capacity Plan - the same Energy Delta model as the Energy &
+// Capacity tool above it on this tab (Capacity - Net Load = Energy
+// Delta), applied to today's planned demands instead of ongoing
+// stressors. No separate credit/budget system: Available Capacity comes
+// from the same capacity check-in, and each task's load is derived from
+// its strain severity rather than a freely-chosen number.
+
+const SEVERITY_BASE_VALUES: Record<'High' | 'Medium' | 'Low', number> = { Low: 15, Medium: 30, High: 45 };
+
+type TaskAction = NonNullable<EnergyCredit['action']>;
+
+// How much of a task's load today's chosen action removes - mirrors the
+// Energy Audit's reduction-level reasoning (section 4), just collapsed
+// into a single action instead of a separate "how much" question, since
+// here the action already implies the answer.
+const ACTION_REDUCTION: Record<TaskAction, number> = {
+  keep: 0, reduce: 0.3, delegate: 0.8, defer: 1, drop: 1,
+};
+
+const ACTION_LABELS: Record<TaskAction, string> = {
+  keep: 'Keep', reduce: 'Reduce', delegate: 'Delegate', defer: 'Defer', drop: 'Drop',
+};
+
+const taskBaseValue = (t: Pick<EnergyCredit, 'priority'>): number => SEVERITY_BASE_VALUES[t.priority];
+const taskNetValue = (t: Pick<EnergyCredit, 'priority' | 'action'>): number =>
+  taskBaseValue(t) * (1 - (t.action ? ACTION_REDUCTION[t.action] : 0));
 
 export const EnergyBudgetTool = ({
   onAwardPoints,
@@ -49,7 +79,7 @@ export const EnergyBudgetTool = ({
     Purpose: 'Purpose'
   };
 
-  const [budgetState, setBudgetState] = useState(60);
+  const [capacity, setCapacity] = useState<number | null>(null);
   const [tasks, setTasks] = useState<(EnergyCredit & { createdAt?: string })[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -58,7 +88,6 @@ export const EnergyBudgetTool = ({
   const [newPriority, setNewPriority] = useState<EnergyCredit['priority']>('Medium');
   const [newShipStage, setNewShipStage] = useState<'Safety' | 'Habits' | 'Identity' | 'Purpose'>('Safety');
   const [sortBy, setSortBy] = useState<'default' | 'drain-high' | 'drain-low' | 'ship-stage' | 'priority'>('default');
-  const [newCost, setNewCost] = useState(10);
   const [hasCommitted, setHasCommitted] = useState(false);
   const [taskToDelete, setTaskToDelete] = useState<string | null>(null);
   const deleteDialogRef = useFocusTrap(!!taskToDelete);
@@ -69,58 +98,49 @@ export const EnergyBudgetTool = ({
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [taskToDelete]);
-  const [filterAction, setFilterAction] = useState<undefined | 'keep' | 'delegate' | 'defer'>();
+  const [filterAction, setFilterAction] = useState<undefined | TaskAction>();
 
   const uid = auth.currentUser?.uid;
 
   const fetchAll = async () => {
+    if (isDemoSession) {
+      setTasks(DEMO_PLANNED_TASKS);
+      setCapacity(DEMO_CAPACITY_CHECKIN.score);
+      setLoading(false);
+      return;
+    }
     if (!uid) return;
     setLoading(true);
     try {
-      const [creditsSnap, settingsSnap] = await Promise.all([
+      const [creditsSnap, checkIn] = await Promise.all([
         getDocs(query(collection(db, 'users', uid, 'energy_credits'), orderBy('createdAt', 'desc'))),
-        getDoc(doc(db, 'users', uid, 'energy_credits_settings', 'current')),
+        loadLatestCapacityCheckIn(uid),
       ]);
       setTasks(creditsSnap.docs.map(d => ({ id: d.id, ...d.data() } as EnergyCredit & { createdAt?: string })));
-      if (settingsSnap.exists()) {
-        setBudgetState(settingsSnap.data().budget ?? 60);
-      }
+      setCapacity(checkIn?.score ?? null);
     } catch (e) {
-      setError('Could not load your energy budget.');
+      setError('Could not load your capacity plan.');
     }
     setLoading(false);
   };
-  useEffect(() => { fetchAll(); }, [uid]);
+  useEffect(() => { fetchAll(); }, [uid, isDemoSession]);
 
-  const persistBudget = async (value: number) => {
-    if (!uid) return;
-    try {
-      await setDoc(doc(db, 'users', uid, 'energy_credits_settings', 'current'), {
-        budget: value,
-        updatedAt: new Date().toISOString(),
-      });
-    } catch (e) {
-      setError('This entry could not be saved.');
-    }
-  };
+  const activeTasks = useMemo(() => tasks.filter(t => t.action !== 'drop'), [tasks]);
+  const droppedTasks = useMemo(() => tasks.filter(t => t.action === 'drop'), [tasks]);
 
-  const setBudget = (value: number) => {
-    setBudgetState(value);
-    persistBudget(value);
-  };
+  const grossLoad = useMemo(() => saturate(activeTasks.map(taskBaseValue)), [activeTasks]);
+  const netLoad = useMemo(() => saturate(activeTasks.map(taskNetValue)), [activeTasks]);
+  const capacityProtected = grossLoad - netLoad;
+  const hasCapacity = capacity !== null;
+  const energyDelta = hasCapacity ? capacity! - netLoad : null;
+  const remainingBuffer = hasCapacity ? Math.max(0, capacity! - netLoad) : null;
 
-  const budget = budgetState;
-
-  const totalSpent = tasks.reduce((sum, t) => sum + t.cost, 0);
-  const currentRatio = isNaN(totalSpent / budget) ? 0 : totalSpent / budget;
-  const isOverBudget = totalSpent > budget;
-
-  const toggleTaskAction = async (id: string, action: 'keep' | 'delegate' | 'defer') => {
-    if (!uid) return;
+  const toggleTaskAction = async (id: string, action: TaskAction) => {
     const task = tasks.find(t => t.id === id);
     if (!task) return;
     const nextAction = task.action === action ? undefined : action;
     setTasks(current => current.map(t => t.id === id ? { ...t, action: nextAction } : t));
+    if (isDemoSession || !uid) return;
     try {
       await updateDoc(doc(db, 'users', uid, 'energy_credits', id), { action: nextAction ?? deleteField(), updatedAt: new Date().toISOString() });
     } catch (e) {
@@ -129,31 +149,31 @@ export const EnergyBudgetTool = ({
   };
 
   const typeConfig: Record<string, { color: string, glow: string, icon: any }> = {
-
     Executive: { color: 'bg-card dark:bg-white', glow: 'shadow-muted-foreground/20', icon: Zap },
     Emotional: { color: 'bg-primary', glow: 'shadow-primary/20', icon: Waves },
     Social: { color: 'bg-text-main', glow: 'shadow-surface', icon: Users },
     Physical: { color: 'bg-teal-500', glow: 'shadow-teal-500/20', icon: BatteryFull },
   };
 
-  // Analyze tasks for delegation
+  // A short, honest read on where today's load is concentrated - never
+  // claims a "Recovery Velocity Score" or any other measurement this
+  // tool doesn't actually compute.
   const getAIAnalysis = () => {
-    if (tasks.length === 0) return `"You have not loaded your schedule into the matrix yet. A baseline analysis requires data."`;
-    
-    // Find highest cost tasks that might be delegated
-    const highCostSocial = tasks.filter(t => t.cost >= 20 && (t.type === 'Social' || t.task.toLowerCase().includes('meeting')));
-    const highCostExec = tasks.filter(t => t.cost >= 25 && t.type === 'Executive');
-    
+    if (tasks.length === 0) return `"Add today's tasks below and I'll help you see where the load is concentrated."`;
+
+    const highCostSocial = tasks.filter(t => t.cost >= 30 && (t.type === 'Social' || t.task.toLowerCase().includes('meeting')));
+    const highCostExec = tasks.filter(t => t.cost >= 40 && t.type === 'Executive');
+
     if (highCostSocial.length > 0) {
-      return `"To improve your Recovery Velocity Score, I suggest delegating or deferring '${highCostSocial[0].task}'. It is currently consuming a significant portion of your energy cap. Reallocating this will stabilise your baseline."`;
+      return `"Consider delegating or deferring '${highCostSocial[0].task}' - it's carrying a lot of today's load. Moving it would free up real capacity."`;
     } else if (highCostExec.length > 0) {
-      return `"Your executive function is heavily taxed by '${highCostExec[0].task}'. To protect your Recovery Velocity, consider time-boxing this or breaking it down into smaller micro-commitments."`;
+      return `"'${highCostExec[0].task}' is taking up a big share of your capacity today. Time-boxing it or breaking it into smaller pieces could help."`;
     }
-    
-    return `"Your allocation matrix is well balanced. Continue monitoring for unexpected neuro-cognitive load."`;
+
+    return `"Today's load looks reasonably balanced. Keep an eye on anything that comes up unexpectedly."`;
   };
 
-  const sortedTasks = [...tasks]
+  const sortedTasks = [...activeTasks]
     .filter(t => filterAction ? t.action === filterAction : true)
     .sort((a, b) => {
     if (sortBy === 'drain-high') {
@@ -174,9 +194,7 @@ export const EnergyBudgetTool = ({
   });
 
   const addTask = async () => {
-    if (!newTaskName || !uid) return;
-    const currentActiveStage = STAGE_MAP[currentStage] || 'Safety';
-    const isAnchor = currentActiveStage === newShipStage;
+    if (!newTaskName) return;
 
     const id = Date.now().toString();
     const createdAt = new Date().toISOString();
@@ -184,7 +202,7 @@ export const EnergyBudgetTool = ({
       id,
       task: newTaskName,
       type: newType as any,
-      cost: newCost,
+      cost: SEVERITY_BASE_VALUES[newPriority],
       priority: newPriority,
       shipStage: newShipStage,
       createdAt,
@@ -192,6 +210,8 @@ export const EnergyBudgetTool = ({
 
     setTasks(prev => [newTask, ...prev]);
     setNewTaskName('');
+
+    if (isDemoSession || !uid) return;
 
     try {
       await setDoc(doc(db, 'users', uid, 'energy_credits', id), {
@@ -209,34 +229,33 @@ export const EnergyBudgetTool = ({
       return;
     }
 
-    logJourney('Energy Budget Update', `Added task: '${newTaskName}' (Cost: ${newCost}, Type: ${newType})`);
-
-    if (isAnchor) {
-      onAwardPoints(25, `Phase Anchor Task Integrated (+15 bonus)`);
-    } else {
-      onAwardPoints(10, "Neural Load Assessment");
-    }
+    logJourney('Capacity Plan Update', `Added task: '${newTaskName}' (${newPriority} strain, ${newType})`);
+    // Flat points regardless of SHIP-pillar match - the pillar tag (shown
+    // as a "Phase Anchor" badge in the list below) is for the user's own
+    // reference, not something that should be gamed for bonus points.
+    onAwardPoints(10, 'Added to Today\'s Load');
   };
 
   const handleCommit = () => {
-    if (!isOverBudget && !hasCommitted) {
+    if (!hasCommitted) {
       setHasCommitted(true);
-      logJourney('Energy Budget Update', `Locked allocation matrix with ${tasks.length} tasks and ${totalSpent}/${budget} credits spent`);
-      onAwardPoints(50, "Allocation Matrix Locked");
+      logJourney('Capacity Plan Update', `Locked today's plan with ${activeTasks.length} active tasks`);
+      onAwardPoints(50, "Today's Plan Locked In");
     }
   };
 
   const removeTask = (id: string) => {
     const taskObj = tasks.find(t => t.id === id);
-    if(taskObj) logJourney('Energy Budget Update', `Removed task: '${taskObj.task}'`);
+    if (taskObj) logJourney('Capacity Plan Update', `Removed task: '${taskObj.task}'`);
     setTaskToDelete(id);
   };
 
   const confirmDeleteTask = async () => {
-    if (!taskToDelete || !uid) return;
+    if (!taskToDelete) return;
     const id = taskToDelete;
     setTaskToDelete(null);
     setTasks(current => current.filter(t => t.id !== id));
+    if (isDemoSession || !uid) return;
     try {
       await deleteDoc(doc(db, 'users', uid, 'energy_credits', id));
     } catch (e) {
@@ -245,9 +264,10 @@ export const EnergyBudgetTool = ({
   };
 
   const weeklyData = useMemo(() => {
+    const now = new Date();
     return Array.from({ length: 7 }).map((_, i) => {
       const daysAgo = 6 - i;
-      const date = new Date(Date.now() - daysAgo * 24 * 60 * 60 * 1000);
+      const date = new Date(now.getTime() - daysAgo * 24 * 60 * 60 * 1000);
       const dateStr = date.toISOString().split('T')[0];
       const dayTasks = tasks.filter(t => t.createdAt?.startsWith(dateStr));
       const byType = { Executive: 0, Social: 0, Emotional: 0, Physical: 0 };
@@ -261,8 +281,8 @@ export const EnergyBudgetTool = ({
     });
   }, [tasks]);
 
-  const overloadDays = weeklyData.filter(d => d.total > budget);
-  const safeDays = weeklyData.filter(d => d.total <= budget && d.total > 0);
+  const overloadDays = hasCapacity ? weeklyData.filter(d => d.total > capacity!) : [];
+  const safeDays = hasCapacity ? weeklyData.filter(d => d.total <= capacity! && d.total > 0) : [];
 
   if (loading) {
     return (
@@ -282,21 +302,20 @@ export const EnergyBudgetTool = ({
            {/* "Energy & Capacity" is already the dominant heading on
                EnergyBudgetMatrix.tsx just above this on the Recover tab -
                this tag intentionally doesn't repeat it as a second
-               competing section heading (section 34's explicit "remove
-               any duplicate Energy & Capacity heading" instruction). */}
+               competing section heading. */}
            <div className="tag">Energy Delta Management · Core Pillar: Rebuild</div>
            <div className="h-px flex-1 bg-border/40" />
         </div>
         <div className="group/tooltip relative inline-flex items-center mb-4">
           <h3 className="text-4xl sm:text-5xl font-display font-medium text-text-main tracking-tight cursor-help underline decoration-primary/30 underline-offset-8 decoration-dashed">
-            Daily Energy Budget
+            Today's Capacity Plan
           </h3>
           <div className="absolute left-0 top-full mt-4 p-4 w-80 bg-card text-text-main text-sm font-medium rounded-lg border border-border shadow-lg opacity-0 invisible group-hover/tooltip:opacity-100 group-hover/tooltip:visible transition-all z-50 pointer-events-none">
             <div className="text-xs uppercase font-medium tracking-widest text-[#9a3412] dark:text-primary mb-2">What this shows</div>
-            See where your energy actually goes. Add daily tasks below to see how they draw down your total capacity.
+            See where today's planned demand sits against the capacity you actually have. Add tasks below to see how they draw on it.
           </div>
         </div>
-        <p className="text-xl text-text-muted font-medium  mt-2">Plan today's tasks against the capacity you actually have.</p>
+        <p className="text-xl text-text-muted font-medium mt-2">Plan today's tasks against the capacity you actually have.</p>
       </div>
 
       {/* SHIP Journey Phase */}
@@ -321,12 +340,14 @@ export const EnergyBudgetTool = ({
                 <h3 className="text-xl font-display font-medium text-text-main">Weekly Energy Load</h3>
                 <p className="text-xs uppercase font-medium tracking-[0.25em] text-text-muted mt-1">By category, over the last 7 days</p>
               </div>
-              <div className="flex items-center gap-4 text-xs">
-                <div className="flex items-center gap-1.5 font-medium text-destructive dark:text-[#f87171]">
-                  <div className="w-2.5 h-2.5 rounded-full bg-destructive" />
-                  Overload Threshold
+              {hasCapacity && (
+                <div className="flex items-center gap-4 text-xs">
+                  <div className="flex items-center gap-1.5 font-medium text-destructive dark:text-[#f87171]">
+                    <div className="w-2.5 h-2.5 rounded-full bg-destructive" />
+                    Your Available Capacity
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
 
             <div className="h-80 w-full">
@@ -336,23 +357,23 @@ export const EnergyBudgetTool = ({
                   margin={{ top: 20, right: 10, left: -20, bottom: 5 }}
                 >
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E2E8F0" className="dark:stroke-border" />
-                  <XAxis 
-                    dataKey="day" 
+                  <XAxis
+                    dataKey="day"
                     tick={{ fill: 'currentColor', fontSize: 10 }}
                     axisLine={false}
                     tickLine={false}
-                    className="text-text-muted" 
+                    className="text-text-muted"
                   />
-                  <YAxis 
+                  <YAxis
                     tick={{ fill: 'currentColor', fontSize: 10 }}
                     axisLine={false}
                     tickLine={false}
-                    className="text-text-muted" 
+                    className="text-text-muted"
                     domain={[0, 100]}
                   />
-                  <Tooltip 
-                    contentStyle={{ 
-                      backgroundColor: 'rgba(15, 23, 42, 0.95)', 
+                  <Tooltip
+                    contentStyle={{
+                      backgroundColor: 'rgba(15, 23, 42, 0.95)',
                       borderColor: '#334155',
                       borderRadius: '12px',
                       color: '#fff'
@@ -360,18 +381,20 @@ export const EnergyBudgetTool = ({
                     itemStyle={{ fontSize: '11px', fontWeight: 'bold' }}
                     labelStyle={{ fontSize: '11px', fontWeight: 'extrabold', color: '#fff', marginBottom: '4px' }}
                   />
-                  <Legend 
-                    verticalAlign="bottom" 
-                    height={36} 
+                  <Legend
+                    verticalAlign="bottom"
+                    height={36}
                     iconType="circle"
                     iconSize={8}
-                    wrapperStyle={{ fontSize: '10px', textTransform: 'uppercase', fontWeight: 'bold' }} 
+                    wrapperStyle={{ fontSize: '10px', textTransform: 'uppercase', fontWeight: 'bold' }}
                   />
                   <Bar dataKey="Executive" stackId="energy" fill="#312E81" />
                   <Bar dataKey="Social" stackId="energy" fill="#38BDF8" />
                   <Bar dataKey="Emotional" stackId="energy" fill="#14B8A6" />
                   <Bar dataKey="Physical" stackId="energy" fill="#F43F5E" radius={[4, 4, 0, 0]} />
-                  <ReferenceLine y={budget} stroke="#EF4444" strokeDasharray="5 5" label={{ value: `Capacitance limit (${budget} CR)`, fill: '#EF4444', fontSize: 9, position: 'top', fontWeight: 'bold' }} />
+                  {hasCapacity && (
+                    <ReferenceLine y={capacity!} stroke="#EF4444" strokeDasharray="5 5" label={{ value: `Your available capacity (${capacity})`, fill: '#EF4444', fontSize: 9, position: 'top', fontWeight: 'bold' }} />
+                  )}
                 </BarChart>
               </ResponsiveContainer>
             </div>
@@ -380,96 +403,76 @@ export const EnergyBudgetTool = ({
               <div className="flex items-center gap-3 p-3 bg-destructive/5 dark:bg-destructive/10 rounded-xl border border-destructive/15">
                 <AlertCircle className="w-5 h-5 text-destructive" />
                 <div className="text-xs leading-tight text-text-muted font-sans font-bold">
-                  <span className="text-destructive dark:text-[#f87171] font-extrabold uppercase tracking-wide">System warning:</span>{' '}
-                  {overloadDays.length > 0
-                    ? <>{overloadDays.map(d => d.day).join(' & ')} active strain exceeded baseline capacitance. Autocortex recovery protocols activated.</>
-                    : 'No days this week exceeded baseline capacitance.'}
+                  <span className="text-destructive dark:text-[#f87171] font-extrabold uppercase tracking-wide">Heads up:</span>{' '}
+                  {!hasCapacity
+                    ? 'Check in on your capacity to see this comparison.'
+                    : overloadDays.length > 0
+                      ? <>{overloadDays.map(d => d.day).join(' & ')} demand exceeded your available capacity that day.</>
+                      : 'No days this week exceeded your available capacity.'}
                 </div>
               </div>
               <div className="flex items-center gap-3 p-3 bg-success/5 dark:bg-success/10 rounded-xl border border-success/15">
                 <CheckCircle2 className="w-5 h-5 text-success dark:text-[#4ade80]" />
                 <div className="text-xs leading-tight text-text-muted font-sans font-bold">
-                  <span className="text-success dark:text-[#4ade80] font-extrabold uppercase tracking-wide">Weekend buffer check:</span>{' '}
+                  <span className="text-success dark:text-[#4ade80] font-extrabold uppercase tracking-wide">Within capacity:</span>{' '}
                   {safeDays.length > 0
-                    ? <>{safeDays.map(d => d.day).join(' & ')} load maintained safely under budget. High recharge score synchronised.</>
+                    ? <>{safeDays.map(d => d.day).join(' & ')} stayed within your available capacity.</>
                     : 'No load logged yet this week.'}
                 </div>
               </div>
             </div>
           </div>
 
-          <div className="card p-6 sm:p-8 md:p-10 space-y-10 relative overflow-hidden border border-border">
-            <div className="flex items-center justify-between relative z-10">
-              <div>
-                <h3 className="text-xl font-display font-medium text-text-main tracking-tight">Daily Energy Budget</h3>
-                <p className="text-xs text-text-muted uppercase tracking-[0.2em] font-medium mt-1">Available Daily Credits</p>
-              </div>
-              <div className="flex items-center gap-6 p-1 bg-surface rounded-full border border-border">
-                <button
-                  onClick={() => setBudget(Math.max(20, budget - 10))}
-                  aria-label="Decrease daily credit budget by 10"
-                  className="w-12 h-12 flex items-center justify-center rounded-full hover:bg-white dark:hover:bg-card transition-all text-text-muted hover:text-primary active:scale-90"
-                >
-                  <Minus className="w-5 h-5" />
-                </button>
-                <div className="flex flex-col items-center min-w-[100px]" role="status" aria-live="polite" aria-atomic="true">
-                  <motion.span 
-                    key={budget}
-                    initial={{ scale: 0.8, opacity: 0 }}
-                    animate={{ scale: 1, opacity: 1 }}
-                    className="font-display text-4xl font-black text-text-main"
-                  >
-                    {budget}
-                  </motion.span>
-                </div>
-                <button 
-                  onClick={() => setBudget(budget + 10)}
-                  aria-label="Increase daily credit budget by 10"
-                  className="w-12 h-12 flex items-center justify-center rounded-full hover:bg-white dark:hover:bg-card transition-all text-text-muted hover:text-primary active:scale-90"
-                >
-                  <Plus className="w-5 h-5" />
-                </button>
+          <div className="card p-6 sm:p-8 md:p-10 space-y-8 relative overflow-hidden border border-border">
+            <div className="relative z-10">
+              <h3 className="text-xl font-display font-medium text-text-main tracking-tight">Today's Capacity Plan</h3>
+              <p className="text-xs text-text-muted uppercase tracking-[0.2em] font-medium mt-1">Capacity vs. planned demand</p>
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-6 relative z-10">
+              <StatTile label="Available Capacity" value={hasCapacity ? `${capacity}` : null} emptyText="Not checked in yet" />
+              <StatTile label="Planned Load" value={activeTasks.length > 0 ? `${Math.round(netLoad)}` : null} emptyText="Nothing planned yet" />
+              <StatTile label="Remaining Buffer" value={remainingBuffer !== null ? `${Math.round(remainingBuffer)}` : null} emptyText="Not checked in yet" />
+              <StatTile label="Capacity Protected" value={capacityProtected > 0 ? `+${Math.round(capacityProtected)}` : null} emptyText="Not yet" />
+              <div className="col-span-2 sm:col-span-1">
+                <p className="text-[11px] font-black uppercase tracking-widest text-text-muted">Energy Delta</p>
+                {energyDelta !== null ? (
+                  <p className={cn("text-3xl font-display font-black tracking-tighter", energyDelta < 0 ? 'text-destructive' : 'text-primary')}>
+                    {energyDelta > 0 ? '+' : ''}{Math.round(energyDelta)}
+                  </p>
+                ) : (
+                  <p className="text-sm font-bold text-text-muted">Not checked in yet</p>
+                )}
               </div>
             </div>
 
-            <div className="space-y-6 relative z-10">
-              <div className="flex justify-between items-end">
-                <div className="space-y-1">
-                   <p className="text-xs uppercase font-black tracking-[0.25e] text-text-muted">Total Resource Load</p>
-                   <p className={cn("text-3xl font-display font-bold", isOverBudget ? 'text-destructive dark:text-[#f87171]' : 'text-[#9a3412] dark:text-primary')}>
-                      {totalSpent} <span className="text-base text-text-muted font-medium tracking-normal">/ {budget} credits</span>
-                   </p>
-                </div>
-                {isOverBudget && (
-                  <motion.div 
-                    initial={{ x: 20, opacity: 0 }}
-                    animate={{ x: 0, opacity: 1 }}
-                    className="flex items-center gap-3 px-4 py-2 bg-destructive/10 border border-destructive/20 rounded-xl text-destructive dark:text-[#f87171] text-xs font-black uppercase tracking-widest"
-                  >
-                     <AlertCircle className="w-4 h-4" /> System Overload Detected
-                  </motion.div>
-                )}
-              </div>
-              
-              <div className="h-4 bg-surface/50 rounded-full overflow-hidden flex shadow-inner border border-border/20 p-0.5">
-                {tasks.map((task, i) => (
-                  <motion.div 
-                    key={task.id} 
+            {activeTasks.length > 0 && (
+              <div className="h-4 bg-surface/50 rounded-full overflow-hidden flex shadow-inner border border-border/20 p-0.5 relative z-10">
+                {activeTasks.map((task) => (
+                  <motion.div
+                    key={task.id}
                     initial={{ width: 0 }}
-                    animate={{ width: `${(task.cost / budget) * 100}%` }}
-                    transition={{ delay: i * 0.1, duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
+                    animate={{ width: `${taskNetValue(task)}%` }}
+                    transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
                     className={cn(typeConfig[task.type]?.color || 'bg-surface', "h-full first:rounded-l-full last:rounded-r-full border-r border-black/10")}
                   />
                 ))}
               </div>
-            </div>
+            )}
+
+            {!hasCapacity && (
+              <p className="text-xs text-text-muted relative z-10">Check in on your capacity in Energy &amp; Capacity above to see your Energy Delta and Remaining Buffer here.</p>
+            )}
+            {hasCapacity && energyDelta !== null && energyDelta < 0 && (
+              <p className="text-xs text-text-muted relative z-10">You've planned more demand than today's available capacity currently supports.</p>
+            )}
           </div>
 
           <div className="space-y-6">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 px-2">
               <div className="flex items-center gap-3">
                 <History className="w-5 h-5 text-text-muted" />
-                <h4 className="text-[11px] font-black text-text-muted uppercase tracking-[0.3em]">Load Manifest</h4>
+                <h4 className="text-[11px] font-black text-text-muted uppercase tracking-[0.3em]">Today's Load</h4>
               </div>
               <div className="flex items-center gap-2">
                 <span className="text-[11px] uppercase font-black tracking-widest text-text-muted ">Sort Filters:</span>
@@ -482,16 +485,16 @@ export const EnergyBudgetTool = ({
                   <option value="default">Default Sync Order</option>
                   <option value="drain-high">Energy Drain (High ➜ Low)</option>
                   <option value="drain-low">Energy Drain (Low ➜ High)</option>
-                  <option value="priority">Load Severity (High ➜ Low)</option>
+                  <option value="priority">Strain Severity (High ➜ Low)</option>
                   <option value="ship-stage">SHIP Pillar Alignment</option>
                 </select>
               </div>
             </div>
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
               <button onClick={() => setFilterAction(undefined)} aria-pressed={!filterAction} className={cn("px-3 py-1.5 rounded-full text-xs font-bold uppercase tracking-widest transition-all", !filterAction ? "bg-primary text-primary-foreground dark:bg-border dark:text-text-main" : "bg-surface text-text-muted hover:bg-border dark:bg-white/5 dark:hover:bg-white/10 dark:text-text-muted")}>All Load</button>
-              <button onClick={() => setFilterAction('keep')} aria-pressed={filterAction === 'keep'} className={cn("px-3 py-1.5 rounded-full text-xs font-bold uppercase tracking-widest transition-all", filterAction === 'keep' ? "bg-success text-white shadow-md shadow-success/20" : "bg-surface text-text-muted hover:bg-border dark:bg-white/5 dark:hover:bg-white/10 dark:text-text-muted")}>Keep</button>
-              <button onClick={() => setFilterAction('delegate')} aria-pressed={filterAction === 'delegate'} className={cn("px-3 py-1.5 rounded-full text-xs font-bold uppercase tracking-widest transition-all", filterAction === 'delegate' ? "bg-warning text-warning-foreground shadow-md shadow-warning/20" : "bg-surface text-text-muted hover:bg-border dark:bg-white/5 dark:hover:bg-white/10 dark:text-text-muted")}>Delegate</button>
-              <button onClick={() => setFilterAction('defer')} aria-pressed={filterAction === 'defer'} className={cn("px-3 py-1.5 rounded-full text-xs font-bold uppercase tracking-widest transition-all", filterAction === 'defer' ? "bg-destructive text-destructive-foreground shadow-md shadow-destructive/20" : "bg-surface text-text-muted hover:bg-border dark:bg-white/5 dark:hover:bg-white/10 dark:text-text-muted")}>Defer</button>
+              {(['keep', 'reduce', 'delegate', 'defer'] as const).map((action) => (
+                <button key={action} onClick={() => setFilterAction(action)} aria-pressed={filterAction === action} className={cn("px-3 py-1.5 rounded-full text-xs font-bold uppercase tracking-widest transition-all", filterAction === action ? "bg-primary text-primary-foreground shadow-md shadow-primary/20" : "bg-surface text-text-muted hover:bg-border dark:bg-white/5 dark:hover:bg-white/10 dark:text-text-muted")}>{ACTION_LABELS[action]}</button>
+              ))}
             </div>
             <div className="grid grid-cols-1 gap-4">
               <AnimatePresence mode="popLayout">
@@ -501,7 +504,7 @@ export const EnergyBudgetTool = ({
                   const currentActiveStage = STAGE_MAP[currentStage] || 'Safety';
                   const isAnchor = task.shipStage === currentActiveStage;
                   return (
-                    <motion.div 
+                    <motion.div
                       key={task.id}
                       layout
                       initial={{ opacity: 0, scale: 0.95 }}
@@ -509,8 +512,8 @@ export const EnergyBudgetTool = ({
                       exit={{ opacity: 0, scale: 0.9, x: -20 }}
                       className={cn(
                         "flex items-center gap-6 p-6 border rounded-[2.5rem] transition-all duration-500 group relative overflow-hidden",
-                        isAnchor 
-                          ? "bg-success/5 hover:bg-success/10 border-success/30" 
+                        isAnchor
+                          ? "bg-success/5 hover:bg-success/10 border-success/30"
                           : "bg-surface/40 hover:bg-card border-border/40"
                       )}
                     >
@@ -541,17 +544,23 @@ export const EnergyBudgetTool = ({
                         </div>
                         <p className="text-[11px] uppercase tracking-[0.2em] font-black text-text-muted  mt-1.5">{task.type}</p>
                       </div>
-                      <div className="flex flex-col items-end gap-1 relative z-10 mr-4">
-                        <span className="font-display font-black text-2xl text-text-main group-hover:scale-110 transition-transform">{task.cost}</span>
-                        <span className="text-[10px] font-black uppercase tracking-widest text-text-muted ">CR</span>
-                      </div>
                       <div className="flex flex-col gap-1 relative z-10 border-l border-border/40 pl-6 mr-2">
-                         <button onClick={() => toggleTaskAction(task.id, 'keep')} aria-pressed={task.action === 'keep'} className={cn("text-[11px] font-black uppercase tracking-widest px-2 py-1 rounded transition-all w-20 text-center", task.action === 'keep' ? "bg-success text-white shadow-md shadow-success/20" : "text-[#166534] dark:text-[#4ade80] hover:bg-success/10")}>Keep</button>
-                         <button onClick={() => toggleTaskAction(task.id, 'delegate')} aria-pressed={task.action === 'delegate'} className={cn("text-[11px] font-black uppercase tracking-widest px-2 py-1 rounded transition-all w-20 text-center", task.action === 'delegate' ? "bg-warning text-warning-foreground shadow-md shadow-warning/20" : "text-[#9a3412] dark:text-warning hover:bg-warning/10")}>Delegate</button>
-                         <button onClick={() => toggleTaskAction(task.id, 'defer')} aria-pressed={task.action === 'defer'} className={cn("text-[11px] font-black uppercase tracking-widest px-2 py-1 rounded transition-all w-20 text-center", task.action === 'defer' ? "bg-destructive text-destructive-foreground shadow-md shadow-destructive/20" : "text-destructive dark:text-[#f87171] hover:bg-destructive/10")}>Defer</button>
+                         {(['keep', 'reduce', 'delegate', 'defer', 'drop'] as const).map((action) => (
+                           <button
+                             key={action}
+                             onClick={() => toggleTaskAction(task.id, action)}
+                             aria-pressed={task.action === action}
+                             className={cn(
+                               "text-[11px] font-black uppercase tracking-widest px-2 py-1 rounded transition-all w-20 text-center",
+                               task.action === action ? "bg-primary text-primary-foreground shadow-md shadow-primary/20" : "text-text-muted hover:bg-primary/10"
+                             )}
+                           >
+                             {ACTION_LABELS[action]}
+                           </button>
+                         ))}
                       </div>
-                      <button 
-                        onClick={() => removeTask(task.id)} 
+                      <button
+                        onClick={() => removeTask(task.id)}
                         aria-label={`Remove ${task.type} task`}
                         className="p-4 text-text-muted hover:text-destructive dark:hover:text-[#f87171] hover:bg-destructive/5 rounded-full transition-all relative z-10 group-hover:opacity-100 opacity-0"
                       >
@@ -566,7 +575,14 @@ export const EnergyBudgetTool = ({
                    <div className="w-16 h-16 bg-surface mx-auto rounded-xl flex items-center justify-center text-text-muted">
                       <Zap className="w-7 h-7" />
                    </div>
-                   <p className="text-text-muted font-medium">Nothing added yet — your energy budget is at baseline.</p>
+                   <p className="text-text-muted font-medium">Nothing planned yet — today's load is at baseline.</p>
+                </div>
+              )}
+              {droppedTasks.length > 0 && (
+                <div className="pt-4 flex flex-wrap gap-2">
+                  {droppedTasks.map((t) => (
+                    <span key={t.id} className="px-3 py-1.5 rounded-lg bg-surface border border-border/40 text-xs font-bold text-text-muted line-through">{t.task}</span>
+                  ))}
                 </div>
               )}
             </div>
@@ -574,16 +590,6 @@ export const EnergyBudgetTool = ({
         </div>
 
         <div className="lg:col-span-4 space-y-10">
-          <div className="card p-6 border border-warning/20 bg-warning/5">
-            <h4 className="text-sm font-medium uppercase tracking-widest text-[#9a3412] dark:text-warning mb-2 flex items-center gap-2">
-              <Zap className="w-4 h-4" /> Tracking Active
-            </h4>
-            <p className="text-text-main font-medium text-xs leading-relaxed">
-              Integrations connected via <strong>Nova Overload Shield</strong> automatically factor in your calendar and message load here,
-              so if things spike, your budget adjusts to reflect it.
-            </p>
-          </div>
-
           <RelapseRadar />
 
           <div className="card p-6 sm:p-8 md:p-10 space-y-8 border border-primary/20 relative overflow-hidden group">
@@ -592,7 +598,7 @@ export const EnergyBudgetTool = ({
                  <div className="w-1.5 h-1.5 rounded-full bg-primary" />
                  <h4 className="text-xs font-medium text-text-muted uppercase tracking-[0.3em]">Add a Task</h4>
               </div>
-              
+
               <div className="space-y-6">
                 <div className="space-y-4">
                   <p className="text-xs uppercase font-black tracking-widest text-text-muted ">Load Description</p>
@@ -607,7 +613,7 @@ export const EnergyBudgetTool = ({
                 </div>
 
                 <div className="space-y-4">
-                  <p className="text-xs uppercase font-black tracking-widest text-text-muted ">Overview</p>
+                  <p className="text-xs uppercase font-black tracking-widest text-text-muted ">Category</p>
                   <div className="grid grid-cols-2 gap-3">
                     {Object.keys(typeConfig).map(type => (
                       <button
@@ -616,12 +622,12 @@ export const EnergyBudgetTool = ({
                         aria-pressed={newType === type}
                         className={cn(
                           "py-4 rounded-2xl border text-xs font-black uppercase tracking-widest transition-all",
-                          newType === type 
-                            ? "bg-primary text-primary-foreground border-primary shadow-xl shadow-primary/30 scale-[1.02]" 
+                          newType === type
+                            ? "bg-primary text-primary-foreground border-primary shadow-xl shadow-primary/30 scale-[1.02]"
                             : "bg-surface/40 text-text-muted border-border/40 hover:border-border dark:hover:border-border"
                         )}
                       >
-                        {type}
+                        {type === 'Executive' ? 'Executive / Work' : type}
                       </button>
                     ))}
                   </div>
@@ -637,8 +643,8 @@ export const EnergyBudgetTool = ({
                         aria-pressed={newPriority === p}
                         className={cn(
                           "py-3 rounded-xl border text-[11px] font-black uppercase tracking-widest transition-all",
-                          newPriority === p 
-                            ? "bg-card dark:bg-white text-text-main border-none shadow-xl scale-[1.02]" 
+                          newPriority === p
+                            ? "bg-card dark:bg-white text-text-main border-none shadow-xl scale-[1.02]"
                             : "bg-surface/40 text-text-muted border-border/40 hover:border-border"
                         )}
                       >
@@ -675,28 +681,10 @@ export const EnergyBudgetTool = ({
                       );
                     })}
                   </div>
-                  <p className="text-[11px] text-text-muted  px-1 font-semibold italic">● Indicates your active Recovery phase pillar. Matching it awards bonus points.</p>
+                  <p className="text-[11px] text-text-muted  px-1 font-semibold italic">● Indicates your active Recovery phase pillar - a tag for your own reference, worth keeping in view as you plan.</p>
                 </div>
 
-                <div className="space-y-6 pt-4">
-                  <div className="flex justify-between items-end px-2">
-                    <p className="text-xs uppercase font-black tracking-widest text-text-muted ">Capacitance Cost</p>
-                    <p className="font-display font-black text-2xl text-[#9a3412] dark:text-primary">{newCost} <span className="text-xs font-black">CR</span></p>
-                  </div>
-                  <input 
-                    type="range" 
-                    min="5" 
-                    max="50" 
-                    step="5"
-                    value={newCost}
-                    onChange={e => setNewCost(parseInt(e.target.value))}
-                    aria-label="Capacitance cost"
-                    aria-valuetext={`${newCost} credits`}
-                    className="w-full h-1.5 bg-surface/50 rounded-full appearance-none cursor-pointer accent-primary border border-border"
-                  />
-                </div>
-
-                <div className="space-y-4 pt-6">
+                <div className="space-y-4 pt-2">
                   <button
                     onClick={addTask}
                     disabled={!newTaskName}
@@ -707,7 +695,7 @@ export const EnergyBudgetTool = ({
 
                   <button
                     onClick={handleCommit}
-                    disabled={isOverBudget || hasCommitted}
+                    disabled={hasCommitted}
                     className={cn(
                       "w-full py-5 rounded-[2rem] text-xs font-black uppercase tracking-[0.2em] transition-all border",
                       hasCommitted
@@ -715,7 +703,7 @@ export const EnergyBudgetTool = ({
                         : "bg-surface/40 text-text-muted border-border hover:bg-white dark:hover:bg-surface disabled:opacity-30"
                     )}
                   >
-                    {hasCommitted ? "Budget Locked In" : "Lock In Today's Budget"}
+                    {hasCommitted ? "Today's Plan Locked In" : "Lock In Today's Plan"}
                   </button>
                 </div>
               </div>
@@ -761,7 +749,7 @@ export const EnergyBudgetTool = ({
                 <div>
                   <h3 id="delete-task-title" className="text-xl font-display font-medium text-text-main mb-2">Delete Task?</h3>
                   <p className="text-text-muted text-sm">
-                    This removes it from your energy budget for good. Are you sure?
+                    This removes it from today's plan for good. Are you sure?
                   </p>
                 </div>
                 <div className="flex gap-4">
@@ -786,3 +774,14 @@ export const EnergyBudgetTool = ({
     </div>
   );
 };
+
+const StatTile = ({ label, value, emptyText }: { label: string; value: string | null; emptyText: string }) => (
+  <div className="space-y-1">
+    <p className="text-[11px] font-black uppercase tracking-widest text-text-muted">{label}</p>
+    {value !== null ? (
+      <p className="text-3xl font-display font-bold text-[#9a3412] dark:text-primary">{value}</p>
+    ) : (
+      <p className="text-sm font-bold text-text-muted">{emptyText}</p>
+    )}
+  </div>
+);

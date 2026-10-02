@@ -721,11 +721,15 @@ service cloud.firestore {
             && request.resource.data.priority in ['High', 'Medium', 'Low']
             && request.resource.data.type in ['Executive', 'Emotional', 'Physical', 'Social']
             && (!('shipStage' in request.resource.data) || request.resource.data.shipStage in ['Safety', 'Habits', 'Identity', 'Purpose'])
-            && (!('action' in request.resource.data) || request.resource.data.action in ['keep', 'delegate', 'defer'])
+            && (!('action' in request.resource.data) || request.resource.data.action in ['keep', 'reduce', 'delegate', 'defer', 'drop'])
             && (request.method == 'create' ? true : checkCreatedAtUnchanged());
       }
 
-      // P. energy_credits_settings/current (the daily/total budget number for EnergyBudgetTool)
+      // P. energy_credits_settings/current - the old per-day credit
+      // budget EnergyBudgetTool no longer reads or writes (replaced by
+      // the real Available Capacity from a capacity check-in, the same
+      // Energy Delta source EnergyBudgetMatrix.tsx uses). Left in place
+      // untouched so any existing value stays readable.
       match /energy_credits_settings/current {
         allow read: if isOwner(uid);
         allow write: if isOwner(uid)

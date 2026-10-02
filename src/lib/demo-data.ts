@@ -170,6 +170,21 @@ export const DEMO_DAILY_SNAPSHOTS: {
   { date: "2026-09-21", capacity: 52, grossLoad: 55, netLoad: 50, capacityProtected: 5, energyDelta: 2, updatedAt: "2026-09-21T18:00:00.000Z" },
 ];
 
+// Today's Capacity Plan's demo task list - a few planned demands for
+// today, one already marked delegated, so the demo session shows
+// Capacity Protected actually moving rather than a flat empty plan.
+const SEVERITY_TO_COST: Record<'High' | 'Medium' | 'Low', number> = { Low: 15, Medium: 30, High: 45 };
+const demoTask = (
+  id: string, task: string, type: 'Executive' | 'Emotional' | 'Social' | 'Physical', priority: 'High' | 'Medium' | 'Low',
+  shipStage: 'Safety' | 'Habits' | 'Identity' | 'Purpose', action?: 'keep' | 'reduce' | 'delegate' | 'defer' | 'drop'
+) => ({ id, task, type, priority, cost: SEVERITY_TO_COST[priority], shipStage, action, createdAt: new Date().toISOString() });
+
+export const DEMO_PLANNED_TASKS = [
+  demoTask('demo-t1', 'Finish the Q3 board deck', 'Executive', 'High', 'Safety'),
+  demoTask('demo-t2', 'Mentor check-in with Priya', 'Social', 'Medium', 'Habits', 'keep'),
+  demoTask('demo-t3', 'Reply to the vendor escalation thread', 'Executive', 'Medium', 'Safety', 'delegate'),
+];
+
 // Recovery Debt v2's sleep fixtures - three logged nights averaging a
 // 1.5h shortfall, matching DEMO_STATS.debts's own Sleep Shortfall value
 // above so the demo session tells one consistent story rather than two
