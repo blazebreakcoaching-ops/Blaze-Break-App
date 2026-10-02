@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { MinusCircle, Brain, Trash2, Clock, Users, Zap, CheckCircle2, WifiOff } from 'lucide-react';
+import { MinusCircle, Brain, Trash2, Clock, Users, Zap, CheckCircle2, WifiOff, HelpCircle, Share2, CircleDot } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { BurnoutFingerprint } from '../types';
 import { secureApiFetch } from '../lib/secure-api';
@@ -8,6 +8,8 @@ import { updateNovaMemoryBySourceAndType } from '../lib/nova-brain';
 import { auth } from '../lib/firebase';
 import { loadStressors, resolveStressor, reportStressorReduction, addStressor } from '../lib/energy-delta-service';
 import { Stressor, ReductionLevel } from '../../energy-delta-engine';
+import { recordOneLessThingCompletion, loadOneLessThingTotalCompletions, recordRediscoveryClue } from '../lib/rediscovery-service';
+import { shouldAskWhyOnPlate, PLATE_REASON_ORDER, PLATE_REASON_LABELS, PlateReasonId } from '../../rediscovery-engine';
 
 interface OneLessThingProps {
   fingerprint: BurnoutFingerprint | null;
@@ -16,25 +18,52 @@ interface OneLessThingProps {
 
 type Step = 'initial' | 'input' | 'analyzing' | 'result';
 
-// The four possible outcomes each carry their own destructive/success/
-// primary/warning color, but that color behaves differently depending on
-// what it sits on. On the solid bgColorClass background, only the
-// matching -foreground token is readable (verified: white works for
-// destructive/success, dark ink works for primary/warning - using one
-// fixed color for all four fails badly on two of them). On a plain card,
-// each color has its own light/dark pass-fail pattern already established
-// elsewhere this session.
+// ONE LESS THING's seven possible outcomes - "Nova should help the user
+// identify one actual demand. Do not create a long productivity exercise."
+// Nova (or the offline heuristic) suggests one; the user can pick a
+// different one from this same list at any time.
+type OutcomeAction = 'Cancel' | 'Delegate' | 'Delay' | 'Make Smaller' | 'Ask For Help' | 'Share' | 'Keep';
+
+const OUTCOME_ORDER: OutcomeAction[] = ['Cancel', 'Delegate', 'Delay', 'Make Smaller', 'Ask For Help', 'Share', 'Keep'];
+
+// Each outcome carries its own destructive/success/primary/warning/neutral
+// color, but a solid background only reads correctly with the matching
+// -foreground token (verified elsewhere this session) - reused rather
+// than inventing new design tokens for the two extra outcomes.
 const SOLID_BG_TEXT: Record<string, string> = {
   'text-destructive': 'text-destructive-foreground',
   'text-success': 'text-success-foreground',
   'text-primary': 'text-primary-foreground',
   'text-warning': 'text-warning-foreground',
+  'text-text-muted': 'text-text-main',
 };
 const CARD_TEXT: Record<string, string> = {
   'text-destructive': 'text-destructive dark:text-[#f87171]',
   'text-success': 'text-[#166534] dark:text-[#4ade80]',
   'text-primary': 'text-[#9a3412] dark:text-primary',
   'text-warning': 'text-[#9a3412] dark:text-warning',
+  'text-text-muted': 'text-text-muted',
+};
+
+const STYLE_BY_ACTION: Record<OutcomeAction, { icon: any; colorClass: string; bgColorClass: string; borderClass: string }> = {
+  Cancel: { icon: Trash2, colorClass: 'text-destructive', bgColorClass: 'bg-destructive', borderClass: 'border-destructive/30' },
+  Delegate: { icon: Users, colorClass: 'text-primary', bgColorClass: 'bg-primary', borderClass: 'border-primary/30' },
+  Delay: { icon: Clock, colorClass: 'text-warning', bgColorClass: 'bg-warning', borderClass: 'border-warning/30' },
+  'Make Smaller': { icon: Zap, colorClass: 'text-success', bgColorClass: 'bg-success', borderClass: 'border-success/30' },
+  'Ask For Help': { icon: HelpCircle, colorClass: 'text-primary', bgColorClass: 'bg-primary', borderClass: 'border-primary/30' },
+  Share: { icon: Share2, colorClass: 'text-success', bgColorClass: 'bg-success', borderClass: 'border-success/30' },
+  Keep: { icon: CircleDot, colorClass: 'text-text-muted', bgColorClass: 'bg-border', borderClass: 'border-border' },
+};
+
+// Delete/Delegate genuinely remove the demand. Delay/Make Smaller/Ask For
+// Help/Share all reduce it without fully resolving it. Keep makes no
+// change at all - "Do not award Capacity Protected merely because the
+// user opened or completed the workflow."
+const ACTION_RESOLVES: Record<OutcomeAction, boolean> = {
+  Cancel: true, Delegate: true, Delay: false, 'Make Smaller': false, 'Ask For Help': false, Share: false, Keep: false,
+};
+const ACTION_REDUCTION: Record<Exclude<OutcomeAction, 'Keep'>, ReductionLevel> = {
+  Cancel: 'a_lot', Delegate: 'a_lot', Delay: 'a_lot', 'Make Smaller': 'meaningfully', 'Ask For Help': 'meaningfully', Share: 'meaningfully',
 };
 
 export const OneLessThing = ({ fingerprint, onAwardPoints }: OneLessThingProps) => {
@@ -47,9 +76,6 @@ export const OneLessThing = ({ fingerprint, onAwardPoints }: OneLessThingProps) 
       isFirstStepRenderRef.current = false;
       return;
     }
-    // The 'input' step already moves focus itself via the textarea's autoFocus,
-    // so this only needs to handle the transitions that don't have a natural
-    // focus target (processing, result).
     if (step === 'input') return;
     const t = window.setTimeout(() => {
       const heading = stepContainerRef.current?.querySelector<HTMLElement>('h3');
@@ -64,54 +90,40 @@ export const OneLessThing = ({ fingerprint, onAwardPoints }: OneLessThingProps) 
   const [activeStressors, setActiveStressors] = useState<Stressor[]>([]);
   const [selectedStressorId, setSelectedStressorId] = useState<string | 'new' | ''>('');
   const [reducedCapacity, setReducedCapacity] = useState(false);
+  const [showWhyQuestion, setShowWhyQuestion] = useState(false);
+  const [whyAnswered, setWhyAnswered] = useState(false);
 
-  // Loaded once, right when the user opens the input step - this feature
-  // is meant to connect directly into Energy Delta Management (Capacity
-  // Protected), not operate as a separate gimmick, so it needs to know
-  // what's already logged.
   useEffect(() => {
     if (step !== 'input' || !auth.currentUser) return;
     loadStressors(auth.currentUser.uid).then((list) => setActiveStressors(list.filter((s) => s.status === 'active')));
   }, [step]);
 
   const [result, setResult] = useState<{
-    action: 'Delete' | 'Delay' | 'Delegate' | 'Simplify';
+    action: OutcomeAction;
     advice: string;
     template?: string;
     icon: any;
     colorClass: string;
     bgColorClass: string;
     borderClass: string;
-    // True when this came from the local fallback heuristic rather than a
-    // real Nova/Gemini call - so the result screen can say so honestly
-    // instead of claiming live analysis that didn't happen.
     isFallback: boolean;
   } | null>(null);
 
-  const STYLE_BY_ACTION: Record<'Delete' | 'Delay' | 'Delegate' | 'Simplify', { icon: any; colorClass: string; bgColorClass: string; borderClass: string }> = {
-    Delete: { icon: Trash2, colorClass: "text-destructive", bgColorClass: "bg-destructive", borderClass: "border-destructive/30" },
-    Simplify: { icon: Zap, colorClass: "text-success", bgColorClass: "bg-success", borderClass: "border-success/30" },
-    Delegate: { icon: Users, colorClass: "text-primary", bgColorClass: "bg-primary", borderClass: "border-primary/30" },
-    Delay: { icon: Clock, colorClass: "text-warning", bgColorClass: "bg-warning", borderClass: "border-warning/30" },
-  };
-
   // The local, deterministic fallback - used ONLY when the real Nova call
-  // fails (no network, server not configured, timeout). Kept as a genuine
-  // safety net so the button still does something useful offline, but the
-  // result screen marks it honestly as a fallback rather than presenting it
-  // as Nova's live reasoning.
+  // fails (no network, server not configured, timeout). Marked honestly
+  // on the result screen rather than presented as Nova's live reasoning.
   const heuristicOutcome = (rawTask: string) => {
     const lowerTask = rawTask.toLowerCase();
     if (lowerTask.includes('meeting') || lowerTask.includes('review')) {
       return {
-        action: 'Delete' as const,
+        action: 'Cancel' as const,
         advice: "This doesn't need to happen today, and possibly doesn't need to happen at all. Cancel it or ask for an async update.",
-        template: "Hi team, I’m re-evaluating priorities for today to protect focus time. Let's handle this update asynchronously via Slack/Email instead of a meeting.",
+        template: "Hi team, I'm re-evaluating priorities for today to protect focus time. Let's handle this update asynchronously via Slack/Email instead of a meeting.",
       };
     }
     if (lowerTask.includes('report') || lowerTask.includes('presentation') || lowerTask.includes('deck')) {
       return {
-        action: 'Simplify' as const,
+        action: 'Make Smaller' as const,
         advice: "Lower the fidelity. Stop trying to make it perfect. Give them the rough draft, the bullet points, or the raw data.",
         template: "Here is the raw data / rough outline. I wanted to get this to you quickly rather than over-polishing. Let me know if you need specific details expanded.",
       };
@@ -121,6 +133,13 @@ export const OneLessThing = ({ fingerprint, onAwardPoints }: OneLessThingProps) 
         action: 'Delegate' as const,
         advice: "You are hoarding execution. Hand this off. Let someone else solve it at 80% quality instead of you doing it at 100%.",
         template: "Hey, I need to pass this over to you to run with. Do your best with it, no need to run decisions by me unless it's a catastrophic blocker.",
+      };
+    }
+    if (lowerTask.includes('alone') || lowerTask.includes('myself') || lowerTask.includes('nobody')) {
+      return {
+        action: 'Ask For Help' as const,
+        advice: "You don't have to carry this entirely on your own. Name one specific person who could take part of it.",
+        template: "Could you help me with part of this? I don't need you to take the whole thing, just a piece of it.",
       };
     }
     return {
@@ -134,7 +153,7 @@ export const OneLessThing = ({ fingerprint, onAwardPoints }: OneLessThingProps) 
     if (!task.trim()) return;
     setStep('analyzing');
 
-    let outcome: { action: 'Delete' | 'Delay' | 'Delegate' | 'Simplify'; advice: string; template?: string };
+    let outcome: { action: OutcomeAction; advice: string; template?: string };
     let isFallback = false;
 
     try {
@@ -144,7 +163,7 @@ export const OneLessThing = ({ fingerprint, onAwardPoints }: OneLessThingProps) 
       });
       if (!res.ok) throw new Error('Nova analysis unavailable');
       const data = await res.json();
-      if (!['Delete', 'Delay', 'Delegate', 'Simplify'].includes(data.action)) throw new Error('Unexpected response');
+      if (!OUTCOME_ORDER.includes(data.action)) throw new Error('Unexpected response');
       outcome = { action: data.action, advice: data.advice, template: data.template };
     } catch {
       outcome = heuristicOutcome(task);
@@ -160,6 +179,14 @@ export const OneLessThing = ({ fingerprint, onAwardPoints }: OneLessThingProps) 
       confidence: 'verified',
       canEdit: true,
     });
+
+    // ONE LESS THING — DEEPER QUESTIONING: occasional, not every time.
+    if (auth.currentUser) {
+      const uid = auth.currentUser.uid;
+      const priorCompletions = await loadOneLessThingTotalCompletions(uid);
+      recordOneLessThingCompletion(uid).catch(() => {});
+      setShowWhyQuestion(shouldAskWhyOnPlate(priorCompletions));
+    }
   };
 
   const handleReset = () => {
@@ -169,17 +196,8 @@ export const OneLessThing = ({ fingerprint, onAwardPoints }: OneLessThingProps) 
     setSelectedStressorId('');
     setReducedCapacity(false);
     setActiveStressors([]);
-  };
-
-  // Delete/Delegate genuinely remove the demand; Delay/Simplify only
-  // reduce it for now (it still happens, just later or smaller) - same
-  // reduction-level reasoning as the Energy Audit's "Did this reduce the
-  // demand?" question, reused rather than invented fresh here.
-  const ACTION_RESOLVES: Record<'Delete' | 'Delay' | 'Delegate' | 'Simplify', boolean> = {
-    Delete: true, Delegate: true, Delay: false, Simplify: false,
-  };
-  const ACTION_REDUCTION: Record<'Delete' | 'Delay' | 'Delegate' | 'Simplify', ReductionLevel> = {
-    Delete: 'a_lot', Delegate: 'a_lot', Delay: 'a_lot', Simplify: 'meaningfully',
+    setShowWhyQuestion(false);
+    setWhyAnswered(false);
   };
 
   const handleConnectReduction = async () => {
@@ -193,7 +211,7 @@ export const OneLessThing = ({ fingerprint, onAwardPoints }: OneLessThingProps) 
       }
       if (ACTION_RESOLVES[result.action]) {
         await resolveStressor(uid, stressorId);
-      } else {
+      } else if (result.action !== 'Keep') {
         await reportStressorReduction(uid, stressorId, ACTION_REDUCTION[result.action]);
       }
       setReducedCapacity(true);
@@ -202,18 +220,29 @@ export const OneLessThing = ({ fingerprint, onAwardPoints }: OneLessThingProps) 
     }
   };
 
+  const handleWhyAnswer = (reasonId: PlateReasonId) => {
+    if (!auth.currentUser) { setWhyAnswered(true); return; }
+    recordRediscoveryClue(
+      auth.currentUser.uid,
+      'one_less_thing_why',
+      'Why was this on your plate in the first place?',
+      PLATE_REASON_LABELS[reasonId]
+    ).catch(() => {});
+    setWhyAnswered(true);
+  };
+
   return (
-    <div className="space-y-12 pb-24">
+    <div id="one-less-thing-section" className="space-y-12 pb-24">
       <div className="max-w-4xl">
         <div className="flex items-center gap-4 mb-4">
-           <div className="tag">Energy Delta Management · Core Pillar: Rebuild</div>
+           <div className="tag">Stabilise · Untangle · Core Pillar: Rebuild</div>
            <div className="h-px flex-1 bg-border/40" />
         </div>
         <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-6">
           <div className="space-y-4">
-            <h3 className="text-5xl font-display font-bold text-text-main tracking-tight">The "One Less Thing" Button</h3>
-            <p className="text-xl text-text-muted font-medium  max-w-2xl">
-              "Burnout prevention in one button. When you are overloaded, press this."
+            <h3 className="text-5xl font-display font-bold text-text-main tracking-tight">One Less Thing</h3>
+            <p className="text-xl text-text-muted font-medium max-w-2xl">
+              You may not need another recovery task. You may need less to carry.
             </p>
           </div>
         </div>
@@ -221,7 +250,7 @@ export const OneLessThing = ({ fingerprint, onAwardPoints }: OneLessThingProps) 
 
       <div ref={stepContainerRef} className="flex justify-center py-8">
         <AnimatePresence mode="wait">
-          
+
           {step === 'initial' && (
             <motion.div
               key="initial"
@@ -238,7 +267,7 @@ export const OneLessThing = ({ fingerprint, onAwardPoints }: OneLessThingProps) 
                   <MinusCircle className="w-12 h-12" />
                 </div>
                 <h3 className="text-3xl font-display font-bold text-center leading-tight mb-2">Help me remove<br/>one thing.</h3>
-                <p className="font-medium text-center">Tap to begin.</p>
+                <p className="font-medium text-center">Let's find something you can cancel, delay, delegate, shorten or stop carrying alone.</p>
               </button>
             </motion.div>
           )}
@@ -258,7 +287,7 @@ export const OneLessThing = ({ fingerprint, onAwardPoints }: OneLessThingProps) 
                 <h3 className="text-2xl font-display font-bold text-text-main">Identify the Weight</h3>
               </div>
               <p className="text-text-muted text-lg mb-6">What is the heaviest, most annoying, or most overwhelming thing on your plate right now?</p>
-              
+
               <textarea
                 autoFocus
                 aria-label="Identify the weight"
@@ -272,12 +301,12 @@ export const OneLessThing = ({ fingerprint, onAwardPoints }: OneLessThingProps) 
                   }
                 }}
               />
-              
+
               <div className="flex justify-end gap-4">
                 <button onClick={handleReset} className="px-6 py-3 font-bold text-text-muted hover:text-text-main transition-colors">
                   Cancel
                 </button>
-                <button 
+                <button
                   onClick={handleAnalyze}
                   disabled={!task.trim()}
                   className="btn-primary py-3 px-8 text-lg"
@@ -302,8 +331,8 @@ export const OneLessThing = ({ fingerprint, onAwardPoints }: OneLessThingProps) 
                transition={{ repeat: Infinity, duration: 2, ease: 'linear' }}
                className="w-20 h-20 border-4 border-primary/20 border-t-primary rounded-full mb-8 shrink-0"
               />
-              <h3 className="text-3xl font-display font-bold text-text-main mb-4">Nova is processing...</h3>
-              <p className="text-text-muted font-medium text-lg">Finding the structural weakness in this task so you can drop it.</p>
+              <h3 className="text-3xl font-display font-bold text-text-main mb-4">Nova is thinking...</h3>
+              <p className="text-text-muted font-medium text-lg">Finding the fastest way to genuinely take this off your plate.</p>
             </motion.div>
           )}
 
@@ -339,7 +368,7 @@ export const OneLessThing = ({ fingerprint, onAwardPoints }: OneLessThingProps) 
                       <p className="text-xl font-medium text-text-main leading-relaxed">
                          "{result.advice}"
                       </p>
-                      
+
                       {result.template && (
                         <div className="p-6 bg-surface dark:bg-surface/50 rounded-xl border border-border space-y-3">
                           <span className="text-xs font-black uppercase tracking-widest text-text-muted flex items-center gap-2">
@@ -351,10 +380,26 @@ export const OneLessThing = ({ fingerprint, onAwardPoints }: OneLessThingProps) 
                         </div>
                       )}
 
+                      {/* Let the user pick a different one of the seven
+                          outcomes instead, rather than only ever accepting
+                          Nova's single suggestion. */}
+                      <div className="flex flex-wrap gap-2">
+                        {OUTCOME_ORDER.filter((a) => a !== result.action).map((a) => (
+                          <button
+                            key={a}
+                            onClick={() => setResult({ ...result, action: a, ...STYLE_BY_ACTION[a] })}
+                            className="px-3 py-1.5 rounded-lg border border-border text-xs font-bold text-text-muted hover:text-text-main hover:border-primary/40 transition-colors"
+                          >
+                            {a} it instead
+                          </button>
+                        ))}
+                      </div>
+
                       {/* Connects this outcome into Energy Delta Management
                           (Capacity Protected) instead of leaving One Less
-                          Thing as a standalone gimmick. */}
-                      {!reducedCapacity ? (
+                          Thing as a standalone gimmick. Never shown for
+                          "Keep" - no genuine demand has been reduced. */}
+                      {result.action !== 'Keep' && (!reducedCapacity ? (
                         <div className="p-5 bg-surface dark:bg-surface/50 rounded-xl border border-border space-y-3">
                           <label htmlFor="one-less-thing-stressor" className="text-xs font-black uppercase tracking-widest text-text-muted block">
                             Is this one of your logged demands?
@@ -384,6 +429,29 @@ export const OneLessThing = ({ fingerprint, onAwardPoints }: OneLessThingProps) 
                         <div className="flex items-center gap-2 text-xs font-bold text-success dark:text-[#4ade80]">
                           <CheckCircle2 className="w-4 h-4" /> Capacity Protected updated.
                         </div>
+                      ))}
+
+                      {/* ONE LESS THING — DEEPER QUESTIONING */}
+                      {showWhyQuestion && !whyAnswered && (
+                        <div className="p-5 bg-surface dark:bg-surface/50 rounded-xl border border-border space-y-3">
+                          <label className="text-xs font-black uppercase tracking-widest text-text-muted block">
+                            Why was this on your plate in the first place?
+                          </label>
+                          <div className="flex flex-wrap gap-2">
+                            {PLATE_REASON_ORDER.map((id) => (
+                              <button
+                                key={id}
+                                onClick={() => handleWhyAnswer(id)}
+                                className="px-3 py-1.5 rounded-lg border border-border text-xs font-bold text-text-muted hover:text-text-main hover:border-primary/40 transition-colors"
+                              >
+                                {PLATE_REASON_LABELS[id]}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      {showWhyQuestion && whyAnswered && (
+                        <p className="text-xs text-text-muted italic">Noted - Nova will keep this in mind, nothing more.</p>
                       )}
                     </div>
 
@@ -392,7 +460,7 @@ export const OneLessThing = ({ fingerprint, onAwardPoints }: OneLessThingProps) 
                          <CheckCircle2 className="w-4 h-4 text-success dark:text-[#4ade80]" /> Nice work, one less thing
                       </span>
                       <button onClick={handleReset} className={cn("rounded-xl px-7 py-3 font-display font-semibold transition-all duration-300 hover:opacity-90", result.bgColorClass, SOLID_BG_TEXT[result.colorClass] || 'text-white')}>
-                        Task Removed
+                        Done
                       </button>
                     </div>
                   </div>

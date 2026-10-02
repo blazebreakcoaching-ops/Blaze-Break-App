@@ -64,7 +64,7 @@ describe('POST /api/nova/one-less-thing', () => {
     expect(callArg.contents.parts[0].text).toContain('The quarterly deck');
   });
 
-  it("rejects the model's own output if the action isn't one of the four valid values", async () => {
+  it("rejects the model's own output if the action isn't one of the valid outcomes", async () => {
     h.generateContent.mockImplementationOnce(async () => ({ text: JSON.stringify({ action: 'Ignore', advice: 'x', template: 'y' }) }));
     const res = await request(app).post('/api/nova/one-less-thing').set(auth(USER)).send({ task: 'something' });
     expect(res.status).toBe(500);
@@ -85,7 +85,7 @@ describe('POST /api/nova/one-less-thing', () => {
 });
 
 // This is a one-shot triage decision put directly to the user (pick one of
-// four actions on the thing they named), so it's one of the two "APPLY"
+// seven outcomes on the thing they named), so it's one of the two "APPLY"
 // surfaces for the style-TONE module (getNovaStyleToneAddendum) - not the
 // questioning-cadence module, since no question is ever asked here. See
 // the AUDIT comment above getNovaStyleToneAddendum in server.ts.
