@@ -21,6 +21,7 @@ import {
 } from '../lib/breathing-reset-service';
 import { loadLatestCapacityCheckIn, loadStressors } from '../lib/energy-delta-service';
 import { computeEnergyDelta } from '../../energy-delta-engine';
+import { startAmbientSoundscape, AmbientSoundscapeId } from '../lib/ambient-soundscape';
 
 interface NervousSystemResetProps {
   fingerprint: BurnoutFingerprint | null;
@@ -471,116 +472,14 @@ export const NervousSystemReset = ({ fingerprint, onAwardPoints }: NervousSystem
 
         audioEngineRef.current.oscillators.push(osc1, osc2, osc3, lfo);
 
-      } else if (soundscape === 'wind') {
-        // Filtered noise with a bandpass sweep - a whoosh character distinct
-        // from the lower, rumbling waves below. Starts at its "exhale" resting
-        // point; applyPhaseAudio takes over the actual swell/recede once
-        // breathing starts.
-        const bufferSize = ctx.sampleRate * 4;
-        const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
-        const data = buffer.getChannelData(0);
-        for (let i = 0; i < bufferSize; i++) {
-          data[i] = Math.random() * 2 - 1;
-        }
-
-        const source = ctx.createBufferSource();
-        source.buffer = buffer;
-        source.loop = true;
-
-        const filter = ctx.createBiquadFilter();
-        filter.type = 'bandpass';
-        filter.Q.setValueAtTime(0.8, now);
-        filter.frequency.setValueAtTime(500, now);
-
-        const gain = ctx.createGain();
-        gain.gain.setValueAtTime(0.12, now);
-
-        source.connect(filter);
-        filter.connect(gain);
-        gain.connect(ambientGain);
-
-        source.start(now);
-        audioEngineRef.current.noiseSources.push(source);
-
-        ambientBreathNodesRef.current = { filter, gain, baseFreq: 500, peakFreq: 1400, baseGain: 0.1, peakGain: 0.32 };
-
-      } else if (soundscape === 'waves') {
-        // Programmatic ocean tide synthesis (Pink-filtered surf noise).
-        // Genuinely breath-synced now - applyPhaseAudio drives the actual
-        // swell on inhale and recede on exhale via ambientBreathNodesRef,
-        // rather than this running on its own disconnected timer.
-        const bufferSize = ctx.sampleRate * 4;
-        const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
-        const data = buffer.getChannelData(0);
-        for (let i = 0; i < bufferSize; i++) {
-          data[i] = Math.random() * 2 - 1;
-        }
-
-        const source = ctx.createBufferSource();
-        source.buffer = buffer;
-        source.loop = true;
-
-        const filter = ctx.createBiquadFilter();
-        filter.type = 'lowpass';
-        filter.Q.setValueAtTime(2.0, now);
-        filter.frequency.setValueAtTime(220, now);
-
-        const gain = ctx.createGain();
-        gain.gain.setValueAtTime(0.22, now);
-
-        source.connect(filter);
-        filter.connect(gain);
-        gain.connect(ambientGain);
-
-        source.start(now);
-
-        audioEngineRef.current.noiseSources.push(source);
-
-        ambientBreathNodesRef.current = { filter, gain, baseFreq: 160, peakFreq: 520, baseGain: 0.16, peakGain: 0.4 };
-
-      } else if (soundscape === 'cosmic') {
-        const bufferSize = ctx.sampleRate * 4;
-        const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
-        const data = buffer.getChannelData(0);
-        for (let i = 0; i < bufferSize; i++) {
-          data[i] = Math.random() * 2 - 1;
-        }
-
-        const source = ctx.createBufferSource();
-        source.buffer = buffer;
-        source.loop = true;
-
-        const filter = ctx.createBiquadFilter();
-        filter.type = 'bandpass';
-        filter.Q.setValueAtTime(5.5, now);
-        filter.frequency.setValueAtTime(140, now);
-
-        const lfo = ctx.createOscillator();
-        lfo.frequency.setValueAtTime(0.04, now);
-        const lfoGain = ctx.createGain();
-        lfoGain.gain.setValueAtTime(90, now);
-
-        lfo.connect(lfoGain);
-        lfoGain.connect(filter.frequency);
-
-        const subHarmonic = ctx.createOscillator();
-        subHarmonic.type = 'triangle';
-        subHarmonic.frequency.setValueAtTime(63.2, now);
-        const subGain = ctx.createGain();
-        subGain.gain.setValueAtTime(0.05, now);
-
-        source.connect(filter);
-        filter.connect(ambientGain);
-
-        subHarmonic.connect(subGain);
-        subGain.connect(ambientGain);
-
-        source.start(now);
-        lfo.start(now);
-        subHarmonic.start(now);
-
-        audioEngineRef.current.noiseSources.push(source);
-        audioEngineRef.current.oscillators.push(lfo, subHarmonic);
+      } else if (soundscape === 'wind' || soundscape === 'waves' || soundscape === 'cosmic') {
+        // Delegates to the shared ambient-soundscape module (same module
+        // Anxiety Reset uses) so "Soft Wind"/"Ocean Drift"/"Night Air"
+        // are only ever synthesized in one place.
+        const handle = startAmbientSoundscape(ctx, ambientGain, soundscape as AmbientSoundscapeId);
+        audioEngineRef.current.noiseSources.push(...handle.noiseSources);
+        audioEngineRef.current.oscillators.push(...handle.oscillators);
+        ambientBreathNodesRef.current = handle.breathNodes;
       }
     };
 
@@ -885,6 +784,23 @@ export const NervousSystemReset = ({ fingerprint, onAwardPoints }: NervousSystem
     playZenChime();
   };
 
+  // Lets Anxiety Reset's breathing handoff hand this, the real shared
+  // breathing system, a pre-selected need - same window-event pattern as
+  // ResetStudio's reset_studio_select_state, so Anxiety Reset never has
+  // to duplicate a second breathing engine of its own.
+  useEffect(() => {
+    const handleSelectNeed = (e: Event) => {
+      const detail = (e as CustomEvent<Needs>).detail;
+      if (detail && BREATHING_NEED_ORDER.includes(detail)) {
+        setActiveSection('breathwork');
+        handleNeedSelect(detail);
+        document.getElementById('nervous-system-reset-section')?.scrollIntoView({ behavior: 'smooth' });
+      }
+    };
+    window.addEventListener('breathing_reset_select_need', handleSelectNeed);
+    return () => window.removeEventListener('breathing_reset_select_need', handleSelectNeed);
+  }, [preferredPractice]);
+
   // Shared by the Nova recommendation screen, the library, and Guided
   // Reset Mode's "slow the body" step - always the same comfort screen
   // between choosing a practice and actually starting it.
@@ -1087,7 +1003,7 @@ export const NervousSystemReset = ({ fingerprint, onAwardPoints }: NervousSystem
   }, [isPlaying]);
 
   return (
-    <div className="space-y-12 pb-24">
+    <div id="nervous-system-reset-section" className="space-y-12 pb-24">
       {/* Reset Confirmation Dialog Modal */}
       <AnimatePresence>
         {showResetConfirm && (
