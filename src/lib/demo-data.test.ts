@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { isDemoUser, DEMO_FINGERPRINT, DEMO_STATS, DEMO_VELOCITY_MAP, DEMO_ENERGY_COMMITMENTS, DEMO_DERIVED_SUMMARIES, DEMO_VOICE_JOURNAL_ENTRIES, DEMO_GUARDIANS } from './demo-data';
+import { isDemoUser, DEMO_FINGERPRINT, DEMO_STATS, DEMO_VELOCITY_MAP, DEMO_CAPACITY_CHECKIN, DEMO_ENERGY_STRESSORS, DEMO_DAILY_SNAPSHOTS, DEMO_RECOVERY_FEEDBACK, DEMO_DERIVED_SUMMARIES, DEMO_VOICE_JOURNAL_ENTRIES, DEMO_GUARDIANS } from './demo-data';
+import { computePreferredRecoveryAction } from '../../energy-delta-engine';
 import { BurnoutProfile } from '../types';
 
 // The exact, real archetype names this app uses - kept as a literal list
@@ -80,17 +81,44 @@ describe('DEMO_VELOCITY_MAP', () => {
   });
 });
 
-describe('DEMO_ENERGY_COMMITMENTS', () => {
+describe('DEMO_ENERGY_STRESSORS', () => {
   it('is every entry tagged isSample so EnergyBudgetMatrix never writes them to Firestore', () => {
-    expect(DEMO_ENERGY_COMMITMENTS.length).toBeGreaterThan(0);
-    for (const c of DEMO_ENERGY_COMMITMENTS) {
-      expect(c.isSample).toBe(true);
+    expect(DEMO_ENERGY_STRESSORS.length).toBeGreaterThan(0);
+    for (const s of DEMO_ENERGY_STRESSORS) {
+      expect(s.isSample).toBe(true);
     }
   });
 
-  it('has at least one active and one resolved commitment, for a populated-looking ledger', () => {
-    expect(DEMO_ENERGY_COMMITMENTS.some(c => c.status === 'active')).toBe(true);
-    expect(DEMO_ENERGY_COMMITMENTS.some(c => c.status !== 'active')).toBe(true);
+  it('has at least one active and one resolved stressor, for a populated-looking audit', () => {
+    expect(DEMO_ENERGY_STRESSORS.some(s => s.status === 'active')).toBe(true);
+    expect(DEMO_ENERGY_STRESSORS.some(s => s.status === 'resolved')).toBe(true);
+  });
+
+  it('has at least one stressor with a reduction reported, to demonstrate capacity protection', () => {
+    expect(DEMO_ENERGY_STRESSORS.some(s => !!s.reduction)).toBe(true);
+  });
+});
+
+describe('DEMO_CAPACITY_CHECKIN', () => {
+  it('has a score in range', () => {
+    expect(DEMO_CAPACITY_CHECKIN.score).toBeGreaterThanOrEqual(0);
+    expect(DEMO_CAPACITY_CHECKIN.score).toBeLessThanOrEqual(100);
+  });
+});
+
+describe('DEMO_DAILY_SNAPSHOTS', () => {
+  it('has at least 3 days, enough to clear the 7-day pattern\'s minimum-valid-days floor', () => {
+    expect(DEMO_DAILY_SNAPSHOTS.length).toBeGreaterThanOrEqual(3);
+  });
+
+  it('includes at least one strained day, to demonstrate the Sustained Capacity Gap card', () => {
+    expect(DEMO_DAILY_SNAPSHOTS.some(d => (d.energyDelta ?? 0) < -10)).toBe(true);
+  });
+});
+
+describe('DEMO_RECOVERY_FEEDBACK', () => {
+  it('clears computePreferredRecoveryAction\'s minimum, so the demo session shows a learned-preference chip', () => {
+    expect(computePreferredRecoveryAction(DEMO_RECOVERY_FEEDBACK)).not.toBeNull();
   });
 });
 

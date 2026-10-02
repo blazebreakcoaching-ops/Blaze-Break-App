@@ -54,7 +54,8 @@ export type FeatureFlag =
   | 'enable_recovery_recipes_dynamic_sequencing'
   | 'enable_recovery_recipes_favourites'
   | 'enable_recovery_recipes_grounding_integration'
-  | 'enable_responsibility_reset';
+  | 'enable_responsibility_reset'
+  | 'enable_energy_delta_v1';
 
 const DEFAULT_FLAGS: Record<FeatureFlag, boolean> = {
   enable_nova_voice: true,
@@ -111,6 +112,7 @@ const DEFAULT_FLAGS: Record<FeatureFlag, boolean> = {
   enable_recovery_recipes_favourites: true,
   enable_recovery_recipes_grounding_integration: true,
   enable_responsibility_reset: true,
+  enable_energy_delta_v1: true,
 };
 
 export const getFeatureFlags = (): Record<FeatureFlag, boolean> => {
