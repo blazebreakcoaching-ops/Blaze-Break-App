@@ -90,7 +90,7 @@ export const RecoveryPlan = ({
   // 1. Determine highest physiological debt
   const getHighestDebt = (): any => {
     const debts = stats.debts || [];
-    if (debts.length === 0) return { label: 'Neural Fatigue', value: 8, max: 20, unit: 'cr' };
+    if (debts.length === 0) return { label: 'Mental Fatigue', value: 8, max: 20, unit: '' };
     return [...debts].sort((a, b) => (b.value / b.max) - (a.value / a.max))[0];
   };
 
@@ -103,13 +103,13 @@ export const RecoveryPlan = ({
     
     let feedback: string;
     if (archetype === 'Founder on Fire') {
-      feedback = "Your identity is completely fused with the survival of your venture. Right now, your " + highestDebt.label + " is at " + Math.round(highestDebtRatio * 100) + "%. This is not an operational metric to optimise; it is a biological warning. Cease the fawning performance narratives and rest.";
+      feedback = "Your identity is completely fused with the survival of your venture. Right now, your " + highestDebt.label + " is at " + Math.round(highestDebtRatio * 100) + "%. This is worth taking seriously, not optimising around. Cease the fawning performance narratives and rest.";
     } else if (archetype === 'Over-Giver') {
-      feedback = "Your fawning habit has turned you into a safety net for everyone else's obligations. Your current " + highestDebt.label + " (" + Math.round(highestDebtRatio * 100) + "% load) is a physical proof of fawning. You are leaking energy by keeping others comfortable. Let's patch it.";
+      feedback = "Your fawning habit has turned you into a safety net for everyone else's obligations. Your current " + highestDebt.label + " (" + Math.round(highestDebtRatio * 100) + "% load) reflects a pattern of fawning. You are leaking energy by keeping others comfortable. Let's patch it.";
     } else if (archetype === 'Silent Resenter') {
-      feedback = "You are carrying intense resentment because you keep saying yes while your battery screams. Your " + highestDebt.label + " is at " + Math.round(highestDebtRatio * 100) + "% of total collapse. Resentment is your nervous system's way of showing where boundaries are needed.";
+      feedback = "You are carrying intense resentment because you keep saying yes while your capacity is already stretched. Your " + highestDebt.label + " is elevated, at " + Math.round(highestDebtRatio * 100) + "% of its tracked range. Resentment is often a sign of where a boundary is needed.";
     } else if (archetype === 'Manager in the Middle') {
-      feedback = "Squeezed between corporate targets and team fatigue, your neural buffers are depleted. Your " + highestDebt.label + " load is at " + Math.round(highestDebtRatio * 100) + "%. Today is about reclaiming your executive authority through radical, protective calendar scheduling.";
+      feedback = "Squeezed between corporate targets and team fatigue, your mental load is high. Your " + highestDebt.label + " load is at " + Math.round(highestDebtRatio * 100) + "%. Today is about reclaiming your executive authority through radical, protective calendar scheduling.";
     } else if (archetype === 'The Impostor') {
       feedback = "You keep adding proof to a case that's already closed. Your " + highestDebt.label + " is at " + Math.round(highestDebtRatio * 100) + "%. The wins are real — today is about letting one of them actually count.";
     } else if (archetype === 'The Perfectionist') {
@@ -152,8 +152,8 @@ export const RecoveryPlan = ({
 
       const items: ActionItem[] = [];
 
-    // section A: RECOVER (Tailored physiological rest based on highest debt)
-    if (debtLabel === 'Sleep Debt') {
+    // section A: RECOVER (tailored to whichever recovery-debt area is highest)
+    if (debtLabel === 'Sleep Shortfall') {
       items.push({
         id: 'rec_sleep_1',
         section: 'Recover',
@@ -170,7 +170,7 @@ export const RecoveryPlan = ({
         completed: completedIds.includes('rec_sleep_2'),
         tag: 'Circadian Stabilisation'
       });
-    } else if (debtLabel === 'Neural Fatigue') {
+    } else if (debtLabel === 'Mental Fatigue') {
       items.push({
         id: 'rec_neural_1',
         section: 'Recover',
@@ -188,7 +188,7 @@ export const RecoveryPlan = ({
         tag: 'Attention Shield'
       });
     } else {
-      // Social Overlap or other
+      // Social Load or other
       items.push({
         id: 'rec_social_1',
         section: 'Recover',

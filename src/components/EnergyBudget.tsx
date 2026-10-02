@@ -27,14 +27,14 @@ import { SHIPStage } from '../types';
 export const EnergyBudgetTool = ({
   onAwardPoints,
   currentStage = 'Safety',
-  debts = [],
+  isDemoSession,
   committedActionIds = [],
   onCommitAction,
   onNavigate,
 }: {
   onAwardPoints: (amount: number, reason: string) => void,
   currentStage?: SHIPStage,
-  debts?: any[],
+  isDemoSession?: boolean,
   // Threaded straight through to ShipJourney below - see that file for
   // why quest completion reuses this existing field/callback rather than
   // a new Firestore collection.
@@ -312,7 +312,7 @@ export const EnergyBudgetTool = ({
       {/* Layout Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 items-start">
         <div className="lg:col-span-8 space-y-10">
-          <DebtTracker debts={debts} />
+          <DebtTracker isDemoSession={isDemoSession} />
 
           {/* Recharts Stacked Weekly Allocation Chart */}
           <div className="card p-8 space-y-6 relative overflow-hidden border border-border">

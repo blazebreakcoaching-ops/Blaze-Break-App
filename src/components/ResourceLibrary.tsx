@@ -9,12 +9,12 @@ interface ResourceLibraryProps {
 const RESOURCES = [
   {
     id: 'r1',
-    title: 'Understanding Neural Fatigue',
+    title: 'Understanding Mental Fatigue',
     type: 'Guide',
     category: 'Safety',
     readTime: '8 min',
     icon: BookOpen,
-    description: 'A deep-dive into managing cognitive overload before it becomes physiological burnout.'
+    description: 'A deep-dive into managing cognitive overload before it builds into burnout.'
   },
   {
     id: 'r2',

@@ -35,9 +35,9 @@ export const DEMO_STATS: UserStats = {
   supportCircle: [],
   committedActionIds: [],
   debts: [
-    { id: "0", label: "Sleep Debt", value: 4, unit: "h", max: 15, color: "text-primary", impact: "Reduced emotional regulation.", novaNote: "Prefrontal fatigue detected. Unplug now." },
-    { id: "1", label: "Neural Fatigue", value: 7, unit: "cr", max: 20, color: "text-warning", impact: "Cognitive tunnel vision.", novaNote: "Neural de-escalation is needed. Pause planning." },
-    { id: "2", label: "Social Overlap", value: 2, unit: "h", max: 10, color: "text-text-main", impact: "Identity erosion from fawning.", novaNote: "Return to your baseline frame." },
+    { id: "0", label: "Sleep Shortfall", value: 1.5, unit: "h", max: 8, color: "text-primary", impact: "Short sleep can make concentration and emotional regulation harder.", novaNote: "Your sleep shortfall is building. Tonight's wind-down matters." },
+    { id: "1", label: "Mental Fatigue", value: 8, unit: "", max: 20, color: "text-warning", impact: "You may notice yourself rereading things or losing your train of thought.", novaNote: "Your mental load looks moderate. Protect one more focus block, then stop." },
+    { id: "2", label: "Social Load", value: 3, unit: "", max: 10, color: "text-text-main", impact: "Overcommitting while capacity is already low can leave less room for your own priorities.", novaNote: "Your social load is manageable right now - nothing to flag." },
   ],
   profile: {
     // A clearly-fake, self-labeling placeholder - never a real-sounding
@@ -138,6 +138,7 @@ export const DEMO_ENERGY_STRESSORS: {
   persistence: StressorPersistence;
   reduction?: ReductionLevel;
   action?: StressorAction;
+  capacityAtLogging?: number | null;
   status: 'active' | 'resolved';
   createdAt: string;
   updatedAt: string;
@@ -147,6 +148,7 @@ export const DEMO_ENERGY_STRESSORS: {
   { id: "demo-s2", name: "Covering a direct report's on-call rotation", category: "professional", severity: 3, persistence: "repeated", reduction: "a_little", action: "delegate", status: "active", createdAt: "2026-09-20T09:00:00.000Z", updatedAt: "2026-09-21T09:00:00.000Z", isSample: true },
   { id: "demo-s3", name: "Smoothing tension between two stakeholders", category: "emotional", severity: 3, persistence: "ongoing", status: "active", createdAt: "2026-09-19T09:00:00.000Z", updatedAt: "2026-09-19T09:00:00.000Z", isSample: true },
   { id: "demo-s4", name: "Coordinating the offsite logistics", category: "logistical", severity: 2, persistence: "one_off", reduction: "a_lot", action: "delegate", status: "resolved", createdAt: "2026-09-17T09:00:00.000Z", updatedAt: "2026-09-21T09:00:00.000Z", isSample: true },
+  { id: "demo-s5", name: "Agreed to host Friday's team dinner", category: "social", severity: 2, persistence: "one_off", capacityAtLogging: 35, status: "active", createdAt: "2026-09-21T09:00:00.000Z", updatedAt: "2026-09-21T09:00:00.000Z", isSample: true },
 ];
 
 // Six days of history before "today" - the component always computes
@@ -166,6 +168,17 @@ export const DEMO_DAILY_SNAPSHOTS: {
   { date: "2026-09-19", capacity: 45, grossLoad: 62, netLoad: 60, capacityProtected: 2, energyDelta: -15, updatedAt: "2026-09-19T18:00:00.000Z" },
   { date: "2026-09-20", capacity: 55, grossLoad: 58, netLoad: 52, capacityProtected: 6, energyDelta: 3, updatedAt: "2026-09-20T18:00:00.000Z" },
   { date: "2026-09-21", capacity: 52, grossLoad: 55, netLoad: 50, capacityProtected: 5, energyDelta: 2, updatedAt: "2026-09-21T18:00:00.000Z" },
+];
+
+// Recovery Debt v2's sleep fixtures - three logged nights averaging a
+// 1.5h shortfall, matching DEMO_STATS.debts's own Sleep Shortfall value
+// above so the demo session tells one consistent story rather than two
+// different numbers for the same thing.
+export const DEMO_SLEEP_TARGET_HOURS = 8;
+export const DEMO_SLEEP_NIGHTS: { date: string; hours: number }[] = [
+  { date: "2026-09-19", hours: 6 },
+  { date: "2026-09-20", hours: 6.5 },
+  { date: "2026-09-21", hours: 7 },
 ];
 
 // Section 8's optional "did that help?" history - four Somatic Reset

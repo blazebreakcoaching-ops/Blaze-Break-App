@@ -291,8 +291,8 @@ export const GamificationDisplay = ({ stats, fingerprint, shipStage = 'Safety', 
                if (badge.id === 'boundary_set') progress = (stats.rehearsalCount / 5) * 100;
                if (badge.id === 'boundary_boss') progress = (stats.rehearsalCount / 10) * 100;
                if (badge.id === 'consistent_sleep') {
-                 const sleepDebt = stats.debts?.find(d => d.label === 'Sleep Debt')?.value ?? 8;
-                 progress = sleepDebt <= 4 ? 100 : Math.max(0, ((15 - sleepDebt) / 11) * 100);
+                 const sleepShortfall = stats.debts?.find(d => d.label === 'Sleep Shortfall')?.value ?? 8;
+                 progress = sleepShortfall <= 1 ? 100 : Math.max(0, ((8 - sleepShortfall) / 7) * 100);
                }
                if (badge.id === 'master_boundaries') progress = (stats.rehearsalCount / 15) * 100;
             }

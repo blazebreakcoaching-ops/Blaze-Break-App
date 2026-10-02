@@ -1486,33 +1486,33 @@ export default function App() {
         debts: [
           {
             id: "0",
-            label: "Sleep Debt",
+            label: "Sleep Shortfall",
             value: 0,
             unit: "h",
-            max: 15,
+            max: 8,
             color: "text-primary",
-            impact: "Reduced emotional regulation.",
-            novaNote: "Prefrontal fatigue detected. Unplug now.",
+            impact: "Short sleep can make concentration and emotional regulation harder.",
+            novaNote: "Not enough sleep data yet.",
           },
           {
             id: "1",
-            label: "Neural Fatigue",
+            label: "Mental Fatigue",
             value: 0,
-            unit: "cr",
+            unit: "",
             max: 20,
             color: "text-warning",
-            impact: "Cognitive tunnel vision.",
-            novaNote: "Neural de-escalation is needed. Pause planning.",
+            impact: "You may notice yourself rereading things or losing your train of thought.",
+            novaNote: "Not checked in yet.",
           },
           {
             id: "2",
-            label: "Social Overlap",
+            label: "Social Load",
             value: 0,
-            unit: "h",
+            unit: "",
             max: 10,
             color: "text-text-main",
-            impact: "Identity erosion from fawning.",
-            novaNote: "Return to your baseline frame.",
+            impact: "Overcommitting while capacity is already low can leave less room for your own priorities.",
+            novaNote: "No social commitments logged yet.",
           },
         ],
         profile: {
@@ -1637,8 +1637,8 @@ export default function App() {
       newBadges.push("boundary_boss");
     
     // Check new badges
-    const sleepDebt = currentStats.debts?.find(d => d.label === 'Sleep Debt')?.value ?? 8;
-    if (sleepDebt <= 4 && !newBadges.includes("consistent_sleep"))
+    const sleepShortfall = currentStats.debts?.find(d => d.label === 'Sleep Shortfall')?.value ?? Infinity;
+    if (sleepShortfall <= 1 && !newBadges.includes("consistent_sleep"))
       newBadges.push("consistent_sleep");
     if (currentStats.rehearsalCount >= 15 && !newBadges.includes("master_boundaries"))
       newBadges.push("master_boundaries");
@@ -2468,7 +2468,7 @@ export default function App() {
                 <EnergyBudgetTool
                   onAwardPoints={awardPoints}
                   currentStage={shipStage}
-                  debts={stats.debts || []}
+                  isDemoSession={isDemoSession}
                   committedActionIds={stats.committedActionIds}
                   onCommitAction={handleCommitAction}
                   onNavigate={safeSetActiveTab}
