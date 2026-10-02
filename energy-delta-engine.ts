@@ -123,6 +123,12 @@ export interface Stressor {
   status: 'active' | 'resolved';
   createdAt: string;
   updatedAt: string;
+  // The user's capacity score at the moment this stressor was logged, if
+  // a check-in existed yet - null/undefined when it didn't. Lets Social
+  // Load (recovery-debt-engine.ts) honestly answer "was this accepted
+  // while capacity was already low?" without guessing backwards from
+  // today's capacity.
+  capacityAtLogging?: number | null;
   // Only ever set on an illustrative demo-data.ts stressor seeded during a
   // demo session - never on a real stressor the visitor logged. Gates
   // every write path in EnergyBudgetMatrix.tsx, since a sample stressor
@@ -158,7 +164,10 @@ export const computeStressorCapacityProtected = (stressor: Pick<Stressor, 'sever
 // how many stressors are active, with diminishing impact per additional
 // one, rather than letting values pile up into something like "180%".
 // values are expected in the 0-100 range (not yet divided by 100).
-const saturate = (values: number[]): number => {
+// Exported so other engines (recovery-debt-engine.ts's Social Load) can
+// aggregate their own category of demand the same way, rather than
+// inventing a second load-combining formula.
+export const saturate = (values: number[]): number => {
   if (values.length === 0) return 0;
   const product = values.reduce((acc, v) => acc * (1 - Math.max(0, Math.min(100, v)) / 100), 1);
   return 100 * (1 - product);

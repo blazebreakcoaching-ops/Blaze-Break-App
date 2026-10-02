@@ -124,6 +124,28 @@ service cloud.firestore {
             (!('meetingLimit' in request.resource.data) || (request.resource.data.meetingLimit is number && request.resource.data.meetingLimit >= 0 && request.resource.data.meetingLimit <= 50));
       }
 
+      // Recovery Debt v2's sleep target - the "target" half of Sleep
+      // Shortfall (target minus reported/logged hours).
+      match /preferences/recovery_debt {
+        allow read: if isOwner(uid);
+        allow write: if isOwner(uid) &&
+            request.resource.data.keys().hasOnly(['sleepTargetHours', 'updatedAt']) &&
+            (!('sleepTargetHours' in request.resource.data) || (request.resource.data.sleepTargetHours is number && request.resource.data.sleepTargetHours >= 1 && request.resource.data.sleepTargetHours <= 14));
+      }
+
+      // Recovery Debt v2's nightly sleep log - one honest reading per
+      // night (doc id = date), upserted rather than accumulated, feeding
+      // the rolling 7-day Sleep Shortfall average.
+      match /sleep_logs/{date} {
+        allow read: if isOwner(uid);
+        allow delete: if isOwner(uid);
+        allow create, update: if isOwner(uid) &&
+            hasOnly(['date', 'hours', 'updatedAt']) &&
+            hasAll(['date', 'hours', 'updatedAt']) &&
+            isStringWithMax(request.resource.data.date, 10) &&
+            request.resource.data.hours is number && request.resource.data.hours >= 0 && request.resource.data.hours <= 24;
+      }
+
       // D. users/{uid}/consents/current
       match /consents/current {
         allow read: if isOwner(uid);
@@ -410,12 +432,13 @@ service cloud.firestore {
         allow read: if isOwner(uid);
         allow delete: if isOwner(uid);
         allow create, update: if isOwner(uid)
-            && hasOnly(['name', 'category', 'severity', 'persistence', 'reduction', 'action', 'status', 'createdAt', 'updatedAt'])
+            && hasOnly(['name', 'category', 'severity', 'persistence', 'reduction', 'action', 'status', 'createdAt', 'updatedAt', 'capacityAtLogging'])
             && hasAll(['name', 'category', 'severity', 'persistence', 'status', 'createdAt', 'updatedAt'])
             && isStringWithMax(request.resource.data.name, 120)
             && request.resource.data.category in ['professional', 'social', 'emotional', 'logistical']
             && request.resource.data.severity in [1, 2, 3, 4, 5]
             && request.resource.data.persistence in ['one_off', 'repeated', 'ongoing']
+            && (!('capacityAtLogging' in request.resource.data) || request.resource.data.capacityAtLogging == null || (request.resource.data.capacityAtLogging is number && request.resource.data.capacityAtLogging >= 0 && request.resource.data.capacityAtLogging <= 100))
             && (!('reduction' in request.resource.data) || request.resource.data.reduction in ['not_yet', 'a_little', 'meaningfully', 'a_lot'])
             && (!('action' in request.resource.data) || request.resource.data.action in ['control', 'reduce', 'delegate', 'defer', 'accept'])
             && request.resource.data.status in ['active', 'resolved']
@@ -698,11 +721,15 @@ service cloud.firestore {
             && request.resource.data.priority in ['High', 'Medium', 'Low']
             && request.resource.data.type in ['Executive', 'Emotional', 'Physical', 'Social']
             && (!('shipStage' in request.resource.data) || request.resource.data.shipStage in ['Safety', 'Habits', 'Identity', 'Purpose'])
-            && (!('action' in request.resource.data) || request.resource.data.action in ['keep', 'delegate', 'defer'])
+            && (!('action' in request.resource.data) || request.resource.data.action in ['keep', 'reduce', 'delegate', 'defer', 'drop'])
             && (request.method == 'create' ? true : checkCreatedAtUnchanged());
       }
 
-      // P. energy_credits_settings/current (the daily/total budget number for EnergyBudgetTool)
+      // P. energy_credits_settings/current - the old per-day credit
+      // budget EnergyBudgetTool no longer reads or writes (replaced by
+      // the real Available Capacity from a capacity check-in, the same
+      // Energy Delta source EnergyBudgetMatrix.tsx uses). Left in place
+      // untouched so any existing value stays readable.
       match /energy_credits_settings/current {
         allow read: if isOwner(uid);
         allow write: if isOwner(uid)

@@ -256,7 +256,7 @@ export const HomeSection = ({
     weeklyRecap: "Weekly Recap",
     quests: "Milestones",
     network: "Guardian Network",
-    radar: "Relapse Radar",
+    radar: "Overload Radar",
     sparkCheck: "SPARK Check",
   };
 

@@ -1037,7 +1037,7 @@ export const RecoveryFuelEngine = ({
                       </div>
                     </div>
                     <p className="text-xs text-text-muted leading-relaxed">
-                      Caffeine blocks adenosine receptors. If you use it to override systemic neural fatigue, you are simply borrowing energy from tomorrow with compounded interest.
+                      Caffeine blocks adenosine receptors. If you use it to override mental fatigue, you are simply borrowing energy from tomorrow with compounded interest.
                     </p>
                     <div className="text-xs bg-white/50 dark:bg-card px-3 py-2 rounded-lg text-text-muted font-bold font-mono">
                       Rule: Enforce a strict caffeine cutoff time (ideal: 12 PM - 2 PM max).

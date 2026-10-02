@@ -25,34 +25,39 @@ import {
 import { cn, fireConfetti } from '../lib/utils';
 import { BurnoutFingerprint } from '../types';
 import { updateNovaMemoryBySourceAndType } from '../lib/nova-brain';
+import { loadLatestCapacityCheckIn } from '../lib/energy-delta-service';
+import { saturate } from '../../energy-delta-engine';
 
 interface WorkloadRealityCheckProps {
   fingerprint: BurnoutFingerprint | null;
   onAwardPoints?: (amount: number, reason: string) => void;
 }
 
-type QuestionId = 'must' | 'wait' | 'delegate' | 'pretend' | 'future';
+type QuestionId = 'must' | 'defer' | 'delegate' | 'could' | 'drop';
 
 export interface WorkloadTask {
   id: string;
   title: string;
-  category: 'must' | 'wait' | 'delegate' | 'future';
+  category: 'must' | 'defer' | 'delegate' | 'could' | 'drop';
   energyDrain: number; // 1 to 100
   priority: 'high' | 'medium' | 'low';
   dueDate: string;
   completed: boolean;
 }
 
+// Today's Realistic Plan's five questions - each maps straight onto one
+// of the plan's own categories (Must do / Could do / Delegate / Defer /
+// Drop), in the order asked.
 const QUESTIONS: Record<QuestionId, { label: string; placeholder: string; icon: any }> = {
-  must: { label: 'What MUST happen today?', placeholder: 'The non-negotiables...', icon: Target },
-  wait: { label: 'What can wait?', placeholder: 'Things pulling at you that aren\'t actually due...', icon: Clock },
-  delegate: { label: 'What can be delegated?', placeholder: 'Who else can handle this?', icon: ListTodo },
-  pretend: { label: 'What are you PRETENDING is urgent?', placeholder: 'Be honest. Is it just loud?', icon: ShieldAlert },
-  future: { label: 'What would Future You thank you for removing?', placeholder: 'What is just noise?', icon: Brain }
+  must: { label: 'What genuinely must happen today?', placeholder: 'The non-negotiables...', icon: Target },
+  defer: { label: 'What feels urgent but can actually wait?', placeholder: 'Things pulling at you that aren\'t actually due...', icon: Clock },
+  delegate: { label: 'What could somebody else own?', placeholder: 'Who else can handle this?', icon: ListTodo },
+  could: { label: 'What could be made smaller rather than done perfectly?', placeholder: 'A lighter, rougher version would still count...', icon: ShieldAlert },
+  drop: { label: 'What could you remove to make today realistically manageable?', placeholder: 'What is just noise?', icon: Brain }
 };
 
 export const WorkloadRealityCheck = ({ fingerprint, onAwardPoints }: WorkloadRealityCheckProps) => {
-  const [answers, setAnswers] = useState<Record<QuestionId, string>>({ must: '', wait: '', delegate: '', pretend: '', future: '' });
+  const [answers, setAnswers] = useState<Record<QuestionId, string>>({ must: '', defer: '', delegate: '', could: '', drop: '' });
   const [currentStep, setCurrentStep] = useState<number>(0);
   const [isSynthesizing, setIsSynthesizing] = useState(false);
   const [result, setResult] = useState<boolean>(false);
@@ -60,6 +65,7 @@ export const WorkloadRealityCheck = ({ fingerprint, onAwardPoints }: WorkloadRea
   // Task list states
   const [tasks, setTasks] = useState<WorkloadTask[]>([]);
   const [dataLoaded, setDataLoaded] = useState(false);
+  const [capacity, setCapacity] = useState<number | null>(null);
 
   // Sorting & Filtering state
   const [sortBy, setSortBy] = useState<'drain' | 'priority' | 'date'>('priority');
@@ -68,7 +74,7 @@ export const WorkloadRealityCheck = ({ fingerprint, onAwardPoints }: WorkloadRea
 
   // Input fields for new tasks
   const [newTitle, setNewTitle] = useState('');
-  const [newCategory, setNewCategory] = useState<'must' | 'wait' | 'delegate' | 'future'>('must');
+  const [newCategory, setNewCategory] = useState<'must' | 'defer' | 'delegate' | 'could' | 'drop'>('must');
   const [newPriority, setNewPriority] = useState<'high' | 'medium' | 'low'>('medium');
   const [newDrain, setNewDrain] = useState(50);
   const [newDueDate, setNewDueDate] = useState(() => {
@@ -109,13 +115,14 @@ export const WorkloadRealityCheck = ({ fingerprint, onAwardPoints }: WorkloadRea
     setEditingTaskId(null);
   };
 
-  // Fatigue Probability Calculation
-  const weeklyDrain = tasks
-    .filter(t => !t.completed)
-    .reduce((acc, t) => acc + t.energyDrain, 0);
-  // Assuming a baseline capacity of ~300 drain points per week
-  const fatigueProbability = Math.min(Math.round((weeklyDrain / 300) * 100), 100);
-  const showFatigueWarning = fatigueProbability > 85;
+  // Today's pending load, combined via the exact same saturation formula
+  // Gross Load already uses (section 3 of the Energy Delta brief) -
+  // never a second, competing way to add up several demands - then
+  // compared directly against the user's real available capacity.
+  // Never shows a warning without real capacity to compare against.
+  const pendingDrains = tasks.filter(t => !t.completed).map(t => t.energyDrain);
+  const todaysLoad = saturate(pendingDrains);
+  const showFatigueWarning = capacity !== null && todaysLoad > capacity;
 
   // Load real state from Firestore on mount - previously this was
   // localStorage only, so a workload reality check done on one device was
@@ -124,6 +131,7 @@ export const WorkloadRealityCheck = ({ fingerprint, onAwardPoints }: WorkloadRea
     const load = async () => {
       if (!auth.currentUser) { setDataLoaded(true); return; }
       try {
+        loadLatestCapacityCheckIn(auth.currentUser.uid).then((c) => setCapacity(c?.score ?? null));
         const snap = await getDoc(doc(db, 'users', auth.currentUser.uid, 'workload_reality_check', 'state'));
         if (snap.exists()) {
           const data = snap.data();
@@ -179,7 +187,7 @@ export const WorkloadRealityCheck = ({ fingerprint, onAwardPoints }: WorkloadRea
       saveWorkloadState({ completed: true });
 
       updateNovaMemoryBySourceAndType('Workload Reality Check', 'state', {
-        content: `Latest workload triage - must: "${answers.must || 'N/A'}", can wait: "${answers.wait || 'N/A'}", can delegate: "${answers.delegate || 'N/A'}", pretending is urgent: "${answers.pretend || 'N/A'}".`,
+        content: `Latest workload triage - must: "${answers.must || 'N/A'}", feels urgent but can wait: "${answers.defer || 'N/A'}", could delegate: "${answers.delegate || 'N/A'}", could be made smaller: "${answers.could || 'N/A'}", could remove: "${answers.drop || 'N/A'}".`,
         confidence: 'verified',
         canEdit: true,
       });
@@ -197,9 +205,9 @@ export const WorkloadRealityCheck = ({ fingerprint, onAwardPoints }: WorkloadRea
             completed: false
           },
           {
-            id: 'wait-' + Date.now(),
-            title: answers.wait || 'Optimise secondary style guidelines',
-            category: 'wait',
+            id: 'defer-' + Date.now(),
+            title: answers.defer || 'Optimise secondary style guidelines',
+            category: 'defer',
             energyDrain: 30,
             priority: 'low',
             dueDate: new Date(Date.now() + 86400000 * 2).toISOString().split('T')[0],
@@ -215,9 +223,18 @@ export const WorkloadRealityCheck = ({ fingerprint, onAwardPoints }: WorkloadRea
             completed: false
           },
           {
-            id: 'future-' + Date.now(),
-            title: answers.future || 'Redundant alerts cleanup',
-            category: 'future',
+            id: 'could-' + Date.now(),
+            title: answers.could || 'Send the rough draft instead of the polished version',
+            category: 'could',
+            energyDrain: 25,
+            priority: 'medium',
+            dueDate: new Date().toISOString().split('T')[0],
+            completed: false
+          },
+          {
+            id: 'drop-' + Date.now(),
+            title: answers.drop || 'Redundant alerts cleanup',
+            category: 'drop',
             energyDrain: 15,
             priority: 'low',
             dueDate: new Date(Date.now() + 86400000 * 3).toISOString().split('T')[0],
@@ -232,7 +249,7 @@ export const WorkloadRealityCheck = ({ fingerprint, onAwardPoints }: WorkloadRea
   };
 
   const handleReset = () => {
-    const cleared = { must: '', wait: '', delegate: '', pretend: '', future: '' };
+    const cleared = { must: '', defer: '', delegate: '', could: '', drop: '' };
     setAnswers(cleared);
     setTasks([]);
     setCurrentStep(0);
@@ -310,16 +327,18 @@ export const WorkloadRealityCheck = ({ fingerprint, onAwardPoints }: WorkloadRea
     return 'bg-success/10 text-success dark:text-[#4ade80] border-success/20';
   };
 
-  const getCategoryTheme = (category: 'must' | 'wait' | 'delegate' | 'future') => {
+  const getCategoryTheme = (category: 'must' | 'defer' | 'delegate' | 'could' | 'drop') => {
     switch (category) {
       case 'must':
-        return { label: 'Must Do Today', badge: 'bg-success/10 text-success dark:text-[#4ade80] border-success/20' };
-      case 'wait':
-        return { label: 'Can Wait', badge: 'bg-primary/10 text-[#9a3412] dark:text-primary border-primary/20' };
+        return { label: 'Must Do', badge: 'bg-success/10 text-success dark:text-[#4ade80] border-success/20' };
+      case 'could':
+        return { label: 'Could Do', badge: 'bg-sky-500/10 text-sky-700 dark:text-sky-400 border-sky-500/20' };
       case 'delegate':
-        return { label: 'Delegate / Defer', badge: 'bg-warning/10 text-[#9a3412] dark:text-warning border-warning/20' };
-      case 'future':
-        return { label: 'Future Guarded', badge: 'bg-primary/10 text-[#9a3412] dark:text-primary border-primary/20' };
+        return { label: 'Delegate', badge: 'bg-warning/10 text-[#9a3412] dark:text-warning border-warning/20' };
+      case 'defer':
+        return { label: 'Defer', badge: 'bg-primary/10 text-[#9a3412] dark:text-primary border-primary/20' };
+      case 'drop':
+        return { label: 'Drop', badge: 'bg-destructive/10 text-destructive dark:text-[#f87171] border-destructive/20' };
     }
   };
 
@@ -368,7 +387,7 @@ export const WorkloadRealityCheck = ({ fingerprint, onAwardPoints }: WorkloadRea
     <div className="space-y-12 pb-24 relative">
       <div className="max-w-4xl">
         <div className="flex items-center gap-4 mb-4">
-          <div className="tag">Section 16 / Workload Calibration</div>
+          <div className="tag">Energy Delta Management · Core Pillar: Rebuild</div>
           <div className="h-px flex-1 bg-border/40" />
         </div>
         <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-6">
@@ -505,9 +524,9 @@ export const WorkloadRealityCheck = ({ fingerprint, onAwardPoints }: WorkloadRea
                   <ShieldAlert className="w-5 h-5 animate-pulse" />
                 </div>
                 <div>
-                  <h4 className="text-sm font-bold text-destructive dark:text-[#f87171]">Critical: Fatigue Probability is {fatigueProbability}%</h4>
+                  <h4 className="text-sm font-bold text-destructive dark:text-[#f87171]">Your planned load is running ahead of your capacity</h4>
                   <p className="text-xs text-destructive/80 dark:text-[#f87171] mt-1 leading-relaxed">
-                    You are severely over-scheduled. The accumulated cognitive load of this pending task list exceeds your baseline recovery velocity. You must delegate or delete tasks before the week begins to avoid a systemic crash.
+                    This task list adds up to more than today's available capacity currently supports. Consider delegating, deferring or dropping something before you start.
                   </p>
                 </div>
               </motion.div>
@@ -547,10 +566,11 @@ export const WorkloadRealityCheck = ({ fingerprint, onAwardPoints }: WorkloadRea
                     onChange={(e) => setNewCategory(e.target.value as any)}
                     className="w-full bg-white dark:bg-surface border border-border/40 rounded-xl px-3 py-2.5 text-xs text-text-main focus:outline-none focus:border-primary transition-all cursor-pointer"
                   >
-                    <option value="must">🔴 Must Do Today</option>
-                    <option value="wait">🔵 Can Wait</option>
-                    <option value="delegate">🟡 Delegate / Defer</option>
-                    <option value="future">🟣 Future Guarded</option>
+                    <option value="must">🔴 Must Do</option>
+                    <option value="could">🔵 Could Do</option>
+                    <option value="delegate">🟡 Delegate</option>
+                    <option value="defer">🟠 Defer</option>
+                    <option value="drop">⚫ Drop</option>
                   </select>
                 </div>
 
@@ -607,7 +627,7 @@ export const WorkloadRealityCheck = ({ fingerprint, onAwardPoints }: WorkloadRea
                       value={newDrain}
                       onChange={(e) => setNewDrain(parseInt(e.target.value, 10))}
                       aria-label="Assigned physical energy drain percentage"
-                      aria-valuetext={`${newDrain} percent, ${newDrain < 35 ? 'Low Drain' : newDrain < 70 ? 'Moderate Drain' : 'Heavy Crash Trigger'}`}
+                      aria-valuetext={`${newDrain} percent, ${newDrain < 35 ? 'Low Drain' : newDrain < 70 ? 'Moderate Drain' : 'Heavy Load'}`}
                       className="w-full accent-primary h-1.5 rounded-full cursor-pointer bg-border dark:bg-surface"
                     />
                   </div>
@@ -616,7 +636,7 @@ export const WorkloadRealityCheck = ({ fingerprint, onAwardPoints }: WorkloadRea
                       {newDrain}%
                     </span>
                     <span className="text-[11px] font-bold uppercase tracking-widest text-text-muted">
-                      ({newDrain < 35 ? 'Low Drain' : newDrain < 70 ? 'Moderate Drain' : 'Heavy Crash Trigger'})
+                      ({newDrain < 35 ? 'Low Drain' : newDrain < 70 ? 'Moderate Drain' : 'Heavy Load'})
                     </span>
                   </div>
                 </div>
@@ -725,7 +745,7 @@ export const WorkloadRealityCheck = ({ fingerprint, onAwardPoints }: WorkloadRea
               </div>
             ) : (
               <div className="space-y-8 font-sans">
-                {(['must', 'wait', 'delegate', 'future'] as const).map(categoryKey => {
+                {(['must', 'could', 'delegate', 'defer', 'drop'] as const).map(categoryKey => {
                   const categoryTasks = sortedTasks.filter(t => t.category === categoryKey);
                   if (categoryTasks.length === 0) return null;
                   
@@ -834,7 +854,7 @@ export const WorkloadRealityCheck = ({ fingerprint, onAwardPoints }: WorkloadRea
                               value={editingDrain}
                               onChange={(e) => setEditingDrain(parseInt(e.target.value, 10))}
                               aria-label="Edit energy drain percentage"
-                              aria-valuetext={`${editingDrain} percent, ${editingDrain < 35 ? 'Low Drain' : editingDrain < 70 ? 'Moderate Drain' : 'Heavy Crash Trigger'}`}
+                              aria-valuetext={`${editingDrain} percent, ${editingDrain < 35 ? 'Low Drain' : editingDrain < 70 ? 'Moderate Drain' : 'Heavy Load'}`}
                               className="w-full h-1.5 rounded-full cursor-pointer bg-border dark:bg-surface/80 accent-primary"
                             />
                           ) : (
@@ -904,10 +924,10 @@ export const WorkloadRealityCheck = ({ fingerprint, onAwardPoints }: WorkloadRea
             {/* Clear Next Step action instruction block */}
             <div className="bg-gradient-to-r from-primary/5 via-primary/5 to-surface/20 border border-border/40 p-6 rounded-2xl space-y-4">
               <span className="text-xs font-black uppercase tracking-widest text-[#9a3412] dark:text-primary flex items-center gap-1">
-                <Sparkles className="w-3.5 h-3.5 animate-bounce" /> Your Prescribed Recovery Action Plan Step
+                <Sparkles className="w-3.5 h-3.5 animate-bounce" /> Your Next Step
               </span>
               <p className="text-xs text-text-muted leading-relaxed">
-                Review your task inventory prioritised by energetic drain. To prevent burnout, commit to completing your <strong>Must Do Today</strong> lists early, then completely power down during the <strong>Mandatory Recovery Block</strong>.
+                Work through your <strong>Must Do</strong> list first, then protect a real recovery block afterwards - not just whatever time is left over.
               </p>
               <div className="flex flex-wrap gap-2.5">
                 <button
