@@ -799,7 +799,7 @@ const Header = ({
     )
   );
 
-  const handleGuardianPing = async () => {
+  const handleGuardianPing = useCallback(async () => {
     if (guardianPingActive) return;
     const primary = (supportCircle || []).find((c: any) => c.role === 'primary_guardian') || (supportCircle || [])[0];
     if (!primary) {
@@ -829,7 +829,18 @@ const Header = ({
       setToastMessage("Couldn't reach the messaging service right now.");
     }
     setTimeout(() => { setToastMessage(null); setGuardianPingActive(false); }, 4000);
-  };
+  }, [guardianPingActive, supportCircle, userName]);
+
+  // Same window-event pattern as open_crisis_support/navigate_tab -
+  // Anxiety Reset's "More unsettled" checkpoint branch offers Guardian
+  // Ping as a support option without threading a callback prop down
+  // through every intermediate layer, and without exposing any Reset
+  // content to the guardian automatically (the ping message never
+  // includes what the user was working through).
+  useEffect(() => {
+    window.addEventListener('trigger_guardian_ping', handleGuardianPing);
+    return () => window.removeEventListener('trigger_guardian_ping', handleGuardianPing);
+  }, [handleGuardianPing]);
 
   return (
     <header className="flex flex-col sm:flex-row sm:items-center items-start justify-between gap-6 mb-12 relative transition-colors duration-500">
@@ -1321,6 +1332,14 @@ export default function App() {
   // the new "what's happening in your head?" picker is the landing
   // experience instead (RESET STUDIO PURPOSE).
   const [showMoreResetTools, setShowMoreResetTools] = useState(false);
+  // Anxiety Reset's breathing handoff needs this expanded before it can
+  // hand the real Breathing & Guided Reset tool a pre-selected need -
+  // same window-event pattern as open_crisis_support/navigate_tab above.
+  useEffect(() => {
+    const handleShowMoreResetTools = () => setShowMoreResetTools(true);
+    window.addEventListener('show_more_reset_tools', handleShowMoreResetTools);
+    return () => window.removeEventListener('show_more_reset_tools', handleShowMoreResetTools);
+  }, []);
   useEffect(() => {
     if (showBlameReset) setBlameReadyToMount(true);
   }, [showBlameReset]);
