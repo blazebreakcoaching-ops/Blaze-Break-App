@@ -54,6 +54,7 @@ export const RecoveryRecipes = ({ fingerprint: _fingerprint, onAwardPoints }: Re
   const [completedStepTypes, setCompletedStepTypes] = useState<RecipeStepType[]>([]);
   const [skippedStepTypes, setSkippedStepTypes] = useState<RecipeStepType[]>([]);
   const [preferredLens, setPreferredLens] = useState<GroundingLens | undefined>(undefined);
+  const [showSupportOptions, setShowSupportOptions] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -61,6 +62,28 @@ export const RecoveryRecipes = ({ fingerprint: _fingerprint, onAwardPoints }: Re
     loadRecipePreferences(auth.currentUser.uid).then((prefs) => {
       if (prefs.preferredLens) setPreferredLens(prefs.preferredLens);
     });
+  }, []);
+
+  // Sections 23/24's smart entry from Movement Snacks and Grounding - both
+  // already live on this same Reset-tab page, so they reach a specific
+  // recipe the same way Movement's deep-link reaches this component:
+  // a plain window event, never a prop-drilled dependency between siblings.
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent<{ situationKey?: SituationKey; capacity?: Capacity }>).detail;
+      if (!detail?.situationKey) return;
+      setSelectedSituation(detail.situationKey);
+      setCapacity(detail.capacity);
+      const built = buildRecoveryRecipe({ situationKey: detail.situationKey, capacity: detail.capacity });
+      setRecipe(built);
+      setStepIndex(0);
+      setCompletedStepTypes([]);
+      setSkippedStepTypes([]);
+      setView('preview');
+      rootRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    };
+    window.addEventListener('open_recovery_recipe', handler);
+    return () => window.removeEventListener('open_recovery_recipe', handler);
   }, []);
 
   const resetToEntry = () => {
@@ -75,6 +98,7 @@ export const RecoveryRecipes = ({ fingerprint: _fingerprint, onAwardPoints }: Re
     setStepIndex(0);
     setCompletedStepTypes([]);
     setSkippedStepTypes([]);
+    setShowSupportOptions(false);
   };
 
   const handlePickSituation = (situation: SituationKey) => {
@@ -141,6 +165,7 @@ export const RecoveryRecipes = ({ fingerprint: _fingerprint, onAwardPoints }: Re
       confidence: 'verified',
       canEdit: true,
     });
+    setShowSupportOptions(false);
     setView('complete');
   };
 
@@ -155,6 +180,19 @@ export const RecoveryRecipes = ({ fingerprint: _fingerprint, onAwardPoints }: Re
       }
     }
     resetToEntry();
+  };
+
+  // Section 15's "One more step" - pulls the next left-over step (already
+  // computed by the engine's capacity assembly, never re-derived here) back
+  // into the active sequence, rather than the recipe ever forcing it in.
+  const handleOneMoreStep = () => {
+    if (!recipe || recipe.optionalSteps.length === 0) return;
+    const [nextOptional, ...restOptional] = recipe.optionalSteps;
+    const extended: BuiltRecoveryRecipe = { ...recipe, steps: [...recipe.steps, nextOptional!], optionalSteps: restOptional };
+    setRecipe(extended);
+    setStepIndex(extended.steps.length - 1);
+    setShowSupportOptions(false);
+    setView('player');
   };
 
   const currentStep: RecipeStep | null = recipe ? recipe.steps[stepIndex] ?? null : null;
@@ -447,15 +485,59 @@ export const RecoveryRecipes = ({ fingerprint: _fingerprint, onAwardPoints }: Re
             animate={{ opacity: 1, scale: 1 }}
             role="status"
             aria-live="polite"
-            className="card border border-primary/20 bg-primary/5 p-6 sm:p-8 md:p-10 flex flex-col items-center justify-center text-center py-20 space-y-6"
+            className="card border border-primary/20 bg-primary/5 p-6 sm:p-8 md:p-10 flex flex-col items-center justify-center text-center py-16 space-y-6"
           >
             <div className="w-20 h-20 bg-primary rounded-full flex items-center justify-center text-primary-foreground shadow-xl shadow-primary/20">
               <CheckCircle2 className="w-10 h-10" />
             </div>
-            <h4 className="text-3xl font-display font-bold text-text-main max-w-lg">{recipe.closingAction}</h4>
-            <button onClick={resetToEntry} className="btn-primary bg-primary hover:bg-primary border-primary text-primary-foreground">
-              Done
-            </button>
+            <div className="space-y-2 max-w-lg">
+              <h4 className="text-3xl font-display font-bold text-text-main">That may be enough for now</h4>
+              <p className="text-lg text-text-muted font-medium">{recipe.closingAction}</p>
+              {/* Section 32's "avoid overprocessing" - only surfaced when the
+                  recipe actually asked for some reflection, since a purely
+                  practical recipe (over_capacity, everything_urgent) has
+                  nothing to over-process in the first place. */}
+              {recipe.steps.some((s) => s.type === 'nova_reflection' || s.type === 'grounding') && (
+                <p className="text-sm text-text-muted italic">You've done useful work here. More processing may not help right now.</p>
+              )}
+            </div>
+
+            {!showSupportOptions ? (
+              <div className="space-y-3">
+                <div className="flex flex-wrap justify-center gap-3">
+                  <button onClick={resetToEntry} className="btn-primary bg-primary hover:bg-primary border-primary text-primary-foreground">
+                    I'm done
+                  </button>
+                  {recipe.optionalSteps.length > 0 && (
+                    <button onClick={handleOneMoreStep} className="px-5 py-3 rounded-xl border border-border hover:border-primary/50 hover:bg-surface dark:hover:bg-surface text-sm font-bold text-text-main transition-all">
+                      One more step
+                    </button>
+                  )}
+                </div>
+                <button onClick={() => setShowSupportOptions(true)} className="text-xs font-black uppercase tracking-widest text-text-muted hover:text-text-main">
+                  I still need support
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-4 max-w-md">
+                <p className="text-sm text-text-muted">
+                  Movement Snacks and Faith &amp; Values Grounding are both here on this page if something more would help - or:
+                </p>
+                <div className="flex flex-wrap justify-center gap-3">
+                  {recipe.steps.some((s) => s.type === 'nova_reflection') && (
+                    <button
+                      onClick={() => { window.dispatchEvent(new CustomEvent('open_nova_launcher')); resetToEntry(); }}
+                      className="btn-primary bg-primary hover:bg-primary border-primary text-primary-foreground"
+                    >
+                      Talk to Nova
+                    </button>
+                  )}
+                  <button onClick={resetToEntry} className="px-5 py-3 rounded-xl border border-border hover:border-primary/50 hover:bg-surface dark:hover:bg-surface text-sm font-bold text-text-main transition-all">
+                    Done for now
+                  </button>
+                </div>
+              </div>
+            )}
           </motion.div>
         )}
       </AnimatePresence>

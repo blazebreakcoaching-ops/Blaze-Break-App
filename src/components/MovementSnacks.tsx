@@ -21,6 +21,16 @@ import {
 import { logMovementEvent } from '../lib/movement-analytics';
 import { MovementVoiceControls } from './MovementVoiceControls';
 import { AfterWorkDecompression } from './AfterWorkDecompression';
+import { SituationKey } from '../../recovery-recipes-content';
+
+// Section 23's smart entry into Recovery Recipes - only offered after
+// movements where "still carrying it" is a plausible follow-up, never
+// forced, and only for the two movements with an unambiguous matching
+// situation (a mis-mapped guess would be worse than no offer at all).
+const RECIPE_BRIDGE_SITUATION: Partial<Record<string, SituationKey>> = {
+  after_work: 'need_switch_off',
+  shake_meeting: 'hard_meeting',
+};
 
 interface MovementSnacksProps {
   fingerprint: BurnoutFingerprint | null;
@@ -645,6 +655,21 @@ export const MovementSnacks = ({ fingerprint: _fingerprint, onAwardPoints }: Mov
                     I still need to work through something
                   </button>
                 </div>
+                {flags.enable_recovery_recipes_nova_suggestions && RECIPE_BRIDGE_SITUATION[activeMovement.id] && (
+                  <div className="pt-4 border-t border-border/30 mt-2 space-y-2">
+                    <p className="text-sm text-text-muted">Still carrying it?</p>
+                    <button
+                      onClick={() => {
+                        const situationKey = RECIPE_BRIDGE_SITUATION[activeMovement.id];
+                        handleCloseComplete('enough');
+                        if (situationKey) window.dispatchEvent(new CustomEvent('open_recovery_recipe', { detail: { situationKey } }));
+                      }}
+                      className="text-xs font-black uppercase tracking-widest text-primary hover:opacity-80"
+                    >
+                      Continue with a Recovery Recipe
+                    </button>
+                  </div>
+                )}
               </div>
             )}
           </motion.div>
