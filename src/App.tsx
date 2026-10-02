@@ -2677,6 +2677,8 @@ export default function App() {
                   fingerprint={fingerprint}
                   onAwardPoints={awardPoints}
                   currentStage={shipStage}
+                  onNavigate={safeSetActiveTab}
+                  onOpenSomaticReset={() => setShowSomaticReset(true)}
                 />
               </div>
             )}
