@@ -27,6 +27,19 @@ import { BurnoutFingerprint } from '../types';
 import { updateNovaMemoryBySourceAndType } from '../lib/nova-brain';
 import { loadLatestCapacityCheckIn } from '../lib/energy-delta-service';
 import { saturate } from '../../energy-delta-engine';
+import { recordWorkloadRealityCheckSnapshot, loadWorkloadRealityCheckHistory, recordRediscoveryClue } from '../lib/rediscovery-service';
+import { detectRecurringMustDo } from '../../rediscovery-engine';
+
+// WORKLOAD REALITY CHECK — PATTERN LEARNING's own four answers - distinct
+// from the generic Yes/Partly/No/Explore confirmation used elsewhere,
+// since the brief gives this reflection its own exact wording.
+type RecurringMustDoAnswer = 'fixed' | 'not_all_necessary' | 'not_sure' | 'explore';
+const RECURRING_MUST_DO_OPTIONS: { id: RecurringMustDoAnswer; label: string }[] = [
+  { id: 'fixed', label: 'They genuinely have to happen' },
+  { id: 'not_all_necessary', label: "They probably aren't all necessary" },
+  { id: 'not_sure', label: "I'm not sure" },
+  { id: 'explore', label: 'Explore this' },
+];
 
 interface WorkloadRealityCheckProps {
   fingerprint: BurnoutFingerprint | null;
@@ -56,6 +69,15 @@ const QUESTIONS: Record<QuestionId, { label: string; placeholder: string; icon: 
   drop: { label: 'What could you remove to make today realistically manageable?', placeholder: 'What is just noise?', icon: Brain }
 };
 
+// How much of a task's energy drain still lands on today's plan once it's
+// been categorised - Must Do stays in full, Could Do is made smaller
+// rather than dropped, and Delegate/Defer/Drop all genuinely come off
+// today's load (even though Delegate and Drop differ in whether the work
+// still exists at all).
+const CATEGORY_LOAD_WEIGHT: Record<QuestionId, number> = {
+  must: 1, could: 0.5, delegate: 0, defer: 0, drop: 0,
+};
+
 export const WorkloadRealityCheck = ({ fingerprint, onAwardPoints }: WorkloadRealityCheckProps) => {
   const [answers, setAnswers] = useState<Record<QuestionId, string>>({ must: '', defer: '', delegate: '', could: '', drop: '' });
   const [currentStep, setCurrentStep] = useState<number>(0);
@@ -66,6 +88,12 @@ export const WorkloadRealityCheck = ({ fingerprint, onAwardPoints }: WorkloadRea
   const [tasks, setTasks] = useState<WorkloadTask[]>([]);
   const [dataLoaded, setDataLoaded] = useState(false);
   const [capacity, setCapacity] = useState<number | null>(null);
+
+  // WORKLOAD REALITY CHECK — PATTERN LEARNING: a recurring Must Do, plus
+  // the user's own read on whether it's genuinely fixed - a hypothesis to
+  // confirm, never a conclusion Nova reaches on its own.
+  const [recurringMustDo, setRecurringMustDo] = useState<string | null>(null);
+  const [recurringMustDoAnswered, setRecurringMustDoAnswered] = useState(false);
 
   // Sorting & Filtering state
   const [sortBy, setSortBy] = useState<'drain' | 'priority' | 'date'>('priority');
@@ -124,6 +152,20 @@ export const WorkloadRealityCheck = ({ fingerprint, onAwardPoints }: WorkloadRea
   const todaysLoad = saturate(pendingDrains);
   const showFatigueWarning = capacity !== null && todaysLoad > capacity;
 
+  // Today's Realistic Plan's impact summary - categorising a task is
+  // itself a demand reduction, so it's weighted the same way One Less
+  // Thing's outcomes are (fully carried, made smaller, or no longer
+  // carried today), then combined with the same saturate() aggregation
+  // and gross-minus-net subtraction Energy Delta Management already uses
+  // - never a second, competing way to add this up.
+  const pendingTasks = tasks.filter((t) => !t.completed);
+  const grossLoad = saturate(pendingTasks.map((t) => t.energyDrain));
+  const netLoad = saturate(pendingTasks.map((t) => t.energyDrain * CATEGORY_LOAD_WEIGHT[t.category]));
+  const capacityProtectedToday = grossLoad - netLoad;
+  const hasCapacity = capacity !== null;
+  const planEnergyDelta = hasCapacity ? capacity! - netLoad : null;
+  const remainingBuffer = hasCapacity ? Math.max(0, capacity! - netLoad) : null;
+
   // Load real state from Firestore on mount - previously this was
   // localStorage only, so a workload reality check done on one device was
   // invisible everywhere else.
@@ -166,6 +208,38 @@ export const WorkloadRealityCheck = ({ fingerprint, onAwardPoints }: WorkloadRea
     if (!dataLoaded) return;
     saveWorkloadState({ tasks });
   }, [tasks, dataLoaded]);
+
+  // One history snapshot per day of what's genuinely Must Do today -
+  // just enough real history for WORKLOAD REALITY CHECK — PATTERN
+  // LEARNING to notice genuine recurrence from, never a fabricated one.
+  useEffect(() => {
+    if (!dataLoaded || !result || !auth.currentUser) return;
+    const mustDoTitles = tasks.filter((t) => t.category === 'must').map((t) => t.title);
+    if (mustDoTitles.length === 0) return;
+    recordWorkloadRealityCheckSnapshot(auth.currentUser.uid, mustDoTitles).catch(() => {});
+  }, [tasks, result, dataLoaded]);
+
+  // Checked once the result view is reached - a hypothesis to offer, not
+  // a conclusion to assert.
+  useEffect(() => {
+    if (!result || !auth.currentUser) return;
+    loadWorkloadRealityCheckHistory(auth.currentUser.uid).then((history) => {
+      setRecurringMustDo(detectRecurringMustDo(history));
+    }).catch(() => {});
+  }, [result]);
+
+  const handleRecurringMustDoAnswer = (answer: RecurringMustDoAnswer) => {
+    if (auth.currentUser && recurringMustDo) {
+      const label = RECURRING_MUST_DO_OPTIONS.find((o) => o.id === answer)?.label || answer;
+      recordRediscoveryClue(
+        auth.currentUser.uid,
+        'workload_recurring_must_do',
+        `"${recurringMustDo}" keeps returning as a non-negotiable - genuinely fixed, or automatic?`,
+        label
+      ).catch(() => {});
+    }
+    setRecurringMustDoAnswered(true);
+  };
 
   const questionKeys = Object.keys(QUESTIONS) as QuestionId[];
   const activeQuestion = questionKeys[currentStep];
@@ -384,10 +458,10 @@ export const WorkloadRealityCheck = ({ fingerprint, onAwardPoints }: WorkloadRea
   });
 
   return (
-    <div className="space-y-12 pb-24 relative">
+    <div id="workload-reality-check-section" className="space-y-12 pb-24 relative">
       <div className="max-w-4xl">
         <div className="flex items-center gap-4 mb-4">
-          <div className="tag">Energy Delta Management · Core Pillar: Rebuild</div>
+          <div className="tag">Untangle · Core Pillar: Rebuild</div>
           <div className="h-px flex-1 bg-border/40" />
         </div>
         <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-6">
@@ -456,9 +530,9 @@ export const WorkloadRealityCheck = ({ fingerprint, onAwardPoints }: WorkloadRea
                 }}
               />
 
-              <div className="flex justify-between items-center pt-6 text-sm text-text-muted">
-                <span>Press <kbd className="font-mono bg-border px-1.5 py-0.5 rounded text-xs">Cmd</kbd> + <kbd className="font-mono bg-border px-1.5 py-0.5 rounded text-xs">Enter</kbd> to advance</span>
-                <button 
+              <div className="flex justify-end sm:justify-between items-center pt-6 text-sm text-text-muted">
+                <span className="hidden sm:inline">Press <kbd className="font-mono bg-border px-1.5 py-0.5 rounded text-xs">Cmd</kbd> + <kbd className="font-mono bg-border px-1.5 py-0.5 rounded text-xs">Enter</kbd> to advance</span>
+                <button
                   onClick={handleNext} 
                   disabled={!answers[activeQuestion].trim()}
                   className="btn-primary"
@@ -512,6 +586,58 @@ export const WorkloadRealityCheck = ({ fingerprint, onAwardPoints }: WorkloadRea
                 </p>
               </div>
             </div>
+
+            {/* Today's Realistic Plan - the same Planned Load / Remaining
+                Buffer / Capacity Protected / Energy Delta figures Energy
+                Delta Management uses, reused rather than invented fresh. */}
+            <div className="card p-6 sm:p-8 space-y-6 relative overflow-hidden border border-border">
+              <div className="relative z-10">
+                <h3 className="text-xl font-display font-medium text-text-main tracking-tight">Today's Realistic Plan</h3>
+                <p className="text-xs text-text-muted uppercase tracking-[0.2em] font-medium mt-1">What this triage actually changes</p>
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-6 relative z-10">
+                <StatTile label="Planned Load" value={pendingTasks.length > 0 ? `${Math.round(netLoad)}` : null} emptyText="Nothing planned yet" />
+                <StatTile label="Remaining Buffer" value={remainingBuffer !== null ? `${Math.round(remainingBuffer)}` : null} emptyText="Not checked in yet" />
+                <StatTile label="Capacity Protected" value={capacityProtectedToday > 0 ? `+${Math.round(capacityProtectedToday)}` : null} emptyText="Not yet" />
+                <div className="col-span-2 sm:col-span-1">
+                  <p className="text-[11px] font-black uppercase tracking-widest text-text-muted">Energy Delta</p>
+                  {planEnergyDelta !== null ? (
+                    <p className={cn("text-3xl font-display font-black tracking-tighter", planEnergyDelta < 0 ? 'text-destructive' : 'text-primary')}>
+                      {planEnergyDelta > 0 ? '+' : ''}{Math.round(planEnergyDelta)}
+                    </p>
+                  ) : (
+                    <p className="text-sm font-bold text-text-muted">Not checked in yet</p>
+                  )}
+                </div>
+              </div>
+              {!hasCapacity && (
+                <p className="text-xs text-text-muted relative z-10">Check in on your capacity in Energy &amp; Capacity above to see your Energy Delta and Remaining Buffer here.</p>
+              )}
+            </div>
+
+            {/* WORKLOAD REALITY CHECK — PATTERN LEARNING */}
+            {recurringMustDo && !recurringMustDoAnswered && (
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="card border border-primary/20 bg-primary/5 p-6 space-y-4"
+              >
+                <p className="text-sm text-text-main font-medium leading-relaxed">
+                  These keep returning as non-negotiables. Are they genuinely fixed, or have they become automatic?
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {RECURRING_MUST_DO_OPTIONS.map((opt) => (
+                    <button
+                      key={opt.id}
+                      onClick={() => handleRecurringMustDoAnswer(opt.id)}
+                      className="px-3 py-1.5 rounded-lg border border-border text-xs font-bold text-text-muted hover:text-text-main hover:border-primary/40 transition-colors"
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+              </motion.div>
+            )}
 
             {/* Interactive New Task Injector Form */}
             {showFatigueWarning && (
@@ -1019,3 +1145,14 @@ export const WorkloadRealityCheck = ({ fingerprint, onAwardPoints }: WorkloadRea
     </div>
   );
 };
+
+const StatTile = ({ label, value, emptyText }: { label: string; value: string | null; emptyText: string }) => (
+  <div className="space-y-1">
+    <p className="text-[11px] font-black uppercase tracking-widest text-text-muted">{label}</p>
+    {value !== null ? (
+      <p className="text-3xl font-display font-bold text-[#9a3412] dark:text-primary">{value}</p>
+    ) : (
+      <p className="text-sm font-bold text-text-muted">{emptyText}</p>
+    )}
+  </div>
+);

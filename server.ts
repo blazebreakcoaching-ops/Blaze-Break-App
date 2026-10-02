@@ -1637,7 +1637,7 @@ async function getNovaStyleToneAddendum(uid: string, firestoreDb: any): Promise<
 //     coaching analysis of the user's own diagnostic result, addressed
 //     directly to them.
 //   - /api/nova/one-less-thing (~line 2668): a real coaching decision
-//     (which of 4 actions to take on a task they named) put directly to
+//     (which of 7 outcomes to take on a task they named) put directly to
 //     the user, plus advice and a ready-to-send template.
 //
 // DO NOT APPLY (neither module - no question or personal decision is put
@@ -3084,7 +3084,7 @@ const OneLessThingRequestSchema = z.object({
   task: z.string().trim().min(1).max(300),
 }).strict();
 
-const ONE_LESS_THING_ACTIONS = ['Delete', 'Delay', 'Delegate', 'Simplify'] as const;
+const ONE_LESS_THING_ACTIONS = ['Cancel', 'Delegate', 'Delay', 'Make Smaller', 'Ask For Help', 'Share', 'Keep'] as const;
 
 app.post("/api/nova/one-less-thing", oneLessThingLimiter, verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
   try {
@@ -3108,22 +3108,25 @@ app.post("/api/nova/one-less-thing", oneLessThingLimiter, verifyAppCheck, authen
         model: "gemini-3.5-flash",
         contents: {
           parts: [{
-            text: `You are Nova, a direct, warm burnout-recovery coach. The user is overloaded right now and has named ONE thing weighing on them. Your job is triage: pick the single fastest way to genuinely take it off their plate today.
+            text: `You are Nova, a direct, warm burnout-recovery coach. The user is overloaded right now and has named ONE thing weighing on them. Your job is to help them find a genuine way to carry less of it today - not to make them better at carrying overload.
 
 The thing on their plate: "${task}"
 
-Choose exactly ONE action:
-- Delete: it doesn't need to happen at all, or not today. Cancel it or make it optional.
+Choose exactly ONE outcome:
+- Cancel: it doesn't need to happen at all, or not today.
+- Delegate: someone else can genuinely own this, even imperfectly.
 - Delay: it's not actually urgent - move it to a specific later time without guilt.
-- Delegate: someone else can genuinely do this, even imperfectly.
-- Simplify: it must happen, but at far lower effort/fidelity than they're planning.
+- Make Smaller: it must happen, but at far lower effort/fidelity than they're planning.
+- Ask For Help: they don't have to do this entirely alone - who could share the load?
+- Share: the responsibility itself could be split with someone, not just the task.
+- Keep: on reflection this genuinely needs to stay exactly as it is - do not force a reduction that doesn't fit.
 
 Then write:
 1. advice: 2 sentences, direct and specific to what they described, in Nova's voice - not generic.
-2. template: a real, ready-to-send message they could copy and paste right now to actually make this happen (e.g. to cancel, delegate, or push back). It must be complete and usable exactly as written - never include a bracket placeholder like "[Tuesday]" or "[name]" that still needs filling in; if you need a day or person, invent a concrete, generic one that reads naturally (e.g. "early next week", "whoever's free").
+2. template: a real, ready-to-send message they could copy and paste right now to actually make this happen (e.g. to cancel, delegate, ask for help, or push back). For "Keep", this should instead be a short honest line acknowledging why it stays. It must be complete and usable exactly as written - never include a bracket placeholder like "[Tuesday]" or "[name]" that still needs filling in; if you need a day or person, invent a concrete, generic one that reads naturally (e.g. "early next week", "whoever's free").
 
 Respond strictly as JSON, no markdown:
-{"action": "Delete" | "Delay" | "Delegate" | "Simplify", "advice": "...", "template": "..."}
+{"action": "Cancel" | "Delegate" | "Delay" | "Make Smaller" | "Ask For Help" | "Share" | "Keep", "advice": "...", "template": "..."}
 ${styleToneAddendum}`,
           }],
         },

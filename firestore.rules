@@ -146,6 +146,28 @@ service cloud.firestore {
             request.resource.data.hours is number && request.resource.data.hours >= 0 && request.resource.data.hours <= 24;
       }
 
+      // Rediscovery Layer: gates how often One Less Thing asks "Why was
+      // this on your plate?" - a simple completion counter, nothing else.
+      match /preferences/one_less_thing {
+        allow read: if isOwner(uid);
+        allow write: if isOwner(uid) &&
+            hasOnly(['totalCompletions', 'updatedAt']) &&
+            (!('totalCompletions' in request.resource.data) || (request.resource.data.totalCompletions is number && request.resource.data.totalCompletions >= 0));
+      }
+
+      // Rediscovery Layer: one Workload Reality Check history snapshot
+      // per day (doc id = date) - just enough real history for the
+      // recurring-Must-Do pattern reflection to work from.
+      match /workload_reality_check_history/{date} {
+        allow read: if isOwner(uid);
+        allow delete: if isOwner(uid);
+        allow create, update: if isOwner(uid) &&
+            hasOnly(['date', 'mustDoTitles', 'createdAt']) &&
+            hasAll(['date', 'mustDoTitles', 'createdAt']) &&
+            isStringWithMax(request.resource.data.date, 10) &&
+            request.resource.data.mustDoTitles is list && request.resource.data.mustDoTitles.size() <= 20;
+      }
+
       // D. users/{uid}/consents/current
       match /consents/current {
         allow read: if isOwner(uid);
@@ -587,6 +609,22 @@ service cloud.firestore {
         allow update: if isOwner(uid)
             && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['helpful'])
             && request.resource.data.helpful in ['yes', 'a_little', 'not_really'];
+      }
+
+      // Rediscovery Layer: raw pattern clues fed in by several tools (One
+      // Less Thing's "why was this on your plate", Workload Reality
+      // Check's recurring-Must-Do reflection, and more to come) - a clue
+      // is never itself an insight or a diagnosis, just a logged
+      // observation, so it's append-only: no update, no reinterpretation
+      // after the fact.
+      match /rediscovery_clues/{clueId} {
+        allow read, delete: if isOwner(uid);
+        allow create: if isOwner(uid)
+            && hasOnly(['id', 'source', 'prompt', 'answer', 'createdAt'])
+            && hasAll(['id', 'source', 'prompt', 'answer', 'createdAt'])
+            && request.resource.data.source in ['one_less_thing_why', 'workload_recurring_must_do', 'one_less_thing_category_imbalance', 'energy_delta_mismatch', 'recovery_fuel_pattern', 'quiet_question']
+            && isStringWithMax(request.resource.data.prompt, 300)
+            && isStringWithMax(request.resource.data.answer, 300);
       }
 
       // J. nova_permissions/current
