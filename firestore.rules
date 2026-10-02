@@ -376,6 +376,74 @@ service cloud.firestore {
             && (request.method == 'create' ? true : checkCreatedAtUnchanged());
       }
 
+      // Energy Delta Model v1 (section references below are to that brief).
+      // Three collections replace energy_commitments' old slider-based
+      // model for new writes - energy_commitments itself is left in place
+      // below (rule "N"), never deleted, so any existing data a returning
+      // user already has stays readable even though the UI no longer
+      // writes to it.
+
+      // capacity_checkins - section 1/9's "how is your capacity today"
+      // check-in. Append-only: a same-day re-check (section 9) creates a
+      // new entry rather than overwriting the last one, so the day's full
+      // history is retained - no update allowed, only create/read/delete.
+      match /capacity_checkins/{checkInId} {
+        allow read: if isOwner(uid);
+        allow delete: if isOwner(uid);
+        allow create: if isOwner(uid)
+            && hasOnly(['physical', 'mental', 'emotional', 'score', 'createdAt'])
+            && hasAll(['physical', 'mental', 'emotional', 'score', 'createdAt'])
+            && request.resource.data.physical in ['very_low', 'low', 'okay', 'good', 'strong']
+            && request.resource.data.mental in ['very_low', 'low', 'okay', 'good', 'strong']
+            && request.resource.data.emotional in ['very_low', 'low', 'okay', 'good', 'strong']
+            && request.resource.data.score is number && request.resource.data.score >= 0 && request.resource.data.score <= 100;
+      }
+
+      // energy_stressors - section 2-4's stressor log (severity +
+      // persistence, with an optional most-recently-reported reduction)
+      // and section 15's Energy Audit action classification. The reduction
+      // field intentionally has no history of its own (section 4 only
+      // ever asks "did this reduce the demand", not "by how much over
+      // time") - updating it in place keeps computeStressorCurrentValue's
+      // "most recent report" contract exact.
+      match /energy_stressors/{stressorId} {
+        allow read: if isOwner(uid);
+        allow delete: if isOwner(uid);
+        allow create, update: if isOwner(uid)
+            && hasOnly(['name', 'category', 'severity', 'persistence', 'reduction', 'action', 'status', 'createdAt', 'updatedAt'])
+            && hasAll(['name', 'category', 'severity', 'persistence', 'status', 'createdAt', 'updatedAt'])
+            && isStringWithMax(request.resource.data.name, 120)
+            && request.resource.data.category in ['professional', 'social', 'emotional', 'logistical']
+            && request.resource.data.severity in [1, 2, 3, 4, 5]
+            && request.resource.data.persistence in ['one_off', 'repeated', 'ongoing']
+            && (!('reduction' in request.resource.data) || request.resource.data.reduction in ['not_yet', 'a_little', 'meaningfully', 'a_lot'])
+            && (!('action' in request.resource.data) || request.resource.data.action in ['control', 'reduce', 'delegate', 'defer', 'accept'])
+            && request.resource.data.status in ['active', 'resolved']
+            && (request.method == 'create' ? true : checkCreatedAtUnchanged());
+      }
+
+      // energy_daily_snapshots - sections 10-12's 7-day pattern/Sustained
+      // Capacity Gap data. Doc id is the calendar date (YYYY-MM-DD),
+      // upserted (merge) with whatever the dashboard most recently
+      // computed live that day (section 9's "use the latest reading"),
+      // never reconstructed after the fact - capacity/energyDelta are
+      // nullable (section 17: a day with no check-in yet is unknown, not
+      // zero), grossLoad/netLoad/capacityProtected always have a real
+      // computed value since they default to 0 with no stressors logged.
+      match /energy_daily_snapshots/{date} {
+        allow read: if isOwner(uid);
+        allow delete: if isOwner(uid);
+        allow create, update: if isOwner(uid)
+            && hasOnly(['date', 'capacity', 'grossLoad', 'netLoad', 'capacityProtected', 'energyDelta', 'updatedAt'])
+            && hasAll(['date', 'grossLoad', 'netLoad', 'capacityProtected', 'updatedAt'])
+            && isStringWithMax(request.resource.data.date, 10)
+            && (!('capacity' in request.resource.data) || request.resource.data.capacity == null || (request.resource.data.capacity is number && request.resource.data.capacity >= 0 && request.resource.data.capacity <= 100))
+            && request.resource.data.grossLoad is number && request.resource.data.grossLoad >= 0 && request.resource.data.grossLoad <= 100
+            && request.resource.data.netLoad is number && request.resource.data.netLoad >= 0 && request.resource.data.netLoad <= 100
+            && request.resource.data.capacityProtected is number
+            && (!('energyDelta' in request.resource.data) || request.resource.data.energyDelta == null || request.resource.data.energyDelta is number);
+      }
+
       // spark_checks - SPARK Check daily scan (Sleep, Performance, Aches,
       // Reactions, Kindness). Matches ConnectedSparkCheck's write.
       match /spark_checks/{checkId} {
