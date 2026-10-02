@@ -219,6 +219,67 @@ service cloud.firestore {
             request.resource.data.mustDoTitles is list && request.resource.data.mustDoTitles.size() <= 20;
       }
 
+      // Decompression Doorway: My Thresholds - one profile per recurring
+      // leaving->arriving pair (doc id = pairKey), holding saved
+      // preferences and a bounded recent-capacity history for pattern
+      // detection. Always written as a full replace via merge, so
+      // create and update share the same shape check.
+      match /decompression_thresholds/{pairKey} {
+        allow read, delete: if isOwner(uid);
+        allow create, update: if isOwner(uid)
+            && hasOnly(['pairKey', 'leaving', 'arriving', 'preferredArrivalQuality', 'transitionAnchor', 'nudgeConsent', 'totalCrossings', 'totalPrompted', 'totalSkipped', 'capacityHistory', 'createdAt', 'updatedAt'])
+            && hasAll(['pairKey', 'leaving', 'arriving', 'nudgeConsent', 'totalCrossings', 'totalPrompted', 'totalSkipped', 'createdAt', 'updatedAt'])
+            && isStringWithMax(request.resource.data.leaving, 60)
+            && isStringWithMax(request.resource.data.arriving, 60)
+            && request.resource.data.nudgeConsent in ['always_ask', 'only_hard_days', 'specific_days', 'off']
+            && request.resource.data.totalCrossings is number && request.resource.data.totalCrossings >= 0
+            && request.resource.data.totalPrompted is number && request.resource.data.totalPrompted >= 0
+            && request.resource.data.totalSkipped is number && request.resource.data.totalSkipped >= 0
+            && (!('preferredArrivalQuality' in request.resource.data) || request.resource.data.preferredArrivalQuality == null || isStringWithMax(request.resource.data.preferredArrivalQuality, 60))
+            && (!('transitionAnchor' in request.resource.data) || request.resource.data.transitionAnchor == null || isStringWithMax(request.resource.data.transitionAnchor, 100))
+            && (!('capacityHistory' in request.resource.data) || (request.resource.data.capacityHistory is list && request.resource.data.capacityHistory.size() <= 10));
+      }
+
+      // Decompression Doorway: unfinished business that was Parked or
+      // Scheduled rather than carried through the threshold - append-
+      // only aside from the one allowed field (resolved) once it's been
+      // retrieved.
+      match /decompression_parked_items/{itemId} {
+        allow read, delete: if isOwner(uid);
+        allow create: if isOwner(uid)
+            && hasOnly(['id', 'text', 'disposition', 'reminderDay', 'resolved', 'createdAt'])
+            && hasAll(['id', 'text', 'disposition', 'resolved', 'createdAt'])
+            && isStringWithMax(request.resource.data.text, 300)
+            && request.resource.data.disposition in ['park', 'schedule']
+            && request.resource.data.resolved == false
+            && (!('reminderDay' in request.resource.data) || request.resource.data.reminderDay == null || isStringWithMax(request.resource.data.reminderDay, 20));
+        allow update: if isOwner(uid)
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['resolved'])
+            && request.resource.data.resolved == true;
+      }
+
+      // Decompression Doorway: one transition log per crossing - the
+      // sparse later arrival check and, if it surfaces something, what
+      // followed through both land on the same record via the narrow
+      // update below, same pattern as breathing_reset_sessions.
+      match /decompression_sessions/{sessionId} {
+        allow read, delete: if isOwner(uid);
+        allow create: if isOwner(uid)
+            && hasOnly(['id', 'pairKey', 'leaving', 'arriving', 'depth', 'capacityAtEntry', 'arrivalQuality', 'anchorUsed', 'arrivalCheck', 'followedThrough', 'pendingArrivalCheck', 'createdAt'])
+            && hasAll(['id', 'pairKey', 'leaving', 'arriving', 'depth', 'pendingArrivalCheck', 'createdAt'])
+            && request.resource.data.depth in ['quick', 'standard', 'deeper']
+            && request.resource.data.pendingArrivalCheck is bool
+            && (!('capacityAtEntry' in request.resource.data) || request.resource.data.capacityAtEntry == null || request.resource.data.capacityAtEntry is number)
+            && (!('arrivalQuality' in request.resource.data) || request.resource.data.arrivalQuality == null || isStringWithMax(request.resource.data.arrivalQuality, 60))
+            && (!('anchorUsed' in request.resource.data) || request.resource.data.anchorUsed == null || isStringWithMax(request.resource.data.anchorUsed, 100))
+            && (!('arrivalCheck' in request.resource.data) || request.resource.data.arrivalCheck == null)
+            && (!('followedThrough' in request.resource.data) || request.resource.data.followedThrough == null);
+        allow update: if isOwner(uid)
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['arrivalCheck', 'followedThrough'])
+            && (!('arrivalCheck' in request.resource.data) || request.resource.data.arrivalCheck in ['yes', 'mostly', 'not_really', 'not_sure'])
+            && (!('followedThrough' in request.resource.data) || request.resource.data.followedThrough in ['the_conversation', 'something_unfinished', 'anger', 'worry', 'work_notifications', 'reopened_work', 'couldnt_switch_off', 'not_sure']);
+      }
+
       // D. users/{uid}/consents/current
       match /consents/current {
         allow read: if isOwner(uid);
@@ -673,7 +734,7 @@ service cloud.firestore {
         allow create: if isOwner(uid)
             && hasOnly(['id', 'source', 'prompt', 'answer', 'createdAt'])
             && hasAll(['id', 'source', 'prompt', 'answer', 'createdAt'])
-            && request.resource.data.source in ['one_less_thing_why', 'workload_recurring_must_do', 'one_less_thing_category_imbalance', 'energy_delta_mismatch', 'recovery_fuel_pattern', 'quiet_question', 'rumination_furnace', 'pressure_valve', 'make_it_smaller']
+            && request.resource.data.source in ['one_less_thing_why', 'workload_recurring_must_do', 'one_less_thing_category_imbalance', 'energy_delta_mismatch', 'recovery_fuel_pattern', 'quiet_question', 'rumination_furnace', 'pressure_valve', 'make_it_smaller', 'decompression_doorway']
             && isStringWithMax(request.resource.data.prompt, 300)
             && isStringWithMax(request.resource.data.answer, 300);
       }

@@ -165,7 +165,8 @@ export type RediscoveryClueSource =
   | 'quiet_question'
   | 'rumination_furnace'
   | 'pressure_valve'
-  | 'make_it_smaller';
+  | 'make_it_smaller'
+  | 'decompression_doorway';
 
 export interface RediscoveryClue {
   id: string;
