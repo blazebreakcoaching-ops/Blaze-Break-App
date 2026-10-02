@@ -83,6 +83,16 @@ export const MovementSnacks = ({ fingerprint: _fingerprint, onAwardPoints }: Mov
     });
   }, []);
 
+  const goToDetail = (movementId: string, context: MovementContext | null) => {
+    setActiveMovementId(movementId);
+    setActiveContext(context);
+    setStepIndex(0);
+    setFeedback(null);
+    setClosingChoicePicked(null);
+    setClosingNote('');
+    setView('detail');
+  };
+
   // Recovery Recipes' deep-link (section 14) - reuses this real component
   // rather than reimplementing any physical step. Jumps straight to the
   // requested movement's detail screen and brings it into view, since both
@@ -140,16 +150,6 @@ export const MovementSnacks = ({ fingerprint: _fingerprint, onAwardPoints }: Mov
     const next = !audioEnabled;
     setAudioEnabled(next);
     if (auth.currentUser) updateMovementPreferences(auth.currentUser.uid, { audioPreference: next }).catch(() => {});
-  };
-
-  const goToDetail = (movementId: string, context: MovementContext | null) => {
-    setActiveMovementId(movementId);
-    setActiveContext(context);
-    setStepIndex(0);
-    setFeedback(null);
-    setClosingChoicePicked(null);
-    setClosingNote('');
-    setView('detail');
   };
 
   const handleContextPick = (context: MovementContext) => {
