@@ -20,6 +20,7 @@
 // `isDemoSession` usage at the <HomeSection> call site.
 
 import { UserStats, BurnoutFingerprint, SupportContact } from "../types";
+import { CapacityLevel, StressorCategory, StressorSeverity, StressorPersistence, ReductionLevel, StressorAction } from "../../energy-delta-engine";
 
 export const DEMO_STATS: UserStats = {
   points: 1450,
@@ -117,27 +118,54 @@ export const DEMO_VELOCITY_MAP: { date: string; energyOutput: number; recoveryIn
 // separate state), so it flips back to false automatically the instant
 // a real profile.fullName is saved (real onboarding completed, or a
 // linked real account's saved profile loads).
-// Matches EnergyBudgetMatrix.tsx's own Commitment shape (its
-// energy_commitments Firestore subcollection). `isSample: true` lets that
-// component tell these apart from anything the visitor genuinely typed
-// into "Inject into Audit" during the same session - its action buttons
-// (Delegate/Boundary/Drop) check this flag and update local state only for
-// a sample card, never call updateDoc/setDoc, so a click can never fire a
-// Firestore write against a doc that was never created.
-export const DEMO_ENERGY_COMMITMENTS: {
+// Energy Delta Model v1's demo fixtures (replaces the old pre-v1
+// DEMO_ENERGY_COMMITMENTS 0-100-slider shape). `isSample: true` on the
+// stressors lets EnergyBudgetMatrix.tsx tell these apart from anything
+// the visitor genuinely logs during the same session - its action
+// handlers check this flag and only ever update local state for a sample
+// entry, never call Firestore.
+export const DEMO_CAPACITY_CHECKIN: {
+  id: string; physical: CapacityLevel; mental: CapacityLevel; emotional: CapacityLevel; score: number; createdAt: string;
+} = {
+  id: "demo-capacity-1", physical: "good", mental: "okay", emotional: "okay", score: 58, createdAt: "2026-09-22T08:00:00.000Z",
+};
+
+export const DEMO_ENERGY_STRESSORS: {
   id: string;
   name: string;
-  energyDrain: number;
-  type: 'professional' | 'social' | 'emotional' | 'logistical';
-  status: 'active' | 'dropped' | 'delegated' | 'restructured';
+  category: StressorCategory;
+  severity: StressorSeverity;
+  persistence: StressorPersistence;
+  reduction?: ReductionLevel;
+  action?: StressorAction;
+  status: 'active' | 'resolved';
   createdAt: string;
-  updatedAt?: string;
+  updatedAt: string;
   isSample: true;
 }[] = [
-  { id: "demo-1", name: "Leading the weekly ops stand-up for 3 teams", energyDrain: 70, type: "professional", status: "active", createdAt: "2026-09-22T09:00:00.000Z", isSample: true },
-  { id: "demo-2", name: "Covering a direct report's on-call rotation", energyDrain: 55, type: "professional", status: "active", createdAt: "2026-09-20T09:00:00.000Z", isSample: true },
-  { id: "demo-3", name: "Smoothing tension between two stakeholders", energyDrain: 60, type: "emotional", status: "active", createdAt: "2026-09-19T09:00:00.000Z", isSample: true },
-  { id: "demo-4", name: "Coordinating the offsite logistics", energyDrain: 35, type: "logistical", status: "delegated", createdAt: "2026-09-17T09:00:00.000Z", updatedAt: "2026-09-21T09:00:00.000Z", isSample: true },
+  { id: "demo-s1", name: "Leading the weekly ops stand-up for 3 teams", category: "professional", severity: 4, persistence: "ongoing", action: "accept", status: "active", createdAt: "2026-09-22T09:00:00.000Z", updatedAt: "2026-09-22T09:00:00.000Z", isSample: true },
+  { id: "demo-s2", name: "Covering a direct report's on-call rotation", category: "professional", severity: 3, persistence: "repeated", reduction: "a_little", action: "delegate", status: "active", createdAt: "2026-09-20T09:00:00.000Z", updatedAt: "2026-09-21T09:00:00.000Z", isSample: true },
+  { id: "demo-s3", name: "Smoothing tension between two stakeholders", category: "emotional", severity: 3, persistence: "ongoing", status: "active", createdAt: "2026-09-19T09:00:00.000Z", updatedAt: "2026-09-19T09:00:00.000Z", isSample: true },
+  { id: "demo-s4", name: "Coordinating the offsite logistics", category: "logistical", severity: 2, persistence: "one_off", reduction: "a_lot", action: "delegate", status: "resolved", createdAt: "2026-09-17T09:00:00.000Z", updatedAt: "2026-09-21T09:00:00.000Z", isSample: true },
+];
+
+// Six days of history before "today" - the component always computes
+// today's own snapshot live from DEMO_CAPACITY_CHECKIN + DEMO_ENERGY_
+// STRESSORS rather than trusting a seventh hardcoded entry here, exactly
+// like the real (non-demo) data flow. A gap that's been gradually
+// closing, consistent with DEMO_DERIVED_SUMMARIES' own "closing over the
+// last two weeks" narrative - and deliberately keeps 4 of these 6 days
+// below the Sustained Capacity Gap threshold so the demo also shows that
+// card, not just a clean dashboard.
+export const DEMO_DAILY_SNAPSHOTS: {
+  date: string; capacity: number | null; grossLoad: number; netLoad: number; capacityProtected: number; energyDelta: number | null; updatedAt: string;
+}[] = [
+  { date: "2026-09-16", capacity: 38, grossLoad: 65, netLoad: 60, capacityProtected: 5, energyDelta: -22, updatedAt: "2026-09-16T18:00:00.000Z" },
+  { date: "2026-09-17", capacity: 42, grossLoad: 62, netLoad: 60, capacityProtected: 2, energyDelta: -18, updatedAt: "2026-09-17T18:00:00.000Z" },
+  { date: "2026-09-18", capacity: 48, grossLoad: 62, netLoad: 60, capacityProtected: 2, energyDelta: -12, updatedAt: "2026-09-18T18:00:00.000Z" },
+  { date: "2026-09-19", capacity: 45, grossLoad: 62, netLoad: 60, capacityProtected: 2, energyDelta: -15, updatedAt: "2026-09-19T18:00:00.000Z" },
+  { date: "2026-09-20", capacity: 55, grossLoad: 58, netLoad: 52, capacityProtected: 6, energyDelta: 3, updatedAt: "2026-09-20T18:00:00.000Z" },
+  { date: "2026-09-21", capacity: 52, grossLoad: 55, netLoad: 50, capacityProtected: 5, energyDelta: 2, updatedAt: "2026-09-21T18:00:00.000Z" },
 ];
 
 // Matches RecoveryIntelligenceLayer.tsx's own local DerivedSummary shape

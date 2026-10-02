@@ -123,6 +123,11 @@ export interface Stressor {
   status: 'active' | 'resolved';
   createdAt: string;
   updatedAt: string;
+  // Only ever set on an illustrative demo-data.ts stressor seeded during a
+  // demo session - never on a real stressor the visitor logged. Gates
+  // every write path in EnergyBudgetMatrix.tsx, since a sample stressor
+  // has no real Firestore document behind it.
+  isSample?: boolean;
 }
 
 // The persistence-adjusted value before any reduction is applied -
