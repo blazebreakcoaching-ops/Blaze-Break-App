@@ -187,13 +187,13 @@ export const WeeklyGoalTracker = ({ onAwardPoints }: WeeklyGoalTrackerProps) => 
         <div className="space-y-1.5">
           <h3 className="text-2xl font-display font-bold text-text-main tracking-tight">7-Day Recovery Cycle</h3>
           <p className="text-sm text-text-muted max-w-xl leading-relaxed">
-            Sustained recovery requires systematic habit protection. Progress is tracked for real, week by week.
+            Seven days of deliberately protecting the habits and actions that restore your capacity.
           </p>
         </div>
         {goals && (
           confirmingNewWeek ? (
             <div className="flex items-center gap-2 shrink-0">
-              <span className="text-xs font-bold text-text-muted">Reset this week's progress?</span>
+              <span className="text-xs font-bold text-text-muted">Start a new cycle? Your current progress won't carry over.</span>
               <button onClick={startWeek} className="rounded-full bg-destructive text-destructive-foreground px-3 py-1.5 text-xs font-bold hover:opacity-90 transition-opacity">
                 Yes, start fresh
               </button>
@@ -206,7 +206,7 @@ export const WeeklyGoalTracker = ({ onAwardPoints }: WeeklyGoalTrackerProps) => 
               onClick={() => setConfirmingNewWeek(true)}
               className="inline-flex items-center gap-1.5 rounded-full border border-border px-3 py-1.5 text-xs font-bold text-text-muted hover:text-primary hover:border-primary/40 transition-colors shrink-0"
             >
-              <RefreshCw className="w-3.5 h-3.5" aria-hidden="true" /> New Week
+              <RefreshCw className="w-3.5 h-3.5" aria-hidden="true" /> New Cycle
             </button>
           )
         )}
@@ -214,11 +214,19 @@ export const WeeklyGoalTracker = ({ onAwardPoints }: WeeklyGoalTrackerProps) => 
 
       {!goals ? (
         <div className="rounded-2xl border border-dashed border-border p-6 text-center space-y-3">
+          <p className="text-sm font-bold text-text-main">No active cycle yet.</p>
           <p className="text-sm text-text-muted">
-            No cycle started for this week yet. Nothing carries over automatically - start when you're ready.
+            Start whenever you're ready. Your previous cycles and progress stay in your history.
           </p>
+          {/* Internally this still keys a cycle to the current ISO
+              calendar week (see weekly-goal-tracker.ts's getIsoWeekId) -
+              a genuine any-day 7-day rolling window would need a stored
+              start-date field and a Firestore schema change, which is out
+              of scope for this copy/UX pass. The copy above deliberately
+              never mentions "this week" so it doesn't promise a rolling
+              window the data model doesn't yet provide. */}
           <button onClick={startWeek} className="btn-primary py-2.5 px-6 text-sm inline-flex items-center gap-2">
-            Start This Week
+            Start My 7 Days
           </button>
         </div>
       ) : (

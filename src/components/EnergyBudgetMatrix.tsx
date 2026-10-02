@@ -1,7 +1,7 @@
 import { auth } from '../lib/firebase';
 import { db } from '../lib/firestore';
 import { collection, doc, setDoc, getDocs, updateDoc, query, orderBy } from 'firebase/firestore';
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { CheckCircle2, TrendingDown, Crosshair, Activity, ArchiveX, BatteryWarning, BatteryCharging, Network, Loader2 } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
@@ -23,6 +23,17 @@ interface Commitment {
   isSample?: boolean;
 }
 
+// User-facing category labels - the underlying stored type values
+// ('professional'/'social'/'emotional'/'logistical') stay as-is, since
+// they're already persisted in Firestore and used as the Commitment['type']
+// union everywhere in this file; only the displayed text changes.
+const TYPE_LABELS: Record<Commitment['type'], string> = {
+  professional: 'Work',
+  emotional: 'Emotional',
+  social: 'Social',
+  logistical: 'Life admin',
+};
+
 export const EnergyBudgetMatrix = ({ onPointsEarned, isDemoSession }: { onPointsEarned: (pts: number, reason: string) => void; isDemoSession?: boolean }) => {
   const [commitments, setCommitments] = useState<Commitment[]>([]);
   const [loading, setLoading] = useState(true);
@@ -31,6 +42,7 @@ export const EnergyBudgetMatrix = ({ onPointsEarned, isDemoSession }: { onPoints
   const [input, setInput] = useState('');
   const [drainSlider, setDrainSlider] = useState(50);
   const [selectedType, setSelectedType] = useState<Commitment['type']>('professional');
+  const stressorInputRef = useRef<HTMLInputElement>(null);
 
   const uid = auth.currentUser?.uid;
 
@@ -161,15 +173,18 @@ export const EnergyBudgetMatrix = ({ onPointsEarned, isDemoSession }: { onPoints
                <BatteryCharging className="w-7 h-7" />
              </div>
              <div>
-                <h2 className="text-3xl lg:text-4xl font-display font-bold text-text-main tracking-tight">Energy Delta Management</h2>
+                <h2 className="text-3xl lg:text-4xl font-display font-bold text-text-main tracking-tight">Energy &amp; Capacity</h2>
                 <div className="flex items-center gap-3 mt-2">
-                  <span className="text-xs font-black uppercase tracking-[0.2em] text-primary flex items-center gap-1.5"><Network className="w-3 h-3" /> Core Pillar: Rebuild</span>
+                  <span className="text-xs font-black uppercase tracking-[0.2em] text-primary flex items-center gap-1.5"><Network className="w-3 h-3" /> Energy Delta Management · Core Pillar: Rebuild</span>
                 </div>
              </div>
           </div>
-          <p className="text-sm lg:text-base text-text-muted leading-relaxed font-serif italic max-w-2xl border-l-[3px] border-primary/30 pl-5 py-1">
-            "Burnout isn't just working too much — it's taking on more commitments than your actual energy can fund. Find where the gap is, and start closing it."
-          </p>
+          <div className="max-w-2xl border-l-[3px] border-primary/30 pl-5 py-1 space-y-1.5">
+            <p className="text-base lg:text-lg text-text-main font-display font-bold">Your energy has a budget too.</p>
+            <p className="text-sm lg:text-base text-text-muted leading-relaxed">
+              Burnout can build when your demands repeatedly outrun the capacity available to meet them. Spot the gap, reduce unnecessary load and protect recovery.
+            </p>
+          </div>
         </div>
       </div>
 
@@ -183,33 +198,43 @@ export const EnergyBudgetMatrix = ({ onPointsEarned, isDemoSession }: { onPoints
               <Activity className="w-4 h-4 text-text-muted" />
             </h4>
             
-            <div className="relative h-56 flex items-center justify-center">
-              <svg className="w-48 h-48 transform -rotate-90">
-                <circle cx="96" cy="96" r="80" fill="none" className="stroke-border" strokeWidth="12" />
-                <motion.circle
-                  cx="96" cy="96" r="80" fill="none"
-                  className={cn("transition-colors duration-700 shadow-glow", isOverloaded ? 'stroke-destructive' : 'stroke-primary')}  
-                  strokeWidth="12"
-                  strokeLinecap="round"
-                  strokeDasharray="502.6"
-                  animate={{ strokeDashoffset: 502.6 - (502.6 * Math.min(100, overloadPercentage)) / 100 }}
-                  transition={{ duration: 1.5, ease: "easeOut" }}
-                />
-              </svg>
-              <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
-                <span className={cn("text-4xl font-black font-display tracking-tighter drop-shadow-lg", isOverloaded ? 'text-destructive' : 'text-text-main')}>
-                   {Math.round(overloadPercentage)}%
-                </span>
-                <span className="text-xs font-black uppercase tracking-widest text-text-muted mt-1">Load</span>
+            {commitments.length === 0 ? (
+              <div className="h-56 flex flex-col items-center justify-center text-center gap-2 px-4">
+                <BatteryCharging className="w-8 h-8 text-text-muted" />
+                <p className="text-sm font-bold text-text-main">Not enough data yet</p>
+                <p className="text-xs text-text-muted leading-relaxed max-w-[220px]">
+                  Log a stressor below and your current load will show here.
+                </p>
               </div>
-            </div>
+            ) : (
+              <div className="relative h-56 flex items-center justify-center">
+                <svg className="w-48 h-48 transform -rotate-90">
+                  <circle cx="96" cy="96" r="80" fill="none" className="stroke-border" strokeWidth="12" />
+                  <motion.circle
+                    cx="96" cy="96" r="80" fill="none"
+                    className={cn("transition-colors duration-700 shadow-glow", isOverloaded ? 'stroke-destructive' : 'stroke-primary')}
+                    strokeWidth="12"
+                    strokeLinecap="round"
+                    strokeDasharray="502.6"
+                    animate={{ strokeDashoffset: 502.6 - (502.6 * Math.min(100, overloadPercentage)) / 100 }}
+                    transition={{ duration: 1.5, ease: "easeOut" }}
+                  />
+                </svg>
+                <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
+                  <span className={cn("text-4xl font-black font-display tracking-tighter drop-shadow-lg", isOverloaded ? 'text-destructive' : 'text-text-main')}>
+                     {Math.round(overloadPercentage)}%
+                  </span>
+                  <span className="text-xs font-black uppercase tracking-widest text-text-muted mt-1">Load</span>
+                </div>
+              </div>
+            )}
 
-            {isOverloaded && (
+            {isOverloaded && commitments.length > 0 && (
               <div className="bg-destructive/10 rounded-2xl p-5 border border-destructive/20 flex items-start gap-4 shadow-inner">
                 <BatteryWarning className="w-5 h-5 text-destructive shrink-0 mt-0.5" />
                 <div className="space-y-1">
-                  <p className="text-xs font-black uppercase tracking-[0.2em] text-destructive">System Critical</p>
-                  <p className="text-xs font-semibold text-rose-200/80 leading-relaxed">Deficit-spending detected. Auto-recovery blocked. Shed load immediately.</p>
+                  <p className="text-xs font-black uppercase tracking-[0.2em] text-destructive">Over capacity</p>
+                  <p className="text-xs font-semibold text-rose-200/80 leading-relaxed">Your current load is higher than what's sustainable right now. Consider shedding or delegating something before taking on more.</p>
                 </div>
               </div>
             )}
@@ -220,9 +245,10 @@ export const EnergyBudgetMatrix = ({ onPointsEarned, isDemoSession }: { onPoints
             
             <div className="space-y-6">
                <div className="space-y-2">
-                 <label htmlFor="energy-matrix-stressor" className="text-[11px] font-black uppercase tracking-widest text-text-muted ml-1">Stressor Identifier</label>
+                 <label htmlFor="energy-matrix-stressor" className="text-[11px] font-black uppercase tracking-widest text-text-muted ml-1">What's draining your energy?</label>
                  <input
                    id="energy-matrix-stressor"
+                   ref={stressorInputRef}
                    type="text"
                    value={input}
                    onChange={(e) => setInput(e.target.value)}
@@ -230,16 +256,16 @@ export const EnergyBudgetMatrix = ({ onPointsEarned, isDemoSession }: { onPoints
                    className="w-full bg-surface border border-white/10 rounded-xl px-4 py-4 text-sm text-text-main placeholder:text-text-muted focus:ring-1 focus:ring-primary/50 focus:border-primary outline-none transition-all font-mono"
                  />
                </div>
-              
+
               <div className="space-y-4 p-5 rounded-2xl bg-white/[0.02] border border-white/[0.05]">
                 <div className="flex justify-between text-xs font-black text-text-muted uppercase tracking-widest">
-                  <span>Energy Drain Coefficient</span>
+                  <span>Energy impact</span>
                   <span className="text-primary px-2 py-0.5 bg-primary/10 rounded">{drainSlider}</span>
                 </div>
                 <input
                   type="range" min="10" max="100" step="5"
                   value={drainSlider} onChange={(e) => setDrainSlider(Number(e.target.value))}
-                  aria-label="Energy drain coefficient"
+                  aria-label="Energy impact"
                   aria-valuetext={`${drainSlider}`}
                   className="w-full h-1.5 bg-card rounded-lg appearance-none cursor-pointer accent-primary transition-all"
                 />
@@ -257,7 +283,7 @@ export const EnergyBudgetMatrix = ({ onPointsEarned, isDemoSession }: { onPoints
                          selectedType === type ? "bg-primary/20 border-primary/50 text-primary shadow-inner" : "bg-card border-border text-text-muted hover:border-border"
                        )}
                      >
-                       {type}
+                       {TYPE_LABELS[type]}
                      </button>
                    ))}
                  </div>
@@ -268,7 +294,7 @@ export const EnergyBudgetMatrix = ({ onPointsEarned, isDemoSession }: { onPoints
                 disabled={!input.trim()}
                 className="w-full bg-surface dark:bg-card text-text-main py-4 rounded-xl flex items-center justify-center gap-3 text-xs font-black uppercase tracking-[0.2em] disabled: hover:bg-border transition-colors shadow-[0_0_20px_rgba(255,255,255,0.1)]"
               >
-                <Crosshair className="w-4 h-4" /> Inject into Audit
+                <Crosshair className="w-4 h-4" /> Add to Energy Audit
               </button>
             </div>
           </div>
@@ -278,54 +304,77 @@ export const EnergyBudgetMatrix = ({ onPointsEarned, isDemoSession }: { onPoints
         <div className="lg:col-span-8 flex flex-col gap-6">
           {/* Workload Velocity Chart Dashboard */}
           <div className="card bg-background p-8 border border-border space-y-6 text-text-main relative overflow-hidden">
-            <h4 className="text-xs font-black uppercase tracking-[0.2em] text-text-muted flex items-center justify-between">
-              <span>7-Day Biometric Workload Velocity</span>
-              <Activity className="w-4 h-4 text-text-muted" />
-            </h4>
-            <div className="h-56 w-full font-mono text-xs">
-              <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-                <AreaChart data={velocityData} margin={{ top: 10, right: 0, left: -20, bottom: 0 }}>
-                  <defs>
-                    <linearGradient id="colorDrain" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#f43f5e" stopOpacity={0.3}/>
-                      <stop offset="95%" stopColor="#f43f5e" stopOpacity={0}/>
-                    </linearGradient>
-                    <linearGradient id="colorCompleted" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#818cf8" stopOpacity={0.3}/>
-                      <stop offset="95%" stopColor="#818cf8" stopOpacity={0}/>
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} />
-                  <XAxis dataKey="day" stroke="#475569" tick={{ fill: '#475569', fontSize: 10 }} axisLine={false} tickLine={false} />
-                  <YAxis stroke="#475569" tick={{ fill: '#475569', fontSize: 10 }} axisLine={false} tickLine={false} />
-                  <Tooltip 
-                    contentStyle={{ backgroundColor: '#020617', borderColor: '#1e293b', borderRadius: '12px', fontSize: '12px' }}
-                    itemStyle={{ fontWeight: 'bold' }}
-                    labelStyle={{ color: '#64748b', marginBottom: '8px', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.1em' }}
-                  />
-                  <Area type="monotone" dataKey="drain" name="Energy Output" stroke="#f43f5e" strokeWidth={3} fillOpacity={1} fill="url(#colorDrain)" />
-                  <Area type="monotone" dataKey="completed" name="Recovery Input" stroke="#818cf8" strokeWidth={3} fillOpacity={1} fill="url(#colorCompleted)" />
-                </AreaChart>
-              </ResponsiveContainer>
+            <div className="flex items-center justify-between">
+              <div>
+                <h4 className="text-xs font-black uppercase tracking-[0.2em] text-text-muted">Your 7-Day Energy Pattern</h4>
+                {/* "Not a biometric reading" - section 29's "do not invent
+                    scientific precision": this is a relative score Blaze
+                    Break computes from what's logged below, never a
+                    wearable/device measurement, and the copy says so
+                    rather than letting the chart imply otherwise. */}
+                <p className="text-[10px] text-text-muted mt-0.5">Based on what you've logged here - not a biometric or device reading.</p>
+              </div>
+              <Activity className="w-4 h-4 text-text-muted shrink-0" />
             </div>
+            {commitments.length === 0 ? (
+              <div className="h-56 flex flex-col items-center justify-center text-center gap-2 px-4">
+                <p className="text-sm font-bold text-text-main">Your energy pattern will appear here.</p>
+                <p className="text-xs text-text-muted leading-relaxed max-w-[280px]">
+                  Log a stressor or recovery action to start building your picture.
+                </p>
+              </div>
+            ) : (
+              <div className="h-56 w-full font-mono text-xs">
+                <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+                  <AreaChart data={velocityData} margin={{ top: 10, right: 0, left: -20, bottom: 0 }}>
+                    <defs>
+                      <linearGradient id="colorDrain" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#f43f5e" stopOpacity={0.3}/>
+                        <stop offset="95%" stopColor="#f43f5e" stopOpacity={0}/>
+                      </linearGradient>
+                      <linearGradient id="colorCompleted" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#818cf8" stopOpacity={0.3}/>
+                        <stop offset="95%" stopColor="#818cf8" stopOpacity={0}/>
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} />
+                    <XAxis dataKey="day" stroke="#475569" tick={{ fill: '#475569', fontSize: 10 }} axisLine={false} tickLine={false} />
+                    <YAxis stroke="#475569" tick={{ fill: '#475569', fontSize: 10 }} axisLine={false} tickLine={false} />
+                    <Tooltip
+                      contentStyle={{ backgroundColor: '#020617', borderColor: '#1e293b', borderRadius: '12px', fontSize: '12px' }}
+                      itemStyle={{ fontWeight: 'bold' }}
+                      labelStyle={{ color: '#64748b', marginBottom: '8px', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.1em' }}
+                    />
+                    <Area type="monotone" dataKey="drain" name="Total Load" stroke="#f43f5e" strokeWidth={3} fillOpacity={1} fill="url(#colorDrain)" />
+                    <Area type="monotone" dataKey="completed" name="Capacity Protected" stroke="#818cf8" strokeWidth={3} fillOpacity={1} fill="url(#colorCompleted)" />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </div>
+            )}
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-             <div className="bg-card border border-border rounded-2xl p-8 relative overflow-hidden group shadow-lg">
-               <p className="text-xs font-black text-text-muted uppercase tracking-widest mb-3">Gross Energy Expenditure</p>
-               <h3 className="text-5xl font-display font-black text-text-main tracking-tighter">{activeTotal.toLocaleString()} <span className="text-xl text-text-muted font-medium tracking-normal">units</span></h3>
-             </div>
-             
-             <div className="bg-primary-dark/30 border border-primary/20 rounded-2xl p-8 relative overflow-hidden group shadow-lg">
-               <p className="text-xs font-black text-primary/80 uppercase tracking-widest mb-3">Recovered Bandwidth</p>
-               <h3 className="text-5xl font-display font-black text-primary tracking-tighter">+{recoveredTotal.toLocaleString()} <span className="text-xl text-primary font-medium tracking-normal">saved</span></h3>
-             </div>
-          </div>
+          {commitments.length === 0 ? (
+            <div className="bg-card border border-border rounded-2xl p-8 text-center">
+              <p className="text-sm text-text-muted">Log a stressor or recovery action to see your totals here.</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+               <div className="bg-card border border-border rounded-2xl p-8 relative overflow-hidden group shadow-lg">
+                 <p className="text-xs font-black text-text-muted uppercase tracking-widest mb-3">Total Load</p>
+                 <h3 className="text-5xl font-display font-black text-text-main tracking-tighter">{activeTotal.toLocaleString()} <span className="text-xl text-text-muted font-medium tracking-normal">units</span></h3>
+               </div>
+
+               <div className="bg-primary-dark/30 border border-primary/20 rounded-2xl p-8 relative overflow-hidden group shadow-lg">
+                 <p className="text-xs font-black text-primary/80 uppercase tracking-widest mb-3">Capacity Protected</p>
+                 <h3 className="text-5xl font-display font-black text-primary tracking-tighter">+{recoveredTotal.toLocaleString()} <span className="text-xl text-primary font-medium tracking-normal">saved</span></h3>
+               </div>
+            </div>
+          )}
 
           <div className="card bg-card border border-border p-8 flex-1 space-y-6">
             <div className="flex items-center justify-between border-b border-white/[0.05] pb-4">
-              <h4 className="text-xs font-black uppercase tracking-[0.2em] text-text-muted">Live Audit Ledger</h4>
-              <span className="text-xs font-mono text-text-muted bg-card px-3 py-1 rounded">{commitments.filter(c => c.status === 'active').length} Nodes</span>
+              <h4 className="text-xs font-black uppercase tracking-[0.2em] text-text-muted">Energy Audit</h4>
+              <span className="text-xs font-mono text-text-muted bg-card px-3 py-1 rounded">{commitments.filter(c => c.status === 'active').length} entries</span>
             </div>
             
             <div className="space-y-4">
@@ -346,7 +395,7 @@ export const EnergyBudgetMatrix = ({ onPointsEarned, isDemoSession }: { onPoints
                       <div>
                         <h5 className="font-bold text-text-main tracking-tight">{commitment.name}</h5>
                         <div className="flex items-center gap-2 mt-1.5">
-                           <span className="text-[11px] uppercase tracking-widest text-text-muted font-black">{commitment.type}</span>
+                           <span className="text-[11px] uppercase tracking-widest text-text-muted font-black">{TYPE_LABELS[commitment.type]}</span>
                            {commitment.isSample && (
                              <span className="text-[10px] uppercase tracking-widest font-black text-[#9a3412] dark:text-primary bg-primary/10 border border-primary/20 px-1.5 py-0.5 rounded">Sample</span>
                            )}
@@ -370,9 +419,15 @@ export const EnergyBudgetMatrix = ({ onPointsEarned, isDemoSession }: { onPoints
               </AnimatePresence>
 
               {commitments.filter(c => c.status === 'active').length === 0 && (
-                <div className="py-16 text-center text-text-muted bg-surface rounded-xl border border-border">
-                  <CheckCircle2 className="w-12 h-12 mx-auto mb-4 text-primary" />
-                  <p className="font-medium text-sm">Nothing pending — you're all caught up.</p>
+                <div className="py-16 text-center text-text-muted bg-surface rounded-xl border border-border space-y-4">
+                  <CheckCircle2 className="w-12 h-12 mx-auto text-primary" />
+                  <p className="font-medium text-sm">No energy drains logged yet.</p>
+                  <button
+                    onClick={() => stressorInputRef.current?.focus()}
+                    className="text-xs font-black uppercase tracking-widest text-primary hover:underline"
+                  >
+                    Log your first one
+                  </button>
                 </div>
               )}
             </div>

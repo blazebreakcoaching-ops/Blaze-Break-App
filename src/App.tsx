@@ -490,7 +490,7 @@ const Sidebar = ({
       ) : (
         <button
           onClick={onOpenCrisisSupport}
-          title="Need support now?"
+          title="Find the right support when things feel too heavy to handle alone."
           aria-label="Need support now? Open crisis support"
           className="shrink-0 w-full flex items-center justify-center p-3 rounded-2xl text-info bg-info/10 hover:bg-info/20 border border-info/20 transition-colors"
         >
@@ -885,7 +885,7 @@ const Header = ({
         {activeTab === "diagnose" &&
           "Root cause identification of cognitive and emotional energy leaks."}
         {activeTab === "recover" &&
-          "Recovery is active repair. Use the credits wisely."}
+          "Recovery is active repair. Choose what would help most right now."}
         {activeTab === "fuel" &&
           "Understand the bidirectional gut-brain highways, diurnal sunlight loops, and caffeine cutoffs."}
         {activeTab === "reset" &&
@@ -933,7 +933,7 @@ const Header = ({
             <span className="sr-only">Recovery Tour</span>
           </button>
           <div className="pointer-events-none absolute left-1/2 -translate-x-1/2 bottom-full mb-2 px-3 py-1.5 bg-card text-text-main text-[11px] font-bold rounded-lg border border-border shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all whitespace-nowrap z-50">
-            Recovery Tour — Interactive System Walkthrough
+            Not sure where to start? Get guided to the right recovery action.
           </div>
         </div>
       )}
@@ -948,7 +948,12 @@ const Header = ({
               actually doing - which read as a false, alarming detection
               claim ("the app has flagged you as high-stress right now").
               This is a plain, static label for a support shortcut instead. */}
-          <span id="header-support-caption" className="text-[10px] uppercase tracking-widest text-text-muted font-bold whitespace-nowrap">Need Support Now?</span>
+          {/* Deliberately not "Need Support Now" - the spec keeps that
+              name for the sidebar's CrisisSupportButton (the actual
+              immediate-support route) so the two stay functionally
+              distinct, rather than this caption implying Guardian Ping
+              and Somatic Reset are also "need support now" tools. */}
+          <span id="header-support-caption" className="text-[10px] uppercase tracking-widest text-text-muted font-bold whitespace-nowrap">Quick Support</span>
           {/* role="group" + aria-labelledby gives screen reader users the
               same context sighted users get from the caption above, even
               when navigating by button rather than reading the page
@@ -974,7 +979,7 @@ const Header = ({
               </span>
             </button>
             <div className="pointer-events-none absolute left-1/2 -translate-x-1/2 bottom-full mb-2 px-3 py-1.5 bg-card text-text-main text-[11px] font-bold rounded-lg border border-border shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all whitespace-nowrap z-50">
-              {guardianPingActive ? "Ping Active — alerting your Support Circle" : "Guardian Ping — alert your Support Circle"}
+              {guardianPingActive ? "Ping Active — alerting your Support Circle" : "Send a simple check-in to your chosen trusted person."}
             </div>
           </div>
           <div className="relative group">
@@ -988,7 +993,7 @@ const Header = ({
               <span className="sr-only">Somatic Reset</span>
             </button>
             <div className="pointer-events-none absolute left-1/2 -translate-x-1/2 bottom-full mb-2 px-3 py-1.5 bg-card text-text-main text-[11px] font-bold rounded-lg border border-border shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all whitespace-nowrap z-50">
-              Somatic Reset — a 60-second guided reset
+              Use a short body-based exercise to release tension and reset.
             </div>
           </div>
           </div>
@@ -2393,6 +2398,7 @@ export default function App() {
                   if (voice) setNovaAutoVoiceRequested(true);
                 }}
                 onEnergyRequest={() => setActiveTab("recover")}
+                onDiagnoseRequest={() => setActiveTab("diagnose")}
                 // Only these five are swapped for sample content during a
                 // demo session - everything below (callbacks, badges,
                 // etc.) stays wired to the visitor's real, honest, empty

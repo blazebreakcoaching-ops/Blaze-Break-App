@@ -272,6 +272,7 @@ export const CrisisSupportModal = ({ isOpen, onClose, guardians = [] }: CrisisSu
 export const CrisisSupportButton = ({ onClick, className }: { onClick: () => void; className?: string }) => (
   <button
     onClick={onClick}
+    title="Find the right support when things feel too heavy to handle alone."
     className={cn(
       "flex items-center gap-2 text-xs font-bold text-info bg-info/10 hover:bg-info/20 border border-info/20 rounded-xl px-3 py-2.5 transition-colors",
       className
