@@ -5,6 +5,9 @@ import { cn } from '../lib/utils';
 import { BurnoutFingerprint } from '../types';
 import { secureApiFetch } from '../lib/secure-api';
 import { updateNovaMemoryBySourceAndType } from '../lib/nova-brain';
+import { auth } from '../lib/firebase';
+import { loadStressors, resolveStressor, reportStressorReduction, addStressor } from '../lib/energy-delta-service';
+import { Stressor, ReductionLevel } from '../../energy-delta-engine';
 
 interface OneLessThingProps {
   fingerprint: BurnoutFingerprint | null;
@@ -58,6 +61,19 @@ export const OneLessThing = ({ fingerprint, onAwardPoints }: OneLessThingProps) 
     return () => window.clearTimeout(t);
   }, [step]);
   const [task, setTask] = useState('');
+  const [activeStressors, setActiveStressors] = useState<Stressor[]>([]);
+  const [selectedStressorId, setSelectedStressorId] = useState<string | 'new' | ''>('');
+  const [reducedCapacity, setReducedCapacity] = useState(false);
+
+  // Loaded once, right when the user opens the input step - this feature
+  // is meant to connect directly into Energy Delta Management (Capacity
+  // Protected), not operate as a separate gimmick, so it needs to know
+  // what's already logged.
+  useEffect(() => {
+    if (step !== 'input' || !auth.currentUser) return;
+    loadStressors(auth.currentUser.uid).then((list) => setActiveStressors(list.filter((s) => s.status === 'active')));
+  }, [step]);
+
   const [result, setResult] = useState<{
     action: 'Delete' | 'Delay' | 'Delegate' | 'Simplify';
     advice: string;
@@ -150,13 +166,47 @@ export const OneLessThing = ({ fingerprint, onAwardPoints }: OneLessThingProps) 
     setTask('');
     setResult(null);
     setStep('initial');
+    setSelectedStressorId('');
+    setReducedCapacity(false);
+    setActiveStressors([]);
+  };
+
+  // Delete/Delegate genuinely remove the demand; Delay/Simplify only
+  // reduce it for now (it still happens, just later or smaller) - same
+  // reduction-level reasoning as the Energy Audit's "Did this reduce the
+  // demand?" question, reused rather than invented fresh here.
+  const ACTION_RESOLVES: Record<'Delete' | 'Delay' | 'Delegate' | 'Simplify', boolean> = {
+    Delete: true, Delegate: true, Delay: false, Simplify: false,
+  };
+  const ACTION_REDUCTION: Record<'Delete' | 'Delay' | 'Delegate' | 'Simplify', ReductionLevel> = {
+    Delete: 'a_lot', Delegate: 'a_lot', Delay: 'a_lot', Simplify: 'meaningfully',
+  };
+
+  const handleConnectReduction = async () => {
+    if (!selectedStressorId || !result || !auth.currentUser) return;
+    const uid = auth.currentUser.uid;
+    try {
+      let stressorId = selectedStressorId;
+      if (selectedStressorId === 'new') {
+        const created = await addStressor(uid, { name: task.trim(), category: 'professional', severity: 3, persistence: 'one_off' });
+        stressorId = created.id;
+      }
+      if (ACTION_RESOLVES[result.action]) {
+        await resolveStressor(uid, stressorId);
+      } else {
+        await reportStressorReduction(uid, stressorId, ACTION_REDUCTION[result.action]);
+      }
+      setReducedCapacity(true);
+    } catch {
+      // Non-fatal - the One Less Thing completion itself still counts.
+    }
   };
 
   return (
     <div className="space-y-12 pb-24">
       <div className="max-w-4xl">
         <div className="flex items-center gap-4 mb-4">
-           <div className="tag">Section 17 / Emergency Relief</div>
+           <div className="tag">Energy Delta Management · Core Pillar: Rebuild</div>
            <div className="h-px flex-1 bg-border/40" />
         </div>
         <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-6">
@@ -188,7 +238,7 @@ export const OneLessThing = ({ fingerprint, onAwardPoints }: OneLessThingProps) 
                   <MinusCircle className="w-12 h-12" />
                 </div>
                 <h3 className="text-3xl font-display font-bold text-center leading-tight mb-2">Help me remove<br/>one thing.</h3>
-                <p className="font-medium text-center">Click to initiate reduction protocol.</p>
+                <p className="font-medium text-center">Tap to begin.</p>
               </button>
             </motion.div>
           )}
@@ -298,6 +348,41 @@ export const OneLessThing = ({ fingerprint, onAwardPoints }: OneLessThingProps) 
                           <p className="text-text-main font-medium italic">
                             "{result.template}"
                           </p>
+                        </div>
+                      )}
+
+                      {/* Connects this outcome into Energy Delta Management
+                          (Capacity Protected) instead of leaving One Less
+                          Thing as a standalone gimmick. */}
+                      {!reducedCapacity ? (
+                        <div className="p-5 bg-surface dark:bg-surface/50 rounded-xl border border-border space-y-3">
+                          <label htmlFor="one-less-thing-stressor" className="text-xs font-black uppercase tracking-widest text-text-muted block">
+                            Is this one of your logged demands?
+                          </label>
+                          <select
+                            id="one-less-thing-stressor"
+                            value={selectedStressorId}
+                            onChange={(e) => setSelectedStressorId(e.target.value as any)}
+                            className="w-full bg-white dark:bg-card border border-border rounded-xl px-3 py-2.5 text-sm text-text-main focus:outline-none focus:border-primary"
+                          >
+                            <option value="">Don't connect this</option>
+                            {activeStressors.map((s) => (
+                              <option key={s.id} value={s.id}>{s.name}</option>
+                            ))}
+                            <option value="new">Log "{task.trim().slice(0, 60)}" as a demand I just removed</option>
+                          </select>
+                          {selectedStressorId && (
+                            <button
+                              onClick={handleConnectReduction}
+                              className="w-full py-2.5 rounded-xl text-xs font-black uppercase tracking-widest bg-primary/10 text-primary hover:bg-primary/20 transition-colors"
+                            >
+                              Update Capacity Protected
+                            </button>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-2 text-xs font-bold text-success dark:text-[#4ade80]">
+                          <CheckCircle2 className="w-4 h-4" /> Capacity Protected updated.
                         </div>
                       )}
                     </div>
