@@ -444,6 +444,20 @@ service cloud.firestore {
             && (!('energyDelta' in request.resource.data) || request.resource.data.energyDelta == null || request.resource.data.energyDelta is number);
       }
 
+      // energy_recovery_feedback - section 8's optional, append-only "did
+      // that help?" rating on a recovery action, used only to compute a
+      // learned preference (computePreferredRecoveryAction) - never a fake
+      // point value and never applied back to load.
+      match /energy_recovery_feedback/{feedbackId} {
+        allow read: if isOwner(uid);
+        allow delete: if isOwner(uid);
+        allow create: if isOwner(uid)
+            && hasOnly(['actionType', 'helpfulness', 'createdAt'])
+            && hasAll(['actionType', 'helpfulness', 'createdAt'])
+            && request.resource.data.actionType in ['somatic_reset', 'recovery_tour', 'guardian_ping', 'movement_snack', 'recovery_recipe', 'other']
+            && request.resource.data.helpfulness in ['not_really', 'a_little', 'noticeably', 'a_lot'];
+      }
+
       // spark_checks - SPARK Check daily scan (Sleep, Performance, Aches,
       // Reactions, Kindness). Matches ConnectedSparkCheck's write.
       match /spark_checks/{checkId} {

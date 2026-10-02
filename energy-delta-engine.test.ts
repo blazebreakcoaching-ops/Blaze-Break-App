@@ -4,6 +4,7 @@ import {
   computeStressorCapacityProtected, computeGrossLoad, computeNetLoad, computeCapacityProtected,
   computeEnergyDelta, getDeltaState, computeSevenDayDelta, countStrainedDays, detectSustainedCapacityGap,
   MIN_VALID_DAYS_FOR_PATTERN, DailyEnergyRecord, Stressor,
+  computePreferredRecoveryAction, RecoveryFeedbackEntry,
 } from './energy-delta-engine';
 
 describe('computeCapacityScore', () => {
@@ -235,5 +236,42 @@ describe('detectSustainedCapacityGap', () => {
     const oldStrain = Array.from({ length: 4 }, () => day(-50));
     const recentCalm = Array.from({ length: 7 }, () => day(5));
     expect(detectSustainedCapacityGap([...oldStrain, ...recentCalm])).toBe(false);
+  });
+});
+
+describe('computePreferredRecoveryAction', () => {
+  const rate = (actionType: RecoveryFeedbackEntry['actionType'], helpfulness: RecoveryFeedbackEntry['helpfulness']): RecoveryFeedbackEntry =>
+    ({ actionType, helpfulness });
+
+  it('returns null with no ratings at all', () => {
+    expect(computePreferredRecoveryAction([])).toBeNull();
+  });
+
+  it('returns null below the 3-rating minimum, even if every rating is glowing', () => {
+    const entries = [rate('somatic_reset', 'a_lot'), rate('somatic_reset', 'a_lot')];
+    expect(computePreferredRecoveryAction(entries)).toBeNull();
+  });
+
+  it('returns the action once it clears 3 ratings and trends positive', () => {
+    const entries = [rate('somatic_reset', 'a_lot'), rate('somatic_reset', 'noticeably'), rate('somatic_reset', 'a_lot')];
+    expect(computePreferredRecoveryAction(entries)).toBe('somatic_reset');
+  });
+
+  it('returns null when ratings clear the minimum but average at or below "a little"', () => {
+    const entries = [rate('guardian_ping', 'not_really'), rate('guardian_ping', 'a_little'), rate('guardian_ping', 'a_little')];
+    expect(computePreferredRecoveryAction(entries)).toBeNull();
+  });
+
+  it('never fabricates a value for an action type that was never rated', () => {
+    const entries = [rate('somatic_reset', 'a_lot'), rate('somatic_reset', 'a_lot'), rate('somatic_reset', 'a_lot')];
+    expect(computePreferredRecoveryAction(entries)).not.toBe('recovery_tour');
+  });
+
+  it('picks the single best-performing action type when several qualify', () => {
+    const entries = [
+      ...Array(3).fill(null).map(() => rate('somatic_reset', 'noticeably' as const)),
+      ...Array(3).fill(null).map(() => rate('recovery_tour', 'a_lot' as const)),
+    ];
+    expect(computePreferredRecoveryAction(entries)).toBe('recovery_tour');
   });
 });

@@ -20,6 +20,7 @@ import {
   recordCapacityCheckIn, loadRecentCapacityCheckIns, loadLatestCapacityCheckIn,
   loadStressors, addStressor, reportStressorReduction, classifyStressor, resolveStressor,
   recordDailySnapshot, loadRecentDailySnapshots,
+  recordRecoveryFeedback, loadRecoveryFeedback,
 } from './energy-delta-service';
 
 beforeEach(() => {
@@ -140,5 +141,31 @@ describe('loadRecentDailySnapshots', () => {
     });
     const result = await loadRecentDailySnapshots('u14');
     expect(result.map((r) => r.date)).toEqual(['2026-01-01', '2026-01-02', '2026-01-03']);
+  });
+});
+
+describe('recordRecoveryFeedback', () => {
+  it('writes the action type, helpfulness and a timestamp', async () => {
+    (addDoc as any).mockResolvedValue({ id: 'f1' });
+    await recordRecoveryFeedback('u15', 'somatic_reset', 'a_lot');
+    const call = (addDoc as any).mock.calls[0];
+    expect(call[1].actionType).toBe('somatic_reset');
+    expect(call[1].helpfulness).toBe('a_lot');
+    expect(call[1].createdAt).toBeTruthy();
+  });
+});
+
+describe('loadRecoveryFeedback', () => {
+  it('returns an empty array rather than throwing when Firestore is unreachable', async () => {
+    (getDocs as any).mockRejectedValue(new Error('unavailable'));
+    expect(await loadRecoveryFeedback('u16')).toEqual([]);
+  });
+
+  it('maps each doc to a record with its id', async () => {
+    (getDocs as any).mockResolvedValue({
+      docs: [{ id: 'f2', data: () => ({ actionType: 'guardian_ping', helpfulness: 'a_little', createdAt: 'x' }) }],
+    });
+    const result = await loadRecoveryFeedback('u17');
+    expect(result).toEqual([{ id: 'f2', actionType: 'guardian_ping', helpfulness: 'a_little', createdAt: 'x' }]);
   });
 });

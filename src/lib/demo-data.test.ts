@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { isDemoUser, DEMO_FINGERPRINT, DEMO_STATS, DEMO_VELOCITY_MAP, DEMO_CAPACITY_CHECKIN, DEMO_ENERGY_STRESSORS, DEMO_DAILY_SNAPSHOTS, DEMO_DERIVED_SUMMARIES, DEMO_VOICE_JOURNAL_ENTRIES, DEMO_GUARDIANS } from './demo-data';
+import { isDemoUser, DEMO_FINGERPRINT, DEMO_STATS, DEMO_VELOCITY_MAP, DEMO_CAPACITY_CHECKIN, DEMO_ENERGY_STRESSORS, DEMO_DAILY_SNAPSHOTS, DEMO_RECOVERY_FEEDBACK, DEMO_DERIVED_SUMMARIES, DEMO_VOICE_JOURNAL_ENTRIES, DEMO_GUARDIANS } from './demo-data';
+import { computePreferredRecoveryAction } from '../../energy-delta-engine';
 import { BurnoutProfile } from '../types';
 
 // The exact, real archetype names this app uses - kept as a literal list
@@ -112,6 +113,12 @@ describe('DEMO_DAILY_SNAPSHOTS', () => {
 
   it('includes at least one strained day, to demonstrate the Sustained Capacity Gap card', () => {
     expect(DEMO_DAILY_SNAPSHOTS.some(d => (d.energyDelta ?? 0) < -10)).toBe(true);
+  });
+});
+
+describe('DEMO_RECOVERY_FEEDBACK', () => {
+  it('clears computePreferredRecoveryAction\'s minimum, so the demo session shows a learned-preference chip', () => {
+    expect(computePreferredRecoveryAction(DEMO_RECOVERY_FEEDBACK)).not.toBeNull();
   });
 });
 

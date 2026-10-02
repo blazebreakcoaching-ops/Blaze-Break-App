@@ -8,7 +8,7 @@ import {
 import { Area, Line, ComposedChart, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { cn } from '../lib/utils';
 import { updateNovaMemoryBySourceAndType } from '../lib/nova-brain';
-import { DEMO_CAPACITY_CHECKIN, DEMO_ENERGY_STRESSORS, DEMO_DAILY_SNAPSHOTS } from '../lib/demo-data';
+import { DEMO_CAPACITY_CHECKIN, DEMO_ENERGY_STRESSORS, DEMO_DAILY_SNAPSHOTS, DEMO_RECOVERY_FEEDBACK } from '../lib/demo-data';
 import {
   CapacityLevel, CAPACITY_LEVEL_ORDER, CAPACITY_LEVEL_LABELS,
   Stressor, StressorCategory, StressorSeverity, StressorPersistence, ReductionLevel, StressorAction,
@@ -17,11 +17,14 @@ import {
   computeCapacityScore, describeCapacity,
   computeEnergyDelta, getDeltaState, computeSevenDayDelta, countStrainedDays, detectSustainedCapacityGap,
   MIN_VALID_DAYS_FOR_PATTERN, DailyEnergyRecord,
+  RecoveryActionType, RecoveryHelpfulness, RECOVERY_ACTION_LABELS, RECOVERY_HELPFULNESS_ORDER, RECOVERY_HELPFULNESS_LABELS,
+  computePreferredRecoveryAction,
 } from '../../energy-delta-engine';
 import {
   loadLatestCapacityCheckIn, recordCapacityCheckIn, CapacityCheckInRecord,
   loadStressors, addStressor, reportStressorReduction, classifyStressor, resolveStressor, deleteStressor,
   recordDailySnapshot, loadRecentDailySnapshots, DailySnapshotRecord,
+  recordRecoveryFeedback, loadRecoveryFeedback, RecoveryFeedbackRecord,
 } from '../lib/energy-delta-service';
 
 // Energy Delta Model v1 - "are the demands on me currently greater than
@@ -54,6 +57,11 @@ export const EnergyBudgetMatrix = ({ onPointsEarned, isDemoSession }: { onPoints
 
   const [reducingId, setReducingId] = useState<string | null>(null);
 
+  const [recoveryFeedback, setRecoveryFeedback] = useState<RecoveryFeedbackRecord[]>([]);
+  const [showHelpPrompt, setShowHelpPrompt] = useState(false);
+  const [helpAction, setHelpAction] = useState<RecoveryActionType>('somatic_reset');
+  const [helpfulness, setHelpfulness] = useState<RecoveryHelpfulness | null>(null);
+
   const uid = auth.currentUser?.uid;
 
   const load = async () => {
@@ -61,24 +69,28 @@ export const EnergyBudgetMatrix = ({ onPointsEarned, isDemoSession }: { onPoints
       setLatestCheckIn(DEMO_CAPACITY_CHECKIN);
       setStressors(DEMO_ENERGY_STRESSORS);
       setSnapshots(DEMO_DAILY_SNAPSHOTS);
+      setRecoveryFeedback(DEMO_RECOVERY_FEEDBACK);
       setLoading(false);
       return;
     }
     if (!uid) return;
     setLoading(true);
     try {
-      const [checkIn, stressorList, snapshotList] = await Promise.all([
-        loadLatestCapacityCheckIn(uid), loadStressors(uid), loadRecentDailySnapshots(uid),
+      const [checkIn, stressorList, snapshotList, feedbackList] = await Promise.all([
+        loadLatestCapacityCheckIn(uid), loadStressors(uid), loadRecentDailySnapshots(uid), loadRecoveryFeedback(uid),
       ]);
       setLatestCheckIn(checkIn);
       setStressors(stressorList);
       setSnapshots(snapshotList);
+      setRecoveryFeedback(feedbackList);
     } catch (e) {
       setError('Could not load your energy data.');
     }
     setLoading(false);
   };
   useEffect(() => { load(); }, [uid, isDemoSession]);
+
+  const preferredRecoveryAction = useMemo(() => computePreferredRecoveryAction(recoveryFeedback), [recoveryFeedback]);
 
   const activeStressors = useMemo(() => stressors.filter((s) => s.status === 'active'), [stressors]);
   const resolvedStressors = useMemo(() => stressors.filter((s) => s.status === 'resolved'), [stressors]);
@@ -133,9 +145,14 @@ export const EnergyBudgetMatrix = ({ onPointsEarned, isDemoSession }: { onPoints
     if (!physical || !mental || !emotional) return;
     const checkIn = { physical, mental, emotional };
     const score = computeCapacityScore(checkIn);
+    // A re-check (there was already a reading today) is the natural
+    // moment to optionally ask what helped (section 8) - a brand-new,
+    // first-ever check-in has nothing to compare against yet.
+    const isRecheck = hasCapacity;
     if (isDemoSession || !uid) {
       setLatestCheckIn({ id: `local-${Date.now()}`, ...checkIn, score, createdAt: new Date().toISOString() });
       resetCheckInForm();
+      if (isRecheck) setShowHelpPrompt(true);
       return;
     }
     try {
@@ -147,10 +164,25 @@ export const EnergyBudgetMatrix = ({ onPointsEarned, isDemoSession }: { onPoints
         confidence: 'verified',
         canEdit: true,
       });
+      if (isRecheck) setShowHelpPrompt(true);
     } catch (e) {
       setError('Could not save that check-in.');
     }
     resetCheckInForm();
+  };
+
+  const submitRecoveryFeedback = async () => {
+    if (!helpfulness) return;
+    if (!isDemoSession && uid) {
+      try {
+        await recordRecoveryFeedback(uid, helpAction, helpfulness);
+        setRecoveryFeedback((prev) => [{ id: `local-${Date.now()}`, actionType: helpAction, helpfulness, createdAt: new Date().toISOString() }, ...prev]);
+      } catch (e) {
+        setError('Could not save that feedback.');
+      }
+    }
+    setShowHelpPrompt(false);
+    setHelpfulness(null);
   };
 
   const submitStressor = async () => {
@@ -294,6 +326,11 @@ export const EnergyBudgetMatrix = ({ onPointsEarned, isDemoSession }: { onPoints
                     <span className="text-lg text-text-muted font-medium mb-1">/ 100</span>
                   </div>
                   <p className="text-sm font-bold text-text-main">{describeCapacity(capacity!)}</p>
+                  {preferredRecoveryAction && (
+                    <p className="text-[11px] text-text-muted leading-relaxed bg-primary/5 border border-primary/10 rounded-lg px-3 py-2">
+                      Noticing: <span className="font-bold text-primary">{RECOVERY_ACTION_LABELS[preferredRecoveryAction]}</span> tends to help you.
+                    </p>
+                  )}
                   <button onClick={() => setShowCheckIn(true)} className="flex items-center gap-1.5 text-xs font-black uppercase tracking-widest text-primary hover:underline">
                     <RefreshCw className="w-3.5 h-3.5" /> Capacity changed? Check in again
                   </button>
@@ -326,6 +363,55 @@ export const EnergyBudgetMatrix = ({ onPointsEarned, isDemoSession }: { onPoints
                     Cancel
                   </button>
                 </div>
+              </div>
+            )}
+
+            {showHelpPrompt && (
+              <div className="space-y-4 pt-5 mt-1 border-t border-white/[0.05]">
+                <div className="flex items-start justify-between gap-2">
+                  <p className="text-xs font-bold text-text-main">Did something help since your last check-in?</p>
+                  <button onClick={() => { setShowHelpPrompt(false); setHelpfulness(null); }} aria-label="Dismiss" className="text-text-muted hover:text-text-main shrink-0">
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {(Object.keys(RECOVERY_ACTION_LABELS) as RecoveryActionType[]).map((a) => (
+                    <button
+                      key={a}
+                      onClick={() => setHelpAction(a)}
+                      aria-pressed={helpAction === a}
+                      className={cn(
+                        "text-[10px] font-black uppercase tracking-widest px-2.5 py-1.5 rounded-lg border transition-all",
+                        helpAction === a ? "bg-primary/20 border-primary/50 text-primary" : "bg-card border-border text-text-muted hover:border-border"
+                      )}
+                    >
+                      {RECOVERY_ACTION_LABELS[a]}
+                    </button>
+                  ))}
+                </div>
+                <p className="text-[11px] font-black uppercase tracking-widest text-text-muted">Did it help?</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {RECOVERY_HELPFULNESS_ORDER.map((h) => (
+                    <button
+                      key={h}
+                      onClick={() => setHelpfulness(h)}
+                      aria-pressed={helpfulness === h}
+                      className={cn(
+                        "text-xs font-bold px-3 py-2 rounded-lg border transition-all",
+                        helpfulness === h ? "bg-primary/20 border-primary/50 text-primary" : "bg-card border-border text-text-muted hover:border-border"
+                      )}
+                    >
+                      {RECOVERY_HELPFULNESS_LABELS[h]}
+                    </button>
+                  ))}
+                </div>
+                <button
+                  onClick={submitRecoveryFeedback}
+                  disabled={!helpfulness}
+                  className="btn-primary py-2.5 px-5 text-[11px] font-black uppercase tracking-widest disabled:opacity-40"
+                >
+                  Save
+                </button>
               </div>
             )}
           </div>

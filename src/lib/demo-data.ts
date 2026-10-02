@@ -20,7 +20,7 @@
 // `isDemoSession` usage at the <HomeSection> call site.
 
 import { UserStats, BurnoutFingerprint, SupportContact } from "../types";
-import { CapacityLevel, StressorCategory, StressorSeverity, StressorPersistence, ReductionLevel, StressorAction } from "../../energy-delta-engine";
+import { CapacityLevel, StressorCategory, StressorSeverity, StressorPersistence, ReductionLevel, StressorAction, RecoveryActionType, RecoveryHelpfulness } from "../../energy-delta-engine";
 
 export const DEMO_STATS: UserStats = {
   points: 1450,
@@ -166,6 +166,20 @@ export const DEMO_DAILY_SNAPSHOTS: {
   { date: "2026-09-19", capacity: 45, grossLoad: 62, netLoad: 60, capacityProtected: 2, energyDelta: -15, updatedAt: "2026-09-19T18:00:00.000Z" },
   { date: "2026-09-20", capacity: 55, grossLoad: 58, netLoad: 52, capacityProtected: 6, energyDelta: 3, updatedAt: "2026-09-20T18:00:00.000Z" },
   { date: "2026-09-21", capacity: 52, grossLoad: 55, netLoad: 50, capacityProtected: 5, energyDelta: 2, updatedAt: "2026-09-21T18:00:00.000Z" },
+];
+
+// Section 8's optional "did that help?" history - four Somatic Reset
+// ratings clearing computePreferredRecoveryAction's 3-rating floor and
+// landing solidly above its positive-trend threshold, so the demo session
+// shows the learned-preference chip ("Somatic Reset tends to help you")
+// rather than leaving that part of the feature looking unfinished.
+export const DEMO_RECOVERY_FEEDBACK: {
+  id: string; actionType: RecoveryActionType; helpfulness: RecoveryHelpfulness; createdAt: string;
+}[] = [
+  { id: "demo-rf1", actionType: "somatic_reset", helpfulness: "a_lot", createdAt: "2026-09-18T12:00:00.000Z" },
+  { id: "demo-rf2", actionType: "somatic_reset", helpfulness: "noticeably", createdAt: "2026-09-19T12:00:00.000Z" },
+  { id: "demo-rf3", actionType: "guardian_ping", helpfulness: "a_little", createdAt: "2026-09-19T15:00:00.000Z" },
+  { id: "demo-rf4", actionType: "somatic_reset", helpfulness: "a_lot", createdAt: "2026-09-20T12:00:00.000Z" },
 ];
 
 // Matches RecoveryIntelligenceLayer.tsx's own local DerivedSummary shape

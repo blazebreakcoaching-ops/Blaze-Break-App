@@ -313,3 +313,61 @@ export const detectSustainedCapacityGap = (days: DailyEnergyRecord[]): boolean =
   const strainedCount = valid.filter((d) => d.energyDelta! < SUSTAINED_GAP_DELTA_THRESHOLD).length;
   return strainedCount >= SUSTAINED_GAP_MIN_DAYS;
 };
+
+// ---------- Recovery feedback & learned preference (section 8) ----------
+//
+// Recovery never subtracts from load directly - it only ever shows up as
+// a fresh, higher capacity check-in. This section is purely about an
+// *optional*, after-the-fact "did that help?" signal, used only to
+// surface which recovery action this particular person tends to find
+// worthwhile - never to fabricate a point value or auto-adjust load.
+
+export type RecoveryActionType = 'somatic_reset' | 'recovery_tour' | 'guardian_ping' | 'movement_snack' | 'recovery_recipe' | 'other';
+
+export const RECOVERY_ACTION_LABELS: Record<RecoveryActionType, string> = {
+  somatic_reset: 'Somatic Reset', recovery_tour: 'Recovery Tour', guardian_ping: 'Guardian Ping',
+  movement_snack: 'Movement Snack', recovery_recipe: 'Recovery Recipe', other: 'Something else',
+};
+
+export type RecoveryHelpfulness = 'not_really' | 'a_little' | 'noticeably' | 'a_lot';
+
+export const RECOVERY_HELPFULNESS_ORDER: RecoveryHelpfulness[] = ['not_really', 'a_little', 'noticeably', 'a_lot'];
+
+export const RECOVERY_HELPFULNESS_LABELS: Record<RecoveryHelpfulness, string> = {
+  not_really: 'Not really', a_little: 'A little', noticeably: 'Noticeably', a_lot: 'A lot',
+};
+
+const RECOVERY_HELPFULNESS_VALUES: Record<RecoveryHelpfulness, number> = {
+  not_really: 0, a_little: 1, noticeably: 2, a_lot: 3,
+};
+
+export interface RecoveryFeedbackEntry {
+  actionType: RecoveryActionType;
+  helpfulness: RecoveryHelpfulness;
+}
+
+const MIN_RATINGS_FOR_PREFERENCE = 3;
+const PREFERENCE_THRESHOLD = 1.5; // average strictly above "a little" (1), i.e. leaning toward noticeably/a lot
+
+// Section 8's "Somatic Reset tends to help this user" - a plain average
+// of self-reported helpfulness per action type, only surfaced once
+// there's enough history to say something real (never from a single
+// rating), and only when it's actually trending positive. Returns null
+// rather than guessing when nothing yet clears the bar.
+export const computePreferredRecoveryAction = (entries: RecoveryFeedbackEntry[]): RecoveryActionType | null => {
+  const byType = new Map<RecoveryActionType, number[]>();
+  for (const entry of entries) {
+    const list = byType.get(entry.actionType) ?? [];
+    list.push(RECOVERY_HELPFULNESS_VALUES[entry.helpfulness]);
+    byType.set(entry.actionType, list);
+  }
+
+  let best: { actionType: RecoveryActionType; avg: number } | null = null;
+  for (const [actionType, values] of byType) {
+    if (values.length < MIN_RATINGS_FOR_PREFERENCE) continue;
+    const avg = values.reduce((sum, v) => sum + v, 0) / values.length;
+    if (avg <= PREFERENCE_THRESHOLD) continue;
+    if (!best || avg > best.avg) best = { actionType, avg };
+  }
+  return best?.actionType ?? null;
+};

@@ -5,6 +5,7 @@ import {
 import {
   CapacityCheckIn, CapacityLevel, Stressor, StressorCategory, StressorSeverity, StressorPersistence,
   ReductionLevel, StressorAction, computeCapacityScore, computeGrossLoad, computeNetLoad, computeCapacityProtected,
+  RecoveryActionType, RecoveryHelpfulness, RecoveryFeedbackEntry,
 } from '../../energy-delta-engine';
 
 // Energy Delta Model v1's Firestore layer - mirrors every other service
@@ -172,6 +173,39 @@ export const loadRecentDailySnapshots = async (uid: string): Promise<DailySnapsh
       limit(RECENT_SNAPSHOT_LIMIT)
     ));
     return snap.docs.map((d) => d.data() as DailySnapshotRecord).reverse();
+  } catch (e) {
+    return [];
+  }
+};
+
+// ---------- Recovery feedback (section 8) ----------
+
+export interface RecoveryFeedbackRecord extends RecoveryFeedbackEntry {
+  id: string;
+  createdAt: string;
+}
+
+// Append-only, same reasoning as capacity_checkins - each "did that help?"
+// answer is its own history entry, never overwritten, so
+// computePreferredRecoveryAction always sees the full rated history.
+export const recordRecoveryFeedback = async (
+  uid: string, actionType: RecoveryActionType, helpfulness: RecoveryHelpfulness
+): Promise<void> => {
+  await addDoc(collection(db, 'users', uid, 'energy_recovery_feedback'), {
+    actionType, helpfulness, createdAt: new Date().toISOString(),
+  });
+};
+
+const RECENT_FEEDBACK_LIMIT = 120;
+
+export const loadRecoveryFeedback = async (uid: string): Promise<RecoveryFeedbackRecord[]> => {
+  try {
+    const snap = await getDocs(query(
+      collection(db, 'users', uid, 'energy_recovery_feedback'),
+      orderBy('createdAt', 'desc'),
+      limit(RECENT_FEEDBACK_LIMIT)
+    ));
+    return snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<RecoveryFeedbackRecord, 'id'>) }));
   } catch (e) {
     return [];
   }
