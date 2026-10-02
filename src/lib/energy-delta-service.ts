@@ -76,19 +76,21 @@ export const loadStressors = async (uid: string): Promise<Stressor[]> => {
 
 export const addStressor = async (
   uid: string,
-  stressor: { name: string; category: StressorCategory; severity: StressorSeverity; persistence: StressorPersistence }
+  stressor: { name: string; category: StressorCategory; severity: StressorSeverity; persistence: StressorPersistence; capacityAtLogging?: number | null }
 ): Promise<Stressor> => {
   const now = new Date().toISOString();
+  const capacityAtLogging = stressor.capacityAtLogging ?? null;
   const ref = await addDoc(collection(db, 'users', uid, 'energy_stressors'), {
     name: stressor.name,
     category: stressor.category,
     severity: stressor.severity,
     persistence: stressor.persistence,
+    capacityAtLogging,
     status: 'active',
     createdAt: now,
     updatedAt: now,
   });
-  return { id: ref.id, ...stressor, status: 'active', createdAt: now, updatedAt: now };
+  return { id: ref.id, ...stressor, capacityAtLogging, status: 'active', createdAt: now, updatedAt: now };
 };
 
 // Section 4's "Did this reduce the demand?" report - updates the

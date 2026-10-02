@@ -188,12 +188,12 @@ export const EnergyBudgetMatrix = ({ onPointsEarned, isDemoSession }: { onPoints
     if (!input.trim() || !uid) return;
     const name = input.trim();
     if (isDemoSession) {
-      setStressors((prev) => [{ id: `local-${Date.now()}`, name, category, severity, persistence, status: 'active', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }, ...prev]);
+      setStressors((prev) => [{ id: `local-${Date.now()}`, name, category, severity, persistence, capacityAtLogging: capacity, status: 'active', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }, ...prev]);
       setInput('');
       return;
     }
     try {
-      const newStressor = await addStressor(uid, { name, category, severity, persistence });
+      const newStressor = await addStressor(uid, { name, category, severity, persistence, capacityAtLogging: capacity });
       setStressors((prev) => [newStressor, ...prev]);
       setInput('');
       onPointsEarned(20, `Logged into Energy Audit: ${name}`);
