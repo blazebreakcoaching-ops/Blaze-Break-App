@@ -2476,6 +2476,7 @@ export default function App() {
                 <MicroRecovery
                   fingerprint={fingerprint}
                   onAwardPoints={awardPoints}
+                  isFocusActive={isFocusActive}
                 />
                 <OneLessThing
                   fingerprint={fingerprint}
