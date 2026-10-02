@@ -1,5 +1,6 @@
 import { db } from './firestore';
-import { collection, doc, setDoc, deleteDoc, getDocs, query, orderBy, limit } from 'firebase/firestore';
+import { collection, doc, setDoc, getDoc, deleteDoc, getDocs, query, orderBy, limit } from 'firebase/firestore';
+import { SparkAnswer } from '../../reset-studio-engine';
 
 // Reset Studio's "Not Ready Yet" save (Rumination Furnace) - the one
 // place in Reset Studio where raw text is deliberately kept, because the
@@ -37,4 +38,32 @@ export const loadSavedRuminationEntries = async (uid: string): Promise<SavedRumi
 
 export const deleteSavedRuminationEntry = async (uid: string, id: string): Promise<void> => {
   await deleteDoc(doc(db, 'users', uid, 'rumination_saved_entries', id));
+};
+
+// Spark Check's rolling answer history - just enough real signal for
+// shouldOfferQuickSupportForSpark's repeat-pattern gate (FLAT — THE
+// SPARK CHECK: "if persistent low mood...emerges, route appropriately"),
+// never a mood score or anything resembling a diagnosis.
+const SPARK_HISTORY_LIMIT = 5;
+
+export const loadRecentSparkAnswers = async (uid: string): Promise<SparkAnswer[]> => {
+  try {
+    const snap = await getDoc(doc(db, 'users', uid, 'preferences', 'spark_check'));
+    if (snap.exists() && Array.isArray(snap.data().recentAnswers)) {
+      return snap.data().recentAnswers as SparkAnswer[];
+    }
+  } catch (e) {
+    // Falls back to an empty history rather than pretending one exists.
+  }
+  return [];
+};
+
+export const recordSparkAnswer = async (uid: string, answer: SparkAnswer): Promise<SparkAnswer[]> => {
+  const existing = await loadRecentSparkAnswers(uid);
+  const next = [...existing, answer].slice(-SPARK_HISTORY_LIMIT);
+  await setDoc(doc(db, 'users', uid, 'preferences', 'spark_check'), {
+    recentAnswers: next,
+    updatedAt: new Date().toISOString(),
+  }, { merge: true });
+  return next;
 };
