@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   Activity, ArrowLeft, CheckCircle2, Star, Zap, Armchair, ChevronRight, Timer,
@@ -21,6 +21,16 @@ import {
 import { logMovementEvent } from '../lib/movement-analytics';
 import { MovementVoiceControls } from './MovementVoiceControls';
 import { AfterWorkDecompression } from './AfterWorkDecompression';
+import { SituationKey } from '../../recovery-recipes-content';
+
+// Section 23's smart entry into Recovery Recipes - only offered after
+// movements where "still carrying it" is a plausible follow-up, never
+// forced, and only for the two movements with an unambiguous matching
+// situation (a mis-mapped guess would be worse than no offer at all).
+const RECIPE_BRIDGE_SITUATION: Partial<Record<string, SituationKey>> = {
+  after_work: 'need_switch_off',
+  shake_meeting: 'hard_meeting',
+};
 
 interface MovementSnacksProps {
   fingerprint: BurnoutFingerprint | null;
@@ -57,6 +67,11 @@ export const MovementSnacks = ({ fingerprint: _fingerprint, onAwardPoints }: Mov
   const [closingChoicePicked, setClosingChoicePicked] = useState<'needs_action' | 'nothing' | null>(null);
   const [closingNote, setClosingNote] = useState('');
   const [showAfterWorkFlow, setShowAfterWorkFlow] = useState(false);
+  // True while the current movement was launched by Recovery Recipes
+  // (section 14's deep-link) rather than picked normally - drives whether
+  // this component reports back to it when the session resolves.
+  const [launchedFromRecipe, setLaunchedFromRecipe] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!auth.currentUser) return;
@@ -67,6 +82,43 @@ export const MovementSnacks = ({ fingerprint: _fingerprint, onAwardPoints }: Mov
       setAudioEnabled(prefs.audioPreference === true);
     });
   }, []);
+
+  const goToDetail = (movementId: string, context: MovementContext | null) => {
+    setActiveMovementId(movementId);
+    setActiveContext(context);
+    setStepIndex(0);
+    setFeedback(null);
+    setClosingChoicePicked(null);
+    setClosingNote('');
+    setView('detail');
+  };
+
+  // Recovery Recipes' deep-link (section 14) - reuses this real component
+  // rather than reimplementing any physical step. Jumps straight to the
+  // requested movement's detail screen and brings it into view, since both
+  // components already live on the same Reset-tab page.
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const movementId = (e as CustomEvent<{ movementId?: string }>).detail?.movementId;
+      if (!movementId || !MOVEMENT_SNACKS[movementId]) return;
+      setLaunchedFromRecipe(true);
+      goToDetail(movementId, null);
+      rootRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    };
+    window.addEventListener('recovery_recipe_launch_movement', handler);
+    return () => window.removeEventListener('recovery_recipe_launch_movement', handler);
+    // Deliberately empty deps - this subscribes once for the component's
+    // lifetime; goToDetail only sets state and closing over the initial
+    // reference is fine, so there is nothing here that needs to
+    // re-subscribe on every render.
+  }, []);
+
+  const notifyRecipeIfLaunched = (completed: boolean) => {
+    if (launchedFromRecipe && activeMovementId) {
+      window.dispatchEvent(new CustomEvent('recovery_recipe_movement_done', { detail: { movementId: activeMovementId, completed } }));
+    }
+    setLaunchedFromRecipe(false);
+  };
 
   const activeMovement = activeMovementId ? MOVEMENT_SNACKS[activeMovementId] : null;
   const currentStep = activeMovement ? activeMovement.steps[stepIndex] : null;
@@ -100,16 +152,6 @@ export const MovementSnacks = ({ fingerprint: _fingerprint, onAwardPoints }: Mov
     if (auth.currentUser) updateMovementPreferences(auth.currentUser.uid, { audioPreference: next }).catch(() => {});
   };
 
-  const goToDetail = (movementId: string, context: MovementContext | null) => {
-    setActiveMovementId(movementId);
-    setActiveContext(context);
-    setStepIndex(0);
-    setFeedback(null);
-    setClosingChoicePicked(null);
-    setClosingNote('');
-    setView('detail');
-  };
-
   const handleContextPick = (context: MovementContext) => {
     const rec = getMovementRecommendation({ context, seatedOnly, usage });
     if (rec) goToDetail(rec.movementId, context);
@@ -140,6 +182,7 @@ export const MovementSnacks = ({ fingerprint: _fingerprint, onAwardPoints }: Mov
       logMovementEvent('movement_skipped', { movementId: activeMovement.id, category: activeMovement.category });
       recordMovementHistory(auth.currentUser.uid, { movementId: activeMovement.id, context: activeContext || undefined, skipped: true }).catch(() => {});
     }
+    notifyRecipeIfLaunched(false);
     setView('entry');
   };
 
@@ -203,6 +246,7 @@ export const MovementSnacks = ({ fingerprint: _fingerprint, onAwardPoints }: Mov
   // intervention, and this app never auto-starts a conversation just
   // because a movement finished. Only the third option actually opens Nova.
   const handleCloseComplete = (choice: 'enough' | 'continue' | 'nova') => {
+    notifyRecipeIfLaunched(true);
     setView('entry');
     setActiveMovementId(null);
     if (choice === 'continue') window.dispatchEvent(new CustomEvent('navigate_tab', { detail: 'home' }));
@@ -253,7 +297,7 @@ export const MovementSnacks = ({ fingerprint: _fingerprint, onAwardPoints }: Mov
   }, [seatedOnly]);
 
   return (
-    <div className="space-y-12 pb-24">
+    <div ref={rootRef} className="space-y-12 pb-24">
       <div className="max-w-4xl">
         <div className="flex items-center gap-4 mb-4">
           <div className="tag">Section 12 / Movement</div>
@@ -611,6 +655,21 @@ export const MovementSnacks = ({ fingerprint: _fingerprint, onAwardPoints }: Mov
                     I still need to work through something
                   </button>
                 </div>
+                {flags.enable_recovery_recipes_nova_suggestions && RECIPE_BRIDGE_SITUATION[activeMovement.id] && (
+                  <div className="pt-4 border-t border-border/30 mt-2 space-y-2">
+                    <p className="text-sm text-text-muted">Still carrying it?</p>
+                    <button
+                      onClick={() => {
+                        const situationKey = RECIPE_BRIDGE_SITUATION[activeMovement.id];
+                        handleCloseComplete('enough');
+                        if (situationKey) window.dispatchEvent(new CustomEvent('open_recovery_recipe', { detail: { situationKey } }));
+                      }}
+                      className="text-xs font-black uppercase tracking-widest text-primary hover:opacity-80"
+                    >
+                      Continue with a Recovery Recipe
+                    </button>
+                  </div>
+                )}
               </div>
             )}
           </motion.div>
@@ -619,7 +678,12 @@ export const MovementSnacks = ({ fingerprint: _fingerprint, onAwardPoints }: Mov
 
       {showAfterWorkFlow && (
         <AfterWorkDecompression
-          onClose={() => { setShowAfterWorkFlow(false); setView('entry'); setActiveMovementId(null); }}
+          onClose={(completed) => {
+            notifyRecipeIfLaunched(completed);
+            setShowAfterWorkFlow(false);
+            setView('entry');
+            setActiveMovementId(null);
+          }}
           onAwardPoints={onAwardPoints}
           voiceEnabled={flags.enable_movement_voice_guidance && audioEnabled}
         />

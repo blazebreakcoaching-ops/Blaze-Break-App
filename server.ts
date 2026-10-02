@@ -18,6 +18,7 @@ import { SendMessageSchema, SetDndSchema, SetStatusSchema } from './boundary-aut
 import { getIsoWeekId } from './weekly-goal-tracker';
 import { findInProgressShipStage } from './ship-stages';
 import { ISLAMIC_THEMES, GROUNDING_LENSES, GroundingLens, IslamicThemeId } from './grounding-content';
+import { SITUATION_LABELS, SituationKey } from './recovery-recipes-content';
 import { PATTERN_DIMENSION_ORDER, PatternDimensionId, PATTERN_DIMENSIONS } from './grounding-patterns-taxonomy';
 import { CommunityConfig } from './community-config';
 import { initializeApp, getApps } from 'firebase-admin/app';
@@ -362,6 +363,20 @@ const groundingReflectLimiter = rateLimit({
   legacyHeaders: false,
   validate: { xForwardedForHeader: false, default: true },
   handler: logRateLimitExceeded('groundingReflectLimiter'),
+});
+
+// Same shape again - Recovery Recipes' Batch 7 enhancement call (section 30)
+// is also a single-shot Gemini call that only ever refines wording/ordering
+// on top of an already-valid deterministic recipe, never required for the
+// feature to work.
+const recoveryRecipesEnhanceLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 15,
+  message: { error: 'Too many requests, please try again shortly.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+  validate: { xForwardedForHeader: false, default: true },
+  handler: logRateLimitExceeded('recoveryRecipesEnhanceLimiter'),
 });
 
 // Same shape again - the executive report and manager coach are each a
@@ -11458,6 +11473,192 @@ app.post("/api/movement/analytics-event", verifyAppCheck, authenticateFirebaseUs
   } catch (error: any) {
     console.error("[Movement analytics event] error:", error?.message || error);
     res.status(500).json({ error: "Could not record that." });
+  }
+});
+
+// Abstract, privacy-preserving Recovery Recipes analytics (Recovery Recipes
+// upgrade, section 36) - an event NAME plus at most the situation/step type,
+// validated server-side against a fixed allowlist. Mirrors
+// /api/movement/analytics-event exactly - never raw emotional text, private
+// Nova content, faith preference or journal content.
+const RecoveryRecipeAnalyticsEventSchema = z.object({
+  eventType: z.enum(['recipe_started', 'recipe_completed', 'recipe_abandoned', 'recipe_step_skipped', 'recipe_saved', 'recipe_feedback']),
+  situationKey: z.enum([
+    'slept_badly', 'hard_meeting', 'guilty_resting', 'angry', 'numb', 'cannot_focus',
+    'need_switch_off', 'over_capacity', 'everything_urgent', 'cant_stop_thinking',
+    'taken_on_too_much', 'waiting_uncontrollable', 'difficult_conversation', 'setback',
+    'feel_behind', 'just_need_reset',
+  ]).optional(),
+  stepType: z.enum(['movement', 'nova_reflection', 'grounding', 'practical_action', 'release', 'connection', 'rest']).optional(),
+}).strict();
+
+app.post("/api/recovery-recipes/analytics-event", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const parsed = RecoveryRecipeAnalyticsEventSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: "Invalid or unrecognised event." });
+    }
+    const uid = requireAuth(req).uid;
+    const db = getDb();
+    await db.collection("users").doc(uid).collection("recovery_recipes_analytics_events").add({
+      eventType: parsed.data.eventType,
+      situationKey: parsed.data.situationKey || null,
+      stepType: parsed.data.stepType || null,
+      createdAt: new Date().toISOString(),
+    });
+    res.json({ recorded: true });
+  } catch (error: any) {
+    console.error("[Recovery Recipes analytics event] error:", error?.message || error);
+    res.status(500).json({ error: "Could not record that." });
+  }
+});
+
+// Batch 7's Nova Intelligence (Recovery Recipes upgrade, section 30) -
+// structured AI enhancement of an ALREADY-VALID deterministic recipe
+// (buildRecoveryRecipe in recovery-recipes-engine.ts). Mirrors
+// /api/grounding/reflect exactly: the model only ever receives labels
+// (situationKey/capacity/step-type enums), never raw free text, and its
+// output is validated against a tight allowlisted schema before it can
+// touch anything - wording only (reason/reflectionQuestion) and which
+// step TYPE to surface first among ones already present, never which
+// steps exist or their structure. "Do not allow arbitrary AI-generated
+// actions to execute automatically" (section 30) - and the deterministic
+// recipe already shown to the user is complete and valid on its own, so
+// this can only ever refine it, never gate it ("AI must remain optional",
+// sections 29/38).
+const RECOVERY_RECIPE_SITUATION_ENUM = z.enum([
+  'slept_badly', 'hard_meeting', 'guilty_resting', 'angry', 'numb', 'cannot_focus',
+  'need_switch_off', 'over_capacity', 'everything_urgent', 'cant_stop_thinking',
+  'taken_on_too_much', 'waiting_uncontrollable', 'difficult_conversation', 'setback',
+  'feel_behind', 'just_need_reset',
+]);
+const RECOVERY_RECIPE_STEP_TYPE_ENUM = z.enum(['movement', 'nova_reflection', 'grounding', 'practical_action', 'release', 'connection', 'rest']);
+
+const RecoveryRecipeEnhanceRequestSchema = z.object({
+  situationKey: RECOVERY_RECIPE_SITUATION_ENUM,
+  capacity: z.enum(['almost_nothing', 'a_little', 'some_space', 'can_go_deeper']).optional(),
+  // The step TYPES actually left over as optional on this specific build
+  // (BuiltRecoveryRecipe.optionalSteps, deduped by type) - the model may
+  // only reorder among these, never invent a type that isn't already
+  // present in the recipe.
+  optionalStepTypes: z.array(RECOVERY_RECIPE_STEP_TYPE_ENUM).max(7).optional(),
+  // Whether the core recipe actually includes a nova_reflection step -
+  // otherwise there's nothing for a personalised reflectionQuestion to
+  // replace, and the client ignores that field anyway.
+  hasReflectionStep: z.boolean().optional(),
+}).strict();
+
+const RecoveryRecipeEnhanceResponseSchema = z.object({
+  // Replaces the template's default "reason" line on the preview screen -
+  // capped short, same register as the deterministic copy, never a
+  // paragraph.
+  reason: z.string().max(220),
+  reflectionQuestion: z.string().max(200).optional(),
+  // At most a reordering of the SAME step types the request named in
+  // optionalStepTypes - re-validated against that exact allowlist below
+  // (not just the general step-type enum), so the model can never surface
+  // a type that wasn't actually left over on this recipe.
+  preferredStepOrder: z.array(RECOVERY_RECIPE_STEP_TYPE_ENUM).max(7).optional(),
+});
+
+// Server-verified recent-situation context, mirroring buildGroundingContext's
+// "read it ourselves, never trust the client" approach - the client never
+// sends its own history to this route.
+async function buildRecoveryRecipeAiContext(uid: string): Promise<{ recentSituations: SituationKey[] }> {
+  const db = getDb();
+  const snap = await db.collection("users").doc(uid).collection("recipeHistory")
+    .orderBy("createdAt", "desc").limit(10).get();
+  const seen = new Set<string>();
+  const recentSituations: SituationKey[] = [];
+  for (const d of snap.docs) {
+    const key = d.data().situationKey;
+    if (typeof key === 'string' && !seen.has(key)) {
+      seen.add(key);
+      recentSituations.push(key as SituationKey);
+      if (recentSituations.length >= 3) break;
+    }
+  }
+  return { recentSituations };
+}
+
+app.post("/api/recovery-recipes/enhance", recoveryRecipesEnhanceLimiter, verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const parsed = RecoveryRecipeEnhanceRequestSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: "Invalid request.", details: (parsed as any).error?.errors || [] });
+    }
+    const { situationKey, capacity, optionalStepTypes, hasReflectionStep } = parsed.data;
+
+    const user = requireAuth(req);
+    const quota = await checkAndReserveCapability(user.uid, 'nova_text');
+    if (!quota.allowed) {
+      return res.status(429).json({
+        error: quota.plan === 'free'
+          ? "You've reached today's free limit for this. It resets tomorrow, or upgrade to Blaze Break Premium for more."
+          : "You've reached today's fair-use limit for this. It resets tomorrow.",
+        code: 'capability_limit_reached',
+        capability: 'nova_text',
+      });
+    }
+
+    const { recentSituations } = await buildRecoveryRecipeAiContext(user.uid);
+    const situationLabel = SITUATION_LABELS[situationKey as SituationKey] || situationKey;
+    const recentText = recentSituations.length > 0
+      ? `\nRecently they've also used recipes for: ${recentSituations.map((s) => SITUATION_LABELS[s]).join(', ')}. Only mention this if it's genuinely relevant - never manufacture a connection.`
+      : '';
+    const orderInstruction = optionalStepTypes?.length
+      ? `\n\nSeparately, order this exact list of step types by which would most likely help this specific situation next - use the type strings exactly as given, never add, remove, or invent one: ${optionalStepTypes.join(', ')}`
+      : '';
+    const reflectionInstruction = hasReflectionStep
+      ? `\n\nAlso write one short, genuinely reflective QUESTION (not advice, not a statement) that fits this specific situation.`
+      : '';
+
+    const prompt = `You are Nova, a calm AI recovery coach at Blaze Break, helping a high achiever recover from burnout - focused on ambition and stability, never a therapist, never making medical claims. They just opened a short Recovery Recipe for: "${situationLabel}"${capacity ? ` (capacity right now: ${String(capacity).replace('_', ' ')})` : ''}.${recentText}
+
+Write one short (1-2 sentence) personalised reason this specific sequence will help right now - calm, practical, grounded in exactly what's given above, never clinical, never a diagnosis.${orderInstruction}${reflectionInstruction}
+
+Respond strictly in this JSON format, no markdown, no commentary outside the JSON:
+{
+  "reason": "your 1-2 sentence personalised reason"${optionalStepTypes?.length ? ',\n  "preferredStepOrder": ["type_1", "type_2"]' : ''}${hasReflectionStep ? ',\n  "reflectionQuestion": "your reflective question"' : ''}
+}
+${NOVA_ONE_SHOT_SAFETY_FLOOR}`;
+
+    const response = await ai.models.generateContent({
+      model: "gemini-3.5-flash",
+      contents: prompt,
+      config: { responseMimeType: "application/json" },
+    });
+
+    const text = response.text;
+    if (!text) throw new Error("Empty response from Gemini model.");
+    const rawEnhancement = JSON.parse(text);
+
+    // Drop any step type the model echoed back that wasn't actually in
+    // optionalStepTypes, rather than failing the whole response - mirrors
+    // the Grounding reflect route's "drop the bad part, keep the rest"
+    // handling for its own model-chosen allowlist field.
+    const allowedOrderTypes = new Set(optionalStepTypes || []);
+    const sanitizedOrder = Array.isArray(rawEnhancement.preferredStepOrder)
+      ? rawEnhancement.preferredStepOrder.filter((t: unknown) => typeof t === 'string' && allowedOrderTypes.has(t as any))
+      : undefined;
+
+    const validated = RecoveryRecipeEnhanceResponseSchema.safeParse({
+      reason: rawEnhancement.reason,
+      reflectionQuestion: hasReflectionStep ? rawEnhancement.reflectionQuestion : undefined,
+      preferredStepOrder: sanitizedOrder?.length ? sanitizedOrder : undefined,
+    });
+    if (!validated.success) {
+      throw new Error(`Model returned an unexpected shape: ${validated.error.message}`);
+    }
+
+    res.json(validated.data);
+  } catch (err: any) {
+    console.error("[Recovery Recipes] enhance error:", err.message);
+    // Section 29/30/38: AI must remain optional and the recipe must
+    // already be complete without it - a failure here is never meant to
+    // block the user, just an empty/no-op enhancement the client falls
+    // back past (see getRecipeEnhancement in src/lib/recovery-recipes-ai.ts).
+    res.status(500).json({ error: "Could not personalise that recipe right now." });
   }
 });
 

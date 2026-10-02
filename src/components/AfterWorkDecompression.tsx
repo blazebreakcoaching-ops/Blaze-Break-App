@@ -34,7 +34,10 @@ const CLOSING_CUES: { id: string; label: string }[] = [
 ];
 
 interface AfterWorkDecompressionProps {
-  onClose: () => void;
+  // Reports whether the flow actually reached completion (true) or was
+  // stopped early (false), so a caller that deep-linked into this from
+  // outside (Recovery Recipes) knows which way to resume.
+  onClose: (completed: boolean) => void;
   onAwardPoints?: (amount: number, reason: string) => void;
   voiceEnabled: boolean;
 }
@@ -79,7 +82,7 @@ export const AfterWorkDecompression = ({ onClose, onAwardPoints, voiceEnabled }:
     if (auth.currentUser) {
       recordMovementHistory(auth.currentUser.uid, { movementId: 'after_work', context: 'switch_off_work', skipped: true }).catch(() => {});
     }
-    onClose();
+    onClose(false);
   };
 
   const handleCarryingPick = (level: CarryingLevel) => {
@@ -255,7 +258,7 @@ export const AfterWorkDecompression = ({ onClose, onAwardPoints, voiceEnabled }:
                 <CheckCircle2 className="w-10 h-10" />
               </div>
               <h4 className="text-2xl font-display font-bold text-text-main">Work has ended. You don't have to keep carrying it in your body.</h4>
-              <button onClick={onClose} className="btn-primary bg-primary hover:bg-primary border-primary text-primary-foreground">Done</button>
+              <button onClick={() => onClose(true)} className="btn-primary bg-primary hover:bg-primary border-primary text-primary-foreground">Done</button>
             </motion.div>
           )}
         </AnimatePresence>

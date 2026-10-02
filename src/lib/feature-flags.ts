@@ -46,7 +46,14 @@ export type FeatureFlag =
   | 'enable_movement_feedback'
   | 'enable_movement_after_work_decompression'
   | 'enable_movement_favourites'
-  | 'enable_movement_history';
+  | 'enable_movement_history'
+  | 'enable_recovery_recipes_adaptive'
+  | 'enable_recovery_recipes_nova_suggestions'
+  | 'enable_recovery_recipes_saved'
+  | 'enable_recovery_recipes_feedback'
+  | 'enable_recovery_recipes_dynamic_sequencing'
+  | 'enable_recovery_recipes_favourites'
+  | 'enable_recovery_recipes_grounding_integration';
 
 const DEFAULT_FLAGS: Record<FeatureFlag, boolean> = {
   enable_nova_voice: true,
@@ -94,7 +101,14 @@ const DEFAULT_FLAGS: Record<FeatureFlag, boolean> = {
   enable_movement_feedback: true,
   enable_movement_after_work_decompression: true,
   enable_movement_favourites: true,
-  enable_movement_history: true
+  enable_movement_history: true,
+  enable_recovery_recipes_adaptive: true,
+  enable_recovery_recipes_nova_suggestions: true,
+  enable_recovery_recipes_saved: true,
+  enable_recovery_recipes_feedback: true,
+  enable_recovery_recipes_dynamic_sequencing: true,
+  enable_recovery_recipes_favourites: true,
+  enable_recovery_recipes_grounding_integration: true,
 };
 
 export const getFeatureFlags = (): Record<FeatureFlag, boolean> => {
