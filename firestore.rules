@@ -146,6 +146,34 @@ service cloud.firestore {
             request.resource.data.hours is number && request.resource.data.hours >= 0 && request.resource.data.hours <= 24;
       }
 
+      // Breathing & Guided Reset: one record per real session (practice,
+      // duration, the post-session checkpoint response, and optionally
+      // the occasional "did it help?" answer). Created once the
+      // checkpoint response is given; the helpful field is added later
+      // by the narrow update below, same pattern as recovery_fuel_checkins.
+      match /breathing_reset_sessions/{sessionId} {
+        allow read, delete: if isOwner(uid);
+        allow create: if isOwner(uid)
+            && hasOnly(['id', 'practiceId', 'durationSeconds', 'checkpointResponse', 'helpful', 'createdAt'])
+            && hasAll(['id', 'practiceId', 'durationSeconds', 'createdAt'])
+            && request.resource.data.practiceId in ['sigh', 'extended', 'coherent', 'box', '478', 'rectangle', 'calm']
+            && request.resource.data.durationSeconds is number && request.resource.data.durationSeconds >= 0
+            && (!('checkpointResponse' in request.resource.data) || request.resource.data.checkpointResponse == null || request.resource.data.checkpointResponse in ['calmer', 'about_same', 'more_unsettled', 'not_sure'])
+            && (!('helpful' in request.resource.data) || request.resource.data.helpful == null);
+        allow update: if isOwner(uid)
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['helpful'])
+            && request.resource.data.helpful in ['yes', 'a_little', 'not_really'];
+      }
+
+      // Breathing & Guided Reset's completion counter - gates how often
+      // "Did it help?" is asked, nothing else.
+      match /preferences/breathing_reset {
+        allow read: if isOwner(uid);
+        allow write: if isOwner(uid) &&
+            hasOnly(['totalSessions', 'updatedAt']) &&
+            (!('totalSessions' in request.resource.data) || (request.resource.data.totalSessions is number && request.resource.data.totalSessions >= 0));
+      }
+
       // Reset Studio's Spark Check: a rolling window of recent answers,
       // just enough real history for the repeat-pattern Quick Support
       // offer - never a mood score.
