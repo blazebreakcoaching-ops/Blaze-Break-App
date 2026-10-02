@@ -162,7 +162,10 @@ export type RediscoveryClueSource =
   | 'one_less_thing_category_imbalance'
   | 'energy_delta_mismatch'
   | 'recovery_fuel_pattern'
-  | 'quiet_question';
+  | 'quiet_question'
+  | 'rumination_furnace'
+  | 'pressure_valve'
+  | 'make_it_smaller';
 
 export interface RediscoveryClue {
   id: string;
