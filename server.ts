@@ -268,6 +268,16 @@ const oneLessThingLimiter = rateLimit({
   handler: logRateLimitExceeded('oneLessThingLimiter'),
 });
 
+const resetStudioReframeLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 30,
+  message: { error: 'Too many requests, please try again shortly.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+  validate: { xForwardedForHeader: false, default: true },
+  handler: logRateLimitExceeded('resetStudioReframeLimiter'),
+});
+
 const speechLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 20, // stricter for speech
@@ -3169,6 +3179,104 @@ ${styleToneAddendum}`,
     }
   } catch (error: any) {
     console.error("One Less Thing API error:", error);
+    res.status(500).json({ error: "Could not reach Nova for analysis right now." });
+  }
+});
+
+// Reset Studio's "Keep the Signal" (Rumination Furnace) and "Turn it into
+// something I can say" (Pressure Valve) share this one endpoint - both are
+// "take this raw emotional text and offer one honest reframe back for the
+// user to confirm or reject" (KEEP THE SIGNAL, FUMING — THE PRESSURE
+// VALVE). Never trusted as true until the user confirms it themselves;
+// never diagnoses or labels what's underneath it. The raw text is not
+// persisted anywhere server-side, same as /api/nova/one-less-thing.
+const ResetStudioReframeRequestSchema = z.object({
+  text: z.string().trim().min(1).max(2000),
+  mode: z.enum(['keep_signal', 'say_what_i_mean']),
+}).strict();
+
+app.post("/api/nova/reset-studio-reframe", resetStudioReframeLimiter, verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const parsed = ResetStudioReframeRequestSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: "Invalid request." });
+    }
+    const { text, mode } = parsed.data;
+
+    if (!process.env.GEMINI_API_KEY || process.env.GEMINI_API_KEY === "MY_GEMINI_API_KEY") {
+      return res.status(401).json({ error: "Nova analysis is not configured on this server." });
+    }
+
+    const abortController = new AbortController();
+    const timeoutId = setTimeout(() => abortController.abort(), 15000);
+
+    try {
+      const promptBody = mode === 'keep_signal'
+        ? `You are Nova, a calm, quiet presence - the user just unloaded a recurring thought, argument or replay onto the page to get it out of their head. Your only job now is to gently ask whether there is one legitimate thing still worth keeping underneath all the noise - a feeling, an unmet need, a boundary, or something unresolved.
+
+What they wrote: "${text}"
+
+Write ONE short, warm, tentative question - a hypothesis they can confirm or reject, never a conclusion. Match the brief's own tone exactly: "Underneath all of that, is the part that still matters something like: '...'?" Keep the quoted guess itself short (one honest sentence in their own kind of language, not clinical). Do not diagnose, label, or name a psychological pattern. If you genuinely cannot find a clear signal, say so plainly instead of inventing one.
+
+Respond strictly as JSON, no markdown:
+{"hypothesis": "..."}`
+        : `You are Nova, quiet and steady. The user wrote a raw, unfiltered reaction they do NOT intend to send to anyone. Your job is to help them separate the raw reaction from what's actually going on, so they could choose to say something clearer later if they want to.
+
+What they wrote: "${text}"
+
+Identify, in their own voice as much as possible:
+1. whatHappened: the plain facts, stripped of the heat (1 sentence).
+2. whatMattered: what actually mattered to them about it (1 sentence).
+3. whatNeedsSaying: a clear, calm version of what might actually need saying, if anything (1-2 sentences). If nothing really needs saying, say that honestly instead of inventing something.
+
+Respond strictly as JSON, no markdown:
+{"whatHappened": "...", "whatMattered": "...", "whatNeedsSaying": "..."}`;
+
+      const response = await ai.models.generateContent({
+        model: "gemini-3.5-flash",
+        contents: { parts: [{ text: `${promptBody}\n${NOVA_ONE_SHOT_SAFETY_FLOOR}` }] },
+        config: {
+          responseMimeType: "application/json",
+          responseSchema: mode === 'keep_signal'
+            ? { type: Type.OBJECT, properties: { hypothesis: { type: Type.STRING } }, required: ["hypothesis"] }
+            : {
+                type: Type.OBJECT,
+                properties: {
+                  whatHappened: { type: Type.STRING },
+                  whatMattered: { type: Type.STRING },
+                  whatNeedsSaying: { type: Type.STRING },
+                },
+                required: ["whatHappened", "whatMattered", "whatNeedsSaying"],
+              },
+        },
+      });
+      clearTimeout(timeoutId);
+
+      const responseText = response.text;
+      if (!responseText) throw new Error("Empty response from Gemini model.");
+      const parsedModel = JSON.parse(responseText);
+
+      if (mode === 'keep_signal') {
+        if (typeof parsedModel.hypothesis !== "string") throw new Error("Model returned an unexpected shape.");
+        return res.json({ hypothesis: parsedModel.hypothesis.slice(0, 400) });
+      }
+      if (typeof parsedModel.whatHappened !== "string" || typeof parsedModel.whatMattered !== "string" || typeof parsedModel.whatNeedsSaying !== "string") {
+        throw new Error("Model returned an unexpected shape.");
+      }
+      res.json({
+        whatHappened: parsedModel.whatHappened.slice(0, 400),
+        whatMattered: parsedModel.whatMattered.slice(0, 400),
+        whatNeedsSaying: parsedModel.whatNeedsSaying.slice(0, 600),
+      });
+    } catch (modelError: any) {
+      clearTimeout(timeoutId);
+      if (modelError.name === "AbortError") {
+        return res.status(504).json({ error: "Nova's analysis timed out." });
+      }
+      throw modelError;
+    }
+  } catch (error: any) {
+    console.error("Reset Studio reframe API error:", error);
     res.status(500).json({ error: "Could not reach Nova for analysis right now." });
   }
 });
