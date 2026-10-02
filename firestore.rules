@@ -155,6 +155,19 @@ service cloud.firestore {
             (!('totalCompletions' in request.resource.data) || (request.resource.data.totalCompletions is number && request.resource.data.totalCompletions >= 0));
       }
 
+      // Reset Studio's Rumination Furnace: "Not Ready Yet" explicitly asks
+      // to save the raw entry for later - the one place in Reset Studio
+      // where raw text is deliberately kept, because the user asked for
+      // it rather than the default "nothing survives the session"
+      // promise every other path there keeps.
+      match /rumination_saved_entries/{entryId} {
+        allow read, delete: if isOwner(uid);
+        allow create: if isOwner(uid)
+            && hasOnly(['id', 'text', 'createdAt'])
+            && hasAll(['id', 'text', 'createdAt'])
+            && isStringWithMax(request.resource.data.text, 2000);
+      }
+
       // Rediscovery Layer: one Workload Reality Check history snapshot
       // per day (doc id = date) - just enough real history for the
       // recurring-Must-Do pattern reflection to work from.
@@ -622,7 +635,7 @@ service cloud.firestore {
         allow create: if isOwner(uid)
             && hasOnly(['id', 'source', 'prompt', 'answer', 'createdAt'])
             && hasAll(['id', 'source', 'prompt', 'answer', 'createdAt'])
-            && request.resource.data.source in ['one_less_thing_why', 'workload_recurring_must_do', 'one_less_thing_category_imbalance', 'energy_delta_mismatch', 'recovery_fuel_pattern', 'quiet_question']
+            && request.resource.data.source in ['one_less_thing_why', 'workload_recurring_must_do', 'one_less_thing_category_imbalance', 'energy_delta_mismatch', 'recovery_fuel_pattern', 'quiet_question', 'rumination_furnace', 'pressure_valve', 'make_it_smaller']
             && isStringWithMax(request.resource.data.prompt, 300)
             && isStringWithMax(request.resource.data.answer, 300);
       }
