@@ -166,3 +166,36 @@ export const getRecentSituations = (history: RecipeHistoryEntry[]): SituationKey
   }
   return ordered;
 };
+
+// Batch 6's "which interventions help most" / "frequently skipped steps"
+// (sections 17/26) - derives a simple ranking from raw history rather than
+// maintaining any running counters or profile document, mirroring
+// computeUsageFromHistory's "compute from source data" convention. A step
+// type counts as helpful when it's been completed more often than skipped
+// across recent history, and vice versa - no clinical framing, just a
+// completion/skip tally capped at the top 3 of each.
+export const deriveStepTypePreferences = (
+  history: RecipeHistoryEntry[]
+): { helpfulStepTypes: RecipeStepType[]; skippedStepTypes: RecipeStepType[] } => {
+  const completedCounts = new Map<RecipeStepType, number>();
+  const skippedCounts = new Map<RecipeStepType, number>();
+  for (const entry of history) {
+    for (const t of entry.completedStepTypes || []) completedCounts.set(t, (completedCounts.get(t) || 0) + 1);
+    for (const t of entry.skippedStepTypes || []) skippedCounts.set(t, (skippedCounts.get(t) || 0) + 1);
+  }
+  const allTypes = new Set<RecipeStepType>([...completedCounts.keys(), ...skippedCounts.keys()]);
+  const scored = [...allTypes].map((type) => ({
+    type, completed: completedCounts.get(type) || 0, skipped: skippedCounts.get(type) || 0,
+  }));
+  const helpfulStepTypes = scored
+    .filter((s) => s.completed > s.skipped)
+    .sort((a, b) => (b.completed - b.skipped) - (a.completed - a.skipped))
+    .slice(0, 3)
+    .map((s) => s.type);
+  const skippedStepTypes = scored
+    .filter((s) => s.skipped > s.completed)
+    .sort((a, b) => (b.skipped - b.completed) - (a.skipped - a.completed))
+    .slice(0, 3)
+    .map((s) => s.type);
+  return { helpfulStepTypes, skippedStepTypes };
+};

@@ -14,7 +14,7 @@
 // mirroring Movement Snacks' recommendation/service split.
 
 import {
-  SituationKey, Capacity, CAPACITY_ORDER, RecipeStep, RECIPE_TEMPLATES,
+  SituationKey, Capacity, CAPACITY_ORDER, RecipeStep, RecipeStepType, RECIPE_TEMPLATES,
   DurationCategory, estimateDurationMinutes, categoriseDuration,
 } from './recovery-recipes-content';
 import { MovementUsageEntry, getMovementRecommendation } from './movement-snacks-recommendation';
@@ -34,7 +34,23 @@ export interface RecoveryRecipeContext {
   // interventions" consideration) - reuses Movement Snacks' own
   // recommendation engine rather than reimplementing cooldown logic.
   movementUsage?: MovementUsageEntry[];
+  // Batch 6 personalisation (section 17's "preferred recipe length") -
+  // only used to pick a default capacity when the person hasn't chosen one
+  // this session; an explicit capacity always wins. Never overrides the
+  // minimum-useful-recipe floor, just which floor applies by default.
+  preferredDurationCategory?: DurationCategory;
+  // Batch 6 personalisation (section 17's "which interventions help most")
+  // - most-helpful-first order for step TYPES, derived from history. Used
+  // only to reorder optionalSteps so "One more step" offers the type the
+  // person has found useful before, never to exclude anything or to
+  // change which steps exist.
+  helpfulStepTypes?: RecipeStepType[];
 }
+
+const DURATION_TO_DEFAULT_CAPACITY: Record<DurationCategory, Capacity> = {
+  quick: 'almost_nothing', short: 'a_little', standard: 'some_space', deep: 'can_go_deeper',
+};
+
 
 export interface BuiltRecoveryRecipe {
   recipeTitle: string;
@@ -110,7 +126,8 @@ export const buildRecoveryRecipe = (context: RecoveryRecipeContext): BuiltRecove
   // text the deterministic engine can't classify) always resolves safely
   // to the universal fallback rather than throwing or returning nothing.
   const template = RECIPE_TEMPLATES[context.situationKey] ?? RECIPE_TEMPLATES.just_need_reset;
-  const capacity = context.capacity ?? 'some_space';
+  const capacity = context.capacity
+    ?? (context.preferredDurationCategory ? DURATION_TO_DEFAULT_CAPACITY[context.preferredDurationCategory] : 'some_space');
 
   const { included: byCapacity, leftOver: leftOverByCapacity } = assembleForCapacity(
     template.coreSteps, template.expandedSteps, template.deepStep, capacity
@@ -123,6 +140,14 @@ export const buildRecoveryRecipe = (context: RecoveryRecipeContext): BuiltRecove
     const trimmed = trimToTimeBudget(byCapacity.slice(0, coreCount), byCapacity.slice(coreCount), context.timeAvailableMinutes);
     included = trimmed.included;
     optionalSteps = [...trimmed.leftOver, ...leftOverByCapacity];
+  }
+
+  if (context.helpfulStepTypes?.length) {
+    const rank = new Map(context.helpfulStepTypes.map((t, i) => [t, i]));
+    // Stable sort - only reorders by how helpful the step's TYPE has been,
+    // never drops or adds anything; ties (including types with no signal
+    // yet) keep their original relative order.
+    optionalSteps = [...optionalSteps].sort((a, b) => (rank.get(a.type) ?? Infinity) - (rank.get(b.type) ?? Infinity));
   }
 
   const resolvedSteps = included.map((s) => resolveMovementStep(s, context.movementUsage));

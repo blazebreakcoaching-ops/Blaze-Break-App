@@ -773,3 +773,30 @@ export const HELPFUL_PART_OPTIONS: { id: HelpfulPartId; label: string }[] = [
   { id: 'grounding', label: 'Grounding' },
   { id: 'stopping', label: 'Stopping' },
 ];
+
+// ---------- Step lookup (Batch 6 - Personalisation, section 20) ----------
+
+// Every step across every template, keyed by its own id - lets a saved
+// recipe's stored stepIds (src/lib/recovery-recipes-service.ts) be resolved
+// back into full step objects for "Use as before", without storing a full
+// copy of each step's content in Firestore. Step ids are only meaningful
+// within this map when they're globally unique across templates - locked
+// in by a test in recovery-recipes-content.test.ts, so a future content
+// edit that accidentally reuses an id fails loudly instead of silently
+// resolving to the wrong step.
+export const ALL_STEPS_BY_ID: Record<string, RecipeStep> = Object.values(RECIPE_TEMPLATES).reduce(
+  (map, template) => {
+    for (const step of [...template.coreSteps, ...template.expandedSteps, ...(template.deepStep ? [template.deepStep] : [])]) {
+      map[step.id] = step;
+    }
+    return map;
+  },
+  {} as Record<string, RecipeStep>
+);
+
+// Resolves a saved recipe's stepIds back into real steps, silently dropping
+// any id that no longer resolves (e.g. a template was later restructured)
+// rather than crashing "Use as before" - a partially-replayed recipe is
+// better than a broken one.
+export const getStepsByIds = (stepIds: string[]): RecipeStep[] =>
+  stepIds.map((id) => ALL_STEPS_BY_ID[id]).filter((step): step is RecipeStep => Boolean(step));

@@ -167,3 +167,35 @@ describe('getSuggestedRecipe', () => {
     expect(recipe.steps.length).toBeGreaterThan(0);
   });
 });
+
+describe('Batch 6 personalisation', () => {
+  it('uses preferredDurationCategory to pick a default capacity only when no explicit capacity is given', () => {
+    const quick = buildRecoveryRecipe({ situationKey: 'slept_badly', preferredDurationCategory: 'quick' });
+    expect(quick.steps.length).toBeLessThanOrEqual(2);
+    const deep = buildRecoveryRecipe({ situationKey: 'slept_badly', preferredDurationCategory: 'deep' });
+    expect(deep.steps.some((s) => s.id === RECIPE_TEMPLATES.slept_badly.deepStep!.id)).toBe(true);
+  });
+
+  it('an explicit capacity always overrides preferredDurationCategory', () => {
+    const recipe = buildRecoveryRecipe({ situationKey: 'slept_badly', capacity: 'almost_nothing', preferredDurationCategory: 'deep' });
+    expect(recipe.steps.length).toBeLessThanOrEqual(2);
+  });
+
+  it('reorders optionalSteps by helpfulStepTypes without dropping or adding anything', () => {
+    const plain = buildRecoveryRecipe({ situationKey: 'slept_badly', capacity: 'almost_nothing' });
+    const expandedId = RECIPE_TEMPLATES.slept_badly.expandedSteps[0]!.id;
+    const deepId = RECIPE_TEMPLATES.slept_badly.deepStep!.id;
+    expect(plain.optionalSteps.map((s) => s.id)).toEqual([expandedId, deepId]);
+
+    // Put nova_reflection (the deepStep's type) ahead of release (the
+    // expandedStep's type) and confirm the order flips, same two ids.
+    const reordered = buildRecoveryRecipe({ situationKey: 'slept_badly', capacity: 'almost_nothing', helpfulStepTypes: ['nova_reflection', 'release'] });
+    expect(reordered.optionalSteps.map((s) => s.id)).toEqual([deepId, expandedId]);
+  });
+
+  it('helpfulStepTypes never changes which steps are included, only optionalSteps order', () => {
+    const withPref = buildRecoveryRecipe({ situationKey: 'slept_badly', capacity: 'almost_nothing', helpfulStepTypes: ['grounding'] });
+    const without = buildRecoveryRecipe({ situationKey: 'slept_badly', capacity: 'almost_nothing' });
+    expect(withPref.steps.map((s) => s.id)).toEqual(without.steps.map((s) => s.id));
+  });
+});

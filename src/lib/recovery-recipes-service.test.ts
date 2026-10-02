@@ -20,7 +20,7 @@ import { getDoc, getDocs, setDoc, addDoc, deleteDoc } from 'firebase/firestore';
 import {
   loadRecipePreferences, toggleFavouriteRecipe, saveRecoveryRecipe, loadSavedRecipes,
   deleteSavedRecipe, markRecipeUsed, recordRecipeHistory, loadRecentRecipeHistory, getRecentSituations,
-  RecipeHistoryEntry,
+  deriveStepTypePreferences, RecipeHistoryEntry,
 } from './recovery-recipes-service';
 
 beforeEach(() => {
@@ -126,5 +126,46 @@ describe('getRecentSituations', () => {
 
   it('returns an empty array for no history', () => {
     expect(getRecentSituations([])).toEqual([]);
+  });
+});
+
+describe('deriveStepTypePreferences', () => {
+  const entry = (completed: any[], skipped: any[]): RecipeHistoryEntry =>
+    ({ id: Math.random().toString(), situationKey: 'hard_meeting', createdAt: 'x', completedStepTypes: completed, skippedStepTypes: skipped });
+
+  it('ranks a type as helpful once it has been completed more than skipped', () => {
+    const { helpfulStepTypes } = deriveStepTypePreferences([
+      entry(['movement', 'movement', 'movement'], []),
+      entry([], ['nova_reflection']),
+    ]);
+    expect(helpfulStepTypes).toContain('movement');
+    expect(helpfulStepTypes).not.toContain('nova_reflection');
+  });
+
+  it('ranks a type as frequently skipped once it has been skipped more than completed', () => {
+    const { skippedStepTypes } = deriveStepTypePreferences([
+      entry([], ['grounding', 'grounding']),
+      entry(['grounding'], []),
+    ]);
+    expect(skippedStepTypes).toContain('grounding');
+  });
+
+  it('caps each list at the top 3', () => {
+    const { helpfulStepTypes } = deriveStepTypePreferences([
+      entry(['movement', 'nova_reflection', 'practical_action', 'release', 'connection'], []),
+    ]);
+    expect(helpfulStepTypes.length).toBeLessThanOrEqual(3);
+  });
+
+  it('returns empty lists for a brand-new user with no history', () => {
+    expect(deriveStepTypePreferences([])).toEqual({ helpfulStepTypes: [], skippedStepTypes: [] });
+  });
+
+  it('never lists the same type as both helpful and skipped', () => {
+    const { helpfulStepTypes, skippedStepTypes } = deriveStepTypePreferences([
+      entry(['movement', 'movement'], ['movement']),
+    ]);
+    expect(helpfulStepTypes).toContain('movement');
+    expect(skippedStepTypes).not.toContain('movement');
   });
 });

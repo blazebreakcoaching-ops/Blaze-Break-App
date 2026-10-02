@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
-  ArrowLeft, ArrowRight, CheckCircle2, Clock, ChevronRight, X,
+  ArrowLeft, ArrowRight, CheckCircle2, Clock, ChevronRight, X, Star,
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { auth } from '../lib/firebase';
@@ -10,10 +10,15 @@ import { updateNovaMemoryBySourceAndType } from '../lib/nova-brain';
 import { useFeatureFlags } from '../lib/feature-flags';
 import {
   SituationKey, SITUATION_ORDER, SITUATION_LABELS, Capacity, CAPACITY_ORDER, CAPACITY_LABELS,
-  DURATION_CATEGORY_LABELS, RecipeStep, RecipeStepType,
+  DURATION_CATEGORY_LABELS, DurationCategory, RecipeStep, RecipeStepType, RecipeFeedback, HelpfulPartId,
+  RECIPE_FEEDBACK_OPTIONS, HELPFUL_PART_OPTIONS, getStepsByIds,
 } from '../../recovery-recipes-content';
 import { buildRecoveryRecipe, adaptRecoveryRecipe, BuiltRecoveryRecipe } from '../../recovery-recipes-engine';
-import { loadRecipePreferences, recordRecipeHistory } from '../lib/recovery-recipes-service';
+import {
+  loadRecipePreferences, updateRecipePreferences, recordRecipeHistory, loadRecentRecipeHistory,
+  deriveStepTypePreferences, saveRecoveryRecipe, loadSavedRecipes, markRecipeUsed, toggleFavouriteRecipe,
+  SavedRecoveryRecipe,
+} from '../lib/recovery-recipes-service';
 import { logRecipeEvent } from '../lib/recovery-recipes-analytics';
 import { MOVEMENT_SNACKS } from '../../movement-snacks-content';
 import { GroundingLens } from '../../grounding-content';
@@ -54,13 +59,38 @@ export const RecoveryRecipes = ({ fingerprint: _fingerprint, onAwardPoints }: Re
   const [completedStepTypes, setCompletedStepTypes] = useState<RecipeStepType[]>([]);
   const [skippedStepTypes, setSkippedStepTypes] = useState<RecipeStepType[]>([]);
   const [preferredLens, setPreferredLens] = useState<GroundingLens | undefined>(undefined);
+  const [preferredDurationCategory, setPreferredDurationCategory] = useState<DurationCategory | undefined>(undefined);
+  const [helpfulStepTypes, setHelpfulStepTypes] = useState<RecipeStepType[]>([]);
+  const [favouriteRecipeIds, setFavouriteRecipeIds] = useState<string[]>([]);
+  const [savedRecipes, setSavedRecipes] = useState<SavedRecoveryRecipe[]>([]);
   const [showSupportOptions, setShowSupportOptions] = useState(false);
+  // Section 16's occasionally-sampled feedback ask - 'none' when no recipe
+  // is active yet, 'ask' / 'ask_helpful_part' while it's mid-flow, 'done'
+  // once resolved (or never asked this time). History is written exactly
+  // once, only when this reaches 'done', so feedback never produces a
+  // second write on top of the completion write.
+  const [feedbackStage, setFeedbackStage] = useState<'none' | 'ask' | 'ask_helpful_part' | 'done'>('none');
+  const [pickedFeedback, setPickedFeedback] = useState<RecipeFeedback | null>(null);
+  const [showSaveRecipe, setShowSaveRecipe] = useState(false);
+  const [saveRecipeName, setSaveRecipeName] = useState('');
+  // Guards against a second history write/points award if "One more step"
+  // (section 15) sends the person back through the player and they finish
+  // again in the same episode - one completion, one write, regardless of
+  // how many optional steps get added on afterward.
+  const [historyWritten, setHistoryWritten] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!auth.currentUser) return;
-    loadRecipePreferences(auth.currentUser.uid).then((prefs) => {
+    const uid = auth.currentUser.uid;
+    loadRecipePreferences(uid).then((prefs) => {
       if (prefs.preferredLens) setPreferredLens(prefs.preferredLens);
+      if (prefs.preferredDurationCategory) setPreferredDurationCategory(prefs.preferredDurationCategory);
+      if (prefs.favouriteRecipeIds) setFavouriteRecipeIds(prefs.favouriteRecipeIds);
+    });
+    loadSavedRecipes(uid).then(setSavedRecipes);
+    loadRecentRecipeHistory(uid).then((history) => {
+      setHelpfulStepTypes(deriveStepTypePreferences(history).helpfulStepTypes);
     });
   }, []);
 
@@ -74,17 +104,18 @@ export const RecoveryRecipes = ({ fingerprint: _fingerprint, onAwardPoints }: Re
       if (!detail?.situationKey) return;
       setSelectedSituation(detail.situationKey);
       setCapacity(detail.capacity);
-      const built = buildRecoveryRecipe({ situationKey: detail.situationKey, capacity: detail.capacity });
+      const built = buildRecoveryRecipe({ situationKey: detail.situationKey, capacity: detail.capacity, preferredDurationCategory, helpfulStepTypes });
       setRecipe(built);
       setStepIndex(0);
       setCompletedStepTypes([]);
       setSkippedStepTypes([]);
+      setHistoryWritten(false);
       setView('preview');
       rootRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     };
     window.addEventListener('open_recovery_recipe', handler);
     return () => window.removeEventListener('open_recovery_recipe', handler);
-  }, []);
+  }, [preferredDurationCategory, helpfulStepTypes]);
 
   const resetToEntry = () => {
     setView('entry');
@@ -98,7 +129,12 @@ export const RecoveryRecipes = ({ fingerprint: _fingerprint, onAwardPoints }: Re
     setStepIndex(0);
     setCompletedStepTypes([]);
     setSkippedStepTypes([]);
+    setHistoryWritten(false);
     setShowSupportOptions(false);
+    setFeedbackStage('none');
+    setPickedFeedback(null);
+    setShowSaveRecipe(false);
+    setSaveRecipeName('');
   };
 
   const handlePickSituation = (situation: SituationKey) => {
@@ -125,19 +161,46 @@ export const RecoveryRecipes = ({ fingerprint: _fingerprint, onAwardPoints }: Re
 
   const buildAndPreview = () => {
     if (!selectedSituation) return;
-    const built = buildRecoveryRecipe({ situationKey: selectedSituation, capacity, timeAvailableMinutes });
+    const built = buildRecoveryRecipe({ situationKey: selectedSituation, capacity, timeAvailableMinutes, preferredDurationCategory, helpfulStepTypes });
     setRecipe(built);
     setStepIndex(0);
     setCompletedStepTypes([]);
     setSkippedStepTypes([]);
+    setHistoryWritten(false);
     setView('preview');
   };
 
   const handleMakeShorter = () => {
     if (!selectedSituation) return;
-    const shortened = adaptRecoveryRecipe({ situationKey: selectedSituation, capacity, timeAvailableMinutes }, { type: 'shorten' });
+    const shortened = adaptRecoveryRecipe({ situationKey: selectedSituation, capacity, timeAvailableMinutes, helpfulStepTypes }, { type: 'shorten' });
     setRecipe(shortened);
     setCapacity('almost_nothing');
+  };
+
+  // Section 20's "Use as before" / "Adapt for today" for a saved recipe.
+  const handleUseSavedRecipe = (saved: SavedRecoveryRecipe, adapt: boolean) => {
+    setSelectedSituation(saved.situationKey);
+    setCapacity(saved.capacity);
+    if (auth.currentUser) markRecipeUsed(auth.currentUser.uid, saved.id).catch(() => {});
+    if (adapt) {
+      setRecipe(buildRecoveryRecipe({ situationKey: saved.situationKey, capacity: saved.capacity, preferredDurationCategory, helpfulStepTypes }));
+    } else {
+      const base = buildRecoveryRecipe({ situationKey: saved.situationKey, capacity: saved.capacity });
+      const resolvedSteps = getStepsByIds(saved.stepIds);
+      setRecipe({ ...base, steps: resolvedSteps.length > 0 ? resolvedSteps : base.steps, optionalSteps: [] });
+    }
+    setStepIndex(0);
+    setCompletedStepTypes([]);
+    setSkippedStepTypes([]);
+    setHistoryWritten(false);
+    setView('preview');
+  };
+
+  const handleToggleFavouriteRecipe = (savedId: string) => {
+    const isFav = favouriteRecipeIds.includes(savedId);
+    const next = isFav ? favouriteRecipeIds.filter((id) => id !== savedId) : [...favouriteRecipeIds, savedId];
+    setFavouriteRecipeIds(next);
+    if (auth.currentUser) toggleFavouriteRecipe(auth.currentUser.uid, savedId, !isFav).catch(() => {});
   };
 
   const handleBegin = () => {
@@ -147,26 +210,75 @@ export const RecoveryRecipes = ({ fingerprint: _fingerprint, onAwardPoints }: Re
     setView('player');
   };
 
-  const finishRecipe = () => {
+  // The single place a completed session's history is written (section 31's
+  // duplicate-write lesson from Movement Snacks Batch 7 hardening - history
+  // is written exactly once, whether or not a feedback ask is sampled).
+  const writeRecipeHistory = (
+    finalCompleted: RecipeStepType[], finalSkipped: RecipeStepType[], feedback?: RecipeFeedback, helpfulPart?: HelpfulPartId
+  ) => {
+    if (!recipe || !selectedSituation || !auth.currentUser) return;
+    const uid = auth.currentUser.uid;
+    recordRecipeHistory(uid, {
+      situationKey: selectedSituation, capacity, durationMinutes: recipe.estimatedDurationMinutes,
+      completedStepTypes: finalCompleted, skippedStepTypes: finalSkipped,
+      ...(feedback ? { feedback } : {}), ...(helpfulPart ? { helpfulPart } : {}),
+    }).catch(() => {});
+    // Refreshes the helpful-step-type ranking from the real history
+    // (including this just-written entry) rather than guessing locally.
+    loadRecentRecipeHistory(uid).then((history) => {
+      const derived = deriveStepTypePreferences(history);
+      setHelpfulStepTypes(derived.helpfulStepTypes);
+      updateRecipePreferences(uid, derived).catch(() => {});
+    });
+  };
+
+  const finishRecipe = (finalCompleted: RecipeStepType[], finalSkipped: RecipeStepType[]) => {
     if (!recipe || !selectedSituation) return;
     logRecipeEvent('recipe_completed', { situationKey: selectedSituation });
-    if (auth.currentUser) {
-      recordRecipeHistory(auth.currentUser.uid, {
-        situationKey: selectedSituation,
-        capacity,
-        durationMinutes: recipe.estimatedDurationMinutes,
-        completedStepTypes,
-        skippedStepTypes,
-      }).catch(() => {});
+    if (!historyWritten) {
+      if (onAwardPoints) onAwardPoints(15, `Completed Recipe: ${recipe.recipeTitle}`);
+      updateNovaMemoryBySourceAndType('Recovery Recipes', 'trigger', {
+        content: `Completed a Recovery Recipe for "${SITUATION_LABELS[selectedSituation]}".`,
+        confidence: 'verified',
+        canEdit: true,
+      });
+      // Section 16's "intelligent sampling" - roughly a third of
+      // completions, never every single one.
+      const askFeedback = flags.enable_recovery_recipes_feedback && Math.random() < 0.34;
+      setFeedbackStage(askFeedback ? 'ask' : 'done');
+      if (!askFeedback) writeRecipeHistory(finalCompleted, finalSkipped);
+      setHistoryWritten(true);
+    } else {
+      // Already recorded once this episode (reached via "One more step") -
+      // show the completion screen again without a second write or award.
+      setFeedbackStage('done');
     }
-    if (onAwardPoints) onAwardPoints(15, `Completed Recipe: ${recipe.recipeTitle}`);
-    updateNovaMemoryBySourceAndType('Recovery Recipes', 'trigger', {
-      content: `Completed a Recovery Recipe for "${SITUATION_LABELS[selectedSituation]}".`,
-      confidence: 'verified',
-      canEdit: true,
-    });
     setShowSupportOptions(false);
     setView('complete');
+  };
+
+  const handleFeedbackPick = (feedback: RecipeFeedback) => {
+    setPickedFeedback(feedback);
+    logRecipeEvent('recipe_feedback', { situationKey: selectedSituation || undefined });
+    setFeedbackStage('ask_helpful_part');
+  };
+
+  const resolveFeedback = (helpfulPart?: HelpfulPartId) => {
+    writeRecipeHistory(completedStepTypes, skippedStepTypes, pickedFeedback || undefined, helpfulPart);
+    setFeedbackStage('done');
+  };
+
+  const handleSaveRecipe = () => {
+    if (!recipe || !selectedSituation || !auth.currentUser || !saveRecipeName.trim()) return;
+    const uid = auth.currentUser.uid;
+    const name = saveRecipeName.trim().slice(0, 60);
+    const stepIds = recipe.steps.map((s) => s.id);
+    logRecipeEvent('recipe_saved', { situationKey: selectedSituation });
+    saveRecoveryRecipe(uid, { name, situationKey: selectedSituation, capacity, stepIds })
+      .then((id) => setSavedRecipes((prev) => [...prev, { id, name, situationKey: selectedSituation!, capacity, stepIds, createdAt: new Date().toISOString() }]))
+      .catch(() => {});
+    setShowSaveRecipe(false);
+    setSaveRecipeName('');
   };
 
   const handleStopRecipe = () => {
@@ -199,16 +311,21 @@ export const RecoveryRecipes = ({ fingerprint: _fingerprint, onAwardPoints }: Re
 
   const advanceStep = (wasSkipped: boolean) => {
     if (!currentStep) return;
+    // Builds the final arrays explicitly rather than reading completed/
+    // skippedStepTypes back out of state immediately after setting them -
+    // state updates aren't visible in this same synchronous call, so
+    // finishRecipe would otherwise miss the very last step's type.
+    const updatedCompleted = wasSkipped ? completedStepTypes : [...completedStepTypes, currentStep.type];
+    const updatedSkipped = wasSkipped ? [...skippedStepTypes, currentStep.type] : skippedStepTypes;
     if (wasSkipped) {
       logRecipeEvent('recipe_step_skipped', { situationKey: selectedSituation || undefined, stepType: currentStep.type });
-      setSkippedStepTypes((prev) => [...prev, currentStep.type]);
-    } else {
-      setCompletedStepTypes((prev) => [...prev, currentStep.type]);
     }
+    setCompletedStepTypes(updatedCompleted);
+    setSkippedStepTypes(updatedSkipped);
     if (recipe && stepIndex < recipe.steps.length - 1) {
       setStepIndex((i) => i + 1);
     } else {
-      finishRecipe();
+      finishRecipe(updatedCompleted, updatedSkipped);
     }
   };
 
@@ -311,6 +428,48 @@ export const RecoveryRecipes = ({ fingerprint: _fingerprint, onAwardPoints }: Re
                   <ArrowRight className="w-4 h-4" /> Build a recipe
                 </button>
               </motion.div>
+            )}
+
+            {/* Section 19's "My go-to recipes" - a quick-access subset of
+                the saved recipes below, never a streak/achievement system. */}
+            {flags.enable_recovery_recipes_favourites && savedRecipes.some((r) => favouriteRecipeIds.includes(r.id)) && (
+              <div className="space-y-3">
+                <h5 className="text-xs uppercase font-black tracking-widest text-text-muted">Your go-to recipes</h5>
+                <div className="flex flex-wrap gap-3">
+                  {savedRecipes.filter((r) => favouriteRecipeIds.includes(r.id)).map((r) => (
+                    <button
+                      key={r.id}
+                      onClick={() => handleUseSavedRecipe(r, false)}
+                      className="px-4 py-2.5 rounded-xl border border-border hover:border-primary/50 hover:bg-surface dark:hover:bg-surface flex items-center gap-2 transition-all"
+                    >
+                      <Star className="w-3.5 h-3.5 fill-primary text-primary shrink-0" />
+                      <span className="text-sm font-bold text-text-main">{r.name}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Section 18's "My Recipes" - every saved recipe, with section
+                20's "Use as before" (the name itself) vs "Adapt for today"
+                as two distinct actions, never one overriding the other. */}
+            {flags.enable_recovery_recipes_saved && savedRecipes.length > 0 && (
+              <div className="space-y-3">
+                <h5 className="text-xs uppercase font-black tracking-widest text-text-muted">My Recipes</h5>
+                <div className="flex flex-wrap gap-3">
+                  {savedRecipes.map((r) => (
+                    <div key={r.id} className="flex items-center gap-1 pl-4 pr-2 py-2 rounded-xl border border-border hover:border-primary/50 transition-all">
+                      <button onClick={() => handleUseSavedRecipe(r, false)} className="text-sm font-bold text-text-main">{r.name}</button>
+                      <button onClick={() => handleUseSavedRecipe(r, true)} className="text-xs font-black uppercase tracking-widest text-text-muted hover:text-text-main px-2">
+                        Adapt
+                      </button>
+                      <button onClick={() => handleToggleFavouriteRecipe(r.id)} aria-label="Toggle favourite" aria-pressed={favouriteRecipeIds.includes(r.id)} className="p-1">
+                        <Star className={cn('w-3.5 h-3.5', favouriteRecipeIds.includes(r.id) ? 'fill-primary text-primary' : 'text-text-muted')} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
             )}
           </motion.div>
         )}
@@ -502,7 +661,44 @@ export const RecoveryRecipes = ({ fingerprint: _fingerprint, onAwardPoints }: Re
               )}
             </div>
 
-            {!showSupportOptions ? (
+            {feedbackStage === 'ask' && (
+              <div className="space-y-3">
+                <p className="text-sm font-bold text-text-main">Did this help?</p>
+                <div className="flex flex-wrap justify-center gap-3">
+                  {RECIPE_FEEDBACK_OPTIONS.map((opt) => (
+                    <button
+                      key={opt.id}
+                      onClick={() => handleFeedbackPick(opt.id)}
+                      className="px-5 py-3 rounded-xl border border-border hover:border-primary/50 hover:bg-surface dark:hover:bg-surface text-sm font-bold text-text-main transition-all"
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {feedbackStage === 'ask_helpful_part' && (
+              <div className="space-y-3 max-w-md">
+                <p className="text-sm text-text-muted">Which part helped most? (optional)</p>
+                <div className="flex flex-wrap justify-center gap-2">
+                  {HELPFUL_PART_OPTIONS.map((opt) => (
+                    <button
+                      key={opt.id}
+                      onClick={() => resolveFeedback(opt.id)}
+                      className="px-3 py-2 rounded-lg border border-border hover:border-primary/50 text-xs font-bold text-text-main transition-all"
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+                <button onClick={() => resolveFeedback()} className="text-xs font-black uppercase tracking-widest text-text-muted hover:text-text-main">
+                  Skip
+                </button>
+              </div>
+            )}
+
+            {feedbackStage === 'done' && (!showSupportOptions ? (
               <div className="space-y-3">
                 <div className="flex flex-wrap justify-center gap-3">
                   <button onClick={resetToEntry} className="btn-primary bg-primary hover:bg-primary border-primary text-primary-foreground">
@@ -514,9 +710,29 @@ export const RecoveryRecipes = ({ fingerprint: _fingerprint, onAwardPoints }: Re
                     </button>
                   )}
                 </div>
-                <button onClick={() => setShowSupportOptions(true)} className="text-xs font-black uppercase tracking-widest text-text-muted hover:text-text-main">
+                <button onClick={() => setShowSupportOptions(true)} className="text-xs font-black uppercase tracking-widest text-text-muted hover:text-text-main block mx-auto">
                   I still need support
                 </button>
+                {flags.enable_recovery_recipes_saved && (
+                  showSaveRecipe ? (
+                    <div className="flex flex-wrap items-center justify-center gap-2 max-w-md mx-auto pt-2">
+                      <input
+                        type="text"
+                        value={saveRecipeName}
+                        onChange={(e) => setSaveRecipeName(e.target.value.slice(0, 60))}
+                        placeholder="Name this recipe"
+                        className="p-2.5 rounded-xl border border-border/40 bg-white dark:bg-surface text-sm text-text-main"
+                      />
+                      <button onClick={handleSaveRecipe} className="px-4 py-2.5 rounded-xl bg-primary text-primary-foreground text-xs font-black uppercase tracking-widest">
+                        Save
+                      </button>
+                    </div>
+                  ) : (
+                    <button onClick={() => setShowSaveRecipe(true)} className="text-xs font-black uppercase tracking-widest text-text-muted hover:text-text-main block mx-auto pt-1">
+                      Save this recipe
+                    </button>
+                  )
+                )}
               </div>
             ) : (
               <div className="space-y-4 max-w-md">
@@ -537,7 +753,7 @@ export const RecoveryRecipes = ({ fingerprint: _fingerprint, onAwardPoints }: Re
                   </button>
                 </div>
               </div>
-            )}
+            ))}
           </motion.div>
         )}
       </AnimatePresence>
