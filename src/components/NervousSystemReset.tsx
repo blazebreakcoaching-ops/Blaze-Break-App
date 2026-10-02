@@ -1,12 +1,26 @@
 import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Wind, Brain, Moon, Waves, Play, Pause, Activity, RefreshCw, Eye, Ear, UserCircle, MapPin, Minimize2, Clock, Volume2, VolumeX, Music, CheckCircle2 } from 'lucide-react';
+import { Wind, Brain, Moon, Waves, Activity, RefreshCw, Eye, Ear, UserCircle, MapPin, Minimize2, Clock, Volume2, VolumeX, Music, CheckCircle2, Sparkles, ShieldAlert, LifeBuoy, MinusCircle, ArrowLeft } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { BurnoutFingerprint } from '../types';
 import { useFocusTrap } from '../lib/useFocusTrap';
 import { secureApiFetch } from '../lib/secure-api';
 import { logJourney } from '../lib/nova-brain';
 import { auth } from '../lib/firebase';
+import {
+  BreathingPracticeId, BreathingNeed, BREATHING_NEED_ORDER, BREATHING_NEED_LABELS, BREATHING_LIBRARY,
+  BREATHING_LIBRARY_ORDER, recommendPractice, CheckpointResponse, CHECKPOINT_RESPONSE_ORDER,
+  CHECKPOINT_RESPONSE_LABELS, CHECKPOINT_BRANCHES, CHECKPOINT_OPTION_LABELS,
+  BreathingHelpfulness, shouldAskDidItHelp, computeMostHelpfulPractice, computeBreathingEffectivenessSignal,
+  shouldSuggestLoadIsRealProblem, OverwhelmIntensity, OVERWHELM_INTENSITY_ORDER, OVERWHELM_INTENSITY_LABELS,
+  maxChoicesForIntensity, GuidedResetStepId,
+} from '../../breathing-reset-engine';
+import {
+  recordBreathingSession, updateBreathingSessionFeedback, loadRecentBreathingSessions,
+  recordBreathingSessionCompletion,
+} from '../lib/breathing-reset-service';
+import { loadLatestCapacityCheckIn, loadStressors } from '../lib/energy-delta-service';
+import { computeEnergyDelta } from '../../energy-delta-engine';
 
 interface NervousSystemResetProps {
   fingerprint: BurnoutFingerprint | null;
@@ -14,26 +28,39 @@ interface NervousSystemResetProps {
 }
 
 type Section = 'breathwork' | 'grounding';
-type BreathingMode = 'box' | '478' | 'coherent' | 'sigh' | 'extended' | 'rectangle' | 'calm';
+type BreathingMode = BreathingPracticeId;
 type GroundingMode = '60sec' | '5things' | 'scan' | 'feet' | 'sound' | 'room' | 'timer';
-type Needs = 'calm' | 'clarity' | 'sleep' | 'focus' | 'release' | null;
+type Needs = BreathingNeed | null;
 
-const BREATHING_MODES: Record<BreathingMode, { name: string; description: string; instruction: string; cycleMs: number; icon: any }> = {
-  box: { name: 'Box Breathing', description: 'Steady focus. Balances the nervous system.', instruction: 'Inhale 4s • Hold 4s • Exhale 4s • Hold 4s', cycleMs: 16000, icon: RefreshCw },
-  '478': { name: '4-7-8 Breathing', description: 'Evening wind-down. Prepares body for sleep.', instruction: 'Inhale 4s • Hold 7s • Exhale 8s', cycleMs: 19000, icon: Moon },
-  coherent: { name: 'Coherent Breathing', description: 'Calm rhythm. Aligns heart rate and breathing.', instruction: 'Inhale 5s • Exhale 5s', cycleMs: 10000, icon: Waves },
-  sigh: { name: 'Physiological Sigh', description: 'Quick reset. Offloads carbon dioxide immediately.', instruction: 'Double Inhale • Long Exhale', cycleMs: 8000, icon: Wind },
-  extended: { name: 'Extended Exhale', description: 'Downshifting stress. Triggers parasympathetic response.', instruction: 'Inhale 4s • Exhale 6s', cycleMs: 10000, icon: Activity },
-  rectangle: { name: 'Rectangle Breathing', description: 'Visual breathing tool for grounding.', instruction: 'Inhale short side • Exhale long side', cycleMs: 12000, icon: RefreshCw },
-  calm: { name: 'Calm Count', description: 'Simple beginner version. Gentle regulation.', instruction: 'Inhale 1-2-3 • Exhale 1-2-3', cycleMs: 6000, icon: Brain },
+// Cycle timing and icons stay local to this component (the animation
+// engine); the name/description/duration copy itself now comes from
+// breathing-reset-engine.ts's BREATHING_LIBRARY so there's one place
+// that copy is written, never two drifting copies of the same practice.
+const BREATHING_CYCLE: Record<BreathingMode, { instruction: string; cycleMs: number; icon: any }> = {
+  box: { instruction: 'Inhale 4s • Hold 4s • Exhale 4s • Hold 4s', cycleMs: 16000, icon: RefreshCw },
+  '478': { instruction: 'Inhale 4s • Hold 7s • Exhale 8s', cycleMs: 19000, icon: Moon },
+  coherent: { instruction: 'Inhale 5s • Exhale 5s', cycleMs: 10000, icon: Waves },
+  sigh: { instruction: 'Double Inhale • Long Exhale', cycleMs: 8000, icon: Wind },
+  extended: { instruction: 'Inhale 4s • Exhale 6s', cycleMs: 10000, icon: Activity },
+  rectangle: { instruction: 'Inhale short side • Exhale long side', cycleMs: 12000, icon: RefreshCw },
+  calm: { instruction: 'Inhale 1-2-3 • Exhale 1-2-3', cycleMs: 6000, icon: Brain },
 };
 
-const NEEDS_MAPPING: Record<NonNullable<Needs>, BreathingMode> = {
-  calm: 'coherent',
-  clarity: 'box',
-  sleep: '478',
-  focus: 'rectangle',
-  release: 'sigh',
+// A small curated set offered during Guided Reset Mode's "slow the body"
+// step - gentle, short practices only, never the more involved ones.
+const GUIDED_RESET_PRACTICES: BreathingPracticeId[] = ['extended', 'sigh', 'coherent'];
+
+// BACKGROUND SOUND: mature, calm labels - never novelty-heavy or
+// scientifically suggestive ("solfeggio" implied a tuning-frequency
+// claim this app never substantiated). Each label is only applied to a
+// soundscape that's genuinely distinct audio already in this engine,
+// never a label invented for a sound that doesn't exist.
+const SOUNDSCAPE_LABELS: Record<'none' | 'solfeggio' | 'wind' | 'waves' | 'cosmic', string> = {
+  none: 'Mute',
+  wind: 'Soft Wind',
+  waves: 'Ocean Drift',
+  solfeggio: 'Soft Tone',
+  cosmic: 'Night Air',
 };
 
 const GROUNDING_MODES: Record<GroundingMode, { name: string; description: string; instructions: string[]; icon: any }> = {
@@ -71,6 +98,70 @@ export const NervousSystemReset = ({ fingerprint, onAwardPoints }: NervousSystem
   const [interactiveChimes, setInteractiveChimes] = useState<boolean>(true);
   const [isMuted, setIsMuted] = useState<boolean>(false);
   const [completedSteps, setCompletedSteps] = useState<number[]>([]);
+
+  // NOVA RECOMMENDATION / PRIMARY POSITIONING: one practice, not three or
+  // four equal options - shown by default (the brief's own "Extended
+  // Exhale" example) even before the user picks a specific need.
+  const [recommendedPractice, setRecommendedPractice] = useState<BreathingPracticeId>('extended');
+  const [showRecommendation, setShowRecommendation] = useState(true);
+  // BEFORE THE PRACTICE: a comfort screen between choosing a practice and
+  // actually starting the timer/animation - never skipped, whether the
+  // practice came from Nova's recommendation or the library below.
+  const [prePractice, setPrePractice] = useState<BreathingPracticeId | null>(null);
+  // GUIDED RESET MODE
+  const [guidedReset, setGuidedReset] = useState<{ step: 'intensity' | GuidedResetStepId; intensity: OverwhelmIntensity | null } | null>(null);
+  const guidedResetActiveRef = useRef(false);
+  // MID-SESSION OPTION
+  const [showMidSessionPrompt, setShowMidSessionPrompt] = useState(false);
+  const midSessionPromptShownRef = useRef(false);
+  const midSessionTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // POST-SESSION RESET CHECKPOINT
+  const [checkpoint, setCheckpoint] = useState<{ toolName: string; practiceId: BreathingPracticeId | null; durationSeconds: number } | null>(null);
+  const [checkpointResponse, setCheckpointResponse] = useState<CheckpointResponse | null>(null);
+  const [checkpointSessionId, setCheckpointSessionId] = useState<string | null>(null);
+  const [showDidItHelp, setShowDidItHelp] = useState(false);
+  const [didItHelpAnswered, setDidItHelpAnswered] = useState(false);
+  // CONNECTION TO ENERGY DELTA + PERSONALISATION
+  const [energyDeltaNegative, setEnergyDeltaNegative] = useState<boolean | null>(null);
+  const [resetsToday, setResetsToday] = useState(0);
+  const [preferredPractice, setPreferredPractice] = useState<BreathingPracticeId | null>(null);
+  const [effectivenessSignal, setEffectivenessSignal] = useState<'reliable' | 'inconsistent' | null>(null);
+
+  const isEveningWindDown = () => {
+    const hour = new Date().getHours();
+    return hour >= 20 || hour < 5;
+  };
+
+  // Loads just enough real context to make the default recommendation
+  // and the personalisation line honest - never claims a signal that
+  // isn't actually connected (CORE PRODUCT PRINCIPLE: "Do not claim
+  // access to data that is not connected or available").
+  useEffect(() => {
+    if (!auth.currentUser) return;
+    const uid = auth.currentUser.uid;
+    (async () => {
+      try {
+        const [checkIn, stressors, sessions] = await Promise.all([
+          loadLatestCapacityCheckIn(uid),
+          loadStressors(uid),
+          loadRecentBreathingSessions(uid),
+        ]);
+        if (checkIn) {
+          const result = computeEnergyDelta(checkIn.score, stressors.filter((s) => s.status === 'active'));
+          setEnergyDeltaNegative(result.energyDelta < 0);
+        }
+        const todayKey = new Date().toDateString();
+        setResetsToday(sessions.filter((s) => new Date(s.createdAt).toDateString() === todayKey).length);
+        const preferred = computeMostHelpfulPractice(sessions.filter((s) => s.helpful).map((s) => ({ practiceId: s.practiceId, helpful: s.helpful as BreathingHelpfulness })));
+        setPreferredPractice(preferred);
+        const recentResponses = sessions.filter((s) => s.checkpointResponse).map((s) => s.checkpointResponse as CheckpointResponse);
+        setEffectivenessSignal(computeBreathingEffectivenessSignal(recentResponses));
+        setRecommendedPractice(recommendPractice(null, { isEveningWindDown: isEveningWindDown(), preferredPractice: preferred }));
+      } catch (e) {
+        // Leaves the honest defaults in place rather than pretending context loaded.
+      }
+    })();
+  }, []);
 
   // ============ Real Completion Tracking ============
   // Previously this whole module had no onAwardPoints, no activity
@@ -773,14 +864,142 @@ export const NervousSystemReset = ({ fingerprint, onAwardPoints }: NervousSystem
     setShowResetConfirm(false);
     setSoundscape('none');
     setCompletedSteps([]);
+    setPrePractice(null);
+    setGuidedReset(null);
+    setCheckpoint(null);
+    setCheckpointResponse(null);
+    setShowDidItHelp(false);
+    setShowRecommendation(true);
   };
 
+  // NOVA RECOMMENDATION: picking a need shows Nova's single recommended
+  // practice (never three or four equal options) - it does not jump
+  // straight into the session. BEFORE THE PRACTICE's comfort screen
+  // still sits between this and actually starting.
   const handleNeedSelect = (need: NonNullable<Needs>) => {
     setSelectedNeed(need);
-    setActiveMode(NEEDS_MAPPING[need]);
-    setIsPlaying(false);
+    const practice = recommendPractice(need, { isEveningWindDown: isEveningWindDown(), preferredPractice });
+    setRecommendedPractice(practice);
+    setShowRecommendation(true);
+    setPrePractice(null);
     playZenChime();
   };
+
+  // Shared by the Nova recommendation screen, the library, and Guided
+  // Reset Mode's "slow the body" step - always the same comfort screen
+  // between choosing a practice and actually starting it.
+  const handleChoosePractice = (practiceId: BreathingPracticeId) => {
+    setPrePractice(practiceId);
+    setShowRecommendation(false);
+  };
+
+  const handleBeginPractice = () => {
+    if (!prePractice) return;
+    ensureAudioContext();
+    setActiveMode(prePractice);
+    setPrePractice(null);
+    breathingSessionStartRef.current = Date.now();
+    midSessionPromptShownRef.current = false;
+    setIsPlaying(true);
+  };
+
+  const handleUseGroundingInstead = () => {
+    setPrePractice(null);
+    setGuidedReset(null);
+    setActiveSection('grounding');
+  };
+
+  // Shared by the Pause button and the mid-session "Finish Here" option -
+  // a real session (>=60s) always ends at the POST-SESSION RESET
+  // CHECKPOINT rather than silently logging in the background.
+  const handlePauseOrFinish = async () => {
+    setIsPlaying(false);
+    if (midSessionTimeoutRef.current) clearTimeout(midSessionTimeoutRef.current);
+    setShowMidSessionPrompt(false);
+    const startedAt = breathingSessionStartRef.current;
+    breathingSessionStartRef.current = null;
+    if (!startedAt || !activeMode) return;
+    const elapsedSeconds = Math.round((Date.now() - startedAt) / 1000);
+    if (elapsedSeconds < 60) { setActiveMode(null); return; }
+    if (guidedResetActiveRef.current) {
+      // Guided Reset Mode handles its own next step instead of the
+      // standalone checkpoint - fewer decisions for someone this overwhelmed.
+      setActiveMode(null);
+      markResetComplete(BREATHING_LIBRARY[activeMode].name, `${Math.round(elapsedSeconds / 60)} minute(s) of practice.`);
+      setGuidedReset((prev) => prev ? { ...prev, step: 'reduce_noise' } : prev);
+      return;
+    }
+    setCheckpoint({ toolName: BREATHING_LIBRARY[activeMode].name, practiceId: activeMode, durationSeconds: elapsedSeconds });
+    setActiveMode(null);
+  };
+
+  const handleCheckpointResponse = async (response: CheckpointResponse) => {
+    setCheckpointResponse(response);
+    if (!checkpoint) return;
+    markResetComplete(checkpoint.toolName, `${Math.round(checkpoint.durationSeconds / 60)} minute(s) of practice.`);
+    if (auth.currentUser && checkpoint.practiceId) {
+      const sessionId = await recordBreathingSession(auth.currentUser.uid, {
+        practiceId: checkpoint.practiceId, durationSeconds: checkpoint.durationSeconds, checkpointResponse: response,
+      }).catch(() => null);
+      setCheckpointSessionId(sessionId);
+    }
+  };
+
+  // Only once the checkpoint itself has actually closed (not when the
+  // user is navigating off to another tool entirely) do we check whether
+  // this is the occasional moment to ask "Did it help?" - DID IT HELP?:
+  // "Do not ask after every session."
+  const closeCheckpointThenMaybeAsk = async (response: CheckpointResponse | null) => {
+    setCheckpoint(null);
+    setCheckpointResponse(null);
+    if (!auth.currentUser || !response) return;
+    const priorTotal = await recordBreathingSessionCompletion(auth.currentUser.uid).catch(() => 0);
+    if (shouldAskDidItHelp(priorTotal - 1, response)) setShowDidItHelp(true);
+  };
+
+  const handleCheckpointOptionSelect = (optionId: string) => {
+    const response = checkpointResponse;
+    switch (optionId) {
+      case 'grounding':
+      case 'use_grounding':
+      case 'try_grounding':
+        setCheckpoint(null); setCheckpointResponse(null); setGuidedReset(null);
+        setActiveSection('grounding');
+        return;
+      case 'make_it_smaller':
+      case 'remove_one_thing':
+        window.dispatchEvent(new CustomEvent('reset_studio_select_state', { detail: 'flooded' }));
+        setCheckpoint(null); setCheckpointResponse(null);
+        return;
+      case 'talk_to_nova':
+        window.dispatchEvent(new CustomEvent('navigate_tab', { detail: 'nova' }));
+        setCheckpoint(null); setCheckpointResponse(null);
+        return;
+      case 'quick_support':
+        window.dispatchEvent(new CustomEvent('open_crisis_support'));
+        setCheckpoint(null); setCheckpointResponse(null);
+        return;
+      case 'one_more_minute': {
+        const practiceId = checkpoint?.practiceId;
+        setCheckpoint(null); setCheckpointResponse(null);
+        if (practiceId) handleChoosePractice(practiceId);
+        return;
+      }
+      default:
+        // good_for_now / smaller_next_step / sit_30_seconds / finish_now
+        // - all stay right here, so this is the moment to maybe ask.
+        closeCheckpointThenMaybeAsk(response);
+    }
+  };
+
+  const handleDidItHelp = (helpful: BreathingHelpfulness) => {
+    setDidItHelpAnswered(true);
+    if (auth.currentUser && checkpointSessionId) {
+      updateBreathingSessionFeedback(auth.currentUser.uid, checkpointSessionId, { helpful }).catch(() => {});
+    }
+    setTimeout(() => { setShowDidItHelp(false); setDidItHelpAnswered(false); setCheckpointSessionId(null); }, 1200);
+  };
+
 
   const handleToggleStep = (idx: number) => {
     setCompletedSteps(prev => {
@@ -856,6 +1075,17 @@ export const NervousSystemReset = ({ fingerprint, onAwardPoints }: NervousSystem
     };
   }, [isPlaying, activeMode]);
 
+  // MID-SESSION OPTION: a single, low-friction check-in partway through a
+  // longer session - never shown twice in the same session.
+  useEffect(() => {
+    if (!isPlaying || midSessionPromptShownRef.current) return;
+    midSessionTimeoutRef.current = setTimeout(() => {
+      midSessionPromptShownRef.current = true;
+      setShowMidSessionPrompt(true);
+    }, 90000);
+    return () => { if (midSessionTimeoutRef.current) clearTimeout(midSessionTimeoutRef.current); };
+  }, [isPlaying]);
+
   return (
     <div className="space-y-12 pb-24">
       {/* Reset Confirmation Dialog Modal */}
@@ -902,14 +1132,14 @@ export const NervousSystemReset = ({ fingerprint, onAwardPoints }: NervousSystem
 
       <div className="max-w-4xl">
         <div className="flex items-center gap-4 mb-4">
-           <div className="tag">Section 8 / Somatic Control</div>
+           <div className="tag">Breathing &amp; Guided Reset · Core Pillar: Rebuild</div>
            <div className="h-px flex-1 bg-border/40" />
         </div>
         <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-6">
           <div className="space-y-4">
-            <h3 className="text-5xl font-display font-bold text-text-main tracking-tight">Nervous System Reset Studio</h3>
+            <h3 className="text-5xl font-display font-bold text-text-main tracking-tight">Reset Studio</h3>
             <p className="text-xl text-text-muted font-medium  max-w-2xl">
-              "Fast tools when you are overwhelmed, tense, scattered, panicky, angry, flat, or mentally fried."
+              Fast support when your system feels overloaded.
             </p>
           </div>
           {(selectedNeed || activeMode || activeGrounding || isPlaying) && (
@@ -921,29 +1151,6 @@ export const NervousSystemReset = ({ fingerprint, onAwardPoints }: NervousSystem
             </button>
           )}
         </div>
-      </div>
-
-      {/* Acute Overwhelm / Panic shortcut */}
-      <div className="mt-8 p-6 rounded-xl border border-destructive/20 bg-destructive/5 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 relative overflow-hidden">
-        <div className="space-y-1 relative z-10 text-left">
-          <div className="flex items-center gap-2 text-destructive dark:text-[#f87171] font-medium uppercase tracking-wider text-[10px]">
-            <span className="w-2 h-2 rounded-full bg-destructive animate-pulse" />
-            Feeling Overwhelmed Right Now?
-          </div>
-          <h4 className="font-display text-lg font-medium text-text-main">Experiencing severe anxiety, tight chest, or racing thoughts?</h4>
-          <p className="text-xs text-text-muted max-w-2xl leading-relaxed">
-            The standard Breathwork and Grounding tools are below. If you need a fully structured sensory reset path with intensity tracking and interactive de-escalation tools, launch the dedicated Reset Mode.
-          </p>
-        </div>
-        <button
-          onClick={() => {
-            const event = new CustomEvent('navigate_tab', { detail: 'anxiety_reset' });
-            window.dispatchEvent(event);
-          }}
-          className="px-5 py-3 shrink-0 bg-destructive hover:opacity-90 text-destructive-foreground font-medium uppercase tracking-widest text-xs rounded-lg transition-all relative z-10 flex items-center gap-2 cursor-pointer"
-        >
-          Launch Reset Mode <Play className="w-4 h-4 fill-current" />
-        </button>
       </div>
 
       <div className="flex bg-surface dark:bg-surface/50 p-1 border border-border/50 rounded-full w-max mt-8 mb-8">
@@ -970,10 +1177,10 @@ export const NervousSystemReset = ({ fingerprint, onAwardPoints }: NervousSystem
               <h4 className="text-xs font-medium uppercase tracking-widest text-text-muted">Background Sound</h4>
             </div>
             <p className="text-sm font-bold text-text-main flex items-center gap-1.5">
-              <Music className="w-4 h-4 text-primary" /> Calming Audio
+              <Music className="w-4 h-4 text-primary" /> Ambient Sound
             </p>
             <p className="text-[11px] text-text-muted">
-              Gentle background tones to help you settle into your breathing.
+              Use as much or as little sound as you want.
             </p>
           </div>
 
@@ -1000,7 +1207,7 @@ export const NervousSystemReset = ({ fingerprint, onAwardPoints }: NervousSystem
                         : "text-text-muted hover:text-text-main"
                     )}
                   >
-                    {sc === 'none' ? 'Mute' : sc}
+                    {SOUNDSCAPE_LABELS[sc]}
                   </button>
                 ))}
               </div>
@@ -1045,7 +1252,7 @@ export const NervousSystemReset = ({ fingerprint, onAwardPoints }: NervousSystem
 
             <div className="flex flex-col gap-1.5 w-36">
               <div className="flex justify-between items-center text-xs uppercase tracking-wider font-black text-text-muted">
-                <span>Pacer Sound</span>
+                <span>Breathing Cue</span>
                 <span className="text-[11px] text-[#9a3412] dark:text-primary font-bold">{pacerSoundEnabled ? "Active" : "Disabled"}</span>
               </div>
               <div className="flex items-center gap-3">
@@ -1091,150 +1298,191 @@ export const NervousSystemReset = ({ fingerprint, onAwardPoints }: NervousSystem
 
       {activeSection === 'breathwork' && (
       <>
-      <div className="card border border-primary/20 bg-primary/5 p-8 relative overflow-hidden mb-8">
-        <div className="relative z-10 space-y-6">
-           <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-full bg-primary flex items-center justify-center text-primary-foreground">
-                <Wind className="w-5 h-5" />
-              </div>
-              <h4 className="text-xl font-display font-medium text-text-main">Nova's Recommendation</h4>
-            </div>
-
-            <p className="text-lg text-text-muted font-serif italic">"Do you need calm, clarity, sleep, focus, or release?"</p>
-
-            <div className="flex flex-wrap gap-4">
-              {(['calm', 'clarity', 'sleep', 'focus', 'release'] as const).map((need) => (
-                <button
-                  key={need}
-                  onClick={() => handleNeedSelect(need)}
-                  aria-pressed={selectedNeed === need}
-                  className={cn(
-                    "px-6 py-3 rounded-full text-sm font-medium uppercase tracking-widest transition-all",
-                    selectedNeed === need
-                      ? "bg-primary text-primary-foreground scale-105"
-                      : "bg-white/5 dark:bg-surface text-text-muted hover:bg-white/10 dark:hover:bg-surface border border-border/50"
-                  )}
-                >
-                  {need}
-                </button>
-              ))}
-            </div>
+      {shouldSuggestLoadIsRealProblem(resetsToday, energyDeltaNegative) && !checkpoint && !guidedReset && !showDidItHelp && (
+        <div className="card border border-warning/30 bg-warning/5 p-6 mb-8 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+          <p className="text-sm text-text-main font-medium max-w-xl">
+            You've used a few resets today, but your load is still running above your capacity. Another breathing exercise may not be the answer.
+          </p>
+          <button
+            onClick={() => window.dispatchEvent(new CustomEvent('navigate_tab', { detail: 'recover' }))}
+            className="btn-primary py-2.5 px-5 text-xs shrink-0 flex items-center gap-2"
+          >
+            <MinusCircle className="w-4 h-4" /> Help Me Remove One Thing
+          </button>
         </div>
-      </div>
+      )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        <div className="lg:col-span-1 space-y-4">
-          <h4 className="text-sm font-black uppercase tracking-widest text-text-muted mb-6">Breathwork Library</h4>
-          {Object.entries(BREATHING_MODES).map(([key, mode]) => {
-            const isSelected = activeMode === key;
-            const Icon = mode.icon;
-            return (
-              <button
-                key={key}
-                onClick={() => {
-                  setActiveMode(key as BreathingMode);
-                  setIsPlaying(false);
-                  setSelectedNeed(null);
-                }}
-                aria-pressed={isSelected}
-                className={cn(
-                  "w-full text-left p-4 rounded-xl border transition-all flex items-center gap-4",
-                  isSelected
-                    ? "bg-primary/10 border-primary/30"
-                    : "bg-transparent border-transparent hover:border-border/50 opacity-70 hover:opacity-100"
+      {guidedReset ? (
+        <GuidedResetPanel
+          guidedReset={guidedReset}
+          setGuidedReset={setGuidedReset}
+          onChoosePractice={handleChoosePractice}
+          onExit={() => { guidedResetActiveRef.current = false; setGuidedReset(null); }}
+          onUseGrounding={handleUseGroundingInstead}
+        />
+      ) : checkpoint ? (
+        <CheckpointPanel
+          checkpoint={checkpoint}
+          response={checkpointResponse}
+          onRespond={handleCheckpointResponse}
+          onSelectOption={handleCheckpointOptionSelect}
+        />
+      ) : showDidItHelp ? (
+        <DidItHelpPanel answered={didItHelpAnswered} onAnswer={handleDidItHelp} />
+      ) : prePractice ? (
+        <div className="card border border-primary/20 bg-primary/5 p-8 sm:p-12 mb-8 text-center space-y-6">
+          <h4 className="text-2xl font-display font-bold text-text-main">Your Reset</h4>
+          <div className="space-y-2 max-w-md mx-auto text-text-muted text-sm leading-relaxed">
+            <p>You don't need to breathe perfectly.</p>
+            <p>Let the animation guide you. Keep the breath comfortable.</p>
+            <p>If breath-holding or deeper breathing feels uncomfortable, stop and switch to grounding instead.</p>
+          </div>
+          <div className="flex flex-wrap justify-center gap-3">
+            <button onClick={handleBeginPractice} className="btn-primary py-3 px-8 text-sm">Start</button>
+            <button onClick={handleUseGroundingInstead} className="px-6 py-3 text-sm font-bold text-text-muted hover:text-text-main">
+              Use Grounding Instead
+            </button>
+          </div>
+        </div>
+      ) : (
+      <>
+      {showRecommendation ? (
+        <div className="card border border-primary/20 bg-primary/5 p-8 relative overflow-hidden mb-8">
+          <div className="relative z-10 space-y-6">
+             <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-primary flex items-center justify-center text-primary-foreground">
+                  <Sparkles className="w-5 h-5" />
+                </div>
+                <h4 className="text-xl font-display font-medium text-text-main">Nova recommends</h4>
+              </div>
+
+              <p className="text-lg text-text-muted">What do you need right now?</p>
+
+              <div className="flex flex-wrap gap-3">
+                {BREATHING_NEED_ORDER.map((need) => (
+                  <button
+                    key={need}
+                    onClick={() => handleNeedSelect(need)}
+                    aria-pressed={selectedNeed === need}
+                    className={cn(
+                      "px-5 py-2.5 rounded-full text-sm font-bold uppercase tracking-widest transition-all",
+                      selectedNeed === need
+                        ? "bg-primary text-primary-foreground scale-105"
+                        : "bg-white/5 dark:bg-surface text-text-muted hover:bg-white/10 dark:hover:bg-surface border border-border/50"
+                    )}
+                  >
+                    {BREATHING_NEED_LABELS[need]}
+                  </button>
+                ))}
+              </div>
+
+              <div className="pt-4 border-t border-border/30 space-y-3">
+                <p className="text-2xl font-display font-bold text-text-main">{BREATHING_LIBRARY[recommendedPractice].name}</p>
+                <p className="text-sm text-text-muted">{BREATHING_LIBRARY[recommendedPractice].description}</p>
+                {preferredPractice === recommendedPractice && (
+                  <p className="text-xs font-bold text-primary">Nova noticed this tends to help you.</p>
                 )}
-              >
-                <div className={cn("w-10 h-10 rounded-full flex items-center justify-center transition-colors", isSelected ? "bg-primary text-primary-foreground" : "bg-white/10 text-text-main")}>
-                  <Icon className="w-4 h-4 cursor-pointer" />
+                <div className="flex flex-wrap gap-3 pt-2">
+                  <button onClick={() => handleChoosePractice(recommendedPractice)} className="btn-primary py-3 px-6 text-sm">
+                    Start {BREATHING_LIBRARY[recommendedPractice].durationLabel.startsWith('30') ? '30-Second' : '2-Minute'} Reset
+                  </button>
+                  <button onClick={() => setShowRecommendation(false)} className="px-6 py-3 text-sm font-bold text-text-muted hover:text-text-main">
+                    Choose Another Practice
+                  </button>
                 </div>
-                <div>
-                  <h5 className="font-bold text-text-main font-display">{mode.name}</h5>
-                  <p className="text-xs uppercase tracking-widest text-text-muted font-bold mt-1 line-clamp-1">{mode.description}</p>
-                </div>
+              </div>
+
+              {effectivenessSignal === 'inconsistent' && (
+                <p className="text-xs text-text-muted italic pt-4 border-t border-border/20">
+                  Breathing hasn't been especially useful for you lately - grounding or reducing what's on your plate might fit better right now.
+                </p>
+              )}
+          </div>
+        </div>
+      ) : (
+        <div className="mb-8 p-6 rounded-xl border border-destructive/20 bg-destructive/5 space-y-4">
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+            <div className="space-y-1 text-left">
+              <div className="flex items-center gap-2 text-destructive dark:text-[#f87171] font-black uppercase tracking-wider text-[10px]">
+                <ShieldAlert className="w-3.5 h-3.5" /> Feeling very overwhelmed right now?
+              </div>
+              <p className="text-xs text-text-muted max-w-xl leading-relaxed">
+                If your thoughts are racing or everything feels too much, start with a guided reset.
+              </p>
+            </div>
+            <div className="flex gap-3 shrink-0">
+              <button onClick={() => { guidedResetActiveRef.current = true; setGuidedReset({ step: 'intensity', intensity: null }); }} className="btn-primary py-2.5 px-5 text-xs">
+                Start Guided Reset
               </button>
-            );
-          })}
+              <button
+                onClick={() => { const el = document.getElementById('breathwork-library'); el?.scrollIntoView({ behavior: 'smooth' }); }}
+                className="px-4 py-2.5 text-xs font-bold text-text-muted hover:text-text-main border border-border rounded-xl"
+              >
+                Browse Breathing Tools
+              </button>
+            </div>
+          </div>
+          <button
+            onClick={() => window.dispatchEvent(new CustomEvent('navigate_tab', { detail: 'anxiety_reset' }))}
+            className="text-[10px] text-text-muted/70 hover:text-text-muted underline underline-offset-2"
+          >
+            Need a more structured walkthrough? Try the Anxiety &amp; Overwhelm Reset.
+          </button>
+        </div>
+      )}
+
+      <div id="breathwork-library" className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        <div className="lg:col-span-1 space-y-6">
+          <button onClick={() => setShowRecommendation(true)} className="flex items-center gap-2 text-xs font-black uppercase tracking-widest text-text-muted hover:text-text-main">
+            <ArrowLeft className="w-3.5 h-3.5" /> Back to Nova's Recommendation
+          </button>
+          {Array.from(new Set(BREATHING_LIBRARY_ORDER.map((id) => BREATHING_LIBRARY[id].category))).map((category) => (
+            <div key={category} className="space-y-2">
+              <h4 className="text-xs font-black uppercase tracking-widest text-text-muted">{category}</h4>
+              {BREATHING_LIBRARY_ORDER.filter((id) => BREATHING_LIBRARY[id].category === category).map((id) => {
+                const mode = BREATHING_LIBRARY[id];
+                const isSelected = activeMode === id;
+                const Icon = BREATHING_CYCLE[id].icon;
+                return (
+                  <button
+                    key={id}
+                    onClick={() => handleChoosePractice(id)}
+                    aria-pressed={isSelected}
+                    className={cn(
+                      "w-full text-left p-4 rounded-xl border transition-all flex items-center gap-4",
+                      isSelected
+                        ? "bg-primary/10 border-primary/30"
+                        : "bg-transparent border-transparent hover:border-border/50 opacity-70 hover:opacity-100"
+                    )}
+                  >
+                    <div className={cn("w-10 h-10 rounded-full flex items-center justify-center transition-colors shrink-0", isSelected ? "bg-primary text-primary-foreground" : "bg-white/10 text-text-main")}>
+                      <Icon className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h5 className="font-bold text-text-main font-display flex items-center gap-2">
+                        {mode.name}
+                        {mode.badge && <span className="text-[9px] font-black uppercase tracking-widest text-primary">{mode.badge}</span>}
+                      </h5>
+                      <p className="text-xs text-text-muted mt-1 line-clamp-1">{mode.description}</p>
+                      <p className="text-[10px] uppercase tracking-widest text-text-muted/70 font-bold mt-0.5">{mode.durationLabel}</p>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          ))}
         </div>
 
         <div className="lg:col-span-2">
           {activeMode ? (
-            <div className="card border border-border p-6 sm:p-8 md:p-12 h-full flex flex-col items-center justify-center text-center relative overflow-hidden min-h-[500px]">
-              <div className="absolute top-8 left-8 text-left">
-                <span className="tag mb-4">{BREATHING_MODES[activeMode].name}</span>
-                <p className="text-xl font-display font-medium text-text-main mt-4 max-w-sm">
-                  {BREATHING_MODES[activeMode].instruction}
-                </p>
-              </div>
-
-              <div className="relative w-64 h-64 flex items-center justify-center my-12">
-                <motion.div
-                  className="absolute inset-0 bg-primary/20 rounded-full blur-2xl"
-                  animate={isPlaying ? {
-                    scale: phase === 'inhale' ? 1.5 : (phase === 'hold1' ? 1.5 : (phase === 'exhale' ? 0.8 : 0.8)),
-                    opacity: phase === 'inhale' ? 0.8 : 0.3
-                  } : { scale: 1, opacity: 0.1 }}
-                  transition={{ duration: phase === 'inhale' || phase === 'exhale' ? 4 : 1, ease: 'easeInOut' }}
-                />
-                <motion.div
-                  className="w-32 h-32 bg-primary rounded-full shadow-2xl shadow-primary/40 flex items-center justify-center relative z-10"
-                  animate={isPlaying ? {
-                    scale: phase === 'inhale' ? 2 : (phase === 'hold1' ? 2 : (phase === 'exhale' ? 1 : 1)),
-                  } : { scale: 1 }}
-                  transition={{ duration: phase === 'inhale' || phase === 'exhale' ? 4 : 1, ease: 'easeInOut' }}
-                >
-                  {isPlaying && (
-                    <motion.span 
-                      key={phase}
-                      initial={{ opacity: 0, y: 10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, y: -10 }}
-                      role="status"
-                      aria-live="polite"
-                      aria-atomic="true"
-                      className="text-text-main font-black uppercase tracking-widest text-lg"
-                    >
-                      {phase.replace('1', '').replace('2', '')}
-                    </motion.span>
-                  )}
-                </motion.div>
-                
-                {/* Decorative rings */}
-                <div className="absolute inset-0 border border-primary/20 rounded-full scale-[1.5]" />
-                <div className="absolute inset-0 border border-primary/10 rounded-full scale-[2]" />
-              </div>
-
-              <button
-                onClick={async () => {
-                  ensureAudioContext();
-                  const startingNow = !isPlaying;
-                  if (startingNow) {
-                    breathingSessionStartRef.current = Date.now();
-                  } else if (breathingSessionStartRef.current) {
-                    const elapsedSeconds = (Date.now() - breathingSessionStartRef.current) / 1000;
-                    if (elapsedSeconds >= 60) {
-                      const minutes = Math.round(elapsedSeconds / 60);
-                      markResetComplete(
-                        activeMode ? BREATHING_MODES[activeMode].name : 'Breathing Pacer',
-                        `${minutes} minute${minutes === 1 ? '' : 's'} of practice.`
-                      );
-                    }
-                    breathingSessionStartRef.current = null;
-                  }
-                  setIsPlaying(!isPlaying);
-                }}
-                className="mt-8 flex items-center gap-3 px-8 py-4 bg-text-main text-bg-main rounded-full font-bold uppercase tracking-widest hover:scale-105 transition-transform"
-              >
-                {isPlaying ? (
-                  <>
-                    <Pause className="w-5 h-5" /> Pause Practice
-                  </>
-                ) : (
-                  <>
-                    <Play className="w-5 h-5" /> Begin Reset Sequence
-                  </>
-                )}
-              </button>
-            </div>
+            <BreathingSession
+              practiceId={activeMode}
+              isPlaying={isPlaying}
+              phase={phase}
+              showMidSessionPrompt={showMidSessionPrompt}
+              onFinish={handlePauseOrFinish}
+              onContinueMidSession={() => setShowMidSessionPrompt(false)}
+            />
           ) : (
             <div className="card border border-border h-full flex flex-col items-center justify-center text-center p-6 sm:p-8 md:p-12 min-h-[500px]">
               <div className="w-24 h-24 mb-6 rounded-full bg-surface dark:bg-surface flex items-center justify-center opacity-50">
@@ -1242,12 +1490,14 @@ export const NervousSystemReset = ({ fingerprint, onAwardPoints }: NervousSystem
               </div>
               <h3 className="text-2xl font-display font-bold text-text-main mb-4">Choose a Practice</h3>
               <p className="text-sm font-medium text-text-muted max-w-md mx-auto">
-                Talk with Nova above or select a breathing mode from the library to begin.
+                Talk with Nova above or select a practice from the library to begin.
               </p>
             </div>
           )}
         </div>
       </div>
+      </>
+      )}
       </>
       )}
 
@@ -1376,3 +1626,269 @@ export const NervousSystemReset = ({ fingerprint, onAwardPoints }: NervousSystem
     </div>
   );
 };
+
+// BREATHING ANIMATION: a soft orb that expands and contracts with the
+// breath cycle - soft glow, gentle easing, no hard edges or mechanical
+// progress bars. ON-SCREEN BREATHING COPY stays minimal (one phase word
+// + one short supporting line). Respects prefers-reduced-motion with a
+// static, non-animated equivalent rather than skipping the cue entirely.
+const PHASE_LABELS: Record<'inhale' | 'hold1' | 'exhale' | 'hold2', { word: string; support: string }> = {
+  inhale: { word: 'Breathe in', support: 'Easy and comfortable.' },
+  hold1: { word: 'Let it pause', support: 'Only if it feels natural.' },
+  exhale: { word: 'Let go', support: 'Slowly. No forcing.' },
+  hold2: { word: 'Again', support: 'Nothing to achieve. Just stay with the next breath.' },
+};
+
+const BreathingSession = ({ practiceId, isPlaying, phase, showMidSessionPrompt, onFinish, onContinueMidSession }: {
+  practiceId: BreathingPracticeId;
+  isPlaying: boolean;
+  phase: 'inhale' | 'hold1' | 'exhale' | 'hold2';
+  showMidSessionPrompt: boolean;
+  onFinish: () => void;
+  onContinueMidSession: () => void;
+}) => {
+  const [reducedMotion, setReducedMotion] = useState(() => window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+  useEffect(() => {
+    const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const handler = () => setReducedMotion(mq.matches);
+    mq.addEventListener('change', handler);
+    return () => mq.removeEventListener('change', handler);
+  }, []);
+
+  const practice = BREATHING_LIBRARY[practiceId];
+  const cycle = BREATHING_CYCLE[practiceId];
+  const expanded = phase === 'inhale' || phase === 'hold1';
+  const label = PHASE_LABELS[phase];
+
+  return (
+    <div className="card border border-border p-6 sm:p-8 md:p-12 h-full flex flex-col items-center justify-center text-center relative overflow-hidden min-h-[500px]">
+      <div className="absolute top-8 left-8 text-left">
+        <span className="tag mb-4">{practice.name}</span>
+        <p className="text-sm font-medium text-text-muted mt-4 max-w-sm">{cycle.instruction}</p>
+      </div>
+
+      {showMidSessionPrompt && (
+        <div className="absolute top-20 sm:top-8 right-6 left-6 sm:left-auto sm:w-80 z-20 p-5 rounded-2xl border border-border bg-background shadow-xl text-left space-y-3">
+          <p className="text-sm text-text-main font-medium">That's enough effort. Let the breathing do less, not more.</p>
+          <div className="flex gap-2">
+            <button onClick={onContinueMidSession} className="px-4 py-2 rounded-lg bg-surface text-xs font-bold text-text-main">Continue</button>
+            <button onClick={onFinish} className="px-4 py-2 rounded-lg bg-primary text-primary-foreground text-xs font-bold">Finish Here</button>
+          </div>
+        </div>
+      )}
+
+      <div className="relative w-64 h-64 flex items-center justify-center my-12">
+        {reducedMotion ? (
+          <div className="w-40 h-40 rounded-full bg-primary/15 border border-primary/30 flex items-center justify-center">
+            {isPlaying && <span role="status" aria-live="polite" className="text-text-main font-bold text-base">{label.word}</span>}
+          </div>
+        ) : (
+          <>
+            <motion.div
+              className="absolute inset-0 bg-primary/15 rounded-full"
+              style={{ filter: 'blur(40px)' }}
+              animate={isPlaying ? { scale: expanded ? 1.4 : 0.85, opacity: expanded ? 0.7 : 0.25 } : { scale: 0.9, opacity: 0.15 }}
+              transition={{ duration: phase === 'inhale' || phase === 'exhale' ? 4 : 1.2, ease: [0.45, 0, 0.2, 1] }}
+            />
+            <motion.div
+              className="w-28 h-28 rounded-full relative z-10 bg-primary shadow-2xl shadow-primary/30"
+              animate={isPlaying ? { scale: expanded ? 1.6 : 1 } : { scale: 1 }}
+              transition={{ duration: phase === 'inhale' || phase === 'exhale' ? 4 : 1.2, ease: [0.45, 0, 0.2, 1] }}
+            />
+            <div className="absolute inset-0 border border-primary/10 rounded-full scale-[1.4]" />
+          </>
+        )}
+
+        {isPlaying && (
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={phase}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.6 }}
+              className="absolute inset-x-0 -bottom-16 text-center"
+            >
+              <p role="status" aria-live="polite" aria-atomic="true" className="text-text-main font-display font-medium text-xl">{label.word}</p>
+              <p className="text-xs text-text-muted mt-1">{label.support}</p>
+            </motion.div>
+          </AnimatePresence>
+        )}
+      </div>
+
+      <button onClick={onFinish} className="mt-16 flex items-center gap-3 px-8 py-4 bg-text-main text-bg-main rounded-full font-bold uppercase tracking-widest hover:scale-105 transition-transform">
+        <CheckCircle2 className="w-5 h-5" /> Finish
+      </button>
+    </div>
+  );
+};
+
+// GUIDED RESET MODE: the more overwhelmed the user appears, the fewer
+// decisions each step offers (maxChoicesForIntensity) - never analytics,
+// educational content or long menus for someone this overwhelmed.
+const GuidedResetPanel = ({ guidedReset, setGuidedReset, onChoosePractice, onExit }: {
+  guidedReset: { step: 'intensity' | GuidedResetStepId; intensity: OverwhelmIntensity | null };
+  setGuidedReset: (next: { step: 'intensity' | GuidedResetStepId; intensity: OverwhelmIntensity | null } | null) => void;
+  onChoosePractice: (id: BreathingPracticeId) => void;
+  onExit: () => void;
+  onUseGrounding: () => void;
+}) => {
+  const { step, intensity } = guidedReset;
+  const maxChoices = intensity ? maxChoicesForIntensity(intensity) : 3;
+
+  return (
+    <div className="card border border-destructive/20 bg-destructive/5 p-8 sm:p-12 space-y-8 text-center relative">
+      <button onClick={onExit} className="absolute top-6 left-6 flex items-center gap-2 text-xs font-black uppercase tracking-widest text-text-muted hover:text-text-main">
+        <ArrowLeft className="w-3.5 h-3.5" /> Exit Guided Reset
+      </button>
+
+      {step === 'intensity' && (
+        <div className="space-y-6 pt-10">
+          <h4 className="text-2xl font-display font-bold text-text-main">How activated do you feel?</h4>
+          <div className="flex flex-wrap justify-center gap-3">
+            {OVERWHELM_INTENSITY_ORDER.map((id) => (
+              <button
+                key={id}
+                onClick={() => setGuidedReset({ step: 'slow_body', intensity: id })}
+                className="px-6 py-3 rounded-full border border-border hover:border-primary/50 font-bold text-text-main"
+              >
+                {OVERWHELM_INTENSITY_LABELS[id]}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {step === 'slow_body' && (
+        <div className="space-y-6 pt-10">
+          <h4 className="text-2xl font-display font-bold text-text-main">Let's slow the body first.</h4>
+          <p className="text-sm text-text-muted">No need to think. Just pick one.</p>
+          <div className="flex flex-wrap justify-center gap-3">
+            {GUIDED_RESET_PRACTICES.slice(0, maxChoices).map((id) => (
+              <button
+                key={id}
+                onClick={() => onChoosePractice(id)}
+                className="px-6 py-3 rounded-full border border-border hover:border-primary/50 font-bold text-text-main"
+              >
+                {BREATHING_LIBRARY[id].name}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {step === 'reduce_noise' && (
+        <div className="space-y-6 pt-10">
+          <h4 className="text-2xl font-display font-bold text-text-main">Now let's reduce the noise.</h4>
+          <p className="text-sm text-text-muted max-w-md mx-auto">
+            {maxChoices === 1
+              ? "You don't need to think about anything else right now."
+              : "If something's crowding your head, you could unload it. Otherwise, just continue."}
+          </p>
+          <div className="flex flex-wrap justify-center gap-3">
+            {maxChoices > 1 && (
+              <button
+                onClick={() => window.dispatchEvent(new CustomEvent('reset_studio_select_state', { detail: 'scattered' }))}
+                className="px-6 py-3 rounded-full border border-border hover:border-primary/50 font-bold text-text-main"
+              >
+                Unload My Thoughts
+              </button>
+            )}
+            <button onClick={() => setGuidedReset({ step: 'next_step', intensity })} className="px-6 py-3 rounded-full bg-primary text-primary-foreground font-bold">
+              Continue
+            </button>
+          </div>
+        </div>
+      )}
+
+      {step === 'next_step' && (
+        <div className="space-y-6 pt-10">
+          <h4 className="text-2xl font-display font-bold text-text-main">The next safe step.</h4>
+          <div className="flex flex-wrap justify-center gap-3">
+            <button onClick={onExit} className="px-6 py-3 rounded-full bg-primary text-primary-foreground font-bold">I'm okay to continue</button>
+            {maxChoices > 1 && (
+              <button
+                onClick={() => window.dispatchEvent(new CustomEvent('open_crisis_support'))}
+                className="px-6 py-3 rounded-full border border-border hover:border-primary/50 font-bold text-text-main flex items-center gap-2"
+              >
+                <LifeBuoy className="w-4 h-4" /> Quick Support
+              </button>
+            )}
+            {maxChoices > 2 && (
+              <button
+                onClick={() => setGuidedReset({ step: 'intensity', intensity: null })}
+                className="px-6 py-3 rounded-full border border-border hover:border-primary/50 font-bold text-text-main"
+              >
+                Stay here a little longer
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// POST-SESSION RESET CHECKPOINT - mandatory after every completed
+// session, closing the loop between intervention and outcome.
+const CheckpointPanel = ({ checkpoint, response, onRespond, onSelectOption }: {
+  checkpoint: { toolName: string; practiceId: BreathingPracticeId | null; durationSeconds: number };
+  response: CheckpointResponse | null;
+  onRespond: (r: CheckpointResponse) => void;
+  onSelectOption: (optionId: string) => void;
+}) => {
+  const branch = response ? CHECKPOINT_BRANCHES[response] : null;
+  return (
+    <div className="card border border-primary/20 bg-primary/5 p-8 sm:p-12 text-center space-y-6">
+      {!response || !branch ? (
+        <>
+          <h4 className="text-2xl font-display font-bold text-text-main">Reset Complete</h4>
+          <p className="text-xs uppercase tracking-widest font-bold text-text-muted">{checkpoint.toolName}</p>
+          <p className="text-sm text-text-muted max-w-sm mx-auto">Don't rush straight back into everything. Give yourself a second.</p>
+          <p className="text-lg font-medium text-text-main pt-4">Where are you now?</p>
+          <div className="flex flex-wrap justify-center gap-3">
+            {CHECKPOINT_RESPONSE_ORDER.map((r) => (
+              <button key={r} onClick={() => onRespond(r)} className="px-5 py-3 rounded-full border border-border hover:border-primary/50 font-bold text-text-main">
+                {CHECKPOINT_RESPONSE_LABELS[r]}
+              </button>
+            ))}
+          </div>
+        </>
+      ) : (
+        <>
+          <p className="text-lg font-medium text-text-main">{branch.novaLine}</p>
+          {branch.supportingLine && <p className="text-sm text-text-muted">{branch.supportingLine}</p>}
+          {branch.followUpQuestion && <p className="text-sm text-text-muted pt-2">{branch.followUpQuestion}</p>}
+          <div className="flex flex-wrap justify-center gap-3 pt-2">
+            {branch.options.map((optionId) => (
+              <button key={optionId} onClick={() => onSelectOption(optionId)} className="px-5 py-3 rounded-full border border-border hover:border-primary/50 font-bold text-text-main flex items-center gap-2">
+                {optionId === 'quick_support' && <LifeBuoy className="w-4 h-4" />}
+                {(optionId === 'remove_one_thing' || optionId === 'make_it_smaller') && <MinusCircle className="w-4 h-4" />}
+                {CHECKPOINT_OPTION_LABELS[optionId]}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+};
+
+// DID IT HELP? - occasional, gated by shouldAskDidItHelp, never a fake
+// effectiveness percentage.
+const DidItHelpPanel = ({ answered, onAnswer }: { answered: boolean; onAnswer: (h: BreathingHelpfulness) => void }) => (
+  <div className="card border border-border p-8 text-center space-y-4">
+    {!answered ? (
+      <>
+        <p className="text-lg font-medium text-text-main">Did this practice feel useful?</p>
+        <div className="flex justify-center gap-3">
+          <button onClick={() => onAnswer('yes')} className="px-5 py-2.5 rounded-full border border-border hover:border-primary/50 font-bold text-text-main">Yes</button>
+          <button onClick={() => onAnswer('a_little')} className="px-5 py-2.5 rounded-full border border-border hover:border-primary/50 font-bold text-text-main">A little</button>
+          <button onClick={() => onAnswer('not_really')} className="px-5 py-2.5 rounded-full border border-border hover:border-primary/50 font-bold text-text-main">Not really</button>
+        </div>
+      </>
+    ) : (
+      <p className="text-sm text-text-muted">Noted - thank you.</p>
+    )}
+  </div>
+);

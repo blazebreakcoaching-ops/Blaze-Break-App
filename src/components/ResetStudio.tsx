@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { ArrowLeft } from 'lucide-react';
 import { BurnoutFingerprint } from '../types';
@@ -26,8 +26,25 @@ export const ResetStudio = ({ fingerprint, onAwardPoints, onNavigate, onOpenCris
 
   const handleBack = () => setSelected(null);
 
+  // Lets a tool elsewhere on the same "reset" tab (the Breathing &
+  // Guided Reset experience, demoted into "More ways to reset") hand off
+  // into one of these six states without threading a callback prop
+  // through App.tsx - same window-event pattern already used throughout
+  // this codebase (navigate_tab, open_crisis_support).
+  useEffect(() => {
+    const handleSelectState = (e: Event) => {
+      const detail = (e as CustomEvent<ResetStudioState>).detail;
+      if (RESET_STUDIO_STATE_ORDER.includes(detail)) {
+        setSelected(detail);
+        document.getElementById('reset-studio-section')?.scrollIntoView({ behavior: 'smooth' });
+      }
+    };
+    window.addEventListener('reset_studio_select_state', handleSelectState);
+    return () => window.removeEventListener('reset_studio_select_state', handleSelectState);
+  }, []);
+
   return (
-    <div className="space-y-8">
+    <div id="reset-studio-section" className="space-y-8">
       <div className="max-w-4xl">
         <div className="flex items-center gap-4 mb-4">
           <div className="tag">Stabilise · Core Pillar: Rebuild</div>
