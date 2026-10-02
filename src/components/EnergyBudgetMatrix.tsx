@@ -111,7 +111,6 @@ export const EnergyBudgetMatrix = ({ onPointsEarned, isDemoSession }: { onPoints
   useEffect(() => {
     if (isDemoSession || !uid || (!hasCapacity && activeStressors.length === 0)) return;
     recordDailySnapshot(uid, capacity, activeStressors).catch(() => {});
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [uid, isDemoSession, capacity, JSON.stringify(activeStressors.map((s) => [s.id, s.severity, s.persistence, s.reduction]))]);
 
   // Today's live-computed numbers, spliced in ahead of whatever history
