@@ -202,6 +202,12 @@ export const RecoveryRecipes = ({ fingerprint: _fingerprint, onAwardPoints }: Re
 
   const handleMakeShorter = () => {
     if (!selectedSituation) return;
+    // Invalidates any enhancement still in flight for the recipe being
+    // replaced - without this, a slow response requested for the
+    // pre-shortened recipe (a different optionalStepTypes/capacity
+    // context) could land on this one after the fact and reorder/reword
+    // it using context that no longer applies.
+    enhancementRequestIdRef.current++;
     const shortened = adaptRecoveryRecipe({ situationKey: selectedSituation, capacity, timeAvailableMinutes, helpfulStepTypes }, { type: 'shorten' });
     setRecipe(shortened);
     setCapacity('almost_nothing');
@@ -217,6 +223,10 @@ export const RecoveryRecipes = ({ fingerprint: _fingerprint, onAwardPoints }: Re
       setRecipe(built);
       requestEnhancement(built, saved.situationKey, saved.capacity);
     } else {
+      // "Use as before" is a literal replay of the exact saved steps -
+      // never AI-enhanced, so any still-in-flight request from whatever
+      // was on screen before this must never land on it afterward.
+      enhancementRequestIdRef.current++;
       const base = buildRecoveryRecipe({ situationKey: saved.situationKey, capacity: saved.capacity });
       const resolvedSteps = getStepsByIds(saved.stepIds);
       setRecipe({ ...base, steps: resolvedSteps.length > 0 ? resolvedSteps : base.steps, optionalSteps: [] });
@@ -293,6 +303,14 @@ export const RecoveryRecipes = ({ fingerprint: _fingerprint, onAwardPoints }: Re
     setPickedFeedback(feedback);
     logRecipeEvent('recipe_feedback', { situationKey: selectedSituation || undefined });
     setFeedbackStage('ask_helpful_part');
+  };
+
+  // The feedback ask is meant to be skippable at either stage (section 16) -
+  // this is the first stage's skip, writing history with no feedback at
+  // all, same as declining ever reaches 'done' through resolveFeedback().
+  const handleSkipFeedback = () => {
+    writeRecipeHistory(completedStepTypes, skippedStepTypes);
+    setFeedbackStage('done');
   };
 
   const resolveFeedback = (helpfulPart?: HelpfulPartId) => {
@@ -453,6 +471,7 @@ export const RecoveryRecipes = ({ fingerprint: _fingerprint, onAwardPoints }: Re
                   type="text"
                   value={somethingElseText}
                   onChange={(e) => setSomethingElseText(e.target.value.slice(0, 200))}
+                  onKeyDown={(e) => e.key === 'Enter' && handleSomethingElse()}
                   placeholder="Describe what's going on, in your own words (optional)"
                   className="w-full p-3 rounded-xl border border-border/40 bg-white dark:bg-surface text-sm text-text-main"
                 />
@@ -654,7 +673,23 @@ export const RecoveryRecipes = ({ fingerprint: _fingerprint, onAwardPoints }: Re
               )}
             </div>
 
-            {!currentStep.choices && (
+            {currentStep.choices ? (
+              // Section 10/34's "never trap the person in a step" also
+              // applies to a choice step marked skippable - picking one of
+              // the choices above is how the step is actively answered,
+              // but someone who doesn't want to answer either way still
+              // needs a way to move on without it (every current template
+              // step is skippable, so without this a choice step would be
+              // the one place in the whole recipe the person could get
+              // stuck).
+              currentStep.skippable && (
+                <div className="flex items-center justify-center pt-4">
+                  <button onClick={() => advanceStep(true)} className="text-xs font-black uppercase tracking-widest text-text-muted hover:text-text-main">
+                    Skip
+                  </button>
+                </div>
+              )
+            ) : (
               <div className="flex items-center justify-center gap-3 pt-6 border-t border-border/50">
                 {currentStep.skippable && (
                   <button onClick={() => advanceStep(true)} className="text-xs font-black uppercase tracking-widest text-text-muted hover:text-text-main">
@@ -707,6 +742,9 @@ export const RecoveryRecipes = ({ fingerprint: _fingerprint, onAwardPoints }: Re
                     </button>
                   ))}
                 </div>
+                <button onClick={handleSkipFeedback} className="text-xs font-black uppercase tracking-widest text-text-muted hover:text-text-main block mx-auto">
+                  Skip
+                </button>
               </div>
             )}
 
@@ -752,6 +790,7 @@ export const RecoveryRecipes = ({ fingerprint: _fingerprint, onAwardPoints }: Re
                         type="text"
                         value={saveRecipeName}
                         onChange={(e) => setSaveRecipeName(e.target.value.slice(0, 60))}
+                        onKeyDown={(e) => e.key === 'Enter' && handleSaveRecipe()}
                         placeholder="Name this recipe"
                         className="p-2.5 rounded-xl border border-border/40 bg-white dark:bg-surface text-sm text-text-main"
                       />
