@@ -2584,7 +2584,7 @@ export default function App() {
                   systemInstruction={`You are Nova, the recovery coach.
                   User's current stats: Points: ${isDemoSession ? DEMO_STATS.points : stats.points}.
                   Recovery Debt Profile: ${JSON.stringify((isDemoSession ? DEMO_STATS.debts : stats.debts) || [])}.
-                  Use this data to provide surgical advice. If Sleep Debt is high, recommend rest. If Neural Fatigue is high, recommend deep work blocks or blackout.
+                  Use this data to give direct, grounded advice. If Sleep Shortfall is high, recommend rest. If Mental Fatigue is high, recommend a break before anything that needs focus.
                   Match the user's preferred communication tone when it's provided in the context below; if the tone ever seems to be landing wrong, it's fine to gently offer to adjust it. Use the user's Burnout Fingerprint archetypes if available.${
                     isDemoSession
                       ? " This visitor is previewing a sample account before signing up - the stats above are illustrative example data, not their own real progress. It's fine to naturally mention signing up, but never claim these sample numbers are the visitor's own history."
