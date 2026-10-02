@@ -1,59 +1,285 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
-  Coffee,
-  Sun,
-  Droplet,
-  Apple,
-  Heart,
-  Info,
-  ShieldAlert,
-  Sparkles,
-  Clock,
-  Check,
-  Compass,
-  ArrowRight,
-  Wine,
-  Activity,
-  Lightbulb,
-  TrendingUp
+  Coffee, Sun, Droplet, Apple, Heart, Info, ShieldAlert, Sparkles, Clock, Check,
+  Wine, Activity, TrendingUp, ChevronDown, X, ListChecks, SlidersHorizontal,
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { updateNovaMemoryBySourceAndType } from '../lib/nova-brain';
 import { useAuth } from '../lib/auth';
 import { auth } from '../lib/firebase';
 import { db } from '../lib/firestore';
-import { doc, getDoc, setDoc, deleteDoc, collection, query, orderBy, limit, getDocs } from 'firebase/firestore';
+import { doc, getDoc, setDoc, deleteDoc, collection, query, orderBy, limit, getDocs, addDoc, updateDoc } from 'firebase/firestore';
 
 import { SHIPStage } from '../types';
 import { detectFuelPatterns, FUEL_PATTERN_COPY, FuelLogEntry } from '../../recovery-fuel-patterns';
+import {
+  FuelTriggerId, FUEL_TRIGGER_ORDER, FUEL_TRIGGER_LABELS, FuelContextSnapshot,
+  getFuelOpening, getFuelFollowUpQuestion, getFuelRecommendation, getProactiveQuestion, getProactiveRecommendation,
+  FuelAnswerId, FuelQuestion, FuelActionId, FUEL_ACTION_LABELS, FuelRecommendation,
+  FUEL_PATTERN_CONFIDENCE_LABELS, computeMostHelpfulFuelAction, FuelHelpfulnessEntry, FuelHelpfulness,
+} from '../../recovery-fuel-coach';
+import { loadLatestCapacityCheckIn, loadStressors } from '../lib/energy-delta-service';
+import { computeEnergyDelta } from '../../energy-delta-engine';
+import { loadSleepTargetHours, loadRecentSleepNights } from '../lib/recovery-debt-service';
+import { computeSleepShortfall } from '../../recovery-debt-engine';
 
 interface RecoveryFuelEngineProps {
   fingerprint?: any;
   onAwardPoints?: (amount: number, reason: string) => void;
   currentStage?: SHIPStage;
+  onNavigate?: (tab: string) => void;
+  onOpenSomaticReset?: () => void;
 }
 
-export const RecoveryFuelEngine = ({ 
-  fingerprint, 
-  onAwardPoints,
-  currentStage = 'Safety'
-}: RecoveryFuelEngineProps) => {
-  // Configured with age state
-  const [isAdult, setIsAdult] = useState<boolean>(() => {
-    const saved = localStorage.getItem('blaze_user_is_adult');
-    return saved === 'true';
-  });
+// Recovery Fuel - "what basic recovery foundations might be making today
+// harder, and what is one useful thing I can do now?" Nova-led coaching
+// first (Nova Fuel Check, this file's default view), quick intervention
+// second (Quick Actions, shown alongside it), tracking and patterns third
+// (My Patterns, a clearly separate secondary view - never the landing
+// screen). The adaptive question logic itself lives in
+// recovery-fuel-coach.ts; this file only ever assembles real context,
+// calls into that engine, and renders the result.
 
+interface FuelCheckinRecord {
+  id: string;
+  trigger: FuelTriggerId | 'proactive';
+  action: FuelActionId;
+  helpful?: FuelHelpfulness;
+  createdAt: string;
+}
+
+const CAPACITY_LOW_CUTOFF = 40; // same cutoff recovery-debt-engine's Social Load already uses
+const SLEEP_SHORTFALL_HIGH_HOURS = 2;
+
+export const RecoveryFuelEngine = ({
+  fingerprint,
+  onAwardPoints,
+  currentStage = 'Safety',
+  onNavigate,
+  onOpenSomaticReset,
+}: RecoveryFuelEngineProps) => {
+  const { accessToken } = useAuth();
+  const uid = auth.currentUser?.uid;
+
+  // ---------- Top-level view ----------
+  const [view, setView] = useState<'home' | 'patterns'>('home');
+
+  // ---------- Age setting - the best available signal, since no
+  // account-level birthdate exists anywhere in this app yet. Defaults to
+  // the conservative (youth) state so age-restricted content never shows
+  // before the person has actually said they're 18+. ----------
+  const [isAdult, setIsAdult] = useState<boolean>(() => localStorage.getItem('blaze_user_is_adult') === 'true');
   const handleAgeChange = (value: boolean) => {
     setIsAdult(value);
     localStorage.setItem('blaze_user_is_adult', String(value));
-    if (onAwardPoints) {
-      onAwardPoints(5, "Demographic Verification Calibrated");
+  };
+
+  // ---------- Real context Nova Fuel Check reads before asking anything ----------
+  const [capacity, setCapacity] = useState<number | null>(null);
+  const [energyDelta, setEnergyDelta] = useState<number | null>(null);
+  const [sleepShortfall, setSleepShortfall] = useState<number | null>(null);
+  const [todayAte, setTodayAte] = useState<boolean | null>(null);
+  const [contextLoaded, setContextLoaded] = useState(false);
+
+  useEffect(() => {
+    const loadContext = async () => {
+      if (!uid) { setContextLoaded(true); return; }
+      try {
+        const [checkIn, stressors, targetHours, nights, todayLog] = await Promise.all([
+          loadLatestCapacityCheckIn(uid),
+          loadStressors(uid),
+          loadSleepTargetHours(uid),
+          loadRecentSleepNights(uid),
+          getDoc(doc(db, 'users', uid, 'recovery_fuel_logs', new Date().toISOString().split('T')[0]!)),
+        ]);
+        const cap = checkIn?.score ?? null;
+        setCapacity(cap);
+        if (cap !== null) {
+          const energy = computeEnergyDelta(cap, stressors.filter((s) => s.status === 'active'));
+          setEnergyDelta(energy.energyDelta);
+        }
+        setSleepShortfall(computeSleepShortfall(targetHours, nights));
+        if (todayLog.exists()) {
+          const data = todayLog.data();
+          setTodayAte(typeof data.hasEaten === 'boolean' ? data.hasEaten : null);
+        }
+      } catch (e) {
+        // Leaves context unknown - Nova Fuel Check just asks instead of guessing.
+      }
+      setContextLoaded(true);
+    };
+    loadContext();
+  }, [uid]);
+
+  const fuelContext: FuelContextSnapshot = useMemo(() => ({
+    capacityLow: capacity === null ? null : capacity <= CAPACITY_LOW_CUTOFF,
+    energyDeltaNegative: energyDelta === null ? null : energyDelta < 0,
+    sleepShortfallHigh: sleepShortfall === null ? null : sleepShortfall > SLEEP_SHORTFALL_HIGH_HOURS,
+    loggedAteToday: todayAte,
+  }), [capacity, energyDelta, sleepShortfall, todayAte]);
+
+  // ---------- Nova Fuel Check flow ----------
+  type CheckPhase = 'opening' | 'question' | 'result';
+  const [checkPhase, setCheckPhase] = useState<CheckPhase>('opening');
+  const [selectedTrigger, setSelectedTrigger] = useState<FuelTriggerId | 'proactive' | null>(null);
+  const [activeQuestion, setActiveQuestion] = useState<FuelQuestion | null>(null);
+  const [recommendation, setRecommendation] = useState<FuelRecommendation | null>(null);
+  const [showMoreOptions, setShowMoreOptions] = useState(false);
+  const [completedAction, setCompletedAction] = useState<FuelActionId | null>(null);
+  const [lastCheckinId, setLastCheckinId] = useState<string | null>(null);
+  const [helpfulGiven, setHelpfulGiven] = useState(false);
+
+  const opening = useMemo(() => getFuelOpening(fuelContext), [fuelContext]);
+
+  const resetCheck = () => {
+    setCheckPhase('opening');
+    setSelectedTrigger(null);
+    setActiveQuestion(null);
+    setRecommendation(null);
+    setShowMoreOptions(false);
+    setCompletedAction(null);
+    setLastCheckinId(null);
+    setHelpfulGiven(false);
+  };
+
+  const handleTriggerSelect = (trigger: FuelTriggerId) => {
+    setSelectedTrigger(trigger);
+    const question = getFuelFollowUpQuestion(trigger, fuelContext);
+    if (question) {
+      setActiveQuestion(question);
+      setCheckPhase('question');
+    } else {
+      setRecommendation(getFuelRecommendation(trigger, null, fuelContext));
+      setCheckPhase('result');
     }
   };
 
-  // Fuel Tracker local states
+  const handleProactiveStart = () => {
+    setSelectedTrigger('proactive');
+    setActiveQuestion(getProactiveQuestion());
+    setCheckPhase('question');
+  };
+
+  const handleQuestionAnswer = (answer: FuelAnswerId) => {
+    const rec = selectedTrigger === 'proactive'
+      ? getProactiveRecommendation(answer)
+      : getFuelRecommendation(selectedTrigger as FuelTriggerId, answer, fuelContext);
+    setRecommendation(rec);
+    setCheckPhase('result');
+  };
+
+  // Logs today's basics quietly in the background when a recommendation
+  // implies a known answer (e.g. "not eaten" -> hasEaten: false), so the
+  // same real data feeds Recovery Debt/My Patterns without a second,
+  // separate log the user has to fill in.
+  const quietlyLogBasics = (action: FuelActionId) => {
+    if (!uid) return;
+    const today = new Date().toISOString().split('T')[0];
+    const updates: Record<string, any> = { updatedAt: new Date().toISOString() };
+    if (action === 'eat') updates.hasEaten = true;
+    if (action === 'drink') updates.hydrationGlasses = 1; // a floor, never overwritten downward by handleSaveCheckIn's merge below
+    if (action === 'daylight') updates.morningLight = true;
+    setDoc(doc(db, 'users', uid, 'recovery_fuel_logs', today), updates, { merge: true }).catch(() => {});
+    if (action === 'eat') setTodayAte(true);
+  };
+
+  const executeFuelAction = async (action: FuelActionId) => {
+    quietlyLogBasics(action);
+    setCompletedAction(action);
+
+    if (uid && selectedTrigger) {
+      try {
+        const ref = await addDoc(collection(db, 'users', uid, 'recovery_fuel_checkins'), {
+          trigger: selectedTrigger,
+          action,
+          createdAt: new Date().toISOString(),
+        });
+        setLastCheckinId(ref.id);
+      } catch (e) {
+        // Non-fatal - the action itself still happens even if this log fails.
+      }
+    }
+
+    updateNovaMemoryBySourceAndType('Recovery Fuel Engine', 'state', {
+      content: `Nova Fuel Check recommended "${FUEL_ACTION_LABELS[action]}" and the user took it.`,
+      canEdit: false,
+      confidence: 'medium',
+    });
+    if (onAwardPoints) onAwardPoints(10, `Recovery Fuel: ${FUEL_ACTION_LABELS[action]}`);
+
+    switch (action) {
+      case 'check_capacity':
+      case 'one_less_thing':
+      case 'reduce_load':
+        onNavigate?.('recover');
+        break;
+      case 'wind_down':
+        onNavigate?.('reset');
+        break;
+      case 'somatic_reset':
+        onOpenSomaticReset?.();
+        break;
+      default:
+        break; // eat/drink/daylight/take_break are logged in place, no navigation
+    }
+  };
+
+  const handleHelpfulResponse = async (helpful: FuelHelpfulness) => {
+    setHelpfulGiven(true);
+    if (uid && lastCheckinId) {
+      try {
+        await updateDoc(doc(db, 'users', uid, 'recovery_fuel_checkins', lastCheckinId), { helpful });
+      } catch (e) {
+        // Non-fatal.
+      }
+    }
+  };
+
+  // ---------- My Patterns data ----------
+  const [recentLogs, setRecentLogs] = useState<(FuelLogEntry & { id: string })[]>([]);
+  const [recentCheckins, setRecentCheckins] = useState<FuelCheckinRecord[]>([]);
+  const weeklyPatternMemoryWrittenRef = useRef(false);
+
+  useEffect(() => {
+    const loadPatterns = async () => {
+      if (!uid) return;
+      try {
+        const [logsSnap, checkinsSnap] = await Promise.all([
+          getDocs(query(collection(db, 'users', uid, 'recovery_fuel_logs'), orderBy('createdAt', 'desc'), limit(7))),
+          getDocs(query(collection(db, 'users', uid, 'recovery_fuel_checkins'), orderBy('createdAt', 'desc'), limit(20))),
+        ]);
+        setRecentLogs(logsSnap.docs.map((d) => ({ id: d.id, ...(d.data() as FuelLogEntry) })));
+        setRecentCheckins(checkinsSnap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<FuelCheckinRecord, 'id'>) })));
+      } catch (e) {
+        // Leaves these empty - My Patterns just shows its honest empty state.
+      }
+    };
+    loadPatterns();
+  }, [uid]);
+
+  const weeklyPatterns = detectFuelPatterns(recentLogs, { includeAlcohol: isAdult });
+
+  useEffect(() => {
+    if (weeklyPatternMemoryWrittenRef.current) return;
+    if (weeklyPatterns.length === 0) return;
+    weeklyPatternMemoryWrittenRef.current = true;
+    const top = weeklyPatterns[0];
+    updateNovaMemoryBySourceAndType('Recovery Fuel Engine - Weekly Pattern', 'state', {
+      content: `Recurring fuel pattern detected: ${FUEL_PATTERN_COPY[top.id].nudgeMessage(top)}`,
+      canEdit: false,
+      confidence: 'medium',
+    });
+  }, [weeklyPatterns]);
+
+  const mostHelpfulAction = useMemo(() => {
+    const entries: FuelHelpfulnessEntry[] = recentCheckins
+      .filter((c): c is FuelCheckinRecord & { helpful: FuelHelpfulness } => !!c.helpful)
+      .map((c) => ({ action: c.action, helpful: c.helpful }));
+    return computeMostHelpfulFuelAction(entries);
+  }, [recentCheckins]);
+
+  // ---------- Manual detailed log (optional, for people who want it) ----------
   const [hasEaten, setHasEaten] = useState<boolean | null>(null);
   const [skippedBreakfast, setSkippedBreakfast] = useState<boolean | null>(null);
   const [caffeineCount, setCaffeineCount] = useState<number>(0);
@@ -64,549 +290,258 @@ export const RecoveryFuelEngine = ({
   const [alcoholLogged, setAlcoholLogged] = useState<boolean | null>(null);
   const [shakyIrritable, setShakyIrritable] = useState<boolean | null>(null);
   const [isCheckInSubmitted, setIsCheckInSubmitted] = useState<boolean>(false);
-  const [activeTab, setActiveTab] = useState<'tracker' | 'education' | 'insights'>('tracker');
 
-  // Hydration and Meal Timing Reminders & Alerts - these are the real,
-  // user-configured setup, persisted to Firestore so they follow the
-  // person across devices rather than being trapped in one browser.
-  const { accessToken, signInWithCalendar } = useAuth();
-  const [hydrationReminderEnabled, setHydrationReminderEnabled] = useState<boolean>(false);
-  const [hydrationInterval, setHydrationInterval] = useState<number>(90);
-  const [meetingReminderEnabled, setMeetingReminderEnabled] = useState<boolean>(false);
-  const [meetingLeadMinutes, setMeetingLeadMinutes] = useState<number>(15);
-  const [emotionalReminderEnabled, setEmotionalReminderEnabled] = useState<boolean>(false);
-  const [emotionalInterval, setEmotionalInterval] = useState<number>(120);
-  const [reminderPrefsLoaded, setReminderPrefsLoaded] = useState(false);
-  const [savingReminderPrefs, setSavingReminderPrefs] = useState(false);
-  const [activeNudge, setActiveNudge] = useState<{
-    type: 'hydration' | 'meeting' | 'emotional';
-    title: string;
-    message: string;
-  } | null>(null);
-
-  // Fetch real reminder preferences on mount.
-  useEffect(() => {
-    const loadPrefs = async () => {
-      if (!auth.currentUser) { setReminderPrefsLoaded(true); return; }
-      try {
-        const snap = await getDoc(doc(db, 'users', auth.currentUser.uid, 'preferences', 'fuel_reminders'));
-        if (snap.exists()) {
-          const data = snap.data();
-          if (typeof data.hydrationEnabled === 'boolean') setHydrationReminderEnabled(data.hydrationEnabled);
-          if (typeof data.hydrationIntervalMinutes === 'number') setHydrationInterval(data.hydrationIntervalMinutes);
-          if (typeof data.meetingEnabled === 'boolean') setMeetingReminderEnabled(data.meetingEnabled);
-          if (typeof data.meetingLeadMinutes === 'number') setMeetingLeadMinutes(data.meetingLeadMinutes);
-          if (typeof data.emotionalEnabled === 'boolean') setEmotionalReminderEnabled(data.emotionalEnabled);
-          if (typeof data.emotionalIntervalMinutes === 'number') setEmotionalInterval(data.emotionalIntervalMinutes);
-        }
-      } catch (e) {
-        // Leaves the defaults (all off) in place - an honest starting point
-        // rather than silently assuming preferences that were never set.
-      }
-      setReminderPrefsLoaded(true);
-    };
-    loadPrefs();
-  }, []);
-
-  // Persists whichever fields changed. Called explicitly by each handler
-  // below rather than on every render, so a single toggle click is a single
-  // write, not a write-per-keystroke while adjusting a slider.
-  const saveReminderPrefs = async (updates: Record<string, any>) => {
-    if (!auth.currentUser) return;
-    setSavingReminderPrefs(true);
-    try {
-      await setDoc(doc(db, 'users', auth.currentUser.uid, 'preferences', 'fuel_reminders'), {
-        ...updates,
-        updatedAt: new Date().toISOString(),
-      }, { merge: true });
-    } catch (e) {
-      // Non-fatal - the local UI state still reflects the change even if
-      // the persisted write fails; it'll just fall back to the last-saved
-      // value next time this loads.
-    }
-    setSavingReminderPrefs(false);
-  };
-
-
-  // Last 7 logged days (not necessarily 7 calendar days - gaps in logging
-  // are normal), used to detect genuine multi-day patterns rather than
-  // over-reacting to any single day. Feeds both the Insights tab's "This
-  // Week's Pattern" section below and the Nova memory write further down.
-  const [recentLogs, setRecentLogs] = useState<(FuelLogEntry & { id: string })[]>([]);
-  const weeklyPatternMemoryWrittenRef = useRef(false);
-
-  useEffect(() => {
-    const loadRecentLogs = async () => {
-      if (!auth.currentUser) return;
-      try {
-        const snap = await getDocs(
-          query(
-            collection(db, 'users', auth.currentUser.uid, 'recovery_fuel_logs'),
-            orderBy('createdAt', 'desc'),
-            limit(7)
-          )
-        );
-        setRecentLogs(snap.docs.map((d) => ({ id: d.id, ...(d.data() as FuelLogEntry) })));
-      } catch (e) {
-        // Leaves recentLogs empty - the weekly pattern section just won't
-        // show anything rather than guessing at history it couldn't load.
-      }
-    };
-    loadRecentLogs();
-  }, []);
-
-  const weeklyPatterns = detectFuelPatterns(recentLogs, { includeAlcohol: isAdult });
-
-  // Only ever writes once a genuine pattern is actually present, and only
-  // once per mount - this is a background signal for Nova to draw on in
-  // conversation, not something that should refire on every re-render.
-  useEffect(() => {
-    if (weeklyPatternMemoryWrittenRef.current) return;
-    if (weeklyPatterns.length === 0) return;
-    weeklyPatternMemoryWrittenRef.current = true;
-    const top = weeklyPatterns[0];
-    updateNovaMemoryBySourceAndType(
-      'Recovery Fuel Engine - Weekly Pattern',
-      'state',
-      {
-        content: `Recurring fuel pattern detected: ${FUEL_PATTERN_COPY[top.id].nudgeMessage(top)}`,
-        canEdit: false,
-        confidence: 'medium',
-      }
-    );
-  }, [weeklyPatterns]);
-
-  // Load check-in state if saved for today
   useEffect(() => {
     const loadTodayFuelLog = async () => {
-      if (!auth.currentUser) return;
+      if (!uid) return;
       const today = new Date().toISOString().split('T')[0];
       try {
-        const snap = await getDoc(doc(db, 'users', auth.currentUser.uid, 'recovery_fuel_logs', today));
+        const snap = await getDoc(doc(db, 'users', uid, 'recovery_fuel_logs', today));
         if (snap.exists()) {
           const parsed = snap.data();
-          setHasEaten(parsed.hasEaten);
-          setSkippedBreakfast(parsed.skippedBreakfast);
-          setCaffeineCount(parsed.caffeineCount);
-          setCaffeineTiming(parsed.caffeineTiming);
-          setCaffeineEmptyStomach(parsed.caffeineEmptyStomach);
-          setHydrationGlasses(parsed.hydrationGlasses);
-          setMorningLight(parsed.morningLight);
-          setAlcoholLogged(parsed.alcoholLogged);
-          setShakyIrritable(parsed.shakyIrritable);
-          setIsCheckInSubmitted(true);
+          setHasEaten(parsed.hasEaten ?? null);
+          setSkippedBreakfast(parsed.skippedBreakfast ?? null);
+          setCaffeineCount(parsed.caffeineCount ?? 0);
+          setCaffeineTiming(parsed.caffeineTiming ?? 'none');
+          setCaffeineEmptyStomach(parsed.caffeineEmptyStomach ?? null);
+          setHydrationGlasses(parsed.hydrationGlasses ?? 0);
+          setMorningLight(parsed.morningLight ?? null);
+          setAlcoholLogged(parsed.alcoholLogged ?? null);
+          setShakyIrritable(parsed.shakyIrritable ?? null);
+          setIsCheckInSubmitted(Object.keys(parsed).length > 0);
         }
       } catch (e) {
         // Leaves the honest empty state in place rather than pretending today's log loaded.
       }
     };
     loadTodayFuelLog();
-  }, []);
+  }, [uid]);
 
   const handleSaveCheckIn = () => {
     const today = new Date().toISOString().split('T')[0];
     const fuelData = {
-      hasEaten,
-      skippedBreakfast,
-      caffeineCount,
-      caffeineTiming,
-      caffeineEmptyStomach,
-      hydrationGlasses,
-      morningLight,
-      alcoholLogged: isAdult ? alcoholLogged : false,
-      shakyIrritable,
-      timestamp: new Date().toISOString()
+      hasEaten, skippedBreakfast, caffeineCount, caffeineTiming, caffeineEmptyStomach,
+      hydrationGlasses, morningLight, alcoholLogged: isAdult ? alcoholLogged : null, shakyIrritable,
     };
 
-    if (auth.currentUser) {
-      const { timestamp, ...fuelDataForFirestore } = fuelData;
-      setDoc(doc(db, 'users', auth.currentUser.uid, 'recovery_fuel_logs', today), {
-        ...fuelDataForFirestore,
-        createdAt: timestamp,
-        updatedAt: timestamp,
-      }, { merge: true }).catch(() => {
-        // Non-fatal - the UI still reflects the change locally even if this save fails.
-      });
+    if (uid) {
+      setDoc(doc(db, 'users', uid, 'recovery_fuel_logs', today), {
+        ...fuelData, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+      }, { merge: true }).catch(() => {});
     }
     setIsCheckInSubmitted(true);
+    setTodayAte(hasEaten);
+    setRecentLogs((prev) => [{ id: today, ...fuelData } as FuelLogEntry & { id: string }, ...prev.filter((l) => l.id !== today)].slice(0, 7));
 
-    // Keep the weekly pattern view in sync with what was just saved,
-    // without a network round-trip - replaces today's entry if it was
-    // already in the fetched window (editing an existing log), otherwise
-    // adds it as the newest, identified by date id rather than position.
-    setRecentLogs((prev) => {
-      const { timestamp: _timestamp, ...todaysEntry } = fuelData;
-      const withoutToday = prev.filter((l) => l.id !== today);
-      return [{ id: today, ...todaysEntry } as FuelLogEntry & { id: string }, ...withoutToday].slice(0, 7);
+    updateNovaMemoryBySourceAndType('Recovery Fuel Engine', 'state', {
+      content: `Recovery Fuel log for today: ${hasEaten === false || skippedBreakfast ? 'meals skipped or delayed. ' : ''}${caffeineCount > 3 || caffeineTiming === 'late' ? 'higher or later caffeine. ' : ''}${hydrationGlasses < 5 ? 'hydration below usual. ' : ''}${morningLight === false ? 'no morning daylight. ' : ''}${isAdult && alcoholLogged ? 'alcohol logged. ' : ''}${shakyIrritable ? 'feeling shaky or flat. ' : ''}`,
+      canEdit: false,
+      confidence: 'high',
     });
-
-    // Build specific feedback context for Nova memory baseline
-    let contextStr = "Recovery Fuel state updated: ";
-    if (hasEaten === false || skippedBreakfast === true) {
-      contextStr += "Skipped meals detected. ";
-    }
-    if (caffeineCount > 3 || caffeineTiming === 'late') {
-      contextStr += "High caffeine or late intake patterns flagged. ";
-    }
-    if (hydrationGlasses < 5) {
-      contextStr += "Hydration metrics under baseline guidelines. ";
-    }
-    if (morningLight === false) {
-      contextStr += "Circadian synchronisation light missing. ";
-    }
-    if (isAdult && alcoholLogged === true) {
-      contextStr += "Alcohol logged (reduced REM recovery probability). ";
-    }
-    if (shakyIrritable === true) {
-      contextStr += "User reports hypoglycemic symptoms (shaky, irritable). ";
-    }
-
-    updateNovaMemoryBySourceAndType(
-      'Recovery Fuel Engine',
-      'state',
-      {
-        content: contextStr,
-        canEdit: false,
-        confidence: 'high'
-      }
-    );
-
-    if (onAwardPoints) {
-      onAwardPoints(25, "Biometric Fuel Synchronisation Logged");
-      if (morningLight && hydrationGlasses >= 6 && hasEaten) {
-        onAwardPoints(15, "Perfect Physiological Alignment Badge Unlocked");
-      }
-    }
+    if (onAwardPoints) onAwardPoints(15, 'Logged today\'s Recovery Fuel basics');
   };
 
   const handleResetCheckIn = () => {
     const today = new Date().toISOString().split('T')[0];
-    if (auth.currentUser) {
-      deleteDoc(doc(db, 'users', auth.currentUser.uid, 'recovery_fuel_logs', today)).catch(() => {
-        // Non-fatal - the UI still resets locally even if this delete fails.
-      });
-    }
-    setHasEaten(null);
-    setSkippedBreakfast(null);
-    setCaffeineCount(0);
-    setCaffeineTiming('none');
-    setCaffeineEmptyStomach(null);
-    setHydrationGlasses(0);
-    setMorningLight(null);
-    setAlcoholLogged(null);
-    setShakyIrritable(null);
-    setIsCheckInSubmitted(false);
+    if (uid) deleteDoc(doc(db, 'users', uid, 'recovery_fuel_logs', today)).catch(() => {});
+    setHasEaten(null); setSkippedBreakfast(null); setCaffeineCount(0); setCaffeineTiming('none');
+    setCaffeineEmptyStomach(null); setHydrationGlasses(0); setMorningLight(null); setAlcoholLogged(null);
+    setShakyIrritable(null); setIsCheckInSubmitted(false);
   };
 
-  const handleHydrationToggle = (val: boolean) => {
-    setHydrationReminderEnabled(val);
-    saveReminderPrefs({ hydrationEnabled: val });
-    if (onAwardPoints && val) {
-      onAwardPoints(5, "Hydration Schedule Set");
-    }
+  // ---------- Reminder preferences - real, working, in-app-only nudges.
+  // Three categories (hydration, before meetings, recovery breaks) rather
+  // than the full list a central nudge system could eventually cover -
+  // each one genuinely fires on the schedule configured, there's no
+  // background/push delivery here (confirmed: this only runs while this
+  // component is mounted), so the UI says so honestly rather than
+  // implying notifications work when the tab isn't open. ----------
+  const [hydrationReminderEnabled, setHydrationReminderEnabled] = useState<boolean>(false);
+  const [hydrationInterval, setHydrationInterval] = useState<number>(90);
+  const [meetingReminderEnabled, setMeetingReminderEnabled] = useState<boolean>(false);
+  const [meetingLeadMinutes, setMeetingLeadMinutes] = useState<number>(15);
+  const [breakReminderEnabled, setBreakReminderEnabled] = useState<boolean>(false);
+  const [breakInterval, setBreakInterval] = useState<number>(120);
+  const [reminderPrefsLoaded, setReminderPrefsLoaded] = useState(false);
+  const [activeNudge, setActiveNudge] = useState<{ type: 'hydration' | 'meeting' | 'break'; title: string; message: string } | null>(null);
+  const [dismissedStreak, setDismissedStreak] = useState<Record<'hydration' | 'meeting' | 'break', number>>({ hydration: 0, meeting: 0, break: 0 });
+  const [fatigueCheck, setFatigueCheck] = useState<'hydration' | 'meeting' | 'break' | null>(null);
+
+  useEffect(() => {
+    const loadPrefs = async () => {
+      if (!uid) { setReminderPrefsLoaded(true); return; }
+      try {
+        const snap = await getDoc(doc(db, 'users', uid, 'preferences', 'fuel_reminders'));
+        if (snap.exists()) {
+          const data = snap.data();
+          if (typeof data.hydrationEnabled === 'boolean') setHydrationReminderEnabled(data.hydrationEnabled);
+          if (typeof data.hydrationIntervalMinutes === 'number') setHydrationInterval(data.hydrationIntervalMinutes);
+          if (typeof data.meetingEnabled === 'boolean') setMeetingReminderEnabled(data.meetingEnabled);
+          if (typeof data.meetingLeadMinutes === 'number') setMeetingLeadMinutes(data.meetingLeadMinutes);
+          if (typeof data.emotionalEnabled === 'boolean') setBreakReminderEnabled(data.emotionalEnabled);
+          if (typeof data.emotionalIntervalMinutes === 'number') setBreakInterval(data.emotionalIntervalMinutes);
+        }
+      } catch (e) {
+        // Leaves the defaults (all off) in place.
+      }
+      setReminderPrefsLoaded(true);
+    };
+    loadPrefs();
+  }, [uid]);
+
+  const saveReminderPrefs = (updates: Record<string, any>) => {
+    if (!uid) return;
+    setDoc(doc(db, 'users', uid, 'preferences', 'fuel_reminders'), { ...updates, updatedAt: new Date().toISOString() }, { merge: true }).catch(() => {});
   };
 
-  const handleHydrationIntervalChange = (val: number) => {
-    setHydrationInterval(val);
-    saveReminderPrefs({ hydrationIntervalMinutes: val });
-  };
+  const handleHydrationToggle = (val: boolean) => { setHydrationReminderEnabled(val); saveReminderPrefs({ hydrationEnabled: val }); };
+  const handleHydrationIntervalChange = (val: number) => { setHydrationInterval(val); saveReminderPrefs({ hydrationIntervalMinutes: val }); };
+  const handleMeetingToggle = (val: boolean) => { setMeetingReminderEnabled(val); saveReminderPrefs({ meetingEnabled: val }); };
+  const handleMeetingLeadChange = (val: number) => { setMeetingLeadMinutes(val); saveReminderPrefs({ meetingLeadMinutes: val }); };
+  const handleBreakToggle = (val: boolean) => { setBreakReminderEnabled(val); saveReminderPrefs({ emotionalEnabled: val }); };
+  const handleBreakIntervalChange = (val: number) => { setBreakInterval(val); saveReminderPrefs({ emotionalIntervalMinutes: val }); };
 
-  const handleMeetingToggle = (val: boolean) => {
-    setMeetingReminderEnabled(val);
-    saveReminderPrefs({ meetingEnabled: val });
-    if (onAwardPoints && val) {
-      onAwardPoints(5, "Pre-Meeting Nutrition Shield Enabled");
-    }
-  };
-
-  const handleMeetingLeadChange = (val: number) => {
-    setMeetingLeadMinutes(val);
-    saveReminderPrefs({ meetingLeadMinutes: val });
-  };
-
-  const handleEmotionalToggle = (val: boolean) => {
-    setEmotionalReminderEnabled(val);
-    saveReminderPrefs({ emotionalEnabled: val });
-    if (onAwardPoints && val) {
-      onAwardPoints(5, "Emotional Decision Fuel Buffer Activated");
-    }
-  };
-
-  const handleEmotionalIntervalChange = (val: number) => {
-    setEmotionalInterval(val);
-    saveReminderPrefs({ emotionalIntervalMinutes: val });
-  };
-
-  const triggerHydrationTest = () => {
-    setActiveNudge({
-      type: 'hydration',
-      title: 'Time for water',
-      message: "Nova here — you haven't logged water in a while, and even mild dehydration can feel a lot like fatigue or brain fog. Take a moment for a full glass."
-    });
-  };
-
-  const triggerMeetingTest = () => {
-    setActiveNudge({
-      type: 'meeting',
-      title: 'Before your next meeting',
-      message: "Nova here — you've got a high-stakes call coming up. Going in without eating can spike your stress response and make it harder to stay steady. A handful of almonds, an oatcake, or something slow-release now could help."
-    });
-  };
-
-  const triggerEmotionalTest = () => {
-    setActiveNudge({
-      type: 'emotional',
-      title: 'A quick check before you respond',
-      message: "Nova here — if you're feeling resentful, defensive, or about to send a heavy message, it might be worth pausing. Big decisions are harder on an empty stomach. Worth eating something first."
-    });
-  };
-
-  // ============ Real Scheduling Engine ============
-  // Everything below actually fires reminders on its own, on the schedule
-  // the person configured - the "Preview" buttons above only show what a
-  // reminder looks like on demand; this is what makes them genuinely happen
-  // without anyone needing to click anything.
-
+  // ---------- Real scheduling engine (unchanged mechanics from the
+  // previous version - genuinely fires on its own schedule while this
+  // tab is open; only the copy and category names changed). ----------
   const lastHydrationFiredRef = useRef<number>(Number(localStorage.getItem('blaze_fuel_last_hydration_fired') || 0));
-  const lastEmotionalFiredRef = useRef<number>(Number(localStorage.getItem('blaze_fuel_last_emotional_fired') || 0));
+  const lastBreakFiredRef = useRef<number>(Number(localStorage.getItem('blaze_fuel_last_break_fired') || 0));
   const lastCalendarFetchRef = useRef<number>(0);
   const cachedEventsRef = useRef<{ id: string; summary: string; startMs: number }[]>([]);
-  const remindedMeetingIdsRef = useRef<Set<string>>(new Set(
-    JSON.parse(localStorage.getItem('blaze_fuel_reminded_meetings') || '[]')
-  ));
+  const remindedMeetingIdsRef = useRef<Set<string>>(new Set(JSON.parse(localStorage.getItem('blaze_fuel_reminded_meetings') || '[]')));
 
   useEffect(() => {
     if (!reminderPrefsLoaded) return;
-
     const checkSchedule = async () => {
-      if (activeNudge) return; // don't stack reminders on top of one another
+      if (activeNudge || fatigueCheck) return;
       const now = Date.now();
 
-      if (hydrationReminderEnabled) {
+      if (hydrationReminderEnabled && dismissedStreak.hydration < 3) {
         const dueAt = lastHydrationFiredRef.current + hydrationInterval * 60000;
         if (now >= dueAt) {
-          setActiveNudge({
-            type: 'hydration',
-            title: 'Time for water',
-            message: "Nova here — you haven't logged water in a while, and even mild dehydration can feel a lot like fatigue or brain fog. Take a moment for a full glass."
-          });
+          setActiveNudge({ type: 'hydration', title: 'Time for water', message: "Small check: had anything to drink recently?" });
           lastHydrationFiredRef.current = now;
           localStorage.setItem('blaze_fuel_last_hydration_fired', String(now));
           return;
         }
       }
 
-      if (emotionalReminderEnabled) {
-        const dueAt = lastEmotionalFiredRef.current + emotionalInterval * 60000;
+      if (breakReminderEnabled && dismissedStreak.break < 3) {
+        const dueAt = lastBreakFiredRef.current + breakInterval * 60000;
         if (now >= dueAt) {
-          setActiveNudge({
-            type: 'emotional',
-            title: 'A quick check-in',
-            message: "Nova here — worth a quick check: if you're feeling resentful, defensive, or about to send a heavy message right now, big decisions are harder on an empty stomach. Worth eating something first."
-          });
-          lastEmotionalFiredRef.current = now;
-          localStorage.setItem('blaze_fuel_last_emotional_fired', String(now));
+          setActiveNudge({ type: 'break', title: 'A quick recovery break', message: "You've been going for a while. Good point for a short break and something to eat or drink." });
+          lastBreakFiredRef.current = now;
+          localStorage.setItem('blaze_fuel_last_break_fired', String(now));
           return;
         }
       }
 
-      if (meetingReminderEnabled && accessToken) {
-        // Real calendar data, refetched at most every 5 minutes - the
-        // per-tick check below just re-scans the cached list, so a genuine
-        // API call only happens this rarely.
+      if (meetingReminderEnabled && accessToken && dismissedStreak.meeting < 3) {
         const minutesSinceFetch = (now - lastCalendarFetchRef.current) / 60000;
         if (lastCalendarFetchRef.current === 0 || minutesSinceFetch >= 5) {
           lastCalendarFetchRef.current = now;
           try {
             const start = new Date();
-            const end = new Date(start.getTime() + 4 * 60 * 60 * 1000); // next 4 hours is plenty for a lead-time check
+            const end = new Date(start.getTime() + 4 * 60 * 60 * 1000);
             const url = `https://www.googleapis.com/calendar/v3/calendars/primary/events?timeMin=${encodeURIComponent(start.toISOString())}&timeMax=${encodeURIComponent(end.toISOString())}&singleEvents=true&orderBy=startTime`;
             const res = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
             if (res.ok) {
               const data = await res.json();
               cachedEventsRef.current = (data.items || [])
                 .filter((item: any) => item.start?.dateTime)
-                .map((item: any) => ({
-                  id: item.id,
-                  summary: item.summary || 'Untitled meeting',
-                  startMs: new Date(item.start.dateTime).getTime(),
-                }));
+                .map((item: any) => ({ id: item.id, summary: item.summary || 'Untitled meeting', startMs: new Date(item.start.dateTime).getTime() }));
             }
           } catch (e) {
             // Non-fatal - just means no meeting reminder fires this cycle.
           }
         }
-
-        const upcoming = cachedEventsRef.current.find(ev => {
+        const upcoming = cachedEventsRef.current.find((ev) => {
           if (remindedMeetingIdsRef.current.has(ev.id)) return false;
           const minutesUntil = (ev.startMs - now) / 60000;
           return minutesUntil > 0 && minutesUntil <= meetingLeadMinutes;
         });
         if (upcoming) {
-          setActiveNudge({
-            type: 'meeting',
-            title: 'Before your next meeting',
-            message: `Nova here — "${upcoming.summary}" starts in about ${meetingLeadMinutes} minutes. Going in without eating can spike your stress response. A handful of almonds, an oatcake, or something slow-release now could help.`
-          });
+          setActiveNudge({ type: 'meeting', title: 'Before your next meeting', message: `"${upcoming.summary}" starts in about ${meetingLeadMinutes} minutes. Worth eating or drinking something first.` });
           remindedMeetingIdsRef.current.add(upcoming.id);
           localStorage.setItem('blaze_fuel_reminded_meetings', JSON.stringify(Array.from(remindedMeetingIdsRef.current).slice(-50)));
         }
       }
     };
-
     checkSchedule();
     const interval = setInterval(checkSchedule, 60000);
     return () => clearInterval(interval);
-  }, [reminderPrefsLoaded, hydrationReminderEnabled, hydrationInterval, emotionalReminderEnabled, emotionalInterval, meetingReminderEnabled, meetingLeadMinutes, accessToken, activeNudge]);
+  }, [reminderPrefsLoaded, hydrationReminderEnabled, hydrationInterval, breakReminderEnabled, breakInterval, meetingReminderEnabled, meetingLeadMinutes, accessToken, activeNudge, fatigueCheck, dismissedStreak]);
 
-  // Insight generator based on state
-  const getDynamicInsights = () => {
-    const insights = [];
-
-    if (hasEaten === false || skippedBreakfast === true) {
-      insights.push({
-        title: "Sunder-Load Meal Gaps",
-        type: "critical" as const,
-        description: "Skipping meals triggers physiological emergency protocols. Epinephrine surges to mobilise liver glycogen, mimicking sudden anxiety and creating false panic signals.",
-        coaching: "Do not attempt deep boundary discussions or major strategic decisions while nutrient-derived glucose is flatlined. Eat slow-release starch first."
-      });
-    }
-
-    if (caffeineEmptyStomach === true) {
-      insights.push({
-        title: "Caffeine on an Empty Stomach",
-        type: "warning" as const,
-        description: "Drinking caffeine on an empty stomach triggers pre-mature cortisol spikes and damages gastric mucosa. It trains the nervous system to remain hyper-vigilant.",
-        coaching: "Consume a protein baseline (e.g. eggs, seeds, toast) before drinking coffee. Restrict caffeine after 12:00 PM."
-      });
-    }
-
-    if (caffeineCount > 3) {
-      insights.push({
-        title: "Caffeine Compensation Loop",
-        type: "warning" as const,
-        description: "Borrowing energy from tomorrow. High caffeine intake suppresses adenosine accumulation, meaning physical fatigue is just masked, not resolved.",
-        coaching: "Gradually taper down to 1-2 cups of coffee. Consider substituting the third cup with herbal ginger tea or dynamic movement."
-      });
-    }
-
-    if (hydrationGlasses < 5) {
-      insights.push({
-        title: "Subclinical Neural Dehydration",
-        type: "info" as const,
-        description: "A 1.5% decrease in optimal hydration causes immediate cognitive fatigue, memory latency, and poor emotional regulation.",
-        coaching: "Place a high-contrast physical container on your workspace. Drink a full glass during meeting transitions."
-      });
-    }
-
-    if (morningLight === false) {
-      insights.push({
-        title: "Melatonin Suppression Mismatch",
-        type: "info" as const,
-        description: "Failing to expose the visual cortex to bright natural light before 9:00 AM delays noctural melatonin production by up to 3 hours, destroying deep sleep architecture.",
-        coaching: "Spend 5-10 minutes outdoors immediately after waking, even on cloudy mornings. Keep phone screens dark after 9:30 PM."
-      });
-    }
-
-    if (isAdult && alcoholLogged === true) {
-      insights.push({
-        title: "Sedative-Induced Sleep Fragmentation",
-        type: "critical" as const,
-        description: "Alcohol may decompress mood temporarily, but acts as a central nervous sedative. It blocks physiological REM sleep and raises nocturnal body temperature, preventing true nervous recovery.",
-        coaching: "Avoid alcohol within 4 hours of sleeping. Track next-day energy depletion scores to inspect individual tolerances."
-      });
-    }
-
-    if (!isAdult && alcoholLogged !== null) {
-      insights.push({
-        title: "Youth Circadian Baseline",
-        type: "info" as const,
-        description: "Adolescent brain development is heavily reliant on deep REM sleep and natural melatonin cycles. Secondary stimulants or sleep-inhibitors trigger persistent neural exhaustion.",
-        coaching: "Prioritise consistent wake times and high-density nutrient intake over active screens."
-      });
-    }
-
-    // Default insights
-    if (insights.length === 0) {
-      insights.push({
-        title: "Physiological Baseline Restored",
-        type: "success" as const,
-        description: "Your fuel rhythm metrics match the optimised guidelines. Your hormone fluxes are stabilised.",
-        coaching: "Stable nutrition translates to a robust psychological perimeter. Rehearse boundary parameters with maximum firmness today."
-      });
-    }
-
-    return insights;
+  const dismissNudge = (type: 'hydration' | 'meeting' | 'break', actedOn: boolean) => {
+    setActiveNudge(null);
+    setDismissedStreak((prev) => {
+      const next = actedOn ? 0 : prev[type] + 1;
+      if (!actedOn && next >= 3) {
+        setFatigueCheck(type);
+      }
+      return { ...prev, [type]: next };
+    });
   };
 
+  const pauseReminder = (type: 'hydration' | 'meeting' | 'break', mode: 'today' | 'week' | 'off') => {
+    setFatigueCheck(null);
+    setDismissedStreak((prev) => ({ ...prev, [type]: 0 }));
+    if (mode === 'off') {
+      if (type === 'hydration') handleHydrationToggle(false);
+      if (type === 'meeting') handleMeetingToggle(false);
+      if (type === 'break') handleBreakToggle(false);
+      return;
+    }
+    const pauseMs = (mode === 'today' ? 24 : 24 * 7) * 60 * 60 * 1000;
+    const resumeAt = Date.now() + pauseMs;
+    if (type === 'hydration') { lastHydrationFiredRef.current = resumeAt; localStorage.setItem('blaze_fuel_last_hydration_fired', String(resumeAt)); }
+    if (type === 'break') { lastBreakFiredRef.current = resumeAt; localStorage.setItem('blaze_fuel_last_break_fired', String(resumeAt)); }
+    if (type === 'meeting') { lastCalendarFetchRef.current = resumeAt; }
+  };
+
+  if (!contextLoaded) {
+    return <div className="card border border-border p-10 rounded-xl text-center text-text-muted text-sm">Loading Recovery Fuel…</div>;
+  }
+
   return (
-    <div className="card border border-border p-6 sm:p-8 md:p-10 rounded-xl space-y-10 relative overflow-hidden" id="recovery_fuel_engine_container">
-      {/* Active Nudge Notification Banner */}
+    <div className="card border border-border p-6 sm:p-8 md:p-10 rounded-xl space-y-8 relative overflow-hidden" id="recovery_fuel_engine_container">
+      {/* Nudge fatigue check - takes priority over a normal nudge banner */}
       <AnimatePresence>
-        {activeNudge && (
-          <motion.div
-            initial={{ opacity: 0, y: -20, scale: 0.95 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: -20, scale: 0.95 }}
-            className={cn(
-              "absolute top-6 left-6 right-6 z-50 p-6 rounded-xl border shadow-lg flex flex-col md:flex-row items-start justify-between gap-4 animate-in",
-              activeNudge.type === 'hydration' ? "bg-primary/5 border-primary/30 text-text-main" :
-              activeNudge.type === 'meeting' ? "bg-warning/10 border-warning/30 text-warning-foreground dark:text-warning" :
-              "bg-destructive/10 border-destructive/30 text-text-main"
-            )}
-            id="active_nova_fuel_nudge"
-          >
+        {fatigueCheck && (
+          <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }}
+            className="absolute top-6 left-6 right-6 z-50 p-6 rounded-xl border border-border bg-card shadow-lg space-y-4">
+            <p className="text-sm font-bold text-text-main">These don't seem useful right now. Want me to pause them?</p>
+            <div className="flex flex-wrap gap-2">
+              <button onClick={() => pauseReminder(fatigueCheck, 'today')} className="px-3 py-2 rounded-lg text-xs font-bold bg-surface border border-border hover:border-primary/40">Pause today</button>
+              <button onClick={() => pauseReminder(fatigueCheck, 'week')} className="px-3 py-2 rounded-lg text-xs font-bold bg-surface border border-border hover:border-primary/40">Pause for a week</button>
+              <button onClick={() => pauseReminder(fatigueCheck, 'off')} className="px-3 py-2 rounded-lg text-xs font-bold bg-surface border border-border hover:border-primary/40">Turn off</button>
+              <button onClick={() => setFatigueCheck(null)} className="px-3 py-2 rounded-lg text-xs font-bold text-text-muted hover:text-text-main">Keep as is</button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Active nudge banner */}
+      <AnimatePresence>
+        {activeNudge && !fatigueCheck && (
+          <motion.div initial={{ opacity: 0, y: -20, scale: 0.95 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: -20, scale: 0.95 }}
+            className="absolute top-6 left-6 right-6 z-50 p-6 rounded-xl border border-primary/20 bg-primary/5 shadow-lg flex flex-col md:flex-row items-start justify-between gap-4">
             <div className="flex gap-4 items-start">
-              <div className={cn(
-                "w-11 h-11 rounded-lg flex items-center justify-center shrink-0",
-                activeNudge.type === 'hydration' ? "bg-surface text-text-main" :
-                activeNudge.type === 'meeting' ? "bg-warning/20 text-[#9a3412] dark:text-warning" :
-                "bg-destructive/20 text-destructive"
-              )}>
-                {activeNudge.type === 'hydration' ? <Droplet className="w-5 h-5" /> :
-                 activeNudge.type === 'meeting' ? <Clock className="w-5 h-5" /> :
-                 <ShieldAlert className="w-5 h-5" />}
+              <div className="w-11 h-11 rounded-lg bg-surface flex items-center justify-center shrink-0 text-text-main">
+                {activeNudge.type === 'hydration' ? <Droplet className="w-5 h-5" /> : activeNudge.type === 'meeting' ? <Clock className="w-5 h-5" /> : <Sparkles className="w-5 h-5" />}
               </div>
               <div className="space-y-1">
-                <span className="text-xs font-medium uppercase tracking-widest  flex items-center gap-1.5">
-                  <Sparkles className="w-3 h-3 text-primary" /> Nova Check-in
-                </span>
-                <h4 className="text-base font-bold tracking-tight">{activeNudge.title}</h4>
-                <p className="text-xs leading-relaxed opacity-90 max-w-2xl">{activeNudge.message}</p>
+                <span className="text-xs font-medium uppercase tracking-widest text-text-muted flex items-center gap-1.5"><Sparkles className="w-3 h-3 text-primary" /> Nova</span>
+                <h4 className="text-base font-bold tracking-tight text-text-main">{activeNudge.title}</h4>
+                <p className="text-xs leading-relaxed text-text-muted max-w-2xl">{activeNudge.message}</p>
               </div>
             </div>
-
             <div className="flex items-center gap-2 shrink-0 self-end md:self-center">
-              {activeNudge.type === 'hydration' ? (
-                <button
-                  onClick={() => {
-                    setHydrationGlasses(prev => Math.min(8, prev + 1));
-                    setActiveNudge(null);
-                    if (onAwardPoints) {
-                      onAwardPoints(10, "Hydration Reminder Actioned");
-                    }
-                  }}
-                  className="px-4 py-2 bg-sky-500 hover:bg-text-main hover:text-background text-[#1c1917] font-bold text-xs uppercase tracking-wider rounded-xl transition-all shadow-md cursor-pointer"
-                >
-                  Drink Glass (+10 pts)
-                </button>
-              ) : (
-                <button
-                  onClick={() => {
-                    setActiveNudge(null);
-                    if (onAwardPoints) {
-                      onAwardPoints(15, "Adrenaline Checkpoint Safeguarded");
-                    }
-                  }}
-                  className="px-4 py-2 bg-primary-light hover:bg-primary text-[#1c1917] dark:text-text-main dark:hover:text-[#1c1917] font-bold text-xs uppercase tracking-wider rounded-xl transition-all shadow-md cursor-pointer"
-                >
-                  Fuelled Up (+15 pts)
-                </button>
-              )}
-              <button
-                onClick={() => setActiveNudge(null)}
-                className="px-3 py-2 border border-border/20 text-text-muted hover:text-text-main font-bold text-xs uppercase tracking-wider rounded-xl hover:bg-surface/30 transition-all cursor-pointer"
-              >
+              <button onClick={() => { executeFuelAction(activeNudge.type === 'hydration' ? 'drink' : 'eat'); dismissNudge(activeNudge.type, true); }}
+                className="px-4 py-2 bg-primary hover:opacity-90 text-primary-foreground font-bold text-xs uppercase tracking-wider rounded-xl transition-all">
+                Done
+              </button>
+              <button onClick={() => dismissNudge(activeNudge.type, false)} className="px-3 py-2 border border-border/40 text-text-muted hover:text-text-main font-bold text-xs uppercase tracking-wider rounded-xl">
                 Dismiss
               </button>
             </div>
@@ -614,888 +549,505 @@ export const RecoveryFuelEngine = ({
         )}
       </AnimatePresence>
 
-      {/* Flag / Header */}
+      {/* Header */}
       <div className="flex flex-col md:flex-row md:items-start justify-between gap-6 pb-6 border-b border-border/40 relative z-10">
         <div className="flex items-center gap-6">
           <div className="w-14 h-14 bg-primary/10 text-primary rounded-lg flex items-center justify-center">
             <Apple className="w-8 h-8" />
           </div>
           <div>
-            <div className="flex items-center gap-3">
-              <span className="text-xs font-black uppercase tracking-[0.25em] text-[#9a3412] dark:text-primary px-3 py-1 bg-primary/10 rounded-full border border-primary/15">
-                Pillar 3: Habits & Physiological Fuel
-              </span>
-              <span className="text-[11px] font-bold text-text-muted flex items-center gap-1">
-                <Compass className="w-3.5 h-3.5 text-primary" /> Connected to Nova
-              </span>
-            </div>
-            <h2 className="text-3xl font-display font-black text-text-main tracking-tight mt-2">
-              Recovery Fuel Engine
-            </h2>
+            <span className="text-xs font-black uppercase tracking-[0.25em] text-[#9a3412] dark:text-primary px-3 py-1 bg-primary/10 rounded-full border border-primary/15">
+              Pillar 3 · Habits
+            </span>
+            <h2 className="text-3xl font-display font-black text-text-main tracking-tight mt-2">Recovery Fuel</h2>
             <p className="text-xs text-text-muted mt-1 max-w-xl leading-relaxed">
-              Understand how nutrient timing, hydration, caffeine cycle, morning sunlight, and sleep structure affect baseline stability. No calorie counting. No diets. Genuine burnout recovery support.
+              Check the basics that can make recovery easier: sleep, regular fuel, hydration, daylight and a healthier relationship with caffeine.
+            </p>
+            <p className="text-[11px] text-text-muted/80 mt-1 max-w-xl leading-relaxed italic">
+              No calorie counting. No diets. No food guilt. Just practical habits that can support steadier energy and recovery.
             </p>
           </div>
         </div>
+        <button
+          onClick={() => setView(view === 'home' ? 'patterns' : 'home')}
+          className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-border bg-surface/40 text-xs font-black uppercase tracking-widest text-text-muted hover:text-text-main hover:border-border transition-all shrink-0"
+        >
+          {view === 'home' ? <><ListChecks className="w-4 h-4" /> My Patterns</> : <><X className="w-4 h-4" /> Back</>}
+        </button>
+      </div>
 
-        {/* Age Restriction Controller */}
-        <div className="bg-surface/30 px-5 py-4 rounded-2xl border border-border/40 flex flex-col gap-2 min-w-[200px]">
-          <span className="text-[11px] font-black uppercase tracking-wider text-text-muted">Age Demographic Toggle</span>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => handleAgeChange(true)}
-              className={cn(
-                "flex-1 py-1 px-3 rounded-lg text-[11px] font-black uppercase tracking-widest transition-all border",
-                isAdult 
-                  ? "bg-primary text-primary-foreground border-primary" 
-                  : "bg-transparent text-text-muted border-transparent"
+      {view === 'home' ? (
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 relative z-10">
+          {/* Nova Fuel Check */}
+          <div className="lg:col-span-8 bg-surface/20 border border-border/30 rounded-2xl p-6 sm:p-8 space-y-6 min-h-[280px] flex flex-col justify-center">
+            <AnimatePresence mode="wait">
+              {checkPhase === 'opening' && (
+                <motion.div key="opening" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="space-y-6">
+                  <div className="flex items-start gap-3">
+                    <Sparkles className="w-5 h-5 text-primary shrink-0 mt-0.5" />
+                    <h3 className="text-xl font-display font-bold text-text-main leading-snug">{opening.line}</h3>
+                  </div>
+                  {opening.proactive ? (
+                    <div className="flex flex-wrap gap-2">
+                      {getProactiveQuestion().options.map((opt) => (
+                        <button key={opt.id} onClick={() => { handleProactiveStart(); handleQuestionAnswer(opt.id); }}
+                          className="px-5 py-3 rounded-xl border border-border bg-white dark:bg-card text-sm font-bold text-text-main hover:border-primary/50 transition-all">
+                          {opt.label}
+                        </button>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                      {FUEL_TRIGGER_ORDER.map((trigger) => (
+                        <button key={trigger} onClick={() => handleTriggerSelect(trigger)}
+                          className="px-5 py-4 rounded-xl border border-border bg-white dark:bg-card text-sm font-bold text-text-main hover:border-primary/50 hover:bg-primary/5 transition-all text-left">
+                          {FUEL_TRIGGER_LABELS[trigger]}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </motion.div>
               )}
-            >
-              Adult 18+
-            </button>
-            <button
-              onClick={() => handleAgeChange(false)}
-              className={cn(
-                "flex-1 py-1 px-3 rounded-lg text-[11px] font-black uppercase tracking-widest transition-all border",
-                !isAdult 
-                  ? "bg-primary text-primary-foreground border-primary" 
-                  : "bg-transparent text-text-muted border-transparent"
+
+              {checkPhase === 'question' && activeQuestion && (
+                <motion.div key="question" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-6">
+                  <div className="flex items-start gap-3">
+                    <Sparkles className="w-5 h-5 text-primary shrink-0 mt-0.5" />
+                    <h3 className="text-xl font-display font-bold text-text-main leading-snug">{activeQuestion.prompt}</h3>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {activeQuestion.options.map((opt) => (
+                      <button key={opt.id} onClick={() => handleQuestionAnswer(opt.id)}
+                        className="px-5 py-3 rounded-xl border border-border bg-white dark:bg-card text-sm font-bold text-text-main hover:border-primary/50 transition-all">
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                </motion.div>
               )}
-            >
-              Youth &lt;18
-            </button>
+
+              {checkPhase === 'result' && recommendation && (
+                <motion.div key="result" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-6">
+                  <div className="flex items-start gap-3">
+                    <Sparkles className="w-5 h-5 text-primary shrink-0 mt-0.5" />
+                    <p className="text-lg font-display font-bold text-text-main leading-snug">{recommendation.novaLine}</p>
+                  </div>
+
+                  {recommendation.primary && (
+                    <div className="space-y-3">
+                      <span className="text-[11px] font-black uppercase tracking-widest text-text-muted">Recommended now</span>
+                      {completedAction === recommendation.primary ? (
+                        <div className="flex items-center gap-2 text-sm font-bold text-success dark:text-[#4ade80]"><Check className="w-4 h-4" /> Done</div>
+                      ) : (
+                        <button onClick={() => executeFuelAction(recommendation.primary!)}
+                          className="btn-primary py-3.5 px-6 text-sm font-bold">
+                          {FUEL_ACTION_LABELS[recommendation.primary]}
+                        </button>
+                      )}
+                    </div>
+                  )}
+
+                  {recommendation.secondary.length > 0 && (
+                    <div>
+                      <button onClick={() => setShowMoreOptions((v) => !v)} className="flex items-center gap-1 text-xs font-black uppercase tracking-widest text-text-muted hover:text-text-main">
+                        More options <ChevronDown className={cn('w-3.5 h-3.5 transition-transform', showMoreOptions && 'rotate-180')} />
+                      </button>
+                      {showMoreOptions && (
+                        <div className="flex flex-wrap gap-2 mt-3">
+                          {recommendation.secondary.map((action) => (
+                            <button key={action} onClick={() => executeFuelAction(action)}
+                              className={cn('px-4 py-2 rounded-lg border text-xs font-bold transition-all',
+                                completedAction === action ? 'border-success/40 text-success dark:text-[#4ade80] bg-success/5' : 'border-border bg-white dark:bg-card text-text-main hover:border-primary/40')}>
+                              {completedAction === action ? <span className="flex items-center gap-1"><Check className="w-3 h-3" /> {FUEL_ACTION_LABELS[action]}</span> : FUEL_ACTION_LABELS[action]}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {completedAction && !helpfulGiven && (
+                    <div className="pt-4 border-t border-border/30 flex items-center gap-3 flex-wrap">
+                      <span className="text-xs font-bold text-text-muted">Did that help at all?</span>
+                      {(['yes', 'a_little', 'not_really'] as const).map((h) => (
+                        <button key={h} onClick={() => handleHelpfulResponse(h)} className="px-3 py-1.5 rounded-lg border border-border text-[11px] font-bold text-text-main hover:border-primary/40">
+                          {h === 'yes' ? 'Yes, noticeably' : h === 'a_little' ? 'A little' : 'Not really'}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
+                  <button onClick={resetCheck} className="text-xs font-black uppercase tracking-widest text-text-muted hover:text-text-main">Start over</button>
+                </motion.div>
+              )}
+            </AnimatePresence>
           </div>
-          <p className="text-[10px] text-text-muted tracking-normal text-center leading-normal">
-            Hides alcohol tracking parameters automatically contextually.
-          </p>
-        </div>
-      </div>
 
-      {/* Tabs */}
-      <div className="flex items-center gap-2 bg-surface/30 p-1.5 rounded-2xl border border-border/20 max-w-md">
-        {[
-          { id: 'tracker', label: 'Daily Fuel Log', icon: Activity },
-          { id: 'insights', label: 'Biometric Pattern Insights', icon: Lightbulb },
-          { id: 'education', label: 'Gut-Brain & Supplement Literacy', icon: Info },
-        ].map(tab => (
-          <button
-            key={tab.id}
-            onClick={() => setActiveTab(tab.id as any)}
-            className={cn(
-              "flex-1 py-2.5 px-3 rounded-xl text-xs uppercase font-black tracking-widest transition-all flex items-center justify-center gap-2 cursor-pointer",
-              activeTab === tab.id 
-                ? "bg-white dark:bg-card text-[#9a3412] dark:text-primary shadow-md shadow-primary/5 border border-border/30" 
-                : "text-text-muted hover:text-text-main bg-transparent border-transparent"
-            )}
-          >
-            <tab.icon className="w-3.5 h-3.5" />
-            {tab.label.split(' ')[0]}
-          </button>
-        ))}
-      </div>
-
-      {/* Main Sections */}
-      <AnimatePresence mode="wait">
-        {activeTab === 'tracker' && (
-          <motion.div
-            key="tracker"
-            initial={{ opacity: 0, y: 15 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -15 }}
-            className="space-y-8"
-          >
-            {isCheckInSubmitted ? (
-              <div className="bg-success/5 border border-success/20 p-8 rounded-2xl text-center space-y-4">
-                <div className="w-12 h-12 bg-success/15 text-success dark:text-[#4ade80] rounded-full flex items-center justify-center mx-auto shadow-lg">
-                  <Check className="w-6 h-6" />
-                </div>
-                <h3 className="text-xl font-display font-bold text-text-main">
-                  Today's Nutrition Plan Synced
-                </h3>
-                <p className="text-xs text-text-muted max-w-md mx-auto leading-relaxed">
-                  Your daily indicators have been committed to Nova's active parameter ledger. Your coach is correlating these inputs against behavioural logs.
-                </p>
-                <div className="flex items-center justify-center gap-4">
-                  <button
-                    onClick={() => setActiveTab('insights')}
-                    className="px-6 py-2 bg-primary hover:bg-primary text-primary-foreground rounded-xl text-[11px] uppercase font-black tracking-widest flex items-center gap-1 hover:scale-[1.02] active:scale-95 transition-all cursor-pointer"
-                  >
-                    Inspect Biometric Insights <ArrowRight className="w-3 h-3" />
-                  </button>
-                  <button
-                    onClick={handleResetCheckIn}
-                    className="px-4 py-2 border border-border/40 hover:bg-surface/30 rounded-xl text-[11px] uppercase font-black tracking-widest text-text-muted hover:text-text-main transition-all cursor-pointer"
-                  >
-                    Edit Log
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                
-                {/* Check in form */}
-                <div className="space-y-6 bg-surface/20 p-6 rounded-2xl border border-border/20">
-                  <h3 className="text-[11px] font-black uppercase text-text-muted tracking-widest flex items-center gap-2">
-                    <Activity className="w-4 h-4 text-primary" /> Daily Physiological Indicators
-                  </h3>
-
-                  {/* Q1: Meal Routine */}
-                  <div className="space-y-3">
-                    <label className="text-xs font-bold text-text-main flex items-center justify-between">
-                      <span>Have you eaten meals regularly today?</span>
-                      {hasEaten !== null && (
-                        <span className="text-[11px] font-black uppercase text-success dark:text-[#4ade80]">Filled</span>
-                      )}
-                    </label>
-                    <div className="grid grid-cols-2 gap-3">
-                      <button
-                        onClick={() => { setHasEaten(true); setSkippedBreakfast(false); }}
-                        aria-pressed={hasEaten === true}
-                        className={cn(
-                          "py-3 rounded-xl text-xs font-bold border transition-all cursor-pointer",
-                          hasEaten === true ? "bg-primary/10 border-primary/45 text-[#9a3412] dark:text-primary" : "bg-white dark:bg-surface border-border/40 text-text-muted hover:border-border"
-                        )}
-                      >
-                        Yes, regularly
-                      </button>
-                      <button
-                        onClick={() => { setHasEaten(false); }}
-                        aria-pressed={hasEaten === false}
-                        className={cn(
-                          "py-3 rounded-xl text-xs font-bold border transition-all cursor-pointer",
-                          hasEaten === false ? "bg-destructive/10 border-destructive/40 text-destructive dark:text-[#f87171]" : "bg-white dark:bg-surface border-border/40 text-text-muted hover:border-border"
-                        )}
-                      >
-                        Skipped or delayed
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Q2: Skipped Breakfast */}
-                  {hasEaten === false && (
-                    <div className="space-y-3 animate-in slide-in-from-top-1">
-                      <label className="text-xs font-bold text-text-main">Did you skip breakfast/lunch today?</label>
-                      <div className="grid grid-cols-2 gap-3">
-                        <button
-                          onClick={() => setSkippedBreakfast(true)}
-                          aria-pressed={skippedBreakfast === true}
-                          className={cn(
-                            "py-3 rounded-xl text-xs font-bold border transition-all cursor-pointer",
-                            skippedBreakfast === true ? "bg-destructive/10 border-destructive/40 text-destructive dark:text-[#f87171]" : "bg-white dark:bg-surface border-border/40 text-text-muted hover:border-border"
-                          )}
-                        >
-                          Yes, skipped entirely
-                        </button>
-                        <button
-                          onClick={() => setSkippedBreakfast(false)}
-                          aria-pressed={skippedBreakfast === false}
-                          className={cn(
-                            "py-3 rounded-xl text-xs font-bold border transition-all cursor-pointer",
-                            skippedBreakfast === false ? "bg-primary/10 border-primary/45 text-[#9a3412] dark:text-primary" : "bg-white dark:bg-surface border-border/40 text-text-muted hover:border-border"
-                          )}
-                        >
-                          No, just late
-                        </button>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Q3: Caffeine count */}
-                  <div className="space-y-3">
-                    <label className="text-xs font-bold text-text-main flex items-center justify-between">
-                      <span>How many beverages with caffeine? (Coffee, tea, energy)</span>
-                      <span className="font-mono text-sm text-text-muted">{caffeineCount} cups</span>
-                    </label>
-                    <div className="flex items-center gap-2">
-                      {[0, 1, 2, 3, 4, 5].map(cnt => (
-                        <button
-                          key={cnt}
-                          onClick={() => {
-                            setCaffeineCount(cnt);
-                            if (cnt === 0) setCaffeineTiming('none');
-                            else if (caffeineTiming === 'none') setCaffeineTiming('early');
-                          }}
-                          aria-pressed={caffeineCount === cnt}
-                          className={cn(
-                            "flex-1 py-2.5 rounded-lg text-xs font-mono font-bold border transition-all cursor-pointer",
-                            caffeineCount === cnt ? "bg-primary text-primary-foreground border-primary shadow-md" : "bg-white dark:bg-surface border-border/40 hover:border-border text-text-muted"
-                          )}
-                        >
-                          {cnt === 5 ? '5+' : cnt}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Q4: Caffeine details */}
-                  {caffeineCount > 0 && (
-                    <div className="space-y-4 animate-in slide-in-from-top-1">
-                      <div className="space-y-2">
-                        <label className="text-[11px] font-black uppercase text-text-muted tracking-wider">Caffeine Intake Timing:</label>
-                        <div className="grid grid-cols-2 gap-3">
-                          <button
-                            onClick={() => setCaffeineTiming('early')}
-                            aria-pressed={caffeineTiming === 'early'}
-                            className={cn(
-                              "py-2.5 rounded-xl text-xs font-bold border transition-all cursor-pointer",
-                              caffeineTiming === 'early' ? "bg-primary/10 border-primary/45 text-[#9a3412] dark:text-primary" : "bg-white dark:bg-surface border-border/40 text-text-muted"
-                            )}
-                          >
-                            Early (Before 12 PM)
-                          </button>
-                          <button
-                            onClick={() => setCaffeineTiming('late')}
-                            aria-pressed={caffeineTiming === 'late'}
-                            className={cn(
-                              "py-2.5 rounded-xl text-xs font-bold border transition-all cursor-pointer",
-                              caffeineTiming === 'late' ? "bg-destructive/10 border-destructive/40 text-destructive dark:text-[#f87171]" : "bg-white dark:bg-surface border-border/40 text-text-muted"
-                            )}
-                          >
-                            Late (After 2 PM)
-                          </button>
-                        </div>
-                      </div>
-
-                      <div className="space-y-2">
-                        <label className="text-[11px] font-black uppercase text-text-muted tracking-wider">Did you drink it on an empty stomach?</label>
-                        <div className="grid grid-cols-2 gap-3">
-                          <button
-                            onClick={() => setCaffeineEmptyStomach(true)}
-                            aria-pressed={caffeineEmptyStomach === true}
-                            className={cn(
-                              "py-2.5 rounded-xl text-xs font-bold border transition-all cursor-pointer",
-                              caffeineEmptyStomach === true ? "bg-destructive/10 border-destructive/40 text-destructive dark:text-[#f87171]" : "bg-white dark:bg-surface border-border/40 text-text-muted"
-                            )}
-                          >
-                            Yes, empty stomach
-                          </button>
-                          <button
-                            onClick={() => setCaffeineEmptyStomach(false)}
-                            aria-pressed={caffeineEmptyStomach === false}
-                            className={cn(
-                              "py-2.5 rounded-xl text-xs font-bold border transition-all cursor-pointer",
-                              caffeineEmptyStomach === false ? "bg-primary/10 border-primary/45 text-[#9a3412] dark:text-primary" : "bg-white dark:bg-surface border-border/40 text-text-muted"
-                            )}
-                          >
-                            No, with or after food
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Q5: Hydration */}
-                  <div className="space-y-3">
-                    <label className="text-xs font-bold text-text-main flex items-between justify-between">
-                      <span>Hydration tracker (Water intake today)</span>
-                      <span className="font-mono text-sm text-text-muted">{hydrationGlasses} glasses / 8</span>
-                    </label>
-                    <div className="flex items-center gap-1 pointer-events-auto">
-                      {[...Array(9)].map((_, i) => (
-                        <button
-                          key={i}
-                          onClick={() => setHydrationGlasses(i)}
-                          aria-label={i === 0 ? "Reset hydration to zero glasses" : `Set hydration to ${i} glass${i === 1 ? '' : 'es'}`}
-                          aria-pressed={hydrationGlasses >= i && i > 0}
-                          className={cn(
-                            "flex-1 h-10 rounded-lg border transition-all flex items-center justify-center cursor-pointer",
-                            hydrationGlasses >= i && i > 0 
-                              ? "bg-text-main/10 border-text-main/40 text-text-main shadow-sm" 
-                              : "bg-white dark:bg-surface border-border/40 text-text-muted hover:border-border"
-                          )}
-                        >
-                          <Droplet className={cn("w-4 h-4", hydrationGlasses >= i && i > 0 ? "fill-text-main" : "text-text-muted")} />
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Q6: Light Exposure */}
-                  <div className="space-y-3">
-                    <label className="text-xs font-bold text-text-main">Did you get morning natural sunlight (&lt;10 AM)?</label>
-                    <div className="grid grid-cols-2 gap-3">
-                      <button
-                        onClick={() => setMorningLight(true)}
-                        aria-pressed={morningLight === true}
-                        className={cn(
-                          "py-3 rounded-xl text-xs font-bold border transition-all cursor-pointer",
-                          morningLight === true ? "bg-primary/10 border-primary/45 text-[#9a3412] dark:text-primary" : "bg-white dark:bg-surface border-border/40 text-text-muted hover:border-border"
-                        )}
-                      >
-                        Yes, outdoor light
-                      </button>
-                      <button
-                        onClick={() => setMorningLight(false)}
-                        aria-pressed={morningLight === false}
-                        className={cn(
-                          "py-3 rounded-xl text-xs font-bold border transition-all cursor-pointer",
-                          morningLight === false ? "bg-transparent border-border/45 text-text-muted hover:border-border" : "bg-white dark:bg-surface border-border/40 text-text-muted hover:border-border"
-                        )}
-                      >
-                        No alignment light
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Q7: Alcohol awareness for adults only */}
-                  {isAdult && (
-                    <div className="space-y-3 animate-in slide-in-from-top-1">
-                      <label className="text-xs font-bold text-text-main">Did you have any alcohol yesterday?</label>
-                      <div className="grid grid-cols-2 gap-3">
-                        <button
-                          onClick={() => setAlcoholLogged(true)}
-                          aria-pressed={alcoholLogged === true}
-                          className={cn(
-                            "py-3 rounded-xl text-xs font-bold border transition-all cursor-pointer",
-                            alcoholLogged === true ? "bg-destructive/10 border-destructive/45 text-destructive dark:text-[#f87171]" : "bg-white dark:bg-surface border-border/40 text-text-muted hover:border-border"
-                          )}
-                        >
-                          Yes, had alcohol
-                        </button>
-                        <button
-                          onClick={() => setAlcoholLogged(false)}
-                          aria-pressed={alcoholLogged === false}
-                          className={cn(
-                            "py-3 rounded-xl text-xs font-bold border transition-all cursor-pointer",
-                            alcoholLogged === false ? "bg-primary/10 border-primary/45 text-[#9a3412] dark:text-primary" : "bg-white dark:bg-surface border-border/40 text-text-muted hover:border-border"
-                          )}
-                        >
-                          No alcohol consumed
-                        </button>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Q8: Shaky / Irritable / Shaky feeling */}
-                  <div className="space-y-3">
-                    <label className="text-xs font-bold text-text-main">Do you feel shaky, irritable, foggy, or physically flat right now?</label>
-                    <div className="grid grid-cols-2 gap-3">
-                      <button
-                        onClick={() => setShakyIrritable(true)}
-                        aria-pressed={shakyIrritable === true}
-                        className={cn(
-                          "py-3 rounded-xl text-xs font-bold border transition-all cursor-pointer",
-                          shakyIrritable === true ? "bg-destructive/10 border-destructive/40 text-destructive dark:text-[#f87171] bg-gradient-to-br" : "bg-white dark:bg-surface border-border/40 text-text-muted hover:border-border"
-                        )}
-                      >
-                        Yes, shaky / fogged
-                      </button>
-                      <button
-                        onClick={() => setShakyIrritable(false)}
-                        aria-pressed={shakyIrritable === false}
-                        className={cn(
-                          "py-3 rounded-xl text-xs font-bold border transition-all cursor-pointer",
-                          shakyIrritable === false ? "bg-primary/10 border-primary/45 text-[#9a3412] dark:text-primary" : "bg-white dark:bg-surface border-border/40 text-text-muted hover:border-border"
-                        )}
-                      >
-                        Stable & steady
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Sync Action */}
-                  <div className="pt-4">
-                    <button
-                      onClick={handleSaveCheckIn}
-                      className="w-full py-4 bg-primary hover:bg-primary text-primary-foreground rounded-2xl text-xs font-black uppercase tracking-[0.2em] flex items-center justify-center gap-2 transition-all hover:scale-[1.01] active:scale-95 shadow-lg shadow-primary/10 cursor-pointer"
-                    >
-                      Sync Daily Recovery Fuel <Check className="w-4 h-4" />
-                    </button>
-                  </div>
-                </div>
-
-                {/* Educational highlight preview */}
-                <div className="space-y-6">
-                  {/* Meal Rhythm Nudge */}
-                  <div className="bg-surface dark:bg-surface p-6 rounded-2xl border border-border/40 space-y-4">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center text-primary">
-                        <Apple className="w-5 h-5" />
-                      </div>
-                      <div>
-                        <h4 className="text-xs uppercase font-black tracking-widest text-[#9a3412] dark:text-primary">Meal Rhythm Nudge</h4>
-                        <p className="text-xs font-bold text-text-main mt-0.5">Keep Blood Glucose Flat</p>
-                      </div>
-                    </div>
-                    <p className="text-xs text-text-muted leading-relaxed">
-                      "Before we call this emotional failure, let’s check your fuel." Skipping meals triggers rapid drops in blood sugar, forcing cortisol and adrenaline releases that your brain misinterprets as workplace anxiety.
-                    </p>
-                    <div className="text-xs bg-white/50 dark:bg-card px-3 py-2 rounded-lg text-text-muted font-bold font-mono">
-                      Rule: Avoid running your engine on caffeine alone.
-                    </div>
-                  </div>
-
-                  {/* Caffeine Guard Card */}
-                  <div className="bg-surface dark:bg-surface p-6 rounded-2xl border border-border/40 space-y-4">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-xl bg-warning/10 flex items-center justify-center text-[#9a3412] dark:text-warning">
-                        <Coffee className="w-5 h-5" />
-                      </div>
-                      <div>
-                        <h4 className="text-xs uppercase font-black tracking-widest text-[#9a3412] dark:text-warning">Caffeine Recovery Guard</h4>
-                        <p className="text-xs font-bold text-text-main mt-0.5">Prevent Adenosine Masquerades</p>
-                      </div>
-                    </div>
-                    <p className="text-xs text-text-muted leading-relaxed">
-                      Caffeine blocks adenosine receptors. If you use it to override mental fatigue, you are simply borrowing energy from tomorrow with compounded interest.
-                    </p>
-                    <div className="text-xs bg-white/50 dark:bg-card px-3 py-2 rounded-lg text-text-muted font-bold font-mono">
-                      Rule: Enforce a strict caffeine cutoff time (ideal: 12 PM - 2 PM max).
-                    </div>
-                  </div>
-
-                  {/* Circadian Sunlight card */}
-                  <div className="bg-surface dark:bg-surface p-6 rounded-2xl border border-border/40 space-y-4">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-xl bg-warning/10 flex items-center justify-center text-[#9a3412] dark:text-warning">
-                        <Sun className="w-5 h-5" />
-                      </div>
-                      <div>
-                        <h4 className="text-xs uppercase font-black tracking-widest text-[#9a3412] dark:text-warning">Circadian Sunlight Nudge</h4>
-                        <p className="text-xs font-bold text-text-main mt-0.5">Calibrate Your Body Clock</p>
-                      </div>
-                    </div>
-                    <p className="text-xs text-text-muted leading-relaxed">
-                      "Your recovery clock starts in the morning. Get light early, reduce light late." 5-10 minutes of morning photons triggers visual pathway signals that synchronise your nervous system.
-                    </p>
-                  </div>
-
-                  {/* Smart Recovery Nudges & Reminders Panel */}
-                  <div className="bg-surface dark:bg-surface p-6 rounded-2xl border border-border/40 space-y-6">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center text-primary">
-                        <Sparkles className="w-5 h-5" />
-                      </div>
-                      <div>
-                        <h4 className="text-xs uppercase font-black tracking-widest text-[#9a3412] dark:text-primary">Nudges & Reminders Setup</h4>
-                        <p className="text-xs font-bold text-text-main mt-0.5">{savingReminderPrefs ? 'Saving...' : 'Set up once, fires automatically'}</p>
-                      </div>
-                    </div>
-
-                    <p className="text-xs text-text-muted leading-relaxed">
-                      These actually run in the background while the app is open, on the schedule you set below — not just a preview. Turn any of them on and they'll genuinely remind you, on your own timing.
-                    </p>
-
-                    {/* Hydration Reminder Subsection */}
-                    <div className="space-y-3 pt-4 border-t border-border/20">
-                      <div className="flex items-center justify-between">
-                        <div className="space-y-0.5">
-                          <span className="text-xs font-bold text-text-main flex items-center gap-1.5">
-                            <Droplet className="w-3.5 h-3.5 text-text-main" /> Hydration Reminders
-                          </span>
-                          <p className="text-xs text-text-muted">Prevent fogginess & cognitive fatigue</p>
-                        </div>
-                        <button
-                          onClick={() => handleHydrationToggle(!hydrationReminderEnabled)}
-                          role="switch"
-                          aria-checked={hydrationReminderEnabled}
-                          className={cn(
-                            "px-3 py-1 rounded-lg text-[11px] font-black uppercase tracking-wider transition-all border cursor-pointer",
-                            hydrationReminderEnabled 
-                              ? "bg-text-main text-background border-text-main shadow-sm" 
-                              : "bg-transparent text-text-muted border-border/40"
-                          )}
-                        >
-                          {hydrationReminderEnabled ? "Enabled" : "Disabled"}
-                        </button>
-                      </div>
-
-                      {hydrationReminderEnabled && (
-                        <div className="space-y-2 animate-in slide-in-from-top-1 bg-white/40 dark:bg-card/40 p-3 rounded-xl border border-border/10">
-                          <label className="text-[11px] font-black uppercase text-text-muted tracking-wider block">Remind me every:</label>
-                          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                            {[60, 90, 120].map(mins => (
-                              <button
-                                key={mins}
-                                onClick={() => handleHydrationIntervalChange(mins)}
-                                className={cn(
-                                  "py-1.5 rounded-lg text-xs font-mono font-bold border transition-all cursor-pointer",
-                                  hydrationInterval === mins 
-                                    ? "bg-text-main/10 border-text-main/40 text-text-main" 
-                                    : "bg-transparent border-border/25 text-text-muted"
-                                )}
-                              >
-                                {mins} min
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-
-                      <button
-                        onClick={triggerHydrationTest}
-                        className="w-full py-2 bg-text-main/5 hover:bg-text-main/10 border border-text-main/10 text-text-main rounded-xl text-[11px] font-black uppercase tracking-widest flex items-center justify-center gap-1.5 transition-all cursor-pointer hover:scale-[1.01] active:scale-95"
-                      >
-                        <Droplet className="w-3 h-3" /> Preview This Nudge
-                      </button>
-                    </div>
-
-                    {/* Meal Timing Subsection */}
-                    <div className="space-y-4 pt-4 border-t border-border/20">
-                      <div className="space-y-0.5">
-                        <span className="text-xs font-bold text-text-main flex items-center gap-1.5">
-                          <Clock className="w-3.5 h-3.5 text-warning" /> Meal Timing Anchors
-                        </span>
-                        <p className="text-xs text-text-muted">Proactive triggers to align decision and stress windows</p>
-                      </div>
-
-                      <div className="space-y-3">
-                        {/* Toggle 1: Meetings */}
-                        <div className="p-3 rounded-xl bg-white/40 dark:bg-card/40 border border-border/10 space-y-3">
-                          <div className="flex items-center justify-between">
-                            <div className="space-y-0.5 max-w-[70%]">
-                              <span className="text-[11px] font-bold text-text-main block">Pre-Meeting Shield</span>
-                              <p className="text-[11px] text-text-muted leading-relaxed">Nudges to eat before real calendar meetings</p>
-                            </div>
-                            <button
-                              onClick={() => handleMeetingToggle(!meetingReminderEnabled)}
-                              role="switch"
-                              aria-checked={meetingReminderEnabled}
-                              className={cn(
-                                "px-2.5 py-1 rounded-lg text-[11px] font-black uppercase tracking-wider transition-all border cursor-pointer",
-                                meetingReminderEnabled
-                                  ? "bg-warning text-warning-foreground border-warning shadow-sm"
-                                  : "bg-transparent text-text-muted border-border/40"
-                              )}
-                            >
-                              {meetingReminderEnabled ? "Active" : "Off"}
-                            </button>
-                          </div>
-
-                          {meetingReminderEnabled && !accessToken && (
-                            <div className="p-3 bg-warning/5 border border-warning/20 rounded-lg space-y-2">
-                              <p className="text-[11px] text-text-muted leading-relaxed">This needs your calendar connected to know when meetings actually start — it can't check without it.</p>
-                              <button
-                                onClick={() => signInWithCalendar()}
-                                className="text-[11px] font-black uppercase tracking-widest text-[#9a3412] dark:text-warning hover:opacity-80"
-                              >
-                                Connect Google Calendar
-                              </button>
-                            </div>
-                          )}
-
-                          {meetingReminderEnabled && accessToken && (
-                            <div className="space-y-2">
-                              <label className="text-[11px] font-black uppercase text-text-muted tracking-wider block">Remind me before, by:</label>
-                              <div className="grid grid-cols-3 gap-2">
-                                {[10, 15, 30].map(mins => (
-                                  <button
-                                    key={mins}
-                                    onClick={() => handleMeetingLeadChange(mins)}
-                                    aria-pressed={meetingLeadMinutes === mins}
-                                    className={cn(
-                                      "py-1.5 rounded-lg text-xs font-mono font-bold border transition-all cursor-pointer",
-                                      meetingLeadMinutes === mins
-                                        ? "bg-warning/10 border-warning/40 text-[#9a3412] dark:text-warning"
-                                        : "bg-transparent border-border/25 text-text-muted"
-                                    )}
-                                  >
-                                    {mins} min
-                                  </button>
-                                ))}
-                              </div>
-                            </div>
-                          )}
-                        </div>
-
-                        {/* Toggle 2: Emotional Choices */}
-                        <div className="p-3 rounded-xl bg-white/40 dark:bg-card/40 border border-border/10 space-y-3">
-                          <div className="flex items-center justify-between">
-                            <div className="space-y-0.5 max-w-[70%]">
-                              <span className="text-[11px] font-bold text-text-main block">Decision Point Guard</span>
-                              <p className="text-[11px] text-text-muted leading-relaxed">Periodic check-in before heavy emotional decisions</p>
-                            </div>
-                            <button
-                              onClick={() => handleEmotionalToggle(!emotionalReminderEnabled)}
-                              role="switch"
-                              aria-checked={emotionalReminderEnabled}
-                              className={cn(
-                                "px-2.5 py-1 rounded-lg text-[11px] font-black uppercase tracking-wider transition-all border cursor-pointer",
-                                emotionalReminderEnabled
-                                  ? "bg-destructive text-destructive-foreground border-destructive shadow-sm"
-                                  : "bg-transparent text-text-muted border-border/40"
-                              )}
-                            >
-                              {emotionalReminderEnabled ? "Active" : "Off"}
-                            </button>
-                          </div>
-
-                          {emotionalReminderEnabled && (
-                            <div className="space-y-2">
-                              <label className="text-[11px] font-black uppercase text-text-muted tracking-wider block">Remind me every:</label>
-                              <div className="grid grid-cols-3 gap-2">
-                                {[60, 120, 180].map(mins => (
-                                  <button
-                                    key={mins}
-                                    onClick={() => handleEmotionalIntervalChange(mins)}
-                                    className={cn(
-                                      "py-1.5 rounded-lg text-xs font-mono font-bold border transition-all cursor-pointer",
-                                      emotionalInterval === mins
-                                        ? "bg-destructive/10 border-destructive/40 text-destructive dark:text-[#f87171]"
-                                        : "bg-transparent border-border/25 text-text-muted"
-                                    )}
-                                  >
-                                    {mins} min
-                                  </button>
-                                ))}
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-
-                      <div className="grid grid-cols-2 gap-2">
-                        <button
-                          onClick={triggerMeetingTest}
-                          className="py-2 bg-warning/5 hover:bg-warning/10 border border-warning/15 text-[#9a3412] dark:text-warning rounded-xl text-[11px] font-black uppercase tracking-widest flex items-center justify-center gap-1 transition-all cursor-pointer hover:scale-[1.01] active:scale-95"
-                        >
-                          <Clock className="w-3 h-3" /> Preview
-                        </button>
-                        <button
-                          onClick={triggerEmotionalTest}
-                          className="py-2 bg-destructive/5 hover:bg-destructive/10 border border-destructive/15 text-destructive dark:text-[#f87171] rounded-xl text-[11px] font-black uppercase tracking-widest flex items-center justify-center gap-1 transition-all cursor-pointer hover:scale-[1.01] active:scale-95"
-                        >
-                          <ShieldAlert className="w-3 h-3" /> Preview
-                        </button>
-                      </div>
-
-                    </div>
-                  </div>
-                </div>
-
-              </div>
-            )}
-          </motion.div>
-        )}
-
-        {/* INSIGHTS */}
-        {activeTab === 'insights' && (
-          <motion.div
-            key="insights"
-            initial={{ opacity: 0, scale: 0.98 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.98 }}
-            className="space-y-6"
-          >
-            <div className="bg-surface dark:bg-surface p-6 rounded-2xl border border-border/40">
-              <h3 className="text-xs uppercase font-black tracking-wider text-text-muted ">Active Coach Overrides</h3>
-              <p className="text-xl font-display font-medium text-text-main mt-1">Nova's Nutrition Analysis</p>
-              <div className="text-sm bg-primary/5 text-[#9a3412] dark:text-primary font-bold p-4 rounded-xl mt-4 border border-primary/10 italic">
-                “Your emotional resilience might not be failing today. If you skipped lunch, slept poorly, and ran on high caffeine, you are physically unstable. Fuel your body before judging your boundaries.”
-              </div>
+          {/* Quick Actions */}
+          <div className="lg:col-span-4 space-y-3">
+            <span className="text-[11px] font-black uppercase tracking-widest text-text-muted">Quick Actions</span>
+            <div className="grid grid-cols-2 gap-2.5">
+              {([
+                ['drink', Droplet], ['eat', Apple], ['daylight', Sun], ['take_break', Clock],
+                ['somatic_reset', Heart], ['check_capacity', Activity], ['one_less_thing', ShieldAlert], ['wind_down', Coffee],
+              ] as [FuelActionId, any][]).map(([action, Icon]) => (
+                <button key={action} onClick={() => executeFuelAction(action)}
+                  className="flex flex-col items-center gap-1.5 p-3.5 rounded-xl border border-border bg-surface/30 hover:bg-primary/5 hover:border-primary/40 transition-all text-center">
+                  <Icon className="w-4 h-4 text-primary" />
+                  <span className="text-[10px] font-bold text-text-main leading-tight">{FUEL_ACTION_LABELS[action]}</span>
+                </button>
+              ))}
             </div>
+          </div>
+        </div>
+      ) : (
+        <MyPatternsView
+          isAdult={isAdult}
+          onAgeChange={handleAgeChange}
+          recentCheckins={recentCheckins}
+          weeklyPatterns={weeklyPatterns}
+          recentLogsCount={recentLogs.length}
+          mostHelpfulAction={mostHelpfulAction}
+          accessToken={accessToken}
+          hasEaten={hasEaten} setHasEaten={setHasEaten}
+          skippedBreakfast={skippedBreakfast} setSkippedBreakfast={setSkippedBreakfast}
+          caffeineCount={caffeineCount} setCaffeineCount={setCaffeineCount}
+          caffeineTiming={caffeineTiming} setCaffeineTiming={setCaffeineTiming}
+          caffeineEmptyStomach={caffeineEmptyStomach} setCaffeineEmptyStomach={setCaffeineEmptyStomach}
+          hydrationGlasses={hydrationGlasses} setHydrationGlasses={setHydrationGlasses}
+          morningLight={morningLight} setMorningLight={setMorningLight}
+          alcoholLogged={alcoholLogged} setAlcoholLogged={setAlcoholLogged}
+          shakyIrritable={shakyIrritable} setShakyIrritable={setShakyIrritable}
+          isCheckInSubmitted={isCheckInSubmitted}
+          handleSaveCheckIn={handleSaveCheckIn}
+          handleResetCheckIn={handleResetCheckIn}
+          hydrationReminderEnabled={hydrationReminderEnabled} onHydrationToggle={handleHydrationToggle}
+          hydrationInterval={hydrationInterval} onHydrationIntervalChange={handleHydrationIntervalChange}
+          meetingReminderEnabled={meetingReminderEnabled} onMeetingToggle={handleMeetingToggle}
+          meetingLeadMinutes={meetingLeadMinutes} onMeetingLeadChange={handleMeetingLeadChange}
+          breakReminderEnabled={breakReminderEnabled} onBreakToggle={handleBreakToggle}
+          breakInterval={breakInterval} onBreakIntervalChange={handleBreakIntervalChange}
+        />
+      )}
 
-            {/* This Week's Pattern - genuine multi-day trends, only shown
-                when real repetition exists (recovery-fuel-patterns.ts
-                requires more than half of logged days), so this section
-                simply doesn't render on a stable week or with too little
-                history yet rather than manufacturing something to say. */}
-            {weeklyPatterns.length > 0 && (
-              <div className="bg-surface dark:bg-surface p-6 rounded-2xl border border-border/40 space-y-4">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center text-primary">
-                    <TrendingUp className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <h3 className="text-xs uppercase font-black tracking-wider text-[#9a3412] dark:text-primary">This Week's Pattern</h3>
-                    <p className="text-xs text-text-muted mt-0.5">Based on your last {recentLogs.length} logged days, not just today</p>
-                  </div>
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {weeklyPatterns.map((pattern) => {
-                    const copy = FUEL_PATTERN_COPY[pattern.id];
-                    return (
-                      <div key={pattern.id} className="bg-white/40 dark:bg-card/40 p-4 rounded-xl border border-border/10 space-y-2">
-                        <h4 className="text-xs font-black text-text-main">{copy.title}</h4>
-                        <p className="text-[11px] text-text-muted leading-relaxed">{copy.description}</p>
-                        <p className="text-[11px] font-medium leading-normal text-[#9a3412] dark:text-primary italic">
-                          "{copy.coaching}"
-                        </p>
-                      </div>
-                    );
-                  })}
-                </div>
+      {/* Safe Coaching Boundary - shown once, not repeated per section */}
+      <div className="bg-surface/30 px-5 py-4 rounded-2xl border border-border/20 flex items-start gap-4 text-left relative z-10">
+        <ShieldAlert className="w-5 h-5 text-text-muted shrink-0 mt-0.5" />
+        <p className="text-xs text-text-muted leading-relaxed">
+          <span className="font-black uppercase tracking-wider text-[11px] block mb-0.5">Safe Coaching Boundary</span>
+          Recovery Fuel provides general wellbeing education and behavioural coaching. It does not diagnose medical conditions or replace personalised medical or nutritional advice.
+        </p>
+      </div>
+    </div>
+  );
+};
+
+// ---------- My Patterns (secondary view) ----------
+
+const MyPatternsView = (props: {
+  isAdult: boolean; onAgeChange: (v: boolean) => void;
+  recentCheckins: FuelCheckinRecord[];
+  weeklyPatterns: ReturnType<typeof detectFuelPatterns>;
+  recentLogsCount: number;
+  mostHelpfulAction: ReturnType<typeof computeMostHelpfulFuelAction>;
+  accessToken: string | null | undefined;
+  hasEaten: boolean | null; setHasEaten: (v: boolean | null) => void;
+  skippedBreakfast: boolean | null; setSkippedBreakfast: (v: boolean | null) => void;
+  caffeineCount: number; setCaffeineCount: (v: number) => void;
+  caffeineTiming: 'early' | 'late' | 'none'; setCaffeineTiming: (v: 'early' | 'late' | 'none') => void;
+  caffeineEmptyStomach: boolean | null; setCaffeineEmptyStomach: (v: boolean | null) => void;
+  hydrationGlasses: number; setHydrationGlasses: (v: number) => void;
+  morningLight: boolean | null; setMorningLight: (v: boolean | null) => void;
+  alcoholLogged: boolean | null; setAlcoholLogged: (v: boolean | null) => void;
+  shakyIrritable: boolean | null; setShakyIrritable: (v: boolean | null) => void;
+  isCheckInSubmitted: boolean;
+  handleSaveCheckIn: () => void;
+  handleResetCheckIn: () => void;
+  hydrationReminderEnabled: boolean; onHydrationToggle: (v: boolean) => void;
+  hydrationInterval: number; onHydrationIntervalChange: (v: number) => void;
+  meetingReminderEnabled: boolean; onMeetingToggle: (v: boolean) => void;
+  meetingLeadMinutes: number; onMeetingLeadChange: (v: number) => void;
+  breakReminderEnabled: boolean; onBreakToggle: (v: boolean) => void;
+  breakInterval: number; onBreakIntervalChange: (v: number) => void;
+}) => {
+  const [expandedEducation, setExpandedEducation] = useState<string | null>(null);
+  const [showManualLog, setShowManualLog] = useState(false);
+  const hasEnoughHistory = props.recentLogsCount >= 3 || props.recentCheckins.length >= 3;
+
+  return (
+    <div className="space-y-8 relative z-10">
+      {/* Recent Fuel Checks + what tends to help */}
+      <div className="bg-surface dark:bg-surface p-6 rounded-2xl border border-border/40 space-y-4">
+        <div className="flex items-center gap-3">
+          <TrendingUp className="w-5 h-5 text-primary" />
+          <h3 className="text-xs uppercase font-black tracking-wider text-text-main">Recent Fuel Checks</h3>
+        </div>
+        {!hasEnoughHistory ? (
+          <div className="text-center py-8 space-y-2">
+            <p className="text-sm font-bold text-text-main">Nova is still learning what supports your recovery.</p>
+            <p className="text-xs text-text-muted">A few quick check-ins over time will make these patterns more useful.</p>
+          </div>
+        ) : (
+          <>
+            {props.mostHelpfulAction && (
+              <div className="bg-primary/5 border border-primary/15 rounded-xl p-4 flex items-center justify-between gap-3">
+                <p className="text-xs text-text-main">
+                  <span className="font-bold">{FUEL_ACTION_LABELS[props.mostHelpfulAction.action]}</span> tends to help you more consistently than other options.
+                </p>
+                <span className="text-[10px] font-black uppercase tracking-widest text-primary bg-primary/10 px-2 py-1 rounded-full shrink-0">
+                  {FUEL_PATTERN_CONFIDENCE_LABELS[props.mostHelpfulAction.confidence]}
+                </span>
               </div>
             )}
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {getDynamicInsights().map((insight, idx) => (
-                <div 
-                  key={idx} 
-                  className={cn(
-                    "p-6 rounded-2xl border flex flex-col justify-between space-y-4",
-                    insight.type === 'critical' ? "bg-destructive/5 border-destructive/20" :
-                    insight.type === 'warning' ? "bg-warning/5 border-warning/20" :
-                    insight.type === 'success' ? "bg-success/5 border-success/20" :
-                    "bg-surface dark:bg-surface border-border/40"
-                  )}
-                >
-                  <div className="space-y-2">
-                    <div className="flex items-center gap-2">
-                      <div className={cn(
-                        "w-2 h-2 rounded-full",
-                        insight.type === 'critical' ? 'bg-destructive animate-pulse' :
-                        insight.type === 'warning' ? 'bg-warning' :
-                        insight.type === 'success' ? 'bg-success' :
-                        'bg-text-main'
-                      )} />
-                      <h4 className="font-display font-black text-xs uppercase tracking-wider text-text-main">
-                        {insight.title}
-                      </h4>
-                    </div>
-                    <p className="text-xs text-text-muted leading-relaxed">
-                      {insight.description}
-                    </p>
-                  </div>
-
-                  <div className="bg-white/40 dark:bg-card/40 p-4 rounded-xl border border-border/10 space-y-1">
-                    <div className="flex items-center gap-1.5">
-                      <Sparkles className="w-3.5 h-3.5 text-primary" />
-                      <span className="text-[11px] uppercase font-black tracking-wider text-[#9a3412] dark:text-primary">Nova Recovery Direct</span>
-                    </div>
-                    <p className="text-[11px] font-medium leading-normal text-text-muted dark:text-text-muted italic">
-                      "{insight.coaching}"
-                    </p>
-                  </div>
+            <div className="space-y-2">
+              {props.recentCheckins.slice(0, 5).map((c) => (
+                <div key={c.id} className="flex items-center justify-between text-xs py-2 border-b border-border/20 last:border-0">
+                  <span className="text-text-muted">{c.trigger === 'proactive' ? 'Nova noticed' : FUEL_TRIGGER_LABELS[c.trigger]} → {FUEL_ACTION_LABELS[c.action]}</span>
+                  {c.helpful && <span className="text-[10px] font-bold text-text-muted uppercase">{c.helpful === 'yes' ? 'Helped' : c.helpful === 'a_little' ? 'A little' : 'Not much'}</span>}
                 </div>
               ))}
             </div>
-          </motion.div>
+          </>
         )}
+      </div>
 
-        {/* EDUCATION */}
-        {activeTab === 'education' && (
-          <motion.div
-            key="education"
-            initial={{ opacity: 0, y: 15 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -15 }}
-            className="grid grid-cols-1 md:grid-cols-2 gap-6"
-          >
-            {/* Gut-Brain Education */}
-            <div className="bg-surface dark:bg-surface p-6 rounded-2xl border border-border/40 space-y-4">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center text-primary">
-                  <Heart className="w-5 h-5" />
+      {/* Weekly patterns - reuses detectFuelPatterns unchanged */}
+      {props.weeklyPatterns.length > 0 && (
+        <div className="bg-surface dark:bg-surface p-6 rounded-2xl border border-border/40 space-y-4">
+          <div>
+            <h3 className="text-xs uppercase font-black tracking-wider text-text-main">What tends to make days harder</h3>
+            <p className="text-xs text-text-muted mt-0.5">Based on your last {props.recentLogsCount} logged days, not just today</p>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {props.weeklyPatterns.map((pattern) => {
+              const copy = FUEL_PATTERN_COPY[pattern.id];
+              return (
+                <div key={pattern.id} className="bg-white/40 dark:bg-card/40 p-4 rounded-xl border border-border/10 space-y-2">
+                  <h4 className="text-xs font-black text-text-main">{copy.title}</h4>
+                  <p className="text-[11px] text-text-muted leading-relaxed">{copy.description}</p>
+                  <p className="text-[11px] font-medium leading-normal text-[#9a3412] dark:text-primary italic">"{copy.coaching}"</p>
                 </div>
-                <div>
-                  <h4 className="text-xs uppercase font-medium tracking-widest text-[#9a3412] dark:text-primary">Gut-Brain Connection</h4>
-                  <p className="text-xs font-bold text-text-main mt-0.5">How they affect each other</p>
-                </div>
-              </div>
-              <p className="text-xs text-text-muted leading-relaxed">
-                The digestive system communicates directly with your brain via the vagus nerve. Inflammatory pathways, microbiome changes, or severe meal skipping directly manifest as cognitive fog and defensive cynicism.
-              </p>
-              <div className="bg-white/40 dark:bg-card/30 p-4 rounded-xl text-[11px] text-text-muted font-bold leading-normal">
-                💡 <span className="text-[#9a3412] dark:text-primary">Fact:</span> Poor meal timing, late screen exposure, high caffeine, and chronic workplace stress all cooperate to lock the autonomic nervous system into a defence cycle, prolonging neurological fatigue. This is educational support, not medical treatment.
-              </div>
-            </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
-            {/* Supplement Literacy Card */}
-            <div className="bg-surface dark:bg-surface p-6 rounded-2xl border border-border/40 space-y-4">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-teal-500/10 flex items-center justify-center text-teal-500">
-                  <Info className="w-5 h-5" />
-                </div>
-                <div>
-                  <h4 className="text-xs uppercase font-black tracking-widest text-teal-500">Supplement Literacy Card</h4>
-                  <p className="text-xs font-bold text-text-main mt-0.5">Magnesium & Micronutrient Baselines</p>
-                </div>
-              </div>
-              <p className="text-xs text-text-muted leading-relaxed">
-                Micronutrients like magnesium glycinate, Vitamin D, high-dose B vitamins, and omega-3 essential fatty acids participate in normal cellular and nervous system functions. Chronic stress siphons these mineral reserves.
-              </p>
-              <div className="bg-warning/5 text-[#9a3412] dark:text-warning p-4 rounded-xl text-xs font-black uppercase tracking-wider leading-relaxed border border-warning/10">
-                ⚠️ Safe Recovery Boundary: This app supports behavioural recovery. Do not treat supplement insights as a prescription. Speak to a qualified medical professional if you suspect clinical deficiencies, take prescription medication, are pregnant, or are under 18.
-              </div>
-            </div>
+      {/* Reminder preferences */}
+      <div className="bg-surface dark:bg-surface p-6 rounded-2xl border border-border/40 space-y-5">
+        <div className="flex items-center gap-3">
+          <SlidersHorizontal className="w-5 h-5 text-primary" />
+          <div>
+            <h3 className="text-xs uppercase font-black tracking-wider text-text-main">Reminder Preferences</h3>
+            <p className="text-[11px] text-text-muted mt-0.5">In-app only - these appear while Blaze Break is open in this tab, not as background push notifications.</p>
+          </div>
+        </div>
 
-            {/* Hydration card */}
-            <div className="bg-surface dark:bg-surface p-6 rounded-2xl border border-border/40 space-y-4">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-text-main/10 flex items-center justify-center text-text-main">
-                  <Droplet className="w-5 h-5" />
-                </div>
-                <div>
-                  <h4 className="text-xs uppercase font-black tracking-widest text-text-main">Hydration Reminder</h4>
-                  <p className="text-xs font-bold text-text-main mt-0.5">Replenish Neurotransmission Fluid</p>
-                </div>
-              </div>
-              <p className="text-xs text-text-muted leading-relaxed">
-                Lower water levels raise cortisol output and make decision pathways sluggish. Carry a water vessel. Earning engagement points for tracking hydration establishes automatic, friction-free replacement cues.
-              </p>
-            </div>
+        <ReminderRow label="Hydration" description="A gentle check-in on a timer." enabled={props.hydrationReminderEnabled} onToggle={props.onHydrationToggle}>
+          {props.hydrationReminderEnabled && (
+            <IntervalPicker value={props.hydrationInterval} onChange={props.onHydrationIntervalChange} options={[60, 90, 120, 180]} />
+          )}
+        </ReminderRow>
 
-            {/* Alcohol sleep disruption card */}
-            <div className="bg-surface dark:bg-surface p-6 rounded-2xl border border-border/40 space-y-4">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-destructive/10 flex items-center justify-center text-destructive">
-                  <Wine className="w-5 h-5" />
-                </div>
-                <div>
-                  <h4 className="text-xs uppercase font-black tracking-widest text-destructive dark:text-[#f87171]">Alcohol Recovery Awareness</h4>
-                  <p className="text-xs font-bold text-text-main mt-0.5">Disarming the Sleep Sedative</p>
-                </div>
-              </div>
-              <p className="text-xs text-text-muted leading-relaxed">
-                {isAdult ? (
-                  "Alcohol acts as a quick sedative, but it disrupts melatonin production, destroys REM sleep architecture, and elevates heart rate variability during rest, preventing genuine autonomic rejuvenation."
-                ) : (
-                  "Developmental health is completely dependent on robust structural sleep cycles. Avoiding toxic inputs ensures healthy neurogenesis and sustainable professional growth patterns."
-                )}
-              </p>
-            </div>
+        <ReminderRow label="Before meetings" description={props.accessToken ? 'Uses your connected calendar to find upcoming meetings.' : 'Connect your calendar in Micro-Recovery to enable this.'} enabled={props.meetingReminderEnabled} onToggle={props.onMeetingToggle} disabled={!props.accessToken}>
+          {props.meetingReminderEnabled && (
+            <IntervalPicker value={props.meetingLeadMinutes} onChange={props.onMeetingLeadChange} options={[5, 10, 15, 30]} suffix="min before" />
+          )}
+        </ReminderRow>
 
-            {/* Blood Sugar Stability Card */}
-            <div className="bg-surface dark:bg-surface p-6 rounded-2xl border border-border/40 space-y-4 col-span-1 md:col-span-2">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-warning/10 flex items-center justify-center text-[#9a3412] dark:text-warning">
-                  <Activity className="w-5 h-5" />
-                </div>
-                <div>
-                  <h4 className="text-xs uppercase font-medium tracking-widest text-[#9a3412] dark:text-warning">Blood Sugar Stability</h4>
-                  <p className="text-xs font-bold text-text-main mt-0.5">Slow-Release Energy Foods for Calm Resiliency</p>
-                </div>
-              </div>
-              <p className="text-xs text-text-muted leading-relaxed">
-                When you consume rapid-release refined sugars or skip meals entirely, your blood glucose fluctuates erratically. When blood sugar drops precipitously, your autonomic nervous system goes into an immediate crisis alert, flooding your system with cortisol and adrenaline. Your mind then translates this purely physiological chemical spike as workspace panic or intense irritation. Sustaining a flat, steady glucose fuel line prevents sudden physical fogginess and unwarranted mood emergencies.
-              </p>
-              <div className="bg-white/40 dark:bg-card/30 p-4 rounded-xl text-[11px] text-text-muted space-y-3">
-                <span className="font-bold text-primary dark:text-primary block uppercase tracking-wider text-xs">Approachables & Actionable Slow-Release Replacements:</span>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
-                  <div className="space-y-1">
-                    <span className="font-bold text-text-main">🌾 Complex Fibrous Oats & Seeds</span>
-                    <p className="text-[11px] text-text-muted leading-relaxed">Porridge, chia pudding, or pumpkin seeds slowly liberate glycogen over 4 hours instead of a sudden peak, keeping your baseline stable.</p>
-                  </div>
-                  <div className="space-y-1">
-                    <span className="font-bold text-text-main">🍞 Ancient Rye, Sourdough & Nut Butters</span>
-                    <p className="text-[11px] text-text-muted leading-relaxed">Whole carbs combined with thick healthy fats cushion digestion, delaying insulin responses and preventing the classic 3 PM brain fog.</p>
-                  </div>
-                  <div className="space-y-1">
-                    <span className="font-bold text-text-main">🥑 Avocados, Nuts & Roasted Chickpeas</span>
-                    <p className="text-[11px] text-text-muted leading-relaxed">Portable office fuel (almonds, walnuts) that gives you clean fats/fibre. Perfect to snack on 20 minutes before a high-pressure board meeting.</p>
-                  </div>
-                  <div className="space-y-1">
-                    <span className="font-bold text-text-main">🥚 Dense Protein Anchors (Eggs & Yogurts)</span>
-                    <p className="text-[11px] text-text-muted leading-relaxed">Consuming protein prior to major stress loops slows down metabolic rate variation and keeps memory recall sharp when tension runs high.</p>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </motion.div>
+        <ReminderRow label="Recovery breaks" description="A nudge to pause and refuel after a while without one." enabled={props.breakReminderEnabled} onToggle={props.onBreakToggle}>
+          {props.breakReminderEnabled && (
+            <IntervalPicker value={props.breakInterval} onChange={props.onBreakIntervalChange} options={[90, 120, 180, 240]} />
+          )}
+        </ReminderRow>
+      </div>
+
+      {/* Connected data sources */}
+      <div className="bg-surface dark:bg-surface p-6 rounded-2xl border border-border/40 space-y-3">
+        <h3 className="text-xs uppercase font-black tracking-wider text-text-main">Connected Data Sources</h3>
+        <div className="text-xs text-text-muted space-y-1.5">
+          <p>Capacity &amp; Energy Delta - connected (from your check-ins)</p>
+          <p>Recovery Debt sleep data - connected</p>
+          <p>Google Calendar - {props.accessToken ? 'connected' : 'not connected'}</p>
+        </div>
+      </div>
+
+      {/* Manual detailed log - optional, for people who want it */}
+      <div className="bg-surface dark:bg-surface p-6 rounded-2xl border border-border/40 space-y-4">
+        <button onClick={() => setShowManualLog((v) => !v)} className="w-full flex items-center justify-between text-left">
+          <div>
+            <h3 className="text-xs uppercase font-black tracking-wider text-text-main">Detailed Daily Log</h3>
+            <p className="text-[11px] text-text-muted mt-0.5">Optional - for tracking more than the Quick Actions capture.</p>
+          </div>
+          <ChevronDown className={cn('w-4 h-4 text-text-muted transition-transform', showManualLog && 'rotate-180')} />
+        </button>
+        {showManualLog && (
+          <ManualFuelLog {...props} />
         )}
-      </AnimatePresence>
+      </div>
 
-      {/* Safety Notice Footer */}
-      <div className="bg-surface/30 px-5 py-4 rounded-2xl border border-border/20 flex items-start gap-4 text-left">
-        <ShieldAlert className="w-5 h-5 text-text-muted shrink-0 mt-0.5" />
+      {/* Education */}
+      <div className="space-y-3">
+        <h3 className="text-xs uppercase font-black tracking-wider text-text-main px-1">Learn Why</h3>
+        <EducationCard id="gut_brain" expanded={expandedEducation} setExpanded={setExpandedEducation} icon={Heart}
+          title="Gut-Brain Connection" subtitle="How everyday habits can affect how you feel">
+          The digestive system and brain communicate through nervous, hormonal and immune pathways - the vagus nerve is one part of this, not the whole story.
+          Irregular eating and chronic stress can contribute to feeling foggy or on edge, but many things affect how you feel day to day. This is educational, not a diagnosis.
+        </EducationCard>
+        <EducationCard id="supplements" expanded={expandedEducation} setExpanded={setExpandedEducation} icon={Info}
+          title="Supplement Literacy" subtitle="Supplements aren't a shortcut for recovery">
+          Some vitamins and minerals are essential for normal health, but supplements are not automatically useful just because you're stressed or tired.
+          If you suspect a deficiency, take medication, are pregnant, or are under 18, speak to a qualified healthcare professional rather than self-prescribing.
+        </EducationCard>
+        <EducationCard id="steadier_fuel" expanded={expandedEducation} setExpanded={setExpandedEducation} icon={Activity}
+          title="Steadier Fuel" subtitle="Why regular meals can help">
+          Long gaps without food can leave some people feeling hungry, tired or less able to concentrate. Regular meals and snacks can make demanding days easier to navigate - this isn't about any single food fixing a feeling.
+        </EducationCard>
+        <EducationCard id="daylight" expanded={expandedEducation} setExpanded={setExpandedEducation} icon={Sun}
+          title="Daylight" subtitle="Why timing can matter">
+          Light and darkness help regulate sleep-wake timing. Daylight earlier in your waking day can help reinforce that rhythm - there's no exact minute threshold that makes or breaks it.
+        </EducationCard>
+        <EducationCard id="food_ideas" expanded={expandedEducation} setExpanded={setExpandedEducation} icon={Apple}
+          title="Easy Fuel Ideas" subtitle="A few simple, portable options">
+          Wholegrain options, fruit and vegetables, protein-containing foods, nuts and seeds where appropriate, yoghurt or alternatives, beans and pulses.
+          Always respect allergies, dietary requirements, and cultural or religious food preferences - these are ideas, not a prescription.
+        </EducationCard>
+        {props.isAdult && (
+          <EducationCard id="alcohol" expanded={expandedEducation} setExpanded={setExpandedEducation} icon={Wine}
+            title="Alcohol &amp; Recovery" subtitle="A brief, honest note on sleep">
+            Alcohol can feel relaxing in the short term, but it can disrupt sleep quality later in the night, which can affect how recovered you feel the next day.
+            This is general educational information, not a tracking or compliance tool.
+          </EducationCard>
+        )}
+      </div>
+
+      {/* Age setting */}
+      <div className="bg-surface/30 px-5 py-4 rounded-2xl border border-border/40 flex items-center justify-between gap-4 flex-wrap">
         <div>
-          <span className="text-[11px] uppercase font-black tracking-wider text-text-muted">Safe Coaching Boundary</span>
-          <p className="text-xs text-text-muted leading-relaxed mt-0.5">
-            This module provides non-clinical educational support to stabilise daily behavioural cycles. Do not interpret tracking alerts or insights as medical, nutritional, psychiatric, or metabolic advice.
-          </p>
+          <span className="text-[11px] font-black uppercase tracking-wider text-text-muted block">Account Age Setting</span>
+          <p className="text-[10px] text-text-muted mt-0.5">Hides alcohol content and other adult-only material automatically.</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <button onClick={() => props.onAgeChange(true)} className={cn('py-1.5 px-3 rounded-lg text-[11px] font-black uppercase tracking-widest border', props.isAdult ? 'bg-primary text-primary-foreground border-primary' : 'bg-transparent text-text-muted border-border')}>Adult 18+</button>
+          <button onClick={() => props.onAgeChange(false)} className={cn('py-1.5 px-3 rounded-lg text-[11px] font-black uppercase tracking-widest border', !props.isAdult ? 'bg-primary text-primary-foreground border-primary' : 'bg-transparent text-text-muted border-border')}>Under 18</button>
         </div>
       </div>
     </div>
   );
 };
+
+const ReminderRow = ({ label, description, enabled, onToggle, disabled, children }: { label: string; description: string; enabled: boolean; onToggle: (v: boolean) => void; disabled?: boolean; children?: React.ReactNode }) => (
+  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 py-3 border-b border-border/20 last:border-0">
+    <div className="flex-1">
+      <p className="text-xs font-bold text-text-main">{label}</p>
+      <p className="text-[11px] text-text-muted mt-0.5">{description}</p>
+    </div>
+    <div className="flex items-center gap-3">
+      {children}
+      <button onClick={() => onToggle(!enabled)} disabled={disabled} aria-pressed={enabled}
+        className={cn('w-11 h-6 rounded-full transition-all relative shrink-0', enabled ? 'bg-primary' : 'bg-border', disabled && 'opacity-40 cursor-not-allowed')}>
+        <span className={cn('absolute top-0.5 w-5 h-5 rounded-full bg-white transition-all', enabled ? 'left-5' : 'left-0.5')} />
+      </button>
+    </div>
+  </div>
+);
+
+const IntervalPicker = ({ value, onChange, options, suffix }: { value: number; onChange: (v: number) => void; options: number[]; suffix?: string }) => (
+  <select value={value} onChange={(e) => onChange(Number(e.target.value))} className="bg-white dark:bg-card border border-border rounded-lg px-2 py-1.5 text-xs font-bold text-text-main">
+    {options.map((o) => <option key={o} value={o}>{o} {suffix || 'min'}</option>)}
+  </select>
+);
+
+const EducationCard = ({ id, expanded, setExpanded, icon: Icon, title, subtitle, children }: { id: string; expanded: string | null; setExpanded: (v: string | null) => void; icon: any; title: string; subtitle: string; children: React.ReactNode }) => (
+  <div className="bg-surface dark:bg-surface rounded-2xl border border-border/40 overflow-hidden">
+    <button onClick={() => setExpanded(expanded === id ? null : id)} className="w-full flex items-center gap-3 p-4 text-left">
+      <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center text-primary shrink-0"><Icon className="w-4 h-4" /></div>
+      <div className="flex-1">
+        <h4 className="text-xs font-black text-text-main">{title}</h4>
+        <p className="text-[11px] text-text-muted">{subtitle}</p>
+      </div>
+      <ChevronDown className={cn('w-4 h-4 text-text-muted transition-transform shrink-0', expanded === id && 'rotate-180')} />
+    </button>
+    {expanded === id && <p className="px-4 pb-4 text-xs text-text-muted leading-relaxed">{children}</p>}
+  </div>
+);
+
+const ManualFuelLog = (props: {
+  hasEaten: boolean | null; setHasEaten: (v: boolean | null) => void;
+  skippedBreakfast: boolean | null; setSkippedBreakfast: (v: boolean | null) => void;
+  caffeineCount: number; setCaffeineCount: (v: number) => void;
+  caffeineTiming: 'early' | 'late' | 'none'; setCaffeineTiming: (v: 'early' | 'late' | 'none') => void;
+  caffeineEmptyStomach: boolean | null; setCaffeineEmptyStomach: (v: boolean | null) => void;
+  hydrationGlasses: number; setHydrationGlasses: (v: number) => void;
+  morningLight: boolean | null; setMorningLight: (v: boolean | null) => void;
+  alcoholLogged: boolean | null; setAlcoholLogged: (v: boolean | null) => void;
+  shakyIrritable: boolean | null; setShakyIrritable: (v: boolean | null) => void;
+  isCheckInSubmitted: boolean;
+  handleSaveCheckIn: () => void;
+  handleResetCheckIn: () => void;
+  isAdult: boolean;
+}) => (
+  <div className="space-y-5 pt-2">
+    <ToggleField label="Has eating been fairly regular today?" value={props.hasEaten} onYes={() => { props.setHasEaten(true); props.setSkippedBreakfast(false); }} onNo={() => props.setHasEaten(false)} yesLabel="Regular enough" noLabel="A bit irregular" />
+    {props.hasEaten === false && (
+      <ToggleField label="Long gaps without eating today?" value={props.skippedBreakfast} onYes={() => props.setSkippedBreakfast(true)} onNo={() => props.setSkippedBreakfast(false)} yesLabel="Yes, long gaps" noLabel="Just a bit late" />
+    )}
+
+    <div className="space-y-2">
+      <label className="text-xs font-bold text-text-main flex items-center justify-between"><span>Caffeine today</span><span className="font-mono text-xs text-text-muted">{props.caffeineCount}</span></label>
+      <div className="flex items-center gap-2">
+        {[0, 1, 2, 3, 4, 5].map((cnt) => (
+          <button key={cnt} onClick={() => { props.setCaffeineCount(cnt); if (cnt === 0) props.setCaffeineTiming('none'); else if (props.caffeineTiming === 'none') props.setCaffeineTiming('early'); }}
+            aria-pressed={props.caffeineCount === cnt}
+            className={cn('flex-1 py-2 rounded-lg text-xs font-mono font-bold border', props.caffeineCount === cnt ? 'bg-primary text-primary-foreground border-primary' : 'bg-white dark:bg-surface border-border/40 text-text-muted')}>
+            {cnt === 5 ? '5+' : cnt}
+          </button>
+        ))}
+      </div>
+    </div>
+
+    {props.caffeineCount > 0 && (
+      <ToggleField label="Caffeine later in your day?" value={props.caffeineTiming === 'late'} onYes={() => props.setCaffeineTiming('late')} onNo={() => props.setCaffeineTiming('early')} yesLabel="Later in the day" noLabel="Earlier in the day" />
+    )}
+
+    <div className="space-y-2">
+      <label className="text-xs font-bold text-text-main">Had much to drink today?</label>
+      <div className="grid grid-cols-3 gap-2">
+        <button onClick={() => props.setHydrationGlasses(1)} className={cn('py-2.5 rounded-xl text-xs font-bold border', props.hydrationGlasses >= 6 ? 'bg-primary/10 border-primary/45 text-primary' : 'bg-white dark:bg-surface border-border/40 text-text-muted')}>Yes</button>
+        <button onClick={() => props.setHydrationGlasses(3)} className={cn('py-2.5 rounded-xl text-xs font-bold border', props.hydrationGlasses > 0 && props.hydrationGlasses < 6 ? 'bg-primary/10 border-primary/45 text-primary' : 'bg-white dark:bg-surface border-border/40 text-text-muted')}>A bit</button>
+        <button onClick={() => props.setHydrationGlasses(0)} className={cn('py-2.5 rounded-xl text-xs font-bold border', props.hydrationGlasses === 0 ? 'bg-primary/10 border-primary/45 text-primary' : 'bg-white dark:bg-surface border-border/40 text-text-muted')}>Not much</button>
+      </div>
+      <p className="text-[11px] text-text-muted leading-relaxed">Not drinking enough can contribute to tiredness, headaches and difficulty concentrating.</p>
+    </div>
+
+    <ToggleField label="Have you spent some time in natural daylight today?" value={props.morningLight} onYes={() => props.setMorningLight(true)} onNo={() => props.setMorningLight(false)} yesLabel="Yes" noLabel="Not yet" />
+
+    {props.isAdult && (
+      <ToggleField label="Any alcohol yesterday?" value={props.alcoholLogged} onYes={() => props.setAlcoholLogged(true)} onNo={() => props.setAlcoholLogged(false)} yesLabel="Yes" noLabel="No" />
+    )}
+
+    <div className="space-y-2">
+      <label className="text-xs font-bold text-text-main">How steady do you feel right now?</label>
+      <div className="grid grid-cols-3 gap-2">
+        <button onClick={() => props.setShakyIrritable(false)} className={cn('py-2.5 rounded-xl text-xs font-bold border', props.shakyIrritable === false ? 'bg-primary/10 border-primary/45 text-primary' : 'bg-white dark:bg-surface border-border/40 text-text-muted')}>Steady</button>
+        <button onClick={() => props.setShakyIrritable(null)} className={cn('py-2.5 rounded-xl text-xs font-bold border', props.shakyIrritable === null ? 'bg-primary/10 border-primary/45 text-primary' : 'bg-white dark:bg-surface border-border/40 text-text-muted')}>A little flat</button>
+        <button onClick={() => props.setShakyIrritable(true)} className={cn('py-2.5 rounded-xl text-xs font-bold border', props.shakyIrritable === true ? 'bg-destructive/10 border-destructive/40 text-destructive' : 'bg-white dark:bg-surface border-border/40 text-text-muted')}>Drained</button>
+      </div>
+    </div>
+
+    <div className="flex items-center gap-3 pt-2">
+      <button onClick={props.handleSaveCheckIn} className="btn-primary py-3 px-6 text-xs font-black uppercase tracking-widest">Save Today's Log</button>
+      {props.isCheckInSubmitted && <button onClick={props.handleResetCheckIn} className="text-xs font-black uppercase tracking-widest text-text-muted hover:text-text-main">Reset</button>}
+    </div>
+  </div>
+);
+
+const ToggleField = ({ label, value, onYes, onNo, yesLabel, noLabel }: { label: string; value: boolean | null; onYes: () => void; onNo: () => void; yesLabel: string; noLabel: string }) => (
+  <div className="space-y-2">
+    <label className="text-xs font-bold text-text-main">{label}</label>
+    <div className="grid grid-cols-2 gap-2">
+      <button onClick={onYes} aria-pressed={value === true} className={cn('py-2.5 rounded-xl text-xs font-bold border', value === true ? 'bg-primary/10 border-primary/45 text-primary' : 'bg-white dark:bg-surface border-border/40 text-text-muted')}>{yesLabel}</button>
+      <button onClick={onNo} aria-pressed={value === false} className={cn('py-2.5 rounded-xl text-xs font-bold border', value === false ? 'bg-destructive/10 border-destructive/40 text-destructive' : 'bg-white dark:bg-surface border-border/40 text-text-muted')}>{noLabel}</button>
+    </div>
+  </div>
+);

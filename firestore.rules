@@ -572,7 +572,23 @@ service cloud.firestore {
             && (!('hydrationGlasses' in request.resource.data) || (request.resource.data.hydrationGlasses is number && request.resource.data.hydrationGlasses >= 0 && request.resource.data.hydrationGlasses <= 30))
             && (request.method == 'create' ? true : checkCreatedAtUnchanged());
       }
-      
+
+      // Nova Fuel Check's own history - each entry is one trigger/
+      // question -> recommended action, with an optional later "did that
+      // help?" update. Append-only by design (never overwritten beyond
+      // adding `helpful`), feeding My Patterns' "what tends to help".
+      match /recovery_fuel_checkins/{checkinId} {
+        allow read, delete: if isOwner(uid);
+        allow create: if isOwner(uid)
+            && hasOnly(['trigger', 'action', 'helpful', 'createdAt'])
+            && hasAll(['trigger', 'action', 'createdAt'])
+            && request.resource.data.trigger in ['running_low', 'not_eaten', 'need_drink', 'running_on_caffeine', 'no_sleep', 'overloaded', 'okay', 'proactive']
+            && request.resource.data.action in ['eat', 'drink', 'daylight', 'take_break', 'somatic_reset', 'check_capacity', 'one_less_thing', 'reduce_load', 'wind_down'];
+        allow update: if isOwner(uid)
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['helpful'])
+            && request.resource.data.helpful in ['yes', 'a_little', 'not_really'];
+      }
+
       // J. nova_permissions/current
       //
       // allowNovaMemorySuggestions/allowNovaRememberCoachingPreferences/

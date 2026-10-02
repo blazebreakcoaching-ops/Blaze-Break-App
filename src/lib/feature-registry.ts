@@ -133,8 +133,8 @@ export const FEATURE_REGISTRY: Record<string, FeatureDefinition> = {
   },
   recovery_fuel_engine: {
     id: 'recovery_fuel_engine',
-    name: 'Recovery Fuel Engine',
-    purpose: 'Help users understand how food rhythm, hydration, caffeine, alcohol awareness, sunlight, gut-brain education, and nutrient literacy affect burnout recovery, energy, sleep, mood, and focus.',
+    name: 'Recovery Fuel',
+    purpose: 'Nova-led coaching that checks basic recovery foundations - sleep, regular meals, hydration, daylight and caffeine awareness - and recommends one practical action, with optional detailed tracking and education.',
     section: 'Recover & Support',
     status: 'active',
     riskLevel: 'medium',

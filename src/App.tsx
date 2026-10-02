@@ -1968,7 +1968,7 @@ export default function App() {
     executive: "Executive ROI",
     admin: "Live Activity & Access",
     reset: "Reset Studio",
-    fuel: "Recovery Fuel Engine",
+    fuel: "Recovery Fuel",
     signals: "Recovery Signals",
     sleep: "Sleep Builder",
     movement: "Movement Snacks",
@@ -2677,6 +2677,8 @@ export default function App() {
                   fingerprint={fingerprint}
                   onAwardPoints={awardPoints}
                   currentStage={shipStage}
+                  onNavigate={safeSetActiveTab}
+                  onOpenSomaticReset={() => setShowSomaticReset(true)}
                 />
               </div>
             )}
