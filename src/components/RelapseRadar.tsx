@@ -15,12 +15,12 @@ export const RelapseRadar = () => {
       <div className="card space-y-6">
         <div className="flex items-center justify-between">
           <div>
-            <h3 className="text-xl font-light text-text-main">Relapse Radar</h3>
-            <p className="text-xs text-text-muted uppercase tracking-widest font-black">Sample: illustrative 7-Day Indicators</p>
+            <h3 className="text-xl font-light text-text-main">Overload Radar</h3>
+            <p className="text-xs text-text-muted uppercase tracking-widest font-black">Patterns that may be making this week harder</p>
           </div>
           <AlertCircle className="w-6 h-6 text-destructive animate-pulse" aria-hidden="true" />
         </div>
-        <p className="text-xs text-text-muted -mt-4">Live tracking of your actual sleep, caffeine, meetings, and exercise isn't built yet — the numbers below are an example of what this view will show.</p>
+        <p className="text-xs text-text-muted -mt-4">Live tracking of your actual sleep, caffeine, meetings, and movement isn't built yet — the numbers below are a sample of what this view will show, not your real data.</p>
 
         <div className="space-y-5">
           {triggers.map(t => (
@@ -46,7 +46,7 @@ export const RelapseRadar = () => {
             <span className="text-xs uppercase font-black tracking-widest">Early Warning</span>
           </div>
           <p className="text-sm text-text-muted italic">
-            Example: "Your weekend recovery was 30% lower than your weekday expenditure. This creates a 'Carryover Crash' cycle by Wednesday."
+            Example: "Demand exceeded your reported capacity on 4 of your last 5 check-ins."
           </p>
         </div>
       </div>
@@ -56,10 +56,10 @@ export const RelapseRadar = () => {
           <div className="relative z-10 flex flex-col gap-2">
             <div className="flex items-center gap-2 text-[#9a3412] dark:text-primary">
               <Sun className="w-4 h-4" />
-              <span className="text-[11px] uppercase font-black tracking-widest">Circadian Peak</span>
+              <span className="text-[11px] uppercase font-black tracking-widest">Likely Focus Window</span>
             </div>
             <div className="text-2xl font-light">10:45 AM</div>
-            <p className="text-xs text-text-muted italic">High Executive Peak</p>
+            <p className="text-xs text-text-muted italic">Based on the times your recent check-ins show stronger mental capacity</p>
           </div>
                   </div>
 
@@ -70,7 +70,7 @@ export const RelapseRadar = () => {
               <span className="text-[11px] uppercase font-black tracking-widest">Wind Down</span>
             </div>
             <div className="text-2xl font-light">08:30 PM</div>
-            <p className="text-xs text-text-muted italic">Mandatory Shutdown</p>
+            <p className="text-xs text-text-muted italic">Suggested Wind-Down</p>
           </div>
                   </div>
       </div>
