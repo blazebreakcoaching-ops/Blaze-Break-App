@@ -379,6 +379,20 @@ const recoveryRecipesEnhanceLimiter = rateLimit({
   handler: logRateLimitExceeded('recoveryRecipesEnhanceLimiter'),
 });
 
+// Same shape again - the Responsibility Reset tool's "close it out" call
+// is also a single-shot Gemini call (summarise a bounded conversation
+// into three short closing fields), never required for the conversation
+// itself to work.
+const responsibilityResetCloseLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 15,
+  message: { error: 'Too many requests, please try again shortly.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+  validate: { xForwardedForHeader: false, default: true },
+  handler: logRateLimitExceeded('responsibilityResetCloseLimiter'),
+});
+
 // Same shape again - the executive report and manager coach are each a
 // comparable single-shot Gemini call, and previously had no rate limiter
 // at all (unlike nova/chat, diagnose, and every other AI-backed route).
@@ -9966,6 +9980,7 @@ const ACTIVITY_FIELD_MAP: Record<string, string> = {
   energyBudgetUpdate: 'lastEnergyBudgetUpdate',
   recoveryAllyActivity: 'lastRecoveryAllyActivity',
   blameReset: 'lastBlameReset',
+  responsibilityReset: 'lastResponsibilityReset',
   sparkCheck: 'lastSparkCheck',
 };
 
@@ -11659,6 +11674,102 @@ ${NOVA_ONE_SHOT_SAFETY_FLOOR}`;
     // block the user, just an empty/no-op enhancement the client falls
     // back past (see getRecipeEnhancement in src/lib/recovery-recipes-ai.ts).
     res.status(500).json({ error: "Could not personalise that recipe right now." });
+  }
+});
+
+// Responsibility Reset's "Close it out" (NOTICE/OWN/RELEASE/MOVE) - the
+// live conversation itself runs entirely through /api/nova/chat (same
+// pattern as BLAME Reset's Locate+Accept exchange: a systemInstruction
+// sent from the client, never persisted). This route is the one-shot,
+// structured step at the end: read the bounded conversation that already
+// happened and distil it into exactly three short, honest fields - what's
+// genuinely theirs, what isn't, and one controllable next move. It never
+// concludes "it wasn't your fault" unless that's genuinely what the
+// conversation established, and it never invents specifics the person
+// didn't actually say. The conversation reaching this route is handled
+// exactly like any other Nova exchange already is (never written to
+// Firestore) - this route itself writes nothing; the client discards the
+// transcript the moment the summary is shown.
+const ResponsibilityResetTurnSchema = z.object({
+  role: z.enum(['user', 'model']),
+  parts: z.array(z.object({ text: z.string().max(2000) })).length(1),
+});
+const ResponsibilityResetCloseRequestSchema = z.object({
+  history: z.array(ResponsibilityResetTurnSchema).min(1).max(24),
+}).strict();
+
+const ResponsibilityResetCloseResponseSchema = z.object({
+  owns: z.string().max(220),
+  notOwns: z.string().max(220),
+  nextMove: z.string().max(160),
+}).strict();
+
+app.post("/api/responsibility-reset/close", responsibilityResetCloseLimiter, verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const parsed = ResponsibilityResetCloseRequestSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: "Invalid request.", details: (parsed as any).error?.errors || [] });
+    }
+
+    const user = requireAuth(req);
+    const quota = await checkAndReserveCapability(user.uid, 'nova_text');
+    if (!quota.allowed) {
+      return res.status(429).json({
+        error: quota.plan === 'free'
+          ? "You've reached today's free limit for this. It resets tomorrow, or upgrade to Blaze Break Premium for more."
+          : "You've reached today's fair-use limit for this. It resets tomorrow.",
+        code: 'capability_limit_reached',
+        capability: 'nova_text',
+      });
+    }
+
+    const transcript = parsed.data.history
+      .map((turn) => `${turn.role === 'user' ? 'Person' : 'Nova'}: ${turn.parts[0]!.text}`)
+      .join('\n');
+
+    const prompt = `You are Nova, helping someone close out a Responsibility Reset - a calm, guided conversation for sorting what's genuinely theirs to own from what isn't, and finding one controllable next move. The goal is clarity and agency, not reassurance - never conclude "it wasn't your fault" unless that is genuinely what the conversation below established. Sometimes they really did do something wrong; sometimes the blame is exaggerated; sometimes responsibility is shared. Ground every word only in what was actually said below - never invent specifics they didn't mention.
+
+Conversation so far:
+${transcript}
+
+Write a short, honest close with exactly three parts:
+- owns: what they genuinely own here - specific, not vague, and not inflated into a bigger failure than the facts support. If responsibility is genuinely minimal or absent, say that plainly instead of manufacturing some.
+- notOwns: what does not belong to them to carry - another person's choices, circumstances, or something still unknown. If nothing else was clearly established, say that plainly instead of guessing.
+- nextMove: one small, genuinely controllable next action - never "fix everything", just the next real step (which may be as small as resting before deciding, or doing nothing yet).
+
+Keep each part to one plain sentence. No therapy jargon, no moralising, no "everything happens for a reason", no telling them how to feel, no pressuring forgiveness or reconciliation.
+
+Respond strictly in this JSON format, no markdown, no commentary outside the JSON:
+{
+  "owns": "...",
+  "notOwns": "...",
+  "nextMove": "..."
+}
+${NOVA_ONE_SHOT_SAFETY_FLOOR}`;
+
+    const response = await ai.models.generateContent({
+      model: "gemini-3.5-flash",
+      contents: prompt,
+      config: { responseMimeType: "application/json" },
+    });
+
+    const text = response.text;
+    if (!text) throw new Error("Empty response from Gemini model.");
+    const raw = JSON.parse(text);
+
+    const validated = ResponsibilityResetCloseResponseSchema.safeParse(raw);
+    if (!validated.success) {
+      throw new Error(`Model returned an unexpected shape: ${validated.error.message}`);
+    }
+
+    res.json(validated.data);
+  } catch (err: any) {
+    console.error("[Responsibility Reset] close error:", err.message);
+    // The close-out summary is a refinement on top of a conversation that
+    // already happened, never a gate on finishing - a failure here must
+    // never block the person from ending the session (see the client's
+    // fallback in src/components/ResponsibilityReset.tsx).
+    res.status(500).json({ error: "Could not put that together right now." });
   }
 });
 

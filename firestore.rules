@@ -356,6 +356,26 @@ service cloud.firestore {
             && (request.method == 'create' ? true : checkCreatedAtUnchanged());
       }
 
+      // responsibility_resets - Responsibility Reset tool completion log
+      // (Notice, Own, Release, Move - a slower, guided sort of what's
+      // genuinely mine vs not, distinct from BLAME Reset's 30-90s brake).
+      // Deliberately the same shape as blame_resets: structural fields
+      // only, never the conversation itself or any of its three closing
+      // fields (owns/notOwns/nextMove) - those are shown once in the UI
+      // and never persisted, so this log can never become a record of
+      // what someone actually said they did wrong.
+      match /responsibility_resets/{resetId} {
+        allow read: if isOwner(uid);
+        allow delete: if isOwner(uid);
+        allow create, update: if isOwner(uid)
+            && hasOnly(['createdAt', 'updatedAt', 'durationSeconds', 'turnCount', 'reachedClose'])
+            && hasAll(['createdAt', 'updatedAt', 'durationSeconds', 'turnCount', 'reachedClose'])
+            && request.resource.data.durationSeconds is number && request.resource.data.durationSeconds >= 0 && request.resource.data.durationSeconds <= 1800
+            && request.resource.data.turnCount is number && request.resource.data.turnCount >= 0 && request.resource.data.turnCount <= 30
+            && request.resource.data.reachedClose is bool
+            && (request.method == 'create' ? true : checkCreatedAtUnchanged());
+      }
+
       // spark_checks - SPARK Check daily scan (Sleep, Performance, Aches,
       // Reactions, Kindness). Matches ConnectedSparkCheck's write.
       match /spark_checks/{checkId} {

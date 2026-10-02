@@ -123,6 +123,7 @@ const RecoveryAlly = lazy(() => import("./components/RecoveryAlly.tsx").then(m =
 const UserGuide = lazy(() => import("./components/UserGuide.tsx").then(m => ({ default: m.UserGuide })));
 const SomaticResetOverlay = lazy(() => import("./components/SomaticResetOverlay.tsx").then(m => ({ default: m.SomaticResetOverlay })));
 const BLAMEResetOverlay = lazy(() => import("./components/BLAMEResetOverlay.tsx").then(m => ({ default: m.BLAMEResetOverlay })));
+const ResponsibilityReset = lazy(() => import("./components/ResponsibilityReset.tsx").then(m => ({ default: m.ResponsibilityReset })));
 const RecoveryPlan = lazy(() => import("./components/RecoveryPlan.tsx").then(m => ({ default: m.RecoveryPlan })));
 const FocusZone = lazy(() => import("./components/FocusZone.tsx").then(m => ({ default: m.FocusZone })));
 import { SubscriptionTier } from "./types.ts";
@@ -2637,6 +2638,7 @@ export default function App() {
                     Start BLAME Reset
                   </button>
                 </div>
+                <ResponsibilityReset onAwardPoints={awardPoints} />
                 <NervousSystemReset fingerprint={fingerprint} onAwardPoints={awardPoints} />
                 <SleepBuilder
                   fingerprint={fingerprint}
