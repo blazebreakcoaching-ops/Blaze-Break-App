@@ -146,6 +146,16 @@ service cloud.firestore {
             request.resource.data.hours is number && request.resource.data.hours >= 0 && request.resource.data.hours <= 24;
       }
 
+      // Reset Studio's Spark Check: a rolling window of recent answers,
+      // just enough real history for the repeat-pattern Quick Support
+      // offer - never a mood score.
+      match /preferences/spark_check {
+        allow read: if isOwner(uid);
+        allow write: if isOwner(uid) &&
+            hasOnly(['recentAnswers', 'updatedAt']) &&
+            (!('recentAnswers' in request.resource.data) || (request.resource.data.recentAnswers is list && request.resource.data.recentAnswers.size() <= 5));
+      }
+
       // Rediscovery Layer: gates how often One Less Thing asks "Why was
       // this on your plate?" - a simple completion counter, nothing else.
       match /preferences/one_less_thing {
@@ -153,6 +163,19 @@ service cloud.firestore {
         allow write: if isOwner(uid) &&
             hasOnly(['totalCompletions', 'updatedAt']) &&
             (!('totalCompletions' in request.resource.data) || (request.resource.data.totalCompletions is number && request.resource.data.totalCompletions >= 0));
+      }
+
+      // Reset Studio's Rumination Furnace: "Not Ready Yet" explicitly asks
+      // to save the raw entry for later - the one place in Reset Studio
+      // where raw text is deliberately kept, because the user asked for
+      // it rather than the default "nothing survives the session"
+      // promise every other path there keeps.
+      match /rumination_saved_entries/{entryId} {
+        allow read, delete: if isOwner(uid);
+        allow create: if isOwner(uid)
+            && hasOnly(['id', 'text', 'createdAt'])
+            && hasAll(['id', 'text', 'createdAt'])
+            && isStringWithMax(request.resource.data.text, 2000);
       }
 
       // Rediscovery Layer: one Workload Reality Check history snapshot
@@ -622,7 +645,7 @@ service cloud.firestore {
         allow create: if isOwner(uid)
             && hasOnly(['id', 'source', 'prompt', 'answer', 'createdAt'])
             && hasAll(['id', 'source', 'prompt', 'answer', 'createdAt'])
-            && request.resource.data.source in ['one_less_thing_why', 'workload_recurring_must_do', 'one_less_thing_category_imbalance', 'energy_delta_mismatch', 'recovery_fuel_pattern', 'quiet_question']
+            && request.resource.data.source in ['one_less_thing_why', 'workload_recurring_must_do', 'one_less_thing_category_imbalance', 'energy_delta_mismatch', 'recovery_fuel_pattern', 'quiet_question', 'rumination_furnace', 'pressure_valve', 'make_it_smaller']
             && isStringWithMax(request.resource.data.prompt, 300)
             && isStringWithMax(request.resource.data.answer, 300);
       }

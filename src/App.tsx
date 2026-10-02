@@ -25,6 +25,7 @@ import {
   Loader2,
   ChevronRight,
   ChevronLeft,
+  ChevronDown,
   Menu,
   Wind,
   Activity,
@@ -96,7 +97,7 @@ const OutcomeTracker = lazy(() => import("./components/OutcomeTracker.tsx").then
 const OmniNova = lazy(() => import("./components/OmniNova.tsx").then(m => ({ default: m.OmniNova })));
 const EnergyBudgetMatrix = lazy(() => import("./components/EnergyBudgetMatrix.tsx").then(m => ({ default: m.EnergyBudgetMatrix })));
 const WeeklyGoalTracker = lazy(() => import("./components/WeeklyGoalTracker.tsx").then(m => ({ default: m.WeeklyGoalTracker })));
-const RuminationFurnace = lazy(() => import("./components/RuminationFurnace.tsx").then(m => ({ default: m.RuminationFurnace })));
+const ResetStudio = lazy(() => import("./components/ResetStudio.tsx").then(m => ({ default: m.ResetStudio })));
 const SettingsModal = lazy(() => import("./components/SettingsModal.tsx").then(m => ({ default: m.SettingsModal })));
 const FutureSelfSimulator = lazy(() => import("./components/FutureSelfSimulator.tsx").then(m => ({ default: m.FutureSelfSimulator })));
 const AssuranceCentre = lazy(() => import("./components/AssuranceCentre.tsx").then(m => ({ default: m.AssuranceCentre })));
@@ -740,7 +741,7 @@ const EYEBROW_LABELS: Record<string, string> = {
   diagnose: "Loop Analysis",
   recover: "Energy Delta Management",
   fuel: "Recovery Fuel",
-  reset: "Nervous System Reset Studio",
+  reset: "Reset Studio",
   anxiety_reset: "Anxiety Reset",
   wellbeing: "Anxiety Check-in",
   communicate: "Boundary Architect v2.1",
@@ -889,7 +890,7 @@ const Header = ({
         {activeTab === "fuel" &&
           "Understand the bidirectional gut-brain highways, diurnal sunlight loops, and caffeine cutoffs."}
         {activeTab === "reset" &&
-          "Fast tools when you are overwhelmed, tense, scattered, panicky, angry, flat, or mentally fried."}
+          "Too much going on upstairs? Start with what it feels like right now."}
         {activeTab === "anxiety_reset" &&
           "A secure somatic handrail to de-escalate nervous system arousal, racing thoughts, and panic loops."}
         {activeTab === "wellbeing" &&
@@ -1316,6 +1317,10 @@ export default function App() {
   // Same lazy "sticky mount" pattern as SomaticResetOverlay above.
   const [showBlameReset, setShowBlameReset] = useState(false);
   const [blameReadyToMount, setBlameReadyToMount] = useState(false);
+  // Reset Studio's pre-existing tool stack, demoted behind this toggle so
+  // the new "what's happening in your head?" picker is the landing
+  // experience instead (RESET STUDIO PURPOSE).
+  const [showMoreResetTools, setShowMoreResetTools] = useState(false);
   useEffect(() => {
     if (showBlameReset) setBlameReadyToMount(true);
   }, [showBlameReset]);
@@ -2627,48 +2632,70 @@ export default function App() {
 
             {activeTab === "reset" && (
               <div className="space-y-32">
-                <RuminationFurnace
-                  onCleared={() => awardPoints(20, "Rumination Cleared")}
+                <ResetStudio
+                  fingerprint={fingerprint}
+                  onAwardPoints={awardPoints}
+                  onNavigate={safeSetActiveTab as any}
+                  onOpenCrisisSupport={() => setShowCrisisSupport(true)}
                 />
-                <div className="p-6 rounded-2xl border border-border bg-surface dark:bg-card/40 flex flex-col gap-3">
-                  <div className="flex items-center gap-3">
-                    <Zap className="w-5 h-5 text-primary" />
-                    <span className="font-display font-bold text-text-main">BLAME Reset</span>
-                  </div>
-                  <p className="text-xs text-text-muted leading-relaxed">
-                    A short interrupt for the moment you're about to react instead of respond &mdash; Breathe, Locate, Accept, Manage, Empower, at your own pace, with Nova alongside you for Locate and Accept.
-                  </p>
+
+                {/* The pre-existing Reset Studio tools, kept exactly as they
+                    were but demoted behind a collapsed section rather than
+                    stacked as the landing experience - Reset Studio should
+                    lead with "what's happening in your head?", not a long
+                    scroll of independent cards (RESET STUDIO PURPOSE). */}
+                <div className="border-t border-border/40 pt-10">
                   <button
-                    onClick={() => setShowBlameReset(true)}
-                    className="btn-primary py-3 px-6 text-xs font-black uppercase tracking-widest self-start"
+                    onClick={() => setShowMoreResetTools((v) => !v)}
+                    className="flex items-center gap-2 text-xs font-black uppercase tracking-widest text-text-muted hover:text-text-main transition-colors mb-8"
                   >
-                    Start BLAME Reset
+                    <ChevronDown className={cn("w-3.5 h-3.5 transition-transform", showMoreResetTools && "rotate-180")} />
+                    More ways to reset
                   </button>
+                  {showMoreResetTools && (
+                    <div className="space-y-32">
+                      <div className="p-6 rounded-2xl border border-border bg-surface dark:bg-card/40 flex flex-col gap-3">
+                        <div className="flex items-center gap-3">
+                          <Zap className="w-5 h-5 text-primary" />
+                          <span className="font-display font-bold text-text-main">BLAME Reset</span>
+                        </div>
+                        <p className="text-xs text-text-muted leading-relaxed">
+                          A short interrupt for the moment you're about to react instead of respond &mdash; Breathe, Locate, Accept, Manage, Empower, at your own pace, with Nova alongside you for Locate and Accept.
+                        </p>
+                        <button
+                          onClick={() => setShowBlameReset(true)}
+                          className="btn-primary py-3 px-6 text-xs font-black uppercase tracking-widest self-start"
+                        >
+                          Start BLAME Reset
+                        </button>
+                      </div>
+                      <ResponsibilityReset onAwardPoints={awardPoints} />
+                      <NervousSystemReset fingerprint={fingerprint} onAwardPoints={awardPoints} />
+                      <SleepBuilder
+                        fingerprint={fingerprint}
+                        onAwardPoints={awardPoints}
+                      />
+                      <MovementSnacks
+                        fingerprint={fingerprint}
+                        onAwardPoints={awardPoints}
+                      />
+                      <DecompressionDoorway
+                        fingerprint={fingerprint}
+                        onAwardPoints={awardPoints}
+                      />
+                      <RecoveryRecipes
+                        fingerprint={fingerprint}
+                        onAwardPoints={awardPoints}
+                      />
+                      <FaithValuesMode
+                        fingerprint={fingerprint}
+                        onAwardPoints={awardPoints}
+                      />
+                      <ResourceLibrary fingerprint={fingerprint} />
+                      <MicroInterventions shipStage={shipStage} />
+                    </div>
+                  )}
                 </div>
-                <ResponsibilityReset onAwardPoints={awardPoints} />
-                <NervousSystemReset fingerprint={fingerprint} onAwardPoints={awardPoints} />
-                <SleepBuilder
-                  fingerprint={fingerprint}
-                  onAwardPoints={awardPoints}
-                />
-                <MovementSnacks
-                  fingerprint={fingerprint}
-                  onAwardPoints={awardPoints}
-                />
-                <DecompressionDoorway
-                  fingerprint={fingerprint}
-                  onAwardPoints={awardPoints}
-                />
-                <RecoveryRecipes
-                  fingerprint={fingerprint}
-                  onAwardPoints={awardPoints}
-                />
-                <FaithValuesMode
-                  fingerprint={fingerprint}
-                  onAwardPoints={awardPoints}
-                />
-                <ResourceLibrary fingerprint={fingerprint} />
-                <MicroInterventions shipStage={shipStage} />
               </div>
             )}
 
