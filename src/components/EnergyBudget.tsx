@@ -279,19 +279,24 @@ export const EnergyBudgetTool = ({
       )}
       <div className="max-w-4xl">
         <div className="flex items-center gap-4 mb-4">
-           <div className="tag">Energy & Capacity</div>
+           {/* "Energy & Capacity" is already the dominant heading on
+               EnergyBudgetMatrix.tsx just above this on the Recover tab -
+               this tag intentionally doesn't repeat it as a second
+               competing section heading (section 34's explicit "remove
+               any duplicate Energy & Capacity heading" instruction). */}
+           <div className="tag">Energy Delta Management · Core Pillar: Rebuild</div>
            <div className="h-px flex-1 bg-border/40" />
         </div>
         <div className="group/tooltip relative inline-flex items-center mb-4">
           <h3 className="text-4xl sm:text-5xl font-display font-medium text-text-main tracking-tight cursor-help underline decoration-primary/30 underline-offset-8 decoration-dashed">
-            Energy & Capacity
+            Daily Energy Budget
           </h3>
           <div className="absolute left-0 top-full mt-4 p-4 w-80 bg-card text-text-main text-sm font-medium rounded-lg border border-border shadow-lg opacity-0 invisible group-hover/tooltip:opacity-100 group-hover/tooltip:visible transition-all z-50 pointer-events-none">
             <div className="text-xs uppercase font-medium tracking-widest text-[#9a3412] dark:text-primary mb-2">What this shows</div>
             See where your energy actually goes. Add daily tasks below to see how they draw down your total capacity.
           </div>
         </div>
-        <p className="text-xl text-text-muted font-medium  mt-2">"Burnout is a resource allocation failure. Recovery is a structural redesign."</p>
+        <p className="text-xl text-text-muted font-medium  mt-2">Plan today's tasks against the capacity you actually have.</p>
       </div>
 
       {/* SHIP Journey Phase */}

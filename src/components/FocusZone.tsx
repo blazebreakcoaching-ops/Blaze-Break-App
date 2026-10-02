@@ -333,7 +333,15 @@ export function FocusZone({ onAwardPoints, isFocusActive, setIsFocusActive, curr
     setSessionCompleted(false);
     setIsFocusActive(true);
     setQuitInterceptOpen(false);
-    // Request full lockout
+    // This is a soft, in-page focus block (a full-screen overlay plus
+    // this flag), not real OS-level distracting-app blocking - there is
+    // no permission check or native/browser-extension API call anywhere
+    // in this file to actually block other apps or tabs on the device.
+    // The UI copy deliberately no longer claims "Lock Apps"; a genuine
+    // "Block distracting apps" option (per the product brief) would need
+    // real platform capability detection and graceful degradation when
+    // it's unavailable/unpermitted, which is out of scope for this
+    // copy/UX pass - flagging here for whoever builds that.
     localStorage.setItem("blaze_lockout_active", "true");
   };
 
@@ -451,7 +459,7 @@ export function FocusZone({ onAwardPoints, isFocusActive, setIsFocusActive, curr
             </div>
 
             <p className="text-sm text-text-muted leading-relaxed font-medium">
-              Over-givers and high achievers burn 40% more energy due to unsolicited context-switching and fawning behaviors. Lock out non-essential apps for a tactical deep work block to repair mental reserves.
+              Protect your attention for a while. Constant context-switching, interruptions and feeling permanently available can make an already demanding day feel heavier. Create a protected block for focused work, deliberate recovery, or simply some quiet.
             </p>
 
             {/* Config Panel */}
@@ -480,14 +488,21 @@ export function FocusZone({ onAwardPoints, isFocusActive, setIsFocusActive, curr
               </div>
 
               <div className="space-y-2.5">
-                <span className="text-[10px] font-black uppercase tracking-widest text-text-muted">Calming Audio Shield</span>
+                <span className="text-[10px] font-black uppercase tracking-widest text-text-muted">Audio Shield</span>
+                {/* User-selected sound environments, not therapeutic or
+                    medical claims about specific frequencies - "Alpha
+                    waves"/"Solfeggio"/Hz labels dropped from the visible
+                    copy even where the underlying synth still uses that
+                    frequency (see startBinauralBeats/startSingingBowl
+                    below), since the label shouldn't promise a clinical
+                    effect the app has no basis to claim. */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   {[
-                    { id: 'none', label: 'Absolute Silence' },
-                    { id: 'binaural', label: '8Hz Binaural (Alpha)' },
-                    { id: 'ocean', label: 'Solfeggio Ocean Rain' },
+                    { id: 'none', label: 'Silence' },
+                    { id: 'binaural', label: 'Binaural Tones' },
+                    { id: 'ocean', label: 'Ocean Rain' },
                     { id: 'drone', label: 'Sub-harmonic Drone' },
-                    { id: 'singingBowl', label: '432Hz Singing Bowl' }
+                    { id: 'singingBowl', label: 'Singing Bowl' }
                   ].map((track) => (
                     <button
                       key={track.id}
@@ -512,7 +527,7 @@ export function FocusZone({ onAwardPoints, isFocusActive, setIsFocusActive, curr
               className="w-full py-4 bg-primary hover:bg-primary/90 text-primary-foreground rounded-2xl text-xs font-black uppercase tracking-widest transition-all shadow-xl flex items-center justify-center gap-2 cursor-pointer mt-4"
             >
               <Play className="w-4 h-4 fill-primary-foreground/20" />
-              Enter Deep Focus Zone & Lock Apps
+              Start Focus Block
             </button>
           </div>
         </div>
@@ -541,8 +556,8 @@ export function FocusZone({ onAwardPoints, isFocusActive, setIsFocusActive, curr
                   <Brain className="w-5 h-5" />
                 </div>
                 <div className="text-left">
-                  <span className="text-[10px] font-black uppercase tracking-widest text-primary font-mono block">Nova Focus Fortress Active</span>
-                  <span className="text-xs text-text-muted font-bold">Non-essential app actions locked out</span>
+                  <span className="text-[10px] font-black uppercase tracking-widest text-primary font-mono block">Focus Block Active</span>
+                  <span className="text-xs text-text-muted font-bold">Protected time - this screen stays on until you're done</span>
                 </div>
               </div>
 

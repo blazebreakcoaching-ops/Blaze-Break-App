@@ -196,6 +196,7 @@ const NovaVoiceGuidance = ({ stage }: { stage: SHIPStage }) => {
 export const HomeSection = ({
   onChatRequest,
   onEnergyRequest,
+  onDiagnoseRequest,
   fingerprint,
   stats,
   onClaimDaily,
@@ -215,6 +216,7 @@ export const HomeSection = ({
 }: {
   onChatRequest: (voice?: boolean) => void;
   onEnergyRequest: () => void;
+  onDiagnoseRequest: () => void;
   fingerprint: BurnoutFingerprint | null;
   stats: UserStats;
   onClaimDaily: () => void;
@@ -740,8 +742,13 @@ export const HomeSection = ({
   };
 
   const { score: recoveryScore, factors: recoveryScoreFactors } = calculateRecoveryScore();
-  const dynamicRisk =
-    recoveryScore < 40 ? "High" : recoveryScore < 70 ? "Moderate" : "Low";
+  // The real, assessed Burnout Risk (Stable/Moderate/Elevated, set only
+  // once a check-in has actually happened) - never a value derived from
+  // the recovery-score floor, which would otherwise show a confident-
+  // looking "High" to someone who hasn't logged anything yet.
+  const isBurnoutRiskAssessed = burnoutRisk !== "Not yet assessed";
+  const burnoutRiskColor = burnoutRisk === "Stable" ? "text-success" : burnoutRisk === "Moderate" ? "text-warning" : "text-destructive";
+  const burnoutRiskBg = burnoutRisk === "Stable" ? "bg-success/10" : burnoutRisk === "Moderate" ? "bg-warning/10" : "bg-destructive/10";
 
   // We use the passed pulseHistory for the AreaChart
 
@@ -870,24 +877,55 @@ export const HomeSection = ({
     stats: (
       <div key="stats" className="grid grid-cols-1 md:grid-cols-3 gap-8">
         {[
-          { label: "Current Phase", value: shipStage, subLabel: "SHIP Journey", color: "text-primary", bg: "bg-primary/10" },
-          { label: "Burnout Risk", value: dynamicRisk, subLabel: "How you're trending", color: dynamicRisk === "Low" ? "text-success" : dynamicRisk === "Moderate" ? "text-warning" : "text-destructive", bg: dynamicRisk === "Low" ? "bg-success/10" : dynamicRisk === "Moderate" ? "bg-warning/10" : "bg-destructive/10" },
-          { label: "Energy Cap", value: `${energyLevel}%`, subLabel: "Energy available today", color: "text-primary", bg: "bg-primary/10" },
+          { key: 'phase', label: "Current Phase", value: shipStage, subLabel: "SHIP Journey", color: "text-primary", bg: "bg-primary/10" },
+          { key: 'risk', label: "Burnout Risk" },
+          { key: 'energy', label: "Energy Cap", value: `${energyLevel}%`, subLabel: "Energy available today", color: "text-primary", bg: "bg-primary/10" },
         ].map((item, i) => (
-          <motion.div key={i} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.1 }}>
+          <motion.div key={item.key} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.1 }}>
             <SmartCard id={`stat_${i}`} title={item.label} energyDrain={i === 1 ? 'high' : 'low'} onDragStart={handleDragStart} onDragOver={handleDragOver} onDrop={(e, id) => handleDrop(e, id, 'left')} onMoveUp={handleMoveUp} onMoveDown={handleMoveDown} isFirst={isFirstInCol(`stat_${i}`)} isLast={isLastInCol(`stat_${i}`)}>
-              <div className="flex flex-col gap-4">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-black uppercase tracking-widest text-text-muted">{item.label}</span>
-                  <div className={cn("p-2 rounded-xl transition-all duration-500 group-hover:scale-110", item.bg, item.color)}>
-                    <StageIcon className="w-4 h-4" />
+              {item.key === 'risk' ? (
+                isBurnoutRiskAssessed ? (
+                  <div className="flex flex-col gap-4">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-black uppercase tracking-widest text-text-muted">Burnout Risk</span>
+                      <div className={cn("p-2 rounded-xl transition-all duration-500 group-hover:scale-110", burnoutRiskBg, burnoutRiskColor)}>
+                        <StageIcon className="w-4 h-4" />
+                      </div>
+                    </div>
+                    <div className="space-y-1">
+                      <div className={cn("text-3xl font-display font-bold", burnoutRiskColor)}>{burnoutRisk}</div>
+                      <p className="text-xs font-black uppercase tracking-widest text-text-muted ">How you're trending</p>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex flex-col gap-3">
+                    <span className="text-xs font-black uppercase tracking-widest text-text-muted">Burnout Risk</span>
+                    <div className="text-2xl font-display font-bold text-text-muted">Not assessed yet</div>
+                    <p className="text-xs text-text-muted leading-relaxed">
+                      Take a short check-in to establish your current load and recovery baseline.
+                    </p>
+                    <button
+                      onClick={onDiagnoseRequest}
+                      className="text-xs font-black uppercase tracking-widest text-primary hover:underline self-start mt-1"
+                    >
+                      Take Burnout Check-in
+                    </button>
+                  </div>
+                )
+              ) : (
+                <div className="flex flex-col gap-4">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-black uppercase tracking-widest text-text-muted">{item.label}</span>
+                    <div className={cn("p-2 rounded-xl transition-all duration-500 group-hover:scale-110", item.bg, item.color)}>
+                      <StageIcon className="w-4 h-4" />
+                    </div>
+                  </div>
+                  <div className="space-y-1">
+                    <div className={cn("text-3xl font-display font-bold", item.color)}>{item.value}</div>
+                    <p className="text-xs font-black uppercase tracking-widest text-text-muted ">{item.subLabel}</p>
                   </div>
                 </div>
-                <div className="space-y-1">
-                  <div className={cn("text-3xl font-display font-bold", item.color)}>{item.value}</div>
-                  <p className="text-xs font-black uppercase tracking-widest text-text-muted ">{item.subLabel}</p>
-                </div>
-              </div>
+              )}
             </SmartCard>
           </motion.div>
         ))}
