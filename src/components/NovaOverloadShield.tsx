@@ -19,14 +19,22 @@ import { cn } from '../lib/utils';
 import { BurnoutFingerprint } from '../types';
 import { secureApiFetch } from '../lib/secure-api';
 import { updateNovaMemoryBySourceAndType } from '../lib/nova-brain';
+import { auth } from '../lib/firebase';
+import { loadLatestCapacityCheckIn, loadStressors } from '../lib/energy-delta-service';
+import { computeNetLoad } from '../../energy-delta-engine';
+import {
+  ShieldState, SHIELD_STATUS_LABELS, SHIELD_STATUS_MESSAGES, SHIELD_STATUS_SUBTEXT,
+  computeManualLoadScore, computeIntegrationLoadScore, scoreToShieldState,
+  NOVA_OVERLOAD_SHIELD_HEADER_QUOTE, NOVA_OVERLOAD_SHIELD_TAGLINE,
+  CHECK_TODAYS_LOAD_LABEL, REFRESH_SIGNALS_LABEL, GUARDIAN_DISPATCH_LINE,
+  buildEnergyBudgetNote, buildCapacitySignalLine,
+} from '../../nova-overload-shield-engine';
 
 interface NovaOverloadShieldProps {
   fingerprint: BurnoutFingerprint | null;
   onAwardPoints?: (amount: number, reason: string) => void;
   onNavigate?: (tab: string) => void;
 }
-
-type ShieldState = 'stable' | 'drifting' | 'overload';
 
 interface Integration {
   id: string;
@@ -38,28 +46,10 @@ interface Integration {
   scoreContribution: number;
 }
 
-const SHIELD_STATES: Record<ShieldState, { label: string; color: string; icon: any; message: string; subtext: string }> = {
-  stable: {
-    label: 'Green — Stable',
-    color: 'emerald',
-    icon: ShieldCheck,
-    message: "Your schedule has enough breathing room today.",
-    subtext: "Capacity is aligned with energy levels. No intervention required."
-  },
-  drifting: {
-    label: 'Amber — Drifting',
-    color: 'amber',
-    icon: Shield,
-    message: "Meeting load is high and recovery gaps are low. Protect one break.",
-    subtext: "Your telemetry indicates escalating pressure and reduced recovery space."
-  },
-  overload: {
-    label: 'Red — Overload Risk',
-    color: 'rose',
-    icon: ShieldAlert,
-    message: "You are heading into overload. Let's reduce one thing now.",
-    subtext: "Your combined meeting volume, message pressure, and lack of gaps have breached your limit."
-  }
+const SHIELD_STATE_VISUALS: Record<ShieldState, { color: string; icon: any }> = {
+  stable: { color: 'emerald', icon: ShieldCheck },
+  drifting: { color: 'amber', icon: Shield },
+  overload: { color: 'rose', icon: ShieldAlert },
 };
 
 // Fully-written class strings (not template-literal interpolation) so Tailwind's
@@ -123,6 +113,30 @@ export const NovaOverloadShield = ({ fingerprint, onAwardPoints, onNavigate }: N
   const [simulating, setSimulating] = useState(false);
   const [integrationsLoaded, setIntegrationsLoaded] = useState(false);
 
+  // Third, always-on real signal (Energy Delta capacity vs. planned load) -
+  // shown honestly alongside the manual/integration score rather than
+  // silently blended into it.
+  const [capacityScore, setCapacityScore] = useState<number | null>(null);
+  const [plannedLoad, setPlannedLoad] = useState<number | null>(null);
+
+  useEffect(() => {
+    const load = async () => {
+      if (!auth.currentUser) return;
+      try {
+        const [checkIn, stressors] = await Promise.all([
+          loadLatestCapacityCheckIn(auth.currentUser.uid),
+          loadStressors(auth.currentUser.uid),
+        ]);
+        setCapacityScore(checkIn ? checkIn.score : null);
+        setPlannedLoad(checkIn ? computeNetLoad(stressors) : null);
+      } catch {
+        setCapacityScore(null);
+        setPlannedLoad(null);
+      }
+    };
+    load();
+  }, []);
+
   // Fetches genuinely real signal data for each service - previously this
   // list was five hardcoded entries with fabricated per-service "stats"
   // text shown identically to every user, and "connecting" just flipped a
@@ -183,34 +197,10 @@ export const NovaOverloadShield = ({ fingerprint, onAwardPoints, onNavigate }: N
   }, [activeTab, integrationsLoaded]);
 
   useEffect(() => {
-    let score = 0;
-    
-    if (activeTab === 'manual') {
-      if (manualData.meetings > 5) score += 2;
-      else if (manualData.meetings > 3) score += 1;
-      
-      if (manualData.hours > 10) score += 2;
-      else if (manualData.hours > 8) score += 1;
-      
-      if (manualData.messagePressure === 'high') score += 2;
-      else if (manualData.messagePressure === 'medium') score += 1;
-      
-      if (manualData.sleepQuality === 'poor') score += 2;
-      else if (manualData.sleepQuality === 'fair') score += 1;
-      
-      if (manualData.energyLevel === 'low') score += 2;
-      else if (manualData.energyLevel === 'medium') score += 1;
-      
-      if (manualData.recoveryGaps === 'no') score += 2;
-    } else {
-      score = integrations.reduce((sum, int) => sum + (int.status === 'connected' ? int.scoreContribution : 0), 0);
-    }
-    
-    let nextState: ShieldState = 'stable';
-    if (score >= 7) nextState = 'overload';
-    else if (score >= 4) nextState = 'drifting';
-    
-    setCurrentState(nextState);
+    const score = activeTab === 'manual'
+      ? computeManualLoadScore(manualData)
+      : computeIntegrationLoadScore(integrations);
+    setCurrentState(scoreToShieldState(score));
   }, [activeTab, manualData, integrations]);
 
   const calculateRisk = () => {
@@ -229,21 +219,28 @@ export const NovaOverloadShield = ({ fingerprint, onAwardPoints, onNavigate }: N
     }, 1500);
   };
 
-  const activeState = SHIELD_STATES[currentState];
-  const stateColors = SHIELD_COLOR_CLASSES[activeState.color];
+  const activeState = {
+    label: SHIELD_STATUS_LABELS[currentState],
+    message: SHIELD_STATUS_MESSAGES[currentState],
+    subtext: SHIELD_STATUS_SUBTEXT[currentState],
+    icon: SHIELD_STATE_VISUALS[currentState].icon,
+  };
+  const stateColors = SHIELD_COLOR_CLASSES[SHIELD_STATE_VISUALS[currentState].color];
+  const connectedIntegrationCount = integrations.filter((i) => i.status === 'connected').length;
+  const capacitySignalLine = buildCapacitySignalLine(capacityScore, plannedLoad);
 
   return (
     <div className="space-y-12 pb-24">
       <div className="max-w-4xl">
         <div className="flex items-center gap-4 mb-4">
-           <div className="tag">Section 22 / Burnout Protection</div>
+           <div className="tag">Section 22 / {NOVA_OVERLOAD_SHIELD_TAGLINE}</div>
            <div className="h-px flex-1 bg-border/40" />
         </div>
         <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-6">
           <div className="space-y-4">
             <h3 className="text-5xl font-display font-bold text-text-main tracking-tight">Nova Overload Shield</h3>
             <p className="text-xl text-text-muted font-medium  max-w-2xl">
-              "Most tools wait until you are overwhelmed. Nova tracks metadata to prevent the crash before it happens."
+              "{NOVA_OVERLOAD_SHIELD_HEADER_QUOTE}"
             </p>
           </div>
         </div>
@@ -464,7 +461,7 @@ export const NovaOverloadShield = ({ fingerprint, onAwardPoints, onNavigate }: N
                  disabled={simulating}
                  className="btn-primary shrink-0 self-start md:self-auto bg-border hover:bg-surface dark:bg-surface dark:hover:bg-surface text-text-main border-transparent"
                >
-                 <Zap className="w-4 h-4 mr-2" /> {activeTab === 'manual' ? 'Calculate Risk' : 'Force Scan'}
+                 <Zap className="w-4 h-4 mr-2" /> {activeTab === 'manual' ? CHECK_TODAYS_LOAD_LABEL : REFRESH_SIGNALS_LABEL}
                </button>
              </div>
 
@@ -474,6 +471,9 @@ export const NovaOverloadShield = ({ fingerprint, onAwardPoints, onNavigate }: N
                </p>
                <p className="text-text-muted font-medium ">
                  {activeState.subtext}
+               </p>
+               <p className="text-sm text-text-muted font-medium pt-1">
+                 {capacitySignalLine}
                </p>
              </div>
 
@@ -518,7 +518,7 @@ export const NovaOverloadShield = ({ fingerprint, onAwardPoints, onNavigate }: N
                       <ShieldAlert className="w-4 h-4" /> Guardian Dispatch
                     </h4>
                     <p className="text-text-main font-medium text-sm leading-relaxed mb-6">
-                      Your biometric load and event pressure indicate a high risk of systemic crash. Do you want me to notify a trusted Guardian?
+                      {GUARDIAN_DISPATCH_LINE}
                     </p>
                     <button className="btn-primary w-full bg-destructive hover:bg-destructive border-destructive text-destructive-foreground shadow-lg shadow-destructive/20">
                       Notify Guardian Network
@@ -546,9 +546,11 @@ export const NovaOverloadShield = ({ fingerprint, onAwardPoints, onNavigate }: N
                        <div>
                          <h5 className="font-bold text-text-main group-hover:text-warning transition-colors flex items-center justify-between">
                            Energy Budget ↗
-                           <span className="text-xs bg-warning text-warning-foreground px-2 py-0.5 rounded-full font-bold">Auto-Synced</span>
+                           {connectedIntegrationCount > 0 && (
+                             <span className="text-xs bg-warning text-warning-foreground px-2 py-0.5 rounded-full font-bold">Auto-Synced</span>
+                           )}
                          </h5>
-                         <span className="text-xs text-text-muted mt-1 block">Live telemetry from {integrations.filter(i => i.status === 'connected').length} active integration(s) is currently deducting credits from your budget.</span>
+                         <span className="text-xs text-text-muted mt-1 block">{buildEnergyBudgetNote(connectedIntegrationCount)}</span>
                        </div>
                      </button>
                    </div>

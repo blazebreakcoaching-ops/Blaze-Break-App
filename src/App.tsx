@@ -60,6 +60,7 @@ const EnergyBudgetTool = lazy(() => import("./components/EnergyBudget.tsx").then
 const CapacityFirewall = lazy(() => import("./components/CapacityFirewall.tsx").then(m => ({ default: m.CapacityFirewall })));
 const BoundaryRehearsal = lazy(() => import("./components/BoundaryRehearsal.tsx").then(m => ({ default: m.BoundaryRehearsal })));
 const BoundaryAutopilot = lazy(() => import("./components/BoundaryAutopilot.tsx").then(m => ({ default: m.BoundaryAutopilot })));
+const MyBoundaries = lazy(() => import("./components/MyBoundaries.tsx").then(m => ({ default: m.MyBoundaries })));
 const ReflectSection = lazy(() => import("./components/ReflectSection.tsx").then(m => ({ default: m.ReflectSection })));
 const NovaChat = lazy(() => import("./components/NovaChat.tsx").then(m => ({ default: m.NovaChat })));
 const Walkthrough = lazy(() => import("./components/Walkthrough.tsx").then(m => ({ default: m.Walkthrough })));
@@ -1155,6 +1156,7 @@ export default function App() {
     null,
   );
   const [isFocusActive, setIsFocusActive] = useState(false);
+  const [showMyBoundaries, setShowMyBoundaries] = useState(false);
 
   // Global Sync State
   const [isGlobalSyncing, setIsGlobalSyncing] = useState(false);
@@ -2516,6 +2518,18 @@ export default function App() {
 
             {activeTab === "communicate" && (
               <div className="space-y-32">
+                <div className="flex justify-end -mb-20">
+                  <button
+                    onClick={() => setShowMyBoundaries((v) => !v)}
+                    className="text-xs font-bold text-primary flex items-center gap-1 hover:underline"
+                  >
+                    {showMyBoundaries ? "Back" : "My Boundaries ↗"}
+                  </button>
+                </div>
+                {showMyBoundaries ? (
+                  <MyBoundaries />
+                ) : (
+                  <>
                 <CapacityFirewall onNavigate={safeSetActiveTab as any} />
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-12">
                   <div className="lg:col-span-2 space-y-12">
@@ -2581,6 +2595,8 @@ export default function App() {
                     onAwardPoints={awardPoints}
                     onNavigate={safeSetActiveTab as any}
                   />
+                )}
+                  </>
                 )}
               </div>
             )}
