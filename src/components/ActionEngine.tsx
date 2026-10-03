@@ -1,6 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, lazy, Suspense } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Compass, ArrowRight } from 'lucide-react';
+
+// recharts is heavy (pulls in d3); loaded lazily so it stays out of
+// ActionEngine's own bundle until the Change Graph actually renders.
+const ChangeGraphChart = lazy(() => import('./ChangeGraphChart.tsx').then(m => ({ default: m.ChangeGraphChart })));
 import { cn } from '../lib/utils';
 import { auth } from '../lib/firebase';
 import { loadRediscoveryClues, loadWorkloadRealityCheckHistory } from '../lib/rediscovery-service';
@@ -40,6 +44,7 @@ import {
   buildProofOfChange, PROOF_OF_CHANGE_KIND_LABELS,
   buildThingsIKnowNow, KNOWLEDGE_ENTRY_LINE,
   confirmedExperimentCountForInsight, evidenceLevelForInsightState, EVIDENCE_LEVEL_LABELS,
+  buildOperatingManual, buildChangeGraph,
 } from '../../action-engine';
 
 interface ActionEngineProps {
@@ -75,6 +80,7 @@ export const ActionEngine = ({ onNavigate }: ActionEngineProps) => {
   const [predictionDraft, setPredictionDraft] = useState('');
   const [realityDraft, setRealityDraft] = useState('');
   const [experiments, setExperiments] = useState<ExperimentRecord[]>([]);
+  const [insights, setInsights] = useState<ActionInsightRecord[]>([]);
 
   useEffect(() => {
     const load = async () => {
@@ -86,6 +92,7 @@ export const ActionEngine = ({ onNavigate }: ActionEngineProps) => {
           loadRecentExperiments(uid),
         ]);
         setExperiments(experiments);
+        setInsights(existing);
         const active = experiments.find((e) => e.status === 'active') ?? null;
         if (active) {
           setActiveExperiment(active);
@@ -109,11 +116,13 @@ export const ActionEngine = ({ onNavigate }: ActionEngineProps) => {
         if (!candidate) { setStep('empty'); return; }
         const id = await createActionInsight(uid, { section: 'what_drains', text: candidate.text, source: candidate.source });
         const now = new Date().toISOString();
-        setInsight({
+        const newInsight: ActionInsightRecord = {
           id, section: 'what_drains', text: candidate.text, state: 'nova_noticed', source: candidate.source,
           controllability: null, sharedResponsibilityPlan: null, outsideControlChoice: null, nothingNeedsFixingChoice: null,
           createdAt: now, updatedAt: now,
-        });
+        };
+        setInsight(newInsight);
+        setInsights((prev) => [...prev, newInsight]);
         setStep('insight_card');
       } catch {
         setStep('empty');
@@ -127,6 +136,7 @@ export const ActionEngine = ({ onNavigate }: ActionEngineProps) => {
     if (shouldEnterControllabilityGate(answer)) {
       await updateActionInsight(auth.currentUser.uid, insight.id, { state: 'user_confirmed' });
       setInsight({ ...insight, state: 'user_confirmed' });
+      setInsights((prev) => prev.map((i) => (i.id === insight.id ? { ...i, state: 'user_confirmed' } : i)));
       setStep('controllability_gate');
       return;
     }
@@ -340,6 +350,8 @@ export const ActionEngine = ({ onNavigate }: ActionEngineProps) => {
   const proofOfChange = buildProofOfChange(experiments);
   const thingsIKnowNow = buildThingsIKnowNow(experiments);
   const evidenceLevel = insight ? evidenceLevelForInsightState(insight.state, confirmedExperimentCountForInsight(insight.id, experiments)) : null;
+  const operatingManual = buildOperatingManual(insights, experiments);
+  const changeGraph = buildChangeGraph(experiments);
 
   if (step === 'loading') return null;
 
@@ -839,6 +851,37 @@ export const ActionEngine = ({ onNavigate }: ActionEngineProps) => {
             </p>
           ))}
         </div>
+      </div>
+    )}
+
+    {changeGraph.length > 1 && (
+      <div className="card p-6 sm:p-8 space-y-4">
+        <div>
+          <h3 className="text-sm font-display font-bold text-text-main">Change Graph</h3>
+          <p className="text-xs text-text-muted">Where each real experiment actually landed, over time.</p>
+        </div>
+        <div className="h-40">
+          <Suspense fallback={<div className="h-full w-full flex items-center justify-center text-xs text-text-muted">Loading chart…</div>}>
+            <ChangeGraphChart points={changeGraph} />
+          </Suspense>
+        </div>
+      </div>
+    )}
+
+    {operatingManual.length > 0 && (
+      <div className="card p-6 sm:p-8 space-y-5">
+        <div>
+          <h3 className="text-sm font-display font-bold text-text-main">My Operating Manual</h3>
+          <p className="text-xs text-text-muted">A living reference, compiled only from what's actually real for you.</p>
+        </div>
+        {operatingManual.map((section) => (
+          <div key={section.heading} className="space-y-2">
+            <p className="text-xs font-bold text-primary uppercase tracking-wider">{section.heading}</p>
+            {section.lines.map((line, i) => (
+              <p key={i} className="text-sm text-text-main p-3 rounded-xl bg-surface/50 border border-border/50">{line}</p>
+            ))}
+          </div>
+        ))}
       </div>
     )}
     </>

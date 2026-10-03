@@ -29,6 +29,9 @@ import {
   buildProofOfChange, PROOF_OF_CHANGE_KIND_LABELS,
   buildThingsIKnowNow, KNOWLEDGE_ENTRY_LINE,
   confirmedExperimentCountForInsight,
+  buildPersonalChangeModel, CHANGE_MODEL_TRAIT_ORDER, CHANGE_MODEL_TRAIT_LABELS,
+  buildChangeGraph, CHANGE_GRAPH_OUTCOME_LABELS,
+  buildOperatingManual, ActionInsightRecord,
 } from './action-engine';
 import { RediscoveryClue, WorkloadCheckSnapshot } from './rediscovery-engine';
 
@@ -433,5 +436,127 @@ describe('Confidence/Evidence model applied: counting confirmed experiments per 
     const experiments = [kept('i1', 'e1'), kept('i1', 'e2'), kept('i1', 'e3')];
     const count = confirmedExperimentCountForInsight('i1', experiments);
     expect(evidenceLevelForInsightState('nova_noticed', count)).toBe('behaviourally_supported');
+  });
+});
+
+describe('Personal Change Model: real traits, never a generic theory from thin data', () => {
+  const exp = (overrides: Partial<ExperimentRecord>): ExperimentRecord => ({
+    id: 'e', insightId: 'i', text: 't', ladderLevel: 'experiment', duration: 'this_week',
+    momentOfTruth: null, friction: null, minimumViableChange: null, status: 'completed',
+    lastMomentChoice: null, prediction: null, reality: null,
+    reviewChoice: null, changeReason: null, autopsyReason: null, keepFollowUp: null,
+    createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z',
+    ...overrides,
+  });
+
+  it('surfaces no traits from a single instance - not enough evidence yet', () => {
+    expect(buildPersonalChangeModel([exp({ changeReason: 'too_vague' })])).toHaveLength(0);
+  });
+
+  it('surfaces a trait once there are two real supporting instances', () => {
+    const traits = buildPersonalChangeModel([
+      exp({ changeReason: 'too_vague' }), exp({ changeReason: 'too_vague' }),
+    ]);
+    expect(traits).toEqual(['needs_specificity']);
+    expect(CHANGE_MODEL_TRAIT_LABELS.needs_specificity).toBeTruthy();
+  });
+
+  it('combines support across different real reasons for the same trait', () => {
+    const traits = buildPersonalChangeModel([
+      exp({ changeReason: 'too_difficult' }), exp({ autopsyReason: 'too_ambitious' }),
+    ]);
+    expect(traits).toEqual(['needs_smaller_steps']);
+  });
+
+  it('every trait in the order has a real, non-generic label', () => {
+    CHANGE_MODEL_TRAIT_ORDER.forEach((t) => {
+      expect(CHANGE_MODEL_TRAIT_LABELS[t]).toBeTruthy();
+    });
+  });
+
+  it('capacity_limited comes from repeated no_capacity autopsies', () => {
+    const traits = buildPersonalChangeModel([
+      exp({ autopsyReason: 'no_capacity' }), exp({ autopsyReason: 'no_capacity' }),
+    ]);
+    expect(traits).toContain('capacity_limited');
+  });
+});
+
+describe('Change Graph: a real trajectory over time, never a score', () => {
+  const exp = (id: string, updatedAt: string, overrides: Partial<ExperimentRecord>): ExperimentRecord => ({
+    id, insightId: 'i', text: 't', ladderLevel: 'experiment', duration: 'this_week',
+    momentOfTruth: null, friction: null, minimumViableChange: null, status: 'completed',
+    lastMomentChoice: null, prediction: null, reality: null,
+    reviewChoice: null, changeReason: null, autopsyReason: null, keepFollowUp: null,
+    createdAt: updatedAt, updatedAt,
+    ...overrides,
+  });
+
+  it('maps kept/changed/dropped/active to the expected outcome and value', () => {
+    const points = buildChangeGraph([
+      exp('e1', '2026-01-01T00:00:00Z', { reviewChoice: 'keep' }),
+      exp('e2', '2026-01-02T00:00:00Z', { reviewChoice: 'change' }),
+      exp('e3', '2026-01-03T00:00:00Z', { reviewChoice: 'drop' }),
+      exp('e4', '2026-01-04T00:00:00Z', { status: 'active', reviewChoice: null }),
+    ]);
+    expect(points.map((p) => p.outcome)).toEqual(['kept', 'changed', 'dropped', 'active']);
+    expect(points.map((p) => p.value)).toEqual([1, 0, -1, 0]);
+  });
+
+  it('orders points chronologically, oldest first', () => {
+    const points = buildChangeGraph([
+      exp('newer', '2026-02-01T00:00:00Z', { reviewChoice: 'keep' }),
+      exp('older', '2026-01-01T00:00:00Z', { reviewChoice: 'drop' }),
+    ]);
+    expect(points.map((p) => p.experimentId)).toEqual(['older', 'newer']);
+  });
+
+  it('every outcome has a real label', () => {
+    (['kept', 'changed', 'dropped', 'active'] as const).forEach((o) => {
+      expect(CHANGE_GRAPH_OUTCOME_LABELS[o]).toBeTruthy();
+    });
+  });
+});
+
+describe('My Operating Manual: compiled only from real, already-confirmed material', () => {
+  const insight = (overrides: Partial<ActionInsightRecord>): ActionInsightRecord => ({
+    id: 'i1', section: 'what_drains', text: 'I overcommit on Fridays', state: 'nova_noticed', source: 'raw_clue',
+    controllability: null, sharedResponsibilityPlan: null, outsideControlChoice: null, nothingNeedsFixingChoice: null,
+    createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z',
+    ...overrides,
+  });
+  const exp = (overrides: Partial<ExperimentRecord>): ExperimentRecord => ({
+    id: 'e1', insightId: 'i1', text: 'Say no to same-day asks', ladderLevel: 'experiment', duration: 'this_week',
+    momentOfTruth: null, friction: null, minimumViableChange: null, status: 'completed',
+    lastMomentChoice: null, prediction: null, reality: null,
+    reviewChoice: null, changeReason: null, autopsyReason: null, keepFollowUp: null,
+    createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z',
+    ...overrides,
+  });
+
+  it('returns no sections when there is nothing real yet', () => {
+    expect(buildOperatingManual([], [])).toEqual([]);
+  });
+
+  it('includes confirmed patterns only from user-confirmed insights', () => {
+    const sections = buildOperatingManual(
+      [insight({ state: 'user_confirmed' }), insight({ id: 'i2', state: 'nova_noticed' })], []
+    );
+    const patterns = sections.find((s) => s.heading === 'Patterns that feel true');
+    expect(patterns?.lines).toEqual(['I overcommit on Fridays']);
+  });
+
+  it('includes proof of change entries, reusing Proof of Change rather than restating it', () => {
+    const sections = buildOperatingManual([], [exp({ status: 'completed', reviewChoice: 'keep', keepFollowUp: 'protect_it' })]);
+    const proof = sections.find((s) => s.heading === "What you've changed");
+    expect(proof?.lines[0]).toContain('Say no to same-day asks');
+  });
+
+  it('includes personal change model traits once there is enough evidence', () => {
+    const sections = buildOperatingManual([], [
+      exp({ id: 'e1', changeReason: 'too_vague' }), exp({ id: 'e2', changeReason: 'too_vague' }),
+    ]);
+    const model = sections.find((s) => s.heading === 'How you tend to change');
+    expect(model?.lines).toEqual([CHANGE_MODEL_TRAIT_LABELS.needs_specificity]);
   });
 });
