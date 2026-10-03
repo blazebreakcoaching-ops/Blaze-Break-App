@@ -62,6 +62,7 @@ const BoundaryRehearsal = lazy(() => import("./components/BoundaryRehearsal.tsx"
 const BoundaryAutopilot = lazy(() => import("./components/BoundaryAutopilot.tsx").then(m => ({ default: m.BoundaryAutopilot })));
 const MyBoundaries = lazy(() => import("./components/MyBoundaries.tsx").then(m => ({ default: m.MyBoundaries })));
 const ReflectSection = lazy(() => import("./components/ReflectSection.tsx").then(m => ({ default: m.ReflectSection })));
+const ActionEngine = lazy(() => import("./components/ActionEngine.tsx").then(m => ({ default: m.ActionEngine })));
 const NovaChat = lazy(() => import("./components/NovaChat.tsx").then(m => ({ default: m.NovaChat })));
 const Walkthrough = lazy(() => import("./components/Walkthrough.tsx").then(m => ({ default: m.Walkthrough })));
 import { CrisisSupportModal, CrisisSupportButton } from "./components/CrisisSupport.tsx";
@@ -244,7 +245,7 @@ export const ALL_TABS: {
   {
     id: "reflect",
     icon: Book,
-    label: "Reflect",
+    label: "Action Engine",
     roles: ["individual", "employee", "executive"],
     featureId: "weekly_review",
   },
@@ -2603,6 +2604,7 @@ export default function App() {
 
             {activeTab === "reflect" && (
               <div className="space-y-32">
+                <ActionEngine onNavigate={safeSetActiveTab as any} />
                 <ReflectSection
                   onAwardPoints={awardPoints}
                   committedActionIds={stats.committedActionIds}

@@ -893,6 +893,33 @@ service cloud.firestore {
             && isStringWithMax(request.resource.data.answer, 300);
       }
 
+      // Action Engine's confirmed-insight store: one record per insight
+      // Nova surfaced, carried through confirmation and (if the user says
+      // it's worth acting on) the Controllability Gate's resolution -
+      // section/text/source/state locked at creation (state must start
+      // 'nova_noticed', never created already-confirmed), everything else
+      // added narrowly afterwards as the flow progresses.
+      match /rediscovery_insights/{insightId} {
+        allow read, delete: if isOwner(uid);
+        allow create: if isOwner(uid)
+            && hasOnly(['id', 'section', 'text', 'state', 'source', 'controllability', 'sharedResponsibilityPlan', 'outsideControlChoice', 'nothingNeedsFixingChoice', 'createdAt', 'updatedAt'])
+            && hasAll(['id', 'section', 'text', 'state', 'source', 'createdAt', 'updatedAt'])
+            && request.resource.data.section in ['what_matters', 'what_drains', 'what_restores', 'what_carrying', 'what_relearning', 'what_want_back', 'what_leave_behind', 'experiments']
+            && isStringWithMax(request.resource.data.text, 500)
+            && request.resource.data.state == 'nova_noticed'
+            && (!('controllability' in request.resource.data) || request.resource.data.controllability == null)
+            && (!('sharedResponsibilityPlan' in request.resource.data) || request.resource.data.sharedResponsibilityPlan == null)
+            && (!('outsideControlChoice' in request.resource.data) || request.resource.data.outsideControlChoice == null)
+            && (!('nothingNeedsFixingChoice' in request.resource.data) || request.resource.data.nothingNeedsFixingChoice == null);
+        allow update: if isOwner(uid)
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['state', 'controllability', 'sharedResponsibilityPlan', 'outsideControlChoice', 'nothingNeedsFixingChoice', 'updatedAt'])
+            && (!('state' in request.resource.data) || request.resource.data.state in ['nova_noticed', 'user_confirmed', 'still_exploring', 'rejected', 'archived'])
+            && (!('controllability' in request.resource.data) || request.resource.data.controllability in ['mine_to_change', 'can_influence', 'depends_on_someone_else', 'mostly_outside_control', 'not_sure'])
+            && (!('sharedResponsibilityPlan' in request.resource.data) || request.resource.data.sharedResponsibilityPlan == null || request.resource.data.sharedResponsibilityPlan is map)
+            && (!('outsideControlChoice' in request.resource.data) || request.resource.data.outsideControlChoice in ['reduce_impact', 'protect_capacity', 'ask_for_help', 'accept_uncertainty', 'change_what_can_change', 'understand_it'])
+            && (!('nothingNeedsFixingChoice' in request.resource.data) || request.resource.data.nothingNeedsFixingChoice in ['leave_it_here', 'journal_about_it', 'keep_noticing', 'talk_to_nova']);
+      }
+
       // J. nova_permissions/current
       //
       // allowNovaMemorySuggestions/allowNovaRememberCoachingPreferences/
