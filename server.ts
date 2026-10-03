@@ -39,7 +39,10 @@ import { collectionsForExport, collectionsForErasure } from './user-data-collect
 import { htmlToPlainTextFallback, buildEmailVerificationEmail, buildPasswordResetEmail, buildPasswordChangedEmail, buildMfaEnabledEmail, buildMfaDisabledEmail, buildSupportRequestReceivedEmail, buildAllyInviteEmail, buildInactivityWarningEmail } from './brevo-templates';
 import { evaluateRetentionAction, retentionSweepIsEnabled, RetentionCandidate } from './data-retention';
 import { generateTotpSecret, buildOtpauthUri, verifyTotpCode, generateRecoveryCodes, hashRecoveryCode, encryptSecret as encryptTotpSecret, decryptSecret as decryptTotpSecret, isTotpLockedOut, nextLockoutState } from './totp-mfa';
-import { isValidGad7Answers, scoreGad7, interpretGad7 } from './gad7';
+import {
+  isValidGad7Answers, scoreGad7, interpretGad7, GAD7_ASSESSMENT_VERSION,
+  GAD7_CONTEXT_TAG_ORDER, GAD7_FORTNIGHTLY_DAYS, Gad7ContextTag, Gad7ReminderChoice, GAD7_REMINDER_CHOICE_ORDER,
+} from './gad7';
 import { DEFAULT_LEGAL_DOCUMENTS, LegalDocumentType } from './legal-documents';
 import { OrgRole, isOrgRole, hasOrgPermission, canAssignRole, OrgPermission, ORG_ROLE_PERMISSIONS } from './org-rbac';
 import { getEffectiveDataPolicy, validateDataPolicyUpdate } from './org-data-policy';
@@ -1217,21 +1220,76 @@ app.get("/api/nova/voice-sessions", verifyAppCheck, authenticateFirebaseUser, as
   }
 });
 
-// ============ Personal wellbeing tracking — GAD-7 ============
+// ============ Personal wellbeing tracking — GAD-7 (Anxiety Check-in) ============
 // A validated self-report anxiety screener the user completes about
-// themselves. Two hard rules, enforced here:
+// themselves. Hard rules, enforced here:
 //   1. STRICTLY PRIVATE to the individual. Stored under the user document and
 //      there is deliberately NO org/aggregate endpoint for it - a person's
 //      GAD-7 result must never reach an employer dashboard.
 //   2. Self-report, not diagnosis, not inference. The user rates themselves;
 //      the server just validates, scores with the standard published bands
 //      (see gad7.ts), and stores the history so they can see their own trend.
+//   3. The seven questions, response options and scoring are LOCKED, version-
+//      controlled content (GAD7_ASSESSMENT_VERSION) - never computed or
+//      rewritten by an LLM.
+//   4. An incomplete check-in is never scored and never creates a trend
+//      entry - it lives only in the single draft doc below until all 7
+//      items are answered.
 // Nested under the user, so the GDPR export/delete endpoints cover it
 // automatically (it is health data and must be erasable).
+
 const Gad7Schema = z.object({
   answers: z.array(z.number().int().min(0).max(3)).length(7),
   impairment: z.number().int().min(0).max(3).nullable().optional(),
 }).strict();
+
+// A draft in progress - at most one per user, so "Continue Check-in" always
+// resumes the same in-progress attempt. -1 marks an item not yet answered;
+// never interpreted as a real 0 ("Not at all").
+const Gad7DraftSchema = z.object({
+  answers: z.array(z.number().int().min(-1).max(3)).length(7),
+  impairment: z.number().int().min(0).max(3).nullable().optional(),
+}).strict();
+
+app.put("/api/wellbeing/gad7/draft", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const uid = requireAuth(req).uid;
+    const parsed = Gad7DraftSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: "Invalid draft check-in." });
+    const db = getDb();
+    await db.collection("users").doc(uid).collection("wellbeing_drafts").doc("gad7").set({
+      assessmentVersion: GAD7_ASSESSMENT_VERSION,
+      answers: parsed.data.answers,
+      impairment: parsed.data.impairment ?? null,
+      updatedAt: new Date().toISOString(),
+    });
+    res.json({ success: true });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get("/api/wellbeing/gad7/draft", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const uid = requireAuth(req).uid;
+    const db = getDb();
+    const doc = await db.collection("users").doc(uid).collection("wellbeing_drafts").doc("gad7").get();
+    res.json({ draft: doc.exists ? doc.data() : null });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.delete("/api/wellbeing/gad7/draft", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const uid = requireAuth(req).uid;
+    const db = getDb();
+    await db.collection("users").doc(uid).collection("wellbeing_drafts").doc("gad7").delete();
+    res.json({ success: true });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
 
 app.post("/api/wellbeing/gad7", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
   try {
@@ -1243,15 +1301,25 @@ app.post("/api/wellbeing/gad7", verifyAppCheck, authenticateFirebaseUser, async 
     const score = scoreGad7(parsed.data.answers);
     const result = interpretGad7(score);
     const db = getDb();
-    await db.collection("users").doc(uid).collection("gad7_assessments").add({
+    const ref = await db.collection("users").doc(uid).collection("gad7_assessments").add({
+      assessmentVersion: GAD7_ASSESSMENT_VERSION,
       answers: parsed.data.answers,
       impairment: parsed.data.impairment ?? null,
       score,
       severity: result.severity,
+      status: "completed",
+      contextTags: [],
+      novaPatternLearningAuthorized: false,
+      contextualTagsAuthorized: false,
       createdAt: new Date().toISOString(),
       serverCreatedAt: FieldValue.serverTimestamp(),
     });
-    res.json({ score, severity: result.severity, severityLabel: result.severityLabel, summary: result.summary, suggestsSupport: result.suggestsSupport });
+    // A completed submission always clears the in-progress draft, if any.
+    await db.collection("users").doc(uid).collection("wellbeing_drafts").doc("gad7").delete();
+    res.json({
+      id: ref.id, score, severity: result.severity, severityLabel: result.severityLabel,
+      summary: result.summary, suggestsSupport: result.suggestsSupport,
+    });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
@@ -1266,9 +1334,80 @@ app.get("/api/wellbeing/gad7", verifyAppCheck, authenticateFirebaseUser, async (
     res.json({
       assessments: snap.docs.map(d => {
         const data = d.data();
-        return { id: d.id, score: data.score, severity: data.severity, createdAt: data.createdAt };
+        return {
+          id: d.id, score: data.score, severity: data.severity, impairment: data.impairment ?? null,
+          contextTags: data.contextTags || [], createdAt: data.createdAt,
+        };
       }),
     });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// "Why now?" context tags and the privacy/pattern-learning authorization
+// choices - asked only AFTER the result, and only ever applied to an
+// already-completed assessment the caller owns. Never touches the
+// locked score/answers fields.
+const Gad7ContextUpdateSchema = z.object({
+  contextTags: z.array(z.enum(GAD7_CONTEXT_TAG_ORDER as [Gad7ContextTag, ...Gad7ContextTag[]])).max(GAD7_CONTEXT_TAG_ORDER.length).optional(),
+  novaPatternLearningAuthorized: z.boolean().optional(),
+  contextualTagsAuthorized: z.boolean().optional(),
+}).strict();
+
+app.patch("/api/wellbeing/gad7/:id", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const uid = requireAuth(req).uid;
+    const parsed = Gad7ContextUpdateSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: "Invalid update." });
+    const db = getDb();
+    const ref = db.collection("users").doc(uid).collection("gad7_assessments").doc(req.params.id);
+    const doc = await ref.get();
+    if (!doc.exists) return res.status(404).json({ error: "Check-in not found." });
+    await ref.update({ ...parsed.data, updatedAt: new Date().toISOString() });
+    res.json({ success: true });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Fortnightly, optional, PULL-based reminder preference: never a push
+// promise this app doesn't keep - just a stored "suggest again around this
+// date", surfaced the next time the user opens the check-in themselves.
+const Gad7ReminderSchema = z.object({
+  choice: z.enum(GAD7_REMINDER_CHOICE_ORDER as [Gad7ReminderChoice, ...Gad7ReminderChoice[]]),
+  nextSuggestedAt: z.string().datetime().nullable().optional(),
+}).strict();
+
+app.put("/api/wellbeing/gad7/reminder", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const uid = requireAuth(req).uid;
+    const parsed = Gad7ReminderSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: "Invalid reminder preference." });
+    const nextSuggestedAt = parsed.data.choice === 'two_weeks'
+      ? new Date(Date.now() + GAD7_FORTNIGHTLY_DAYS * 24 * 60 * 60 * 1000).toISOString()
+      : parsed.data.choice === 'choose_other'
+        ? (parsed.data.nextSuggestedAt ?? null)
+        : null;
+    const db = getDb();
+    await db.collection("users").doc(uid).collection("preferences").doc("gad7_checkin").set({
+      reminderChoice: parsed.data.choice,
+      nextSuggestedAt,
+      updatedAt: new Date().toISOString(),
+    }, { merge: true });
+    res.json({ success: true, nextSuggestedAt });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get("/api/wellbeing/gad7/reminder", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const uid = requireAuth(req).uid;
+    const db = getDb();
+    const doc = await db.collection("users").doc(uid).collection("preferences").doc("gad7_checkin").get();
+    const data = doc.exists ? doc.data()! : {};
+    res.json({ reminderChoice: data.reminderChoice ?? null, nextSuggestedAt: data.nextSuggestedAt ?? null });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
@@ -10470,6 +10609,10 @@ app.post("/api/user/mark-activity", verifyAppCheck, authenticateFirebaseUser, as
 // weekly goals/energy budget are time-boxed and "in progress" by
 // design all week, so neither maps cleanly to "abandoned" - both
 // deliberately left for a future pass rather than guessed at here).
+// The Anxiety Check-in (GAD-7) now has its own in-progress draft
+// (/api/wellbeing/gad7/draft), but resumption is offered right inside
+// that screen's own intro step - it doesn't need this cross-app prompt
+// too.
 // Kept as a fully separate function from the rule-based recommendation
 // engine above so it carries zero risk to those rules. Only ever
 // surfaces ONE prompt (the most recently touched), matching this
