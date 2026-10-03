@@ -12,6 +12,10 @@ import { SixtySecondCheckIn } from './SixtySecondCheckIn.tsx';
 import { cn } from '../lib/utils';
 import { useFocusTrap } from '../lib/useFocusTrap';
 import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip as RechartsTooltip, CartesianGrid, BarChart, Bar, Cell, Legend } from 'recharts';
+import { loadRecentActionInsights } from '../lib/rediscovery-insight-service';
+import { loadRecentExperiments } from '../lib/action-experiment-service';
+import { loadLatestCapacityCheckIn } from '../lib/energy-delta-service';
+import { hasStructuralProblem, buildPersonalChangeModel, pickJustInTimeInsight, JustInTimeInsight } from '../../action-engine';
 
 interface Chapter {
   id: string;
@@ -199,6 +203,41 @@ export const ReflectSection = ({
   };
 
   useEffect(() => { fetchMoodLogs(); }, [uid]);
+
+  // Just-in-Time Insights: one real reason to read a specific chapter right
+  // now, drawn from signals the Action Engine already computes (capacity,
+  // controllability, structural problems, the Personal Change Model, the
+  // most recent review) - never a generic rotation, and never fabricated
+  // for a demo session with no real history behind it.
+  const [justInTime, setJustInTime] = useState<JustInTimeInsight | null>(null);
+
+  useEffect(() => {
+    const load = async () => {
+      if (!uid || isDemoSession) { setJustInTime(null); return; }
+      try {
+        const [insights, experiments, latestCapacityCheckIn] = await Promise.all([
+          loadRecentActionInsights(uid),
+          loadRecentExperiments(uid),
+          loadLatestCapacityCheckIn(uid),
+        ]);
+        const latestInsight = [...insights].sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1))[0] ?? null;
+        const mostRecentReviewChoice = [...experiments]
+          .sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1))
+          .find((e) => e.reviewChoice !== null)?.reviewChoice ?? null;
+
+        setJustInTime(pickJustInTimeInsight({
+          capacityScore: latestCapacityCheckIn ? latestCapacityCheckIn.score : null,
+          latestControllability: latestInsight?.controllability ?? null,
+          structuralProblemDetected: latestInsight ? hasStructuralProblem(latestInsight.id, experiments) : false,
+          personalChangeModelTraits: buildPersonalChangeModel(experiments),
+          mostRecentReviewChoice,
+        }));
+      } catch {
+        setJustInTime(null);
+      }
+    };
+    load();
+  }, [uid, isDemoSession]);
 
   const [moodFilter, setMoodFilter] = useState<'all' | 'negative' | 'positive'>('all');
   const [newMoodWord, setNewMoodWord] = useState('');
@@ -539,9 +578,20 @@ export const ReflectSection = ({
         <div className="lg:col-span-4 space-y-4">
           <div className="flex items-center gap-2 mb-6 px-1">
             <LayoutTemplate className="w-4 h-4 text-text-muted" />
-            <span className="text-xs font-black uppercase tracking-[0.2em] text-text-muted">Recovery Curriculum</span>
+            <span className="text-xs font-black uppercase tracking-[0.2em] text-text-muted">Just-in-Time Insights</span>
           </div>
-          
+
+          {justInTime && (
+            <button
+              onClick={() => handleSelect(chapters.find((c) => c.id === justInTime.chapterId)!)}
+              className="w-full text-left mb-4 p-5 rounded-2xl border border-primary/30 bg-primary/5 hover:bg-primary/10 transition-colors"
+            >
+              <p className="text-[10px] font-black uppercase tracking-widest text-[#9a3412] dark:text-primary mb-1.5">Right now</p>
+              <p className="text-xs text-text-muted mb-2">{justInTime.reason}</p>
+              <p className="font-bold text-sm text-text-main">{chapters.find((c) => c.id === justInTime.chapterId)?.title}</p>
+            </button>
+          )}
+
           <div className="space-y-3">
             {chapters.map(c => (
               <button

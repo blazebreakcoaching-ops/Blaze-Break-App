@@ -799,3 +799,43 @@ export const shouldDeferNewExperiment = (capacityScore: number | null): boolean 
 export const CAPACITY_AWARE_DEFER_LINE = "Capacity looks low right now. Let's protect what you have before starting something new.";
 
 export const CAPACITY_AWARE_HANDOFF_TAB = 'recover';
+
+// ---- Just-in-Time Insights --------------------------------------------------------
+// Replaces a flat, always-visible curriculum menu with one real reason, drawn
+// from signals that already exist elsewhere in the Action Engine, to read a
+// specific insight right now - never a generic rotation, and never shown at
+// all when nothing real applies.
+
+export type JustInTimeChapterId = '1' | '2' | '3' | '4';
+
+export interface JustInTimeInsightContext {
+  capacityScore: number | null;
+  latestControllability: Controllability | null;
+  structuralProblemDetected: boolean;
+  personalChangeModelTraits: ChangeModelTrait[];
+  mostRecentReviewChoice: ReviewChoice | null;
+}
+
+export interface JustInTimeInsight {
+  chapterId: JustInTimeChapterId;
+  reason: string;
+}
+
+// Checked in a fixed priority order - the first real signal wins, since
+// several could be true at once and this is meant to surface one thing to
+// read, not a ranked list.
+export const pickJustInTimeInsight = (ctx: JustInTimeInsightContext): JustInTimeInsight | null => {
+  if (shouldDeferNewExperiment(ctx.capacityScore)) {
+    return { chapterId: '1', reason: 'Capacity has been low.' };
+  }
+  if (ctx.structuralProblemDetected || ctx.latestControllability === 'depends_on_someone_else') {
+    return { chapterId: '4', reason: "This keeps not working, however you try it." };
+  }
+  if (ctx.personalChangeModelTraits.includes('protects_identity')) {
+    return { chapterId: '3', reason: "You've dropped things that didn't feel like you." };
+  }
+  if (ctx.mostRecentReviewChoice === 'drop') {
+    return { chapterId: '2', reason: "You just let something go - that's allowed." };
+  }
+  return null;
+};
