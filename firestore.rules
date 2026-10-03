@@ -173,17 +173,21 @@ service cloud.firestore {
       match /anxiety_reset_sessions/{sessionId} {
         allow read, delete: if isOwner(uid);
         allow create: if isOwner(uid)
-            && hasOnly(['id', 'notice', 'intensity', 'intervention', 'checkResponse', 'helpful', 'createdAt'])
-            && hasAll(['id', 'notice', 'intensity', 'intervention', 'createdAt'])
+            && hasOnly(['id', 'notice', 'intensity', 'intervention', 'settingContext', 'pendingLaterFollowUp', 'checkResponse', 'helpful', 'laterFollowUp', 'createdAt'])
+            && hasAll(['id', 'notice', 'intensity', 'intervention', 'settingContext', 'pendingLaterFollowUp', 'createdAt'])
             && request.resource.data.notice in ['racing_thoughts', 'body_tense', 'panicky', 'worried_specific', 'dreading', 'stuck_decision', 'cant_switch_off', 'dont_know']
             && request.resource.data.intensity in ['manageable', 'hard_to_focus', 'overwhelming']
-            && request.resource.data.intervention in ['worry_offload', 'breathing', 'grounding', 'tension_release']
+            && request.resource.data.intervention in ['worry_offload', 'breathing', 'grounding', 'tension_release', 'discreet_reset', 'stay_with_me']
+            && (request.resource.data.settingContext == null || request.resource.data.settingContext in ['private', 'around_others', 'meeting_or_class', 'travelling', 'in_bed', 'other'])
+            && request.resource.data.pendingLaterFollowUp is bool
             && (!('checkResponse' in request.resource.data) || request.resource.data.checkResponse == null)
-            && (!('helpful' in request.resource.data) || request.resource.data.helpful == null);
+            && (!('helpful' in request.resource.data) || request.resource.data.helpful == null)
+            && (!('laterFollowUp' in request.resource.data) || request.resource.data.laterFollowUp == null);
         allow update: if isOwner(uid)
-            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['checkResponse', 'helpful'])
-            && (!('checkResponse' in request.resource.data) || request.resource.data.checkResponse in ['steadier', 'about_same', 'more_unsettled', 'not_sure'])
-            && (!('helpful' in request.resource.data) || request.resource.data.helpful in ['yes', 'a_little', 'not_really']);
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['checkResponse', 'helpful', 'laterFollowUp'])
+            && (!('checkResponse' in request.resource.data) || request.resource.data.checkResponse in ['steadier', 'still_anxious_continuing', 'about_same', 'more_unsettled', 'not_sure'])
+            && (!('helpful' in request.resource.data) || request.resource.data.helpful in ['yes', 'a_little', 'not_really'])
+            && (!('laterFollowUp' in request.resource.data) || request.resource.data.laterFollowUp in ['settled_enough', 'came_back', 'got_harder', 'moved_on']);
       }
 
       // Anxiety Reset's completion counter - gates how often "Did that
@@ -191,19 +195,24 @@ service cloud.firestore {
       match /preferences/anxiety_reset {
         allow read: if isOwner(uid);
         allow write: if isOwner(uid) &&
-            hasOnly(['totalSessions', 'updatedAt']) &&
-            (!('totalSessions' in request.resource.data) || (request.resource.data.totalSessions is number && request.resource.data.totalSessions >= 0));
+            hasOnly(['totalSessions', 'breathingPreference', 'updatedAt']) &&
+            (!('totalSessions' in request.resource.data) || (request.resource.data.totalSessions is number && request.resource.data.totalSessions >= 0)) &&
+            (!('breathingPreference' in request.resource.data) || request.resource.data.breathingPreference in ['usually_helps', 'sometimes_helps', 'prefer_grounding', 'dont_suggest']);
       }
 
       // Worry Offload - PARK IT: "It's captured. You don't have to keep
       // rehearsing it to remember it." Retrievable and resolvable, same
-      // shape as Decompression Doorway's parked-items store.
+      // shape as Decompression Doorway's parked-items store. Only ever
+      // written when the user chose Save Privately or Let Nova Use This
+      // to Notice Patterns - "Don't Save This" never writes here at all.
       match /anxiety_parked_worries/{itemId} {
         allow read, delete: if isOwner(uid);
         allow create: if isOwner(uid)
-            && hasOnly(['id', 'text', 'resolved', 'createdAt'])
-            && hasAll(['id', 'text', 'resolved', 'createdAt'])
+            && hasOnly(['id', 'text', 'reminderDay', 'availableForPatterns', 'resolved', 'createdAt'])
+            && hasAll(['id', 'text', 'reminderDay', 'availableForPatterns', 'resolved', 'createdAt'])
             && isStringWithMax(request.resource.data.text, 2000)
+            && (request.resource.data.reminderDay == null || request.resource.data.reminderDay in ['later_today', 'tomorrow', 'no_reminder'])
+            && request.resource.data.availableForPatterns is bool
             && request.resource.data.resolved == false;
         allow update: if isOwner(uid)
             && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['resolved'])
