@@ -2,8 +2,14 @@ import React, { useState, useEffect } from 'react';
 import { Users, Heart, Share2, PhoneCall, ChevronRight } from 'lucide-react';
 import { auth } from '../lib/firebase';
 import { db } from '../lib/firestore';
-import { doc, getDoc } from 'firebase/firestore';
+import { doc, getDoc, collection, getDocs } from 'firebase/firestore';
 import { isRealGuardian } from '../../guardian-alert';
+import {
+  SupportCapsuleCategory,
+  SUPPORT_CAPSULE_CATEGORIES,
+  SUPPORT_CAPSULE_CATEGORY_LABELS,
+  deriveEffectiveSharing,
+} from '../../support-capsules';
 import { SupportContact } from '../types';
 import { cn } from '../lib/utils';
 import { RecoveryAlly } from './RecoveryAlly';
@@ -16,37 +22,17 @@ import { AllyNudgeScheduler } from './AllyNudgeScheduler';
 // overview connecting them. The Overview tab answers the Master Support
 // Circle spec's three home-screen questions - who's in my corner, what am
 // I sharing, can I reach someone - from data these existing features
-// already store; it introduces no new sharing model of its own (that's
-// the Support Capsules work, a later PR in this series).
+// already store. "What am I sharing" reads the real Support Capsules
+// model (support-capsules.ts) - the same source of truth RecoveryAlly.tsx
+// itself now uses - rather than the old blanket permissions object.
 
 type SupportCircleView = 'overview' | 'ally' | 'guardian' | 'checkins';
-
-interface AllyPermissionsSummary {
-  viewGoals: boolean;
-  viewMilestones: boolean;
-  viewEnergyStats: boolean;
-  sendPings: boolean;
-}
 
 interface AllySummary {
   isInvited: boolean;
   allyName: string;
-  permissions: AllyPermissionsSummary;
+  sharing: Record<SupportCapsuleCategory, boolean>;
 }
-
-const DEFAULT_PERMISSIONS_SUMMARY: AllyPermissionsSummary = {
-  viewGoals: true, viewMilestones: true, viewEnergyStats: false, sendPings: true,
-};
-
-// Mirrors RecoveryAlly.tsx's own toggle labels exactly, so "what am I
-// sharing" on the overview never drifts from what the permissions panel
-// itself calls these.
-const PERMISSION_LABELS: Record<keyof AllyPermissionsSummary, string> = {
-  viewGoals: 'Shared Goals',
-  viewMilestones: 'Milestone Updates',
-  viewEnergyStats: 'Energy Levels',
-  sendPings: 'Messages from them',
-};
 
 const NAV_ITEMS: { id: SupportCircleView; label: string }[] = [
   { id: 'overview', label: 'Overview' },
@@ -87,14 +73,17 @@ export const MySupportCircle = ({ contacts, realContacts, onAdd, onRemove, userN
   useEffect(() => {
     const load = async () => {
       if (!auth.currentUser) { setLoadingSummary(false); return; }
+      const uid = auth.currentUser.uid;
       try {
-        const snap = await getDoc(doc(db, 'users', auth.currentUser.uid, 'recovery_ally', 'state'));
+        const snap = await getDoc(doc(db, 'users', uid, 'recovery_ally', 'state'));
         if (snap.exists()) {
           const data = snap.data();
+          const capsulesSnap = await getDocs(collection(db, 'users', uid, 'support_capsules'));
+          const capsules = capsulesSnap.docs.map((d) => d.data() as { category: SupportCapsuleCategory; expiresAt: string | null });
           setAllySummary({
             isInvited: !!data.isInvited,
             allyName: data.allyName || '',
-            permissions: { ...DEFAULT_PERMISSIONS_SUMMARY, ...(data.permissions || {}) },
+            sharing: deriveEffectiveSharing(capsules, new Date().toISOString(), data.permissions || {}),
           });
         }
       } catch (e) {
@@ -111,9 +100,7 @@ export const MySupportCircle = ({ contacts, realContacts, onAdd, onRemove, userN
   // one here would promise a capability the rest of the page doesn't.
   const reachableGuardians = realContacts.filter((c) => isRealGuardian(c) && !c.isSample);
   const sharedWith = allySummary?.isInvited
-    ? (Object.keys(PERMISSION_LABELS) as (keyof AllyPermissionsSummary)[])
-        .filter((key) => allySummary.permissions[key])
-        .map((key) => PERMISSION_LABELS[key])
+    ? SUPPORT_CAPSULE_CATEGORIES.filter((category) => allySummary.sharing[category]).map((category) => SUPPORT_CAPSULE_CATEGORY_LABELS[category])
     : [];
 
   return (

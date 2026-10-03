@@ -1205,6 +1205,28 @@ service cloud.firestore {
             && (request.method == 'create' ? true : checkCreatedAtUnchanged());
       }
 
+      // Support Capsules (support-capsules.ts): the real, scoped, expiring
+      // replacement for recovery_ally/state's old blanket permissions
+      // object. Doc ID is the category itself, so there can only ever be
+      // one capsule per category - creating/updating one for a category
+      // that already has one simply replaces it, matching "there is at
+      // most one active share per category" by construction rather than
+      // by an extra uniqueness check. expiresAt is owner-supplied (not
+      // re-derived here) since this is the owner's own data, same trust
+      // level nudge_schedules' time/timezone fields already get; the
+      // category/expiryType enums are what rules can and do enforce.
+      match /support_capsules/{category} {
+        allow read, delete: if isOwner(uid);
+        allow create, update: if isOwner(uid)
+            && hasOnly(['category', 'expiryType', 'startAt', 'expiresAt', 'createdAt', 'updatedAt'])
+            && hasAll(['category', 'expiryType', 'startAt', 'expiresAt'])
+            && request.resource.data.category in ['viewGoals', 'viewMilestones', 'viewEnergyStats', 'sendPings']
+            && request.resource.data.category == category
+            && request.resource.data.expiryType in ['today', 'seven_days', 'until_date', 'until_off']
+            && request.resource.data.startAt is string
+            && (request.resource.data.expiresAt == null || request.resource.data.expiresAt is string);
+      }
+
       match /ally_shared_goals/{goalId} {
         allow read, delete: if isOwner(uid);
         allow create, update: if isOwner(uid)
