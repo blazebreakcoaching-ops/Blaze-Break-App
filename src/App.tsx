@@ -57,6 +57,7 @@ import { auth, getDb } from "./lib/firebase.ts";
 const DiagnoseView = lazy(() => import("./components/DiagnoseSection.tsx").then(m => ({ default: m.DiagnoseView })));
 const ResultView = lazy(() => import("./components/DiagnoseSection.tsx").then(m => ({ default: m.ResultView })));
 const EnergyBudgetTool = lazy(() => import("./components/EnergyBudget.tsx").then(m => ({ default: m.EnergyBudgetTool })));
+const CapacityFirewall = lazy(() => import("./components/CapacityFirewall.tsx").then(m => ({ default: m.CapacityFirewall })));
 const BoundaryRehearsal = lazy(() => import("./components/BoundaryRehearsal.tsx").then(m => ({ default: m.BoundaryRehearsal })));
 const BoundaryAutopilot = lazy(() => import("./components/BoundaryAutopilot.tsx").then(m => ({ default: m.BoundaryAutopilot })));
 const ReflectSection = lazy(() => import("./components/ReflectSection.tsx").then(m => ({ default: m.ReflectSection })));
@@ -2515,6 +2516,7 @@ export default function App() {
 
             {activeTab === "communicate" && (
               <div className="space-y-32">
+                <CapacityFirewall onNavigate={safeSetActiveTab as any} />
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-12">
                   <div className="lg:col-span-2 space-y-12">
                     <BoundaryRehearsal

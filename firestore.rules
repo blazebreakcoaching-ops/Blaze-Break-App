@@ -219,6 +219,33 @@ service cloud.firestore {
             && request.resource.data.resolved == true;
       }
 
+      // Capacity Firewall's decision log: The Pause / Capacity Gate / Choice
+      // Screen for one incoming demand. Created with the demand + real
+      // capacity snapshot, then narrowly updated as the flow progresses -
+      // never re-scoring the capacity/demand fields after creation.
+      match /capacity_firewall_decisions/{decisionId} {
+        allow read, delete: if isOwner(uid);
+        allow create: if isOwner(uid)
+            && hasOnly(['id', 'demandDescription', 'estimatedMinutes', 'isToday', 'capacityScore', 'plannedLoad', 'squeezeAreas', 'choice', 'acceptRationale', 'conditionalYesLever', 'conditionalYesMessage', 'delegateAnswer', 'deferAnswer', 'createdAt'])
+            && hasAll(['id', 'demandDescription', 'estimatedMinutes', 'isToday', 'capacityScore', 'plannedLoad', 'createdAt'])
+            && isStringWithMax(request.resource.data.demandDescription, 500)
+            && request.resource.data.isToday is bool
+            && (request.resource.data.estimatedMinutes == null || (request.resource.data.estimatedMinutes is number && request.resource.data.estimatedMinutes >= 0 && request.resource.data.estimatedMinutes <= 1440))
+            && (request.resource.data.capacityScore == null || (request.resource.data.capacityScore is number && request.resource.data.capacityScore >= 0 && request.resource.data.capacityScore <= 100))
+            && (request.resource.data.plannedLoad == null || (request.resource.data.plannedLoad is number && request.resource.data.plannedLoad >= 0 && request.resource.data.plannedLoad <= 100))
+            && (!('squeezeAreas' in request.resource.data) || request.resource.data.squeezeAreas.size() == 0)
+            && (!('choice' in request.resource.data) || request.resource.data.choice == null);
+        allow update: if isOwner(uid)
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['squeezeAreas', 'choice', 'acceptRationale', 'conditionalYesLever', 'conditionalYesMessage', 'delegateAnswer', 'deferAnswer'])
+            && (!('squeezeAreas' in request.resource.data) || (request.resource.data.squeezeAreas is list && request.resource.data.squeezeAreas.size() <= 8))
+            && (!('choice' in request.resource.data) || request.resource.data.choice in ['accept', 'conditional_yes', 'negotiate', 'delegate', 'defer', 'decline', 'need_more_info'])
+            && (!('acceptRationale' in request.resource.data) || request.resource.data.acceptRationale == null || request.resource.data.acceptRationale in ['making_exception', 'fits_comfortably', 'moving_something_else'])
+            && (!('conditionalYesLever' in request.resource.data) || request.resource.data.conditionalYesLever == null || request.resource.data.conditionalYesLever in ['deadline', 'scope', 'duration', 'ownership', 'priority', 'timing', 'support', 'custom'])
+            && (!('conditionalYesMessage' in request.resource.data) || request.resource.data.conditionalYesMessage == null || isStringWithMax(request.resource.data.conditionalYesMessage, 500))
+            && (!('delegateAnswer' in request.resource.data) || request.resource.data.delegateAnswer == null || isStringWithMax(request.resource.data.delegateAnswer, 300))
+            && (!('deferAnswer' in request.resource.data) || request.resource.data.deferAnswer == null || isStringWithMax(request.resource.data.deferAnswer, 300));
+      }
+
       // Breathing & Guided Reset's completion counter - gates how often
       // "Did it help?" is asked, nothing else.
       match /preferences/breathing_reset {
