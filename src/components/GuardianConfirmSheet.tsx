@@ -165,6 +165,7 @@ export const GuardianConfirmSheet = ({ userName, onClose }: GuardianConfirmSheet
   };
 
   const handleAddGuardian = () => {
+    window.dispatchEvent(new CustomEvent('support_circle_select_view', { detail: 'guardian' }));
     window.dispatchEvent(new CustomEvent('navigate_tab', { detail: 'ally' }));
     onClose();
   };

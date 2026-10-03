@@ -591,6 +591,7 @@ export const FaithValuesMode = (_props: FaithValuesModeProps) => {
   };
 
   const handleTrustedPersonContinue = () => {
+    window.dispatchEvent(new CustomEvent('support_circle_select_view', { detail: 'ally' }));
     window.dispatchEvent(new CustomEvent('navigate_tab', { detail: 'ally' }));
   };
 

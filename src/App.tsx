@@ -69,8 +69,7 @@ import { CrisisSupportModal, CrisisSupportButton } from "./components/CrisisSupp
 import { ErrorBoundary } from "./components/ErrorBoundary.tsx";
 const CommandPalette = lazy(() => import("./components/CommandPalette.tsx").then(m => ({ default: m.CommandPalette })));
 import { useFeatureFlags } from "./lib/feature-flags";
-const NovaGuardianRelay = lazy(() => import("./components/NovaGuardianRelay.tsx").then(m => ({ default: m.NovaGuardianRelay })));
-const AllyNudgeScheduler = lazy(() => import("./components/AllyNudgeScheduler.tsx").then(m => ({ default: m.AllyNudgeScheduler })));
+const MySupportCircle = lazy(() => import("./components/MySupportCircle.tsx").then(m => ({ default: m.MySupportCircle })));
 const OrgDashboard = lazy(() => import("./components/OrgDashboard.tsx").then(m => ({ default: m.OrgDashboard })));
 const PrivacyVault = lazy(() => import("./components/PrivacyVault.tsx").then(m => ({ default: m.PrivacyVault })));
 import { LandingPage } from "./components/LandingPage.tsx";
@@ -123,7 +122,6 @@ import { buildDashboardGreeting } from "../dashboard-greeting.ts";
 const TrustCentrePage = lazy(() => import("./components/TrustCentrePage.tsx").then(m => ({ default: m.TrustCentrePage })));
 const SubscriptionCentre = lazy(() => import("./components/SubscriptionCentre.tsx").then(m => ({ default: m.SubscriptionCentre })));
 import { hasSubscriptionEntitlement } from "./lib/entitlement.ts";
-const RecoveryAlly = lazy(() => import("./components/RecoveryAlly.tsx").then(m => ({ default: m.RecoveryAlly })));
 const UserGuide = lazy(() => import("./components/UserGuide.tsx").then(m => ({ default: m.UserGuide })));
 const SomaticResetOverlay = lazy(() => import("./components/SomaticResetOverlay.tsx").then(m => ({ default: m.SomaticResetOverlay })));
 const BLAMEResetOverlay = lazy(() => import("./components/BLAMEResetOverlay.tsx").then(m => ({ default: m.BLAMEResetOverlay })));
@@ -278,7 +276,7 @@ export const ALL_TABS: {
   {
     id: "ally",
     icon: HeartPulse,
-    label: "Recovery Ally",
+    label: "My Support Circle",
     roles: ["individual", "employee", "executive", "recovery_ally"],
   },
   {
@@ -753,7 +751,6 @@ const EYEBROW_LABELS: Record<string, string> = {
   nova: "AI Recovery Interface",
   subscription: "Plan & Billing",
   privacy: "Privacy & Trust Centre",
-  ally: "Recovery Ally",
   guide: "How To Use Blaze Break",
   org: "Collective Stability Pulse",
   evolution: "Feature Configuration",
@@ -813,7 +810,7 @@ const Header = ({
     const realGuardians = (supportCircle || []).filter(isRealGuardian);
     const primary = realGuardians.find((c: any) => c.role === 'primary_guardian') || realGuardians[0];
     if (!primary) {
-      setToastMessage("No guardian is set up yet - add one in Recovery Ally first.");
+      setToastMessage("No guardian is set up yet - add one in My Support Circle first.");
       setTimeout(() => setToastMessage(null), 4000);
       return;
     }
@@ -1993,7 +1990,7 @@ export default function App() {
     anxiety_reset: "Anxiety Reset",
     wellbeing: "Anxiety Check-in",
     subscription: "Plan & Billing",
-    ally: "Recovery Ally",
+    ally: "My Support Circle",
     guide: "User Guide",
     evolution: "Evolution Engine",
     intelligence: "Recovery Intelligence Layer",
@@ -2756,24 +2753,22 @@ export default function App() {
             )}
 
             {activeTab === "ally" && (
-              <div className="space-y-32">
-                <RecoveryAlly />
-                <NovaGuardianRelay
-                  // Sample cards are shown alongside (never in place of) any
-                  // real contacts the visitor has already added - a real
-                  // add/remove during a demo session still works normally
-                  // (Rule 2: genuine visitor action, not fabrication). Kept
-                  // out of AllyNudgeScheduler below on purpose - that
-                  // component schedules real, recurring server-side SMS
-                  // sends, which a fabricated contact must never be able to
-                  // trigger.
-                  contacts={isDemoSession ? [...DEMO_GUARDIANS, ...(stats.supportCircle || [])] : (stats.supportCircle || [])}
-                  onAdd={handleAddContact}
-                  onRemove={handleRemoveContact}
-                  userName={stats.profile?.fullName}
-                />
-                <AllyNudgeScheduler contacts={stats.supportCircle || []} />
-              </div>
+              <MySupportCircle
+                // Sample cards are shown alongside (never in place of) any
+                // real contacts the visitor has already added - a real
+                // add/remove during a demo session still works normally
+                // (Rule 2: genuine visitor action, not fabrication). Kept
+                // out of realContacts below on purpose - AllyNudgeScheduler
+                // schedules real, recurring server-side SMS sends, which a
+                // fabricated contact must never be able to trigger, and the
+                // overview's own "who's in my corner"/"can I reach someone"
+                // counts must never count a sample as a genuine contact.
+                contacts={isDemoSession ? [...DEMO_GUARDIANS, ...(stats.supportCircle || [])] : (stats.supportCircle || [])}
+                realContacts={stats.supportCircle || []}
+                onAdd={handleAddContact}
+                onRemove={handleRemoveContact}
+                userName={stats.profile?.fullName}
+              />
             )}
 
             {activeTab === "guide" && (
