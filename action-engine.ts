@@ -234,3 +234,130 @@ export interface ActionInsightRecord extends RediscoveryInsight {
   outsideControlChoice: OutsideControlResponse | null;
   nothingNeedsFixingChoice: NothingNeedsFixingChoice | null;
 }
+
+// ---- Experiments ------------------------------------------------------------
+// Experiments, not habits: default language throughout is "try", "test",
+// "see what happens" - never "habit", "routine", "discipline" or "streak".
+// An experiment means "we don't know yet whether this works for you."
+
+export const TRY_ONCE_CTA = 'Try This Once';
+export const EXPERIMENT_CTA = 'Start Experimenting';
+
+export type ExperimentDuration = 'next_time' | 'this_week' | 'next_three_situations' | 'until_friday' | 'two_weeks';
+
+export const EXPERIMENT_DURATION_ORDER: ExperimentDuration[] = [
+  'next_time', 'this_week', 'next_three_situations', 'until_friday', 'two_weeks',
+];
+
+export const EXPERIMENT_DURATION_LABELS: Record<ExperimentDuration, string> = {
+  next_time: 'Next time',
+  this_week: 'This week',
+  next_three_situations: 'Next three relevant situations',
+  until_friday: 'Until Friday',
+  two_weeks: 'Two weeks',
+};
+
+export const ENOUGH_DATA_EARLY_END_LABEL = "That's enough data";
+
+// ---- Moment-of-Truth Plan -----------------------------------------------------
+// Translates a vague intention into a specific cue and response - natural
+// language, never robotic.
+
+export const MOMENT_OF_TRUTH_PROMPT = "When X happens, I'll try Y.";
+export const MOMENT_OF_TRUTH_CUE_PROMPT = "When does this usually come up?";
+export const MOMENT_OF_TRUTH_RESPONSE_PROMPT = 'What will you actually say or do?';
+
+export interface MomentOfTruthPlan {
+  cue: string;
+  response: string;
+}
+
+// ---- Friction Forecast ---------------------------------------------------------
+
+export const FRICTION_FORECAST_QUESTION = "What's most likely to get in the way?";
+
+export type FrictionType =
+  | 'forget' | 'too_tired' | 'guilt' | 'pushback' | 'no_time'
+  | 'environment' | 'dont_want_it' | 'overthink' | 'dont_know' | 'something_else';
+
+export const FRICTION_TYPE_ORDER: FrictionType[] = [
+  'forget', 'too_tired', 'guilt', 'pushback', 'no_time',
+  'environment', 'dont_want_it', 'overthink', 'dont_know', 'something_else',
+];
+
+export const FRICTION_TYPE_LABELS: Record<FrictionType, string> = {
+  forget: "I'll forget",
+  too_tired: "I'll be too tired",
+  guilt: "I'll feel guilty",
+  pushback: 'Someone will push back',
+  no_time: "I won't have time",
+  environment: 'The environment makes it difficult',
+  dont_want_it: "I'm not sure I actually want to do it",
+  overthink: "I'll overthink it",
+  dont_know: "I don't know",
+  something_else: 'Something else',
+};
+
+// How the selected friction adapts the experiment - every friction type
+// maps to exactly one real adjustment, never left to float unaddressed.
+export type FrictionAdaptation =
+  | 'lightweight_nudge' | 'prepare_aftercare' | 'communication_lab_rehearsal'
+  | 'reduce_experiment_size' | 'context_change' | 'reconsider_experiment';
+
+export const FRICTION_ADAPTATION_LABELS: Record<FrictionAdaptation, string> = {
+  lightweight_nudge: 'A lightweight reminder',
+  prepare_aftercare: 'Prepare aftercare for afterwards',
+  communication_lab_rehearsal: 'Rehearse it in Communication Lab first',
+  reduce_experiment_size: "Let's make this smaller",
+  context_change: 'Change the environment first',
+  reconsider_experiment: "Let's reconsider whether this is the right experiment",
+};
+
+export const FRICTION_ADAPTATION_FOR_TYPE: Record<FrictionType, FrictionAdaptation> = {
+  forget: 'lightweight_nudge',
+  too_tired: 'reduce_experiment_size',
+  guilt: 'prepare_aftercare',
+  pushback: 'communication_lab_rehearsal',
+  no_time: 'reduce_experiment_size',
+  environment: 'context_change',
+  dont_want_it: 'reconsider_experiment',
+  overthink: 'lightweight_nudge',
+  dont_know: 'reconsider_experiment',
+  something_else: 'reconsider_experiment',
+};
+
+export const FRICTION_ADAPTATION_HANDOFF_TAB: Partial<Record<FrictionAdaptation, string>> = {
+  communication_lab_rehearsal: 'communicate',
+  context_change: 'communicate',
+};
+
+// ---- Minimum Viable Change ------------------------------------------------------
+// Every experiment should have a smaller fallback version - never marked
+// as failed when capacity drops and the smaller version is used instead.
+
+export const MINIMUM_VIABLE_CHANGE_PROMPT = 'What would the smaller, easier version of this look like?';
+export const WANT_SMALLER_VERSION_TODAY_LINE = 'Want the smaller version today?';
+
+// ---- The experiment record -----------------------------------------------------
+
+export type ExperimentStatus = 'active' | 'completed' | 'abandoned';
+
+export interface ExperimentRecord {
+  id: string;
+  insightId: string;
+  text: string;
+  ladderLevel: ActionLadderLevel;
+  duration: ExperimentDuration | null;
+  momentOfTruth: MomentOfTruthPlan | null;
+  friction: FrictionType | null;
+  minimumViableChange: string | null;
+  status: ExperimentStatus;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export const ladderLevelForExperiment = (duration: ExperimentDuration | null): ActionLadderLevel =>
+  duration === null ? 'try_once' : 'experiment';
+
+export const hasActiveExperiment = (experiments: ExperimentRecord[]): boolean =>
+  experiments.some((e) => e.status === 'active');
