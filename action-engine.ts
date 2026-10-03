@@ -593,3 +593,124 @@ export const KNOWLEDGE_ENTRY_LINE: Record<KnowledgeEntryKind, (text: string, det
 
 export const confirmedExperimentCountForInsight = (insightId: string, experiments: ExperimentRecord[]): number =>
   experiments.filter((e) => e.insightId === insightId && e.reviewChoice === 'keep').length;
+
+// ---- Personal Change Model ------------------------------------------------------
+// Real traits about how THIS person tends to change, each surfaced only once
+// there's enough real evidence for it - never a generic theory of change
+// imposed on a single data point.
+
+export type ChangeModelTrait =
+  | 'needs_smaller_steps' | 'needs_specificity' | 'affected_by_others' | 'timing_sensitive'
+  | 'protects_identity' | 'capacity_limited';
+
+export const CHANGE_MODEL_TRAIT_ORDER: ChangeModelTrait[] = [
+  'needs_smaller_steps', 'needs_specificity', 'affected_by_others', 'timing_sensitive', 'protects_identity', 'capacity_limited',
+];
+
+export const CHANGE_MODEL_TRAIT_LABELS: Record<ChangeModelTrait, string> = {
+  needs_smaller_steps: 'Smaller, more specific experiments tend to stick better for you.',
+  needs_specificity: 'Vague plans tend not to hold - specific ones do.',
+  affected_by_others: "Other people's choices often change what's realistic for you.",
+  timing_sensitive: 'Timing matters a lot to whether something works for you.',
+  protects_identity: "You tend to drop what doesn't feel like you, even if it would \"work\".",
+  capacity_limited: 'Capacity, not willingness, is usually what gets in the way.',
+};
+
+const CHANGE_REASON_TRAIT: Partial<Record<ChangeReason, ChangeModelTrait>> = {
+  too_difficult: 'needs_smaller_steps',
+  too_much_effort: 'needs_smaller_steps',
+  too_vague: 'needs_specificity',
+  someone_else_affected_it: 'affected_by_others',
+  wrong_timing: 'timing_sensitive',
+  didnt_feel_like_me: 'protects_identity',
+};
+
+const AUTOPSY_REASON_TRAIT: Partial<Record<AutopsyReason, ChangeModelTrait>> = {
+  too_ambitious: 'needs_smaller_steps',
+  someone_else_changed_things: 'affected_by_others',
+  no_capacity: 'capacity_limited',
+};
+
+const MIN_OCCURRENCES_FOR_TRAIT = 2;
+
+// A trait needs at least two real, independent instances of support -
+// counting across both change reasons and autopsy reasons, since several
+// different real reasons can point at the same underlying trait.
+export const buildPersonalChangeModel = (experiments: ExperimentRecord[]): ChangeModelTrait[] => {
+  const traitCounts = new Map<ChangeModelTrait, number>();
+  const bump = (trait: ChangeModelTrait | undefined) => {
+    if (!trait) return;
+    traitCounts.set(trait, (traitCounts.get(trait) ?? 0) + 1);
+  };
+  experiments.forEach((e) => {
+    if (e.changeReason) bump(CHANGE_REASON_TRAIT[e.changeReason]);
+    if (e.autopsyReason) bump(AUTOPSY_REASON_TRAIT[e.autopsyReason]);
+  });
+  return CHANGE_MODEL_TRAIT_ORDER.filter((t) => (traitCounts.get(t) ?? 0) >= MIN_OCCURRENCES_FOR_TRAIT);
+};
+
+// ---- Change Graph -----------------------------------------------------------------
+// A simple real trajectory over time - never a score, just where each
+// experiment actually landed, in order.
+
+export type ChangeGraphOutcome = 'kept' | 'changed' | 'dropped' | 'active';
+
+export interface ChangeGraphPoint {
+  experimentId: string;
+  date: string;
+  outcome: ChangeGraphOutcome;
+  value: number;
+}
+
+export const CHANGE_GRAPH_OUTCOME_LABELS: Record<ChangeGraphOutcome, string> = {
+  kept: 'Kept',
+  changed: 'Changed',
+  dropped: 'Dropped',
+  active: 'Still running',
+};
+
+const CHANGE_GRAPH_VALUE_FOR_OUTCOME: Record<ChangeGraphOutcome, number> = {
+  kept: 1, changed: 0, dropped: -1, active: 0,
+};
+
+const changeGraphOutcomeForExperiment = (e: ExperimentRecord): ChangeGraphOutcome => {
+  if (e.reviewChoice === 'keep') return 'kept';
+  if (e.reviewChoice === 'change') return 'changed';
+  if (e.reviewChoice === 'drop') return 'dropped';
+  return 'active';
+};
+
+export const buildChangeGraph = (experiments: ExperimentRecord[]): ChangeGraphPoint[] =>
+  experiments
+    .map((e): ChangeGraphPoint => {
+      const outcome = changeGraphOutcomeForExperiment(e);
+      return { experimentId: e.id, date: e.updatedAt, outcome, value: CHANGE_GRAPH_VALUE_FOR_OUTCOME[outcome] };
+    })
+    .sort((a, b) => (a.date < b.date ? -1 : 1));
+
+// ---- My Operating Manual -----------------------------------------------------------
+// A living personal reference compiled only from real, already-confirmed
+// material - never a generic self-help document. Reuses Proof of Change and
+// the Personal Change Model rather than restating them.
+
+export interface OperatingManualSection {
+  heading: string;
+  lines: string[];
+}
+
+export const buildOperatingManual = (
+  insights: ActionInsightRecord[], experiments: ExperimentRecord[]
+): OperatingManualSection[] => {
+  const sections: OperatingManualSection[] = [];
+
+  const confirmedPatterns = insights.filter((i) => i.state === 'user_confirmed').map((i) => i.text);
+  if (confirmedPatterns.length > 0) sections.push({ heading: 'Patterns that feel true', lines: confirmedPatterns });
+
+  const proven = buildProofOfChange(experiments).map((p) => `${p.text} — ${PROOF_OF_CHANGE_KIND_LABELS[p.kind]}`);
+  if (proven.length > 0) sections.push({ heading: "What you've changed", lines: proven });
+
+  const traits = buildPersonalChangeModel(experiments).map((t) => CHANGE_MODEL_TRAIT_LABELS[t]);
+  if (traits.length > 0) sections.push({ heading: 'How you tend to change', lines: traits });
+
+  return sections;
+};
