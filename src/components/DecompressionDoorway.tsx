@@ -7,7 +7,8 @@ import { auth } from '../lib/firebase';
 import { updateNovaMemoryBySourceAndType } from '../lib/nova-brain';
 import { recordRediscoveryClue } from '../lib/rediscovery-service';
 import { loadLatestCapacityCheckIn } from '../lib/energy-delta-service';
-import { ConfirmationAnswer, CONFIRMATION_OPTIONS } from '../../rediscovery-engine';
+import { createActionInsight, updateActionInsight } from '../lib/rediscovery-insight-service';
+import { ConfirmationAnswer, CONFIRMATION_OPTIONS, nextStateForConfirmation } from '../../rediscovery-engine';
 import {
   LEAVING_PRESETS, ARRIVING_STATE_PRESETS, SUGGESTED_PAIRINGS, RETURN_TO_ME_PAIRINGS,
   UnfinishedBusinessAnswer, UNFINISHED_BUSINESS_ORDER, UNFINISHED_BUSINESS_LABELS,
@@ -912,11 +913,17 @@ const MyThresholds = () => {
     load();
   }, []);
 
+  // Confirming (or partly confirming) a noticed threshold pattern now
+  // becomes a real ActionInsightRecord - not just a raw clue - so it can
+  // actually flow into the Action Engine's own Controllability Gate and
+  // experiment builder, the same machinery every other confirmed insight
+  // already uses, rather than dead-ending here once it's been read.
   const handleConfirmPattern = async (profile: ThresholdProfile, hypothesis: string, answer: ConfirmationAnswer) => {
     setConfirmed((prev) => ({ ...prev, [profile.pairKey]: answer }));
-    if (answer === 'yes' && auth.currentUser) {
-      await recordRediscoveryClue(auth.currentUser.uid, 'decompression_doorway', `${profile.leaving} → ${profile.arriving}`, hypothesis);
-    }
+    if (!auth.currentUser) return;
+    const uid = auth.currentUser.uid;
+    const id = await createActionInsight(uid, { section: 'what_drains', text: hypothesis, source: 'decompression_doorway' });
+    await updateActionInsight(uid, id, { state: nextStateForConfirmation(answer) });
   };
 
   const handleResolveParked = async (id: string) => {

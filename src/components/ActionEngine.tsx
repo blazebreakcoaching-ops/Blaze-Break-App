@@ -29,7 +29,7 @@ import {
   EXPERIMENT_DURATION_ORDER, EXPERIMENT_DURATION_LABELS, ExperimentDuration,
   MOMENT_OF_TRUTH_PROMPT, MOMENT_OF_TRUTH_CUE_PROMPT, MOMENT_OF_TRUTH_RESPONSE_PROMPT,
   FRICTION_FORECAST_QUESTION, FRICTION_TYPE_ORDER, FRICTION_TYPE_LABELS, FrictionType,
-  FRICTION_ADAPTATION_LABELS, FRICTION_ADAPTATION_FOR_TYPE,
+  FRICTION_ADAPTATION_LABELS, FRICTION_ADAPTATION_FOR_TYPE, FRICTION_ADAPTATION_HANDOFF_TAB,
   MINIMUM_VIABLE_CHANGE_PROMPT,
   ladderLevelForExperiment, hasActiveExperiment, ExperimentRecord,
   ONE_ACTIVE_EXPERIMENT_LINE, ACTIVE_EXPERIMENT_CONFLICT_ORDER, ACTIVE_EXPERIMENT_CONFLICT_LABELS, ActiveExperimentConflictChoice,
@@ -118,10 +118,16 @@ export const ActionEngine = ({ onNavigate }: ActionEngineProps) => {
           setStep('drift_detected');
           return;
         }
-        const pending = existing.find((i) => i.state === 'nova_noticed' || i.state === 'still_exploring') ?? null;
+        // A pattern confirmed as true elsewhere (e.g. My Thresholds) arrives
+        // here already past the worthiness question - it goes straight to
+        // the Controllability Gate rather than being asked "does this feel
+        // worth working on?" a second time.
+        const pending = existing.find((i) =>
+          i.state === 'nova_noticed' || i.state === 'still_exploring' || (i.state === 'user_confirmed' && !i.controllability)
+        ) ?? null;
         if (pending) {
           setInsight(pending);
-          setStep(pending.controllability ? 'controllability_gate' : 'insight_card');
+          setStep(pending.controllability || pending.state === 'user_confirmed' ? 'controllability_gate' : 'insight_card');
           return;
         }
         const [clues, workloadHistory] = await Promise.all([
@@ -204,7 +210,11 @@ export const ActionEngine = ({ onNavigate }: ActionEngineProps) => {
     if (!auth.currentUser || !insight) return;
     await updateActionInsight(auth.currentUser.uid, insight.id, { nothingNeedsFixingChoice: choice });
     if (choice === 'talk_to_nova' && onNavigate) { onNavigate('nova'); return; }
-    setResolvedSummary(NOTHING_NEEDS_FIXING_LABELS[choice]);
+    setResolvedSummary(
+      choice === 'journal_about_it'
+        ? `${NOTHING_NEEDS_FIXING_LABELS[choice]} The 60-Second Check-In is just below, whenever you're ready.`
+        : NOTHING_NEEDS_FIXING_LABELS[choice]
+    );
     setStep('resolved');
   };
 
@@ -745,7 +755,17 @@ export const ActionEngine = ({ onNavigate }: ActionEngineProps) => {
                   ))}
                 </div>
                 {friction && (
-                  <p className="text-xs text-text-muted">{FRICTION_ADAPTATION_LABELS[FRICTION_ADAPTATION_FOR_TYPE[friction]]}</p>
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-xs text-text-muted">{FRICTION_ADAPTATION_LABELS[FRICTION_ADAPTATION_FOR_TYPE[friction]]}</p>
+                    {FRICTION_ADAPTATION_HANDOFF_TAB[FRICTION_ADAPTATION_FOR_TYPE[friction]] && onNavigate && (
+                      <button
+                        onClick={() => onNavigate(FRICTION_ADAPTATION_HANDOFF_TAB[FRICTION_ADAPTATION_FOR_TYPE[friction]]!)}
+                        className="text-xs font-bold text-primary hover:underline shrink-0"
+                      >
+                        Rehearse this first
+                      </button>
+                    )}
+                  </div>
                 )}
                 <div className="flex gap-3">
                   <button onClick={() => setBuilderStage('mvc')} className="btn-primary py-2.5 px-5">Continue</button>
