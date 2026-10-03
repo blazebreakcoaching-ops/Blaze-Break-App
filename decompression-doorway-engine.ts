@@ -370,3 +370,85 @@ export const containsBannedPhrase = (text: string): boolean => {
   const lower = text.toLowerCase();
   return DECOMPRESSION_BANNED_PHRASES.some((p) => lower.includes(p));
 };
+
+// ---- First-use suggestions --------------------------------------------------
+// EMPTY / FIRST-USE EXPERIENCE: a short, specific starting list rather
+// than the full preset grid - setup should be very short the first time.
+
+export const FIRST_USE_SUGGESTIONS: ThresholdPairing[] = [
+  { leaving: 'Work', arriving: 'Home' },
+  { leaving: 'Busy Day', arriving: 'Sleep' },
+  { leaving: 'Parenting', arriving: 'Me' },
+  { leaving: 'Social Mode', arriving: 'Alone Time' },
+];
+
+// ---- Unfinished business: "do you need to act on it tonight?" ---------------
+// STANDARD DOORWAY EXAMPLE's own gate, ahead of the full disposition set -
+// a clear "yes" or "no" narrows the options rather than showing all four
+// every time.
+
+export type ActTonightAnswer = 'yes' | 'no' | 'not_sure';
+
+export const ACT_TONIGHT_ORDER: ActTonightAnswer[] = ['yes', 'no', 'not_sure'];
+
+export const ACT_TONIGHT_LABELS: Record<ActTonightAnswer, string> = {
+  yes: 'Yes', no: 'No', not_sure: "I'm not sure",
+};
+
+// A "yes" settles straight into needing action now; a "no" means it
+// doesn't need to come through the door at all, so only Park It/Let It
+// Go make sense (nothing to schedule for something that needs no
+// action); "not sure" falls back to the complete set.
+export const dispositionOptionsForActTonight = (answer: ActTonightAnswer): UnfinishedBusinessDisposition[] => {
+  if (answer === 'yes') return ['needs_action_now'];
+  if (answer === 'no') return ['park', 'let_go'];
+  return DISPOSITION_ORDER;
+};
+
+// ---- Park It: exact copy -----------------------------------------------------
+
+export const PARK_IT_CAPTURE_LABEL = 'Leave It Here';
+export const PARK_IT_SUPPORTING_LINE = "What are you afraid you'll forget if you stop thinking about it?";
+export const PARK_IT_CTA = 'Park It Until Later';
+export const PARK_IT_CONFIRM_LINE = "It's captured. You don't need to keep rehearsing it to remember it.";
+
+// ---- Crossing moment: exact copy ----------------------------------------------
+
+export const CROSSING_SUPPORTING_LINE = "You don't have to carry every part of the last chapter into the next one.";
+export const CROSSING_SHORT_LINE = 'Leave what can stay here.';
+
+// ---- Digital boundary (honest framing) -----------------------------------------
+
+export type DigitalBoundaryChoice = 'yes' | 'not_today' | 'set_schedule';
+
+export const DIGITAL_BOUNDARY_ORDER: DigitalBoundaryChoice[] = ['yes', 'not_today', 'set_schedule'];
+
+export const DIGITAL_BOUNDARY_LABELS: Record<DigitalBoundaryChoice, string> = {
+  yes: 'Yes', not_today: 'Not today', set_schedule: 'Set my usual schedule',
+};
+
+// Blaze Break never claims an external app has been muted unless it
+// genuinely has been - this is the one honest line behind every choice
+// above, since direct notification control isn't technically available here.
+export const DIGITAL_BOUNDARY_HONEST_NOTE =
+  "Blaze Break can't mute your phone - but naming this now makes it easier to actually put it down.";
+
+// ---- "Use your usual doorway?" -------------------------------------------------
+// Offered when a saved arrival quality AND anchor already exist for this
+// pair, instead of silently reusing them without asking.
+
+export type UseUsualDoorwayChoice = 'yes' | 'change_it' | 'skip_today';
+
+export const USE_USUAL_DOORWAY_ORDER: UseUsualDoorwayChoice[] = ['yes', 'change_it', 'skip_today'];
+
+export const USE_USUAL_DOORWAY_LABELS: Record<UseUsualDoorwayChoice, string> = {
+  yes: 'Yes', change_it: 'Change it', skip_today: 'Skip today',
+};
+
+// ---- Work-from-home support -----------------------------------------------------
+
+const WORK_LEAVING_PRESETS = new Set(['Work', 'Manager Mode', 'Business Owner Mode', 'Client Pressure']);
+
+export const isWorkFromHomeContext = (leaving: string): boolean => WORK_LEAVING_PRESETS.has(leaving);
+
+export const NO_COMMUTE_PROMPT = 'You may not have a commute, but your brain still needs an ending.';

@@ -36,6 +36,20 @@ import {
   appendCapacityHistory,
   CAPACITY_HISTORY_MAX,
   containsBannedPhrase,
+  FIRST_USE_SUGGESTIONS,
+  ActTonightAnswer,
+  dispositionOptionsForActTonight,
+  PARK_IT_CAPTURE_LABEL,
+  PARK_IT_SUPPORTING_LINE,
+  PARK_IT_CTA,
+  PARK_IT_CONFIRM_LINE,
+  CROSSING_SUPPORTING_LINE,
+  CROSSING_SHORT_LINE,
+  DIGITAL_BOUNDARY_ORDER,
+  DIGITAL_BOUNDARY_HONEST_NOTE,
+  USE_USUAL_DOORWAY_ORDER,
+  isWorkFromHomeContext,
+  NO_COMMUTE_PROMPT,
 } from './decompression-doorway-engine';
 
 describe('decompression-doorway-engine', () => {
@@ -203,5 +217,48 @@ describe('decompression-doorway-engine', () => {
     ARRIVAL_CHECK_ORDER.forEach((r) => {
       expect(containsBannedPhrase(ARRIVAL_CHECK_BRANCHES[r].novaLine)).toBe(false);
     });
+  });
+
+  it('offers a short, specific first-use suggestion list', () => {
+    expect(FIRST_USE_SUGGESTIONS.length).toBe(4);
+    expect(FIRST_USE_SUGGESTIONS).toEqual(
+      expect.arrayContaining([{ leaving: 'Work', arriving: 'Home' }, { leaving: 'Parenting', arriving: 'Me' }])
+    );
+  });
+
+  it('narrows unfinished-business disposition options from the act-tonight gate', () => {
+    expect(dispositionOptionsForActTonight('yes')).toEqual(['needs_action_now']);
+    expect(dispositionOptionsForActTonight('no')).toEqual(['park', 'let_go']);
+    expect(dispositionOptionsForActTonight('not_sure')).toEqual(DISPOSITION_ORDER);
+    const allAnswers: ActTonightAnswer[] = ['yes', 'no', 'not_sure'];
+    allAnswers.forEach((a) => expect(dispositionOptionsForActTonight(a).length).toBeGreaterThan(0));
+  });
+
+  it('keeps the exact Park It copy free of compliance-engine language', () => {
+    [PARK_IT_CAPTURE_LABEL, PARK_IT_SUPPORTING_LINE, PARK_IT_CTA, PARK_IT_CONFIRM_LINE].forEach((line) => {
+      expect(containsBannedPhrase(line)).toBe(false);
+    });
+    expect(PARK_IT_CONFIRM_LINE).toBe("It's captured. You don't need to keep rehearsing it to remember it.");
+  });
+
+  it('keeps the exact crossing-moment copy free of compliance-engine language', () => {
+    expect(containsBannedPhrase(CROSSING_SUPPORTING_LINE)).toBe(false);
+    expect(containsBannedPhrase(CROSSING_SHORT_LINE)).toBe(false);
+  });
+
+  it('frames the digital boundary honestly - never claiming a device was actually muted', () => {
+    expect(DIGITAL_BOUNDARY_ORDER).toEqual(['yes', 'not_today', 'set_schedule']);
+    expect(DIGITAL_BOUNDARY_HONEST_NOTE.toLowerCase()).toContain("can't mute");
+  });
+
+  it('offers to reuse a saved anchor without silently applying it', () => {
+    expect(USE_USUAL_DOORWAY_ORDER).toEqual(['yes', 'change_it', 'skip_today']);
+  });
+
+  it('recognises a work-from-home context and offers the no-commute prompt', () => {
+    expect(isWorkFromHomeContext('Work')).toBe(true);
+    expect(isWorkFromHomeContext('Manager Mode')).toBe(true);
+    expect(isWorkFromHomeContext('Social Mode')).toBe(false);
+    expect(containsBannedPhrase(NO_COMMUTE_PROMPT)).toBe(false);
   });
 });
