@@ -127,7 +127,8 @@ const SAFETY_NET: GuideFeature[] = [
     subTools: ['Daily reflection journal', 'Friction Finder'],
   },
   {
-    tab: 'ally', tag: 'Recovery Ally', title: 'Someone in your corner', description: "Invite a trusted friend, mentor, or partner to check in - you choose exactly what they see, and can turn any of it off any time.", icon: HeartPulse,
+    tab: 'ally', tag: 'My Support Circle', title: 'Someone in your corner', description: "Invite a trusted friend, mentor, or partner to check in - you choose exactly what they see, and can turn any of it off any time.", icon: HeartPulse,
+    subTools: ['Recovery Ally (everyday accountability)', 'Guardian Relay (trusted contacts you can reach in one tap)', 'Accountability Nudges (scheduled check-in messages)'],
     definition: { term: 'Guardian Protocol', text: "A one-tap way to ask a trusted contact you've chosen in advance to reach out to you. It's always something you start yourself - the app never watches for risk or sends anything without you tapping the button first." },
   },
   { tab: 'privacy', tag: 'Privacy Centre', title: 'Your data, your rules', description: 'See exactly what is stored, export it, or delete it - always on, nothing to go looking for.', icon: Lock },
