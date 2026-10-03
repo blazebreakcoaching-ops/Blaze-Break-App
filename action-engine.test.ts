@@ -10,6 +10,13 @@ import {
   ACTION_LADDER_ORDER, ACTION_LADDER_LABELS, ACTION_LADDER_DESCRIPTIONS,
   EVIDENCE_LEVEL_ORDER, EVIDENCE_LEVEL_LABELS, evidenceLevelForInsightState,
   ONE_ACTIVE_EXPERIMENT_LINE, ACTIVE_EXPERIMENT_CONFLICT_ORDER, ACTIVE_EXPERIMENT_CONFLICT_LABELS,
+  TRY_ONCE_CTA, EXPERIMENT_CTA,
+  EXPERIMENT_DURATION_ORDER, EXPERIMENT_DURATION_LABELS, ENOUGH_DATA_EARLY_END_LABEL,
+  MOMENT_OF_TRUTH_PROMPT, MOMENT_OF_TRUTH_CUE_PROMPT, MOMENT_OF_TRUTH_RESPONSE_PROMPT,
+  FRICTION_FORECAST_QUESTION, FRICTION_TYPE_ORDER, FRICTION_TYPE_LABELS,
+  FRICTION_ADAPTATION_LABELS, FRICTION_ADAPTATION_FOR_TYPE, FRICTION_ADAPTATION_HANDOFF_TAB,
+  MINIMUM_VIABLE_CHANGE_PROMPT, WANT_SMALLER_VERSION_TODAY_LINE,
+  ladderLevelForExperiment, hasActiveExperiment, ExperimentRecord,
 } from './action-engine';
 import { RediscoveryClue, WorkloadCheckSnapshot } from './rediscovery-engine';
 
@@ -141,5 +148,90 @@ describe('One Active Experiment principle', () => {
     expect(ONE_ACTIVE_EXPERIMENT_LINE).toBe("You already have something you're testing. Let's not turn recovery into another workload.");
     expect(ACTIVE_EXPERIMENT_CONFLICT_ORDER).toEqual(['keep_current', 'replace_it', 'save_for_later']);
     expect(Object.keys(ACTIVE_EXPERIMENT_CONFLICT_LABELS)).toHaveLength(3);
+  });
+});
+
+describe('Experiment language: never "Start 30-Day Challenge"', () => {
+  it('uses experiment language, not habit/streak/challenge language', () => {
+    expect(TRY_ONCE_CTA).toBe('Try This Once');
+    expect(EXPERIMENT_CTA).not.toMatch(/challenge|streak|habit/i);
+  });
+
+  it('has five appropriate durations plus an early-end option, never an arbitrary 30 days', () => {
+    expect(EXPERIMENT_DURATION_ORDER).toHaveLength(5);
+    expect(Object.keys(EXPERIMENT_DURATION_LABELS)).toHaveLength(5);
+    expect(Object.values(EXPERIMENT_DURATION_LABELS).join(' ')).not.toMatch(/30.day/i);
+    expect(ENOUGH_DATA_EARLY_END_LABEL).toBe("That's enough data");
+  });
+
+  it('try_once has no duration, experiment does', () => {
+    expect(ladderLevelForExperiment(null)).toBe('try_once');
+    expect(ladderLevelForExperiment('this_week')).toBe('experiment');
+  });
+});
+
+describe('Moment-of-Truth Plan: a specific cue and response, natural language', () => {
+  it('has the exact spec prompt and two sub-prompts', () => {
+    expect(MOMENT_OF_TRUTH_PROMPT).toBe("When X happens, I'll try Y.");
+    expect(MOMENT_OF_TRUTH_CUE_PROMPT).toBeTruthy();
+    expect(MOMENT_OF_TRUTH_RESPONSE_PROMPT).toBeTruthy();
+  });
+});
+
+describe('Friction Forecast: every friction type maps to exactly one real adaptation', () => {
+  it('has all ten spec options', () => {
+    expect(FRICTION_FORECAST_QUESTION).toBe("What's most likely to get in the way?");
+    expect(FRICTION_TYPE_ORDER).toHaveLength(10);
+    expect(Object.keys(FRICTION_TYPE_LABELS)).toHaveLength(10);
+  });
+
+  it('every friction type has a mapped adaptation with a label', () => {
+    FRICTION_TYPE_ORDER.forEach((f) => {
+      const adaptation = FRICTION_ADAPTATION_FOR_TYPE[f];
+      expect(adaptation).toBeTruthy();
+      expect(FRICTION_ADAPTATION_LABELS[adaptation]).toBeTruthy();
+    });
+  });
+
+  it('matches the spec worked examples', () => {
+    expect(FRICTION_ADAPTATION_FOR_TYPE.forget).toBe('lightweight_nudge');
+    expect(FRICTION_ADAPTATION_FOR_TYPE.guilt).toBe('prepare_aftercare');
+    expect(FRICTION_ADAPTATION_FOR_TYPE.pushback).toBe('communication_lab_rehearsal');
+    expect(FRICTION_ADAPTATION_FOR_TYPE.environment).toBe('context_change');
+    expect(FRICTION_ADAPTATION_FOR_TYPE.dont_want_it).toBe('reconsider_experiment');
+  });
+
+  it('only the two tool-backed adaptations hand off to a real tab', () => {
+    expect(FRICTION_ADAPTATION_HANDOFF_TAB.communication_lab_rehearsal).toBe('communicate');
+    expect(FRICTION_ADAPTATION_HANDOFF_TAB.context_change).toBe('communicate');
+    expect(FRICTION_ADAPTATION_HANDOFF_TAB.lightweight_nudge).toBeUndefined();
+    expect(FRICTION_ADAPTATION_HANDOFF_TAB.reconsider_experiment).toBeUndefined();
+  });
+});
+
+describe('Minimum Viable Change: a fallback, never a failure', () => {
+  it('has the exact spec prompt and offer line', () => {
+    expect(MINIMUM_VIABLE_CHANGE_PROMPT).toBeTruthy();
+    expect(WANT_SMALLER_VERSION_TODAY_LINE).toBe('Want the smaller version today?');
+  });
+});
+
+describe('One active experiment enforcement', () => {
+  const exp = (status: ExperimentRecord['status']): ExperimentRecord => ({
+    id: 'e1', insightId: 'i1', text: 't', ladderLevel: 'try_once', duration: null,
+    momentOfTruth: null, friction: null, minimumViableChange: null, status,
+    createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z',
+  });
+
+  it('detects a real active experiment', () => {
+    expect(hasActiveExperiment([exp('active')])).toBe(true);
+  });
+
+  it('completed and abandoned experiments do not block a new one', () => {
+    expect(hasActiveExperiment([exp('completed'), exp('abandoned')])).toBe(false);
+  });
+
+  it('no experiments at all means no conflict', () => {
+    expect(hasActiveExperiment([])).toBe(false);
   });
 });

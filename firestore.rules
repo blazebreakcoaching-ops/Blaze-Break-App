@@ -920,6 +920,27 @@ service cloud.firestore {
             && (!('nothingNeedsFixingChoice' in request.resource.data) || request.resource.data.nothingNeedsFixingChoice in ['leave_it_here', 'journal_about_it', 'keep_noticing', 'talk_to_nova']);
       }
 
+      // Action Engine's experiments: small, optional, specific, reversible -
+      // everything about WHAT is being tried is locked at creation (never
+      // re-scored after the fact), only its status narrows afterwards as
+      // the one-active-experiment rule and review flow progress it.
+      match /action_experiments/{experimentId} {
+        allow read, delete: if isOwner(uid);
+        allow create: if isOwner(uid)
+            && hasOnly(['id', 'insightId', 'text', 'ladderLevel', 'duration', 'momentOfTruth', 'friction', 'minimumViableChange', 'status', 'createdAt', 'updatedAt'])
+            && hasAll(['id', 'insightId', 'text', 'ladderLevel', 'status', 'createdAt', 'updatedAt'])
+            && isStringWithMax(request.resource.data.text, 500)
+            && request.resource.data.ladderLevel in ['notice', 'try_once', 'experiment', 'protect', 'default']
+            && request.resource.data.status == 'active'
+            && (!('duration' in request.resource.data) || request.resource.data.duration == null || request.resource.data.duration in ['next_time', 'this_week', 'next_three_situations', 'until_friday', 'two_weeks'])
+            && (!('momentOfTruth' in request.resource.data) || request.resource.data.momentOfTruth == null || request.resource.data.momentOfTruth is map)
+            && (!('friction' in request.resource.data) || request.resource.data.friction == null || request.resource.data.friction in ['forget', 'too_tired', 'guilt', 'pushback', 'no_time', 'environment', 'dont_want_it', 'overthink', 'dont_know', 'something_else'])
+            && (!('minimumViableChange' in request.resource.data) || request.resource.data.minimumViableChange == null || isStringWithMax(request.resource.data.minimumViableChange, 300));
+        allow update: if isOwner(uid)
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updatedAt'])
+            && request.resource.data.status in ['active', 'completed', 'abandoned'];
+      }
+
       // J. nova_permissions/current
       //
       // allowNovaMemorySuggestions/allowNovaRememberCoachingPreferences/
