@@ -2554,7 +2554,7 @@ export default function App() {
                               02
                             </div>
                             <span className="text-xs uppercase font-black tracking-widest text-text-muted">
-                              Anticipate 'Guilt Triggers'
+                              Know what might make you back down
                             </span>
                           </li>
                           <li className="flex items-start gap-3">
