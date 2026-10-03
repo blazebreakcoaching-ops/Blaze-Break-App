@@ -2646,7 +2646,7 @@ export default function App() {
             )}
 
             {activeTab === "wellbeing" && (
-              <Gad7Check onNeedSupport={() => setShowCrisisSupport(true)} />
+              <Gad7Check onNeedSupport={() => setShowCrisisSupport(true)} onNavigate={safeSetActiveTab as any} />
             )}
 
             {activeTab === "reset" && (
