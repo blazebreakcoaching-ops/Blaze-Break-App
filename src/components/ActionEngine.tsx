@@ -13,8 +13,9 @@ import {
 } from '../lib/rediscovery-insight-service';
 import {
   createExperiment, updateExperimentStatus, loadRecentExperiments,
-  recordMomentChoice, recordPrediction, recordReality, recordReview, recordAutopsy,
+  recordMomentChoice, recordPrediction, recordReality, recordReview, recordAutopsy, resetDriftCounters,
 } from '../lib/action-experiment-service';
+import { loadLatestCapacityCheckIn } from '../lib/energy-delta-service';
 import {
   ActionInsightRecord,
   pickCandidateInsight, CandidateInsight,
@@ -45,6 +46,10 @@ import {
   buildThingsIKnowNow, KNOWLEDGE_ENTRY_LINE,
   confirmedExperimentCountForInsight, evidenceLevelForInsightState, EVIDENCE_LEVEL_LABELS,
   buildOperatingManual, buildChangeGraph,
+  isInMaintenanceMode, MAINTENANCE_CHECK_IN_QUESTION, MAINTENANCE_CHECK_IN_ORDER, MAINTENANCE_CHECK_IN_LABELS, MaintenanceCheckInAnswer,
+  hasDrifted, DRIFT_DETECTED_LINE, DRIFT_RESPONSE_ORDER, DRIFT_RESPONSE_LABELS, DriftResponse,
+  hasStructuralProblem, STRUCTURAL_PROBLEM_LINE, STRUCTURAL_PROBLEM_RESPONSE_ORDER, STRUCTURAL_PROBLEM_RESPONSE_LABELS, StructuralProblemResponse,
+  shouldDeferNewExperiment, CAPACITY_AWARE_DEFER_LINE, CAPACITY_AWARE_HANDOFF_TAB,
 } from '../../action-engine';
 
 interface ActionEngineProps {
@@ -54,9 +59,10 @@ interface ActionEngineProps {
 type Step =
   | 'loading' | 'empty' | 'insight_card' | 'controllability_gate' | 'controllability_guidance'
   | 'depends_on_someone_resolve' | 'shared_plan_saved' | 'outside_control_resolve' | 'nothing_needs_fixing'
-  | 'active_experiment_conflict' | 'experiment_builder'
+  | 'active_experiment_conflict' | 'capacity_defer' | 'structural_problem_check' | 'experiment_builder'
   | 'experiment_active' | 'moment_of_choice' | 'review_did_it_happen' | 'review_reality' | 'review_choice'
   | 'review_keep_followup' | 'review_change_reason' | 'review_not_sure_followup' | 'change_autopsy'
+  | 'maintenance_check_in' | 'drift_detected'
   | 'resolved';
 
 type BuilderStage = 'text' | 'moment' | 'friction' | 'mvc';
@@ -81,18 +87,21 @@ export const ActionEngine = ({ onNavigate }: ActionEngineProps) => {
   const [realityDraft, setRealityDraft] = useState('');
   const [experiments, setExperiments] = useState<ExperimentRecord[]>([]);
   const [insights, setInsights] = useState<ActionInsightRecord[]>([]);
+  const [capacityScore, setCapacityScore] = useState<number | null>(null);
 
   useEffect(() => {
     const load = async () => {
       if (!auth.currentUser) { setStep('empty'); return; }
       const uid = auth.currentUser.uid;
       try {
-        const [existing, experiments] = await Promise.all([
+        const [existing, experiments, latestCapacityCheckIn] = await Promise.all([
           loadRecentActionInsights(uid),
           loadRecentExperiments(uid),
+          loadLatestCapacityCheckIn(uid),
         ]);
         setExperiments(experiments);
         setInsights(existing);
+        setCapacityScore(latestCapacityCheckIn ? latestCapacityCheckIn.score : null);
         const active = experiments.find((e) => e.status === 'active') ?? null;
         if (active) {
           setActiveExperiment(active);
@@ -100,6 +109,13 @@ export const ActionEngine = ({ onNavigate }: ActionEngineProps) => {
           setPredictionDraft('');
           setRealityDraft('');
           setStep('experiment_active');
+          return;
+        }
+        const drifted = experiments.find((e) => isInMaintenanceMode(e) && hasDrifted(e)) ?? null;
+        if (drifted) {
+          setActiveExperiment(drifted);
+          setInsight(existing.find((i) => i.id === drifted.insightId) ?? null);
+          setStep('drift_detected');
           return;
         }
         const pending = existing.find((i) => i.state === 'nova_noticed' || i.state === 'still_exploring') ?? null;
@@ -192,10 +208,20 @@ export const ActionEngine = ({ onNavigate }: ActionEngineProps) => {
     setStep('resolved');
   };
 
-  const enterExperimentBuilder = async (prefillText: string) => {
+  const enterExperimentBuilder = async (prefillText: string, skipCapacity = false, skipStructural = false) => {
     if (!auth.currentUser) return;
-    const experiments = await loadRecentExperiments(auth.currentUser.uid);
-    if (hasActiveExperiment(experiments)) {
+    if (!skipCapacity && shouldDeferNewExperiment(capacityScore)) {
+      setPendingExperimentText(prefillText);
+      setStep('capacity_defer');
+      return;
+    }
+    if (!skipStructural && insight && hasStructuralProblem(insight.id, experiments)) {
+      setPendingExperimentText(prefillText);
+      setStep('structural_problem_check');
+      return;
+    }
+    const liveExperiments = await loadRecentExperiments(auth.currentUser.uid);
+    if (hasActiveExperiment(liveExperiments)) {
       setPendingExperimentText(prefillText);
       setStep('active_experiment_conflict');
       return;
@@ -205,6 +231,14 @@ export const ActionEngine = ({ onNavigate }: ActionEngineProps) => {
     setMomentCue(''); setMomentResponse(''); setFriction(null); setMvc('');
     setBuilderStage('text');
     setStep('experiment_builder');
+  };
+
+  const continueExperimentDespiteCapacity = () => enterExperimentBuilder(pendingExperimentText, true, false);
+
+  const chooseStructuralProblemResponse = async (choice: StructuralProblemResponse) => {
+    if (choice === 'revisit_controllability') { setStep('controllability_gate'); return; }
+    if (choice === 'name_it_as_outside_control') { await chooseControllability('mostly_outside_control'); return; }
+    await enterExperimentBuilder(pendingExperimentText, true, true);
   };
 
   const resolveActiveExperimentConflict = async (choice: ActiveExperimentConflictChoice) => {
@@ -245,6 +279,7 @@ export const ActionEngine = ({ onNavigate }: ActionEngineProps) => {
       {
         ...data, id, status: 'active', lastMomentChoice: null, prediction: null, reality: null,
         reviewChoice: null, changeReason: null, autopsyReason: null, keepFollowUp: null,
+        usualResponseCount: 0, triedDifferentCount: 0,
         createdAt: now, updatedAt: now,
       },
     ]);
@@ -263,12 +298,49 @@ export const ActionEngine = ({ onNavigate }: ActionEngineProps) => {
   const chooseMomentChoice = async (choice: MomentChoice) => {
     if (!auth.currentUser || !activeExperiment) return;
     await recordMomentChoice(auth.currentUser.uid, activeExperiment.id, choice);
-    setActiveExperiment({ ...activeExperiment, lastMomentChoice: choice });
+    const updated: ExperimentRecord = {
+      ...activeExperiment,
+      lastMomentChoice: choice,
+      usualResponseCount: activeExperiment.usualResponseCount + (choice === 'usual_response' ? 1 : 0),
+      triedDifferentCount: activeExperiment.triedDifferentCount + (choice === 'try_something_different' ? 1 : 0),
+    };
+    setActiveExperiment(updated);
+    setExperiments((prev) => prev.map((e) => (e.id === updated.id ? updated : e)));
     setResolvedSummary(
       choice === 'try_something_different'
         ? "Noted — however it went, that's real information."
         : "Noted. No guilt either way — this is just information for later."
     );
+    setStep('resolved');
+  };
+
+  const chooseMaintenanceCheckIn = async (answer: MaintenanceCheckInAnswer) => {
+    if (!auth.currentUser || !activeExperiment) return;
+    if (answer === 'still_holding') {
+      setResolvedSummary("Good to know. We'll check back in another time.");
+      setStep('resolved');
+      return;
+    }
+    if (answer === 'slipping') { setStep('drift_detected'); return; }
+    await updateExperimentStatus(auth.currentUser.uid, activeExperiment.id, 'abandoned');
+    setExperiments((prev) => prev.map((e) => (e.id === activeExperiment.id ? { ...e, status: 'abandoned' } : e)));
+    setResolvedSummary("Noted. That's allowed to change.");
+    setStep('resolved');
+  };
+
+  const chooseDriftResponse = async (choice: DriftResponse) => {
+    if (!auth.currentUser || !activeExperiment) return;
+    if (choice === 'reaffirm_it') {
+      await resetDriftCounters(auth.currentUser.uid, activeExperiment.id);
+      setExperiments((prev) => prev.map((e) => (e.id === activeExperiment.id ? { ...e, usualResponseCount: 0, triedDifferentCount: 0 } : e)));
+      setResolvedSummary("Good — let's keep this one going.");
+      setStep('resolved');
+      return;
+    }
+    if (choice === 'redesign_it') { await enterExperimentBuilder(activeExperiment.text, true, true); return; }
+    await updateExperimentStatus(auth.currentUser.uid, activeExperiment.id, 'abandoned');
+    setExperiments((prev) => prev.map((e) => (e.id === activeExperiment.id ? { ...e, status: 'abandoned' } : e)));
+    setResolvedSummary("That's alright — it had its time.");
     setStep('resolved');
   };
 
@@ -352,6 +424,12 @@ export const ActionEngine = ({ onNavigate }: ActionEngineProps) => {
   const evidenceLevel = insight ? evidenceLevelForInsightState(insight.state, confirmedExperimentCountForInsight(insight.id, experiments)) : null;
   const operatingManual = buildOperatingManual(insights, experiments);
   const changeGraph = buildChangeGraph(experiments);
+  const maintenanceItems = experiments.filter((e) => isInMaintenanceMode(e) && !(activeExperiment?.id === e.id && (step === 'drift_detected' || step === 'maintenance_check_in')));
+
+  const startMaintenanceCheckIn = (e: ExperimentRecord) => {
+    setActiveExperiment(e);
+    setStep('maintenance_check_in');
+  };
 
   if (step === 'loading') return null;
 
@@ -525,6 +603,42 @@ export const ActionEngine = ({ onNavigate }: ActionEngineProps) => {
                   className="p-3 rounded-xl bg-surface/50 border border-border/50 hover:border-primary/40 text-sm font-medium text-text-main text-left"
                 >
                   {ACTIVE_EXPERIMENT_CONFLICT_LABELS[c]}
+                </button>
+              ))}
+            </div>
+          </motion.div>
+        )}
+
+        {step === 'capacity_defer' && (
+          <motion.div key="capacity_defer" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-4">
+            <p className="text-sm font-bold text-text-main">{CAPACITY_AWARE_DEFER_LINE}</p>
+            <div className="flex flex-wrap gap-3">
+              {onNavigate && (
+                <button
+                  onClick={() => onNavigate(CAPACITY_AWARE_HANDOFF_TAB)}
+                  className="btn-primary py-2.5 px-5 inline-flex items-center gap-2"
+                >
+                  Protect capacity first <ArrowRight className="w-4 h-4" aria-hidden="true" />
+                </button>
+              )}
+              <button onClick={continueExperimentDespiteCapacity} className="text-xs text-text-muted">
+                Start it anyway
+              </button>
+            </div>
+          </motion.div>
+        )}
+
+        {step === 'structural_problem_check' && (
+          <motion.div key="structural_problem" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-4">
+            <p className="text-sm font-bold text-text-main">{STRUCTURAL_PROBLEM_LINE}</p>
+            <div className="grid grid-cols-1 sm:grid-cols-1 gap-2">
+              {STRUCTURAL_PROBLEM_RESPONSE_ORDER.map((r) => (
+                <button
+                  key={r}
+                  onClick={() => chooseStructuralProblemResponse(r)}
+                  className="p-3 rounded-xl bg-surface/50 border border-border/50 hover:border-primary/40 text-sm font-medium text-text-main text-left"
+                >
+                  {STRUCTURAL_PROBLEM_RESPONSE_LABELS[r]}
                 </button>
               ))}
             </div>
@@ -815,6 +929,47 @@ export const ActionEngine = ({ onNavigate }: ActionEngineProps) => {
           </motion.div>
         )}
 
+        {step === 'maintenance_check_in' && activeExperiment && (
+          <motion.div key="maintenance_check_in" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-4">
+            <div className="p-4 rounded-xl bg-surface/60 border border-border/50">
+              <p className="text-xs font-bold text-primary uppercase tracking-wider mb-1">Maintenance check-in</p>
+              <p className="text-sm text-text-main">{activeExperiment.text}</p>
+            </div>
+            <p className="text-sm font-bold text-text-main">{MAINTENANCE_CHECK_IN_QUESTION}</p>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+              {MAINTENANCE_CHECK_IN_ORDER.map((a) => (
+                <button
+                  key={a}
+                  onClick={() => chooseMaintenanceCheckIn(a)}
+                  className="p-3 rounded-xl bg-surface/50 border border-border/50 hover:border-primary/40 text-sm font-medium text-text-main text-left"
+                >
+                  {MAINTENANCE_CHECK_IN_LABELS[a]}
+                </button>
+              ))}
+            </div>
+          </motion.div>
+        )}
+
+        {step === 'drift_detected' && activeExperiment && (
+          <motion.div key="drift_detected" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-4">
+            <div className="p-4 rounded-xl bg-surface/60 border border-border/50">
+              <p className="text-sm text-text-main">{activeExperiment.text}</p>
+            </div>
+            <p className="text-sm font-bold text-text-main">{DRIFT_DETECTED_LINE}</p>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+              {DRIFT_RESPONSE_ORDER.map((r) => (
+                <button
+                  key={r}
+                  onClick={() => chooseDriftResponse(r)}
+                  className="p-3 rounded-xl bg-surface/50 border border-border/50 hover:border-primary/40 text-sm font-medium text-text-main text-left"
+                >
+                  {DRIFT_RESPONSE_LABELS[r]}
+                </button>
+              ))}
+            </div>
+          </motion.div>
+        )}
+
         {step === 'resolved' && (
           <motion.div key="resolved" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-center space-y-3 py-4">
             <p className="text-sm text-text-main">{resolvedSummary}</p>
@@ -882,6 +1037,25 @@ export const ActionEngine = ({ onNavigate }: ActionEngineProps) => {
             ))}
           </div>
         ))}
+      </div>
+    )}
+
+    {maintenanceItems.length > 0 && (
+      <div className="card p-6 sm:p-8 space-y-4">
+        <div>
+          <h3 className="text-sm font-display font-bold text-text-main">Maintenance</h3>
+          <p className="text-xs text-text-muted">Things that became a default - a lighter check, not a new project.</p>
+        </div>
+        <div className="space-y-2">
+          {maintenanceItems.map((e) => (
+            <div key={e.id} className="p-3 rounded-xl bg-surface/50 border border-border/50 flex items-center justify-between gap-3">
+              <p className="text-sm text-text-main">{e.text}</p>
+              <button onClick={() => startMaintenanceCheckIn(e)} className="text-xs font-bold text-primary hover:underline shrink-0">
+                Check in
+              </button>
+            </div>
+          ))}
+        </div>
       </div>
     )}
     </>

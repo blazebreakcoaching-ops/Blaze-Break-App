@@ -359,6 +359,8 @@ export interface ExperimentRecord {
   changeReason: ChangeReason | null;
   autopsyReason: AutopsyReason | null;
   keepFollowUp: KeepFollowUp | null;
+  usualResponseCount: number;
+  triedDifferentCount: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -714,3 +716,86 @@ export const buildOperatingManual = (
 
   return sections;
 };
+
+// ---- Maintenance Mode -------------------------------------------------------------
+// Once something becomes a default, it doesn't need the same active review
+// cycle forever - a lighter, periodic check that it's still holding, not
+// another round of Moment-of-Truth planning.
+
+export const isInMaintenanceMode = (e: ExperimentRecord): boolean =>
+  e.status === 'completed' && e.reviewChoice === 'keep' && e.keepFollowUp === 'make_default';
+
+export const MAINTENANCE_CHECK_IN_QUESTION = 'Is this still part of how you do things?';
+
+export type MaintenanceCheckInAnswer = 'still_holding' | 'slipping' | 'no_longer_applies';
+
+export const MAINTENANCE_CHECK_IN_ORDER: MaintenanceCheckInAnswer[] = ['still_holding', 'slipping', 'no_longer_applies'];
+
+export const MAINTENANCE_CHECK_IN_LABELS: Record<MaintenanceCheckInAnswer, string> = {
+  still_holding: "Yes, it's holding",
+  slipping: "It's slipping",
+  no_longer_applies: "It doesn't apply anymore",
+};
+
+// ---- Drift Detection ----------------------------------------------------------------
+// A real, counted signal - not a guess - that something that became a
+// default is slipping back toward the old pattern. Only ever looks at an
+// experiment already in Maintenance Mode.
+
+export const DRIFT_MIN_USUAL_RESPONSES = 2;
+
+export const hasDrifted = (e: ExperimentRecord): boolean =>
+  isInMaintenanceMode(e) && e.usualResponseCount >= DRIFT_MIN_USUAL_RESPONSES && e.usualResponseCount > e.triedDifferentCount;
+
+export const DRIFT_DETECTED_LINE = "This seems to be slipping back to how things used to be. That's worth noticing, not hiding from.";
+
+export type DriftResponse = 'reaffirm_it' | 'redesign_it' | 'let_it_go';
+
+export const DRIFT_RESPONSE_ORDER: DriftResponse[] = ['reaffirm_it', 'redesign_it', 'let_it_go'];
+
+export const DRIFT_RESPONSE_LABELS: Record<DriftResponse, string> = {
+  reaffirm_it: 'Reaffirm it',
+  redesign_it: 'Redesign it',
+  let_it_go: 'Let it go',
+};
+
+// ---- Structural Problem Check --------------------------------------------------------
+// When the same insight keeps not working no matter how it's tried, more
+// effort isn't the answer - this surfaces that honestly instead of quietly
+// cycling the user through another attempt forever.
+
+export const STRUCTURAL_PROBLEM_MIN_ATTEMPTS = 3;
+
+export const hasStructuralProblem = (insightId: string, experiments: ExperimentRecord[]): boolean =>
+  experiments.filter((e) => e.insightId === insightId && (e.reviewChoice === 'drop' || e.status === 'abandoned')).length
+    >= STRUCTURAL_PROBLEM_MIN_ATTEMPTS;
+
+export const STRUCTURAL_PROBLEM_LINE =
+  "You've tried this a few different ways and it keeps not working. That might mean the problem isn't really about effort - it might be structural.";
+
+export type StructuralProblemResponse = 'revisit_controllability' | 'name_it_as_outside_control' | 'keep_trying_differently';
+
+export const STRUCTURAL_PROBLEM_RESPONSE_ORDER: StructuralProblemResponse[] = [
+  'revisit_controllability', 'name_it_as_outside_control', 'keep_trying_differently',
+];
+
+export const STRUCTURAL_PROBLEM_RESPONSE_LABELS: Record<StructuralProblemResponse, string> = {
+  revisit_controllability: "Let's look again at what's actually in your control",
+  name_it_as_outside_control: "Name it as mostly outside my control",
+  keep_trying_differently: "I still want to keep trying",
+};
+
+// ---- Capacity-Aware Actions -----------------------------------------------------------
+// New change work is never offered as the priority when there isn't real
+// capacity for it - this takes a capacity score the caller already computed
+// from the Energy Delta model (never recomputed or guessed here) and asks
+// only whether it's low enough that protecting capacity should come first.
+
+export const CAPACITY_AWARE_LOW_THRESHOLD = 40;
+
+export const shouldDeferNewExperiment = (capacityScore: number | null): boolean =>
+  capacityScore !== null && capacityScore <= CAPACITY_AWARE_LOW_THRESHOLD;
+
+export const CAPACITY_AWARE_DEFER_LINE = "Capacity looks low right now. Let's protect what you have before starting something new.";
+
+export const CAPACITY_AWARE_HANDOFF_TAB = 'recover';

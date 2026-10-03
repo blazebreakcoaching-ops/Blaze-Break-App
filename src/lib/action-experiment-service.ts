@@ -1,5 +1,5 @@
 import { db } from './firestore';
-import { doc, setDoc, getDocs, collection, query, orderBy, limit } from 'firebase/firestore';
+import { doc, setDoc, getDocs, collection, query, orderBy, limit, increment } from 'firebase/firestore';
 import {
   ExperimentRecord, ExperimentStatus, ExperimentDuration, MomentOfTruthPlan, FrictionType, ActionLadderLevel,
   MomentChoice, ReviewChoice, ChangeReason, AutopsyReason, KeepFollowUp,
@@ -23,6 +23,7 @@ export const createExperiment = async (
     id: randomId('experiment'), ...data, status: 'active',
     lastMomentChoice: null, prediction: null, reality: null,
     reviewChoice: null, changeReason: null, autopsyReason: null, keepFollowUp: null,
+    usualResponseCount: 0, triedDifferentCount: 0,
     createdAt: now, updatedAt: now,
   };
   await setDoc(doc(db, 'users', uid, 'action_experiments', record.id), record);
@@ -34,7 +35,12 @@ export const updateExperimentStatus = async (uid: string, id: string, status: Ex
 };
 
 export const recordMomentChoice = async (uid: string, id: string, choice: MomentChoice): Promise<void> => {
-  await setDoc(doc(db, 'users', uid, 'action_experiments', id), { lastMomentChoice: choice, updatedAt: new Date().toISOString() }, { merge: true });
+  await setDoc(doc(db, 'users', uid, 'action_experiments', id), {
+    lastMomentChoice: choice,
+    usualResponseCount: increment(choice === 'usual_response' ? 1 : 0),
+    triedDifferentCount: increment(choice === 'try_something_different' ? 1 : 0),
+    updatedAt: new Date().toISOString(),
+  }, { merge: true });
 };
 
 export const recordPrediction = async (uid: string, id: string, prediction: string): Promise<void> => {
@@ -50,6 +56,12 @@ export const recordReview = async (
   data: { reviewChoice: ReviewChoice; changeReason: ChangeReason | null; keepFollowUp: KeepFollowUp | null; status: ExperimentStatus }
 ): Promise<void> => {
   await setDoc(doc(db, 'users', uid, 'action_experiments', id), { ...data, updatedAt: new Date().toISOString() }, { merge: true });
+};
+
+export const resetDriftCounters = async (uid: string, id: string): Promise<void> => {
+  await setDoc(doc(db, 'users', uid, 'action_experiments', id), {
+    usualResponseCount: 0, triedDifferentCount: 0, updatedAt: new Date().toISOString(),
+  }, { merge: true });
 };
 
 export const recordAutopsy = async (
