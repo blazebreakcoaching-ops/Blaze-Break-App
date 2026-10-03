@@ -272,6 +272,33 @@ service cloud.firestore {
             && request.resource.data.classification in ['actually_urgent', 'important_not_immediate', 'someone_elses_urgency', 'can_wait', 'needs_more_information'];
       }
 
+      // Boundary Aftercare / Outcome: one record per real boundary action
+      // (currently: Boundary Autopilot). The feared outcome and action
+      // type are locked at creation; aftercare response, waiting choice,
+      // real outcome, and the Capacity Protected link are added narrowly
+      // afterwards as the loop closes - never re-scoring the action itself.
+      match /boundary_outcomes/{outcomeId} {
+        allow read, delete: if isOwner(uid);
+        allow create: if isOwner(uid)
+            && hasOnly(['id', 'sourceAction', 'requestSource', 'fearedOutcome', 'aftercareResponse', 'waitingChoice', 'outcome', 'capacityProtectedApplied', 'linkedStressorId', 'createdAt'])
+            && hasAll(['id', 'sourceAction', 'capacityProtectedApplied', 'createdAt'])
+            && request.resource.data.sourceAction in ['slack_send', 'slack_dnd', 'slack_status', 'calendar_decline']
+            && request.resource.data.capacityProtectedApplied == false
+            && (!('requestSource' in request.resource.data) || request.resource.data.requestSource == null || request.resource.data.requestSource in ['manager', 'colleague', 'client', 'family', 'friend', 'other'])
+            && (!('fearedOutcome' in request.resource.data) || request.resource.data.fearedOutcome == null || request.resource.data.fearedOutcome in ['expect_pushback', 'expect_accepted', 'not_sure'])
+            && (!('aftercareResponse' in request.resource.data) || request.resource.data.aftercareResponse == null)
+            && (!('waitingChoice' in request.resource.data) || request.resource.data.waitingChoice == null)
+            && (!('outcome' in request.resource.data) || request.resource.data.outcome == null)
+            && (!('linkedStressorId' in request.resource.data) || request.resource.data.linkedStressorId == null);
+        allow update: if isOwner(uid)
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['aftercareResponse', 'waitingChoice', 'outcome', 'capacityProtectedApplied', 'linkedStressorId'])
+            && (!('aftercareResponse' in request.resource.data) || request.resource.data.aftercareResponse in ['im_okay', 'second_guessing', 'feel_guilty', 'worried_about_response', 'talk_to_nova'])
+            && (!('waitingChoice' in request.resource.data) || request.resource.data.waitingChoice in ['wait', 'review_what_i_sent', 'talk_to_nova'])
+            && (!('outcome' in request.resource.data) || request.resource.data.outcome in ['respected_it', 'negotiated', 'pushed_back', 'i_softened_it', 'i_backed_down', 'i_changed_my_mind', 'no_response', 'something_else'])
+            && (!('capacityProtectedApplied' in request.resource.data) || request.resource.data.capacityProtectedApplied is bool)
+            && (!('linkedStressorId' in request.resource.data) || request.resource.data.linkedStressorId is string);
+      }
+
       // Breathing & Guided Reset's completion counter - gates how often
       // "Did it help?" is asked, nothing else.
       match /preferences/breathing_reset {

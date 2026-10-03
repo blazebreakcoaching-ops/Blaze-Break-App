@@ -2526,7 +2526,7 @@ export default function App() {
                       onToneChange={handleNovaToneChange}
                       onStyleChange={handleNovaStyleChange}
                     />
-                    <BoundaryAutopilot />
+                    <BoundaryAutopilot onNavigate={safeSetActiveTab as any} />
                   </div>
                   <div className="space-y-8">
                     <NegotiatorTool />

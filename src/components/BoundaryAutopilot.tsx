@@ -1,11 +1,29 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Send, Moon, MessageCircle, CalendarX, Check, X, AlertTriangle, Loader2, History } from 'lucide-react';
+import { Send, Moon, MessageCircle, CalendarX, Check, X, AlertTriangle, Loader2, History, ShieldCheck } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { useAuth } from '../lib/auth';
+import { auth } from '../lib/firebase';
 import { secureApiFetch } from '../lib/secure-api';
 import { fetchUpcomingEvents, declineCalendarEvent, UpcomingEvent } from '../lib/boundary-autopilot';
 import { updateNovaMemoryBySourceAndType } from '../lib/nova-brain';
+import { loadStressors } from '../lib/energy-delta-service';
+import { Stressor } from '../../energy-delta-engine';
+import {
+  AFTERCARE_LINE, AFTERCARE_RESPONSE_ORDER, AFTERCARE_RESPONSE_LABELS, AftercareResponse,
+  BOUNDARY_OUTCOME_QUESTION, BOUNDARY_OUTCOME_ORDER, BOUNDARY_OUTCOME_LABELS, BoundaryOutcome,
+  FEARED_OUTCOME_ORDER, FEARED_OUTCOME_LABELS, FearedOutcome, WHAT_DO_YOU_EXPECT_QUESTION,
+  buildEvidenceBaseResult, EvidencePair,
+  EVIDENCE_BASE_FOLLOWUP_QUESTION, EVIDENCE_BASE_FOLLOWUP_ORDER, EVIDENCE_BASE_FOLLOWUP_LABELS, EvidenceBaseFollowupAnswer,
+} from '../../boundary-outcome-engine';
+import {
+  recordBoundaryAction, updateBoundaryOutcomeRecord, loadRecentBoundaryOutcomes, applyCapacityProtectedIfEarned,
+  BoundaryOutcomeRecord,
+} from '../lib/boundary-outcome-service';
+
+interface BoundaryAutopilotProps {
+  onNavigate?: (tab: string) => void;
+}
 
 type ActionTab = 'message' | 'dnd' | 'status' | 'calendar' | 'history';
 
@@ -28,7 +46,7 @@ interface AutopilotAction {
 // click that both drafts and executes. Boundary Autopilot's whole value is
 // trustworthy action on someone's behalf; a UI that makes it easy to
 // accidentally send something would undermine exactly that trust.
-export const BoundaryAutopilot = () => {
+export const BoundaryAutopilot = ({ onNavigate }: BoundaryAutopilotProps) => {
   const { accessToken } = useAuth();
   const [activeTab, setActiveTab] = useState<ActionTab>('message');
   const [status, setStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
@@ -64,6 +82,24 @@ export const BoundaryAutopilot = () => {
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyLoaded, setHistoryLoaded] = useState(false);
 
+  // BOUNDARY AFTERCARE / OUTCOME: "What do you expect will happen?" is
+  // captured once, before confirming - optional, never forced.
+  const [fearedOutcome, setFearedOutcome] = useState<FearedOutcome | null>(null);
+  // The just-taken action's own outcome record - aftercare is offered
+  // right after a real action, not auto-reassuring, and never scored.
+  const [currentRecord, setCurrentRecord] = useState<BoundaryOutcomeRecord | null>(null);
+  const [aftercareAnswered, setAftercareAnswered] = useState<AftercareResponse | null>(null);
+  const [capacityStressors, setCapacityStressors] = useState<Stressor[]>([]);
+  const [selectedStressorId, setSelectedStressorId] = useState('');
+  const [capacityLinked, setCapacityLinked] = useState(false);
+
+  // History tab: the sparse, pull-based "How did it go?" follow-up, and
+  // the Personal Evidence Base built only from the user's own confirmed
+  // feared-vs-actual pairs.
+  const [outcomeHistory, setOutcomeHistory] = useState<BoundaryOutcomeRecord[]>([]);
+  const [outcomeChoiceDraft, setOutcomeChoiceDraft] = useState<BoundaryOutcome | null>(null);
+  const [evidenceFollowup, setEvidenceFollowup] = useState<EvidenceBaseFollowupAnswer | null>(null);
+
   // Checked once, regardless of which tab is active, so message/DND/status
   // never show as live-and-ready before we actually know Slack is connected.
   useEffect(() => {
@@ -92,10 +128,24 @@ export const BoundaryAutopilot = () => {
         .then((data) => { setHistoryActions(data.actions || []); setHistoryLoaded(true); })
         .catch(() => {})
         .finally(() => setHistoryLoading(false));
+      if (auth.currentUser) {
+        loadRecentBoundaryOutcomes(auth.currentUser.uid).then(setOutcomeHistory);
+      }
     }
   }, [activeTab, accessToken, events.length]);
 
-  const runAction = async (fn: () => Promise<void>, successMessage: string) => {
+  // The single most recent action still waiting on a real "how did it
+  // go?" - calendar declines never need one (the decline itself already
+  // is the confirmed reduction). Sparse by construction: only ever one
+  // banner, never a backlog, and never prompts repeated checking.
+  const pendingOutcomeRecord = outcomeHistory.find((r) => r.outcome === null && r.sourceAction !== 'calendar_decline') ?? null;
+
+  const evidencePairs: EvidencePair[] = outcomeHistory
+    .filter((r) => r.fearedOutcome && r.outcome)
+    .map((r) => ({ feared: r.fearedOutcome as FearedOutcome, outcome: r.outcome as BoundaryOutcome }));
+  const evidenceResult = buildEvidenceBaseResult(evidencePairs);
+
+  const runAction = async (fn: () => Promise<void>, successMessage: string, sourceAction: BoundaryOutcomeRecord['sourceAction']) => {
     setIsSubmitting(true);
     setStatus(null);
     try {
@@ -110,6 +160,23 @@ export const BoundaryAutopilot = () => {
         confidence: 'verified',
         canEdit: false,
       });
+      setAftercareAnswered(null);
+      setCapacityLinked(false);
+      setCurrentRecord(null);
+      if (auth.currentUser) {
+        const uid = auth.currentUser.uid;
+        const id = await recordBoundaryAction(uid, { sourceAction, requestSource: null, fearedOutcome });
+        setCurrentRecord({
+          id, sourceAction, requestSource: null, fearedOutcome,
+          aftercareResponse: null, waitingChoice: null, outcome: null,
+          capacityProtectedApplied: false, linkedStressorId: null, createdAt: new Date().toISOString(),
+        });
+        if (sourceAction === 'calendar_decline') {
+          const stressors = await loadStressors(uid);
+          setCapacityStressors(stressors.filter((s) => s.status === 'active'));
+        }
+      }
+      setFearedOutcome(null);
     } catch (e: any) {
       setStatus({ type: 'error', message: e.message || 'Something went wrong.' });
     } finally {
@@ -126,7 +193,7 @@ export const BoundaryAutopilot = () => {
     const data = await res.json();
     if (data.error) throw new Error(data.error);
     setMessageDraft('');
-  }, 'Message sent.');
+  }, 'Message sent.', 'slack_send');
 
   const setDnd = () => runAction(async () => {
     const res = await secureApiFetch('/api/boundary-autopilot/slack/dnd', {
@@ -135,7 +202,7 @@ export const BoundaryAutopilot = () => {
     });
     const data = await res.json();
     if (data.error) throw new Error(data.error);
-  }, `Do Not Disturb set for ${dndMinutes} minutes.`);
+  }, `Do Not Disturb set for ${dndMinutes} minutes.`, 'slack_dnd');
 
   const setSlackStatus = () => runAction(async () => {
     const res = await secureApiFetch('/api/boundary-autopilot/slack/status', {
@@ -144,7 +211,7 @@ export const BoundaryAutopilot = () => {
     });
     const data = await res.json();
     if (data.error) throw new Error(data.error);
-  }, 'Slack status updated.');
+  }, 'Slack status updated.', 'slack_status');
 
   const declineMeeting = () => runAction(async () => {
     if (!accessToken) throw new Error('Connect Google Calendar first.');
@@ -158,7 +225,28 @@ export const BoundaryAutopilot = () => {
     }).catch(() => {
       // The decline itself already succeeded — a logging failure shouldn't surface as an error to the user.
     });
-  }, 'Meeting declined.');
+  }, 'Meeting declined.', 'calendar_decline');
+
+  const answerAftercare = async (response: AftercareResponse) => {
+    setAftercareAnswered(response);
+    if (auth.currentUser && currentRecord) {
+      await updateBoundaryOutcomeRecord(auth.currentUser.uid, currentRecord.id, { aftercareResponse: response });
+    }
+    if (response === 'talk_to_nova') onNavigate?.('nova');
+  };
+
+  const linkCapacityProtected = async () => {
+    if (!auth.currentUser || !currentRecord || !selectedStressorId) return;
+    const applied = await applyCapacityProtectedIfEarned(auth.currentUser.uid, currentRecord, selectedStressorId);
+    if (applied) setCapacityLinked(true);
+  };
+
+  const submitPendingOutcome = async () => {
+    if (!auth.currentUser || !pendingOutcomeRecord || !outcomeChoiceDraft) return;
+    await updateBoundaryOutcomeRecord(auth.currentUser.uid, pendingOutcomeRecord.id, { outcome: outcomeChoiceDraft });
+    setOutcomeHistory((prev) => prev.map((r) => (r.id === pendingOutcomeRecord.id ? { ...r, outcome: outcomeChoiceDraft } : r)));
+    setOutcomeChoiceDraft(null);
+  };
 
   const tabs: { id: ActionTab; label: string; icon: any }[] = [
     { id: 'message', label: 'Send Message', icon: Send },
@@ -167,6 +255,63 @@ export const BoundaryAutopilot = () => {
     { id: 'calendar', label: 'Decline Meeting', icon: CalendarX },
     { id: 'history', label: 'History', icon: History },
   ];
+
+  const expectedOutcomePicker = (
+    <div className="space-y-2">
+      <p className="text-xs font-bold text-text-muted">{WHAT_DO_YOU_EXPECT_QUESTION}</p>
+      <div className="flex flex-wrap gap-2">
+        {FEARED_OUTCOME_ORDER.map((f) => (
+          <button
+            key={f}
+            onClick={() => setFearedOutcome(f)}
+            aria-pressed={fearedOutcome === f}
+            className={cn("px-3 py-1.5 rounded-lg border text-xs font-bold", fearedOutcome === f ? "border-primary bg-primary/10 text-[#9a3412] dark:text-primary" : "border-border text-text-muted hover:border-primary/40")}
+          >
+            {FEARED_OUTCOME_LABELS[f]}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+
+  const aftercareAndCapacityPanel = currentRecord && (
+    <div className="space-y-3">
+      {!aftercareAnswered ? (
+        <div className="p-4 rounded-xl border border-border bg-surface/60 space-y-3">
+          <p className="text-sm font-bold text-text-main">{AFTERCARE_LINE}</p>
+          <div className="flex flex-wrap gap-2">
+            {AFTERCARE_RESPONSE_ORDER.map((r) => (
+              <button key={r} onClick={() => answerAftercare(r)} className="px-3 py-1.5 rounded-lg border border-border text-xs font-bold text-text-main hover:border-primary/40">
+                {AFTERCARE_RESPONSE_LABELS[r]}
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : null}
+      {currentRecord.sourceAction === 'calendar_decline' && !capacityLinked && capacityStressors.length > 0 && (
+        <div className="p-4 rounded-xl border border-border bg-surface/60 space-y-2">
+          <p className="text-xs font-bold text-text-muted flex items-center gap-1.5"><ShieldCheck className="w-3.5 h-3.5" /> Did this remove something from your logged load?</p>
+          <select
+            value={selectedStressorId}
+            onChange={(e) => setSelectedStressorId(e.target.value)}
+            aria-label="Choose the stressor this resolved"
+            className="w-full p-2.5 rounded-lg border border-border bg-surface text-xs text-text-main"
+          >
+            <option value="">Not tracked as a stressor...</option>
+            {capacityStressors.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+          </select>
+          {selectedStressorId && (
+            <button onClick={linkCapacityProtected} className="text-xs font-bold text-[#9a3412] dark:text-primary hover:opacity-80">
+              Update Capacity Protected
+            </button>
+          )}
+        </div>
+      )}
+      {capacityLinked && (
+        <p className="text-xs font-bold text-success dark:text-[#4ade80] flex items-center gap-1.5"><Check className="w-3.5 h-3.5" /> Capacity Protected updated.</p>
+      )}
+    </div>
+  );
 
   return (
     <div className="card bg-card border border-border p-6 space-y-6">
@@ -226,12 +371,15 @@ export const BoundaryAutopilot = () => {
                   Review before sending
                 </button>
               ) : (
-                <ConfirmBar
-                  isSubmitting={isSubmitting}
-                  label={`Send this message to ${members.find((m) => m.id === recipientId)?.name}?`}
-                  onConfirm={sendMessage}
-                  onCancel={() => setPendingConfirm(false)}
-                />
+                <>
+                  {expectedOutcomePicker}
+                  <ConfirmBar
+                    isSubmitting={isSubmitting}
+                    label={`Send this message to ${members.find((m) => m.id === recipientId)?.name}?`}
+                    onConfirm={sendMessage}
+                    onCancel={() => setPendingConfirm(false)}
+                  />
+                </>
               )}
             </div>
           )}
@@ -263,12 +411,15 @@ export const BoundaryAutopilot = () => {
                   Review before setting
                 </button>
               ) : (
-                <ConfirmBar
-                  isSubmitting={isSubmitting}
-                  label={`Set Do Not Disturb for ${dndMinutes} minutes?`}
-                  onConfirm={setDnd}
-                  onCancel={() => setPendingConfirm(false)}
-                />
+                <>
+                  {expectedOutcomePicker}
+                  <ConfirmBar
+                    isSubmitting={isSubmitting}
+                    label={`Set Do Not Disturb for ${dndMinutes} minutes?`}
+                    onConfirm={setDnd}
+                    onCancel={() => setPendingConfirm(false)}
+                  />
+                </>
               )}
             </div>
           )}
@@ -294,12 +445,15 @@ export const BoundaryAutopilot = () => {
                   Review before updating
                 </button>
               ) : (
-                <ConfirmBar
-                  isSubmitting={isSubmitting}
-                  label={`Set your Slack status to "${statusText}"?`}
-                  onConfirm={setSlackStatus}
-                  onCancel={() => setPendingConfirm(false)}
-                />
+                <>
+                  {expectedOutcomePicker}
+                  <ConfirmBar
+                    isSubmitting={isSubmitting}
+                    label={`Set your Slack status to "${statusText}"?`}
+                    onConfirm={setSlackStatus}
+                    onCancel={() => setPendingConfirm(false)}
+                  />
+                </>
               )}
             </div>
           )}
@@ -336,18 +490,60 @@ export const BoundaryAutopilot = () => {
                 </button>
               )}
               {selectedEventId && pendingConfirm && (
-                <ConfirmBar
-                  isSubmitting={isSubmitting}
-                  label={`Decline "${events.find((e) => e.id === selectedEventId)?.summary}" and notify attendees?`}
-                  onConfirm={declineMeeting}
-                  onCancel={() => setPendingConfirm(false)}
-                />
+                <>
+                  {expectedOutcomePicker}
+                  <ConfirmBar
+                    isSubmitting={isSubmitting}
+                    label={`Decline "${events.find((e) => e.id === selectedEventId)?.summary}" and notify attendees?`}
+                    onConfirm={declineMeeting}
+                    onCancel={() => setPendingConfirm(false)}
+                  />
+                </>
               )}
             </div>
           )}
 
           {activeTab === 'history' && (
             <div className="space-y-2">
+              {pendingOutcomeRecord && (
+                <div className="p-4 rounded-xl border border-primary/20 bg-primary/5 space-y-3 mb-2">
+                  <p className="text-sm font-bold text-text-main">{BOUNDARY_OUTCOME_QUESTION}</p>
+                  <div className="flex flex-wrap gap-2">
+                    {BOUNDARY_OUTCOME_ORDER.map((o) => (
+                      <button
+                        key={o}
+                        onClick={() => setOutcomeChoiceDraft(o)}
+                        aria-pressed={outcomeChoiceDraft === o}
+                        className={cn("px-3 py-1.5 rounded-lg border text-xs font-bold", outcomeChoiceDraft === o ? "border-primary bg-primary/10 text-text-main" : "border-border text-text-muted hover:border-primary/40")}
+                      >
+                        {BOUNDARY_OUTCOME_LABELS[o]}
+                      </button>
+                    ))}
+                  </div>
+                  {outcomeChoiceDraft && (
+                    <button onClick={submitPendingOutcome} className="text-xs font-bold text-[#9a3412] dark:text-primary hover:opacity-80">Save</button>
+                  )}
+                </div>
+              )}
+              {evidenceResult.available && evidenceResult.line && (
+                <div className="p-4 rounded-xl border border-border bg-surface/60 space-y-3 mb-2">
+                  <p className="text-sm text-text-main">{evidenceResult.line}</p>
+                  {!evidenceFollowup ? (
+                    <>
+                      <p className="text-xs font-bold text-text-muted">{EVIDENCE_BASE_FOLLOWUP_QUESTION}</p>
+                      <div className="flex flex-wrap gap-2">
+                        {EVIDENCE_BASE_FOLLOWUP_ORDER.map((a) => (
+                          <button key={a} onClick={() => setEvidenceFollowup(a)} className="px-3 py-1.5 rounded-lg border border-border text-xs font-bold text-text-main hover:border-primary/40">
+                            {EVIDENCE_BASE_FOLLOWUP_LABELS[a]}
+                          </button>
+                        ))}
+                      </div>
+                    </>
+                  ) : (
+                    <p className="text-xs text-text-muted">Noted.</p>
+                  )}
+                </div>
+              )}
               {historyLoading ? (
                 <div className="flex items-center gap-2 text-text-muted text-xs py-4">
                   <Loader2 className="w-4 h-4 animate-spin" /> Loading history...
@@ -391,6 +587,8 @@ export const BoundaryAutopilot = () => {
           <span>{status.message}</span>
         </div>
       )}
+
+      {aftercareAndCapacityPanel}
     </div>
   );
 };
