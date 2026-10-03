@@ -19,11 +19,10 @@ import {
   Phone,
   Zap,
   HeartPulse,
-  Sparkles,
   PhoneForwarded,
   Clock,
-  Activity,
-  Network
+  Network,
+  ArrowUpRight
 } from 'lucide-react';
 import { SupportContact } from '../types';
 import { cn } from '../lib/utils';
@@ -130,7 +129,7 @@ const GuardianCard = ({
         "absolute top-5 right-5 flex items-center gap-2"
       )}>
          <span className="text-[11px] uppercase tracking-widest font-black text-text-muted opacity-0 group-hover:opacity-100 transition-opacity">
-           {indicatorMode === 'emergency' ? 'CRITICAL' : indicatorMode === 'sync' ? 'SYNCING' : 'READY'}
+           {indicatorMode === 'emergency' ? 'Sending' : indicatorMode === 'sync' ? 'Checking' : 'Added'}
          </span>
          <div className={cn(
            "w-2 h-2 rounded-full transition-all",
@@ -199,7 +198,7 @@ const GuardianCard = ({
                 onClick={() => onActivateSOS(contact.id)}
                 className="col-span-1 py-3 text-[11px] font-black uppercase tracking-widest rounded-xl transition-all shadow-sm bg-destructive hover:bg-destructive text-destructive-foreground"
               >
-                Manual SOS
+                Ask Them to Call
               </button>
             ) : (
               <div className="col-span-1" />
@@ -228,11 +227,11 @@ const GuardianCard = ({
                 )}
               >
                 {countdown !== null ? (
-                  <><AlertTriangle className="w-4 h-4" /> Abort Dispatch ({countdown}s)</>
+                  <><AlertTriangle className="w-4 h-4" /> Cancel ({countdown}s)</>
                 ) : isRelaying ? (
-                  <><Loader2 className="w-4 h-4 animate-spin" /> Transmitting...</>
+                  <><Loader2 className="w-4 h-4 animate-spin" /> Sending...</>
                 ) : (
-                  <><Zap className="w-4 h-4" /> One-Touch Alert</>
+                  <><Zap className="w-4 h-4" /> Send Alert</>
                 )}
               </button>
             ) : isRealGuardian(contact) ? (
@@ -415,21 +414,20 @@ export const NovaGuardianRelay = ({ contacts, onAdd, onRemove, userName }: NovaG
             </div>
             <div>
                <h2 className="text-3xl lg:text-4xl font-display font-bold text-text-main tracking-tight">Guardian Relay</h2>
-               <p className="text-destructive dark:text-[#f87171] text-xs font-black uppercase tracking-widest mt-2 flex items-center gap-2"><Activity className="w-3 h-3" /> Priority Access Subsystem</p>
             </div>
           </div>
           <p className="text-xl leading-relaxed text-text-muted font-medium italic border-l-2 border-destructive/50 pl-6 py-2">
             "When you can't reach out, Nova reaches in."
           </p>
           <p className="text-sm text-text-muted leading-relaxed max-w-2xl">
-            A pre-set escalation network you control. Add trusted contacts once, then reach them in one tap whenever you need real support — nothing is monitored or triggered automatically, and your private details are never shared with your guardians.
+            Trusted contacts you set up once, then reach in one tap whenever you need real support — nothing is monitored or triggered automatically, and your private details are never shared with them.
           </p>
-          
-          <button 
+
+          <button
             onClick={() => setIsAdding(true)}
             className="mt-6 flex items-center justify-center gap-3 px-8 py-4 bg-white text-text-main hover:bg-surface dark:bg-card rounded-xl text-xs font-black uppercase tracking-widest transition-all w-fit shadow-lg shadow-white/5"
           >
-            <UserPlus className="w-4 h-4" /> Provision New Guardian
+            <UserPlus className="w-4 h-4" /> Add a Trusted Contact
           </button>
         </div>
       </div>
@@ -445,7 +443,7 @@ export const NovaGuardianRelay = ({ contacts, onAdd, onRemove, userName }: NovaG
         {/* Guardian Network List */}
         <div className="xl:col-span-8 space-y-6">
           <div className="flex items-center justify-between">
-            <h3 className="text-xs font-black uppercase tracking-[0.2em] text-text-muted">Active Guardian Nodes</h3>
+            <h3 className="text-xs font-black uppercase tracking-[0.2em] text-text-muted">Your Trusted Contacts</h3>
             <span className="text-xs font-mono text-text-muted bg-surface dark:bg-surface px-3 py-1 rounded-full">{visibleContacts.length} Configured</span>
           </div>
 
@@ -467,7 +465,7 @@ export const NovaGuardianRelay = ({ contacts, onAdd, onRemove, userName }: NovaG
             {visibleContacts.length === 0 && !isAdding && (
                <div className="col-span-full py-16 flex flex-col items-center justify-center text-center border border-dashed border-border rounded-xl bg-surface dark:bg-card/50">
                  <Shield className="w-12 h-12 text-text-muted mb-6" />
-                 <h4 className="font-bold text-text-main mb-2 text-lg">Infrastructure Offline</h4>
+                 <h4 className="font-bold text-text-main mb-2 text-lg">No Trusted Contacts Yet</h4>
                  <p className="text-sm text-text-muted max-w-md px-6 mb-8 leading-relaxed">Set up your emergency contacts now, so there's a clear path to reach someone if things ever get to be too much.</p>
                  <button 
                    onClick={() => setIsAdding(true)}
@@ -482,43 +480,33 @@ export const NovaGuardianRelay = ({ contacts, onAdd, onRemove, userName }: NovaG
 
         {/* Info Sidebar */}
         <div className="xl:col-span-4 space-y-6">
-          {/* Nova's Anchor: Grounding State */}
-          <div className="card p-8 bg-card border border-border text-text-main relative overflow-hidden space-y-6">
+          {/* Ground With Nova: links out to the real Anxiety Reset tool
+              rather than duplicating a second, fake breathing simulation
+              here with a hardcoded "4.0s inhalation / 4.0s exhalation"
+              pattern and unverifiable physiological claims ("biological
+              false alarm", "we are safe in this exact moment") that this
+              card used to assert on its own. The actual guided breathing
+              lives in AnxietyResetMode.tsx; this just routes there. */}
+          <div className="card p-8 bg-card border border-border text-text-main relative overflow-hidden space-y-5">
             <div className="absolute top-0 right-0 w-full h-full bg-gradient-to-br from-primary/10 via-transparent to-transparent pointer-events-none" />
-            
-            <div className="relative z-10 flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <Sparkles className="w-5 h-5 text-[#9a3412] dark:text-primary" />
-                <h4 className="font-bold uppercase tracking-widest text-xs tracking-[0.2em] text-[#9a3412] dark:text-primary">
-                  Nova's Anchor
-                </h4>
-              </div>
-              <div className="w-2 h-2 rounded-full bg-primary animate-pulse shadow-[0_0_10px_rgba(234,88,12,0.8)]" />
+
+            <div className="relative z-10 flex items-center gap-3">
+              <HeartPulse className="w-5 h-5 text-[#9a3412] dark:text-primary" />
+              <h4 className="font-bold uppercase tracking-widest text-xs tracking-[0.2em] text-[#9a3412] dark:text-primary">
+                Ground With Nova
+              </h4>
             </div>
 
-            <div className="relative z-10 space-y-5">
-              <div className="p-6 bg-primary/10 rounded-2xl border border-primary/20 text-center space-y-6 shadow-inner">
-                <p className="text-sm font-medium leading-relaxed italic text-[#9a3412] dark:text-primary">
-                  "Your nervous system is overworked, not broken. The panic you feel is a biological false alarm, attempting to protect you from an invisible threat. We are safe in this exact moment."
-                </p>
-                <div className="pt-2">
-                   <motion.div 
-                     animate={{ scale: [1, 1.15, 1] }}
-                     transition={{ duration: 8, repeat: Infinity, ease: "easeInOut" }}
-                     className="w-16 h-16 rounded-full border border-primary/30 mx-auto flex items-center justify-center text-primary relative shadow-[0_0_30px_rgba(234,88,12,0.2)]"
-                   >
-                     <motion.div 
-                       animate={{ opacity: [0.5, 1, 0.5] }}
-                       transition={{ duration: 4, repeat: Infinity, ease: "linear" }}
-                       className="absolute inset-0 bg-primary/20 rounded-full blur-md"
-                     />
-                     <HeartPulse className="w-6 h-6 relative z-10" />
-                   </motion.div>
-                   <p className="text-xs uppercase tracking-[0.2em] font-black text-[#9a3412] dark:text-primary mt-6">Respiratory sync pattern</p>
-                   <p className="text-[11px] font-mono text-[#9a3412] dark:text-primary mt-1">4.0s INHALATION // 4.0s EXHALATION</p>
-                </div>
-              </div>
-            </div>
+            <p className="relative z-10 text-sm text-text-muted leading-relaxed">
+              While you wait to hear back, a guided breathing reset can help settle things in the meantime.
+            </p>
+
+            <button
+              onClick={() => window.dispatchEvent(new CustomEvent('navigate_tab', { detail: 'anxiety_reset' }))}
+              className="relative z-10 w-full flex items-center justify-center gap-2 py-3.5 rounded-xl text-xs font-black uppercase tracking-widest bg-primary/10 hover:bg-primary/20 text-[#9a3412] dark:text-primary transition-colors"
+            >
+              Open Anxiety Reset <ArrowUpRight className="w-4 h-4" />
+            </button>
           </div>
 
           {/* Crisis support — shared content, see CrisisSupport.tsx */}
@@ -541,7 +529,7 @@ export const NovaGuardianRelay = ({ contacts, onAdd, onRemove, userName }: NovaG
           <div className="card p-8 border border-border bg-card text-text-main relative overflow-hidden space-y-6 shadow-lg">
              <div className="relative z-10 flex items-center gap-3 border-b border-border pb-4">
                <Eye className="w-5 h-5 text-text-muted" />
-               <h4 className="font-bold uppercase tracking-widest text-xs tracking-[0.2em] text-text-muted">Privacy Assertion</h4>
+               <h4 className="font-bold uppercase tracking-widest text-xs tracking-[0.2em] text-text-muted">Your Privacy</h4>
              </div>
              
              <div className="relative z-10 space-y-5 pt-2">
@@ -587,13 +575,13 @@ export const NovaGuardianRelay = ({ contacts, onAdd, onRemove, userName }: NovaG
                   <h3 className="text-2xl font-bold font-display text-text-main flex items-center gap-3">
                      <ShieldCheck className="w-6 h-6 text-primary" /> Add a Support Contact
                   </h3>
-                  <p className="text-sm text-text-muted">Define the endpoint identity and access parameters for severe overload scenarios.</p>
+                  <p className="text-sm text-text-muted">Add someone you trust to reach out to when you need real support.</p>
                 </div>
 
                 <form onSubmit={handleSubmit} className="space-y-8">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                     <div className="space-y-2 md:col-span-2">
-                      <label htmlFor="guardian-contact-name" className="text-[11px] font-black uppercase tracking-widest text-text-muted ml-1">Identity Designation</label>
+                      <label htmlFor="guardian-contact-name" className="text-[11px] font-black uppercase tracking-widest text-text-muted ml-1">Name</label>
                       <input
                         id="guardian-contact-name"
                         type="text"
@@ -631,7 +619,7 @@ export const NovaGuardianRelay = ({ contacts, onAdd, onRemove, userName }: NovaG
                     </div>
 
                     <div className="space-y-2 md:col-span-2">
-                       <label htmlFor="guardian-contact-role" className="text-[11px] font-black uppercase tracking-widest text-text-muted ml-1">Hierarchical Security Role (Authorised Access Framework)</label>
+                       <label htmlFor="guardian-contact-role" className="text-[11px] font-black uppercase tracking-widest text-text-muted ml-1">Role</label>
                        <select
                          id="guardian-contact-role"
                          value={newContact.role}
@@ -640,13 +628,13 @@ export const NovaGuardianRelay = ({ contacts, onAdd, onRemove, userName }: NovaG
                          className="w-full bg-surface dark:bg-surface border border-border rounded-xl px-4 py-3.5 text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30 transition-all font-sans"
                        >
                          <option value="primary_guardian">Primary Contact (Contacted First)</option>
-                         <option value="backup_guardian">Secondary Sentinel (Failover Endpoint)</option>
+                         <option value="backup_guardian">Backup Contact (Contacted if Primary Doesn't Respond)</option>
                          <option value="coach">Therapist / Counsellor</option>
-                         <option value="peer" disabled>Peer Validator (Blocked by Zone D Privacy Rules)</option>
-                         <option value="manager" disabled>Manager (Blocked by Zone A Privacy Isolation Rules)</option>
+                         <option value="peer" disabled>Coworker or Peer (not available as a guardian)</option>
+                         <option value="manager" disabled>Manager (not available as a guardian)</option>
                        </select>
                        <p id="guardian-contact-role-hint" className="text-xs text-text-muted mt-2 ml-1">
-                          Note: Under Authorised Access Framework Zone A, organisational managers and peers are strictly prohibited from receiving Guardian crisis intercepts.
+                          Managers and coworkers can't be added as guardians - this stays strictly personal, never shared with your organisation.
                        </p>
                     </div>
                   </div>
@@ -664,7 +652,7 @@ export const NovaGuardianRelay = ({ contacts, onAdd, onRemove, userName }: NovaG
         )}
       </AnimatePresence>
 
-      {/* SOS Manual Modal */}
+      {/* Ask Them to Call modal */}
       <AnimatePresence>
         {activeSOS && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
@@ -691,7 +679,7 @@ export const NovaGuardianRelay = ({ contacts, onAdd, onRemove, userName }: NovaG
                      <AlertTriangle className="w-10 h-10" />
                   </div>
                   <div className="text-center space-y-3">
-                     <h3 id="sos-dialog-title" className="text-2xl font-bold font-display line-clamp-1 text-text-main tracking-tight">Manual Dispatch</h3>
+                     <h3 id="sos-dialog-title" className="text-2xl font-bold font-display line-clamp-1 text-text-main tracking-tight">Call Request</h3>
                      <p className="text-sm text-text-muted px-4 leading-relaxed">
                        Sending an alert to <strong className="text-text-main">"{visibleContacts.find(c => c.id === activeSOS)?.name}"</strong>. They'll be asked to reach out to you as soon as possible.
                      </p>
@@ -718,9 +706,9 @@ export const NovaGuardianRelay = ({ contacts, onAdd, onRemove, userName }: NovaG
                         disabled={isSending}
                         className="py-4 rounded-xl font-bold text-xs uppercase tracking-widest bg-card text-text-muted hover:bg-surface transition-colors disabled:opacity-40"
                       >
-                        Abort Sequence
+                        Cancel
                       </button>
-                      <button 
+                      <button
                         onClick={() => {
                            const c = visibleContacts.find(c => c.id === activeSOS);
                            if (c) triggerLiveRelay(c);
@@ -728,7 +716,7 @@ export const NovaGuardianRelay = ({ contacts, onAdd, onRemove, userName }: NovaG
                         disabled={isSending}
                         className="py-4 rounded-xl font-bold text-xs uppercase tracking-widest bg-destructive text-destructive-foreground hover:bg-destructive transition-colors flex items-center justify-center gap-2 shadow-lg shadow-destructive/30 disabled:opacity-40"
                       >
-                       {isSending ? <Loader2 className="w-4 h-4 animate-spin" /> : <><Send className="w-4 h-4 relative -left-0.5" /> Execute</>}
+                       {isSending ? <Loader2 className="w-4 h-4 animate-spin" /> : <><Send className="w-4 h-4 relative -left-0.5" /> Send</>}
                       </button>
                     </div>
                   )}
