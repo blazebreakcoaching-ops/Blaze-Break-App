@@ -32,6 +32,10 @@ import {
   buildPersonalChangeModel, CHANGE_MODEL_TRAIT_ORDER, CHANGE_MODEL_TRAIT_LABELS,
   buildChangeGraph, CHANGE_GRAPH_OUTCOME_LABELS,
   buildOperatingManual, ActionInsightRecord,
+  isInMaintenanceMode, MAINTENANCE_CHECK_IN_QUESTION, MAINTENANCE_CHECK_IN_ORDER, MAINTENANCE_CHECK_IN_LABELS,
+  hasDrifted, DRIFT_DETECTED_LINE, DRIFT_RESPONSE_ORDER, DRIFT_RESPONSE_LABELS,
+  hasStructuralProblem, STRUCTURAL_PROBLEM_LINE, STRUCTURAL_PROBLEM_RESPONSE_ORDER, STRUCTURAL_PROBLEM_RESPONSE_LABELS,
+  shouldDeferNewExperiment, CAPACITY_AWARE_DEFER_LINE, CAPACITY_AWARE_LOW_THRESHOLD,
 } from './action-engine';
 import { RediscoveryClue, WorkloadCheckSnapshot } from './rediscovery-engine';
 
@@ -236,7 +240,7 @@ describe('One active experiment enforcement', () => {
     id: 'e1', insightId: 'i1', text: 't', ladderLevel: 'try_once', duration: null,
     momentOfTruth: null, friction: null, minimumViableChange: null, status,
     lastMomentChoice: null, prediction: null, reality: null,
-    reviewChoice: null, changeReason: null, autopsyReason: null, keepFollowUp: null,
+    reviewChoice: null, changeReason: null, autopsyReason: null, keepFollowUp: null, usualResponseCount: 0, triedDifferentCount: 0,
     createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z',
   });
 
@@ -339,7 +343,7 @@ describe('Proof of Change: real evidence, never an arbitrary point score', () =>
     id: 'e1', insightId: 'i1', text: 'Say no to a same-day request', ladderLevel: 'experiment', duration: 'two_weeks',
     momentOfTruth: null, friction: null, minimumViableChange: null, status: 'completed',
     lastMomentChoice: null, prediction: null, reality: null,
-    reviewChoice: 'keep', changeReason: null, autopsyReason: null, keepFollowUp: 'protect_it',
+    reviewChoice: 'keep', changeReason: null, autopsyReason: null, keepFollowUp: 'protect_it', usualResponseCount: 0, triedDifferentCount: 0,
     createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-05T00:00:00Z',
   };
 
@@ -377,7 +381,7 @@ describe('Things I Know Now: a traceable personal evidence log', () => {
     id: 'e1', insightId: 'i1', text: 'Block focus time on Fridays', ladderLevel: 'experiment', duration: 'this_week',
     momentOfTruth: null, friction: null, minimumViableChange: null, status: 'completed',
     lastMomentChoice: null, prediction: null, reality: null,
-    reviewChoice: null, changeReason: null, autopsyReason: null, keepFollowUp: null,
+    reviewChoice: null, changeReason: null, autopsyReason: null, keepFollowUp: null, usualResponseCount: 0, triedDifferentCount: 0,
     createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-05T00:00:00Z',
   };
 
@@ -420,7 +424,7 @@ describe('Confidence/Evidence model applied: counting confirmed experiments per 
     id, insightId, text: 't', ladderLevel: 'experiment', duration: 'this_week',
     momentOfTruth: null, friction: null, minimumViableChange: null, status: 'completed',
     lastMomentChoice: null, prediction: null, reality: null,
-    reviewChoice: 'keep', changeReason: null, autopsyReason: null, keepFollowUp: 'protect_it',
+    reviewChoice: 'keep', changeReason: null, autopsyReason: null, keepFollowUp: 'protect_it', usualResponseCount: 0, triedDifferentCount: 0,
     createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z',
   });
 
@@ -444,7 +448,7 @@ describe('Personal Change Model: real traits, never a generic theory from thin d
     id: 'e', insightId: 'i', text: 't', ladderLevel: 'experiment', duration: 'this_week',
     momentOfTruth: null, friction: null, minimumViableChange: null, status: 'completed',
     lastMomentChoice: null, prediction: null, reality: null,
-    reviewChoice: null, changeReason: null, autopsyReason: null, keepFollowUp: null,
+    reviewChoice: null, changeReason: null, autopsyReason: null, keepFollowUp: null, usualResponseCount: 0, triedDifferentCount: 0,
     createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z',
     ...overrides,
   });
@@ -487,7 +491,7 @@ describe('Change Graph: a real trajectory over time, never a score', () => {
     id, insightId: 'i', text: 't', ladderLevel: 'experiment', duration: 'this_week',
     momentOfTruth: null, friction: null, minimumViableChange: null, status: 'completed',
     lastMomentChoice: null, prediction: null, reality: null,
-    reviewChoice: null, changeReason: null, autopsyReason: null, keepFollowUp: null,
+    reviewChoice: null, changeReason: null, autopsyReason: null, keepFollowUp: null, usualResponseCount: 0, triedDifferentCount: 0,
     createdAt: updatedAt, updatedAt,
     ...overrides,
   });
@@ -529,7 +533,7 @@ describe('My Operating Manual: compiled only from real, already-confirmed materi
     id: 'e1', insightId: 'i1', text: 'Say no to same-day asks', ladderLevel: 'experiment', duration: 'this_week',
     momentOfTruth: null, friction: null, minimumViableChange: null, status: 'completed',
     lastMomentChoice: null, prediction: null, reality: null,
-    reviewChoice: null, changeReason: null, autopsyReason: null, keepFollowUp: null,
+    reviewChoice: null, changeReason: null, autopsyReason: null, keepFollowUp: null, usualResponseCount: 0, triedDifferentCount: 0,
     createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z',
     ...overrides,
   });
@@ -558,5 +562,123 @@ describe('My Operating Manual: compiled only from real, already-confirmed materi
     ]);
     const model = sections.find((s) => s.heading === 'How you tend to change');
     expect(model?.lines).toEqual([CHANGE_MODEL_TRAIT_LABELS.needs_specificity]);
+  });
+});
+
+describe('Maintenance Mode: a lighter check for something that already became a default', () => {
+  const exp = (overrides: Partial<ExperimentRecord>): ExperimentRecord => ({
+    id: 'e1', insightId: 'i1', text: 't', ladderLevel: 'default', duration: 'two_weeks',
+    momentOfTruth: null, friction: null, minimumViableChange: null, status: 'completed',
+    lastMomentChoice: null, prediction: null, reality: null,
+    reviewChoice: 'keep', changeReason: null, autopsyReason: null, keepFollowUp: 'make_default',
+    usualResponseCount: 0, triedDifferentCount: 0,
+    createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z',
+    ...overrides,
+  });
+
+  it('only a kept, made-default, completed experiment is in maintenance mode', () => {
+    expect(isInMaintenanceMode(exp({}))).toBe(true);
+    expect(isInMaintenanceMode(exp({ keepFollowUp: 'protect_it' }))).toBe(false);
+    expect(isInMaintenanceMode(exp({ status: 'active', keepFollowUp: null }))).toBe(false);
+    expect(isInMaintenanceMode(exp({ reviewChoice: 'drop', keepFollowUp: null, status: 'abandoned' }))).toBe(false);
+  });
+
+  it('has the exact spec question and three honest answers', () => {
+    expect(MAINTENANCE_CHECK_IN_QUESTION).toBe('Is this still part of how you do things?');
+    expect(MAINTENANCE_CHECK_IN_ORDER).toHaveLength(3);
+    expect(Object.keys(MAINTENANCE_CHECK_IN_LABELS)).toHaveLength(3);
+  });
+});
+
+describe('Drift Detection: a real counted signal, only within Maintenance Mode', () => {
+  const exp = (overrides: Partial<ExperimentRecord>): ExperimentRecord => ({
+    id: 'e1', insightId: 'i1', text: 't', ladderLevel: 'default', duration: 'two_weeks',
+    momentOfTruth: null, friction: null, minimumViableChange: null, status: 'completed',
+    lastMomentChoice: null, prediction: null, reality: null,
+    reviewChoice: 'keep', changeReason: null, autopsyReason: null, keepFollowUp: 'make_default',
+    usualResponseCount: 0, triedDifferentCount: 0,
+    createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z',
+    ...overrides,
+  });
+
+  it('does not flag drift from a single usual response', () => {
+    expect(hasDrifted(exp({ usualResponseCount: 1 }))).toBe(false);
+  });
+
+  it('flags drift once usual responses repeat and outnumber trying differently', () => {
+    expect(hasDrifted(exp({ usualResponseCount: 2, triedDifferentCount: 0 }))).toBe(true);
+  });
+
+  it('does not flag drift when trying differently keeps pace', () => {
+    expect(hasDrifted(exp({ usualResponseCount: 2, triedDifferentCount: 2 }))).toBe(false);
+  });
+
+  it('never flags drift outside Maintenance Mode, however high the count', () => {
+    expect(hasDrifted(exp({ status: 'active', keepFollowUp: null, usualResponseCount: 5, triedDifferentCount: 0 }))).toBe(false);
+  });
+
+  it('the detected line never blames and offers three real responses', () => {
+    expect(DRIFT_DETECTED_LINE).not.toMatch(/fail|blame|your fault/i);
+    expect(DRIFT_RESPONSE_ORDER).toHaveLength(3);
+    expect(Object.keys(DRIFT_RESPONSE_LABELS)).toHaveLength(3);
+  });
+});
+
+describe('Structural Problem Check: more effort is not always the answer', () => {
+  const exp = (id: string, overrides: Partial<ExperimentRecord>): ExperimentRecord => ({
+    id, insightId: 'i1', text: 't', ladderLevel: 'experiment', duration: 'this_week',
+    momentOfTruth: null, friction: null, minimumViableChange: null, status: 'abandoned',
+    lastMomentChoice: null, prediction: null, reality: null,
+    reviewChoice: 'drop', changeReason: null, autopsyReason: null, keepFollowUp: null,
+    usualResponseCount: 0, triedDifferentCount: 0,
+    createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z',
+    ...overrides,
+  });
+
+  it('does not flag a structural problem from one or two dropped attempts', () => {
+    expect(hasStructuralProblem('i1', [exp('e1', {}), exp('e2', {})])).toBe(false);
+  });
+
+  it('flags a structural problem after three or more real non-working attempts on the same insight', () => {
+    expect(hasStructuralProblem('i1', [exp('e1', {}), exp('e2', {}), exp('e3', {})])).toBe(true);
+  });
+
+  it('only counts attempts on the matching insight', () => {
+    expect(hasStructuralProblem('i1', [exp('e1', {}), exp('e2', {}), exp('e3', { insightId: 'i2' })])).toBe(false);
+  });
+
+  it('counts both dropped reviews and abandoned (change-autopsy-ended) experiments', () => {
+    const experiments = [
+      exp('e1', { reviewChoice: null, status: 'abandoned' }),
+      exp('e2', { reviewChoice: null, status: 'abandoned' }),
+      exp('e3', { reviewChoice: 'drop', status: 'abandoned' }),
+    ];
+    expect(hasStructuralProblem('i1', experiments)).toBe(true);
+  });
+
+  it('the line never says "you failed" and offers three honest responses', () => {
+    expect(STRUCTURAL_PROBLEM_LINE).not.toMatch(/you failed/i);
+    expect(STRUCTURAL_PROBLEM_RESPONSE_ORDER).toHaveLength(3);
+    expect(Object.keys(STRUCTURAL_PROBLEM_RESPONSE_LABELS)).toHaveLength(3);
+  });
+});
+
+describe('Capacity-Aware Actions: never prioritise new change work over real low capacity', () => {
+  it('defers when capacity is at or below the low threshold', () => {
+    expect(shouldDeferNewExperiment(CAPACITY_AWARE_LOW_THRESHOLD)).toBe(true);
+    expect(shouldDeferNewExperiment(0)).toBe(true);
+  });
+
+  it('does not defer once capacity is above the threshold', () => {
+    expect(shouldDeferNewExperiment(CAPACITY_AWARE_LOW_THRESHOLD + 1)).toBe(false);
+    expect(shouldDeferNewExperiment(100)).toBe(false);
+  });
+
+  it('never defers when there is no real capacity score to check', () => {
+    expect(shouldDeferNewExperiment(null)).toBe(false);
+  });
+
+  it('the defer line never implies failure', () => {
+    expect(CAPACITY_AWARE_DEFER_LINE).not.toMatch(/fail/i);
   });
 });
