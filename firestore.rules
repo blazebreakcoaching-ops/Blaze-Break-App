@@ -299,6 +299,26 @@ service cloud.firestore {
             && (!('linkedStressorId' in request.resource.data) || request.resource.data.linkedStressorId is string);
       }
 
+      // Boundary Contract / My Default Boundaries: decided ahead of time,
+      // never auto-enforced - reviewHistory only grows via an explicit
+      // Keep/Make Exception/Change review, and only "change" may also
+      // update defaultResponse.
+      match /boundary_contracts/{contractId} {
+        allow read, delete: if isOwner(uid);
+        allow create: if isOwner(uid)
+            && hasOnly(['id', 'category', 'customLabel', 'defaultResponse', 'reviewHistory', 'createdAt', 'updatedAt'])
+            && hasAll(['id', 'category', 'defaultResponse', 'reviewHistory', 'createdAt', 'updatedAt'])
+            && request.resource.data.category in ['after_hours_messages', 'weekend_work', 'extra_meetings', 'last_minute_requests', 'scope_creep', 'other']
+            && isStringWithMax(request.resource.data.defaultResponse, 300)
+            && isOptionalStringWithMax(request.resource.data, 'customLabel', 80)
+            && request.resource.data.reviewHistory is list && request.resource.data.reviewHistory.size() == 0;
+        allow update: if isOwner(uid)
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['defaultResponse', 'reviewHistory', 'updatedAt'])
+            && isStringWithMax(request.resource.data.defaultResponse, 300)
+            && request.resource.data.reviewHistory is list && request.resource.data.reviewHistory.size() <= 50
+            && checkCreatedAtUnchanged();
+      }
+
       // Breathing & Guided Reset's completion counter - gates how often
       // "Did it help?" is asked, nothing else.
       match /preferences/breathing_reset {
