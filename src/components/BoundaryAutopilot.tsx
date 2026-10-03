@@ -34,6 +34,13 @@ export const BoundaryAutopilot = () => {
   const [status, setStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  // INTEGRATION TRUTHFULNESS: live execution controls for Slack-backed
+  // actions (message/DND/status) only ever render once we've confirmed
+  // Slack is actually connected - null while checking, false shows a
+  // plain "connect it in Settings" notice instead of simulating
+  // functionality that isn't really there.
+  const [slackConnected, setSlackConnected] = useState<boolean | null>(null);
+
   // Message tab state
   const [members, setMembers] = useState<SlackMember[]>([]);
   const [recipientId, setRecipientId] = useState('');
@@ -57,13 +64,20 @@ export const BoundaryAutopilot = () => {
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyLoaded, setHistoryLoaded] = useState(false);
 
+  // Checked once, regardless of which tab is active, so message/DND/status
+  // never show as live-and-ready before we actually know Slack is connected.
   useEffect(() => {
-    if (activeTab === 'message' && members.length === 0) {
-      secureApiFetch('/api/boundary-autopilot/slack/users')
-        .then((res) => res.json())
-        .then((data) => setMembers(data.members || []))
-        .catch(() => {});
-    }
+    secureApiFetch('/api/boundary-autopilot/slack/users')
+      .then(async (res) => {
+        const data = await res.json();
+        if (!res.ok || data.error) { setSlackConnected(false); return; }
+        setSlackConnected(true);
+        setMembers(data.members || []);
+      })
+      .catch(() => setSlackConnected(false));
+  }, []);
+
+  useEffect(() => {
     if (activeTab === 'calendar' && accessToken && events.length === 0) {
       setEventsLoading(true);
       fetchUpcomingEvents(accessToken)
@@ -79,7 +93,7 @@ export const BoundaryAutopilot = () => {
         .catch(() => {})
         .finally(() => setHistoryLoading(false));
     }
-  }, [activeTab, accessToken, members.length, events.length]);
+  }, [activeTab, accessToken, events.length]);
 
   const runAction = async (fn: () => Promise<void>, successMessage: string) => {
     setIsSubmitting(true);
@@ -182,7 +196,9 @@ export const BoundaryAutopilot = () => {
 
       <AnimatePresence mode="wait">
         <motion.div key={activeTab} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-          {activeTab === 'message' && (
+          {activeTab === 'message' && slackConnected === false && <SlackNotConnectedNotice action="send messages" />}
+          {activeTab === 'message' && slackConnected === null && <Loader2 className="w-5 h-5 animate-spin text-text-muted" />}
+          {activeTab === 'message' && slackConnected === true && (
             <div className="space-y-3">
               <select
                 value={recipientId}
@@ -220,7 +236,9 @@ export const BoundaryAutopilot = () => {
             </div>
           )}
 
-          {activeTab === 'dnd' && (
+          {activeTab === 'dnd' && slackConnected === false && <SlackNotConnectedNotice action="set Do Not Disturb" />}
+          {activeTab === 'dnd' && slackConnected === null && <Loader2 className="w-5 h-5 animate-spin text-text-muted" />}
+          {activeTab === 'dnd' && slackConnected === true && (
             <div className="space-y-3">
               <div className="flex gap-2">
                 {[30, 60, 120, 240].map((m) => (
@@ -255,7 +273,9 @@ export const BoundaryAutopilot = () => {
             </div>
           )}
 
-          {activeTab === 'status' && (
+          {activeTab === 'status' && slackConnected === false && <SlackNotConnectedNotice action="update your Slack status" />}
+          {activeTab === 'status' && slackConnected === null && <Loader2 className="w-5 h-5 animate-spin text-text-muted" />}
+          {activeTab === 'status' && slackConnected === true && (
             <div className="space-y-3">
               <input
                 value={statusText}
@@ -400,6 +420,13 @@ const describeAutopilotAction = (a: AutopilotAction): string => {
       return 'Action completed.';
   }
 };
+
+// INTEGRATION TRUTHFULNESS: shown instead of simulating a live control
+// when Slack genuinely isn't connected - draft-only/copy equivalents live
+// on the Script Library and Boundary Compiler, not here.
+const SlackNotConnectedNotice = ({ action }: { action: string }) => (
+  <p className="text-xs text-text-muted py-4">Connect Slack in Settings to {action}.</p>
+);
 
 const ConfirmBar = ({ label, onConfirm, onCancel, isSubmitting }: {
   label: string;

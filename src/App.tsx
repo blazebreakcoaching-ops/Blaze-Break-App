@@ -2573,6 +2573,7 @@ export default function App() {
                 <DigitalBoundaryShield
                   fingerprint={isDemoSession ? DEMO_FINGERPRINT : fingerprint}
                   onAwardPoints={awardPoints}
+                  onNavigate={safeSetActiveTab as any}
                 />
                 {featureFlags.enable_overload_shield && (
                   <NovaOverloadShield
