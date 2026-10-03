@@ -2518,7 +2518,7 @@ export default function App() {
 
             {activeTab === "communicate" && (
               <div className="space-y-32">
-                <div className="flex justify-end -mb-20">
+                <div className="flex justify-end">
                   <button
                     onClick={() => setShowMyBoundaries((v) => !v)}
                     className="text-xs font-bold text-primary flex items-center gap-1 hover:underline"
