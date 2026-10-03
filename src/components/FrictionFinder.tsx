@@ -1,20 +1,21 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Flame, Brain, ArrowRight, AlertOctagon, ShieldAlert } from 'lucide-react';
+import { Flame, Brain, ArrowRight, AlertOctagon, Sparkles } from 'lucide-react';
 import { BurnoutFingerprint } from '../types';
 import { secureApiFetch } from '../lib/secure-api';
 import { auth } from '../lib/firebase';
 import { db } from '../lib/firestore';
 import { collection, addDoc } from 'firebase/firestore';
 import { addNovaMemory } from '../lib/nova-brain';
+import { recordRediscoveryClue } from '../lib/rediscovery-service';
 
-interface ResentmentTrackerProps {
+interface FrictionFinderProps {
   fingerprint: BurnoutFingerprint | null;
   onAwardPoints?: (amount: number, reason: string) => void;
   onNavigate?: (tab: string) => void;
 }
 
-export const ResentmentTracker = ({ fingerprint, onAwardPoints, onNavigate }: ResentmentTrackerProps) => {
+export const FrictionFinder = ({ fingerprint, onAwardPoints, onNavigate }: FrictionFinderProps) => {
   const [log, setLog] = useState('');
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysis, setAnalysis] = useState<null | {
@@ -41,7 +42,8 @@ export const ResentmentTracker = ({ fingerprint, onAwardPoints, onNavigate }: Re
       setAnalysis(result);
 
       if (auth.currentUser) {
-        addDoc(collection(db, 'users', auth.currentUser.uid, 'resentment_logs'), {
+        const uid = auth.currentUser.uid;
+        addDoc(collection(db, 'users', uid, 'resentment_logs'), {
           log: log.trim(),
           ...result,
           createdAt: new Date().toISOString(),
@@ -49,17 +51,28 @@ export const ResentmentTracker = ({ fingerprint, onAwardPoints, onNavigate }: Re
         }).catch(() => {
           // Non-fatal - the analysis still shows for this session even if the write fails.
         });
+
+        // Real friction, routed into the same Rediscovery pipeline every
+        // other tool feeds - never duplicates the Action Engine's own
+        // insight/experiment machinery, just gives it one more honest
+        // signal to work from (pickCandidateInsight's raw-clue fallback
+        // picks this up automatically).
+        if (result.missingBoundary) {
+          recordRediscoveryClue(uid, 'friction_finder_log', 'What friction came up?', result.missingBoundary).catch(() => {
+            // Non-fatal - this is an additional signal, not the record of truth.
+          });
+        }
       }
 
       addNovaMemory({
         type: 'trigger',
-        content: `User logged workplace resentment. Missing boundary identified: "${result.missingBoundary}"`,
-        source: 'Resentment Tracker',
+        content: `User named real friction at work. A concrete option they could try: "${result.missingBoundary}"`,
+        source: 'Friction Finder',
         confidence: 'medium',
         canEdit: true,
       });
 
-      if (onAwardPoints) onAwardPoints(30, 'Logged & Analysed Resentment');
+      if (onAwardPoints) onAwardPoints(30, 'Named a Real Friction Point');
     } catch (e: any) {
       // A daily-limit/rate-limit response has a real, specific message
       // worth showing (e.g. "reached today's free limit") - only fall
@@ -88,16 +101,16 @@ export const ResentmentTracker = ({ fingerprint, onAwardPoints, onNavigate }: Re
         </div>
         <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-6">
           <div className="space-y-4">
-            <h3 className="text-5xl font-display font-bold text-text-main tracking-tight">Resentment Tracker</h3>
+            <h3 className="text-5xl font-display font-bold text-text-main tracking-tight">Friction Finder</h3>
             <p className="text-xl text-text-muted font-medium  max-w-2xl">
-              "Resentment is often a sign of repeated boundary failure."
+              Friction is real data about where something isn't working - not a personal failing.
             </p>
           </div>
         </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        
+
         {/* Input Section */}
         <div className="space-y-6">
           <div className="card border border-border p-8">
@@ -107,11 +120,11 @@ export const ResentmentTracker = ({ fingerprint, onAwardPoints, onNavigate }: Re
               </div>
               <h3 className="text-2xl font-display font-bold text-text-main">Log the Friction</h3>
             </div>
-            
+
             <p className="text-text-muted mb-4 font-medium">
               What is currently annoying you? Be unprofessional. Be petty. Just get it out.
             </p>
-            
+
             <textarea
               value={log}
               onChange={(e) => setLog(e.target.value)}
@@ -134,14 +147,14 @@ export const ResentmentTracker = ({ fingerprint, onAwardPoints, onNavigate }: Re
                 ) : (
                   <Brain className="w-5 h-5" />
                 )}
-                {isAnalyzing ? "Nova is Analysing Patterns..." : "Analyse the Resentment"}
+                {isAnalyzing ? "Nova is Analysing Patterns..." : "Find the Friction"}
               </button>
             )}
 
             {error && (
               <p role="alert" className="text-sm text-destructive mt-3 text-center">{error}</p>
             )}
-            
+
             {analysis && (
               <button
                 onClick={handleReset}
@@ -157,7 +170,7 @@ export const ResentmentTracker = ({ fingerprint, onAwardPoints, onNavigate }: Re
         <div className="space-y-6">
            <AnimatePresence mode="wait">
              {!analysis && !isAnalyzing && (
-               <motion.div 
+               <motion.div
                  initial={{ opacity: 0 }}
                  animate={{ opacity: 1 }}
                  exit={{ opacity: 0 }}
@@ -165,7 +178,7 @@ export const ResentmentTracker = ({ fingerprint, onAwardPoints, onNavigate }: Re
                >
                  <AlertOctagon className="w-12 h-12 mb-4 opacity-50" />
                  <p className="font-display font-bold text-xl">Awaiting Data</p>
-                 <p className="text-sm mt-2 max-w-xs">Nova needs raw input to detect structural boundary failures.</p>
+                 <p className="text-sm mt-2 max-w-xs">Nova needs raw input to spot the real pattern underneath this.</p>
                </motion.div>
              )}
 
@@ -184,8 +197,8 @@ export const ResentmentTracker = ({ fingerprint, onAwardPoints, onNavigate }: Re
                        <Brain className="w-4 h-4" />
                      </div>
                      <div>
-                       <h3 className="text-sm font-display font-bold text-text-main tracking-tight">Nova's Read</h3>
-                       <p className="text-[11px] uppercase tracking-[0.2em] font-black text-[#9a3412] dark:text-primary">Root Cause Extraction</p>
+                       <h3 className="text-sm font-display font-bold text-text-main tracking-tight">Nova Noticed</h3>
+                       <p className="text-[11px] uppercase tracking-[0.2em] font-black text-[#9a3412] dark:text-primary">What's Actually Going On</p>
                      </div>
                    </div>
 
@@ -193,7 +206,7 @@ export const ResentmentTracker = ({ fingerprint, onAwardPoints, onNavigate }: Re
                      <div className="space-y-2">
                        <h4 className="text-xs font-black uppercase tracking-widest text-text-muted flex items-center gap-2">
                          <span aria-hidden="true" className="w-1.5 h-1.5 rounded-full bg-destructive" />
-                         Where you said yes but meant no
+                         Where "yes" might have actually meant "no"
                        </h4>
                        <p className="text-text-main font-medium">{analysis.yesMeantNo}</p>
                      </div>
@@ -216,8 +229,8 @@ export const ResentmentTracker = ({ fingerprint, onAwardPoints, onNavigate }: Re
 
                      <div className="space-y-2 p-4 bg-primary/10 border border-primary/20 rounded-xl">
                        <h4 className="text-xs font-black uppercase tracking-widest text-[#9a3412] dark:text-primary flex items-center gap-2 mb-2">
-                         <ShieldAlert className="w-4 h-4" />
-                         The Missing Boundary
+                         <Sparkles className="w-4 h-4" />
+                         Something You Could Try
                        </h4>
                        <p className="text-text-main font-bold text-lg">{analysis.missingBoundary}</p>
                      </div>
@@ -230,7 +243,7 @@ export const ResentmentTracker = ({ fingerprint, onAwardPoints, onNavigate }: Re
                        }}
                        className="w-full btn-primary flex items-center justify-between group py-4"
                      >
-                       <span>Proceed to Boundary Rehearsal</span>
+                       <span>Rehearse This in Boundary Rehearsal</span>
                        <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
                      </button>
                    </div>

@@ -359,7 +359,7 @@ Nova should draw on this when someone asks what a specific screen, tool, or widg
 - Talk it through (nova tab): this is Nova herself - text or voice, whichever someone prefers, with memory of their context so they don't have to re-explain themselves every time. Questioning style is the specific term for how Nova prefers to ask things, not what she knows - a person can pick Operator, Board Member, Mentor, or Pre-Mortem in Settings → Nova Style to match how they like to think things through. It's purely a style choice; it never changes what Nova can see or do.
 
 ## REFLECTION & SAFETY NET
-- Weekly review (reflect tab): a few minutes at the end of the week to notice what actually helped, in someone's own words. Contains a daily reflection journal and the Resentment Tracker.
+- Weekly review (reflect tab): a few minutes at the end of the week to notice what actually helped, in someone's own words. Contains a daily reflection journal and Friction Finder.
 - Someone in your corner (ally tab): invite a trusted friend, mentor, or partner to check in - the person chooses exactly what they see, and can turn any of it off any time. Guardian Protocol is the specific term for the one-tap way to ask a trusted, pre-chosen contact to reach out - always started by the person themselves; the app never watches for risk or sends anything without them tapping the button first.
 - Privacy Centre (privacy tab): see exactly what is stored, export it, or delete it - always on, nothing to go looking for.
 - Plan & Billing (subscription tab): current plan, what's included, usage this month, and change or cancel any time.

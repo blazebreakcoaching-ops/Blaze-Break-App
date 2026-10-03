@@ -166,7 +166,8 @@ export type RediscoveryClueSource =
   | 'rumination_furnace'
   | 'pressure_valve'
   | 'make_it_smaller'
-  | 'decompression_doorway';
+  | 'decompression_doorway'
+  | 'friction_finder_log';
 
 export interface RediscoveryClue {
   id: string;
