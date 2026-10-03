@@ -95,7 +95,7 @@ export const AllyNudgeScheduler = ({ contacts }: AllyNudgeSchedulerProps) => {
       return;
     }
     if (!/^\+[1-9]\d{6,14}$/.test(contact.contactMethod)) {
-      setError("This contact's number isn't in a valid format - edit it in Guardian Protection Network first.");
+      setError("This contact's number isn't in a valid format - edit it in Guardian Relay first.");
       return;
     }
     if (!message.trim()) {
@@ -210,7 +210,7 @@ export const AllyNudgeScheduler = ({ contacts }: AllyNudgeSchedulerProps) => {
               </div>
 
               {contacts.length === 0 ? (
-                <p className="text-sm text-text-muted italic">Add a contact in Guardian Protection Network first, then come back here to schedule nudges to them.</p>
+                <p className="text-sm text-text-muted italic">Add a contact in Guardian Relay first, then come back here to schedule nudges to them.</p>
               ) : (
                 <>
                   <div className="space-y-2">

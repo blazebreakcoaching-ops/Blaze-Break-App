@@ -30,8 +30,8 @@ import path from 'node:path';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const CAPABILITY_CLAIMING_STRINGS: { file: string; text: string }[] = [
-  { file: 'src/components/NovaGuardianRelay.tsx', text: 'One-Touch Alert' },
-  { file: 'src/components/NovaGuardianRelay.tsx', text: 'Manual SOS' },
+  { file: 'src/components/NovaGuardianRelay.tsx', text: 'Send Alert' },
+  { file: 'src/components/NovaGuardianRelay.tsx', text: 'Ask Them to Call' },
   { file: 'src/components/CrisisSupport.tsx', text: 'Sends a text asking them to call you right now' },
   // Guardian Support Invitation's own review sheet - reuses the same send
   // capability, so its own "Send it now" claim needs the same gate. Call,

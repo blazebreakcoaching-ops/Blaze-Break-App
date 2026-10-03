@@ -135,6 +135,7 @@ const ExecutiveBoardReport = lazy(() => import("./components/ExecutiveBoardRepor
 const CalendarDefenseView = lazy(() => import("./components/CalendarDefenseView.tsx").then(m => ({ default: m.CalendarDefenseView })));
 const WhatsNewModal = lazy(() => import("./components/WhatsNewModal.tsx").then(m => ({ default: m.WhatsNewModal })));
 import { secureApiFetch } from "./lib/secure-api";
+import { isRealGuardian } from "../guardian-alert";
 import { syncCalendarSignal } from "./lib/calendar-signals";
 import { subscribeToPushNotifications, reportPulseStatus } from "./lib/push-notifications";
 import { logAuditAction } from "./lib/audit-logger";
@@ -752,7 +753,7 @@ const EYEBROW_LABELS: Record<string, string> = {
   nova: "AI Recovery Interface",
   subscription: "Plan & Billing",
   privacy: "Privacy & Trust Centre",
-  ally: "Guardian Protection Network",
+  ally: "Recovery Ally",
   guide: "How To Use Blaze Break",
   org: "Collective Stability Pulse",
   evolution: "Feature Configuration",
@@ -804,35 +805,38 @@ const Header = ({
 
   const handleGuardianPing = useCallback(async () => {
     if (guardianPingActive) return;
-    const primary = (supportCircle || []).find((c: any) => c.role === 'primary_guardian') || (supportCircle || [])[0];
+    // Only ever pick a contact the product itself recognises as a real
+    // guardian (same isRealGuardian gate NovaGuardianRelay.tsx and the
+    // server's own /api/guardian/alert enforce) - never fall back to an
+    // arbitrary first contact, which could be a coach/peer never meant to
+    // receive this kind of alert.
+    const realGuardians = (supportCircle || []).filter(isRealGuardian);
+    const primary = realGuardians.find((c: any) => c.role === 'primary_guardian') || realGuardians[0];
     if (!primary) {
-      setToastMessage("No guardian is set up yet - add one in Guardian Protection Network first.");
-      setTimeout(() => setToastMessage(null), 4000);
-      return;
-    }
-    if (!/^\+[1-9]\d{6,14}$/.test(primary.contactMethod)) {
-      setToastMessage("Couldn't send - your guardian's number isn't in a valid format.");
+      setToastMessage("No guardian is set up yet - add one in Recovery Ally first.");
       setTimeout(() => setToastMessage(null), 4000);
       return;
     }
     setGuardianPingActive(true);
-    const senderName = userName?.trim() || 'A Blaze Break user';
+    // Routed through the same hardened /api/guardian/alert endpoint every
+    // other real guardian send uses (NovaGuardianRelay.tsx, CrisisSupport.tsx)
+    // instead of a raw /api/twilio/send call - this one-tap header button
+    // gets the same cooldown, daily cap, and idempotency protection as
+    // every other guardian send path, rather than only the looser generic
+    // rate limit /api/twilio/send enforces.
+    const idempotencyKey = `header_ping_${primary.id}_${Date.now()}_${Math.random().toString(36).slice(2)}`;
     try {
-      const res = await secureApiFetch('/api/twilio/send', {
+      const res = await secureApiFetch('/api/guardian/alert', {
         method: 'POST',
-        data: {
-          to: primary.contactMethod,
-          message: `Nova Alert: ${senderName} flagged high stress right now and asked for extra support. This message was sent because they manually requested it.`,
-          useWhatsapp: primary.notificationPreference === 'whatsapp',
-        },
+        data: { contactId: primary.id, idempotencyKey },
       });
       const body = await res.json();
-      setToastMessage(res.ok && body.success ? `Ping sent to ${primary.name}.` : (body.error || "Couldn't send that ping right now."));
+      setToastMessage(res.ok ? (body.userMessage || `Ping sent to ${primary.name}.`) : (body.userMessage || body.error || "Couldn't send that ping right now."));
     } catch (e) {
       setToastMessage("Couldn't reach the messaging service right now.");
     }
     setTimeout(() => { setToastMessage(null); setGuardianPingActive(false); }, 4000);
-  }, [guardianPingActive, supportCircle, userName]);
+  }, [guardianPingActive, supportCircle]);
 
   // Same window-event pattern as open_crisis_support/navigate_tab -
   // Anxiety Reset's "More unsettled" checkpoint branch offers Guardian
