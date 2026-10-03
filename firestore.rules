@@ -927,7 +927,7 @@ service cloud.firestore {
       match /action_experiments/{experimentId} {
         allow read, delete: if isOwner(uid);
         allow create: if isOwner(uid)
-            && hasOnly(['id', 'insightId', 'text', 'ladderLevel', 'duration', 'momentOfTruth', 'friction', 'minimumViableChange', 'status', 'lastMomentChoice', 'prediction', 'reality', 'reviewChoice', 'changeReason', 'autopsyReason', 'createdAt', 'updatedAt'])
+            && hasOnly(['id', 'insightId', 'text', 'ladderLevel', 'duration', 'momentOfTruth', 'friction', 'minimumViableChange', 'status', 'lastMomentChoice', 'prediction', 'reality', 'reviewChoice', 'changeReason', 'autopsyReason', 'keepFollowUp', 'createdAt', 'updatedAt'])
             && hasAll(['id', 'insightId', 'text', 'ladderLevel', 'status', 'createdAt', 'updatedAt'])
             && isStringWithMax(request.resource.data.text, 500)
             && request.resource.data.ladderLevel in ['notice', 'try_once', 'experiment', 'protect', 'default']
@@ -941,16 +941,18 @@ service cloud.firestore {
             && (!('reality' in request.resource.data) || request.resource.data.reality == null)
             && (!('reviewChoice' in request.resource.data) || request.resource.data.reviewChoice == null)
             && (!('changeReason' in request.resource.data) || request.resource.data.changeReason == null)
-            && (!('autopsyReason' in request.resource.data) || request.resource.data.autopsyReason == null);
+            && (!('autopsyReason' in request.resource.data) || request.resource.data.autopsyReason == null)
+            && (!('keepFollowUp' in request.resource.data) || request.resource.data.keepFollowUp == null);
         allow update: if isOwner(uid)
-            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'lastMomentChoice', 'prediction', 'reality', 'reviewChoice', 'changeReason', 'autopsyReason', 'updatedAt'])
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'lastMomentChoice', 'prediction', 'reality', 'reviewChoice', 'changeReason', 'autopsyReason', 'keepFollowUp', 'updatedAt'])
             && (!('status' in request.resource.data) || request.resource.data.status in ['active', 'completed', 'abandoned'])
             && (!('lastMomentChoice' in request.resource.data) || request.resource.data.lastMomentChoice in ['usual_response', 'try_something_different'])
             && (!('prediction' in request.resource.data) || isStringWithMax(request.resource.data.prediction, 500))
             && (!('reality' in request.resource.data) || isStringWithMax(request.resource.data.reality, 500))
             && (!('reviewChoice' in request.resource.data) || request.resource.data.reviewChoice in ['keep', 'change', 'drop', 'not_sure_yet'])
             && (!('changeReason' in request.resource.data) || request.resource.data.changeReason in ['too_difficult', 'wrong_timing', 'too_much_effort', 'too_vague', 'someone_else_affected_it', 'need_smaller_version', 'didnt_feel_like_me'])
-            && (!('autopsyReason' in request.resource.data) || request.resource.data.autopsyReason in ['forgot', 'situation_didnt_happen', 'no_capacity', 'someone_else_changed_things', 'felt_uncomfortable', 'too_ambitious', 'didnt_feel_useful', 'changed_my_mind', 'not_sure']);
+            && (!('autopsyReason' in request.resource.data) || request.resource.data.autopsyReason in ['forgot', 'situation_didnt_happen', 'no_capacity', 'someone_else_changed_things', 'felt_uncomfortable', 'too_ambitious', 'didnt_feel_useful', 'changed_my_mind', 'not_sure'])
+            && (!('keepFollowUp' in request.resource.data) || request.resource.data.keepFollowUp == null || request.resource.data.keepFollowUp in ['try_longer', 'protect_it', 'make_default']);
       }
 
       // J. nova_permissions/current

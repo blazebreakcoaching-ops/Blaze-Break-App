@@ -26,6 +26,9 @@ import {
   statusForReviewChoice,
   CHANGE_AUTOPSY_QUESTION, AUTOPSY_REASON_ORDER, AUTOPSY_REASON_LABELS,
   AUTOPSY_RESPONSE_FOR_REASON, AUTOPSY_RESPONSE_LABELS,
+  buildProofOfChange, PROOF_OF_CHANGE_KIND_LABELS,
+  buildThingsIKnowNow, KNOWLEDGE_ENTRY_LINE,
+  confirmedExperimentCountForInsight,
 } from './action-engine';
 import { RediscoveryClue, WorkloadCheckSnapshot } from './rediscovery-engine';
 
@@ -230,7 +233,7 @@ describe('One active experiment enforcement', () => {
     id: 'e1', insightId: 'i1', text: 't', ladderLevel: 'try_once', duration: null,
     momentOfTruth: null, friction: null, minimumViableChange: null, status,
     lastMomentChoice: null, prediction: null, reality: null,
-    reviewChoice: null, changeReason: null, autopsyReason: null,
+    reviewChoice: null, changeReason: null, autopsyReason: null, keepFollowUp: null,
     createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z',
   });
 
@@ -325,5 +328,110 @@ describe('Change Autopsy: a non-happening is useful information, never a failure
     Object.values(AUTOPSY_RESPONSE_LABELS).forEach((label) => {
       expect(label).not.toMatch(/you failed/i);
     });
+  });
+});
+
+describe('Proof of Change: real evidence, never an arbitrary point score', () => {
+  const base: ExperimentRecord = {
+    id: 'e1', insightId: 'i1', text: 'Say no to a same-day request', ladderLevel: 'experiment', duration: 'two_weeks',
+    momentOfTruth: null, friction: null, minimumViableChange: null, status: 'completed',
+    lastMomentChoice: null, prediction: null, reality: null,
+    reviewChoice: 'keep', changeReason: null, autopsyReason: null, keepFollowUp: 'protect_it',
+    createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-05T00:00:00Z',
+  };
+
+  it('counts a protected experiment as proof', () => {
+    const entries = buildProofOfChange([base]);
+    expect(entries).toHaveLength(1);
+    expect(entries[0].kind).toBe('protected');
+    expect(PROOF_OF_CHANGE_KIND_LABELS.protected).toBeTruthy();
+  });
+
+  it('counts a made-default experiment as proof', () => {
+    const entries = buildProofOfChange([{ ...base, keepFollowUp: 'make_default' }]);
+    expect(entries[0].kind).toBe('made_default');
+  });
+
+  it('does not count a "try longer" kept experiment as proof yet - it is still active', () => {
+    expect(buildProofOfChange([{ ...base, status: 'active', keepFollowUp: 'try_longer' }])).toHaveLength(0);
+  });
+
+  it('does not count a changed, dropped, or never-reviewed experiment as proof', () => {
+    expect(buildProofOfChange([{ ...base, reviewChoice: 'change', keepFollowUp: null }])).toHaveLength(0);
+    expect(buildProofOfChange([{ ...base, status: 'abandoned', reviewChoice: 'drop', keepFollowUp: null }])).toHaveLength(0);
+    expect(buildProofOfChange([{ ...base, status: 'active', reviewChoice: null, keepFollowUp: null }])).toHaveLength(0);
+  });
+
+  it('never uses points/score language in its labels', () => {
+    Object.values(PROOF_OF_CHANGE_KIND_LABELS).forEach((label) => {
+      expect(label).not.toMatch(/point|score/i);
+    });
+  });
+});
+
+describe('Things I Know Now: a traceable personal evidence log', () => {
+  const base: ExperimentRecord = {
+    id: 'e1', insightId: 'i1', text: 'Block focus time on Fridays', ladderLevel: 'experiment', duration: 'this_week',
+    momentOfTruth: null, friction: null, minimumViableChange: null, status: 'completed',
+    lastMomentChoice: null, prediction: null, reality: null,
+    reviewChoice: null, changeReason: null, autopsyReason: null, keepFollowUp: null,
+    createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-05T00:00:00Z',
+  };
+
+  it('builds a kept entry', () => {
+    const entries = buildThingsIKnowNow([{ ...base, reviewChoice: 'keep', keepFollowUp: 'protect_it' }]);
+    expect(entries).toHaveLength(1);
+    expect(entries[0].kind).toBe('kept');
+    expect(KNOWLEDGE_ENTRY_LINE.kept(entries[0].text, entries[0].detail)).toContain('Block focus time on Fridays');
+  });
+
+  it('builds a changed entry carrying the change reason as detail', () => {
+    const entries = buildThingsIKnowNow([{ ...base, reviewChoice: 'change', changeReason: 'too_difficult' }]);
+    expect(entries[0].kind).toBe('changed');
+    expect(entries[0].detail).toBe(CHANGE_REASON_LABELS.too_difficult);
+    expect(KNOWLEDGE_ENTRY_LINE.changed(entries[0].text, entries[0].detail)).toContain('too difficult'.replace('too difficult', CHANGE_REASON_LABELS.too_difficult));
+  });
+
+  it('builds a dropped entry treated as real information, never failure language', () => {
+    const entries = buildThingsIKnowNow([{ ...base, status: 'abandoned', reviewChoice: 'drop' }]);
+    expect(entries[0].kind).toBe('dropped');
+    const line = KNOWLEDGE_ENTRY_LINE.dropped(entries[0].text, entries[0].detail);
+    expect(line).not.toMatch(/fail/i);
+  });
+
+  it('excludes experiments with no review yet (not_sure_yet or unreviewed)', () => {
+    expect(buildThingsIKnowNow([{ ...base, reviewChoice: 'not_sure_yet' }])).toHaveLength(0);
+    expect(buildThingsIKnowNow([{ ...base, reviewChoice: null }])).toHaveLength(0);
+  });
+
+  it('orders entries most recent first', () => {
+    const older = { ...base, id: 'e-old', reviewChoice: 'keep' as const, updatedAt: '2026-01-01T00:00:00Z' };
+    const newer = { ...base, id: 'e-new', reviewChoice: 'drop' as const, status: 'abandoned' as const, updatedAt: '2026-01-10T00:00:00Z' };
+    const entries = buildThingsIKnowNow([older, newer]);
+    expect(entries.map((e) => e.experimentId)).toEqual(['e-new', 'e-old']);
+  });
+});
+
+describe('Confidence/Evidence model applied: counting confirmed experiments per insight', () => {
+  const kept = (insightId: string, id: string): ExperimentRecord => ({
+    id, insightId, text: 't', ladderLevel: 'experiment', duration: 'this_week',
+    momentOfTruth: null, friction: null, minimumViableChange: null, status: 'completed',
+    lastMomentChoice: null, prediction: null, reality: null,
+    reviewChoice: 'keep', changeReason: null, autopsyReason: null, keepFollowUp: 'protect_it',
+    createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z',
+  });
+
+  it('counts only kept experiments for the matching insight', () => {
+    const experiments = [
+      kept('i1', 'e1'), kept('i1', 'e2'), { ...kept('i1', 'e3'), reviewChoice: 'drop' as const },
+      kept('i2', 'e4'),
+    ];
+    expect(confirmedExperimentCountForInsight('i1', experiments)).toBe(2);
+  });
+
+  it('feeds into behaviourally_supported once three or more are confirmed', () => {
+    const experiments = [kept('i1', 'e1'), kept('i1', 'e2'), kept('i1', 'e3')];
+    const count = confirmedExperimentCountForInsight('i1', experiments);
+    expect(evidenceLevelForInsightState('nova_noticed', count)).toBe('behaviourally_supported');
   });
 });

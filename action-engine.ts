@@ -358,6 +358,7 @@ export interface ExperimentRecord {
   reviewChoice: ReviewChoice | null;
   changeReason: ChangeReason | null;
   autopsyReason: AutopsyReason | null;
+  keepFollowUp: KeepFollowUp | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -510,3 +511,85 @@ export const AUTOPSY_RESPONSE_LABELS: Record<AutopsyResponse, string> = {
   allow_experiment_to_end: "That's alright — we can end this one here.",
   acknowledge: "Thanks for the honesty — that's useful to know.",
 };
+
+// ---- Proof of Change (replaces Stability Points) ------------------------------
+// Real evidence that something changed, built only from experiments the user
+// actually finished and chose to keep - never an arbitrary point score, and
+// never awarded for merely starting or showing up.
+
+export type ProofOfChangeKind = 'protected' | 'made_default';
+
+export interface ProofOfChangeEntry {
+  experimentId: string;
+  text: string;
+  kind: ProofOfChangeKind;
+  date: string;
+}
+
+export const PROOF_OF_CHANGE_KIND_LABELS: Record<ProofOfChangeKind, string> = {
+  protected: 'Protected',
+  made_default: 'Made a default',
+};
+
+// Only a completed, kept experiment with a recorded follow-up counts as
+// proof - "try longer" leaves the experiment active, so it isn't proof yet.
+export const buildProofOfChange = (experiments: ExperimentRecord[]): ProofOfChangeEntry[] =>
+  experiments
+    .filter((e) => e.status === 'completed' && e.reviewChoice === 'keep' && e.keepFollowUp && e.keepFollowUp !== 'try_longer')
+    .map((e): ProofOfChangeEntry => ({
+      experimentId: e.id,
+      text: e.text,
+      kind: e.keepFollowUp === 'make_default' ? 'made_default' : 'protected',
+      date: e.updatedAt,
+    }))
+    .sort((a, b) => (a.date < b.date ? 1 : -1));
+
+// ---- Things I Know Now ---------------------------------------------------------
+// A personal evidence log, not a journaling dashboard - every entry traces
+// back to something the user actually tried, never a generic self-help line.
+
+export type KnowledgeEntryKind = 'kept' | 'changed' | 'dropped';
+
+export interface KnowledgeEntry {
+  experimentId: string;
+  text: string;
+  kind: KnowledgeEntryKind;
+  detail: string | null;
+  date: string;
+}
+
+const knowledgeKindForExperiment = (e: ExperimentRecord): KnowledgeEntryKind | null => {
+  if (e.reviewChoice === 'keep') return 'kept';
+  if (e.reviewChoice === 'change') return 'changed';
+  if (e.reviewChoice === 'drop') return 'dropped';
+  return null;
+};
+
+export const buildThingsIKnowNow = (experiments: ExperimentRecord[]): KnowledgeEntry[] =>
+  experiments
+    .map((e): KnowledgeEntry | null => {
+      const kind = knowledgeKindForExperiment(e);
+      if (!kind) return null;
+      return {
+        experimentId: e.id,
+        text: e.text,
+        kind,
+        detail: kind === 'changed' && e.changeReason ? CHANGE_REASON_LABELS[e.changeReason] : null,
+        date: e.updatedAt,
+      };
+    })
+    .filter((entry): entry is KnowledgeEntry => entry !== null)
+    .sort((a, b) => (a.date < b.date ? 1 : -1));
+
+export const KNOWLEDGE_ENTRY_LINE: Record<KnowledgeEntryKind, (text: string, detail: string | null) => string> = {
+  kept: (text) => `You tried "${text}" — and it was worth keeping.`,
+  changed: (text, detail) => `You tried "${text}" — and learned it needed to change${detail ? ` (${detail})` : ''}.`,
+  dropped: (text) => `You tried "${text}" — and learned it wasn't the right fit. That's real information too.`,
+};
+
+// ---- Confidence/Evidence model, applied ---------------------------------------
+// How many of an insight's own experiments were actually kept - the only
+// input evidenceLevelForInsightState needs beyond the insight's own state.
+
+export const confirmedExperimentCountForInsight = (insightId: string, experiments: ExperimentRecord[]): number =>
+  experiments.filter((e) => e.insightId === insightId && e.reviewChoice === 'keep').length;

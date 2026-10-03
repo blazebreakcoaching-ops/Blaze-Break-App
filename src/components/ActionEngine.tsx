@@ -37,6 +37,9 @@ import {
   statusForReviewChoice,
   CHANGE_AUTOPSY_QUESTION, AUTOPSY_REASON_ORDER, AUTOPSY_REASON_LABELS, AutopsyReason,
   AUTOPSY_RESPONSE_FOR_REASON, AUTOPSY_RESPONSE_LABELS,
+  buildProofOfChange, PROOF_OF_CHANGE_KIND_LABELS,
+  buildThingsIKnowNow, KNOWLEDGE_ENTRY_LINE,
+  confirmedExperimentCountForInsight, evidenceLevelForInsightState, EVIDENCE_LEVEL_LABELS,
 } from '../../action-engine';
 
 interface ActionEngineProps {
@@ -71,6 +74,7 @@ export const ActionEngine = ({ onNavigate }: ActionEngineProps) => {
   const [activeExperiment, setActiveExperiment] = useState<ExperimentRecord | null>(null);
   const [predictionDraft, setPredictionDraft] = useState('');
   const [realityDraft, setRealityDraft] = useState('');
+  const [experiments, setExperiments] = useState<ExperimentRecord[]>([]);
 
   useEffect(() => {
     const load = async () => {
@@ -81,6 +85,7 @@ export const ActionEngine = ({ onNavigate }: ActionEngineProps) => {
           loadRecentActionInsights(uid),
           loadRecentExperiments(uid),
         ]);
+        setExperiments(experiments);
         const active = experiments.find((e) => e.status === 'active') ?? null;
         if (active) {
           setActiveExperiment(active);
@@ -214,7 +219,7 @@ export const ActionEngine = ({ onNavigate }: ActionEngineProps) => {
 
   const saveExperiment = async (mvcOverride?: string) => {
     if (!auth.currentUser || !insight || !experimentText.trim()) return;
-    await createExperiment(auth.currentUser.uid, {
+    const data = {
       insightId: insight.id,
       text: experimentText.trim(),
       ladderLevel: ladderLevelForExperiment(experimentDuration),
@@ -222,7 +227,17 @@ export const ActionEngine = ({ onNavigate }: ActionEngineProps) => {
       momentOfTruth: momentCue.trim() || momentResponse.trim() ? { cue: momentCue.trim(), response: momentResponse.trim() } : null,
       friction,
       minimumViableChange: (mvcOverride ?? mvc).trim() || null,
-    });
+    };
+    const id = await createExperiment(auth.currentUser.uid, data);
+    const now = new Date().toISOString();
+    setExperiments((prev) => [
+      ...prev,
+      {
+        ...data, id, status: 'active', lastMomentChoice: null, prediction: null, reality: null,
+        reviewChoice: null, changeReason: null, autopsyReason: null, keepFollowUp: null,
+        createdAt: now, updatedAt: now,
+      },
+    ]);
     setResolvedSummary(
       `You're trying: "${experimentText.trim()}" — ${experimentDuration ? EXPERIMENT_DURATION_LABELS[experimentDuration] : 'next time it comes up'}.`
     );
@@ -267,14 +282,18 @@ export const ActionEngine = ({ onNavigate }: ActionEngineProps) => {
     if (choice === 'change') { setStep('review_change_reason'); return; }
     if (choice === 'not_sure_yet') { setStep('review_not_sure_followup'); return; }
     // drop
-    finishReview('drop', null, statusForReviewChoice('drop')!, DROP_LINE);
+    finishReview('drop', null, null, statusForReviewChoice('drop')!, DROP_LINE);
   };
 
   const finishReview = async (
-    choice: ReviewChoice, changeReason: ChangeReason | null, status: ExperimentRecord['status'], summary: string
+    choice: ReviewChoice, changeReason: ChangeReason | null, keepFollowUp: KeepFollowUp | null,
+    status: ExperimentRecord['status'], summary: string
   ) => {
     if (!auth.currentUser || !activeExperiment) return;
-    await recordReview(auth.currentUser.uid, activeExperiment.id, { reviewChoice: choice, changeReason, status });
+    await recordReview(auth.currentUser.uid, activeExperiment.id, { reviewChoice: choice, changeReason, keepFollowUp, status });
+    setExperiments((prev) => prev.map((e) => (
+      e.id === activeExperiment.id ? { ...e, reviewChoice: choice, changeReason, keepFollowUp, status } : e
+    )));
     setResolvedSummary(summary);
     setStep('resolved');
   };
@@ -285,12 +304,15 @@ export const ActionEngine = ({ onNavigate }: ActionEngineProps) => {
       followUp === 'try_longer' ? "Good — let's keep going with it."
       : followUp === 'protect_it' ? "Noted. We'll build out ways to protect this soon."
       : "Noted. We'll build out making this a default soon.";
-    finishReview('keep', null, status, summary);
+    finishReview('keep', null, followUp, status, summary);
   };
 
   const chooseChangeReason = async (reason: ChangeReason) => {
     if (!auth.currentUser || !activeExperiment) return;
-    await recordReview(auth.currentUser.uid, activeExperiment.id, { reviewChoice: 'change', changeReason: reason, status: 'completed' });
+    await recordReview(auth.currentUser.uid, activeExperiment.id, { reviewChoice: 'change', changeReason: reason, keepFollowUp: null, status: 'completed' });
+    setExperiments((prev) => prev.map((e) => (
+      e.id === activeExperiment.id ? { ...e, reviewChoice: 'change', changeReason: reason, status: 'completed' } : e
+    )));
     await enterExperimentBuilder(activeExperiment.text);
   };
 
@@ -300,7 +322,7 @@ export const ActionEngine = ({ onNavigate }: ActionEngineProps) => {
       followUp === 'try_once_more' ? "Alright, let's see how it goes."
       : followUp === 'leave_it_open' ? "No rush — it'll stay open."
       : 'Noted. We’ll leave it there for now.';
-    finishReview('not_sure_yet', null, status, summary);
+    finishReview('not_sure_yet', null, null, status, summary);
   };
 
   const chooseAutopsyReason = async (reason: AutopsyReason) => {
@@ -308,13 +330,21 @@ export const ActionEngine = ({ onNavigate }: ActionEngineProps) => {
     const response = AUTOPSY_RESPONSE_FOR_REASON[reason];
     const status: ExperimentRecord['status'] = response === 'allow_experiment_to_end' ? 'abandoned' : 'active';
     await recordAutopsy(auth.currentUser.uid, activeExperiment.id, { autopsyReason: reason, status });
+    setExperiments((prev) => prev.map((e) => (
+      e.id === activeExperiment.id ? { ...e, autopsyReason: reason, status } : e
+    )));
     setResolvedSummary(AUTOPSY_RESPONSE_LABELS[response]);
     setStep('resolved');
   };
 
+  const proofOfChange = buildProofOfChange(experiments);
+  const thingsIKnowNow = buildThingsIKnowNow(experiments);
+  const evidenceLevel = insight ? evidenceLevelForInsightState(insight.state, confirmedExperimentCountForInsight(insight.id, experiments)) : null;
+
   if (step === 'loading') return null;
 
   return (
+    <>
     <div className="card p-6 sm:p-8 space-y-6">
       <div className="flex items-center gap-4">
         <div className="w-10 h-10 rounded-2xl bg-primary/10 flex items-center justify-center shrink-0">
@@ -344,6 +374,7 @@ export const ActionEngine = ({ onNavigate }: ActionEngineProps) => {
             <div className="p-4 rounded-xl bg-surface/60 border border-border/50">
               <p className="text-xs font-bold text-primary uppercase tracking-wider mb-1">Nova noticed</p>
               <p className="text-sm text-text-main">{insight.text}</p>
+              {evidenceLevel && <p className="text-xs text-text-muted mt-2">{EVIDENCE_LEVEL_LABELS[evidenceLevel]}</p>}
             </div>
             <p className="text-sm font-bold text-text-main">{ACTION_WORTHINESS_QUESTION}</p>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -364,6 +395,7 @@ export const ActionEngine = ({ onNavigate }: ActionEngineProps) => {
           <motion.div key="controllability_gate" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-4">
             <div className="p-4 rounded-xl bg-surface/60 border border-border/50">
               <p className="text-sm text-text-main">{insight.text}</p>
+              {evidenceLevel && <p className="text-xs text-text-muted mt-2">{EVIDENCE_LEVEL_LABELS[evidenceLevel]}</p>}
             </div>
             <p className="text-sm font-bold text-text-main">{CONTROLLABILITY_QUESTION}</p>
             <div className="space-y-2">
@@ -779,5 +811,36 @@ export const ActionEngine = ({ onNavigate }: ActionEngineProps) => {
         )}
       </AnimatePresence>
     </div>
+
+    {proofOfChange.length > 0 && (
+      <div className="card p-6 sm:p-8 space-y-4">
+        <div>
+          <h3 className="text-sm font-display font-bold text-text-main">Proof of Change</h3>
+          <p className="text-xs text-text-muted">Real evidence of what's changed — not points.</p>
+        </div>
+        <div className="space-y-2">
+          {proofOfChange.map((entry) => (
+            <div key={entry.experimentId} className="p-3 rounded-xl bg-surface/50 border border-border/50">
+              <p className="text-sm text-text-main">{entry.text}</p>
+              <p className="text-xs font-bold text-primary mt-1">{PROOF_OF_CHANGE_KIND_LABELS[entry.kind]}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    )}
+
+    {thingsIKnowNow.length > 0 && (
+      <div className="card p-6 sm:p-8 space-y-4">
+        <h3 className="text-sm font-display font-bold text-text-main">Things I Know Now</h3>
+        <div className="space-y-2">
+          {thingsIKnowNow.map((entry) => (
+            <p key={entry.experimentId} className="text-sm text-text-main p-3 rounded-xl bg-surface/50 border border-border/50">
+              {KNOWLEDGE_ENTRY_LINE[entry.kind](entry.text, entry.detail)}
+            </p>
+          ))}
+        </div>
+      </div>
+    )}
+    </>
   );
 };
