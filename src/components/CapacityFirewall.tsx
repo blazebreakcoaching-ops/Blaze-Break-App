@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { ShieldCheck, ArrowRight, ArrowLeft, Copy, Check } from 'lucide-react';
+import { ShieldCheck, ArrowRight, ArrowLeft, Copy, Check, Compass } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { auth } from '../lib/firebase';
 import { loadLatestCapacityCheckIn, loadStressors } from '../lib/energy-delta-service';
 import { computeNetLoad } from '../../energy-delta-engine';
+import { CapacityField } from './CapacityField';
+import { buildCapacityFieldModel, buildScenarioPreview, SCENARIO_MODE_INTRO_LINE, SCENARIO_MODE_CTA, SCENARIO_MODE_DISCLAIMER } from '../../capacity-field-engine';
 import {
   QUICK_PAUSE_FIT_ORDER, QUICK_PAUSE_FIT_LABELS, QuickPauseFit, QUICK_PAUSE_PROMPT, QUICK_PAUSE_WHAT_QUESTION,
   QUICK_PAUSE_FIT_QUESTION, needsCapacityGate,
@@ -54,6 +56,9 @@ export const CapacityFirewall = ({ onNavigate }: CapacityFirewallProps) => {
   const [deferAnswer, setDeferAnswer] = useState('');
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
 
+  const [scenarioOpen, setScenarioOpen] = useState(false);
+  const [scenarioDemand, setScenarioDemand] = useState('');
+
   const loadCapacity = async () => {
     if (!auth.currentUser) { setCapacityLoaded(true); return; }
     try {
@@ -79,6 +84,14 @@ export const CapacityFirewall = ({ onNavigate }: CapacityFirewallProps) => {
   const tightness: BufferTightness = capacityScore !== null && plannedLoad !== null
     ? describeBufferAfterAccepting(capacityScore, plannedLoad) : 'unknown';
   const scenarios = buildCapacityGateScenarios({ capacityScore, plannedLoad });
+  const capacityFieldModel = buildCapacityFieldModel(capacityScore, plannedLoad);
+  const scenarioPreview = buildScenarioPreview(capacityScore, plannedLoad);
+
+  const startRealFlowFromScenario = () => {
+    setDemandDescription(scenarioDemand);
+    setScenarioOpen(false);
+    setStep('quick_pause');
+  };
 
   const reset = () => {
     setStep('intro');
@@ -180,14 +193,53 @@ export const CapacityFirewall = ({ onNavigate }: CapacityFirewallProps) => {
     <div className="card p-6 sm:p-8 space-y-6">
       <AnimatePresence mode="wait">
         {step === 'intro' && (
-          <motion.div key="intro" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-4 text-center">
-            <div className="w-12 h-12 rounded-2xl bg-primary/10 flex items-center justify-center mx-auto">
-              <ShieldCheck className="w-6 h-6 text-primary" aria-hidden="true" />
+          <motion.div key="intro" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-6">
+            <div className="space-y-4 text-center">
+              <div className="w-12 h-12 rounded-2xl bg-primary/10 flex items-center justify-center mx-auto">
+                <ShieldCheck className="w-6 h-6 text-primary" aria-hidden="true" />
+              </div>
+              <h3 className="text-xl font-display font-bold text-text-main">{CAPACITY_FIREWALL_INTRO_LINE}</h3>
+              <button onClick={() => setStep('quick_pause')} className="btn-primary py-3 px-6 inline-flex items-center gap-2">
+                {CAPACITY_FIREWALL_INTRO_CTA} <ArrowRight className="w-4 h-4" aria-hidden="true" />
+              </button>
             </div>
-            <h3 className="text-xl font-display font-bold text-text-main">{CAPACITY_FIREWALL_INTRO_LINE}</h3>
-            <button onClick={() => setStep('quick_pause')} className="btn-primary py-3 px-6 inline-flex items-center gap-2">
-              {CAPACITY_FIREWALL_INTRO_CTA} <ArrowRight className="w-4 h-4" aria-hidden="true" />
-            </button>
+
+            <div className="text-left space-y-4 border-t border-border/40 pt-6">
+              <CapacityField field={capacityFieldModel} />
+
+              {!scenarioOpen ? (
+                <button
+                  onClick={() => setScenarioOpen(true)}
+                  className="text-xs font-bold text-primary flex items-center gap-1.5 mx-auto"
+                >
+                  <Compass className="w-3.5 h-3.5" aria-hidden="true" /> {SCENARIO_MODE_CTA}
+                </button>
+              ) : (
+                <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-3 bg-surface/50 border border-border/50 rounded-xl p-4">
+                  <p className="text-xs font-medium text-text-muted">{SCENARIO_MODE_INTRO_LINE}</p>
+                  <input
+                    value={scenarioDemand}
+                    onChange={(e) => setScenarioDemand(e.target.value)}
+                    placeholder="e.g. a 2-hour project for Thursday"
+                    className="w-full bg-surface border border-border/50 rounded-lg px-3 py-2 text-sm text-text-main"
+                  />
+                  <ul className="space-y-1.5 text-sm text-text-main">
+                    <li><span className="font-bold">If you accept:</span> {scenarioPreview.accept}</li>
+                    <li><span className="font-bold">If you move it:</span> {scenarioPreview.move}</li>
+                    <li><span className="font-bold">If you decline:</span> {scenarioPreview.decline}</li>
+                  </ul>
+                  <p className="text-[11px] text-text-muted italic">{SCENARIO_MODE_DISCLAIMER}</p>
+                  <div className="flex gap-2 pt-1">
+                    <button onClick={startRealFlowFromScenario} className="btn-primary text-xs px-3 py-1.5">
+                      Start the real flow
+                    </button>
+                    <button onClick={() => setScenarioOpen(false)} className="text-xs text-text-muted px-3 py-1.5">
+                      Close
+                    </button>
+                  </div>
+                </motion.div>
+              )}
+            </div>
           </motion.div>
         )}
 
