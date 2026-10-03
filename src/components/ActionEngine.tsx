@@ -9,6 +9,7 @@ import {
 } from '../lib/rediscovery-insight-service';
 import {
   createExperiment, updateExperimentStatus, loadRecentExperiments,
+  recordMomentChoice, recordPrediction, recordReality, recordReview, recordAutopsy,
 } from '../lib/action-experiment-service';
 import {
   ActionInsightRecord,
@@ -25,8 +26,17 @@ import {
   FRICTION_FORECAST_QUESTION, FRICTION_TYPE_ORDER, FRICTION_TYPE_LABELS, FrictionType,
   FRICTION_ADAPTATION_LABELS, FRICTION_ADAPTATION_FOR_TYPE,
   MINIMUM_VIABLE_CHANGE_PROMPT,
-  ladderLevelForExperiment, hasActiveExperiment,
+  ladderLevelForExperiment, hasActiveExperiment, ExperimentRecord,
   ONE_ACTIVE_EXPERIMENT_LINE, ACTIVE_EXPERIMENT_CONFLICT_ORDER, ACTIVE_EXPERIMENT_CONFLICT_LABELS, ActiveExperimentConflictChoice,
+  MOMENT_OF_CHOICE_LINE, MOMENT_CHOICE_ORDER, MOMENT_CHOICE_LABELS, MomentChoice,
+  PREDICTION_QUESTION, REALITY_QUESTION,
+  REVIEW_QUESTION, REVIEW_CHOICE_ORDER, REVIEW_CHOICE_LABELS, ReviewChoice,
+  KEEP_FOLLOW_UP_ORDER, KEEP_FOLLOW_UP_LABELS, KeepFollowUp,
+  CHANGE_REASON_QUESTION, CHANGE_REASON_ORDER, CHANGE_REASON_LABELS, ChangeReason,
+  DROP_LINE, NOT_SURE_YET_FOLLOW_UP_ORDER, NOT_SURE_YET_FOLLOW_UP_LABELS, NotSureYetFollowUp,
+  statusForReviewChoice,
+  CHANGE_AUTOPSY_QUESTION, AUTOPSY_REASON_ORDER, AUTOPSY_REASON_LABELS, AutopsyReason,
+  AUTOPSY_RESPONSE_FOR_REASON, AUTOPSY_RESPONSE_LABELS,
 } from '../../action-engine';
 
 interface ActionEngineProps {
@@ -36,7 +46,10 @@ interface ActionEngineProps {
 type Step =
   | 'loading' | 'empty' | 'insight_card' | 'controllability_gate' | 'controllability_guidance'
   | 'depends_on_someone_resolve' | 'shared_plan_saved' | 'outside_control_resolve' | 'nothing_needs_fixing'
-  | 'active_experiment_conflict' | 'experiment_builder' | 'resolved';
+  | 'active_experiment_conflict' | 'experiment_builder'
+  | 'experiment_active' | 'moment_of_choice' | 'review_did_it_happen' | 'review_reality' | 'review_choice'
+  | 'review_keep_followup' | 'review_change_reason' | 'review_not_sure_followup' | 'change_autopsy'
+  | 'resolved';
 
 type BuilderStage = 'text' | 'moment' | 'friction' | 'mvc';
 
@@ -55,12 +68,28 @@ export const ActionEngine = ({ onNavigate }: ActionEngineProps) => {
   const [friction, setFriction] = useState<FrictionType | null>(null);
   const [mvc, setMvc] = useState('');
 
+  const [activeExperiment, setActiveExperiment] = useState<ExperimentRecord | null>(null);
+  const [predictionDraft, setPredictionDraft] = useState('');
+  const [realityDraft, setRealityDraft] = useState('');
+
   useEffect(() => {
     const load = async () => {
       if (!auth.currentUser) { setStep('empty'); return; }
       const uid = auth.currentUser.uid;
       try {
-        const existing = await loadRecentActionInsights(uid);
+        const [existing, experiments] = await Promise.all([
+          loadRecentActionInsights(uid),
+          loadRecentExperiments(uid),
+        ]);
+        const active = experiments.find((e) => e.status === 'active') ?? null;
+        if (active) {
+          setActiveExperiment(active);
+          setInsight(existing.find((i) => i.id === active.insightId) ?? null);
+          setPredictionDraft('');
+          setRealityDraft('');
+          setStep('experiment_active');
+          return;
+        }
         const pending = existing.find((i) => i.state === 'nova_noticed' || i.state === 'still_exploring') ?? null;
         if (pending) {
           setInsight(pending);
@@ -197,6 +226,89 @@ export const ActionEngine = ({ onNavigate }: ActionEngineProps) => {
     setResolvedSummary(
       `You're trying: "${experimentText.trim()}" — ${experimentDuration ? EXPERIMENT_DURATION_LABELS[experimentDuration] : 'next time it comes up'}.`
     );
+    setStep('resolved');
+  };
+
+  const savePrediction = async () => {
+    if (!auth.currentUser || !activeExperiment || !predictionDraft.trim()) return;
+    await recordPrediction(auth.currentUser.uid, activeExperiment.id, predictionDraft.trim());
+    setActiveExperiment({ ...activeExperiment, prediction: predictionDraft.trim() });
+  };
+
+  const chooseMomentChoice = async (choice: MomentChoice) => {
+    if (!auth.currentUser || !activeExperiment) return;
+    await recordMomentChoice(auth.currentUser.uid, activeExperiment.id, choice);
+    setActiveExperiment({ ...activeExperiment, lastMomentChoice: choice });
+    setResolvedSummary(
+      choice === 'try_something_different'
+        ? "Noted — however it went, that's real information."
+        : "Noted. No guilt either way — this is just information for later."
+    );
+    setStep('resolved');
+  };
+
+  const startReview = () => setStep('review_did_it_happen');
+
+  const answerDidItHappen = (happened: boolean) => {
+    if (!happened) { setStep('change_autopsy'); return; }
+    if (activeExperiment?.prediction && !activeExperiment.reality) { setStep('review_reality'); return; }
+    setStep('review_choice');
+  };
+
+  const saveReality = async () => {
+    if (!auth.currentUser || !activeExperiment || !realityDraft.trim()) return;
+    await recordReality(auth.currentUser.uid, activeExperiment.id, realityDraft.trim());
+    setActiveExperiment({ ...activeExperiment, reality: realityDraft.trim() });
+    setStep('review_choice');
+  };
+
+  const chooseReview = (choice: ReviewChoice) => {
+    if (choice === 'keep') { setStep('review_keep_followup'); return; }
+    if (choice === 'change') { setStep('review_change_reason'); return; }
+    if (choice === 'not_sure_yet') { setStep('review_not_sure_followup'); return; }
+    // drop
+    finishReview('drop', null, statusForReviewChoice('drop')!, DROP_LINE);
+  };
+
+  const finishReview = async (
+    choice: ReviewChoice, changeReason: ChangeReason | null, status: ExperimentRecord['status'], summary: string
+  ) => {
+    if (!auth.currentUser || !activeExperiment) return;
+    await recordReview(auth.currentUser.uid, activeExperiment.id, { reviewChoice: choice, changeReason, status });
+    setResolvedSummary(summary);
+    setStep('resolved');
+  };
+
+  const chooseKeepFollowUp = (followUp: KeepFollowUp) => {
+    const status: ExperimentRecord['status'] = followUp === 'try_longer' ? 'active' : statusForReviewChoice('keep')!;
+    const summary =
+      followUp === 'try_longer' ? "Good — let's keep going with it."
+      : followUp === 'protect_it' ? "Noted. We'll build out ways to protect this soon."
+      : "Noted. We'll build out making this a default soon.";
+    finishReview('keep', null, status, summary);
+  };
+
+  const chooseChangeReason = async (reason: ChangeReason) => {
+    if (!auth.currentUser || !activeExperiment) return;
+    await recordReview(auth.currentUser.uid, activeExperiment.id, { reviewChoice: 'change', changeReason: reason, status: 'completed' });
+    await enterExperimentBuilder(activeExperiment.text);
+  };
+
+  const chooseNotSureYetFollowUp = (followUp: NotSureYetFollowUp) => {
+    const status: ExperimentRecord['status'] = followUp === 'finish_for_now' ? 'completed' : 'active';
+    const summary =
+      followUp === 'try_once_more' ? "Alright, let's see how it goes."
+      : followUp === 'leave_it_open' ? "No rush — it'll stay open."
+      : 'Noted. We’ll leave it there for now.';
+    finishReview('not_sure_yet', null, status, summary);
+  };
+
+  const chooseAutopsyReason = async (reason: AutopsyReason) => {
+    if (!auth.currentUser || !activeExperiment) return;
+    const response = AUTOPSY_RESPONSE_FOR_REASON[reason];
+    const status: ExperimentRecord['status'] = response === 'allow_experiment_to_end' ? 'abandoned' : 'active';
+    await recordAutopsy(auth.currentUser.uid, activeExperiment.id, { autopsyReason: reason, status });
+    setResolvedSummary(AUTOPSY_RESPONSE_LABELS[response]);
     setStep('resolved');
   };
 
@@ -499,6 +611,163 @@ export const ActionEngine = ({ onNavigate }: ActionEngineProps) => {
                 </div>
               </>
             )}
+          </motion.div>
+        )}
+
+        {step === 'experiment_active' && activeExperiment && (
+          <motion.div key="experiment_active" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-4">
+            <div className="p-4 rounded-xl bg-surface/60 border border-border/50">
+              <p className="text-xs font-bold text-primary uppercase tracking-wider mb-1">You're trying</p>
+              <p className="text-sm text-text-main">{activeExperiment.text}</p>
+              {activeExperiment.momentOfTruth?.cue && (
+                <p className="text-xs text-text-muted mt-2">
+                  When {activeExperiment.momentOfTruth.cue}, you planned to: {activeExperiment.momentOfTruth.response}
+                </p>
+              )}
+            </div>
+            {!activeExperiment.prediction && (
+              <label className="block space-y-1.5">
+                <span className="text-xs font-bold text-text-muted">{PREDICTION_QUESTION} <span className="font-normal">(optional)</span></span>
+                <div className="flex gap-2">
+                  <input
+                    value={predictionDraft}
+                    onChange={(e) => setPredictionDraft(e.target.value)}
+                    className="flex-1 bg-surface/60 border border-border rounded-xl px-3 py-2 text-sm text-text-main"
+                  />
+                  <button onClick={savePrediction} disabled={!predictionDraft.trim()} className="text-xs font-bold text-primary disabled:opacity-40">Save</button>
+                </div>
+              </label>
+            )}
+            <div className="flex flex-wrap gap-3">
+              <button onClick={() => setStep('moment_of_choice')} className="btn-primary py-2.5 px-5">This came up</button>
+              <button onClick={startReview} className="text-xs font-bold text-primary hover:underline">Review it</button>
+            </div>
+          </motion.div>
+        )}
+
+        {step === 'moment_of_choice' && (
+          <motion.div key="moment_of_choice" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-4">
+            <p className="text-sm font-bold text-text-main">{MOMENT_OF_CHOICE_LINE}</p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              {MOMENT_CHOICE_ORDER.map((c) => (
+                <button
+                  key={c}
+                  onClick={() => chooseMomentChoice(c)}
+                  className="p-3 rounded-xl bg-surface/50 border border-border/50 hover:border-primary/40 text-sm font-medium text-text-main text-left"
+                >
+                  {MOMENT_CHOICE_LABELS[c]}
+                </button>
+              ))}
+            </div>
+          </motion.div>
+        )}
+
+        {step === 'review_did_it_happen' && (
+          <motion.div key="did_it_happen" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-4">
+            <p className="text-sm font-bold text-text-main">Did this happen?</p>
+            <div className="flex gap-3">
+              <button onClick={() => answerDidItHappen(true)} className="btn-primary py-2.5 px-5">Yes</button>
+              <button onClick={() => answerDidItHappen(false)} className="py-2.5 px-5 rounded-xl border border-border/50 text-sm font-bold text-text-main">No</button>
+            </div>
+          </motion.div>
+        )}
+
+        {step === 'review_reality' && (
+          <motion.div key="reality" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-4">
+            <p className="text-xs text-text-muted">You expected: {activeExperiment?.prediction}</p>
+            <label className="block space-y-1.5">
+              <span className="text-sm font-bold text-text-main">{REALITY_QUESTION}</span>
+              <textarea
+                value={realityDraft}
+                onChange={(e) => setRealityDraft(e.target.value)}
+                rows={2}
+                className="w-full bg-surface/60 border border-border rounded-xl px-3 py-2 text-sm text-text-main"
+              />
+            </label>
+            <button onClick={saveReality} disabled={!realityDraft.trim()} className="btn-primary py-2.5 px-5 disabled:opacity-40">Continue</button>
+          </motion.div>
+        )}
+
+        {step === 'review_choice' && (
+          <motion.div key="review_choice" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-4">
+            <p className="text-sm font-bold text-text-main">{REVIEW_QUESTION}</p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              {REVIEW_CHOICE_ORDER.map((c) => (
+                <button
+                  key={c}
+                  onClick={() => chooseReview(c)}
+                  className="p-3 rounded-xl bg-surface/50 border border-border/50 hover:border-primary/40 text-sm font-medium text-text-main text-left"
+                >
+                  {REVIEW_CHOICE_LABELS[c]}
+                </button>
+              ))}
+            </div>
+          </motion.div>
+        )}
+
+        {step === 'review_keep_followup' && (
+          <motion.div key="keep_followup" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-4">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+              {KEEP_FOLLOW_UP_ORDER.map((f) => (
+                <button
+                  key={f}
+                  onClick={() => chooseKeepFollowUp(f)}
+                  className="p-3 rounded-xl bg-surface/50 border border-border/50 hover:border-primary/40 text-sm font-medium text-text-main text-left"
+                >
+                  {KEEP_FOLLOW_UP_LABELS[f]}
+                </button>
+              ))}
+            </div>
+          </motion.div>
+        )}
+
+        {step === 'review_change_reason' && (
+          <motion.div key="change_reason" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-4">
+            <p className="text-sm font-bold text-text-main">{CHANGE_REASON_QUESTION}</p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              {CHANGE_REASON_ORDER.map((r) => (
+                <button
+                  key={r}
+                  onClick={() => chooseChangeReason(r)}
+                  className="p-3 rounded-xl bg-surface/50 border border-border/50 hover:border-primary/40 text-sm font-medium text-text-main text-left"
+                >
+                  {CHANGE_REASON_LABELS[r]}
+                </button>
+              ))}
+            </div>
+          </motion.div>
+        )}
+
+        {step === 'review_not_sure_followup' && (
+          <motion.div key="not_sure_followup" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-4">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+              {NOT_SURE_YET_FOLLOW_UP_ORDER.map((f) => (
+                <button
+                  key={f}
+                  onClick={() => chooseNotSureYetFollowUp(f)}
+                  className="p-3 rounded-xl bg-surface/50 border border-border/50 hover:border-primary/40 text-sm font-medium text-text-main text-left"
+                >
+                  {NOT_SURE_YET_FOLLOW_UP_LABELS[f]}
+                </button>
+              ))}
+            </div>
+          </motion.div>
+        )}
+
+        {step === 'change_autopsy' && (
+          <motion.div key="autopsy" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-4">
+            <p className="text-sm font-bold text-text-main">{CHANGE_AUTOPSY_QUESTION}</p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              {AUTOPSY_REASON_ORDER.map((r) => (
+                <button
+                  key={r}
+                  onClick={() => chooseAutopsyReason(r)}
+                  className="p-3 rounded-xl bg-surface/50 border border-border/50 hover:border-primary/40 text-sm font-medium text-text-main text-left"
+                >
+                  {AUTOPSY_REASON_LABELS[r]}
+                </button>
+              ))}
+            </div>
           </motion.div>
         )}
 

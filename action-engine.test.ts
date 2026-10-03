@@ -17,6 +17,15 @@ import {
   FRICTION_ADAPTATION_LABELS, FRICTION_ADAPTATION_FOR_TYPE, FRICTION_ADAPTATION_HANDOFF_TAB,
   MINIMUM_VIABLE_CHANGE_PROMPT, WANT_SMALLER_VERSION_TODAY_LINE,
   ladderLevelForExperiment, hasActiveExperiment, ExperimentRecord,
+  MOMENT_OF_CHOICE_LINE, MOMENT_CHOICE_ORDER, MOMENT_CHOICE_LABELS,
+  PREDICTION_QUESTION, REALITY_QUESTION,
+  REVIEW_QUESTION, REVIEW_CHOICE_ORDER, REVIEW_CHOICE_LABELS,
+  KEEP_FOLLOW_UP_ORDER, KEEP_FOLLOW_UP_LABELS,
+  CHANGE_REASON_QUESTION, CHANGE_REASON_ORDER, CHANGE_REASON_LABELS,
+  DROP_LINE, NOT_SURE_YET_FOLLOW_UP_ORDER, NOT_SURE_YET_FOLLOW_UP_LABELS,
+  statusForReviewChoice,
+  CHANGE_AUTOPSY_QUESTION, AUTOPSY_REASON_ORDER, AUTOPSY_REASON_LABELS,
+  AUTOPSY_RESPONSE_FOR_REASON, AUTOPSY_RESPONSE_LABELS,
 } from './action-engine';
 import { RediscoveryClue, WorkloadCheckSnapshot } from './rediscovery-engine';
 
@@ -220,6 +229,8 @@ describe('One active experiment enforcement', () => {
   const exp = (status: ExperimentRecord['status']): ExperimentRecord => ({
     id: 'e1', insightId: 'i1', text: 't', ladderLevel: 'try_once', duration: null,
     momentOfTruth: null, friction: null, minimumViableChange: null, status,
+    lastMomentChoice: null, prediction: null, reality: null,
+    reviewChoice: null, changeReason: null, autopsyReason: null,
     createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z',
   });
 
@@ -233,5 +244,86 @@ describe('One active experiment enforcement', () => {
 
   it('no experiments at all means no conflict', () => {
     expect(hasActiveExperiment([])).toBe(false);
+  });
+});
+
+describe('Moment of Choice: the usual response is never punished', () => {
+  it('has the exact spec line and two choices, neither framed as failure', () => {
+    expect(MOMENT_OF_CHOICE_LINE).toBe('This is one of those moments.');
+    expect(MOMENT_CHOICE_ORDER).toEqual(['usual_response', 'try_something_different']);
+    expect(Object.keys(MOMENT_CHOICE_LABELS)).toHaveLength(2);
+    expect(MOMENT_CHOICE_LABELS.usual_response).not.toMatch(/fail|wrong|bad/i);
+  });
+});
+
+describe('Prediction vs Reality: compared, never generalised from one event', () => {
+  it('has the exact spec questions', () => {
+    expect(PREDICTION_QUESTION).toBe('What do you think will happen?');
+    expect(REALITY_QUESTION).toBe('What actually happened?');
+  });
+});
+
+describe('Review: Keep / Change / Drop / Not sure yet', () => {
+  it('has the exact spec question and four choices', () => {
+    expect(REVIEW_QUESTION).toBe('What did you learn?');
+    expect(REVIEW_CHOICE_ORDER).toEqual(['keep', 'change', 'drop', 'not_sure_yet']);
+    expect(Object.keys(REVIEW_CHOICE_LABELS)).toHaveLength(4);
+  });
+
+  it('Keep offers three real follow-ups', () => {
+    expect(KEEP_FOLLOW_UP_ORDER).toHaveLength(3);
+    expect(Object.keys(KEEP_FOLLOW_UP_LABELS)).toHaveLength(3);
+  });
+
+  it('Change asks what needs changing, with all seven spec reasons', () => {
+    expect(CHANGE_REASON_QUESTION).toBe('What needs changing?');
+    expect(CHANGE_REASON_ORDER).toHaveLength(7);
+    expect(Object.keys(CHANGE_REASON_LABELS)).toHaveLength(7);
+  });
+
+  it('Drop uses the exact non-failure spec line', () => {
+    expect(DROP_LINE).toBe('Good to know. Not everything needs to become part of your life.');
+    expect(DROP_LINE).not.toMatch(/fail/i);
+  });
+
+  it('Not sure yet offers three real follow-ups', () => {
+    expect(NOT_SURE_YET_FOLLOW_UP_ORDER).toHaveLength(3);
+    expect(Object.keys(NOT_SURE_YET_FOLLOW_UP_LABELS)).toHaveLength(3);
+  });
+
+  it('keep completes the experiment, drop abandons it, change/not-sure-yet are left to the caller', () => {
+    expect(statusForReviewChoice('keep')).toBe('completed');
+    expect(statusForReviewChoice('drop')).toBe('abandoned');
+    expect(statusForReviewChoice('change')).toBeNull();
+    expect(statusForReviewChoice('not_sure_yet')).toBeNull();
+  });
+});
+
+describe('Change Autopsy: a non-happening is useful information, never a failure', () => {
+  it('has the exact spec question and all nine reasons', () => {
+    expect(CHANGE_AUTOPSY_QUESTION).toBe('What got in the way?');
+    expect(AUTOPSY_REASON_ORDER).toHaveLength(9);
+    expect(Object.keys(AUTOPSY_REASON_LABELS)).toHaveLength(9);
+  });
+
+  it('every reason maps to exactly one real system response', () => {
+    AUTOPSY_REASON_ORDER.forEach((r) => {
+      const response = AUTOPSY_RESPONSE_FOR_REASON[r];
+      expect(response).toBeTruthy();
+      expect(AUTOPSY_RESPONSE_LABELS[response]).toBeTruthy();
+    });
+  });
+
+  it('matches the spec worked examples', () => {
+    expect(AUTOPSY_RESPONSE_FOR_REASON.no_capacity).toBe('reduce_demand');
+    expect(AUTOPSY_RESPONSE_FOR_REASON.too_ambitious).toBe('offer_minimum_viable_change');
+    expect(AUTOPSY_RESPONSE_FOR_REASON.someone_else_changed_things).toBe('separate_action_from_response');
+    expect(AUTOPSY_RESPONSE_FOR_REASON.changed_my_mind).toBe('allow_experiment_to_end');
+  });
+
+  it('never uses "you failed" language anywhere in the response labels', () => {
+    Object.values(AUTOPSY_RESPONSE_LABELS).forEach((label) => {
+      expect(label).not.toMatch(/you failed/i);
+    });
   });
 });

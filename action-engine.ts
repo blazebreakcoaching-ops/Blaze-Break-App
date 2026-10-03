@@ -352,6 +352,12 @@ export interface ExperimentRecord {
   friction: FrictionType | null;
   minimumViableChange: string | null;
   status: ExperimentStatus;
+  lastMomentChoice: MomentChoice | null;
+  prediction: string | null;
+  reality: string | null;
+  reviewChoice: ReviewChoice | null;
+  changeReason: ChangeReason | null;
+  autopsyReason: AutopsyReason | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -361,3 +367,146 @@ export const ladderLevelForExperiment = (duration: ExperimentDuration | null): A
 
 export const hasActiveExperiment = (experiments: ExperimentRecord[]): boolean =>
   experiments.some((e) => e.status === 'active');
+
+// ---- Moment of Choice --------------------------------------------------------
+// A signature interaction: when a known recurring situation appears, the
+// usual response is never punished - choosing it is always a legitimate
+// answer, just one that's allowed to be noticed rather than hidden.
+
+export const MOMENT_OF_CHOICE_LINE = 'This is one of those moments.';
+
+export type MomentChoice = 'usual_response' | 'try_something_different';
+
+export const MOMENT_CHOICE_ORDER: MomentChoice[] = ['usual_response', 'try_something_different'];
+
+export const MOMENT_CHOICE_LABELS: Record<MomentChoice, string> = {
+  usual_response: 'Usual response',
+  try_something_different: 'Try something different',
+};
+
+// ---- Prediction vs Reality ----------------------------------------------------
+// Compared carefully, never treated as universal proof from one event.
+
+export const PREDICTION_QUESTION = 'What do you think will happen?';
+export const REALITY_QUESTION = 'What actually happened?';
+
+// ---- Review: Keep / Change / Drop / Not sure yet ------------------------------
+
+export const REVIEW_QUESTION = 'What did you learn?';
+
+export type ReviewChoice = 'keep' | 'change' | 'drop' | 'not_sure_yet';
+
+export const REVIEW_CHOICE_ORDER: ReviewChoice[] = ['keep', 'change', 'drop', 'not_sure_yet'];
+
+export const REVIEW_CHOICE_LABELS: Record<ReviewChoice, string> = {
+  keep: 'Keep it',
+  change: 'Change it',
+  drop: 'Drop it',
+  not_sure_yet: 'Not sure yet',
+};
+
+export type KeepFollowUp = 'try_longer' | 'protect_it' | 'make_default';
+
+export const KEEP_FOLLOW_UP_ORDER: KeepFollowUp[] = ['try_longer', 'protect_it', 'make_default'];
+
+export const KEEP_FOLLOW_UP_LABELS: Record<KeepFollowUp, string> = {
+  try_longer: 'Try it a little longer',
+  protect_it: 'Protect it',
+  make_default: 'Make it one of my defaults',
+};
+
+export const CHANGE_REASON_QUESTION = "What needs changing?";
+
+export type ChangeReason =
+  | 'too_difficult' | 'wrong_timing' | 'too_much_effort' | 'too_vague'
+  | 'someone_else_affected_it' | 'need_smaller_version' | 'didnt_feel_like_me';
+
+export const CHANGE_REASON_ORDER: ChangeReason[] = [
+  'too_difficult', 'wrong_timing', 'too_much_effort', 'too_vague',
+  'someone_else_affected_it', 'need_smaller_version', 'didnt_feel_like_me',
+];
+
+export const CHANGE_REASON_LABELS: Record<ChangeReason, string> = {
+  too_difficult: 'Too difficult',
+  wrong_timing: 'Wrong timing',
+  too_much_effort: 'Too much effort',
+  too_vague: 'Too vague',
+  someone_else_affected_it: 'Someone else affected it',
+  need_smaller_version: 'I need a smaller version',
+  didnt_feel_like_me: "It didn't feel like me",
+};
+
+// Never failure language - a dropped experiment is real, useful information.
+export const DROP_LINE = 'Good to know. Not everything needs to become part of your life.';
+
+export type NotSureYetFollowUp = 'try_once_more' | 'leave_it_open' | 'finish_for_now';
+
+export const NOT_SURE_YET_FOLLOW_UP_ORDER: NotSureYetFollowUp[] = ['try_once_more', 'leave_it_open', 'finish_for_now'];
+
+export const NOT_SURE_YET_FOLLOW_UP_LABELS: Record<NotSureYetFollowUp, string> = {
+  try_once_more: 'Try once more',
+  leave_it_open: 'Leave it open',
+  finish_for_now: 'Finish for now',
+};
+
+// What happens to the experiment's status once reviewed - "change" and
+// "not sure yet" are resolved by the caller alongside their own follow-up
+// choice (e.g. "try longer" keeps it active; "protect it" completes it).
+export const statusForReviewChoice = (choice: ReviewChoice): ExperimentStatus | null => {
+  if (choice === 'drop') return 'abandoned';
+  if (choice === 'keep') return 'completed';
+  return null;
+};
+
+// ---- Change Autopsy: the experiment didn't happen -----------------------------
+// Treated as useful information, never "you failed to complete your
+// experiment."
+
+export const CHANGE_AUTOPSY_QUESTION = "What got in the way?";
+
+export type AutopsyReason =
+  | 'forgot' | 'situation_didnt_happen' | 'no_capacity' | 'someone_else_changed_things'
+  | 'felt_uncomfortable' | 'too_ambitious' | 'didnt_feel_useful' | 'changed_my_mind' | 'not_sure';
+
+export const AUTOPSY_REASON_ORDER: AutopsyReason[] = [
+  'forgot', 'situation_didnt_happen', 'no_capacity', 'someone_else_changed_things',
+  'felt_uncomfortable', 'too_ambitious', 'didnt_feel_useful', 'changed_my_mind', 'not_sure',
+];
+
+export const AUTOPSY_REASON_LABELS: Record<AutopsyReason, string> = {
+  forgot: 'I forgot',
+  situation_didnt_happen: "The situation didn't happen",
+  no_capacity: 'I had no capacity',
+  someone_else_changed_things: 'Someone else changed things',
+  felt_uncomfortable: 'I felt uncomfortable',
+  too_ambitious: 'It was too ambitious',
+  didnt_feel_useful: "It didn't feel useful",
+  changed_my_mind: 'I changed my mind',
+  not_sure: "I'm not sure",
+};
+
+// Every autopsy reason maps to exactly one real system response - never
+// just another reminder.
+export type AutopsyResponse =
+  | 'reduce_demand' | 'offer_minimum_viable_change' | 'separate_action_from_response'
+  | 'allow_experiment_to_end' | 'acknowledge';
+
+export const AUTOPSY_RESPONSE_FOR_REASON: Record<AutopsyReason, AutopsyResponse> = {
+  forgot: 'acknowledge',
+  situation_didnt_happen: 'acknowledge',
+  no_capacity: 'reduce_demand',
+  someone_else_changed_things: 'separate_action_from_response',
+  felt_uncomfortable: 'acknowledge',
+  too_ambitious: 'offer_minimum_viable_change',
+  didnt_feel_useful: 'allow_experiment_to_end',
+  changed_my_mind: 'allow_experiment_to_end',
+  not_sure: 'acknowledge',
+};
+
+export const AUTOPSY_RESPONSE_LABELS: Record<AutopsyResponse, string> = {
+  reduce_demand: "Let's reduce what's being asked of you here, not just add a reminder.",
+  offer_minimum_viable_change: 'Want to try the smaller version instead?',
+  separate_action_from_response: "That's on them, not on what you did.",
+  allow_experiment_to_end: "That's alright — we can end this one here.",
+  acknowledge: "Thanks for the honesty — that's useful to know.",
+};
