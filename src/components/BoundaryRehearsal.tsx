@@ -16,7 +16,6 @@ import {
   Briefcase, 
   Heart,
   Sparkles,
-  Trophy,
   Loader2,
   Target,
   Zap,
@@ -34,6 +33,11 @@ import {
   CONDITIONAL_YES_LEVER_ORDER, CONDITIONAL_YES_LEVER_LABELS, ConditionalYesLever, CONDITIONAL_YES_QUESTION,
   buildConditionalYesMessage,
 } from '../../capacity-firewall-engine';
+import {
+  BACK_DOWN_REASON_ORDER, BACK_DOWN_REASON_LABELS, BackDownReason, WHAT_MIGHT_MAKE_YOU_BACK_DOWN_QUESTION,
+  recommendPushbackPattern, PUSHBACK_PATTERN_LABELS, PUSHBACK_PATTERN_ROLEPLAY_HINT,
+  PUSHBACK_END_CHOICE_ORDER, PUSHBACK_END_CHOICE_LABELS, PushbackEndChoice,
+} from '../../boundary-pushback-engine';
 
 interface Script {
   id: string;
@@ -192,6 +196,15 @@ export const BoundaryRehearsal = ({
   // leaning Compiler output rather than buried under it.
   const [conditionalYesLever, setConditionalYesLever] = useState<ConditionalYesLever | null>(null);
   const [conditionalYesDetail, setConditionalYesDetail] = useState('');
+
+  // Boundary Resilience: "What might make you back down?" is asked once
+  // per practice session, before the live roleplay, and tailors which
+  // pushback pattern Nova leans into - never a personality diagnosis.
+  const [showBackDownPicker, setShowBackDownPicker] = useState(false);
+  const [backDownReason, setBackDownReason] = useState<BackDownReason | null>(null);
+  // Bumped on "Try That Moment Again" to remount NovaChat with a fresh
+  // conversation rather than continuing the one where the boundary caved.
+  const [practiceAttempt, setPracticeAttempt] = useState(0);
 
   const [showCritique, setShowCritique] = useState(false);
   const [critiqueLoading, setCritiqueLoading] = useState(false);
@@ -448,11 +461,28 @@ First separate the user's internal reaction from what actually needs to be commu
   const startPractice = (script: Script) => {
     setSelected(script);
     setIsPractising(true);
+    setShowBackDownPicker(true);
+    setBackDownReason(null);
+    setPracticeAttempt(0);
     setShowCritique(false);
     setFinalCritique(null);
     setDetailedFeedback(null);
     onAwardPoints(50, "Boundary Rehearsal");
     onRehearsalComplete();
+  };
+
+  const chooseBackDownReason = (reason: BackDownReason | null) => {
+    setBackDownReason(reason);
+    setShowBackDownPicker(false);
+  };
+
+  const pushbackPattern = backDownReason ? recommendPushbackPattern(backDownReason) : null;
+
+  const tryMomentAgain = () => {
+    setShowCritique(false);
+    setFinalCritique(null);
+    setDetailedFeedback(null);
+    setPracticeAttempt((n) => n + 1);
   };
 
   const generateFinalCritique = async () => {
@@ -473,14 +503,14 @@ First separate the user's internal reaction from what actually needs to be commu
       const response = await secureApiFetch('/api/nova/chat', {
         method: 'POST',
         data: {
-          message: "The rehearsal is complete. Give me a 2-sentence final critique of my performance. Did I apologize too much? Was I firm?",
-          systemInstruction: "You are Nova. Provide a concise, tough, direct critique of the user's boundary setting rehearsal."
+          message: "The rehearsal is complete. Give me a brief, direct review of my boundary rehearsal.",
+          systemInstruction: `You are Nova. Review the user's boundary-setting rehearsal that just happened in this conversation. This is skill-building, not scoring - never give a numeric score, grade, or percentage of any kind. If, at any point, the user gave up their original ask or trade-off rather than holding or renegotiating it, say so plainly using exactly this phrase: "That was the moment the original trade-off disappeared." - then name what happened around that point. If they held the line throughout, say that plainly instead. Never call the roleplayed other party manipulative, toxic, or any other character label - describe behaviour (e.g. "they leaned on urgency"), never diagnose a personality. Keep it to 2-3 sentences.`
         }
       });
       const data = await response.json();
       setFinalCritique(data.text);
     } catch(e) {
-      setFinalCritique("Rehearsal audio processed. You held the line well, but ensure your body language matches the words next time.");
+      setFinalCritique("Here's what stood out: you held the shape of your original ask through most of the exchange. Keep an eye on where you start qualifying or over-explaining next time.");
     }
     setCritiqueLoading(false);
   };
@@ -813,6 +843,27 @@ First separate the user's internal reaction from what actually needs to be commu
             ))}
           </div>
         </div>
+      ) : showBackDownPicker ? (
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="max-w-xl mx-auto">
+          <div className="bg-card border border-border rounded-xl p-8 space-y-6 text-center">
+            <h3 className="text-xl font-display font-medium text-text-main tracking-tight">{WHAT_MIGHT_MAKE_YOU_BACK_DOWN_QUESTION}</h3>
+            <p className="text-xs text-text-muted leading-relaxed">This isn't about your personality - it just helps Nova practise the right kind of pushback with you.</p>
+            <div className="grid grid-cols-1 gap-2">
+              {BACK_DOWN_REASON_ORDER.map((reason) => (
+                <button
+                  key={reason}
+                  onClick={() => chooseBackDownReason(reason)}
+                  className="text-left text-sm rounded-xl border border-border px-4 py-3 text-text-main hover:border-primary/40 transition-colors"
+                >
+                  {BACK_DOWN_REASON_LABELS[reason]}
+                </button>
+              ))}
+            </div>
+            <button onClick={() => chooseBackDownReason(null)} className="text-xs font-medium uppercase tracking-widest text-text-muted hover:text-text-main">
+              Skip this
+            </button>
+          </div>
+        </motion.div>
       ) : (
         <motion.div
           initial={{ opacity: 0, y: 20 }}
@@ -881,11 +932,13 @@ First separate the user's internal reaction from what actually needs to be commu
                 <div className="flex-1 relative z-10 pb-16">
                   <div className="absolute inset-0">
                     <NovaChat
-                      systemInstruction={`You are Nova, an AI recovery coach. Help the user practice setting boundaries for this specific scenario: "${selected?.situation}".
+                      key={practiceAttempt}
+                      systemInstruction={`You are Nova, an AI recovery coach. Help the user practise setting boundaries for this specific scenario: "${selected?.situation}".
                       The user wants to use this script: "${selected?.script}".
-                      ROLEPLAY: You are the manager, client, or family member. BE TOUGH. Push back slightly. Ask 'Why?' or 'Can't you just squeeze it in?'.
-                      CRITIQUE: After they reply, give them a one-sentence critique if they apologized or sounded weak.
-                      GOAL: Help them deliver the line with zero apology and maximum professionalism. Executive tone.`}
+                      ROLEPLAY: You are the manager, client, or family member. Push back - this is skill-building practice, so make it a real test.${pushbackPattern ? ` Lean specifically into this pattern: ${PUSHBACK_PATTERN_LABELS[pushbackPattern]} - ${PUSHBACK_PATTERN_ROLEPLAY_HINT[pushbackPattern]}` : ''}
+                      GUARDRAILS: This is a roleplay character, not a real person - never describe this character as manipulative, toxic, or any other character label; just play the pattern. Never grade or score the user numerically.
+                      CRITIQUE: After they reply, give them a one-sentence note only if it's genuinely useful - no score, no grade.
+                      GOAL: Help them hold or renegotiate their original ask with zero unnecessary apology. Executive tone.`}
                       initialMessage={`"Alright, let's practise. I'll play the other side of this conversation and push back a little — that's the point. Here goes: 'Hey, I know you're at capacity, but I really need this handled by tonight. Can you just make it happen?'"`}
                       profile={profile}
                       onToneChange={onToneChange}
@@ -964,24 +1017,28 @@ First separate the user's internal reaction from what actually needs to be commu
                         </button>
                       )}
                       
-                      <div className="p-6 bg-success/10 rounded-2xl border border-success/20 space-y-3">
-                         <div className="flex items-center gap-3">
-                           <Trophy className="w-5 h-5 text-success dark:text-[#4ade80]" />
-                           <span className="text-xs font-black uppercase tracking-widest text-[#166534] dark:text-[#4ade80]">Parameter Locked</span>
-                         </div>
-                         <p className="text-sm text-[#166534] dark:text-[#4ade80] font-medium">"You’ve successfully identified the leak in this interaction. Consistency is your next move."</p>
-                      </div>
                     </div>
                   )}
                 </div>
 
-                <div className="p-6 border-t border-border bg-background relative z-10">
-                  <button 
-                     onClick={() => setIsPractising(false)}
-                     className="w-full bg-surface dark:bg-card text-text-main py-4 rounded-xl text-xs font-black uppercase tracking-widest hover:bg-border transition-colors shadow-lg"
-                  >
-                    Return to Lab
-                  </button>
+                <div className="p-6 border-t border-border bg-background relative z-10 space-y-2">
+                  {PUSHBACK_END_CHOICE_ORDER.map((choice: PushbackEndChoice) => (
+                    <button
+                      key={choice}
+                      onClick={() => {
+                        if (choice === 'try_again') tryMomentAgain();
+                        else setIsPractising(false);
+                      }}
+                      className={cn(
+                        "w-full py-3.5 rounded-xl text-xs font-black uppercase tracking-widest transition-colors",
+                        choice === 'try_again'
+                          ? "bg-primary hover:opacity-90 text-primary-foreground shadow-lg"
+                          : "bg-surface dark:bg-card text-text-main hover:bg-border"
+                      )}
+                    >
+                      {PUSHBACK_END_CHOICE_LABELS[choice]}
+                    </button>
+                  ))}
                 </div>
               </motion.div>
             )}
