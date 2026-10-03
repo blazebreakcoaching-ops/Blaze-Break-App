@@ -2,7 +2,7 @@ import { db } from './firestore';
 import { doc, setDoc, getDocs, collection, query, orderBy, limit } from 'firebase/firestore';
 import {
   ExperimentRecord, ExperimentStatus, ExperimentDuration, MomentOfTruthPlan, FrictionType, ActionLadderLevel,
-  MomentChoice, ReviewChoice, ChangeReason, AutopsyReason,
+  MomentChoice, ReviewChoice, ChangeReason, AutopsyReason, KeepFollowUp,
 } from '../../action-engine';
 
 // One record per experiment - created from a confirmed, controllable
@@ -22,7 +22,7 @@ export const createExperiment = async (
   const record: ExperimentRecord = {
     id: randomId('experiment'), ...data, status: 'active',
     lastMomentChoice: null, prediction: null, reality: null,
-    reviewChoice: null, changeReason: null, autopsyReason: null,
+    reviewChoice: null, changeReason: null, autopsyReason: null, keepFollowUp: null,
     createdAt: now, updatedAt: now,
   };
   await setDoc(doc(db, 'users', uid, 'action_experiments', record.id), record);
@@ -47,7 +47,7 @@ export const recordReality = async (uid: string, id: string, reality: string): P
 
 export const recordReview = async (
   uid: string, id: string,
-  data: { reviewChoice: ReviewChoice; changeReason: ChangeReason | null; status: ExperimentStatus }
+  data: { reviewChoice: ReviewChoice; changeReason: ChangeReason | null; keepFollowUp: KeepFollowUp | null; status: ExperimentStatus }
 ): Promise<void> => {
   await setDoc(doc(db, 'users', uid, 'action_experiments', id), { ...data, updatedAt: new Date().toISOString() }, { merge: true });
 };
