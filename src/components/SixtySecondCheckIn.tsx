@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { Mic, Square, Trash2, Volume2, Sparkles, AlertCircle, CheckCircle, Brain, Heart, Waves } from "lucide-react";
-import { collection, doc, setDoc, getDocs, query, orderBy, limit as fbLimit } from "firebase/firestore";
+import { Mic, Square, Trash2, Volume2, Sparkles, AlertCircle, CheckCircle, Brain, Heart, Waves, ShieldCheck } from "lucide-react";
+import { collection, doc, setDoc, deleteDoc, getDocs, query, orderBy, limit as fbLimit } from "firebase/firestore";
 import { auth } from '../lib/firebase';
 import { db } from '../lib/firestore';
 import { secureApiFetch } from "../lib/secure-api";
@@ -9,7 +9,7 @@ import { addNovaMemory } from "../lib/nova-brain";
 import { cn } from "../lib/utils";
 import { DEMO_VOICE_JOURNAL_ENTRIES } from "../lib/demo-data";
 
-interface VoiceJournalEntry {
+interface CheckInEntry {
   id: string;
   date: string;
   transcription: string;
@@ -19,7 +19,17 @@ interface VoiceJournalEntry {
   emotionalTone: string;
 }
 
-export const DailyVoiceJournal = ({
+// What Nova sends back before anything is saved - held here, reviewable,
+// until the user actually confirms it (never auto-saved on arrival).
+interface PendingCheckInResult {
+  transcription: string;
+  themes: string[];
+  analysis: string;
+  advice: string;
+  emotionalTone: string;
+}
+
+export const SixtySecondCheckIn = ({
   onAwardPoints,
   isDemoSession,
 }: {
@@ -31,11 +41,16 @@ export const DailyVoiceJournal = ({
   const [audioBlob, setAudioBlob] = useState<Blob | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  
+
   // Dynamic metacognitive status messages
   const [analysisStatus, setAnalysisStatus] = useState("Awaiting voice feed...");
-  const [entries, setEntries] = useState<VoiceJournalEntry[]>([]);
-  const [activeEntry, setActiveEntry] = useState<VoiceJournalEntry | null>(null);
+  const [entries, setEntries] = useState<CheckInEntry[]>([]);
+  const [activeEntry, setActiveEntry] = useState<CheckInEntry | null>(null);
+
+  // Nova's read of the recording, waiting for the user to actually confirm
+  // it before it's saved or fed into Nova's memory - never automatic.
+  const [pendingResult, setPendingResult] = useState<PendingCheckInResult | null>(null);
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
@@ -45,7 +60,7 @@ export const DailyVoiceJournal = ({
   const [isPlayingNova, setIsPlayingNova] = useState(false);
 
   const fetchEntries = async () => {
-    // A demo session has no real journal history to read - seed the
+    // A demo session has no real check-in history to read - seed the
     // illustrative sample entries so a visitor can see what an already-
     // analysed entry looks like without recording anything themselves.
     if (isDemoSession) {
@@ -58,7 +73,7 @@ export const DailyVoiceJournal = ({
     try {
       const q = query(collection(db, "users", uid, "voice_journal_entries"), orderBy("createdAt", "desc"), fbLimit(30));
       const snap = await getDocs(q);
-      const loaded = snap.docs.map((d) => ({ id: d.id, ...d.data() } as VoiceJournalEntry));
+      const loaded = snap.docs.map((d) => ({ id: d.id, ...d.data() } as CheckInEntry));
       setEntries(loaded);
       setActiveEntry((prev) => prev ?? loaded[0] ?? null);
     } catch {
@@ -87,7 +102,7 @@ export const DailyVoiceJournal = ({
 
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      
+
       // Determine best supported MIME type
       let mimeType = "audio/webm";
       if (MediaRecorder.isTypeSupported("audio/webm;codecs=opus")) {
@@ -162,7 +177,10 @@ export const DailyVoiceJournal = ({
     });
   };
 
-  const analyzeVoiceJournal = async () => {
+  // Sends the recording to Nova for transcription + analysis and holds the
+  // result for review - it is never saved or fed into Nova's memory until
+  // the user confirms it in confirmSaveCheckIn.
+  const analyzeCheckIn = async () => {
     if (!audioBlob) return;
     const uid = auth.currentUser?.uid;
     if (!uid) return;
@@ -204,64 +222,96 @@ export const DailyVoiceJournal = ({
 
       if (result.error) throw new Error(result.error);
 
-      const nowIso = new Date().toISOString();
-      const displayDate = new Date().toLocaleDateString("en-GB", {
-        day: "numeric",
-        month: "short",
-        hour: "2-digit",
-        minute: "2-digit",
-      });
-      const docId = `vj_${Date.now()}`;
-
-      const newEntry: VoiceJournalEntry = {
-        id: docId,
-        date: displayDate,
-        transcription: result.transcription,
-        themes: result.themes,
-        analysis: result.analysis,
-        advice: result.advice,
-        emotionalTone: result.emotionalTone,
-      };
-
-      await setDoc(doc(db, "users", uid, "voice_journal_entries", docId), {
-        createdAt: nowIso,
-        date: displayDate,
+      setPendingResult({
         transcription: result.transcription,
         themes: result.themes,
         analysis: result.analysis,
         advice: result.advice,
         emotionalTone: result.emotionalTone,
       });
-
-      // 4. Nova's Deeper Metacognitive Memory Loop
-      // Write memories to Nova's brain based on user's active spoken words
-      addNovaMemory({
-        type: "trigger",
-        content: `Spoken triggers: ${result.themes.join(", ")}. Transcription context: "${result.transcription.substring(0, 120)}..."`,
-        source: `Daily Voice Journal Entry (${newEntry.date})`,
-        confidence: "high",
-        canEdit: true
-      });
-
-      addNovaMemory({
-        type: "preference",
-        content: `Emotional tone: '${result.emotionalTone}'. Insight: ${result.analysis}`,
-        source: `Nova Voice Journal Analysis (${newEntry.date})`,
-        confidence: "verified",
-        canEdit: false
-      });
-
-      setEntries(prev => [newEntry, ...prev]);
-      setActiveEntry(newEntry);
-      onAwardPoints(75, "Daily Voice Reflection Synced to Nova Core");
 
     } catch (e: any) {
-      console.error("Voice Journal analysis failed:", e);
+      console.error("Check-in analysis failed:", e);
       setError(e.message || "Could not analyse the audio. Please speak clearly.");
     } finally {
       setIsAnalyzing(false);
       setAudioBlob(null);
     }
+  };
+
+  // The actual save, only ever called once the user has reviewed Nova's
+  // transcription/analysis and chosen to keep it.
+  const confirmSaveCheckIn = async () => {
+    const uid = auth.currentUser?.uid;
+    if (!uid || !pendingResult) return;
+    const result = pendingResult;
+
+    const nowIso = new Date().toISOString();
+    const displayDate = new Date().toLocaleDateString("en-GB", {
+      day: "numeric",
+      month: "short",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+    const docId = `vj_${Date.now()}`;
+
+    const newEntry: CheckInEntry = {
+      id: docId,
+      date: displayDate,
+      transcription: result.transcription,
+      themes: result.themes,
+      analysis: result.analysis,
+      advice: result.advice,
+      emotionalTone: result.emotionalTone,
+    };
+
+    await setDoc(doc(db, "users", uid, "voice_journal_entries", docId), {
+      createdAt: nowIso,
+      date: displayDate,
+      transcription: result.transcription,
+      themes: result.themes,
+      analysis: result.analysis,
+      advice: result.advice,
+      emotionalTone: result.emotionalTone,
+    });
+
+    // Nova's Deeper Metacognitive Memory Loop - only reached once the user
+    // has confirmed they want this check-in kept.
+    addNovaMemory({
+      type: "trigger",
+      content: `Spoken triggers: ${result.themes.join(", ")}. Transcription context: "${result.transcription.substring(0, 120)}..."`,
+      source: `60-Second Check-In (${newEntry.date})`,
+      confidence: "high",
+      canEdit: true
+    });
+
+    addNovaMemory({
+      type: "preference",
+      content: `Emotional tone: '${result.emotionalTone}'. Insight: ${result.analysis}`,
+      source: `Nova 60-Second Check-In Analysis (${newEntry.date})`,
+      confidence: "verified",
+      canEdit: false
+    });
+
+    setEntries(prev => [newEntry, ...prev]);
+    setActiveEntry(newEntry);
+    onAwardPoints(75, "60-Second Check-In Synced to Nova Core");
+    setPendingResult(null);
+  };
+
+  // Nova's read is discarded entirely - never saved, never fed into Nova's
+  // memory. A real, honest "no" that leaves nothing behind.
+  const discardPendingResult = () => {
+    setPendingResult(null);
+  };
+
+  const deleteCheckInEntry = async (id: string) => {
+    const uid = auth.currentUser?.uid;
+    if (!uid || isDemoSession) { setPendingDeleteId(null); return; }
+    await deleteDoc(doc(db, "users", uid, "voice_journal_entries", id));
+    setEntries((prev) => prev.filter((e) => e.id !== id));
+    setActiveEntry((prev) => (prev?.id === id ? null : prev));
+    setPendingDeleteId(null);
   };
 
   const playNovaVoice = async (text: string) => {
@@ -328,7 +378,7 @@ export const DailyVoiceJournal = ({
   };
 
   return (
-    <div className="card bg-card border border-border rounded-xl p-8 md:p-10 relative overflow-hidden" id="daily-voice-journal-module">
+    <div className="card bg-card border border-border rounded-xl p-8 md:p-10 relative overflow-hidden" id="sixty-second-check-in-module">
 
       <div className="relative z-10 flex flex-col gap-8">
         {/* Header */}
@@ -339,37 +389,65 @@ export const DailyVoiceJournal = ({
             </div>
             <div>
               <h3 className="text-xl font-display font-bold text-text-main flex items-center gap-2">
-                Daily Voice Journal
-                <span className="px-2 py-0.5 text-[9px] font-mono tracking-widest text-[#9a3412] dark:text-primary bg-primary/10 border border-primary/25 rounded">60S MEMO</span>
+                60-Second Check-In
+                <span className="px-2 py-0.5 text-[9px] font-mono tracking-widest text-[#9a3412] dark:text-primary bg-primary/10 border border-primary/25 rounded">PRIVATE</span>
               </h3>
-              <p className="text-xs text-text-muted mt-1">Speak freely about your current cognitive loads, stress indicators, and boundaries.</p>
+              <p className="text-xs text-text-muted mt-1 flex items-center gap-1.5">
+                <ShieldCheck className="w-3.5 h-3.5 shrink-0" />
+                Speak freely about your current cognitive loads, stress indicators, and boundaries - this stays private to you, never shared with your organisation.
+              </p>
             </div>
           </div>
-          
+
           {entries.length > 0 && (
             <div className="flex gap-2 self-start md:self-auto overflow-x-auto max-w-full py-1">
               {entries.slice(0, 3).map((entry) => (
-                <button
-                  key={entry.id}
-                  onClick={() => setActiveEntry(entry)}
-                  aria-pressed={activeEntry?.id === entry.id}
-                  className={cn(
-                    "px-4 py-2 rounded-xl text-xs font-mono border transition-all shrink-0",
-                    activeEntry?.id === entry.id
-                      ? "bg-primary/15 border-primary/40 text-[#9a3412] dark:text-primary"
-                      : "bg-surface dark:bg-card border-border hover:bg-border/30 text-text-muted"
-                  )}
-                >
-                  {entry.date}
-                </button>
+                <div key={entry.id} className="relative shrink-0 group">
+                  <button
+                    onClick={() => setActiveEntry(entry)}
+                    aria-pressed={activeEntry?.id === entry.id}
+                    className={cn(
+                      "px-4 py-2 pr-7 rounded-xl text-xs font-mono border transition-all",
+                      activeEntry?.id === entry.id
+                        ? "bg-primary/15 border-primary/40 text-[#9a3412] dark:text-primary"
+                        : "bg-surface dark:bg-card border-border hover:bg-border/30 text-text-muted"
+                    )}
+                  >
+                    {entry.date}
+                  </button>
+                  <button
+                    onClick={() => setPendingDeleteId(entry.id)}
+                    aria-label={`Delete check-in from ${entry.date}`}
+                    className="absolute right-1.5 top-1/2 -translate-y-1/2 text-text-muted hover:text-destructive opacity-0 group-hover:opacity-100 transition-opacity"
+                  >
+                    <Trash2 className="w-3 h-3" />
+                  </button>
+                </div>
               ))}
             </div>
           )}
         </div>
 
+        {pendingDeleteId && (
+          <div className="flex items-center justify-between gap-3 p-3 bg-destructive/10 border border-destructive/20 rounded-xl">
+            <p className="text-xs text-destructive dark:text-[#f87171]">Delete this check-in? This can't be undone.</p>
+            <div className="flex gap-2 shrink-0">
+              <button
+                onClick={() => deleteCheckInEntry(pendingDeleteId)}
+                className="px-3 py-1.5 bg-destructive text-destructive-foreground text-xs font-bold rounded-lg"
+              >
+                Delete
+              </button>
+              <button onClick={() => setPendingDeleteId(null)} className="px-3 py-1.5 text-xs font-bold text-text-muted">
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Action Grid */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-          
+
           {/* Recorder Panel */}
           <div className="lg:col-span-5 flex flex-col items-center justify-center bg-surface/30 dark:bg-card/40 border border-border/40 rounded-2xl p-6 min-h-[300px]">
             {isAnalyzing ? (
@@ -381,6 +459,14 @@ export const DailyVoiceJournal = ({
                 <div className="space-y-1">
                   <h4 className="text-sm font-bold text-text-main font-mono">Nova Brain Syncing</h4>
                   <p className="text-xs text-text-muted max-w-[200px] animate-pulse">{analysisStatus}</p>
+                </div>
+              </div>
+            ) : pendingResult ? (
+              <div className="flex flex-col items-center gap-4 w-full text-center">
+                <CheckCircle className="w-10 h-10 text-success dark:text-[#4ade80]" />
+                <div className="space-y-1">
+                  <h4 className="text-sm font-bold text-text-main">Nova's read is ready to review</h4>
+                  <p className="text-xs text-text-muted max-w-[240px]">Nothing is saved yet - look it over, then keep it or let it go.</p>
                 </div>
               </div>
             ) : (
@@ -401,7 +487,7 @@ export const DailyVoiceJournal = ({
                   <button
                     onClick={isRecording ? stopRecording : startRecording}
                     aria-pressed={isRecording}
-                    aria-label={isRecording ? "Stop recording" : "Start recording voice journal"}
+                    aria-label={isRecording ? "Stop recording" : "Start recording your check-in"}
                     className={cn(
                       "w-20 h-20 rounded-full flex items-center justify-center shadow-lg transition-all border duration-300 relative z-10",
                       isRecording
@@ -430,7 +516,7 @@ export const DailyVoiceJournal = ({
                       </span>
                       <div className="flex items-center justify-center gap-2">
                         <button
-                          onClick={analyzeVoiceJournal}
+                          onClick={analyzeCheckIn}
                           className="px-6 py-2.5 bg-primary hover:opacity-90 text-primary-foreground font-bold text-xs uppercase tracking-widest rounded-xl transition-all shadow-md flex items-center gap-2"
                         >
                           <Sparkles className="w-3.5 h-3.5" /> Analyse with Nova
@@ -472,9 +558,60 @@ export const DailyVoiceJournal = ({
 
           {/* Analysis View Panel */}
           <div className="lg:col-span-7 flex flex-col justify-between bg-surface/10 border border-border/30 rounded-2xl p-6 min-h-[300px]">
-            {activeEntry ? (
+            {pendingResult ? (
               <div className="flex flex-col gap-5 h-full">
-                
+                <div className="flex items-center justify-between border-b border-border/30 pb-3">
+                  <span className="text-[10px] font-mono text-[#9a3412] dark:text-primary bg-primary/10 px-2 py-0.5 rounded border border-primary/20 uppercase">
+                    {pendingResult.emotionalTone}
+                  </span>
+                  <span className="text-[10px] font-black uppercase tracking-widest text-text-muted">Review before saving</span>
+                </div>
+
+                <div className="space-y-1.5">
+                  <h5 className="text-[11px] font-black uppercase tracking-widest text-text-muted flex items-center gap-1.5">
+                    <Brain className="w-3.5 h-3.5" /> Speech Transcription Feed
+                  </h5>
+                  <p className="text-xs text-text-main italic leading-relaxed bg-surface/40 p-3 rounded-xl border border-border/20">
+                    "{pendingResult.transcription}"
+                  </p>
+                </div>
+
+                <div className="space-y-2">
+                  <h5 className="text-[11px] font-black uppercase tracking-widest text-text-muted">Detected Burnout Leaks</h5>
+                  <div className="flex flex-wrap gap-1.5">
+                    {pendingResult.themes.map((theme, i) => (
+                      <span key={i} className="text-[10px] font-mono px-2.5 py-1 bg-warning/10 border border-warning/20 text-[#9a3412] dark:text-warning rounded-lg uppercase">
+                        ⚠️ {theme}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="space-y-1.5 border-t border-border/20 pt-4">
+                  <h5 className="text-[11px] font-black uppercase tracking-widest text-[#9a3412] dark:text-primary flex items-center gap-1.5">
+                    <Sparkles className="w-3.5 h-3.5" /> Metacognitive Analysis
+                  </h5>
+                  <p className="text-xs text-text-main leading-relaxed">{pendingResult.analysis}</p>
+                </div>
+
+                <div className="mt-auto flex items-center gap-2">
+                  <button
+                    onClick={confirmSaveCheckIn}
+                    className="px-5 py-2.5 bg-primary hover:opacity-90 text-primary-foreground font-bold text-xs uppercase tracking-widest rounded-xl transition-all shadow-md"
+                  >
+                    Keep this check-in
+                  </button>
+                  <button
+                    onClick={discardPendingResult}
+                    className="px-4 py-2.5 bg-surface hover:bg-border text-text-muted text-xs font-bold rounded-xl border border-border"
+                  >
+                    Let it go
+                  </button>
+                </div>
+              </div>
+            ) : activeEntry ? (
+              <div className="flex flex-col gap-5 h-full">
+
                 {/* Meta Row */}
                 <div className="flex items-center justify-between border-b border-border/30 pb-3">
                   <div className="flex items-center gap-2">
@@ -549,7 +686,7 @@ export const DailyVoiceJournal = ({
                 <div className="space-y-1">
                   <h5 className="text-xs font-bold text-text-muted uppercase tracking-widest">No Active Transcription</h5>
                   <p className="text-xs text-text-muted max-w-[260px]">
-                    Your spoken records are processed securely server-side. Speak for up to 60 seconds to initiate.
+                    Your spoken records are processed securely server-side and stay private to you. Speak for up to 60 seconds to initiate.
                   </p>
                 </div>
               </div>
