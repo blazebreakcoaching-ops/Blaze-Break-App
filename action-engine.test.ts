@@ -36,6 +36,7 @@ import {
   hasDrifted, DRIFT_DETECTED_LINE, DRIFT_RESPONSE_ORDER, DRIFT_RESPONSE_LABELS,
   hasStructuralProblem, STRUCTURAL_PROBLEM_LINE, STRUCTURAL_PROBLEM_RESPONSE_ORDER, STRUCTURAL_PROBLEM_RESPONSE_LABELS,
   shouldDeferNewExperiment, CAPACITY_AWARE_DEFER_LINE, CAPACITY_AWARE_LOW_THRESHOLD,
+  pickJustInTimeInsight, JustInTimeInsightContext,
 } from './action-engine';
 import { RediscoveryClue, WorkloadCheckSnapshot } from './rediscovery-engine';
 
@@ -680,5 +681,59 @@ describe('Capacity-Aware Actions: never prioritise new change work over real low
 
   it('the defer line never implies failure', () => {
     expect(CAPACITY_AWARE_DEFER_LINE).not.toMatch(/fail/i);
+  });
+});
+
+describe('Just-in-Time Insights: one real reason, never a generic rotation', () => {
+  const emptyCtx: JustInTimeInsightContext = {
+    capacityScore: 80,
+    latestControllability: null,
+    structuralProblemDetected: false,
+    personalChangeModelTraits: [],
+    mostRecentReviewChoice: null,
+  };
+
+  it('returns null when nothing real applies', () => {
+    expect(pickJustInTimeInsight(emptyCtx)).toBeNull();
+  });
+
+  it('surfaces chapter 1 when capacity is genuinely low', () => {
+    expect(pickJustInTimeInsight({ ...emptyCtx, capacityScore: 30 })).toEqual({
+      chapterId: '1', reason: 'Capacity has been low.',
+    });
+  });
+
+  it('surfaces chapter 4 on a structural problem or a depends-on-someone-else controllability', () => {
+    expect(pickJustInTimeInsight({ ...emptyCtx, structuralProblemDetected: true })?.chapterId).toBe('4');
+    expect(pickJustInTimeInsight({ ...emptyCtx, latestControllability: 'depends_on_someone_else' })?.chapterId).toBe('4');
+  });
+
+  it('surfaces chapter 3 when the protects_identity trait is present', () => {
+    expect(pickJustInTimeInsight({ ...emptyCtx, personalChangeModelTraits: ['protects_identity'] })?.chapterId).toBe('3');
+  });
+
+  it('surfaces chapter 2 when the most recent review was a drop', () => {
+    expect(pickJustInTimeInsight({ ...emptyCtx, mostRecentReviewChoice: 'drop' })?.chapterId).toBe('2');
+  });
+
+  it('checks signals in a fixed priority order when more than one is true', () => {
+    expect(pickJustInTimeInsight({
+      ...emptyCtx, capacityScore: 30, structuralProblemDetected: true, mostRecentReviewChoice: 'drop',
+    })?.chapterId).toBe('1');
+    expect(pickJustInTimeInsight({
+      ...emptyCtx, structuralProblemDetected: true, personalChangeModelTraits: ['protects_identity'],
+    })?.chapterId).toBe('4');
+  });
+
+  it('never uses failure language in any reason', () => {
+    const contexts: JustInTimeInsightContext[] = [
+      { ...emptyCtx, capacityScore: 30 },
+      { ...emptyCtx, structuralProblemDetected: true },
+      { ...emptyCtx, personalChangeModelTraits: ['protects_identity'] },
+      { ...emptyCtx, mostRecentReviewChoice: 'drop' },
+    ];
+    contexts.forEach((ctx) => {
+      expect(pickJustInTimeInsight(ctx)?.reason).not.toMatch(/fail/i);
+    });
   });
 });
