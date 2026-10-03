@@ -89,7 +89,7 @@ const SleepBuilder = lazy(() => import("./components/SleepBuilder.tsx").then(m =
 const MovementSnacks = lazy(() => import("./components/MovementSnacks.tsx").then(m => ({ default: m.MovementSnacks })));
 const DecompressionDoorway = lazy(() => import("./components/DecompressionDoorway.tsx").then(m => ({ default: m.DecompressionDoorway })));
 const DigitalBoundaryShield = lazy(() => import("./components/DigitalBoundaryShield.tsx").then(m => ({ default: m.DigitalBoundaryShield })));
-const ResentmentTracker = lazy(() => import("./components/ResentmentTracker.tsx").then(m => ({ default: m.ResentmentTracker })));
+const FrictionFinder = lazy(() => import("./components/FrictionFinder.tsx").then(m => ({ default: m.FrictionFinder })));
 const WorkloadRealityCheck = lazy(() => import("./components/WorkloadRealityCheck.tsx").then(m => ({ default: m.WorkloadRealityCheck })));
 const OneLessThing = lazy(() => import("./components/OneLessThing.tsx").then(m => ({ default: m.OneLessThing })));
 const RecoveryRecipes = lazy(() => import("./components/RecoveryRecipes.tsx").then(m => ({ default: m.RecoveryRecipes })));
@@ -2614,7 +2614,7 @@ export default function App() {
                   onToneChange={handleNovaToneChange}
                   onStyleChange={handleNovaStyleChange}
                 />
-                <ResentmentTracker
+                <FrictionFinder
                   fingerprint={fingerprint}
                   onAwardPoints={awardPoints}
                   onNavigate={safeSetActiveTab as any}

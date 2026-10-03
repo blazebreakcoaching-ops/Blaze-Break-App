@@ -123,10 +123,10 @@ export const SHIP_STAGES: ShipStageConfig[] = [
       },
       {
         id: 'ship_identity_resentment_log',
-        title: "Log what you're resenting right now",
+        title: "Log what's causing friction right now",
         why: "Resentment is data about a boundary that hasn't been said yet.",
         tab: 'reflect',
-        ctaLabel: 'Open Resentment Tracker',
+        ctaLabel: 'Open Friction Finder',
       },
     ],
   },

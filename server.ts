@@ -11346,7 +11346,7 @@ app.get("/api/user/outcome-tracker", verifyAppCheck, authenticateFirebaseUser, a
 // actually there.
 
 // ============================================================================
-// Resentment Tracker: real analysis (previously this was 100% hardcoded -
+// Friction Finder: real analysis (previously this was 100% hardcoded -
 // the code's own comment admitted "Simulate AI analysis delay" - the same
 // four-part response was shown to every user regardless of what they
 // actually wrote, after a fake 2-second "thinking" animation).
@@ -11391,7 +11391,7 @@ app.post("/api/nova/resentment-analysis", resentmentAnalysisLimiter, verifyAppCh
       });
     }
 
-    const prompt = `You are Nova, a direct, analytical British high-performance recovery coach. The user has just written raw, unfiltered venting about something that's currently resenting them at work or in life - they were explicitly told "be unprofessional, be petty, just get it out." Read what they actually wrote and extract genuine structural patterns from it. Do not invent specifics not present in their text - if something isn't there, say so honestly rather than filling the gap with a generic-sounding but fabricated observation.
+    const prompt = `You are Nova, a direct, analytical British high-performance recovery coach. The user has just written raw, unfiltered venting about real friction at work or in life - they were explicitly told "be unprofessional, be petty, just get it out." Treat what they wrote as useful information about a situation, never as evidence of something wrong with them. Read what they actually wrote and extract genuine structural patterns from it. Do not invent specifics not present in their text - if something isn't there, say so honestly rather than filling the gap with a generic-sounding but fabricated observation.
 
 Their raw venting:
 """
@@ -11400,10 +11400,10 @@ ${log}
 
 Respond strictly in this JSON format, no markdown, no commentary outside the JSON:
 {
-  "yesMeantNo": "1-2 sentences on where they likely agreed to something when they meant to decline, based specifically on what they wrote. If this pattern isn't evident in their text, say so honestly instead of guessing.",
+  "yesMeantNo": "1-2 sentences on any moment where they may have said yes while actually wanting to say no, based specifically on what they wrote - framed as a real, understandable situation, not a lapse on their part. If this pattern isn't evident in their text, say so honestly instead of guessing.",
   "unclear": "1-2 sentences on where expectations seem vaguely defined, based specifically on what they wrote.",
   "unappreciated": "1-2 sentences on where their effort seems to be going unrecognized, based specifically on what they wrote.",
-  "missingBoundary": "A short, concrete boundary statement (under 20 words) they could have used, grounded in their actual situation - not a generic template."
+  "missingBoundary": "A short, concrete thing they could actually say or do next time (under 20 words), grounded in their specific situation - not a generic template, and never phrased as something they should have already done."
 }
 ${NOVA_ONE_SHOT_SAFETY_FLOOR}`;
 

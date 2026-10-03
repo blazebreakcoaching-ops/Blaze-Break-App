@@ -124,7 +124,7 @@ const TALK_TOOLS: GuideFeature[] = [
 const SAFETY_NET: GuideFeature[] = [
   {
     tab: 'reflect', tag: 'Reflect', title: 'Weekly review', description: 'A few minutes at the end of the week to notice what actually helped, in your own words.', icon: Book,
-    subTools: ['Daily reflection journal', 'Resentment Tracker'],
+    subTools: ['Daily reflection journal', 'Friction Finder'],
   },
   {
     tab: 'ally', tag: 'Recovery Ally', title: 'Someone in your corner', description: "Invite a trusted friend, mentor, or partner to check in - you choose exactly what they see, and can turn any of it off any time.", icon: HeartPulse,
