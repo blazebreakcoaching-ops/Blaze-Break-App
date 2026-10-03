@@ -196,7 +196,7 @@ if (process.env.NODE_ENV === "production") {
 
 // Helmet (as of this version) doesn't ship a Permissions-Policy middleware,
 // unlike its older deprecated Feature-Policy equivalent - set it directly.
-// microphone is genuinely used (Nova Live Voice, Daily Voice Journal) and
+// microphone is genuinely used (Nova Live Voice, 60-Second Check-In) and
 // clipboard-write is used throughout (the many copy-to-clipboard buttons);
 // everything else powerful this app has no use for is explicitly denied
 // rather than left to each browser's default.
@@ -3143,7 +3143,7 @@ app.post("/api/nova/voice-journal", novaVoiceJournalLimiter, verifyAppCheck, aut
     const { audioData, mimeType } = parsedParams.data;
 
     if (!process.env.GEMINI_API_KEY || process.env.GEMINI_API_KEY === "MY_GEMINI_API_KEY") {
-      return res.status(401).json({ error: "Gemini API key not configured for Voice Journal." });
+      return res.status(401).json({ error: "Gemini API key not configured for the 60-Second Check-In." });
     }
 
     const abortController = new AbortController();
@@ -3214,7 +3214,7 @@ ${NOVA_ONE_SHOT_SAFETY_FLOOR}`
     }
   } catch (error: any) {
     console.error("Voice Journal API error:", error);
-    res.status(500).json({ error: "Voice Journal analysis failed. Please try speaking clearly." });
+    res.status(500).json({ error: "Check-in analysis failed. Please try speaking clearly." });
   }
 });
 

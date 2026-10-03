@@ -8,7 +8,7 @@ import { Book, CheckCircle2, ChevronRight, Sparkles, Zap, ArrowRight, BookOpen, 
 import { NovaChat } from './NovaChat';
 import type { NovaQuestioningStyle } from './NovaStyleControl';
 import type { UserProfileData } from '../types';
-import { DailyVoiceJournal } from './DailyVoiceJournal.tsx';
+import { SixtySecondCheckIn } from './SixtySecondCheckIn.tsx';
 import { cn } from '../lib/utils';
 import { useFocusTrap } from '../lib/useFocusTrap';
 import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip as RechartsTooltip, CartesianGrid, BarChart, Bar, Cell, Legend } from 'recharts';
@@ -531,8 +531,8 @@ export const ReflectSection = ({
         </div>
       </div>
 
-      {/* Daily Voice Journal */}
-      <DailyVoiceJournal onAwardPoints={onAwardPoints} isDemoSession={isDemoSession} />
+      {/* 60-Second Check-In */}
+      <SixtySecondCheckIn onAwardPoints={onAwardPoints} isDemoSession={isDemoSession} />
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
         {/* Navigation Sidebar */}

@@ -290,12 +290,13 @@ export const DEMO_DERIVED_SUMMARIES: Record<string, {
   },
 };
 
-// Matches DailyVoiceJournal.tsx's own VoiceJournalEntry shape (its
-// voice_journal_entries Firestore subcollection) - what an already-analysed
-// entry looks like, so a demo visitor can see the payoff without recording
-// anything themselves. The real record-and-analyse flow (a live, paid Nova
-// call) stays untouched and fully click-triggered - these are never fed
-// into it, only rendered.
+// Matches SixtySecondCheckIn.tsx's own CheckInEntry shape (its
+// voice_journal_entries Firestore subcollection - unchanged by the PR7
+// rename, since existing user data already lives at that path) - what an
+// already-analysed entry looks like, so a demo visitor can see the payoff
+// without recording anything themselves. The real record-and-analyse flow
+// (a live, paid Nova call) stays untouched and fully click-triggered -
+// these are never fed into it, only rendered.
 export const DEMO_VOICE_JOURNAL_ENTRIES: {
   id: string;
   date: string;
