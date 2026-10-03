@@ -1,6 +1,6 @@
 import { auth } from '../lib/firebase';
 import { db } from '../lib/firestore';
-import { collection, doc, setDoc, getDocs, query, orderBy, limit } from 'firebase/firestore';
+import { collection, doc, setDoc, getDoc, getDocs, query, orderBy, limit } from 'firebase/firestore';
 import { useState, useEffect, useRef } from 'react';
 import { motion } from 'motion/react';
 import ReactMarkdown from 'react-markdown';
@@ -30,6 +30,10 @@ import { NovaChat } from './NovaChat';
 import type { NovaQuestioningStyle } from './NovaStyleControl';
 import type { UserProfileData } from '../types';
 import { cn } from '../lib/utils';
+import {
+  CONDITIONAL_YES_LEVER_ORDER, CONDITIONAL_YES_LEVER_LABELS, ConditionalYesLever, CONDITIONAL_YES_QUESTION,
+  buildConditionalYesMessage,
+} from '../../capacity-firewall-engine';
 
 interface Script {
   id: string;
@@ -163,16 +167,31 @@ export const BoundaryRehearsal = ({
   const [selected, setSelected] = useState<Script | null>(null);
   const [activeCategory, setActiveCategory] = useState(scriptGroups[0].category);
   const [isPractising, setIsPractising] = useState(false);
-  const [mode, setMode] = useState<'library' | 'generator'>('library');
+  const [mode, setMode] = useState<'library' | 'generator'>('generator');
 
   const [generatorInput, setGeneratorInput] = useState('');
+  // The Boundary Compiler's short optional context - who this is with and
+  // what the user actually has room for - sharpens the breakdown without
+  // forcing a long form before they can start.
+  const [compilerWho, setCompilerWho] = useState('');
+  const [compilerCapacity, setCompilerCapacity] = useState('');
+  const [compilerOutcome, setCompilerOutcome] = useState('');
   const [generatingScripts, setGeneratingScripts] = useState(false);
   const [generatedResult, setGeneratedResult] = useState<string | null>(null);
   const [isSpeakingScript, setIsSpeakingScript] = useState(false);
   const [scriptAudioLoading, setScriptAudioLoading] = useState(false);
   const ttsAudioCtxRef = useRef<AudioContext | null>(null);
   const ttsSourceRef = useRef<AudioBufferSourceNode | null>(null);
-  const [selectedTone, setSelectedTone] = useState<'polite' | 'data' | 'direct'>('polite');
+  const [selectedTone, setSelectedTone] = useState<'warm' | 'clear' | 'firm'>('clear');
+  // "Sounds Like Me" - an explicit opt-in. Nova never silently imitates a
+  // personal communication style; this only matches when the user has
+  // turned it on themselves.
+  const [soundsLikeMe, setSoundsLikeMe] = useState(false);
+  // Strategic/Conditional Yes - deterministic and instant (same engine
+  // Capacity Firewall uses), kept exactly as prominent as the decline-
+  // leaning Compiler output rather than buried under it.
+  const [conditionalYesLever, setConditionalYesLever] = useState<ConditionalYesLever | null>(null);
+  const [conditionalYesDetail, setConditionalYesDetail] = useState('');
 
   const [showCritique, setShowCritique] = useState(false);
   const [critiqueLoading, setCritiqueLoading] = useState(false);
@@ -193,13 +212,58 @@ export const BoundaryRehearsal = ({
       // Non-critical - the generator still works even if history fails to load.
     }
   };
-  useEffect(() => { fetchSavedScripts(); }, [uid]);
+  const fetchSoundsLikeMePreference = async () => {
+    if (!uid) return;
+    try {
+      const snap = await getDoc(doc(db, 'users', uid, 'preferences', 'boundary_architect'));
+      if (snap.exists() && typeof snap.data().soundsLikeMeEnabled === 'boolean') {
+        setSoundsLikeMe(snap.data().soundsLikeMeEnabled);
+      }
+    } catch (e) {
+      // Falls back to off - style-matching is an opt-in convenience, not required.
+    }
+  };
+  useEffect(() => {
+    const load = async () => { await Promise.all([fetchSavedScripts(), fetchSoundsLikeMePreference()]); };
+    load();
+  }, [uid]);
+
+  const toggleSoundsLikeMe = async () => {
+    const next = !soundsLikeMe;
+    setSoundsLikeMe(next);
+    if (uid) {
+      try {
+        await setDoc(doc(db, 'users', uid, 'preferences', 'boundary_architect'), {
+          soundsLikeMeEnabled: next, updatedAt: new Date().toISOString(),
+        }, { merge: true });
+      } catch (e) {
+        // Non-critical - the toggle still works for this session either way.
+      }
+    }
+  };
+
+  // The Boundary Compiler's breakdown - separates the user's internal
+  // reaction from what actually needs external communication, generically
+  // by heading rather than two hardcoded section names, so it survives
+  // Nova phrasing a heading slightly differently.
+  const getCompilerSections = (): Record<string, string> => {
+    if (!generatedResult) return {};
+    const sections: Record<string, string> = {};
+    const parts = generatedResult.split(/^###\s*/m).slice(1);
+    for (const part of parts) {
+      const newlineIdx = part.indexOf('\n');
+      const headingRaw = newlineIdx === -1 ? part : part.slice(0, newlineIdx);
+      const heading = headingRaw.toLowerCase().replace(/['’]/g, '').trim();
+      const body = (newlineIdx === -1 ? '' : part.slice(newlineIdx + 1)).trim();
+      sections[heading] = body;
+    }
+    return sections;
+  };
 
   const getParsedCustomScript = () => {
-    if (!generatedResult) return { script: '', advice: '' };
-    const parts = generatedResult.split(/###\s*(?:Script|Behavioral Strategy)/gi);
-    const script = parts[1]?.trim() || generatedResult;
-    const advice = parts[2]?.trim() || "Nova recommends holding this line high and matching with visual boundaries.";
+    const sections = getCompilerSections();
+    const script = sections['message'] || generatedResult || '';
+    const advice = sections['behavioral strategy'] || sections['strategy'] || "Nova recommends holding this line high and matching with visual boundaries.";
     return { script, advice };
   };
 
@@ -278,67 +342,95 @@ export const BoundaryRehearsal = ({
     }
   };
 
-  const handleGenerateScrips = async () => {
+  // BOUNDARY COMPILER: turns a messy, possibly frustrated description of
+  // an incoming demand into a clear external boundary - separating what
+  // objectively happened from what needs negotiating from the raw
+  // frustration that doesn't need to be sent. Never invalidates the
+  // emotion; it just keeps it out of the message.
+  const BUILD_TONE_LABELS: Record<'warm' | 'clear' | 'firm', string> = { warm: 'Warm', clear: 'Clear', firm: 'Firm' };
+  const BUILD_TONE_DESCRIPTIONS: Record<'warm' | 'clear' | 'firm', string> = {
+    warm: 'warm in register, but still clear about the boundary itself',
+    clear: 'plain and matter-of-fact, with no extra softening',
+    firm: 'direct and non-negotiable in tone, while staying professional',
+  };
+
+  const handleCompileBoundary = async () => {
     if (!generatorInput.trim()) return;
     setGeneratingScripts(true);
     setGeneratedResult(null);
-    
+
     try {
-      const toneLabels = {
-        polite: 'Polite but Firm (Fawners recovering)',
-        data: 'Data-driven Trade-off (Logical parameters)',
-        direct: 'Direct No (Absolute boundary protection)'
-      };
+      const contextLines = [
+        compilerWho.trim() ? `Who this is with: ${compilerWho.trim()}.` : '',
+        compilerCapacity.trim() ? `What the user actually has capacity for right now: ${compilerCapacity.trim()}.` : '',
+        compilerOutcome.trim() ? `The outcome the user wants: ${compilerOutcome.trim()}.` : '',
+      ].filter(Boolean).join(' ');
+
+      const styleNote = soundsLikeMe && savedScripts.length > 0
+        ? ` Where it fits naturally, match the general directness/length of the user's own previous messages: ${savedScripts.slice(0, 2).map(s => `"${s.scriptText}"`).join(' / ')}.`
+        : '';
 
       const response = await secureApiFetch('/api/nova/chat', {
         method: 'POST',
         data: {
-          message: `The user has received this demand/situation: "${generatorInput}". 
-          Generate a tailored, professional, zero-apology pushback script in the following tone: "${toneLabels[selectedTone]}".
-          
-          Format your response exactly like this:
-          ### Script
-          [Input the customized script here. Make it professional, confident, and direct. Avoid any apologies like "I'm sorry" or "pardon".]
-          
-          ### Behavioral Strategy
-          [Input tactical advice on why this works, specifically tailored for a high achiever, and how it protects their energy budget.]`,
-          systemInstruction: `You are Nova, the High-Performance Recovery Coach. Provide a copy-paste ready tactical script and custom behavioral strategy. No fluff, no introductory chatter.`
+          message: `Here is the situation, in the user's own words: "${generatorInput}". ${contextLines}
+
+First separate the user's internal reaction from what actually needs to be communicated externally. Respond in exactly this format, with these exact headings:
+
+### What Happened
+[One neutral sentence - what objectively happened, stripped of frustration.]
+
+### What You Can Do
+[One sentence - what the user can still deliver or offer as-is.]
+
+### What Needs Negotiating
+[One sentence - the specific thing that needs to change: deadline, scope, ownership, timing, or similar.]
+
+### What Doesn't Need To Be Sent
+[One sentence naming the raw frustration that should stay internal - never say the feeling is invalid, just note it doesn't belong in the message itself.]
+
+### Message
+[The actual message to send, in a ${BUILD_TONE_LABELS[selectedTone]} tone: ${BUILD_TONE_DESCRIPTIONS[selectedTone]}. Zero apology unless genuinely warranted.]
+
+### Behavioral Strategy
+[One sentence of tactical advice on why this works for a high achiever protecting their capacity.]`,
+          systemInstruction: `You are Nova, a Blaze Break recovery coach. Help a high achiever turn a messy, emotional description of an incoming demand into a clear external boundary. Never tell them their feelings are invalid - just separate the internal reaction from the external communication. Never diagnose, never use clinical language, no fluff or introductory chatter.${styleNote}`
         }
       });
       const data = await response.json();
       setGeneratedResult(data.text);
-      onAwardPoints(20, "Generated Custom Boundary Script");
+      onAwardPoints(20, "Compiled a Boundary");
 
       // Persist so this generation survives a refresh and shows up in
       // Recent Custom Scripts below - reuses the same boundary_scripts
       // collection and schema ConnectedBoundaryScripts already reads from.
       if (uid) {
         try {
-          const { script } = (() => {
-            const parts = data.text.split(/###\s*(?:Script|Behavioral Strategy)/gi);
-            return { script: parts[1]?.trim() || data.text };
-          })();
+          const messageMatch = data.text.split(/###\s*Message\s*\n/i)[1];
+          const message = messageMatch ? messageMatch.split(/\n###/)[0].trim() : data.text;
           const id = Date.now().toString();
           await setDoc(doc(db, 'users', uid, 'boundary_scripts', id), {
             createdAt: new Date().toISOString(),
             updatedAt: new Date().toISOString(),
             title: generatorInput.slice(0, 80),
             scenarioType: 'workload',
-            scriptText: script.slice(0, 500),
+            scriptText: message.slice(0, 500),
             status: 'saved',
           });
           fetchSavedScripts();
         } catch (e) {
-          // Non-critical - the generated script is still shown and usable
+          // Non-critical - the generated message is still shown and usable
           // for practice even if saving it to history fails.
         }
       }
     } catch (e) {
-      setGeneratedResult("### Script\nI have received your request. Let me check my capacity and I will outline the trade-offs required to take this on.\n\n### Behavioral Strategy\nThis delays commitment, giving your cognitive load time to level out.");
+      setGeneratedResult("### What Happened\nA new request arrived.\n\n### What You Can Do\nYour existing commitments can continue as planned.\n\n### What Needs Negotiating\nThe timing of this new request.\n\n### What Doesn't Need To Be Sent\nAny frustration about the timing - that's useful information for you, not for them.\n\n### Message\nI have received your request. Let me check my capacity and I will outline the trade-offs required to take this on.\n\n### Behavioral Strategy\nThis delays commitment, giving your cognitive load time to level out.");
     } finally {
       setGeneratingScripts(false);
     }
   };
+
+  const conditionalYesPreview = conditionalYesLever ? buildConditionalYesMessage(conditionalYesLever, conditionalYesDetail) : '';
 
   const startCustomRehearsal = () => {
     const { script, advice } = getParsedCustomScript();
@@ -429,25 +521,25 @@ export const BoundaryRehearsal = ({
              </div>
              <div className="flex flex-col md:flex-row md:items-center justify-between w-full">
                 <div>
-                  <h2 className="text-2xl lg:text-3xl font-display font-medium text-text-main tracking-tight">Boundary Rehearsal</h2>
+                  <h2 className="text-2xl lg:text-3xl font-display font-medium text-text-main tracking-tight">Boundary Architect</h2>
                   <div className="flex items-center gap-3 mt-2">
-                    <span className="text-xs font-medium uppercase tracking-widest text-[#9a3412] dark:text-primary flex items-center gap-1.5"><Network className="w-3 h-3" /> Core Pillar: Practice</span>
+                    <span className="text-xs font-medium uppercase tracking-widest text-[#9a3412] dark:text-primary flex items-center gap-1.5"><Network className="w-3 h-3" /> Say it clearly.</span>
                   </div>
                 </div>
                 <div className="mt-4 md:mt-0 flex bg-surface border border-border rounded-lg p-1">
-                  <button
-                    onClick={() => setMode('library')}
-                    aria-pressed={mode === 'library'}
-                    className={cn("px-5 py-2.5 rounded-md text-xs font-medium uppercase tracking-widest transition-colors", mode === 'library' ? "bg-card text-text-main" : "text-text-muted hover:text-text-main")}
-                  >
-                    Library
-                  </button>
                   <button
                     onClick={() => setMode('generator')}
                     aria-pressed={mode === 'generator'}
                     className={cn("px-5 py-2.5 rounded-md text-xs font-medium uppercase tracking-widest transition-colors", mode === 'generator' ? "bg-card text-text-main" : "text-text-muted hover:text-text-main")}
                   >
-                    Custom Generator
+                    Build My Boundary
+                  </button>
+                  <button
+                    onClick={() => setMode('library')}
+                    aria-pressed={mode === 'library'}
+                    className={cn("px-5 py-2.5 rounded-md text-xs font-medium uppercase tracking-widest transition-colors", mode === 'library' ? "bg-card text-text-main" : "text-text-muted hover:text-text-main")}
+                  >
+                    Script Library
                   </button>
                 </div>
              </div>
@@ -464,60 +556,117 @@ export const BoundaryRehearsal = ({
             <div className="card bg-card border border-border p-8 space-y-6 relative overflow-hidden group">
               <div className="relative z-10 space-y-3 border-b border-border pb-5">
                 <h4 className="text-lg font-bold text-text-main flex items-center gap-2 tracking-tight">
-                  <Wand2 className="w-5 h-5 text-primary" /> Script Builder
+                  <Wand2 className="w-5 h-5 text-primary" /> Boundary Compiler
                 </h4>
                 <p className="text-xs text-text-muted leading-relaxed font-medium">
-                  Received an unreasonable demand on Slack or Email? Don't panic and say yes. Paste it here, and Nova will draft a confident, zero-apology script.
+                  Describe what landed on you, messy and unfiltered if that's how it feels. Nova separates what happened from what actually needs to be said.
                 </p>
               </div>
 
               <div className="relative z-10 space-y-5">
                 <div>
-                  <label htmlFor="incoming-demand" className="text-[11px] font-medium uppercase tracking-widest text-text-muted ml-1 mb-2 block">The Incoming Demand</label>
+                  <label htmlFor="incoming-demand" className="text-[11px] font-medium uppercase tracking-widest text-text-muted ml-1 mb-2 block">What are they asking?</label>
                   <textarea
                     id="incoming-demand"
                     value={generatorInput}
                     onChange={(e) => setGeneratorInput(e.target.value)}
-                    placeholder='e.g. "Can you quickly throw together a 10-slide deck for the board meeting tomorrow morning?"'
+                    placeholder='e.g. "They dropped this on me at 4pm and expect it tomorrow, again."'
                     className="w-full h-32 bg-background border border-border rounded-lg p-4 text-sm text-text-main placeholder:text-text-muted focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/50 resize-none transition-all font-mono"
                   />
                 </div>
 
+                <div className="grid grid-cols-1 gap-3">
+                  <input
+                    value={compilerWho}
+                    onChange={(e) => setCompilerWho(e.target.value)}
+                    placeholder="Who is this with? (optional)"
+                    className="w-full bg-background border border-border rounded-lg px-3 py-2.5 text-xs text-text-main placeholder:text-text-muted focus:outline-none focus:border-primary"
+                  />
+                  <input
+                    value={compilerCapacity}
+                    onChange={(e) => setCompilerCapacity(e.target.value)}
+                    placeholder="What do you actually have capacity for? (optional)"
+                    className="w-full bg-background border border-border rounded-lg px-3 py-2.5 text-xs text-text-main placeholder:text-text-muted focus:outline-none focus:border-primary"
+                  />
+                  <input
+                    value={compilerOutcome}
+                    onChange={(e) => setCompilerOutcome(e.target.value)}
+                    placeholder="What outcome do you want? (optional)"
+                    className="w-full bg-background border border-border rounded-lg px-3 py-2.5 text-xs text-text-main placeholder:text-text-muted focus:outline-none focus:border-primary"
+                  />
+                </div>
+
                 <div>
-                  <label className="text-[11px] font-black uppercase tracking-widest text-text-muted ml-1 mb-2 block">Select Compilation Tone</label>
-                  <div className="grid grid-cols-1 gap-2">
-                    {[
-                      { id: 'polite', label: 'Polite but Firm' },
-                      { id: 'data', label: 'Data Trade-off' },
-                      { id: 'direct', label: 'Direct No' }
-                    ].map((tone) => (
+                  <label className="text-[11px] font-black uppercase tracking-widest text-text-muted ml-1 mb-2 block">How direct should this sound?</label>
+                  <div className="grid grid-cols-3 gap-2">
+                    {(['warm', 'clear', 'firm'] as const).map((tone) => (
                       <button
-                        key={tone.id}
-                        onClick={() => setSelectedTone(tone.id as any)}
-                        aria-pressed={selectedTone === tone.id}
+                        key={tone}
+                        onClick={() => setSelectedTone(tone)}
+                        aria-pressed={selectedTone === tone}
                         className={cn(
-                          "py-3 px-4 text-left rounded-xl text-xs font-black uppercase tracking-wider border transition-all cursor-pointer",
-                          selectedTone === tone.id
+                          "py-3 px-2 text-center rounded-xl text-xs font-black uppercase tracking-wider border transition-all cursor-pointer",
+                          selectedTone === tone
                             ? "border-primary bg-primary/10 text-[#9a3412] dark:text-primary shadow-inner"
                             : "border-border bg-background text-text-muted hover:border-muted-foreground hover:text-text-muted"
                         )}
                       >
-                        {tone.label}
+                        {BUILD_TONE_LABELS[tone]}
                       </button>
                     ))}
                   </div>
                 </div>
 
+                <label className="flex items-start gap-2.5 text-xs text-text-muted cursor-pointer pt-1">
+                  <input type="checkbox" checked={soundsLikeMe} onChange={toggleSoundsLikeMe} className="mt-0.5" />
+                  Sounds Like Me - match the directness of my own saved messages
+                </label>
+
                 <div className="pt-2">
                   <button
-                    onClick={handleGenerateScrips}
+                    onClick={handleCompileBoundary}
                     disabled={!generatorInput.trim() || generatingScripts}
                     className="w-full bg-primary hover:opacity-90 text-primary-foreground py-4 rounded-lg text-xs font-medium uppercase tracking-widest flex items-center justify-center gap-2 cursor-pointer transition-all disabled:opacity-40 disabled:grayscale"
                   >
-                    {generatingScripts ? <><Loader2 className="w-4 h-4 animate-spin" /> Drafting your script...</> : <><Sparkles className="w-4 h-4" /> Generate Pushback Script</>}
+                    {generatingScripts ? <><Loader2 className="w-4 h-4 animate-spin" /> Compiling...</> : <><Sparkles className="w-4 h-4" /> Compile My Boundary</>}
                   </button>
                 </div>
               </div>
+            </div>
+
+            <div className="card bg-card border border-border p-6 space-y-4">
+              <h5 className="text-xs font-medium uppercase tracking-widest text-text-muted flex items-center gap-2">
+                <Target className="w-3.5 h-3.5" /> Or, a Strategic Yes
+              </h5>
+              <p className="text-xs text-text-muted leading-relaxed">{CONDITIONAL_YES_QUESTION}</p>
+              <div className="flex flex-wrap gap-1.5">
+                {CONDITIONAL_YES_LEVER_ORDER.map((l) => (
+                  <button
+                    key={l}
+                    onClick={() => setConditionalYesLever(l)}
+                    aria-pressed={conditionalYesLever === l}
+                    className={cn("px-2.5 py-1.5 rounded-md border text-[11px] font-bold", conditionalYesLever === l ? "border-primary bg-primary/10 text-text-main" : "border-border text-text-muted hover:border-primary/40")}
+                  >
+                    {CONDITIONAL_YES_LEVER_LABELS[l]}
+                  </button>
+                ))}
+              </div>
+              {conditionalYesLever && (
+                <>
+                  <input
+                    value={conditionalYesDetail}
+                    onChange={(e) => setConditionalYesDetail(e.target.value)}
+                    placeholder="Add a detail (optional)"
+                    className="w-full bg-background border border-border rounded-lg px-3 py-2 text-xs text-text-main focus:outline-none focus:border-primary"
+                  />
+                  <div className="p-3 rounded-lg border border-border bg-surface flex items-center justify-between gap-3">
+                    <p className="text-xs text-text-main">{conditionalYesPreview}</p>
+                    <button onClick={() => copyToClipboard(conditionalYesPreview)} aria-label="Copy strategic yes message" className="shrink-0 text-text-muted hover:text-primary">
+                      <Copy className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </>
+              )}
             </div>
 
             {savedScripts.length > 0 && (
@@ -537,18 +686,18 @@ export const BoundaryRehearsal = ({
 
           <div className="lg:col-span-8 space-y-6">
             <h4 className="text-xs font-medium uppercase tracking-[0.2em] text-text-muted flex items-center gap-2">
-              <Zap className="w-3.5 h-3.5" /> Generated Response
+              <Zap className="w-3.5 h-3.5" /> How This Was Compiled
             </h4>
 
             {!generatedResult && !generatingScripts ? (
               <div className="h-[400px] rounded-xl border-2 border-dashed border-border flex flex-col items-center justify-center text-text-muted p-8 text-center bg-surface">
                 <ShieldAlert className="w-8 h-8 mb-4 opacity-20" />
-                <p className="text-xs font-medium max-w-sm">Scripts will populate here. Choose the tone that matches the political capital you want to spend.</p>
+                <p className="text-xs font-medium max-w-sm">The breakdown and message will appear here, so you can see how it was derived - not just the final line.</p>
               </div>
             ) : generatingScripts ? (
               <div role="status" aria-live="polite" className="h-[400px] rounded-xl border border-primary/20 bg-primary/5 flex flex-col items-center justify-center text-[#9a3412] dark:text-primary relative overflow-hidden">
                 <Loader2 className="w-8 h-8 animate-spin mb-4" />
-                <p className="text-xs font-medium uppercase tracking-widest">Nova is drafting your script...</p>
+                <p className="text-xs font-medium uppercase tracking-widest">Nova is compiling your boundary...</p>
               </div>
             ) : (
               <motion.div
