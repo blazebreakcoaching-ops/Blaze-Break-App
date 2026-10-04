@@ -9361,8 +9361,20 @@ const computeStreak = (completedDates: string[]): number => {
 // Support Circle spec). Both must build the exact same response shape from
 // the exact same real data, so Preview Their View genuinely shows what the
 // ally would see right now - never a generic or example preview.
-const buildAllyViewResponse = async (ownerRef: any, permissions: Record<string, boolean>, allyName: string) => {
-  const response: any = { allyName: allyName || 'there' };
+const buildAllyViewResponse = async (ownerRef: any, permissions: Record<string, boolean>, state: any) => {
+  const response: any = { allyName: state?.allyName || 'there' };
+
+  // "How to Support Me" (Master Support Circle spec): a short, user-
+  // authored note the owner can choose to show - never inferred, never
+  // shown unless they explicitly set supportVisibleToAlly, independent of
+  // the Support Capsules categories above (this isn't expiring shared
+  // data, it's a static preference the owner opts into once).
+  if (state?.supportVisibleToAlly && (state.supportHelps || state.supportDoesNotHelp)) {
+    response.supportPreferences = {
+      helps: state.supportHelps || '',
+      doesNotHelp: state.supportDoesNotHelp || '',
+    };
+  }
 
   if (permissions.viewGoals) {
     const goalsSnap = await ownerRef.collection("ally_shared_goals").orderBy("createdAt", "desc").limit(20).get();
@@ -9809,7 +9821,7 @@ app.get("/api/ally/view/:token", verifyAppCheck, async (req, res) => {
     const capsulesSnap = await ownerRef.collection("support_capsules").get();
     const capsules = capsulesSnap.docs.map(d => d.data() as { category: string; expiresAt: string | null });
     const permissions = deriveEffectiveSharing(capsules as any, new Date().toISOString(), state.permissions || {});
-    const response = await buildAllyViewResponse(ownerRef, permissions, state.allyName);
+    const response = await buildAllyViewResponse(ownerRef, permissions, state);
 
     res.json(response);
   } catch (err: any) {
@@ -9837,7 +9849,7 @@ app.get("/api/ally/preview", verifyAppCheck, authenticateFirebaseUser, async (re
     const state = stateSnap.data()!;
     const capsules = capsulesSnap.docs.map(d => d.data() as { category: string; expiresAt: string | null });
     const permissions = deriveEffectiveSharing(capsules as any, new Date().toISOString(), state.permissions || {});
-    const response = await buildAllyViewResponse(ownerRef, permissions, state.allyName);
+    const response = await buildAllyViewResponse(ownerRef, permissions, state);
     res.json(response);
   } catch (err: any) {
     res.status(500).json({ error: "Could not load the preview." });
