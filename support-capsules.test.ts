@@ -114,4 +114,19 @@ describe('deriveEffectiveSharing', () => {
     // viewEnergyStats has no capsule and no legacy entry - defaults false.
     expect(result.viewEnergyStats).toBe(false);
   });
+
+  it('"Stop Sharing" (paused=true) forces every category false, regardless of active capsules or legacy fallback', () => {
+    const result = deriveEffectiveSharing(
+      [{ category: 'viewGoals', expiresAt: null }, { category: 'viewMilestones', expiresAt: null }],
+      now,
+      { sendPings: true },
+      true
+    );
+    expect(result).toEqual({ viewGoals: false, viewMilestones: false, viewEnergyStats: false, sendPings: false });
+  });
+
+  it('paused=false (the default) is unaffected - identical to omitting the argument', () => {
+    const capsules: { category: 'viewGoals'; expiresAt: null }[] = [{ category: 'viewGoals', expiresAt: null }];
+    expect(deriveEffectiveSharing(capsules, now, {}, false)).toEqual(deriveEffectiveSharing(capsules, now, {}));
+  });
 });

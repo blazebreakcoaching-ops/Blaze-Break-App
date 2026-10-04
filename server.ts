@@ -9406,6 +9406,12 @@ const buildAllyViewResponse = async (ownerRef: any, permissions: Record<string, 
       : null;
   }
 
+  // Message controls (Master Support Circle spec): the ally's own page
+  // needs to know up front whether sending a note is possible at all,
+  // rather than discovering it's off only after writing one and hitting
+  // the 403 the /encourage route below already enforces.
+  response.canSendMessage = !!permissions.sendPings;
+
   return response;
 };
 
@@ -9436,9 +9442,16 @@ const resolveAllyViewForState = async (ownerRef: any, state: any) => {
   // (see support-capsules.ts's MIGRATION NOTE).
   const capsulesSnap = await ownerRef.collection("support_capsules").get();
   const capsules = capsulesSnap.docs.map((d: any) => d.data() as { category: string; expiresAt: string | null });
-  const permissions = deriveEffectiveSharing(capsules as any, now, state?.permissions || {});
+  const sharingPaused = state?.sharingPaused === true;
+  const permissions = deriveEffectiveSharing(capsules as any, now, state?.permissions || {}, sharingPaused);
   const response = await buildAllyViewResponse(ownerRef, permissions, state);
   response.consentStatus = 'accepted';
+  // "Stop Sharing" (Master Support Circle spec): distinct from Remove
+  // Ally - every capsule record is untouched, so resuming restores
+  // exactly what was shared before. Surfaced here so the ally's own page
+  // can say why nothing (or less) is visible right now, instead of
+  // looking like the owner quietly removed everything for good.
+  if (sharingPaused) response.sharingPaused = true;
   return response;
 };
 
@@ -9582,6 +9595,45 @@ app.post("/api/ally/regenerate-link", verifyAppCheck, authenticateFirebaseUser, 
       updatedAt: FieldValue.serverTimestamp(),
     }, { merge: true });
     res.json({ success: true, shareToken });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// "Stop Sharing" (Master Support Circle spec): a distinct, reversible
+// action from Remove Ally below - the relationship, the ally's name/
+// email, consent, and every individual Support Capsule all stay exactly
+// as they are. Only resolveAllyViewForState's output changes, immediately
+// and for every category at once.
+app.post("/api/ally/pause-sharing", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const user = requireAuth(req);
+    const db = getDb();
+    const stateRef = db.collection("users").doc(user.uid).collection("recovery_ally").doc("state");
+    const stateSnap = await stateRef.get();
+    if (!stateSnap.exists || !stateSnap.data()?.isInvited) {
+      return res.status(404).json({ error: "You haven't invited a Recovery Ally yet." });
+    }
+    await stateRef.set({ sharingPaused: true, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Resumes exactly what was shared before pausing - every Support Capsule
+// was left untouched, so there is nothing to recreate or re-select.
+app.post("/api/ally/resume-sharing", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const user = requireAuth(req);
+    const db = getDb();
+    const stateRef = db.collection("users").doc(user.uid).collection("recovery_ally").doc("state");
+    const stateSnap = await stateRef.get();
+    if (!stateSnap.exists || !stateSnap.data()?.isInvited) {
+      return res.status(404).json({ error: "You haven't invited a Recovery Ally yet." });
+    }
+    await stateRef.set({ sharingPaused: false, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+    res.json({ success: true });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }

@@ -20,7 +20,20 @@ interface AllyData {
   supportPreferences?: { helps: string; doesNotHelp: string };
   consentStatus?: 'pending' | 'accepted' | 'declined';
   expired?: boolean;
+  canSendMessage?: boolean;
+  sharingPaused?: boolean;
 }
+
+// Non-pressuring Encouragement quick-replies (Master Support Circle
+// spec): a one-tap option for an ally who wants to show up but doesn't
+// want to compose anything - sent exactly like a typed note, through the
+// same endpoint and the same 300-character limit.
+const QUICK_REPLIES = [
+  "Thinking of you today.",
+  "Proud of you for sticking with this.",
+  "No pressure to reply - just checking in.",
+  "Keep going, you've got this.",
+];
 
 export const AllyView = ({ token }: { token: string }) => {
   const { loading: authLoading } = useAuth();
@@ -86,14 +99,15 @@ export const AllyView = ({ token }: { token: string }) => {
     setRespondingTo(null);
   };
 
-  const handleSend = async () => {
-    if (!message.trim()) return;
+  const handleSend = async (textOverride?: string) => {
+    const text = (textOverride ?? message).trim();
+    if (!text) return;
     setSending(true);
     setSendError('');
     try {
       const res = await secureApiFetch(`/api/ally/view/${token}/encourage`, {
         method: 'POST',
-        data: { message: message.trim() },
+        data: { message: text },
       });
       const json = await res.json();
       if (!res.ok) {
@@ -228,6 +242,13 @@ export const AllyView = ({ token }: { token: string }) => {
           </p>
         </div>
 
+        {data?.sharingPaused && (
+          <div role="status" className="card bg-surface flex items-center gap-3">
+            <Clock3 className="w-5 h-5 text-text-muted shrink-0" />
+            <p className="text-sm text-text-muted">They've paused sharing for now - check back later.</p>
+          </div>
+        )}
+
         {data?.sharedGoals && (
           <div className="card space-y-4">
             <h2 className="font-bold text-text-main flex items-center gap-2"><Target className="w-4 h-4 text-primary" /> Their Boundary Goals</h2>
@@ -300,6 +321,11 @@ export const AllyView = ({ token }: { token: string }) => {
 
         <div className="card space-y-4">
           <h2 className="font-bold text-text-main">Leave Them a Note</h2>
+          {data?.canSendMessage === false ? (
+            // Message controls (Master Support Circle spec): told up front,
+            // not discovered by writing a note and hitting a 403.
+            <p className="text-sm text-text-muted">They've turned off messages for now.</p>
+          ) : (
           <AnimatePresence mode="wait">
             {sent ? (
               <motion.div key="sent" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="p-4 bg-success/5 border border-success/20 rounded-xl flex items-center gap-2 text-sm text-success dark:text-[#4ade80]">
@@ -310,6 +336,22 @@ export const AllyView = ({ token }: { token: string }) => {
                 {sendError && (
                   <div role="alert" className="p-3 bg-destructive/10 border border-destructive/20 text-destructive dark:text-[#f87171] text-xs rounded-xl">{sendError}</div>
                 )}
+                {/* Non-pressuring Encouragement quick-replies: a one-tap
+                    option for an ally who wants to show up without
+                    composing anything. */}
+                <div className="flex flex-wrap gap-2">
+                  {QUICK_REPLIES.map((reply) => (
+                    <button
+                      key={reply}
+                      type="button"
+                      onClick={() => handleSend(reply)}
+                      disabled={sending}
+                      className="px-3 py-1.5 bg-surface border border-border text-text-muted text-xs rounded-full hover:border-primary/40 hover:text-text-main transition-colors disabled:opacity-50"
+                    >
+                      {reply}
+                    </button>
+                  ))}
+                </div>
                 <textarea
                   aria-label="Your encouragement note"
                   value={message}
@@ -319,7 +361,7 @@ export const AllyView = ({ token }: { token: string }) => {
                   className="w-full h-24 bg-surface border border-border rounded-xl p-4 text-sm text-text-main placeholder:text-text-muted focus:outline-none focus:border-primary resize-none"
                 />
                 <button
-                  onClick={handleSend}
+                  onClick={() => handleSend()}
                   disabled={sending || !message.trim()}
                   className="px-5 py-2.5 bg-primary hover:opacity-90 text-primary-foreground text-xs font-bold uppercase tracking-widest rounded-xl transition-all disabled:opacity-50 flex items-center gap-2"
                 >
@@ -329,6 +371,7 @@ export const AllyView = ({ token }: { token: string }) => {
               </motion.div>
             )}
           </AnimatePresence>
+          )}
         </div>
 
         <p className="text-center text-xs text-text-muted">

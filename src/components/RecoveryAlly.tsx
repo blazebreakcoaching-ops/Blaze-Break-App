@@ -22,6 +22,7 @@ interface PreviewData {
   longestStreak?: number;
   recentAvgMood?: number | null;
   supportPreferences?: { helps: string; doesNotHelp: string };
+  sharingPaused?: boolean;
 }
 
 interface SharedGoal {
@@ -73,6 +74,11 @@ export const RecoveryAlly = () => {
   const [consentStatus, setConsentStatus] = useState<ConsentStatus>('accepted');
   const [inviteExpiresAt, setInviteExpiresAt] = useState<string | null>(null);
   const [regenerating, setRegenerating] = useState(false);
+  // "Stop Sharing" (Master Support Circle spec): distinct from Remove
+  // Ally below - pauses every category at once without touching a
+  // single capsule record, so Resume restores exactly what was shared.
+  const [sharingPaused, setSharingPaused] = useState(false);
+  const [pausingSharing, setPausingSharing] = useState(false);
   const [permissions, setPermissionsState] = useState<AllyPermissions>(DEFAULT_PERMISSIONS);
   const [sharedGoals, setSharedGoals] = useState<SharedGoal[]>([]);
   const [encouragements, setEncouragements] = useState<Encouragement[]>([]);
@@ -135,6 +141,7 @@ export const RecoveryAlly = () => {
           setShareToken(data.shareToken || '');
           setConsentStatus(effectiveConsentStatus(data.consentStatus));
           setInviteExpiresAt(data.inviteExpiresAt || null);
+          setSharingPaused(!!data.sharingPaused);
           setSupportHelps(data.supportHelps || '');
           setSupportDoesNotHelp(data.supportDoesNotHelp || '');
           setSupportVisibleToAlly(!!data.supportVisibleToAlly);
@@ -310,11 +317,50 @@ export const RecoveryAlly = () => {
       setShareToken('');
       setConsentStatus('accepted');
       setInviteExpiresAt(null);
+      setSharingPaused(false);
       setEncouragements([]);
     } catch (e) {
       setError('Could not remove your ally. Please try again.');
     }
     setRevoking(false);
+  };
+
+  // "Stop Sharing" (Master Support Circle spec): a lighter, reversible
+  // action than Remove Ally - nothing about the relationship, consent, or
+  // individual capsules changes, so Resume brings back exactly what was
+  // shared before, with nothing to re-select.
+  const pauseSharing = async () => {
+    setPausingSharing(true);
+    setError('');
+    try {
+      const res = await secureApiFetch('/api/ally/pause-sharing', { method: 'POST' });
+      if (!res.ok) {
+        const data = await res.json();
+        setError(data.error || 'Could not pause sharing.');
+      } else {
+        setSharingPaused(true);
+      }
+    } catch (e) {
+      setError('Could not pause sharing.');
+    }
+    setPausingSharing(false);
+  };
+
+  const resumeSharing = async () => {
+    setPausingSharing(true);
+    setError('');
+    try {
+      const res = await secureApiFetch('/api/ally/resume-sharing', { method: 'POST' });
+      if (!res.ok) {
+        const data = await res.json();
+        setError(data.error || 'Could not resume sharing.');
+      } else {
+        setSharingPaused(false);
+      }
+    } catch (e) {
+      setError('Could not resume sharing.');
+    }
+    setPausingSharing(false);
   };
 
   // Magic-link hardening (Master Support Circle spec): "immediate revoke
@@ -553,7 +599,26 @@ export const RecoveryAlly = () => {
                   <ShieldCheck className="w-4 h-4 text-text-muted" />
                 </div>
 
-                <div className="space-y-3">
+                {/* "Stop Sharing" (Master Support Circle spec): a paused
+                    state distinct from Remove Ally - every category below
+                    still reflects what's selected, it just isn't visible
+                    to {allyName} right now. */}
+                {sharingPaused && (
+                  <div role="status" className="p-3 bg-warning/10 border border-warning/20 rounded-lg space-y-2">
+                    <p className="text-xs text-text-main leading-relaxed">
+                      <strong>Sharing is paused.</strong> {allyName || 'Your ally'} can't see anything right now, but nothing below has changed - resume to restore it exactly as it was.
+                    </p>
+                    <button
+                      onClick={resumeSharing}
+                      disabled={pausingSharing}
+                      className="w-full flex items-center justify-center gap-2 py-2.5 bg-primary text-primary-foreground rounded-lg text-xs font-bold uppercase tracking-widest hover:opacity-90 transition-colors disabled:opacity-50"
+                    >
+                      {pausingSharing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null} Resume Sharing
+                    </button>
+                  </div>
+                )}
+
+                <div className={cn("space-y-3", sharingPaused && "opacity-50")}>
                   <label className="flex items-center justify-between p-3 rounded-lg border border-border hover:border-primary/30 transition-colors cursor-pointer group bg-surface dark:bg-surface/50">
                     <div className="flex items-center gap-3">
                       <Target className="w-4 h-4 text-text-muted group-hover:text-primary transition-colors" />
@@ -645,7 +710,16 @@ export const RecoveryAlly = () => {
                 </button>
               </div>
 
-              <div className="pt-4 mt-6 border-t border-border">
+              <div className="pt-4 mt-6 border-t border-border space-y-2">
+                {!sharingPaused && (
+                  <button
+                    onClick={pauseSharing}
+                    disabled={pausingSharing}
+                    className="w-full flex items-center justify-center gap-2 py-3 text-text-muted bg-surface dark:bg-surface/50 hover:bg-border dark:hover:bg-surface rounded-lg text-xs uppercase tracking-widest font-medium transition-colors disabled:opacity-50"
+                  >
+                    {pausingSharing ? <Loader2 className="w-4 h-4 animate-spin" /> : null} Stop Sharing
+                  </button>
+                )}
                 <button
                   onClick={handleRevoke}
                   disabled={revoking}
@@ -929,6 +1003,11 @@ export const RecoveryAlly = () => {
                 <div role="alert" className="p-3 bg-destructive/10 border border-destructive/20 text-destructive text-sm rounded-xl">{previewError}</div>
               ) : previewData ? (
                 <div className="space-y-4">
+                  {previewData.sharingPaused && (
+                    <div role="status" className="p-3 bg-warning/10 border border-warning/20 rounded-lg text-xs text-text-main leading-relaxed">
+                      Sharing is paused - this is exactly what {allyName || 'your ally'} sees right now: nothing, until you resume.
+                    </div>
+                  )}
                   {previewData.sharedGoals && (
                     <div className="space-y-2">
                       <h4 className="text-xs font-black uppercase tracking-widest text-text-muted">Their Boundary Goals</h4>

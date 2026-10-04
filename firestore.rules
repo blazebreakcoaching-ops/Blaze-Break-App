@@ -1180,7 +1180,7 @@ service cloud.firestore {
       match /recovery_ally/state {
         allow read, delete: if isOwner(uid);
         allow create, update: if isOwner(uid)
-            && request.resource.data.keys().hasOnly(['isInvited', 'allyName', 'allyEmail', 'permissions', 'shareToken', 'invitedAt', 'updatedAt', 'supportHelps', 'supportDoesNotHelp', 'supportVisibleToAlly', 'consentStatus', 'consentRespondedAt', 'inviteExpiresAt'])
+            && request.resource.data.keys().hasOnly(['isInvited', 'allyName', 'allyEmail', 'permissions', 'shareToken', 'invitedAt', 'updatedAt', 'supportHelps', 'supportDoesNotHelp', 'supportVisibleToAlly', 'consentStatus', 'consentRespondedAt', 'inviteExpiresAt', 'sharingPaused'])
             && (!('allyEmail' in request.resource.data) || isStringWithMax(request.resource.data.allyEmail, 200))
             && (!('allyName' in request.resource.data) || isStringWithMax(request.resource.data.allyName, 100))
             // "How to Support Me" (Master Support Circle spec) - a short,
@@ -1197,7 +1197,12 @@ service cloud.firestore {
             // owner's own direct reads of their own document.
             && (!('consentStatus' in request.resource.data) || request.resource.data.consentStatus in ['pending', 'accepted', 'declined'])
             && (!('consentRespondedAt' in request.resource.data) || request.resource.data.consentRespondedAt is string)
-            && (!('inviteExpiresAt' in request.resource.data) || request.resource.data.inviteExpiresAt is string);
+            && (!('inviteExpiresAt' in request.resource.data) || request.resource.data.inviteExpiresAt is string)
+            // "Stop Sharing" (Master Support Circle spec) - distinct from
+            // Remove Ally; only ever written server-side (pause-sharing/
+            // resume-sharing, via the Admin SDK), same as the consent
+            // fields above.
+            && (!('sharingPaused' in request.resource.data) || request.resource.data.sharingPaused is bool);
       }
 
       // Recurring accountability nudges sent to a user's chosen support
