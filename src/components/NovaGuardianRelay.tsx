@@ -471,7 +471,7 @@ export const NovaGuardianRelay = ({ contacts, onAdd, onRemove, userName }: NovaG
         </div>
       )}
 
-      <div className="grid grid-cols-1 xl:grid-cols-12 gap-8">
+      <div className="grid grid-cols-1 xl:grid-cols-12 gap-8 items-start">
         {/* Guardian Network List */}
         <div className="xl:col-span-8 space-y-6">
           <div className="flex items-center justify-between">

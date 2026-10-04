@@ -132,7 +132,7 @@ export const MyBoundaries = () => {
         </p>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
         <SectionCard icon={ListChecks} title="Boundaries I've Chosen" isEmpty={chosen.length === 0} emptyText="Nothing decided yet - it'll show up here once you run a demand through Capacity Firewall.">
           <ul className="space-y-2">
             {chosen.map((c, i) => (
