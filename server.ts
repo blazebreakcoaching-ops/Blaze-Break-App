@@ -9356,6 +9356,46 @@ const computeStreak = (completedDates: string[]): number => {
   return streak;
 };
 
+// Shared by the public GET /api/ally/view/:token (the ally's own page) and
+// the owner-facing GET /api/ally/preview ("Preview Their View" - Master
+// Support Circle spec). Both must build the exact same response shape from
+// the exact same real data, so Preview Their View genuinely shows what the
+// ally would see right now - never a generic or example preview.
+const buildAllyViewResponse = async (ownerRef: any, permissions: Record<string, boolean>, allyName: string) => {
+  const response: any = { allyName: allyName || 'there' };
+
+  if (permissions.viewGoals) {
+    const goalsSnap = await ownerRef.collection("ally_shared_goals").orderBy("createdAt", "desc").limit(20).get();
+    response.sharedGoals = goalsSnap.docs.map((d: any) => {
+      const data = d.data();
+      const dates: string[] = data.completedDates || [];
+      return {
+        id: d.id,
+        text: data.text,
+        category: data.category,
+        completedToday: dates.includes(new Date().toISOString().split('T')[0]),
+        streak: computeStreak(dates),
+      };
+    });
+  }
+
+  if (permissions.viewMilestones) {
+    const goalsSnap = await ownerRef.collection("ally_shared_goals").get();
+    const longestStreak = goalsSnap.docs.reduce((max: number, d: any) => Math.max(max, computeStreak(d.data().completedDates || [])), 0);
+    response.longestStreak = longestStreak;
+  }
+
+  if (permissions.viewEnergyStats) {
+    const moodSnap = await ownerRef.collection("mood_pulses").orderBy("createdAt", "desc").limit(7).get();
+    const intensities = moodSnap.docs.map((d: any) => d.data().intensity).filter((n: any) => typeof n === 'number');
+    response.recentAvgMood = intensities.length > 0
+      ? Number((intensities.reduce((a: number, b: number) => a + b, 0) / intensities.length).toFixed(1))
+      : null;
+  }
+
+  return response;
+};
+
 // ============ Recovery Ally (real, two-sided accountability) ============
 // The ally doesn't need their own Blaze Break account - they get a real
 // emailed link to an unauthenticated, token-scoped view of exactly what the
@@ -9769,40 +9809,38 @@ app.get("/api/ally/view/:token", verifyAppCheck, async (req, res) => {
     const capsulesSnap = await ownerRef.collection("support_capsules").get();
     const capsules = capsulesSnap.docs.map(d => d.data() as { category: string; expiresAt: string | null });
     const permissions = deriveEffectiveSharing(capsules as any, new Date().toISOString(), state.permissions || {});
-    const response: any = { allyName: state.allyName || 'there' };
-
-    if (permissions.viewGoals) {
-      const goalsSnap = await ownerRef.collection("ally_shared_goals").orderBy("createdAt", "desc").limit(20).get();
-      response.sharedGoals = goalsSnap.docs.map(d => {
-        const data = d.data();
-        const dates: string[] = data.completedDates || [];
-        return {
-          id: d.id,
-          text: data.text,
-          category: data.category,
-          completedToday: dates.includes(new Date().toISOString().split('T')[0]),
-          streak: computeStreak(dates),
-        };
-      });
-    }
-
-    if (permissions.viewMilestones) {
-      const goalsSnap = await ownerRef.collection("ally_shared_goals").get();
-      const longestStreak = goalsSnap.docs.reduce((max, d) => Math.max(max, computeStreak(d.data().completedDates || [])), 0);
-      response.longestStreak = longestStreak;
-    }
-
-    if (permissions.viewEnergyStats) {
-      const moodSnap = await ownerRef.collection("mood_pulses").orderBy("createdAt", "desc").limit(7).get();
-      const intensities = moodSnap.docs.map(d => d.data().intensity).filter((n: any) => typeof n === 'number');
-      response.recentAvgMood = intensities.length > 0
-        ? Number((intensities.reduce((a: number, b: number) => a + b, 0) / intensities.length).toFixed(1))
-        : null;
-    }
+    const response = await buildAllyViewResponse(ownerRef, permissions, state.allyName);
 
     res.json(response);
   } catch (err: any) {
     res.status(500).json({ error: "Could not load this page." });
+  }
+});
+
+// Owner-facing "Preview Their View" (Master Support Circle spec): shows
+// the owner exactly what their own ally's page would show right now -
+// built from buildAllyViewResponse, the same function the public token
+// route above uses, over the owner's own real current data. Never a
+// generic example; if nothing is shared, it honestly shows nothing.
+app.get("/api/ally/preview", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const user = requireAuth(req);
+    const db = getDb();
+    const ownerRef = db.collection("users").doc(user.uid);
+    const [stateSnap, capsulesSnap] = await Promise.all([
+      ownerRef.collection("recovery_ally").doc("state").get(),
+      ownerRef.collection("support_capsules").get(),
+    ]);
+    if (!stateSnap.exists || !stateSnap.data()?.isInvited) {
+      return res.status(404).json({ error: "You haven't invited a Recovery Ally yet." });
+    }
+    const state = stateSnap.data()!;
+    const capsules = capsulesSnap.docs.map(d => d.data() as { category: string; expiresAt: string | null });
+    const permissions = deriveEffectiveSharing(capsules as any, new Date().toISOString(), state.permissions || {});
+    const response = await buildAllyViewResponse(ownerRef, permissions, state.allyName);
+    res.json(response);
+  } catch (err: any) {
+    res.status(500).json({ error: "Could not load the preview." });
   }
 });
 

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { HeartPulse, CheckSquare, Target, Mail, Award, Trash2, CheckCircle2, AlertTriangle, ShieldCheck, Activity, Brain, Clock, Plus, ArrowRight, Zap, Loader2, Copy } from 'lucide-react';
+import { HeartPulse, CheckSquare, Target, Mail, Award, Trash2, CheckCircle2, AlertTriangle, ShieldCheck, Activity, Brain, Clock, Plus, ArrowRight, Zap, Loader2, Copy, Eye, X, Check } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { logJourney } from '../lib/nova-brain';
 import { secureApiFetch } from '../lib/secure-api';
@@ -10,9 +10,17 @@ import { doc, getDoc, setDoc, collection, addDoc, getDocs, deleteDoc, orderBy, q
 import {
   SupportCapsuleCategory,
   SUPPORT_CAPSULE_CATEGORIES,
+  SUPPORT_CAPSULE_CATEGORY_LABELS,
   computeCapsuleExpiresAt,
   deriveEffectiveSharing,
 } from '../../support-capsules';
+
+interface PreviewData {
+  allyName: string;
+  sharedGoals?: { id: string; text: string; category: string; completedToday: boolean; streak: number }[];
+  longestStreak?: number;
+  recentAvgMood?: number | null;
+}
 
 interface SharedGoal {
   id: string;
@@ -69,6 +77,21 @@ export const RecoveryAlly = () => {
   const [isAddingGoal, setIsAddingGoal] = useState(false);
   const [newGoalText, setNewGoalText] = useState('');
   const [linkCopied, setLinkCopied] = useState(false);
+
+  // Sharing Preview (Master Support Circle spec): a checkbox never commits
+  // immediately - it stages a pending change and shows exactly what will
+  // and won't be visible as a result, requiring an explicit Confirm before
+  // the real capsule write happens.
+  const [pendingToggle, setPendingToggle] = useState<{ category: SupportCapsuleCategory; nextOn: boolean } | null>(null);
+  const [confirmingToggle, setConfirmingToggle] = useState(false);
+
+  // Preview Their View (Master Support Circle spec): the owner's own real
+  // current data, rendered exactly as the ally's page would show it -
+  // fetched on demand, never pre-filled with example data.
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [previewData, setPreviewData] = useState<PreviewData | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewError, setPreviewError] = useState('');
 
   const fetchGoals = async () => {
     if (!auth.currentUser) return;
@@ -131,12 +154,13 @@ export const RecoveryAlly = () => {
     load();
   }, []);
 
-  // Toggling a category writes (or deletes) its own real Support Capsule -
+  // The real, immediate write - only ever called after the owner has seen
+  // the Sharing Preview below and explicitly confirmed (see confirmToggle).
   // 'until_off' is the only expiry this checkbox-based UI offers for now
   // (a real expiry-type picker is a later PR in this series); the
   // underlying model already supports more, so that UI can land without
   // another schema change.
-  const toggleCapsule = async (category: SupportCapsuleCategory, nextOn: boolean) => {
+  const commitCapsuleToggle = async (category: SupportCapsuleCategory, nextOn: boolean) => {
     setPermissionsState((prev) => ({ ...prev, [category]: nextOn }));
     if (!auth.currentUser) return;
     const uid = auth.currentUser.uid;
@@ -158,6 +182,46 @@ export const RecoveryAlly = () => {
       // Non-fatal - the toggle still reflects locally even if the save fails;
       // it'll revert to the last-saved value next time this loads.
     }
+  };
+
+  // Stages a checkbox change for the Sharing Preview below instead of
+  // writing anything yet.
+  const requestCapsuleToggle = (category: SupportCapsuleCategory, nextOn: boolean) => {
+    setPendingToggle({ category, nextOn });
+  };
+
+  const confirmPendingToggle = async () => {
+    if (!pendingToggle) return;
+    setConfirmingToggle(true);
+    await commitCapsuleToggle(pendingToggle.category, pendingToggle.nextOn);
+    setConfirmingToggle(false);
+    setPendingToggle(null);
+  };
+
+  const cancelPendingToggle = () => setPendingToggle(null);
+
+  // What the ally would see if the pending change were confirmed right
+  // now - the "exactly what will/won't be visible" the spec asks for.
+  const previewedSharing: AllyPermissions = pendingToggle
+    ? { ...permissions, [pendingToggle.category]: pendingToggle.nextOn }
+    : permissions;
+
+  const fetchPreview = async () => {
+    setPreviewOpen(true);
+    setPreviewLoading(true);
+    setPreviewError('');
+    try {
+      const res = await secureApiFetch('/api/ally/preview');
+      const json = await res.json();
+      if (!res.ok) {
+        setPreviewError(json.error || "Couldn't load the preview.");
+      } else {
+        setPreviewData(json);
+      }
+    } catch (e) {
+      setPreviewError("Couldn't load the preview.");
+    }
+    setPreviewLoading(false);
   };
 
   const handleInvite = async (e: React.FormEvent) => {
@@ -390,7 +454,7 @@ export const RecoveryAlly = () => {
                       <Target className="w-4 h-4 text-text-muted group-hover:text-primary transition-colors" />
                       <span className="text-xs font-bold text-text-main">Shared Goals</span>
                     </div>
-                    <input type="checkbox" checked={permissions.viewGoals} onChange={() => toggleCapsule('viewGoals', !permissions.viewGoals)} className="w-4 h-4 text-primary rounded border-border focus:ring-primary bg-transparent" />
+                    <input type="checkbox" checked={previewedSharing.viewGoals} onChange={() => requestCapsuleToggle('viewGoals', !previewedSharing.viewGoals)} className="w-4 h-4 text-primary rounded border-border focus:ring-primary bg-transparent" />
                   </label>
 
                   <label className="flex items-center justify-between p-3 rounded-lg border border-border hover:border-primary/30 transition-colors cursor-pointer group bg-surface dark:bg-surface/50">
@@ -398,7 +462,7 @@ export const RecoveryAlly = () => {
                       <Award className="w-4 h-4 text-text-muted group-hover:text-primary transition-colors" />
                       <span className="text-xs font-bold text-text-main">Milestone Updates</span>
                     </div>
-                    <input type="checkbox" checked={permissions.viewMilestones} onChange={() => toggleCapsule('viewMilestones', !permissions.viewMilestones)} className="w-4 h-4 text-primary rounded border-border focus:ring-primary bg-transparent" />
+                    <input type="checkbox" checked={previewedSharing.viewMilestones} onChange={() => requestCapsuleToggle('viewMilestones', !previewedSharing.viewMilestones)} className="w-4 h-4 text-primary rounded border-border focus:ring-primary bg-transparent" />
                   </label>
 
                   <label className="flex items-center justify-between p-3 rounded-lg border border-border hover:border-primary/30 transition-colors cursor-pointer group bg-surface dark:bg-surface/50">
@@ -406,7 +470,7 @@ export const RecoveryAlly = () => {
                       <Activity className="w-4 h-4 text-text-muted group-hover:text-primary transition-colors" />
                       <span className="text-xs font-bold text-text-main">Energy Levels</span>
                     </div>
-                    <input type="checkbox" checked={permissions.viewEnergyStats} onChange={() => toggleCapsule('viewEnergyStats', !permissions.viewEnergyStats)} className="w-4 h-4 text-primary rounded border-border focus:ring-primary bg-transparent" />
+                    <input type="checkbox" checked={previewedSharing.viewEnergyStats} onChange={() => requestCapsuleToggle('viewEnergyStats', !previewedSharing.viewEnergyStats)} className="w-4 h-4 text-primary rounded border-border focus:ring-primary bg-transparent" />
                   </label>
 
                   <label className="flex items-center justify-between p-3 rounded-lg border border-border hover:border-primary/30 transition-colors cursor-pointer group bg-surface dark:bg-surface/50">
@@ -414,9 +478,66 @@ export const RecoveryAlly = () => {
                       <Mail className="w-4 h-4 text-text-muted group-hover:text-primary transition-colors" />
                       <span className="text-xs font-bold text-text-main">Allow Messages</span>
                     </div>
-                    <input type="checkbox" checked={permissions.sendPings} onChange={() => toggleCapsule('sendPings', !permissions.sendPings)} className="w-4 h-4 text-primary rounded border-border focus:ring-primary bg-transparent" />
+                    <input type="checkbox" checked={previewedSharing.sendPings} onChange={() => requestCapsuleToggle('sendPings', !previewedSharing.sendPings)} className="w-4 h-4 text-primary rounded border-border focus:ring-primary bg-transparent" />
                   </label>
                 </div>
+
+                {/* Sharing Preview - mandatory before any change actually
+                    commits (Master Support Circle spec): shows exactly
+                    what will and won't be visible if confirmed. */}
+                <AnimatePresence>
+                  {pendingToggle && (
+                    <motion.div
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: 'auto' }}
+                      exit={{ opacity: 0, height: 0 }}
+                      className="overflow-hidden"
+                    >
+                      <div role="alert" className="p-4 bg-primary/5 border border-primary/20 rounded-lg space-y-3">
+                        <p className="text-xs font-bold text-text-main">
+                          {pendingToggle.nextOn ? 'Turning this on' : 'Turning this off'} - {allyName || 'your ally'} will be able to see:
+                        </p>
+                        <ul className="space-y-1">
+                          {SUPPORT_CAPSULE_CATEGORIES.map((category) => (
+                            <li key={category} className="flex items-center gap-2 text-xs">
+                              {previewedSharing[category] ? (
+                                <Check className="w-3.5 h-3.5 text-success dark:text-[#4ade80] shrink-0" />
+                              ) : (
+                                <X className="w-3.5 h-3.5 text-text-muted shrink-0" />
+                              )}
+                              <span className={previewedSharing[category] ? "text-text-main font-medium" : "text-text-muted"}>
+                                {SUPPORT_CAPSULE_CATEGORY_LABELS[category]}
+                              </span>
+                            </li>
+                          ))}
+                        </ul>
+                        <div className="flex gap-2 pt-1">
+                          <button
+                            onClick={cancelPendingToggle}
+                            disabled={confirmingToggle}
+                            className="flex-1 py-2 rounded-lg text-xs font-bold uppercase tracking-widest bg-surface dark:bg-card text-text-muted hover:bg-border transition-colors disabled:opacity-50"
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            onClick={confirmPendingToggle}
+                            disabled={confirmingToggle}
+                            className="flex-1 py-2 rounded-lg text-xs font-bold uppercase tracking-widest bg-primary text-primary-foreground hover:opacity-90 transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+                          >
+                            {confirmingToggle ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null} Confirm
+                          </button>
+                        </div>
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+
+                <button
+                  onClick={fetchPreview}
+                  className="w-full flex items-center justify-center gap-2 py-3 text-xs font-bold uppercase tracking-widest text-text-muted bg-surface dark:bg-surface/50 hover:bg-border dark:hover:bg-surface rounded-lg transition-colors"
+                >
+                  <Eye className="w-4 h-4" /> Preview Their View
+                </button>
               </div>
 
               <div className="pt-4 mt-6 border-t border-border">
@@ -578,6 +699,77 @@ export const RecoveryAlly = () => {
           </div>
         </motion.div>
       )}
+
+      {/* Preview Their View - the owner's own real current data, rendered
+          exactly as the ally's page would show it right now. */}
+      <AnimatePresence>
+        {previewOpen && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setPreviewOpen(false)}
+              className="absolute inset-0 bg-surface/80 backdrop-blur-md"
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 10 }}
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="preview-their-view-title"
+              className="relative card w-full max-w-lg p-8 bg-white dark:bg-card border border-border shadow-lg space-y-6 max-h-[80vh] overflow-y-auto"
+            >
+              <button
+                onClick={() => setPreviewOpen(false)}
+                aria-label="Close preview"
+                className="absolute top-6 right-6 p-2 text-text-muted hover:bg-surface dark:hover:bg-surface rounded-lg transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+              <div className="flex items-center gap-3">
+                <Eye className="w-5 h-5 text-primary" />
+                <h3 id="preview-their-view-title" className="text-lg font-bold text-text-main tracking-tight">Preview Their View</h3>
+              </div>
+              <p className="text-xs text-text-muted leading-relaxed">
+                This is exactly what {allyName || 'your ally'} sees on their own private link right now - not an example.
+              </p>
+
+              {previewLoading ? (
+                <div className="flex items-center justify-center py-10"><Loader2 className="w-6 h-6 animate-spin text-primary" /></div>
+              ) : previewError ? (
+                <div role="alert" className="p-3 bg-destructive/10 border border-destructive/20 text-destructive text-sm rounded-xl">{previewError}</div>
+              ) : previewData ? (
+                <div className="space-y-4">
+                  {previewData.sharedGoals && (
+                    <div className="space-y-2">
+                      <h4 className="text-xs font-black uppercase tracking-widest text-text-muted">Their Boundary Goals</h4>
+                      {previewData.sharedGoals.length === 0 ? (
+                        <p className="text-sm text-text-muted">No goals shared yet.</p>
+                      ) : previewData.sharedGoals.map((goal) => (
+                        <div key={goal.id} className={cn("flex items-center justify-between p-3 rounded-xl border", goal.completedToday ? "bg-success/5 border-success/20" : "bg-surface border-border")}>
+                          <span className="text-sm font-medium text-text-main">{goal.text}</span>
+                          {goal.streak > 0 && <span className="text-[11px] font-black uppercase tracking-widest text-[#9a3412] dark:text-warning">{goal.streak} day{goal.streak === 1 ? '' : 's'}</span>}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {typeof previewData.longestStreak === 'number' && (
+                    <p className="text-sm text-text-main"><strong>Longest current streak:</strong> {previewData.longestStreak} day{previewData.longestStreak === 1 ? '' : 's'}</p>
+                  )}
+                  {typeof previewData.recentAvgMood === 'number' && (
+                    <p className="text-sm text-text-main"><strong>Recent average mood:</strong> {previewData.recentAvgMood}/10</p>
+                  )}
+                  {!previewData.sharedGoals && typeof previewData.longestStreak !== 'number' && typeof previewData.recentAvgMood !== 'number' && (
+                    <p className="text-sm text-text-muted">Nothing is shared right now - {allyName || 'your ally'}'s page would be empty aside from the note box.</p>
+                  )}
+                </div>
+              ) : null}
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };
