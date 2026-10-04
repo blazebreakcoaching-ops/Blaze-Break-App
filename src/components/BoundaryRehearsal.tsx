@@ -29,6 +29,7 @@ import { NovaChat } from './NovaChat';
 import type { NovaQuestioningStyle } from './NovaStyleControl';
 import type { UserProfileData } from '../types';
 import { cn } from '../lib/utils';
+import { CommunicationGrid, CommunicationGridColumn } from './layout/CommunicationGrid';
 import {
   CONDITIONAL_YES_LEVER_ORDER, CONDITIONAL_YES_LEVER_LABELS, ConditionalYesLever, CONDITIONAL_YES_QUESTION,
   buildConditionalYesMessage,
@@ -539,8 +540,12 @@ First separate the user's internal reaction from what actually needs to be commu
 
   const currentGroup = scriptGroups.find(g => g.category === activeCategory) || scriptGroups[0];
 
+  // No outer max-w/mx-auto here - this component always renders inside
+  // a parent grid column (App.tsx's Communication layout), and a
+  // self-imposed width cap here was inert at best and a landmine at
+  // worst if this component is ever placed somewhere wider.
   return (
-    <div className="space-y-12 pb-24 font-sans max-w-[1400px] mx-auto text-text-main">
+    <div className="space-y-12 pb-24 font-sans text-text-main min-w-0">
       
       {/* Boundary rehearsal header */}
       <div className="relative overflow-hidden rounded-xl bg-card border border-border p-6 sm:p-8 md:p-10">
@@ -581,8 +586,8 @@ First separate the user's internal reaction from what actually needs to be commu
       </div>
 
       {mode === 'generator' ? (
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-          <div className="lg:col-span-4 max-w-none space-y-6">
+        <CommunicationGrid columns="lg:grid-cols-[minmax(320px,420px)_minmax(0,1fr)]">
+          <CommunicationGridColumn>
             <div className="card bg-card border border-border p-8 space-y-6 relative overflow-hidden group">
               <div className="relative z-10 space-y-3 border-b border-border pb-5">
                 <h4 className="text-lg font-bold text-text-main flex items-center gap-2 tracking-tight">
@@ -712,9 +717,9 @@ First separate the user's internal reaction from what actually needs to be commu
                 </div>
               </div>
             )}
-          </div>
+          </CommunicationGridColumn>
 
-          <div className="lg:col-span-8 space-y-6">
+          <CommunicationGridColumn>
             <h4 className="text-xs font-medium uppercase tracking-[0.2em] text-text-muted flex items-center gap-2">
               <Zap className="w-3.5 h-3.5" /> How This Was Compiled
             </h4>
@@ -789,8 +794,8 @@ First separate the user's internal reaction from what actually needs to be commu
                 </div>
               </motion.div>
             )}
-          </div>
-        </div>
+          </CommunicationGridColumn>
+        </CommunicationGrid>
       ) : !isPractising ? (
         <div className="space-y-8">
           {/* Category Tabs */}

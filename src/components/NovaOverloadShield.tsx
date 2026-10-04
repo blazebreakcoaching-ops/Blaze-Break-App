@@ -13,9 +13,11 @@ import {
   ArrowRight,
   Activity,
   UserX,
-  Server
+  Server,
+  ChevronDown
 } from 'lucide-react';
 import { cn } from '../lib/utils';
+import { CommunicationGrid, CommunicationGridColumn } from './layout/CommunicationGrid';
 import { BurnoutFingerprint } from '../types';
 import { secureApiFetch } from '../lib/secure-api';
 import { updateNovaMemoryBySourceAndType } from '../lib/nova-brain';
@@ -246,10 +248,10 @@ export const NovaOverloadShield = ({ fingerprint, onAwardPoints, onNavigate }: N
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        
+      <CommunicationGrid columns="lg:grid-cols-[minmax(320px,40%)_minmax(0,1fr)]">
+
         {/* Left Column: Input & Privacy */}
-        <div className="space-y-8">
+        <CommunicationGridColumn>
           <div className="card p-2 flex bg-surface border border-border">
             <button 
               onClick={() => setActiveTab('manual')}
@@ -283,28 +285,30 @@ export const NovaOverloadShield = ({ fingerprint, onAwardPoints, onNavigate }: N
                 </div>
                 
                 <div className="space-y-4">
-                  <div className="space-y-2">
-                    <label htmlFor="ows-meetings-today" className="text-xs font-bold text-text-muted uppercase tracking-wider">Meetings Today</label>
-                    <input
-                      id="ows-meetings-today"
-                      type="number"
-                      min="0"
-                      value={manualData.meetings}
-                      onChange={(e) => setManualData({...manualData, meetings: parseInt(e.target.value) || 0})}
-                      className="w-full bg-surface border border-border/50 rounded-xl p-3 text-text-main font-medium focus:ring-2 focus:ring-primary/50 outline-none transition-all"
-                    />
-                  </div>
-                  
-                  <div className="space-y-2">
-                    <label htmlFor="ows-hours-planned" className="text-xs font-bold text-text-muted uppercase tracking-wider">Hours Planned</label>
-                    <input
-                      id="ows-hours-planned"
-                      type="number"
-                      min="0"
-                      value={manualData.hours}
-                      onChange={(e) => setManualData({...manualData, hours: parseInt(e.target.value) || 0})}
-                      className="w-full bg-surface border border-border/50 rounded-xl p-3 text-text-main font-medium focus:ring-2 focus:ring-primary/50 outline-none transition-all"
-                    />
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <label htmlFor="ows-meetings-today" className="text-xs font-bold text-text-muted uppercase tracking-wider">Meetings Today</label>
+                      <input
+                        id="ows-meetings-today"
+                        type="number"
+                        min="0"
+                        value={manualData.meetings}
+                        onChange={(e) => setManualData({...manualData, meetings: parseInt(e.target.value) || 0})}
+                        className="w-full bg-surface border border-border/50 rounded-xl p-3 text-text-main font-medium focus:ring-2 focus:ring-primary/50 outline-none transition-all"
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <label htmlFor="ows-hours-planned" className="text-xs font-bold text-text-muted uppercase tracking-wider">Hours Planned</label>
+                      <input
+                        id="ows-hours-planned"
+                        type="number"
+                        min="0"
+                        value={manualData.hours}
+                        onChange={(e) => setManualData({...manualData, hours: parseInt(e.target.value) || 0})}
+                        className="w-full bg-surface border border-border/50 rounded-xl p-3 text-text-main font-medium focus:ring-2 focus:ring-primary/50 outline-none transition-all"
+                      />
+                    </div>
                   </div>
 
                   <div className="space-y-2">
@@ -418,37 +422,39 @@ export const NovaOverloadShield = ({ fingerprint, onAwardPoints, onNavigate }: N
             )}
           </AnimatePresence>
 
-          <div className="card p-6 border border-primary/20 bg-primary/5">
-            <h4 className="text-sm font-black uppercase tracking-widest text-primary mb-4 flex items-center gap-2">
-              <Lock className="w-4 h-4" /> Privacy Perimeter
-            </h4>
-            <ul className="space-y-3">
+          {/* A compact, collapsed-by-default disclosure rather than a
+              full card at the same visual weight as Current Workload -
+              the three claims themselves are unchanged. */}
+          <details className="group rounded-xl border border-border px-4 py-3">
+            <summary className="flex items-center justify-between gap-2 text-xs font-bold text-text-muted uppercase tracking-wider cursor-pointer list-none [&::-webkit-details-marker]:hidden">
+              <span className="flex items-center gap-2"><Lock className="w-3.5 h-3.5" /> Privacy Perimeter</span>
+              <ChevronDown className="w-3.5 h-3.5 transition-transform group-open:rotate-180" />
+            </summary>
+            <ul className="space-y-2.5 mt-3">
               {[
                 { icon: Server, text: "Metadata only. We never read message content." },
                 { icon: UserX, text: "No employer surveillance. Your data is yours." },
                 { icon: EyeOff, text: "No secret HR reports. Trust is our moat." }
               ].map((item, i) => (
-                <li key={i} className="flex items-start gap-3 text-sm text-text-main font-medium">
-                  <div className="p-1 rounded bg-primary/10 text-primary shrink-0 mt-0.5">
-                    <item.icon className="w-3 h-3" />
-                  </div>
+                <li key={i} className="flex items-start gap-2.5 text-xs text-text-muted font-medium">
+                  <item.icon className="w-3.5 h-3.5 shrink-0 mt-0.5 text-text-muted" />
                   {item.text}
                 </li>
               ))}
             </ul>
-          </div>
-        </div>
+          </details>
+        </CommunicationGridColumn>
 
         {/* Right Column: Shield Status & Interventions */}
-        <div className="lg:col-span-2 space-y-8">
-          
+        <CommunicationGridColumn>
+
           <div className={cn("card p-8 md:p-12 transition-all duration-500 relative overflow-hidden border", stateColors.cardBorder, stateColors.cardBg)}>
-             <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6 mb-8">
-               <div className="flex items-center gap-4">
-                 <div className={cn("w-16 h-16 rounded-2xl flex items-center justify-center text-white shadow-xl transition-all duration-500", stateColors.iconBg, stateColors.iconShadow)}>
+             <div className="relative z-10 flex flex-col md:flex-row md:flex-wrap md:items-center justify-between gap-6 mb-8">
+               <div className="flex items-center gap-4 min-w-0">
+                 <div className={cn("w-16 h-16 rounded-2xl flex items-center justify-center text-white shadow-xl transition-all duration-500 shrink-0", stateColors.iconBg, stateColors.iconShadow)}>
                    {simulating ? <Zap className="w-8 h-8 animate-pulse" /> : <activeState.icon className="w-8 h-8" />}
                  </div>
-                 <div role="status" aria-live="polite">
+                 <div role="status" aria-live="polite" className="min-w-0">
                    <h3 className="text-xs font-black uppercase tracking-widest text-text-muted mb-1">Current Status</h3>
                    <h2 className={cn("text-3xl font-display font-bold transition-colors", stateColors.heading)}>
                      {simulating ? 'Scanning...' : activeState.label}
@@ -559,8 +565,8 @@ export const NovaOverloadShield = ({ fingerprint, onAwardPoints, onNavigate }: N
             )}
           </AnimatePresence>
 
-        </div>
-      </div>
+        </CommunicationGridColumn>
+      </CommunicationGrid>
     </div>
   );
 };

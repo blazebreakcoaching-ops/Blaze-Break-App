@@ -322,7 +322,10 @@ export const BoundaryAutopilot = ({ onNavigate }: BoundaryAutopilotProps) => {
         </p>
       </div>
 
-      <div className="flex gap-2 overflow-x-auto pb-1" role="tablist">
+      {/* flex-wrap, not overflow-x-auto: five tabs at normal laptop width
+          fit on one or two wrapped rows without ever needing a horizontal
+          scrollbar. */}
+      <div className="flex flex-wrap gap-2" role="tablist">
         {tabs.map((t) => (
           <button
             key={t.id}
@@ -330,7 +333,7 @@ export const BoundaryAutopilot = ({ onNavigate }: BoundaryAutopilotProps) => {
             aria-selected={activeTab === t.id}
             onClick={() => { setActiveTab(t.id); setStatus(null); setPendingConfirm(false); }}
             className={cn(
-              "flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-colors shrink-0",
+              "flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-colors",
               activeTab === t.id ? "bg-primary/10 text-[#9a3412] dark:text-primary" : "text-text-muted hover:bg-surface"
             )}
           >

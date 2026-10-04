@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Shield, MessageSquare, Power, AlertTriangle, ShieldCheck, CheckCircle2, ExternalLink, Loader2 } from 'lucide-react';
 import { cn } from '../lib/utils';
+import { CommunicationGrid, CommunicationGridColumn } from './layout/CommunicationGrid';
 import { auth } from '../lib/firebase';
 import { BurnoutFingerprint } from '../types';
 import { updateNovaMemoryBySourceAndType } from '../lib/nova-brain';
@@ -142,9 +143,9 @@ export const DigitalBoundaryShield = ({ fingerprint, onAwardPoints, onNavigate }
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+      <CommunicationGrid columns="lg:grid-cols-[minmax(0,2fr)_minmax(280px,1fr)]">
 
-        <div className="lg:col-span-2 space-y-8">
+        <CommunicationGridColumn>
           {/* Urgent or Loud? - guided, never a one-line pronouncement */}
           <div className="card border border-primary/20 bg-primary/5 p-8 relative overflow-hidden">
             <div className="relative z-10 space-y-6">
@@ -344,9 +345,9 @@ export const DigitalBoundaryShield = ({ fingerprint, onAwardPoints, onNavigate }
               )
             )}
           </div>
-        </div>
+        </CommunicationGridColumn>
 
-        <div className="lg:col-span-1 space-y-8">
+        <CommunicationGridColumn>
           <div className="card border border-border p-6 bg-surface dark:bg-surface/50">
              <div className="flex items-center gap-2 mb-2">
                <MessageSquare className="w-4 h-4 text-text-muted" />
@@ -370,8 +371,8 @@ export const DigitalBoundaryShield = ({ fingerprint, onAwardPoints, onNavigate }
               Blaze Break can't mute Slack, Teams, WhatsApp or email on its own. Where a real action exists (Slack status, Do Not Disturb), it routes to Boundary Autopilot. Everything else here is a checklist you confirm for yourself.
             </p>
           </div>
-        </div>
-      </div>
+        </CommunicationGridColumn>
+      </CommunicationGrid>
     </div>
   );
 };

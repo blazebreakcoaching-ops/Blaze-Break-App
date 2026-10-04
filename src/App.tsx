@@ -114,6 +114,7 @@ const IntegrationsDashboard = lazy(() => import("./components/IntegrationsDashbo
 const AdminDashboard = lazy(() => import("./components/AdminDashboard.tsx").then(m => ({ default: m.AdminDashboard })));
 const NovaFeedbackModal = lazy(() => import("./components/NovaFeedbackModal.tsx").then(m => ({ default: m.NovaFeedbackModal })));
 import { InAppNudge } from "./components/InAppNudge.tsx";
+import { CommunicationGrid, CommunicationGridColumn } from "./components/layout/CommunicationGrid.tsx";
 const EvolutionEngine = lazy(() => import("./components/EvolutionEngine.tsx").then(m => ({ default: m.EvolutionEngine })));
 const MicroInterventions = lazy(() => import("./components/MicroInterventions.tsx").then(m => ({ default: m.MicroInterventions })));
 const NovaOverloadShield = lazy(() => import("./components/NovaOverloadShield.tsx").then(m => ({ default: m.NovaOverloadShield })));
@@ -2284,11 +2285,25 @@ export default function App() {
         layout
         transition={{ type: "spring", stiffness: 300, damping: 30 }}
         className={cn(
-          "relative transition-colors duration-500",
-          "p-8 md:p-12 lg:p-16 max-w-7xl mx-auto",
+          "relative transition-colors duration-500 min-w-0",
+          "p-8 md:p-12 lg:p-16",
           isSidebarCollapsed ? "md:ml-32" : "md:ml-72",
         )}
       >
+        {/* Width-capping and centering live here, separately from the
+            sidebar-offset margin above - putting max-w-7xl/mx-auto on the
+            same element as a fixed md:ml-* margin meant the auto margins
+            could never resolve symmetrically (the fixed left margin wins,
+            so all the slack between the capped content and the right edge
+            of the viewport collapsed onto one side instead of centering).
+            This is the root cause of the large unused regions reported
+            across Communication on wide laptop/desktop viewports.
+            Note: <main> itself deliberately has NO w-full here - width:auto
+            (the default) lets the browser subtract md:ml-* from the
+            containing block automatically; adding w-full back would make
+            width 100% of the containing block with the margin added on
+            top, overflowing the right edge by exactly the sidebar offset. */}
+        <div className="max-w-7xl mx-auto min-w-0">
         <AccountStatusBanner
           isDemoSession={isDemoSession}
           onSignUp={() => { setFlow("landing"); setLandingInitialAuthOpen(true); }}
@@ -2519,7 +2534,7 @@ export default function App() {
             )}
 
             {activeTab === "communicate" && (
-              <div className="space-y-32">
+              <div className="space-y-10 lg:space-y-12">
                 <div className="flex justify-end">
                   <button
                     onClick={() => setShowMyBoundaries((v) => !v)}
@@ -2533,8 +2548,11 @@ export default function App() {
                 ) : (
                   <>
                 <CapacityFirewall onNavigate={safeSetActiveTab as any} />
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-12">
-                  <div className="lg:col-span-2 space-y-12">
+                <CommunicationGrid
+                  columns="lg:grid-cols-[minmax(0,2fr)_minmax(280px,1fr)]"
+                  gap="gap-8 lg:gap-10"
+                >
+                  <CommunicationGridColumn className="space-y-10">
                     <BoundaryRehearsal
                       onAwardPoints={awardPoints}
                       onRehearsalComplete={incrementRehearsal}
@@ -2543,8 +2561,8 @@ export default function App() {
                       onStyleChange={handleNovaStyleChange}
                     />
                     <BoundaryAutopilot onNavigate={safeSetActiveTab as any} />
-                  </div>
-                  <div className="space-y-8">
+                  </CommunicationGridColumn>
+                  <CommunicationGridColumn>
                     <NegotiatorTool />
                     <div className="card bg-card text-text-main border-border space-y-6 transition-colors duration-500">
                       <h4 className="text-xs font-black uppercase tracking-widest text-primary">
@@ -2584,8 +2602,8 @@ export default function App() {
                         </ul>
                       </div>
                     </div>
-                  </div>
-                </div>
+                  </CommunicationGridColumn>
+                </CommunicationGrid>
                 <DigitalBoundaryShield
                   fingerprint={isDemoSession ? DEMO_FINGERPRINT : fingerprint}
                   onAwardPoints={awardPoints}
@@ -2884,6 +2902,7 @@ export default function App() {
             <NovaFeedbackModal />
           </Suspense>
         )}
+        </div>
       </motion.main>
 
       {/* Mobile Nav */}
