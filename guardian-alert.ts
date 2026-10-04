@@ -56,6 +56,26 @@ export const buildGuardianCallRequestMessage = (senderFirstName: string): string
   return `${name} has asked you to call them as soon as you can. This is a support request sent from their Blaze Break app. Please try to contact them directly.`;
 };
 
+// §B.2's safe contact check (docs/GUARDIAN_SUPPORT_SPEC.md line ~169) -
+// the exact warning shown before a contact is added, confirmed/buildable
+// now, not the [REVIEW]-gated verification mechanism in §B.3. Kept as a
+// constant (not inline JSX) so NovaGuardianRelay.tsx's copy and any future
+// test asserting on it read from the same single source of truth.
+export const GUARDIAN_SAFE_CONTACT_CHECK_COPY =
+  "Only add a person you trust to respond with care. Please don't add someone who might react badly, put you at risk, or use this against you if they learn you're struggling.";
+
+// The test-ping message (NovaGuardianRelay.tsx's "Ping Status" button,
+// POST /api/guardian/contacts/:id/test-ping): deliberately named and
+// worded as a reachability test, never as "verification" in the §B.3
+// sense - that word is reserved for the code-based mechanism §B.3 marks
+// [REVIEW] pending safeguarding/privacy sign-off, which this product has
+// not done. This only ever proves a message reached the provider for that
+// number; it says nothing about whether the person received or read it.
+export const buildGuardianTestPingMessage = (senderFirstName: string): string => {
+  const name = senderFirstName?.trim() || 'A Blaze Break user';
+  return `Nova Test: This is a test of ${name}'s Guardian Relay. No action needed - just confirming this contact method works.`;
+};
+
 // Extracts a real first name from a full name, falling back honestly
 // rather than guessing - an empty or whitespace-only name produces the
 // same generic fallback buildGuardianCallRequestMessage already uses.

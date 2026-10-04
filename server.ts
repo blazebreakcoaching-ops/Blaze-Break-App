@@ -32,7 +32,7 @@ import { memoryToolIsAllowed, searchMemories, isValidRecoveryDuration, validateM
 import { toClaudeTools, GeminiStyleToolDeclaration } from './nova-claude-tools';
 import { computeClimateStrain, computeClimateStrainByDimension, computeMoodStrain, computeOverallStrain, computeTrend } from './org-risk-trend';
 import { suggestRecognitionPrompts } from './positive-reinforcement';
-import { isRealGuardian, isValidGuardianPhone, buildGuardianCallRequestMessage, extractFirstName, nudgeSchedulerIsEnabled, guardianAlertsEnabled } from './guardian-alert';
+import { isRealGuardian, isValidGuardianPhone, buildGuardianCallRequestMessage, buildGuardianTestPingMessage, extractFirstName, nudgeSchedulerIsEnabled, guardianAlertsEnabled } from './guardian-alert';
 import { deriveEffectiveSharing, computeCapsuleExpiresAt, DEFAULT_SHARED_CATEGORIES } from './support-capsules';
 import { effectiveConsentStatus, canRespondToConsent, computeInviteExpiresAt, isInviteExpired } from './recovery-ally-consent';
 import { guardianSupportInvitationEnabled, validateGuardianSupportOffer, isValidGuardianSupportEventType, isValidGuardianSupportTemplateId, buildGuardianSupportMessage } from './guardian-support-invitation';
@@ -980,6 +980,46 @@ const GUARDIAN_STATE_COPY: Record<GuardianAlertState, string> = {
 // `finally` once the request finishes, success or failure.
 const guardianAlertInFlight = new Set<string>();
 
+// Shared by /api/guardian/alert and /api/guardian/contacts/:id/test-ping:
+// loads a user's own guardian contact strictly server-side (the phone
+// number is never taken from the request body - a caller can only ever
+// act on a contact that is genuinely their own, genuinely marked as a
+// guardian) and runs the same two gates with the same error shape. Reads
+// the validated support_circle subcollection first (the real source of
+// truth - see src/lib/support-circle.ts); falls back to the legacy
+// user_stats/core.supportCircle array for any account that hasn't opened
+// the app since the client-side migration to that subcollection shipped.
+// fromRealDoc tells a caller whether contact.id is a real document it can
+// merge-update (a legacy-array-only contact has no per-contact doc yet).
+async function resolveGuardianContact(db: any, uid: string, contactId: string): Promise<
+  | { ok: true; contact: any; statsSnap: any; fromRealDoc: boolean }
+  | { ok: false; status: number; body: any }
+> {
+  const [contactDocSnap, statsSnap] = await Promise.all([
+    db.collection("users").doc(uid).collection("support_circle").doc(contactId).get(),
+    db.collection("users").doc(uid).collection("user_stats").doc("core").get(),
+  ]);
+  let contact: any = contactDocSnap.exists ? { id: contactDocSnap.id, ...contactDocSnap.data() } : null;
+  const fromRealDoc = contactDocSnap.exists;
+  if (!contact) {
+    const legacySupportCircle: any[] = statsSnap.exists ? (statsSnap.data()?.supportCircle || []) : [];
+    contact = legacySupportCircle.find((c) => c?.id === contactId) || null;
+  }
+  if (!isRealGuardian(contact)) {
+    return {
+      ok: false, status: 403,
+      body: { error: "not_a_guardian", userMessage: "I don't have that person set up as a guardian. You can add one in the Ally tab." },
+    };
+  }
+  if (!isValidGuardianPhone(contact.contactMethod)) {
+    return {
+      ok: false, status: 400,
+      body: { error: "invalid_number", userMessage: `${contact.name}'s number isn't in a valid format. Edit it and try again.` },
+    };
+  }
+  return { ok: true, contact, statsSnap, fromRealDoc };
+}
+
 // §E.7's capability-registered kill switch - see guardian-alert.ts for why
 // this defaults enabled rather than following the spec's literal
 // "ship new, default off" step. Checked first thing inside the handler,
@@ -1035,37 +1075,12 @@ app.post("/api/guardian/alert", guardianAlertLimiter, verifyAppCheck, authentica
       });
     }
 
-    // Load the user's own guardian contact server-side and look it up by id
-    // - the phone number is never taken from the request body. A caller can
-    // only ever message a contact that is genuinely their own, genuinely
-    // marked as a guardian. Reads the validated support_circle subcollection
-    // first (the real source of truth - see src/lib/support-circle.ts);
-    // falls back to the legacy user_stats/core.supportCircle array for any
-    // account that hasn't opened the app since the client-side migration to
-    // that subcollection shipped, so a real alert send can't break during
-    // that transition window. statsSnap is also needed below regardless, for
-    // the sender's own name in the message template.
-    const [contactDocSnap, statsSnap] = await Promise.all([
-      db.collection("users").doc(uid).collection("support_circle").doc(contactId).get(),
-      db.collection("users").doc(uid).collection("user_stats").doc("core").get(),
-    ]);
-    let contact: any = contactDocSnap.exists ? { id: contactDocSnap.id, ...contactDocSnap.data() } : null;
-    if (!contact) {
-      const legacySupportCircle: any[] = statsSnap.exists ? (statsSnap.data()?.supportCircle || []) : [];
-      contact = legacySupportCircle.find(c => c?.id === contactId) || null;
-    }
-    if (!isRealGuardian(contact)) {
-      return res.status(403).json({
-        error: "not_a_guardian",
-        userMessage: "I don't have that person set up as a guardian. You can add one in the Ally tab.",
-      });
-    }
-    if (!isValidGuardianPhone(contact.contactMethod)) {
-      return res.status(400).json({
-        error: "invalid_number",
-        userMessage: `${contact.name}'s number isn't in a valid format. Edit it and try again.`,
-      });
-    }
+    // statsSnap is also needed below regardless, for the sender's own name
+    // in the message template - so a real alert send can't break during a
+    // migration-transition window where the contact is still legacy-only.
+    const resolved = await resolveGuardianContact(db, uid, contactId);
+    if (resolved.ok === false) return res.status(resolved.status).json(resolved.body);
+    const { contact, statsSnap } = resolved;
 
     // Cooldown: prevents accidental repeat sends to the same person, while
     // still letting a genuinely escalating situation try again immediately -
@@ -1169,6 +1184,51 @@ app.get("/api/guardian/alerts", verifyAppCheck, authenticateFirebaseUser, async 
       }),
     });
   } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// "Ping Status" reachability test (NovaGuardianRelay.tsx's GuardianCard).
+// Deliberately NOT the §B.3 [REVIEW]-gated verification mechanism - that
+// needs a safeguarding lead + privacy counsel decision this product
+// hasn't made (see guardian-alert.ts's buildGuardianTestPingMessage).
+// This only persists an honest "a test message reached the provider for
+// this number at this time" record, replacing the previous behaviour
+// where that same fact lived only in React state and vanished on reload
+// even though the test had genuinely just succeeded.
+app.post("/api/guardian/contacts/:id/test-ping", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const uid = requireAuth(req).uid;
+    const db = getDb();
+    const resolved = await resolveGuardianContact(db, uid, req.params.id);
+    if (resolved.ok === false) return res.status(resolved.status).json(resolved.body);
+    const { contact, statsSnap, fromRealDoc } = resolved;
+
+    const userStats = statsSnap.exists ? statsSnap.data() : null;
+    const firstName = extractFirstName(userStats?.profile?.fullName);
+    const message = buildGuardianTestPingMessage(firstName);
+    const result = await sendTwilioMessage(uid, contact.contactMethod, message, contact.notificationPreference === "whatsapp", 'manual_send');
+    if (!result.success) {
+      return res.status(502).json({ error: result.error, userMessage: `Couldn't reach ${contact.name} right now.` });
+    }
+
+    const now = new Date().toISOString();
+    // Only a contact that already has a real support_circle document can
+    // be merge-updated this way - one still living only in the legacy
+    // user_stats/core.supportCircle array has no per-contact doc yet. The
+    // test genuinely succeeded either way; this just can't be persisted
+    // for that already-deprecated path (the next load backfills it into a
+    // real document - see src/lib/support-circle.ts - after which this
+    // works normally).
+    if (fromRealDoc) {
+      await db.collection("users").doc(uid).collection("support_circle").doc(contact.id).set(
+        { lastTestPingAt: now, updatedAt: now },
+        { merge: true }
+      );
+    }
+    res.json({ success: true, lastTestPingAt: now, userMessage: `Test sent to ${contact.name}.` });
+  } catch (error: any) {
+    console.error("[Guardian test ping] error:", error?.message || error);
     res.status(500).json({ error: error.message });
   }
 });
