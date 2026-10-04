@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { HeartPulse, Loader2, AlertTriangle, CheckCircle2, Zap, Award, Activity, Send, Target } from 'lucide-react';
+import { HeartPulse, Loader2, AlertTriangle, CheckCircle2, Zap, Award, Activity, Send, Target, MessageCircle, HeartHandshake } from 'lucide-react';
 import { useAuth } from '../lib/auth';
 import { secureApiFetch } from '../lib/secure-api';
 
@@ -17,6 +17,7 @@ interface AllyData {
   sharedGoals?: SharedGoal[];
   longestStreak?: number;
   recentAvgMood?: number | null;
+  supportPreferences?: { helps: string; doesNotHelp: string };
 }
 
 export const AllyView = ({ token }: { token: string }) => {
@@ -153,6 +154,27 @@ export const AllyView = ({ token }: { token: string }) => {
             </div>
           </div>
         )}
+
+        {data?.supportPreferences && (data.supportPreferences.helps || data.supportPreferences.doesNotHelp) && (
+          <div className="card space-y-3">
+            <h2 className="font-bold text-text-main flex items-center gap-2"><MessageCircle className="w-4 h-4 text-primary" /> How to Support Me</h2>
+            {data.supportPreferences.helps && (
+              <p className="text-sm text-text-main"><strong>Helps:</strong> {data.supportPreferences.helps}</p>
+            )}
+            {data.supportPreferences.doesNotHelp && (
+              <p className="text-sm text-text-main"><strong>Doesn't help:</strong> {data.supportPreferences.doesNotHelp}</p>
+            )}
+          </div>
+        )}
+
+        <div className="card space-y-3 bg-surface">
+          <h2 className="font-bold text-text-main flex items-center gap-2"><HeartHandshake className="w-4 h-4 text-primary" /> A Couple of Things</h2>
+          <ul className="text-xs text-text-muted space-y-1.5 leading-relaxed">
+            <li>You're not expected to diagnose, monitor, or fix anything.</li>
+            <li>You can pause notifications or step back at any time, no explanation required.</li>
+            <li>This isn't a crisis service - if you're worried about their safety right now, reach out directly or contact emergency services.</li>
+          </ul>
+        </div>
 
         <div className="card space-y-4">
           <h2 className="font-bold text-text-main">Leave Them a Note</h2>

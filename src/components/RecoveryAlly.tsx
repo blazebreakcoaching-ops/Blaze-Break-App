@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { HeartPulse, CheckSquare, Target, Mail, Award, Trash2, CheckCircle2, AlertTriangle, ShieldCheck, Activity, Brain, Clock, Plus, ArrowRight, Zap, Loader2, Copy, Eye, X, Check } from 'lucide-react';
+import { HeartPulse, CheckSquare, Target, Mail, Award, Trash2, CheckCircle2, AlertTriangle, ShieldCheck, Activity, Brain, Clock, Plus, ArrowRight, Zap, Loader2, Copy, Eye, X, Check, MessageCircle, HeartHandshake } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { logJourney } from '../lib/nova-brain';
 import { secureApiFetch } from '../lib/secure-api';
@@ -20,6 +20,7 @@ interface PreviewData {
   sharedGoals?: { id: string; text: string; category: string; completedToday: boolean; streak: number }[];
   longestStreak?: number;
   recentAvgMood?: number | null;
+  supportPreferences?: { helps: string; doesNotHelp: string };
 }
 
 interface SharedGoal {
@@ -93,6 +94,15 @@ export const RecoveryAlly = () => {
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState('');
 
+  // "How to Support Me" (Master Support Circle spec): a short,
+  // user-authored, skippable note - never shown to the ally unless
+  // visibleToAlly is explicitly turned on.
+  const [supportHelps, setSupportHelps] = useState('');
+  const [supportDoesNotHelp, setSupportDoesNotHelp] = useState('');
+  const [supportVisibleToAlly, setSupportVisibleToAlly] = useState(false);
+  const [savingPreferences, setSavingPreferences] = useState(false);
+  const [preferencesSaved, setPreferencesSaved] = useState(false);
+
   const fetchGoals = async () => {
     if (!auth.currentUser) return;
     const snap = await getDocs(query(collection(db, 'users', auth.currentUser.uid, 'ally_shared_goals'), orderBy('createdAt', 'desc')));
@@ -117,6 +127,9 @@ export const RecoveryAlly = () => {
           setAllyName(data.allyName || '');
           setAllyEmail(data.allyEmail || '');
           setShareToken(data.shareToken || '');
+          setSupportHelps(data.supportHelps || '');
+          setSupportDoesNotHelp(data.supportDoesNotHelp || '');
+          setSupportVisibleToAlly(!!data.supportVisibleToAlly);
 
           if (data.isInvited) {
             const capsulesSnap = await getDocs(collection(db, 'users', uid, 'support_capsules'));
@@ -222,6 +235,28 @@ export const RecoveryAlly = () => {
       setPreviewError("Couldn't load the preview.");
     }
     setPreviewLoading(false);
+  };
+
+  // Writing the note and sharing it are separate acts - saving always
+  // persists helps/doesNotHelp regardless of the toggle, but they only
+  // ever reach buildAllyViewResponse (and therefore the ally's real page)
+  // when supportVisibleToAlly is true.
+  const savePreferences = async () => {
+    if (!auth.currentUser) return;
+    setSavingPreferences(true);
+    try {
+      await setDoc(doc(db, 'users', auth.currentUser.uid, 'recovery_ally', 'state'), {
+        supportHelps: supportHelps.trim(),
+        supportDoesNotHelp: supportDoesNotHelp.trim(),
+        supportVisibleToAlly,
+        updatedAt: new Date().toISOString(),
+      }, { merge: true });
+      setPreferencesSaved(true);
+      setTimeout(() => setPreferencesSaved(false), 2500);
+    } catch (e) {
+      setError('Could not save your support preferences.');
+    }
+    setSavingPreferences(false);
   };
 
   const handleInvite = async (e: React.FormEvent) => {
@@ -553,6 +588,88 @@ export const RecoveryAlly = () => {
           </div>
 
           <div className="lg:col-span-8 space-y-6">
+            {/* How to Support Me */}
+            <div className="card space-y-5">
+              <div className="flex items-center gap-3">
+                <MessageCircle className="w-5 h-5 text-primary" />
+                <div>
+                  <h3 className="font-bold text-text-main text-lg tracking-tight">How to Support Me</h3>
+                  <p className="text-xs text-text-muted mt-0.5">Optional - write a few words if it helps. Only shared with {allyName || 'your ally'} if you turn it on below.</p>
+                </div>
+              </div>
+
+              <div className="space-y-4">
+                <div className="space-y-1.5">
+                  <label htmlFor="support-helps" className="text-[11px] font-black uppercase tracking-widest text-text-muted ml-1">What helps</label>
+                  <textarea
+                    id="support-helps"
+                    value={supportHelps}
+                    onChange={(e) => setSupportHelps(e.target.value)}
+                    maxLength={300}
+                    rows={2}
+                    placeholder="e.g. Just checking in without asking for details."
+                    className="w-full bg-surface dark:bg-surface border border-border rounded-xl px-4 py-3 text-sm font-medium focus:outline-none focus:border-primary resize-none"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label htmlFor="support-does-not-help" className="text-[11px] font-black uppercase tracking-widest text-text-muted ml-1">What doesn't help</label>
+                  <textarea
+                    id="support-does-not-help"
+                    value={supportDoesNotHelp}
+                    onChange={(e) => setSupportDoesNotHelp(e.target.value)}
+                    maxLength={300}
+                    rows={2}
+                    placeholder="e.g. Advice I didn't ask for."
+                    className="w-full bg-surface dark:bg-surface border border-border rounded-xl px-4 py-3 text-sm font-medium focus:outline-none focus:border-primary resize-none"
+                  />
+                </div>
+
+                <label className="flex items-center justify-between p-3 rounded-lg border border-border bg-surface dark:bg-surface/50 cursor-pointer">
+                  <span className="text-xs font-bold text-text-main">Show this to {allyName || 'your ally'}</span>
+                  <input
+                    type="checkbox"
+                    checked={supportVisibleToAlly}
+                    onChange={(e) => setSupportVisibleToAlly(e.target.checked)}
+                    className="w-4 h-4 text-primary rounded border-border focus:ring-primary bg-transparent"
+                  />
+                </label>
+
+                <button
+                  onClick={savePreferences}
+                  disabled={savingPreferences}
+                  className="w-full flex items-center justify-center gap-2 py-3 bg-primary text-primary-foreground hover:opacity-90 rounded-lg text-xs font-bold uppercase tracking-widest transition-colors disabled:opacity-50"
+                >
+                  {savingPreferences ? <Loader2 className="w-4 h-4 animate-spin" /> : preferencesSaved ? <CheckCircle2 className="w-4 h-4" /> : null}
+                  {preferencesSaved ? 'Saved' : 'Save'}
+                </button>
+              </div>
+            </div>
+
+            {/* Our Support Handshake - mutual, non-binding expectations;
+                purely informational, nothing here is stored. */}
+            <div className="card space-y-4 bg-surface dark:bg-card/50">
+              <div className="flex items-center gap-3">
+                <HeartHandshake className="w-5 h-5 text-primary" />
+                <h3 className="font-bold text-text-main text-lg tracking-tight">Our Support Handshake</h3>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <h4 className="text-[11px] font-black uppercase tracking-widest text-text-muted">What you're agreeing to</h4>
+                  <ul className="text-xs text-text-muted space-y-1.5 leading-relaxed">
+                    <li>{allyName || 'Your ally'} only ever sees what you actively choose to share, and you can turn any of it off at any time.</li>
+                    <li>This isn't a crisis service - for anything urgent, use Guardian Relay instead.</li>
+                  </ul>
+                </div>
+                <div className="space-y-2">
+                  <h4 className="text-[11px] font-black uppercase tracking-widest text-text-muted">What {allyName || 'your ally'} is agreeing to</h4>
+                  <ul className="text-xs text-text-muted space-y-1.5 leading-relaxed">
+                    <li>They're not expected to diagnose, monitor, or fix anything.</li>
+                    <li>They can pause notifications or step back at any time, no explanation required.</li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+
             {/* Shared Goals */}
             <div className="card space-y-6">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -761,7 +878,14 @@ export const RecoveryAlly = () => {
                   {typeof previewData.recentAvgMood === 'number' && (
                     <p className="text-sm text-text-main"><strong>Recent average mood:</strong> {previewData.recentAvgMood}/10</p>
                   )}
-                  {!previewData.sharedGoals && typeof previewData.longestStreak !== 'number' && typeof previewData.recentAvgMood !== 'number' && (
+                  {previewData.supportPreferences && (
+                    <div className="space-y-2 p-3 bg-surface border border-border rounded-xl">
+                      <h4 className="text-xs font-black uppercase tracking-widest text-text-muted">How to Support Me</h4>
+                      {previewData.supportPreferences.helps && <p className="text-sm text-text-main"><strong>Helps:</strong> {previewData.supportPreferences.helps}</p>}
+                      {previewData.supportPreferences.doesNotHelp && <p className="text-sm text-text-main"><strong>Doesn't help:</strong> {previewData.supportPreferences.doesNotHelp}</p>}
+                    </div>
+                  )}
+                  {!previewData.sharedGoals && typeof previewData.longestStreak !== 'number' && typeof previewData.recentAvgMood !== 'number' && !previewData.supportPreferences && (
                     <p className="text-sm text-text-muted">Nothing is shared right now - {allyName || 'your ally'}'s page would be empty aside from the note box.</p>
                   )}
                 </div>
