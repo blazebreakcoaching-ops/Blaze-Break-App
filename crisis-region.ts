@@ -46,6 +46,20 @@ export function detectCrisisRegion(timeZone: string | undefined | null): CrisisR
   return "unknown";
 }
 
+// "Quick Support" previously only ever had two region-specific blocks
+// (UK/Ireland, US/Canada) - anyone outside both (most of the world's
+// population) saw two blocks of numbers they likely can't dial, with
+// nothing pointed at their own country. CrisisSupportContent now always
+// shows a third, global-directory block (findahelpline.com - a verified
+// aggregator covering 175+ countries, not hardcoded per-country numbers
+// this codebase has no way to keep current or verify) alongside the
+// existing two. This only decides whether that block leads or trails -
+// same reorder-hint philosophy as detectCrisisRegion above, never a
+// filter, since every block is always shown regardless.
+export function shouldShowGlobalDirectoryFirst(region: CrisisRegion): boolean {
+  return region === "unknown";
+}
+
 // Wrapped in try/catch since Intl.DateTimeFormat().resolvedOptions() can
 // throw in a locked-down or unusual environment - callers get null and
 // fall back to "unknown" (today's fixed order) rather than a crash.
