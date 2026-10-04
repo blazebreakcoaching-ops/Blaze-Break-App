@@ -33,6 +33,7 @@ import { toClaudeTools, GeminiStyleToolDeclaration } from './nova-claude-tools';
 import { computeClimateStrain, computeClimateStrainByDimension, computeMoodStrain, computeOverallStrain, computeTrend } from './org-risk-trend';
 import { suggestRecognitionPrompts } from './positive-reinforcement';
 import { isRealGuardian, isValidGuardianPhone, buildGuardianCallRequestMessage, extractFirstName, nudgeSchedulerIsEnabled, guardianAlertsEnabled } from './guardian-alert';
+import { deriveEffectiveSharing, computeCapsuleExpiresAt, DEFAULT_SHARED_CATEGORIES } from './support-capsules';
 import { guardianSupportInvitationEnabled, validateGuardianSupportOffer, isValidGuardianSupportEventType, isValidGuardianSupportTemplateId, buildGuardianSupportMessage } from './guardian-support-invitation';
 import { buildPrimaryIndicators, sortByAttention } from './org-leading-indicators';
 import { collectionsForExport, collectionsForErasure } from './user-data-collections';
@@ -9372,16 +9373,34 @@ app.post("/api/ally/invite", verifyAppCheck, authenticateFirebaseUser, async (re
     const db = getDb();
     const shareToken = crypto.randomBytes(24).toString('hex');
     const allyName = allyEmail.split('@')[0];
+    const now = new Date().toISOString();
 
     await db.collection("users").doc(user.uid).collection("recovery_ally").doc("state").set({
       isInvited: true,
       allyName,
       allyEmail: allyEmail.trim().toLowerCase(),
-      permissions: { viewGoals: true, viewMilestones: true, sendPings: true, viewEnergyStats: false },
       shareToken,
-      invitedAt: new Date().toISOString(),
+      invitedAt: now,
       updatedAt: FieldValue.serverTimestamp(),
     });
+
+    // Real Support Capsules (support-capsules.ts) replace the old blanket
+    // permissions object as of this invite - doc ID is the category, so
+    // this is exactly the same default share set DEFAULT_SHARED_CATEGORIES
+    // describes (Shared Goals/Milestone Updates/Allow Messages on, Energy
+    // Levels off by omission), just backed by real, individually-expirable
+    // documents instead of one static object.
+    const capsulesRef = db.collection("users").doc(user.uid).collection("support_capsules");
+    await Promise.all(DEFAULT_SHARED_CATEGORIES.map((category) =>
+      capsulesRef.doc(category).set({
+        category,
+        expiryType: "until_off",
+        startAt: now,
+        expiresAt: computeCapsuleExpiresAt("until_off", now),
+        createdAt: now,
+        updatedAt: FieldValue.serverTimestamp(),
+      })
+    ));
 
     const appBase = (process.env.APP_URL || "").replace(/\/$/, "");
     if (!appBase) {
@@ -9427,8 +9446,14 @@ app.post("/api/ally/revoke", verifyAppCheck, authenticateFirebaseUser, async (re
       allyName: '',
       allyEmail: '',
       shareToken: FieldValue.delete(),
+      permissions: FieldValue.delete(), // retire the pre-Support-Capsules blanket object, if present
       updatedAt: FieldValue.serverTimestamp(),
     }, { merge: true });
+    // Nothing should remain shared simply because it once was - removing
+    // an ally clears every capsule too, so a later re-invite (to the same
+    // or a different person) starts from a real, genuinely empty slate
+    // instead of inheriting whatever the previous relationship shared.
+    await db.recursiveDelete(db.collection("users").doc(user.uid).collection("support_capsules"));
     res.json({ success: true });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
@@ -9737,7 +9762,13 @@ app.get("/api/ally/view/:token", verifyAppCheck, async (req, res) => {
     if (!ownerRef) {
       return res.status(404).json({ error: "This link isn't valid." });
     }
-    const permissions = state.permissions || {};
+    // Real Support Capsules are the source of truth; the old blanket
+    // permissions object is only consulted per-category as a fallback for
+    // a relationship that predates capsules and hasn't been touched since
+    // (see support-capsules.ts's MIGRATION NOTE).
+    const capsulesSnap = await ownerRef.collection("support_capsules").get();
+    const capsules = capsulesSnap.docs.map(d => d.data() as { category: string; expiresAt: string | null });
+    const permissions = deriveEffectiveSharing(capsules as any, new Date().toISOString(), state.permissions || {});
     const response: any = { allyName: state.allyName || 'there' };
 
     if (permissions.viewGoals) {
@@ -9793,12 +9824,15 @@ app.post("/api/ally/view/:token/encourage", verifyAppCheck, async (req, res) => 
     }
     const stateDoc = stateSnap.docs[0];
     const state = stateDoc.data();
-    if (state.permissions?.sendPings === false) {
-      return res.status(403).json({ error: "This person has turned off messages for now." });
-    }
     const ownerRef = stateDoc.ref.parent.parent;
     if (!ownerRef) {
       return res.status(404).json({ error: "This link isn't valid." });
+    }
+    const capsulesSnap = await ownerRef.collection("support_capsules").get();
+    const capsules = capsulesSnap.docs.map(d => d.data() as { category: string; expiresAt: string | null });
+    const permissions = deriveEffectiveSharing(capsules as any, new Date().toISOString(), state.permissions || {});
+    if (!permissions.sendPings) {
+      return res.status(403).json({ error: "This person has turned off messages for now." });
     }
     await ownerRef.collection("ally_encouragements").add({
       type: 'personal',

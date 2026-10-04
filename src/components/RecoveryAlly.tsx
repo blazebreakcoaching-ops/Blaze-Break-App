@@ -7,6 +7,12 @@ import { secureApiFetch } from '../lib/secure-api';
 import { auth } from '../lib/firebase';
 import { db } from '../lib/firestore';
 import { doc, getDoc, setDoc, collection, addDoc, getDocs, deleteDoc, orderBy, query, limit } from 'firebase/firestore';
+import {
+  SupportCapsuleCategory,
+  SUPPORT_CAPSULE_CATEGORIES,
+  computeCapsuleExpiresAt,
+  deriveEffectiveSharing,
+} from '../../support-capsules';
 
 interface SharedGoal {
   id: string;
@@ -22,12 +28,7 @@ interface Encouragement {
   createdAt: string;
 }
 
-interface AllyPermissions {
-  viewGoals: boolean;
-  viewMilestones: boolean;
-  sendPings: boolean;
-  viewEnergyStats: boolean;
-}
+type AllyPermissions = Record<SupportCapsuleCategory, boolean>;
 
 const DEFAULT_PERMISSIONS: AllyPermissions = { viewGoals: true, viewMilestones: true, sendPings: true, viewEnergyStats: false };
 
@@ -84,16 +85,40 @@ export const RecoveryAlly = () => {
   useEffect(() => {
     const load = async () => {
       if (!auth.currentUser) { setLoading(false); return; }
+      const uid = auth.currentUser.uid;
       try {
-        const stateSnap = await getDoc(doc(db, 'users', auth.currentUser.uid, 'recovery_ally', 'state'));
+        const stateSnap = await getDoc(doc(db, 'users', uid, 'recovery_ally', 'state'));
         if (stateSnap.exists()) {
           const data = stateSnap.data();
           setIsInvited(!!data.isInvited);
           setAllyName(data.allyName || '');
           setAllyEmail(data.allyEmail || '');
           setShareToken(data.shareToken || '');
-          setPermissionsState({ ...DEFAULT_PERMISSIONS, ...(data.permissions || {}) });
+
           if (data.isInvited) {
+            const capsulesSnap = await getDocs(collection(db, 'users', uid, 'support_capsules'));
+            let capsules = capsulesSnap.docs.map((d) => d.data() as { category: SupportCapsuleCategory; expiresAt: string | null });
+
+            // One-time lazy migration for a relationship that predates
+            // Support Capsules: write real capsules for whatever the old
+            // blanket object had on, so this user's sharing is backed by
+            // the real model from here on (see support-capsules.ts's
+            // MIGRATION NOTE) instead of permanently relying on a fallback.
+            if (capsules.length === 0 && data.permissions) {
+              const now = new Date().toISOString();
+              const toCreate = SUPPORT_CAPSULE_CATEGORIES.filter((cat) => data.permissions[cat] === true);
+              await Promise.all(toCreate.map((category) => setDoc(doc(db, 'users', uid, 'support_capsules', category), {
+                category,
+                expiryType: 'until_off',
+                startAt: now,
+                expiresAt: computeCapsuleExpiresAt('until_off', now),
+                createdAt: now,
+                updatedAt: now,
+              })));
+              capsules = toCreate.map((category) => ({ category, expiresAt: null }));
+            }
+
+            setPermissionsState(deriveEffectiveSharing(capsules, new Date().toISOString(), data.permissions || {}) as AllyPermissions);
             await fetchGoals();
             await fetchEncouragements();
           }
@@ -106,14 +131,29 @@ export const RecoveryAlly = () => {
     load();
   }, []);
 
-  const savePermissions = async (next: AllyPermissions) => {
-    setPermissionsState(next);
+  // Toggling a category writes (or deletes) its own real Support Capsule -
+  // 'until_off' is the only expiry this checkbox-based UI offers for now
+  // (a real expiry-type picker is a later PR in this series); the
+  // underlying model already supports more, so that UI can land without
+  // another schema change.
+  const toggleCapsule = async (category: SupportCapsuleCategory, nextOn: boolean) => {
+    setPermissionsState((prev) => ({ ...prev, [category]: nextOn }));
     if (!auth.currentUser) return;
+    const uid = auth.currentUser.uid;
     try {
-      await setDoc(doc(db, 'users', auth.currentUser.uid, 'recovery_ally', 'state'), {
-        permissions: next,
-        updatedAt: new Date().toISOString(),
-      }, { merge: true });
+      if (nextOn) {
+        const now = new Date().toISOString();
+        await setDoc(doc(db, 'users', uid, 'support_capsules', category), {
+          category,
+          expiryType: 'until_off',
+          startAt: now,
+          expiresAt: computeCapsuleExpiresAt('until_off', now),
+          createdAt: now,
+          updatedAt: now,
+        });
+      } else {
+        await deleteDoc(doc(db, 'users', uid, 'support_capsules', category));
+      }
     } catch (e) {
       // Non-fatal - the toggle still reflects locally even if the save fails;
       // it'll revert to the last-saved value next time this loads.
@@ -350,7 +390,7 @@ export const RecoveryAlly = () => {
                       <Target className="w-4 h-4 text-text-muted group-hover:text-primary transition-colors" />
                       <span className="text-xs font-bold text-text-main">Shared Goals</span>
                     </div>
-                    <input type="checkbox" checked={permissions.viewGoals} onChange={() => savePermissions({ ...permissions, viewGoals: !permissions.viewGoals })} className="w-4 h-4 text-primary rounded border-border focus:ring-primary bg-transparent" />
+                    <input type="checkbox" checked={permissions.viewGoals} onChange={() => toggleCapsule('viewGoals', !permissions.viewGoals)} className="w-4 h-4 text-primary rounded border-border focus:ring-primary bg-transparent" />
                   </label>
 
                   <label className="flex items-center justify-between p-3 rounded-lg border border-border hover:border-primary/30 transition-colors cursor-pointer group bg-surface dark:bg-surface/50">
@@ -358,7 +398,7 @@ export const RecoveryAlly = () => {
                       <Award className="w-4 h-4 text-text-muted group-hover:text-primary transition-colors" />
                       <span className="text-xs font-bold text-text-main">Milestone Updates</span>
                     </div>
-                    <input type="checkbox" checked={permissions.viewMilestones} onChange={() => savePermissions({ ...permissions, viewMilestones: !permissions.viewMilestones })} className="w-4 h-4 text-primary rounded border-border focus:ring-primary bg-transparent" />
+                    <input type="checkbox" checked={permissions.viewMilestones} onChange={() => toggleCapsule('viewMilestones', !permissions.viewMilestones)} className="w-4 h-4 text-primary rounded border-border focus:ring-primary bg-transparent" />
                   </label>
 
                   <label className="flex items-center justify-between p-3 rounded-lg border border-border hover:border-primary/30 transition-colors cursor-pointer group bg-surface dark:bg-surface/50">
@@ -366,7 +406,7 @@ export const RecoveryAlly = () => {
                       <Activity className="w-4 h-4 text-text-muted group-hover:text-primary transition-colors" />
                       <span className="text-xs font-bold text-text-main">Energy Levels</span>
                     </div>
-                    <input type="checkbox" checked={permissions.viewEnergyStats} onChange={() => savePermissions({ ...permissions, viewEnergyStats: !permissions.viewEnergyStats })} className="w-4 h-4 text-primary rounded border-border focus:ring-primary bg-transparent" />
+                    <input type="checkbox" checked={permissions.viewEnergyStats} onChange={() => toggleCapsule('viewEnergyStats', !permissions.viewEnergyStats)} className="w-4 h-4 text-primary rounded border-border focus:ring-primary bg-transparent" />
                   </label>
 
                   <label className="flex items-center justify-between p-3 rounded-lg border border-border hover:border-primary/30 transition-colors cursor-pointer group bg-surface dark:bg-surface/50">
@@ -374,7 +414,7 @@ export const RecoveryAlly = () => {
                       <Mail className="w-4 h-4 text-text-muted group-hover:text-primary transition-colors" />
                       <span className="text-xs font-bold text-text-main">Allow Messages</span>
                     </div>
-                    <input type="checkbox" checked={permissions.sendPings} onChange={() => savePermissions({ ...permissions, sendPings: !permissions.sendPings })} className="w-4 h-4 text-primary rounded border-border focus:ring-primary bg-transparent" />
+                    <input type="checkbox" checked={permissions.sendPings} onChange={() => toggleCapsule('sendPings', !permissions.sendPings)} className="w-4 h-4 text-primary rounded border-border focus:ring-primary bg-transparent" />
                   </label>
                 </div>
               </div>
