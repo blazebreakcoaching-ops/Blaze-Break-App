@@ -36,6 +36,7 @@ import { isRealGuardian, isValidGuardianPhone, buildGuardianCallRequestMessage, 
 import { deriveEffectiveSharing, computeCapsuleExpiresAt, DEFAULT_SHARED_CATEGORIES } from './support-capsules';
 import { effectiveConsentStatus, canRespondToConsent, computeInviteExpiresAt, isInviteExpired } from './recovery-ally-consent';
 import { guardianSupportInvitationEnabled, validateGuardianSupportOffer, isValidGuardianSupportEventType, isValidGuardianSupportTemplateId, buildGuardianSupportMessage } from './guardian-support-invitation';
+import { quietHoursCheckPasses } from './ally-nudge-quiet-hours';
 import { buildPrimaryIndicators, sortByAttention } from './org-leading-indicators';
 import { collectionsForExport, collectionsForErasure } from './user-data-collections';
 import { htmlToPlainTextFallback, buildEmailVerificationEmail, buildPasswordResetEmail, buildPasswordChangedEmail, buildMfaEnabledEmail, buildMfaDisabledEmail, buildSupportRequestReceivedEmail, buildAllyInviteEmail, buildInactivityWarningEmail } from './brevo-templates';
@@ -859,6 +860,29 @@ async function sendTwilioMessage(
         recordCapabilityUsage(uid, 'sms_nudges', tierQuotaPlan, 1),
       ]);
     }
+    // Admin cost visibility (Master Support Circle spec) is a separate
+    // concern from the per-user tier quota above, and must never be
+    // conflated with it: guardian_alert is deliberately exempt from
+    // usageSubjectToCap (sms-guardrails.ts - "safety must not be removed
+    // to save money"), but that exemption previously also meant every
+    // Guardian Relay send was invisible to /api/admin/cost-usage's
+    // smsSegmentCount total, since that endpoint only ever read the
+    // conditionally-written smsCount field above. This write always
+    // happens, for every category, specifically so an admin can still see
+    // what Guardian Relay (and everything else) actually costs even
+    // though no individual user is ever capped by it.
+    // updatedAt must be set explicitly here, not assumed from the
+    // cap-subject block above: a guardian_alert-only day never enters
+    // that block (recordCapabilityUsage is what stamps updatedAt there),
+    // so without this, a day with only Guardian Relay sends would never
+    // match /api/admin/cost-usage's `where("updatedAt", ">=", sinceIso)`
+    // query at all - silently defeating this entire fix for the one
+    // category it exists for.
+    const nowIso = new Date().toISOString();
+    await Promise.all([
+      db.collection("users").doc(uid).collection("usage_counters").doc(dayKey).set({ allSmsCount: FieldValue.increment(1), [`categoryCounts.${category}`]: FieldValue.increment(1), updatedAt: nowIso }, { merge: true }),
+      db.collection("users").doc(uid).collection("usage_counters").doc(monthKey).set({ allSmsCount: FieldValue.increment(1), [`categoryCounts.${category}`]: FieldValue.increment(1), updatedAt: nowIso }, { merge: true }),
+    ]);
     return { success: true, sid: m.sid };
   } catch (error: any) {
     console.error("Twilio error:", error);
@@ -5737,6 +5761,12 @@ app.get("/api/admin/cost-usage", verifyAppCheck, authenticateFirebaseUser, async
     const sinceIso = new Date(Date.now() - periodDays * 24 * 60 * 60 * 1000).toISOString();
 
     const totals: UsageTotals = { novaTextCount: 0, novaVoiceCount: 0, diagnoseCount: 0, smsSegmentCount: 0 };
+    // Support Circle visibility (Master Support Circle spec): guardian_alert
+    // is deliberately exempt from the per-user SMS aggregate cap
+    // (sms-guardrails.ts), which previously also made it invisible here -
+    // broken out per-category so an admin can see what Guardian Relay
+    // specifically costs, not just a lump "everything" total.
+    const smsByCategory: Record<string, number> = { guardian_alert: 0, ally_nudge: 0, manual_send: 0 };
     // Nova usage broken down by plan tier - the one real, non-sensitive
     // commercial signal this pass can honestly report for the B2C
     // pricing brief's "Nova Live usage by tier" analytics ask. Built from
@@ -5760,10 +5790,17 @@ app.get("/api/admin/cost-usage", verifyAppCheck, authenticateFirebaseUser, async
         totals.novaTextCount += Number(data.nova_text) || 0;
         totals.novaVoiceCount += Number(data.nova_voice) || 0;
         totals.diagnoseCount += Number(data.diagnose) || 0;
-        // smsCount tracks messages sent, not exact provider segments (segment
-        // count isn't persisted per-send) - treated here as ~1 segment each,
-        // a conservative underestimate for any longer message.
-        totals.smsSegmentCount += Number(data.smsCount) || 0;
+        // allSmsCount (not the older, cap-scoped smsCount) tracks every
+        // SMS/WhatsApp send regardless of category, including
+        // guardian_alert - see sendTwilioMessage's comment on why that
+        // distinction matters. Treated as ~1 segment each (segment count
+        // isn't persisted per-send) - a conservative underestimate for
+        // any longer message.
+        totals.smsSegmentCount += Number(data.allSmsCount) || 0;
+        const categoryCounts = data.categoryCounts || {};
+        for (const cat of Object.keys(smsByCategory)) {
+          smsByCategory[cat] += Number(categoryCounts[cat]) || 0;
+        }
 
         // usage_counters docs always live at users/{uid}/usage_counters/{key}
         // - read the uid directly from the path segment rather than
@@ -5832,6 +5869,7 @@ app.get("/api/admin/cost-usage", verifyAppCheck, authenticateFirebaseUser, async
       isEstimate: true,
       note: "Rough internal estimates from captured usage counts, not live provider billing data. See docs/COST_MONITORING.md.",
       usage: totals,
+      smsByCategory,
       estimatedCostUsd: estimateCost(totals),
       byTier,
       planChanges: {
@@ -9738,6 +9776,13 @@ const NudgeScheduleBase = z.object({
   // have an account), so this is an honest human checkpoint rather than a
   // fabricated "consent verified" claim.
   contactAcknowledged: z.literal(true, { message: "Please confirm you've told this contact to expect these messages." }),
+  // Quiet hours (Master Support Circle spec, ally-nudge-quiet-hours.ts):
+  // same honest-checkpoint reasoning as contactAcknowledged above, for a
+  // different risk - a recurring, unattended send landing late at night
+  // or very early morning, which nothing previously warned about.
+  // Optional because it's only ever required when time actually falls in
+  // the quiet-hours window (enforced by the refine below, not here).
+  quietHoursAcknowledged: z.boolean().optional(),
 }).strict();
 
 // A weekly schedule must name at least one day. When frequency is absent
@@ -9746,7 +9791,11 @@ const weeklyNeedsDays = (data: { frequency?: 'daily' | 'weekly'; daysOfWeek?: nu
   data.frequency !== 'weekly' || (!!data.daysOfWeek && data.daysOfWeek.length > 0);
 const weeklyNeedsDaysError = { message: "Weekly schedules need at least one day selected.", path: ['daysOfWeek'] };
 
-const NudgeScheduleSchema = NudgeScheduleBase.refine(weeklyNeedsDays, weeklyNeedsDaysError);
+const quietHoursNeedsAck = (data: { time?: string; quietHoursAcknowledged?: boolean }) =>
+  quietHoursCheckPasses(data.time, data.quietHoursAcknowledged);
+const quietHoursNeedsAckError = { message: "This time falls during quiet hours (9pm-7am) - please confirm you still want to send then.", path: ['quietHoursAcknowledged'] };
+
+const NudgeScheduleSchema = NudgeScheduleBase.refine(weeklyNeedsDays, weeklyNeedsDaysError).refine(quietHoursNeedsAck, quietHoursNeedsAckError);
 
 app.post("/api/nudge-schedules", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
   try {
@@ -9788,7 +9837,7 @@ app.get("/api/nudge-schedules", verifyAppCheck, authenticateFirebaseUser, async 
 // weekly-days refinement is re-applied.
 const NudgeScheduleUpdateSchema = NudgeScheduleBase.partial().extend({
   contactAcknowledged: z.literal(true).optional(),
-}).refine(weeklyNeedsDays, weeklyNeedsDaysError);
+}).refine(weeklyNeedsDays, weeklyNeedsDaysError).refine(quietHoursNeedsAck, quietHoursNeedsAckError);
 
 app.patch("/api/nudge-schedules/:id", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
   try {
@@ -10002,6 +10051,24 @@ app.get("/api/ally/view/:token", verifyAppCheck, async (req, res) => {
       return res.status(404).json({ error: "This link isn't valid." });
     }
     const response = await resolveAllyViewForState(ownerRef, state);
+    // Privacy Receipt (Master Support Circle spec): the one honest,
+    // already-available signal for "did my ally actually open this" -
+    // this route IS the ally's real page, so a request reaching here is
+    // a genuine fetch of it, not an assumption. Only recorded once real
+    // shared data was actually returned (consentStatus === 'accepted'),
+    // never for a still-pending/declined/expired response - those aren't
+    // the ally checking in on shared data, and recording a view for them
+    // would conflate "opened a decision screen" with "saw what I shared".
+    // Deliberately NOT written into resolveAllyViewForState itself, since
+    // that function is also called by the owner's own Preview Their View
+    // (GET /api/ally/preview) - a view there is the owner looking at
+    // their own data, never a real ally check-in, and must never be
+    // recorded as one.
+    if (response.consentStatus === 'accepted') {
+      stateDoc.ref.update({ lastViewedAt: new Date().toISOString() }).catch(() => {
+        // Non-fatal - the ally's real page must never fail to load over this.
+      });
+    }
     res.json(response);
   } catch (err: any) {
     res.status(500).json({ error: "Could not load this page." });

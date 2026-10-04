@@ -57,10 +57,30 @@ describe('GET /api/admin/cost-usage', () => {
   it('aggregates usage_counters across multiple users within the lookback window', async () => {
     const today = new Date().toISOString();
     seedDoc('users/u1/usage_counters/day1', { nova_text: 10, diagnose: 2, updatedAt: today });
-    seedDoc('users/u2/usage_counters/day1', { nova_text: 5, nova_voice: 1, smsCount: 3, updatedAt: today });
+    // allSmsCount (not the older, cap-scoped smsCount) is what this
+    // total is built from now - see sendTwilioMessage's comment on why.
+    seedDoc('users/u2/usage_counters/day1', { nova_text: 5, nova_voice: 1, allSmsCount: 3, updatedAt: today });
     const res = await request(app).get('/api/admin/cost-usage').set(auth(ADMIN));
     expect(res.body.usage).toEqual({ novaTextCount: 15, novaVoiceCount: 1, diagnoseCount: 2, smsSegmentCount: 3 });
     expect(res.body.estimatedCostUsd.totalUsd).toBeGreaterThan(0);
+  });
+
+  // The actual point of this fix: guardian_alert is deliberately exempt
+  // from the per-user SMS aggregate cap (sms-guardrails.ts), which
+  // previously also meant every Guardian Relay send was invisible to
+  // this endpoint - smsCount was only ever incremented for cap-subject
+  // categories. allSmsCount/categoryCounts are written unconditionally
+  // for every category specifically so this gap can't recur silently.
+  it('counts guardian_alert sends even though they are exempt from the SMS aggregate cap', async () => {
+    const today = new Date().toISOString();
+    seedDoc('users/u1/usage_counters/day1', {
+      allSmsCount: 5,
+      categoryCounts: { guardian_alert: 2, ally_nudge: 3 },
+      updatedAt: today,
+    });
+    const res = await request(app).get('/api/admin/cost-usage').set(auth(ADMIN));
+    expect(res.body.usage.smsSegmentCount).toBe(5);
+    expect(res.body.smsByCategory).toEqual({ guardian_alert: 2, ally_nudge: 3, manual_send: 0 });
   });
 
   it('excludes usage_counters docs from outside the lookback window', async () => {

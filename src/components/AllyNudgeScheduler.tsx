@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { SupportContact } from '../types';
+import { isQuietHoursTime } from '../../ally-nudge-quiet-hours';
 
 interface NudgeSchedule {
   id: string;
@@ -53,6 +54,12 @@ export const AllyNudgeScheduler = ({ contacts }: AllyNudgeSchedulerProps) => {
   const [daysOfWeek, setDaysOfWeek] = useState<number[]>([1, 2, 3, 4, 5]);
   const [time, setTime] = useState('09:00');
   const [acknowledged, setAcknowledged] = useState(false);
+  // Quiet hours (Master Support Circle spec): a confirmation gate, not a
+  // scheduling restriction - resets whenever the chosen time moves back
+  // out of the quiet-hours window, so it can never silently carry over
+  // and cover for a later, different quiet-hours time.
+  const [quietHoursAcknowledged, setQuietHoursAcknowledged] = useState(false);
+  const isQuietHours = isQuietHoursTime(time);
 
   const detectedTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
@@ -80,7 +87,15 @@ export const AllyNudgeScheduler = ({ contacts }: AllyNudgeSchedulerProps) => {
     setDaysOfWeek([1, 2, 3, 4, 5]);
     setTime('09:00');
     setAcknowledged(false);
+    setQuietHoursAcknowledged(false);
     setError(null);
+  };
+
+  // A fresh time always needs a fresh decision - an acknowledgement given
+  // for one quiet-hours time must never silently cover a different one.
+  const handleTimeChange = (next: string) => {
+    setTime(next);
+    setQuietHoursAcknowledged(false);
   };
 
   const toggleDay = (day: number) => {
@@ -110,6 +125,10 @@ export const AllyNudgeScheduler = ({ contacts }: AllyNudgeSchedulerProps) => {
       setError("Please confirm you've told them to expect these messages.");
       return;
     }
+    if (isQuietHours && !quietHoursAcknowledged) {
+      setError('Please confirm you still want this to send during quiet hours (9pm-7am).');
+      return;
+    }
 
     setSubmitting(true);
     try {
@@ -127,6 +146,7 @@ export const AllyNudgeScheduler = ({ contacts }: AllyNudgeSchedulerProps) => {
           timezone: detectedTimezone,
           enabled: true,
           contactAcknowledged: true,
+          quietHoursAcknowledged: isQuietHours ? true : undefined,
         },
       });
       if (!res.ok) {
@@ -277,11 +297,28 @@ export const AllyNudgeScheduler = ({ contacts }: AllyNudgeSchedulerProps) => {
                         id="ally-nudge-time"
                         type="time"
                         value={time}
-                        onChange={e => setTime(e.target.value)}
+                        onChange={e => handleTimeChange(e.target.value)}
                         className="w-full bg-white dark:bg-surface border border-border rounded-xl px-4 py-2.5 text-sm font-medium focus:outline-none focus:border-primary"
                       />
                     </div>
                   </div>
+
+                  {/* Quiet hours (Master Support Circle spec): a
+                      confirmation gate, not a block - the owner can still
+                      choose a late-night time (a genuinely escalating
+                      situation shouldn't be stuck waiting for daylight),
+                      they just have to mean it. */}
+                  {isQuietHours && (
+                    <label className="flex items-start gap-3 cursor-pointer p-3 bg-warning/10 border border-warning/20 rounded-xl">
+                      <div className={cn("w-5 h-5 rounded flex items-center justify-center shrink-0 mt-0.5 border-2 transition-all", quietHoursAcknowledged ? "bg-primary border-primary" : "bg-white dark:bg-surface border-border")}>
+                        {quietHoursAcknowledged && <CheckCircle2 className="w-3.5 h-3.5 text-primary-foreground" />}
+                      </div>
+                      <input type="checkbox" checked={quietHoursAcknowledged} onChange={e => setQuietHoursAcknowledged(e.target.checked)} className="hidden" />
+                      <span className="text-xs text-text-main leading-relaxed">
+                        <strong>{time} falls during typical quiet hours (9pm-7am).</strong> I still want this to send at that time.
+                      </span>
+                    </label>
+                  )}
 
                   {frequency === 'weekly' && (
                     <div className="flex gap-1.5 flex-wrap">

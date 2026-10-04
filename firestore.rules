@@ -1180,7 +1180,7 @@ service cloud.firestore {
       match /recovery_ally/state {
         allow read, delete: if isOwner(uid);
         allow create, update: if isOwner(uid)
-            && request.resource.data.keys().hasOnly(['isInvited', 'allyName', 'allyEmail', 'permissions', 'shareToken', 'invitedAt', 'updatedAt', 'supportHelps', 'supportDoesNotHelp', 'supportVisibleToAlly', 'consentStatus', 'consentRespondedAt', 'inviteExpiresAt', 'sharingPaused'])
+            && request.resource.data.keys().hasOnly(['isInvited', 'allyName', 'allyEmail', 'permissions', 'shareToken', 'invitedAt', 'updatedAt', 'supportHelps', 'supportDoesNotHelp', 'supportVisibleToAlly', 'consentStatus', 'consentRespondedAt', 'inviteExpiresAt', 'sharingPaused', 'lastViewedAt'])
             && (!('allyEmail' in request.resource.data) || isStringWithMax(request.resource.data.allyEmail, 200))
             && (!('allyName' in request.resource.data) || isStringWithMax(request.resource.data.allyName, 100))
             // "How to Support Me" (Master Support Circle spec) - a short,
@@ -1202,7 +1202,13 @@ service cloud.firestore {
             // Remove Ally; only ever written server-side (pause-sharing/
             // resume-sharing, via the Admin SDK), same as the consent
             // fields above.
-            && (!('sharingPaused' in request.resource.data) || request.resource.data.sharingPaused is bool);
+            && (!('sharingPaused' in request.resource.data) || request.resource.data.sharingPaused is bool)
+            // Privacy Receipt (Master Support Circle spec) - only ever
+            // written server-side (GET /api/ally/view/:token, via the
+            // Admin SDK) the instant the ally's real page is actually
+            // fetched with real data in the response; this just
+            // validates shape for the owner's own direct reads/writes.
+            && (!('lastViewedAt' in request.resource.data) || request.resource.data.lastViewedAt is string);
       }
 
       // Recurring accountability nudges sent to a user's chosen support
@@ -1212,7 +1218,7 @@ service cloud.firestore {
       match /nudge_schedules/{scheduleId} {
         allow read, delete: if isOwner(uid);
         allow create, update: if isOwner(uid)
-            && request.resource.data.keys().hasOnly(['contactId', 'contactName', 'contactMethod', 'notificationPreference', 'message', 'frequency', 'daysOfWeek', 'time', 'timezone', 'enabled', 'contactAcknowledged', 'createdAt', 'updatedAt'])
+            && request.resource.data.keys().hasOnly(['contactId', 'contactName', 'contactMethod', 'notificationPreference', 'message', 'frequency', 'daysOfWeek', 'time', 'timezone', 'enabled', 'contactAcknowledged', 'quietHoursAcknowledged', 'createdAt', 'updatedAt'])
             && request.resource.data.keys().hasAll(['contactId', 'contactMethod', 'message', 'frequency', 'time', 'timezone', 'enabled', 'contactAcknowledged', 'createdAt', 'updatedAt'])
             && isStringWithMax(request.resource.data.message, 300)
             && request.resource.data.contactMethod is string && request.resource.data.contactMethod.size() >= 8 && request.resource.data.contactMethod.size() <= 16
@@ -1222,6 +1228,11 @@ service cloud.firestore {
             && request.resource.data.enabled is bool
             && request.resource.data.contactAcknowledged is bool
             && (!('daysOfWeek' in request.resource.data) || (request.resource.data.daysOfWeek is list && request.resource.data.daysOfWeek.size() <= 7))
+            // Quiet hours (ally-nudge-quiet-hours.ts) - same honest-
+            // checkpoint shape as contactAcknowledged above; the real
+            // cross-field "is this time actually in quiet hours" check
+            // lives in server.ts's zod refine, not here.
+            && (!('quietHoursAcknowledged' in request.resource.data) || request.resource.data.quietHoursAcknowledged is bool)
             && (request.method == 'create' ? true : checkCreatedAtUnchanged());
       }
 
