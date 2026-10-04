@@ -581,8 +581,8 @@ First separate the user's internal reaction from what actually needs to be commu
       </div>
 
       {mode === 'generator' ? (
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-          <div className="lg:col-span-4 max-w-none space-y-6">
+        <div className="grid grid-cols-1 xl:grid-cols-12 gap-8">
+          <div className="xl:col-span-5 min-w-0 space-y-6">
             <div className="card bg-card border border-border p-8 space-y-6 relative overflow-hidden group">
               <div className="relative z-10 space-y-3 border-b border-border pb-5">
                 <h4 className="text-lg font-bold text-text-main flex items-center gap-2 tracking-tight">
@@ -714,7 +714,7 @@ First separate the user's internal reaction from what actually needs to be commu
             )}
           </div>
 
-          <div className="lg:col-span-8 space-y-6">
+          <div className="xl:col-span-7 min-w-0 space-y-6">
             <h4 className="text-xs font-medium uppercase tracking-[0.2em] text-text-muted flex items-center gap-2">
               <Zap className="w-3.5 h-3.5" /> How This Was Compiled
             </h4>

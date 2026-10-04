@@ -322,7 +322,7 @@ export const BoundaryAutopilot = ({ onNavigate }: BoundaryAutopilotProps) => {
         </p>
       </div>
 
-      <div className="flex gap-2 overflow-x-auto pb-1" role="tablist">
+      <div className="flex flex-wrap gap-2" role="tablist">
         {tabs.map((t) => (
           <button
             key={t.id}

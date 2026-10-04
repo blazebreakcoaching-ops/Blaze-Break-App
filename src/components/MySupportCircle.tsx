@@ -115,7 +115,7 @@ export const MySupportCircle = ({ contacts, realContacts, onAdd, onRemove, userN
         </div>
       </div>
 
-      <div role="tablist" aria-label="Support Circle sections" className="flex items-center gap-2 border-b border-border overflow-x-auto">
+      <div role="tablist" aria-label="Support Circle sections" className="flex flex-wrap items-center gap-2 border-b border-border">
         {NAV_ITEMS.map((item) => (
           <button
             key={item.id}

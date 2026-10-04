@@ -2533,8 +2533,8 @@ export default function App() {
                 ) : (
                   <>
                 <CapacityFirewall onNavigate={safeSetActiveTab as any} />
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-12">
-                  <div className="lg:col-span-2 space-y-12">
+                <div className="grid grid-cols-1 xl:grid-cols-3 gap-12">
+                  <div className="xl:col-span-2 min-w-0 space-y-12">
                     <BoundaryRehearsal
                       onAwardPoints={awardPoints}
                       onRehearsalComplete={incrementRehearsal}
@@ -2544,7 +2544,7 @@ export default function App() {
                     />
                     <BoundaryAutopilot onNavigate={safeSetActiveTab as any} />
                   </div>
-                  <div className="space-y-8">
+                  <div className="min-w-0 space-y-8">
                     <NegotiatorTool />
                     <div className="card bg-card text-text-main border-border space-y-6 transition-colors duration-500">
                       <h4 className="text-xs font-black uppercase tracking-widest text-primary">
