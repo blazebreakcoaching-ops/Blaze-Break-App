@@ -79,6 +79,11 @@ export const RecoveryAlly = () => {
   // single capsule record, so Resume restores exactly what was shared.
   const [sharingPaused, setSharingPaused] = useState(false);
   const [pausingSharing, setPausingSharing] = useState(false);
+  // Privacy Receipt (Master Support Circle spec): the real, server-
+  // recorded instant the ally's own page last actually fetched shared
+  // data (GET /api/ally/view/:token) - not an assumption, and never set
+  // by the owner's own Preview Their View.
+  const [lastViewedAt, setLastViewedAt] = useState<string | null>(null);
   const [permissions, setPermissionsState] = useState<AllyPermissions>(DEFAULT_PERMISSIONS);
   const [sharedGoals, setSharedGoals] = useState<SharedGoal[]>([]);
   const [encouragements, setEncouragements] = useState<Encouragement[]>([]);
@@ -142,6 +147,7 @@ export const RecoveryAlly = () => {
           setConsentStatus(effectiveConsentStatus(data.consentStatus));
           setInviteExpiresAt(data.inviteExpiresAt || null);
           setSharingPaused(!!data.sharingPaused);
+          setLastViewedAt(data.lastViewedAt || null);
           setSupportHelps(data.supportHelps || '');
           setSupportDoesNotHelp(data.supportDoesNotHelp || '');
           setSupportVisibleToAlly(!!data.supportVisibleToAlly);
@@ -556,6 +562,19 @@ export const RecoveryAlly = () => {
                   )}
                 </div>
               </div>
+
+              {/* Privacy Receipt: an honest "did they actually look"
+                  signal, distinct from consent (accepting doesn't mean
+                  they've opened the link since). Only ever shown once
+                  accepted - a receipt for a decision screen they haven't
+                  acted on yet would be meaningless. */}
+              {consentStatus === 'accepted' && (
+                <p className="text-[11px] text-text-muted -mt-2">
+                  {lastViewedAt
+                    ? `${allyName || 'They'} last checked their link on ${new Date(lastViewedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}.`
+                    : `${allyName || 'They'} haven't opened their link yet.`}
+                </p>
+              )}
 
               {(consentStatus === 'declined' || inviteExpired) && (
                 <div className="p-3 bg-surface rounded-lg border border-border space-y-2">

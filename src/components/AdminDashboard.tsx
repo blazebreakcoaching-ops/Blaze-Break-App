@@ -141,6 +141,12 @@ export const AdminDashboard = () => {
   const [feedbackSubmissions, setFeedbackSubmissions] = useState<FeedbackSubmission[]>([]);
   const [feedbackCategoryFilter, setFeedbackCategoryFilter] = useState<'all' | FeedbackSubmission['category']>('all');
   const [metrics, setMetrics] = useState<ResetMetrics | null>(null);
+  // Support Circle messaging cost visibility (Master Support Circle spec):
+  // guardian_alert is deliberately exempt from the per-user SMS cap
+  // (sms-guardrails.ts), which previously also made it invisible to
+  // /api/admin/cost-usage entirely - retiring the honest "Not yet
+  // tracked" placeholder below only once this is real data, not before.
+  const [supportCircleCost, setSupportCircleCost] = useState<{ periodDays: number; guardianAlertCount: number; smsUsd: number } | null>(null);
   const [orgs, setOrgs] = useState<{ id: string; name: string; joinCode: string; privacyThreshold: number; memberCount: number; adminCount: number }[]>([]);
 
   const [loading, setLoading] = useState(true);
@@ -307,11 +313,30 @@ export const AdminDashboard = () => {
 
       // 4. Calculate Somatic Reset Metrics
       await fetchSomaticMetrics();
+      // 5. Support Circle messaging cost visibility
+      await fetchSupportCircleCost();
 
     } catch (e: any) {
       setError(e.message);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchSupportCircleCost = async () => {
+    try {
+      const res = await secureApiFetch('/api/admin/cost-usage');
+      if (!res.ok) { setSupportCircleCost(null); return; }
+      const data = await res.json();
+      setSupportCircleCost({
+        periodDays: data.periodDays ?? 7,
+        guardianAlertCount: data.smsByCategory?.guardian_alert ?? 0,
+        smsUsd: data.estimatedCostUsd?.smsUsd ?? 0,
+      });
+    } catch (e) {
+      // Non-fatal - this card just falls back to its own "not available"
+      // state rather than failing the whole dashboard load.
+      setSupportCircleCost(null);
     }
   };
 
@@ -759,9 +784,20 @@ export const AdminDashboard = () => {
             </div>
           </div>
           <div className="pt-2 border-t border-white/5 flex items-center justify-between text-[11px] text-text-muted">
-            <span>Guardian Alerts: <strong className="text-text-muted font-semibold">Not yet tracked</strong></span>
+            <span>
+              Guardian Alerts ({supportCircleCost?.periodDays ?? 7}d): {supportCircleCost ? (
+                <strong className="text-text-main font-semibold">{supportCircleCost.guardianAlertCount} Sent</strong>
+              ) : (
+                <strong className="text-text-muted font-semibold">Not available</strong>
+              )}
+            </span>
             <span>Crisis Referrals: <strong className="text-text-main font-semibold">{metrics?.crisisReferrals ?? 0} Triggers</strong></span>
           </div>
+          {supportCircleCost && supportCircleCost.smsUsd > 0 && (
+            <div className="pt-2 border-t border-white/5 text-[11px] text-text-muted">
+              <span>All SMS/WhatsApp ({supportCircleCost.periodDays}d) est. cost: <strong className="text-text-main font-semibold">${supportCircleCost.smsUsd.toFixed(2)}</strong> <span className="italic">(rough internal estimate, not live provider billing - see docs/COST_MONITORING.md)</span></span>
+            </div>
+          )}
         </div>
       </div>
 
