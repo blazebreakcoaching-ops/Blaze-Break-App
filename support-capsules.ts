@@ -122,15 +122,23 @@ export const isCapsuleActive = (capsule: Pick<SupportCapsule, 'expiresAt'>, now:
 // means it's shared; a category with no capsule at all falls back to the
 // legacy boolean (see MIGRATION NOTE above) - there is otherwise no
 // "shared by default" behaviour anywhere in this function.
+//
+// `paused` is "Stop Sharing" (Master Support Circle spec): a distinct,
+// reversible action from Remove Ally - it forces every category to
+// false without touching a single capsule record, so resuming restores
+// exactly what was shared before, with no re-selection needed.
 export const deriveEffectiveSharing = (
   capsules: Pick<SupportCapsule, 'category' | 'expiresAt'>[],
   now: string,
-  legacyFallback: Partial<Record<SupportCapsuleCategory, boolean>> = {}
+  legacyFallback: Partial<Record<SupportCapsuleCategory, boolean>> = {},
+  paused: boolean = false
 ): Record<SupportCapsuleCategory, boolean> => {
   const categoriesWithCapsule = new Set(capsules.map((c) => c.category));
   const result = {} as Record<SupportCapsuleCategory, boolean>;
   for (const category of SUPPORT_CAPSULE_CATEGORIES) {
-    if (categoriesWithCapsule.has(category)) {
+    if (paused) {
+      result[category] = false;
+    } else if (categoriesWithCapsule.has(category)) {
       result[category] = capsules.some((c) => c.category === category && isCapsuleActive(c, now));
     } else {
       result[category] = legacyFallback[category] === true;
