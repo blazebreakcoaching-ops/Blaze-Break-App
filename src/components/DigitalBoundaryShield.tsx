@@ -142,7 +142,7 @@ export const DigitalBoundaryShield = ({ fingerprint, onAwardPoints, onNavigate }
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
 
         <div className="lg:col-span-2 space-y-8">
           {/* Urgent or Loud? - guided, never a one-line pronouncement */}

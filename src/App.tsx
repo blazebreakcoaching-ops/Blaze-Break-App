@@ -2533,7 +2533,7 @@ export default function App() {
                 ) : (
                   <>
                 <CapacityFirewall onNavigate={safeSetActiveTab as any} />
-                <div className="grid grid-cols-1 xl:grid-cols-3 gap-12">
+                <div className="grid grid-cols-1 xl:grid-cols-3 gap-12 items-start">
                   <div className="xl:col-span-2 min-w-0 space-y-12">
                     <BoundaryRehearsal
                       onAwardPoints={awardPoints}

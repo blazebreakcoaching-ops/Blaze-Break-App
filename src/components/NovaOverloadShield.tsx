@@ -246,7 +246,7 @@ export const NovaOverloadShield = ({ fingerprint, onAwardPoints, onNavigate }: N
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
         
         {/* Left Column: Input & Privacy */}
         <div className="space-y-8">

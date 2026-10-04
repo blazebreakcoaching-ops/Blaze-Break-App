@@ -133,7 +133,7 @@ export const MySupportCircle = ({ contacts, realContacts, onAdd, onRemove, userN
       </div>
 
       {view === 'overview' && (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-start">
           <div className="card p-6 space-y-4">
             <h3 className="text-xs font-black uppercase tracking-widest text-text-muted">Who's in my corner</h3>
             {loadingSummary ? (

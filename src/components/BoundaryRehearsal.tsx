@@ -581,7 +581,7 @@ First separate the user's internal reaction from what actually needs to be commu
       </div>
 
       {mode === 'generator' ? (
-        <div className="grid grid-cols-1 xl:grid-cols-12 gap-8">
+        <div className="grid grid-cols-1 xl:grid-cols-12 gap-8 items-start">
           <div className="xl:col-span-5 min-w-0 space-y-6">
             <div className="card bg-card border border-border p-8 space-y-6 relative overflow-hidden group">
               <div className="relative z-10 space-y-3 border-b border-border pb-5">
