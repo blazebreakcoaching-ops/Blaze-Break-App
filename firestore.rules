@@ -1180,7 +1180,7 @@ service cloud.firestore {
       match /recovery_ally/state {
         allow read, delete: if isOwner(uid);
         allow create, update: if isOwner(uid)
-            && request.resource.data.keys().hasOnly(['isInvited', 'allyName', 'allyEmail', 'permissions', 'shareToken', 'invitedAt', 'updatedAt', 'supportHelps', 'supportDoesNotHelp', 'supportVisibleToAlly'])
+            && request.resource.data.keys().hasOnly(['isInvited', 'allyName', 'allyEmail', 'permissions', 'shareToken', 'invitedAt', 'updatedAt', 'supportHelps', 'supportDoesNotHelp', 'supportVisibleToAlly', 'consentStatus', 'consentRespondedAt', 'inviteExpiresAt'])
             && (!('allyEmail' in request.resource.data) || isStringWithMax(request.resource.data.allyEmail, 200))
             && (!('allyName' in request.resource.data) || isStringWithMax(request.resource.data.allyName, 100))
             // "How to Support Me" (Master Support Circle spec) - a short,
@@ -1188,7 +1188,16 @@ service cloud.firestore {
             // unless supportVisibleToAlly is explicitly true.
             && (!('supportHelps' in request.resource.data) || isStringWithMax(request.resource.data.supportHelps, 300))
             && (!('supportDoesNotHelp' in request.resource.data) || isStringWithMax(request.resource.data.supportDoesNotHelp, 300))
-            && (!('supportVisibleToAlly' in request.resource.data) || request.resource.data.supportVisibleToAlly is bool);
+            && (!('supportVisibleToAlly' in request.resource.data) || request.resource.data.supportVisibleToAlly is bool)
+            // Mandatory Ally Consent + magic-link expiry (Master Support
+            // Circle spec) - consentStatus/consentRespondedAt/inviteExpiresAt
+            // are only ever written server-side (invite/regenerate-link/
+            // the public consent endpoint, all via the Admin SDK, which
+            // bypasses these rules), so this just validates shape for the
+            // owner's own direct reads of their own document.
+            && (!('consentStatus' in request.resource.data) || request.resource.data.consentStatus in ['pending', 'accepted', 'declined'])
+            && (!('consentRespondedAt' in request.resource.data) || request.resource.data.consentRespondedAt is string)
+            && (!('inviteExpiresAt' in request.resource.data) || request.resource.data.inviteExpiresAt is string);
       }
 
       // Recurring accountability nudges sent to a user's chosen support

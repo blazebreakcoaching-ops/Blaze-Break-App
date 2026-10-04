@@ -34,6 +34,7 @@ import { computeClimateStrain, computeClimateStrainByDimension, computeMoodStrai
 import { suggestRecognitionPrompts } from './positive-reinforcement';
 import { isRealGuardian, isValidGuardianPhone, buildGuardianCallRequestMessage, extractFirstName, nudgeSchedulerIsEnabled, guardianAlertsEnabled } from './guardian-alert';
 import { deriveEffectiveSharing, computeCapsuleExpiresAt, DEFAULT_SHARED_CATEGORIES } from './support-capsules';
+import { effectiveConsentStatus, canRespondToConsent, computeInviteExpiresAt, isInviteExpired } from './recovery-ally-consent';
 import { guardianSupportInvitationEnabled, validateGuardianSupportOffer, isValidGuardianSupportEventType, isValidGuardianSupportTemplateId, buildGuardianSupportMessage } from './guardian-support-invitation';
 import { buildPrimaryIndicators, sortByAttention } from './org-leading-indicators';
 import { collectionsForExport, collectionsForErasure } from './user-data-collections';
@@ -9408,6 +9409,39 @@ const buildAllyViewResponse = async (ownerRef: any, permissions: Record<string, 
   return response;
 };
 
+// Mandatory Ally Consent (Master Support Circle spec): the single place
+// that decides whether real data is visible at all, used by both the
+// public GET /api/ally/view/:token (the ally's real page) and GET
+// /api/ally/preview ("Preview Their View" - which must show what the
+// ally would genuinely see right now, including a still-pending or
+// declined state, not the data they'd see once accepted). An expired,
+// still-pending invite is reported before consent status, since there's
+// nothing left to accept or decline at that point.
+const resolveAllyViewForState = async (ownerRef: any, state: any) => {
+  const now = new Date().toISOString();
+  const allyName = state?.allyName || 'there';
+
+  if (isInviteExpired(state?.inviteExpiresAt, state?.consentStatus, now)) {
+    return { allyName, expired: true };
+  }
+
+  const consentStatus = effectiveConsentStatus(state?.consentStatus);
+  if (consentStatus !== 'accepted') {
+    return { allyName, consentStatus };
+  }
+
+  // Real Support Capsules are the source of truth; the old blanket
+  // permissions object is only consulted per-category as a fallback for
+  // a relationship that predates capsules and hasn't been touched since
+  // (see support-capsules.ts's MIGRATION NOTE).
+  const capsulesSnap = await ownerRef.collection("support_capsules").get();
+  const capsules = capsulesSnap.docs.map((d: any) => d.data() as { category: string; expiresAt: string | null });
+  const permissions = deriveEffectiveSharing(capsules as any, now, state?.permissions || {});
+  const response = await buildAllyViewResponse(ownerRef, permissions, state);
+  response.consentStatus = 'accepted';
+  return response;
+};
+
 // ============ Recovery Ally (real, two-sided accountability) ============
 // The ally doesn't need their own Blaze Break account - they get a real
 // emailed link to an unauthenticated, token-scoped view of exactly what the
@@ -9433,6 +9467,14 @@ app.post("/api/ally/invite", verifyAppCheck, authenticateFirebaseUser, async (re
       allyEmail: allyEmail.trim().toLowerCase(),
       shareToken,
       invitedAt: now,
+      // Mandatory Ally Consent (Master Support Circle spec): the
+      // relationship starts pending, never live, until the ally actively
+      // accepts via the consent endpoint below - opening the link alone
+      // never implies consent. Time-boxed so an unanswered invite doesn't
+      // sit silently clickable forever; re-sendable via
+      // POST /api/ally/regenerate-link.
+      consentStatus: "pending",
+      inviteExpiresAt: computeInviteExpiresAt(now),
       updatedAt: FieldValue.serverTimestamp(),
     });
 
@@ -9499,6 +9541,9 @@ app.post("/api/ally/revoke", verifyAppCheck, authenticateFirebaseUser, async (re
       allyEmail: '',
       shareToken: FieldValue.delete(),
       permissions: FieldValue.delete(), // retire the pre-Support-Capsules blanket object, if present
+      consentStatus: FieldValue.delete(),
+      consentRespondedAt: FieldValue.delete(),
+      inviteExpiresAt: FieldValue.delete(),
       updatedAt: FieldValue.serverTimestamp(),
     }, { merge: true });
     // Nothing should remain shared simply because it once was - removing
@@ -9507,6 +9552,36 @@ app.post("/api/ally/revoke", verifyAppCheck, authenticateFirebaseUser, async (re
     // instead of inheriting whatever the previous relationship shared.
     await db.recursiveDelete(db.collection("users").doc(user.uid).collection("support_capsules"));
     res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Magic-link hardening (Master Support Circle spec): "immediate revoke
+// and regenerate if compromised". Issues a brand new token and resets
+// consent to pending - the old token stops matching anything the instant
+// this writes (the public view route looks it up by exact value), and
+// the ally has to actively consent again before any data is shared
+// through the new link, same as a fresh invite.
+app.post("/api/ally/regenerate-link", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const user = requireAuth(req);
+    const db = getDb();
+    const stateRef = db.collection("users").doc(user.uid).collection("recovery_ally").doc("state");
+    const stateSnap = await stateRef.get();
+    if (!stateSnap.exists || !stateSnap.data()?.isInvited) {
+      return res.status(404).json({ error: "You haven't invited a Recovery Ally yet." });
+    }
+    const shareToken = crypto.randomBytes(24).toString('hex');
+    const now = new Date().toISOString();
+    await stateRef.set({
+      shareToken,
+      consentStatus: "pending",
+      inviteExpiresAt: computeInviteExpiresAt(now),
+      consentRespondedAt: FieldValue.delete(),
+      updatedAt: FieldValue.serverTimestamp(),
+    }, { merge: true });
+    res.json({ success: true, shareToken });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
@@ -9814,15 +9889,7 @@ app.get("/api/ally/view/:token", verifyAppCheck, async (req, res) => {
     if (!ownerRef) {
       return res.status(404).json({ error: "This link isn't valid." });
     }
-    // Real Support Capsules are the source of truth; the old blanket
-    // permissions object is only consulted per-category as a fallback for
-    // a relationship that predates capsules and hasn't been touched since
-    // (see support-capsules.ts's MIGRATION NOTE).
-    const capsulesSnap = await ownerRef.collection("support_capsules").get();
-    const capsules = capsulesSnap.docs.map(d => d.data() as { category: string; expiresAt: string | null });
-    const permissions = deriveEffectiveSharing(capsules as any, new Date().toISOString(), state.permissions || {});
-    const response = await buildAllyViewResponse(ownerRef, permissions, state);
-
+    const response = await resolveAllyViewForState(ownerRef, state);
     res.json(response);
   } catch (err: any) {
     res.status(500).json({ error: "Could not load this page." });
@@ -9831,25 +9898,21 @@ app.get("/api/ally/view/:token", verifyAppCheck, async (req, res) => {
 
 // Owner-facing "Preview Their View" (Master Support Circle spec): shows
 // the owner exactly what their own ally's page would show right now -
-// built from buildAllyViewResponse, the same function the public token
-// route above uses, over the owner's own real current data. Never a
-// generic example; if nothing is shared, it honestly shows nothing.
+// built from the same resolveAllyViewForState function the public token
+// route above uses, over the owner's own real current data. If the ally
+// hasn't accepted (or has declined, or the invite expired), the preview
+// honestly shows that state too, rather than the data they'd see once
+// accepted - "exactly what will/won't be visible", not a hypothetical.
 app.get("/api/ally/preview", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
   try {
     const user = requireAuth(req);
     const db = getDb();
     const ownerRef = db.collection("users").doc(user.uid);
-    const [stateSnap, capsulesSnap] = await Promise.all([
-      ownerRef.collection("recovery_ally").doc("state").get(),
-      ownerRef.collection("support_capsules").get(),
-    ]);
+    const stateSnap = await ownerRef.collection("recovery_ally").doc("state").get();
     if (!stateSnap.exists || !stateSnap.data()?.isInvited) {
       return res.status(404).json({ error: "You haven't invited a Recovery Ally yet." });
     }
-    const state = stateSnap.data()!;
-    const capsules = capsulesSnap.docs.map(d => d.data() as { category: string; expiresAt: string | null });
-    const permissions = deriveEffectiveSharing(capsules as any, new Date().toISOString(), state.permissions || {});
-    const response = await buildAllyViewResponse(ownerRef, permissions, state);
+    const response = await resolveAllyViewForState(ownerRef, stateSnap.data());
     res.json(response);
   } catch (err: any) {
     res.status(500).json({ error: "Could not load the preview." });
@@ -9878,6 +9941,11 @@ app.post("/api/ally/view/:token/encourage", verifyAppCheck, async (req, res) => 
     if (!ownerRef) {
       return res.status(404).json({ error: "This link isn't valid." });
     }
+    // Mandatory Ally Consent: a not-yet-accepted (or declined/expired)
+    // invite can't send a message either - the relationship isn't live.
+    if (effectiveConsentStatus(state.consentStatus) !== 'accepted') {
+      return res.status(403).json({ error: "This isn't active yet." });
+    }
     const capsulesSnap = await ownerRef.collection("support_capsules").get();
     const capsules = capsulesSnap.docs.map(d => d.data() as { category: string; expiresAt: string | null });
     const permissions = deriveEffectiveSharing(capsules as any, new Date().toISOString(), state.permissions || {});
@@ -9892,6 +9960,48 @@ app.post("/api/ally/view/:token/encourage", verifyAppCheck, async (req, res) => 
     res.json({ success: true });
   } catch (err: any) {
     res.status(500).json({ error: "Could not send that." });
+  }
+});
+
+// Mandatory Ally Consent (Master Support Circle spec): the ally's active
+// choice, never implied by opening the link. Only ever changes anything
+// while the invite is genuinely still pending - canRespondToConsent
+// blocks responding again once already decided, so this can't be used to
+// retroactively undo an acceptance or re-contact someone who declined.
+app.post("/api/ally/view/:token/consent", verifyAppCheck, async (req, res) => {
+  try {
+    const { token } = req.params;
+    const { decision } = req.body;
+    if (decision !== 'accept' && decision !== 'decline') {
+      return res.status(400).json({ error: "Invalid decision." });
+    }
+    if (!token || token.length < 20) {
+      return res.status(404).json({ error: "This link isn't valid." });
+    }
+    const db = getDb();
+    const stateSnap = await db.collectionGroup("recovery_ally")
+      .where("shareToken", "==", token).limit(1).get();
+    if (stateSnap.empty) {
+      return res.status(404).json({ error: "This link isn't valid or has been revoked." });
+    }
+    const stateDoc = stateSnap.docs[0];
+    const state = stateDoc.data();
+    const now = new Date().toISOString();
+    if (isInviteExpired(state.inviteExpiresAt, state.consentStatus, now)) {
+      return res.status(410).json({ error: "This invitation has expired." });
+    }
+    if (!canRespondToConsent(state.consentStatus)) {
+      return res.status(409).json({ error: "This has already been handled.", consentStatus: effectiveConsentStatus(state.consentStatus) });
+    }
+    const consentStatus = decision === 'accept' ? 'accepted' : 'declined';
+    await stateDoc.ref.update({
+      consentStatus,
+      consentRespondedAt: now,
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+    res.json({ success: true, consentStatus });
+  } catch (err: any) {
+    res.status(500).json({ error: "Could not record that." });
   }
 });
 
