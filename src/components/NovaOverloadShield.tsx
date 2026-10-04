@@ -283,28 +283,30 @@ export const NovaOverloadShield = ({ fingerprint, onAwardPoints, onNavigate }: N
                 </div>
                 
                 <div className="space-y-4">
-                  <div className="space-y-2">
-                    <label htmlFor="ows-meetings-today" className="text-xs font-bold text-text-muted uppercase tracking-wider">Meetings Today</label>
-                    <input
-                      id="ows-meetings-today"
-                      type="number"
-                      min="0"
-                      value={manualData.meetings}
-                      onChange={(e) => setManualData({...manualData, meetings: parseInt(e.target.value) || 0})}
-                      className="w-full bg-surface border border-border/50 rounded-xl p-3 text-text-main font-medium focus:ring-2 focus:ring-primary/50 outline-none transition-all"
-                    />
-                  </div>
-                  
-                  <div className="space-y-2">
-                    <label htmlFor="ows-hours-planned" className="text-xs font-bold text-text-muted uppercase tracking-wider">Hours Planned</label>
-                    <input
-                      id="ows-hours-planned"
-                      type="number"
-                      min="0"
-                      value={manualData.hours}
-                      onChange={(e) => setManualData({...manualData, hours: parseInt(e.target.value) || 0})}
-                      className="w-full bg-surface border border-border/50 rounded-xl p-3 text-text-main font-medium focus:ring-2 focus:ring-primary/50 outline-none transition-all"
-                    />
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <label htmlFor="ows-meetings-today" className="text-xs font-bold text-text-muted uppercase tracking-wider">Meetings Today</label>
+                      <input
+                        id="ows-meetings-today"
+                        type="number"
+                        min="0"
+                        value={manualData.meetings}
+                        onChange={(e) => setManualData({...manualData, meetings: parseInt(e.target.value) || 0})}
+                        className="w-full bg-surface border border-border/50 rounded-xl p-3 text-text-main font-medium focus:ring-2 focus:ring-primary/50 outline-none transition-all"
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <label htmlFor="ows-hours-planned" className="text-xs font-bold text-text-muted uppercase tracking-wider">Hours Planned</label>
+                      <input
+                        id="ows-hours-planned"
+                        type="number"
+                        min="0"
+                        value={manualData.hours}
+                        onChange={(e) => setManualData({...manualData, hours: parseInt(e.target.value) || 0})}
+                        className="w-full bg-surface border border-border/50 rounded-xl p-3 text-text-main font-medium focus:ring-2 focus:ring-primary/50 outline-none transition-all"
+                      />
+                    </div>
                   </div>
 
                   <div className="space-y-2">
