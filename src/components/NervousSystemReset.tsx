@@ -1632,7 +1632,7 @@ const BreathingSession = ({ practiceId, isPlaying, phase, showMidSessionPrompt, 
         )}
       </div>
 
-      <button onClick={onFinish} className="mt-16 flex items-center gap-3 px-8 py-4 bg-text-main text-bg-main rounded-full font-bold uppercase tracking-widest hover:scale-105 transition-transform">
+      <button onClick={onFinish} className="mt-16 flex items-center gap-3 px-8 py-4 bg-text-main text-background rounded-full font-bold uppercase tracking-widest hover:scale-105 transition-transform">
         <CheckCircle2 className="w-5 h-5" /> Finish
       </button>
     </div>
