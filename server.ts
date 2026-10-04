@@ -223,8 +223,24 @@ app.use(cors({
   }
 }));
 
-// Apply strict body size limits globally to block oversized payloads
-app.use(express.json({ limit: '10kb' }));
+// Apply strict body size limits globally to block oversized payloads. The
+// 60-Second Check-In (/api/nova/voice-journal) is the one legitimate
+// exception: it ships a base64-encoded audio recording as JSON, which blows
+// past 10kb within the first couple of seconds of speech (base64 inflates
+// raw audio by ~1/3, and even opus-encoded speech runs well over 10kb/sec),
+// so every recording - not just long ones - was being rejected here before
+// it ever reached the route's own validation. Give that one route a limit
+// sized for a genuine 60s clip (generous enough to cover a worst-case
+// uncompressed WAV fallback on browsers without opus support) while every
+// other route keeps the strict 10kb ceiling.
+const strictJsonParser = express.json({ limit: '10kb' });
+const voiceJournalJsonParser = express.json({ limit: '15mb' });
+app.use((req, res, next) => {
+  if (req.path === '/api/nova/voice-journal') {
+    return voiceJournalJsonParser(req, res, next);
+  }
+  return strictJsonParser(req, res, next);
+});
 
 // Set up rate limiting
 //
