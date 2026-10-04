@@ -26,7 +26,7 @@ import {
 } from 'lucide-react';
 import { SupportContact } from '../types';
 import { cn } from '../lib/utils';
-import { isRealGuardian, buildGuardianCallRequestMessage, extractFirstName } from '../../guardian-alert';
+import { isRealGuardian, buildGuardianCallRequestMessage, extractFirstName, GUARDIAN_SAFE_CONTACT_CHECK_COPY } from '../../guardian-alert';
 import { useGuardianAlertsEnabled } from '../lib/useGuardianAlertsEnabled';
 
 interface NovaGuardianRelayProps {
@@ -46,7 +46,7 @@ const GuardianCard = ({
 }: {
   contact: SupportContact;
   onRemove: (id: string) => void;
-  onSendTest: () => Promise<boolean>;
+  onSendTest: () => Promise<string | null>;
   onTriggerRelay: () => void;
   onActivateSOS: (id: string) => void;
   alertsEnabled: boolean;
@@ -54,7 +54,13 @@ const GuardianCard = ({
   const [countdown, setCountdown] = useState<number | null>(null);
   const [isHealthChecking, setIsHealthChecking] = useState(false);
   const [isRelaying, setIsRelaying] = useState(false);
-  const [lastHealthCheck, setLastHealthCheck] = useState<Date | null>(null);
+  // Seeded from the real, server-persisted value (POST
+  // /api/guardian/contacts/:id/test-ping) so a page reload doesn't lose a
+  // test that genuinely just succeeded - previously this lived only in
+  // React state and silently reset to "Unverified" on every reload.
+  const [lastHealthCheck, setLastHealthCheck] = useState<Date | null>(
+    contact.lastTestPingAt ? new Date(contact.lastTestPingAt) : null
+  );
   
   const isSyncing = countdown !== null || isHealthChecking || isRelaying;
   const indicatorMode = (countdown !== null || isRelaying) ? 'emergency' : (isHealthChecking ? 'sync' : 'idle');
@@ -98,9 +104,9 @@ const GuardianCard = ({
 
   const handleHealthCheck = async () => {
     setIsHealthChecking(true);
-    const success = await onSendTest();
+    const pingedAt = await onSendTest();
     setIsHealthChecking(false);
-    if (success) setLastHealthCheck(new Date());
+    if (pingedAt) setLastHealthCheck(new Date(pingedAt));
   };
 
   return (
@@ -177,7 +183,10 @@ const GuardianCard = ({
            </p>
            <div className="group/time relative flex items-center justify-end cursor-help text-text-muted hover:text-success dark:hover:text-[#4ade80] transition-colors">
              <span className="absolute right-full mr-2 opacity-0 group-hover/time:opacity-100 transition-opacity text-[11px] uppercase tracking-widest font-black whitespace-nowrap pointer-events-none bg-card text-text-main px-2 py-1 rounded">
-               {lastHealthCheck ? `Verified: ${lastHealthCheck.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : 'Unverified'}
+               {/* "Test sent", not "Verified" - this only proves a message
+                   reached the provider for this number, never that the
+                   person received or read it (see buildGuardianTestPingMessage). */}
+               {lastHealthCheck ? `Test sent: ${lastHealthCheck.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : 'Not tested yet'}
              </span>
              <Clock className="w-3.5 h-3.5" />
            </div>
@@ -280,6 +289,32 @@ export const NovaGuardianRelay = ({ contacts, onAdd, onRemove, userName }: NovaG
     onRemove(id);
   };
 
+  // Guardian Alert History (spec §E.1's "GuardianHistory - honest status
+  // per §D.6"): the real GET /api/guardian/alerts endpoint has existed
+  // since Tier 1 shipped, but nothing in the UI ever rendered it - once
+  // the 3-second success toast disappeared, a sender had no way to find
+  // out what they'd actually sent, or what happened to it. This closes
+  // that "fires into silence" gap honestly, using exactly the state the
+  // server already records (no new claim about delivery or response).
+  const [alertHistory, setAlertHistory] = useState<{ id: string; contactName: string; userMessage: string | null; createdAt: string }[] | null>(null);
+  const [historyLoading, setHistoryLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await secureApiFetch('/api/guardian/alerts');
+        const body = await res.json();
+        if (!cancelled && res.ok) setAlertHistory(body.alerts || []);
+      } catch (e) {
+        // Non-fatal - the history panel just shows its own empty/error
+        // state; it was never visible before this PR anyway.
+      }
+      if (!cancelled) setHistoryLoading(false);
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
   useEffect(() => {
     if (!activeSOS) return;
     const onKeyDown = (e: KeyboardEvent) => {
@@ -299,42 +334,35 @@ export const NovaGuardianRelay = ({ contacts, onAdd, onRemove, userName }: NovaG
   };
 
   // Tests exactly one contact - each card's own "Ping Status" button uses
-  // this, scoped to that card's contact only. Returns whether the send
-  // succeeded so the calling card can update its own "last verified"
-  // state honestly, rather than assuming success or updating a timestamp
-  // unrelated to what actually happened.
-  const sendTestAlert = async (contact: SupportContact): Promise<boolean> => {
+  // this, scoped to that card's contact only. Returns the real, server-
+  // persisted lastTestPingAt on success (or null) so the calling card can
+  // update its own status honestly from what the server actually recorded,
+  // rather than assuming success or stamping a client-side timestamp that
+  // wouldn't survive a reload anyway (see POST .../test-ping and
+  // SupportContact.lastTestPingAt).
+  const sendTestAlert = async (contact: SupportContact): Promise<string | null> => {
     // A sample contact has no real phone number behind it - never reach
     // the network, no matter what the Ping Status button says elsewhere.
     if (contact.isSample) {
       setSendSuccess(`${contact.name} is a sample contact - sign up and add a real guardian to test this for real.`);
       setTimeout(() => setSendSuccess(null), 4000);
-      return false;
+      return null;
     }
     if (!/^\+[1-9]\d{6,14}$/.test(contact.contactMethod)) {
       setSendSuccess(`${contact.name}'s number isn't in a valid format - edit it and try again.`);
       setTimeout(() => setSendSuccess(null), 4000);
-      return false;
+      return null;
     }
-    const senderName = userName?.trim() || 'A Blaze Break user';
     try {
-      const res = await secureApiFetch('/api/twilio/send', {
-        method: 'POST',
-        data: {
-          to: contact.contactMethod,
-          message: `Nova Test: This is a test of ${senderName}'s Guardian Relay. No action needed - just confirming this contact method works.`,
-          useWhatsapp: contact.notificationPreference === 'whatsapp',
-        },
-      });
+      const res = await secureApiFetch(`/api/guardian/contacts/${contact.id}/test-ping`, { method: 'POST' });
       const body = await res.json();
-      const success = res.ok && body.success === true;
-      setSendSuccess(success ? `Test sent to ${contact.name}.` : (body.error || `Couldn't reach ${contact.name} right now.`));
+      setSendSuccess(res.ok ? (body.userMessage || `Test sent to ${contact.name}.`) : (body.userMessage || body.error || `Couldn't reach ${contact.name} right now.`));
       setTimeout(() => setSendSuccess(null), 4000);
-      return success;
+      return res.ok ? (body.lastTestPingAt || null) : null;
     } catch (e) {
       setSendSuccess(`Couldn't reach the messaging service right now.`);
       setTimeout(() => setSendSuccess(null), 4000);
-      return false;
+      return null;
     }
   };
 
@@ -373,6 +401,10 @@ export const NovaGuardianRelay = ({ contacts, onAdd, onRemove, userName }: NovaG
       const body = await res.json();
       if (res.ok) {
         setSendSuccess(body.userMessage || `Alert sent to ${contact.name}.`);
+        setAlertHistory(prev => [
+          { id: body.alertId || idempotencyKey, contactName: contact.name, userMessage: body.userMessage || null, createdAt: new Date().toISOString() },
+          ...(prev || []),
+        ]);
         // A real safety event, not a preference - system-derived and
         // never user-deletable from a memory review screen, matching the
         // existing Guardian Protocol "Safety Engine" rule in App.tsx
@@ -526,6 +558,30 @@ export const NovaGuardianRelay = ({ contacts, onAdd, onRemove, userName }: NovaG
                 <CrisisSupportContent guardians={visibleContacts.filter(c => !c.isSample)} />
              </div>
           </div>
+          {/* Guardian Alert History - honest status per the existing
+              GUARDIAN_STATE_COPY mapping (server.ts), not a claim about
+              whether anyone responded. */}
+          <div className="card p-8 border border-border bg-card text-text-main relative overflow-hidden space-y-5 shadow-lg">
+             <div className="relative z-10 flex items-center gap-3 border-b border-border pb-4">
+               <Clock className="w-5 h-5 text-text-muted" />
+               <h4 className="font-bold uppercase tracking-widest text-xs tracking-[0.2em] text-text-muted">Alert History</h4>
+             </div>
+             <div className="relative z-10 space-y-3">
+               {historyLoading ? (
+                 <div className="flex items-center justify-center py-4"><Loader2 className="w-4 h-4 animate-spin text-text-muted" /></div>
+               ) : !alertHistory || alertHistory.length === 0 ? (
+                 <p className="text-[11px] text-text-muted leading-relaxed">Nothing sent yet. Once you send an alert, it'll show up here with exactly what happened.</p>
+               ) : (
+                 alertHistory.slice(0, 5).map((alert) => (
+                   <div key={alert.id} className="text-[11px] leading-relaxed border-l-2 border-border pl-3">
+                     <p className="text-text-main font-bold">{alert.contactName}</p>
+                     <p className="text-text-muted">{alert.userMessage || 'Status unavailable.'}</p>
+                     <p className="text-text-muted opacity-70">{new Date(alert.createdAt).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</p>
+                   </div>
+                 ))
+               )}
+             </div>
+          </div>
           <div className="card p-8 border border-border bg-card text-text-main relative overflow-hidden space-y-6 shadow-lg">
              <div className="relative z-10 flex items-center gap-3 border-b border-border pb-4">
                <Eye className="w-5 h-5 text-text-muted" />
@@ -576,6 +632,15 @@ export const NovaGuardianRelay = ({ contacts, onAdd, onRemove, userName }: NovaG
                      <ShieldCheck className="w-6 h-6 text-primary" /> Add a Support Contact
                   </h3>
                   <p className="text-sm text-text-muted">Add someone you trust to reach out to when you need real support.</p>
+                </div>
+
+                {/* §B.2 Safe contact check (docs/GUARDIAN_SUPPORT_SPEC.md) -
+                    confirmed, buildable copy that was missing here; distinct
+                    from the §B.3 verification-code mechanism, which this
+                    product hasn't built. */}
+                <div className="bg-surface border border-destructive/20 p-4 rounded-lg flex gap-3 text-xs text-text-muted">
+                  <AlertTriangle className="w-5 h-5 text-destructive/80 dark:text-[#f87171] shrink-0" />
+                  <p>{GUARDIAN_SAFE_CONTACT_CHECK_COPY}</p>
                 </div>
 
                 <form onSubmit={handleSubmit} className="space-y-8">

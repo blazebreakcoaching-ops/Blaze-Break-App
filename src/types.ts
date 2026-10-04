@@ -86,6 +86,12 @@ export interface SupportContact {
   // NovaGuardianRelay.tsx, since a sample contact has no real phone number
   // behind it and must never trigger an actual SMS.
   isSample?: boolean;
+  // Set server-side only, by POST /api/guardian/contacts/:id/test-ping,
+  // the instant a "Ping Status" test message is successfully handed to
+  // the provider for this number. Deliberately not called "verified" -
+  // see guardian-alert.ts's buildGuardianTestPingMessage for why that
+  // word is reserved for a mechanism this product hasn't built.
+  lastTestPingAt?: string;
 }
 
 export interface OrgTrends {

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { isRealGuardian, isValidGuardianPhone, buildGuardianCallRequestMessage, extractFirstName, checkCooldown, nudgeSchedulerIsEnabled, guardianAlertsEnabled, guardianCapabilityIsRegistered, GUARDIAN_ALERTS_FLAG } from './guardian-alert';
+import { isRealGuardian, isValidGuardianPhone, buildGuardianCallRequestMessage, buildGuardianTestPingMessage, GUARDIAN_SAFE_CONTACT_CHECK_COPY, extractFirstName, checkCooldown, nudgeSchedulerIsEnabled, guardianAlertsEnabled, guardianCapabilityIsRegistered, GUARDIAN_ALERTS_FLAG } from './guardian-alert';
 
 describe('isRealGuardian: the entire consent gate for Tier 1 - must be exact, since this decides who a message can go to', () => {
   it('accepts a contact explicitly flagged isGuardian', () => {
@@ -151,6 +151,26 @@ describe('extractFirstName: used to personalise the message without ever needing
     expect(extractFirstName('   ')).toBe('A Blaze Break user');
     expect(extractFirstName(undefined)).toBe('A Blaze Break user');
     expect(extractFirstName(null)).toBe('A Blaze Break user');
+  });
+});
+
+describe('buildGuardianTestPingMessage: the "Ping Status" reachability test - must never claim verification', () => {
+  it('describes itself as a test, never as verification', () => {
+    const msg = buildGuardianTestPingMessage('Tourae');
+    expect(msg.toLowerCase()).toContain('test');
+    expect(msg.toLowerCase()).not.toContain('verif');
+  });
+
+  it('falls back to a generic sender description for empty or whitespace-only input', () => {
+    expect(buildGuardianTestPingMessage('')).toContain('A Blaze Break user');
+    expect(buildGuardianTestPingMessage('   ')).toContain('A Blaze Break user');
+  });
+});
+
+describe('GUARDIAN_SAFE_CONTACT_CHECK_COPY: §B.2, shown before a contact is added', () => {
+  it('warns against adding someone who might react badly or use it against the person', () => {
+    expect(GUARDIAN_SAFE_CONTACT_CHECK_COPY).toContain('trust');
+    expect(GUARDIAN_SAFE_CONTACT_CHECK_COPY.toLowerCase()).toContain('react badly');
   });
 });
 
