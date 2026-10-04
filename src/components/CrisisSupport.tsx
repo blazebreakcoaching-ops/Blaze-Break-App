@@ -1,11 +1,11 @@
 import React, { useEffect, useState } from 'react';
 import { motion, AnimatePresence, useDragControls } from 'motion/react';
-import { X, PhoneCall, MessageCircle, LifeBuoy, Loader2, CheckCircle2 } from 'lucide-react';
+import { X, PhoneCall, MessageCircle, LifeBuoy, Loader2, CheckCircle2, Globe, ArrowUpRight } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { useFocusTrap } from '../lib/useFocusTrap';
 import { secureApiFetch } from '../lib/secure-api';
 import { updateNovaMemoryBySourceAndType } from '../lib/nova-brain';
-import { detectCrisisRegion, getBrowserTimeZone } from '../../crisis-region';
+import { detectCrisisRegion, getBrowserTimeZone, shouldShowGlobalDirectoryFirst } from '../../crisis-region';
 import { useGuardianAlertsEnabled } from '../lib/useGuardianAlertsEnabled';
 
 interface GuardianForCrisisAction {
@@ -147,6 +147,34 @@ const UsCanadaBlock = () => (
   </div>
 );
 
+// "Quick Support global directory" - a verified international directory
+// (findahelpline.com, run by ThroughLine, holding direct relationships
+// with helpline organisations in 175+ countries) for anyone outside the
+// two region-specific blocks above. Deliberately a link out, not a
+// hardcoded per-country number list: this codebase has no way to keep
+// dozens of countries' crisis numbers current or verified, and a wrong
+// or stale number here would be actively dangerous, not just unhelpful.
+const GlobalDirectoryBlock = () => (
+  <div className="space-y-3">
+    <h5 className="text-[11px] font-black uppercase tracking-widest text-text-muted ml-1">Anywhere else in the world</h5>
+    <a
+      href="https://findahelpline.com"
+      target="_blank"
+      rel="noopener noreferrer"
+      className="flex items-center justify-between p-4 rounded-xl border border-border bg-surface hover:bg-border/40 dark:hover:bg-surface/60 transition-colors group"
+    >
+      <div className="space-y-1.5">
+        <span className="text-sm font-bold text-text-main block">Find A Helpline</span>
+        <span className="text-[11px] font-black uppercase tracking-widest text-text-muted font-mono">Verified local helplines in 175+ countries</span>
+      </div>
+      <div className="flex items-center gap-1 shrink-0 text-text-muted group-hover:text-text-main transition-colors">
+        <Globe className="w-5 h-5" />
+        <ArrowUpRight className="w-3.5 h-3.5" />
+      </div>
+    </a>
+  </div>
+);
+
 // Single source of truth for crisis resource content. Used both in the
 // standalone global modal (reachable from anywhere) and inline on the
 // Recovery Ally / Guardian Relay page, so the two never drift out of sync.
@@ -156,7 +184,8 @@ export const CrisisSupportContent = ({ guardians = [] }: { guardians?: GuardianF
   // memoised across the app's lifetime, since a laptop that travels
   // between time zones should get a fresh guess each time this opens.
   const region = detectCrisisRegion(getBrowserTimeZone());
-  const blocks = region === "us_canada" ? [UsCanadaBlock, UkIrelandBlock] : [UkIrelandBlock, UsCanadaBlock];
+  const regionBlocks = region === "us_canada" ? [UsCanadaBlock, UkIrelandBlock] : [UkIrelandBlock, UsCanadaBlock];
+  const blocks = shouldShowGlobalDirectoryFirst(region) ? [GlobalDirectoryBlock, ...regionBlocks] : [...regionBlocks, GlobalDirectoryBlock];
 
   return (
     <div className="space-y-6">

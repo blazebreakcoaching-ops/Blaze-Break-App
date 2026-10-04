@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { detectCrisisRegion } from "./crisis-region";
+import { detectCrisisRegion, shouldShowGlobalDirectoryFirst } from "./crisis-region";
 
 describe("detectCrisisRegion", () => {
   it("recognises UK and Ireland time zones", () => {
@@ -27,5 +27,16 @@ describe("detectCrisisRegion", () => {
     expect(detectCrisisRegion(undefined)).toBe("unknown");
     expect(detectCrisisRegion(null)).toBe("unknown");
     expect(detectCrisisRegion("")).toBe("unknown");
+  });
+});
+
+describe("shouldShowGlobalDirectoryFirst", () => {
+  it("leads with the global directory when no region was guessed - most of the world", () => {
+    expect(shouldShowGlobalDirectoryFirst("unknown")).toBe(true);
+  });
+
+  it("trails the global directory when a specific region was guessed - it still shows, just second", () => {
+    expect(shouldShowGlobalDirectoryFirst("uk_ireland")).toBe(false);
+    expect(shouldShowGlobalDirectoryFirst("us_canada")).toBe(false);
   });
 });
