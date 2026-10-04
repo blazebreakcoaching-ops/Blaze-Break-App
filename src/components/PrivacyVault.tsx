@@ -558,7 +558,7 @@ export const PrivacyVault = ({
                   <div className="flex items-center justify-between p-3 rounded-xl bg-background/50 border border-white/[0.02]">
                     <div>
                       <p className="text-sm font-bold text-text-main flex items-center gap-2">
-                        Anonymous Aggregation <span className="px-1.5 py-0.5 bg-surface0/20 text-text-muted border border-muted-foreground/30 text-[10px] uppercase tracking-wider rounded-full">Zone D</span>
+                        Anonymous Aggregation <span className="px-1.5 py-0.5 bg-surface/20 text-text-muted border border-muted-foreground/30 text-[10px] uppercase tracking-wider rounded-full">Zone D</span>
                       </p>
                       <p className="text-xs text-text-muted mt-0.5">Contribute trends to Team Climate.</p>
                     </div>

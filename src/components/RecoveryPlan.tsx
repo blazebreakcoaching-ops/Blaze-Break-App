@@ -847,7 +847,7 @@ export const RecoveryPlan = ({
                   type="checkbox"
                   checked={optInLeaderboard}
                   onChange={(e) => handleToggleLeaderboard(e.target.checked)}
-                  className="rounded border-border text-primary focus:ring-primary focus:ring-opacity-40 w-4 h-4 cursor-pointer"
+                  className="rounded border-border text-primary focus:ring-primary/40 w-4 h-4 cursor-pointer"
                 />
               </div>
 

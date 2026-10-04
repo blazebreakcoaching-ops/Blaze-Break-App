@@ -1036,7 +1036,7 @@ export const NervousSystemReset = ({ fingerprint, onAwardPoints }: NervousSystem
                 <button
                   type="button"
                   onClick={handleResetAllState}
-                  className="px-4 py-2 rounded-xl text-xs font-black uppercase tracking-widest bg-destructive hover:bg-destructive-foreground hover:bg-opacity-90 text-destructive-foreground cursor-pointer"
+                  className="px-4 py-2 rounded-xl text-xs font-black uppercase tracking-widest bg-destructive hover:bg-destructive/90 text-destructive-foreground cursor-pointer"
                 >
                   Yes, Reset State
                 </button>

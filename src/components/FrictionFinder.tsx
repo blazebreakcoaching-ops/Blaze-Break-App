@@ -138,7 +138,7 @@ export const FrictionFinder = ({ fingerprint, onAwardPoints, onNavigate }: Frict
               <button
                 onClick={handleAnalyze}
                 disabled={!log.trim() || isAnalyzing}
-                className="w-full btn-primary bg-destructive hover:bg-destructive-foreground hover:bg-opacity-90 border-destructive py-4 text-lg disabled:opacity-50 flex items-center justify-center gap-2"
+                className="w-full btn-primary bg-destructive hover:bg-destructive-foreground/90 border-destructive py-4 text-lg disabled:opacity-50 flex items-center justify-center gap-2"
               >
                 {isAnalyzing ? (
                   <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1, ease: 'linear' }}>

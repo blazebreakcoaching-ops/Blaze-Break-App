@@ -1201,7 +1201,7 @@ export const RecoveryIntelligenceLayer = ({ onAwardPoints, fingerprint, isDemoSe
 
                 <button
                   onClick={submitTrigger}
-                  className="w-full py-4 bg-destructive hover:bg-destructive-foreground hover:bg-opacity-90 text-destructive-foreground text-xs uppercase font-black tracking-widest rounded-xl transition-all hover:scale-[1.01] cursor-pointer"
+                  className="w-full py-4 bg-destructive hover:bg-destructive/90 text-destructive-foreground text-xs uppercase font-black tracking-widest rounded-xl transition-all hover:scale-[1.01] cursor-pointer"
                 >
                   Record Trigger Insight (+15 pts)
                 </button>
