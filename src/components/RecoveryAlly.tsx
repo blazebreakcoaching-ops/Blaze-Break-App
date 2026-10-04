@@ -1,12 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { HeartPulse, CheckSquare, Target, Mail, Award, Trash2, CheckCircle2, AlertTriangle, ShieldCheck, Activity, Brain, Clock, Plus, ArrowRight, Zap, Loader2, Copy, Eye, X, Check, MessageCircle, HeartHandshake } from 'lucide-react';
+import { HeartPulse, CheckSquare, Target, Mail, Award, Trash2, CheckCircle2, AlertTriangle, ShieldCheck, Activity, Brain, Clock, Plus, ArrowRight, Zap, Loader2, Copy, Eye, X, Check, MessageCircle, HeartHandshake, Clock3, RefreshCw } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { logJourney } from '../lib/nova-brain';
 import { secureApiFetch } from '../lib/secure-api';
 import { auth } from '../lib/firebase';
 import { db } from '../lib/firestore';
 import { doc, getDoc, setDoc, collection, addDoc, getDocs, deleteDoc, orderBy, query, limit } from 'firebase/firestore';
+import { effectiveConsentStatus, isInviteExpired, computeInviteExpiresAt, ConsentStatus } from '../../recovery-ally-consent';
 import {
   SupportCapsuleCategory,
   SUPPORT_CAPSULE_CATEGORIES,
@@ -67,6 +68,11 @@ export const RecoveryAlly = () => {
   const [allyName, setAllyName] = useState('');
   const [allyEmail, setAllyEmail] = useState('');
   const [shareToken, setShareToken] = useState('');
+  // Mandatory Ally Consent + magic-link hardening (Master Support Circle
+  // spec): the owner's own read of where this invite actually stands.
+  const [consentStatus, setConsentStatus] = useState<ConsentStatus>('accepted');
+  const [inviteExpiresAt, setInviteExpiresAt] = useState<string | null>(null);
+  const [regenerating, setRegenerating] = useState(false);
   const [permissions, setPermissionsState] = useState<AllyPermissions>(DEFAULT_PERMISSIONS);
   const [sharedGoals, setSharedGoals] = useState<SharedGoal[]>([]);
   const [encouragements, setEncouragements] = useState<Encouragement[]>([]);
@@ -127,6 +133,8 @@ export const RecoveryAlly = () => {
           setAllyName(data.allyName || '');
           setAllyEmail(data.allyEmail || '');
           setShareToken(data.shareToken || '');
+          setConsentStatus(effectiveConsentStatus(data.consentStatus));
+          setInviteExpiresAt(data.inviteExpiresAt || null);
           setSupportHelps(data.supportHelps || '');
           setSupportDoesNotHelp(data.supportDoesNotHelp || '');
           setSupportVisibleToAlly(!!data.supportVisibleToAlly);
@@ -277,6 +285,8 @@ export const RecoveryAlly = () => {
         setAllyEmail(emailDraft.trim().toLowerCase());
         setAllyName(emailDraft.split('@')[0]);
         setShareToken(data.shareToken || '');
+        setConsentStatus('pending');
+        setInviteExpiresAt(computeInviteExpiresAt(new Date().toISOString()));
         setPermissionsState(DEFAULT_PERMISSIONS);
         setEmailDraft('');
         if (!data.emailSent) {
@@ -298,11 +308,37 @@ export const RecoveryAlly = () => {
       setAllyEmail('');
       setAllyName('');
       setShareToken('');
+      setConsentStatus('accepted');
+      setInviteExpiresAt(null);
       setEncouragements([]);
     } catch (e) {
       setError('Could not remove your ally. Please try again.');
     }
     setRevoking(false);
+  };
+
+  // Magic-link hardening (Master Support Circle spec): "immediate revoke
+  // and regenerate if compromised" - issues a brand new token and resets
+  // consent to pending. The old link stops working the instant this
+  // succeeds (the server looks tokens up by exact value).
+  const regenerateLink = async () => {
+    setRegenerating(true);
+    setError('');
+    try {
+      const res = await secureApiFetch('/api/ally/regenerate-link', { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error || 'Could not generate a new link.');
+      } else {
+        setShareToken(data.shareToken || '');
+        setConsentStatus('pending');
+        setInviteExpiresAt(computeInviteExpiresAt(new Date().toISOString()));
+        setLinkCopied(false);
+      }
+    } catch (e) {
+      setError('Could not generate a new link.');
+    }
+    setRegenerating(false);
   };
 
   const toggleGoalToday = async (goal: SharedGoal) => {
@@ -363,6 +399,7 @@ export const RecoveryAlly = () => {
   };
 
   const shareLink = shareToken ? `${window.location.origin}/ally/${shareToken}` : '';
+  const inviteExpired = isInviteExpired(inviteExpiresAt, consentStatus, new Date().toISOString());
 
   if (loading) {
     return (
@@ -454,13 +491,45 @@ export const RecoveryAlly = () => {
                 </div>
                 <div>
                   <h3 className="font-bold text-text-main text-lg tracking-tight">{allyName}</h3>
-                  <span className="inline-flex items-center gap-1.5 text-[11px] uppercase font-medium tracking-widest text-success dark:text-[#4ade80] mt-1">
-                    <CheckCircle2 className="w-3 h-3" /> Invited
-                  </span>
+                  {consentStatus === 'accepted' ? (
+                    <span className="inline-flex items-center gap-1.5 text-[11px] uppercase font-medium tracking-widest text-success dark:text-[#4ade80] mt-1">
+                      <CheckCircle2 className="w-3 h-3" /> Accepted
+                    </span>
+                  ) : consentStatus === 'declined' ? (
+                    <span className="inline-flex items-center gap-1.5 text-[11px] uppercase font-medium tracking-widest text-text-muted mt-1">
+                      <X className="w-3 h-3" /> Said They Can't Take This On
+                    </span>
+                  ) : inviteExpired ? (
+                    <span className="inline-flex items-center gap-1.5 text-[11px] uppercase font-medium tracking-widest text-text-muted mt-1">
+                      <Clock3 className="w-3 h-3" /> Invitation Expired
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1.5 text-[11px] uppercase font-medium tracking-widest text-warning mt-1">
+                      <Clock3 className="w-3 h-3" /> Waiting for Them to Respond
+                    </span>
+                  )}
                 </div>
               </div>
 
-              {shareLink && (
+              {(consentStatus === 'declined' || inviteExpired) && (
+                <div className="p-3 bg-surface rounded-lg border border-border space-y-2">
+                  <p className="text-xs text-text-muted leading-relaxed">
+                    {consentStatus === 'declined'
+                      ? "They've let you know they can't take this on right now."
+                      : "This invitation window has closed - nothing was ever shared."}
+                    {" "}Send a fresh link if you'd like to ask again.
+                  </p>
+                  <button
+                    onClick={regenerateLink}
+                    disabled={regenerating}
+                    className="w-full flex items-center justify-center gap-2 py-2.5 bg-primary text-primary-foreground rounded-lg text-xs font-bold uppercase tracking-widest hover:opacity-90 transition-colors disabled:opacity-50"
+                  >
+                    {regenerating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />} Send a New Link
+                  </button>
+                </div>
+              )}
+
+              {shareLink && consentStatus === 'pending' && !inviteExpired && (
                 <div className="p-3 bg-surface rounded-lg border border-border space-y-1.5">
                   <span className="text-[10px] font-black uppercase tracking-widest text-text-muted">Their private link</span>
                   <div className="flex items-center gap-2">
@@ -474,6 +543,7 @@ export const RecoveryAlly = () => {
                       {linkCopied ? <CheckCircle2 className="w-3.5 h-3.5 text-success dark:text-[#4ade80]" /> : <Copy className="w-3.5 h-3.5" />}
                     </button>
                   </div>
+                  <p className="text-[10px] text-text-muted">Nothing will be shared until they accept.</p>
                 </div>
               )}
 
