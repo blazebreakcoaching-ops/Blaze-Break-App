@@ -166,7 +166,7 @@ export const AdminDashboard = () => {
 
   const isAdmin = isPlatformAdminRole(appRole);
 
-  const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'entitlements' | 'admins' | 'orgs' | 'audit' | 'somatic' | 'feedback'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'entitlements' | 'admins' | 'orgs' | 'communications' | 'audit' | 'somatic' | 'feedback'>('overview');
   // Which account's Access Timeline is expanded in the Plans &
   // Entitlements tab - at most one open at a time, same pattern as other
   // single-item expand/collapse state in this file.
@@ -184,6 +184,16 @@ export const AdminDashboard = () => {
   // /api/admin/cost-usage entirely - retiring the honest "Not yet
   // tracked" placeholder below only once this is real data, not before.
   const [supportCircleCost, setSupportCircleCost] = useState<{ periodDays: number; guardianAlertCount: number; smsUsd: number } | null>(null);
+  // Fuller view of the same /api/admin/cost-usage response, for the
+  // Communications tab - real per-category SMS counts and the estimated
+  // cost breakdown, not just the Guardian Alert slice supportCircleCost
+  // above narrows to.
+  const [commsUsage, setCommsUsage] = useState<{
+    periodDays: number;
+    smsByCategory: { guardian_alert: number; ally_nudge: number; manual_send: number };
+    smsSegmentCount: number;
+    estimatedCostUsd: { smsUsd: number; novaTextUsd: number; novaVoiceUsd: number; diagnoseUsd: number; totalUsd: number };
+  } | null>(null);
   const [orgs, setOrgs] = useState<{ id: string; name: string; joinCode: string; privacyThreshold: number; memberCount: number; adminCount: number; createdAt?: string | null; billingPlan?: string }[]>([]);
   // Which org's detail (billing + member list) is expanded, and the
   // fetched detail itself - fetched lazily on expand, not preloaded for
@@ -395,7 +405,7 @@ export const AdminDashboard = () => {
       // 4. Calculate Somatic Reset Metrics
       await fetchSomaticMetrics();
       // 5. Support Circle messaging cost visibility
-      await fetchSupportCircleCost();
+      await fetchCostUsage();
 
     } catch (e: any) {
       setError(e.message);
@@ -404,20 +414,27 @@ export const AdminDashboard = () => {
     }
   };
 
-  const fetchSupportCircleCost = async () => {
+  const fetchCostUsage = async () => {
     try {
       const res = await secureApiFetch('/api/admin/cost-usage');
-      if (!res.ok) { setSupportCircleCost(null); return; }
+      if (!res.ok) { setSupportCircleCost(null); setCommsUsage(null); return; }
       const data = await res.json();
       setSupportCircleCost({
         periodDays: data.periodDays ?? 7,
         guardianAlertCount: data.smsByCategory?.guardian_alert ?? 0,
         smsUsd: data.estimatedCostUsd?.smsUsd ?? 0,
       });
+      setCommsUsage({
+        periodDays: data.periodDays ?? 7,
+        smsByCategory: { guardian_alert: 0, ally_nudge: 0, manual_send: 0, ...data.smsByCategory },
+        smsSegmentCount: data.usage?.smsSegmentCount ?? 0,
+        estimatedCostUsd: { smsUsd: 0, novaTextUsd: 0, novaVoiceUsd: 0, diagnoseUsd: 0, totalUsd: 0, ...data.estimatedCostUsd },
+      });
     } catch (e) {
       // Non-fatal - this card just falls back to its own "not available"
       // state rather than failing the whole dashboard load.
       setSupportCircleCost(null);
+      setCommsUsage(null);
     }
   };
 
@@ -1084,6 +1101,7 @@ export const AdminDashboard = () => {
           { id: 'entitlements', label: 'Plans & Entitlements', icon: CreditCard },
           { id: 'admins', label: 'Promote Platform Admins', icon: ShieldAlert },
           { id: 'orgs', label: 'Organisations', icon: Building2 },
+          { id: 'communications', label: 'Communications', icon: MessageSquare },
           { id: 'audit', label: 'Auditor Event Log', icon: Activity },
           { id: 'somatic', label: 'Somatic De-escalation Stats', icon: Heart },
           { id: 'feedback', label: 'Feedback & Testimonials', icon: MessageSquare }
@@ -1845,6 +1863,79 @@ export const AdminDashboard = () => {
                   ))}
                 </div>
               )}
+            </div>
+          </div>
+        )}
+
+        {/* Communications - provider configuration status (reused from the
+            Overview card) plus the real SMS/WhatsApp usage breakdown
+            already computed by /api/admin/cost-usage for Support Circle
+            cost visibility. Email/Push have no aggregate send-volume
+            tracking anywhere in this codebase today, so this says so
+            rather than fabricating a count. */}
+        {activeTab === 'communications' && (
+          <div className="space-y-6">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {([
+                { key: 'twilioConfigured' as const, label: 'SMS / WhatsApp (Twilio)', envHint: 'TWILIO_ACCOUNT_SID / TWILIO_AUTH_TOKEN' },
+                { key: 'brevoConfigured' as const, label: 'Email (Brevo)', envHint: 'BREVO_API_KEY' },
+                { key: 'pushConfigured' as const, label: 'Push', envHint: 'VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY' },
+              ]).map((p) => {
+                const isConfigured = communications ? communications[p.key] : false;
+                return (
+                  <div key={p.key} className="p-5 bg-surface dark:bg-card border border-border rounded-2xl">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-xs font-black uppercase tracking-widest text-text-muted">{p.label}</span>
+                      <span className={`px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-widest ${
+                        isConfigured ? 'bg-success/10 text-success dark:text-[#4ade80]' : 'bg-surface text-text-muted'
+                      }`}>
+                        {communications ? (isConfigured ? 'Configured' : 'Not configured') : 'Not available'}
+                      </span>
+                    </div>
+                    <p className="text-[10px] text-text-muted font-mono">{p.envHint}</p>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="card p-6 bg-surface dark:bg-card border border-border rounded-2xl space-y-4">
+              <div className="flex items-center justify-between">
+                <h4 className="font-display text-sm font-bold text-text-main">SMS / WhatsApp Usage ({commsUsage?.periodDays ?? 7}d)</h4>
+                <span className="text-[10px] text-text-muted italic">Rough internal estimate, not live provider billing - see docs/COST_MONITORING.md</span>
+              </div>
+              {commsUsage ? (
+                <>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    <div className="p-4 bg-background rounded-xl">
+                      <span className="text-[10px] font-black uppercase tracking-widest text-text-muted block mb-1">Guardian Alerts</span>
+                      <span className="text-2xl font-display font-black text-text-main">{commsUsage.smsByCategory.guardian_alert}</span>
+                      <p className="text-[10px] text-text-muted mt-1">Safety feature - exempt from the aggregate cap below</p>
+                    </div>
+                    <div className="p-4 bg-background rounded-xl">
+                      <span className="text-[10px] font-black uppercase tracking-widest text-text-muted block mb-1">Ally Nudges</span>
+                      <span className="text-2xl font-display font-black text-text-main">{commsUsage.smsByCategory.ally_nudge}</span>
+                    </div>
+                    <div className="p-4 bg-background rounded-xl">
+                      <span className="text-[10px] font-black uppercase tracking-widest text-text-muted block mb-1">Manual Sends</span>
+                      <span className="text-2xl font-display font-black text-text-main">{commsUsage.smsByCategory.manual_send}</span>
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between pt-3 border-t border-border text-xs">
+                    <span className="text-text-muted">Total segments: <strong className="text-text-main">{commsUsage.smsSegmentCount}</strong></span>
+                    <span className="text-text-muted">Estimated cost: <strong className="text-text-main">${commsUsage.estimatedCostUsd.smsUsd.toFixed(2)}</strong></span>
+                  </div>
+                </>
+              ) : (
+                <p className="text-sm text-text-muted italic">Couldn't load usage data.</p>
+              )}
+              <div className="p-3 bg-background rounded-xl text-[10px] text-text-muted leading-relaxed">
+                <strong className="text-text-main">Guardrail policy:</strong> Ally Nudge and Manual Send are capped per-account at 20/day and 150/month (sms-guardrails.ts) to limit runaway cost/abuse. Guardian Alert has its own dedicated, tighter safety limiter and is never subject to this shared cap - a safety alert can never be silently swallowed because an account used up an unrelated SMS quota.
+              </div>
+            </div>
+
+            <div className="card p-6 bg-surface dark:bg-card border border-border rounded-2xl">
+              <h4 className="font-display text-sm font-bold text-text-main mb-2">Email & Push Volume</h4>
+              <p className="text-xs text-text-muted leading-relaxed">Not yet tracked. Configuration status above reflects whether credentials are present; neither provider's send volume is aggregated anywhere in this codebase today, so no count is shown rather than a fabricated one.</p>
             </div>
           </div>
         )}
