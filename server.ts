@@ -3524,11 +3524,25 @@ Respond strictly as JSON, no markdown:
 });
 
 // Reusable Helper Guards and Roles
+// Temporary privilege escalation (see POST /api/admin/admin-users and
+// .../:uid/role) stores a roleExpiresAt ISO string directly as a custom
+// claim, so it rides along on every ID token with zero extra cost. This
+// is the single place that expiry is enforced: once it's passed, every
+// elevated field the three guards below check (role/admin/
+// platform_admin/platformOwner) is stripped from the object they see, so
+// requireAdmin/requireRole/requirePlatformOwner all automatically stop
+// recognising the account as elevated without each needing its own copy
+// of this check. No cron job, no extra Firestore read on the request
+// path - just a synchronous comparison against the token's own claim.
 const requireAuth = (req: any) => {
   if (!req.user) {
     throw new Error("Unauthorized. Missing user authentication.");
   }
-  return req.user;
+  const user = req.user;
+  if (user.roleExpiresAt && Date.now() > Date.parse(user.roleExpiresAt)) {
+    return { ...user, role: 'user', admin: false, platform_admin: false, platformOwner: false };
+  }
+  return user;
 };
 
 // Bootstrap platform-owner access for the founder account by email, so the
@@ -6315,17 +6329,30 @@ app.get("/api/admin/admin-users", verifyAppCheck, authenticateFirebaseUser, asyn
 // copy of the list - this used to be independently maintained and had
 // drifted from the client's role vocabulary, missing security_admin.
 const ADMIN_PANEL_ROLES = PLATFORM_ADMIN_ROLES;
-const AdminPanelRoleSchema = z.object({ role: z.enum(ADMIN_PANEL_ROLES) }).strict();
+// `reason` is required on every grant/promotion/role-change - a Platform
+// Owner escalating someone's access must say why, and that reason is
+// stored on the admin_users doc and in the audit log, never discarded.
+// `escalationHours` is the optional temporary-privilege-escalation path:
+// when set, the elevated role expires on its own rather than staying
+// permanent until someone remembers to revoke it. Bounded at 30 days -
+// anything longer isn't really "temporary," it's just a permanent grant
+// with extra paperwork.
+const AdminPanelRoleSchema = z.object({
+  role: z.enum(ADMIN_PANEL_ROLES),
+  reason: z.string().trim().min(3).max(500),
+  escalationHours: z.number().int().min(1).max(720).optional(),
+}).strict();
 
 app.post("/api/admin/admin-users", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
   try {
     requirePlatformOwner(req);
     const { email, displayName } = req.body;
-    const parsedRole = AdminPanelRoleSchema.safeParse({ role: req.body.role });
+    const parsedRole = AdminPanelRoleSchema.safeParse({ role: req.body.role, reason: req.body.reason, escalationHours: req.body.escalationHours });
     if (!parsedRole.success) {
-      return res.status(400).json({ error: `"role" must be one of: ${ADMIN_PANEL_ROLES.join(', ')}.` });
+      return res.status(400).json({ error: `"role" must be one of: ${ADMIN_PANEL_ROLES.join(', ')}, and "reason" (3-500 characters) is required.` });
     }
-    const { role } = parsedRole.data;
+    const { role, reason, escalationHours } = parsedRole.data;
+    const expiresAt = escalationHours ? new Date(Date.now() + escalationHours * 60 * 60 * 1000).toISOString() : null;
 
     const authUser = await getAuth().getUserByEmail(email);
     const targetUid = authUser.uid;
@@ -6333,7 +6360,11 @@ app.post("/api/admin/admin-users", verifyAppCheck, authenticateFirebaseUser, asy
     await mergeCustomClaims(targetUid, {
       admin: true,
       role: role,
-      platformOwner: role === 'platform_owner'
+      platformOwner: role === 'platform_owner',
+      // null (not omitted) explicitly clears any expiry left over from a
+      // PREVIOUS temporary escalation - merging would otherwise let a
+      // stale roleExpiresAt silently survive a later "permanent" grant.
+      roleExpiresAt: expiresAt,
     });
 
     const db = getDb();
@@ -6344,12 +6375,14 @@ app.post("/api/admin/admin-users", verifyAppCheck, authenticateFirebaseUser, asy
       role: role,
       status: "active",
       permissions: getPermissionsForRole(role),
+      reason,
+      expiresAt,
       createdAt: FieldValue.serverTimestamp(),
       updatedAt: FieldValue.serverTimestamp(),
       createdBy: (req as any).user.email
     }, { merge: true });
-    
-    await logAdminAction(req, "create_admin_user", targetUid, email, { role });
+
+    await logAdminAction(req, "create_admin_user", targetUid, email, { role, reason, expiresAt });
     res.json({ success: true });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
@@ -6361,27 +6394,31 @@ app.post("/api/admin/admin-users/:uid/role", verifyAppCheck, authenticateFirebas
     requirePlatformOwner(req);
     const parsed = AdminPanelRoleSchema.safeParse(req.body);
     if (!parsed.success) {
-      return res.status(400).json({ error: `"role" must be one of: ${ADMIN_PANEL_ROLES.join(', ')}.` });
+      return res.status(400).json({ error: `"role" must be one of: ${ADMIN_PANEL_ROLES.join(', ')}, and "reason" (3-500 characters) is required.` });
     }
     const targetUid = req.params.uid;
-    const { role } = parsed.data;
+    const { role, reason, escalationHours } = parsed.data;
+    const expiresAt = escalationHours ? new Date(Date.now() + escalationHours * 60 * 60 * 1000).toISOString() : null;
 
     await assertNotLastPlatformOwner(targetUid, firebaseConfigDatabaseId);
 
     await mergeCustomClaims(targetUid, {
       admin: true,
       role: role,
-      platformOwner: role === 'platform_owner'
+      platformOwner: role === 'platform_owner',
+      roleExpiresAt: expiresAt,
     });
 
     const db = getDb();
     await db.collection("admin_users").doc(targetUid).update({
       role: role,
       permissions: getPermissionsForRole(role),
+      reason,
+      expiresAt,
       updatedAt: FieldValue.serverTimestamp()
     });
-    
-    await logAdminAction(req, "update_admin_role", targetUid, "", { role });
+
+    await logAdminAction(req, "update_admin_role", targetUid, "", { role, reason, expiresAt });
     res.json({ success: true });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
@@ -6392,16 +6429,16 @@ app.delete("/api/admin/admin-users/:uid", verifyAppCheck, authenticateFirebaseUs
   try {
     requirePlatformOwner(req);
     const targetUid = req.params.uid;
-    
+
     await assertNotLastPlatformOwner(targetUid, firebaseConfigDatabaseId);
     // Removes only the admin-related claim keys, not the whole claims
     // object - setCustomUserClaims(uid, null) used to wipe everything,
     // including unrelated claims like mfaEnabled.
-    await removeCustomClaimKeys(targetUid, ['admin', 'role', 'platformOwner']);
+    await removeCustomClaimKeys(targetUid, ['admin', 'role', 'platformOwner', 'roleExpiresAt']);
 
     const db = getDb();
     await db.collection("admin_users").doc(targetUid).delete();
-    
+
     await logAdminAction(req, "remove_admin_user", targetUid, "", {});
     res.json({ success: true });
   } catch (err: any) {

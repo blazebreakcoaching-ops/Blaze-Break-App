@@ -60,6 +60,13 @@ interface PlatformAdmin {
   role: string;
   status: string;
   createdAt?: any;
+  // Why this account holds this role, and - for a temporary privilege
+  // escalation - when it self-expires. Both required/settable on every
+  // promotion and role change (see server.ts's AdminPanelRoleSchema).
+  // Optional only because an admin_users doc created before this existed
+  // won't have them.
+  reason?: string;
+  expiresAt?: string | null;
 }
 
 interface AuditLog {
@@ -227,7 +234,21 @@ export const AdminDashboard = () => {
   const [newAdminEmail, setNewAdminEmail] = useState('');
   const [newAdminName, setNewAdminName] = useState('');
   const [newAdminRole, setNewAdminRole] = useState('platform_admin');
+  // Required on every promotion/role-change - see server.ts's
+  // AdminPanelRoleSchema. escalationHours left blank means a permanent
+  // grant; set means temporary privilege escalation that expires itself.
+  const [newAdminReason, setNewAdminReason] = useState('');
+  const [newAdminEscalationHours, setNewAdminEscalationHours] = useState('');
   const [isAddingAdmin, setIsAddingAdmin] = useState(false);
+
+  // Change Role form - the update-role endpoint already existed server-
+  // side but had no UI wired to it; previously the only way to change an
+  // existing admin's role was to revoke and re-promote them.
+  const [changeRoleTarget, setChangeRoleTarget] = useState<PlatformAdmin | null>(null);
+  const [changeRoleValue, setChangeRoleValue] = useState('platform_admin');
+  const [changeRoleReason, setChangeRoleReason] = useState('');
+  const [changeRoleEscalationHours, setChangeRoleEscalationHours] = useState('');
+  const [isChangingRole, setIsChangingRole] = useState(false);
 
   // New Organisation Form State
   const [newOrgId, setNewOrgId] = useState('');
@@ -569,19 +590,22 @@ export const AdminDashboard = () => {
 
   const handleAddAdmin = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newAdminEmail) return;
+    if (!newAdminEmail || !newAdminReason.trim()) return;
 
     try {
       setIsAddingAdmin(true);
       setError(null);
 
+      const escalationHours = newAdminEscalationHours.trim() === '' ? undefined : Number(newAdminEscalationHours);
       const res = await secureApiFetch('/api/admin/admin-users', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           email: newAdminEmail,
           role: newAdminRole,
-          displayName: newAdminName
+          displayName: newAdminName,
+          reason: newAdminReason.trim(),
+          ...(escalationHours ? { escalationHours } : {}),
         })
       });
 
@@ -590,14 +614,59 @@ export const AdminDashboard = () => {
         throw new Error(errorData.error || 'Failed to assign custom admin credentials.');
       }
 
-      showSuccess(`Successfully promoted ${newAdminEmail} to admin tier.`);
+      showSuccess(
+        escalationHours
+          ? `Successfully promoted ${newAdminEmail} - this access expires automatically in ${escalationHours}h.`
+          : `Successfully promoted ${newAdminEmail} to admin tier.`
+      );
       setNewAdminEmail('');
       setNewAdminName('');
+      setNewAdminReason('');
+      setNewAdminEscalationHours('');
       await loadAllData();
     } catch (e: any) {
       setError(e.message);
     } finally {
       setIsAddingAdmin(false);
+    }
+  };
+
+  // Previously the update-role endpoint existed server-side with no UI
+  // calling it - the only way to change an existing admin's role was to
+  // revoke and re-promote them, losing the account's history in the
+  // process. This wires the Change Role form to that same endpoint.
+  const handleChangeAdminRole = async () => {
+    if (!changeRoleTarget || !changeRoleReason.trim()) return;
+    try {
+      setIsChangingRole(true);
+      setError(null);
+      const escalationHours = changeRoleEscalationHours.trim() === '' ? undefined : Number(changeRoleEscalationHours);
+      const res = await secureApiFetch(`/api/admin/admin-users/${changeRoleTarget.uid}/role`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          role: changeRoleValue,
+          reason: changeRoleReason.trim(),
+          ...(escalationHours ? { escalationHours } : {}),
+        })
+      });
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.error || "Couldn't update that admin's role.");
+      }
+      showSuccess(
+        escalationHours
+          ? `Role updated - this access expires automatically in ${escalationHours}h.`
+          : 'Role updated.'
+      );
+      setChangeRoleTarget(null);
+      setChangeRoleReason('');
+      setChangeRoleEscalationHours('');
+      await loadAllData();
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setIsChangingRole(false);
     }
   };
 
@@ -1342,11 +1411,39 @@ export const AdminDashboard = () => {
                     ))}
                   </select>
                 </div>
+                <div>
+                  <label htmlFor="admin-new-admin-reason" className="block text-xs font-black uppercase tracking-wider text-text-muted mb-2">Reason (required)</label>
+                  <input
+                    id="admin-new-admin-reason"
+                    type="text"
+                    required
+                    minLength={3}
+                    maxLength={500}
+                    placeholder="Why does this account need this access?"
+                    value={newAdminReason}
+                    onChange={(e) => setNewAdminReason(e.target.value)}
+                    className="w-full px-4 py-2.5 bg-surface dark:bg-card border border-border rounded-xl text-sm text-text-main placeholder:text-text-muted focus:outline-none focus:border-primary"
+                  />
+                </div>
+                <div>
+                  <label htmlFor="admin-new-admin-escalation" className="block text-xs font-black uppercase tracking-wider text-text-muted mb-2">Temporary Escalation (hours, optional)</label>
+                  <input
+                    id="admin-new-admin-escalation"
+                    type="number"
+                    min={1}
+                    max={720}
+                    placeholder="Leave blank for a permanent grant"
+                    value={newAdminEscalationHours}
+                    onChange={(e) => setNewAdminEscalationHours(e.target.value)}
+                    className="w-full px-4 py-2.5 bg-surface dark:bg-card border border-border rounded-xl text-sm text-text-main placeholder:text-text-muted focus:outline-none focus:border-primary"
+                  />
+                  <p className="text-[10px] text-text-muted mt-1.5">Set this for incident-response or time-boxed access - the role expires itself, enforced server-side, with no need to remember to revoke it.</p>
+                </div>
 
                 <button
                   type="submit"
-                  disabled={isAddingAdmin}
-                  className="w-full btn-primary py-3 flex items-center justify-center gap-2 group text-xs uppercase tracking-widest"
+                  disabled={isAddingAdmin || !newAdminReason.trim()}
+                  className="w-full btn-primary py-3 flex items-center justify-center gap-2 group text-xs uppercase tracking-widest disabled:opacity-50"
                 >
                   {isAddingAdmin ? <Loader2 className="w-4 h-4 animate-spin" /> : <ShieldCheck className="w-4 h-4" />}
                   Promote to Admin
@@ -1363,25 +1460,92 @@ export const AdminDashboard = () => {
                 </div>
               </div>
 
+              {/* Change Role form - targets changeRoleTarget, set by the
+                  per-row "Change Role" button below. */}
+              <AnimatePresence>
+                {changeRoleTarget && (
+                  <motion.div
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: 'auto' }}
+                    exit={{ opacity: 0, height: 0 }}
+                    className="mb-6 p-5 bg-primary/5 rounded-2xl border border-primary/20 space-y-3 overflow-hidden"
+                  >
+                    <h5 className="font-display text-sm font-bold text-text-main">Change Role: {changeRoleTarget.displayName || changeRoleTarget.email}</h5>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      <select
+                        aria-label="New role"
+                        value={changeRoleValue}
+                        onChange={(e) => setChangeRoleValue(e.target.value)}
+                        className="w-full p-3 bg-surface border border-border rounded-xl text-sm text-text-main focus:outline-none focus:border-primary"
+                      >
+                        {PLATFORM_ADMIN_ROLES.map((role) => (
+                          <option key={role} value={role}>{PLATFORM_ADMIN_ROLE_LABELS[role]}</option>
+                        ))}
+                      </select>
+                      <input
+                        type="number"
+                        min={1}
+                        max={720}
+                        placeholder="Temporary escalation (hours, optional)"
+                        value={changeRoleEscalationHours}
+                        onChange={(e) => setChangeRoleEscalationHours(e.target.value)}
+                        className="w-full px-4 py-2.5 bg-surface border border-border rounded-xl text-sm text-text-main placeholder:text-text-muted focus:outline-none focus:border-primary"
+                      />
+                    </div>
+                    <input
+                      type="text"
+                      required
+                      minLength={3}
+                      maxLength={500}
+                      placeholder="Reason (required)"
+                      value={changeRoleReason}
+                      onChange={(e) => setChangeRoleReason(e.target.value)}
+                      className="w-full px-4 py-2.5 bg-surface border border-border rounded-xl text-sm text-text-main placeholder:text-text-muted focus:outline-none focus:border-primary"
+                    />
+                    <div className="flex gap-3 justify-end">
+                      <button
+                        onClick={() => setChangeRoleTarget(null)}
+                        className="px-4 py-2 bg-transparent text-text-muted hover:text-text-main text-xs font-bold uppercase tracking-wider transition-colors"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        onClick={handleChangeAdminRole}
+                        disabled={isChangingRole || !changeRoleReason.trim()}
+                        className="px-5 py-2.5 bg-primary hover:bg-primary-dark text-white text-xs font-bold uppercase tracking-wider rounded-xl transition-all flex items-center gap-2 disabled:opacity-50"
+                      >
+                        {isChangingRole ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                        Update Role
+                      </button>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
               <div className="overflow-x-auto">
                 <table className="w-full text-left border-collapse">
                   <thead>
                     <tr className="border-b border-white/5">
                       <th scope="col" className="pb-3 text-xs font-black uppercase tracking-widest text-text-muted">Administrator</th>
                       <th scope="col" className="pb-3 text-xs font-black uppercase tracking-widest text-text-muted">Assigned Role</th>
-                      <th scope="col" className="pb-3 text-xs font-black uppercase tracking-widest text-text-muted text-right">Revoke Privileges</th>
+                      <th scope="col" className="pb-3 text-xs font-black uppercase tracking-widest text-text-muted text-right">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="text-sm">
-                    {admins.map((adminUser) => (
+                    {admins.map((adminUser) => {
+                      const isExpired = !!adminUser.expiresAt && Date.parse(adminUser.expiresAt) < Date.now();
+                      return (
                       <tr key={adminUser.uid} className="border-b border-white/[0.02] hover:bg-white/5 transition-colors">
                         <td className="py-4">
                           <div className="font-bold text-text-main">{adminUser.displayName}</div>
                           <div className="text-xs text-text-muted font-mono">{adminUser.email}</div>
+                          {adminUser.reason && (
+                            <div className="text-[10px] text-text-muted mt-1 italic max-w-xs truncate" title={adminUser.reason}>"{adminUser.reason}"</div>
+                          )}
                         </td>
                         <td className="py-4">
                           <span className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-widest ${
-                            adminUser.role === 'platform_owner' 
+                            adminUser.role === 'platform_owner'
                               ? 'bg-destructive/10 text-destructive dark:text-[#f87171] border border-destructive/20'
                               : adminUser.role === 'platform_admin'
                               ? 'bg-primary/10 text-[#9a3412] dark:text-primary border border-primary/20'
@@ -1389,19 +1553,38 @@ export const AdminDashboard = () => {
                           }`}>
                             {adminUser.role.replace('_', ' ')}
                           </span>
+                          {adminUser.expiresAt && (
+                            <span className={`block text-[10px] mt-1.5 font-bold uppercase tracking-wide ${isExpired ? 'text-destructive dark:text-[#f87171]' : 'text-text-muted normal-case'}`}>
+                              {isExpired ? 'Escalation expired - access already revoked' : `Expires ${new Date(adminUser.expiresAt).toLocaleString()}`}
+                            </span>
+                          )}
                         </td>
                         <td className="py-4 text-right">
-                          <button
-                            onClick={() => setPendingAction({ type: 'revokeAdmin', uid: adminUser.uid, email: adminUser.email })}
-                            aria-label={`Revoke admin claims for ${adminUser.displayName}`}
-                            className="p-2 text-destructive hover:bg-destructive/10 rounded-xl transition-all"
-                            title="Revoke Admin claims"
-                          >
-                            <UserMinus className="w-4 h-4" />
-                          </button>
+                          <div className="flex items-center justify-end gap-2">
+                            <button
+                              onClick={() => {
+                                setChangeRoleTarget(adminUser);
+                                setChangeRoleValue(adminUser.role);
+                                setChangeRoleReason('');
+                                setChangeRoleEscalationHours('');
+                              }}
+                              className="px-3 py-1.5 bg-primary/10 hover:bg-primary/20 text-[#9a3412] dark:text-primary text-[10px] font-black uppercase tracking-widest rounded-lg transition-all"
+                            >
+                              Change Role
+                            </button>
+                            <button
+                              onClick={() => setPendingAction({ type: 'revokeAdmin', uid: adminUser.uid, email: adminUser.email })}
+                              aria-label={`Revoke admin claims for ${adminUser.displayName}`}
+                              className="p-2 text-destructive hover:bg-destructive/10 rounded-xl transition-all"
+                              title="Revoke Admin claims"
+                            >
+                              <UserMinus className="w-4 h-4" />
+                            </button>
+                          </div>
                         </td>
                       </tr>
-                    ))}
+                      );
+                    })}
                     {admins.length === 0 && (
                       <tr>
                         <td colSpan={3} className="py-12 text-center text-text-muted text-sm italic">

@@ -27,7 +27,19 @@ vi.mock('firebase-admin/app', () => ({ initializeApp: vi.fn(), getApps: () => [{
 vi.mock('firebase-admin/app-check', () => ({ getAppCheck: () => ({ verifyToken: vi.fn() }) }));
 vi.mock('firebase-admin/auth', () => ({
   getAuth: () => ({
-    verifyIdToken: async (t: string) => ({ uid: t, email: `${t}@test.dev`, role: t === 'owner_1' ? 'platform_owner' : undefined }),
+    verifyIdToken: async (t: string) => ({
+      uid: t,
+      email: `${t}@test.dev`,
+      role: t === 'owner_1' ? 'platform_owner' : (t === 'owner_2' ? 'platform_owner' : undefined),
+      admin: t === 'owner_2' ? true : undefined,
+      platformOwner: t === 'owner_2' ? true : undefined,
+      // owner_2 simulates a temporary escalation that already expired -
+      // the token itself still carries the old elevated claims (exactly
+      // what a real, not-yet-refreshed Firebase ID token would look
+      // like), proving requireAuth's expiry check strips them rather
+      // than relying on the claim simply being absent.
+      roleExpiresAt: t === 'owner_2' ? new Date(Date.now() - 60_000).toISOString() : undefined,
+    }),
     setCustomUserClaims: h.setCustomUserClaims,
     getUserByEmail: h.getUserByEmail,
     updateUser: h.updateUser,
@@ -58,12 +70,12 @@ beforeEach(() => {
 
 describe('POST /api/admin/admin-users', () => {
   it('requires platform owner', async () => {
-    const res = await request(app).post('/api/admin/admin-users').set(auth(NOT_OWNER)).send({ email: 'a@b.com', role: 'support_admin' });
+    const res = await request(app).post('/api/admin/admin-users').set(auth(NOT_OWNER)).send({ email: 'a@b.com', role: 'support_admin', reason: 'incident response' });
     expect(res.status).toBe(500); // requirePlatformOwner throws, caught by the generic 500 handler in this route
   });
 
   it('rejects an invalid role', async () => {
-    const res = await request(app).post('/api/admin/admin-users').set(auth(OWNER)).send({ email: 'a@b.com', role: 'super_admin' });
+    const res = await request(app).post('/api/admin/admin-users').set(auth(OWNER)).send({ email: 'a@b.com', role: 'super_admin', reason: 'incident response' });
     expect(res.status).toBe(400);
     expect(res.body.error).toMatch(/role/i);
     expect(h.setCustomUserClaims).not.toHaveBeenCalled();
@@ -72,58 +84,108 @@ describe('POST /api/admin/admin-users', () => {
   it('rejects an app-level role that is not a valid admin-panel role', async () => {
     // 'individual'/'manager' etc. are real AuthRole values but never valid
     // admin-panel roles - confirms the two enums are kept genuinely separate.
-    const res = await request(app).post('/api/admin/admin-users').set(auth(OWNER)).send({ email: 'a@b.com', role: 'individual' });
+    const res = await request(app).post('/api/admin/admin-users').set(auth(OWNER)).send({ email: 'a@b.com', role: 'individual', reason: 'incident response' });
+    expect(res.status).toBe(400);
+  });
+
+  it('requires a reason', async () => {
+    const res = await request(app).post('/api/admin/admin-users').set(auth(OWNER)).send({ email: 'a@b.com', role: 'support_admin' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/reason/i);
+    expect(h.setCustomUserClaims).not.toHaveBeenCalled();
+  });
+
+  it('rejects a too-short reason', async () => {
+    const res = await request(app).post('/api/admin/admin-users').set(auth(OWNER)).send({ email: 'a@b.com', role: 'support_admin', reason: 'hi' });
     expect(res.status).toBe(400);
   });
 
   it('accepts every valid admin-panel role and creates the admin user', async () => {
     for (const role of ['platform_owner', 'platform_admin', 'support_admin', 'content_admin', 'coach_admin', 'b2b_admin', 'viewer_admin']) {
-      const res = await request(app).post('/api/admin/admin-users').set(auth(OWNER)).send({ email: `${role}@test.dev`, role, displayName: 'Test' });
+      const res = await request(app).post('/api/admin/admin-users').set(auth(OWNER)).send({ email: `${role}@test.dev`, role, displayName: 'Test', reason: 'quarterly access review' });
       expect(res.status).toBe(200);
     }
   });
 
-  it('stores the role and sets the admin custom claim on success', async () => {
-    const res = await request(app).post('/api/admin/admin-users').set(auth(OWNER)).send({ email: 'new@test.dev', role: 'support_admin', displayName: 'New Admin' });
+  it('stores the role and sets the admin custom claim on success, with no expiry when none is requested', async () => {
+    const res = await request(app).post('/api/admin/admin-users').set(auth(OWNER)).send({ email: 'new@test.dev', role: 'support_admin', displayName: 'New Admin', reason: 'covering support rotation' });
     expect(res.status).toBe(200);
-    expect(h.setCustomUserClaims).toHaveBeenCalledWith('uid_new@test.dev', expect.objectContaining({ admin: true, role: 'support_admin', platformOwner: false }));
+    expect(h.setCustomUserClaims).toHaveBeenCalledWith('uid_new@test.dev', expect.objectContaining({ admin: true, role: 'support_admin', platformOwner: false, roleExpiresAt: null }));
     const stored = getDocRaw('admin_users/uid_new@test.dev');
     expect(stored?.role).toBe('support_admin');
     expect(stored?.permissions).toEqual(['users.read', 'safety.read']);
+    expect(stored?.reason).toBe('covering support rotation');
+    expect(stored?.expiresAt).toBeNull();
+  });
+
+  it('grants a temporary, self-expiring escalation when escalationHours is set', async () => {
+    const res = await request(app).post('/api/admin/admin-users').set(auth(OWNER))
+      .send({ email: 'temp@test.dev', role: 'security_admin', reason: 'incident response - 24h escalation', escalationHours: 24 });
+    expect(res.status).toBe(200);
+    const [, claims] = h.setCustomUserClaims.mock.calls.at(-1) as unknown as [string, any];
+    expect(claims.roleExpiresAt).toBeTruthy();
+    expect(Date.parse(claims.roleExpiresAt)).toBeGreaterThan(Date.now());
+    const stored = getDocRaw('admin_users/uid_temp@test.dev');
+    expect(stored?.expiresAt).toBe(claims.roleExpiresAt);
+  });
+
+  it('rejects an escalation longer than 30 days', async () => {
+    const res = await request(app).post('/api/admin/admin-users').set(auth(OWNER))
+      .send({ email: 'a@b.com', role: 'support_admin', reason: 'too long', escalationHours: 721 });
+    expect(res.status).toBe(400);
   });
 });
 
 describe('POST /api/admin/admin-users/:uid/role', () => {
   it('requires platform owner', async () => {
-    const res = await request(app).post('/api/admin/admin-users/target_uid/role').set(auth(NOT_OWNER)).send({ role: 'support_admin' });
+    const res = await request(app).post('/api/admin/admin-users/target_uid/role').set(auth(NOT_OWNER)).send({ role: 'support_admin', reason: 'incident response' });
     expect(res.status).toBe(500);
   });
 
   it('rejects an invalid role', async () => {
-    const res = await request(app).post('/api/admin/admin-users/target_uid/role').set(auth(OWNER)).send({ role: 'super_admin' });
+    const res = await request(app).post('/api/admin/admin-users/target_uid/role').set(auth(OWNER)).send({ role: 'super_admin', reason: 'incident response' });
     expect(res.status).toBe(400);
     expect(h.setCustomUserClaims).not.toHaveBeenCalled();
   });
 
+  it('requires a reason', async () => {
+    const res = await request(app).post('/api/admin/admin-users/target_uid/role').set(auth(OWNER)).send({ role: 'support_admin' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/reason/i);
+  });
+
   it('rejects an extra, unexpected field in the body', async () => {
-    const res = await request(app).post('/api/admin/admin-users/target_uid/role').set(auth(OWNER)).send({ role: 'support_admin', extra: true });
+    const res = await request(app).post('/api/admin/admin-users/target_uid/role').set(auth(OWNER)).send({ role: 'support_admin', reason: 'incident response', extra: true });
     expect(res.status).toBe(400);
   });
 
   it('updates the role on a valid request', async () => {
     seedDoc('admin_users/target_uid', { uid: 'target_uid', role: 'viewer_admin', permissions: [] });
-    const res = await request(app).post('/api/admin/admin-users/target_uid/role').set(auth(OWNER)).send({ role: 'content_admin' });
+    const res = await request(app).post('/api/admin/admin-users/target_uid/role').set(auth(OWNER)).send({ role: 'content_admin', reason: 'promoted for content review duties' });
     expect(res.status).toBe(200);
     const stored = getDocRaw('admin_users/target_uid');
     expect(stored?.role).toBe('content_admin');
     expect(stored?.permissions).toEqual(['content.manage', 'nova.manage']);
+    expect(stored?.reason).toBe('promoted for content review duties');
   });
 
   it('refuses to downgrade the last remaining platform owner', async () => {
     seedDoc('admin_users/target_uid', { uid: 'target_uid', role: 'platform_owner' });
-    const res = await request(app).post('/api/admin/admin-users/target_uid/role').set(auth(OWNER)).send({ role: 'support_admin' });
+    const res = await request(app).post('/api/admin/admin-users/target_uid/role').set(auth(OWNER)).send({ role: 'support_admin', reason: 'org restructure' });
     expect(res.status).toBe(500);
     expect(res.body.error).toMatch(/last Platform Owner/i);
+  });
+});
+
+describe('requireAuth: temporary privilege escalation expiry', () => {
+  it('no longer treats an expired escalation as admin, platform_admin, or platform_owner', async () => {
+    // owner_2 is minted by the test's own verifyIdToken mock below with an
+    // already-past roleExpiresAt - requireAuth must strip the elevated
+    // claims before any of the three guards see them, with no Firestore
+    // read and no cron job involved.
+    const res = await request(app).get('/api/admin/admin-users').set(auth('owner_2'));
+    expect(res.status).toBe(500);
+    expect(res.body.error).toMatch(/Forbidden/i);
   });
 });
 
