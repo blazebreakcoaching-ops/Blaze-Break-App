@@ -6324,7 +6324,21 @@ app.get("/api/admin/admin-users", verifyAppCheck, authenticateFirebaseUser, asyn
     requireAdmin(req);
     const db = getDb();
     const snap = await db.collection("admin_users").get();
-    const admins = snap.docs.map(doc => doc.data());
+    // mfaEnabled lives on the Firebase Auth custom claims, not the
+    // admin_users doc - a real security signal for the Security & Audit
+    // view (which of the platform's own most powerful accounts don't
+    // have two-factor turned on), read fresh per admin rather than
+    // trusted from anything client-writable. A lookup failure (e.g. the
+    // Auth record was deleted) degrades to false rather than failing the
+    // whole list.
+    const admins = await Promise.all(snap.docs.map(async (doc) => {
+      const data = doc.data();
+      let mfaEnabled = false;
+      try {
+        mfaEnabled = (await getAuth().getUser(doc.id)).customClaims?.mfaEnabled === true;
+      } catch (e) { /* Auth record missing - leave as false, not fabricated true */ }
+      return { ...data, mfaEnabled };
+    }));
     res.json({ admins });
   } catch (err: any) {
     res.status(500).json({ error: err.message });

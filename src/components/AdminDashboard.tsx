@@ -67,6 +67,10 @@ interface PlatformAdmin {
   // won't have them.
   reason?: string;
   expiresAt?: string | null;
+  // Read fresh from this account's real Firebase Auth custom claims on
+  // every fetch, not stored on the admin_users doc - whether one of the
+  // platform's own most powerful accounts has two-factor turned on.
+  mfaEnabled?: boolean;
 }
 
 interface AuditLog {
@@ -153,6 +157,17 @@ const PLAN_LABELS: Record<string, string> = {
 // completeness (entitlements.ts declares them) but no real payment
 // provider is wired up in this codebase today - only 'admin' and
 // 'organisation' are ever actually written.
+// Groups server.ts's real logAdminAction action strings for the Audit
+// tab's category filter - every action string that actually gets logged
+// somewhere in server.ts is accounted for exactly once, so "Other"
+// genuinely means "a real action outside these groups," not a catch-all
+// for typos.
+const AUDIT_CATEGORIES = {
+  'Role & Access': ['create_admin_user', 'update_admin_role', 'remove_admin_user', 'update_user_role', 'suspend_user', 'unsuspend_user'],
+  'Entitlements': ['grant_entitlement'],
+  'Platform Controls': ['manage_feature_flags', 'manage_nova_settings', 'manage_knowledge_chunks', 'manage_content_library', 'manage_organisation', 'update_release_channel', 'LEGAL_DOCUMENT_PUBLISHED'],
+} as const;
+
 const BILLING_SOURCE_LABELS: Record<string, string> = {
   admin: 'Admin grant',
   organisation: 'Organisation seat',
@@ -222,6 +237,7 @@ export const AdminDashboard = () => {
 
   // Forms State
   const [searchQuery, setSearchQuery] = useState('');
+  const [auditCategoryFilter, setAuditCategoryFilter] = useState<'all' | keyof typeof AUDIT_CATEGORIES>('all');
   const [verifiedFilter, setVerifiedFilter] = useState<'all' | 'verified' | 'unverified'>('all');
   const [roleFilter, setRoleFilter] = useState('all');
   const [planFilter, setPlanFilter] = useState('all');
@@ -775,6 +791,10 @@ export const AdminDashboard = () => {
     (verifiedFilter === 'all' || (verifiedFilter === 'verified') === u.emailVerified) &&
     (roleFilter === 'all' || (u.role || 'user') === roleFilter) &&
     (planFilter === 'all' || (u.plan || 'free') === planFilter)
+  );
+
+  const filteredAuditLogs = auditLogs.filter((log) =>
+    auditCategoryFilter === 'all' || (AUDIT_CATEGORIES[auditCategoryFilter] as readonly string[]).includes(log.action)
   );
 
   // Distinct roles actually present in the loaded page, not the full
@@ -1534,8 +1554,17 @@ export const AdminDashboard = () => {
             <div className="lg:col-span-2 card p-6 bg-surface dark:bg-card border border-border rounded-2xl">
               <div className="flex items-center justify-between mb-6">
                 <h4 className="text-sm font-bold text-text-main">Active Administrator Registry</h4>
-                <div className="text-xs uppercase font-black tracking-widest text-text-muted">
-                  Total Admins: {admins.length}
+                <div className="text-right">
+                  <div className="text-xs uppercase font-black tracking-widest text-text-muted">
+                    Total Admins: {admins.length}
+                  </div>
+                  {admins.length > 0 && (
+                    <div className={`text-[10px] font-bold uppercase tracking-wide mt-0.5 ${
+                      admins.every((a) => a.mfaEnabled) ? 'text-success dark:text-[#4ade80]' : 'text-[#9a3412] dark:text-warning'
+                    }`}>
+                      {admins.filter((a) => a.mfaEnabled).length} / {admins.length} have MFA enabled
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -1607,6 +1636,7 @@ export const AdminDashboard = () => {
                     <tr className="border-b border-white/5">
                       <th scope="col" className="pb-3 text-xs font-black uppercase tracking-widest text-text-muted">Administrator</th>
                       <th scope="col" className="pb-3 text-xs font-black uppercase tracking-widest text-text-muted">Assigned Role</th>
+                      <th scope="col" className="pb-3 text-xs font-black uppercase tracking-widest text-text-muted">2FA</th>
                       <th scope="col" className="pb-3 text-xs font-black uppercase tracking-widest text-text-muted text-right">Actions</th>
                     </tr>
                   </thead>
@@ -1638,6 +1668,13 @@ export const AdminDashboard = () => {
                             </span>
                           )}
                         </td>
+                        <td className="py-4">
+                          <span className={`px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-widest ${
+                            adminUser.mfaEnabled ? 'bg-success/10 text-success dark:text-[#4ade80]' : 'bg-warning/10 text-[#9a3412] dark:text-warning'
+                          }`}>
+                            {adminUser.mfaEnabled ? 'Enabled' : 'Not enabled'}
+                          </span>
+                        </td>
                         <td className="py-4 text-right">
                           <div className="flex items-center justify-end gap-2">
                             <button
@@ -1666,7 +1703,7 @@ export const AdminDashboard = () => {
                     })}
                     {admins.length === 0 && (
                       <tr>
-                        <td colSpan={3} className="py-12 text-center text-text-muted text-sm italic">
+                        <td colSpan={4} className="py-12 text-center text-text-muted text-sm italic">
                           No administrative promotions logged yet.
                         </td>
                       </tr>
@@ -1943,18 +1980,33 @@ export const AdminDashboard = () => {
         {/* Tab 3: Audit Timeline */}
         {activeTab === 'audit' && (
           <div className="card p-6 bg-surface dark:bg-card border border-border rounded-2xl">
-            <div className="flex items-center justify-between mb-6">
+            <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-3 mb-6">
               <div>
                 <h4 className="text-sm font-bold text-text-main">Audit Event Trail</h4>
-                <p className="text-xs text-text-muted mt-0.5">Immutable administrative security activity registry</p>
+                <p className="text-xs text-text-muted mt-0.5">
+                  Immutable administrative security activity registry - firestore.rules denies all client writes to this collection (<code className="font-mono">allow write: if false</code>); only server-side admin actions can ever append to it.
+                </p>
               </div>
-              <div className="text-xs uppercase font-black tracking-widest text-text-muted">
-                Audit Events Cached: {auditLogs.length}
+              <div className="flex items-center gap-3 shrink-0">
+                <select
+                  aria-label="Filter by category"
+                  value={auditCategoryFilter}
+                  onChange={(e) => setAuditCategoryFilter(e.target.value as typeof auditCategoryFilter)}
+                  className="px-3 py-2 bg-surface dark:bg-card border border-border rounded-xl text-xs text-text-main focus:outline-none focus:border-primary"
+                >
+                  <option value="all">All categories</option>
+                  {Object.keys(AUDIT_CATEGORIES).map((cat) => (
+                    <option key={cat} value={cat}>{cat}</option>
+                  ))}
+                </select>
+                <div className="text-xs uppercase font-black tracking-widest text-text-muted">
+                  Showing {filteredAuditLogs.length} of {auditLogs.length}
+                </div>
               </div>
             </div>
 
             <div className="space-y-4">
-              {auditLogs.map((log) => (
+              {filteredAuditLogs.map((log) => (
                 <div key={log.id} className="p-4 bg-card hover:bg-white/[0.01] rounded-xl border border-white/5 transition-all flex items-start gap-4">
                   <div className={`p-2 rounded-lg shrink-0 ${
                     log.action.includes('suspend') 
@@ -1981,9 +2033,9 @@ export const AdminDashboard = () => {
                   </div>
                 </div>
               ))}
-              {auditLogs.length === 0 && (
+              {filteredAuditLogs.length === 0 && (
                 <div className="py-12 text-center text-text-muted text-sm italic">
-                  No administrative actions are logged in this ledger yet.
+                  {auditLogs.length === 0 ? 'No administrative actions are logged in this ledger yet.' : 'No events in this category.'}
                 </div>
               )}
             </div>

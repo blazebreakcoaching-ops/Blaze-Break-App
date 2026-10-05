@@ -68,6 +68,28 @@ beforeEach(() => {
   h.getUser.mockClear();
 });
 
+describe('GET /api/admin/admin-users', () => {
+  it("surfaces each admin's real mfaEnabled status, read fresh from Auth custom claims", async () => {
+    seedDoc('admin_users/uid_with_mfa', { uid: 'uid_with_mfa', email: 'secure@test.dev', role: 'platform_admin' });
+    seedDoc('admin_users/uid_without_mfa', { uid: 'uid_without_mfa', email: 'insecure@test.dev', role: 'support_admin' });
+    h.getUser.mockImplementationOnce(async (uid: string) => ({ customClaims: uid === 'uid_with_mfa' ? { mfaEnabled: true } : {} }));
+    h.getUser.mockImplementationOnce(async (uid: string) => ({ customClaims: uid === 'uid_with_mfa' ? { mfaEnabled: true } : {} }));
+    const res = await request(app).get('/api/admin/admin-users').set(auth(OWNER));
+    expect(res.status).toBe(200);
+    const byUid = Object.fromEntries(res.body.admins.map((a: any) => [a.uid, a]));
+    expect(byUid.uid_with_mfa.mfaEnabled).toBe(true);
+    expect(byUid.uid_without_mfa.mfaEnabled).toBe(false);
+  });
+
+  it('defaults mfaEnabled to false (not fabricated true) when the Auth lookup fails', async () => {
+    seedDoc('admin_users/ghost', { uid: 'ghost', email: 'ghost@test.dev', role: 'viewer_admin' });
+    h.getUser.mockImplementationOnce(async () => { throw new Error('no such user'); });
+    const res = await request(app).get('/api/admin/admin-users').set(auth(OWNER));
+    expect(res.status).toBe(200);
+    expect(res.body.admins[0].mfaEnabled).toBe(false);
+  });
+});
+
 describe('POST /api/admin/admin-users', () => {
   it('requires platform owner', async () => {
     const res = await request(app).post('/api/admin/admin-users').set(auth(NOT_OWNER)).send({ email: 'a@b.com', role: 'support_admin', reason: 'incident response' });
