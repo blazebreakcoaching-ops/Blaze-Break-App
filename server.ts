@@ -6131,12 +6131,29 @@ app.get("/api/admin/users", verifyAppCheck, authenticateFirebaseUser, async (req
           role: (authUser.customClaims as any)?.role || 'user',
           plan,
           entitlementStatus: entitlement.status,
+          // Raw provenance fields for the Plans & Entitlements workspace -
+          // `plan` above is the EFFECTIVE plan (already falls back to
+          // 'free' once entitlementEnd has passed); `storedPlan` is the
+          // account's actual stored/coerced plan, so an admin can tell
+          // "this account's grant expired" apart from "this account was
+          // never granted anything," which the People table's collapsed
+          // `plan` field alone can't distinguish.
+          storedPlan: entitlement.plan,
+          billingSource: entitlement.billingSource,
+          entitlementEnd: entitlement.entitlementEnd,
+          cancelAtPeriodEnd: entitlement.cancelAtPeriodEnd,
+          lastVerifiedAt: entitlement.lastVerifiedAt,
         };
       } catch (e) {
         // A Firestore doc with no matching live Auth account (e.g.
         // deleted directly in the Auth console) - surfaced honestly
         // rather than papered over with a fabricated email/date.
-        return { uid: doc.id, email: null, emailVerified: false, isAnonymous: false, createdAt: null, lastSignIn: null, accessStatus: "unknown", role: 'user', plan, entitlementStatus: entitlement.status };
+        return {
+          uid: doc.id, email: null, emailVerified: false, isAnonymous: false, createdAt: null, lastSignIn: null,
+          accessStatus: "unknown", role: 'user', plan, entitlementStatus: entitlement.status,
+          storedPlan: entitlement.plan, billingSource: entitlement.billingSource, entitlementEnd: entitlement.entitlementEnd,
+          cancelAtPeriodEnd: entitlement.cancelAtPeriodEnd, lastVerifiedAt: entitlement.lastVerifiedAt,
+        };
       }
     }));
     // This route has always been capped at ADMIN_USERS_PAGE_LIMIT with no
@@ -6397,7 +6414,17 @@ app.get("/api/admin/audit-logs", verifyAppCheck, authenticateFirebaseUser, async
     requireAdmin(req);
     const db = getDb();
     const snap = await db.collection("admin_audit_logs").orderBy("createdAt", "desc").limit(100).get();
-    const logs = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    // createdAt is a Firestore server Timestamp, which has no toJSON - sent
+    // raw it serializes to {_seconds,_nanoseconds} and the client's
+    // `new Date(log.createdAt)` silently produces "Invalid Date" for every
+    // entry. Converted the same way other routes in this file already do;
+    // a plain string passes through unchanged (e.g. the fake-firestore
+    // test harness resolves serverTimestamp() directly to an ISO string).
+    const logs = snap.docs.map((doc) => {
+      const data = doc.data();
+      const createdAt = typeof data.createdAt?.toDate === 'function' ? data.createdAt.toDate().toISOString() : (typeof data.createdAt === 'string' ? data.createdAt : null);
+      return { id: doc.id, ...data, createdAt };
+    });
     res.json({ logs });
   } catch (err: any) {
     res.status(500).json({ error: err.message });

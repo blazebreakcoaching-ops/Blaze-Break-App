@@ -40,6 +40,17 @@ interface AdminUser {
   // was added) wouldn't have it.
   plan?: 'free' | 'core' | 'performance' | 'executive' | 'legacy_premium';
   entitlementStatus?: 'active' | 'trial' | 'grace' | 'past_due' | 'cancelled' | 'expired';
+  // Raw entitlement provenance - see entitlements.ts's EntitlementRecord.
+  // `storedPlan` is the account's actual stored/coerced plan, which can
+  // differ from the computed `plan` above once entitlementEnd has passed
+  // (storedPlan stays e.g. 'performance', plan falls back to 'free') -
+  // without this an expired grant and a never-granted account were
+  // indistinguishable in the admin UI.
+  storedPlan?: 'free' | 'core' | 'performance' | 'executive' | 'legacy_premium';
+  billingSource?: 'stripe' | 'apple' | 'google' | 'organisation' | 'admin' | null;
+  entitlementEnd?: string | null;
+  cancelAtPeriodEnd?: boolean;
+  lastVerifiedAt?: string | null;
 }
 
 interface PlatformAdmin {
@@ -53,11 +64,16 @@ interface PlatformAdmin {
 
 interface AuditLog {
   id: string;
-  adminEmail: string;
+  // Matches logAdminAction's actual stored field names (server.ts) -
+  // this previously read `adminEmail`/`details`, fields that were never
+  // written, so every audit entry silently showed "Admin undefined" and
+  // never rendered its Details block.
+  actorEmail: string;
+  actorRole?: string;
   action: string;
   targetUid?: string;
   targetEmail?: string;
-  details?: any;
+  metadata?: any;
   createdAt: string;
 }
 
@@ -124,12 +140,30 @@ const PLAN_LABELS: Record<string, string> = {
   legacy_premium: 'Legacy Premium',
 };
 
+// Provenance labels for entitlements.ts's EntitlementBillingSource - the
+// "why/how does this account have this plan" answer the Plans &
+// Entitlements workspace surfaces. Stripe/Apple/Google are listed for
+// completeness (entitlements.ts declares them) but no real payment
+// provider is wired up in this codebase today - only 'admin' and
+// 'organisation' are ever actually written.
+const BILLING_SOURCE_LABELS: Record<string, string> = {
+  admin: 'Admin grant',
+  organisation: 'Organisation seat',
+  stripe: 'Stripe',
+  apple: 'Apple',
+  google: 'Google Play',
+};
+
 export const AdminDashboard = () => {
   const { appRole, user: authUser } = useAuth();
 
   const isAdmin = isPlatformAdminRole(appRole);
 
-  const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'admins' | 'orgs' | 'audit' | 'somatic' | 'feedback'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'entitlements' | 'admins' | 'orgs' | 'audit' | 'somatic' | 'feedback'>('overview');
+  // Which account's Access Timeline is expanded in the Plans &
+  // Entitlements tab - at most one open at a time, same pattern as other
+  // single-item expand/collapse state in this file.
+  const [expandedTimelineUid, setExpandedTimelineUid] = useState<string | null>(null);
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [usersCapped, setUsersCapped] = useState(false);
   const [admins, setAdmins] = useState<PlatformAdmin[]>([]);
@@ -610,6 +644,20 @@ export const AdminDashboard = () => {
     return { label: 'Active', tone: 'active' };
   };
 
+  // Whether an account's STORED entitlement is actually live right now -
+  // `storedPlan` can be e.g. 'performance' while the computed `plan`
+  // already fell back to 'free' because entitlementEnd has passed. Without
+  // this distinction an expired time-limited grant and an account that was
+  // never granted anything both just show "Free", with no way to tell
+  // "this access ended" from "this access was never given" - exactly the
+  // kind of silently-collapsed-to-zero state the Command Centre is meant
+  // to avoid.
+  const entitlementEffectiveState = (u: AdminUser): { label: string; tone: 'active' | 'muted' | 'warning' } => {
+    if (!u.storedPlan || u.storedPlan === 'free') return { label: 'Free', tone: 'muted' };
+    if (u.plan === 'free') return { label: 'Expired', tone: 'warning' };
+    return { label: 'Live', tone: 'active' };
+  };
+
   const applySavedView = (view: (typeof savedViews)[number]) => {
     setSearchQuery(view.searchQuery);
     setVerifiedFilter(view.verifiedFilter);
@@ -903,6 +951,7 @@ export const AdminDashboard = () => {
         {[
           { id: 'overview', label: 'Overview', icon: ShieldCheck },
           { id: 'users', label: 'User Roles & claims', icon: Key },
+          { id: 'entitlements', label: 'Plans & Entitlements', icon: CreditCard },
           { id: 'admins', label: 'Promote Platform Admins', icon: ShieldAlert },
           { id: 'orgs', label: 'Organisations', icon: Building2 },
           { id: 'audit', label: 'Auditor Event Log', icon: Activity },
@@ -1106,6 +1155,132 @@ export const AdminDashboard = () => {
                       {filteredUsers.length === 0 && (
                         <tr>
                           <td colSpan={8} className="py-12 text-center text-text-muted text-sm italic">
+                            No matching user accounts registered on this node.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Plans & Entitlements - provenance (who/what granted this
+            account's access), whether the stored grant is actually live
+            right now, and an Access Timeline of every grant_entitlement
+            audit event for that account. Reuses the same users/auditLogs
+            data already loaded for People/Security & Audit - no separate
+            fetch - and the same Account Control Drawer for making
+            changes, rather than a second, duplicate editing surface. */}
+        {activeTab === 'entitlements' && (
+          <div className="space-y-6">
+            <p className="text-xs text-text-muted leading-relaxed max-w-2xl">
+              Every row below is this account's real stored entitlement record - not a derived guess. "Effective" shows whether that grant is live right now; a "Live" grant can still show "Expired" here once its end date passes, even though nothing else about the record changed.
+            </p>
+            {loading ? (
+              <div className="flex flex-col items-center justify-center py-24 gap-4">
+                <Loader2 className="w-8 h-8 animate-spin text-primary" />
+                <p className="text-xs uppercase font-black tracking-widest text-text-muted">Accessing Secure Claims Ledger...</p>
+              </div>
+            ) : (
+              <div className="card p-6 bg-surface dark:bg-card border border-border dark:border-border shadow-xl rounded-2xl">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left border-collapse">
+                    <thead>
+                      <tr className="border-b border-white/5">
+                        <th scope="col" className="pb-3 text-xs font-black uppercase tracking-widest text-text-muted">Account</th>
+                        <th scope="col" className="pb-3 text-xs font-black uppercase tracking-widest text-text-muted">Stored Plan</th>
+                        <th scope="col" className="pb-3 text-xs font-black uppercase tracking-widest text-text-muted">Effective</th>
+                        <th scope="col" className="pb-3 text-xs font-black uppercase tracking-widest text-text-muted">Source</th>
+                        <th scope="col" className="pb-3 text-xs font-black uppercase tracking-widest text-text-muted">Expires</th>
+                        <th scope="col" className="pb-3 text-xs font-black uppercase tracking-widest text-text-muted">Last Verified</th>
+                        <th scope="col" className="pb-3 text-xs font-black uppercase tracking-widest text-text-muted text-right">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="text-sm">
+                      {filteredUsers.map((u) => {
+                        const effective = entitlementEffectiveState(u);
+                        const timeline = auditLogs.filter((log) => log.action === 'grant_entitlement' && log.targetUid === u.uid);
+                        return (
+                          <React.Fragment key={u.uid}>
+                            <tr className="border-b border-white/[0.02] hover:bg-white/5 transition-colors">
+                              <td className="py-4 font-bold text-text-main max-w-[220px] truncate" title={u.email || u.uid}>
+                                {u.email || <span className="font-normal italic text-text-muted">{u.isAnonymous ? 'No email (demo account)' : 'No email on record'}</span>}
+                              </td>
+                              <td className="py-4">
+                                <span className={`px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-widest ${
+                                  u.storedPlan === 'executive' ? 'bg-primary/10 text-primary'
+                                  : u.storedPlan === 'performance' ? 'bg-success/10 text-success dark:text-[#4ade80]'
+                                  : u.storedPlan === 'core' ? 'bg-info/10 text-info'
+                                  : u.storedPlan === 'legacy_premium' ? 'bg-warning/10 text-[#9a3412] dark:text-warning'
+                                  : 'bg-surface text-text-muted'
+                                }`}>
+                                  {u.storedPlan ? PLAN_LABELS[u.storedPlan] || u.storedPlan : 'Unknown'}
+                                </span>
+                              </td>
+                              <td className="py-4">
+                                <span className={`px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-widest ${
+                                  effective.tone === 'active' ? 'bg-success/10 text-success dark:text-[#4ade80]'
+                                  : effective.tone === 'warning' ? 'bg-warning/10 text-[#9a3412] dark:text-warning'
+                                  : 'bg-surface text-text-muted'
+                                }`}>
+                                  {effective.label}
+                                </span>
+                                {u.cancelAtPeriodEnd && effective.tone === 'active' && (
+                                  <span className="block text-[10px] text-text-muted mt-1 normal-case">Not renewing</span>
+                                )}
+                              </td>
+                              <td className="py-4 text-text-muted text-xs">
+                                {u.billingSource ? (BILLING_SOURCE_LABELS[u.billingSource] || u.billingSource) : 'Not connected'}
+                              </td>
+                              <td className="py-4 text-text-muted text-xs">{u.entitlementEnd ? new Date(u.entitlementEnd).toLocaleDateString() : 'No fixed end'}</td>
+                              <td className="py-4 text-text-muted text-xs">{u.lastVerifiedAt ? new Date(u.lastVerifiedAt).toLocaleDateString() : 'Never'}</td>
+                              <td className="py-4 text-right">
+                                <div className="flex items-center justify-end gap-2">
+                                  <button
+                                    onClick={() => setExpandedTimelineUid(expandedTimelineUid === u.uid ? null : u.uid)}
+                                    disabled={timeline.length === 0}
+                                    className="px-3 py-1.5 bg-surface hover:bg-border text-text-muted text-[10px] font-black uppercase tracking-widest rounded-lg transition-all disabled:opacity-40"
+                                  >
+                                    Timeline ({timeline.length})
+                                  </button>
+                                  <button
+                                    onClick={() => openAccountDrawer(u)}
+                                    className="px-3 py-1.5 bg-primary/10 hover:bg-primary/20 text-[#9a3412] dark:text-primary text-[10px] font-black uppercase tracking-widest rounded-lg transition-all"
+                                  >
+                                    Manage
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                            {expandedTimelineUid === u.uid && timeline.length > 0 && (
+                              <tr className="border-b border-white/[0.02] bg-background/40">
+                                <td colSpan={7} className="py-3 px-2">
+                                  <div className="space-y-2 pl-2 border-l-2 border-primary/30">
+                                    {timeline.map((log) => (
+                                      <div key={log.id} className="text-xs text-text-muted">
+                                        <span className="font-mono text-[10px] text-text-muted">{new Date(log.createdAt).toLocaleString()}</span>
+                                        {' — '}
+                                        <span className="text-text-main font-semibold">{log.actorEmail}</span> granted{' '}
+                                        <span className="text-text-main">{PLAN_LABELS[log.metadata?.plan] || log.metadata?.plan}</span>
+                                        {log.metadata?.previousPlan && (
+                                          <span> (from {PLAN_LABELS[log.metadata.previousPlan] || log.metadata.previousPlan}, {log.metadata.planChange})</span>
+                                        )}
+                                        {log.metadata?.durationDays && <span> for {log.metadata.durationDays} day{log.metadata.durationDays === 1 ? '' : 's'}</span>}
+                                      </div>
+                                    ))}
+                                  </div>
+                                </td>
+                              </tr>
+                            )}
+                          </React.Fragment>
+                        );
+                      })}
+                      {filteredUsers.length === 0 && (
+                        <tr>
+                          <td colSpan={7} className="py-12 text-center text-text-muted text-sm italic">
                             No matching user accounts registered on this node.
                           </td>
                         </tr>
@@ -1385,11 +1560,11 @@ export const AdminDashboard = () => {
                       <span className="text-[10px] text-text-muted shrink-0 font-mono">{new Date(log.createdAt).toLocaleString()}</span>
                     </div>
                     <p className="text-xs text-text-muted leading-relaxed">
-                      Admin <span className="font-bold text-text-main">{log.adminEmail}</span> executed action targeting <span className="font-mono text-text-main select-all">{log.targetUid || log.targetEmail}</span>.
+                      Admin <span className="font-bold text-text-main">{log.actorEmail}</span> executed action targeting <span className="font-mono text-text-main select-all">{log.targetUid || log.targetEmail}</span>.
                     </p>
-                    {log.details && Object.keys(log.details).length > 0 && (
+                    {log.metadata && Object.keys(log.metadata).length > 0 && (
                       <div className="p-2.5 bg-surface rounded-lg text-[10px] font-mono text-text-muted mt-2 border border-white/5 max-w-lg truncate">
-                        Details: {JSON.stringify(log.details)}
+                        Details: {JSON.stringify(log.metadata)}
                       </div>
                     )}
                   </div>
