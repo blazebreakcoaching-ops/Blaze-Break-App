@@ -706,7 +706,7 @@ export const NovaGuardianRelay = ({ contacts, onAdd, onRemove, userName }: NovaG
 
                   <button 
                     type="submit"
-                    className="w-full bg-surface dark:bg-white text-text-main dark:text-foreground py-5 rounded-xl text-xs font-black uppercase tracking-[0.15em] mt-4 shadow-xl shadow-black/10 transition-all flex items-center justify-center gap-3 hover:scale-[1.01]"
+                    className="w-full bg-surface text-text-main py-5 rounded-xl text-xs font-black uppercase tracking-[0.15em] mt-4 shadow-xl shadow-black/10 transition-all flex items-center justify-center gap-3 hover:scale-[1.01]"
                   >
                     Save Contact
                   </button>

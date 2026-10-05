@@ -149,7 +149,7 @@ export const EnergyBudgetTool = ({
   };
 
   const typeConfig: Record<string, { color: string, glow: string, icon: any }> = {
-    Executive: { color: 'bg-card dark:bg-white', glow: 'shadow-muted-foreground/20', icon: Zap },
+    Executive: { color: 'bg-card', glow: 'shadow-muted-foreground/20', icon: Zap },
     Emotional: { color: 'bg-primary', glow: 'shadow-primary/20', icon: Waves },
     Social: { color: 'bg-text-main', glow: 'shadow-surface', icon: Users },
     Physical: { color: 'bg-teal-500', glow: 'shadow-teal-500/20', icon: BatteryFull },
@@ -644,7 +644,7 @@ export const EnergyBudgetTool = ({
                         className={cn(
                           "py-3 rounded-xl border text-[11px] font-black uppercase tracking-widest transition-all",
                           newPriority === p
-                            ? "bg-card dark:bg-white text-text-main border-none shadow-xl scale-[1.02]"
+                            ? "bg-card text-text-main border-none shadow-xl scale-[1.02]"
                             : "bg-surface/40 text-text-muted border-border/40 hover:border-border"
                         )}
                       >

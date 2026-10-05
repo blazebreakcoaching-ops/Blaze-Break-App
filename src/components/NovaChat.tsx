@@ -1134,7 +1134,7 @@ We are now in real-time voice mode. Be concise and conversational, you don't nee
                               />
                               <button
                                 onClick={() => submitFeedbackMemory(i)}
-                                className="w-full py-2 bg-card dark:bg-white text-text-main dark:text-foreground border border-border/10 rounded-xl text-[11px] uppercase font-black tracking-widest hover:scale-[1.01] active:scale-95 transition-all flex items-center justify-center gap-1 cursor-pointer"
+                                className="w-full py-2 bg-card text-text-main border border-border/10 rounded-xl text-[11px] uppercase font-black tracking-widest hover:scale-[1.01] active:scale-95 transition-all flex items-center justify-center gap-1 cursor-pointer"
                               >
                                 Commit to Memory Baseline{" "}
                                 <Check className="w-3 h-3" />
