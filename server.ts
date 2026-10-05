@@ -48,6 +48,7 @@ import {
 } from './gad7';
 import { DEFAULT_LEGAL_DOCUMENTS, LegalDocumentType } from './legal-documents';
 import { OrgRole, isOrgRole, hasOrgPermission, canAssignRole, OrgPermission, ORG_ROLE_PERMISSIONS } from './org-rbac';
+import { PLATFORM_ADMIN_ROLES, isPlatformAdminRole, DEFAULT_OWNER_BOOTSTRAP_EMAILS, isOwnerBootstrapEmail as isOwnerBootstrapEmailFor } from './admin-roles';
 import { getEffectiveDataPolicy, validateDataPolicyUpdate } from './org-data-policy';
 import { initialAuthStatus, validateConnectorCreate, canSeeConnectorDetail, ORG_CONNECTOR_TYPES } from './org-connectors';
 import { isDeviceChannel, isValidAppVersion, validateDeviceRegistration, evaluateUpdateStatus, DEVICE_CHANNELS } from './desktop-deployment';
@@ -3536,16 +3537,26 @@ const requireAuth = (req: any) => {
 // hardcoded at every call site - defaults to the two addresses already in
 // use today, so this doesn't change current deployed behavior, just gives
 // it one source of truth instead of four independently-maintained copies.
-const OWNER_BOOTSTRAP_EMAILS = (process.env.OWNER_BOOTSTRAP_EMAILS || 'teampublication@gmail.com,teampublication@googlemail.com')
+const OWNER_BOOTSTRAP_EMAILS = (process.env.OWNER_BOOTSTRAP_EMAILS || DEFAULT_OWNER_BOOTSTRAP_EMAILS.join(','))
   .split(',')
   .map((e) => e.trim().toLowerCase())
   .filter(Boolean);
 const isOwnerBootstrapEmail = (email: string | null | undefined) =>
-  !!email && OWNER_BOOTSTRAP_EMAILS.includes(email.toLowerCase());
+  isOwnerBootstrapEmailFor(email, OWNER_BOOTSTRAP_EMAILS);
 
+// Widened from a literal `user.role === 'platform_owner'` check to
+// isPlatformAdminRole(user.role) (all 8 platform-staff tiers, see
+// admin-roles.ts) - previously an account whose role claim was set via
+// /api/admin/users/:uid/role (which only ever writes `{role}`, no
+// `admin` boolean) to anything other than 'platform_owner' - e.g.
+// 'security_admin' or 'support_admin' - would pass the CLIENT's
+// AdminDashboard isAdmin check (which already allowed all 8 roles) but
+// then fail every single data fetch against this guard, a real
+// inconsistency between what the UI let someone into and what the
+// backend actually honoured.
 const requireAdmin = (req: any) => {
   const user = requireAuth(req);
-  const isSuperAdmin = user.platform_admin === true || user.admin === true || user.role === 'platform_owner' || isOwnerBootstrapEmail(user.email);
+  const isSuperAdmin = user.platform_admin === true || user.admin === true || isPlatformAdminRole(user.role) || isOwnerBootstrapEmail(user.email);
   if (!isSuperAdmin) {
     throw new Error("Forbidden: Admin privileges required.");
   }
@@ -3583,6 +3594,25 @@ const assertNotLastPlatformOwner = async (targetUid: string, databaseId: string 
 
 const getDb = () => {
   return getFirestore(firebaseConfigDatabaseId);
+};
+
+// Every admin route that touches Firebase custom claims used to call
+// setCustomUserClaims(uid, {...}) with a literal object, which REPLACES
+// the account's entire claims set rather than merging into it - so
+// promoting someone to platform_admin would silently wipe an unrelated
+// claim like mfaEnabled, and revoking admin access wiped it with
+// setCustomUserClaims(uid, null). These two helpers read the current
+// claims first so every write only ever touches the keys it actually
+// means to change.
+const mergeCustomClaims = async (uid: string, patch: Record<string, any>) => {
+  const existing = (await getAuth().getUser(uid)).customClaims || {};
+  await getAuth().setCustomUserClaims(uid, { ...existing, ...patch });
+};
+
+const removeCustomClaimKeys = async (uid: string, keys: string[]) => {
+  const existing = { ...((await getAuth().getUser(uid)).customClaims || {}) };
+  for (const key of keys) delete existing[key];
+  await getAuth().setCustomUserClaims(uid, Object.keys(existing).length > 0 ? existing : null);
 };
 
 const getPermissionsForRole = (role: string): string[] => {
@@ -6008,17 +6038,27 @@ app.get("/api/admin/summary", verifyAppCheck, authenticateFirebaseUser, async (r
 
     res.json({
       totalUsers: totalUsersCount,
-      activeUsers: totalUsersCount, // Active in current session config
-      newSignups: totalUsersCount, 
-      activeSubscriptions: Math.ceil(totalUsersCount * 0.35), // Mock B2C B2B paid tier ratio
       burnoutDiagnosticCompletions: diagnosticCompletions,
-      novaMessagesToday: 24, // Mock counter for metrics
       safetyEvents: safetyEscalations,
-      contentItems: 12,
       knowledgeChunks: NOVA_KNOWLEDGE_BASE.length,
       b2bOrganisations: orgsCount,
       featureFlagsActive: activeFeatureFlags,
-      
+      // Real, env-presence-based configuration state for the Command
+      // Centre's Communications overview card - NOT a delivery/volume
+      // metric (that's Command Centre PR7's job), just an honest "is
+      // this provider even configured" signal. Previously this endpoint
+      // also returned activeSubscriptions/novaMessagesToday/contentItems/
+      // activeUsers/newSignups, all hardcoded or derived from a made-up
+      // ratio (`Math.ceil(totalUsersCount * 0.35)`) rather than anything
+      // real - exactly the kind of fabricated-but-real-looking number the
+      // Command Centre spec explicitly rules out. None of them were ever
+      // read by the client, so removing them changes no visible behaviour.
+      communications: {
+        twilioConfigured: !!(process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN),
+        brevoConfigured: !!process.env.BREVO_API_KEY,
+        pushConfigured,
+      },
+
       // GAD-informed Anxiety reset metrics
       anxietyResetsToday: resetsToday,
       anxietyResetsThisWeek: resetsThisWeek,
@@ -6147,8 +6187,8 @@ app.post("/api/admin/users/:uid/role", verifyAppCheck, authenticateFirebaseUser,
     const targetUid = req.params.uid;
     const { role } = parsed.data;
 
-    await getAuth().setCustomUserClaims(targetUid, { role });
-    
+    await mergeCustomClaims(targetUid, { role });
+
     const db = getDb();
     await db.collection("users").doc(targetUid).collection("entitlements").doc("status").set({
       role: role,
@@ -6243,10 +6283,10 @@ app.get("/api/admin/admin-users", verifyAppCheck, authenticateFirebaseUser, asyn
 // create/update an admin_users doc, just with getPermissionsForRole()'s
 // default: [] - a real admin account with a nonsense role and no
 // permissions, silently.
-const ADMIN_PANEL_ROLES = [
-  'platform_owner', 'platform_admin', 'support_admin',
-  'content_admin', 'coach_admin', 'b2b_admin', 'viewer_admin',
-] as const;
+// Sourced from admin-roles.ts (see import above) rather than its own
+// copy of the list - this used to be independently maintained and had
+// drifted from the client's role vocabulary, missing security_admin.
+const ADMIN_PANEL_ROLES = PLATFORM_ADMIN_ROLES;
 const AdminPanelRoleSchema = z.object({ role: z.enum(ADMIN_PANEL_ROLES) }).strict();
 
 app.post("/api/admin/admin-users", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
@@ -6261,13 +6301,13 @@ app.post("/api/admin/admin-users", verifyAppCheck, authenticateFirebaseUser, asy
 
     const authUser = await getAuth().getUserByEmail(email);
     const targetUid = authUser.uid;
-    
-    await getAuth().setCustomUserClaims(targetUid, {
+
+    await mergeCustomClaims(targetUid, {
       admin: true,
       role: role,
       platformOwner: role === 'platform_owner'
     });
-    
+
     const db = getDb();
     await db.collection("admin_users").doc(targetUid).set({
       uid: targetUid,
@@ -6299,13 +6339,13 @@ app.post("/api/admin/admin-users/:uid/role", verifyAppCheck, authenticateFirebas
     const { role } = parsed.data;
 
     await assertNotLastPlatformOwner(targetUid, firebaseConfigDatabaseId);
-    
-    await getAuth().setCustomUserClaims(targetUid, {
+
+    await mergeCustomClaims(targetUid, {
       admin: true,
       role: role,
       platformOwner: role === 'platform_owner'
     });
-    
+
     const db = getDb();
     await db.collection("admin_users").doc(targetUid).update({
       role: role,
@@ -6326,8 +6366,11 @@ app.delete("/api/admin/admin-users/:uid", verifyAppCheck, authenticateFirebaseUs
     const targetUid = req.params.uid;
     
     await assertNotLastPlatformOwner(targetUid, firebaseConfigDatabaseId);
-    await getAuth().setCustomUserClaims(targetUid, null);
-    
+    // Removes only the admin-related claim keys, not the whole claims
+    // object - setCustomUserClaims(uid, null) used to wipe everything,
+    // including unrelated claims like mfaEnabled.
+    await removeCustomClaimKeys(targetUid, ['admin', 'role', 'platformOwner']);
+
     const db = getDb();
     await db.collection("admin_users").doc(targetUid).delete();
     

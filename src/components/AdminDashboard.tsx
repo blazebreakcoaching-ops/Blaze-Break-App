@@ -10,6 +10,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { useAuth } from '../lib/auth';
 import { ConfirmDialog } from './ConfirmDialog';
 import { formatFeedbackCategory } from '../lib/feedback-format';
+import { PLATFORM_ADMIN_ROLES, PLATFORM_ADMIN_ROLE_LABELS, isPlatformAdminRole } from '../../admin-roles';
 
 interface AdminUser {
   uid: string;
@@ -72,15 +73,14 @@ interface ResetMetrics {
   crisisReferrals: number;
 }
 
+// Sourced from admin-roles.ts (the shared platform-staff role vocabulary -
+// see that file's header for why it's the single source of truth) plus
+// one option, 'user', that isn't a platform-staff role at all: it's how
+// an admin demotes an account back to a plain end-user via this same
+// dropdown.
 const ROLE_HIERARCHY = [
-  { value: 'platform_owner', label: 'Platform Owner (Master Admin)' },
-  { value: 'platform_admin', label: 'Platform Admin' },
-  { value: 'support_admin', label: 'Support Admin' },
-  { value: 'content_admin', label: 'Content Admin' },
-  { value: 'coach_admin', label: 'Coach Admin (Nova Core)' },
-  { value: 'b2b_admin', label: 'B2B Admin (Org Insights)' },
-  { value: 'viewer_admin', label: 'Viewer Admin' },
-  { value: 'user', label: 'Standard User' }
+  ...PLATFORM_ADMIN_ROLES.map((value) => ({ value, label: PLATFORM_ADMIN_ROLE_LABELS[value] })),
+  { value: 'user', label: 'Standard User' },
 ];
 
 // Mirrors entitlements.ts's PURCHASABLE_PLANS/ENTITLEMENT_STATUSES exactly -
@@ -116,24 +116,10 @@ const PLAN_LABELS: Record<string, string> = {
 
 export const AdminDashboard = () => {
   const { appRole, user: authUser } = useAuth();
-  const [simulatedRole, setSimulatedRole] = useState<string | null>(
-    localStorage.getItem('blaze_simulated_admin_role')
-  );
 
-  const currentRole = simulatedRole || appRole;
-  
-  const isAdmin = [
-    'platform_owner',
-    'platform_admin',
-    'security_admin',
-    'support_admin',
-    'content_admin',
-    'coach_admin',
-    'b2b_admin',
-    'viewer_admin'
-  ].includes(currentRole);
+  const isAdmin = isPlatformAdminRole(appRole);
 
-  const [activeTab, setActiveTab] = useState<'users' | 'admins' | 'orgs' | 'audit' | 'somatic' | 'feedback'>('users');
+  const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'admins' | 'orgs' | 'audit' | 'somatic' | 'feedback'>('overview');
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [usersCapped, setUsersCapped] = useState(false);
   const [admins, setAdmins] = useState<PlatformAdmin[]>([]);
@@ -148,6 +134,11 @@ export const AdminDashboard = () => {
   // tracked" placeholder below only once this is real data, not before.
   const [supportCircleCost, setSupportCircleCost] = useState<{ periodDays: number; guardianAlertCount: number; smsUsd: number } | null>(null);
   const [orgs, setOrgs] = useState<{ id: string; name: string; joinCode: string; privacyThreshold: number; memberCount: number; adminCount: number }[]>([]);
+  // Whether each messaging provider has credentials configured on the
+  // server (env vars present) - a configuration signal for the Overview's
+  // Communications card, not a delivery/volume metric. null until the
+  // first successful /api/admin/summary fetch.
+  const [communications, setCommunications] = useState<{ twilioConfigured: boolean; brevoConfigured: boolean; pushConfigured: boolean } | null>(null);
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -357,6 +348,7 @@ export const AdminDashboard = () => {
           setLoadError("Couldn't load live data — showing nothing rather than placeholders.");
         }
         setMetrics(null);
+        setCommunications(null);
         return;
       }
       const data = await res.json();
@@ -371,11 +363,13 @@ export const AdminDashboard = () => {
         safetyEscalations: data.safetyEscalations ?? 0,
         crisisReferrals: data.crisisReferrals ?? 0,
       });
+      setCommunications(data.communications ?? null);
 
     } catch (err) {
       console.error("Somatic aggregation failed: ", err);
       setLoadError("Couldn't load live data — showing nothing rather than placeholders.");
       setMetrics(null);
+      setCommunications(null);
     }
   };
 
@@ -593,39 +587,8 @@ export const AdminDashboard = () => {
             Required: Platform Admin Role
           </p>
           <p className="text-sm text-text-muted leading-relaxed">
-            Your current account role (<span className="text-[#9a3412] dark:text-primary font-bold font-mono">{appRole}</span>) is unauthorised to read platform security custom claims or audit logs.
+            Your current account role (<span className="text-[#9a3412] dark:text-primary font-bold font-mono">{appRole}</span>) is unauthorised to read platform security custom claims or audit logs. Ask a Platform Owner to grant you a Command Centre role.
           </p>
-        </div>
-
-        <div className="p-5 bg-surface rounded-2xl border border-border text-left space-y-4">
-          <span className="text-xs font-black uppercase tracking-wider text-text-muted block">
-            Simulation Bypass (Developer Evaluation Mode)
-          </span>
-          <p className="text-xs text-text-muted leading-relaxed">
-            In compliance with Blaze Break's prototyping phase, you can temporarily simulate administrative privileges to explore the audit trail, somatic telemetry, and custom claims engine.
-          </p>
-          <div className="grid grid-cols-1 gap-2 pt-2">
-            <button
-              onClick={() => {
-                setSimulatedRole('platform_admin');
-                localStorage.setItem('blaze_simulated_admin_role', 'platform_admin');
-                showSuccess("Successfully elevated to simulated Platform Admin!");
-              }}
-              className="w-full py-2.5 bg-primary hover:opacity-90 text-primary-foreground text-xs font-bold uppercase tracking-widest rounded-xl transition-all shadow-md flex items-center justify-center gap-2"
-            >
-              <ShieldCheck className="w-4 h-4" /> Simulate Platform Admin
-            </button>
-            <button
-              onClick={() => {
-                setSimulatedRole('platform_owner');
-                localStorage.setItem('blaze_simulated_admin_role', 'platform_owner');
-                showSuccess("Successfully elevated to simulated Platform Owner!");
-              }}
-              className="w-full py-2.5 bg-neutral-800 hover:bg-neutral-700 text-text-main border border-border text-xs font-bold uppercase tracking-widest rounded-xl transition-all flex items-center justify-center gap-2"
-            >
-              <ShieldAlert className="w-4 h-4 text-amber-500" /> Simulate Platform Owner (Master)
-            </button>
-          </div>
         </div>
       </motion.div>
     );
@@ -640,34 +603,14 @@ export const AdminDashboard = () => {
       animate={{ opacity: 1, y: 0 }}
       className="space-y-8 max-w-6xl mx-auto"
     >
-      {/* Simulation Banner */}
-      {simulatedRole && (
-        <div className="p-3 bg-amber-500/10 border border-amber-500/20 text-amber-500 rounded-2xl text-xs font-bold flex flex-col sm:flex-row items-center justify-between gap-3 shadow-sm">
-          <span className="flex items-center gap-2">
-            <ShieldAlert className="w-4 h-4 shrink-0 text-amber-500" />
-            <span>Simulation Mode Active: Viewing as <strong className="uppercase">{simulatedRole.replace('_', ' ')}</strong>. Access token simulated for dev evaluation.</span>
-          </span>
-          <button 
-            onClick={() => {
-              setSimulatedRole(null);
-              localStorage.removeItem('blaze_simulated_admin_role');
-              showSuccess("Simulation cleared. Restored real-time user role.");
-            }}
-            className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-black font-extrabold uppercase tracking-wider text-[10px] rounded-lg transition-colors shrink-0"
-          >
-            Exit Simulation
-          </button>
-        </div>
-      )}
-
       {/* Title Bar */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-white/10 pb-6">
         <div>
           <h3 className="text-2xl font-display font-bold text-text-main flex items-center gap-3">
-            <ShieldCheck className="w-6 h-6 text-primary" /> Master Super Admin Portal
+            <ShieldCheck className="w-6 h-6 text-primary" /> Platform Command Centre
           </h3>
           <p className="text-xs text-text-muted mt-1 uppercase tracking-widest font-black">
-            Platform Security Controls, Audit Trails, and System Health
+            Access, operations, security and platform health.
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -728,13 +671,17 @@ export const AdminDashboard = () => {
         )}
       </AnimatePresence>
 
-      {/* KPI Overview Grid - Summary Cards */}
+      {/* Overview - truthful platform-state summary. Every card below
+          either shows a real count already loaded for other tabs, or
+          says plainly that nothing is connected/configured yet - never a
+          number that looks real but is actually hardcoded or guessed. */}
+      {activeTab === 'overview' && (
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        {/* Card 1: Total Users */}
+        {/* Card 1: People */}
         <div className="p-6 bg-surface dark:bg-card border border-border rounded-2xl space-y-4 shadow-sm relative overflow-hidden hover:border-primary/40 transition-all duration-300">
           <div className="flex justify-between items-start">
             <div className="space-y-1">
-              <span className="text-[10px] font-black uppercase tracking-widest text-text-muted block">Registered Professionals</span>
+              <span className="text-[10px] font-black uppercase tracking-widest text-text-muted block">People</span>
               <h4 className="text-3xl font-display font-black text-text-main flex items-baseline gap-2">
                 {users.length}{usersCapped ? '+' : ''}
               </h4>
@@ -748,14 +695,14 @@ export const AdminDashboard = () => {
           </div>
         </div>
 
-        {/* Card 2: Active Subscriptions - no billing system exists yet, so
-            this honestly says so rather than showing numbers that would look
+        {/* Card 2: Commercial - no billing system exists yet, so this
+            honestly says so rather than showing numbers that would look
             like real, currently-zero metrics but are actually just
             hardcoded and could never change. */}
         <div className="p-6 bg-surface dark:bg-card border border-border rounded-2xl space-y-4 shadow-sm relative overflow-hidden hover:border-primary/40 transition-all duration-300">
           <div className="flex justify-between items-start">
             <div className="space-y-1">
-              <span className="text-[10px] font-black uppercase tracking-widest text-text-muted block">Subscription Coverage</span>
+              <span className="text-[10px] font-black uppercase tracking-widest text-text-muted block">Commercial</span>
               <h4 className="text-xl font-display font-black text-text-muted">
                 Not yet tracked
               </h4>
@@ -769,7 +716,7 @@ export const AdminDashboard = () => {
           </div>
         </div>
 
-        {/* Card 3: Somatic Safety Events */}
+        {/* Card 3: Safety & Support */}
         <div className="p-6 bg-surface dark:bg-card border border-border rounded-2xl space-y-4 shadow-sm relative overflow-hidden hover:border-primary/40 transition-all duration-300">
           <div className="flex justify-between items-start">
             <div className="space-y-1">
@@ -799,11 +746,73 @@ export const AdminDashboard = () => {
             </div>
           )}
         </div>
+
+        {/* Card 4: Communications - real env-presence configuration state
+            for each provider, not a delivery/volume metric (that's a
+            later Command Centre PR's job). */}
+        <div className="p-6 bg-surface dark:bg-card border border-border rounded-2xl space-y-4 shadow-sm relative overflow-hidden hover:border-primary/40 transition-all duration-300">
+          <div className="flex justify-between items-start">
+            <div className="space-y-1">
+              <span className="text-[10px] font-black uppercase tracking-widest text-text-muted block">Communications</span>
+              <h4 className="text-xl font-display font-black text-text-main">
+                {communications ? [communications.twilioConfigured, communications.brevoConfigured, communications.pushConfigured].filter(Boolean).length : 0} / 3 configured
+              </h4>
+            </div>
+            <div className="p-3 bg-primary/10 text-primary rounded-xl">
+              <MessageSquare className="w-5 h-5" />
+            </div>
+          </div>
+          <div className="pt-2 border-t border-white/5 space-y-1 text-[11px] text-text-muted">
+            <div className="flex items-center justify-between"><span>SMS / WhatsApp (Twilio)</span><strong className={communications?.twilioConfigured ? 'text-success' : 'text-text-muted'}>{communications ? (communications.twilioConfigured ? 'Configured' : 'Not configured') : 'Not available'}</strong></div>
+            <div className="flex items-center justify-between"><span>Email (Brevo)</span><strong className={communications?.brevoConfigured ? 'text-success' : 'text-text-muted'}>{communications ? (communications.brevoConfigured ? 'Configured' : 'Not configured') : 'Not available'}</strong></div>
+            <div className="flex items-center justify-between"><span>Push</span><strong className={communications?.pushConfigured ? 'text-success' : 'text-text-muted'}>{communications ? (communications.pushConfigured ? 'Configured' : 'Not configured') : 'Not available'}</strong></div>
+          </div>
+        </div>
+
+        {/* Card 5: Security & Audit - real counts from data already loaded
+            for the Security & Audit tab, not a separate fetch. */}
+        <div className="p-6 bg-surface dark:bg-card border border-border rounded-2xl space-y-4 shadow-sm relative overflow-hidden hover:border-primary/40 transition-all duration-300">
+          <div className="flex justify-between items-start">
+            <div className="space-y-1">
+              <span className="text-[10px] font-black uppercase tracking-widest text-text-muted block">Security & Audit</span>
+              <h4 className="text-3xl font-display font-black text-text-main flex items-baseline gap-2">
+                {admins.length}
+                <span className="text-xs text-text-muted font-normal">Platform Admins</span>
+              </h4>
+            </div>
+            <div className="p-3 bg-primary/10 text-primary rounded-xl">
+              <ShieldAlert className="w-5 h-5" />
+            </div>
+          </div>
+          <div className="pt-2 border-t border-white/5 flex items-center justify-between text-[11px] text-text-muted">
+            <span>Audit events logged: <strong className="text-text-main font-semibold">{auditLogs.length}</strong></span>
+          </div>
+        </div>
+
+        {/* Card 6: Organisations */}
+        <div className="p-6 bg-surface dark:bg-card border border-border rounded-2xl space-y-4 shadow-sm relative overflow-hidden hover:border-primary/40 transition-all duration-300">
+          <div className="flex justify-between items-start">
+            <div className="space-y-1">
+              <span className="text-[10px] font-black uppercase tracking-widest text-text-muted block">Organisations</span>
+              <h4 className="text-3xl font-display font-black text-text-main">
+                {orgs.length}
+              </h4>
+            </div>
+            <div className="p-3 bg-primary/10 text-primary rounded-xl">
+              <Building2 className="w-5 h-5" />
+            </div>
+          </div>
+          <div className="pt-2 border-t border-white/5 flex items-center justify-between text-[11px] text-text-muted">
+            <span>Total members across orgs: <strong className="text-text-main font-semibold">{orgs.reduce((sum, o) => sum + (o.memberCount || 0), 0)}</strong></span>
+          </div>
+        </div>
       </div>
+      )}
 
       {/* Tabs Menu */}
       <div className="flex border-b border-white/5 pb-px overflow-x-auto gap-4">
         {[
+          { id: 'overview', label: 'Overview', icon: ShieldCheck },
           { id: 'users', label: 'User Roles & claims', icon: Key },
           { id: 'admins', label: 'Promote Platform Admins', icon: ShieldAlert },
           { id: 'orgs', label: 'Organisations', icon: Building2 },
@@ -1071,8 +1080,8 @@ export const AdminDashboard = () => {
                                 setSelectedUser(u);
                                 setSelectedUserRole('user'); // Default suggestion
                               }}
-                              disabled={currentRole !== 'platform_owner'}
-                              title={currentRole !== 'platform_owner' ? 'Only a Platform Owner can write a security claim' : undefined}
+                              disabled={appRole !== 'platform_owner'}
+                              title={appRole !== 'platform_owner' ? 'Only a Platform Owner can write a security claim' : undefined}
                               className="px-3 py-1.5 bg-primary/10 hover:bg-primary/20 text-[#9a3412] dark:text-primary text-[10px] font-black uppercase tracking-widest rounded-lg transition-all disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-primary/10"
                             >
                               Edit Claims
@@ -1181,13 +1190,9 @@ export const AdminDashboard = () => {
                     onChange={(e) => setNewAdminRole(e.target.value)}
                     className="w-full p-3 bg-surface border border-border rounded-xl text-sm text-text-main focus:outline-none focus:border-primary"
                   >
-                    <option value="platform_owner">Platform Owner (Master Admin)</option>
-                    <option value="platform_admin">Platform Admin</option>
-                    <option value="support_admin">Support Admin</option>
-                    <option value="content_admin">Content Admin</option>
-                    <option value="coach_admin">Coach Admin (Nova Core)</option>
-                    <option value="b2b_admin">B2B Admin (Org Insights)</option>
-                    <option value="viewer_admin">Viewer Admin</option>
+                    {PLATFORM_ADMIN_ROLES.map((role) => (
+                      <option key={role} value={role}>{PLATFORM_ADMIN_ROLE_LABELS[role]}</option>
+                    ))}
                   </select>
                 </div>
 
@@ -1615,7 +1620,7 @@ export const AdminDashboard = () => {
           pendingAction?.type === 'suspend'
             ? `This will ${pendingAction.currentlyActive ? 'suspend' : 'unsuspend'} ${pendingAction.email}'s account access.`
             : pendingAction?.type === 'revokeAdmin'
-            ? `This replaces ${pendingAction.email}'s Firebase claims immediately, revoking every administrative role they hold.`
+            ? `This revokes every administrative role ${pendingAction.email} holds immediately, without touching any other account claims they have.`
             : ''
         }
         confirmLabel={pendingAction?.type === 'suspend' ? (pendingAction.currentlyActive ? 'Suspend' : 'Unsuspend') : 'Revoke'}

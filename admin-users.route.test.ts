@@ -13,6 +13,12 @@ const h = vi.hoisted(() => {
     setCustomUserClaims: vi.fn(async () => {}),
     getUserByEmail: vi.fn(async (email: string) => ({ uid: `uid_${email}`, email, displayName: null })),
     updateUser: vi.fn(async () => {}),
+    // mergeCustomClaims/removeCustomClaimKeys (server.ts) read the
+    // account's existing claims before writing, so every admin route
+    // under test now calls getUser(uid) first - previously claims were
+    // just overwritten wholesale with no read. Starts empty; tests that
+    // care about merging pre-existing claims can override per-call.
+    getUser: vi.fn(async (_uid: string) => ({ customClaims: {} })),
   };
 });
 
@@ -25,6 +31,7 @@ vi.mock('firebase-admin/auth', () => ({
     setCustomUserClaims: h.setCustomUserClaims,
     getUserByEmail: h.getUserByEmail,
     updateUser: h.updateUser,
+    getUser: h.getUser,
   }),
 }));
 vi.mock('firebase-admin/firestore', async () => {
@@ -46,6 +53,7 @@ beforeEach(() => {
   h.setCustomUserClaims.mockClear();
   h.getUserByEmail.mockClear();
   h.updateUser.mockClear();
+  h.getUser.mockClear();
 });
 
 describe('POST /api/admin/admin-users', () => {

@@ -54,6 +54,7 @@ import { SHIP_QUEST_IDS_BY_STAGE } from "./components/ShipJourney";
 import { cn, fireConfetti } from "./lib/utils.ts";
 import { useFocusTrap } from "./lib/useFocusTrap";
 import { auth, getDb } from "./lib/firebase.ts";
+import { isOwnerBootstrapEmail } from "../admin-roles";
 const DiagnoseView = lazy(() => import("./components/DiagnoseSection.tsx").then(m => ({ default: m.DiagnoseView })));
 const ResultView = lazy(() => import("./components/DiagnoseSection.tsx").then(m => ({ default: m.ResultView })));
 const EnergyBudgetTool = lazy(() => import("./components/EnergyBudget.tsx").then(m => ({ default: m.EnergyBudgetTool })));
@@ -330,7 +331,7 @@ export const ALL_TABS: {
   {
     id: "admin",
     icon: ShieldCheck,
-    label: "Live Activity & Access",
+    label: "Command Centre",
     roles: ["platform_admin"],
   },
 ];
@@ -1061,13 +1062,15 @@ const Header = ({
 export default function App() {
   const { user, appRole, loading: authLoading, accessToken, mfaPending } = useAuth();
 
-  // Bulletproof global super admin check. Both owner email variants, same
-  // as server.ts's requireAdmin/requireRole/requirePlatformOwner and
-  // auth.tsx's own role resolution - this was the one spot that only
-  // checked the .gmail.com address, so the real owner account (on
-  // .googlemail.com) never saw any admin-gated tab despite the server
-  // already recognising it as platform_owner for every API call.
-  const isSuperAdminUser = user?.email === 'teampublication@gmail.com' || user?.email === 'teampublication@googlemail.com' || (user as any)?.isAdmin === true;
+  // Bulletproof global super admin check, now delegating the owner-email
+  // allowlist to admin-roles.ts's shared DEFAULT_OWNER_BOOTSTRAP_EMAILS
+  // rather than keeping its own copy - this file and server.ts's
+  // OWNER_BOOTSTRAP_EMAILS had already drifted out of sync once before
+  // (this was the one spot that only checked the .gmail.com address, so
+  // the real owner account on .googlemail.com never saw any admin-gated
+  // tab despite the server already recognising it as platform_owner for
+  // every API call).
+  const isSuperAdminUser = isOwnerBootstrapEmail(user?.email) || (user as any)?.isAdmin === true;
   const effectiveRole = isSuperAdminUser ? 'platform_admin' : appRole;
 
   // Computed once rather than inline in the animate prop - regenerating these
@@ -1995,7 +1998,7 @@ export default function App() {
     evolution: "Evolution Engine",
     intelligence: "Recovery Intelligence Layer",
     executive: "Executive ROI",
-    admin: "Live Activity & Access",
+    admin: "Command Centre",
     reset: "Reset Studio",
     fuel: "Recovery Fuel",
     signals: "Recovery Signals",
