@@ -3629,6 +3629,19 @@ const removeCustomClaimKeys = async (uid: string, keys: string[]) => {
   await getAuth().setCustomUserClaims(uid, Object.keys(existing).length > 0 ? existing : null);
 };
 
+// A real Firestore Timestamp (e.g. from FieldValue.serverTimestamp()) has
+// no toJSON - sent to the client unconverted it serializes to
+// {_seconds,_nanoseconds}, and `new Date(...)` on that silently produces
+// "Invalid Date". A plain ISO string (already converted, or - in tests -
+// what the fake Firestore's serverTimestamp() resolves directly to)
+// passes through unchanged; anything else is honestly null rather than a
+// fabricated date.
+const firestoreTimestampToIso = (value: any): string | null => {
+  if (typeof value?.toDate === 'function') return value.toDate().toISOString();
+  if (typeof value === 'string') return value;
+  return null;
+};
+
 const getPermissionsForRole = (role: string): string[] => {
   switch (role) {
     case 'platform_owner':
@@ -6451,16 +6464,9 @@ app.get("/api/admin/audit-logs", verifyAppCheck, authenticateFirebaseUser, async
     requireAdmin(req);
     const db = getDb();
     const snap = await db.collection("admin_audit_logs").orderBy("createdAt", "desc").limit(100).get();
-    // createdAt is a Firestore server Timestamp, which has no toJSON - sent
-    // raw it serializes to {_seconds,_nanoseconds} and the client's
-    // `new Date(log.createdAt)` silently produces "Invalid Date" for every
-    // entry. Converted the same way other routes in this file already do;
-    // a plain string passes through unchanged (e.g. the fake-firestore
-    // test harness resolves serverTimestamp() directly to an ISO string).
     const logs = snap.docs.map((doc) => {
       const data = doc.data();
-      const createdAt = typeof data.createdAt?.toDate === 'function' ? data.createdAt.toDate().toISOString() : (typeof data.createdAt === 'string' ? data.createdAt : null);
-      return { id: doc.id, ...data, createdAt };
+      return { id: doc.id, ...data, createdAt: firestoreTimestampToIso(data.createdAt) };
     });
     res.json({ logs });
   } catch (err: any) {
@@ -7276,10 +7282,53 @@ app.get("/api/admin/orgs", verifyAppCheck, authenticateFirebaseUser, async (req,
         privacyThreshold: data.privacyThreshold || 5,
         memberCount: (data.memberUids || []).length,
         adminCount: (data.adminUids || []).length,
-        createdAt: data.createdAt,
+        createdAt: firestoreTimestampToIso(data.createdAt),
+        billingPlan: getEffectiveBillingState(data.billing).plan,
       };
     });
     res.json({ orgs });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Organisation detail for the Platform Command Centre's Organisations
+// workspace - the member list here is deliberately access-control
+// information only (uid/email/role/status/joinedAt, the same fields the
+// org's own admin already sees in its member-management UI), never
+// wellbeing content. A platform admin can see who has access to an org
+// and at what level, not what any member has written in Blaze Break.
+app.get("/api/admin/orgs/:orgId", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    requireAdmin(req);
+    const { orgId } = req.params;
+    const db = getDb();
+    const orgDoc = await db.collection("organisations").doc(orgId).get();
+    if (!orgDoc.exists) {
+      return res.status(404).json({ error: "No organisation with that ID." });
+    }
+    const data = orgDoc.data()!;
+    const membersSnap = await db.collection("organisations").doc(orgId).collection("members").get();
+    const members = membersSnap.docs.map((m) => {
+      const md = m.data();
+      return {
+        uid: m.id,
+        email: md.email || null,
+        role: md.role || 'member',
+        status: md.status || 'active',
+        joinedAt: firestoreTimestampToIso(md.joinedAt),
+      };
+    });
+    res.json({
+      id: orgDoc.id,
+      name: data.name,
+      joinCode: data.joinCode,
+      privacyThreshold: data.privacyThreshold || 5,
+      createdAt: firestoreTimestampToIso(data.createdAt),
+      billing: getEffectiveBillingState(data.billing),
+      billingProvider: billingProvider.name,
+      members,
+    });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }

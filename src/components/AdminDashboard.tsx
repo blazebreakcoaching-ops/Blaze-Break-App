@@ -184,7 +184,21 @@ export const AdminDashboard = () => {
   // /api/admin/cost-usage entirely - retiring the honest "Not yet
   // tracked" placeholder below only once this is real data, not before.
   const [supportCircleCost, setSupportCircleCost] = useState<{ periodDays: number; guardianAlertCount: number; smsUsd: number } | null>(null);
-  const [orgs, setOrgs] = useState<{ id: string; name: string; joinCode: string; privacyThreshold: number; memberCount: number; adminCount: number }[]>([]);
+  const [orgs, setOrgs] = useState<{ id: string; name: string; joinCode: string; privacyThreshold: number; memberCount: number; adminCount: number; createdAt?: string | null; billingPlan?: string }[]>([]);
+  // Which org's detail (billing + member list) is expanded, and the
+  // fetched detail itself - fetched lazily on expand, not preloaded for
+  // every org in the list.
+  const [expandedOrgId, setExpandedOrgId] = useState<string | null>(null);
+  const [orgDetail, setOrgDetail] = useState<{
+    billing: { plan: string; status: string; seatCount: number; billingContact: string | null };
+    billingProvider: string;
+    members: { uid: string; email: string | null; role: string; status: string; joinedAt: string | null }[];
+  } | null>(null);
+  const [isLoadingOrgDetail, setIsLoadingOrgDetail] = useState(false);
+  // Set when the Provision form is pre-filled to EDIT an existing org
+  // (reuses the same upsert-by-orgId POST /api/admin/orgs endpoint) rather
+  // than create a new one.
+  const [editingOrgId, setEditingOrgId] = useState<string | null>(null);
   // Whether each messaging provider has credentials configured on the
   // server (env vars present) - a configuration signal for the Overview's
   // Communications card, not a delivery/volume metric. null until the
@@ -457,6 +471,9 @@ export const AdminDashboard = () => {
       const res = await secureApiFetch('/api/admin/orgs', {
         method: 'POST',
         data: {
+          // Same upsert-by-orgId endpoint handles both create and edit -
+          // when editing, the slug is already fixed (the field is
+          // disabled in the form) so this just re-sends it unchanged.
           orgId: newOrgId.trim().toLowerCase().replace(/[^a-z0-9-]/g, '-'),
           name: newOrgName.trim(),
           privacyThreshold: Number(newOrgThreshold) || 5,
@@ -465,13 +482,14 @@ export const AdminDashboard = () => {
       });
       const data = await res.json();
       if (!res.ok) {
-        setOrgFormError(data.error || 'Could not create that organisation.');
+        setOrgFormError(data.error || 'Could not save that organisation.');
       } else {
-        showSuccess(`Organisation created. Join code: ${data.joinCode}`);
+        showSuccess(editingOrgId ? 'Organisation updated.' : `Organisation created. Join code: ${data.joinCode}`);
         setNewOrgId('');
         setNewOrgName('');
         setNewOrgThreshold('5');
         setNewOrgAdminEmail('');
+        setEditingOrgId(null);
         const orgsRes = await secureApiFetch('/api/admin/orgs');
         if (orgsRes.ok) {
           const orgData = await orgsRes.json();
@@ -479,9 +497,52 @@ export const AdminDashboard = () => {
         }
       }
     } catch (e) {
-      setOrgFormError('Could not create that organisation.');
+      setOrgFormError('Could not save that organisation.');
     }
     setIsCreatingOrg(false);
+  };
+
+  const startEditingOrg = (org: (typeof orgs)[number]) => {
+    setEditingOrgId(org.id);
+    setNewOrgId(org.id);
+    setNewOrgName(org.name);
+    setNewOrgThreshold(String(org.privacyThreshold));
+    setNewOrgAdminEmail('');
+    setOrgFormError('');
+  };
+
+  const cancelEditingOrg = () => {
+    setEditingOrgId(null);
+    setNewOrgId('');
+    setNewOrgName('');
+    setNewOrgThreshold('5');
+    setNewOrgAdminEmail('');
+    setOrgFormError('');
+  };
+
+  // Lazily fetches one org's billing state + member list (access-control
+  // info only - uid/email/role/status, never wellbeing content) on first
+  // expand, rather than preloading detail for every org in the list.
+  const toggleOrgDetail = async (orgId: string) => {
+    if (expandedOrgId === orgId) {
+      setExpandedOrgId(null);
+      setOrgDetail(null);
+      return;
+    }
+    setExpandedOrgId(orgId);
+    setOrgDetail(null);
+    setIsLoadingOrgDetail(true);
+    try {
+      const res = await secureApiFetch(`/api/admin/orgs/${orgId}`);
+      if (res.ok) {
+        const data = await res.json();
+        setOrgDetail({ billing: data.billing, billingProvider: data.billingProvider, members: data.members || [] });
+      }
+    } catch (e) {
+      // Non-fatal - the detail panel just shows its own "couldn't load" state.
+    } finally {
+      setIsLoadingOrgDetail(false);
+    }
   };
 
   useEffect(() => {
@@ -1604,10 +1665,12 @@ export const AdminDashboard = () => {
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
             <div className="card p-6 bg-surface dark:bg-card border border-border rounded-2xl h-fit space-y-6">
               <h4 className="font-display text-lg font-bold text-text-main flex items-center gap-2">
-                <Building2 className="w-5 h-5 text-primary" /> Provision New Organisation
+                <Building2 className="w-5 h-5 text-primary" /> {editingOrgId ? 'Edit Organisation' : 'Provision New Organisation'}
               </h4>
               <p className="text-xs text-text-muted leading-relaxed">
-                Creates a new customer organisation. If you designate an initial admin, they must already have a Blaze Break account under that email.
+                {editingOrgId
+                  ? 'Updates this organisation\'s name and privacy threshold. The ID and join code stay fixed.'
+                  : 'Creates a new customer organisation. If you designate an initial admin, they must already have a Blaze Break account under that email.'}
               </p>
               {orgFormError && (
                 <div role="alert" className="p-3 bg-destructive/10 border border-destructive/20 text-destructive dark:text-[#f87171] text-xs rounded-xl">{orgFormError}</div>
@@ -1620,8 +1683,9 @@ export const AdminDashboard = () => {
                     type="text"
                     value={newOrgId}
                     onChange={(e) => setNewOrgId(e.target.value)}
+                    disabled={!!editingOrgId}
                     placeholder="e.g. acme-corp"
-                    className="w-full bg-background border border-border rounded-xl px-4 py-2.5 text-sm text-text-main focus:outline-none focus:border-primary"
+                    className="w-full bg-background border border-border rounded-xl px-4 py-2.5 text-sm text-text-main focus:outline-none focus:border-primary disabled:opacity-60"
                   />
                 </div>
                 <div>
@@ -1648,26 +1712,38 @@ export const AdminDashboard = () => {
                   />
                   <p className="text-[11px] text-text-muted mt-1">Aggregate dashboards stay locked below this many opted-in members.</p>
                 </div>
-                <div>
-                  <label htmlFor="admin-org-email" className="text-xs font-bold uppercase tracking-widest text-text-muted block mb-1.5">Initial Admin Email (optional)</label>
-                  <input
-                    id="admin-org-email"
-                    type="email"
-                    value={newOrgAdminEmail}
-                    onChange={(e) => setNewOrgAdminEmail(e.target.value)}
-                    placeholder="hr-lead@acmecorp.com"
-                    className="w-full bg-background border border-border rounded-xl px-4 py-2.5 text-sm text-text-main focus:outline-none focus:border-primary"
-                  />
-                </div>
+                {!editingOrgId && (
+                  <div>
+                    <label htmlFor="admin-org-email" className="text-xs font-bold uppercase tracking-widest text-text-muted block mb-1.5">Initial Admin Email (optional)</label>
+                    <input
+                      id="admin-org-email"
+                      type="email"
+                      value={newOrgAdminEmail}
+                      onChange={(e) => setNewOrgAdminEmail(e.target.value)}
+                      placeholder="hr-lead@acmecorp.com"
+                      className="w-full bg-background border border-border rounded-xl px-4 py-2.5 text-sm text-text-main focus:outline-none focus:border-primary"
+                    />
+                  </div>
+                )}
               </div>
-              <button
-                onClick={handleCreateOrg}
-                disabled={isCreatingOrg || !newOrgId.trim() || !newOrgName.trim()}
-                className="w-full py-3 bg-primary hover:opacity-90 text-primary-foreground text-xs font-bold uppercase tracking-widest rounded-xl transition-all disabled:opacity-50 flex items-center justify-center gap-2"
-              >
-                {isCreatingOrg ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
-                Create Organisation
-              </button>
+              <div className="flex gap-3">
+                {editingOrgId && (
+                  <button
+                    onClick={cancelEditingOrg}
+                    className="px-4 py-3 bg-transparent text-text-muted hover:text-text-main text-xs font-bold uppercase tracking-wider transition-colors"
+                  >
+                    Cancel
+                  </button>
+                )}
+                <button
+                  onClick={handleCreateOrg}
+                  disabled={isCreatingOrg || !newOrgId.trim() || !newOrgName.trim()}
+                  className="flex-1 py-3 bg-primary hover:opacity-90 text-primary-foreground text-xs font-bold uppercase tracking-widest rounded-xl transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  {isCreatingOrg ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+                  {editingOrgId ? 'Update Organisation' : 'Create Organisation'}
+                </button>
+              </div>
             </div>
 
             <div className="lg:col-span-2 space-y-4">
@@ -1685,11 +1761,22 @@ export const AdminDashboard = () => {
                         <div>
                           <h5 className="font-bold text-text-main">{org.name}</h5>
                           <p className="text-xs text-text-muted font-mono">{org.id}</p>
+                          {org.createdAt && <p className="text-[10px] text-text-muted mt-0.5">Created {new Date(org.createdAt).toLocaleDateString()}</p>}
                         </div>
                         <div className="flex items-center gap-4 text-xs">
                           <span className="text-text-muted"><strong className="text-text-main">{org.memberCount}</strong> members</span>
                           <span className="text-text-muted"><strong className="text-text-main">{org.adminCount}</strong> admins</span>
                           <span className="text-text-muted">min <strong className="text-text-main">{org.privacyThreshold}</strong></span>
+                          {org.billingPlan && (
+                            <span className={`px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-widest ${
+                              org.billingPlan === 'enterprise' ? 'bg-primary/10 text-primary'
+                              : org.billingPlan === 'business' ? 'bg-success/10 text-success dark:text-[#4ade80]'
+                              : org.billingPlan === 'starter' ? 'bg-info/10 text-info'
+                              : 'bg-surface text-text-muted'
+                            }`}>
+                              {org.billingPlan}
+                            </span>
+                          )}
                         </div>
                       </div>
                       <div className="mt-3 flex items-center gap-2 pt-3 border-t border-border">
@@ -1703,7 +1790,57 @@ export const AdminDashboard = () => {
                         >
                           <Copy className="w-3.5 h-3.5" />
                         </button>
+                        <div className="flex-1" />
+                        <button
+                          onClick={() => startEditingOrg(org)}
+                          className="px-3 py-1.5 bg-surface hover:bg-border text-text-muted text-[10px] font-black uppercase tracking-widest rounded-lg transition-all"
+                        >
+                          Edit
+                        </button>
+                        <button
+                          onClick={() => toggleOrgDetail(org.id)}
+                          className="px-3 py-1.5 bg-primary/10 hover:bg-primary/20 text-[#9a3412] dark:text-primary text-[10px] font-black uppercase tracking-widest rounded-lg transition-all"
+                        >
+                          {expandedOrgId === org.id ? 'Hide Detail' : 'View Detail'}
+                        </button>
                       </div>
+
+                      {expandedOrgId === org.id && (
+                        <div className="mt-3 pt-3 border-t border-border space-y-3">
+                          {isLoadingOrgDetail ? (
+                            <div className="flex items-center justify-center py-6">
+                              <Loader2 className="w-5 h-5 animate-spin text-primary" />
+                            </div>
+                          ) : orgDetail ? (
+                            <>
+                              <div className="flex flex-wrap items-center gap-4 text-xs">
+                                <span className="text-text-muted">Billing: <strong className="text-text-main capitalize">{orgDetail.billing.plan}</strong> ({orgDetail.billing.status})</span>
+                                <span className="text-text-muted">Seats: <strong className="text-text-main">{orgDetail.billing.seatCount}</strong></span>
+                                <span className="text-text-muted">Contact: <strong className="text-text-main">{orgDetail.billing.billingContact || 'Not set'}</strong></span>
+                                {orgDetail.billingProvider === 'null' && (
+                                  <span className="text-[10px] text-text-muted italic">(No real billing provider connected - admin-managed seat count only)</span>
+                                )}
+                              </div>
+                              <div>
+                                <p className="text-[10px] font-black uppercase tracking-widest text-text-muted mb-2">Members ({orgDetail.members.length}) - access level only, never wellbeing content</p>
+                                <div className="space-y-1.5 max-h-48 overflow-y-auto">
+                                  {orgDetail.members.map((m) => (
+                                    <div key={m.uid} className="flex items-center justify-between text-xs py-1.5 px-2.5 bg-background rounded-lg">
+                                      <span className="text-text-main font-mono truncate max-w-[200px]" title={m.email || m.uid}>{m.email || m.uid}</span>
+                                      <span className="text-text-muted uppercase text-[10px] font-bold">{m.role} - {m.status}</span>
+                                    </div>
+                                  ))}
+                                  {orgDetail.members.length === 0 && (
+                                    <p className="text-xs text-text-muted italic py-2">No members yet.</p>
+                                  )}
+                                </div>
+                              </div>
+                            </>
+                          ) : (
+                            <p className="text-xs text-text-muted italic">Couldn't load organisation detail.</p>
+                          )}
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
