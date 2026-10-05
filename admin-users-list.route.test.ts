@@ -15,6 +15,11 @@ const h = vi.hoisted(() => {
       email: `${uid}@test.dev`,
       emailVerified: uid !== 'unverified_user',
       disabled: false,
+      // A real Firebase UserRecord always has providerData (empty only for
+      // an anonymous/demo sign-in) and customClaims (undefined/null when
+      // none have been set) - the route now reads both.
+      providerData: [{ providerId: 'password' }],
+      customClaims: {},
       metadata: { creationTime: '2026-01-01T00:00:00.000Z', lastSignInTime: '2026-01-02T00:00:00.000Z' },
     })),
   };
@@ -83,5 +88,30 @@ describe('GET /api/admin/users', () => {
     const res = await request(app).get('/api/admin/users').set(auth(OWNER));
     expect(res.status).toBe(200);
     expect(res.body.users[0]).toMatchObject({ uid: 'ghost_user', emailVerified: false, accessStatus: 'unknown' });
+  });
+
+  it('reports isAnonymous: true for an account with no linked identity provider', async () => {
+    h.getUser.mockImplementationOnce(async (uid: string) => ({
+      uid, email: null, emailVerified: false, disabled: false, providerData: [], customClaims: {},
+      metadata: { creationTime: '2026-01-01T00:00:00.000Z', lastSignInTime: '2026-01-02T00:00:00.000Z' },
+    }));
+    seedDoc('users/demo_user', {});
+    const res = await request(app).get('/api/admin/users').set(auth(OWNER));
+    expect(res.status).toBe(200);
+    expect(res.body.users[0]).toMatchObject({ uid: 'demo_user', isAnonymous: true, email: null });
+  });
+
+  it("surfaces the account's real role custom claim, defaulting to 'user' when none is set", async () => {
+    h.getUser.mockImplementationOnce(async (uid: string) => ({
+      uid, email: `${uid}@test.dev`, emailVerified: true, disabled: false, providerData: [{ providerId: 'password' }],
+      customClaims: { role: 'manager' },
+      metadata: { creationTime: '2026-01-01T00:00:00.000Z', lastSignInTime: '2026-01-02T00:00:00.000Z' },
+    }));
+    seedDoc('users/manager_user', {});
+    seedDoc('users/plain_user', {});
+    const res = await request(app).get('/api/admin/users').set(auth(OWNER));
+    const byUid = Object.fromEntries(res.body.users.map((u: any) => [u.uid, u]));
+    expect(byUid.manager_user.role).toBe('manager');
+    expect(byUid.plain_user.role).toBe('user');
   });
 });

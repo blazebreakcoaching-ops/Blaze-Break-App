@@ -14,15 +14,25 @@ import { PLATFORM_ADMIN_ROLES, PLATFORM_ADMIN_ROLE_LABELS, isPlatformAdminRole }
 
 interface AdminUser {
   uid: string;
-  email: string;
+  email: string | null;
   // Firebase Auth's own record - true automatically for social sign-ins
   // (Google/Microsoft/Facebook already vouch for the address), only true
   // for an email/password account once the person has clicked the link
   // from the verification email.
   emailVerified: boolean;
-  createdAt: string;
-  lastSignIn: string;
-  accessStatus: 'active' | 'disabled';
+  // True when this account has no linked identity provider at all (no
+  // email, Google, etc.) - Blaze Break's anonymous/demo sign-in path.
+  // Explains a null `email` honestly instead of just rendering blank.
+  isAnonymous?: boolean;
+  createdAt: string | null;
+  lastSignIn: string | null;
+  // 'unknown' is a real, if rare, state: a Firestore users/{uid} doc with
+  // no matching live Firebase Auth account (e.g. deleted directly in the
+  // Auth console).
+  accessStatus: 'active' | 'disabled' | 'unknown';
+  // The account's current role custom claim. Optional only because older
+  // cached responses (before this was added) wouldn't have it.
+  role?: string;
   // The account's real, computed entitlement (server.ts's effectivePlan) -
   // not a raw stored field, so an expired time-limited grant already
   // shows as 'free' here rather than whatever plan string was last
@@ -148,19 +158,30 @@ export const AdminDashboard = () => {
   // Forms State
   const [searchQuery, setSearchQuery] = useState('');
   const [verifiedFilter, setVerifiedFilter] = useState<'all' | 'verified' | 'unverified'>('all');
+  const [roleFilter, setRoleFilter] = useState('all');
+  const [planFilter, setPlanFilter] = useState('all');
+  // Saved Views - per-browser convenience (not shared state other admins
+  // need to see), so localStorage is the right home for it rather than a
+  // Firestore collection. Each view is just a snapshot of the three filter
+  // fields above under a name the admin picked.
+  const [savedViews, setSavedViews] = useState<{ name: string; searchQuery: string; verifiedFilter: typeof verifiedFilter; roleFilter: string; planFilter: string }[]>(() => {
+    try {
+      const raw = localStorage.getItem('blaze_admin_people_views');
+      return raw ? JSON.parse(raw) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [newViewName, setNewViewName] = useState('');
   const [selectedUser, setSelectedUser] = useState<AdminUser | null>(null);
   const [selectedUserRole, setSelectedUserRole] = useState('user');
   const [pendingAction, setPendingAction] = useState<
-    | { type: 'suspend'; uid: string; email: string; currentlyActive: boolean }
+    | { type: 'suspend'; uid: string; email: string | null; currentlyActive: boolean }
     | { type: 'revokeAdmin'; uid: string; email: string }
     | null
   >(null);
   const [isUpdatingRole, setIsUpdatingRole] = useState(false);
   const [grantingEntitlementUid, setGrantingEntitlementUid] = useState<string | null>(null);
-  // The "choose any tier" picker - separate from selectedUser/selectedUserRole
-  // above (that pair is for the Edit Claims/role panel, a different action
-  // on a different field entirely).
-  const [entitlementTargetUser, setEntitlementTargetUser] = useState<AdminUser | null>(null);
   const [grantPlanChoice, setGrantPlanChoice] = useState<'free' | 'core' | 'performance' | 'executive'>('performance');
   const [grantStatusChoice, setGrantStatusChoice] = useState<'active' | 'trial' | 'grace' | 'past_due' | 'cancelled' | 'expired'>('active');
   // Kept as the raw input string (not a number) so an empty field can mean
@@ -428,7 +449,10 @@ export const AdminDashboard = () => {
       }
 
       showSuccess(`Successfully updated custom claims for user to: ${selectedUserRole}`);
-      setSelectedUser(null);
+      // Deliberately doesn't clear selectedUser (the Account Control
+      // Drawer's target) - an admin doing a role change followed by a
+      // plan grant on the same account shouldn't have the drawer vanish
+      // out from under them after the first action succeeds.
       await loadAllData();
     } catch (e: any) {
       setError(e.message);
@@ -476,7 +500,8 @@ export const AdminDashboard = () => {
           ? 'Account reverted to Free.'
           : `Account granted ${PLAN_LABELS[plan]} (${GRANTABLE_STATUSES.find((s) => s.value === status)?.label || status})${durationDays ? ` for ${durationDays} day${durationDays === 1 ? '' : 's'}` : ''}.`
       );
-      setEntitlementTargetUser(null);
+      // Deliberately doesn't clear selectedUser - see handleUpdateRole's
+      // comment above for why the drawer should outlive a single action.
       await loadAllData();
     } catch (e: any) {
       setError(e.message);
@@ -566,8 +591,72 @@ export const AdminDashboard = () => {
   const filteredUsers = users.filter(u =>
     ((u.email || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
     u.uid.includes(searchQuery)) &&
-    (verifiedFilter === 'all' || (verifiedFilter === 'verified') === u.emailVerified)
+    (verifiedFilter === 'all' || (verifiedFilter === 'verified') === u.emailVerified) &&
+    (roleFilter === 'all' || (u.role || 'user') === roleFilter) &&
+    (planFilter === 'all' || (u.plan || 'free') === planFilter)
   );
+
+  // Distinct roles actually present in the loaded page, not the full
+  // platform-admin role list - most accounts are plain end-users with a
+  // mix of app-level AuthRole values (individual/employee/manager/...),
+  // not platform-staff roles, so this filter reflects what's really there.
+  const rolesInView = Array.from(new Set(users.map((u) => u.role || 'user'))).sort();
+
+  const lifecycleOf = (u: AdminUser): { label: string; tone: 'active' | 'muted' | 'warning' | 'destructive' } => {
+    if (u.accessStatus === 'unknown') return { label: 'Orphaned (no Auth record)', tone: 'warning' };
+    if (u.accessStatus === 'disabled') return { label: 'Suspended', tone: 'destructive' };
+    if (u.isAnonymous) return { label: 'Anonymous (Demo)', tone: 'muted' };
+    if (!u.emailVerified) return { label: 'Pending Verification', tone: 'warning' };
+    return { label: 'Active', tone: 'active' };
+  };
+
+  const applySavedView = (view: (typeof savedViews)[number]) => {
+    setSearchQuery(view.searchQuery);
+    setVerifiedFilter(view.verifiedFilter);
+    setRoleFilter(view.roleFilter);
+    setPlanFilter(view.planFilter);
+  };
+
+  const saveCurrentView = () => {
+    const name = newViewName.trim();
+    if (!name) return;
+    const next = [...savedViews.filter((v) => v.name !== name), { name, searchQuery, verifiedFilter, roleFilter, planFilter }];
+    setSavedViews(next);
+    try { localStorage.setItem('blaze_admin_people_views', JSON.stringify(next)); } catch { /* per-viewer convenience only - fine to silently skip if storage is unavailable */ }
+    setNewViewName('');
+  };
+
+  const deleteSavedView = (name: string) => {
+    const next = savedViews.filter((v) => v.name !== name);
+    setSavedViews(next);
+    try { localStorage.setItem('blaze_admin_people_views', JSON.stringify(next)); } catch { /* per-viewer convenience only */ }
+  };
+
+  // Opens the Account Control Drawer for one account, prefilling the role
+  // and entitlement pickers from its real current values - replaces the
+  // two separate "Edit Claims" / "Grant Access" buttons and their own
+  // independent inline panels with one consolidated per-account surface.
+  const openAccountDrawer = (u: AdminUser) => {
+    setSelectedUser(u);
+    setSelectedUserRole(u.role && ROLE_HIERARCHY.some((r) => r.value === u.role) ? u.role : 'user');
+    setGrantPlanChoice(u.plan && GRANTABLE_PLANS.some((p) => p.value === u.plan) ? (u.plan as typeof grantPlanChoice) : 'performance');
+    setGrantStatusChoice(u.entitlementStatus && u.entitlementStatus !== 'expired' ? u.entitlementStatus : 'active');
+    setGrantDurationDays('');
+  };
+
+  const closeAccountDrawer = () => setSelectedUser(null);
+
+  // Keeps the open drawer's snapshot in sync with the freshly reloaded
+  // `users` list after an action (suspend/grant/role write all end in
+  // loadAllData()) - without this, the drawer's lifecycle badge and
+  // Suspend/Reactivate button would keep showing the pre-action state
+  // until it was closed and reopened, since selectedUser is otherwise
+  // just a point-in-time copy taken when the drawer was opened.
+  useEffect(() => {
+    if (!selectedUser) return;
+    const fresh = users.find((u) => u.uid === selectedUser.uid);
+    if (fresh && fresh !== selectedUser) setSelectedUser(fresh);
+  }, [users]);
 
   if (!isAdmin) {
     return (
@@ -845,8 +934,8 @@ export const AdminDashboard = () => {
         {activeTab === 'users' && (
           <div className="space-y-6">
             <div className="flex flex-col md:flex-row gap-4 items-center justify-between">
-              <div className="flex flex-col sm:flex-row gap-3 w-full md:max-w-2xl">
-                <div className="relative flex-1">
+              <div className="flex flex-col sm:flex-row gap-3 w-full flex-wrap">
+                <div className="relative flex-1 min-w-[200px]">
                   <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" />
                   <input
                     type="text"
@@ -867,162 +956,77 @@ export const AdminDashboard = () => {
                   <option value="verified">Verified only</option>
                   <option value="unverified">Unverified only</option>
                 </select>
+                <select
+                  aria-label="Filter by role"
+                  value={roleFilter}
+                  onChange={(e) => setRoleFilter(e.target.value)}
+                  className="px-3 py-2.5 bg-surface dark:bg-card border border-border rounded-xl text-sm text-text-main focus:outline-none focus:border-primary transition-colors shrink-0"
+                >
+                  <option value="all">Any role</option>
+                  {rolesInView.map((r) => (
+                    <option key={r} value={r}>{r}</option>
+                  ))}
+                </select>
+                <select
+                  aria-label="Filter by plan"
+                  value={planFilter}
+                  onChange={(e) => setPlanFilter(e.target.value)}
+                  className="px-3 py-2.5 bg-surface dark:bg-card border border-border rounded-xl text-sm text-text-main focus:outline-none focus:border-primary transition-colors shrink-0"
+                >
+                  <option value="all">Any plan</option>
+                  {GRANTABLE_PLANS.map((p) => (
+                    <option key={p.value} value={p.value}>{p.label}</option>
+                  ))}
+                  <option value="legacy_premium">Legacy Premium</option>
+                </select>
               </div>
-              <div className="text-xs uppercase tracking-wider font-black text-text-muted">
+              <div className="text-xs uppercase tracking-wider font-black text-text-muted shrink-0">
                 Displaying {filteredUsers.length} of {users.length}{usersCapped ? '+' : ''} registered
                 {usersCapped && <span className="block normal-case font-medium text-[10px] mt-0.5">Showing the first {users.length} - there are more.</span>}
               </div>
             </div>
 
-            {/* Quick role-change edit panel */}
-            <AnimatePresence>
-              {selectedUser && (
-                <motion.div 
-                  initial={{ opacity: 0, height: 0 }}
-                  animate={{ opacity: 1, height: 'auto' }}
-                  exit={{ opacity: 0, height: 0 }}
-                  className="p-6 bg-primary/5 rounded-2xl border border-primary/20 space-y-4 overflow-hidden"
-                >
-                  <h4 className="font-display text-lg font-bold text-text-main flex items-center gap-2">
-                    <Key className="w-4 h-4 text-primary" /> Modify Custom User Claims
-                  </h4>
-                  <p className="text-xs text-text-muted">
-                    Assigning a new claim will immediately override the target user's custom token claims in Firebase Authentication. This operation is recorded in the Auditor Event log.
-                  </p>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-end">
-                    <div>
-                      <label className="block text-xs font-black uppercase tracking-wider text-text-muted mb-2">Target Account</label>
-                      <div className="p-3 bg-surface border border-border rounded-xl text-sm font-mono text-text-main select-all">
-                        {selectedUser.email} ({selectedUser.uid})
-                      </div>
-                    </div>
-                    <div>
-                      <label htmlFor="admin-security-tier" className="block text-xs font-black uppercase tracking-wider text-text-muted mb-2">Select Security Tier</label>
-                      <select
-                        id="admin-security-tier"
-                        value={selectedUserRole}
-                        onChange={(e) => setSelectedUserRole(e.target.value)}
-                        className="w-full p-3 bg-surface border border-border rounded-xl text-sm text-text-main focus:outline-none focus:border-primary"
-                      >
-                        {ROLE_HIERARCHY.map((r) => (
-                          <option key={r.value} value={r.value}>{r.label}</option>
-                        ))}
-                      </select>
-                    </div>
-                  </div>
-                  <div className="flex gap-3 justify-end mt-4">
-                    <button
-                      onClick={() => setSelectedUser(null)}
-                      className="px-4 py-2 bg-transparent text-text-muted hover:text-text-main text-xs font-bold uppercase tracking-wider transition-colors"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      onClick={() => handleUpdateRole(selectedUser.uid)}
-                      disabled={isUpdatingRole}
-                      className="px-5 py-2.5 bg-primary hover:bg-primary-dark text-white text-xs font-bold uppercase tracking-wider rounded-xl transition-all flex items-center gap-2"
-                    >
-                      {isUpdatingRole ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
-                      Write Security Claim
-                    </button>
-                  </div>
-                </motion.div>
+            {/* Saved Views - a per-browser convenience for quickly re-
+                applying a filter combination, not shared state other
+                admins need to see. */}
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-[10px] font-black uppercase tracking-widest text-text-muted">Saved Views:</span>
+              {savedViews.length === 0 && (
+                <span className="text-[11px] text-text-muted italic">None yet</span>
               )}
-            </AnimatePresence>
-
-            {/* Grant Access panel - choose any tier, status, and optional
-                duration, instead of the two hardcoded "Grant Performance" /
-                "Revert to Free" buttons this used to be limited to. */}
-            <AnimatePresence>
-              {entitlementTargetUser && (
-                <motion.div
-                  initial={{ opacity: 0, height: 0 }}
-                  animate={{ opacity: 1, height: 'auto' }}
-                  exit={{ opacity: 0, height: 0 }}
-                  className="p-6 bg-success/5 rounded-2xl border border-success/20 space-y-4 overflow-hidden"
+              {savedViews.map((v) => (
+                <span key={v.name} className="inline-flex items-center gap-1 pl-3 pr-1.5 py-1 rounded-lg bg-surface dark:bg-card border border-border text-xs">
+                  <button onClick={() => applySavedView(v)} className="text-text-main font-semibold hover:text-primary transition-colors">
+                    {v.name}
+                  </button>
+                  <button
+                    onClick={() => deleteSavedView(v.name)}
+                    aria-label={`Delete saved view ${v.name}`}
+                    title="Delete this saved view"
+                    className="p-1 text-text-muted hover:text-destructive transition-colors"
+                  >
+                    <AlertCircle className="w-3 h-3 rotate-45" />
+                  </button>
+                </span>
+              ))}
+              <div className="flex items-center gap-1.5 ml-1">
+                <input
+                  type="text"
+                  aria-label="New saved view name"
+                  placeholder="Name this filter combo..."
+                  value={newViewName}
+                  onChange={(e) => setNewViewName(e.target.value)}
+                  className="px-2.5 py-1 bg-surface dark:bg-card border border-border rounded-lg text-xs text-text-main placeholder:text-text-muted focus:outline-none focus:border-primary w-40"
+                />
+                <button
+                  onClick={saveCurrentView}
+                  disabled={!newViewName.trim()}
+                  className="px-2.5 py-1 bg-primary/10 hover:bg-primary/20 text-[#9a3412] dark:text-primary text-[10px] font-black uppercase tracking-widest rounded-lg transition-all disabled:opacity-40"
                 >
-                  <h4 className="font-display text-lg font-bold text-text-main flex items-center gap-2">
-                    <CreditCard className="w-4 h-4 text-success dark:text-[#4ade80]" /> Grant Access
-                  </h4>
-                  <p className="text-xs text-text-muted">
-                    Sets this account's plan directly (admin comp - no billing involved). This is recorded in the Auditor Event log with the previous plan and whether it's an upgrade, downgrade, or lateral change.
-                  </p>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-end">
-                    <div className="md:col-span-2">
-                      <label className="block text-xs font-black uppercase tracking-wider text-text-muted mb-2">Target Account</label>
-                      <div className="p-3 bg-surface border border-border rounded-xl text-sm font-mono text-text-main select-all">
-                        {entitlementTargetUser.email} ({entitlementTargetUser.uid})
-                        {entitlementTargetUser.plan && (
-                          <span className="ml-2 font-sans text-xs text-text-muted not-italic">
-                            - currently {PLAN_LABELS[entitlementTargetUser.plan] || entitlementTargetUser.plan}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                    <div>
-                      <label htmlFor="admin-grant-plan" className="block text-xs font-black uppercase tracking-wider text-text-muted mb-2">Plan</label>
-                      <select
-                        id="admin-grant-plan"
-                        value={grantPlanChoice}
-                        onChange={(e) => setGrantPlanChoice(e.target.value as typeof grantPlanChoice)}
-                        className="w-full p-3 bg-surface border border-border rounded-xl text-sm text-text-main focus:outline-none focus:border-primary"
-                      >
-                        {GRANTABLE_PLANS.map((p) => (
-                          <option key={p.value} value={p.value}>{p.label}</option>
-                        ))}
-                      </select>
-                    </div>
-                    <div>
-                      <label htmlFor="admin-grant-status" className="block text-xs font-black uppercase tracking-wider text-text-muted mb-2">Status</label>
-                      <select
-                        id="admin-grant-status"
-                        value={grantStatusChoice}
-                        onChange={(e) => setGrantStatusChoice(e.target.value as typeof grantStatusChoice)}
-                        className="w-full p-3 bg-surface border border-border rounded-xl text-sm text-text-main focus:outline-none focus:border-primary"
-                      >
-                        {GRANTABLE_STATUSES.map((s) => (
-                          <option key={s.value} value={s.value}>{s.label}</option>
-                        ))}
-                      </select>
-                    </div>
-                    <div className="md:col-span-2">
-                      <label htmlFor="admin-grant-duration" className="block text-xs font-black uppercase tracking-wider text-text-muted mb-2">
-                        Duration (days, optional)
-                      </label>
-                      <input
-                        id="admin-grant-duration"
-                        type="number"
-                        min={1}
-                        max={3650}
-                        placeholder="Leave blank for no fixed end"
-                        value={grantDurationDays}
-                        onChange={(e) => setGrantDurationDays(e.target.value)}
-                        className="w-full p-3 bg-surface border border-border rounded-xl text-sm text-text-main placeholder:text-text-muted focus:outline-none focus:border-primary"
-                      />
-                    </div>
-                  </div>
-                  <div className="flex gap-3 justify-end mt-4">
-                    <button
-                      onClick={() => setEntitlementTargetUser(null)}
-                      className="px-4 py-2 bg-transparent text-text-muted hover:text-text-main text-xs font-bold uppercase tracking-wider transition-colors"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      onClick={() => {
-                        const parsedDuration = grantDurationDays.trim() === '' ? undefined : Number(grantDurationDays);
-                        handleGrantEntitlement(entitlementTargetUser.uid, grantPlanChoice, grantStatusChoice, parsedDuration);
-                      }}
-                      disabled={grantingEntitlementUid === entitlementTargetUser.uid}
-                      className="px-5 py-2.5 bg-success hover:opacity-90 text-white text-xs font-bold uppercase tracking-wider rounded-xl transition-all flex items-center gap-2 disabled:opacity-50"
-                    >
-                      {grantingEntitlementUid === entitlementTargetUser.uid ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CreditCard className="w-3.5 h-3.5" />}
-                      Grant {PLAN_LABELS[grantPlanChoice]}
-                    </button>
-                  </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
+                  Save View
+                </button>
+              </div>
+            </div>
 
             {loading ? (
               <div className="flex flex-col items-center justify-center py-24 gap-4">
@@ -1037,7 +1041,8 @@ export const AdminDashboard = () => {
                       <tr className="border-b border-white/5">
                         <th scope="col" className="pb-3 text-xs font-black uppercase tracking-widest text-text-muted">User ID</th>
                         <th scope="col" className="pb-3 text-xs font-black uppercase tracking-widest text-text-muted">Email Address</th>
-                        <th scope="col" className="pb-3 text-xs font-black uppercase tracking-widest text-text-muted">Email Status</th>
+                        <th scope="col" className="pb-3 text-xs font-black uppercase tracking-widest text-text-muted">Lifecycle</th>
+                        <th scope="col" className="pb-3 text-xs font-black uppercase tracking-widest text-text-muted">Role</th>
                         <th scope="col" className="pb-3 text-xs font-black uppercase tracking-widest text-text-muted">Plan</th>
                         <th scope="col" className="pb-3 text-xs font-black uppercase tracking-widest text-text-muted">Date Joined</th>
                         <th scope="col" className="pb-3 text-xs font-black uppercase tracking-widest text-text-muted">Last Active</th>
@@ -1045,19 +1050,32 @@ export const AdminDashboard = () => {
                       </tr>
                     </thead>
                     <tbody className="text-sm">
-                      {filteredUsers.map((u) => (
+                      {filteredUsers.map((u) => {
+                        const lifecycle = lifecycleOf(u);
+                        return (
                         <tr key={u.uid} className="border-b border-white/[0.02] hover:bg-white/5 transition-colors">
                           <td className="py-4 text-text-muted font-mono text-[10px] truncate max-w-[110px]" title={u.uid}>{u.uid}</td>
-                          <td className="py-4 font-bold text-text-main">{u.email}</td>
+                          <td className="py-4 font-bold text-text-main">
+                            {u.email || (
+                              <span className="font-normal italic text-text-muted">
+                                {u.isAnonymous ? 'No email (anonymous/demo account)' : 'No email on record'}
+                              </span>
+                            )}
+                            {!u.emailVerified && u.email && (
+                              <span className="block text-[10px] font-normal normal-case text-[#9a3412] dark:text-warning mt-0.5">Unverified</span>
+                            )}
+                          </td>
                           <td className="py-4">
                             <span className={`px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-widest ${
-                              u.emailVerified
-                                ? 'bg-success/10 text-success dark:text-[#4ade80]'
-                                : 'bg-warning/10 text-[#9a3412] dark:text-warning'
+                              lifecycle.tone === 'active' ? 'bg-success/10 text-success dark:text-[#4ade80]'
+                              : lifecycle.tone === 'destructive' ? 'bg-destructive/10 text-destructive dark:text-[#f87171]'
+                              : lifecycle.tone === 'warning' ? 'bg-warning/10 text-[#9a3412] dark:text-warning'
+                              : 'bg-surface text-text-muted'
                             }`}>
-                              {u.emailVerified ? 'Verified' : 'Unverified'}
+                              {lifecycle.label}
                             </span>
                           </td>
+                          <td className="py-4 text-text-muted text-xs font-mono">{u.role || 'user'}</td>
                           <td className="py-4">
                             <span className={`px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-widest ${
                               u.plan === 'executive' ? 'bg-primary/10 text-primary'
@@ -1072,68 +1090,22 @@ export const AdminDashboard = () => {
                               <span className="block text-[10px] text-text-muted mt-1 normal-case">{u.entitlementStatus}</span>
                             )}
                           </td>
-                          <td className="py-4 text-text-muted text-xs">{new Date(u.createdAt).toLocaleDateString()}</td>
-                          <td className="py-4 text-text-muted text-xs">{new Date(u.lastSignIn).toLocaleDateString()}</td>
-                          <td className="py-4 text-right flex items-center justify-end gap-3">
+                          <td className="py-4 text-text-muted text-xs">{u.createdAt ? new Date(u.createdAt).toLocaleDateString() : 'Unknown'}</td>
+                          <td className="py-4 text-text-muted text-xs">{u.lastSignIn ? new Date(u.lastSignIn).toLocaleDateString() : 'Unknown'}</td>
+                          <td className="py-4 text-right">
                             <button
-                              onClick={() => {
-                                setSelectedUser(u);
-                                setSelectedUserRole('user'); // Default suggestion
-                              }}
-                              disabled={appRole !== 'platform_owner'}
-                              title={appRole !== 'platform_owner' ? 'Only a Platform Owner can write a security claim' : undefined}
-                              className="px-3 py-1.5 bg-primary/10 hover:bg-primary/20 text-[#9a3412] dark:text-primary text-[10px] font-black uppercase tracking-widest rounded-lg transition-all disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-primary/10"
+                              onClick={() => openAccountDrawer(u)}
+                              className="px-3 py-1.5 bg-primary/10 hover:bg-primary/20 text-[#9a3412] dark:text-primary text-[10px] font-black uppercase tracking-widest rounded-lg transition-all"
                             >
-                              Edit Claims
-                            </button>
-                            <button
-                              onClick={() => {
-                                setEntitlementTargetUser(u);
-                                // Prefill with the account's current plan/status
-                                // where that's a valid choice for the picker,
-                                // so opening it to just glance/confirm doesn't
-                                // default to overwriting a Core or Executive
-                                // account back down to Performance.
-                                setGrantPlanChoice(
-                                  u.plan && GRANTABLE_PLANS.some((p) => p.value === u.plan)
-                                    ? (u.plan as typeof grantPlanChoice)
-                                    : 'performance'
-                                );
-                                setGrantStatusChoice(u.entitlementStatus && u.entitlementStatus !== 'expired' ? u.entitlementStatus : 'active');
-                                setGrantDurationDays('');
-                              }}
-                              disabled={grantingEntitlementUid === u.uid}
-                              title="Choose a plan, status, and optional duration to grant this account (admin comp - no billing involved)"
-                              className="px-3 py-1.5 bg-success/10 hover:bg-success/20 text-success dark:text-[#4ade80] text-[10px] font-black uppercase tracking-widest rounded-lg transition-all disabled:opacity-50 flex items-center gap-1.5"
-                            >
-                              {grantingEntitlementUid === u.uid ? <Loader2 className="w-3 h-3 animate-spin" /> : <CreditCard className="w-3 h-3" />}
-                              Grant Access
-                            </button>
-                            <button
-                              onClick={() => handleGrantEntitlement(u.uid, 'free')}
-                              disabled={grantingEntitlementUid === u.uid || u.plan === 'free'}
-                              title="Revert this account to the Free plan"
-                              className="px-3 py-1.5 bg-surface hover:bg-border text-text-muted text-[10px] font-black uppercase tracking-widest rounded-lg transition-all disabled:opacity-50 flex items-center gap-1.5"
-                            >
-                              {grantingEntitlementUid === u.uid ? <Loader2 className="w-3 h-3 animate-spin" /> : <CreditCard className="w-3 h-3" />}
-                              Revert to Free
-                            </button>
-                            <button
-                              onClick={() => setPendingAction({ type: 'suspend', uid: u.uid, email: u.email, currentlyActive: u.accessStatus === 'active' })}
-                              className={`px-3 py-1.5 text-[10px] font-black uppercase tracking-widest rounded-lg transition-all ${
-                                u.accessStatus === 'active'
-                                  ? 'bg-destructive/10 hover:bg-destructive/20 text-destructive dark:text-[#f87171]'
-                                  : 'bg-success/10 hover:bg-success/20 text-success dark:text-[#4ade80]'
-                              }`}
-                            >
-                              {u.accessStatus === 'active' ? 'Suspend' : 'Activate'}
+                              Manage Account
                             </button>
                           </td>
                         </tr>
-                      ))}
+                        );
+                      })}
                       {filteredUsers.length === 0 && (
                         <tr>
-                          <td colSpan={7} className="py-12 text-center text-text-muted text-sm italic">
+                          <td colSpan={8} className="py-12 text-center text-text-muted text-sm italic">
                             No matching user accounts registered on this node.
                           </td>
                         </tr>
@@ -1599,6 +1571,171 @@ export const AdminDashboard = () => {
           </div>
         )}
       </div>
+
+      {/* Account Control Drawer - the single consolidated surface for
+          everything an admin can do to one account (role, entitlement,
+          suspension), replacing the two separate inline accordion panels
+          this used to be split across. Opens via openAccountDrawer()
+          from a row's "Manage Account" button; the underlying handlers
+          (handleUpdateRole/handleGrantEntitlement/handleToggleSuspend)
+          are unchanged from before this drawer existed. */}
+      <AnimatePresence>
+        {selectedUser && (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={closeAccountDrawer}
+              className="fixed inset-0 bg-black/50 z-40"
+              aria-hidden="true"
+            />
+            <motion.div
+              initial={{ x: '100%' }}
+              animate={{ x: 0 }}
+              exit={{ x: '100%' }}
+              transition={{ type: 'tween', duration: 0.2 }}
+              role="dialog"
+              aria-label="Account Control Drawer"
+              className="fixed top-0 right-0 h-full w-full max-w-md bg-surface dark:bg-card border-l border-border shadow-2xl z-50 overflow-y-auto p-6 space-y-6"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="space-y-1 min-w-0">
+                  <h4 className="font-display text-lg font-bold text-text-main">Account Control</h4>
+                  <p className="text-xs font-mono text-text-muted truncate" title={selectedUser.email || selectedUser.uid}>
+                    {selectedUser.email || (selectedUser.isAnonymous ? 'No email (anonymous/demo account)' : 'No email on record')}
+                  </p>
+                  <p className="text-[10px] font-mono text-text-muted truncate">{selectedUser.uid}</p>
+                </div>
+                <button
+                  onClick={closeAccountDrawer}
+                  aria-label="Close Account Control Drawer"
+                  className="p-2 text-text-muted hover:text-text-main transition-colors shrink-0"
+                >
+                  <AlertCircle className="w-5 h-5 rotate-45" />
+                </button>
+              </div>
+
+              <span className={`inline-block px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-widest ${
+                lifecycleOf(selectedUser).tone === 'active' ? 'bg-success/10 text-success dark:text-[#4ade80]'
+                : lifecycleOf(selectedUser).tone === 'destructive' ? 'bg-destructive/10 text-destructive dark:text-[#f87171]'
+                : lifecycleOf(selectedUser).tone === 'warning' ? 'bg-warning/10 text-[#9a3412] dark:text-warning'
+                : 'bg-background text-text-muted'
+              }`}>
+                {lifecycleOf(selectedUser).label}
+              </span>
+
+              {/* Role section */}
+              <div className="space-y-3 pt-2 border-t border-white/5">
+                <h5 className="font-display text-sm font-bold text-text-main flex items-center gap-2">
+                  <Key className="w-4 h-4 text-primary" /> Role & Claims
+                </h5>
+                <p className="text-xs text-text-muted">
+                  Current role: <strong className="text-text-main font-mono">{selectedUser.role || 'user'}</strong>. Assigning a new claim overrides it immediately in Firebase Authentication and is recorded in the Auditor Event log.
+                </p>
+                <select
+                  aria-label="Select new role"
+                  value={selectedUserRole}
+                  onChange={(e) => setSelectedUserRole(e.target.value)}
+                  className="w-full p-3 bg-background border border-border rounded-xl text-sm text-text-main focus:outline-none focus:border-primary"
+                >
+                  {ROLE_HIERARCHY.map((r) => (
+                    <option key={r.value} value={r.value}>{r.label}</option>
+                  ))}
+                </select>
+                <button
+                  onClick={() => handleUpdateRole(selectedUser.uid)}
+                  disabled={isUpdatingRole || appRole !== 'platform_owner'}
+                  title={appRole !== 'platform_owner' ? 'Only a Platform Owner can write a security claim' : undefined}
+                  className="w-full px-5 py-2.5 bg-primary hover:bg-primary-dark text-white text-xs font-bold uppercase tracking-wider rounded-xl transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+                >
+                  {isUpdatingRole ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                  Write Security Claim
+                </button>
+              </div>
+
+              {/* Entitlement section */}
+              <div className="space-y-3 pt-4 border-t border-white/5">
+                <h5 className="font-display text-sm font-bold text-text-main flex items-center gap-2">
+                  <CreditCard className="w-4 h-4 text-success dark:text-[#4ade80]" /> Access & Entitlement
+                </h5>
+                <p className="text-xs text-text-muted">
+                  Currently {selectedUser.plan ? (PLAN_LABELS[selectedUser.plan] || selectedUser.plan) : 'Unknown'}. Sets this account's plan directly (admin comp - no billing involved); recorded in the Auditor Event log with the previous plan and whether it's an upgrade, downgrade, or lateral change.
+                </p>
+                <div className="grid grid-cols-2 gap-3">
+                  <select
+                    aria-label="Plan"
+                    value={grantPlanChoice}
+                    onChange={(e) => setGrantPlanChoice(e.target.value as typeof grantPlanChoice)}
+                    className="w-full p-3 bg-background border border-border rounded-xl text-sm text-text-main focus:outline-none focus:border-primary"
+                  >
+                    {GRANTABLE_PLANS.map((p) => (
+                      <option key={p.value} value={p.value}>{p.label}</option>
+                    ))}
+                  </select>
+                  <select
+                    aria-label="Status"
+                    value={grantStatusChoice}
+                    onChange={(e) => setGrantStatusChoice(e.target.value as typeof grantStatusChoice)}
+                    className="w-full p-3 bg-background border border-border rounded-xl text-sm text-text-main focus:outline-none focus:border-primary"
+                  >
+                    {GRANTABLE_STATUSES.map((s) => (
+                      <option key={s.value} value={s.value}>{s.label}</option>
+                    ))}
+                  </select>
+                </div>
+                <input
+                  aria-label="Duration in days, optional"
+                  type="number"
+                  min={1}
+                  max={3650}
+                  placeholder="Duration in days (leave blank for no fixed end)"
+                  value={grantDurationDays}
+                  onChange={(e) => setGrantDurationDays(e.target.value)}
+                  className="w-full p-3 bg-background border border-border rounded-xl text-sm text-text-main placeholder:text-text-muted focus:outline-none focus:border-primary"
+                />
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => handleGrantEntitlement(selectedUser.uid, 'free')}
+                    disabled={grantingEntitlementUid === selectedUser.uid || selectedUser.plan === 'free'}
+                    className="flex-1 px-4 py-2.5 bg-background hover:bg-border text-text-muted text-xs font-bold uppercase tracking-wider rounded-xl transition-all disabled:opacity-50"
+                  >
+                    Revert to Free
+                  </button>
+                  <button
+                    onClick={() => {
+                      const parsedDuration = grantDurationDays.trim() === '' ? undefined : Number(grantDurationDays);
+                      handleGrantEntitlement(selectedUser.uid, grantPlanChoice, grantStatusChoice, parsedDuration);
+                    }}
+                    disabled={grantingEntitlementUid === selectedUser.uid}
+                    className="flex-1 px-4 py-2.5 bg-success hover:opacity-90 text-white text-xs font-bold uppercase tracking-wider rounded-xl transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+                  >
+                    {grantingEntitlementUid === selectedUser.uid ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CreditCard className="w-3.5 h-3.5" />}
+                    Grant {PLAN_LABELS[grantPlanChoice]}
+                  </button>
+                </div>
+              </div>
+
+              {/* Suspension section */}
+              <div className="space-y-3 pt-4 border-t border-white/5">
+                <h5 className="font-display text-sm font-bold text-text-main flex items-center gap-2">
+                  <Lock className="w-4 h-4 text-destructive dark:text-[#f87171]" /> Access
+                </h5>
+                <button
+                  onClick={() => setPendingAction({ type: 'suspend', uid: selectedUser.uid, email: selectedUser.email, currentlyActive: selectedUser.accessStatus === 'active' })}
+                  className={`w-full px-4 py-2.5 text-xs font-bold uppercase tracking-wider rounded-xl transition-all ${
+                    selectedUser.accessStatus === 'active'
+                      ? 'bg-destructive/10 hover:bg-destructive/20 text-destructive dark:text-[#f87171]'
+                      : 'bg-success/10 hover:bg-success/20 text-success dark:text-[#4ade80]'
+                  }`}
+                >
+                  {selectedUser.accessStatus === 'active' ? 'Suspend Account' : 'Reactivate Account'}
+                </button>
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
 
       {/* Safety Notice Block */}
       <div className="bg-primary/5 border border-primary/20 p-5 rounded-2xl text-xs text-text-muted flex gap-3">

@@ -6115,9 +6115,20 @@ app.get("/api/admin/users", verifyAppCheck, authenticateFirebaseUser, async (req
           // sessions have no email at all, so this is always false/moot
           // for them.
           emailVerified: authUser.emailVerified,
+          // An empty providerData array is Firebase Auth's real signal for
+          // an anonymous/demo sign-in (no email, Google, etc. identity
+          // linked) - previously the admin table just rendered a blank
+          // email cell for these accounts with nothing to explain why,
+          // indistinguishable from a data problem.
+          isAnonymous: authUser.providerData.length === 0,
           createdAt: authUser.metadata.creationTime,
           lastSignIn: authUser.metadata.lastSignInTime,
           accessStatus: authUser.disabled ? "disabled" : "active",
+          // The account's real current role claim, previously never
+          // returned at all - the Edit Claims panel let an admin pick a
+          // new role for someone without ever being able to see what
+          // role they already had.
+          role: (authUser.customClaims as any)?.role || 'user',
           plan,
           entitlementStatus: entitlement.status,
         };
@@ -6125,7 +6136,7 @@ app.get("/api/admin/users", verifyAppCheck, authenticateFirebaseUser, async (req
         // A Firestore doc with no matching live Auth account (e.g.
         // deleted directly in the Auth console) - surfaced honestly
         // rather than papered over with a fabricated email/date.
-        return { uid: doc.id, email: null, emailVerified: false, createdAt: null, lastSignIn: null, accessStatus: "unknown", plan, entitlementStatus: entitlement.status };
+        return { uid: doc.id, email: null, emailVerified: false, isAnonymous: false, createdAt: null, lastSignIn: null, accessStatus: "unknown", role: 'user', plan, entitlementStatus: entitlement.status };
       }
     }));
     // This route has always been capped at ADMIN_USERS_PAGE_LIMIT with no
