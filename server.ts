@@ -78,7 +78,7 @@ import {
   smsGloballyEnabled, smsCategoryEnabled,
 } from './sms-guardrails';
 import { getEffectiveNotificationPreferences, routeNotification } from './notification-router';
-import { UsageTotals, estimateCost } from './cost-estimates';
+import { UsageTotals, estimateCost, evaluateBudgetAlert } from './cost-estimates';
 import { managedTeamsFor, isTeamManager, isHrViewer, validateTeamAssignment, validateHrViewerList, computeQualifyingTeamGroups } from './org-team-management';
 import { validateAckInput, describeFollowUp } from './team-escalation';
 
@@ -5971,13 +5971,37 @@ app.get("/api/admin/cost-usage", verifyAppCheck, authenticateFirebaseUser, async
       // degrade to zeros rather than failing the whole admin view.
     }
 
+    // Budget alert (Evolution Engine PR11 - Release Health): evaluateBudgetAlert
+    // existed in cost-estimates.ts but nothing ever called it - there was no
+    // stored budget to compare against. Scales this period's estimate to a
+    // monthly figure (periodDays is 7 above) since the configured budget is
+    // monthly; a monthlyBudgetUsd of 0/unset honestly reports 'ok' rather than
+    // a false alarm, matching evaluateBudgetAlert's own documented fallback.
+    const costUsd = estimateCost(totals);
+    let monthlyBudgetUsd = 0;
+    try {
+      const budgetDoc = await db.collection("app_config").doc("evolution_cost_budget").get();
+      monthlyBudgetUsd = Number(budgetDoc.data()?.monthlyBudgetUsd) || 0;
+    } catch (e) {
+      // Degrade to no-budget-configured rather than failing the whole view.
+    }
+    const monthlyEstimateUsd = Math.round(costUsd.totalUsd * (30 / periodDays) * 100) / 100;
+
     res.json({
       periodDays,
       isEstimate: true,
       note: "Rough internal estimates from captured usage counts, not live provider billing data. See docs/COST_MONITORING.md.",
       usage: totals,
       smsByCategory,
-      estimatedCostUsd: estimateCost(totals),
+      estimatedCostUsd: costUsd,
+      budget: {
+        monthlyBudgetUsd,
+        monthlyEstimateUsd,
+        alertLevel: evaluateBudgetAlert(monthlyEstimateUsd, monthlyBudgetUsd),
+        note: monthlyBudgetUsd > 0
+          ? `This period's cost extrapolated to a 30-day estimate, compared against the configured monthly budget.`
+          : "No monthly budget configured yet - set one in Evolution Engine's Release Health tab to get real alert levels instead of always 'ok'.",
+      },
       byTier,
       planChanges: {
         ...planChanges,
@@ -7042,6 +7066,38 @@ app.get("/api/admin/evolution/connectors", verifyAppCheck, authenticateFirebaseU
       return buildOrgConnectorView(doc.id, orgId, doc.data() as OrgConnectorDoc);
     });
     res.json({ connectors: [...platformViews, ...orgViews] });
+  } catch (err: any) {
+    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
+  }
+});
+
+// ============ Evolution Engine: Release Health (cost budget) ============
+// Stores the one real, admin-settable number (app_config/evolution_cost_
+// budget) GET /api/admin/cost-usage's budgetAlert now compares against -
+// see that route for why evaluateBudgetAlert existed but was never
+// actually called until this PR.
+app.get("/api/admin/evolution/cost-budget", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    requireEvolutionAccess(req);
+    const db = getDb();
+    const doc = await db.collection("app_config").doc("evolution_cost_budget").get();
+    res.json({ monthlyBudgetUsd: Number(doc.data()?.monthlyBudgetUsd) || 0 });
+  } catch (err: any) {
+    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
+  }
+});
+
+app.post("/api/admin/evolution/cost-budget", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    requireEvolutionAccess(req);
+    const { monthlyBudgetUsd } = req.body || {};
+    if (typeof monthlyBudgetUsd !== "number" || !Number.isFinite(monthlyBudgetUsd) || monthlyBudgetUsd < 0) {
+      return res.status(400).json({ error: '"monthlyBudgetUsd" must be a non-negative number.' });
+    }
+    const db = getDb();
+    await db.collection("app_config").doc("evolution_cost_budget").set({ monthlyBudgetUsd, updatedAt: new Date().toISOString() }, { merge: true });
+    await logAdminAction(req, "update_evolution_cost_budget", "", "", { monthlyBudgetUsd });
+    res.json({ success: true, monthlyBudgetUsd });
   } catch (err: any) {
     res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
   }

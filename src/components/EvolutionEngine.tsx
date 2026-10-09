@@ -13,6 +13,7 @@ import { isGovernanceWarning, LifecycleState, EnforcementState } from '../../fea
 import { TAB_VISIBILITY_RULES, resolveTabVisibility } from '../../tab-visibility';
 import { buildDependencyGraph, rankByDependents } from '../../dependency-map';
 import { canDecideProposal } from '../../change-proposals';
+import { computeFlagDebt } from '../../flag-debt';
 import { hasSubscriptionEntitlement } from '../lib/entitlement';
 import type { AuthRole, SubscriptionTier } from '../types';
 
@@ -99,6 +100,7 @@ interface RegistryEntry {
   productOwner: string | null;
   technicalOwner: string | null;
   notes: string | null;
+  createdAt: string;
 }
 
 // Server-backed change proposal (platform_change_proposals via
@@ -233,18 +235,15 @@ const NAV_SECTIONS: { id: EvolutionSection; label: string; icon: any; built: boo
   { id: 'connectors', label: 'Connector Layer', icon: Network, built: true },
   { id: 'rollouts', label: 'Rollouts', icon: Rocket, built: true },
   { id: 'evaluations', label: 'Evaluations', icon: FlaskConical, built: false },
-  { id: 'release-health', label: 'Release Health', icon: HeartPulse, built: false },
-  { id: 'flag-debt', label: 'Flag Debt', icon: Trash2, built: false },
-  { id: 'audit', label: 'Audit', icon: ScrollText, built: false },
+  { id: 'release-health', label: 'Release Health', icon: HeartPulse, built: true },
+  { id: 'flag-debt', label: 'Flag Debt', icon: Trash2, built: true },
+  { id: 'audit', label: 'Audit', icon: ScrollText, built: true },
   { id: 'advanced', label: 'Advanced', icon: Settings2, built: false },
 ];
 
 const NOT_YET_BUILT_COPY: Record<string, string> = {
   evaluations: 'An automated test suite for Nova prompt/model changes, run through Shadow Mode and a Replay Lab before anything reaches real conversations. Neither exists yet - there is no safe way in this codebase today to capture and replay past conversations against a candidate prompt without touching live traffic, and a shallow version of either would misrepresent prompt changes as already safely testable. The Nova Runtime Registry above is the real, honest first step (observability over what actually runs today); Shadow Mode and the Replay Lab remain future work.',
-  'release-health': 'Cost and performance budgets tied to releases, so a rollout can be judged against real signals instead of only ship/no-ship. Not yet built; planned for Evolution Engine PR11.',
-  'flag-debt': 'A dedicated view of stale/orphaned feature flags - the Registry tab already flags orphan and not-wired candidates per entry, but there is no aging, retirement workflow, or debt report yet. Not yet built; planned for Evolution Engine PR11.',
-  audit: 'A unified audit log across every Evolution Engine action (registry edits, Protected Core changes, seeds) - Command Centre already has a real Security & Audit trail for platform-admin actions generally, but nothing Evolution-Engine-specific exists yet. Not yet built; planned for Evolution Engine PR11.',
-  advanced: 'Permission scopes specific to Evolution Engine actions (evolution_view, etc.) and a platform-wide Freeze Evolution control. Not yet built; planned for Evolution Engine PR11.',
+  advanced: 'Two real, valuable controls deliberately deferred rather than rushed in alongside PR11\'s other sections: granular evolution_* permissions (narrowing today\'s coarse 3-role EVOLUTION_ENGINE_ROLES boundary - admin-roles.ts already flags this as real future work) and a platform-wide Freeze Evolution kill-switch (which would need to gate every one of the ~11 mutating Evolution Engine routes built across PR1-11). Both touch authorization/safety boundaries that affect every route already shipped - that deserves its own focused, carefully-reviewed PR, not a late addition squeezed into this one. Not yet built.',
 };
 
 // Mirrors src/types.ts's AuthRole/SubscriptionTier unions exactly - these
@@ -557,6 +556,87 @@ export const EvolutionEngine = () => {
       setRolloutActionError("Couldn't update the rollout plan.");
     }
   };
+
+  const flagDebt = useMemo(() => computeFlagDebt(registry || []), [registry]);
+
+  const [costUsage, setCostUsage] = useState<any>(null);
+  const [isLoadingCostUsage, setIsLoadingCostUsage] = useState(false);
+  const [costUsageError, setCostUsageError] = useState<string | null>(null);
+  const [budgetInput, setBudgetInput] = useState('');
+  const [isSavingBudget, setIsSavingBudget] = useState(false);
+
+  const fetchCostUsage = async () => {
+    setIsLoadingCostUsage(true);
+    setCostUsageError(null);
+    try {
+      const res = await secureApiFetch('/api/admin/cost-usage');
+      if (res.ok) {
+        const data = await res.json();
+        setCostUsage(data);
+        setBudgetInput(String(data.budget?.monthlyBudgetUsd ?? ''));
+      } else {
+        const err = await res.json();
+        setCostUsageError(err.error || "Couldn't load cost & usage data.");
+      }
+    } catch (e) {
+      setCostUsageError("Couldn't load cost & usage data.");
+    } finally {
+      setIsLoadingCostUsage(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchCostUsage();
+  }, []);
+
+  const handleSaveBudget = async () => {
+    const value = Number(budgetInput);
+    if (!Number.isFinite(value) || value < 0) return;
+    setIsSavingBudget(true);
+    try {
+      const res = await secureApiFetch('/api/admin/evolution/cost-budget', { method: 'POST', data: { monthlyBudgetUsd: value } });
+      if (res.ok) await fetchCostUsage();
+    } finally {
+      setIsSavingBudget(false);
+    }
+  };
+
+  // Not a parallel audit system - filters the EXISTING real admin_audit_logs
+  // (GET /api/admin/audit-logs, same data Command Centre's Security & Audit
+  // trail shows) down to Evolution Engine action names.
+  const EVOLUTION_AUDIT_ACTIONS = [
+    'create_change_proposal', 'submit_change_proposal', 'decide_change_proposal', 'withdraw_change_proposal', 'apply_change_proposal',
+    'create_rollout_plan', 'update_rollout_plan_status',
+    'update_feature_registry', 'seed_feature_registry',
+    'update_protected_core', 'seed_protected_core',
+    'update_evolution_cost_budget',
+  ];
+  const [auditLogs, setAuditLogs] = useState<any[] | null>(null);
+  const [isLoadingAuditLogs, setIsLoadingAuditLogs] = useState(false);
+  const [auditLogsError, setAuditLogsError] = useState<string | null>(null);
+
+  const fetchAuditLogs = async () => {
+    setIsLoadingAuditLogs(true);
+    setAuditLogsError(null);
+    try {
+      const res = await secureApiFetch('/api/admin/audit-logs');
+      if (res.ok) {
+        const data = await res.json();
+        setAuditLogs((data.logs || []).filter((l: any) => EVOLUTION_AUDIT_ACTIONS.includes(l.action)));
+      } else {
+        const err = await res.json();
+        setAuditLogsError(err.error || "Couldn't load the audit log.");
+      }
+    } catch (e) {
+      setAuditLogsError("Couldn't load the audit log.");
+    } finally {
+      setIsLoadingAuditLogs(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchAuditLogs();
+  }, []);
 
   const handleCreateProposal = async () => {
     setProposalActionError(null);
@@ -1595,27 +1675,131 @@ export const EvolutionEngine = () => {
         </div>
       )}
 
-      {/* Release Health Section */}
+      {/* Release Health Section - wires up evaluateBudgetAlert
+          (cost-estimates.ts), which existed but nothing ever called
+          until this PR, against a real stored monthly budget. Reuses
+          the existing GET /api/admin/cost-usage data rather than a
+          second, parallel cost-aggregation path. */}
       {activeTab === 'release-health' && (
         <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2">
-          <h3 className="text-xl font-bold flex items-center gap-2 text-text-main border-b border-border/20 pb-4"><HeartPulse className="w-5 h-5 text-text-muted" /> Release Health</h3>
-          <NotYetBuilt sectionId="release-health" />
+          <div className="flex items-center justify-between border-b border-border/20 pb-4">
+            <h3 className="text-xl font-bold flex items-center gap-2 text-text-main"><HeartPulse className="w-5 h-5 text-text-muted" /> Release Health</h3>
+            <button onClick={fetchCostUsage} disabled={isLoadingCostUsage} className="text-xs font-bold px-3 py-1.5 rounded-lg border border-border/40 text-text-muted hover:text-text-main flex items-center gap-1.5 disabled:opacity-50">
+              <RefreshCw className={cn("w-3.5 h-3.5", isLoadingCostUsage && "animate-spin")} /> Refresh
+            </button>
+          </div>
+          <p className="text-sm text-text-muted max-w-3xl">
+            Rough internal cost estimates (never live provider billing data - see Command Centre's Cost & Usage view for the same underlying numbers) extrapolated to a monthly figure and compared against a budget you set here.
+          </p>
+
+          {costUsageError && <div className="p-4 bg-destructive/10 border border-destructive/20 rounded-xl text-sm text-destructive dark:text-[#f87171]">{costUsageError}</div>}
+
+          {isLoadingCostUsage && !costUsage ? (
+            <p className="text-sm text-text-muted italic">Loading...</p>
+          ) : costUsage && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="bg-card border border-border/40 rounded-2xl p-6 space-y-2">
+                <span className="text-[10px] uppercase font-black tracking-widest text-text-muted block">This period (7 days, estimate)</span>
+                <span className="text-2xl font-display font-black text-text-main block">${costUsage.estimatedCostUsd.totalUsd.toFixed(2)}</span>
+                <span className="text-[10px] uppercase font-black tracking-widest text-text-muted block mt-3">Extrapolated monthly estimate</span>
+                <span className="text-2xl font-display font-black text-text-main block">${costUsage.budget.monthlyEstimateUsd.toFixed(2)}</span>
+                <span className={cn("inline-block text-xs uppercase font-black tracking-widest px-2 py-0.5 rounded-full mt-2",
+                  costUsage.budget.alertLevel === 'ok' ? 'bg-success/10 text-success dark:text-[#4ade80]' :
+                  costUsage.budget.alertLevel === 'informational' ? 'bg-surface/50 text-text-muted' :
+                  costUsage.budget.alertLevel === 'warning' ? 'bg-warning/10 text-[#9a3412] dark:text-warning' :
+                  'bg-destructive/10 text-destructive dark:text-[#f87171]'
+                )}>{costUsage.budget.alertLevel}</span>
+                <p className="text-[11px] text-text-muted italic pt-2">{costUsage.budget.note}</p>
+              </div>
+              <div className="bg-card border border-border/40 rounded-2xl p-6 space-y-3">
+                <span className="text-[10px] uppercase font-black tracking-widest text-text-muted block">Monthly Budget (USD)</span>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number" min={0} step="0.01"
+                    value={budgetInput}
+                    onChange={(e) => setBudgetInput(e.target.value)}
+                    className="text-sm font-medium text-text-main bg-surface/50 border border-border/40 rounded-lg px-3 py-2 w-32"
+                  />
+                  <button onClick={handleSaveBudget} disabled={isSavingBudget} className="text-xs font-bold px-3 py-2 rounded-lg bg-primary/10 text-[#9a3412] dark:text-primary hover:bg-primary/20 disabled:opacity-50">
+                    {isSavingBudget ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Save'}
+                  </button>
+                </div>
+                <p className="text-[11px] text-text-muted italic">0 means no budget configured - the alert level always reads "ok" honestly rather than guessing a default.</p>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
-      {/* Flag Debt Section */}
+      {/* Flag Debt Section - computed live from the real registry's own
+          enforcementState/createdAt (flag-debt.ts), never a separately
+          tracked list that could drift from it. */}
       {activeTab === 'flag-debt' && (
         <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2">
           <h3 className="text-xl font-bold flex items-center gap-2 text-text-main border-b border-border/20 pb-4"><Trash2 className="w-5 h-5 text-text-muted" /> Flag Debt</h3>
-          <NotYetBuilt sectionId="flag-debt" />
+          <p className="text-sm text-text-muted max-w-3xl">
+            Registry entries whose enforcement has never been verified as real (not_wired or unknown), oldest first - each one is either a dead flag nobody reads, or a real gate nobody has confirmed. Already-retired entries (removed) are excluded; that's resolution, not debt.
+          </p>
+          {flagDebt.length === 0 ? (
+            <div className="p-8 text-center bg-surface/30 border border-border/40 rounded-2xl">
+              <p className="text-sm text-text-muted">{registry === null ? 'No data.' : 'No flag debt candidates - every non-removed entry has verified enforcement.'}</p>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {flagDebt.map(f => (
+                <div key={f.featureId} className="bg-card border border-border/40 rounded-xl p-4 flex items-center justify-between gap-4">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="font-bold text-text-main text-sm">{f.displayName}</span>
+                      <code className="text-[10px] text-text-muted">{f.featureId}</code>
+                    </div>
+                    <p className="text-xs text-text-muted mt-0.5">{f.reason}</p>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <span className="text-xs font-black uppercase tracking-widest text-warning block">{f.ageDays}d old</span>
+                    <span className="text-[10px] text-text-muted">{f.lifecycleState} / {f.enforcementState.replace(/_/g, ' ')}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
-      {/* Audit Section */}
+      {/* Audit Section - a filtered view of the EXISTING real audit log
+          (admin_audit_logs, the same data Command Centre's Security &
+          Audit trail shows), not a second parallel audit system. */}
       {activeTab === 'audit' && (
         <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2">
-          <h3 className="text-xl font-bold flex items-center gap-2 text-text-main border-b border-border/20 pb-4"><ScrollText className="w-5 h-5 text-text-muted" /> Audit</h3>
-          <NotYetBuilt sectionId="audit" />
+          <div className="flex items-center justify-between border-b border-border/20 pb-4">
+            <h3 className="text-xl font-bold flex items-center gap-2 text-text-main"><ScrollText className="w-5 h-5 text-text-muted" /> Audit</h3>
+            <button onClick={fetchAuditLogs} disabled={isLoadingAuditLogs} className="text-xs font-bold px-3 py-1.5 rounded-lg border border-border/40 text-text-muted hover:text-text-main flex items-center gap-1.5 disabled:opacity-50">
+              <RefreshCw className={cn("w-3.5 h-3.5", isLoadingAuditLogs && "animate-spin")} /> Refresh
+            </button>
+          </div>
+          <p className="text-sm text-text-muted max-w-3xl">
+            Every Evolution Engine action, filtered from the same real admin_audit_logs Command Centre's Security & Audit trail already shows (the most recent 100 platform-wide admin actions) - not a separate audit system that could drift from it.
+          </p>
+          {auditLogsError && <div className="p-4 bg-destructive/10 border border-destructive/20 rounded-xl text-sm text-destructive dark:text-[#f87171]">{auditLogsError}</div>}
+          {isLoadingAuditLogs && !auditLogs ? (
+            <p className="text-sm text-text-muted italic">Loading...</p>
+          ) : auditLogs && auditLogs.length === 0 ? (
+            <div className="p-8 text-center bg-surface/30 border border-border/40 rounded-2xl">
+              <p className="text-sm text-text-muted">No Evolution Engine actions in the most recent 100 platform-wide admin actions.</p>
+            </div>
+          ) : (
+            <div className="space-y-1.5">
+              {(auditLogs || []).map((l: any) => (
+                <div key={l.id} className="bg-card border border-border/40 rounded-xl p-3 flex items-center justify-between gap-3 text-xs">
+                  <div className="flex items-center gap-2">
+                    <code className="font-mono text-text-main font-bold">{l.action}</code>
+                    {l.targetEmail && <span className="text-text-muted">{l.targetEmail}</span>}
+                  </div>
+                  <span className="text-text-muted shrink-0">{l.createdAt ? new Date(l.createdAt).toLocaleString() : ''}</span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 

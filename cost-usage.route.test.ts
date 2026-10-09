@@ -54,6 +54,25 @@ describe('GET /api/admin/cost-usage', () => {
     expect(res.body.estimatedCostUsd.totalUsd).toBe(0);
   });
 
+  // Evolution Engine PR11 (Release Health): evaluateBudgetAlert
+  // (cost-estimates.ts) existed but was never called anywhere until this
+  // PR wired it up against a real stored monthly budget.
+  it('reports an "ok" budget alert honestly when no monthly budget is configured', async () => {
+    const res = await request(app).get('/api/admin/cost-usage').set(auth(ADMIN));
+    expect(res.body.budget.monthlyBudgetUsd).toBe(0);
+    expect(res.body.budget.alertLevel).toBe('ok');
+  });
+
+  it('evaluates a real alert level once a monthly budget is configured and usage exceeds it', async () => {
+    const today = new Date().toISOString();
+    // novaTextPerMessage is 0.002 - 100000 messages this week extrapolates to a large monthly figure.
+    seedDoc('users/u1/usage_counters/day1', { nova_text: 100000, updatedAt: today });
+    await request(app).post('/api/admin/evolution/cost-budget').set(auth(ADMIN)).send({ monthlyBudgetUsd: 1 });
+    const res = await request(app).get('/api/admin/cost-usage').set(auth(ADMIN));
+    expect(res.body.budget.monthlyBudgetUsd).toBe(1);
+    expect(res.body.budget.alertLevel).toBe('protection');
+  });
+
   it('aggregates usage_counters across multiple users within the lookback window', async () => {
     const today = new Date().toISOString();
     seedDoc('users/u1/usage_counters/day1', { nova_text: 10, diagnose: 2, updatedAt: today });
