@@ -52,6 +52,7 @@ import { PLATFORM_ADMIN_ROLES, isPlatformAdminRole, DEFAULT_OWNER_BOOTSTRAP_EMAI
 import { validateFeatureRegistryUpsert, buildInitialRegistry, LegacyFeatureDefinition } from './feature-registry-v2';
 import { FEATURE_FLAG_IDS } from './feature-flag-ids';
 import { FEATURE_REGISTRY as LEGACY_FEATURE_REGISTRY } from './src/lib/feature-registry';
+import { validateProtectedCoreUpsert, buildSeedInvariants } from './protected-core';
 import { getEffectiveDataPolicy, validateDataPolicyUpdate } from './org-data-policy';
 import { initialAuthStatus, validateConnectorCreate, canSeeConnectorDetail, ORG_CONNECTOR_TYPES } from './org-connectors';
 import { isDeviceChannel, isValidAppVersion, validateDeviceRegistration, evaluateUpdateStatus, DEVICE_CHANNELS } from './desktop-deployment';
@@ -6754,6 +6755,68 @@ app.post("/api/admin/evolution/registry/seed", verifyAppCheck, authenticateFireb
     }
     await logAdminAction(req, "seed_feature_registry", "", "", { created, skipped });
     res.json({ created, skipped, total: initialEntries.length });
+  } catch (err: any) {
+    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
+  }
+});
+
+// ============ Evolution Engine: Protected Core ============
+// Real, cited governance invariants - see protected-core.ts. Viewing is
+// gated the same as the rest of the Evolution Engine
+// (requireEvolutionAccess); mutating a Protected Core entry is gated
+// tighter, to Platform Owner only - changing what counts as protected is
+// itself the single highest-stakes action this whole system can take.
+app.get("/api/admin/evolution/protected-core", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    requireEvolutionAccess(req);
+    const db = getDb();
+    const snap = await db.collection("platform_protected_core").get();
+    const invariants = snap.docs.map((doc: any) => ({ invariantId: doc.id, ...doc.data() }));
+    res.json({ invariants });
+  } catch (err: any) {
+    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
+  }
+});
+
+app.post("/api/admin/evolution/protected-core", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    requirePlatformOwner(req);
+    const parsed = validateProtectedCoreUpsert(req.body);
+    if (!parsed.valid) {
+      return res.status(400).json({ error: parsed.error });
+    }
+    const db = getDb();
+    const { invariantId, ...rest } = req.body;
+    const ref = db.collection("platform_protected_core").doc(invariantId);
+    await ref.set(rest, { merge: true });
+    await logAdminAction(req, "update_protected_core", "", invariantId, { requiredApproval: rest.requiredApproval, testStatus: rest.testStatus });
+    res.json({ success: true, invariantId });
+  } catch (err: any) {
+    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
+  }
+});
+
+// One-time (idempotent) seed of the real, evidence-backed invariant set -
+// create-if-absent, same safety property as the feature registry's seed
+// route, so re-running it can never clobber a manual edit (e.g. an owner
+// updating testStatus after adding new test coverage).
+app.post("/api/admin/evolution/protected-core/seed", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    requirePlatformOwner(req);
+    const db = getDb();
+    const seedEntries = buildSeedInvariants(new Date().toISOString());
+    let created = 0;
+    let skipped = 0;
+    for (const entry of seedEntries) {
+      const ref = db.collection("platform_protected_core").doc(entry.invariantId);
+      const existing = await ref.get();
+      if (existing.exists) { skipped++; continue; }
+      const { invariantId, ...rest } = entry;
+      await ref.set(rest);
+      created++;
+    }
+    await logAdminAction(req, "seed_protected_core", "", "", { created, skipped });
+    res.json({ created, skipped, total: seedEntries.length });
   } catch (err: any) {
     res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
   }

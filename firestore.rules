@@ -1931,6 +1931,15 @@ service cloud.firestore {
       allow write: if false; // Server-only
     }
 
+    // Protected Core governance invariants (Evolution Engine) - same
+    // admin-read/server-write-only pattern; the real boundary (Platform
+    // Owner only, narrower than general admin) is enforced server-side by
+    // requirePlatformOwner, not by this rule.
+    match /platform_protected_core/{invariantId} {
+      allow read: if isSignedIn() && request.auth.token.admin == true;
+      allow write: if false; // Server-only
+    }
+
     // Platform-wide manual incident log (Command Centre's Incidents tab) -
     // same admin-read/server-write-only pattern as admin_audit_logs. Every
     // write goes through server.ts's requireAdmin + logAdminAction, never

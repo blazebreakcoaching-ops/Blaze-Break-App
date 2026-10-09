@@ -1,10 +1,34 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
-import { Database, Plus, Search, Brain, Network, ZapOff, CheckCircle2, AlertTriangle, Layers, RefreshCw, Loader2 } from 'lucide-react';
+import { Database, Plus, Search, Brain, Network, ZapOff, CheckCircle2, AlertTriangle, Layers, RefreshCw, Loader2, ShieldCheck } from 'lucide-react';
 import { useFeatureFlags, setFeatureFlag, FeatureFlag } from '../lib/feature-flags';
 import { getNovaBrain, NovaMemory, deleteNovaMemory } from '../lib/nova-brain';
 import { cn } from '../lib/utils';
 import { secureApiFetch } from '../lib/secure-api';
+import { useAuth } from '../lib/auth';
+
+// Server-backed Protected Core invariant (platform_protected_core via
+// GET /api/admin/evolution/protected-core) - see protected-core.ts.
+// Supersedes the old "Core Protected List" (six bare strings in JSX,
+// removed in Evolution Engine PR1) with real, evidence-cited governance.
+interface ProtectedCoreInvariant {
+  invariantId: string;
+  title: string;
+  rule: string;
+  scope: string;
+  owner: string | null;
+  requiredApproval: string;
+  testStatus: string;
+  evidence: string;
+  allowedChangeProcess: string;
+  notes: string | null;
+}
+
+const TEST_STATUS_BADGE_STYLES: Record<string, string> = {
+  machine_tested: 'bg-success/10 text-success dark:text-[#4ade80]',
+  manual_only: 'bg-warning/10 text-[#9a3412] dark:text-warning',
+  untested: 'bg-destructive/10 text-destructive dark:text-[#f87171]',
+};
 
 // Server-backed registry entry shape (platform_feature_registry via
 // GET /api/admin/evolution/registry) - see feature-registry-v2.ts for
@@ -49,13 +73,59 @@ const ENFORCEMENT_BADGE_STYLES: Record<string, string> = {
 };
 
 export const EvolutionEngine = () => {
+  const { appRole } = useAuth();
+  const isPlatformOwner = appRole === 'platform_owner';
   const flags = useFeatureFlags();
-  const [activeTab, setActiveTab] = useState<'registry' | 'brain' | 'scanner' | 'connectors'>('registry');
+  const [activeTab, setActiveTab] = useState<'registry' | 'protected-core' | 'brain' | 'scanner' | 'connectors'>('registry');
   const [brainMemories, setBrainMemories] = useState<NovaMemory[]>([]);
   const [registry, setRegistry] = useState<RegistryEntry[] | null>(null);
   const [isLoadingRegistry, setIsLoadingRegistry] = useState(false);
   const [isSeeding, setIsSeeding] = useState(false);
   const [registryError, setRegistryError] = useState<string | null>(null);
+  const [protectedCore, setProtectedCore] = useState<ProtectedCoreInvariant[] | null>(null);
+  const [isLoadingProtectedCore, setIsLoadingProtectedCore] = useState(false);
+  const [isSeedingProtectedCore, setIsSeedingProtectedCore] = useState(false);
+  const [protectedCoreError, setProtectedCoreError] = useState<string | null>(null);
+
+  const fetchProtectedCore = async () => {
+    setIsLoadingProtectedCore(true);
+    setProtectedCoreError(null);
+    try {
+      const res = await secureApiFetch('/api/admin/evolution/protected-core');
+      if (res.ok) {
+        const data = await res.json();
+        setProtectedCore(data.invariants || []);
+      } else {
+        const err = await res.json();
+        setProtectedCoreError(err.error || "Couldn't load Protected Core.");
+      }
+    } catch (e) {
+      setProtectedCoreError("Couldn't load Protected Core.");
+    } finally {
+      setIsLoadingProtectedCore(false);
+    }
+  };
+
+  const handleSeedProtectedCore = async () => {
+    setIsSeedingProtectedCore(true);
+    try {
+      const res = await secureApiFetch('/api/admin/evolution/protected-core/seed', { method: 'POST' });
+      if (res.ok) {
+        await fetchProtectedCore();
+      } else {
+        const err = await res.json();
+        setProtectedCoreError(err.error || "Couldn't seed Protected Core.");
+      }
+    } catch (e) {
+      setProtectedCoreError("Couldn't seed Protected Core.");
+    } finally {
+      setIsSeedingProtectedCore(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchProtectedCore();
+  }, []);
 
   const fetchRegistry = async () => {
     setIsLoadingRegistry(true);
@@ -129,6 +199,7 @@ export const EvolutionEngine = () => {
       <div className="flex items-center gap-2 border-b border-border/40 pb-px" role="tablist">
         {[
           { id: 'registry', label: 'Feature Registry & Flags', icon: Database },
+          { id: 'protected-core', label: 'Protected Core', icon: ShieldCheck },
           { id: 'scanner', label: 'Change Impact Scanner', icon: Search },
           { id: 'brain', label: 'Nova Context Brain', icon: Brain },
           { id: 'connectors', label: 'Connector Layer', icon: Network },
@@ -264,6 +335,74 @@ export const EvolutionEngine = () => {
                        </button>
                      </div>
                    )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Protected Core Tab */}
+      {activeTab === 'protected-core' && (
+        <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2">
+          <div className="flex items-center justify-between border-b border-border/20 pb-4">
+            <h3 className="text-xl font-bold flex items-center gap-2 text-text-main">
+              <ShieldCheck className="w-5 h-5 text-text-muted" /> Protected Core
+            </h3>
+            {isPlatformOwner && (
+              <button
+                onClick={handleSeedProtectedCore}
+                disabled={isSeedingProtectedCore}
+                title="Create-if-absent migration of the real, evidence-backed invariant set - safe to re-run, never overwrites an existing entry."
+                className="text-xs font-bold px-3 py-1.5 rounded-lg bg-primary/10 text-[#9a3412] dark:text-primary hover:bg-primary/20 flex items-center gap-1.5 disabled:opacity-50"
+              >
+                {isSeedingProtectedCore ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />} Seed real invariants
+              </button>
+            )}
+          </div>
+
+          <p className="text-sm text-text-muted max-w-3xl">
+            Boundaries that must survive any feature rewrite touching them. Each invariant cites real evidence - where it's genuinely enforced today - rather than being a goal. Changing one requires the approval tier shown; most require a Platform Owner.
+          </p>
+
+          {protectedCoreError && (
+            <div className="p-4 bg-destructive/10 border border-destructive/20 rounded-xl text-sm text-destructive dark:text-[#f87171]">{protectedCoreError}</div>
+          )}
+
+          {isLoadingProtectedCore && !protectedCore ? (
+            <p className="text-sm text-text-muted italic">Loading...</p>
+          ) : protectedCore && protectedCore.length === 0 ? (
+            <div className="p-8 text-center bg-surface/30 border border-border/40 rounded-2xl">
+              <p className="text-sm text-text-muted mb-1">No invariants have been seeded yet.</p>
+              {isPlatformOwner ? (
+                <p className="text-xs text-text-muted">Click "Seed real invariants" above to load the evidence-backed starting set.</p>
+              ) : (
+                <p className="text-xs text-text-muted">Ask a Platform Owner to seed the real invariant set.</p>
+              )}
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {(protectedCore || []).map(inv => (
+                <div key={inv.invariantId} className="bg-card border border-border/40 rounded-2xl p-6">
+                  <div className="flex items-start justify-between gap-3 mb-2">
+                    <h4 className="font-bold text-lg text-text-main">{inv.title}</h4>
+                    <code className="text-[10px] text-text-muted shrink-0 mt-1">{inv.invariantId}</code>
+                  </div>
+                  <p className="text-sm text-text-main leading-relaxed mb-3">{inv.rule}</p>
+                  <div className="flex flex-wrap gap-2 mb-3">
+                    <span className={cn("text-xs uppercase font-black tracking-widest px-2 py-0.5 rounded-full", TEST_STATUS_BADGE_STYLES[inv.testStatus] || 'bg-surface/50 text-text-muted')}>
+                      {inv.testStatus.replace(/_/g, ' ')}
+                    </span>
+                    <span className="text-xs uppercase font-black tracking-widest px-2 py-0.5 rounded-full bg-surface/50 text-text-muted">
+                      Approval: {inv.requiredApproval.replace(/_/g, ' ')}
+                    </span>
+                    <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-background text-text-muted border border-border/40">{inv.scope}</span>
+                  </div>
+                  <div className="p-3 bg-surface/30 rounded-lg mb-2">
+                    <span className="text-[10px] uppercase font-black tracking-widest text-text-muted block mb-1">Evidence</span>
+                    <p className="text-xs text-text-muted font-mono leading-relaxed">{inv.evidence}</p>
+                  </div>
+                  <p className="text-[11px] text-text-muted italic leading-relaxed">{inv.allowedChangeProcess}</p>
                 </div>
               ))}
             </div>
