@@ -305,6 +305,13 @@ export class FakeFirestore {
   collection(id: string) { return new CollectionRef(this.store, id); }
   collectionGroup(id: string) { return new CollectionGroupRef(this.store, id); }
 
+  // Batched multi-doc read, same signature as the real Admin SDK's
+  // db.getAll(...refs) - returns one DocSnapshot per ref, same order as
+  // given.
+  async getAll(...refs: DocRef[]): Promise<DocSnapshot[]> {
+    return refs.map((ref) => new DocSnapshot(this.store, ref.path, this.store.docs.get(ref.path)));
+  }
+
   // Deletes a document (or every doc within a collection) and everything
   // nested beneath it - the erasure the delete-account endpoint relies on.
   async recursiveDelete(ref: DocRef | CollectionRef) {

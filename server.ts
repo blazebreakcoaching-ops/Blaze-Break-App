@@ -40,7 +40,7 @@ import { quietHoursCheckPasses } from './ally-nudge-quiet-hours';
 import { buildPrimaryIndicators, sortByAttention } from './org-leading-indicators';
 import { collectionsForExport, collectionsForErasure } from './user-data-collections';
 import { htmlToPlainTextFallback, buildEmailVerificationEmail, buildPasswordResetEmail, buildPasswordChangedEmail, buildMfaEnabledEmail, buildMfaDisabledEmail, buildSupportRequestReceivedEmail, buildAllyInviteEmail, buildInactivityWarningEmail } from './brevo-templates';
-import { evaluateRetentionAction, retentionSweepIsEnabled, RetentionCandidate } from './data-retention';
+import { evaluateRetentionAction, retentionSweepIsEnabled, RetentionCandidate, RETENTION_INACTIVITY_MONTHS, RETENTION_WARNING_DAYS_BEFORE } from './data-retention';
 import { generateTotpSecret, buildOtpauthUri, verifyTotpCode, generateRecoveryCodes, hashRecoveryCode, encryptSecret as encryptTotpSecret, decryptSecret as decryptTotpSecret, isTotpLockedOut, nextLockoutState } from './totp-mfa';
 import {
   isValidGad7Answers, scoreGad7, interpretGad7, GAD7_ASSESSMENT_VERSION,
@@ -10225,6 +10225,56 @@ async function processInactivityRetentionSweep() {
 if (process.env.TEST_MODE !== 'true') {
   cron.schedule('0 3 * * *', processInactivityRetentionSweep);
 }
+
+// Read-only admin visibility into the same inactivity-retention decision
+// processInactivityRetentionSweep() acts on nightly - reuses
+// evaluateRetentionAction() (data-retention.ts) so the Command Centre can
+// never show a different answer than what the real sweep would actually
+// do. Capped at one listUsers() page (1000 accounts) - an on-demand admin
+// view scanning the whole user base on every request would be a much
+// heavier, more frequent read pattern than the sweep's own once-a-day
+// batched pass; `capped` says so honestly rather than silently truncating.
+app.get("/api/admin/privacy/retention-queue", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    requireAdmin(req);
+    const db = getDb();
+    const warnedPending: { uid: string; email: string | null; lastSignInTime: string | null; warnedAt: string | null }[] = [];
+    const eligibleForDeletion: { uid: string; email: string | null; lastSignInTime: string | null; warnedAt: string | null }[] = [];
+
+    const page = await getAuth().listUsers(1000);
+    const refs = page.users.map((u) => db.collection("users").doc(u.uid));
+    const snaps = refs.length ? await db.getAll(...refs) : [];
+    const warningByUid = new Map<string, string | null>();
+    snaps.forEach((snap: any, i: number) => {
+      warningByUid.set(page.users[i].uid, snap.exists ? (snap.data()?.retentionWarningSentAt ?? null) : null);
+    });
+
+    for (const authUser of page.users) {
+      const candidate: RetentionCandidate = {
+        uid: authUser.uid,
+        lastSignInTime: authUser.metadata.lastSignInTime || null,
+        creationTime: authUser.metadata.creationTime,
+        retentionWarningSentAt: warningByUid.get(authUser.uid) ?? null,
+      };
+      const decision = evaluateRetentionAction(candidate);
+      const row = { uid: authUser.uid, email: authUser.email || null, lastSignInTime: candidate.lastSignInTime, warnedAt: candidate.retentionWarningSentAt };
+      if (decision.action === 'warn') warnedPending.push(row);
+      else if (decision.action === 'delete') eligibleForDeletion.push(row);
+    }
+
+    res.json({
+      sweepEnabled: RETENTION_SWEEP_ENABLED,
+      inactivityMonths: RETENTION_INACTIVITY_MONTHS,
+      warningDaysBefore: RETENTION_WARNING_DAYS_BEFORE,
+      scannedCount: page.users.length,
+      capped: !!page.pageToken,
+      warnedPending,
+      eligibleForDeletion,
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
 // Public - the ally doesn't have an account. Access is entirely gated by
 // possession of an unguessable 48-character token, and the response only

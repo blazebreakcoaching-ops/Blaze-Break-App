@@ -181,7 +181,7 @@ export const AdminDashboard = () => {
 
   const isAdmin = isPlatformAdminRole(appRole);
 
-  const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'entitlements' | 'admins' | 'orgs' | 'communications' | 'audit' | 'somatic' | 'feedback'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'entitlements' | 'admins' | 'orgs' | 'communications' | 'privacy' | 'audit' | 'somatic' | 'feedback'>('overview');
   // Which account's Access Timeline is expanded in the Plans &
   // Entitlements tab - at most one open at a time, same pattern as other
   // single-item expand/collapse state in this file.
@@ -210,6 +210,20 @@ export const AdminDashboard = () => {
     estimatedCostUsd: { smsUsd: number; novaTextUsd: number; novaVoiceUsd: number; diagnoseUsd: number; totalUsd: number };
   } | null>(null);
   const [orgs, setOrgs] = useState<{ id: string; name: string; joinCode: string; privacyThreshold: number; memberCount: number; adminCount: number; createdAt?: string | null; billingPlan?: string }[]>([]);
+  // The same inactivity-retention decision the real nightly sweep acts on
+  // (data-retention.ts's evaluateRetentionAction), read-only - fetched
+  // lazily only when the Privacy Operations tab is first opened, not on
+  // every dashboard load.
+  const [retentionQueue, setRetentionQueue] = useState<{
+    sweepEnabled: boolean;
+    inactivityMonths: number;
+    warningDaysBefore: number;
+    scannedCount: number;
+    capped: boolean;
+    warnedPending: { uid: string; email: string | null; lastSignInTime: string | null; warnedAt: string | null }[];
+    eligibleForDeletion: { uid: string; email: string | null; lastSignInTime: string | null; warnedAt: string | null }[];
+  } | null>(null);
+  const [isLoadingRetentionQueue, setIsLoadingRetentionQueue] = useState(false);
   // Which org's detail (billing + member list) is expanded, and the
   // fetched detail itself - fetched lazily on expand, not preloaded for
   // every org in the list.
@@ -578,9 +592,32 @@ export const AdminDashboard = () => {
     }
   };
 
+  const fetchRetentionQueue = async () => {
+    setIsLoadingRetentionQueue(true);
+    try {
+      const res = await secureApiFetch('/api/admin/privacy/retention-queue');
+      if (res.ok) {
+        setRetentionQueue(await res.json());
+      }
+    } catch (e) {
+      // Non-fatal - the tab just shows its own "couldn't load" state.
+    } finally {
+      setIsLoadingRetentionQueue(false);
+    }
+  };
+
   useEffect(() => {
     loadAllData();
   }, []);
+
+  // Lazy-loaded only once, the first time the Privacy Operations tab is
+  // actually opened - a listUsers() scan isn't worth doing on every
+  // dashboard load for a tab most sessions never visit.
+  useEffect(() => {
+    if (activeTab === 'privacy' && retentionQueue === null && !isLoadingRetentionQueue) {
+      fetchRetentionQueue();
+    }
+  }, [activeTab]);
 
   const handleUpdateRole = async (uid: string) => {
     try {
@@ -1122,6 +1159,7 @@ export const AdminDashboard = () => {
           { id: 'admins', label: 'Promote Platform Admins', icon: ShieldAlert },
           { id: 'orgs', label: 'Organisations', icon: Building2 },
           { id: 'communications', label: 'Communications', icon: MessageSquare },
+          { id: 'privacy', label: 'Privacy Operations', icon: Lock },
           { id: 'audit', label: 'Auditor Event Log', icon: Activity },
           { id: 'somatic', label: 'Somatic De-escalation Stats', icon: Heart },
           { id: 'feedback', label: 'Feedback & Testimonials', icon: MessageSquare }
@@ -1973,6 +2011,79 @@ export const AdminDashboard = () => {
             <div className="card p-6 bg-surface dark:bg-card border border-border rounded-2xl">
               <h4 className="font-display text-sm font-bold text-text-main mb-2">Email & Push Volume</h4>
               <p className="text-xs text-text-muted leading-relaxed">Not yet tracked. Configuration status above reflects whether credentials are present; neither provider's send volume is aggregated anywhere in this codebase today, so no count is shown rather than a fabricated one.</p>
+            </div>
+          </div>
+        )}
+
+        {/* Privacy Operations - the one real, already-running privacy
+            automation in this codebase: the inactivity-based retention
+            sweep (warn at ~11 months inactive, delete at 12 if the warning
+            goes unanswered). Shows exactly what the real nightly sweep
+            would do right now, via the same decision function, rather
+            than a separate admin-only approximation. Export and manual
+            deletion are self-service (GDPR Art. 15/17/20) and consciously
+            NOT logged to any admin-visible queue today - said plainly
+            below instead of a fabricated "0 pending" row. */}
+        {activeTab === 'privacy' && (
+          <div className="space-y-6">
+            <div className="card p-6 bg-surface dark:bg-card border border-border rounded-2xl">
+              <div className="flex items-center justify-between mb-2">
+                <h4 className="font-display text-sm font-bold text-text-main">Inactivity Retention Sweep</h4>
+                {retentionQueue && (
+                  <span className={`px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-widest ${
+                    retentionQueue.sweepEnabled ? 'bg-success/10 text-success dark:text-[#4ade80]' : 'bg-surface text-text-muted'
+                  }`}>
+                    {retentionQueue.sweepEnabled ? 'Enabled' : 'Disabled (kill switch off)'}
+                  </span>
+                )}
+              </div>
+              {retentionQueue ? (
+                <p className="text-xs text-text-muted leading-relaxed">
+                  An account with no sign-in for {retentionQueue.inactivityMonths} months is warned by email {retentionQueue.warningDaysBefore} days before deletion, then erased via the same routine the self-serve delete-account flow uses if it stays inactive through the grace period.
+                </p>
+              ) : (
+                <p className="text-xs text-text-muted italic">{isLoadingRetentionQueue ? 'Loading...' : "Couldn't load sweep status."}</p>
+              )}
+            </div>
+
+            {retentionQueue && (
+              <>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="card p-6 bg-surface dark:bg-card border border-border rounded-2xl">
+                    <span className="text-[10px] font-black uppercase tracking-widest text-text-muted block mb-1">Warned, Pending Deletion</span>
+                    <span className="text-3xl font-display font-black text-text-main">{retentionQueue.warnedPending.length}</span>
+                    <p className="text-[10px] text-text-muted mt-1">Already warned - will be erased once the grace period elapses, unless they sign in again</p>
+                  </div>
+                  <div className="card p-6 bg-surface dark:bg-card border border-border rounded-2xl">
+                    <span className="text-[10px] font-black uppercase tracking-widest text-text-muted block mb-1">Eligible for Deletion Next Sweep</span>
+                    <span className="text-3xl font-display font-black text-destructive dark:text-[#f87171]">{retentionQueue.eligibleForDeletion.length}</span>
+                    <p className="text-[10px] text-text-muted mt-1">Grace period has elapsed - the next sweep run will erase these accounts</p>
+                  </div>
+                </div>
+
+                {retentionQueue.eligibleForDeletion.length > 0 && (
+                  <div className="card p-6 bg-surface dark:bg-card border border-border rounded-2xl">
+                    <h5 className="text-sm font-bold text-text-main mb-3">Eligible for Deletion</h5>
+                    <div className="space-y-1.5 max-h-56 overflow-y-auto">
+                      {retentionQueue.eligibleForDeletion.map((row) => (
+                        <div key={row.uid} className="flex items-center justify-between text-xs py-1.5 px-2.5 bg-background rounded-lg">
+                          <span className="text-text-main font-mono truncate max-w-[220px]" title={row.email || row.uid}>{row.email || row.uid}</span>
+                          <span className="text-text-muted text-[10px]">Last active {row.lastSignInTime ? new Date(row.lastSignInTime).toLocaleDateString() : 'unknown'}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <p className="text-[10px] text-text-muted italic">
+                  Scanned {retentionQueue.scannedCount} accounts{retentionQueue.capped ? ' (capped at the first page - there are more)' : ''}.
+                </p>
+              </>
+            )}
+
+            <div className="card p-6 bg-surface dark:bg-card border border-border rounded-2xl">
+              <h4 className="font-display text-sm font-bold text-text-main mb-2">Data Export & Manual Deletion Requests</h4>
+              <p className="text-xs text-text-muted leading-relaxed">Not tracked here. Account data export (GDPR Art. 15/20) and account deletion (Art. 17) are both real, working self-service flows a user triggers on their own account - neither writes to any admin-visible log today, so no queue is shown rather than a fabricated empty one.</p>
             </div>
           </div>
         )}
