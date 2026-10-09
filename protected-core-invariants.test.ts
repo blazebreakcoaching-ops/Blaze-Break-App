@@ -189,4 +189,25 @@ describe('organisation_aggregate_cohort_threshold', () => {
     expect(res.body.locked).toBe(false);
     expect(res.body.cohortSize).toBe(5);
   });
+
+  it('GET /api/org/:orgId/hr-dashboard calls the shared checkCohortSufficiency function rather than its own inline comparison', () => {
+    const routeStart = serverSource.indexOf('app.get("/api/org/:orgId/hr-dashboard"');
+    expect(routeStart).toBeGreaterThan(-1);
+    const nextRouteStart = serverSource.slice(routeStart + 10).search(/\bapp\.(get|post|put|delete|patch)\(/);
+    expect(nextRouteStart).toBeGreaterThan(-1);
+    const handlerSlice = serverSource.slice(routeStart, routeStart + 10 + nextRouteStart);
+    expect(handlerSlice).toMatch(/checkCohortSufficiency\(/);
+    expect(handlerSlice).toMatch(/buildLockedAggregateResponse\(/);
+    expect(handlerSlice).not.toMatch(/consentingUids\.length < threshold/);
+  });
+
+  it('a cohort below the organisation privacy threshold receives a locked hr-dashboard response with no team figures', async () => {
+    seedDoc('organisations/org_1', { name: 'Test Org', adminUids: ['owner_1'], hrViewerUids: ['owner_1'], memberUids: ['owner_1', 'member_1'], privacyThreshold: 5 });
+    seedDoc('users/owner_1', { shareAnonymizedDataWithOrg: true });
+    seedDoc('users/member_1', { shareAnonymizedDataWithOrg: true });
+
+    const res = await request(app).get('/api/org/org_1/hr-dashboard').set(auth('owner_1'));
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ locked: true, cohortSize: 2, threshold: 5, teams: [] });
+  });
 });

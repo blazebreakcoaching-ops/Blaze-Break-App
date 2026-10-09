@@ -157,6 +157,51 @@ describe('GET /api/org/:orgId/hr-dashboard — follow-up status', () => {
   });
 });
 
+describe('GET /api/org/:orgId/hr-dashboard — Work Design Signals and Intervention Register visibility', () => {
+  it('returns a Work Design Signals entry per team, same vocabulary as the manager view', async () => {
+    seedOrg(ORG, {
+      adminUids: ['owner_1'],
+      memberUids: ['owner_1', 'hr_1', 'a1', 'a2', 'a3'],
+      memberTeams: { a1: 'Team A', a2: 'Team A', a3: 'Team A' },
+      hrViewerUids: ['hr_1'],
+      privacyThreshold: 3,
+    });
+    ['a1', 'a2', 'a3'].forEach(consenting);
+
+    const res = await request(app).get(`/api/org/${ORG}/hr-dashboard`).set(auth('hr_1'));
+    const teamA = res.body.teams.find((t: any) => t.team === 'Team A');
+    expect(teamA.workDesignSignals).toHaveLength(1);
+    expect(teamA.workDesignSignals[0].key).toBe('meeting_pressure');
+    expect(teamA.activeIntervention).toBeNull();
+  });
+
+  it('surfaces a team\'s active intervention read-only, without a recommendation or trial action', async () => {
+    seedOrg(ORG, {
+      adminUids: ['owner_1'],
+      memberUids: ['owner_1', 'hr_1', 'mgr_a', 'a1', 'a2', 'a3'],
+      memberTeams: { a1: 'Team A', a2: 'Team A', a3: 'Team A' },
+      hrViewerUids: ['hr_1'],
+      privacyThreshold: 3,
+    });
+    seedDoc(`organisations/${ORG}`, {
+      adminUids: ['owner_1'], memberUids: ['owner_1', 'hr_1', 'mgr_a', 'a1', 'a2', 'a3'],
+      memberTeams: { a1: 'Team A', a2: 'Team A', a3: 'Team A' },
+      hrViewerUids: ['hr_1'], privacyThreshold: 3,
+      teamManagers: { mgr_a: ['Team A'] },
+    });
+    ['a1', 'a2', 'a3'].forEach(consenting);
+    await request(app).post(`/api/org/${ORG}/work-design-interventions`).set(auth('mgr_a'))
+      .send({ team: 'Team A', signalKey: 'meeting_pressure', proposedChange: 'Protect 14:00-16:00', why: 'High meeting load' });
+
+    const res = await request(app).get(`/api/org/${ORG}/hr-dashboard`).set(auth('hr_1'));
+    const teamA = res.body.teams.find((t: any) => t.team === 'Team A');
+    expect(teamA.activeIntervention).not.toBeNull();
+    expect(teamA.activeIntervention.status).toBe('trialling');
+    expect(teamA.activeIntervention.proposedChange).toBe('Protect 14:00-16:00');
+    expect(teamA.recommendation).toBeUndefined();
+  });
+});
+
 describe('tenant isolation', () => {
   it("org B's HR viewer sees nothing about org A", async () => {
     seedOrg(ORG, { adminUids: ['owner_a'], memberUids: ['owner_a'] });

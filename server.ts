@@ -8447,6 +8447,7 @@ const buildMeetingPressureSignal = async (db: any, uids: string[], threshold: nu
 // set (the spec's own "never 14 recommendations" doctrine applied to
 // signals, not just Nova's copy) rather than listing every signal
 // regardless of whether it actually warrants a manager's attention.
+const ACTIVE_INTERVENTION_STATUSES = new Set(['trialling', 'active']);
 const MAX_ATTENTION_ITEMS = 3;
 const describeSignalsNeedingAttention = (signals: TeamWorkDesignSignal[]): string[] =>
   signals
@@ -8989,7 +8990,6 @@ app.get("/api/org/:orgId/team-dashboard", verifyAppCheck, authenticateFirebaseUs
       // that's not forgotten.
       const interventionsSnap = await db.collection("organisations").doc(orgId).collection("work_design_interventions")
         .where("team", "==", team).get();
-      const ACTIVE_INTERVENTION_STATUSES = new Set(['trialling', 'active']);
       const activeIntervention = interventionsSnap.docs
         .map((d: any) => ({ id: d.id, ...d.data() }))
         .find((iv: any) => ACTIVE_INTERVENTION_STATUSES.has(iv.status)) || null;
@@ -9257,8 +9257,9 @@ app.get("/api/org/:orgId/hr-dashboard", verifyAppCheck, authenticateFirebaseUser
     const memberTeams: Record<string, string> = org.memberTeams || {};
     const consentingUids = await getConsentingMemberUids(db, memberUids);
 
-    if (consentingUids.length < threshold) {
-      return res.json({ locked: true, cohortSize: consentingUids.length, threshold, teams: [] });
+    const sufficiency = checkCohortSufficiency(consentingUids.length, threshold);
+    if (!sufficiency.sufficient) {
+      return res.json(buildLockedAggregateResponse(sufficiency, { teams: [] }));
     }
 
     const orgSnapshot = await computeStrainSnapshotForCohort(db, consentingUids);
@@ -9284,9 +9285,23 @@ app.get("/api/org/:orgId/hr-dashboard", verifyAppCheck, authenticateFirebaseUser
         climate: snap.climateConcern,
         overallTrend: teamTrends[team],
       }));
+      // Work Design Signals, read-only for HR - the same structural signal
+      // a manager sees (see team-dashboard above), never a recommendation
+      // or a "start trial" action: those stay manager-only, HR only gets
+      // visibility into what's running (activeIntervention) via the
+      // Intervention Register, not the power to start one on a team they
+      // don't manage.
+      const workDesignSignals = [await buildMeetingPressureSignal(db, teamGroups[team], threshold)];
+      const interventionsSnap = await db.collection("organisations").doc(orgId).collection("work_design_interventions")
+        .where("team", "==", team).get();
+      const activeIntervention = interventionsSnap.docs
+        .map((d: any) => ({ id: d.id, ...d.data() }))
+        .find((iv: any) => ACTIVE_INTERVENTION_STATUSES.has(iv.status)) || null;
       return {
         team,
         cohortSize: teamGroups[team].length,
+        workDesignSignals,
+        activeIntervention,
         overallConcern: snap.overallConcern,
         moodConcern: snap.moodConcern,
         climateConcern: snap.climateConcern,
