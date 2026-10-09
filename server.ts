@@ -54,6 +54,7 @@ import { FEATURE_FLAG_IDS } from './feature-flag-ids';
 import { FEATURE_REGISTRY as LEGACY_FEATURE_REGISTRY } from './src/lib/feature-registry';
 import { validateProtectedCoreUpsert, buildSeedInvariants } from './protected-core';
 import { checkCohortSufficiency, buildLockedAggregateResponse } from './anonymous-aggregation-engine';
+import { evaluateMeetingPressure, SIGNAL_BAND_LABELS } from './work-design-signals';
 import {
   validateChangeProposalCreate, deriveFeatureRegistryApprovalTier, canDecideProposal,
   canTransitionProposalStatus, ProposalStatus,
@@ -8408,6 +8409,47 @@ const computeMeetingLoadSnapshotForCohort = async (
   };
 };
 
+// Shapes computeMeetingLoadSnapshotForCohort's raw snapshot into the one
+// Work Design Signal card a manager/HR/executive view actually renders -
+// a band (or an honest "we don't know" when the signal isn't available),
+// never a raw number standing alone. The only signal with a real band
+// function today (work-design-signals.ts); more will be added here as
+// their own functions land in later PRs, not invented ahead of them.
+interface TeamWorkDesignSignal {
+  key: string;
+  label: string;
+  band: string | null;
+  bandLabel: string | null;
+  sufficiencyStatus: string;
+  sufficiencyMessage: string;
+  basis: string;
+}
+
+const buildMeetingPressureSignal = async (db: any, uids: string[], threshold: number): Promise<TeamWorkDesignSignal> => {
+  const snapshot = await computeMeetingLoadSnapshotForCohort(db, uids, threshold);
+  const result = evaluateMeetingPressure(snapshot);
+  return {
+    key: 'meeting_pressure',
+    label: 'Meeting Pressure',
+    band: result.band,
+    bandLabel: result.band ? SIGNAL_BAND_LABELS[result.band] : null,
+    sufficiencyStatus: result.sufficiency.status,
+    sufficiencyMessage: result.sufficiency.message,
+    basis: result.basis,
+  };
+};
+
+// "What deserves attention?" - capped at a small, genuinely meaningful
+// set (the spec's own "never 14 recommendations" doctrine applied to
+// signals, not just Nova's copy) rather than listing every signal
+// regardless of whether it actually warrants a manager's attention.
+const MAX_ATTENTION_ITEMS = 3;
+const describeSignalsNeedingAttention = (signals: TeamWorkDesignSignal[]): string[] =>
+  signals
+    .filter((s) => s.band === 'elevated' || s.band === 'sustained')
+    .slice(0, MAX_ATTENTION_ITEMS)
+    .map((s) => `${s.label} is ${s.bandLabel?.toLowerCase()}.`);
+
 // The cohort-level "did people actually use the app" signal - extracted
 // from the original /api/org/:orgId/dashboard route so the same real
 // engagement math can be reused per-team (team-dashboard, hr-dashboard)
@@ -8923,11 +8965,23 @@ app.get("/api/org/:orgId/team-dashboard", verifyAppCheck, authenticateFirebaseUs
       const nudge = topIndicator && (topIndicator.severity === 'elevated' || topIndicator.direction === 'worsening')
         ? { title: 'Consider a team check-in', message: topIndicator.note }
         : null;
+      // Work Design Signals - the new, structural framing this is moving
+      // toward (see work-design-signals.ts): meeting load, not mood. Uses
+      // the SAME teamConsentingUids/threshold already established above,
+      // but computeMeetingLoadSnapshotForCohort applies its own separate,
+      // real k-anonymity check on top (the contributing group is whoever
+      // of these consenting members has ALSO connected a live calendar,
+      // which is typically smaller) - so this can independently come back
+      // insufficient even when the team's overall privacy threshold is met.
+      const workDesignSignals = [await buildMeetingPressureSignal(db, teamConsentingUids, threshold)];
+      const attention = describeSignalsNeedingAttention(workDesignSignals);
       return {
         team,
         locked: false,
         cohortSize: teamConsentingUids.length,
         threshold,
+        workDesignSignals,
+        attention,
         overallConcern: snapshot.overallConcern,
         moodConcern: snapshot.moodConcern,
         climateConcern: snapshot.climateConcern,

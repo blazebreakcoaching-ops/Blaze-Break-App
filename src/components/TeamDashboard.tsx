@@ -2,7 +2,24 @@ import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { secureApiFetch } from '../lib/secure-api';
 import { cn } from '../lib/utils';
-import { Users, Lock, Loader2, AlertTriangle, ShieldCheck, ArrowUp, ArrowDown, Minus, HeartPulse } from 'lucide-react';
+import { Users, Lock, Loader2, AlertTriangle, ShieldCheck, ArrowUp, ArrowDown, Minus, HeartPulse, Calendar } from 'lucide-react';
+
+interface TeamWorkDesignSignal {
+  key: string;
+  label: string;
+  band: 'low' | 'typical' | 'elevated' | 'sustained' | null;
+  bandLabel: string | null;
+  sufficiencyStatus: 'available' | 'insufficient_data' | 'not_connected' | 'stale' | 'demo';
+  sufficiencyMessage: string;
+  basis: string;
+}
+
+const bandBadgeClasses: Record<string, string> = {
+  sustained: 'bg-destructive/10 text-destructive dark:text-[#f87171] border-destructive/20',
+  elevated: 'bg-warning/10 text-[#9a3412] dark:text-warning border-warning/20',
+  typical: 'bg-primary/10 text-primary border-primary/20',
+  low: 'bg-success/10 text-[#166534] dark:text-[#4ade80] border-success/20',
+};
 
 interface TeamIndicator {
   key: string;
@@ -25,6 +42,8 @@ interface TeamEntry {
   engagementRate?: number;
   indicators?: TeamIndicator[];
   nudge?: { title: string; message: string } | null;
+  workDesignSignals?: TeamWorkDesignSignal[];
+  attention?: string[];
 }
 
 const sevClasses: Record<string, string> = {
@@ -200,6 +219,43 @@ export const TeamDashboard = () => {
                           {acknowledgingTeam === entry.team ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
                           Log that I addressed this
                         </button>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {entry.workDesignSignals && entry.workDesignSignals.length > 0 && (
+                  <div className="space-y-3">
+                    <h5 className="text-xs uppercase font-bold tracking-widest text-text-muted flex items-center gap-2">
+                      <Calendar className="w-3.5 h-3.5" /> Work Design Signals
+                    </h5>
+                    <ul className="space-y-2.5">
+                      {entry.workDesignSignals.map((signal) => (
+                        <li key={signal.key} className="flex items-center gap-4 p-4 rounded-xl border border-border bg-surface/60 dark:bg-card/40">
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-bold text-text-main truncate">{signal.label}</p>
+                            <p className="text-xs text-text-muted mt-0.5">
+                              {signal.band ? signal.basis : signal.sufficiencyMessage}
+                            </p>
+                          </div>
+                          {signal.band ? (
+                            <span className={cn('shrink-0 text-[11px] font-black uppercase tracking-widest px-2.5 py-1 rounded-full border', bandBadgeClasses[signal.band])}>
+                              {signal.bandLabel}
+                            </span>
+                          ) : (
+                            <span className="shrink-0 text-[11px] text-text-muted">not enough data yet</span>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                    {entry.attention && entry.attention.length > 0 && (
+                      <div className="p-4 bg-warning/10 border border-warning/20 rounded-xl">
+                        <p className="text-xs font-bold text-text-main mb-1">What deserves attention?</p>
+                        <ul className="space-y-1">
+                          {entry.attention.map((item) => (
+                            <li key={item} className="text-xs text-text-muted">{item}</li>
+                          ))}
+                        </ul>
                       </div>
                     )}
                   </div>

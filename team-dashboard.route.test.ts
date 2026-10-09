@@ -152,6 +152,54 @@ describe('GET /api/org/:orgId/team-dashboard — Nova nudge banner', () => {
   });
 });
 
+describe('GET /api/org/:orgId/team-dashboard — Work Design Signals (Meeting Pressure)', () => {
+  it('no data != zero: with no calendar connections at all, the signal is honestly insufficient, not a fabricated low band', async () => {
+    seedOrg(ORG, {
+      adminUids: ['owner_1'],
+      memberUids: ['owner_1', 'mgr_a', 'a1', 'a2', 'a3'],
+      memberTeams: { a1: 'Team A', a2: 'Team A', a3: 'Team A' },
+      teamManagers: { mgr_a: ['Team A'] },
+      privacyThreshold: 3,
+    });
+    ['a1', 'a2', 'a3'].forEach(uid => seedDoc(`users/${uid}`, { shareAnonymizedDataWithOrg: true }));
+
+    const res = await request(app).get(`/api/org/${ORG}/team-dashboard`).set(auth('mgr_a'));
+    const team = res.body.teams[0];
+    expect(team.locked).toBe(false);
+    const signal = team.workDesignSignals.find((s: any) => s.key === 'meeting_pressure');
+    expect(signal.band).toBeNull();
+    expect(signal.sufficiencyStatus).toBe('insufficient_data');
+    expect(signal.sufficiencyMessage).toBeTruthy();
+    expect(team.attention).toEqual([]);
+  });
+
+  it('a real, sufficiently-connected cohort gets a genuine band and basis, never a raw unexplained number', async () => {
+    seedOrg(ORG, {
+      adminUids: ['owner_1'],
+      memberUids: ['owner_1', 'mgr_a', 'a1', 'a2', 'a3'],
+      memberTeams: { a1: 'Team A', a2: 'Team A', a3: 'Team A' },
+      teamManagers: { mgr_a: ['Team A'] },
+      privacyThreshold: 3,
+    });
+    const nowIso = new Date().toISOString();
+    for (const uid of ['a1', 'a2', 'a3']) {
+      seedDoc(`users/${uid}`, { shareAnonymizedDataWithOrg: true });
+      seedDoc(`users/${uid}/nova_permissions/current`, { allowCalendarSignals: true });
+      seedDoc(`users/${uid}/live_signals/calendar`, {
+        updatedAt: nowIso, totalMeetingHours: 28, backToBackCount: 10, eveningMeetingCount: 2, weekendMeetingCount: 0,
+      });
+    }
+
+    const res = await request(app).get(`/api/org/${ORG}/team-dashboard`).set(auth('mgr_a'));
+    const team = res.body.teams[0];
+    const signal = team.workDesignSignals.find((s: any) => s.key === 'meeting_pressure');
+    expect(signal.band).toBe('sustained');
+    expect(signal.bandLabel).toBe('Sustained');
+    expect(signal.basis).toContain('28h');
+    expect(team.attention).toEqual(['Meeting Pressure is sustained.']);
+  });
+});
+
 describe('GET /api/org/:orgId/team-dashboard — never writes the shared org-wide history', () => {
   it('does not create a risk_trend_history entry, even for the org\'s first-ever check today', async () => {
     seedOrg(ORG, {
