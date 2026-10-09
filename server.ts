@@ -90,6 +90,7 @@ import { getEffectiveNotificationPreferences, routeNotification } from './notifi
 import { UsageTotals, estimateCost, evaluateBudgetAlert } from './cost-estimates';
 import { managedTeamsFor, isTeamManager, isHrViewer, validateTeamAssignment, validateHrViewerList, computeQualifyingTeamGroups } from './org-team-management';
 import { validateAckInput, describeFollowUp } from './team-escalation';
+import { validateCreateInterventionInput, validateStatusUpdateInput, DEFAULT_REVIEW_WINDOW_DAYS } from './work-design-interventions';
 
 dotenv.config();
 
@@ -9051,6 +9052,126 @@ app.post("/api/org/:orgId/team-dashboard/:team/acknowledge", verifyAppCheck, aut
     // matching the existing "structured diffs, never raw content" rule.
     await logOrgAuditAction(req, orgId, "acknowledge_team_signal", "team_escalation_ack", team, null, { notePresent: !!note });
     res.json({ success: true, ack: record });
+  } catch (err: any) {
+    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("not found") ? 404 : 500).json({ error: err.message });
+  }
+});
+
+// Work Design Action Board / Intervention Register - the spec's "core
+// missing closed loop". A manager starting a trial directly from the Nova
+// Manager Coach card creates one of these at status 'trialling' (not
+// 'suggested' - the manager has already decided to act, there's no
+// separate approval step for a manager acting on their own team). The
+// same auth rule as the acknowledge route above: must manage :team or be
+// an org admin, since this is real workplace-change data, not a general-
+// purpose note anyone can leave on any team.
+app.post("/api/org/:orgId/work-design-interventions", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const { orgId } = req.params;
+    const { user, db, org, role } = await loadOrgAndCallerRole(req, orgId);
+    const isAdmin = role === 'owner' || role === 'admin';
+    const validation = validateCreateInterventionInput(req.body);
+    if (!validation.valid) {
+      return res.status(400).json({ error: validation.error });
+    }
+    const { team, signalKey, proposedChange, why, reviewInDays } = req.body;
+    if (!isTeamManager(org.teamManagers, user.uid, team) && !isAdmin) {
+      return res.status(403).json({ error: "Forbidden: you don't manage this team." });
+    }
+
+    const nowIso = new Date().toISOString();
+    const reviewDate = new Date(Date.now() + (reviewInDays ?? DEFAULT_REVIEW_WINDOW_DAYS) * 24 * 60 * 60 * 1000).toISOString();
+    const record = {
+      team,
+      signalKey,
+      proposedChange,
+      why,
+      owner: user.uid,
+      ownerEmail: user.email || null,
+      status: 'trialling' as const,
+      startDate: nowIso,
+      reviewDate,
+      expectedOutcome: null,
+      actualOutcome: null,
+      outcomeRating: null,
+      outcomeNotes: null,
+      createdAt: nowIso,
+      updatedAt: nowIso,
+    };
+    const ref = await db.collection("organisations").doc(orgId).collection("work_design_interventions").add(record);
+    await logOrgAuditAction(req, orgId, "create_work_design_intervention", "work_design_intervention", ref.id, null, { team, signalKey, status: record.status });
+    res.json({ success: true, intervention: { id: ref.id, ...record } });
+  } catch (err: any) {
+    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("not found") ? 404 : 500).json({ error: err.message });
+  }
+});
+
+// Lists interventions for the caller's own managed team(s), or every team
+// when the caller is an org admin and no ?team= filter is given - the
+// same "manager sees their own team only, admin sees everything" split
+// the rest of this file already uses. HR cross-team visibility without
+// requiring admin is deliberately out of scope here (Workplace
+// Intelligence & Governance, a later PR) - the data model doesn't block
+// adding that read path later, since it's the same collection either way.
+app.get("/api/org/:orgId/work-design-interventions", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const { orgId } = req.params;
+    const { user, db, org, role } = await loadOrgAndCallerRole(req, orgId);
+    const isAdmin = role === 'owner' || role === 'admin';
+    const managedTeams = managedTeamsFor(org.teamManagers, user.uid);
+    const requestedTeam = typeof req.query.team === 'string' ? req.query.team : null;
+
+    if (requestedTeam) {
+      if (!isAdmin && !managedTeams.includes(requestedTeam)) {
+        return res.status(403).json({ error: "Forbidden: you don't manage this team." });
+      }
+    } else if (!isAdmin && managedTeams.length === 0) {
+      return res.status(403).json({ error: "Forbidden: you don't manage any team in this organisation." });
+    }
+
+    let query: any = db.collection("organisations").doc(orgId).collection("work_design_interventions");
+    if (requestedTeam) {
+      query = query.where("team", "==", requestedTeam);
+    } else if (!isAdmin) {
+      // A manager with no team filter sees only the team(s) they manage -
+      // Firestore can't OR across values in this fake/real client
+      // uniformly here, so fan out one query per managed team instead.
+      const perTeamSnaps = await Promise.all(
+        managedTeams.map((team) => db.collection("organisations").doc(orgId).collection("work_design_interventions").where("team", "==", team).get())
+      );
+      const interventions = perTeamSnaps.flatMap((snap: any) => snap.docs.map((d: any) => ({ id: d.id, ...d.data() })));
+      return res.json({ interventions });
+    }
+    const snap = await query.get();
+    const interventions = snap.docs.map((d: any) => ({ id: d.id, ...d.data() }));
+    res.json({ interventions });
+  } catch (err: any) {
+    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("not found") ? 404 : 500).json({ error: err.message });
+  }
+});
+
+app.patch("/api/org/:orgId/work-design-interventions/:id/status", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const { orgId, id } = req.params;
+    const { user, db, org, role } = await loadOrgAndCallerRole(req, orgId);
+    const isAdmin = role === 'owner' || role === 'admin';
+    const validation = validateStatusUpdateInput(req.body);
+    if (!validation.valid) {
+      return res.status(400).json({ error: validation.error });
+    }
+    const ref = db.collection("organisations").doc(orgId).collection("work_design_interventions").doc(id);
+    const snap = await ref.get();
+    if (!snap.exists) {
+      return res.status(404).json({ error: "Intervention not found." });
+    }
+    const existing = snap.data()!;
+    if (!isTeamManager(org.teamManagers, user.uid, existing.team) && !isAdmin) {
+      return res.status(403).json({ error: "Forbidden: you don't manage this team." });
+    }
+    const { status } = req.body;
+    await ref.set({ status, updatedAt: new Date().toISOString() }, { merge: true });
+    await logOrgAuditAction(req, orgId, "update_work_design_intervention_status", "work_design_intervention", id, { status: existing.status }, { status });
+    res.json({ success: true });
   } catch (err: any) {
     res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("not found") ? 404 : 500).json({ error: err.message });
   }
