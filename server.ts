@@ -53,6 +53,7 @@ import { validateFeatureRegistryUpsert, buildInitialRegistry, LegacyFeatureDefin
 import { FEATURE_FLAG_IDS } from './feature-flag-ids';
 import { FEATURE_REGISTRY as LEGACY_FEATURE_REGISTRY } from './src/lib/feature-registry';
 import { validateProtectedCoreUpsert, buildSeedInvariants } from './protected-core';
+import { checkCohortSufficiency, buildLockedAggregateResponse } from './anonymous-aggregation-engine';
 import {
   validateChangeProposalCreate, deriveFeatureRegistryApprovalTier, canDecideProposal,
   canTransitionProposalStatus, ProposalStatus,
@@ -7819,8 +7820,9 @@ app.get("/api/org/:orgId/dashboard", verifyAppCheck, authenticateFirebaseUser, a
     // Only members who've explicitly opted in count toward anything below.
     const consentingUids = await getConsentingMemberUids(db, memberUids);
 
-    if (consentingUids.length < threshold) {
-      return res.json({ locked: true, cohortSize: consentingUids.length, threshold });
+    const sufficiency = checkCohortSufficiency(consentingUids.length, threshold);
+    if (!sufficiency.sufficient) {
+      return res.json(buildLockedAggregateResponse(sufficiency));
     }
 
     const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();

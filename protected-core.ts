@@ -183,4 +183,17 @@ export const buildSeedInvariants = (nowIso: string): ProtectedCoreInvariant[] =>
     lastReviewedAt: nowIso,
     notes: null,
   },
+  {
+    invariantId: 'organisation_aggregate_cohort_threshold',
+    title: 'Organisation Aggregate Routes Require Anonymous Aggregation Engine Approval',
+    rule: 'An organisation-facing aggregate route must withhold its numeric output and return a locked/insufficient-cohort response whenever the contributing cohort is below the organisation\'s configured privacy threshold - checked via the shared Anonymous Aggregation Engine (anonymous-aggregation-engine.ts), not an ad hoc inline comparison a future edit could accidentally loosen or skip.',
+    scope: 'Organisation / B2B surfaces (Work Design Intelligence)',
+    owner: null,
+    requiredApproval: 'owner_only',
+    testStatus: 'machine_tested',
+    evidence: 'anonymous-aggregation-engine.ts exports checkCohortSufficiency/buildLockedAggregateResponse; server.ts\'s GET /api/org/:orgId/dashboard (around the "const sufficiency = checkCohortSufficiency(...)" call) is migrated to call it rather than its own inline threshold comparison. Verified both structurally (server.ts calls the shared function at that route) and behaviourally (a cohort below threshold receives {locked:true}, never a numeric figure) by protected-core-invariants.test.ts.',
+    allowedChangeProcess: 'Any new organisation aggregate route must call checkCohortSufficiency (or a function built on top of it) rather than re-implementing its own threshold comparison; removing or bypassing that call on an existing route requires Platform Owner review. Migrating every remaining pre-existing aggregate route to the shared function is tracked as follow-up work, not yet complete.',
+    lastReviewedAt: nowIso,
+    notes: 'The companion filter-based re-identification guard (checkFilteredCohort, same module) has no live call site yet - no org-facing view currently applies multiple narrowing filters to an aggregate - so it is deliberately not covered by this invariant until it is genuinely wired into one.',
+  },
 ];
