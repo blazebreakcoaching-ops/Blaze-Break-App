@@ -29,6 +29,7 @@ vi.mock('twilio', () => ({ default: () => ({ messages: { create: vi.fn() } }) })
 import request from 'supertest';
 import { app } from './server';
 import { seedDoc, resetStore } from './test/fake-firestore';
+import { buildFinancialRangeEstimate } from './executive-work-design';
 
 const serverSource = readFileSync(join(__dirname, 'server.ts'), 'utf-8');
 const entitlementsSource = readFileSync(join(__dirname, 'entitlements.ts'), 'utf-8');
@@ -229,5 +230,51 @@ describe('organisation_aggregate_cohort_threshold', () => {
     const res = await request(app).get('/api/org/org_1/suggestions').set(auth('owner_1'));
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ locked: true, cohortSize: 2, threshold: 5, suggestions: [] });
+  });
+});
+
+describe('executive_financial_estimate_is_a_range', () => {
+  it('buildFinancialRangeEstimate never returns a single figure - low and high are always distinct when not null', () => {
+    const costInputs = { annualSicknessDays: 240, avgDailyCostPerEmployee: 180, headcount: 45 };
+    const result = buildFinancialRangeEstimate(costInputs, 'Meeting Pressure', 'sustained');
+    expect(result).not.toBeNull();
+    expect(typeof result!.lowEstimate).toBe('number');
+    expect(typeof result!.highEstimate).toBe('number');
+    expect(result!.lowEstimate).toBeLessThan(result!.highEstimate);
+    expect(result!.assumptionNote).toBeTruthy();
+  });
+
+  it('buildFinancialRangeEstimate never fabricates an estimate for a low/typical/null band', () => {
+    const costInputs = { annualSicknessDays: 240, avgDailyCostPerEmployee: 180, headcount: 45 };
+    expect(buildFinancialRangeEstimate(costInputs, 'Meeting Pressure', 'low')).toBeNull();
+    expect(buildFinancialRangeEstimate(costInputs, 'Meeting Pressure', 'typical')).toBeNull();
+    expect(buildFinancialRangeEstimate(costInputs, 'Meeting Pressure', null)).toBeNull();
+  });
+
+  it('GET /api/org/:orgId/executive-work-design calls buildFinancialRangeEstimate rather than computing its own cost figure', () => {
+    const routeStart = serverSource.indexOf('app.get("/api/org/:orgId/executive-work-design"');
+    expect(routeStart).toBeGreaterThan(-1);
+    const nextRouteStart = serverSource.slice(routeStart + 10).search(/\bapp\.(get|post|put|delete|patch)\(/);
+    expect(nextRouteStart).toBeGreaterThan(-1);
+    const handlerSlice = serverSource.slice(routeStart, routeStart + 10 + nextRouteStart);
+    expect(handlerSlice).toMatch(/buildFinancialRangeEstimate\(/);
+  });
+
+  it('a sufficient org-wide cohort with cost inputs and a sustained signal gets a real range, never a single number', async () => {
+    seedDoc('organisations/org_1', {
+      name: 'Test Org', adminUids: ['owner_1'], memberUids: ['owner_1', 'a1', 'a2', 'a3'], privacyThreshold: 3,
+      costInputs: { annualSicknessDays: 240, avgDailyCostPerEmployee: 180, headcount: 45 },
+    });
+    const nowIso = new Date().toISOString();
+    for (const uid of ['a1', 'a2', 'a3']) {
+      seedDoc(`users/${uid}`, { shareAnonymizedDataWithOrg: true });
+      seedDoc(`users/${uid}/nova_permissions/current`, { allowCalendarSignals: true });
+      seedDoc(`users/${uid}/live_signals/calendar`, {
+        updatedAt: nowIso, totalMeetingHours: 30, backToBackCount: 10, eveningMeetingCount: 2, weekendMeetingCount: 0,
+      });
+    }
+
+    const res = await request(app).get('/api/org/org_1/executive-work-design').set(auth('owner_1'));
+    expect(res.body.financialEstimate.lowEstimate).toBeLessThan(res.body.financialEstimate.highEstimate);
   });
 });

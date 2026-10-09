@@ -93,6 +93,7 @@ import { validateAckInput, describeFollowUp } from './team-escalation';
 import {
   validateCreateInterventionInput, validateStatusUpdateInput, validateRecordOutcomeInput, DEFAULT_REVIEW_WINDOW_DAYS,
 } from './work-design-interventions';
+import { buildFinancialRangeEstimate } from './executive-work-design';
 
 dotenv.config();
 
@@ -9327,6 +9328,48 @@ app.get("/api/org/:orgId/hr-dashboard", verifyAppCheck, authenticateFirebaseUser
     res.json({ locked: false, cohortSize: consentingUids.length, threshold, teams });
   } catch (err: any) {
     res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("not found") ? 404 : 500).json({ error: err.message });
+  }
+});
+
+// Executive Work Design - replaces the old personal-data "Recovery ROI"/
+// "Workload Burn Rate" report entirely. Org-wide (not per-team, unlike the
+// manager/HR views), gated the same way as every other org aggregate
+// route (requireOrgAdmin + checkCohortSufficiency - no separate
+// "executive viewer" allow-list exists yet; reconciling the platform-level
+// "executive" role with org admin is WDI PR13's job, not this one).
+// Financial figures are only ever a range with a stated assumption
+// (executive-work-design.ts), and only appear at all when the org's own
+// signal is elevated/sustained - never invented when things look fine.
+app.get("/api/org/:orgId/executive-work-design", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const { orgId } = req.params;
+    const { org } = await requireOrgAdmin(req, orgId);
+    const db = getDb();
+
+    const threshold = org.privacyThreshold || 5;
+    const memberUids: string[] = org.memberUids || [];
+    const consentingUids = await getConsentingMemberUids(db, memberUids);
+
+    const sufficiency = checkCohortSufficiency(consentingUids.length, threshold);
+    if (!sufficiency.sufficient) {
+      return res.json(buildLockedAggregateResponse(sufficiency, { workDesignSignals: [], financialEstimate: null }));
+    }
+
+    const workDesignSignals = [await buildMeetingPressureSignal(db, consentingUids, threshold)];
+    const costInputs = org.costInputs || null;
+    const primarySignal = workDesignSignals[0];
+    const financialEstimate = buildFinancialRangeEstimate(costInputs, primarySignal.label, primarySignal.band);
+
+    res.json({
+      locked: false,
+      cohortSize: consentingUids.length,
+      threshold,
+      workDesignSignals,
+      costInputsAvailable: !!costInputs,
+      financialEstimate,
+    });
+  } catch (err: any) {
+    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
   }
 });
 

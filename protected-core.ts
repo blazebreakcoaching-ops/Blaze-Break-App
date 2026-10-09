@@ -196,4 +196,17 @@ export const buildSeedInvariants = (nowIso: string): ProtectedCoreInvariant[] =>
     lastReviewedAt: nowIso,
     notes: 'The companion filter-based re-identification guard (checkFilteredCohort, same module) has no live call site yet - no org-facing view currently applies multiple narrowing filters to an aggregate - so it is deliberately not covered by this invariant until it is genuinely wired into one.',
   },
+  {
+    invariantId: 'executive_financial_estimate_is_a_range',
+    title: 'Executive Financial Estimates Are Always A Range With A Stated Assumption',
+    rule: 'Any employer-facing financial figure derived from a Work Design Signal must be a low/high range with an explicit assumption stated alongside it, never a single precise-looking number, and must never be invented when the underlying signal has no data or looks fine (low/typical band).',
+    scope: 'Organisation / B2B surfaces (Work Design Intelligence) - Executive Work Design',
+    owner: null,
+    requiredApproval: 'owner_only',
+    testStatus: 'machine_tested',
+    evidence: 'executive-work-design.ts\'s buildFinancialRangeEstimate always returns either null or an object with distinct lowEstimate/highEstimate fields plus an assumptionNote string, and returns null outright for a null/low/typical band or missing cost inputs. GET /api/org/:orgId/executive-work-design (server.ts) calls it directly rather than computing or rendering any cost figure itself. Verified structurally and behaviourally by executive-work-design.test.ts and protected-core-invariants.test.ts.',
+    allowedChangeProcess: 'Any new employer-facing financial figure must be built through buildFinancialRangeEstimate (or an equivalent range-returning function reviewed under the same rule) rather than computing or displaying a single number directly; weakening this to a single precise figure requires Platform Owner review.',
+    lastReviewedAt: nowIso,
+    notes: null,
+  },
 ];
