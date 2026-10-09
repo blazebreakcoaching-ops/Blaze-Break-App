@@ -1,8 +1,9 @@
 import { useEffect, useState, useCallback } from 'react';
-import { ChevronDown, ChevronUp, Loader2 } from 'lucide-react';
+import { ChevronDown, ChevronUp, Loader2, HeartPulse } from 'lucide-react';
 import { auth } from '../lib/firebase';
 import { secureApiFetch } from '../lib/secure-api';
 import { NovaRecommendationCard } from './NovaRecommendationCard';
+import { ConnectedMoodPulse, ConnectedBodyCheckIn, ConnectedWeeklyReviews } from './ConnectedRecoveryModules';
 import { MODULE_TARGET_TAB } from '../../recovery-decision-copy';
 import type { RouteType, RoutingOutcome, ReasonCode, ConfidenceLevel, EvidenceSource } from '../../recovery-routing-engine';
 import type { BandwidthBand } from '../../recovery-capacity-gate';
@@ -43,14 +44,24 @@ interface RoutingDecisionResponse {
   evidenceSource: EvidenceSource | null;
 }
 
-const EXPLORE_TOOLS: { label: string; tab: string }[] = [
-  { label: 'Energy & Capacity', tab: 'recover' },
-  { label: 'Recovery Fuel', tab: 'fuel' },
-  { label: 'Nervous System Reset / Reset Studio', tab: 'reset' },
-  { label: 'Anxiety Reset', tab: 'anxiety_reset' },
-  { label: 'Capacity Firewall / Boundaries', tab: 'communicate' },
-  { label: 'Action Engine', tab: 'reflect' },
-  { label: 'My Support Circle', tab: 'ally' },
+type ExploreTool =
+  | { label: string; kind: 'navigate'; tab: string }
+  | { label: string; kind: 'inline'; id: string };
+
+// A "navigate" tool has a real tab of its own already; an "inline" tool
+// doesn't (Body Check-In and Weekly Review have never had a dedicated tab -
+// they expand in place here instead, available on demand rather than
+// surfaced as a daily fixture).
+const EXPLORE_TOOLS: ExploreTool[] = [
+  { label: 'Energy & Capacity', kind: 'navigate', tab: 'recover' },
+  { label: 'Recovery Fuel', kind: 'navigate', tab: 'fuel' },
+  { label: 'Nervous System Reset / Reset Studio', kind: 'navigate', tab: 'reset' },
+  { label: 'Anxiety Reset', kind: 'navigate', tab: 'anxiety_reset' },
+  { label: 'Capacity Firewall / Boundaries', kind: 'navigate', tab: 'communicate' },
+  { label: 'Action Engine', kind: 'navigate', tab: 'reflect' },
+  { label: 'My Support Circle', kind: 'navigate', tab: 'ally' },
+  { label: 'Body Check-In', kind: 'inline', id: 'body_check_in' },
+  { label: 'Weekly Review', kind: 'inline', id: 'weekly_review' },
 ];
 
 const navigateToTab = (tab: string) => {
@@ -64,6 +75,8 @@ export const RecoveryIntelligenceHub = () => {
   const [error, setError] = useState('');
   const [dismissed, setDismissed] = useState(false);
   const [showExplore, setShowExplore] = useState(false);
+  const [expandedTool, setExpandedTool] = useState<string | null>(null);
+  const [showMoodCheck, setShowMoodCheck] = useState(false);
 
   const fetchDecision = useCallback(async (body: Record<string, unknown> = {}) => {
     if (!auth.currentUser) return;
@@ -137,6 +150,21 @@ export const RecoveryIntelligenceHub = () => {
         />
       )}
 
+      <div className="rounded-xl border border-border bg-surface">
+        <button
+          onClick={() => setShowMoodCheck((v) => !v)}
+          className="w-full flex items-center justify-between p-5 text-xs font-bold uppercase tracking-widest text-text-muted hover:text-text-main transition-colors"
+        >
+          <span className="flex items-center gap-2"><HeartPulse className="w-4 h-4" /> Quick Mood Check</span>
+          {showMoodCheck ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+        </button>
+        {showMoodCheck && (
+          <div className="px-5 pb-5">
+            <ConnectedMoodPulse />
+          </div>
+        )}
+      </div>
+
       {!loading && direction && (
         <div className="rounded-xl border border-border bg-surface p-5 space-y-2">
           <h3 className="text-[11px] font-bold uppercase tracking-widest text-text-muted">Your Direction</h3>
@@ -157,15 +185,27 @@ export const RecoveryIntelligenceHub = () => {
         </button>
         {showExplore && (
           <div className="px-5 pb-5 space-y-2">
-            {EXPLORE_TOOLS.map((tool) => (
-              <button
-                key={tool.tab}
-                onClick={() => navigateToTab(tool.tab)}
-                className="w-full text-left py-2.5 px-3.5 rounded-lg border border-border text-xs font-bold text-text-main hover:border-primary/50 transition-colors"
-              >
-                {tool.label}
-              </button>
-            ))}
+            {EXPLORE_TOOLS.map((tool) => {
+              const key = tool.kind === 'navigate' ? tool.tab : tool.id;
+              const isExpanded = tool.kind === 'inline' && expandedTool === tool.id;
+              return (
+                <div key={key}>
+                  <button
+                    onClick={() => tool.kind === 'navigate' ? navigateToTab(tool.tab) : setExpandedTool(isExpanded ? null : tool.id)}
+                    className="w-full text-left py-2.5 px-3.5 rounded-lg border border-border text-xs font-bold text-text-main hover:border-primary/50 transition-colors flex items-center justify-between"
+                  >
+                    {tool.label}
+                    {tool.kind === 'inline' && (isExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />)}
+                  </button>
+                  {isExpanded && tool.id === 'body_check_in' && (
+                    <div className="mt-2 p-3.5 bg-card/40 rounded-lg border border-white/5"><ConnectedBodyCheckIn /></div>
+                  )}
+                  {isExpanded && tool.id === 'weekly_review' && (
+                    <div className="mt-2 p-3.5 bg-card/40 rounded-lg border border-white/5"><ConnectedWeeklyReviews /></div>
+                  )}
+                </div>
+              );
+            })}
           </div>
         )}
       </div>
