@@ -3,7 +3,8 @@ import {
   ShieldCheck, Search, Loader2, RefreshCw,
   UserPlus, Key, Activity, Heart, ShieldAlert, Check,
   AlertCircle, UserMinus, Lock, Users, CreditCard,
-  HeartPulse, Building2, Copy, Plus, MessageSquare, Star
+  HeartPulse, Building2, Copy, Plus, MessageSquare, Star,
+  Server, Settings2, Rocket, FileText, Smartphone
 } from 'lucide-react';
 import { secureApiFetch } from '../lib/secure-api';
 import { motion, AnimatePresence } from 'motion/react';
@@ -11,6 +12,7 @@ import { useAuth } from '../lib/auth';
 import { ConfirmDialog } from './ConfirmDialog';
 import { formatFeedbackCategory } from '../lib/feedback-format';
 import { PLATFORM_ADMIN_ROLES, PLATFORM_ADMIN_ROLE_LABELS, isPlatformAdminRole } from '../../admin-roles';
+import { DEVICE_CHANNELS } from '../../desktop-deployment';
 
 interface AdminUser {
   uid: string;
@@ -181,7 +183,7 @@ export const AdminDashboard = () => {
 
   const isAdmin = isPlatformAdminRole(appRole);
 
-  const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'entitlements' | 'admins' | 'orgs' | 'communications' | 'privacy' | 'audit' | 'somatic' | 'feedback'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'entitlements' | 'admins' | 'orgs' | 'communications' | 'privacy' | 'audit' | 'health' | 'controls' | 'release' | 'somatic' | 'feedback'>('overview');
   // Which account's Access Timeline is expanded in the Plans &
   // Entitlements tab - at most one open at a time, same pattern as other
   // single-item expand/collapse state in this file.
@@ -243,6 +245,46 @@ export const AdminDashboard = () => {
   // Communications card, not a delivery/volume metric. null until the
   // first successful /api/admin/summary fetch.
   const [communications, setCommunications] = useState<{ twilioConfigured: boolean; brevoConfigured: boolean; pushConfigured: boolean } | null>(null);
+
+  // Real dependency/kill-switch/rate-limit state for the System Health
+  // tab - fetched lazily only when that tab is first opened. No uptime,
+  // error rate, or "last cron run" fields - none of that is persisted
+  // anywhere in this codebase today (see server.ts's comment on the
+  // route this reads from).
+  const [systemHealth, setSystemHealth] = useState<{
+    dependencies: Record<string, { configured: boolean; label: string } | string>;
+    killSwitches: { id: string; label: string; enabled: boolean; defaultPolarity: 'on' | 'off' }[];
+    rateLimits: { name: string; windowMinutes: number; max: number; note: string }[];
+  } | null>(null);
+  const [isLoadingSystemHealth, setIsLoadingSystemHealth] = useState(false);
+
+  // The server's public_feature_flags collection - Platform Controls'
+  // toggle list. Deliberately separate from the client-local "Evolution
+  // Engine" flags (src/lib/feature-flags.ts), which this has no effect
+  // on whatsoever.
+  const [featureFlags, setFeatureFlags] = useState<{ id: string; enabled: boolean; updatedAt: string | null }[] | null>(null);
+  const [isLoadingFeatureFlags, setIsLoadingFeatureFlags] = useState(false);
+  const [togglingFlagId, setTogglingFlagId] = useState<string | null>(null);
+
+  // Legal document registry (legal-documents.ts) - the condensed list
+  // first; full content is fetched lazily per document only once an
+  // admin selects it to review or publish a new version of.
+  const [legalDocuments, setLegalDocuments] = useState<{ docType: string; title: string; version: string; effectiveDate: string; requiresAcceptance: boolean }[] | null>(null);
+  const [isLoadingLegalDocuments, setIsLoadingLegalDocuments] = useState(false);
+  const [selectedLegalDocType, setSelectedLegalDocType] = useState<string | null>(null);
+  const [isLoadingLegalDetail, setIsLoadingLegalDetail] = useState(false);
+  const [legalPublishForm, setLegalPublishForm] = useState<{ title: string; version: string; effectiveDate: string; requiresAcceptance: boolean; materialChange: boolean; content: string } | null>(null);
+  const [isPublishingLegalDoc, setIsPublishingLegalDoc] = useState(false);
+
+  // Release Centre: the platform-wide channel config (app_config/
+  // release_channels) plus every org's registered devices - real data,
+  // very possibly an empty device list in most environments since there
+  // is still no real shipped desktop client (see desktop-deployment.ts).
+  const [releaseChannels, setReleaseChannels] = useState<Record<string, { minVersion: string; latestVersion: string }> | null>(null);
+  const [releaseDevices, setReleaseDevices] = useState<{ id: string; orgId: string | null; channel: string | null; appVersion: string | null; status: string; deviceName: string | null; lastCheckIn: string | null }[] | null>(null);
+  const [isLoadingReleaseCentre, setIsLoadingReleaseCentre] = useState(false);
+  const [releaseChannelForm, setReleaseChannelForm] = useState<{ channel: 'stable' | 'beta'; minVersion: string; latestVersion: string }>({ channel: 'stable', minVersion: '', latestVersion: '' });
+  const [isSavingReleaseChannel, setIsSavingReleaseChannel] = useState(false);
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -606,16 +648,185 @@ export const AdminDashboard = () => {
     }
   };
 
+  const fetchSystemHealth = async () => {
+    setIsLoadingSystemHealth(true);
+    try {
+      const res = await secureApiFetch('/api/admin/system-health');
+      if (res.ok) {
+        setSystemHealth(await res.json());
+      }
+    } catch (e) {
+      // Non-fatal - the tab just shows its own "couldn't load" state.
+    } finally {
+      setIsLoadingSystemHealth(false);
+    }
+  };
+
+  const fetchFeatureFlags = async () => {
+    setIsLoadingFeatureFlags(true);
+    try {
+      const res = await secureApiFetch('/api/admin/feature-flags');
+      if (res.ok) {
+        const data = await res.json();
+        setFeatureFlags(data.flags || []);
+      }
+    } catch (e) {
+      // Non-fatal - the tab just shows its own "couldn't load" state.
+    } finally {
+      setIsLoadingFeatureFlags(false);
+    }
+  };
+
+  const handleToggleFeatureFlag = async (flagId: string, nextEnabled: boolean) => {
+    setTogglingFlagId(flagId);
+    try {
+      const res = await secureApiFetch('/api/admin/feature-flags', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ featureId: flagId, enabled: nextEnabled }),
+      });
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.error || "Couldn't update that flag.");
+      }
+      showSuccess(`"${flagId}" is now ${nextEnabled ? 'enabled' : 'disabled'}.`);
+      await fetchFeatureFlags();
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setTogglingFlagId(null);
+    }
+  };
+
+  const fetchLegalDocuments = async () => {
+    setIsLoadingLegalDocuments(true);
+    try {
+      const res = await secureApiFetch('/api/legal/documents');
+      if (res.ok) {
+        const data = await res.json();
+        setLegalDocuments(data.documents || []);
+      }
+    } catch (e) {
+      // Non-fatal - the tab just shows its own "couldn't load" state.
+    } finally {
+      setIsLoadingLegalDocuments(false);
+    }
+  };
+
+  // Loads one document's full published content into the publish form,
+  // so an admin editing a document starts from what's actually live
+  // rather than a blank form - and so a "publish" that only tweaks one
+  // field doesn't silently blank out the rest.
+  const selectLegalDocType = async (docType: string) => {
+    setSelectedLegalDocType(docType);
+    setIsLoadingLegalDetail(true);
+    setLegalPublishForm(null);
+    try {
+      const res = await secureApiFetch(`/api/legal/documents/${docType}`);
+      if (res.ok) {
+        const doc = await res.json();
+        setLegalPublishForm({
+          title: doc.title,
+          version: doc.version,
+          effectiveDate: doc.effectiveDate,
+          requiresAcceptance: !!doc.requiresAcceptance,
+          materialChange: !!doc.materialChange,
+          content: doc.content,
+        });
+      }
+    } catch (e) {
+      // Non-fatal - the form just stays empty, and the publish button
+      // requires legalPublishForm to be set before it can submit.
+    } finally {
+      setIsLoadingLegalDetail(false);
+    }
+  };
+
+  const handlePublishLegalDoc = async () => {
+    if (!selectedLegalDocType || !legalPublishForm) return;
+    setIsPublishingLegalDoc(true);
+    try {
+      const res = await secureApiFetch(`/api/admin/legal/${selectedLegalDocType}/publish`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(legalPublishForm),
+      });
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.error || "Couldn't publish this document.");
+      }
+      showSuccess(`Published ${legalPublishForm.title} v${legalPublishForm.version}.`);
+      await fetchLegalDocuments();
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setIsPublishingLegalDoc(false);
+    }
+  };
+
+  const fetchReleaseCentre = async () => {
+    setIsLoadingReleaseCentre(true);
+    try {
+      const [channelsRes, devicesRes] = await Promise.all([
+        secureApiFetch('/api/app-config/release-channels'),
+        secureApiFetch('/api/admin/release-centre/devices'),
+      ]);
+      if (channelsRes.ok) {
+        const data = await channelsRes.json();
+        setReleaseChannels(data.channels || {});
+      }
+      if (devicesRes.ok) {
+        const data = await devicesRes.json();
+        setReleaseDevices(data.devices || []);
+      }
+    } catch (e) {
+      // Non-fatal - the tab just shows its own "couldn't load" state.
+    } finally {
+      setIsLoadingReleaseCentre(false);
+    }
+  };
+
+  const handleSaveReleaseChannel = async () => {
+    setIsSavingReleaseChannel(true);
+    try {
+      const res = await secureApiFetch('/api/admin/release-channels', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(releaseChannelForm),
+      });
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.error || "Couldn't update that release channel.");
+      }
+      showSuccess(`"${releaseChannelForm.channel}" channel updated.`);
+      await fetchReleaseCentre();
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setIsSavingReleaseChannel(false);
+    }
+  };
+
   useEffect(() => {
     loadAllData();
   }, []);
 
-  // Lazy-loaded only once, the first time the Privacy Operations tab is
-  // actually opened - a listUsers() scan isn't worth doing on every
-  // dashboard load for a tab most sessions never visit.
+  // Lazy-loaded only once, the first time each tab is actually opened -
+  // none of these queries are worth running on every dashboard load for
+  // a tab most sessions never visit.
   useEffect(() => {
     if (activeTab === 'privacy' && retentionQueue === null && !isLoadingRetentionQueue) {
       fetchRetentionQueue();
+    }
+    if (activeTab === 'health' && systemHealth === null && !isLoadingSystemHealth) {
+      fetchSystemHealth();
+    }
+    if (activeTab === 'controls') {
+      if (featureFlags === null && !isLoadingFeatureFlags) fetchFeatureFlags();
+      if (legalDocuments === null && !isLoadingLegalDocuments) fetchLegalDocuments();
+    }
+    if (activeTab === 'release' && releaseDevices === null && !isLoadingReleaseCentre) {
+      fetchReleaseCentre();
     }
   }, [activeTab]);
 
@@ -1161,6 +1372,9 @@ export const AdminDashboard = () => {
           { id: 'communications', label: 'Communications', icon: MessageSquare },
           { id: 'privacy', label: 'Privacy Operations', icon: Lock },
           { id: 'audit', label: 'Auditor Event Log', icon: Activity },
+          { id: 'health', label: 'System Health', icon: Server },
+          { id: 'controls', label: 'Platform Controls', icon: Settings2 },
+          { id: 'release', label: 'Release Centre', icon: Rocket },
           { id: 'somatic', label: 'Somatic De-escalation Stats', icon: Heart },
           { id: 'feedback', label: 'Feedback & Testimonials', icon: MessageSquare }
         ].map((tab) => {
@@ -2149,6 +2363,297 @@ export const AdminDashboard = () => {
                   {auditLogs.length === 0 ? 'No administrative actions are logged in this ledger yet.' : 'No events in this category.'}
                 </div>
               )}
+            </div>
+          </div>
+        )}
+
+        {/* Tab: System Health */}
+        {activeTab === 'health' && (
+          <div className="space-y-6">
+            {!systemHealth ? (
+              <div className="card p-6 bg-surface dark:bg-card border border-border rounded-2xl text-xs text-text-muted italic">
+                {isLoadingSystemHealth ? 'Loading...' : "Couldn't load system health."}
+              </div>
+            ) : (
+              <>
+                <div className="card p-6 bg-surface dark:bg-card border border-border rounded-2xl">
+                  <h4 className="font-display text-sm font-bold text-text-main mb-3">Dependency Configuration</h4>
+                  <p className="text-xs text-text-muted mb-4">Whether each provider has credentials present on the server - not a live connectivity check, and not a delivery/volume metric (that's the Communications tab's job).</p>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                    {[
+                      { ...systemHealth.dependencies.gemini as { configured: boolean; label: string } },
+                      { ...systemHealth.dependencies.vertex as { configured: boolean; label: string } },
+                      { ...systemHealth.dependencies.claude as { configured: boolean; label: string } },
+                      { ...systemHealth.dependencies.twilio as { configured: boolean; label: string } },
+                      { ...systemHealth.dependencies.brevo as { configured: boolean; label: string } },
+                      { ...systemHealth.dependencies.push as { configured: boolean; label: string } },
+                    ].map((dep) => (
+                      <div key={dep.label} className="flex items-center justify-between p-3 bg-background rounded-xl border border-white/5">
+                        <span className="text-xs text-text-main font-semibold">{dep.label}</span>
+                        <span className={`px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-widest ${dep.configured ? 'bg-success/10 text-success dark:text-[#4ade80]' : 'bg-background text-text-muted'}`}>
+                          {dep.configured ? 'Configured' : 'Not configured'}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                  <p className="text-[10px] text-text-muted mt-3">Nova's active chat provider: <span className="font-mono text-text-main">{String(systemHealth.dependencies.novaChatProvider)}</span></p>
+                </div>
+
+                <div className="card p-6 bg-surface dark:bg-card border border-border rounded-2xl">
+                  <h4 className="font-display text-sm font-bold text-text-main mb-3">Kill Switches</h4>
+                  <p className="text-xs text-text-muted mb-4">Every env-var-gated feature switch in the codebase, read live - these are deploy-time settings, not toggles this page can flip.</p>
+                  <div className="space-y-2">
+                    {systemHealth.killSwitches.map((ks) => (
+                      <div key={ks.id} className="flex items-center justify-between p-3 bg-background rounded-xl border border-white/5">
+                        <div>
+                          <span className="text-xs text-text-main font-semibold block">{ks.label}</span>
+                          <span className="text-[10px] text-text-muted">Default: {ks.defaultPolarity}</span>
+                        </div>
+                        <span className={`px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-widest ${ks.enabled ? 'bg-success/10 text-success dark:text-[#4ade80]' : 'bg-destructive/10 text-destructive dark:text-[#f87171]'}`}>
+                          {ks.enabled ? 'On' : 'Off'}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="card p-6 bg-surface dark:bg-card border border-border rounded-2xl">
+                  <h4 className="font-display text-sm font-bold text-text-main mb-3">Rate Limit Configuration</h4>
+                  <p className="text-xs text-text-muted mb-4">Static configuration, not live violation counts - a rejected request is only ever written to server logs, never persisted anywhere this page can read.</p>
+                  <div className="space-y-1.5">
+                    {systemHealth.rateLimits.map((rl) => (
+                      <div key={rl.name} className="flex items-center justify-between text-xs py-1.5 px-2.5 bg-background rounded-lg">
+                        <span className="text-text-main font-mono">{rl.name}</span>
+                        <span className="text-text-muted text-[10px]">{rl.max} / {rl.windowMinutes}min - {rl.note}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="card p-6 bg-surface dark:bg-card border border-border rounded-2xl">
+                  <h4 className="font-display text-sm font-bold text-text-main mb-2">Incident Tracking</h4>
+                  <p className="text-xs text-text-muted leading-relaxed">Not tracked here. There is no incident log, severity/status workflow, or automated alerting anywhere in this codebase today - see docs/INCIDENT_RESPONSE.md, which says so plainly: detection today is mostly "someone notices." The two real, aggregate safety signals that do exist - Safety Events and Crisis Referrals - are already shown on the Overview tab.</p>
+                </div>
+              </>
+            )}
+          </div>
+        )}
+
+        {/* Tab: Platform Controls */}
+        {activeTab === 'controls' && (
+          <div className="space-y-6">
+            <div className="card p-6 bg-surface dark:bg-card border border-border rounded-2xl">
+              <h4 className="font-display text-sm font-bold text-text-main mb-3">Feature Flags</h4>
+              <p className="text-xs text-text-muted mb-4">
+                Real, server-enforced flags (public_feature_flags) - e.g. "sso_enforcement" gates whether an organisation can turn on SSO enforcement. Not to be confused with the separate, client-local "Evolution Engine" flags, which this has no effect on.
+              </p>
+              {isLoadingFeatureFlags ? (
+                <p className="text-xs text-text-muted italic">Loading...</p>
+              ) : (
+                <div className="space-y-2">
+                  {(featureFlags || []).map((flag) => (
+                    <div key={flag.id} className="flex items-center justify-between p-3 bg-background rounded-xl border border-white/5">
+                      <div>
+                        <span className="text-xs text-text-main font-mono font-semibold block">{flag.id}</span>
+                        {flag.updatedAt && <span className="text-[10px] text-text-muted">Updated {new Date(flag.updatedAt).toLocaleString()}</span>}
+                      </div>
+                      <button
+                        onClick={() => handleToggleFeatureFlag(flag.id, !flag.enabled)}
+                        disabled={togglingFlagId === flag.id}
+                        className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all disabled:opacity-50 ${
+                          flag.enabled ? 'bg-success/10 text-success dark:text-[#4ade80] hover:bg-success/20' : 'bg-background text-text-muted border border-border hover:text-text-main'
+                        }`}
+                      >
+                        {togglingFlagId === flag.id ? <Loader2 className="w-3 h-3 animate-spin" /> : (flag.enabled ? 'Enabled - click to disable' : 'Disabled - click to enable')}
+                      </button>
+                    </div>
+                  ))}
+                  {(featureFlags || []).length === 0 && (
+                    <p className="text-xs text-text-muted italic">No feature flags have been set yet.</p>
+                  )}
+                </div>
+              )}
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  const input = (e.currentTarget.elements.namedItem('newFlagId') as HTMLInputElement);
+                  const flagId = input.value.trim();
+                  if (flagId) { handleToggleFeatureFlag(flagId, true); input.value = ''; }
+                }}
+                className="flex gap-2 mt-4 pt-4 border-t border-white/5"
+              >
+                <input
+                  name="newFlagId"
+                  aria-label="New flag ID"
+                  placeholder="e.g. sso_enforcement"
+                  className="flex-1 p-2.5 bg-background border border-border rounded-xl text-xs text-text-main font-mono placeholder:text-text-muted focus:outline-none focus:border-primary"
+                />
+                <button type="submit" className="px-4 py-2.5 bg-primary hover:bg-primary-dark text-white text-xs font-bold uppercase tracking-wider rounded-xl transition-all">
+                  Create &amp; Enable
+                </button>
+              </form>
+            </div>
+
+            <div className="card p-6 bg-surface dark:bg-card border border-border rounded-2xl">
+              <h4 className="font-display text-sm font-bold text-text-main mb-1 flex items-center gap-2"><FileText className="w-4 h-4 text-primary" /> Legal Documents</h4>
+              <p className="text-xs text-text-muted mb-4">Server-authoritative versioning for every legal document type. Publishing here is the real, audit-logged path - previously there was no admin UI for it at all.</p>
+              {isLoadingLegalDocuments ? (
+                <p className="text-xs text-text-muted italic">Loading...</p>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mb-4">
+                  {(legalDocuments || []).map((doc) => (
+                    <button
+                      key={doc.docType}
+                      onClick={() => selectLegalDocType(doc.docType)}
+                      className={`text-left p-3 rounded-xl border transition-all ${
+                        selectedLegalDocType === doc.docType ? 'border-primary bg-primary/10' : 'border-white/5 bg-background hover:bg-white/[0.02]'
+                      }`}
+                    >
+                      <span className="text-xs font-bold text-text-main block">{doc.title}</span>
+                      <span className="text-[10px] text-text-muted">v{doc.version} - effective {doc.effectiveDate}{doc.requiresAcceptance ? ' - requires acceptance' : ''}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {selectedLegalDocType && (
+                isLoadingLegalDetail || !legalPublishForm ? (
+                  <p className="text-xs text-text-muted italic">Loading document...</p>
+                ) : (
+                  <div className="space-y-3 pt-4 border-t border-white/5">
+                    <div className="grid grid-cols-2 gap-3">
+                      <input
+                        aria-label="Title"
+                        value={legalPublishForm.title}
+                        onChange={(e) => setLegalPublishForm({ ...legalPublishForm, title: e.target.value })}
+                        className="p-2.5 bg-background border border-border rounded-xl text-xs text-text-main focus:outline-none focus:border-primary"
+                      />
+                      <input
+                        aria-label="New version"
+                        placeholder="New version (e.g. 0.2)"
+                        value={legalPublishForm.version}
+                        onChange={(e) => setLegalPublishForm({ ...legalPublishForm, version: e.target.value })}
+                        className="p-2.5 bg-background border border-border rounded-xl text-xs text-text-main focus:outline-none focus:border-primary"
+                      />
+                    </div>
+                    <input
+                      aria-label="Effective date"
+                      value={legalPublishForm.effectiveDate}
+                      onChange={(e) => setLegalPublishForm({ ...legalPublishForm, effectiveDate: e.target.value })}
+                      className="w-full p-2.5 bg-background border border-border rounded-xl text-xs text-text-main focus:outline-none focus:border-primary"
+                    />
+                    <textarea
+                      aria-label="Document content"
+                      value={legalPublishForm.content}
+                      onChange={(e) => setLegalPublishForm({ ...legalPublishForm, content: e.target.value })}
+                      rows={10}
+                      className="w-full p-3 bg-background border border-border rounded-xl text-xs text-text-main font-mono focus:outline-none focus:border-primary"
+                    />
+                    <div className="flex items-center gap-4 text-xs text-text-main">
+                      <label className="flex items-center gap-2">
+                        <input type="checkbox" checked={legalPublishForm.requiresAcceptance} onChange={(e) => setLegalPublishForm({ ...legalPublishForm, requiresAcceptance: e.target.checked })} />
+                        Requires acceptance
+                      </label>
+                      <label className="flex items-center gap-2">
+                        <input type="checkbox" checked={legalPublishForm.materialChange} onChange={(e) => setLegalPublishForm({ ...legalPublishForm, materialChange: e.target.checked })} />
+                        Material change (re-prompts existing acceptors)
+                      </label>
+                    </div>
+                    <button
+                      onClick={handlePublishLegalDoc}
+                      disabled={isPublishingLegalDoc}
+                      className="px-5 py-2.5 bg-primary hover:bg-primary-dark text-white text-xs font-bold uppercase tracking-wider rounded-xl transition-all flex items-center gap-2 disabled:opacity-50"
+                    >
+                      {isPublishingLegalDoc ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                      Publish New Version
+                    </button>
+                  </div>
+                )
+              )}
+            </div>
+
+            <div className="card p-6 bg-surface dark:bg-card border border-border rounded-2xl">
+              <h4 className="font-display text-sm font-bold text-text-main mb-2">Nova Settings, Knowledge Chunks &amp; Content Library</h4>
+              <p className="text-xs text-text-muted leading-relaxed">Not surfaced here. Their write routes and audit logging are real, but nothing in the product reads these Firestore documents back today - Nova's actual knowledge base is a hardcoded constant, unrelated to the "knowledge chunks" doc these routes would write. Building a toggle UI for them would be technically honest but functionally theatre, so this plainly states the gap instead.</p>
+            </div>
+          </div>
+        )}
+
+        {/* Tab: Release Centre */}
+        {activeTab === 'release' && (
+          <div className="space-y-6">
+            <div className="p-4 bg-primary/5 border border-primary/20 rounded-xl text-xs text-text-muted leading-relaxed">
+              There is no real Blaze Break desktop client shipping today - the installable PWA is the only client that exists. This is a backend control plane only, built so a future desktop client has somewhere real to register itself; the data below is real, but a channel with no devices simply means none have registered yet.
+            </div>
+
+            <div className="card p-6 bg-surface dark:bg-card border border-border rounded-2xl">
+              <h4 className="font-display text-sm font-bold text-text-main mb-3">Release Channels</h4>
+              {isLoadingReleaseCentre ? (
+                <p className="text-xs text-text-muted italic">Loading...</p>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
+                  {DEVICE_CHANNELS.map((channel) => {
+                    const config = releaseChannels?.[channel];
+                    return (
+                      <div key={channel} className="p-3 bg-background rounded-xl border border-white/5">
+                        <span className="text-xs font-bold text-text-main uppercase tracking-wide block mb-1">{channel}</span>
+                        {config ? (
+                          <span className="text-[10px] text-text-muted font-mono">min {config.minVersion} / latest {config.latestVersion}</span>
+                        ) : (
+                          <span className="text-[10px] text-text-muted italic">Not configured yet</span>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+              <div className="flex gap-2 pt-4 border-t border-white/5">
+                <select
+                  aria-label="Channel"
+                  value={releaseChannelForm.channel}
+                  onChange={(e) => setReleaseChannelForm({ ...releaseChannelForm, channel: e.target.value as 'stable' | 'beta' })}
+                  className="p-2.5 bg-background border border-border rounded-xl text-xs text-text-main focus:outline-none focus:border-primary"
+                >
+                  {DEVICE_CHANNELS.map((c) => <option key={c} value={c}>{c}</option>)}
+                </select>
+                <input
+                  aria-label="Minimum version"
+                  placeholder="Min version e.g. 1.0.0"
+                  value={releaseChannelForm.minVersion}
+                  onChange={(e) => setReleaseChannelForm({ ...releaseChannelForm, minVersion: e.target.value })}
+                  className="flex-1 p-2.5 bg-background border border-border rounded-xl text-xs text-text-main font-mono focus:outline-none focus:border-primary"
+                />
+                <input
+                  aria-label="Latest version"
+                  placeholder="Latest version e.g. 1.2.0"
+                  value={releaseChannelForm.latestVersion}
+                  onChange={(e) => setReleaseChannelForm({ ...releaseChannelForm, latestVersion: e.target.value })}
+                  className="flex-1 p-2.5 bg-background border border-border rounded-xl text-xs text-text-main font-mono focus:outline-none focus:border-primary"
+                />
+                <button
+                  onClick={handleSaveReleaseChannel}
+                  disabled={isSavingReleaseChannel || !releaseChannelForm.minVersion || !releaseChannelForm.latestVersion}
+                  className="px-4 py-2.5 bg-primary hover:bg-primary-dark text-white text-xs font-bold uppercase tracking-wider rounded-xl transition-all disabled:opacity-50 flex items-center gap-2 shrink-0"
+                >
+                  {isSavingReleaseChannel ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                  Save
+                </button>
+              </div>
+            </div>
+
+            <div className="card p-6 bg-surface dark:bg-card border border-border rounded-2xl">
+              <h4 className="font-display text-sm font-bold text-text-main mb-3 flex items-center gap-2"><Smartphone className="w-4 h-4 text-primary" /> Registered Devices</h4>
+              <div className="space-y-1.5 max-h-72 overflow-y-auto">
+                {(releaseDevices || []).map((device) => (
+                  <div key={device.id} className="flex items-center justify-between text-xs py-1.5 px-2.5 bg-background rounded-lg">
+                    <span className="text-text-main font-mono truncate max-w-[180px]" title={device.deviceName || device.id}>{device.deviceName || device.id}</span>
+                    <span className="text-text-muted text-[10px]">org {device.orgId} - {device.channel || 'no channel'} v{device.appVersion || '?'} - {device.status}</span>
+                  </div>
+                ))}
+                {(releaseDevices || []).length === 0 && (
+                  <p className="text-xs text-text-muted italic">No devices have registered on any organisation yet.</p>
+                )}
+              </div>
             </div>
           </div>
         )}

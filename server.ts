@@ -6105,6 +6105,60 @@ app.get("/api/admin/summary", verifyAppCheck, authenticateFirebaseUser, async (r
   }
 });
 
+// Read-only operational status for the Command Centre's System Health
+// tab: real configuration-presence booleans, the real kill-switch state
+// of every env-var-gated feature in the codebase (nova-tools.ts,
+// guardian-alert.ts, guardian-support-invitation.ts, sms-guardrails.ts,
+// data-retention.ts), and the real (static) rate-limit configuration.
+// Deliberately does NOT claim uptime, error rate, or "last cron run
+// succeeded/failed" - none of that is persisted anywhere in this
+// codebase today (every failure path here only ever does console.error/
+// console.warn - see docs/INCIDENT_RESPONSE.md section 5), and
+// fabricating it here would be exactly the kind of made-up-but-
+// plausible number the Command Centre spec rules out.
+app.get("/api/admin/system-health", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    requireAdmin(req);
+    res.json({
+      dependencies: {
+        gemini: { configured: !!apiKey && apiKey !== "MY_GEMINI_API_KEY", label: "Gemini (Nova's default AI provider)" },
+        vertex: { configured: aiVertex !== null, label: 'Vertex AI' },
+        claude: { configured: anthropic !== null, label: 'Anthropic Claude' },
+        novaChatProvider: process.env.NOVA_CHAT_PROVIDER || 'gemini',
+        twilio: { configured: !!(process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN), label: 'Twilio (SMS)' },
+        brevo: { configured: !!process.env.BREVO_API_KEY, label: 'Brevo (Email)' },
+        push: { configured: pushConfigured, label: 'Web Push' },
+      },
+      killSwitches: [
+        { id: 'nova_tools', label: 'Nova Tool Use', enabled: NOVA_TOOLS_ENABLED, defaultPolarity: 'on' as const },
+        { id: 'nova_live_voice', label: 'Nova Live Voice (Gemini Live)', enabled: NOVA_LIVE_VOICE_ENABLED, defaultPolarity: 'on' as const },
+        { id: 'nudge_scheduler', label: 'Nudge Scheduler (Tier 3 - pending governance review)', enabled: NUDGE_SCHEDULER_ENABLED, defaultPolarity: 'off' as const },
+        { id: 'retention_sweep', label: 'Inactivity Retention Sweep', enabled: RETENTION_SWEEP_ENABLED, defaultPolarity: 'off' as const },
+        { id: 'sms_global', label: 'SMS Sending (all categories)', enabled: SMS_GLOBALLY_ENABLED, defaultPolarity: 'on' as const },
+        { id: 'sms_manual_send', label: 'SMS Manual Send Category', enabled: SMS_MANUAL_SEND_ENABLED, defaultPolarity: 'on' as const },
+        { id: 'guardian_alerts', label: 'Guardian Alerts', enabled: guardianAlertsEnabled(process.env.GUARDIAN_ALERTS_ENABLED), defaultPolarity: 'on' as const },
+        { id: 'guardian_support_invitation', label: 'Guardian Support Invitation', enabled: guardianSupportInvitationEnabled(process.env.GUARDIAN_SUPPORT_INVITATION_ENABLED), defaultPolarity: 'off' as const },
+      ],
+      // Static config, not live violation counts - rate-limit rejections
+      // are only ever console.warn'd (logRateLimitExceeded), never
+      // persisted anywhere, so there is no real "N rejections today" to
+      // report.
+      rateLimits: [
+        { name: 'apiLimiter', windowMinutes: 15, max: 600, note: 'Default per-IP ceiling across the whole API' },
+        { name: 'smsLimiter', windowMinutes: 15, max: 10, note: 'SMS costs real money per message' },
+        { name: 'guardianAlertLimiter', windowMinutes: 60, max: 5, note: 'Guardian alert sends per contact per hour' },
+        { name: 'novaChatLimiter', windowMinutes: 15, max: 60, note: 'Nova chat burst protection' },
+        { name: 'novaDiagnoseLimiter', windowMinutes: 15, max: 15, note: 'Burnout diagnostic AI narrative' },
+        { name: 'exportLimiter', windowMinutes: 60, max: 5, note: 'GDPR data export requests' },
+        { name: 'mfaSigninVerifyLimiter', windowMinutes: 15, max: 8, note: 'MFA sign-in verification attempts' },
+        { name: 'passwordResetRequestLimiter', windowMinutes: 60, max: 5, note: 'Password reset requests' },
+      ],
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Admin Dashboard - Account Operations Only
 const ADMIN_USERS_PAGE_LIMIT = 100;
 
@@ -6495,6 +6549,28 @@ app.get("/api/admin/feedback", verifyAppCheck, authenticateFirebaseUser, async (
     const snap = await db.collection("feedback_submissions").orderBy("createdAt", "desc").limit(200).get();
     const submissions = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
     res.json({ submissions });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Read-only list backing the Platform Controls tab's toggle UI. The
+// write path below (and public_feature_flags itself) predates this -
+// previously nothing exposed the current state of every flag at once,
+// only an aggregate count (admin/summary's featureFlagsActive). Not to
+// be confused with the separate, client-local "Evolution Engine" flags
+// (src/lib/feature-flags.ts) - those live in each browser's localStorage
+// and are untouched by this collection or this route.
+app.get("/api/admin/feature-flags", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    requireAdmin(req);
+    const db = getDb();
+    const snap = await db.collection("public_feature_flags").get();
+    const flags = snap.docs.map((doc: any) => {
+      const data = doc.data();
+      return { id: doc.id, enabled: !!data.enabled, updatedAt: firestoreTimestampToIso(data.updatedAt) };
+    });
+    res.json({ flags });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
@@ -9151,6 +9227,42 @@ app.post("/api/admin/release-channels", verifyAppCheck, authenticateFirebaseUser
     await db.collection("app_config").doc("release_channels").set({ [channel]: { minVersion, latestVersion } }, { merge: true });
     await logAdminAction(req, "update_release_channel", "", channel, { channel, minVersion, latestVersion });
     res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Platform-wide device roster across every org's organisations/{orgId}/
+// devices subcollection - the Release Centre tab's only source of real
+// device data beyond the channel config itself. There is still no real
+// Blaze Break desktop client shipping today (see desktop-deployment.ts) -
+// this may well return an empty list in most environments, and that's
+// reported honestly rather than padded; it exists so the control
+// plane's actual real state is visible, not to imply devices are out
+// there using it.
+app.get("/api/admin/release-centre/devices", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    requireAdmin(req);
+    const db = getDb();
+    const snap = await db.collectionGroup("devices").get();
+    const devices = snap.docs.map((doc: any) => {
+      const data = doc.data();
+      // doc.ref.path is "organisations/{orgId}/devices/{deviceId}" on
+      // both the real Admin SDK and this codebase's fake-firestore test
+      // double, so this reads the orgId without relying on a `.parent`
+      // chain neither implements identically.
+      const orgId = doc.ref.path.split('/')[1] || null;
+      return {
+        id: doc.id,
+        orgId,
+        channel: data.channel || null,
+        appVersion: data.appVersion || null,
+        status: data.status || 'active',
+        deviceName: data.deviceName || null,
+        lastCheckIn: data.lastCheckIn || null,
+      };
+    });
+    res.json({ devices });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
