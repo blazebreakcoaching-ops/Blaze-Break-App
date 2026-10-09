@@ -1027,6 +1027,19 @@ service cloud.firestore {
         allow write: if false;
       }
 
+      // Recovery Routing Engine's session-level Recommendation Budget
+      // state and its privacy-minimised decision audit trail - both are
+      // server-computed only (POST /api/recovery/routing-decision), never
+      // client-written, same reasoning as recommendation_ledger above.
+      match /recovery_routing/{docId} {
+        allow read: if isOwner(uid);
+        allow write: if false;
+      }
+      match /recovery_routing_decisions/{entryId} {
+        allow read: if isOwner(uid);
+        allow write: if false;
+      }
+
       // Legal document acceptance records - server-authoritative by
       // design (spec: "acceptance records are server-authoritative").
       // Written only by POST /api/legal/documents/:docType/accept in

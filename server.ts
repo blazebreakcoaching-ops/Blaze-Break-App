@@ -61,6 +61,10 @@ import { buildPlatformConnectorViews, buildOrgConnectorView, OrgConnectorDoc } f
 import { buildNovaRuntimeReport } from './nova-runtime-registry';
 import { validateRolloutPlanCreate, canTransitionRolloutStatus, isRolloutPlanStatus, RolloutPlanStatus } from './rollout-plans';
 import { isEvolutionFrozen, validateFreezeToggleInput } from './evolution-freeze';
+import { computeEnergyDelta, getDeltaState, Stressor } from './energy-delta-engine';
+import { determineBandwidth } from './recovery-capacity-gate';
+import { selectRoute, EMPTY_SESSION_STATE, SessionRecommendationState } from './recovery-routing-engine';
+import { buildSignalCandidates, buildExplicitRequestCandidate, isKnownRoutingModule, RoutingSignalInput } from './recovery-signal-candidates';
 import { NOVA_MEMORY_DATA_ZONE, summarizeMemoryHealth, MemoryHealthEntry } from './nova-memory-governance';
 import { getEffectiveDataPolicy, validateDataPolicyUpdate } from './org-data-policy';
 import { initialAuthStatus, validateConnectorCreate, canSeeConnectorDetail, ORG_CONNECTOR_TYPES } from './org-connectors';
@@ -12706,6 +12710,150 @@ app.get("/api/recovery/velocity-map", verifyAppCheck, authenticateFirebaseUser, 
     }
 
     res.json({ days, hasAnyData: anyRealData });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ============ Recovery Routing Engine (server wiring) ============
+// First real wiring of recovery-routing-engine.ts/recovery-capacity-gate.ts
+// to actual signals. Reads only real, already-logged data (a capacity
+// check-in + active stressors, pending Workload Reality Check tasks, recent
+// Trigger Journal entries, recent Mood Pulses) and the real Recommendation
+// Budget session state - it never fabricates a candidate. routing_decisions
+// is a privacy-minimised audit trail (structured reason codes and which
+// modules were considered, never raw trigger/mood text) - Nova Decision
+// Compression (translating a selected route into plain language) and any
+// UI are later PRs; this one only computes and persists the decision.
+
+const ROUTING_SESSION_OFFER_LIMIT_RESET_HOURS = 24; // a "session" here is a calendar day, re-evaluated below against UTC date, not a rolling window.
+
+const todayUtcDateKey = (): string => new Date().toISOString().split('T')[0]!;
+
+const loadRoutingSessionState = async (db: FirebaseFirestore.Firestore, uid: string): Promise<SessionRecommendationState> => {
+  const ref = db.collection("users").doc(uid).collection("recovery_routing").doc("session_state");
+  const snap = await ref.get();
+  const today = todayUtcDateKey();
+  if (!snap.exists || snap.data()?.day !== today) {
+    return { ...EMPTY_SESSION_STATE };
+  }
+  const data = snap.data()!;
+  return {
+    recommendationsOffered: data.recommendationsOffered || 0,
+    recommendationsDeclined: data.recommendationsDeclined || 0,
+    interventionsStarted: data.interventionsStarted || 0,
+    interventionsCompleted: data.interventionsCompleted || 0,
+    interventionsAbandoned: data.interventionsAbandoned || 0,
+    secondsSinceLastIntervention: null, // not yet tracked - arrives with the outcome-loop PR.
+    userRequestedMore: false, // a per-request override, never persisted across requests.
+  };
+};
+
+app.post("/api/recovery/routing-decision", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const user = requireAuth(req);
+    const db = getDb();
+    const nowMs = Date.now();
+    const fourteenDaysAgo = new Date(nowMs - 14 * 24 * 60 * 60 * 1000).toISOString();
+
+    const explicitBandwidthReport = ['low_bandwidth', 'some_bandwidth', 'reflective_bandwidth'].includes(req.body?.explicitBandwidthReport)
+      ? req.body.explicitBandwidthReport
+      : undefined;
+    const explicitRequestModule = typeof req.body?.explicitRequestModule === 'string' ? req.body.explicitRequestModule : undefined;
+    const userRequestedMore = req.body?.userRequestedMore === true;
+
+    if (explicitRequestModule && !isKnownRoutingModule(explicitRequestModule)) {
+      return res.status(400).json({ error: `Unrecognised module: ${explicitRequestModule}` });
+    }
+
+    const [latestCheckInSnap, stressorsSnap, workloadSnap, triggersSnap, moodSnap] = await Promise.all([
+      db.collection("users").doc(user.uid).collection("capacity_checkins").orderBy("createdAt", "desc").limit(1).get(),
+      db.collection("users").doc(user.uid).collection("energy_stressors").where("status", "==", "active").get(),
+      db.collection("users").doc(user.uid).collection("workload_reality_check").doc("state").get(),
+      db.collection("users").doc(user.uid).collection("stress_triggers").where("createdAt", ">=", fourteenDaysAgo).orderBy("createdAt", "desc").get(),
+      db.collection("users").doc(user.uid).collection("mood_pulses").orderBy("createdAt", "desc").limit(5).get(),
+    ]);
+
+    const capacityScore: number | null = latestCheckInSnap.empty ? null : (latestCheckInSnap.docs[0].data().score ?? null);
+    const stressors: Pick<Stressor, 'severity' | 'persistence' | 'reduction' | 'status'>[] = stressorsSnap.docs.map((d) => {
+      const data = d.data();
+      return { severity: data.severity, persistence: data.persistence, reduction: data.reduction, status: data.status };
+    });
+    const deltaState = capacityScore === null ? null : getDeltaState(computeEnergyDelta(capacityScore, stressors).energyDelta).key;
+
+    const workloadData = workloadSnap.exists ? workloadSnap.data()! : {};
+    const workloadTasks: { completed?: boolean; category?: string }[] = Array.isArray(workloadData.tasks) ? workloadData.tasks : [];
+    const pendingWorkloadTasks = workloadTasks.filter((t) => !t.completed).length;
+    const pendingMustWorkloadTasks = workloadTasks.filter((t) => !t.completed && t.category === 'must').length;
+
+    const recentTriggers: RoutingSignalInput['recentTriggers'] = triggersSnap.docs.map((d) => {
+      const data = d.data();
+      return {
+        source: String(data.source || ''),
+        severity: (['low', 'medium', 'high'].includes(data.severity) ? data.severity : 'medium') as 'low' | 'medium' | 'high',
+        createdAtMs: new Date(data.createdAt).getTime(),
+      };
+    });
+    const recentMoodPulses: RoutingSignalInput['recentMoodPulses'] = moodSnap.docs.map((d) => {
+      const data = d.data();
+      return {
+        moodLabel: String(data.moodLabel || ''),
+        intensity: Number(data.intensity) || 0,
+        createdAtMs: new Date(data.createdAt).getTime(),
+      };
+    });
+
+    const candidates = buildSignalCandidates({
+      capacityScore, deltaState, pendingWorkloadTasks, pendingMustWorkloadTasks, recentTriggers, recentMoodPulses, nowMs,
+    });
+    if (explicitRequestModule) {
+      const explicitCandidate = buildExplicitRequestCandidate(explicitRequestModule);
+      if (explicitCandidate) candidates.push(explicitCandidate);
+    }
+
+    const bandwidth = determineBandwidth({ explicitBandwidthReport, capacityScore, deltaState });
+    const sessionState = await loadRoutingSessionState(db, user.uid);
+    sessionState.userRequestedMore = userRequestedMore;
+
+    const decision = selectRoute(candidates, bandwidth, sessionState);
+
+    // Only a real "selected"/"needs_clarification" outcome counts as a
+    // recommendation actually having been offered - NONE outcomes (nothing
+    // needed, or suppressed by budget) never consume the budget themselves.
+    if (decision.routingOutcome === 'selected' || decision.routingOutcome === 'needs_clarification') {
+      await db.collection("users").doc(user.uid).collection("recovery_routing").doc("session_state").set({
+        day: todayUtcDateKey(),
+        recommendationsOffered: sessionState.recommendationsOffered + 1,
+        recommendationsDeclined: sessionState.recommendationsDeclined,
+        interventionsStarted: sessionState.interventionsStarted,
+        interventionsCompleted: sessionState.interventionsCompleted,
+        interventionsAbandoned: sessionState.interventionsAbandoned,
+        updatedAt: new Date().toISOString(),
+      }, { merge: true });
+    }
+
+    db.collection("users").doc(user.uid).collection("recovery_routing_decisions").add({
+      createdAt: new Date().toISOString(),
+      selectedRoute: decision.selectedRoute,
+      selectedModule: decision.selectedCandidate?.sourceModule ?? null,
+      routingOutcome: decision.routingOutcome,
+      reasonCodes: decision.reasonCodes,
+      confidence: decision.confidence,
+      consideredModules: candidates.map((c) => c.sourceModule),
+      bandwidthBand: bandwidth.band,
+    }).catch(() => {
+      // Non-fatal - the decision still reaches the user even if the audit write fails.
+    });
+
+    res.json({
+      selectedRoute: decision.selectedRoute,
+      selectedModule: decision.selectedCandidate?.sourceModule ?? null,
+      routingOutcome: decision.routingOutcome,
+      reasonCodes: decision.reasonCodes,
+      confidence: decision.confidence,
+      bandwidthBand: bandwidth.band,
+      sufficientBandwidthData: bandwidth.sufficientData,
+    });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }

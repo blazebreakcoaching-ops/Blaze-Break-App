@@ -217,21 +217,23 @@ const EFFORT_RANK: Record<BandwidthBand, number> = { low_bandwidth: 0, some_band
 const PREFERENCE_RANK: Record<PreferenceMatch, number> = { preferred: 1, neutral: 0, avoided: -1 };
 
 // Deterministic tie-break chain (spec's priority list, in order): explicit
-// user request; structural problem vs self-regulation; urgency/safety; user
-// preference; recent recency (avoid repeating what was just used); evidence
-// quality; minimum effort; shorter duration; stable id as a last resort.
-// Never a single opaque weighted score - every step is independently
-// inspectable.
+// user request; current need/urgency (safety); structural problem vs
+// self-regulation (only among candidates that are otherwise equally
+// urgent - an acute, higher-urgency STABILISE always outranks a calmer
+// structural REDUCE, never the reverse); user preference; recent recency
+// (avoid repeating what was just used); evidence quality; minimum effort;
+// shorter duration; stable id as a last resort. Never a single opaque
+// weighted score - every step is independently inspectable.
 export const compareCandidates = (a: InterventionCandidate, b: InterventionCandidate): number => {
   const aExplicit = !!a.explicitUserRequest;
   const bExplicit = !!b.explicitUserRequest;
   if (aExplicit !== bExplicit) return aExplicit ? -1 : 1;
 
+  if (URGENCY_RANK[a.urgency] !== URGENCY_RANK[b.urgency]) return URGENCY_RANK[b.urgency] - URGENCY_RANK[a.urgency];
+
   const aStructural = a.structuralProblem && STRUCTURAL_PREFERRED_ROUTES.includes(a.routeType);
   const bStructural = b.structuralProblem && STRUCTURAL_PREFERRED_ROUTES.includes(b.routeType);
   if (aStructural !== bStructural) return aStructural ? -1 : 1;
-
-  if (URGENCY_RANK[a.urgency] !== URGENCY_RANK[b.urgency]) return URGENCY_RANK[b.urgency] - URGENCY_RANK[a.urgency];
 
   const aPref = PREFERENCE_RANK[a.userPreferenceMatch ?? 'neutral'];
   const bPref = PREFERENCE_RANK[b.userPreferenceMatch ?? 'neutral'];
