@@ -60,6 +60,7 @@ import {
 import { buildPlatformConnectorViews, buildOrgConnectorView, OrgConnectorDoc } from './connector-layer';
 import { buildNovaRuntimeReport } from './nova-runtime-registry';
 import { validateRolloutPlanCreate, canTransitionRolloutStatus, isRolloutPlanStatus, RolloutPlanStatus } from './rollout-plans';
+import { isEvolutionFrozen, validateFreezeToggleInput } from './evolution-freeze';
 import { NOVA_MEMORY_DATA_ZONE, summarizeMemoryHealth, MemoryHealthEntry } from './nova-memory-governance';
 import { getEffectiveDataPolicy, validateDataPolicyUpdate } from './org-data-policy';
 import { initialAuthStatus, validateConnectorCreate, canSeeConnectorDetail, ORG_CONNECTOR_TYPES } from './org-connectors';
@@ -3629,6 +3630,22 @@ const requirePlatformOwner = (req: any) => {
   return user;
 };
 
+// Checked by every mutating Evolution Engine route, after its own auth
+// check (so a non-evolution-access caller still gets 403 first, not
+// 423) - see evolution-freeze.ts for why this is deliberately a
+// separate, smaller piece of work from narrowing WHO can act (granular
+// evolution_* permissions, still future work). Never checked by a
+// read-only Evolution Engine route - an admin can always see a frozen
+// system's state, just not change it. The freeze toggle route itself
+// does not call this, or freezing would be permanent.
+const requireEvolutionNotFrozen = async () => {
+  const db = getDb();
+  const doc = await db.collection("app_config").doc("evolution_freeze").get();
+  if (isEvolutionFrozen(doc.data())) {
+    throw new Error("Evolution Engine is frozen - no changes can be made until a Platform Owner unfreezes it.");
+  }
+};
+
 const assertNotLastPlatformOwner = async (targetUid: string, databaseId: string | undefined) => {
   const db = getDb();
   const ownersSnap = await db.collection('admin_users').where('role', '==', 'platform_owner').get();
@@ -6748,6 +6765,7 @@ app.get("/api/admin/evolution/registry", verifyAppCheck, authenticateFirebaseUse
 app.post("/api/admin/evolution/registry", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
   try {
     requireEvolutionAccess(req);
+    await requireEvolutionNotFrozen();
     const parsed = validateFeatureRegistryUpsert(req.body);
     if (!parsed.valid) {
       return res.status(400).json({ error: parsed.error });
@@ -6765,7 +6783,7 @@ app.post("/api/admin/evolution/registry", verifyAppCheck, authenticateFirebaseUs
     await logAdminAction(req, "update_feature_registry", "", featureId, { lifecycleState: rest.lifecycleState, enforcementState: rest.enforcementState });
     res.json({ success: true, featureId });
   } catch (err: any) {
-    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
+    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("frozen") ? 423 : 500).json({ error: err.message });
   }
 });
 
@@ -6776,6 +6794,7 @@ app.post("/api/admin/evolution/registry", verifyAppCheck, authenticateFirebaseUs
 app.post("/api/admin/evolution/registry/seed", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
   try {
     requireEvolutionAccess(req);
+    await requireEvolutionNotFrozen();
     const db = getDb();
     const initialEntries = buildInitialRegistry(
       LEGACY_FEATURE_REGISTRY as unknown as Record<string, LegacyFeatureDefinition>,
@@ -6795,7 +6814,7 @@ app.post("/api/admin/evolution/registry/seed", verifyAppCheck, authenticateFireb
     await logAdminAction(req, "seed_feature_registry", "", "", { created, skipped });
     res.json({ created, skipped, total: initialEntries.length });
   } catch (err: any) {
-    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
+    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("frozen") ? 423 : 500).json({ error: err.message });
   }
 });
 
@@ -6820,6 +6839,7 @@ app.get("/api/admin/evolution/protected-core", verifyAppCheck, authenticateFireb
 app.post("/api/admin/evolution/protected-core", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
   try {
     requirePlatformOwner(req);
+    await requireEvolutionNotFrozen();
     const parsed = validateProtectedCoreUpsert(req.body);
     if (!parsed.valid) {
       return res.status(400).json({ error: parsed.error });
@@ -6831,7 +6851,7 @@ app.post("/api/admin/evolution/protected-core", verifyAppCheck, authenticateFire
     await logAdminAction(req, "update_protected_core", "", invariantId, { requiredApproval: rest.requiredApproval, testStatus: rest.testStatus });
     res.json({ success: true, invariantId });
   } catch (err: any) {
-    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
+    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("frozen") ? 423 : 500).json({ error: err.message });
   }
 });
 
@@ -6842,6 +6862,7 @@ app.post("/api/admin/evolution/protected-core", verifyAppCheck, authenticateFire
 app.post("/api/admin/evolution/protected-core/seed", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
   try {
     requirePlatformOwner(req);
+    await requireEvolutionNotFrozen();
     const db = getDb();
     const seedEntries = buildSeedInvariants(new Date().toISOString());
     let created = 0;
@@ -6857,7 +6878,7 @@ app.post("/api/admin/evolution/protected-core/seed", verifyAppCheck, authenticat
     await logAdminAction(req, "seed_protected_core", "", "", { created, skipped });
     res.json({ created, skipped, total: seedEntries.length });
   } catch (err: any) {
-    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
+    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("frozen") ? 423 : 500).json({ error: err.message });
   }
 });
 
@@ -6871,6 +6892,7 @@ app.post("/api/admin/evolution/protected-core/seed", verifyAppCheck, authenticat
 app.post("/api/admin/evolution/change-proposals", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
   try {
     const user = requireEvolutionAccess(req);
+    await requireEvolutionNotFrozen();
     const parsed = validateChangeProposalCreate(req.body);
     if (!parsed.valid) {
       return res.status(400).json({ error: parsed.error });
@@ -6904,7 +6926,7 @@ app.post("/api/admin/evolution/change-proposals", verifyAppCheck, authenticateFi
     await logAdminAction(req, "create_change_proposal", "", ref.id, { targetType, targetId, requiredApproval });
     res.json({ proposalId: ref.id, ...proposal });
   } catch (err: any) {
-    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
+    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("frozen") ? 423 : 500).json({ error: err.message });
   }
 });
 
@@ -6923,6 +6945,7 @@ app.get("/api/admin/evolution/change-proposals", verifyAppCheck, authenticateFir
 app.post("/api/admin/evolution/change-proposals/:id/submit", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
   try {
     requireEvolutionAccess(req);
+    await requireEvolutionNotFrozen();
     const db = getDb();
     const ref = db.collection("platform_change_proposals").doc(req.params.id);
     const snap = await ref.get();
@@ -6937,13 +6960,14 @@ app.post("/api/admin/evolution/change-proposals/:id/submit", verifyAppCheck, aut
     await logAdminAction(req, "submit_change_proposal", "", req.params.id, {});
     res.json({ success: true });
   } catch (err: any) {
-    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
+    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("frozen") ? 423 : 500).json({ error: err.message });
   }
 });
 
 app.post("/api/admin/evolution/change-proposals/:id/decide", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
   try {
     const user = requireEvolutionAccess(req);
+    await requireEvolutionNotFrozen();
     const { approve, notes } = req.body || {};
     if (typeof approve !== "boolean") {
       return res.status(400).json({ error: '"approve" must be a boolean.' });
@@ -6970,13 +6994,14 @@ app.post("/api/admin/evolution/change-proposals/:id/decide", verifyAppCheck, aut
     await logAdminAction(req, "decide_change_proposal", "", req.params.id, { approve, requiredApproval: current?.requiredApproval });
     res.json({ success: true, status: nextStatus });
   } catch (err: any) {
-    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
+    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("frozen") ? 423 : 500).json({ error: err.message });
   }
 });
 
 app.post("/api/admin/evolution/change-proposals/:id/withdraw", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
   try {
     const user = requireEvolutionAccess(req);
+    await requireEvolutionNotFrozen();
     const db = getDb();
     const ref = db.collection("platform_change_proposals").doc(req.params.id);
     const snap = await ref.get();
@@ -6994,7 +7019,7 @@ app.post("/api/admin/evolution/change-proposals/:id/withdraw", verifyAppCheck, a
     await logAdminAction(req, "withdraw_change_proposal", "", req.params.id, {});
     res.json({ success: true });
   } catch (err: any) {
-    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
+    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("frozen") ? 423 : 500).json({ error: err.message });
   }
 });
 
@@ -7005,6 +7030,7 @@ app.post("/api/admin/evolution/change-proposals/:id/withdraw", verifyAppCheck, a
 app.post("/api/admin/evolution/change-proposals/:id/apply", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
   try {
     requireEvolutionAccess(req);
+    await requireEvolutionNotFrozen();
     const db = getDb();
     const ref = db.collection("platform_change_proposals").doc(req.params.id);
     const snap = await ref.get();
@@ -7035,7 +7061,7 @@ app.post("/api/admin/evolution/change-proposals/:id/apply", verifyAppCheck, auth
     await logAdminAction(req, "apply_change_proposal", "", req.params.id, { targetId: current?.targetId });
     res.json({ success: true });
   } catch (err: any) {
-    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
+    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("frozen") ? 423 : 500).json({ error: err.message });
   }
 });
 
@@ -7090,6 +7116,7 @@ app.get("/api/admin/evolution/cost-budget", verifyAppCheck, authenticateFirebase
 app.post("/api/admin/evolution/cost-budget", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
   try {
     requireEvolutionAccess(req);
+    await requireEvolutionNotFrozen();
     const { monthlyBudgetUsd } = req.body || {};
     if (typeof monthlyBudgetUsd !== "number" || !Number.isFinite(monthlyBudgetUsd) || monthlyBudgetUsd < 0) {
       return res.status(400).json({ error: '"monthlyBudgetUsd" must be a non-negative number.' });
@@ -7098,6 +7125,56 @@ app.post("/api/admin/evolution/cost-budget", verifyAppCheck, authenticateFirebas
     await db.collection("app_config").doc("evolution_cost_budget").set({ monthlyBudgetUsd, updatedAt: new Date().toISOString() }, { merge: true });
     await logAdminAction(req, "update_evolution_cost_budget", "", "", { monthlyBudgetUsd });
     res.json({ success: true, monthlyBudgetUsd });
+  } catch (err: any) {
+    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("frozen") ? 423 : 500).json({ error: err.message });
+  }
+});
+
+// ============ Evolution Engine: Freeze Evolution ============
+// A real, platform-wide kill-switch over every mutating Evolution
+// Engine route - see evolution-freeze.ts's module docstring for scope
+// and why this is deliberately separate from narrowing WHO can act
+// (granular evolution_* permissions, still future work). Viewing the
+// current freeze state only needs Evolution Engine access (an admin
+// should always be able to see it); toggling it is Platform Owner only,
+// the same bar as Protected Core mutations - and deliberately does NOT
+// call requireEvolutionNotFrozen itself, or freezing would be permanent.
+app.get("/api/admin/evolution/freeze", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    requireEvolutionAccess(req);
+    const db = getDb();
+    const doc = await db.collection("app_config").doc("evolution_freeze").get();
+    const data = doc.data();
+    res.json({
+      frozen: isEvolutionFrozen(data),
+      reason: data?.reason ?? null,
+      frozenBy: data?.frozenBy ?? null,
+      frozenAt: data?.frozenAt ?? null,
+    });
+  } catch (err: any) {
+    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
+  }
+});
+
+app.post("/api/admin/evolution/freeze", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const user = requirePlatformOwner(req);
+    const parsed = validateFreezeToggleInput(req.body);
+    if (!parsed.valid) {
+      return res.status(400).json({ error: parsed.error });
+    }
+    const { frozen, reason } = req.body;
+    const db = getDb();
+    const now = new Date().toISOString();
+    await db.collection("app_config").doc("evolution_freeze").set({
+      frozen,
+      reason: typeof reason === "string" ? reason.slice(0, 2000) : null,
+      frozenBy: frozen ? user.uid : null,
+      frozenAt: frozen ? now : null,
+      updatedAt: now,
+    }, { merge: true });
+    await logAdminAction(req, frozen ? "freeze_evolution_engine" : "unfreeze_evolution_engine", "", "", { reason: reason || null });
+    res.json({ success: true, frozen });
   } catch (err: any) {
     res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
   }
@@ -7137,6 +7214,7 @@ app.get("/api/admin/evolution/nova-runtime", verifyAppCheck, authenticateFirebas
 app.post("/api/admin/evolution/rollout-plans", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
   try {
     const user = requireEvolutionAccess(req);
+    await requireEvolutionNotFrozen();
     const parsed = validateRolloutPlanCreate(req.body);
     if (!parsed.valid) {
       return res.status(400).json({ error: parsed.error });
@@ -7160,7 +7238,7 @@ app.post("/api/admin/evolution/rollout-plans", verifyAppCheck, authenticateFireb
     await logAdminAction(req, "create_rollout_plan", "", ref.id, { targetFeatureId, targetPercentage });
     res.json({ rolloutId: ref.id, ...plan });
   } catch (err: any) {
-    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
+    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("frozen") ? 423 : 500).json({ error: err.message });
   }
 });
 
@@ -7179,6 +7257,7 @@ app.get("/api/admin/evolution/rollout-plans", verifyAppCheck, authenticateFireba
 app.post("/api/admin/evolution/rollout-plans/:id/status", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
   try {
     const user = requireEvolutionAccess(req);
+    await requireEvolutionNotFrozen();
     const { status, note } = req.body || {};
     if (!isRolloutPlanStatus(status)) {
       return res.status(400).json({ error: "\"status\" must be a valid rollout plan status." });
@@ -7203,7 +7282,7 @@ app.post("/api/admin/evolution/rollout-plans/:id/status", verifyAppCheck, authen
     await logAdminAction(req, "update_rollout_plan_status", "", req.params.id, { from, to: status });
     res.json({ success: true, status });
   } catch (err: any) {
-    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
+    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("frozen") ? 423 : 500).json({ error: err.message });
   }
 });
 

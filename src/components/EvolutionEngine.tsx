@@ -243,7 +243,7 @@ const NAV_SECTIONS: { id: EvolutionSection; label: string; icon: any; built: boo
 
 const NOT_YET_BUILT_COPY: Record<string, string> = {
   evaluations: 'An automated test suite for Nova prompt/model changes, run through Shadow Mode and a Replay Lab before anything reaches real conversations. Neither exists yet - there is no safe way in this codebase today to capture and replay past conversations against a candidate prompt without touching live traffic, and a shallow version of either would misrepresent prompt changes as already safely testable. The Nova Runtime Registry above is the real, honest first step (observability over what actually runs today); Shadow Mode and the Replay Lab remain future work.',
-  advanced: 'Two real, valuable controls deliberately deferred rather than rushed in alongside PR11\'s other sections: granular evolution_* permissions (narrowing today\'s coarse 3-role EVOLUTION_ENGINE_ROLES boundary - admin-roles.ts already flags this as real future work) and a platform-wide Freeze Evolution kill-switch (which would need to gate every one of the ~11 mutating Evolution Engine routes built across PR1-11). Both touch authorization/safety boundaries that affect every route already shipped - that deserves its own focused, carefully-reviewed PR, not a late addition squeezed into this one. Not yet built.',
+  advanced: 'Granular evolution_* permissions (narrowing today\'s coarse 3-role EVOLUTION_ENGINE_ROLES boundary down to specific actions like evolution_view/protected_core_manage) remain real, valuable, and deliberately deferred - admin-roles.ts already flags this as its own future work, and it means touching the authorization check on all ~20 Evolution Engine routes at once, which deserves its own focused, carefully-reviewed PR rather than a rushed addition here. Freeze Evolution (below) shipped instead as the smaller, more bounded safety control - gating WHETHER anyone can act right now, not narrowing WHO.',
 };
 
 // Mirrors src/types.ts's AuthRole/SubscriptionTier unions exactly - these
@@ -610,6 +610,7 @@ export const EvolutionEngine = () => {
     'update_feature_registry', 'seed_feature_registry',
     'update_protected_core', 'seed_protected_core',
     'update_evolution_cost_budget',
+    'freeze_evolution_engine', 'unfreeze_evolution_engine',
   ];
   const [auditLogs, setAuditLogs] = useState<any[] | null>(null);
   const [isLoadingAuditLogs, setIsLoadingAuditLogs] = useState(false);
@@ -637,6 +638,52 @@ export const EvolutionEngine = () => {
   useEffect(() => {
     fetchAuditLogs();
   }, []);
+
+  const [freezeState, setFreezeState] = useState<{ frozen: boolean; reason: string | null; frozenBy: string | null; frozenAt: string | null } | null>(null);
+  const [isLoadingFreeze, setIsLoadingFreeze] = useState(false);
+  const [freezeError, setFreezeError] = useState<string | null>(null);
+  const [freezeReasonInput, setFreezeReasonInput] = useState('');
+  const [isTogglingFreeze, setIsTogglingFreeze] = useState(false);
+
+  const fetchFreezeState = async () => {
+    setIsLoadingFreeze(true);
+    setFreezeError(null);
+    try {
+      const res = await secureApiFetch('/api/admin/evolution/freeze');
+      if (res.ok) {
+        setFreezeState(await res.json());
+      } else {
+        const err = await res.json();
+        setFreezeError(err.error || "Couldn't load the freeze state.");
+      }
+    } catch (e) {
+      setFreezeError("Couldn't load the freeze state.");
+    } finally {
+      setIsLoadingFreeze(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchFreezeState();
+  }, []);
+
+  const handleToggleFreeze = async (frozen: boolean) => {
+    setIsTogglingFreeze(true);
+    try {
+      const res = await secureApiFetch('/api/admin/evolution/freeze', { method: 'POST', data: { frozen, reason: freezeReasonInput || null } });
+      if (res.ok) {
+        setFreezeReasonInput('');
+        await fetchFreezeState();
+      } else {
+        const err = await res.json();
+        setFreezeError(err.error || "Couldn't update the freeze state.");
+      }
+    } catch (e) {
+      setFreezeError("Couldn't update the freeze state.");
+    } finally {
+      setIsTogglingFreeze(false);
+    }
+  };
 
   const handleCreateProposal = async () => {
     setProposalActionError(null);
@@ -713,6 +760,16 @@ export const EvolutionEngine = () => {
           </p>
         </div>
       </div>
+
+      {freezeState?.frozen && (
+        <div className="flex items-center gap-3 p-4 bg-destructive/10 border border-destructive/30 rounded-2xl mb-6">
+          <ShieldCheck className="w-5 h-5 text-destructive dark:text-[#f87171] shrink-0" />
+          <div>
+            <p className="text-sm font-bold text-destructive dark:text-[#f87171]">Evolution Engine is frozen - no changes can be made until a Platform Owner unfreezes it.</p>
+            {freezeState.reason && <p className="text-xs text-text-muted mt-0.5">Reason: {freezeState.reason}</p>}
+          </div>
+        </div>
+      )}
 
       <div className="flex gap-8 items-start">
         {/* Left nav */}
@@ -1803,10 +1860,55 @@ export const EvolutionEngine = () => {
         </div>
       )}
 
-      {/* Advanced Section */}
+      {/* Advanced Section - Freeze Evolution is real (a platform-wide
+          kill-switch over every mutating Evolution Engine route);
+          granular evolution_* permissions are not - see NOT_YET_BUILT_COPY. */}
       {activeTab === 'advanced' && (
         <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2">
           <h3 className="text-xl font-bold flex items-center gap-2 text-text-main border-b border-border/20 pb-4"><Settings2 className="w-5 h-5 text-text-muted" /> Advanced</h3>
+
+          <div>
+            <h4 className="text-sm font-black uppercase tracking-widest text-text-muted mb-3">Freeze Evolution</h4>
+            {freezeError && <div className="p-3 bg-destructive/10 border border-destructive/20 rounded-xl text-sm text-destructive dark:text-[#f87171] mb-3">{freezeError}</div>}
+            {isLoadingFreeze && !freezeState ? (
+              <p className="text-sm text-text-muted italic">Loading...</p>
+            ) : freezeState && (
+              <div className="bg-card border border-border/40 rounded-2xl p-6 max-w-2xl space-y-3">
+                <p className="text-sm text-text-muted">
+                  Blocks every mutating Evolution Engine route platform-wide (registry edits, Protected Core changes, change-proposal actions, cost budget, rollout-plan actions) - reads always stay available. {isPlatformOwner ? '' : 'Only a Platform Owner can toggle this.'}
+                </p>
+                <div className="flex items-center gap-2">
+                  <span className={cn("text-xs uppercase font-black tracking-widest px-2 py-0.5 rounded-full", freezeState.frozen ? 'bg-destructive/10 text-destructive dark:text-[#f87171]' : 'bg-success/10 text-success dark:text-[#4ade80]')}>
+                    {freezeState.frozen ? 'Frozen' : 'Active'}
+                  </span>
+                  {freezeState.frozen && freezeState.frozenBy && <span className="text-xs text-text-muted">by {freezeState.frozenBy}{freezeState.frozenAt ? ` at ${new Date(freezeState.frozenAt).toLocaleString()}` : ''}</span>}
+                </div>
+                {isPlatformOwner && (
+                  <>
+                    {!freezeState.frozen && (
+                      <input
+                        value={freezeReasonInput}
+                        onChange={(e) => setFreezeReasonInput(e.target.value)}
+                        placeholder="Reason for freezing (optional)"
+                        className="text-sm font-medium text-text-main bg-surface/50 border border-border/40 rounded-lg px-3 py-2 w-full"
+                      />
+                    )}
+                    <button
+                      onClick={() => handleToggleFreeze(!freezeState.frozen)}
+                      disabled={isTogglingFreeze}
+                      className={cn("text-xs font-bold px-4 py-2 rounded-lg flex items-center gap-1.5 disabled:opacity-50",
+                        freezeState.frozen ? 'bg-success/10 text-success dark:text-[#4ade80] hover:bg-success/20' : 'bg-destructive/10 text-destructive dark:text-[#f87171] hover:bg-destructive/20'
+                      )}
+                    >
+                      {isTogglingFreeze ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
+                      {freezeState.frozen ? 'Unfreeze' : 'Freeze Evolution Engine'}
+                    </button>
+                  </>
+                )}
+              </div>
+            )}
+          </div>
+
           <NotYetBuilt sectionId="advanced" />
         </div>
       )}
