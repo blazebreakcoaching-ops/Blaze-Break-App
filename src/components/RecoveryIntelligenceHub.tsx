@@ -1,9 +1,12 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, type ComponentType } from 'react';
 import { ChevronDown, ChevronUp, Loader2, HeartPulse } from 'lucide-react';
 import { auth } from '../lib/firebase';
 import { secureApiFetch } from '../lib/secure-api';
 import { NovaRecommendationCard } from './NovaRecommendationCard';
-import { ConnectedMoodPulse, ConnectedBodyCheckIn, ConnectedWeeklyReviews } from './ConnectedRecoveryModules';
+import { ConnectedMoodPulse, ConnectedBodyCheckIn, ConnectedWeeklyReviews, ConnectedEnergyBudget } from './ConnectedRecoveryModules';
+import { PressurePatternCapture } from './PressurePatternCapture';
+import { RelationalLoadSignal } from './RelationalLoadSignal';
+import { ReturnToWorkPlanner } from './ReturnToWorkPlanner';
 import { MODULE_TARGET_TAB } from '../../recovery-decision-copy';
 import type { RouteType, RoutingOutcome, ReasonCode, ConfidenceLevel, EvidenceSource } from '../../recovery-routing-engine';
 import type { BandwidthBand } from '../../recovery-capacity-gate';
@@ -62,7 +65,20 @@ const EXPLORE_TOOLS: ExploreTool[] = [
   { label: 'My Support Circle', kind: 'navigate', tab: 'ally' },
   { label: 'Body Check-In', kind: 'inline', id: 'body_check_in' },
   { label: 'Weekly Review', kind: 'inline', id: 'weekly_review' },
+  { label: 'Pressure Pattern Capture', kind: 'inline', id: 'pressure_pattern' },
+  { label: 'Relational Load Signal', kind: 'inline', id: 'relational_load' },
+  { label: 'Energy Capacity Log (category view)', kind: 'inline', id: 'energy_capacity_log' },
+  { label: 'Return-to-Work Planner', kind: 'inline', id: 'return_to_work' },
 ];
+
+const INLINE_TOOL_COMPONENTS: Record<string, ComponentType> = {
+  body_check_in: ConnectedBodyCheckIn,
+  weekly_review: ConnectedWeeklyReviews,
+  pressure_pattern: PressurePatternCapture,
+  relational_load: RelationalLoadSignal,
+  energy_capacity_log: ConnectedEnergyBudget,
+  return_to_work: ReturnToWorkPlanner,
+};
 
 const navigateToTab = (tab: string) => {
   window.dispatchEvent(new CustomEvent('navigate_tab', { detail: tab }));
@@ -188,6 +204,7 @@ export const RecoveryIntelligenceHub = () => {
             {EXPLORE_TOOLS.map((tool) => {
               const key = tool.kind === 'navigate' ? tool.tab : tool.id;
               const isExpanded = tool.kind === 'inline' && expandedTool === tool.id;
+              const InlineComponent = tool.kind === 'inline' ? INLINE_TOOL_COMPONENTS[tool.id] : null;
               return (
                 <div key={key}>
                   <button
@@ -197,11 +214,8 @@ export const RecoveryIntelligenceHub = () => {
                     {tool.label}
                     {tool.kind === 'inline' && (isExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />)}
                   </button>
-                  {isExpanded && tool.id === 'body_check_in' && (
-                    <div className="mt-2 p-3.5 bg-card/40 rounded-lg border border-white/5"><ConnectedBodyCheckIn /></div>
-                  )}
-                  {isExpanded && tool.id === 'weekly_review' && (
-                    <div className="mt-2 p-3.5 bg-card/40 rounded-lg border border-white/5"><ConnectedWeeklyReviews /></div>
+                  {isExpanded && InlineComponent && (
+                    <div className="mt-2 p-3.5 bg-card/40 rounded-lg border border-white/5"><InlineComponent /></div>
                   )}
                 </div>
               );

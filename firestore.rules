@@ -630,6 +630,19 @@ service cloud.firestore {
             && (request.method == 'create' ? true : checkCreatedAtUnchanged());
       }
       
+      // E2. relational_load_signals (Relational Load Signal - Social
+      // Battery's real new home: a qualitative self-report, never a
+      // percentage. Append-only, same reasoning as mood_pulses/
+      // body_checkins - each check-in is its own history entry.)
+      match /relational_load_signals/{entryId} {
+        allow read: if isOwner(uid);
+        allow delete: if isOwner(uid);
+        allow create: if isOwner(uid)
+            && hasOnly(['createdAt', 'value'])
+            && hasAll(['createdAt', 'value'])
+            && request.resource.data.value in ['more_drained', 'about_the_same', 'more_restored'];
+      }
+
       // F. wins
       match /wins/{winId} {
         allow read: if isOwner(uid);
@@ -1140,12 +1153,17 @@ service cloud.firestore {
       match /stress_triggers/{triggerId} {
         allow read: if isOwner(uid);
         allow delete: if isOwner(uid);
+        // 'source' was added to the real write path (RecoveryIntelligenceLayer.tsx's
+        // saveTriggers, and PressurePatternCapture.tsx) so Recovery Routing
+        // Engine's repeated-source pattern detection has something real to
+        // group by - must be allowed here or every real write is denied.
         allow create, update: if isOwner(uid)
-            && hasOnly(['createdAt', 'updatedAt', 'text', 'date', 'severity', 'energyLevel'])
-            && hasAll(['createdAt', 'updatedAt', 'text', 'date', 'severity', 'energyLevel'])
+            && hasOnly(['createdAt', 'updatedAt', 'text', 'date', 'severity', 'energyLevel', 'source'])
+            && hasAll(['createdAt', 'updatedAt', 'text', 'date', 'severity', 'energyLevel', 'source'])
             && isStringWithMax(request.resource.data.text, 300)
             && request.resource.data.severity is number && request.resource.data.severity >= 1 && request.resource.data.severity <= 10
             && request.resource.data.energyLevel is number && request.resource.data.energyLevel >= 0 && request.resource.data.energyLevel <= 100
+            && isStringWithMax(request.resource.data.source, 60)
             && (request.method == 'create' ? true : checkCreatedAtUnchanged());
       }
 
