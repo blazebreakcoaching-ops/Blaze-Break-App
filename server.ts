@@ -54,6 +54,7 @@ import { FEATURE_FLAG_IDS } from './feature-flag-ids';
 import { FEATURE_REGISTRY as LEGACY_FEATURE_REGISTRY } from './src/lib/feature-registry';
 import { validateProtectedCoreUpsert, buildSeedInvariants } from './protected-core';
 import { buildPlatformConnectorViews, buildOrgConnectorView, OrgConnectorDoc } from './connector-layer';
+import { NOVA_MEMORY_DATA_ZONE, summarizeMemoryHealth, MemoryHealthEntry } from './nova-memory-governance';
 import { getEffectiveDataPolicy, validateDataPolicyUpdate } from './org-data-policy';
 import { initialAuthStatus, validateConnectorCreate, canSeeConnectorDetail, ORG_CONNECTOR_TYPES } from './org-connectors';
 import { isDeviceChannel, isValidAppVersion, validateDeviceRegistration, evaluateUpdateStatus, DEVICE_CHANNELS } from './desktop-deployment';
@@ -2584,6 +2585,11 @@ async function executeRememberAboutUser(uid: string, firestoreDb: any, args: Rec
     createdAt: now,
     updatedAt: now,
     canEdit: true,
+    // No canonicalKey: a model-initiated memory has no structural
+    // source+type identity to dedup on the way updateNovaMemoryBySourceAndType
+    // writes do (nova-brain.ts) - see nova-memory-governance.ts.
+    canonicalKey: null,
+    dataZone: NOVA_MEMORY_DATA_ZONE,
   });
 
   return { saved: true };
@@ -6850,6 +6856,39 @@ app.get("/api/admin/evolution/connectors", verifyAppCheck, authenticateFirebaseU
       return buildOrgConnectorView(doc.id, orgId, doc.data() as OrgConnectorDoc);
     });
     res.json({ connectors: [...platformViews, ...orgViews] });
+  } catch (err: any) {
+    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
+  }
+});
+
+// ============ Evolution Engine: Nova Context Brain Health ============
+// Platform-wide, metadata-only aggregate across every user's
+// nova_memories - see nova-memory-governance.ts. Deliberately never
+// reads or returns a memory's `content` field; only type, confidence,
+// and canonicalKey presence are used, matching the spec's own rule that
+// the normal governance view shows volume/conflicts/health, not raw
+// private text. A capped scan (CONTEXT_BRAIN_HEALTH_SCAN_LIMIT) protects
+// against an unbounded collectionGroup read as the user base grows;
+// `capped: true` reports honestly when the real total may be higher.
+const CONTEXT_BRAIN_HEALTH_SCAN_LIMIT = 5000;
+
+app.get("/api/admin/evolution/context-brain/health", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    requireEvolutionAccess(req);
+    const db = getDb();
+    const snap = await db.collectionGroup("nova_memories").limit(CONTEXT_BRAIN_HEALTH_SCAN_LIMIT).get();
+    const entries: MemoryHealthEntry[] = snap.docs.map((doc: any) => {
+      const data = doc.data();
+      const ownerUid = doc.ref.path.split('/')[1] || 'unknown';
+      return {
+        ownerUid,
+        type: typeof data.type === 'string' ? data.type : 'unknown',
+        confidence: typeof data.confidence === 'string' ? data.confidence : null,
+        canonicalKey: typeof data.canonicalKey === 'string' ? data.canonicalKey : null,
+      };
+    });
+    const summary = summarizeMemoryHealth(entries);
+    res.json({ ...summary, capped: snap.size >= CONTEXT_BRAIN_HEALTH_SCAN_LIMIT });
   } catch (err: any) {
     res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
   }

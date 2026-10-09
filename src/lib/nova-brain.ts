@@ -1,4 +1,5 @@
 import { auth, getDb } from './firebase';
+import { NOVA_MEMORY_DATA_ZONE, deriveCanonicalKey } from '../../nova-memory-governance';
 
 export type MemoryType = 'profile' | 'trigger' | 'state' | 'rule' | 'preference';
 export type ConfidenceLevel = 'low' | 'medium' | 'high' | 'verified';
@@ -12,6 +13,17 @@ export interface NovaMemory {
   createdAt: string;
   updatedAt: string;
   canEdit: boolean;
+  // Added in Evolution Engine PR4 - see nova-memory-governance.ts. Only
+  // ever set for memories written through updateNovaMemoryBySourceAndType
+  // (the one path with a real structural identity to dedup on); freeform
+  // writes (addNovaMemory, logJourney, Nova's own remember_about_user
+  // tool) leave this undefined rather than guessing one.
+  canonicalKey?: string | null;
+  // Always NOVA_MEMORY_DATA_ZONE - every Nova memory is personal coaching
+  // context, there is no second zone to choose between. Stored explicitly
+  // so the platform-wide Context Brain Health view (and any future data-
+  // zone-flow check) can read it directly off the document.
+  dataZone?: string;
 }
 
 // Nova's memory is genuinely persisted to Firestore (users/{uid}/nova_memories),
@@ -221,6 +233,8 @@ const persistMemory = (uid: string, memory: NovaMemory) => {
         createdAt: memory.createdAt,
         updatedAt: memory.updatedAt,
         canEdit: memory.canEdit,
+        canonicalKey: memory.canonicalKey ?? null,
+        dataZone: NOVA_MEMORY_DATA_ZONE,
       });
     } catch {
       // Non-fatal - the cache (and therefore the UI) still reflects the
@@ -306,12 +320,14 @@ export const updateNovaMemoryBySourceAndType = (
   memoryParams: Omit<NovaMemory, 'id' | 'createdAt' | 'updatedAt' | 'source' | 'type'>
 ) => {
   if (!isNovaLearningAllowed()) return;
+  const canonicalKey = deriveCanonicalKey(source, type);
   const existingIndex = cachedBrain.findIndex(m => m.source === source && m.type === type);
 
   if (existingIndex > -1) {
     const updated: NovaMemory = {
       ...cachedBrain[existingIndex],
       ...memoryParams,
+      canonicalKey,
       updatedAt: new Date().toISOString(),
     };
     cachedBrain = [...cachedBrain.slice(0, existingIndex), updated, ...cachedBrain.slice(existingIndex + 1)];
@@ -321,9 +337,10 @@ export const updateNovaMemoryBySourceAndType = (
     if (uid) persistMemory(uid, updated);
   } else {
     addNovaMemory({
+      ...memoryParams,
       source,
       type,
-      ...memoryParams,
+      canonicalKey,
     });
   }
 };

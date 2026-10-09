@@ -1488,8 +1488,22 @@ export default function App() {
 
   // Route Protection
   useEffect(() => {
-    logJourney('Navigation Context', `User entering module: ${activeTab}`);
-    
+    // Evolution Engine PR4 investigation: this effect used to call
+    // logJourney('Navigation Context', `User entering module: ${activeTab}`)
+    // on every single tab switch - writing a real nova_memories document
+    // each time. Nothing ever read "Navigation Context" entries for any
+    // coaching purpose, but getNovaContextAndMetadata (server.ts) pulls
+    // the 5 most-recently-updated memories of ANY type straight into
+    // Nova's live conversation context - so a session with a few tab
+    // switches could fill most or all of those 5 slots with navigation
+    // noise, displacing genuinely useful memories (a completed boundary
+    // rehearsal, a confirmed preference). Removed outright rather than
+    // rerouted to a TTL'd variant: there is no coaching value in "user
+    // entering module: home" at any retention length, and the spec's own
+    // guidance is explicit that navigation history belongs in product
+    // analytics, not personal coaching memory - which this app has none
+    // of today, so there is nowhere honest to send it instead.
+
     // Check route protection as well
     const adminTabs = ["org", "evolution", "intelligence", "admin", "executive"];
     const isProtected = adminTabs.includes(activeTab);

@@ -57,6 +57,20 @@ const CONNECTOR_STATUS_BADGE_STYLES: Record<string, string> = {
   revoked: 'bg-destructive/10 text-destructive dark:text-[#f87171]',
 };
 
+// Platform-wide, metadata-only aggregate via
+// GET /api/admin/evolution/context-brain/health - see
+// nova-memory-governance.ts. Never includes any memory's `content`.
+interface ContextBrainHealthSummary {
+  totalMemories: number;
+  usersScanned: number;
+  byType: Record<string, number>;
+  byConfidence: Record<string, number>;
+  duplicateCandidateGroups: number;
+  duplicateCandidateMemories: number;
+  memoriesWithoutCanonicalKey: number;
+  capped: boolean;
+}
+
 // Server-backed registry entry shape (platform_feature_registry via
 // GET /api/admin/evolution/registry) - see feature-registry-v2.ts for
 // the authoritative schema. This is the canonical source now; the old
@@ -179,6 +193,32 @@ export const EvolutionEngine = () => {
 
   useEffect(() => {
     fetchConnectors();
+  }, []);
+
+  const [contextBrainHealth, setContextBrainHealth] = useState<ContextBrainHealthSummary | null>(null);
+  const [isLoadingContextBrainHealth, setIsLoadingContextBrainHealth] = useState(false);
+  const [contextBrainHealthError, setContextBrainHealthError] = useState<string | null>(null);
+
+  const fetchContextBrainHealth = async () => {
+    setIsLoadingContextBrainHealth(true);
+    setContextBrainHealthError(null);
+    try {
+      const res = await secureApiFetch('/api/admin/evolution/context-brain/health');
+      if (res.ok) {
+        setContextBrainHealth(await res.json());
+      } else {
+        const err = await res.json();
+        setContextBrainHealthError(err.error || "Couldn't load Context Brain Health.");
+      }
+    } catch (e) {
+      setContextBrainHealthError("Couldn't load Context Brain Health.");
+    } finally {
+      setIsLoadingContextBrainHealth(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchContextBrainHealth();
   }, []);
 
   const fetchRegistry = async () => {
@@ -467,13 +507,80 @@ export const EvolutionEngine = () => {
       {/* Brain Tab */}
       {activeTab === 'brain' && (
         <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2">
-          <div className="p-6 bg-primary/5 border border-primary/20 rounded-2xl mb-8 flex gap-4">
+          <h3 className="text-xl font-bold flex items-center gap-2 text-text-main border-b border-border/20 pb-4">
+            <Brain className="w-5 h-5 text-text-muted" /> Context Brain Health
+          </h3>
+          <p className="text-sm text-text-muted max-w-3xl">
+            Platform-wide, every user's memory store - metadata only (type, confidence, duplicate-candidate counts). Never shows what any memory actually says; that stays private to each user's own Nova conversation.
+          </p>
+
+          {contextBrainHealthError && (
+            <div className="p-4 bg-destructive/10 border border-destructive/20 rounded-xl text-sm text-destructive dark:text-[#f87171]">{contextBrainHealthError}</div>
+          )}
+
+          {isLoadingContextBrainHealth && !contextBrainHealth ? (
+            <p className="text-sm text-text-muted italic">Loading...</p>
+          ) : contextBrainHealth && (
+            <>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div className="bg-card border border-border/40 rounded-xl p-4">
+                  <span className="text-[10px] uppercase font-black tracking-widest text-text-muted block mb-1">Total Memories</span>
+                  <span className="text-2xl font-display font-black text-text-main">{contextBrainHealth.totalMemories}</span>
+                  {contextBrainHealth.capped && <span className="text-[10px] text-warning block mt-1">Capped scan - real total may be higher</span>}
+                </div>
+                <div className="bg-card border border-border/40 rounded-xl p-4">
+                  <span className="text-[10px] uppercase font-black tracking-widest text-text-muted block mb-1">Users With Memories</span>
+                  <span className="text-2xl font-display font-black text-text-main">{contextBrainHealth.usersScanned}</span>
+                </div>
+                <div className="bg-card border border-border/40 rounded-xl p-4">
+                  <span className="text-[10px] uppercase font-black tracking-widest text-text-muted block mb-1">Duplicate Candidates</span>
+                  <span className={cn("text-2xl font-display font-black", contextBrainHealth.duplicateCandidateGroups > 0 ? "text-destructive dark:text-[#f87171]" : "text-text-main")}>
+                    {contextBrainHealth.duplicateCandidateGroups}
+                  </span>
+                  <span className="text-[10px] text-text-muted block mt-1">groups ({contextBrainHealth.duplicateCandidateMemories} memories)</span>
+                </div>
+                <div className="bg-card border border-border/40 rounded-xl p-4">
+                  <span className="text-[10px] uppercase font-black tracking-widest text-text-muted block mb-1">No Canonical Key</span>
+                  <span className="text-2xl font-display font-black text-text-main">{contextBrainHealth.memoriesWithoutCanonicalKey}</span>
+                  <span className="text-[10px] text-text-muted block mt-1">freeform writes - not structurally dedupable</span>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="bg-card border border-border/40 rounded-xl p-4">
+                  <span className="text-[10px] uppercase font-black tracking-widest text-text-muted block mb-2">By Type</span>
+                  <div className="space-y-1">
+                    {Object.entries(contextBrainHealth.byType).map(([type, count]) => (
+                      <div key={type} className="flex items-center justify-between text-xs">
+                        <span className="text-text-main">{type}</span>
+                        <span className="text-text-muted font-mono">{count}</span>
+                      </div>
+                    ))}
+                    {Object.keys(contextBrainHealth.byType).length === 0 && <p className="text-xs text-text-muted italic">No memories recorded anywhere yet.</p>}
+                  </div>
+                </div>
+                <div className="bg-card border border-border/40 rounded-xl p-4">
+                  <span className="text-[10px] uppercase font-black tracking-widest text-text-muted block mb-2">By Confidence</span>
+                  <div className="space-y-1">
+                    {Object.entries(contextBrainHealth.byConfidence).map(([confidence, count]) => (
+                      <div key={confidence} className="flex items-center justify-between text-xs">
+                        <span className="text-text-main">{confidence}</span>
+                        <span className="text-text-muted font-mono">{count}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </>
+          )}
+
+          <div className="p-6 bg-primary/5 border border-primary/20 rounded-2xl mt-8 flex gap-4">
              <div className="w-12 h-12 bg-primary rounded-xl flex items-center justify-center shrink-0">
                <Brain className="w-6 h-6 text-text-main" />
              </div>
              <div>
-               <h3 className="font-bold text-lg text-text-main">Nova Personal Context Brain</h3>
-               <p className="text-sm text-text-muted mt-1">Structured memory system for accurate, non-clinical AI coaching. No spontaneous hallucinations. Memories are source-tagged and confidence-rated.</p>
+               <h3 className="font-bold text-lg text-text-main">My Own Nova Memories</h3>
+               <p className="text-sm text-text-muted mt-1">This admin account's own personal Nova memory, not any other user's - the only memory content any Evolution Engine screen ever shows in full.</p>
              </div>
           </div>
 

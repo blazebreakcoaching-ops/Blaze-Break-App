@@ -205,12 +205,21 @@ class CollectionRef {
 // path. Supports the where/get subset the routes under test actually use.
 class CollectionGroupRef {
   private clauses: WhereClause[] = [];
+  private limitN: number | null = null;
 
   constructor(private store: FakeStore, private collectionId: string) {}
 
   where(field: string, op: string, value: any) {
     const q = new CollectionGroupRef(this.store, this.collectionId);
     q.clauses = [...this.clauses, [field, op, value]];
+    q.limitN = this.limitN;
+    return q;
+  }
+
+  limit(n: number) {
+    const q = new CollectionGroupRef(this.store, this.collectionId);
+    q.clauses = this.clauses;
+    q.limitN = n;
     return q;
   }
 
@@ -223,6 +232,7 @@ class CollectionGroupRef {
       if (segs.length % 2 === 0 && segs[segs.length - 2] === this.collectionId) {
         if (this.clauses.every((c) => matchesWhere(data, c))) {
           rows.push(new DocSnapshot(this.store, docPath, data));
+          if (this.limitN !== null && rows.length >= this.limitN) break;
         }
       }
     }
