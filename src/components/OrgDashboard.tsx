@@ -110,6 +110,7 @@ export const OrgDashboard = () => {
   } | null>(null);
 
   const [suggestions, setSuggestions] = useState<{ id: string; message: string }[]>([]);
+  const [suggestionsLocked, setSuggestionsLocked] = useState(false);
   // Lets the Manager Action Library cards (climate tab) ask Nova a real
   // question on the admin's behalf instead of being a static, unclickable
   // reference list - see OrgManagerCoachChat's seedMessage prop.
@@ -457,7 +458,10 @@ export const OrgDashboard = () => {
     try {
       const res = await secureApiFetch(`/api/org/${currentOrgId}/suggestions`);
       const data = await res.json();
-      if (res.ok) setSuggestions(data.suggestions || []);
+      if (res.ok) {
+        setSuggestions(data.suggestions || []);
+        setSuggestionsLocked(!!data.locked);
+      }
     } catch (e) {
       // Non-fatal - falls back to the illustrative examples shown below.
     }
@@ -1061,9 +1065,11 @@ export const OrgDashboard = () => {
                 <div className="card">
                   <div className="flex items-center gap-2 mb-4">
                     <MessageSquare className="w-5 h-5 text-warning" />
-                    <h4 className="font-bold text-text-main">{suggestions.length > 0 ? 'Anonymous Team Voice' : 'Example Coaching Themes'}</h4>
+                    <h4 className="font-bold text-text-main">{suggestionsLocked ? 'Anonymous Team Voice' : suggestions.length > 0 ? 'Anonymous Team Voice' : 'Example Coaching Themes'}</h4>
                   </div>
-                  {suggestions.length > 0 ? (
+                  {suggestionsLocked ? (
+                    <p className="text-xs text-text-muted">Not enough teammates have opted in to anonymised sharing yet for this to be shown safely.</p>
+                  ) : suggestions.length > 0 ? (
                     <>
                       <p className="text-xs text-text-muted mb-4">Submitted anonymously by your team — no name or account is ever attached to these.</p>
                       <div className="space-y-3">

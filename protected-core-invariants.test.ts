@@ -210,4 +210,24 @@ describe('organisation_aggregate_cohort_threshold', () => {
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ locked: true, cohortSize: 2, threshold: 5, teams: [] });
   });
+
+  it('GET /api/org/:orgId/suggestions calls the shared checkCohortSufficiency function rather than its own inline comparison', () => {
+    const routeStart = serverSource.indexOf('app.get("/api/org/:orgId/suggestions"');
+    expect(routeStart).toBeGreaterThan(-1);
+    const nextRouteStart = serverSource.slice(routeStart + 10).search(/\bapp\.(get|post|put|delete|patch)\(/);
+    expect(nextRouteStart).toBeGreaterThan(-1);
+    const handlerSlice = serverSource.slice(routeStart, routeStart + 10 + nextRouteStart);
+    expect(handlerSlice).toMatch(/checkCohortSufficiency\(/);
+    expect(handlerSlice).toMatch(/buildLockedAggregateResponse\(/);
+  });
+
+  it('a cohort below the organisation privacy threshold receives a locked suggestions response, never the real free-text content', async () => {
+    seedDoc('organisations/org_1', { name: 'Test Org', adminUids: ['owner_1'], memberUids: ['owner_1', 'member_1'], privacyThreshold: 5 });
+    seedDoc('users/owner_1', { shareAnonymizedDataWithOrg: true });
+    seedDoc('users/member_1', { shareAnonymizedDataWithOrg: true });
+
+    const res = await request(app).get('/api/org/org_1/suggestions').set(auth('owner_1'));
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ locked: true, cohortSize: 2, threshold: 5, suggestions: [] });
+  });
 });

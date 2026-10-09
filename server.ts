@@ -8066,13 +8066,26 @@ app.get("/api/org/:orgId/suggestions", verifyAppCheck, authenticateFirebaseUser,
     const user = requireAuth(req);
     const db = getDb();
     const orgDoc = await db.collection("organisations").doc(orgId).get();
-    if (!orgDoc.exists || !(orgDoc.data()?.memberUids || []).includes(user.uid)) {
+    const org = orgDoc.data();
+    if (!orgDoc.exists || !(org?.memberUids || []).includes(user.uid)) {
       return res.status(403).json({ error: "You're not a member of this organisation." });
+    }
+    // Same privacy reasoning as every other aggregate view: free-text
+    // content, even with no name attached, can still be traced back to
+    // its author in a small enough group - so this reads through the
+    // same Anonymous Aggregation Engine gate as every numeric figure,
+    // rather than being an exception just because nothing numeric is
+    // involved.
+    const threshold = org?.privacyThreshold || 5;
+    const consentingUids = await getConsentingMemberUids(db, org?.memberUids || []);
+    const sufficiency = checkCohortSufficiency(consentingUids.length, threshold);
+    if (!sufficiency.sufficient) {
+      return res.json(buildLockedAggregateResponse(sufficiency, { suggestions: [] }));
     }
     const snap = await db.collection("organisations").doc(orgId).collection("anonymous_suggestions")
       .orderBy("createdAt", "desc").limit(30).get();
     const suggestions = snap.docs.map(d => ({ id: d.id, message: d.data().message, createdAt: d.data().createdAt }));
-    res.json({ suggestions });
+    res.json({ locked: false, cohortSize: consentingUids.length, threshold, suggestions });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
