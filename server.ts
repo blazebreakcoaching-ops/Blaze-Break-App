@@ -6554,6 +6554,108 @@ app.get("/api/admin/feedback", verifyAppCheck, authenticateFirebaseUser, async (
   }
 });
 
+// ============ Platform-wide manual incident log ============
+// There is no automated detection, alerting, or SIEM anywhere in this
+// codebase (docs/INCIDENT_RESPONSE.md says so outright: "detection today
+// is mostly someone notices") - this is deliberately a real, manually
+// created and manually updated record of what an admin noticed and did
+// about it, not a claim that anything here was auto-detected. Every
+// entry is genuinely persisted in platform_incidents and audit-logged,
+// the same as every other admin action in this file. The two existing
+// automated aggregate signals (Overview's Safety Events/Crisis
+// Referrals, from anxiety_reset_events) are separate and untouched by
+// this - an admin judging a pattern in those worth tracking logs it here.
+const INCIDENT_SEVERITIES = ['low', 'medium', 'high', 'critical'] as const;
+const INCIDENT_STATUSES = ['open', 'investigating', 'monitoring', 'resolved'] as const;
+
+const IncidentCreateSchema = z.object({
+  title: z.string().trim().min(3).max(200),
+  description: z.string().trim().min(1).max(5000),
+  severity: z.enum(INCIDENT_SEVERITIES),
+  relatedArea: z.string().trim().max(60).optional(),
+}).strict();
+
+const IncidentUpdateSchema = z.object({
+  note: z.string().trim().min(1).max(2000),
+  status: z.enum(INCIDENT_STATUSES).optional(),
+  severity: z.enum(INCIDENT_SEVERITIES).optional(),
+}).strict();
+
+app.post("/api/admin/incidents", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const user = requireAdmin(req);
+    const parsed = IncidentCreateSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: "Invalid incident payload.", details: (parsed as any).error?.errors || [] });
+    }
+    const db = getDb();
+    const now = new Date().toISOString();
+    const actorEmail = user.email || user.uid;
+    const record = {
+      title: parsed.data.title,
+      description: parsed.data.description,
+      severity: parsed.data.severity,
+      relatedArea: parsed.data.relatedArea || null,
+      status: 'open' as const,
+      createdAt: now,
+      updatedAt: now,
+      resolvedAt: null as string | null,
+      createdByEmail: actorEmail,
+      timeline: [{ at: now, status: 'open', note: 'Incident logged.', byEmail: actorEmail }],
+    };
+    const ref = await db.collection("platform_incidents").add(record);
+    await logAdminAction(req, "create_incident", "", ref.id, { title: record.title, severity: record.severity });
+    res.json({ id: ref.id, ...record });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get("/api/admin/incidents", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    requireAdmin(req);
+    const db = getDb();
+    const snap = await db.collection("platform_incidents").orderBy("createdAt", "desc").limit(200).get();
+    const incidents = snap.docs.map((doc: any) => ({ id: doc.id, ...doc.data() }));
+    res.json({ incidents });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/api/admin/incidents/:id/update", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const user = requireAdmin(req);
+    const parsed = IncidentUpdateSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: "Invalid update payload.", details: (parsed as any).error?.errors || [] });
+    }
+    const db = getDb();
+    const ref = db.collection("platform_incidents").doc(req.params.id);
+    const doc = await ref.get();
+    if (!doc.exists) {
+      return res.status(404).json({ error: "Incident not found." });
+    }
+    const existing = doc.data();
+    const now = new Date().toISOString();
+    const actorEmail = user.email || user.uid;
+    const nextStatus = parsed.data.status || existing.status;
+    const nextSeverity = parsed.data.severity || existing.severity;
+    const timelineEntry = { at: now, status: nextStatus, note: parsed.data.note, byEmail: actorEmail };
+    await ref.update({
+      status: nextStatus,
+      severity: nextSeverity,
+      updatedAt: now,
+      resolvedAt: nextStatus === 'resolved' ? now : null,
+      timeline: FieldValue.arrayUnion(timelineEntry),
+    });
+    await logAdminAction(req, "update_incident", "", req.params.id, { status: nextStatus, severity: nextSeverity, note: parsed.data.note });
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(err.message?.includes("not found") ? 404 : 500).json({ error: err.message });
+  }
+});
+
 // Read-only list backing the Platform Controls tab's toggle UI. The
 // write path below (and public_feature_flags itself) predates this -
 // previously nothing exposed the current state of every flag at once,

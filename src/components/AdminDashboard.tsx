@@ -4,7 +4,7 @@ import {
   UserPlus, Key, Activity, Heart, ShieldAlert, Check,
   AlertCircle, UserMinus, Lock, Users, CreditCard,
   HeartPulse, Building2, Copy, Plus, MessageSquare, Star,
-  Server, Settings2, Rocket, FileText, Smartphone
+  Server, Settings2, Rocket, FileText, Smartphone, AlertTriangle
 } from 'lucide-react';
 import { secureApiFetch } from '../lib/secure-api';
 import { motion, AnimatePresence } from 'motion/react';
@@ -168,7 +168,25 @@ const AUDIT_CATEGORIES = {
   'Role & Access': ['create_admin_user', 'update_admin_role', 'remove_admin_user', 'update_user_role', 'suspend_user', 'unsuspend_user'],
   'Entitlements': ['grant_entitlement'],
   'Platform Controls': ['manage_feature_flags', 'manage_nova_settings', 'manage_knowledge_chunks', 'manage_content_library', 'manage_organisation', 'update_release_channel', 'LEGAL_DOCUMENT_PUBLISHED'],
+  'Incidents': ['create_incident', 'update_incident'],
 } as const;
+
+const INCIDENT_STATUS_OPTIONS = ['open', 'investigating', 'monitoring', 'resolved'] as const;
+const INCIDENT_SEVERITY_OPTIONS = ['low', 'medium', 'high', 'critical'] as const;
+
+const INCIDENT_STATUS_STYLES: Record<string, string> = {
+  open: 'bg-destructive/10 text-destructive dark:text-[#f87171]',
+  investigating: 'bg-warning/10 text-[#9a3412] dark:text-warning',
+  monitoring: 'bg-primary/10 text-primary',
+  resolved: 'bg-success/10 text-success dark:text-[#4ade80]',
+};
+
+const INCIDENT_SEVERITY_STYLES: Record<string, string> = {
+  low: 'bg-background text-text-muted',
+  medium: 'bg-warning/10 text-[#9a3412] dark:text-warning',
+  high: 'bg-destructive/10 text-destructive dark:text-[#f87171]',
+  critical: 'bg-destructive/20 text-destructive dark:text-[#f87171]',
+};
 
 const BILLING_SOURCE_LABELS: Record<string, string> = {
   admin: 'Admin grant',
@@ -183,7 +201,7 @@ export const AdminDashboard = () => {
 
   const isAdmin = isPlatformAdminRole(appRole);
 
-  const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'entitlements' | 'admins' | 'orgs' | 'communications' | 'privacy' | 'audit' | 'health' | 'controls' | 'release' | 'somatic' | 'feedback'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'entitlements' | 'admins' | 'orgs' | 'communications' | 'privacy' | 'audit' | 'health' | 'controls' | 'release' | 'incidents' | 'somatic' | 'feedback'>('overview');
   // Which account's Access Timeline is expanded in the Plans &
   // Entitlements tab - at most one open at a time, same pattern as other
   // single-item expand/collapse state in this file.
@@ -285,6 +303,25 @@ export const AdminDashboard = () => {
   const [isLoadingReleaseCentre, setIsLoadingReleaseCentre] = useState(false);
   const [releaseChannelForm, setReleaseChannelForm] = useState<{ channel: 'stable' | 'beta'; minVersion: string; latestVersion: string }>({ channel: 'stable', minVersion: '', latestVersion: '' });
   const [isSavingReleaseChannel, setIsSavingReleaseChannel] = useState(false);
+
+  // Platform-wide manual incident log (platform_incidents) - a real,
+  // admin-created and admin-updated record. There is still no automated
+  // detection anywhere in this codebase (docs/INCIDENT_RESPONSE.md says
+  // so outright); every entry here is something an admin deliberately
+  // logged and tracked, not something the system noticed on its own.
+  const [incidents, setIncidents] = useState<{
+    id: string; title: string; description: string; severity: 'low' | 'medium' | 'high' | 'critical';
+    status: 'open' | 'investigating' | 'monitoring' | 'resolved'; relatedArea: string | null;
+    createdAt: string; updatedAt: string; resolvedAt: string | null; createdByEmail: string;
+    timeline: { at: string; status: string; note: string; byEmail: string }[];
+  }[] | null>(null);
+  const [isLoadingIncidents, setIsLoadingIncidents] = useState(false);
+  const [incidentStatusFilter, setIncidentStatusFilter] = useState<'all' | 'open' | 'investigating' | 'monitoring' | 'resolved'>('all');
+  const [newIncidentForm, setNewIncidentForm] = useState<{ title: string; description: string; severity: 'low' | 'medium' | 'high' | 'critical'; relatedArea: string }>({ title: '', description: '', severity: 'medium', relatedArea: '' });
+  const [isCreatingIncident, setIsCreatingIncident] = useState(false);
+  const [expandedIncidentId, setExpandedIncidentId] = useState<string | null>(null);
+  const [incidentUpdateForm, setIncidentUpdateForm] = useState<{ status: string; severity: string; note: string }>({ status: '', severity: '', note: '' });
+  const [isUpdatingIncidentId, setIsUpdatingIncidentId] = useState<string | null>(null);
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -807,6 +844,79 @@ export const AdminDashboard = () => {
     }
   };
 
+  const fetchIncidents = async () => {
+    setIsLoadingIncidents(true);
+    try {
+      const res = await secureApiFetch('/api/admin/incidents');
+      if (res.ok) {
+        const data = await res.json();
+        setIncidents(data.incidents || []);
+      }
+    } catch (e) {
+      // Non-fatal - the tab just shows its own "couldn't load" state.
+    } finally {
+      setIsLoadingIncidents(false);
+    }
+  };
+
+  const handleCreateIncident = async () => {
+    setIsCreatingIncident(true);
+    try {
+      const res = await secureApiFetch('/api/admin/incidents', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: newIncidentForm.title,
+          description: newIncidentForm.description,
+          severity: newIncidentForm.severity,
+          ...(newIncidentForm.relatedArea.trim() ? { relatedArea: newIncidentForm.relatedArea.trim() } : {}),
+        }),
+      });
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.error || "Couldn't log this incident.");
+      }
+      showSuccess(`Logged "${newIncidentForm.title}".`);
+      setNewIncidentForm({ title: '', description: '', severity: 'medium', relatedArea: '' });
+      await fetchIncidents();
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setIsCreatingIncident(false);
+    }
+  };
+
+  const openIncident = (incident: NonNullable<typeof incidents>[number]) => {
+    if (expandedIncidentId === incident.id) {
+      setExpandedIncidentId(null);
+      return;
+    }
+    setExpandedIncidentId(incident.id);
+    setIncidentUpdateForm({ status: incident.status, severity: incident.severity, note: '' });
+  };
+
+  const handleUpdateIncident = async (incidentId: string) => {
+    setIsUpdatingIncidentId(incidentId);
+    try {
+      const res = await secureApiFetch(`/api/admin/incidents/${incidentId}/update`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(incidentUpdateForm),
+      });
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.error || "Couldn't update this incident.");
+      }
+      showSuccess('Incident updated.');
+      setIncidentUpdateForm({ ...incidentUpdateForm, note: '' });
+      await fetchIncidents();
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setIsUpdatingIncidentId(null);
+    }
+  };
+
   useEffect(() => {
     loadAllData();
   }, []);
@@ -827,6 +937,9 @@ export const AdminDashboard = () => {
     }
     if (activeTab === 'release' && releaseDevices === null && !isLoadingReleaseCentre) {
       fetchReleaseCentre();
+    }
+    if (activeTab === 'incidents' && incidents === null && !isLoadingIncidents) {
+      fetchIncidents();
     }
   }, [activeTab]);
 
@@ -1375,6 +1488,7 @@ export const AdminDashboard = () => {
           { id: 'health', label: 'System Health', icon: Server },
           { id: 'controls', label: 'Platform Controls', icon: Settings2 },
           { id: 'release', label: 'Release Centre', icon: Rocket },
+          { id: 'incidents', label: 'Incidents', icon: AlertTriangle },
           { id: 'somatic', label: 'Somatic De-escalation Stats', icon: Heart },
           { id: 'feedback', label: 'Feedback & Testimonials', icon: MessageSquare }
         ].map((tab) => {
@@ -2432,7 +2546,7 @@ export const AdminDashboard = () => {
 
                 <div className="card p-6 bg-surface dark:bg-card border border-border rounded-2xl">
                   <h4 className="font-display text-sm font-bold text-text-main mb-2">Incident Tracking</h4>
-                  <p className="text-xs text-text-muted leading-relaxed">Not tracked here. There is no incident log, severity/status workflow, or automated alerting anywhere in this codebase today - see docs/INCIDENT_RESPONSE.md, which says so plainly: detection today is mostly "someone notices." The two real, aggregate safety signals that do exist - Safety Events and Crisis Referrals - are already shown on the Overview tab.</p>
+                  <p className="text-xs text-text-muted leading-relaxed">There is still no automated detection or alerting anywhere in this codebase - see docs/INCIDENT_RESPONSE.md, which says so plainly: nothing here watches for problems on its own. What does exist is the Incidents tab: a real log an admin creates and updates by hand when they notice something, plus the two aggregate safety signals (Safety Events, Crisis Referrals) already shown on the Overview tab.</p>
                 </div>
               </>
             )}
@@ -2654,6 +2768,166 @@ export const AdminDashboard = () => {
                   <p className="text-xs text-text-muted italic">No devices have registered on any organisation yet.</p>
                 )}
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* Tab: Incidents */}
+        {activeTab === 'incidents' && (
+          <div className="space-y-6">
+            <div className="p-4 bg-primary/5 border border-primary/20 rounded-xl text-xs text-text-muted leading-relaxed">
+              A real, admin-created and admin-updated log - there is still no automated detection anywhere in this codebase (see docs/INCIDENT_RESPONSE.md). An admin who notices something worth tracking logs it here; it is tracked from that point on with a real status/severity workflow and a timestamped timeline, not auto-populated.
+            </div>
+
+            <div className="card p-6 bg-surface dark:bg-card border border-border rounded-2xl">
+              <h4 className="font-display text-sm font-bold text-text-main mb-3">Log a New Incident</h4>
+              <div className="space-y-3">
+                <input
+                  aria-label="Incident title"
+                  placeholder="Title (e.g. Twilio SMS delivery delayed)"
+                  value={newIncidentForm.title}
+                  onChange={(e) => setNewIncidentForm({ ...newIncidentForm, title: e.target.value })}
+                  className="w-full p-2.5 bg-background border border-border rounded-xl text-xs text-text-main placeholder:text-text-muted focus:outline-none focus:border-primary"
+                />
+                <textarea
+                  aria-label="Incident description"
+                  placeholder="What happened, what's affected, and anything already known"
+                  value={newIncidentForm.description}
+                  onChange={(e) => setNewIncidentForm({ ...newIncidentForm, description: e.target.value })}
+                  rows={3}
+                  className="w-full p-2.5 bg-background border border-border rounded-xl text-xs text-text-main placeholder:text-text-muted focus:outline-none focus:border-primary"
+                />
+                <div className="grid grid-cols-2 gap-3">
+                  <select
+                    aria-label="Severity"
+                    value={newIncidentForm.severity}
+                    onChange={(e) => setNewIncidentForm({ ...newIncidentForm, severity: e.target.value as typeof newIncidentForm.severity })}
+                    className="p-2.5 bg-background border border-border rounded-xl text-xs text-text-main focus:outline-none focus:border-primary"
+                  >
+                    <option value="low">Low</option>
+                    <option value="medium">Medium</option>
+                    <option value="high">High</option>
+                    <option value="critical">Critical</option>
+                  </select>
+                  <input
+                    aria-label="Related area, optional"
+                    placeholder="Related area, optional (e.g. nova, sms, billing)"
+                    value={newIncidentForm.relatedArea}
+                    onChange={(e) => setNewIncidentForm({ ...newIncidentForm, relatedArea: e.target.value })}
+                    className="p-2.5 bg-background border border-border rounded-xl text-xs text-text-main placeholder:text-text-muted focus:outline-none focus:border-primary"
+                  />
+                </div>
+                <button
+                  onClick={handleCreateIncident}
+                  disabled={isCreatingIncident || !newIncidentForm.title.trim() || !newIncidentForm.description.trim()}
+                  className="px-5 py-2.5 bg-primary hover:bg-primary-dark text-white text-xs font-bold uppercase tracking-wider rounded-xl transition-all flex items-center gap-2 disabled:opacity-50"
+                >
+                  {isCreatingIncident ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
+                  Log Incident
+                </button>
+              </div>
+            </div>
+
+            <div className="card p-6 bg-surface dark:bg-card border border-border rounded-2xl">
+              <div className="flex items-center justify-between mb-4">
+                <h4 className="font-display text-sm font-bold text-text-main">Incident Log</h4>
+                <select
+                  aria-label="Filter by status"
+                  value={incidentStatusFilter}
+                  onChange={(e) => setIncidentStatusFilter(e.target.value as typeof incidentStatusFilter)}
+                  className="px-3 py-2 bg-surface dark:bg-card border border-border rounded-xl text-xs text-text-main focus:outline-none focus:border-primary"
+                >
+                  <option value="all">All statuses</option>
+                  {INCIDENT_STATUS_OPTIONS.map((s) => <option key={s} value={s}>{s}</option>)}
+                </select>
+              </div>
+
+              {isLoadingIncidents ? (
+                <p className="text-xs text-text-muted italic">Loading...</p>
+              ) : (
+                <div className="space-y-3">
+                  {(incidents || [])
+                    .filter((inc) => incidentStatusFilter === 'all' || inc.status === incidentStatusFilter)
+                    .map((inc) => (
+                      <div key={inc.id} className="border border-white/5 rounded-xl overflow-hidden">
+                        <button onClick={() => openIncident(inc)} className="w-full text-left p-4 bg-card hover:bg-white/[0.01] transition-all flex items-start gap-4">
+                          <div className={`p-2 rounded-lg shrink-0 ${INCIDENT_SEVERITY_STYLES[inc.severity]}`}>
+                            <AlertTriangle className="w-4 h-4" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center justify-between gap-4">
+                              <span className="text-xs font-bold text-text-main">{inc.title}</span>
+                              <span className="text-[10px] text-text-muted shrink-0 font-mono">{new Date(inc.createdAt).toLocaleString()}</span>
+                            </div>
+                            <p className="text-xs text-text-muted leading-relaxed mt-1 line-clamp-2">{inc.description}</p>
+                            <div className="flex items-center gap-2 mt-2">
+                              <span className={`px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-widest ${INCIDENT_STATUS_STYLES[inc.status]}`}>{inc.status}</span>
+                              <span className={`px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-widest ${INCIDENT_SEVERITY_STYLES[inc.severity]}`}>{inc.severity}</span>
+                              {inc.relatedArea && <span className="px-2 py-0.5 rounded-md text-[10px] font-mono text-text-muted bg-background">{inc.relatedArea}</span>}
+                              <span className="text-[10px] text-text-muted">logged by {inc.createdByEmail}</span>
+                            </div>
+                          </div>
+                        </button>
+
+                        {expandedIncidentId === inc.id && (
+                          <div className="p-4 bg-background border-t border-white/5 space-y-4">
+                            <div className="space-y-1.5">
+                              {inc.timeline.slice().reverse().map((entry, i) => (
+                                <div key={i} className="text-[10px] text-text-muted flex items-start gap-2">
+                                  <span className="font-mono shrink-0">{new Date(entry.at).toLocaleString()}</span>
+                                  <span className="font-bold text-text-main shrink-0">{entry.status}</span>
+                                  <span className="flex-1">{entry.note} - {entry.byEmail}</span>
+                                </div>
+                              ))}
+                            </div>
+
+                            <div className="space-y-2 pt-3 border-t border-white/5">
+                              <div className="grid grid-cols-2 gap-2">
+                                <select
+                                  aria-label="New status"
+                                  value={incidentUpdateForm.status}
+                                  onChange={(e) => setIncidentUpdateForm({ ...incidentUpdateForm, status: e.target.value })}
+                                  className="p-2 bg-surface dark:bg-card border border-border rounded-lg text-xs text-text-main focus:outline-none focus:border-primary"
+                                >
+                                  {INCIDENT_STATUS_OPTIONS.map((s) => <option key={s} value={s}>{s}</option>)}
+                                </select>
+                                <select
+                                  aria-label="New severity"
+                                  value={incidentUpdateForm.severity}
+                                  onChange={(e) => setIncidentUpdateForm({ ...incidentUpdateForm, severity: e.target.value })}
+                                  className="p-2 bg-surface dark:bg-card border border-border rounded-lg text-xs text-text-main focus:outline-none focus:border-primary"
+                                >
+                                  {INCIDENT_SEVERITY_OPTIONS.map((s) => <option key={s} value={s}>{s}</option>)}
+                                </select>
+                              </div>
+                              <textarea
+                                aria-label="Update note"
+                                placeholder="What changed, and why"
+                                value={incidentUpdateForm.note}
+                                onChange={(e) => setIncidentUpdateForm({ ...incidentUpdateForm, note: e.target.value })}
+                                rows={2}
+                                className="w-full p-2 bg-surface dark:bg-card border border-border rounded-lg text-xs text-text-main placeholder:text-text-muted focus:outline-none focus:border-primary"
+                              />
+                              <button
+                                onClick={() => handleUpdateIncident(inc.id)}
+                                disabled={isUpdatingIncidentId === inc.id || !incidentUpdateForm.note.trim()}
+                                className="px-4 py-2 bg-primary hover:bg-primary-dark text-white text-xs font-bold uppercase tracking-wider rounded-lg transition-all flex items-center gap-2 disabled:opacity-50"
+                              >
+                                {isUpdatingIncidentId === inc.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                                Add Update
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  {(incidents || []).filter((inc) => incidentStatusFilter === 'all' || inc.status === incidentStatusFilter).length === 0 && (
+                    <div className="py-12 text-center text-text-muted text-sm italic">
+                      {(incidents || []).length === 0 ? 'No incidents have been logged yet.' : 'No incidents match this filter.'}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </div>
         )}
