@@ -150,6 +150,35 @@ describe('buildSignalCandidates - RECOVER', () => {
   });
 });
 
+describe('buildSignalCandidates - moduleHistory', () => {
+  it('defaults every candidate to no history when moduleHistory is omitted', () => {
+    const candidates = buildSignalCandidates({ ...baseInput, deltaState: 'over_capacity' });
+    const stabilise = candidates.find((c) => c.routeType === 'STABILISE');
+    expect(stabilise?.recentlyUsed).toBe(false);
+    expect(stabilise?.cooldownActive).toBe(false);
+  });
+
+  it('carries real recentlyUsed/cooldownActive through for the matching module', () => {
+    const candidates = buildSignalCandidates({
+      ...baseInput, deltaState: 'over_capacity',
+      moduleHistory: { guided_reset: { recentlyUsed: true, cooldownActive: true } },
+    });
+    const stabilise = candidates.find((c) => c.routeType === 'STABILISE');
+    expect(stabilise?.recentlyUsed).toBe(true);
+    expect(stabilise?.cooldownActive).toBe(true);
+  });
+
+  it('history for an unrelated module never leaks onto a different candidate', () => {
+    const candidates = buildSignalCandidates({
+      ...baseInput, deltaState: 'over_capacity',
+      moduleHistory: { recovery_fuel: { recentlyUsed: true, cooldownActive: true } },
+    });
+    const stabilise = candidates.find((c) => c.routeType === 'STABILISE');
+    expect(stabilise?.recentlyUsed).toBe(false);
+    expect(stabilise?.cooldownActive).toBe(false);
+  });
+});
+
 describe('isKnownRoutingModule / MODULE_ROUTE_MAP', () => {
   it('recognises every module this PR\'s candidates can name as a source', () => {
     expect(isKnownRoutingModule('guided_reset')).toBe(true);

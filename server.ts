@@ -12729,6 +12729,20 @@ app.get("/api/recovery/velocity-map", verifyAppCheck, authenticateFirebaseUser, 
 
 const ROUTING_SESSION_OFFER_LIMIT_RESET_HOURS = 24; // a "session" here is a calendar day, re-evaluated below against UTC date, not a rolling window.
 
+// Real per-module recency/cooldown windows (PR8) - replaces the
+// always-false recentlyUsed/cooldownActive recovery-signal-candidates.ts
+// shipped with initially, since no history existed to compute them from
+// yet. A module "just suggested" shouldn't be suggested again within a few
+// hours without new evidence; a module declined repeatedly over the last
+// couple of weeks should drop in priority rather than keep reappearing.
+const RECENTLY_USED_WINDOW_MS = 6 * 60 * 60 * 1000;
+const COOLDOWN_LOOKBACK_MS = 14 * 24 * 60 * 60 * 1000;
+const COOLDOWN_DECLINE_THRESHOLD = 3;
+// A "started" intervention nobody ever answered an outcome question for is
+// treated as abandoned once it's this old - asking about a session from
+// days ago would be confusing, not useful.
+const PENDING_OUTCOME_STALE_MS = 24 * 60 * 60 * 1000;
+
 const todayUtcDateKey = (): string => new Date().toISOString().split('T')[0]!;
 
 const loadRoutingSessionState = async (db: FirebaseFirestore.Firestore, uid: string): Promise<SessionRecommendationState> => {
@@ -12748,6 +12762,80 @@ const loadRoutingSessionState = async (db: FirebaseFirestore.Firestore, uid: str
     secondsSinceLastIntervention: null, // not yet tracked - arrives with the outcome-loop PR.
     userRequestedMore: false, // a per-request override, never persisted across requests.
   };
+};
+
+// Increments one session_state counter the same day-aware way
+// loadRoutingSessionState reads it - never a raw FieldValue.increment here,
+// since that would partially update a stale (previous-day) doc instead of
+// resetting it the way every read of this doc already assumes.
+type SessionCounterField = 'recommendationsDeclined' | 'interventionsStarted' | 'interventionsCompleted' | 'interventionsAbandoned';
+const incrementSessionCounter = async (db: FirebaseFirestore.Firestore, uid: string, field: SessionCounterField): Promise<void> => {
+  const sessionState = await loadRoutingSessionState(db, uid);
+  const next = { ...sessionState, [field]: sessionState[field] + 1 };
+  await db.collection("users").doc(uid).collection("recovery_routing").doc("session_state").set({
+    day: todayUtcDateKey(),
+    recommendationsOffered: next.recommendationsOffered,
+    recommendationsDeclined: next.recommendationsDeclined,
+    interventionsStarted: next.interventionsStarted,
+    interventionsCompleted: next.interventionsCompleted,
+    interventionsAbandoned: next.interventionsAbandoned,
+    updatedAt: new Date().toISOString(),
+  }, { merge: true });
+};
+
+// Reads recent routing_decisions once and derives both real per-module
+// history (for this request's candidates) and whether there's an earlier
+// started-but-unresolved intervention to ask about (or quietly mark
+// abandoned, if it's gone stale). One query serves both needs.
+const loadRoutingHistory = async (
+  db: FirebaseFirestore.Firestore, uid: string, nowMs: number
+): Promise<{ moduleHistory: Record<string, { recentlyUsed: boolean; cooldownActive: boolean }>; pendingOutcomeCheck: { decisionId: string; selectedModule: string | null } | null }> => {
+  const lookbackStart = new Date(nowMs - COOLDOWN_LOOKBACK_MS).toISOString();
+  const snap = await db.collection("users").doc(uid).collection("recovery_routing_decisions")
+    .where("createdAt", ">=", lookbackStart).orderBy("createdAt", "desc").get();
+
+  const recentlyUsedModules = new Set<string>();
+  const declineCounts = new Map<string, number>();
+  let pendingOutcomeCheck: { decisionId: string; selectedModule: string | null } | null = null;
+  let staleUnresolvedDoc: { id: string } | null = null;
+
+  for (const doc of snap.docs) {
+    const data = doc.data();
+    const selectedModule: string | null = data.selectedModule ?? null;
+    const createdAtMs = new Date(data.createdAt).getTime();
+
+    if (selectedModule && nowMs - createdAtMs <= RECENTLY_USED_WINDOW_MS) {
+      recentlyUsedModules.add(selectedModule);
+    }
+    if (selectedModule && data.outcome === 'declined') {
+      declineCounts.set(selectedModule, (declineCounts.get(selectedModule) ?? 0) + 1);
+    }
+    if (!pendingOutcomeCheck && !staleUnresolvedDoc && data.startedAt && !data.outcome) {
+      const startedAtMs = new Date(data.startedAt).getTime();
+      if (nowMs - startedAtMs > PENDING_OUTCOME_STALE_MS) {
+        staleUnresolvedDoc = { id: doc.id };
+      } else {
+        pendingOutcomeCheck = { decisionId: doc.id, selectedModule };
+      }
+    }
+  }
+
+  if (staleUnresolvedDoc) {
+    db.collection("users").doc(uid).collection("recovery_routing_decisions").doc(staleUnresolvedDoc.id).set({
+      outcome: 'abandoned', outcomeAt: new Date(nowMs).toISOString(),
+    }, { merge: true }).catch(() => {});
+    incrementSessionCounter(db, uid, 'interventionsAbandoned').catch(() => {});
+  }
+
+  const moduleHistory: Record<string, { recentlyUsed: boolean; cooldownActive: boolean }> = {};
+  for (const moduleId of new Set([...recentlyUsedModules, ...declineCounts.keys()])) {
+    moduleHistory[moduleId] = {
+      recentlyUsed: recentlyUsedModules.has(moduleId),
+      cooldownActive: (declineCounts.get(moduleId) ?? 0) >= COOLDOWN_DECLINE_THRESHOLD,
+    };
+  }
+
+  return { moduleHistory, pendingOutcomeCheck };
 };
 
 app.post("/api/recovery/routing-decision", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
@@ -12819,8 +12907,11 @@ app.post("/api/recovery/routing-decision", verifyAppCheck, authenticateFirebaseU
       };
     });
 
+    const { moduleHistory, pendingOutcomeCheck } = await loadRoutingHistory(db, user.uid, nowMs);
+
     const candidates = buildSignalCandidates({
       capacityScore, deltaState, pendingWorkloadTasks, pendingMustWorkloadTasks, recentTriggers, recentMoodPulses, nowMs,
+      moduleHistory,
     });
     if (explicitRequestModule) {
       const explicitCandidate = buildExplicitRequestCandidate(explicitRequestModule);
@@ -12848,20 +12939,28 @@ app.post("/api/recovery/routing-decision", verifyAppCheck, authenticateFirebaseU
       }, { merge: true });
     }
 
-    db.collection("users").doc(user.uid).collection("recovery_routing_decisions").add({
-      createdAt: new Date().toISOString(),
-      selectedRoute: decision.selectedRoute,
-      selectedModule: decision.selectedCandidate?.sourceModule ?? null,
-      routingOutcome: decision.routingOutcome,
-      reasonCodes: decision.reasonCodes,
-      confidence: decision.confidence,
-      consideredModules: candidates.map((c) => c.sourceModule),
-      bandwidthBand: bandwidth.band,
-    }).catch(() => {
-      // Non-fatal - the decision still reaches the user even if the audit write fails.
-    });
+    // Awaited (not fire-and-forget) so the real doc ID can be returned to
+    // the client - PR8's outcome loop needs it to report back against this
+    // exact decision later (Start / Not Now / "did it help?").
+    let decisionId: string | null = null;
+    try {
+      const ref = await db.collection("users").doc(user.uid).collection("recovery_routing_decisions").add({
+        createdAt: new Date().toISOString(),
+        selectedRoute: decision.selectedRoute,
+        selectedModule: decision.selectedCandidate?.sourceModule ?? null,
+        routingOutcome: decision.routingOutcome,
+        reasonCodes: decision.reasonCodes,
+        confidence: decision.confidence,
+        consideredModules: candidates.map((c) => c.sourceModule),
+        bandwidthBand: bandwidth.band,
+      });
+      decisionId = ref.id;
+    } catch (e) {
+      // Non-fatal - the decision still reaches the user even if the audit write fails, just without an outcome loop for this one.
+    }
 
     res.json({
+      decisionId,
       selectedRoute: decision.selectedRoute,
       selectedModule: decision.selectedCandidate?.sourceModule ?? null,
       routingOutcome: decision.routingOutcome,
@@ -12874,7 +12973,60 @@ app.post("/api/recovery/routing-decision", verifyAppCheck, authenticateFirebaseU
       // prefers this over its generic per-reason-code fallback.
       evidenceDetail: decision.selectedCandidate?.evidence.detail ?? null,
       evidenceSource: decision.selectedCandidate?.evidence.source ?? null,
+      // An earlier intervention the user started but never reported back
+      // on (within the last 24h) - the Hub asks the one lightweight
+      // outcome question about this before showing anything new.
+      pendingOutcomeCheck,
     });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+const ROUTING_OUTCOME_ACTIONS = ['started', 'declined', 'completed', 'abandoned'] as const;
+type RoutingOutcomeAction = typeof ROUTING_OUTCOME_ACTIONS[number];
+const ROUTING_OUTCOME_HELPFULNESS = ['better', 'same', 'not_really', 'not_sure'] as const;
+type RoutingOutcomeHelpfulness = typeof ROUTING_OUTCOME_HELPFULNESS[number];
+
+app.post("/api/recovery/routing-outcome", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const user = requireAuth(req);
+    const db = getDb();
+    const { decisionId, action, helpfulness } = req.body ?? {};
+
+    if (typeof decisionId !== 'string' || !decisionId) {
+      return res.status(400).json({ error: 'decisionId is required' });
+    }
+    if (!ROUTING_OUTCOME_ACTIONS.includes(action)) {
+      return res.status(400).json({ error: 'invalid action' });
+    }
+    const validHelpfulness: RoutingOutcomeHelpfulness | null =
+      ROUTING_OUTCOME_HELPFULNESS.includes(helpfulness) ? helpfulness : null;
+
+    const decisionRef = db.collection('users').doc(user.uid).collection('recovery_routing_decisions').doc(decisionId);
+    const decisionSnap = await decisionRef.get();
+    if (!decisionSnap.exists) {
+      return res.status(404).json({ error: 'decision not found' });
+    }
+
+    const nowIso = new Date().toISOString();
+    const typedAction = action as RoutingOutcomeAction;
+
+    if (typedAction === 'started') {
+      await decisionRef.set({ startedAt: nowIso }, { merge: true });
+      await incrementSessionCounter(db, user.uid, 'interventionsStarted');
+    } else if (typedAction === 'declined') {
+      await decisionRef.set({ outcome: 'declined', outcomeAt: nowIso }, { merge: true });
+      await incrementSessionCounter(db, user.uid, 'recommendationsDeclined');
+    } else if (typedAction === 'completed') {
+      await decisionRef.set({ outcome: 'completed', helpfulness: validHelpfulness, outcomeAt: nowIso }, { merge: true });
+      await incrementSessionCounter(db, user.uid, 'interventionsCompleted');
+    } else {
+      await decisionRef.set({ outcome: 'abandoned', outcomeAt: nowIso }, { merge: true });
+      await incrementSessionCounter(db, user.uid, 'interventionsAbandoned');
+    }
+
+    res.json({ ok: true });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }

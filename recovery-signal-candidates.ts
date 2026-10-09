@@ -67,6 +67,20 @@ export interface RecentMoodSignal {
   createdAtMs: number;
 }
 
+// Real per-module history (recovery_routing_decisions, since PR8) - whether
+// a module was offered/started recently, and whether it's been declined
+// often enough recently to cool down. Optional and defaults to "no history"
+// so existing callers/tests that don't supply it behave exactly as before.
+export interface ModuleHistoryEntry {
+  recentlyUsed: boolean;
+  cooldownActive: boolean;
+}
+
+export type ModuleHistory = Record<string, ModuleHistoryEntry>;
+
+const historyFor = (moduleHistory: ModuleHistory | undefined, sourceModule: string): ModuleHistoryEntry =>
+  moduleHistory?.[sourceModule] ?? { recentlyUsed: false, cooldownActive: false };
+
 export interface RoutingSignalInput {
   // The latest capacity check-in's stored score (energy-delta-engine's
   // computeCapacityScore, already computed at write time) - null if the
@@ -84,6 +98,10 @@ export interface RoutingSignalInput {
   recentTriggers: RecentTriggerSignal[];
   recentMoodPulses: RecentMoodSignal[];
   nowMs: number;
+  // Real per-module recency/decline history, keyed by sourceModule -
+  // optional (defaults to "no history" for every module) so this stays
+  // backward-compatible with every existing caller/test.
+  moduleHistory?: ModuleHistory;
 }
 
 // A trigger with no recorded source (e.g. one logged before the source
@@ -133,8 +151,7 @@ const buildStabiliseCandidate = (input: RoutingSignalInput): InterventionCandida
     requiresHumanContact: false,
     structuralProblem: false,
     prerequisitesMet: true,
-    recentlyUsed: false,
-    cooldownActive: false,
+    ...historyFor(input.moduleHistory, 'guided_reset'),
     eligibleForPrivacyZone: true,
   };
 };
@@ -163,8 +180,7 @@ const buildReduceCandidate = (input: RoutingSignalInput): InterventionCandidate 
     requiresHumanContact: false,
     structuralProblem: true,
     prerequisitesMet: true,
-    recentlyUsed: false,
-    cooldownActive: false,
+    ...historyFor(input.moduleHistory, 'one_less_thing'),
     eligibleForPrivacyZone: true,
   };
 };
@@ -198,8 +214,7 @@ const buildProtectCandidate = (input: RoutingSignalInput): InterventionCandidate
     requiresHumanContact: false,
     structuralProblem: true,
     prerequisitesMet: true,
-    recentlyUsed: false,
-    cooldownActive: false,
+    ...historyFor(input.moduleHistory, 'capacity_firewall'),
     eligibleForPrivacyZone: true,
   };
 };
@@ -225,8 +240,7 @@ const buildRecoverCandidate = (input: RoutingSignalInput): InterventionCandidate
     requiresHumanContact: false,
     structuralProblem: false,
     prerequisitesMet: true,
-    recentlyUsed: false,
-    cooldownActive: false,
+    ...historyFor(input.moduleHistory, 'recovery_fuel'),
     eligibleForPrivacyZone: true,
   };
 };
@@ -262,8 +276,7 @@ const buildUnderstandCandidate = (input: RoutingSignalInput): InterventionCandid
     requiresHumanContact: false,
     structuralProblem: false,
     prerequisitesMet: true,
-    recentlyUsed: false,
-    cooldownActive: false,
+    ...historyFor(input.moduleHistory, 'my_patterns'),
     eligibleForPrivacyZone: true,
   };
 };

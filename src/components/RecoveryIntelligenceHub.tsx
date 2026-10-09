@@ -7,7 +7,7 @@ import { ConnectedMoodPulse, ConnectedBodyCheckIn, ConnectedWeeklyReviews, Conne
 import { PressurePatternCapture } from './PressurePatternCapture';
 import { RelationalLoadSignal } from './RelationalLoadSignal';
 import { ReturnToWorkPlanner } from './ReturnToWorkPlanner';
-import { MODULE_TARGET_TAB } from '../../recovery-decision-copy';
+import { MODULE_TARGET_TAB, moduleDisplayName } from '../../recovery-decision-copy';
 import type { RouteType, RoutingOutcome, ReasonCode, ConfidenceLevel, EvidenceSource } from '../../recovery-routing-engine';
 import type { BandwidthBand } from '../../recovery-capacity-gate';
 import { RECOVERY_DIRECTION_LABELS, type RecoveryDirectionBand } from '../../recovery-direction-engine';
@@ -35,7 +35,13 @@ interface RecoveryDirectionResponse {
   explanation: string;
 }
 
+interface PendingOutcomeCheck {
+  decisionId: string;
+  selectedModule: string | null;
+}
+
 interface RoutingDecisionResponse {
+  decisionId: string | null;
   selectedRoute: RouteType;
   selectedModule: string | null;
   routingOutcome: RoutingOutcome;
@@ -45,7 +51,15 @@ interface RoutingDecisionResponse {
   sufficientBandwidthData: boolean;
   evidenceDetail: string | null;
   evidenceSource: EvidenceSource | null;
+  pendingOutcomeCheck: PendingOutcomeCheck | null;
 }
+
+const HELPFULNESS_OPTIONS: { value: 'better' | 'same' | 'not_really' | 'not_sure'; label: string }[] = [
+  { value: 'better', label: 'A little better' },
+  { value: 'same', label: 'About the same' },
+  { value: 'not_really', label: 'Not really' },
+  { value: 'not_sure', label: 'Not sure' },
+];
 
 type ExploreTool =
   | { label: string; kind: 'navigate'; tab: string }
@@ -93,6 +107,14 @@ export const RecoveryIntelligenceHub = () => {
   const [showExplore, setShowExplore] = useState(false);
   const [expandedTool, setExpandedTool] = useState<string | null>(null);
   const [showMoodCheck, setShowMoodCheck] = useState(false);
+  const [pendingOutcomeCheck, setPendingOutcomeCheck] = useState<PendingOutcomeCheck | null>(null);
+
+  const reportOutcome = useCallback((decisionId: string | null, action: 'started' | 'declined' | 'completed' | 'abandoned', helpfulness?: string) => {
+    if (!decisionId || !auth.currentUser) return;
+    secureApiFetch('/api/recovery/routing-outcome', { method: 'POST', data: { decisionId, action, helpfulness } }).catch(() => {
+      // Non-fatal - the primary recommendation flow isn't blocked by the outcome write failing.
+    });
+  }, []);
 
   const fetchDecision = useCallback(async (body: Record<string, unknown> = {}) => {
     if (!auth.currentUser) return;
@@ -103,6 +125,7 @@ export const RecoveryIntelligenceHub = () => {
       const res = await secureApiFetch('/api/recovery/routing-decision', { method: 'POST', data: body });
       const data = await res.json();
       setDecision(data);
+      setPendingOutcomeCheck(data.pendingOutcomeCheck ?? null);
     } catch (e) {
       setError('Your latest recommendation isn\'t available yet.');
     }
@@ -122,6 +145,7 @@ export const RecoveryIntelligenceHub = () => {
 
   const handleStart = () => {
     if (!decision?.selectedModule) return;
+    reportOutcome(decision.decisionId, 'started');
     const tab = MODULE_TARGET_TAB[decision.selectedModule];
     if (tab) navigateToTab(tab);
   };
@@ -134,8 +158,24 @@ export const RecoveryIntelligenceHub = () => {
     fetchDecision({ explicitBandwidthReport: 'reflective_bandwidth' });
   };
 
+  const handleNotNow = () => {
+    reportOutcome(decision?.decisionId ?? null, 'declined');
+    setDismissed(true);
+  };
+
+  const handleImOkay = () => {
+    reportOutcome(decision?.decisionId ?? null, 'declined');
+    setDismissed(true);
+  };
+
   const handleBandwidthAnswer = (band: BandwidthBand) => {
     fetchDecision({ explicitBandwidthReport: band });
+  };
+
+  const handlePendingOutcomeAnswer = (helpfulness: 'better' | 'same' | 'not_really' | 'not_sure') => {
+    if (!pendingOutcomeCheck) return;
+    reportOutcome(pendingOutcomeCheck.decisionId, 'completed', helpfulness);
+    setPendingOutcomeCheck(null);
   };
 
   return (
@@ -155,13 +195,32 @@ export const RecoveryIntelligenceHub = () => {
         <div className="p-4 bg-surface text-xs text-text-muted rounded-xl">{error}</div>
       )}
 
+      {!loading && !error && pendingOutcomeCheck && (
+        <div className="rounded-xl border border-border bg-surface p-5 space-y-3">
+          <p className="text-sm font-bold text-text-main">
+            How did {moduleDisplayName(pendingOutcomeCheck.selectedModule)} go?
+          </p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            {HELPFULNESS_OPTIONS.map((option) => (
+              <button
+                key={option.value}
+                onClick={() => handlePendingOutcomeAnswer(option.value)}
+                className="py-2.5 px-3 rounded-lg border border-border text-xs font-bold text-text-main hover:border-primary/50 transition-colors"
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       {!loading && !error && decision && !dismissed && (
         <NovaRecommendationCard
           decision={decision}
           onStart={handleStart}
           onSomethingElse={handleSomethingElse}
-          onNotNow={() => setDismissed(true)}
-          onImOkay={() => setDismissed(true)}
+          onNotNow={handleNotNow}
+          onImOkay={handleImOkay}
           onBandwidthAnswer={handleBandwidthAnswer}
         />
       )}
