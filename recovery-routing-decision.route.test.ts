@@ -97,6 +97,78 @@ describe('POST /api/recovery/routing-decision', () => {
     expect(res.status).toBe(400);
   });
 
+  it('PROTECT end-to-end: a real repeated boundary-pressure trigger pattern routes to capacity_firewall', async () => {
+    seedDoc(`users/${USER}/capacity_checkins/ci1`, {
+      physical: 'medium', mental: 'medium', emotional: 'medium', score: 70, createdAt: new Date().toISOString(),
+    });
+    for (let i = 0; i < 3; i++) {
+      seedDoc(`users/${USER}/stress_triggers/tr${i}`, { source: 'Meetings', severity: 'medium', createdAt: new Date(Date.now() - i * 1000).toISOString() });
+    }
+    const res = await request(app).post('/api/recovery/routing-decision').set(auth(USER)).send({});
+    expect(res.body.selectedRoute).toBe('PROTECT');
+    expect(res.body.selectedModule).toBe('capacity_firewall');
+  });
+
+  it('UNDERSTAND end-to-end: a repeated non-boundary trigger pattern routes to my_patterns, but only once bandwidth is confirmed reflective', async () => {
+    for (let i = 0; i < 3; i++) {
+      seedDoc(`users/${USER}/stress_triggers/tr${i}`, { source: 'Scope / Deadline creep', severity: 'medium', createdAt: new Date(Date.now() - i * 1000).toISOString() });
+    }
+    const unclear = await request(app).post('/api/recovery/routing-decision').set(auth(USER)).send({});
+    expect(unclear.body.routingOutcome).toBe('needs_clarification');
+    const res = await request(app).post('/api/recovery/routing-decision').set(auth(USER)).send({ explicitBandwidthReport: 'reflective_bandwidth' });
+    expect(res.body.selectedRoute).toBe('UNDERSTAND');
+    expect(res.body.selectedModule).toBe('my_patterns');
+  });
+
+  it('RECOVER end-to-end: a real depleted-foundation mood pulse routes to recovery_fuel', async () => {
+    seedDoc(`users/${USER}/mood_pulses/mp1`, { moodLabel: 'tired', intensity: 8, createdAt: new Date().toISOString() });
+    const res = await request(app).post('/api/recovery/routing-decision').set(auth(USER)).send({ explicitBandwidthReport: 'some_bandwidth' });
+    expect(res.body.selectedRoute).toBe('RECOVER');
+    expect(res.body.selectedModule).toBe('recovery_fuel');
+  });
+
+  it('CONNECT via explicit request: respected once a real connected Recovery Ally exists', async () => {
+    seedDoc(`users/${USER}/recovery_ally/state`, { isInvited: true });
+    const res = await request(app).post('/api/recovery/routing-decision').set(auth(USER)).send({ explicitRequestModule: 'recovery_ally' });
+    expect(res.body.selectedRoute).toBe('CONNECT');
+    expect(res.body.selectedModule).toBe('recovery_ally');
+  });
+
+  it('CONNECT via explicit request: excluded (never assumed available) when no Recovery Ally is actually connected yet', async () => {
+    const res = await request(app).post('/api/recovery/routing-decision').set(auth(USER)).send({ explicitRequestModule: 'recovery_ally' });
+    expect(res.body.selectedRoute).toBe('NONE');
+    expect(res.body.selectedModule).toBeNull();
+  });
+
+  it('CONNECT via explicit request to support_circle: respected once at least one real guardian contact exists', async () => {
+    seedDoc(`users/${USER}/support_circle/contact1`, { name: 'A Friend', isGuardian: true });
+    const res = await request(app).post('/api/recovery/routing-decision').set(auth(USER)).send({ explicitRequestModule: 'support_circle' });
+    expect(res.body.selectedRoute).toBe('CONNECT');
+    expect(res.body.selectedModule).toBe('support_circle');
+  });
+
+  it('multiple real candidates competing: a simultaneously-eligible REDUCE candidate loses to a higher-urgency STABILISE one, end-to-end', async () => {
+    seedDoc(`users/${USER}/capacity_checkins/ci1`, {
+      physical: 'low', mental: 'low', emotional: 'low', score: 25, createdAt: new Date().toISOString(),
+    });
+    seedDoc(`users/${USER}/workload_reality_check/state`, {
+      tasks: [{ id: 't1', title: 'x', category: 'must', energyDrain: 40, priority: 'high', dueDate: '', completed: false }],
+      completed: false, updatedAt: new Date().toISOString(),
+    });
+    seedDoc(`users/${USER}/mood_pulses/mp1`, { moodLabel: 'overwhelmed', intensity: 9, createdAt: new Date().toISOString() });
+    const res = await request(app).post('/api/recovery/routing-decision').set(auth(USER)).send({});
+    expect(res.body.selectedRoute).toBe('STABILISE');
+  });
+
+  it('no intervention appropriate: a healthy capacity check-in alone, with nothing else logged, needs no step at all', async () => {
+    seedDoc(`users/${USER}/capacity_checkins/ci1`, {
+      physical: 'high', mental: 'high', emotional: 'high', score: 90, createdAt: new Date().toISOString(),
+    });
+    const res = await request(app).post('/api/recovery/routing-decision').set(auth(USER)).send({});
+    expect(res.body.routingOutcome).toBe('none_needed');
+    expect(res.body.selectedRoute).toBe('NONE');
+  });
+
   it('the Recommendation Budget suppresses a 4th offer in the same day', async () => {
     seedDoc(`users/${USER}/recovery_routing/session_state`, {
       day: new Date().toISOString().split('T')[0], recommendationsOffered: 3, recommendationsDeclined: 0,

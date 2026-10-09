@@ -216,4 +216,18 @@ describe('buildExplicitRequestCandidate', () => {
     expect(buildExplicitRequestCandidate('recovery_ally')?.requiresHumanContact).toBe(true);
     expect(buildExplicitRequestCandidate('one_less_thing')?.requiresHumanContact).toBe(false);
   });
+
+  it('a CONNECT-routed module defaults to ineligible (not assumed connected) when connectorAvailable is omitted', () => {
+    expect(buildExplicitRequestCandidate('recovery_ally')?.eligibleForPrivacyZone).toBe(false);
+    expect(buildExplicitRequestCandidate('support_circle')?.eligibleForPrivacyZone).toBe(false);
+  });
+
+  it('a CONNECT-routed module becomes eligible once connectorAvailable is explicitly true', () => {
+    expect(buildExplicitRequestCandidate('recovery_ally', true)?.eligibleForPrivacyZone).toBe(true);
+  });
+
+  it('connectorAvailable is irrelevant for a non-CONNECT module - always eligible either way', () => {
+    expect(buildExplicitRequestCandidate('one_less_thing', false)?.eligibleForPrivacyZone).toBe(true);
+    expect(buildExplicitRequestCandidate('capacity_firewall')?.eligibleForPrivacyZone).toBe(true);
+  });
 });

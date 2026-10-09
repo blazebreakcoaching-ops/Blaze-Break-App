@@ -298,7 +298,20 @@ export const buildSignalCandidates = (input: RoutingSignalInput): InterventionCa
 // "If the user requests a specific feature directly: respect the request
 // unless a genuine safety/technical restriction applies." Returns null for
 // an unrecognised module name rather than guessing a route for it.
-export const buildExplicitRequestCandidate = (sourceModule: string): InterventionCandidate | null => {
+//
+// connectorAvailable only matters for a CONNECT-routed module
+// (recovery_ally/support_circle) - it's the real "Support Circle/connector
+// unavailable" restriction the engine's own eligibleForPrivacyZone field
+// documents (recovery-routing-engine.ts), fed by server.ts's actual
+// recovery_ally/support_circle reads rather than assumed true. It's
+// ignored for every other route, since there's nothing to connect to.
+// This is never bypassed by explicitUserRequest, same as the engine itself
+// never bypasses it - asking directly for an Ally you don't have yet
+// doesn't make one appear.
+export const buildExplicitRequestCandidate = (
+  sourceModule: string,
+  connectorAvailable?: boolean,
+): InterventionCandidate | null => {
   const routeType = MODULE_ROUTE_MAP[sourceModule];
   if (!routeType) return null;
 
@@ -319,7 +332,7 @@ export const buildExplicitRequestCandidate = (sourceModule: string): Interventio
     prerequisitesMet: true,
     recentlyUsed: false,
     cooldownActive: false,
-    eligibleForPrivacyZone: true,
+    eligibleForPrivacyZone: routeType !== 'CONNECT' || connectorAvailable === true,
     explicitUserRequest: true,
   };
 };

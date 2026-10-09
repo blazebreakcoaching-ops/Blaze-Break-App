@@ -217,19 +217,30 @@ const EFFORT_RANK: Record<BandwidthBand, number> = { low_bandwidth: 0, some_band
 const PREFERENCE_RANK: Record<PreferenceMatch, number> = { preferred: 1, neutral: 0, avoided: -1 };
 
 // Deterministic tie-break chain (spec's priority list, in order): explicit
-// user request; current need/urgency (safety); structural problem vs
-// self-regulation (only among candidates that are otherwise equally
-// urgent - an acute, higher-urgency STABILISE always outranks a calmer
-// structural REDUCE, never the reverse); user preference; recent recency
-// (avoid repeating what was just used); evidence quality; minimum effort;
-// shorter duration; stable id as a last resort. Never a single opaque
-// weighted score - every step is independently inspectable.
+// user request; current need/urgency (safety); NO_INTERVENTION_CANDIDATE
+// loses any urgency tie against a real candidate (its own doctrine: "only
+// wins when no real candidate out-urgencies it" - its hardcoded high
+// confidence/zero effort must never let it out-rank a genuine low-urgency
+// candidate on a later tie-break step, which is what silently excluded
+// UNDERSTAND from ever being selected before this check existed, since
+// every real UNDERSTAND candidate's urgency is 'low', tying NONE's own);
+// structural problem vs self-regulation (only among candidates that are
+// otherwise equally urgent - an acute, higher-urgency STABILISE always
+// outranks a calmer structural REDUCE, never the reverse); user
+// preference; recent recency (avoid repeating what was just used);
+// evidence quality; minimum effort; shorter duration; stable id as a last
+// resort. Never a single opaque weighted score - every step is
+// independently inspectable.
 export const compareCandidates = (a: InterventionCandidate, b: InterventionCandidate): number => {
   const aExplicit = !!a.explicitUserRequest;
   const bExplicit = !!b.explicitUserRequest;
   if (aExplicit !== bExplicit) return aExplicit ? -1 : 1;
 
   if (URGENCY_RANK[a.urgency] !== URGENCY_RANK[b.urgency]) return URGENCY_RANK[b.urgency] - URGENCY_RANK[a.urgency];
+
+  const aIsNoIntervention = a.candidateId === NO_INTERVENTION_CANDIDATE.candidateId;
+  const bIsNoIntervention = b.candidateId === NO_INTERVENTION_CANDIDATE.candidateId;
+  if (aIsNoIntervention !== bIsNoIntervention) return aIsNoIntervention ? 1 : -1;
 
   const aStructural = a.structuralProblem && STRUCTURAL_PREFERRED_ROUTES.includes(a.routeType);
   const bStructural = b.structuralProblem && STRUCTURAL_PREFERRED_ROUTES.includes(b.routeType);

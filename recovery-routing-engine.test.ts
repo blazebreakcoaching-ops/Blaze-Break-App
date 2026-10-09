@@ -130,6 +130,33 @@ describe('selectRoute - required scenario matrix', () => {
     expect(decision.selectedCandidate?.candidateId).toBe('a');
   });
 
+  it('a genuine low-urgency UNDERSTAND candidate (matching real signal-derived confidence/effort) is selected over the synthetic NONE candidate, not silently excluded by it', () => {
+    // Reproduces exactly what recovery-signal-candidates.ts's buildUnderstandCandidate
+    // actually produces for a real 3x repeated non-boundary trigger pattern: urgency
+    // 'low' (ties NONE's own hardcoded urgency), confidence 'medium' (below NONE's
+    // hardcoded 'high'), reflective_bandwidth effort (above NONE's hardcoded
+    // low_bandwidth). Before compareCandidates' NO_INTERVENTION_CANDIDATE tie-break
+    // existed, those two facts made NONE win every one of these ties, so a 3x (not
+    // yet 5x) repeated pattern could never actually surface as UNDERSTAND - this
+    // guards against that regressing.
+    const candidates = [
+      candidate({
+        candidateId: 'my_patterns_understand', sourceModule: 'my_patterns', routeType: 'UNDERSTAND',
+        reasonCode: 'repeated_pressure_pattern', urgency: 'low', userEffort: 'reflective_bandwidth',
+        requiresReflection: true, evidence: { source: 'recent_repeated_pattern', confidence: 'medium' },
+      }),
+    ];
+    const decision = selectRoute(candidates, sufficientBand('reflective_bandwidth'), EMPTY_SESSION_STATE);
+    expect(decision.selectedRoute).toBe('UNDERSTAND');
+    expect(decision.selectedCandidate?.candidateId).toBe('my_patterns_understand');
+  });
+
+  it('the synthetic NONE candidate still wins outright when it is the only thing eligible', () => {
+    const decision = selectRoute([], sufficientBand(), EMPTY_SESSION_STATE);
+    expect(decision.selectedRoute).toBe('NONE');
+    expect(decision.routingOutcome).toBe('none_needed');
+  });
+
   it('user declines recommendation (tracked via session state) -> after enough offers, suppressed rather than repeatedly re-offered', () => {
     const session: SessionRecommendationState = { ...EMPTY_SESSION_STATE, recommendationsOffered: SESSION_RECOMMENDATION_OFFER_LIMIT, recommendationsDeclined: 2 };
     const candidates = [candidate({ candidateId: 'a', sourceModule: 'mod_a', routeType: 'STABILISE', reasonCode: 'high_demand_low_capacity' })];

@@ -64,7 +64,7 @@ import { isEvolutionFrozen, validateFreezeToggleInput } from './evolution-freeze
 import { computeEnergyDelta, getDeltaState, Stressor } from './energy-delta-engine';
 import { determineBandwidth } from './recovery-capacity-gate';
 import { selectRoute, EMPTY_SESSION_STATE, SessionRecommendationState } from './recovery-routing-engine';
-import { buildSignalCandidates, buildExplicitRequestCandidate, isKnownRoutingModule, RoutingSignalInput } from './recovery-signal-candidates';
+import { buildSignalCandidates, buildExplicitRequestCandidate, isKnownRoutingModule, MODULE_ROUTE_MAP, RoutingSignalInput } from './recovery-signal-candidates';
 import { computeRecoveryDirection, explainRecoveryDirection, CapacitySample } from './recovery-direction-engine';
 import { NOVA_MEMORY_DATA_ZONE, summarizeMemoryHealth, MemoryHealthEntry } from './nova-memory-governance';
 import { getEffectiveDataPolicy, validateDataPolicyUpdate } from './org-data-policy';
@@ -12838,6 +12838,23 @@ const loadRoutingHistory = async (
   return { moduleHistory, pendingOutcomeCheck };
 };
 
+// The real "Support Circle/connector unavailable" check recovery-signal-
+// candidates.ts's buildExplicitRequestCandidate needs for a CONNECT-routed
+// explicit request - never assumed true. Only ever called for recovery_ally
+// or support_circle, so the two real collections involved are read directly
+// rather than adding a third, generic abstraction over them.
+const isConnectorAvailable = async (db: FirebaseFirestore.Firestore, uid: string, sourceModule: string): Promise<boolean> => {
+  if (sourceModule === 'recovery_ally') {
+    const allySnap = await db.collection("users").doc(uid).collection("recovery_ally").doc("state").get();
+    return allySnap.exists && allySnap.data()?.isInvited === true;
+  }
+  if (sourceModule === 'support_circle') {
+    const circleSnap = await db.collection("users").doc(uid).collection("support_circle").limit(1).get();
+    return !circleSnap.empty;
+  }
+  return true;
+};
+
 app.post("/api/recovery/routing-decision", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
   try {
     const user = requireAuth(req);
@@ -12914,7 +12931,10 @@ app.post("/api/recovery/routing-decision", verifyAppCheck, authenticateFirebaseU
       moduleHistory,
     });
     if (explicitRequestModule) {
-      const explicitCandidate = buildExplicitRequestCandidate(explicitRequestModule);
+      const connectorAvailable = MODULE_ROUTE_MAP[explicitRequestModule] === 'CONNECT'
+        ? await isConnectorAvailable(db, user.uid, explicitRequestModule)
+        : undefined;
+      const explicitCandidate = buildExplicitRequestCandidate(explicitRequestModule, connectorAvailable);
       if (explicitCandidate) candidates.push(explicitCandidate);
     }
 
