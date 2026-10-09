@@ -2,7 +2,15 @@ import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { secureApiFetch } from '../lib/secure-api';
 import { cn } from '../lib/utils';
-import { Users, Lock, Loader2, AlertTriangle, ShieldCheck, ArrowUp, ArrowDown, Minus, HeartPulse, Calendar } from 'lucide-react';
+import { Users, Lock, Loader2, AlertTriangle, ShieldCheck, ArrowUp, ArrowDown, Minus, HeartPulse, Calendar, Sparkles } from 'lucide-react';
+
+interface ManagerRecommendation {
+  signalKey: string;
+  headline: string;
+  why: string;
+  primaryActionLabel: string;
+  secondaryActionLabel: string;
+}
 
 interface TeamWorkDesignSignal {
   key: string;
@@ -44,6 +52,7 @@ interface TeamEntry {
   nudge?: { title: string; message: string } | null;
   workDesignSignals?: TeamWorkDesignSignal[];
   attention?: string[];
+  recommendation?: ManagerRecommendation | null;
 }
 
 const sevClasses: Record<string, string> = {
@@ -248,7 +257,19 @@ export const TeamDashboard = () => {
                         </li>
                       ))}
                     </ul>
-                    {entry.attention && entry.attention.length > 0 && (
+                    {entry.recommendation ? (
+                      <div className="p-4 bg-primary/5 border border-primary/20 rounded-xl space-y-2">
+                        <p className="text-xs font-bold text-text-main flex items-center gap-1.5">
+                          <Sparkles className="w-3.5 h-3.5 text-primary" /> Nova Manager Coach
+                        </p>
+                        <p className="text-sm font-bold text-text-main">{entry.recommendation.headline}</p>
+                        <p className="text-xs text-text-muted">{entry.recommendation.why}</p>
+                        <div className="flex items-center gap-4 pt-1">
+                          <span className="text-xs font-bold text-primary">{entry.recommendation.primaryActionLabel}</span>
+                          <span className="text-xs text-text-muted">{entry.recommendation.secondaryActionLabel}</span>
+                        </div>
+                      </div>
+                    ) : entry.attention && entry.attention.length > 0 && (
                       <div className="p-4 bg-warning/10 border border-warning/20 rounded-xl">
                         <p className="text-xs font-bold text-text-main mb-1">What deserves attention?</p>
                         <ul className="space-y-1">

@@ -54,7 +54,8 @@ import { FEATURE_FLAG_IDS } from './feature-flag-ids';
 import { FEATURE_REGISTRY as LEGACY_FEATURE_REGISTRY } from './src/lib/feature-registry';
 import { validateProtectedCoreUpsert, buildSeedInvariants } from './protected-core';
 import { checkCohortSufficiency, buildLockedAggregateResponse } from './anonymous-aggregation-engine';
-import { evaluateMeetingPressure, SIGNAL_BAND_LABELS } from './work-design-signals';
+import { evaluateMeetingPressure, SIGNAL_BAND_LABELS, type SignalBand } from './work-design-signals';
+import { buildTopManagerRecommendation } from './nova-manager-coach';
 import {
   validateChangeProposalCreate, deriveFeatureRegistryApprovalTier, canDecideProposal,
   canTransitionProposalStatus, ProposalStatus,
@@ -8418,7 +8419,7 @@ const computeMeetingLoadSnapshotForCohort = async (
 interface TeamWorkDesignSignal {
   key: string;
   label: string;
-  band: string | null;
+  band: SignalBand | null;
   bandLabel: string | null;
   sufficiencyStatus: string;
   sufficiencyMessage: string;
@@ -8975,6 +8976,13 @@ app.get("/api/org/:orgId/team-dashboard", verifyAppCheck, authenticateFirebaseUs
       // insufficient even when the team's overall privacy threshold is met.
       const workDesignSignals = [await buildMeetingPressureSignal(db, teamConsentingUids, threshold)];
       const attention = describeSignalsNeedingAttention(workDesignSignals);
+      // Nova Manager Coach: one practical action, or none - never a second
+      // demand on the manager's attention alongside the raw attention
+      // list above (that list is the "what's true"; this is "what to do
+      // about it", and only ever offers one thing to do).
+      const recommendation = buildTopManagerRecommendation(
+        workDesignSignals.map((s) => ({ signalKey: s.key, label: s.label, band: s.band, basis: s.basis }))
+      );
       return {
         team,
         locked: false,
@@ -8982,6 +8990,7 @@ app.get("/api/org/:orgId/team-dashboard", verifyAppCheck, authenticateFirebaseUs
         threshold,
         workDesignSignals,
         attention,
+        recommendation,
         overallConcern: snapshot.overallConcern,
         moodConcern: snapshot.moodConcern,
         climateConcern: snapshot.climateConcern,

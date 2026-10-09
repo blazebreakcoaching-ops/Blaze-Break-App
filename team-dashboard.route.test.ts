@@ -200,6 +200,47 @@ describe('GET /api/org/:orgId/team-dashboard — Work Design Signals (Meeting Pr
   });
 });
 
+describe('GET /api/org/:orgId/team-dashboard — Nova Manager Coach recommendation', () => {
+  it('no recommendation when nothing warrants one (insufficient data)', async () => {
+    seedOrg(ORG, {
+      adminUids: ['owner_1'],
+      memberUids: ['owner_1', 'mgr_a', 'a1', 'a2', 'a3'],
+      memberTeams: { a1: 'Team A', a2: 'Team A', a3: 'Team A' },
+      teamManagers: { mgr_a: ['Team A'] },
+      privacyThreshold: 3,
+    });
+    ['a1', 'a2', 'a3'].forEach(uid => seedDoc(`users/${uid}`, { shareAnonymizedDataWithOrg: true }));
+
+    const res = await request(app).get(`/api/org/${ORG}/team-dashboard`).set(auth('mgr_a'));
+    expect(res.body.teams[0].recommendation).toBeNull();
+  });
+
+  it('a real, one-item recommendation accompanies a sustained Meeting Pressure band', async () => {
+    seedOrg(ORG, {
+      adminUids: ['owner_1'],
+      memberUids: ['owner_1', 'mgr_a', 'a1', 'a2', 'a3'],
+      memberTeams: { a1: 'Team A', a2: 'Team A', a3: 'Team A' },
+      teamManagers: { mgr_a: ['Team A'] },
+      privacyThreshold: 3,
+    });
+    const nowIso = new Date().toISOString();
+    for (const uid of ['a1', 'a2', 'a3']) {
+      seedDoc(`users/${uid}`, { shareAnonymizedDataWithOrg: true });
+      seedDoc(`users/${uid}/nova_permissions/current`, { allowCalendarSignals: true });
+      seedDoc(`users/${uid}/live_signals/calendar`, {
+        updatedAt: nowIso, totalMeetingHours: 28, backToBackCount: 10, eveningMeetingCount: 2, weekendMeetingCount: 0,
+      });
+    }
+
+    const res = await request(app).get(`/api/org/${ORG}/team-dashboard`).set(auth('mgr_a'));
+    const rec = res.body.teams[0].recommendation;
+    expect(rec).not.toBeNull();
+    expect(rec.signalKey).toBe('meeting_pressure');
+    expect(rec.primaryActionLabel).toBeTruthy();
+    expect(rec.secondaryActionLabel).toBe('Explore a different change');
+  });
+});
+
 describe('GET /api/org/:orgId/team-dashboard — never writes the shared org-wide history', () => {
   it('does not create a risk_trend_history entry, even for the org\'s first-ever check today', async () => {
     seedOrg(ORG, {
