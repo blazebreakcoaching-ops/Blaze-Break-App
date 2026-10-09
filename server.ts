@@ -53,6 +53,10 @@ import { validateFeatureRegistryUpsert, buildInitialRegistry, LegacyFeatureDefin
 import { FEATURE_FLAG_IDS } from './feature-flag-ids';
 import { FEATURE_REGISTRY as LEGACY_FEATURE_REGISTRY } from './src/lib/feature-registry';
 import { validateProtectedCoreUpsert, buildSeedInvariants } from './protected-core';
+import {
+  validateChangeProposalCreate, deriveFeatureRegistryApprovalTier, canDecideProposal,
+  canTransitionProposalStatus, ProposalStatus,
+} from './change-proposals';
 import { buildPlatformConnectorViews, buildOrgConnectorView, OrgConnectorDoc } from './connector-layer';
 import { NOVA_MEMORY_DATA_ZONE, summarizeMemoryHealth, MemoryHealthEntry } from './nova-memory-governance';
 import { getEffectiveDataPolicy, validateDataPolicyUpdate } from './org-data-policy';
@@ -3612,10 +3616,12 @@ const requireRole = (req: any, allowedRoles: string[]) => {
   return user;
 };
 
+const isUserPlatformOwner = (user: any) =>
+  user.platformOwner === true || isOwnerBootstrapEmail(user.email) || user.role === 'platform_owner';
+
 const requirePlatformOwner = (req: any) => {
   const user = requireAuth(req);
-  const isOwner = user.platformOwner === true || isOwnerBootstrapEmail(user.email) || user.role === 'platform_owner';
-  if (!isOwner) {
+  if (!isUserPlatformOwner(user)) {
     throw new Error("Forbidden: Platform Owner privileges required.");
   }
   return user;
@@ -6824,6 +6830,184 @@ app.post("/api/admin/evolution/protected-core/seed", verifyAppCheck, authenticat
     }
     await logAdminAction(req, "seed_protected_core", "", "", { created, skipped });
     res.json({ created, skipped, total: seedEntries.length });
+  } catch (err: any) {
+    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
+  }
+});
+
+// ============ Evolution Engine: Change Proposals ============
+// Governance Tiers reuse Protected Core's real APPROVAL_TIERS (see
+// change-proposals.ts's module docstring) rather than a separately
+// invented severity scale. A feature-registry proposal's tier is
+// derived from the target entry's real current lifecycleState at
+// creation time; a Protected Core proposal uses that invariant's own
+// already-real requiredApproval field directly.
+app.post("/api/admin/evolution/change-proposals", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const user = requireEvolutionAccess(req);
+    const parsed = validateChangeProposalCreate(req.body);
+    if (!parsed.valid) {
+      return res.status(400).json({ error: parsed.error });
+    }
+    const { targetType, targetId, title, rationale, proposedChanges } = req.body;
+    const db = getDb();
+    let requiredApproval: string;
+    if (targetType === "feature_registry") {
+      const targetSnap = await db.collection("platform_feature_registry").doc(targetId).get();
+      if (!targetSnap.exists) {
+        return res.status(400).json({ error: `No feature registry entry with featureId "${targetId}" exists.` });
+      }
+      requiredApproval = deriveFeatureRegistryApprovalTier(targetSnap.data()?.lifecycleState);
+    } else {
+      const targetSnap = await db.collection("platform_protected_core").doc(targetId).get();
+      if (!targetSnap.exists) {
+        return res.status(400).json({ error: `No Protected Core invariant with id "${targetId}" exists.` });
+      }
+      requiredApproval = targetSnap.data()?.requiredApproval || "owner_only";
+    }
+    const now = new Date().toISOString();
+    const ref = db.collection("platform_change_proposals").doc();
+    const proposal = {
+      targetType, targetId, title, rationale, proposedChanges,
+      requiredApproval, status: "draft",
+      proposedBy: user.uid, proposedByEmail: user.email || null,
+      decidedBy: null, decidedAt: null, decisionNotes: null, appliedAt: null,
+      createdAt: now, updatedAt: now,
+    };
+    await ref.set(proposal);
+    await logAdminAction(req, "create_change_proposal", "", ref.id, { targetType, targetId, requiredApproval });
+    res.json({ proposalId: ref.id, ...proposal });
+  } catch (err: any) {
+    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
+  }
+});
+
+app.get("/api/admin/evolution/change-proposals", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    requireEvolutionAccess(req);
+    const db = getDb();
+    const snap = await db.collection("platform_change_proposals").orderBy("createdAt", "desc").get();
+    const proposals = snap.docs.map((doc: any) => ({ proposalId: doc.id, ...doc.data() }));
+    res.json({ proposals });
+  } catch (err: any) {
+    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
+  }
+});
+
+app.post("/api/admin/evolution/change-proposals/:id/submit", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    requireEvolutionAccess(req);
+    const db = getDb();
+    const ref = db.collection("platform_change_proposals").doc(req.params.id);
+    const snap = await ref.get();
+    if (!snap.exists) {
+      return res.status(404).json({ error: "No such change proposal." });
+    }
+    const current = snap.data();
+    if (!canTransitionProposalStatus(current?.status, "submitted")) {
+      return res.status(400).json({ error: `This proposal cannot be submitted from its current status (${current?.status}).` });
+    }
+    await ref.set({ status: "submitted", updatedAt: new Date().toISOString() }, { merge: true });
+    await logAdminAction(req, "submit_change_proposal", "", req.params.id, {});
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
+  }
+});
+
+app.post("/api/admin/evolution/change-proposals/:id/decide", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const user = requireEvolutionAccess(req);
+    const { approve, notes } = req.body || {};
+    if (typeof approve !== "boolean") {
+      return res.status(400).json({ error: '"approve" must be a boolean.' });
+    }
+    const db = getDb();
+    const ref = db.collection("platform_change_proposals").doc(req.params.id);
+    const snap = await ref.get();
+    if (!snap.exists) {
+      return res.status(404).json({ error: "No such change proposal." });
+    }
+    const current = snap.data();
+    const nextStatus: ProposalStatus = approve ? "approved" : "rejected";
+    if (!canTransitionProposalStatus(current?.status, nextStatus)) {
+      return res.status(400).json({ error: `This proposal cannot be decided from its current status (${current?.status}) - it must be submitted first.` });
+    }
+    if (!canDecideProposal(current?.requiredApproval, user.role, isUserPlatformOwner(user))) {
+      return res.status(403).json({ error: `Forbidden: this proposal requires ${current?.requiredApproval} approval.` });
+    }
+    const now = new Date().toISOString();
+    await ref.set({
+      status: nextStatus, decidedBy: user.uid, decidedAt: now,
+      decisionNotes: typeof notes === "string" ? notes.slice(0, 2000) : null, updatedAt: now,
+    }, { merge: true });
+    await logAdminAction(req, "decide_change_proposal", "", req.params.id, { approve, requiredApproval: current?.requiredApproval });
+    res.json({ success: true, status: nextStatus });
+  } catch (err: any) {
+    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
+  }
+});
+
+app.post("/api/admin/evolution/change-proposals/:id/withdraw", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const user = requireEvolutionAccess(req);
+    const db = getDb();
+    const ref = db.collection("platform_change_proposals").doc(req.params.id);
+    const snap = await ref.get();
+    if (!snap.exists) {
+      return res.status(404).json({ error: "No such change proposal." });
+    }
+    const current = snap.data();
+    if (user.uid !== current?.proposedBy && !isUserPlatformOwner(user)) {
+      return res.status(403).json({ error: "Forbidden: only the proposer or a Platform Owner can withdraw this proposal." });
+    }
+    if (!canTransitionProposalStatus(current?.status, "withdrawn")) {
+      return res.status(400).json({ error: `This proposal cannot be withdrawn from its current status (${current?.status}).` });
+    }
+    await ref.set({ status: "withdrawn", updatedAt: new Date().toISOString() }, { merge: true });
+    await logAdminAction(req, "withdraw_change_proposal", "", req.params.id, {});
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
+  }
+});
+
+// Only a feature-registry proposal can auto-apply - see change-
+// proposals.ts's module docstring for why a Protected Core proposal
+// deliberately cannot (it would bypass that invariant's own required
+// direct-evidence-reverification step).
+app.post("/api/admin/evolution/change-proposals/:id/apply", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    requireEvolutionAccess(req);
+    const db = getDb();
+    const ref = db.collection("platform_change_proposals").doc(req.params.id);
+    const snap = await ref.get();
+    if (!snap.exists) {
+      return res.status(404).json({ error: "No such change proposal." });
+    }
+    const current = snap.data();
+    if (!canTransitionProposalStatus(current?.status, "applied")) {
+      return res.status(400).json({ error: `Only an approved proposal can be applied (current status: ${current?.status}).` });
+    }
+    if (current?.targetType === "protected_core") {
+      return res.status(400).json({ error: "Protected Core changes are not auto-applied from a proposal - a Platform Owner must make the change directly via POST /api/admin/evolution/protected-core after re-verifying the evidence. This proposal's approval is tracked for context only." });
+    }
+    const targetRef = db.collection("platform_feature_registry").doc(current?.targetId);
+    const targetSnap = await targetRef.get();
+    if (!targetSnap.exists) {
+      return res.status(400).json({ error: `No feature registry entry with featureId "${current?.targetId}" exists anymore.` });
+    }
+    const merged = { featureId: current?.targetId, ...targetSnap.data(), ...current?.proposedChanges };
+    const validated = validateFeatureRegistryUpsert(merged);
+    if (!validated.valid) {
+      return res.status(400).json({ error: `Applying this proposal would leave an invalid registry entry: ${validated.error}` });
+    }
+    const { featureId, ...rest } = merged;
+    const now = new Date().toISOString();
+    await targetRef.set({ ...rest, lastChangedAt: now }, { merge: true });
+    await ref.set({ status: "applied", appliedAt: now, updatedAt: now }, { merge: true });
+    await logAdminAction(req, "apply_change_proposal", "", req.params.id, { targetId: current?.targetId });
+    res.json({ success: true });
   } catch (err: any) {
     res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
   }

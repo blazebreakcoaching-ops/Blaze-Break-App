@@ -1940,6 +1940,15 @@ service cloud.firestore {
       allow write: if false; // Server-only
     }
 
+    // Change Proposal workflow (Evolution Engine PR8) - same admin-read/
+    // server-write-only pattern. The real boundary (Evolution Engine
+    // access to create/list, tier-derived approval to decide, proposer-
+    // or-owner to withdraw) is enforced server-side, not by this rule.
+    match /platform_change_proposals/{proposalId} {
+      allow read: if isSignedIn() && request.auth.token.admin == true;
+      allow write: if false; // Server-only
+    }
+
     // Platform-wide manual incident log (Command Centre's Incidents tab) -
     // same admin-read/server-write-only pattern as admin_audit_logs. Every
     // write goes through server.ts's requireAdmin + logAdminAction, never

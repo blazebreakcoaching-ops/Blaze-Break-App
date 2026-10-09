@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import {
   Database, Plus, Search, Brain, Network, ZapOff, CheckCircle2, Layers,
   RefreshCw, Loader2, ShieldCheck, LayoutDashboard, Sliders, GitPullRequest, Rocket,
-  FlaskConical, HeartPulse, Trash2, ScrollText, Settings2,
+  FlaskConical, HeartPulse, Trash2, ScrollText, Settings2, XCircle, Send,
 } from 'lucide-react';
 import { useFeatureFlags, setFeatureFlag, FeatureFlag } from '../lib/feature-flags';
 import { getNovaBrain, NovaMemory, deleteNovaMemory } from '../lib/nova-brain';
@@ -12,6 +12,7 @@ import { useAuth } from '../lib/auth';
 import { isGovernanceWarning, LifecycleState, EnforcementState } from '../../feature-registry-v2';
 import { TAB_VISIBILITY_RULES, resolveTabVisibility } from '../../tab-visibility';
 import { buildDependencyGraph, rankByDependents } from '../../dependency-map';
+import { canDecideProposal } from '../../change-proposals';
 import { hasSubscriptionEntitlement } from '../lib/entitlement';
 import type { AuthRole, SubscriptionTier } from '../types';
 
@@ -100,6 +101,38 @@ interface RegistryEntry {
   notes: string | null;
 }
 
+// Server-backed change proposal (platform_change_proposals via
+// GET /api/admin/evolution/change-proposals) - see change-proposals.ts.
+// requiredApproval reuses Protected Core's real ApprovalTier vocabulary,
+// not an invented severity scale.
+interface ChangeProposal {
+  proposalId: string;
+  targetType: 'feature_registry' | 'protected_core';
+  targetId: string;
+  title: string;
+  rationale: string;
+  proposedChanges: Record<string, unknown>;
+  requiredApproval: string;
+  status: string;
+  proposedBy: string;
+  proposedByEmail: string | null;
+  decidedBy: string | null;
+  decidedAt: string | null;
+  decisionNotes: string | null;
+  appliedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+const PROPOSAL_STATUS_BADGE_STYLES: Record<string, string> = {
+  draft: 'bg-surface/50 text-text-muted',
+  submitted: 'bg-primary/10 text-[#9a3412] dark:text-primary',
+  approved: 'bg-success/10 text-success dark:text-[#4ade80]',
+  rejected: 'bg-destructive/10 text-destructive dark:text-[#f87171]',
+  applied: 'bg-success/10 text-success dark:text-[#4ade80]',
+  withdrawn: 'bg-surface/50 text-text-muted',
+};
+
 const LIFECYCLE_BADGE_STYLES: Record<string, string> = {
   draft: 'bg-surface/50 text-text-muted',
   shadow: 'bg-surface/50 text-text-muted',
@@ -137,7 +170,7 @@ const NAV_SECTIONS: { id: EvolutionSection; label: string; icon: any; built: boo
   { id: 'overview', label: 'Overview', icon: LayoutDashboard, built: true },
   { id: 'registry', label: 'Feature Registry & Flags', icon: Database, built: true },
   { id: 'effective-config', label: 'Effective Configuration', icon: Sliders, built: true },
-  { id: 'change-proposals', label: 'Change Proposals', icon: GitPullRequest, built: false },
+  { id: 'change-proposals', label: 'Change Proposals', icon: GitPullRequest, built: true },
   { id: 'dependency-map', label: 'Dependency Map', icon: Search, built: true },
   { id: 'protected-core', label: 'Protected Core', icon: ShieldCheck, built: true },
   { id: 'brain', label: 'Nova Context Brain', icon: Brain, built: true },
@@ -151,7 +184,6 @@ const NAV_SECTIONS: { id: EvolutionSection; label: string; icon: any; built: boo
 ];
 
 const NOT_YET_BUILT_COPY: Record<string, string> = {
-  'change-proposals': 'A structured proposal/review workflow with governance tiers, replacing ad-hoc code review for changes that touch Protected Core or live features. Not yet built; planned for Evolution Engine PR8.',
   rollouts: 'Staged percentage rollouts with environment diffing, stop conditions, and rollback - distinct from the simple on/off feature flags the Registry tab already manages. Not yet built; planned for Evolution Engine PR10.',
   evaluations: 'A test suite for Nova prompt/model changes, run against Shadow Mode and the Nova Runtime Registry before anything reaches real conversations. Not yet built; planned for Evolution Engine PR9-10.',
   'release-health': 'Cost and performance budgets tied to releases, so a rollout can be judged against real signals instead of only ship/no-ship. Not yet built; planned for Evolution Engine PR11.',
@@ -182,7 +214,7 @@ const NotYetBuilt = ({ sectionId }: { sectionId: string }) => (
 );
 
 export const EvolutionEngine = () => {
-  const { appRole } = useAuth();
+  const { appRole, user } = useAuth();
   const isPlatformOwner = appRole === 'platform_owner';
   const flags = useFeatureFlags();
   const [activeTab, setActiveTab] = useState<EvolutionSection>('overview');
@@ -345,6 +377,99 @@ export const EvolutionEngine = () => {
 
   const dependencyGraph = useMemo(() => rankByDependents(buildDependencyGraph(registry || [])), [registry]);
   const [selectedDependencyNodeId, setSelectedDependencyNodeId] = useState<string | null>(null);
+
+  const [proposals, setProposals] = useState<ChangeProposal[] | null>(null);
+  const [isLoadingProposals, setIsLoadingProposals] = useState(false);
+  const [proposalsError, setProposalsError] = useState<string | null>(null);
+  const [isSubmittingNewProposal, setIsSubmittingNewProposal] = useState(false);
+  const [proposalActionError, setProposalActionError] = useState<string | null>(null);
+  const [decisionNotesByProposal, setDecisionNotesByProposal] = useState<Record<string, string>>({});
+  const [newProposal, setNewProposal] = useState({
+    targetType: 'feature_registry' as 'feature_registry' | 'protected_core',
+    targetId: '', title: '', rationale: '', proposedChangesJson: '{\n  \n}',
+  });
+
+  const fetchProposals = async () => {
+    setIsLoadingProposals(true);
+    setProposalsError(null);
+    try {
+      const res = await secureApiFetch('/api/admin/evolution/change-proposals');
+      if (res.ok) {
+        const data = await res.json();
+        setProposals(data.proposals || []);
+      } else {
+        const err = await res.json();
+        setProposalsError(err.error || "Couldn't load change proposals.");
+      }
+    } catch (e) {
+      setProposalsError("Couldn't load change proposals.");
+    } finally {
+      setIsLoadingProposals(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchProposals();
+  }, []);
+
+  const handleCreateProposal = async () => {
+    setProposalActionError(null);
+    let proposedChanges: Record<string, unknown>;
+    try {
+      proposedChanges = JSON.parse(newProposal.proposedChangesJson);
+      if (!proposedChanges || typeof proposedChanges !== 'object' || Array.isArray(proposedChanges)) throw new Error();
+    } catch (e) {
+      setProposalActionError('"Proposed changes" must be valid JSON for an object, e.g. { "enforcementState": "fully_enforced" }.');
+      return;
+    }
+    setIsSubmittingNewProposal(true);
+    try {
+      const res = await secureApiFetch('/api/admin/evolution/change-proposals', {
+        method: 'POST',
+        data: {
+          targetType: newProposal.targetType,
+          targetId: newProposal.targetId,
+          title: newProposal.title,
+          rationale: newProposal.rationale,
+          proposedChanges,
+        },
+      });
+      if (res.ok) {
+        setNewProposal({ targetType: 'feature_registry', targetId: '', title: '', rationale: '', proposedChangesJson: '{\n  \n}' });
+        await fetchProposals();
+      } else {
+        const err = await res.json();
+        setProposalActionError(err.error || "Couldn't create the proposal.");
+      }
+    } catch (e) {
+      setProposalActionError("Couldn't create the proposal.");
+    } finally {
+      setIsSubmittingNewProposal(false);
+    }
+  };
+
+  const handleProposalAction = async (proposalId: string, action: 'submit' | 'withdraw' | 'apply' | 'decide', body?: Record<string, unknown>) => {
+    setProposalActionError(null);
+    try {
+      const res = await secureApiFetch(`/api/admin/evolution/change-proposals/${proposalId}/${action}`, {
+        method: 'POST',
+        ...(body ? { data: body } : {}),
+      });
+      if (res.ok) {
+        await fetchProposals();
+        if (action === 'apply') await fetchRegistry();
+      } else {
+        const err = await res.json();
+        setProposalActionError(err.error || `Couldn't ${action} the proposal.`);
+      }
+    } catch (e) {
+      setProposalActionError(`Couldn't ${action} the proposal.`);
+    }
+  };
+
+  const handleDecideProposal = async (proposalId: string, approve: boolean) => {
+    await handleProposalAction(proposalId, 'decide', { approve, notes: decisionNotesByProposal[proposalId] || undefined });
+  };
 
   return (
     <div className="max-w-7xl mx-auto space-y-10 pb-24">
@@ -877,11 +1002,167 @@ export const EvolutionEngine = () => {
         </div>
       )}
 
-      {/* Change Proposals Section */}
+      {/* Change Proposals Section - a real, server-persisted workflow
+          (platform_change_proposals), not a mock. Governance Tiers reuse
+          Protected Core's real ApprovalTier vocabulary (owner_only /
+          platform_admin_review / technical_review / none) rather than
+          inventing a parallel severity scale - see change-proposals.ts. */}
       {activeTab === 'change-proposals' && (
         <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2">
-          <h3 className="text-xl font-bold flex items-center gap-2 text-text-main border-b border-border/20 pb-4"><GitPullRequest className="w-5 h-5 text-text-muted" /> Change Proposals</h3>
-          <NotYetBuilt sectionId="change-proposals" />
+          <div className="flex items-center justify-between border-b border-border/20 pb-4">
+            <h3 className="text-xl font-bold flex items-center gap-2 text-text-main"><GitPullRequest className="w-5 h-5 text-text-muted" /> Change Proposals</h3>
+            <button
+              onClick={fetchProposals}
+              disabled={isLoadingProposals}
+              className="text-xs font-bold px-3 py-1.5 rounded-lg border border-border/40 text-text-muted hover:text-text-main flex items-center gap-1.5 disabled:opacity-50"
+            >
+              <RefreshCw className={cn("w-3.5 h-3.5", isLoadingProposals && "animate-spin")} /> Refresh
+            </button>
+          </div>
+
+          <p className="text-sm text-text-muted max-w-3xl">
+            A Feature Registry proposal's Governance Tier is derived from its target's real current lifecycle state; a Protected Core proposal uses that invariant's own real requiredApproval field. Approving a Feature Registry proposal lets it be applied directly to the real registry entry here. A Protected Core proposal is tracked for context only - applying it still requires a Platform Owner to make the change directly, re-verifying the evidence, since that's the one action in this whole system Protected Core itself exists to protect.
+          </p>
+
+          {/* Create form */}
+          <div className="bg-card border border-border/40 rounded-2xl p-6 space-y-3">
+            <h4 className="font-bold text-text-main flex items-center gap-2"><Plus className="w-4 h-4" /> New Proposal</h4>
+            {proposalActionError && (
+              <div className="p-3 bg-destructive/10 border border-destructive/20 rounded-xl text-sm text-destructive dark:text-[#f87171]">{proposalActionError}</div>
+            )}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <label className="flex flex-col gap-1 text-xs font-bold text-text-muted uppercase tracking-wider">
+                Target Type
+                <select
+                  value={newProposal.targetType}
+                  onChange={(e) => setNewProposal({ ...newProposal, targetType: e.target.value as 'feature_registry' | 'protected_core' })}
+                  className="text-sm font-medium text-text-main bg-surface/50 border border-border/40 rounded-lg px-3 py-2 normal-case tracking-normal"
+                >
+                  <option value="feature_registry">Feature Registry entry</option>
+                  <option value="protected_core">Protected Core invariant</option>
+                </select>
+              </label>
+              <label className="flex flex-col gap-1 text-xs font-bold text-text-muted uppercase tracking-wider">
+                Target ID (featureId or invariantId)
+                <input
+                  value={newProposal.targetId}
+                  onChange={(e) => setNewProposal({ ...newProposal, targetId: e.target.value })}
+                  placeholder="energy_budget"
+                  className="text-sm font-medium text-text-main bg-surface/50 border border-border/40 rounded-lg px-3 py-2 normal-case tracking-normal"
+                />
+              </label>
+            </div>
+            <label className="flex flex-col gap-1 text-xs font-bold text-text-muted uppercase tracking-wider">
+              Title
+              <input
+                value={newProposal.title}
+                onChange={(e) => setNewProposal({ ...newProposal, title: e.target.value })}
+                className="text-sm font-medium text-text-main bg-surface/50 border border-border/40 rounded-lg px-3 py-2 normal-case tracking-normal"
+              />
+            </label>
+            <label className="flex flex-col gap-1 text-xs font-bold text-text-muted uppercase tracking-wider">
+              Rationale
+              <textarea
+                value={newProposal.rationale}
+                onChange={(e) => setNewProposal({ ...newProposal, rationale: e.target.value })}
+                rows={2}
+                className="text-sm font-medium text-text-main bg-surface/50 border border-border/40 rounded-lg px-3 py-2 normal-case tracking-normal resize-none"
+              />
+            </label>
+            <label className="flex flex-col gap-1 text-xs font-bold text-text-muted uppercase tracking-wider">
+              Proposed Changes (JSON patch)
+              <textarea
+                value={newProposal.proposedChangesJson}
+                onChange={(e) => setNewProposal({ ...newProposal, proposedChangesJson: e.target.value })}
+                rows={4}
+                className="text-xs font-mono text-text-main bg-surface/50 border border-border/40 rounded-lg px-3 py-2 normal-case tracking-normal resize-none"
+              />
+            </label>
+            <div className="flex justify-end">
+              <button
+                onClick={handleCreateProposal}
+                disabled={isSubmittingNewProposal || !newProposal.targetId || !newProposal.title || !newProposal.rationale}
+                className="text-xs font-bold px-4 py-2 rounded-lg bg-primary/10 text-[#9a3412] dark:text-primary hover:bg-primary/20 flex items-center gap-1.5 disabled:opacity-50"
+              >
+                {isSubmittingNewProposal ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />} Create Draft
+              </button>
+            </div>
+          </div>
+
+          {proposalsError && (
+            <div className="p-4 bg-destructive/10 border border-destructive/20 rounded-xl text-sm text-destructive dark:text-[#f87171]">{proposalsError}</div>
+          )}
+
+          {isLoadingProposals && !proposals ? (
+            <p className="text-sm text-text-muted italic">Loading...</p>
+          ) : proposals && proposals.length === 0 ? (
+            <div className="p-8 text-center bg-surface/30 border border-border/40 rounded-2xl">
+              <p className="text-sm text-text-muted">No proposals yet - create one above.</p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {(proposals || []).map(p => {
+                const canDecide = canDecideProposal(p.requiredApproval as any, appRole, isPlatformOwner);
+                const canWithdraw = user?.uid === p.proposedBy || isPlatformOwner;
+                return (
+                  <div key={p.proposalId} className="bg-card border border-border/40 rounded-2xl p-6">
+                    <div className="flex items-start justify-between gap-3 mb-2">
+                      <div>
+                        <h4 className="font-bold text-lg text-text-main">{p.title}</h4>
+                        <code className="text-[10px] text-text-muted">{p.targetType === 'feature_registry' ? 'Registry' : 'Protected Core'}: {p.targetId}</code>
+                      </div>
+                      <div className="flex flex-col items-end gap-1.5">
+                        <span className={cn("text-xs uppercase font-black tracking-widest px-2 py-0.5 rounded-full", PROPOSAL_STATUS_BADGE_STYLES[p.status] || 'bg-surface/50 text-text-muted')}>{p.status}</span>
+                        <span className="text-[10px] font-bold text-text-muted">Requires: {p.requiredApproval.replace(/_/g, ' ')}</span>
+                      </div>
+                    </div>
+                    <p className="text-sm text-text-main leading-relaxed mb-2">{p.rationale}</p>
+                    <pre className="text-[11px] font-mono bg-surface/30 rounded-lg p-2 mb-3 overflow-x-auto">{JSON.stringify(p.proposedChanges, null, 2)}</pre>
+                    {p.decisionNotes && (
+                      <p className="text-[11px] text-text-muted italic border-t border-border/20 pt-2 mb-3">Decision notes: {p.decisionNotes}</p>
+                    )}
+
+                    <div className="flex flex-wrap items-center gap-2 border-t border-border/20 pt-3">
+                      {p.status === 'draft' && (
+                        <button onClick={() => handleProposalAction(p.proposalId, 'submit')} className="text-xs font-bold px-3 py-1.5 rounded-lg bg-primary/10 text-[#9a3412] dark:text-primary hover:bg-primary/20 flex items-center gap-1.5">
+                          <Send className="w-3.5 h-3.5" /> Submit for review
+                        </button>
+                      )}
+                      {p.status === 'submitted' && canDecide && (
+                        <>
+                          <input
+                            value={decisionNotesByProposal[p.proposalId] || ''}
+                            onChange={(e) => setDecisionNotesByProposal({ ...decisionNotesByProposal, [p.proposalId]: e.target.value })}
+                            placeholder="Decision notes (optional)"
+                            className="text-xs font-medium text-text-main bg-surface/50 border border-border/40 rounded-lg px-2 py-1.5 flex-1 min-w-[10rem]"
+                          />
+                          <button onClick={() => handleDecideProposal(p.proposalId, true)} className="text-xs font-bold px-3 py-1.5 rounded-lg bg-success/10 text-success dark:text-[#4ade80] hover:bg-success/20 flex items-center gap-1.5">
+                            <CheckCircle2 className="w-3.5 h-3.5" /> Approve
+                          </button>
+                          <button onClick={() => handleDecideProposal(p.proposalId, false)} className="text-xs font-bold px-3 py-1.5 rounded-lg bg-destructive/10 text-destructive dark:text-[#f87171] hover:bg-destructive/20 flex items-center gap-1.5">
+                            <XCircle className="w-3.5 h-3.5" /> Reject
+                          </button>
+                        </>
+                      )}
+                      {p.status === 'submitted' && !canDecide && (
+                        <span className="text-xs text-text-muted italic">Awaiting someone with {p.requiredApproval.replace(/_/g, ' ')} authority.</span>
+                      )}
+                      {p.status === 'approved' && (
+                        <button onClick={() => handleProposalAction(p.proposalId, 'apply')} className="text-xs font-bold px-3 py-1.5 rounded-lg bg-success/10 text-success dark:text-[#4ade80] hover:bg-success/20 flex items-center gap-1.5">
+                          <CheckCircle2 className="w-3.5 h-3.5" /> Apply
+                        </button>
+                      )}
+                      {(p.status === 'draft' || p.status === 'submitted' || p.status === 'approved') && canWithdraw && (
+                        <button onClick={() => handleProposalAction(p.proposalId, 'withdraw')} className="text-xs font-bold px-3 py-1.5 rounded-lg border border-border/40 text-text-muted hover:text-text-main flex items-center gap-1.5">
+                          Withdraw
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       )}
 
