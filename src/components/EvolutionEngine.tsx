@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   Database, Plus, Search, Brain, Network, ZapOff, CheckCircle2, Layers,
   RefreshCw, Loader2, ShieldCheck, LayoutDashboard, Sliders, GitPullRequest, Rocket,
@@ -11,6 +11,7 @@ import { secureApiFetch } from '../lib/secure-api';
 import { useAuth } from '../lib/auth';
 import { isGovernanceWarning, LifecycleState, EnforcementState } from '../../feature-registry-v2';
 import { TAB_VISIBILITY_RULES, resolveTabVisibility } from '../../tab-visibility';
+import { buildDependencyGraph, rankByDependents } from '../../dependency-map';
 import { hasSubscriptionEntitlement } from '../lib/entitlement';
 import type { AuthRole, SubscriptionTier } from '../types';
 
@@ -137,7 +138,7 @@ const NAV_SECTIONS: { id: EvolutionSection; label: string; icon: any; built: boo
   { id: 'registry', label: 'Feature Registry & Flags', icon: Database, built: true },
   { id: 'effective-config', label: 'Effective Configuration', icon: Sliders, built: true },
   { id: 'change-proposals', label: 'Change Proposals', icon: GitPullRequest, built: false },
-  { id: 'dependency-map', label: 'Dependency Map', icon: Search, built: false },
+  { id: 'dependency-map', label: 'Dependency Map', icon: Search, built: true },
   { id: 'protected-core', label: 'Protected Core', icon: ShieldCheck, built: true },
   { id: 'brain', label: 'Nova Context Brain', icon: Brain, built: true },
   { id: 'connectors', label: 'Connector Layer', icon: Network, built: true },
@@ -151,7 +152,6 @@ const NAV_SECTIONS: { id: EvolutionSection; label: string; icon: any; built: boo
 
 const NOT_YET_BUILT_COPY: Record<string, string> = {
   'change-proposals': 'A structured proposal/review workflow with governance tiers, replacing ad-hoc code review for changes that touch Protected Core or live features. Not yet built; planned for Evolution Engine PR8.',
-  'dependency-map': 'A real, generated graph of what depends on what across the registry, Protected Core, and Connector Layer, plus an upgraded Change Impact Scanner that reads actual dependency data instead of a fixed example. Not yet built; planned for Evolution Engine PR7. (The previous version of this tab showed a single hardcoded "Nova Overload Shield" example - that was invented sample output, not real scan results, so it has been removed rather than kept as decoration.)',
   rollouts: 'Staged percentage rollouts with environment diffing, stop conditions, and rollback - distinct from the simple on/off feature flags the Registry tab already manages. Not yet built; planned for Evolution Engine PR10.',
   evaluations: 'A test suite for Nova prompt/model changes, run against Shadow Mode and the Nova Runtime Registry before anything reaches real conversations. Not yet built; planned for Evolution Engine PR9-10.',
   'release-health': 'Cost and performance budgets tied to releases, so a rollout can be judged against real signals instead of only ship/no-ship. Not yet built; planned for Evolution Engine PR11.',
@@ -342,6 +342,9 @@ export const EvolutionEngine = () => {
 
   const [simRole, setSimRole] = useState<AuthRole>('individual');
   const [simTier, setSimTier] = useState<SubscriptionTier>('free');
+
+  const dependencyGraph = useMemo(() => rankByDependents(buildDependencyGraph(registry || [])), [registry]);
+  const [selectedDependencyNodeId, setSelectedDependencyNodeId] = useState<string | null>(null);
 
   return (
     <div className="max-w-7xl mx-auto space-y-10 pb-24">
@@ -885,13 +888,102 @@ export const EvolutionEngine = () => {
       {/* Dependency Map Section - supersedes the old "Change Impact
           Scanner" tab, which was a single hardcoded example card with
           invented sample output (a fixed "Nova Overload Shield" scan
-          result with no real scanning behind it). Removed rather than
-          kept, since showing it under a dedicated nav item without
-          marking it fake would misrepresent it as real. */}
+          result with no real scanning behind it, never updated by
+          anything). This is a real graph instead, computed live from the
+          registry's own `dependencies` field (migrated from the legacy
+          FEATURE_REGISTRY's hand-authored `allowedConnections` lists -
+          see dependency-map.ts for exactly what is and isn't verified
+          about that data). */}
       {activeTab === 'dependency-map' && (
         <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2">
-          <h3 className="text-xl font-bold flex items-center gap-2 text-text-main border-b border-border/20 pb-4"><Search className="w-5 h-5 text-text-muted" /> Dependency Map</h3>
-          <NotYetBuilt sectionId="dependency-map" />
+          <div className="border-b border-border/20 pb-4">
+            <h3 className="text-xl font-bold flex items-center gap-2 text-text-main"><Search className="w-5 h-5 text-text-muted" /> Dependency Map</h3>
+            <p className="text-sm text-text-muted max-w-3xl mt-2">
+              Computed live from the registry's declared dependencies - highest blast-radius (most other entries depending on it) first. Select an entry to see its real impact picture: a genuine replacement for the old static example card, not a redesign of it.
+            </p>
+          </div>
+
+          {registry === null ? (
+            <p className="text-sm text-text-muted italic">{isLoadingRegistry ? 'Loading...' : registryError ? "Couldn't load." : 'No data.'}</p>
+          ) : registry.length === 0 ? (
+            <div className="p-8 text-center bg-surface/30 border border-border/40 rounded-2xl">
+              <p className="text-sm text-text-muted">The registry is empty - seed it from the Feature Registry tab first.</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 lg:grid-cols-[1fr_1.2fr] gap-6">
+              <div className="space-y-1.5 max-h-[32rem] overflow-y-auto pr-1">
+                {dependencyGraph.map(node => (
+                  <button
+                    key={node.featureId}
+                    onClick={() => setSelectedDependencyNodeId(node.featureId)}
+                    className={cn(
+                      "w-full text-left px-4 py-2.5 rounded-xl flex items-center justify-between gap-3 transition-all",
+                      selectedDependencyNodeId === node.featureId ? "bg-primary/10 text-[#9a3412] dark:text-primary" : "text-text-muted hover:text-text-main hover:bg-surface/50"
+                    )}
+                  >
+                    <span className="text-sm font-bold truncate">{node.displayName}</span>
+                    <span className="text-xs font-mono shrink-0">{node.dependents.length} dependent{node.dependents.length === 1 ? '' : 's'}</span>
+                  </button>
+                ))}
+              </div>
+
+              <div className="bg-card border border-border/40 rounded-2xl p-6">
+                {(() => {
+                  const node = dependencyGraph.find(n => n.featureId === selectedDependencyNodeId) || dependencyGraph[0];
+                  if (!node) return <p className="text-sm text-text-muted italic">No entry selected.</p>;
+                  const entry = (registry || []).find(f => f.featureId === node.featureId);
+                  return (
+                    <div className="space-y-4">
+                      <div>
+                        <h4 className="font-bold text-lg text-text-main">{node.displayName}</h4>
+                        <code className="text-[10px] text-text-muted">{node.featureId}</code>
+                      </div>
+                      {entry && (
+                        <div className="flex flex-wrap gap-2">
+                          <span className={cn("text-xs uppercase font-black tracking-widest px-2 py-0.5 rounded-full", LIFECYCLE_BADGE_STYLES[entry.lifecycleState] || 'bg-surface/50 text-text-muted')}>{entry.lifecycleState.replace(/_/g, ' ')}</span>
+                          <span className={cn("text-xs uppercase font-black tracking-widest px-2 py-0.5 rounded-full", ENFORCEMENT_BADGE_STYLES[entry.enforcementState] || 'bg-surface/50 text-text-muted')}>{entry.enforcementState.replace(/_/g, ' ')}</span>
+                          {isGovernanceWarning(entry) && <span className="text-xs uppercase font-black tracking-widest px-2 py-0.5 rounded-full bg-destructive/10 text-destructive dark:text-[#f87171]">Governance warning</span>}
+                        </div>
+                      )}
+
+                      <div>
+                        <span className="text-[10px] uppercase font-black tracking-widest text-text-muted block mb-1.5">Depends on ({node.resolvedDependencies.length} in registry, {node.unresolvedDependencies.length} unresolved)</span>
+                        {node.resolvedDependencies.length === 0 && node.unresolvedDependencies.length === 0 ? (
+                          <p className="text-xs text-text-muted italic">No declared dependencies.</p>
+                        ) : (
+                          <div className="flex flex-wrap gap-1.5">
+                            {node.resolvedDependencies.map(d => (
+                              <button key={d} onClick={() => setSelectedDependencyNodeId(d)} className="text-xs font-mono px-2 py-1 rounded-lg bg-surface/50 text-text-main hover:bg-primary/10 cursor-pointer">{d}</button>
+                            ))}
+                            {node.unresolvedDependencies.map(d => (
+                              <span key={d} title="No registry entry matches this - either an external integration this registry doesn't model, or a stale reference. Not determined automatically." className="text-xs font-mono px-2 py-1 rounded-lg bg-surface/30 text-text-muted border border-dashed border-border/40">{d}</span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
+                      <div>
+                        <span className="text-[10px] uppercase font-black tracking-widest text-text-muted block mb-1.5">Depended on by ({node.dependents.length})</span>
+                        {node.dependents.length === 0 ? (
+                          <p className="text-xs text-text-muted italic">Nothing in the registry declares a dependency on this - breaking it has no known declared downstream impact.</p>
+                        ) : (
+                          <div className="flex flex-wrap gap-1.5">
+                            {node.dependents.map(d => (
+                              <button key={d} onClick={() => setSelectedDependencyNodeId(d)} className="text-xs font-mono px-2 py-1 rounded-lg bg-surface/50 text-text-main hover:bg-primary/10 cursor-pointer">{d}</button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
+                      <p className="text-[11px] text-text-muted italic leading-relaxed border-t border-border/20 pt-3">
+                        Not shown: Protected Core or Connector Layer linkage. None of this registry's dependency strings are an exact match for a real Protected Core invariant id or Connector Layer provider id today - a fuzzy match would be an invented link, not a verified one, so none is attempted.
+                      </p>
+                    </div>
+                  );
+                })()}
+              </div>
+            </div>
+          )}
         </div>
       )}
 
