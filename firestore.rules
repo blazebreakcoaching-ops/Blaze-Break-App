@@ -1949,6 +1949,14 @@ service cloud.firestore {
       allow write: if false; // Server-only
     }
 
+    // Rollout Plans (Evolution Engine PR10) - same admin-read/server-
+    // write-only pattern. A coordination record, not an enforcement
+    // mechanism - see rollout-plans.ts's module docstring.
+    match /platform_rollout_plans/{rolloutId} {
+      allow read: if isSignedIn() && request.auth.token.admin == true;
+      allow write: if false; // Server-only
+    }
+
     // Platform-wide manual incident log (Command Centre's Incidents tab) -
     // same admin-read/server-write-only pattern as admin_audit_logs. Every
     // write goes through server.ts's requireAdmin + logAdminAction, never

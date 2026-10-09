@@ -59,6 +59,7 @@ import {
 } from './change-proposals';
 import { buildPlatformConnectorViews, buildOrgConnectorView, OrgConnectorDoc } from './connector-layer';
 import { buildNovaRuntimeReport } from './nova-runtime-registry';
+import { validateRolloutPlanCreate, canTransitionRolloutStatus, isRolloutPlanStatus, RolloutPlanStatus } from './rollout-plans';
 import { NOVA_MEMORY_DATA_ZONE, summarizeMemoryHealth, MemoryHealthEntry } from './nova-memory-governance';
 import { getEffectiveDataPolicy, validateDataPolicyUpdate } from './org-data-policy';
 import { initialAuthStatus, validateConnectorCreate, canSeeConnectorDetail, ORG_CONNECTOR_TYPES } from './org-connectors';
@@ -7064,6 +7065,87 @@ app.get("/api/admin/evolution/nova-runtime", verifyAppCheck, authenticateFirebas
       claudeConfigured: anthropic !== null,
     });
     res.json({ surfaces });
+  } catch (err: any) {
+    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
+  }
+});
+
+// ============ Evolution Engine: Rollout Plans ============
+// A coordination/declaration record for staging a feature out to more
+// of the audience - NOT a live traffic-splitting engine. See rollout-
+// plans.ts's module docstring for why: feature-flags.ts has no real
+// per-user or server-side flag evaluation to enforce a percentage
+// against, only a flat per-browser localStorage boolean. Every response
+// here is honest about that; nothing here claims to actually gate
+// traffic.
+app.post("/api/admin/evolution/rollout-plans", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const user = requireEvolutionAccess(req);
+    const parsed = validateRolloutPlanCreate(req.body);
+    if (!parsed.valid) {
+      return res.status(400).json({ error: parsed.error });
+    }
+    const { targetFeatureId, targetPercentage, stopConditions, rationale } = req.body;
+    const db = getDb();
+    const targetSnap = await db.collection("platform_feature_registry").doc(targetFeatureId).get();
+    if (!targetSnap.exists) {
+      return res.status(400).json({ error: `No feature registry entry with featureId "${targetFeatureId}" exists.` });
+    }
+    const now = new Date().toISOString();
+    const ref = db.collection("platform_rollout_plans").doc();
+    const plan = {
+      targetFeatureId, targetPercentage, stopConditions, rationale,
+      status: "planned",
+      statusHistory: [{ status: "planned", at: now, by: user.uid, note: null }],
+      createdBy: user.uid, createdByEmail: user.email || null,
+      createdAt: now, updatedAt: now,
+    };
+    await ref.set(plan);
+    await logAdminAction(req, "create_rollout_plan", "", ref.id, { targetFeatureId, targetPercentage });
+    res.json({ rolloutId: ref.id, ...plan });
+  } catch (err: any) {
+    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
+  }
+});
+
+app.get("/api/admin/evolution/rollout-plans", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    requireEvolutionAccess(req);
+    const db = getDb();
+    const snap = await db.collection("platform_rollout_plans").orderBy("createdAt", "desc").get();
+    const plans = snap.docs.map((doc: any) => ({ rolloutId: doc.id, ...doc.data() }));
+    res.json({ plans });
+  } catch (err: any) {
+    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
+  }
+});
+
+app.post("/api/admin/evolution/rollout-plans/:id/status", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const user = requireEvolutionAccess(req);
+    const { status, note } = req.body || {};
+    if (!isRolloutPlanStatus(status)) {
+      return res.status(400).json({ error: "\"status\" must be a valid rollout plan status." });
+    }
+    const db = getDb();
+    const ref = db.collection("platform_rollout_plans").doc(req.params.id);
+    const snap = await ref.get();
+    if (!snap.exists) {
+      return res.status(404).json({ error: "No such rollout plan." });
+    }
+    const current = snap.data();
+    const from = current?.status as RolloutPlanStatus;
+    if (!canTransitionRolloutStatus(from, status)) {
+      return res.status(400).json({ error: `This plan cannot move from "${from}" to "${status}".` });
+    }
+    const now = new Date().toISOString();
+    const event = { status, at: now, by: user.uid, note: typeof note === "string" ? note.slice(0, 2000) : null };
+    await ref.set({
+      status, updatedAt: now,
+      statusHistory: [...(Array.isArray(current?.statusHistory) ? current.statusHistory : []), event],
+    }, { merge: true });
+    await logAdminAction(req, "update_rollout_plan_status", "", req.params.id, { from, to: status });
+    res.json({ success: true, status });
   } catch (err: any) {
     res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
   }

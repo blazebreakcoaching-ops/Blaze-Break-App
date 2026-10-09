@@ -145,6 +145,41 @@ interface NovaRuntimeSurfaceReport {
   evidence: string;
 }
 
+// Server-backed rollout plan (platform_rollout_plans via
+// GET /api/admin/evolution/rollout-plans) - see rollout-plans.ts. A
+// declared coordination record, NOT a live traffic-splitting
+// enforcement mechanism - feature flags have no real per-user/server
+// evaluation to enforce a percentage against (confirmed in PR6).
+interface RolloutPlan {
+  rolloutId: string;
+  targetFeatureId: string;
+  targetPercentage: number;
+  stopConditions: string;
+  rationale: string;
+  status: string;
+  statusHistory: { status: string; at: string; by: string; note: string | null }[];
+  createdBy: string;
+  createdByEmail: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+const ROLLOUT_STATUS_BADGE_STYLES: Record<string, string> = {
+  planned: 'bg-surface/50 text-text-muted',
+  active: 'bg-primary/10 text-[#9a3412] dark:text-primary',
+  paused: 'bg-warning/10 text-[#9a3412] dark:text-warning',
+  completed: 'bg-success/10 text-success dark:text-[#4ade80]',
+  rolled_back: 'bg-destructive/10 text-destructive dark:text-[#f87171]',
+};
+
+const ROLLOUT_NEXT_STATUSES: Record<string, string[]> = {
+  planned: ['active', 'rolled_back'],
+  active: ['paused', 'completed', 'rolled_back'],
+  paused: ['active', 'rolled_back'],
+  completed: [],
+  rolled_back: [],
+};
+
 const PROPOSAL_STATUS_BADGE_STYLES: Record<string, string> = {
   draft: 'bg-surface/50 text-text-muted',
   submitted: 'bg-primary/10 text-[#9a3412] dark:text-primary',
@@ -196,7 +231,7 @@ const NAV_SECTIONS: { id: EvolutionSection; label: string; icon: any; built: boo
   { id: 'protected-core', label: 'Protected Core', icon: ShieldCheck, built: true },
   { id: 'brain', label: 'Nova Context Brain', icon: Brain, built: true },
   { id: 'connectors', label: 'Connector Layer', icon: Network, built: true },
-  { id: 'rollouts', label: 'Rollouts', icon: Rocket, built: false },
+  { id: 'rollouts', label: 'Rollouts', icon: Rocket, built: true },
   { id: 'evaluations', label: 'Evaluations', icon: FlaskConical, built: false },
   { id: 'release-health', label: 'Release Health', icon: HeartPulse, built: false },
   { id: 'flag-debt', label: 'Flag Debt', icon: Trash2, built: false },
@@ -205,7 +240,6 @@ const NAV_SECTIONS: { id: EvolutionSection; label: string; icon: any; built: boo
 ];
 
 const NOT_YET_BUILT_COPY: Record<string, string> = {
-  rollouts: 'Staged percentage rollouts with environment diffing, stop conditions, and rollback - distinct from the simple on/off feature flags the Registry tab already manages. Not yet built; planned for Evolution Engine PR10.',
   evaluations: 'An automated test suite for Nova prompt/model changes, run through Shadow Mode and a Replay Lab before anything reaches real conversations. Neither exists yet - there is no safe way in this codebase today to capture and replay past conversations against a candidate prompt without touching live traffic, and a shallow version of either would misrepresent prompt changes as already safely testable. The Nova Runtime Registry above is the real, honest first step (observability over what actually runs today); Shadow Mode and the Replay Lab remain future work.',
   'release-health': 'Cost and performance budgets tied to releases, so a rollout can be judged against real signals instead of only ship/no-ship. Not yet built; planned for Evolution Engine PR11.',
   'flag-debt': 'A dedicated view of stale/orphaned feature flags - the Registry tab already flags orphan and not-wired candidates per entry, but there is no aging, retirement workflow, or debt report yet. Not yet built; planned for Evolution Engine PR11.',
@@ -459,6 +493,70 @@ export const EvolutionEngine = () => {
   useEffect(() => {
     fetchNovaRuntime();
   }, []);
+
+  const [rolloutPlans, setRolloutPlans] = useState<RolloutPlan[] | null>(null);
+  const [isLoadingRolloutPlans, setIsLoadingRolloutPlans] = useState(false);
+  const [rolloutPlansError, setRolloutPlansError] = useState<string | null>(null);
+  const [isCreatingRolloutPlan, setIsCreatingRolloutPlan] = useState(false);
+  const [rolloutActionError, setRolloutActionError] = useState<string | null>(null);
+  const [newRolloutPlan, setNewRolloutPlan] = useState({ targetFeatureId: '', targetPercentage: 10, stopConditions: '', rationale: '' });
+
+  const fetchRolloutPlans = async () => {
+    setIsLoadingRolloutPlans(true);
+    setRolloutPlansError(null);
+    try {
+      const res = await secureApiFetch('/api/admin/evolution/rollout-plans');
+      if (res.ok) {
+        const data = await res.json();
+        setRolloutPlans(data.plans || []);
+      } else {
+        const err = await res.json();
+        setRolloutPlansError(err.error || "Couldn't load rollout plans.");
+      }
+    } catch (e) {
+      setRolloutPlansError("Couldn't load rollout plans.");
+    } finally {
+      setIsLoadingRolloutPlans(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchRolloutPlans();
+  }, []);
+
+  const handleCreateRolloutPlan = async () => {
+    setRolloutActionError(null);
+    setIsCreatingRolloutPlan(true);
+    try {
+      const res = await secureApiFetch('/api/admin/evolution/rollout-plans', { method: 'POST', data: newRolloutPlan });
+      if (res.ok) {
+        setNewRolloutPlan({ targetFeatureId: '', targetPercentage: 10, stopConditions: '', rationale: '' });
+        await fetchRolloutPlans();
+      } else {
+        const err = await res.json();
+        setRolloutActionError(err.error || "Couldn't create the rollout plan.");
+      }
+    } catch (e) {
+      setRolloutActionError("Couldn't create the rollout plan.");
+    } finally {
+      setIsCreatingRolloutPlan(false);
+    }
+  };
+
+  const handleRolloutStatusChange = async (rolloutId: string, status: string) => {
+    setRolloutActionError(null);
+    try {
+      const res = await secureApiFetch(`/api/admin/evolution/rollout-plans/${rolloutId}/status`, { method: 'POST', data: { status } });
+      if (res.ok) {
+        await fetchRolloutPlans();
+      } else {
+        const err = await res.json();
+        setRolloutActionError(err.error || "Couldn't update the rollout plan.");
+      }
+    } catch (e) {
+      setRolloutActionError("Couldn't update the rollout plan.");
+    }
+  };
 
   const handleCreateProposal = async () => {
     setProposalActionError(null);
@@ -1316,11 +1414,124 @@ export const EvolutionEngine = () => {
         </div>
       )}
 
-      {/* Rollouts Section */}
+      {/* Rollouts Section - a real, server-persisted coordination record
+          (Evolution Engine PR10), deliberately NOT a live traffic-
+          splitting engine. feature-flags.ts has no real per-user/server
+          flag evaluation to enforce a percentage against (confirmed
+          during PR6's investigation) - only a flat per-browser
+          localStorage boolean. Building that properly is a separate,
+          much larger change to the flag system itself; this is the
+          honest, bounded version: a plan a human records and updates. */}
       {activeTab === 'rollouts' && (
         <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2">
-          <h3 className="text-xl font-bold flex items-center gap-2 text-text-main border-b border-border/20 pb-4"><Rocket className="w-5 h-5 text-text-muted" /> Rollouts</h3>
-          <NotYetBuilt sectionId="rollouts" />
+          <div className="flex items-center justify-between border-b border-border/20 pb-4">
+            <h3 className="text-xl font-bold flex items-center gap-2 text-text-main"><Rocket className="w-5 h-5 text-text-muted" /> Rollouts</h3>
+            <button
+              onClick={fetchRolloutPlans}
+              disabled={isLoadingRolloutPlans}
+              className="text-xs font-bold px-3 py-1.5 rounded-lg border border-border/40 text-text-muted hover:text-text-main flex items-center gap-1.5 disabled:opacity-50"
+            >
+              <RefreshCw className={cn("w-3.5 h-3.5", isLoadingRolloutPlans && "animate-spin")} /> Refresh
+            </button>
+          </div>
+
+          <p className="text-sm text-text-muted max-w-3xl">
+            A rollout plan is a declared coordination record - target percentage, stop conditions, rationale - not an enforcement mechanism. Nothing in this codebase actually gates traffic by percentage: feature-flags.ts stores a flat on/off boolean in the viewing browser's own localStorage, with no per-user or server-side evaluation. A real staged rollout needs that built first; this is the honest, bounded version available today.
+          </p>
+
+          <div className="bg-card border border-border/40 rounded-2xl p-6 space-y-3">
+            <h4 className="font-bold text-text-main flex items-center gap-2"><Plus className="w-4 h-4" /> New Rollout Plan</h4>
+            {rolloutActionError && (
+              <div className="p-3 bg-destructive/10 border border-destructive/20 rounded-xl text-sm text-destructive dark:text-[#f87171]">{rolloutActionError}</div>
+            )}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <label className="flex flex-col gap-1 text-xs font-bold text-text-muted uppercase tracking-wider">
+                Target Feature ID
+                <input
+                  value={newRolloutPlan.targetFeatureId}
+                  onChange={(e) => setNewRolloutPlan({ ...newRolloutPlan, targetFeatureId: e.target.value })}
+                  placeholder="energy_budget"
+                  className="text-sm font-medium text-text-main bg-surface/50 border border-border/40 rounded-lg px-3 py-2 normal-case tracking-normal"
+                />
+              </label>
+              <label className="flex flex-col gap-1 text-xs font-bold text-text-muted uppercase tracking-wider">
+                Target Percentage
+                <input
+                  type="number" min={0} max={100}
+                  value={newRolloutPlan.targetPercentage}
+                  onChange={(e) => setNewRolloutPlan({ ...newRolloutPlan, targetPercentage: Number(e.target.value) })}
+                  className="text-sm font-medium text-text-main bg-surface/50 border border-border/40 rounded-lg px-3 py-2 normal-case tracking-normal"
+                />
+              </label>
+            </div>
+            <label className="flex flex-col gap-1 text-xs font-bold text-text-muted uppercase tracking-wider">
+              Stop Conditions
+              <textarea
+                value={newRolloutPlan.stopConditions}
+                onChange={(e) => setNewRolloutPlan({ ...newRolloutPlan, stopConditions: e.target.value })}
+                rows={2}
+                placeholder="Pause if error rate exceeds 1% or support tickets spike."
+                className="text-sm font-medium text-text-main bg-surface/50 border border-border/40 rounded-lg px-3 py-2 normal-case tracking-normal resize-none"
+              />
+            </label>
+            <label className="flex flex-col gap-1 text-xs font-bold text-text-muted uppercase tracking-wider">
+              Rationale
+              <textarea
+                value={newRolloutPlan.rationale}
+                onChange={(e) => setNewRolloutPlan({ ...newRolloutPlan, rationale: e.target.value })}
+                rows={2}
+                className="text-sm font-medium text-text-main bg-surface/50 border border-border/40 rounded-lg px-3 py-2 normal-case tracking-normal resize-none"
+              />
+            </label>
+            <div className="flex justify-end">
+              <button
+                onClick={handleCreateRolloutPlan}
+                disabled={isCreatingRolloutPlan || !newRolloutPlan.targetFeatureId || !newRolloutPlan.stopConditions || !newRolloutPlan.rationale}
+                className="text-xs font-bold px-4 py-2 rounded-lg bg-primary/10 text-[#9a3412] dark:text-primary hover:bg-primary/20 flex items-center gap-1.5 disabled:opacity-50"
+              >
+                {isCreatingRolloutPlan ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />} Create Plan
+              </button>
+            </div>
+          </div>
+
+          {rolloutPlansError && (
+            <div className="p-4 bg-destructive/10 border border-destructive/20 rounded-xl text-sm text-destructive dark:text-[#f87171]">{rolloutPlansError}</div>
+          )}
+
+          {isLoadingRolloutPlans && !rolloutPlans ? (
+            <p className="text-sm text-text-muted italic">Loading...</p>
+          ) : rolloutPlans && rolloutPlans.length === 0 ? (
+            <div className="p-8 text-center bg-surface/30 border border-border/40 rounded-2xl">
+              <p className="text-sm text-text-muted">No rollout plans yet - create one above.</p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {(rolloutPlans || []).map(p => (
+                <div key={p.rolloutId} className="bg-card border border-border/40 rounded-2xl p-6">
+                  <div className="flex items-start justify-between gap-3 mb-2">
+                    <div>
+                      <h4 className="font-bold text-lg text-text-main">{p.targetFeatureId}</h4>
+                      <span className="text-xs text-text-muted">Target: {p.targetPercentage}%</span>
+                    </div>
+                    <span className={cn("text-xs uppercase font-black tracking-widest px-2 py-0.5 rounded-full", ROLLOUT_STATUS_BADGE_STYLES[p.status] || 'bg-surface/50 text-text-muted')}>{p.status.replace(/_/g, ' ')}</span>
+                  </div>
+                  <p className="text-sm text-text-main leading-relaxed mb-2">{p.rationale}</p>
+                  <p className="text-[11px] text-text-muted italic mb-3">Stop conditions: {p.stopConditions}</p>
+                  <div className="flex flex-wrap items-center gap-2 border-t border-border/20 pt-3">
+                    {(ROLLOUT_NEXT_STATUSES[p.status] || []).map(next => (
+                      <button
+                        key={next}
+                        onClick={() => handleRolloutStatusChange(p.rolloutId, next)}
+                        className="text-xs font-bold px-3 py-1.5 rounded-lg border border-border/40 text-text-muted hover:text-text-main flex items-center gap-1.5"
+                      >
+                        Mark {next.replace(/_/g, ' ')}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
