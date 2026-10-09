@@ -65,6 +65,7 @@ import { computeEnergyDelta, getDeltaState, Stressor } from './energy-delta-engi
 import { determineBandwidth } from './recovery-capacity-gate';
 import { selectRoute, EMPTY_SESSION_STATE, SessionRecommendationState } from './recovery-routing-engine';
 import { buildSignalCandidates, buildExplicitRequestCandidate, isKnownRoutingModule, RoutingSignalInput } from './recovery-signal-candidates';
+import { computeRecoveryDirection, explainRecoveryDirection, CapacitySample } from './recovery-direction-engine';
 import { NOVA_MEMORY_DATA_ZONE, summarizeMemoryHealth, MemoryHealthEntry } from './nova-memory-governance';
 import { getEffectiveDataPolicy, validateDataPolicyUpdate } from './org-data-policy';
 import { initialAuthStatus, validateConnectorCreate, canSeeConnectorDetail, ORG_CONNECTOR_TYPES } from './org-connectors';
@@ -12874,6 +12875,71 @@ app.post("/api/recovery/routing-decision", verifyAppCheck, authenticateFirebaseU
       evidenceDetail: decision.selectedCandidate?.evidence.detail ?? null,
       evidenceSource: decision.selectedCandidate?.evidence.source ?? null,
     });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ============ Recovery Direction ============
+// The one deterministic trend replacing the three independent, disagreeing
+// "Recovery Velocity" formulas found during this rebuild's investigation
+// (RecoveryIntelligenceLayer.tsx's inline getVelocityDetails, this file's
+// own /api/recovery/recalculate "RECOVERY VELOCITY" block, and
+// RecoveryVelocityMap.tsx's separate netVelocityBalance). Computed from the
+// server's own real Firestore reads (capacity_checkins + resolved
+// energy_stressors) - never from client-supplied arrays - and persisted so
+// the result is stable between reads, not recomputed differently every
+// render.
+
+const RECOVERY_DIRECTION_LOOKBACK_DAYS = 14;
+
+app.get("/api/recovery/direction", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const user = requireAuth(req);
+    const db = getDb();
+    const nowMs = Date.now();
+    const lookbackStart = new Date(nowMs - RECOVERY_DIRECTION_LOOKBACK_DAYS * 24 * 60 * 60 * 1000).toISOString();
+    const halfwayPoint = nowMs - (RECOVERY_DIRECTION_LOOKBACK_DAYS / 2) * 24 * 60 * 60 * 1000;
+
+    const [checkInsSnap, resolvedStressorsSnap] = await Promise.all([
+      db.collection("users").doc(user.uid).collection("capacity_checkins").where("createdAt", ">=", lookbackStart).get(),
+      db.collection("users").doc(user.uid).collection("energy_stressors")
+        .where("status", "==", "resolved").where("updatedAt", ">=", lookbackStart).get(),
+    ]);
+
+    const recentCapacitySamples: CapacitySample[] = checkInsSnap.docs.map((d) => {
+      const data = d.data();
+      return { score: Number(data.score) || 0, atMs: new Date(data.createdAt).getTime() };
+    });
+
+    let resolvedStressorCountRecentHalf = 0;
+    let resolvedStressorCountPriorHalf = 0;
+    for (const d of resolvedStressorsSnap.docs) {
+      const updatedAtMs = new Date(d.data().updatedAt).getTime();
+      if (updatedAtMs >= halfwayPoint) resolvedStressorCountRecentHalf += 1;
+      else resolvedStressorCountPriorHalf += 1;
+    }
+
+    const result = computeRecoveryDirection({
+      recentCapacitySamples, resolvedStressorCountRecentHalf, resolvedStressorCountPriorHalf,
+    });
+    const explanation = explainRecoveryDirection(result, RECOVERY_DIRECTION_LOOKBACK_DAYS);
+
+    const summary = {
+      band: result.band,
+      capacityTrend: result.capacityTrend,
+      demandReductionTrend: result.demandReductionTrend,
+      sampleCount: result.sampleCount,
+      explanation,
+      lookbackDays: RECOVERY_DIRECTION_LOOKBACK_DAYS,
+      calculatedAt: new Date().toISOString(),
+    };
+
+    db.collection("users").doc(user.uid).collection("derived").doc("recovery_direction").set(summary, { merge: true }).catch(() => {
+      // Non-fatal - the result still reaches the user even if the persisted copy fails to write.
+    });
+
+    res.json(summary);
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }

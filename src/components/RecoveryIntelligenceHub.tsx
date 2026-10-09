@@ -6,6 +6,7 @@ import { NovaRecommendationCard } from './NovaRecommendationCard';
 import { MODULE_TARGET_TAB } from '../../recovery-decision-copy';
 import type { RouteType, RoutingOutcome, ReasonCode, ConfidenceLevel, EvidenceSource } from '../../recovery-routing-engine';
 import type { BandwidthBand } from '../../recovery-capacity-gate';
+import { RECOVERY_DIRECTION_LABELS, type RecoveryDirectionBand } from '../../recovery-direction-engine';
 
 // Recovery Intelligence, rebuilt around the spec's central doctrine: many
 // capabilities underneath, one useful next step on top. This page itself
@@ -24,6 +25,11 @@ import type { BandwidthBand } from '../../recovery-capacity-gate';
 // a fourth trends section on top of unresolved, disagreeing data sources
 // would be exactly the invented-looking-data problem this rebuild exists to
 // fix. That's the next PR.
+
+interface RecoveryDirectionResponse {
+  band: RecoveryDirectionBand | null;
+  explanation: string;
+}
 
 interface RoutingDecisionResponse {
   selectedRoute: RouteType;
@@ -53,6 +59,7 @@ const navigateToTab = (tab: string) => {
 
 export const RecoveryIntelligenceHub = () => {
   const [decision, setDecision] = useState<RoutingDecisionResponse | null>(null);
+  const [direction, setDirection] = useState<RecoveryDirectionResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [dismissed, setDismissed] = useState(false);
@@ -75,6 +82,13 @@ export const RecoveryIntelligenceHub = () => {
 
   useEffect(() => {
     fetchDecision();
+    if (!auth.currentUser) return;
+    secureApiFetch('/api/recovery/direction')
+      .then((res) => res.json())
+      .then(setDirection)
+      .catch(() => {
+        // Non-fatal - "Your Direction" simply doesn't render below.
+      });
   }, [fetchDecision]);
 
   const handleStart = () => {
@@ -121,6 +135,16 @@ export const RecoveryIntelligenceHub = () => {
           onImOkay={() => setDismissed(true)}
           onBandwidthAnswer={handleBandwidthAnswer}
         />
+      )}
+
+      {!loading && direction && (
+        <div className="rounded-xl border border-border bg-surface p-5 space-y-2">
+          <h3 className="text-[11px] font-bold uppercase tracking-widest text-text-muted">Your Direction</h3>
+          {direction.band ? (
+            <p className="text-sm font-bold text-text-main">{RECOVERY_DIRECTION_LABELS[direction.band]}</p>
+          ) : null}
+          <p className="text-xs text-text-muted">{direction.explanation}</p>
+        </div>
       )}
 
       <div className="rounded-xl border border-border bg-surface">
