@@ -125,7 +125,10 @@ export const RecoveryIntelligenceLayer = ({ onAwardPoints, fingerprint, isDemoSe
         setTriggers(triggerSnap.docs.map(d => {
           const data = d.data();
           const severityLabel: 'low' | 'medium' | 'high' = data.severity <= 4 ? 'low' : data.severity <= 7 ? 'medium' : 'high';
-          return { id: d.id, timestamp: data.createdAt, source: 'general', notes: data.text, severity: severityLabel };
+          // data.source is only present on entries logged after the write-side
+          // fix above - older entries never had it, so this history list still
+          // falls back to a plain label for those rather than showing "undefined".
+          return { id: d.id, timestamp: data.createdAt, source: data.source || 'general', notes: data.text, severity: severityLabel };
         }));
 
         setWins(winsSnap.docs.map(d => {
@@ -426,6 +429,13 @@ export const RecoveryIntelligenceLayer = ({ onAwardPoints, fingerprint, isDemoSe
       await addDoc(collection(db, 'users', user.uid, 'stress_triggers'), {
         text: latest.notes,
         date: latest.timestamp,
+        // Was previously dropped entirely before this write - the picker
+        // above lets a person choose Meetings/People/etc., but nothing
+        // persisted it, so every real trigger ever logged this way has no
+        // source on record. Recovery Routing Engine's PROTECT/UNDERSTAND
+        // candidates (recovery-signal-candidates.ts) group repeated
+        // triggers by exactly this field.
+        source: latest.source,
         severity: severityNumber,
         energyLevel: 50,
         createdAt: latest.timestamp,

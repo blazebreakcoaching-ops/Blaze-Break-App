@@ -12786,11 +12786,26 @@ app.post("/api/recovery/routing-decision", verifyAppCheck, authenticateFirebaseU
     const pendingWorkloadTasks = workloadTasks.filter((t) => !t.completed).length;
     const pendingMustWorkloadTasks = workloadTasks.filter((t) => !t.completed && t.category === 'must').length;
 
+    // Trigger Journal (RecoveryIntelligenceLayer.tsx's saveTriggers) stores
+    // severity as a number (3/6/9), not the 'low'/'medium'/'high' string the
+    // picker itself shows - the same <=4/<=7/else bands that file's own
+    // read-back already uses, so this stays consistent with it rather than
+    // inventing a second threshold convention.
+    const classifyTriggerSeverity = (raw: unknown): 'low' | 'medium' | 'high' => {
+      if (raw === 'low' || raw === 'medium' || raw === 'high') return raw;
+      const n = Number(raw);
+      if (Number.isFinite(n)) return n <= 4 ? 'low' : n <= 7 ? 'medium' : 'high';
+      return 'medium';
+    };
     const recentTriggers: RoutingSignalInput['recentTriggers'] = triggersSnap.docs.map((d) => {
       const data = d.data();
       return {
+        // Older entries logged before source was persisted have none - an
+        // empty source is filtered out of pattern-counting in
+        // recovery-signal-candidates.ts rather than treated as a real,
+        // recurring category.
         source: String(data.source || ''),
-        severity: (['low', 'medium', 'high'].includes(data.severity) ? data.severity : 'medium') as 'low' | 'medium' | 'high',
+        severity: classifyTriggerSeverity(data.severity),
         createdAtMs: new Date(data.createdAt).getTime(),
       };
     });
@@ -12853,6 +12868,11 @@ app.post("/api/recovery/routing-decision", verifyAppCheck, authenticateFirebaseU
       confidence: decision.confidence,
       bandwidthBand: bandwidth.band,
       sufficientBandwidthData: bandwidth.sufficientData,
+      // The submitting candidate's own short, real-data-grounded detail and
+      // what it rests on - recovery-decision-copy.ts's buildDecisionCopy
+      // prefers this over its generic per-reason-code fallback.
+      evidenceDetail: decision.selectedCandidate?.evidence.detail ?? null,
+      evidenceSource: decision.selectedCandidate?.evidence.source ?? null,
     });
   } catch (err: any) {
     res.status(500).json({ error: err.message });

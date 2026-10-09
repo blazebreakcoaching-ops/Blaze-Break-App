@@ -33,6 +33,26 @@ export const MODULE_DISPLAY_NAMES: Record<string, string> = {
 export const moduleDisplayName = (sourceModule: string | null): string =>
   (sourceModule && MODULE_DISPLAY_NAMES[sourceModule]) || 'this';
 
+// Which real App.tsx nav tab actually hosts each destination module -
+// Recovery Intelligence never builds a second copy of any of these tools,
+// it only ever points at where the real one already lives.
+export const MODULE_TARGET_TAB: Record<string, string> = {
+  guided_reset: 'reset',
+  reset_studio: 'reset',
+  anxiety_reset: 'anxiety_reset',
+  one_less_thing: 'recover',
+  workload_reality_check: 'recover',
+  capacity_firewall: 'communicate',
+  boundary_architect: 'communicate',
+  digital_boundary_shield: 'communicate',
+  recovery_fuel: 'fuel',
+  my_patterns: 'reflect',
+  weekly_review: 'reflect',
+  action_engine: 'reflect',
+  recovery_ally: 'ally',
+  support_circle: 'ally',
+};
+
 // One human headline per route - never the literal internal label. Written
 // to stand alone as the card's main line, matching the spec's own examples
 // ("Today looks heavier than your recent capacity... let's make one thing

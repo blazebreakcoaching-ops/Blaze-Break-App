@@ -35,6 +35,7 @@ export interface TabVisibilityRule {
 export const TAB_VISIBILITY_RULES: TabVisibilityRule[] = [
   { id: 'home', label: 'Pulse', roles: ['individual', 'employee', 'executive'] },
   { id: 'plan', label: 'Recovery Plan', roles: ['individual', 'employee', 'executive'] },
+  { id: 'recovery_intelligence', label: 'Recovery Intelligence', roles: ['individual', 'employee', 'executive'], group: 'recovery_tools' },
   { id: 'diagnose', label: 'Check-in', roles: ['individual', 'employee', 'executive'], featureId: 'burnout_diagnostic', group: 'recovery_tools' },
   { id: 'recover', label: 'Recover', roles: ['individual', 'employee', 'executive'], featureId: 'energy_budget', group: 'recovery_tools' },
   { id: 'fuel', label: 'Nutrition', roles: ['individual', 'employee', 'executive'], featureId: 'nutrition_recovery', group: 'recovery_tools' },

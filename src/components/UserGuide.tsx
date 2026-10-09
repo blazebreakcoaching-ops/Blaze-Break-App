@@ -16,6 +16,7 @@ import {
   PhoneCall,
   ListChecks,
   CreditCard,
+  Navigation,
 } from 'lucide-react';
 
 interface GuideFeature {
@@ -92,6 +93,9 @@ const START_HERE: GuideFeature[] = [
 ];
 
 const DAILY_TOOLS: GuideFeature[] = [
+  {
+    tab: 'recovery_intelligence', tag: 'Recovery Intelligence', title: 'One useful next step', description: "Nova's single read on what's worth your attention right now, instead of a wall of tools to choose between.", icon: Navigation,
+  },
   {
     tab: 'recover', tag: 'Recover', title: 'Energy budget', description: 'See where your energy is actually going this week, and where to protect some back.', icon: BatteryFull,
     definition: { term: 'Energy Budget', text: "Where your energy actually goes each day and each week, and how much you have left before you're overdrawn - a budget, but for capacity instead of money." },

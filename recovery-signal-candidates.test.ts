@@ -121,6 +121,12 @@ describe('buildSignalCandidates - PROTECT vs UNDERSTAND', () => {
     expect(candidates.find((c) => c.routeType === 'PROTECT')?.evidence.confidence).toBe('high');
   });
 
+  it('an empty/missing source (historical entries logged before source was persisted) never counts toward a pattern', () => {
+    const candidates = buildSignalCandidates({ ...baseInput, recentTriggers: repeat('', 5) });
+    expect(candidates.find((c) => c.routeType === 'UNDERSTAND')).toBeUndefined();
+    expect(candidates.find((c) => c.routeType === 'PROTECT')).toBeUndefined();
+  });
+
   it('the UNDERSTAND candidate requires reflective bandwidth (never demanded cheaply)', () => {
     const candidates = buildSignalCandidates({ ...baseInput, recentTriggers: repeat('Scope / Deadline creep', 3) });
     expect(candidates.find((c) => c.routeType === 'UNDERSTAND')?.userEffort).toBe('reflective_bandwidth');

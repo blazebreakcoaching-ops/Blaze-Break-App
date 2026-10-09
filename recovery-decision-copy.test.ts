@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildDecisionCopy, moduleDisplayName, SOMETHING_ELSE_INTENTS, DecisionCopyInput } from './recovery-decision-copy';
+import { buildDecisionCopy, moduleDisplayName, SOMETHING_ELSE_INTENTS, MODULE_DISPLAY_NAMES, MODULE_TARGET_TAB, DecisionCopyInput } from './recovery-decision-copy';
 
 const selected = (overrides: Partial<DecisionCopyInput> = {}): DecisionCopyInput => ({
   routingOutcome: 'selected',
@@ -85,6 +85,12 @@ describe('moduleDisplayName', () => {
   it('falls back gracefully for a null or unknown module', () => {
     expect(moduleDisplayName(null)).toBe('this');
     expect(moduleDisplayName('unknown_module')).toBe('this');
+  });
+});
+
+describe('MODULE_TARGET_TAB', () => {
+  it('every module with a display name also has a real target tab, and vice versa', () => {
+    expect(Object.keys(MODULE_TARGET_TAB).sort()).toEqual(Object.keys(MODULE_DISPLAY_NAMES).sort());
   });
 });
 

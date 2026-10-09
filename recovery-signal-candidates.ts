@@ -86,9 +86,17 @@ export interface RoutingSignalInput {
   nowMs: number;
 }
 
+// A trigger with no recorded source (e.g. one logged before the source
+// field was persisted at all) can never count toward a repeated-source
+// pattern - treating it as its own "" category would falsely group
+// unrelated historical entries together as if they were all the same
+// recurring source.
 const countBySource = (triggers: RecentTriggerSignal[]): Map<string, number> => {
   const counts = new Map<string, number>();
-  for (const t of triggers) counts.set(t.source, (counts.get(t.source) ?? 0) + 1);
+  for (const t of triggers) {
+    if (!t.source) continue;
+    counts.set(t.source, (counts.get(t.source) ?? 0) + 1);
+  }
   return counts;
 };
 

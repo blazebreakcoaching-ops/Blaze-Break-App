@@ -38,6 +38,7 @@ import {
   HelpCircle,
   CreditCard,
   ClipboardCheck,
+  Navigation,
 } from "lucide-react";
 
 import {
@@ -96,6 +97,7 @@ const OneLessThing = lazy(() => import("./components/OneLessThing.tsx").then(m =
 const RecoveryRecipes = lazy(() => import("./components/RecoveryRecipes.tsx").then(m => ({ default: m.RecoveryRecipes })));
 const RecoveryFuelEngine = lazy(() => import("./components/RecoveryFuelEngine.tsx").then(m => ({ default: m.RecoveryFuelEngine })));
 const RecoveryIntelligenceLayer = lazy(() => import("./components/RecoveryIntelligenceLayer.tsx").then(m => ({ default: m.RecoveryIntelligenceLayer })));
+const RecoveryIntelligenceHub = lazy(() => import("./components/RecoveryIntelligenceHub.tsx").then(m => ({ default: m.RecoveryIntelligenceHub })));
 const FaithValuesMode = lazy(() => import("./components/FaithValuesMode.tsx").then(m => ({ default: m.FaithValuesMode })));
 const OutcomeTracker = lazy(() => import("./components/OutcomeTracker.tsx").then(m => ({ default: m.OutcomeTracker })));
 const OmniNova = lazy(() => import("./components/OmniNova.tsx").then(m => ({ default: m.OmniNova })));
@@ -144,6 +146,7 @@ type AppFlow = "landing" | "onboarding" | "app" | "trust-centre" | "admin";
 
 type ActiveTab =
   | "home"
+  | "recovery_intelligence"
   | "diagnose"
   | "recover"
   | "fuel"
@@ -190,6 +193,13 @@ export const ALL_TABS: {
     icon: Sparkles,
     label: "Recovery Plan",
     roles: ["individual", "employee", "executive"],
+  },
+  {
+    id: "recovery_intelligence",
+    icon: Navigation,
+    label: "Recovery Intelligence",
+    roles: ["individual", "employee", "executive"],
+    group: "recovery_tools",
   },
   {
     id: "diagnose",
@@ -755,6 +765,7 @@ const Sidebar = ({
 // the h2 title below (see dashboard-titles.test.ts).
 const EYEBROW_LABELS: Record<string, string> = {
   home: "Neuro-Stability Engine",
+  recovery_intelligence: "Recovery Intelligence",
   diagnose: "Loop Analysis",
   recover: "Energy Delta Management",
   fuel: "Recovery Fuel",
@@ -913,6 +924,8 @@ const Header = ({
             : burnoutRisk === "Stable"
             ? "Your baseline looks steady. Keep doing what's working."
             : "Log a check-in to get a real read on your baseline today.")}
+        {activeTab === "recovery_intelligence" &&
+          "Nova's read on what's worth your attention right now - not a list of everything you could do."}
         {activeTab === "diagnose" &&
           "Root cause identification of cognitive and emotional energy leaks."}
         {activeTab === "recover" &&
@@ -2026,6 +2039,7 @@ export default function App() {
     plan: "Personalised Recovery Plan",
     micro: "Micro-Recovery",
     home: "Daily Pulse",
+    recovery_intelligence: "Recovery Intelligence",
     diagnose: "Burnout Fingerprint",
     recover: "Recovery Hub",
     communicate: "Communication Lab",
@@ -2507,6 +2521,10 @@ export default function App() {
                 onNavigateTab={(tab) => safeSetActiveTab(tab)}
                 onRehearsalComplete={incrementRehearsal}
               />
+            )}
+
+            {activeTab === "recovery_intelligence" && (
+              <RecoveryIntelligenceHub />
             )}
 
             {activeTab === "diagnose" &&
