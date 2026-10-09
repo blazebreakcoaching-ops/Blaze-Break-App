@@ -124,6 +124,27 @@ interface ChangeProposal {
   updatedAt: string;
 }
 
+// Server-backed Nova Runtime Registry report (via
+// GET /api/admin/evolution/nova-runtime) - see nova-runtime-registry.ts.
+// Read-only; covers only Nova's own three conversational surfaces, not
+// every AI call in the app.
+interface NovaRuntimeProviderOption {
+  provider: string;
+  model: string;
+  configured: boolean;
+  selectionEnvVar: string | null;
+}
+interface NovaRuntimeSurfaceReport {
+  surface: string;
+  label: string;
+  activeProvider: string;
+  activeModel: string;
+  providerOptions: NovaRuntimeProviderOption[];
+  systemPromptSource: string;
+  promptVersioning: string;
+  evidence: string;
+}
+
 const PROPOSAL_STATUS_BADGE_STYLES: Record<string, string> = {
   draft: 'bg-surface/50 text-text-muted',
   submitted: 'bg-primary/10 text-[#9a3412] dark:text-primary',
@@ -185,7 +206,7 @@ const NAV_SECTIONS: { id: EvolutionSection; label: string; icon: any; built: boo
 
 const NOT_YET_BUILT_COPY: Record<string, string> = {
   rollouts: 'Staged percentage rollouts with environment diffing, stop conditions, and rollback - distinct from the simple on/off feature flags the Registry tab already manages. Not yet built; planned for Evolution Engine PR10.',
-  evaluations: 'A test suite for Nova prompt/model changes, run against Shadow Mode and the Nova Runtime Registry before anything reaches real conversations. Not yet built; planned for Evolution Engine PR9-10.',
+  evaluations: 'An automated test suite for Nova prompt/model changes, run through Shadow Mode and a Replay Lab before anything reaches real conversations. Neither exists yet - there is no safe way in this codebase today to capture and replay past conversations against a candidate prompt without touching live traffic, and a shallow version of either would misrepresent prompt changes as already safely testable. The Nova Runtime Registry above is the real, honest first step (observability over what actually runs today); Shadow Mode and the Replay Lab remain future work.',
   'release-health': 'Cost and performance budgets tied to releases, so a rollout can be judged against real signals instead of only ship/no-ship. Not yet built; planned for Evolution Engine PR11.',
   'flag-debt': 'A dedicated view of stale/orphaned feature flags - the Registry tab already flags orphan and not-wired candidates per entry, but there is no aging, retirement workflow, or debt report yet. Not yet built; planned for Evolution Engine PR11.',
   audit: 'A unified audit log across every Evolution Engine action (registry edits, Protected Core changes, seeds) - Command Centre already has a real Security & Audit trail for platform-admin actions generally, but nothing Evolution-Engine-specific exists yet. Not yet built; planned for Evolution Engine PR11.',
@@ -410,6 +431,33 @@ export const EvolutionEngine = () => {
 
   useEffect(() => {
     fetchProposals();
+  }, []);
+
+  const [novaRuntimeSurfaces, setNovaRuntimeSurfaces] = useState<NovaRuntimeSurfaceReport[] | null>(null);
+  const [isLoadingNovaRuntime, setIsLoadingNovaRuntime] = useState(false);
+  const [novaRuntimeError, setNovaRuntimeError] = useState<string | null>(null);
+
+  const fetchNovaRuntime = async () => {
+    setIsLoadingNovaRuntime(true);
+    setNovaRuntimeError(null);
+    try {
+      const res = await secureApiFetch('/api/admin/evolution/nova-runtime');
+      if (res.ok) {
+        const data = await res.json();
+        setNovaRuntimeSurfaces(data.surfaces || []);
+      } else {
+        const err = await res.json();
+        setNovaRuntimeError(err.error || "Couldn't load the Nova Runtime Registry.");
+      }
+    } catch (e) {
+      setNovaRuntimeError("Couldn't load the Nova Runtime Registry.");
+    } finally {
+      setIsLoadingNovaRuntime(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchNovaRuntime();
   }, []);
 
   const handleCreateProposal = async () => {
@@ -1276,10 +1324,62 @@ export const EvolutionEngine = () => {
         </div>
       )}
 
-      {/* Evaluations Section */}
+      {/* Evaluations Section - the Nova Runtime Registry portion is real
+          (Evolution Engine PR9); Shadow Mode and the Replay Lab, which
+          would actually run evaluations through this registry, are not -
+          see the honest note below rather than a shallow fake of either. */}
       {activeTab === 'evaluations' && (
         <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2">
-          <h3 className="text-xl font-bold flex items-center gap-2 text-text-main border-b border-border/20 pb-4"><FlaskConical className="w-5 h-5 text-text-muted" /> Evaluations</h3>
+          <div className="flex items-center justify-between border-b border-border/20 pb-4">
+            <h3 className="text-xl font-bold flex items-center gap-2 text-text-main"><FlaskConical className="w-5 h-5 text-text-muted" /> Evaluations</h3>
+            <button
+              onClick={fetchNovaRuntime}
+              disabled={isLoadingNovaRuntime}
+              className="text-xs font-bold px-3 py-1.5 rounded-lg border border-border/40 text-text-muted hover:text-text-main flex items-center gap-1.5 disabled:opacity-50"
+            >
+              <RefreshCw className={cn("w-3.5 h-3.5", isLoadingNovaRuntime && "animate-spin")} /> Refresh
+            </button>
+          </div>
+
+          <div>
+            <h4 className="text-sm font-black uppercase tracking-widest text-text-muted mb-3">Nova Runtime Registry</h4>
+            <p className="text-sm text-text-muted max-w-3xl mb-4">
+              What Nova's three real conversational surfaces actually run on today - read live from the same environment checks System Health and the Connector Layer already use. Not a config source anything reads from yet; the other hardcoded model strings scattered through server.ts for unrelated one-off AI completions are out of scope.
+            </p>
+
+            {novaRuntimeError && (
+              <div className="p-4 bg-destructive/10 border border-destructive/20 rounded-xl text-sm text-destructive dark:text-[#f87171]">{novaRuntimeError}</div>
+            )}
+
+            {isLoadingNovaRuntime && !novaRuntimeSurfaces ? (
+              <p className="text-sm text-text-muted italic">Loading...</p>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {(novaRuntimeSurfaces || []).map(s => (
+                  <div key={s.surface} className="bg-card border border-border/40 rounded-2xl p-5">
+                    <h5 className="font-bold text-text-main mb-2">{s.label}</h5>
+                    <div className="space-y-1.5 text-xs mb-3">
+                      <div className="flex items-center justify-between"><span className="text-text-muted">Active provider</span><span className="font-bold text-text-main">{s.activeProvider}</span></div>
+                      <div className="flex items-center justify-between"><span className="text-text-muted">Model</span><code className="font-mono text-text-main">{s.activeModel}</code></div>
+                      <div className="flex items-center justify-between"><span className="text-text-muted">Prompt versioning</span><span className="font-bold text-warning">{s.promptVersioning}</span></div>
+                    </div>
+                    <p className="text-[11px] text-text-muted mb-2">{s.systemPromptSource}</p>
+                    {s.providerOptions.length > 1 && (
+                      <div className="flex flex-wrap gap-1.5 mb-2">
+                        {s.providerOptions.map(po => (
+                          <span key={po.provider} className={cn("text-[10px] font-mono px-1.5 py-0.5 rounded-full", po.configured ? 'bg-success/10 text-success dark:text-[#4ade80]' : 'bg-surface/50 text-text-muted')}>
+                            {po.provider}{po.configured ? '' : ' (not configured)'}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                    <p className="text-[10px] text-text-muted font-mono leading-relaxed border-t border-border/20 pt-2">{s.evidence}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
           <NotYetBuilt sectionId="evaluations" />
         </div>
       )}

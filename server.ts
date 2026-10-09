@@ -58,6 +58,7 @@ import {
   canTransitionProposalStatus, ProposalStatus,
 } from './change-proposals';
 import { buildPlatformConnectorViews, buildOrgConnectorView, OrgConnectorDoc } from './connector-layer';
+import { buildNovaRuntimeReport } from './nova-runtime-registry';
 import { NOVA_MEMORY_DATA_ZONE, summarizeMemoryHealth, MemoryHealthEntry } from './nova-memory-governance';
 import { getEffectiveDataPolicy, validateDataPolicyUpdate } from './org-data-policy';
 import { initialAuthStatus, validateConnectorCreate, canSeeConnectorDetail, ORG_CONNECTOR_TYPES } from './org-connectors';
@@ -7040,6 +7041,29 @@ app.get("/api/admin/evolution/connectors", verifyAppCheck, authenticateFirebaseU
       return buildOrgConnectorView(doc.id, orgId, doc.data() as OrgConnectorDoc);
     });
     res.json({ connectors: [...platformViews, ...orgViews] });
+  } catch (err: any) {
+    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
+  }
+});
+
+// ============ Evolution Engine: Nova Runtime Registry ============
+// Read-only report over Nova's own three conversational surfaces - see
+// nova-runtime-registry.ts for exactly what is and isn't covered (the
+// dozen-plus other hardcoded model strings scattered through this file
+// for unrelated one-off AI completions are deliberately out of scope).
+// Reuses the exact same provider-configured booleans System Health and
+// the Connector Layer already compute - never a fourth, separately
+// invented "is this provider up" check.
+app.get("/api/admin/evolution/nova-runtime", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    requireEvolutionAccess(req);
+    const surfaces = buildNovaRuntimeReport({
+      novaChatProviderEnv: process.env.NOVA_CHAT_PROVIDER,
+      geminiConfigured: !!apiKey && apiKey !== "MY_GEMINI_API_KEY",
+      vertexConfigured: aiVertex !== null,
+      claudeConfigured: anthropic !== null,
+    });
+    res.json({ surfaces });
   } catch (err: any) {
     res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
   }
