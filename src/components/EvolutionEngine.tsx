@@ -10,6 +10,9 @@ import { cn } from '../lib/utils';
 import { secureApiFetch } from '../lib/secure-api';
 import { useAuth } from '../lib/auth';
 import { isGovernanceWarning, LifecycleState, EnforcementState } from '../../feature-registry-v2';
+import { TAB_VISIBILITY_RULES, resolveTabVisibility } from '../../tab-visibility';
+import { hasSubscriptionEntitlement } from '../lib/entitlement';
+import type { AuthRole, SubscriptionTier } from '../types';
 
 // Server-backed Protected Core invariant (platform_protected_core via
 // GET /api/admin/evolution/protected-core) - see protected-core.ts.
@@ -132,7 +135,7 @@ type EvolutionSection =
 const NAV_SECTIONS: { id: EvolutionSection; label: string; icon: any; built: boolean }[] = [
   { id: 'overview', label: 'Overview', icon: LayoutDashboard, built: true },
   { id: 'registry', label: 'Feature Registry & Flags', icon: Database, built: true },
-  { id: 'effective-config', label: 'Effective Configuration', icon: Sliders, built: false },
+  { id: 'effective-config', label: 'Effective Configuration', icon: Sliders, built: true },
   { id: 'change-proposals', label: 'Change Proposals', icon: GitPullRequest, built: false },
   { id: 'dependency-map', label: 'Dependency Map', icon: Search, built: false },
   { id: 'protected-core', label: 'Protected Core', icon: ShieldCheck, built: true },
@@ -147,7 +150,6 @@ const NAV_SECTIONS: { id: EvolutionSection; label: string; icon: any; built: boo
 ];
 
 const NOT_YET_BUILT_COPY: Record<string, string> = {
-  'effective-config': 'A per-user "why is this person seeing this" simulator - resolves a persona through feature flags, entitlements, and registry state into one explained outcome. Not yet built; planned for Evolution Engine PR6.',
   'change-proposals': 'A structured proposal/review workflow with governance tiers, replacing ad-hoc code review for changes that touch Protected Core or live features. Not yet built; planned for Evolution Engine PR8.',
   'dependency-map': 'A real, generated graph of what depends on what across the registry, Protected Core, and Connector Layer, plus an upgraded Change Impact Scanner that reads actual dependency data instead of a fixed example. Not yet built; planned for Evolution Engine PR7. (The previous version of this tab showed a single hardcoded "Nova Overload Shield" example - that was invented sample output, not real scan results, so it has been removed rather than kept as decoration.)',
   rollouts: 'Staged percentage rollouts with environment diffing, stop conditions, and rollback - distinct from the simple on/off feature flags the Registry tab already manages. Not yet built; planned for Evolution Engine PR10.',
@@ -157,6 +159,20 @@ const NOT_YET_BUILT_COPY: Record<string, string> = {
   audit: 'A unified audit log across every Evolution Engine action (registry edits, Protected Core changes, seeds) - Command Centre already has a real Security & Audit trail for platform-admin actions generally, but nothing Evolution-Engine-specific exists yet. Not yet built; planned for Evolution Engine PR11.',
   advanced: 'Permission scopes specific to Evolution Engine actions (evolution_view, etc.) and a platform-wide Freeze Evolution control. Not yet built; planned for Evolution Engine PR11.',
 };
+
+// Mirrors src/types.ts's AuthRole/SubscriptionTier unions exactly - these
+// are the real values a persona picker needs; the types themselves are
+// imported above for compile-time safety against drift, but TypeScript
+// unions have no runtime form, so the option lists still need to be
+// declared once as real values here.
+const ROLE_OPTIONS: AuthRole[] = [
+  'individual', 'employee', 'recovery_ally', 'manager', 'organisation_admin', 'executive',
+  'platform_admin', 'security_admin', 'platform_owner', 'support_admin', 'content_admin',
+  'coach_admin', 'b2b_admin', 'viewer_admin', 'user',
+];
+const TIER_OPTIONS: SubscriptionTier[] = [
+  'free', 'recovery', 'pro', 'executive_digital', 'coaching_circle', 'private_coaching', 'organisation_sponsored',
+];
 
 const NotYetBuilt = ({ sectionId }: { sectionId: string }) => (
   <div className="p-10 text-center bg-surface/30 border border-border/40 rounded-2xl max-w-2xl">
@@ -323,6 +339,9 @@ export const EvolutionEngine = () => {
   const handleToggleFlag = (flag: FeatureFlag, currentVal: boolean) => {
     setFeatureFlag(flag, !currentVal);
   };
+
+  const [simRole, setSimRole] = useState<AuthRole>('individual');
+  const [simTier, setSimTier] = useState<SubscriptionTier>('free');
 
   return (
     <div className="max-w-7xl mx-auto space-y-10 pb-24">
@@ -773,11 +792,85 @@ export const EvolutionEngine = () => {
         </div>
       )}
 
-      {/* Effective Configuration Section */}
+      {/* Effective Configuration Section - a real simulator, not a
+          placeholder, built on the exact same resolveTabVisibility
+          function App.tsx itself calls (via tab-visibility.ts) and the
+          real feature registry already fetched above. Deliberately does
+          NOT simulate feature flags (stored in the viewing browser's own
+          localStorage, not per-user - there is no way to know what flags
+          a different real user has) or entitlements.ts's capability/quota
+          model (gates USAGE limits like daily message counts, not tab
+          visibility - a separate system, see entitlements.ts's own
+          module docstring). Both gaps are stated below rather than
+          glossed over. */}
       {activeTab === 'effective-config' && (
         <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2">
-          <h3 className="text-xl font-bold flex items-center gap-2 text-text-main border-b border-border/20 pb-4"><Sliders className="w-5 h-5 text-text-muted" /> Effective Configuration</h3>
-          <NotYetBuilt sectionId="effective-config" />
+          <div className="border-b border-border/20 pb-4">
+            <h3 className="text-xl font-bold flex items-center gap-2 text-text-main"><Sliders className="w-5 h-5 text-text-muted" /> Effective Configuration</h3>
+            <p className="text-sm text-text-muted max-w-3xl mt-2">
+              Pick a persona and see exactly why each top-level app tab would or wouldn't be visible to them - computed live by calling the real resolveTabVisibility function (tab-visibility.ts) that App.tsx itself uses for its sidebar, cross-referenced against the real feature registry for any tab with a featureId.
+            </p>
+          </div>
+
+          <div className="flex flex-wrap gap-4 bg-card border border-border/40 rounded-2xl p-5">
+            <label className="flex flex-col gap-1.5 text-xs font-bold text-text-muted uppercase tracking-wider">
+              Role
+              <select
+                value={simRole}
+                onChange={(e) => setSimRole(e.target.value as AuthRole)}
+                className="text-sm font-medium text-text-main bg-surface/50 border border-border/40 rounded-lg px-3 py-2 normal-case tracking-normal"
+              >
+                {ROLE_OPTIONS.map(r => <option key={r} value={r}>{r}</option>)}
+              </select>
+            </label>
+            <label className="flex flex-col gap-1.5 text-xs font-bold text-text-muted uppercase tracking-wider">
+              Subscription Tier
+              <select
+                value={simTier}
+                onChange={(e) => setSimTier(e.target.value as SubscriptionTier)}
+                className="text-sm font-medium text-text-main bg-surface/50 border border-border/40 rounded-lg px-3 py-2 normal-case tracking-normal"
+              >
+                {TIER_OPTIONS.map(t => <option key={t} value={t}>{t}</option>)}
+              </select>
+            </label>
+          </div>
+
+          <div className="space-y-2">
+            {TAB_VISIBILITY_RULES.map(rule => {
+              const result = resolveTabVisibility(rule, simRole, simTier, hasSubscriptionEntitlement);
+              const registryEntry = rule.featureId ? (registry || []).find(f => f.featureId === rule.featureId) : null;
+              return (
+                <div key={rule.id} className="bg-card border border-border/40 rounded-xl p-4">
+                  <div className="flex items-center justify-between gap-3 mb-1.5">
+                    <div className="flex items-center gap-2">
+                      <span className="font-bold text-text-main text-sm">{rule.label}</span>
+                      <code className="text-[10px] text-text-muted">{rule.id}</code>
+                    </div>
+                    <span className={cn("text-xs uppercase font-black tracking-widest px-2 py-0.5 rounded-full", result.visible ? 'bg-success/10 text-success dark:text-[#4ade80]' : 'bg-surface/50 text-text-muted')}>
+                      {result.visible ? 'Visible' : 'Hidden'}
+                    </span>
+                  </div>
+                  <p className="text-xs text-text-muted leading-relaxed">{result.reason}</p>
+                  {rule.featureId && (
+                    registryEntry ? (
+                      <p className="text-[11px] text-text-muted italic mt-2 pt-2 border-t border-border/20">
+                        Registry: "{registryEntry.displayName}" is {registryEntry.lifecycleState.replace(/_/g, ' ')} / enforcement {registryEntry.enforcementState.replace(/_/g, ' ')}.
+                      </p>
+                    ) : (
+                      <p className="text-[11px] text-warning italic mt-2 pt-2 border-t border-border/20">
+                        No registry entry has featureId "{rule.featureId}" - this tab's gate doesn't correspond to anything in the canonical feature registry.
+                      </p>
+                    )
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="p-5 bg-surface/30 border border-border/40 rounded-2xl text-xs text-text-muted leading-relaxed space-y-1.5">
+            <p><strong className="text-text-main">Not simulated here:</strong> feature flags (feature-flags.ts) are stored in the viewing browser's own localStorage, not per-user server state - there is no real data source that would let this screen know what flags a different, real user has.</p>
+            <p>Also not simulated: entitlements.ts's capability/quota model (Nova message limits, voice minutes, exports, etc.) - that system gates USAGE limits, not tab visibility, and is a separate taxonomy from the SubscriptionTier used above (see entitlements.ts's own module docstring for why the two aren't interchangeable).</p>
+          </div>
         </div>
       )}
 

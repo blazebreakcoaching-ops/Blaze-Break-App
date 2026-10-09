@@ -55,6 +55,7 @@ import { cn, fireConfetti } from "./lib/utils.ts";
 import { useFocusTrap } from "./lib/useFocusTrap";
 import { auth, getDb } from "./lib/firebase.ts";
 import { isOwnerBootstrapEmail, EVOLUTION_ENGINE_ROLES, PLATFORM_ADMIN_ROLES, isPlatformAdminRole, isEvolutionEngineRole } from "../admin-roles";
+import { resolveTabVisibility } from "../tab-visibility";
 const DiagnoseView = lazy(() => import("./components/DiagnoseSection.tsx").then(m => ({ default: m.DiagnoseView })));
 const ResultView = lazy(() => import("./components/DiagnoseSection.tsx").then(m => ({ default: m.ResultView })));
 const EnergyBudgetTool = lazy(() => import("./components/EnergyBudget.tsx").then(m => ({ default: m.EnergyBudgetTool })));
@@ -351,20 +352,16 @@ export const ALL_TABS: {
 // sidebar, the quick-find launcher, and the mobile tab bar. A future hidden
 // tab added to one of those three and missed in another would otherwise
 // silently diverge without anyone noticing.
-const isTabVisible = (t: (typeof ALL_TABS)[number], role: string | undefined, tier: SubscriptionTier) => {
-  if (t.id === "privacy") return false; // Reachable via Settings > Consent & Privacy instead
-  // Previously only the literal string "platform_admin" bypassed every
-  // tab's own roles list - the other 7 platform-staff roles (including
-  // platform_owner, the highest-privilege one) had no such bypass and
-  // depended entirely on being explicitly listed in each tab's roles
-  // array, which several tabs (e.g. "admin") didn't do. Broadened to the
-  // full canonical set so platform staff can always see every tab,
-  // consistently, regardless of which of the 8 roles they hold.
-  if (isPlatformAdminRole(role)) return true;
-  if (!role || !t.roles.includes(role)) return false;
-  if (t.featureId && !hasSubscriptionEntitlement(tier, t.featureId)) return false;
-  return true;
-};
+//
+// The actual resolution logic now lives in tab-visibility.ts's
+// resolveTabVisibility (Evolution Engine PR6), so the Evolution Engine's
+// Effective Configuration simulator can explain real tab visibility for
+// a chosen persona using the exact same function this app itself calls,
+// rather than a parallel reimplementation that could silently drift from
+// the three real role-gating bugs Evolution Engine PR1 already found and
+// fixed here once.
+const isTabVisible = (t: (typeof ALL_TABS)[number], role: string | undefined, tier: SubscriptionTier) =>
+  resolveTabVisibility(t, role, tier, hasSubscriptionEntitlement).visible;
 
 const Sidebar = ({
   activeTab,
