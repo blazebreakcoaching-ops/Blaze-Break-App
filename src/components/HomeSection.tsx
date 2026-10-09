@@ -676,67 +676,13 @@ export const HomeSection = ({
     if (stats.rehearsalCount > 0) { score += 5; factors.push({ label: "Boundary rehearsal practice", points: 5 }); }
     if (stats.streak > 3) { score += 5; factors.push({ label: "Streak beyond 3 days", points: 5 }); }
 
-    // Integrated Layer 2 Recovery Intelligence Signals
-    try {
-      const moodLogsSaved = localStorage.getItem("blaze_intelligence_moods");
-      if (moodLogsSaved) {
-        const moodLogs = JSON.parse(moodLogsSaved);
-        if (moodLogs.length > 0) {
-          const positiveWords = [
-            "good", "great", "rested", "aligned", "steady", "calm", "vibrant", "stable",
-          ];
-          const recentMood = moodLogs[0].word.toLowerCase();
-          const hasPos = positiveWords.some((w: string) => recentMood.includes(w));
-          score += hasPos ? 15 : -10;
-          factors.push({ label: "Recent mood check-in", points: hasPos ? 15 : -10 });
-        }
-      }
-
-      const triggersSaved = localStorage.getItem("blaze_intelligence_triggers");
-      if (triggersSaved) {
-        const triggers = JSON.parse(triggersSaved);
-        if (triggers.length > 0) {
-          const triggerPenalty = -Math.min(25, triggers.length * 5);
-          score += triggerPenalty;
-          factors.push({ label: "Logged triggers", points: triggerPenalty });
-        }
-      }
-
-      const socialBatterySaved = localStorage.getItem("blaze_intelligence_social_battery");
-      if (socialBatterySaved) {
-        const socialBattery = parseInt(socialBatterySaved, 10);
-        if (socialBattery > 60) { score += 10; factors.push({ label: "Social battery", points: 10 }); }
-        if (socialBattery < 30) { score -= 15; factors.push({ label: "Low social battery", points: -15 }); }
-      }
-
-      const winsSaved = localStorage.getItem("blaze_intelligence_wins");
-      if (winsSaved) {
-        const winsList = JSON.parse(winsSaved);
-        if (winsList.length > 0) {
-          const winsBonus = Math.min(25, winsList.length * 8);
-          score += winsBonus;
-          factors.push({ label: "Logged wins", points: winsBonus });
-        }
-      }
-
-      const symptomsSaved = localStorage.getItem("blaze_intelligence_symptoms");
-      if (symptomsSaved) {
-        const symptomsList = JSON.parse(symptomsSaved);
-        if (symptomsList.length > 0) {
-          const symptomsPenalty = -Math.min(20, symptomsList.length * 4);
-          score += symptomsPenalty;
-          factors.push({ label: "Logged symptoms", points: symptomsPenalty });
-        }
-      }
-
-      const focusSaved = localStorage.getItem("blaze_intelligence_focus_shield");
-      if (focusSaved === "true") {
-        score += 10;
-        factors.push({ label: "Focus Shield active", points: 10 });
-      }
-    } catch (e) {
-      console.warn("Could not read local recovery-intelligence signals.", e);
-    }
+    // A prior "Integrated Layer 2 Recovery Intelligence Signals" block here
+    // read six localStorage keys (blaze_intelligence_moods/triggers/
+    // social_battery/wins/symptoms/focus_shield) - none of which were ever
+    // written anywhere in this codebase, so every read always returned null
+    // and none of these six factors could ever actually fire. Removed as
+    // confirmed-dead code rather than left as a convincing-looking factor
+    // list that never contributed anything.
 
     return { score: Math.max(10, Math.min(100, score)), factors };
   };

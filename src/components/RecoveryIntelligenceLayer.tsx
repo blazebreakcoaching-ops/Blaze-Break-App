@@ -672,10 +672,10 @@ export const RecoveryIntelligenceLayer = ({ onAwardPoints, fingerprint, isDemoSe
         confidence: 'high'
       }
     );
-
-    if (next) {
-      onAwardPoints(15, "Focus Shield Activated");
-    }
+    // Focus Shield now has a real, end-user-reachable home
+    // (FocusShieldControl.tsx, inside Capacity Firewall) - no points are
+    // awarded there, so this legacy staff-only toggle doesn't award points
+    // for the same boolean either.
   };
 
   // 9. Recovery Velocity Score Engine

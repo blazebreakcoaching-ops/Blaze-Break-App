@@ -79,6 +79,10 @@ import { LandingPage } from "./components/LandingPage.tsx";
 import { MfaChallenge } from "./components/MfaChallenge.tsx";
 import { SituationalOnboarding } from "./components/SituationalOnboarding.tsx";
 const ConnectedDailyCheckIn = lazy(() => import("./components/ConnectedRecoveryModules.tsx").then(m => ({ default: m.ConnectedDailyCheckIn })));
+const ConnectedWinsLog = lazy(() => import("./components/ConnectedRecoveryModules.tsx").then(m => ({ default: m.ConnectedWinsLog })));
+const ConnectedGoals = lazy(() => import("./components/ConnectedRecoveryModules.tsx").then(m => ({ default: m.ConnectedGoals })));
+const ConnectedBoundaryScripts = lazy(() => import("./components/ConnectedRecoveryModules.tsx").then(m => ({ default: m.ConnectedBoundaryScripts })));
+const FocusShieldControl = lazy(() => import("./components/FocusShieldControl.tsx").then(m => ({ default: m.FocusShieldControl })));
 const NegotiatorTool = lazy(() => import("./components/NegotiatorTool.tsx").then(m => ({ default: m.NegotiatorTool })));
 
 const ResourceLibrary = lazy(() => import("./components/ResourceLibrary.tsx").then(m => ({ default: m.ResourceLibrary })));
@@ -2599,6 +2603,14 @@ export default function App() {
                 ) : (
                   <>
                 <CapacityFirewall onNavigate={safeSetActiveTab as any} />
+                <FocusShieldControl />
+                <div className="space-y-6">
+                  <div>
+                    <h3 className="text-sm font-display font-bold text-text-main">Boundary Scripts</h3>
+                    <p className="text-xs text-text-muted mt-1">Saved scripts for scenarios you've already thought through.</p>
+                  </div>
+                  <ConnectedBoundaryScripts />
+                </div>
                 <div className="grid grid-cols-1 xl:grid-cols-3 gap-12 items-start">
                   <div className="xl:col-span-2 min-w-0 space-y-12">
                     <BoundaryRehearsal
@@ -2672,6 +2684,20 @@ export default function App() {
             {activeTab === "reflect" && (
               <div className="space-y-32">
                 <ActionEngine onNavigate={safeSetActiveTab as any} />
+                <div className="space-y-6">
+                  <div>
+                    <h3 className="text-sm font-display font-bold text-text-main">Personal Evidence</h3>
+                    <p className="text-xs text-text-muted mt-1">Real-world proof of what's actually worked for you - not a streak to keep up.</p>
+                  </div>
+                  <ConnectedWinsLog />
+                </div>
+                <div className="space-y-6">
+                  <div>
+                    <h3 className="text-sm font-display font-bold text-text-main">Goals</h3>
+                    <p className="text-xs text-text-muted mt-1">Behavioural recovery goals you're actively working on.</p>
+                  </div>
+                  <ConnectedGoals />
+                </div>
                 <ReflectSection
                   onAwardPoints={awardPoints}
                   committedActionIds={stats.committedActionIds}
