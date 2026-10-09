@@ -90,7 +90,9 @@ import { getEffectiveNotificationPreferences, routeNotification } from './notifi
 import { UsageTotals, estimateCost, evaluateBudgetAlert } from './cost-estimates';
 import { managedTeamsFor, isTeamManager, isHrViewer, validateTeamAssignment, validateHrViewerList, computeQualifyingTeamGroups } from './org-team-management';
 import { validateAckInput, describeFollowUp } from './team-escalation';
-import { validateCreateInterventionInput, validateStatusUpdateInput, DEFAULT_REVIEW_WINDOW_DAYS } from './work-design-interventions';
+import {
+  validateCreateInterventionInput, validateStatusUpdateInput, validateRecordOutcomeInput, DEFAULT_REVIEW_WINDOW_DAYS,
+} from './work-design-interventions';
 
 dotenv.config();
 
@@ -8977,11 +8979,25 @@ app.get("/api/org/:orgId/team-dashboard", verifyAppCheck, authenticateFirebaseUs
       // insufficient even when the team's overall privacy threshold is met.
       const workDesignSignals = [await buildMeetingPressureSignal(db, teamConsentingUids, threshold)];
       const attention = describeSignalsNeedingAttention(workDesignSignals);
+      // A trial already running for this team suppresses the recommendation
+      // entirely - a manager who already started one shouldn't be offered
+      // the same (or a conflicting) recommendation again. Only one signal
+      // exists today (meeting_pressure), so "any active intervention for
+      // this team" and "an active intervention for this specific signal"
+      // are currently the same check - this will need to narrow to a real
+      // per-signal match once a second signal exists, documented here so
+      // that's not forgotten.
+      const interventionsSnap = await db.collection("organisations").doc(orgId).collection("work_design_interventions")
+        .where("team", "==", team).get();
+      const ACTIVE_INTERVENTION_STATUSES = new Set(['trialling', 'active']);
+      const activeIntervention = interventionsSnap.docs
+        .map((d: any) => ({ id: d.id, ...d.data() }))
+        .find((iv: any) => ACTIVE_INTERVENTION_STATUSES.has(iv.status)) || null;
       // Nova Manager Coach: one practical action, or none - never a second
       // demand on the manager's attention alongside the raw attention
       // list above (that list is the "what's true"; this is "what to do
       // about it", and only ever offers one thing to do).
-      const recommendation = buildTopManagerRecommendation(
+      const recommendation = activeIntervention ? null : buildTopManagerRecommendation(
         workDesignSignals.map((s) => ({ signalKey: s.key, label: s.label, band: s.band, basis: s.basis }))
       );
       return {
@@ -8992,6 +9008,7 @@ app.get("/api/org/:orgId/team-dashboard", verifyAppCheck, authenticateFirebaseUs
         workDesignSignals,
         attention,
         recommendation,
+        activeIntervention,
         overallConcern: snapshot.overallConcern,
         moodConcern: snapshot.moodConcern,
         climateConcern: snapshot.climateConcern,
@@ -9171,6 +9188,48 @@ app.patch("/api/org/:orgId/work-design-interventions/:id/status", verifyAppCheck
     const { status } = req.body;
     await ref.set({ status, updatedAt: new Date().toISOString() }, { merge: true });
     await logOrgAuditAction(req, orgId, "update_work_design_intervention_status", "work_design_intervention", id, { status: existing.status }, { status });
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("not found") ? 404 : 500).json({ error: err.message });
+  }
+});
+
+// Recording "what happened?" IS the trial ending, in the real world a
+// manager experiences it - there's no separate moment where the trial is
+// over but nobody's said what happened yet, so this sets status to
+// 'completed' itself rather than requiring a second PATCH .../status call
+// the client would have to remember to also make. "stopped_early" still
+// goes through this same route (the manager is still reporting what
+// happened, just earlier than planned) rather than the generic status
+// route, since it's a real outcome, not a bare status change.
+app.patch("/api/org/:orgId/work-design-interventions/:id/outcome", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const { orgId, id } = req.params;
+    const { user, db, org, role } = await loadOrgAndCallerRole(req, orgId);
+    const isAdmin = role === 'owner' || role === 'admin';
+    const validation = validateRecordOutcomeInput(req.body);
+    if (!validation.valid) {
+      return res.status(400).json({ error: validation.error });
+    }
+    const ref = db.collection("organisations").doc(orgId).collection("work_design_interventions").doc(id);
+    const snap = await ref.get();
+    if (!snap.exists) {
+      return res.status(404).json({ error: "Intervention not found." });
+    }
+    const existing = snap.data()!;
+    if (!isTeamManager(org.teamManagers, user.uid, existing.team) && !isAdmin) {
+      return res.status(403).json({ error: "Forbidden: you don't manage this team." });
+    }
+    const { outcomeRating, actualOutcome, outcomeNotes } = req.body;
+    const update = {
+      outcomeRating,
+      actualOutcome: actualOutcome || null,
+      outcomeNotes: outcomeNotes || null,
+      status: 'completed' as const,
+      updatedAt: new Date().toISOString(),
+    };
+    await ref.set(update, { merge: true });
+    await logOrgAuditAction(req, orgId, "record_work_design_intervention_outcome", "work_design_intervention", id, { status: existing.status }, { status: update.status, outcomeRating });
     res.json({ success: true });
   } catch (err: any) {
     res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("not found") ? 404 : 500).json({ error: err.message });

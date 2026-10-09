@@ -239,6 +239,60 @@ describe('GET /api/org/:orgId/team-dashboard — Nova Manager Coach recommendati
     expect(rec.primaryActionLabel).toBeTruthy();
     expect(rec.secondaryActionLabel).toBe('Explore a different change');
   });
+
+  it('no recommendation is offered while a trial is already active for this team - activeIntervention is returned instead', async () => {
+    seedOrg(ORG, {
+      adminUids: ['owner_1'],
+      memberUids: ['owner_1', 'mgr_a', 'a1', 'a2', 'a3'],
+      memberTeams: { a1: 'Team A', a2: 'Team A', a3: 'Team A' },
+      teamManagers: { mgr_a: ['Team A'] },
+      privacyThreshold: 3,
+    });
+    const nowIso = new Date().toISOString();
+    for (const uid of ['a1', 'a2', 'a3']) {
+      seedDoc(`users/${uid}`, { shareAnonymizedDataWithOrg: true });
+      seedDoc(`users/${uid}/nova_permissions/current`, { allowCalendarSignals: true });
+      seedDoc(`users/${uid}/live_signals/calendar`, {
+        updatedAt: nowIso, totalMeetingHours: 28, backToBackCount: 10, eveningMeetingCount: 2, weekendMeetingCount: 0,
+      });
+    }
+    await request(app).post(`/api/org/${ORG}/work-design-interventions`).set(auth('mgr_a'))
+      .send({ team: 'Team A', signalKey: 'meeting_pressure', proposedChange: 'Protect 14:00-16:00', why: 'High meeting load' });
+
+    const res = await request(app).get(`/api/org/${ORG}/team-dashboard`).set(auth('mgr_a'));
+    const team = res.body.teams[0];
+    expect(team.recommendation).toBeNull();
+    expect(team.activeIntervention).not.toBeNull();
+    expect(team.activeIntervention.status).toBe('trialling');
+    expect(team.activeIntervention.proposedChange).toBe('Protect 14:00-16:00');
+  });
+
+  it('a completed intervention does not count as active - the recommendation returns', async () => {
+    seedOrg(ORG, {
+      adminUids: ['owner_1'],
+      memberUids: ['owner_1', 'mgr_a', 'a1', 'a2', 'a3'],
+      memberTeams: { a1: 'Team A', a2: 'Team A', a3: 'Team A' },
+      teamManagers: { mgr_a: ['Team A'] },
+      privacyThreshold: 3,
+    });
+    const nowIso = new Date().toISOString();
+    for (const uid of ['a1', 'a2', 'a3']) {
+      seedDoc(`users/${uid}`, { shareAnonymizedDataWithOrg: true });
+      seedDoc(`users/${uid}/nova_permissions/current`, { allowCalendarSignals: true });
+      seedDoc(`users/${uid}/live_signals/calendar`, {
+        updatedAt: nowIso, totalMeetingHours: 28, backToBackCount: 10, eveningMeetingCount: 2, weekendMeetingCount: 0,
+      });
+    }
+    const createRes = await request(app).post(`/api/org/${ORG}/work-design-interventions`).set(auth('mgr_a'))
+      .send({ team: 'Team A', signalKey: 'meeting_pressure', proposedChange: 'Protect 14:00-16:00', why: 'High meeting load' });
+    await request(app).patch(`/api/org/${ORG}/work-design-interventions/${createRes.body.intervention.id}/outcome`).set(auth('mgr_a'))
+      .send({ outcomeRating: 'useful' });
+
+    const res = await request(app).get(`/api/org/${ORG}/team-dashboard`).set(auth('mgr_a'));
+    const team = res.body.teams[0];
+    expect(team.activeIntervention).toBeNull();
+    expect(team.recommendation).not.toBeNull();
+  });
 });
 
 describe('GET /api/org/:orgId/team-dashboard — never writes the shared org-wide history', () => {

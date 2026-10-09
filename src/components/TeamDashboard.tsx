@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { secureApiFetch } from '../lib/secure-api';
 import { cn } from '../lib/utils';
-import { Users, Lock, Loader2, AlertTriangle, ShieldCheck, ArrowUp, ArrowDown, Minus, HeartPulse, Calendar, Sparkles } from 'lucide-react';
+import { Users, Lock, Loader2, AlertTriangle, ShieldCheck, ArrowUp, ArrowDown, Minus, HeartPulse, Calendar, Sparkles, FlaskConical } from 'lucide-react';
 
 interface ManagerRecommendation {
   signalKey: string;
@@ -11,6 +11,27 @@ interface ManagerRecommendation {
   primaryActionLabel: string;
   secondaryActionLabel: string;
 }
+
+type OutcomeRating = 'useful' | 'partly_useful' | 'no_clear_difference' | 'created_another_problem' | 'stopped_early';
+
+interface ActiveIntervention {
+  id: string;
+  team: string;
+  signalKey: string;
+  proposedChange: string;
+  why: string;
+  status: string;
+  startDate: string;
+  reviewDate: string;
+}
+
+const OUTCOME_RATING_OPTIONS: { value: OutcomeRating; label: string }[] = [
+  { value: 'useful', label: 'Useful' },
+  { value: 'partly_useful', label: 'Partly Useful' },
+  { value: 'no_clear_difference', label: 'No Clear Difference' },
+  { value: 'created_another_problem', label: 'Created Another Problem' },
+  { value: 'stopped_early', label: 'Stopped Early' },
+];
 
 interface TeamWorkDesignSignal {
   key: string;
@@ -53,6 +74,7 @@ interface TeamEntry {
   workDesignSignals?: TeamWorkDesignSignal[];
   attention?: string[];
   recommendation?: ManagerRecommendation | null;
+  activeIntervention?: ActiveIntervention | null;
 }
 
 const sevClasses: Record<string, string> = {
@@ -86,6 +108,27 @@ export const TeamDashboard = () => {
   const [ackNotes, setAckNotes] = useState<Record<string, string>>({});
   const [acknowledgingTeam, setAcknowledgingTeam] = useState<string | null>(null);
   const [ackConfirmed, setAckConfirmed] = useState<Record<string, boolean>>({});
+  const [dismissedRecommendation, setDismissedRecommendation] = useState<Record<string, boolean>>({});
+  const [startingTrial, setStartingTrial] = useState<string | null>(null);
+  const [outcomeNotes, setOutcomeNotes] = useState<Record<string, string>>({});
+  const [recordingOutcome, setRecordingOutcome] = useState<string | null>(null);
+
+  const loadTeams = async (orgIdToUse: string, showSpinner: boolean) => {
+    if (showSpinner) setLoading(true);
+    setError('');
+    try {
+      const res = await secureApiFetch(`/api/org/${orgIdToUse}/team-dashboard`);
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error || 'Could not load your team dashboard.');
+      } else {
+        setTeams(data.teams || []);
+      }
+    } catch (e) {
+      setError('Could not load your team dashboard.');
+    }
+    if (showSpinner) setLoading(false);
+  };
 
   useEffect(() => {
     const load = async () => {
@@ -100,13 +143,7 @@ export const TeamDashboard = () => {
           return;
         }
         setOrgId(me.organisationId);
-        const res = await secureApiFetch(`/api/org/${me.organisationId}/team-dashboard`);
-        const data = await res.json();
-        if (!res.ok) {
-          setError(data.error || 'Could not load your team dashboard.');
-        } else {
-          setTeams(data.teams || []);
-        }
+        await loadTeams(me.organisationId, false);
       } catch (e) {
         setError('Could not load your team dashboard.');
       }
@@ -114,6 +151,43 @@ export const TeamDashboard = () => {
     };
     load();
   }, []);
+
+  // Starting a trial directly from the Nova Manager Coach card's primary
+  // action - creates a real intervention at status 'trialling' and
+  // refreshes so the card now shows the trial-in-progress state instead
+  // of offering the same recommendation again.
+  const handleStartTrial = async (team: string, recommendation: ManagerRecommendation) => {
+    if (!orgId) return;
+    setStartingTrial(team);
+    try {
+      await secureApiFetch(`/api/org/${orgId}/work-design-interventions`, {
+        method: 'POST',
+        data: { team, signalKey: recommendation.signalKey, proposedChange: recommendation.primaryActionLabel, why: recommendation.why },
+      });
+      await loadTeams(orgId, false);
+    } catch (e) {
+      // Non-critical - the manager can just try again.
+    }
+    setStartingTrial(null);
+  };
+
+  // Recording "what happened?" ends the trial (the server sets status to
+  // 'completed' itself) - refreshing afterward returns the Nova Manager
+  // Coach card to its normal recommend-or-nothing state.
+  const handleRecordOutcome = async (interventionId: string, outcomeRating: OutcomeRating) => {
+    if (!orgId) return;
+    setRecordingOutcome(interventionId);
+    try {
+      await secureApiFetch(`/api/org/${orgId}/work-design-interventions/${interventionId}/outcome`, {
+        method: 'PATCH',
+        data: { outcomeRating, outcomeNotes: outcomeNotes[interventionId]?.trim() || undefined },
+      });
+      await loadTeams(orgId, false);
+    } catch (e) {
+      // Non-critical - the manager can just try again.
+    }
+    setRecordingOutcome(null);
+  };
 
   // A factual "I addressed this" record HR can read - not a verified fact,
   // and never a score. See docs/TEAM_WELFARE_DASHBOARDS.md.
@@ -257,7 +331,42 @@ export const TeamDashboard = () => {
                         </li>
                       ))}
                     </ul>
-                    {entry.recommendation ? (
+                    {entry.activeIntervention ? (
+                      <div className="p-4 bg-primary/5 border border-primary/20 rounded-xl space-y-3">
+                        <p className="text-xs font-bold text-text-main flex items-center gap-1.5">
+                          <FlaskConical className="w-3.5 h-3.5 text-primary" /> Trial in progress
+                        </p>
+                        <p className="text-sm font-bold text-text-main">{entry.activeIntervention.proposedChange}</p>
+                        <p className="text-xs text-text-muted">
+                          Started {new Date(entry.activeIntervention.startDate).toLocaleDateString()} - review by {new Date(entry.activeIntervention.reviewDate).toLocaleDateString()}
+                        </p>
+                        <div className="space-y-2 pt-1">
+                          <p className="text-xs font-bold text-text-main">What happened?</p>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                            {OUTCOME_RATING_OPTIONS.map((opt) => (
+                              <button
+                                key={opt.value}
+                                onClick={() => handleRecordOutcome(entry.activeIntervention!.id, opt.value)}
+                                disabled={recordingOutcome === entry.activeIntervention!.id}
+                                className="text-left py-2 px-3 rounded-lg border border-border text-xs font-bold text-text-main hover:border-primary/50 transition-colors disabled:opacity-50"
+                              >
+                                {opt.label}
+                              </button>
+                            ))}
+                          </div>
+                          <label htmlFor={`outcome-note-${entry.activeIntervention.id}`} className="sr-only">Optional note about what happened</label>
+                          <input
+                            id={`outcome-note-${entry.activeIntervention.id}`}
+                            type="text"
+                            value={outcomeNotes[entry.activeIntervention.id] || ''}
+                            onChange={(e) => setOutcomeNotes(prev => ({ ...prev, [entry.activeIntervention!.id]: e.target.value }))}
+                            placeholder="Optional note"
+                            maxLength={500}
+                            className="w-full bg-surface border border-border rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-primary/50"
+                          />
+                        </div>
+                      </div>
+                    ) : entry.recommendation && !dismissedRecommendation[entry.team] ? (
                       <div className="p-4 bg-primary/5 border border-primary/20 rounded-xl space-y-2">
                         <p className="text-xs font-bold text-text-main flex items-center gap-1.5">
                           <Sparkles className="w-3.5 h-3.5 text-primary" /> Nova Manager Coach
@@ -265,8 +374,19 @@ export const TeamDashboard = () => {
                         <p className="text-sm font-bold text-text-main">{entry.recommendation.headline}</p>
                         <p className="text-xs text-text-muted">{entry.recommendation.why}</p>
                         <div className="flex items-center gap-4 pt-1">
-                          <span className="text-xs font-bold text-primary">{entry.recommendation.primaryActionLabel}</span>
-                          <span className="text-xs text-text-muted">{entry.recommendation.secondaryActionLabel}</span>
+                          <button
+                            onClick={() => handleStartTrial(entry.team, entry.recommendation!)}
+                            disabled={startingTrial === entry.team}
+                            className="text-xs font-bold text-primary hover:opacity-70 disabled:opacity-50"
+                          >
+                            {startingTrial === entry.team ? 'Starting...' : entry.recommendation.primaryActionLabel}
+                          </button>
+                          <button
+                            onClick={() => setDismissedRecommendation(prev => ({ ...prev, [entry.team]: true }))}
+                            className="text-xs text-text-muted hover:text-text-main"
+                          >
+                            {entry.recommendation.secondaryActionLabel}
+                          </button>
                         </div>
                       </div>
                     ) : entry.attention && entry.attention.length > 0 && (

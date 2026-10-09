@@ -160,3 +160,46 @@ describe('PATCH /api/org/:orgId/work-design-interventions/:id/status', () => {
     expect(res.status).toBe(400);
   });
 });
+
+describe('PATCH /api/org/:orgId/work-design-interventions/:id/outcome', () => {
+  it("recording an outcome sets status to 'completed' and stores the rating", async () => {
+    seedOrg(ORG, { adminUids: ['owner_1'], memberUids: ['owner_1', 'mgr_a'], teamManagers: { mgr_a: ['Team A'] } });
+    const createRes = await request(app).post(`/api/org/${ORG}/work-design-interventions`).set(auth('mgr_a')).send(validBody);
+    const id = createRes.body.intervention.id;
+
+    const res = await request(app).patch(`/api/org/${ORG}/work-design-interventions/${id}/outcome`).set(auth('mgr_a'))
+      .send({ outcomeRating: 'useful', outcomeNotes: 'Team felt the difference' });
+    expect(res.status).toBe(200);
+
+    const listRes = await request(app).get(`/api/org/${ORG}/work-design-interventions`).set(auth('mgr_a'));
+    const intervention = listRes.body.interventions[0];
+    expect(intervention.status).toBe('completed');
+    expect(intervention.outcomeRating).toBe('useful');
+    expect(intervention.outcomeNotes).toBe('Team felt the difference');
+  });
+
+  it('a manager of a different team cannot record an outcome', async () => {
+    seedOrg(ORG, {
+      adminUids: ['owner_1'], memberUids: ['owner_1', 'mgr_a', 'mgr_b'],
+      teamManagers: { mgr_a: ['Team A'], mgr_b: ['Team B'] },
+    });
+    const createRes = await request(app).post(`/api/org/${ORG}/work-design-interventions`).set(auth('mgr_a')).send(validBody);
+    const id = createRes.body.intervention.id;
+    const res = await request(app).patch(`/api/org/${ORG}/work-design-interventions/${id}/outcome`).set(auth('mgr_b')).send({ outcomeRating: 'useful' });
+    expect(res.status).toBe(403);
+  });
+
+  it('404s for a non-existent intervention', async () => {
+    seedOrg(ORG, { adminUids: ['owner_1'], memberUids: ['owner_1'] });
+    const res = await request(app).patch(`/api/org/${ORG}/work-design-interventions/does_not_exist/outcome`).set(auth('owner_1')).send({ outcomeRating: 'useful' });
+    expect(res.status).toBe(404);
+  });
+
+  it('rejects an invalid rating with 400', async () => {
+    seedOrg(ORG, { adminUids: ['owner_1'], memberUids: ['owner_1'] });
+    const createRes = await request(app).post(`/api/org/${ORG}/work-design-interventions`).set(auth('owner_1')).send(validBody);
+    const id = createRes.body.intervention.id;
+    const res = await request(app).patch(`/api/org/${ORG}/work-design-interventions/${id}/outcome`).set(auth('owner_1')).send({ outcomeRating: 'amazing' });
+    expect(res.status).toBe(400);
+  });
+});
