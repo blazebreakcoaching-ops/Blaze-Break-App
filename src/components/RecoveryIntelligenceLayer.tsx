@@ -25,7 +25,6 @@ import { secureApiFetch } from '../lib/secure-api';
 import { DEMO_DERIVED_SUMMARIES } from '../lib/demo-data';
 
 interface RecoveryIntelligenceProps {
-  onAwardPoints: (amount: number, reason: string) => void;
   fingerprint?: any;
   isDemoSession?: boolean;
 }
@@ -53,7 +52,7 @@ interface WinLogData {
   description: string;
 }
 
-export const RecoveryIntelligenceLayer = ({ onAwardPoints, fingerprint, isDemoSession }: RecoveryIntelligenceProps) => {
+export const RecoveryIntelligenceLayer = ({ fingerprint, isDemoSession }: RecoveryIntelligenceProps) => {
   const [activeRoom, setActiveRoom] = useState<string>('velocity');
 
   // Load States from Firestore/Sync
@@ -238,7 +237,6 @@ export const RecoveryIntelligenceLayer = ({ onAwardPoints, fingerprint, isDemoSe
       const data = await res.json();
       if (data.success && data.summaries) {
         setRecalculateSuccess(true);
-        onAwardPoints(15, 'Recalculated Derived Recovery Intelligence');
 
         // The server already persisted these (derived/{summaryId} is
         // server-only written, per firestore.rules) - re-fetch to pick up
@@ -261,64 +259,6 @@ export const RecoveryIntelligenceLayer = ({ onAwardPoints, fingerprint, isDemoSe
       fetchDerivedSummaries();
     }
   }, [user, isDemoSession]);
-
-  // Somatic Micro-Interventions Timer States & Presets
-  const [activePresetId, setActivePresetId] = useState<string | null>(null);
-  const [presetTimeLeft, setPresetTimeLeft] = useState<number>(0);
-  const [presetRunning, setPresetRunning] = useState<boolean>(false);
-  const [presetCompletedSuccess, setPresetCompletedSuccess] = useState<boolean>(false);
-
-  // Somatic presets list for direct physical release
-  const BODY_RESET_PRESETS = [
-    {
-      id: 'physiolsigh',
-      name: 'Physiological Sigh',
-      durationSeconds: 60,
-      description: 'Double inhale through your nose followed by a long sigh exhale. Releasing carbon dioxide quickly resetting baseline tone.',
-      steps: [
-        'Take a deep unhurried inhale through the nose.',
-        'Take a secondary sharp sip of air to inflate the lungs.',
-        'Sigh it out long and audibly through your slack mouth.',
-        'Repeat this dual breath loop 3-5 times.'
-      ]
-    },
-    {
-      id: 'eyerelease',
-      name: 'Optic Drift (20-20-20 Rule)',
-      durationSeconds: 60,
-      description: 'Relieves eye strain and mental fatigue from screen time.',
-      steps: [
-        'Avert eyes from any digital screen.',
-        'Find a physical object 20 feet away to look at softly.',
-        'Let your eyes linger on the negative spaces for 20 seconds.',
-        'Blink consciously 5 times to let optic networks cool.'
-      ]
-    },
-    {
-      id: 'jawtension',
-      name: 'Jaw Drop & Shoulder Release',
-      durationSeconds: 90,
-      description: 'Clears somatic holding zones. Highly recommended for clenching habits.',
-      steps: [
-        'Drop your jaw completely loose. Let it slide slightly forward.',
-        'Roll your shoulders forward, carry them high, then drop them heavy.',
-        'Tilt your left ear to your left shoulder; repeat on the right.',
-        'Breathe into the widened cervical stretch for 4 full cycles.'
-      ]
-    },
-    {
-      id: 'stepsreset',
-      name: '3-Minute Somatic Desk Reset Walk',
-      durationSeconds: 180,
-      description: 'Complete spatial disruption. Breaks the mental inertia loop.',
-      steps: [
-        'Lock screen and walk away from work infrastructure.',
-        'Observe 3 different color palettes around the room.',
-        'Feel the weight of the floor under your heels.',
-        'Return to the desk with single-task priority focus.'
-      ]
-    }
-  ];
 
   // Helper trigger keyword to script suggestion matcher
   const getScriptSuggestion = (notes: string) => {
@@ -381,26 +321,6 @@ export const RecoveryIntelligenceLayer = ({ onAwardPoints, fingerprint, isDemoSe
     }
     return null;
   };
-
-  // Somatic timer hook
-  useEffect(() => {
-    if (!presetRunning || presetTimeLeft <= 0) {
-      if (presetRunning && presetTimeLeft === 0) {
-        setPresetRunning(false);
-        setPresetCompletedSuccess(true);
-        onAwardPoints(15, 'Somatic Micro-Intervention Completed');
-        setTimeout(() => {
-          setPresetCompletedSuccess(false);
-          setActivePresetId(null);
-        }, 3500);
-      }
-      return;
-    }
-    const timer = setTimeout(() => {
-      setPresetTimeLeft(prev => prev - 1);
-    }, 1000);
-    return () => clearTimeout(timer);
-  }, [presetRunning, presetTimeLeft]);
 
   // Saving helpers - these now genuinely persist rather than only updating
   // local React state.
@@ -601,8 +521,6 @@ export const RecoveryIntelligenceLayer = ({ onAwardPoints, fingerprint, isDemoSe
         confidence: 'verified'
       }
     );
-
-    onAwardPoints(20, 'Nervous-System Recovery Proof Committed');
   };
 
   // 5. Body Symptoms
@@ -655,7 +573,6 @@ export const RecoveryIntelligenceLayer = ({ onAwardPoints, fingerprint, isDemoSe
         confidence: 'high'
       }
     );
-    onAwardPoints(10, "RTW Roadmap Safety Limit Adjusted");
   };
 
   // 8. Focus Shield
@@ -891,7 +808,7 @@ export const RecoveryIntelligenceLayer = ({ onAwardPoints, fingerprint, isDemoSe
                     </div>
                     <div>
                       <span className="text-xs font-black uppercase tracking-wider text-[#166534] dark:text-[#4ade80] block">Updated</span>
-                      <p className="text-xs text-text-muted mt-0.5 leading-relaxed">Your numbers are refreshed — +15 XP for staying on top of it.</p>
+                      <p className="text-xs text-text-muted mt-0.5 leading-relaxed">Your numbers are refreshed.</p>
                     </div>
                   </div>
                 )}
@@ -1213,7 +1130,7 @@ export const RecoveryIntelligenceLayer = ({ onAwardPoints, fingerprint, isDemoSe
                   onClick={submitTrigger}
                   className="w-full py-4 bg-destructive hover:bg-destructive/90 text-destructive-foreground text-xs uppercase font-black tracking-widest rounded-xl transition-all hover:scale-[1.01] cursor-pointer"
                 >
-                  Record Trigger Insight (+15 pts)
+                  Record Trigger Insight
                 </button>
 
                 {triggers.length > 0 && (
@@ -1541,7 +1458,7 @@ export const RecoveryIntelligenceLayer = ({ onAwardPoints, fingerprint, isDemoSe
                       isFocusShieldActive ? "bg-destructive text-destructive-foreground shadow-destructive/10" : "bg-primary text-primary-foreground shadow-primary/10"
                     )}
                   >
-                    {isFocusShieldActive ? "Disengage Shield" : "Activate Focus Shield (+15 pts)"}
+                    {isFocusShieldActive ? "Disengage Shield" : "Activate Focus Shield"}
                   </button>
                 </div>
               </motion.div>

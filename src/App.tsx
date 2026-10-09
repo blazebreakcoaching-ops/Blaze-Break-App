@@ -2934,7 +2934,6 @@ export default function App() {
               <div className="space-y-32">
                 <RecoveryIntelligenceLayer
                   fingerprint={fingerprint}
-                  onAwardPoints={awardPoints}
                   isDemoSession={isDemoSession}
                 />
               </div>
