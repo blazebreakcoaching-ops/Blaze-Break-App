@@ -53,6 +53,7 @@ import { validateFeatureRegistryUpsert, buildInitialRegistry, LegacyFeatureDefin
 import { FEATURE_FLAG_IDS } from './feature-flag-ids';
 import { FEATURE_REGISTRY as LEGACY_FEATURE_REGISTRY } from './src/lib/feature-registry';
 import { validateProtectedCoreUpsert, buildSeedInvariants } from './protected-core';
+import { buildPlatformConnectorViews, buildOrgConnectorView, OrgConnectorDoc } from './connector-layer';
 import { getEffectiveDataPolicy, validateDataPolicyUpdate } from './org-data-policy';
 import { initialAuthStatus, validateConnectorCreate, canSeeConnectorDetail, ORG_CONNECTOR_TYPES } from './org-connectors';
 import { isDeviceChannel, isValidAppVersion, validateDeviceRegistration, evaluateUpdateStatus, DEVICE_CHANNELS } from './desktop-deployment';
@@ -6817,6 +6818,38 @@ app.post("/api/admin/evolution/protected-core/seed", verifyAppCheck, authenticat
     }
     await logAdminAction(req, "seed_protected_core", "", "", { created, skipped });
     res.json({ created, skipped, total: seedEntries.length });
+  } catch (err: any) {
+    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
+  }
+});
+
+// ============ Evolution Engine: Connector Layer ============
+// Read-only, platform-wide view unifying the two real connector systems
+// in this codebase (see connector-layer.ts) - never a third, invented
+// one. Platform dependency "configured" booleans are the exact same
+// expressions GET /api/admin/system-health already uses; org connectors
+// are read live via collectionGroup across every organisation, honestly
+// empty if none have registered any (no org-admin UI for
+// /api/org/:orgId/connectors exists yet, so that may well be the case
+// in most environments today).
+app.get("/api/admin/evolution/connectors", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    requireEvolutionAccess(req);
+    const db = getDb();
+    const platformViews = buildPlatformConnectorViews({
+      gemini: !!apiKey && apiKey !== "MY_GEMINI_API_KEY",
+      vertex: aiVertex !== null,
+      claude: anthropic !== null,
+      twilio: !!(process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN),
+      brevo: !!process.env.BREVO_API_KEY,
+      push: pushConfigured,
+    });
+    const snap = await db.collectionGroup("connectors").get();
+    const orgViews = snap.docs.map((doc: any) => {
+      const orgId = doc.ref.path.split('/')[1] || 'unknown';
+      return buildOrgConnectorView(doc.id, orgId, doc.data() as OrgConnectorDoc);
+    });
+    res.json({ connectors: [...platformViews, ...orgViews] });
   } catch (err: any) {
     res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
   }

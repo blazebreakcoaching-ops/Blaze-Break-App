@@ -30,6 +30,33 @@ const TEST_STATUS_BADGE_STYLES: Record<string, string> = {
   untested: 'bg-destructive/10 text-destructive dark:text-[#f87171]',
 };
 
+// Server-backed unified connector view (platform + organisation) via
+// GET /api/admin/evolution/connectors - see connector-layer.ts.
+// Supersedes the old "Safe Connector Layer" tab's three hardcoded example
+// cards with invented sample output.
+interface UnifiedConnectorView {
+  connectorId: string;
+  scope: 'platform' | 'organisation';
+  orgId: string | null;
+  provider: string;
+  status: string;
+  authenticationState: string;
+  capabilities: string[];
+  dataZones: string[];
+  mutationAllowed: boolean;
+  fallback: string;
+  lastSuccessfulSync: string | null;
+  owner: string | null;
+}
+
+const CONNECTOR_STATUS_BADGE_STYLES: Record<string, string> = {
+  configured: 'bg-success/10 text-success dark:text-[#4ade80]',
+  not_configured: 'bg-destructive/10 text-destructive dark:text-[#f87171]',
+  active: 'bg-success/10 text-success dark:text-[#4ade80]',
+  disabled: 'bg-surface/50 text-text-muted',
+  revoked: 'bg-destructive/10 text-destructive dark:text-[#f87171]',
+};
+
 // Server-backed registry entry shape (platform_feature_registry via
 // GET /api/admin/evolution/registry) - see feature-registry-v2.ts for
 // the authoritative schema. This is the canonical source now; the old
@@ -125,6 +152,33 @@ export const EvolutionEngine = () => {
 
   useEffect(() => {
     fetchProtectedCore();
+  }, []);
+
+  const [connectors, setConnectors] = useState<UnifiedConnectorView[] | null>(null);
+  const [isLoadingConnectors, setIsLoadingConnectors] = useState(false);
+  const [connectorsError, setConnectorsError] = useState<string | null>(null);
+
+  const fetchConnectors = async () => {
+    setIsLoadingConnectors(true);
+    setConnectorsError(null);
+    try {
+      const res = await secureApiFetch('/api/admin/evolution/connectors');
+      if (res.ok) {
+        const data = await res.json();
+        setConnectors(data.connectors || []);
+      } else {
+        const err = await res.json();
+        setConnectorsError(err.error || "Couldn't load the Connector Layer.");
+      }
+    } catch (e) {
+      setConnectorsError("Couldn't load the Connector Layer.");
+    } finally {
+      setIsLoadingConnectors(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchConnectors();
   }, []);
 
   const fetchRegistry = async () => {
@@ -502,26 +556,79 @@ export const EvolutionEngine = () => {
       {/* Connectors Tab */}
       {activeTab === 'connectors' && (
         <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2">
-          <div className="bg-surface/50 border border-border/40 p-8 rounded-xl text-center space-y-4">
-            <Network className="w-12 h-12 text-text-muted mx-auto" />
-            <h3 className="text-xl font-bold text-text-main">Safe Connector Layer</h3>
-            <p className="text-text-muted max-w-lg mx-auto text-sm">Features share context without directly modifying each other's state machines.</p>
-            
-            <div className="mt-8 grid grid-cols-1 md:grid-cols-3 gap-4 text-left">
-               <div className="bg-card p-4 rounded-xl shadow-sm border border-border/40">
-                 <div className="text-xs font-black uppercase text-[#9a3412] dark:text-primary mb-2">Calendar Scanner</div>
-                 <p className="text-sm text-text-main">"User has 7 meetings today."</p>
-               </div>
-               <div className="bg-card p-4 rounded-xl shadow-sm border border-border/40 border-x-4 border-l-primary/0 border-r-primary/0 md:border-y-0 md:border-x">
-                 <div className="text-xs font-black uppercase text-destructive dark:text-[#f87171] mb-2">Energy Budget</div>
-                 <p className="text-sm text-text-main">"That costs 90 energy credits. Overload risk threshold passed."</p>
-               </div>
-               <div className="bg-card p-4 rounded-xl shadow-sm border border-border/40">
-                 <div className="text-xs font-black uppercase text-[#166534] dark:text-[#4ade80] mb-2">Nova Change Interpreter</div>
-                 <p className="text-sm text-text-main">"Suggesting Recovery Mode protocol."</p>
-               </div>
-            </div>
+          <div className="flex items-center justify-between border-b border-border/20 pb-4">
+            <h3 className="text-xl font-bold flex items-center gap-2 text-text-main">
+              <Network className="w-5 h-5 text-text-muted" /> Connector Layer
+            </h3>
+            <button
+              onClick={fetchConnectors}
+              disabled={isLoadingConnectors}
+              className="text-xs font-bold px-3 py-1.5 rounded-lg border border-border/40 text-text-muted hover:text-text-main flex items-center gap-1.5 disabled:opacity-50"
+            >
+              <RefreshCw className={cn("w-3.5 h-3.5", isLoadingConnectors && "animate-spin")} /> Refresh
+            </button>
           </div>
+
+          <p className="text-sm text-text-muted max-w-3xl">
+            A real, unified view over two genuine connector systems - the platform's own third-party dependencies (Twilio, Brevo, Gemini, Vertex, Claude, Web Push), and every organisation's registered connectors. "Configured" means credentials are present, not that a live connection was just verified - no connectivity probe exists for any of these.
+          </p>
+
+          {connectorsError && (
+            <div className="p-4 bg-destructive/10 border border-destructive/20 rounded-xl text-sm text-destructive dark:text-[#f87171]">{connectorsError}</div>
+          )}
+
+          {isLoadingConnectors && !connectors ? (
+            <p className="text-sm text-text-muted italic">Loading...</p>
+          ) : (
+            <>
+              <h4 className="text-sm font-black uppercase tracking-widest text-text-muted">Platform Dependencies</h4>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {(connectors || []).filter(c => c.scope === 'platform').map(c => (
+                  <div key={c.connectorId} className="bg-card border border-border/40 rounded-xl p-5">
+                    <div className="flex items-start justify-between gap-3 mb-2">
+                      <span className="font-bold text-text-main">{c.provider}</span>
+                      <span className={cn("text-[10px] uppercase font-black tracking-widest px-2 py-0.5 rounded-full shrink-0", CONNECTOR_STATUS_BADGE_STYLES[c.status] || 'bg-surface/50 text-text-muted')}>
+                        {c.status.replace(/_/g, ' ')}
+                      </span>
+                    </div>
+                    <p className="text-xs text-text-muted mb-2">{c.capabilities.join(', ')}</p>
+                    <div className="flex items-center gap-2 mb-3">
+                      {c.mutationAllowed && (
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-warning/10 text-[#9a3412] dark:text-warning">Can mutate external state</span>
+                      )}
+                      {c.dataZones.map(z => (
+                        <span key={z} className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-surface/50 text-text-muted">{z.replace(/_/g, ' ')}</span>
+                      ))}
+                    </div>
+                    <p className="text-[11px] text-text-muted italic leading-relaxed border-t border-border/20 pt-2">{c.fallback}</p>
+                  </div>
+                ))}
+              </div>
+
+              <h4 className="text-sm font-black uppercase tracking-widest text-text-muted pt-2">Organisation Connectors (all orgs)</h4>
+              {(connectors || []).filter(c => c.scope === 'organisation').length === 0 ? (
+                <div className="p-6 bg-surface/30 border border-border/40 rounded-xl text-sm text-text-muted">
+                  No organisation has registered a connector yet. The backend for this (org-connectors.ts, /api/org/:orgId/connectors) is real and tested, but no dedicated org-admin management screen exists in the app yet - this is a platform-wide read-only view over whatever gets registered once one does.
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {(connectors || []).filter(c => c.scope === 'organisation').map(c => (
+                    <div key={c.connectorId} className="bg-card border border-border/40 rounded-xl p-5">
+                      <div className="flex items-start justify-between gap-3 mb-2">
+                        <span className="font-bold text-text-main">{c.provider}</span>
+                        <span className={cn("text-[10px] uppercase font-black tracking-widest px-2 py-0.5 rounded-full shrink-0", CONNECTOR_STATUS_BADGE_STYLES[c.status] || 'bg-surface/50 text-text-muted')}>
+                          {c.status.replace(/_/g, ' ')}
+                        </span>
+                      </div>
+                      <p className="text-[10px] text-text-muted font-mono mb-2">org: {c.orgId}</p>
+                      <p className="text-xs text-text-muted mb-2">{c.capabilities.join(', ')}</p>
+                      <p className="text-[11px] text-text-muted italic leading-relaxed border-t border-border/20 pt-2">{c.fallback}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </>
+          )}
         </div>
       )}
     </div>
