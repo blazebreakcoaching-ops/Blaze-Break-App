@@ -1,15 +1,101 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
-import { Shield, Database, Plus, Search, Cpu, Brain, Network, Lock, ZapOff, CheckCircle2, AlertTriangle, Layers } from 'lucide-react';
-import { FEATURE_REGISTRY } from '../lib/feature-registry';
+import { Database, Plus, Search, Brain, Network, ZapOff, CheckCircle2, AlertTriangle, Layers, RefreshCw, Loader2 } from 'lucide-react';
 import { useFeatureFlags, setFeatureFlag, FeatureFlag } from '../lib/feature-flags';
 import { getNovaBrain, NovaMemory, deleteNovaMemory } from '../lib/nova-brain';
 import { cn } from '../lib/utils';
+import { secureApiFetch } from '../lib/secure-api';
+
+// Server-backed registry entry shape (platform_feature_registry via
+// GET /api/admin/evolution/registry) - see feature-registry-v2.ts for
+// the authoritative schema. This is the canonical source now; the old
+// client-only FEATURE_REGISTRY static object (src/lib/feature-registry.ts)
+// is migrated into this collection by the one-time seed route rather than
+// imported directly here, so there is exactly one place this screen reads
+// governance data from.
+interface RegistryEntry {
+  featureId: string;
+  displayName: string;
+  description: string;
+  lifecycleState: string;
+  enforcementState: string;
+  featureFlag: string | null;
+  dataZones: string[];
+  dependencies: string[];
+  productOwner: string | null;
+  technicalOwner: string | null;
+  notes: string | null;
+}
+
+const LIFECYCLE_BADGE_STYLES: Record<string, string> = {
+  draft: 'bg-surface/50 text-text-muted',
+  shadow: 'bg-surface/50 text-text-muted',
+  internal_beta: 'bg-primary/10 text-[#9a3412] dark:text-primary',
+  private_beta: 'bg-primary/10 text-[#9a3412] dark:text-primary',
+  public_beta: 'bg-primary/10 text-[#9a3412] dark:text-primary',
+  live: 'bg-success/10 text-success dark:text-[#4ade80]',
+  frozen: 'bg-warning/10 text-[#9a3412] dark:text-warning',
+  deprecated: 'bg-destructive/10 text-destructive dark:text-[#f87171]',
+  removed: 'bg-destructive/10 text-destructive dark:text-[#f87171]',
+};
+
+const ENFORCEMENT_BADGE_STYLES: Record<string, string> = {
+  fully_enforced: 'bg-success/10 text-success dark:text-[#4ade80]',
+  partially_enforced: 'bg-warning/10 text-[#9a3412] dark:text-warning',
+  frontend_only: 'bg-warning/10 text-[#9a3412] dark:text-warning',
+  backend_only: 'bg-warning/10 text-[#9a3412] dark:text-warning',
+  not_wired: 'bg-destructive/10 text-destructive dark:text-[#f87171]',
+  unknown: 'bg-surface/50 text-text-muted',
+};
 
 export const EvolutionEngine = () => {
   const flags = useFeatureFlags();
   const [activeTab, setActiveTab] = useState<'registry' | 'brain' | 'scanner' | 'connectors'>('registry');
   const [brainMemories, setBrainMemories] = useState<NovaMemory[]>([]);
+  const [registry, setRegistry] = useState<RegistryEntry[] | null>(null);
+  const [isLoadingRegistry, setIsLoadingRegistry] = useState(false);
+  const [isSeeding, setIsSeeding] = useState(false);
+  const [registryError, setRegistryError] = useState<string | null>(null);
+
+  const fetchRegistry = async () => {
+    setIsLoadingRegistry(true);
+    setRegistryError(null);
+    try {
+      const res = await secureApiFetch('/api/admin/evolution/registry');
+      if (res.ok) {
+        const data = await res.json();
+        setRegistry(data.entries || []);
+      } else {
+        const err = await res.json();
+        setRegistryError(err.error || "Couldn't load the feature registry.");
+      }
+    } catch (e) {
+      setRegistryError("Couldn't load the feature registry.");
+    } finally {
+      setIsLoadingRegistry(false);
+    }
+  };
+
+  const handleSeedRegistry = async () => {
+    setIsSeeding(true);
+    try {
+      const res = await secureApiFetch('/api/admin/evolution/registry/seed', { method: 'POST' });
+      if (res.ok) {
+        await fetchRegistry();
+      } else {
+        const err = await res.json();
+        setRegistryError(err.error || "Couldn't seed the registry.");
+      }
+    } catch (e) {
+      setRegistryError("Couldn't seed the registry.");
+    } finally {
+      setIsSeeding(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchRegistry();
+  }, []);
 
   useEffect(() => {
     setBrainMemories(getNovaBrain());
@@ -73,106 +159,115 @@ export const EvolutionEngine = () => {
         <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2">
           <div className="flex items-center justify-between border-b border-border/20 pb-4">
             <h3 className="text-xl font-bold flex items-center gap-2 text-text-main">
-              <Lock className="w-5 h-5 text-text-muted" /> Core Protected List
+              <Database className="w-5 h-5 text-text-muted" /> Canonical Feature Registry
             </h3>
-            <span className="text-xs uppercase tracking-widest font-black text-text-muted">Foundation</span>
-          </div>
-          <div className="flex flex-wrap gap-2 mb-10">
-            {['app_navigation', 'user_profile', 'nova_identity_rules', 'ship_framework', 'safety_rules', 'blame_method'].map(core => (
-              <div key={core} className="px-3 py-1.5 bg-surface/50 rounded-lg text-xs font-mono font-bold text-text-muted border border-border/40 flex items-center gap-1.5 ">
-                <Shield className="w-3 h-3 text-text-muted" /> {core}
-              </div>
-            ))}
+            <div className="flex items-center gap-2">
+              <button
+                onClick={fetchRegistry}
+                disabled={isLoadingRegistry}
+                className="text-xs font-bold px-3 py-1.5 rounded-lg border border-border/40 text-text-muted hover:text-text-main flex items-center gap-1.5 disabled:opacity-50"
+              >
+                <RefreshCw className={cn("w-3.5 h-3.5", isLoadingRegistry && "animate-spin")} /> Refresh
+              </button>
+              <button
+                onClick={handleSeedRegistry}
+                disabled={isSeeding}
+                title="Create-if-absent migration from the legacy static registry and feature-flags.ts - safe to re-run, never overwrites an existing entry."
+                className="text-xs font-bold px-3 py-1.5 rounded-lg bg-primary/10 text-[#9a3412] dark:text-primary hover:bg-primary/20 flex items-center gap-1.5 disabled:opacity-50"
+              >
+                {isSeeding ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />} Sync from legacy sources
+              </button>
+            </div>
           </div>
 
-          <h3 className="text-xl font-bold flex items-center gap-2 mb-4 text-text-main">
-            <Database className="w-5 h-5 text-text-muted" /> Registered Features
-          </h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {Object.values(FEATURE_REGISTRY).map(feature => (
-              <div key={feature.id} className="bg-card border border-border/40 rounded-2xl p-6 relative">
-                 <div className="flex items-start justify-between mb-2">
-                   <h4 className="font-bold text-lg text-text-main">{feature.name}</h4>
-                   <span className={cn(
-                     "text-xs uppercase font-black tracking-widest px-2 py-0.5 rounded-full",
-                     feature.status === 'active' ? "bg-success/10 text-success dark:text-[#4ade80]" :
-                     feature.status === 'planned' ? "bg-primary/10 text-[#9a3412] dark:text-primary" :
-                     "bg-surface/50 text-text-muted"
-                   )}>{feature.status}</span>
-                 </div>
-                 <p className="text-sm text-text-muted mb-4 h-10">{feature.purpose}</p>
-                 
-                 <div className="space-y-2 mb-6">
-                    <div className="flex items-center justify-between text-xs font-medium text-text-muted bg-surface/30 p-2 rounded-lg">
-                      <span>Feature Flag:</span>
-                      <code className="text-xs bg-card px-1.5 py-0.5 rounded border border-border/40">{feature.featureFlagName}</code>
-                    </div>
-                    {feature.data_zone && (
+          <p className="text-sm text-text-muted max-w-3xl">
+            Server-persisted (platform_feature_registry) - this replaces the old static, client-only registry. <strong className="text-text-main">Lifecycle</strong> describes maturity; <strong className="text-text-main">Enforcement</strong> describes whether the feature's behaviour is actually, verifiably gated end-to-end. A feature can be Live while its enforcement is Unknown - that distinction is the point.
+          </p>
+
+          {registryError && (
+            <div className="p-4 bg-destructive/10 border border-destructive/20 rounded-xl text-sm text-destructive dark:text-[#f87171]">{registryError}</div>
+          )}
+
+          {isLoadingRegistry && !registry ? (
+            <p className="text-sm text-text-muted italic">Loading registry...</p>
+          ) : registry && registry.length === 0 ? (
+            <div className="p-8 text-center bg-surface/30 border border-border/40 rounded-2xl">
+              <p className="text-sm text-text-muted mb-3">The registry is empty - no entries have been seeded yet.</p>
+              <p className="text-xs text-text-muted">Click "Sync from legacy sources" above to migrate the real existing feature-registry.ts and feature-flags.ts data in.</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {(registry || []).map(feature => (
+                <div key={feature.featureId} className="bg-card border border-border/40 rounded-2xl p-6 relative">
+                   <div className="flex items-start justify-between gap-3 mb-2">
+                     <h4 className="font-bold text-lg text-text-main">{feature.displayName}</h4>
+                     <code className="text-[10px] text-text-muted shrink-0 mt-1">{feature.featureId}</code>
+                   </div>
+                   <p className="text-sm text-text-muted mb-4 min-h-[2.5rem]">{feature.description}</p>
+
+                   <div className="flex flex-wrap gap-2 mb-4">
+                     <span className={cn("text-xs uppercase font-black tracking-widest px-2 py-0.5 rounded-full", LIFECYCLE_BADGE_STYLES[feature.lifecycleState] || 'bg-surface/50 text-text-muted')}>
+                       {feature.lifecycleState.replace(/_/g, ' ')}
+                     </span>
+                     <span
+                       title="Enforcement describes whether this feature's behaviour is actually, verifiably gated - separate from lifecycle maturity."
+                       className={cn("text-xs uppercase font-black tracking-widest px-2 py-0.5 rounded-full", ENFORCEMENT_BADGE_STYLES[feature.enforcementState] || 'bg-surface/50 text-text-muted')}
+                     >
+                       {feature.enforcementState.replace(/_/g, ' ')}
+                     </span>
+                   </div>
+
+                   <div className="space-y-2 mb-4">
+                      {feature.featureFlag && (
+                        <div className="flex items-center justify-between text-xs font-medium text-text-muted bg-surface/30 p-2 rounded-lg">
+                          <span>Feature Flag:</span>
+                          <code className="text-xs bg-card px-1.5 py-0.5 rounded border border-border/40">{feature.featureFlag}</code>
+                        </div>
+                      )}
+                      {feature.dataZones.length > 0 && (
+                        <div className="flex items-center justify-between text-xs font-medium text-text-muted bg-surface/30 p-2 rounded-lg">
+                          <span>Data Zone:</span>
+                          <span className="text-xs uppercase font-black text-[#9a3412] dark:text-primary tracking-wider text-right">
+                            {feature.dataZones.map(z => z.replace(/_/g, ' ')).join(', ')}
+                          </span>
+                        </div>
+                      )}
                       <div className="flex items-center justify-between text-xs font-medium text-text-muted bg-surface/30 p-2 rounded-lg">
-                        <span>Data Zone:</span>
-                        <span className="text-xs uppercase font-black text-[#9a3412] dark:text-primary tracking-wider">
-                          {feature.data_zone.replace(/_/g, ' ')}
+                        <span>Owner:</span>
+                        <span className={cn("text-xs font-bold", !feature.productOwner && !feature.technicalOwner && "text-warning")}>
+                          {feature.productOwner || feature.technicalOwner || 'Nobody owns this'}
                         </span>
                       </div>
-                    )}
-                    <div className="flex items-center justify-between text-xs font-medium text-text-muted bg-surface/30 p-2 rounded-lg">
-                      <span>Risk Level:</span>
-                      <span className={cn(
-                        "uppercase font-black tracking-wider text-xs",
-                        feature.riskLevel === 'high' ? 'text-destructive dark:text-[#f87171]' :
-                        feature.riskLevel === 'medium' ? 'text-[#9a3412] dark:text-warning' : 'text-[#166534] dark:text-[#4ade80]'
-                      )}>{feature.riskLevel}</span>
-                    </div>
-                 </div>
+                   </div>
 
-                 <div className="flex items-end justify-between border-t border-border/20 pt-4 mt-auto">
-                    <div className="flex gap-2">
-                      {feature.usesAI && <Cpu className="w-4 h-4 text-primary" />}
-                      {feature.usesSensitiveData && <Lock className="w-4 h-4 text-warning" />}
-                    </div>
-                    
-                    {/* Only enable_overload_shield is actually wired to gate
-                        anything (App.tsx checks it before rendering
-                        NovaOverloadShield) - every other flag here is read by
-                        nothing outside this screen, so a real Enable/Disable
-                        control for it would be a lie. Rather than remove the
-                        registry's governance metadata (still useful
-                        documentation - risk level, data zone, AI usage), the
-                        control itself is shown only where it's real, and
-                        every other feature says so plainly instead of
-                        offering a switch that does nothing. */}
-                    {feature.status === 'active' && feature.featureFlagName === 'enable_overload_shield' ? (
-                      <button
-                        onClick={() => handleToggleFlag(feature.featureFlagName as FeatureFlag, flags[feature.featureFlagName as FeatureFlag] || false)}
-                        aria-pressed={flags[feature.featureFlagName as FeatureFlag] || false}
-                        className={cn(
-                          "text-xs font-bold px-3 py-1.5 rounded-lg border flex items-center gap-1.5 transition-all text-text-muted hover:text-text-main border-border/40 cursor-pointer"
-                        )}
-                      >
-                        {flags[feature.featureFlagName as FeatureFlag] ? (
-                          <><ZapOff className="w-3.5 h-3.5 text-primary" /> Disable Flag</>
-                        ) : (
-                          <><Plus className="w-3.5 h-3.5" /> Enable Flag</>
-                        )}
-                      </button>
-                    ) : feature.status === 'active' ? (
-                      <span
-                        title="This flag exists in the registry but nothing in the app currently reads it - toggling it here would have no real effect."
-                        className="text-xs font-bold px-3 py-1.5 rounded-lg border border-border/40 text-text-muted/60 flex items-center gap-1.5"
-                      >
-                        Not enforced
-                      </span>
-                    ) : null}
-                 </div>
+                   {feature.notes && (
+                     <p className="text-[11px] text-text-muted italic leading-relaxed border-t border-border/20 pt-3">{feature.notes}</p>
+                   )}
 
-                 {/* Absolute corner indicator if the flag both toggles AND
-                     genuinely gates something - see note above. */}
-                 {flags[feature.featureFlagName as FeatureFlag] && feature.status === 'active' && feature.featureFlagName === 'enable_overload_shield' && (
-                   <div className="absolute -top-1 -right-1 w-3 h-3 bg-success rounded-full border-2 border-white shadow-sm" />
-                 )}
-              </div>
-            ))}
-          </div>
+                   {/* Only enable_overload_shield is actually wired to gate
+                       anything (App.tsx checks it before rendering
+                       NovaOverloadShield) - a real Enable/Disable control
+                       for any other flag here would be a lie, so the
+                       toggle is shown only where it's real. */}
+                   {feature.featureFlag === 'enable_overload_shield' && (
+                     <div className="flex justify-end border-t border-border/20 pt-3 mt-3">
+                       <button
+                         onClick={() => handleToggleFlag(feature.featureFlag as FeatureFlag, flags[feature.featureFlag as FeatureFlag] || false)}
+                         aria-pressed={flags[feature.featureFlag as FeatureFlag] || false}
+                         className="text-xs font-bold px-3 py-1.5 rounded-lg border flex items-center gap-1.5 transition-all text-text-muted hover:text-text-main border-border/40 cursor-pointer"
+                       >
+                         {flags[feature.featureFlag as FeatureFlag] ? (
+                           <><ZapOff className="w-3.5 h-3.5 text-primary" /> Disable Flag</>
+                         ) : (
+                           <><Plus className="w-3.5 h-3.5" /> Enable Flag</>
+                         )}
+                       </button>
+                     </div>
+                   )}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 

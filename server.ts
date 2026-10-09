@@ -48,7 +48,10 @@ import {
 } from './gad7';
 import { DEFAULT_LEGAL_DOCUMENTS, LegalDocumentType } from './legal-documents';
 import { OrgRole, isOrgRole, hasOrgPermission, canAssignRole, OrgPermission, ORG_ROLE_PERMISSIONS } from './org-rbac';
-import { PLATFORM_ADMIN_ROLES, isPlatformAdminRole, DEFAULT_OWNER_BOOTSTRAP_EMAILS, isOwnerBootstrapEmail as isOwnerBootstrapEmailFor } from './admin-roles';
+import { PLATFORM_ADMIN_ROLES, isPlatformAdminRole, DEFAULT_OWNER_BOOTSTRAP_EMAILS, isOwnerBootstrapEmail as isOwnerBootstrapEmailFor, isEvolutionEngineRole } from './admin-roles';
+import { validateFeatureRegistryUpsert, buildInitialRegistry, LegacyFeatureDefinition } from './feature-registry-v2';
+import { FEATURE_FLAG_IDS } from './feature-flag-ids';
+import { FEATURE_REGISTRY as LEGACY_FEATURE_REGISTRY } from './src/lib/feature-registry';
 import { getEffectiveDataPolicy, validateDataPolicyUpdate } from './org-data-policy';
 import { initialAuthStatus, validateConnectorCreate, canSeeConnectorDetail, ORG_CONNECTOR_TYPES } from './org-connectors';
 import { isDeviceChannel, isValidAppVersion, validateDeviceRegistration, evaluateUpdateStatus, DEVICE_CHANNELS } from './desktop-deployment';
@@ -3577,6 +3580,21 @@ const requireAdmin = (req: any) => {
   return user;
 };
 
+// The Evolution Engine (platform-governance control plane) is narrower
+// than general admin access - see admin-roles.ts's EVOLUTION_ENGINE_ROLES
+// comment for why. This is the one server-side gate every Evolution
+// Engine route uses; App.tsx's nav/route guards import the same
+// EVOLUTION_ENGINE_ROLES list so the client and server boundary can't
+// drift independently again.
+const requireEvolutionAccess = (req: any) => {
+  const user = requireAuth(req);
+  const allowed = isEvolutionEngineRole(user.role) || isOwnerBootstrapEmail(user.email);
+  if (!allowed) {
+    throw new Error("Forbidden: Evolution Engine access required.");
+  }
+  return user;
+};
+
 const requireRole = (req: any, allowedRoles: string[]) => {
   const user = requireAuth(req);
   const role = user.role || (isOwnerBootstrapEmail(user.email) ? 'platform_owner' : 'user');
@@ -6653,6 +6671,91 @@ app.post("/api/admin/incidents/:id/update", verifyAppCheck, authenticateFirebase
     res.json({ success: true });
   } catch (err: any) {
     res.status(err.message?.includes("not found") ? 404 : 500).json({ error: err.message });
+  }
+});
+
+// ============ Evolution Engine: canonical feature registry ============
+// Server-persisted source of truth (platform_feature_registry) -
+// supersedes src/lib/feature-registry.ts's static, client-only object,
+// which conflated registered/built/enabled/live into one `status` field
+// and was never read by anything outside its own admin display. See
+// feature-registry-v2.ts for the schema and the migration's honesty
+// rules (never invent an owner, enforcement state, or dependency that
+// isn't independently verifiable). Gated by requireEvolutionAccess, not
+// requireAdmin - deliberately narrower, matching the spec's framing of
+// this as a "protected administrative/developer control plane," not
+// general platform-staff territory.
+
+// Grep-verified, as of this migration, the only flag ids actually read
+// anywhere outside this registry's own display (App.tsx's render gates,
+// entitlements.ts, NovaChat.tsx). This is a static snapshot, deliberately
+// NOT auto-derived from a runtime scan of the client bundle (which this
+// server can't see) - re-verify by grep if a flag's wiring changes.
+const EVOLUTION_VERIFIED_WIRED_FLAG_IDS = ['enable_overload_shield', 'enable_nova_voice', 'enable_guardian_protocol'];
+
+app.get("/api/admin/evolution/registry", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    requireEvolutionAccess(req);
+    const db = getDb();
+    const snap = await db.collection("platform_feature_registry").get();
+    const entries = snap.docs.map((doc: any) => ({ featureId: doc.id, ...doc.data() }));
+    res.json({ entries });
+  } catch (err: any) {
+    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
+  }
+});
+
+app.post("/api/admin/evolution/registry", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    requireEvolutionAccess(req);
+    const parsed = validateFeatureRegistryUpsert(req.body);
+    if (!parsed.valid) {
+      return res.status(400).json({ error: parsed.error });
+    }
+    const db = getDb();
+    const { featureId, ...rest } = req.body;
+    const ref = db.collection("platform_feature_registry").doc(featureId);
+    const existing = await ref.get();
+    const now = new Date().toISOString();
+    await ref.set({
+      ...rest,
+      createdAt: existing.exists ? (existing.data()?.createdAt || now) : now,
+      lastChangedAt: now,
+    }, { merge: true });
+    await logAdminAction(req, "update_feature_registry", "", featureId, { lifecycleState: rest.lifecycleState, enforcementState: rest.enforcementState });
+    res.json({ success: true, featureId });
+  } catch (err: any) {
+    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
+  }
+});
+
+// One-time (idempotent) migration from the legacy static sources into
+// the real, server-persisted registry. Create-if-absent per entry, so
+// re-running this after a manual edit can never clobber that edit - it
+// only ever fills in features that don't yet have a registry doc.
+app.post("/api/admin/evolution/registry/seed", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    requireEvolutionAccess(req);
+    const db = getDb();
+    const initialEntries = buildInitialRegistry(
+      LEGACY_FEATURE_REGISTRY as unknown as Record<string, LegacyFeatureDefinition>,
+      FEATURE_FLAG_IDS,
+      EVOLUTION_VERIFIED_WIRED_FLAG_IDS
+    );
+    let created = 0;
+    let skipped = 0;
+    for (const entry of initialEntries) {
+      const ref = db.collection("platform_feature_registry").doc(entry.featureId);
+      const existing = await ref.get();
+      if (existing.exists) { skipped++; continue; }
+      const { featureId, ...rest } = entry;
+      await ref.set(rest);
+      created++;
+    }
+    await logAdminAction(req, "seed_feature_registry", "", "", { created, skipped });
+    res.json({ created, skipped, total: initialEntries.length });
+  } catch (err: any) {
+    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
   }
 });
 

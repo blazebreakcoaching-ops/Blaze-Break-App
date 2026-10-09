@@ -1921,6 +1921,16 @@ service cloud.firestore {
       allow write: if false; // Server-only
     }
 
+    // Canonical feature registry (Evolution Engine) - supersedes the old
+    // static, client-only FEATURE_REGISTRY. Same admin-read/server-write-
+    // only pattern as admin_audit_logs/platform_incidents; the real
+    // boundary (narrower than general admin) is enforced server-side by
+    // requireEvolutionAccess, not by this rule.
+    match /platform_feature_registry/{featureId} {
+      allow read: if isSignedIn() && request.auth.token.admin == true;
+      allow write: if false; // Server-only
+    }
+
     // Platform-wide manual incident log (Command Centre's Incidents tab) -
     // same admin-read/server-write-only pattern as admin_audit_logs. Every
     // write goes through server.ts's requireAdmin + logAdminAction, never

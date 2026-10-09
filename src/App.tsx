@@ -54,7 +54,7 @@ import { SHIP_QUEST_IDS_BY_STAGE } from "./components/ShipJourney";
 import { cn, fireConfetti } from "./lib/utils.ts";
 import { useFocusTrap } from "./lib/useFocusTrap";
 import { auth, getDb } from "./lib/firebase.ts";
-import { isOwnerBootstrapEmail } from "../admin-roles";
+import { isOwnerBootstrapEmail, EVOLUTION_ENGINE_ROLES, PLATFORM_ADMIN_ROLES, isPlatformAdminRole, isEvolutionEngineRole } from "../admin-roles";
 const DiagnoseView = lazy(() => import("./components/DiagnoseSection.tsx").then(m => ({ default: m.DiagnoseView })));
 const ResultView = lazy(() => import("./components/DiagnoseSection.tsx").then(m => ({ default: m.ResultView })));
 const EnergyBudgetTool = lazy(() => import("./components/EnergyBudget.tsx").then(m => ({ default: m.EnergyBudgetTool })));
@@ -312,15 +312,20 @@ export const ALL_TABS: {
     id: "evolution",
     icon: Activity,
     label: "Evolution Engine",
-    roles: ["platform_admin", "security_admin"],
-    featureId: "burnout_diagnostic",
+    // Deliberately the narrower EVOLUTION_ENGINE_ROLES set, not every
+    // platform-admin role - see admin-roles.ts. Previously hardcoded as
+    // two inline strings that had already drifted from that file (missing
+    // platform_owner entirely) and carried a stray `featureId:
+    // "burnout_diagnostic"` entitlement gate left over from a copy-paste -
+    // a platform governance tool's nav visibility should never depend on
+    // a staff member's own personal consumer subscription tier.
+    roles: [...EVOLUTION_ENGINE_ROLES],
   },
   {
     id: "intelligence",
     icon: Brain,
     label: "Intelligence Layer",
-    roles: ["platform_admin", "security_admin"],
-    featureId: "burnout_diagnostic",
+    roles: [...EVOLUTION_ENGINE_ROLES],
   },
   {
     id: "executive",
@@ -332,7 +337,12 @@ export const ALL_TABS: {
     id: "admin",
     icon: ShieldCheck,
     label: "Command Centre",
-    roles: ["platform_admin"],
+    // Previously only "platform_admin" - AdminDashboard.tsx's own
+    // internal gate (isPlatformAdminRole) already recognises all 8
+    // platform-staff roles, so a platform_owner or security_admin
+    // couldn't even see the nav button to reach a dashboard they were
+    // otherwise fully entitled to open.
+    roles: [...PLATFORM_ADMIN_ROLES],
   },
 ];
 
@@ -343,7 +353,14 @@ export const ALL_TABS: {
 // silently diverge without anyone noticing.
 const isTabVisible = (t: (typeof ALL_TABS)[number], role: string | undefined, tier: SubscriptionTier) => {
   if (t.id === "privacy") return false; // Reachable via Settings > Consent & Privacy instead
-  if (role === "platform_admin") return true;
+  // Previously only the literal string "platform_admin" bypassed every
+  // tab's own roles list - the other 7 platform-staff roles (including
+  // platform_owner, the highest-privilege one) had no such bypass and
+  // depended entirely on being explicitly listed in each tab's roles
+  // array, which several tabs (e.g. "admin") didn't do. Broadened to the
+  // full canonical set so platform staff can always see every tab,
+  // consistently, regardless of which of the 8 roles they hold.
+  if (isPlatformAdminRole(role)) return true;
   if (!role || !t.roles.includes(role)) return false;
   if (t.featureId && !hasSubscriptionEntitlement(tier, t.featureId)) return false;
   return true;
@@ -1481,7 +1498,24 @@ export default function App() {
       if (activeTab === "org" && effectiveRole !== "platform_admin" && !["manager", "organisation_admin", "individual"].includes(effectiveRole)) {
         setActiveTab("home");
       }
-      else if (["evolution", "intelligence", "executive", "admin"].includes(activeTab) && !["platform_admin", "security_admin", "executive"].includes(effectiveRole)) {
+      // Previously one combined check lumped "executive" (a customer plan
+      // role) in with "evolution"/"intelligence"/"admin" (platform-staff-
+      // only governance surfaces) and allowed any of the three listed
+      // roles onto any of the four tabs - meaning a customer with the
+      // "executive" role would NOT be redirected home off "evolution",
+      // "intelligence", or "admin" if activeTab were ever set to one of
+      // those by anything other than the (correctly gated) nav button,
+      // and a platform_owner - not literally "platform_admin" or
+      // "security_admin" - would incorrectly be bounced off all four.
+      // Split per tab, each checked against the canonical role lists in
+      // admin-roles.ts instead of ad hoc inline strings.
+      else if (activeTab === "executive" && effectiveRole !== "executive" && !isPlatformAdminRole(effectiveRole)) {
+        setActiveTab("home");
+      }
+      else if (["evolution", "intelligence"].includes(activeTab) && !isEvolutionEngineRole(effectiveRole)) {
+        setActiveTab("home");
+      }
+      else if (activeTab === "admin" && !isPlatformAdminRole(effectiveRole)) {
         setActiveTab("home");
       }
     }

@@ -70,3 +70,27 @@ export const isOwnerBootstrapEmail = (
   const lower = email.toLowerCase();
   return allowlist.some((e) => e.toLowerCase() === lower);
 };
+
+// The Evolution Engine (platform-governance control plane: feature
+// registry, change proposals, protected core, Nova context brain
+// governance, connector contracts) is deliberately narrower than every
+// other platform-admin surface - it's "developer control plane" territory,
+// not general admin work. Previously App.tsx re-typed this as two
+// hardcoded strings ("platform_admin", "security_admin") directly in its
+// own nav/route-guard arrays, missing platform_owner entirely and drifting
+// independently from this file the same way the three now-unified
+// admin-role copies did before admin-roles.ts existed. This is the one
+// place both the client nav gate and any server-side route gate should
+// import this list from. A future PR narrows this further with granular
+// evolution_* permissions (evolution_view, protected_core_manage, etc.);
+// until then, this coarse three-role list is the real boundary.
+export const EVOLUTION_ENGINE_ROLES = [
+  'platform_owner',
+  'platform_admin',
+  'security_admin',
+] as const;
+
+export type EvolutionEngineRole = (typeof EVOLUTION_ENGINE_ROLES)[number];
+
+export const isEvolutionEngineRole = (value: unknown): value is EvolutionEngineRole =>
+  typeof value === 'string' && (EVOLUTION_ENGINE_ROLES as readonly string[]).includes(value);
