@@ -97,6 +97,9 @@ import { validateAckInput, describeFollowUp } from './team-escalation';
 import {
   validateCreateInterventionInput, validateStatusUpdateInput, validateRecordOutcomeInput, DEFAULT_REVIEW_WINDOW_DAYS,
 } from './work-design-interventions';
+import {
+  validateCreateWorkDesignDebtInput, validateAssignOwnerInput, validateStatusTransition,
+} from './work-design-debt';
 import { buildFinancialRangeEstimate } from './executive-work-design';
 
 dotenv.config();
@@ -9506,6 +9509,147 @@ app.patch("/api/org/:orgId/work-design-interventions/:id/outcome", verifyAppChec
     };
     await ref.set(update, { merge: true });
     await logOrgAuditAction(req, orgId, "record_work_design_intervention_outcome", "work_design_intervention", id, { status: existing.status }, { status: update.status, outcomeRating });
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("not found") ? 404 : 500).json({ error: err.message });
+  }
+});
+
+// Work Design Debt Ledger (Work Design Pulse PR4) - a structural problem
+// the organisation has identified but not yet actually fixed, tracked
+// separately from a single intervention someone tried. Same manager-sees-
+// own-team(s)/admin-sees-everything split as the intervention routes above.
+app.post("/api/org/:orgId/work-design-debt", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const { orgId } = req.params;
+    const { user, db, org, role } = await loadOrgAndCallerRole(req, orgId);
+    const isAdmin = role === 'owner' || role === 'admin';
+    const validation = validateCreateWorkDesignDebtInput(req.body);
+    if (!validation.valid) {
+      return res.status(400).json({ error: validation.error });
+    }
+    const { team, signalKey, description } = req.body;
+    if (!isTeamManager(org.teamManagers, user.uid, team) && !isAdmin) {
+      return res.status(403).json({ error: "Forbidden: you don't manage this team." });
+    }
+    const nowIso = new Date().toISOString();
+    const record = {
+      team,
+      signalKey,
+      description,
+      status: 'identified' as const,
+      ownerUid: null,
+      linkedInterventionId: null,
+      createdBy: user.uid,
+      createdAt: nowIso,
+      updatedAt: nowIso,
+    };
+    const ref = await db.collection("organisations").doc(orgId).collection("work_design_debt").add(record);
+    await logOrgAuditAction(req, orgId, "create_work_design_debt", "work_design_debt", ref.id, null, { team, signalKey, status: record.status });
+    res.json({ success: true, debt: { id: ref.id, ...record } });
+  } catch (err: any) {
+    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("not found") ? 404 : 500).json({ error: err.message });
+  }
+});
+
+app.get("/api/org/:orgId/work-design-debt", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const { orgId } = req.params;
+    const { user, db, org, role } = await loadOrgAndCallerRole(req, orgId);
+    const isAdmin = role === 'owner' || role === 'admin';
+    const managedTeams = managedTeamsFor(org.teamManagers, user.uid);
+    const requestedTeam = typeof req.query.team === 'string' ? req.query.team : null;
+
+    if (requestedTeam) {
+      if (!isAdmin && !managedTeams.includes(requestedTeam)) {
+        return res.status(403).json({ error: "Forbidden: you don't manage this team." });
+      }
+    } else if (!isAdmin && managedTeams.length === 0) {
+      return res.status(403).json({ error: "Forbidden: you don't manage any team in this organisation." });
+    }
+
+    let query: any = db.collection("organisations").doc(orgId).collection("work_design_debt");
+    if (requestedTeam) {
+      query = query.where("team", "==", requestedTeam);
+    } else if (!isAdmin) {
+      const perTeamSnaps = await Promise.all(
+        managedTeams.map((team) => db.collection("organisations").doc(orgId).collection("work_design_debt").where("team", "==", team).get())
+      );
+      const items = perTeamSnaps.flatMap((snap: any) => snap.docs.map((d: any) => ({ id: d.id, ...d.data() })));
+      return res.json({ items });
+    }
+    const snap = await query.get();
+    const items = snap.docs.map((d: any) => ({ id: d.id, ...d.data() }));
+    res.json({ items });
+  } catch (err: any) {
+    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("not found") ? 404 : 500).json({ error: err.message });
+  }
+});
+
+app.patch("/api/org/:orgId/work-design-debt/:id/owner", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const { orgId, id } = req.params;
+    const { user, db, org, role } = await loadOrgAndCallerRole(req, orgId);
+    const isAdmin = role === 'owner' || role === 'admin';
+    const validation = validateAssignOwnerInput(req.body);
+    if (!validation.valid) {
+      return res.status(400).json({ error: validation.error });
+    }
+    const { ownerUid } = req.body;
+    if (!(org.memberUids || []).includes(ownerUid)) {
+      return res.status(400).json({ error: "The owner must be a real member of this organisation." });
+    }
+    const ref = db.collection("organisations").doc(orgId).collection("work_design_debt").doc(id);
+    const snap = await ref.get();
+    if (!snap.exists) {
+      return res.status(404).json({ error: "Work design debt item not found." });
+    }
+    const existing = snap.data()!;
+    if (!isTeamManager(org.teamManagers, user.uid, existing.team) && !isAdmin) {
+      return res.status(403).json({ error: "Forbidden: you don't manage this team." });
+    }
+    const before = { ownerUid: existing.ownerUid || null };
+    await ref.set({ ownerUid, updatedAt: new Date().toISOString() }, { merge: true });
+    await logOrgAuditAction(req, orgId, "assign_work_design_debt_owner", "work_design_debt", id, before, { ownerUid });
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("not found") ? 404 : 500).json({ error: err.message });
+  }
+});
+
+app.patch("/api/org/:orgId/work-design-debt/:id/status", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const { orgId, id } = req.params;
+    const { user, db, org, role } = await loadOrgAndCallerRole(req, orgId);
+    const isAdmin = role === 'owner' || role === 'admin';
+    const ref = db.collection("organisations").doc(orgId).collection("work_design_debt").doc(id);
+    const snap = await ref.get();
+    if (!snap.exists) {
+      return res.status(404).json({ error: "Work design debt item not found." });
+    }
+    const existing = snap.data()!;
+    if (!isTeamManager(org.teamManagers, user.uid, existing.team) && !isAdmin) {
+      return res.status(403).json({ error: "Forbidden: you don't manage this team." });
+    }
+    let linkedInterventionOutcomeRating: string | null = null;
+    const linkedInterventionId = req.body?.linkedInterventionId;
+    if (typeof linkedInterventionId === 'string' && linkedInterventionId.trim().length > 0) {
+      const interventionSnap = await db.collection("organisations").doc(orgId).collection("work_design_interventions").doc(linkedInterventionId).get();
+      linkedInterventionOutcomeRating = interventionSnap.exists ? (interventionSnap.data()!.outcomeRating || null) : null;
+    }
+    const validation = validateStatusTransition(
+      { status: existing.status, ownerUid: existing.ownerUid || null },
+      req.body,
+      linkedInterventionOutcomeRating,
+    );
+    if (!validation.valid) {
+      return res.status(400).json({ error: validation.error });
+    }
+    const { status } = req.body;
+    const update: Record<string, unknown> = { status, updatedAt: new Date().toISOString() };
+    if (status === 'resolved') update.linkedInterventionId = linkedInterventionId;
+    await ref.set(update, { merge: true });
+    await logOrgAuditAction(req, orgId, "update_work_design_debt_status", "work_design_debt", id, { status: existing.status }, { status });
     res.json({ success: true });
   } catch (err: any) {
     res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("not found") ? 404 : 500).json({ error: err.message });
