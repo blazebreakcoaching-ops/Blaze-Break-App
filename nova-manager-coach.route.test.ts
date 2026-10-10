@@ -86,7 +86,9 @@ describe('GET /api/org/:orgId/manager-coach — k-anonymity gate', () => {
     seedOrg(3, 3);
     await request(app).get(`/api/org/${ORG}/manager-coach`).set(auth(ADMIN));
     const callArg = h.generateContent.mock.calls[0][0];
-    expect(callArg.contents).toContain('Engagement this week');
+    expect(callArg.contents).toContain('Meeting Pressure:');
+    expect(callArg.contents).toContain('Open Work Design Debt items:');
+    expect(callArg.contents).toContain('Active structural change trials right now:');
     expect(callArg.contents).not.toMatch(/m_0|m_1|m_2/); // no member uid ever reaches the prompt
   });
 });

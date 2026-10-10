@@ -8,62 +8,9 @@
 // ever suggests text for a human to review, edit, or discard before the
 // existing recognition-wall composer sends it.
 
-// Legacy, engagement-rate-based variant. Deprecated: engagementRate was
-// derived by reading mood_pulses/body_checkins across members, which the
-// Work Design Pulse privacy architecture no longer permits from an
-// organisation-scoped route (Lane A - the Private Recovery Vault - must be
-// server-side unreachable by organisation code, not just aggregated).
-// Kept only for GET /api/org/:orgId/manager-coach/chat's
-// get_engagement_and_recognition_signal tool until that tool is replaced;
-// GET /api/org/:orgId/recognition-suggestions itself now calls
-// suggestStructuralRecognitionPrompts below instead.
-export interface EngagementSnapshot {
-  engagementRate: number; // 0-100
-}
-
-// A change smaller than this is treated as noise, not a real shift -
-// same reasoning and threshold as org-risk-trend.ts's STABLE_THRESHOLD.
-const NOTABLE_DELTA = 5;
-const HIGH_ENGAGEMENT = 70;
-
-export const suggestRecognitionPrompts = (
-  current: EngagementSnapshot,
-  previous: EngagementSnapshot | null
-): string[] => {
-  const suggestions: string[] = [];
-  const delta = previous ? current.engagementRate - previous.engagementRate : null;
-
-  if (delta !== null && delta >= NOTABLE_DELTA) {
-    suggestions.push(
-      `More of your team showed up for themselves this week — engagement is up ${delta} points. A good moment to say so.`
-    );
-  }
-
-  if (current.engagementRate >= HIGH_ENGAGEMENT) {
-    suggestions.push(
-      "Engagement is solid across the team right now. A specific, genuine thank-you lands better than a general one — call out something real."
-    );
-  }
-
-  if (delta !== null && delta <= -NOTABLE_DELTA) {
-    suggestions.push(
-      "Engagement has dipped a little this week. Recognition works best alongside lowering pressure, not instead of it — worth considering both."
-    );
-  }
-
-  if (suggestions.length === 0) {
-    suggestions.push(
-      "Consistent small wins are easy to miss precisely because they're consistent. Worth noticing one out loud this week."
-    );
-  }
-
-  return suggestions.slice(0, 3);
-};
-
-// Work Design Pulse variant - the real replacement for the engagement-rate
-// version above. Every input here comes from Lane B (organisation work
-// data: resolved debt items, intervention outcomes, the real meeting
-// pressure signal), never from reading an individual's mood/body check-ins.
+// Every input here comes from Lane B (organisation work data: resolved
+// debt items, intervention outcomes, the real meeting pressure signal),
+// never from reading an individual's mood/body check-ins.
 export interface StructuralRecognitionSignals {
   // Work Design Debt items that moved to 'resolved' in roughly the last
   // 7 days - a real structural change, not a wellbeing score.

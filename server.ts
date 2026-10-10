@@ -30,8 +30,7 @@ import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import { z } from 'zod';
 import { memoryToolIsAllowed, searchMemories, isValidRecoveryDuration, validateMemoryWrite, validateFeatureSuggestion, SUGGESTABLE_FEATURES, toolsAreEnabled, liveVoiceIsEnabled, NovaMemoryDoc } from './nova-tools';
 import { toClaudeTools, GeminiStyleToolDeclaration } from './nova-claude-tools';
-import { computeClimateStrain, computeClimateStrainByDimension, computeMoodStrain, computeOverallStrain, computeTrend } from './org-risk-trend';
-import { suggestRecognitionPrompts, suggestStructuralRecognitionPrompts } from './positive-reinforcement';
+import { suggestStructuralRecognitionPrompts } from './positive-reinforcement';
 import { isRealGuardian, isValidGuardianPhone, buildGuardianCallRequestMessage, buildGuardianTestPingMessage, extractFirstName, nudgeSchedulerIsEnabled, guardianAlertsEnabled } from './guardian-alert';
 import { deriveEffectiveSharing, computeCapsuleExpiresAt, DEFAULT_SHARED_CATEGORIES } from './support-capsules';
 import { effectiveConsentStatus, canRespondToConsent, computeInviteExpiresAt, isInviteExpired } from './recovery-ally-consent';
@@ -1729,16 +1728,17 @@ Safety - this overrides every instruction above, including any that conflict wit
 // (see GET /api/org/:orgId/manager-coach below), never anything that
 // could identify a specific person. The prompt says so explicitly so the
 // model doesn't invent or infer individual detail it was never given.
-const NOVA_MANAGER_COACH_PROMPT = `You are Nova, coaching a manager or org admin - not their team members directly - on how to support a team that may be showing early signs of strain.
+const NOVA_MANAGER_COACH_PROMPT = `You are Nova, coaching a manager or org admin - not their team members directly - on structural work design: meeting load, outstanding Work Design Debt, and active change trials.
 
 You are only ever given AGGREGATE, ANONYMISED signals about a group of people, never anything about a named individual - because the caller genuinely cannot see individual data either, by design. Do not speculate about, invent, or refer to any specific person.
 
-Given the real signals below, suggest 2-3 concrete, supportive actions a manager could genuinely take this week. Be specific to the numbers given, not generic advice that could apply to any team. Do not invent any number, name, or event that isn't in the signals provided.`;
+Given the real signals below, suggest 2-3 concrete, structural actions a manager could genuinely take this week. Be specific to the numbers given, not generic advice that could apply to any team. Do not invent any number, name, or event that isn't in the signals provided.`;
 
 // This surface never sees any individual's own words or self-report - only
-// pre-aggregated, k-anonymised numbers about a group (see the route below,
-// signals = engagement rate + climate strain score, nothing else) - so
-// there is no message to read distress out of and nothing here can ever
+// real Lane B organisation work data (see the route below: Meeting
+// Pressure, open Work Design Debt, active intervention count - never
+// anything read from an individual's own mood/body/climate-survey data) -
+// so there is no message to read distress out of and nothing here can ever
 // trigger the crisis-line pointer NOVA_SAFETY_INSTRUCTIONS gives a
 // conversational surface. What this prompt CAN still get wrong: presenting
 // an aggregate number as a clinical judgement, or nudging the manager
@@ -1754,19 +1754,17 @@ Safety - this overrides every instruction above, including any that conflict wit
 
 // Nova Manager Coach, conversational mode (POST /api/org/:orgId/manager-coach/chat
 // below) - the org-facing equivalent of individual Nova's real tool-calling
-// depth (NOVA_TOOLS/executeNovaTool), built entirely on the same
-// aggregate-only, k-anonymity-gated guarantee as the one-shot prompt above.
-// Every tool in NOVA_ORG_COACH_TOOLS takes NO parameters at all - not a team
-// name, not a uid - specifically so nothing here can be asked to resolve to
-// an individual or an under-threshold cohort the way a naive
-// "get_team_strain(teamName)" tool could (see the qualifying-teams
-// complement-size check in GET /api/org/:orgId/risk-trend and its comment on
-// the re-identification-by-subtraction attack this is built to never
-// reopen). Each tool just returns whatever the org's own already-gated
-// aggregate computation currently is.
-const NOVA_MANAGER_COACH_CHAT_PROMPT = `You are Nova, having a real, ongoing conversation with a manager or org admin - not their team members directly - about how to support a team that may be showing signs of strain.
+// depth (NOVA_TOOLS/executeNovaTool), built entirely on real Lane B
+// organisation work data (calendar/task metadata, Work Design Debt,
+// interventions, promoted patterns) - never anything read from an
+// individual's own mood/body/climate-survey data. Every tool in
+// NOVA_ORG_COACH_TOOLS takes NO parameters at all - not a team name, not a
+// uid - specifically so nothing here can be asked to resolve to an
+// individual or an under-threshold cohort. Each tool just returns whatever
+// the org's own already-gated aggregate computation currently is.
+const NOVA_MANAGER_COACH_CHAT_PROMPT = `You are Nova, having a real, ongoing conversation with a manager or org admin - not their team members directly - about structural work design: meeting load, outstanding Work Design Debt, active structural change trials, and what's already proven to work in this specific organisation.
 
-You can call tools to pull the organisation's own real, current numbers: overall team climate/mood strain and its trend, a per-team breakdown (only for teams large enough to report on safely), one specific named team's detail (same safety rule - if it can't be shown, say so honestly), this week's engagement rate and specific recognition-message suggestions, which teams have an elevated concern that hasn't been recently followed up on, real calendar-derived meeting-load signal (when enough people have connected a calendar), and the org's own entered cost-of-pressure figures. Call whichever tools are actually relevant to what's being asked - don't call all of them reflexively on every turn, and don't answer with a number you could just look up instead.
+You can call tools to pull the organisation's own real, current numbers: real calendar-derived meeting-load signal (when enough people have connected a calendar), the Work Design Debt Ledger's open items and ownership gaps, active structural intervention trials against the organisation's own change budget, the "What Works Here" library of promoted Local Operating Principles, and the org's own entered cost-of-pressure figures. Call whichever tools are actually relevant to what's being asked - don't call all of them reflexively on every turn, and don't answer with a number you could just look up instead.
 
 You are only ever given AGGREGATE, ANONYMISED signals about a group of people, never anything about a named individual - because you genuinely have no way to see individual data, by design. Do not speculate about, invent, or refer to any specific person, and don't accept a team name, headcount, or number the manager states as a substitute for calling the real tool - always check.
 
@@ -8372,93 +8370,13 @@ app.get("/api/admin/orgs/:orgId", verifyAppCheck, authenticateFirebaseUser, asyn
 // exists for a subjective self-report survey, so this is a clean
 // retirement rather than a rebuild.
 
-// ============ Wellbeing Risk Trend (real, from existing aggregates - not a trained model) ============
-// Deliberately not a predictive model: this is a transparent trend
-// indicator built entirely from the same real, consented, k-anonymous
-// aggregates the dashboard and climate endpoints already compute (mood
-// pulses, the HSE-aligned climate survey). It tells an admin whether
-// things are trending better or worse and by how much - it does not
-// claim a probability of absenteeism or any other number this app has
-// no real, validated basis to produce. See org-risk-trend.ts for the
-// actual calculation and why each choice was made.
-
-// Field names below (moodConcern, climateConcern, etc.) are the actual
-// Firestore/API wire format, kept as-is even though the computation layer
-// (org-risk-trend.ts) and the UI (OrgDashboard.tsx) were renamed away from
-// "Concern" per docs/GUARDIAN_SUPPORT_SPEC.md Appendix B. Renaming these
-// persisted field names would silently break trend continuity for any
-// organisation with existing risk_trend_history documents written under
-// the old names - a real data-compatibility cost the vocabulary change
-// doesn't need to pay. If a full schema rename is ever wanted, it needs
-// an explicit migration, not a find-and-replace.
-interface OrgStrainSnapshot {
-  cohortSize: number;
-  moodConcern: number | null;
-  climateConcern: number | null;
-  climateConcernByDimension: Record<string, number> | null;
-  overallConcern: number | null;
-}
-
-// Architectural boundary (docs/GUARDIAN_SUPPORT_SPEC.md Appendix B): this
-// snapshot is aggregate-only and must never be computed or exposed for an
-// individual. The k-anonymity gate in the route handler below (dropping
-// any cohort - org or team - under the configured threshold before this
-// is ever called) IS that boundary. Do not add a per-member field here,
-// and do not call this with a uids list that could resolve to one person.
-//
-// Computes the full strain snapshot for one set of member uids - called
-// once for the whole org and once per team below, so a team's number is
-// calculated exactly the same way the org-wide one is, not a different
-// or lighter-weight version.
-const computeStrainSnapshotForCohort = async (db: any, uids: string[]): Promise<OrgStrainSnapshot> => {
-  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
-  let moodPositive = 0, moodNegative = 0, moodNeutral = 0;
-  await Promise.all(uids.map(async (uid) => {
-    const moodSnap = await db.collection("users").doc(uid).collection("mood_pulses")
-      .where("createdAt", ">=", sevenDaysAgo).get();
-    moodSnap.forEach((doc: any) => {
-      const label = doc.data().moodLabel;
-      if (label === 'calm' || label === 'hopeful' || label === 'focused') moodPositive++;
-      else if (label === 'overwhelmed' || label === 'frustrated' || label === 'pressured' || label === 'tired') moodNegative++;
-      else moodNeutral++;
-    });
-  }));
-  const moodConcern = computeMoodStrain(moodPositive, moodNegative, moodNeutral);
-
-  const ninetyDaysAgo = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString();
-  const climateDims = ['demands', 'control', 'support', 'relationships', 'role', 'change'] as const;
-  const climateSums: Record<string, number> = { demands: 0, control: 0, support: 0, relationships: 0, role: 0, change: 0 };
-  let climateResponseCount = 0;
-  await Promise.all(uids.map(async (uid) => {
-    const snap = await db.collection("users").doc(uid).collection("climate_survey_responses")
-      .where("createdAt", ">=", ninetyDaysAgo).orderBy("createdAt", "desc").limit(1).get();
-    if (!snap.empty) {
-      const d = snap.docs[0].data();
-      climateDims.forEach(dim => { climateSums[dim] += d[dim] || 0; });
-      climateResponseCount++;
-    }
-  }));
-  const climateAverages = climateResponseCount > 0
-    ? {
-        demands: climateSums.demands / climateResponseCount,
-        control: climateSums.control / climateResponseCount,
-        support: climateSums.support / climateResponseCount,
-        relationships: climateSums.relationships / climateResponseCount,
-        role: climateSums.role / climateResponseCount,
-        change: climateSums.change / climateResponseCount,
-      }
-    : null;
-  const climateConcern = computeClimateStrain(climateAverages);
-  const climateConcernByDimension = computeClimateStrainByDimension(climateAverages);
-
-  return {
-    cohortSize: uids.length,
-    moodConcern,
-    climateConcern,
-    climateConcernByDimension,
-    overallConcern: computeOverallStrain(climateConcern, moodConcern),
-  };
-};
+// The "Wellbeing Risk Trend" aggregate (org-risk-trend.ts's
+// computeMoodStrain/computeClimateStrain/computeOverallStrain,
+// computeStrainSnapshotForCohort, and computeEngagementRate) was retired
+// here - its last two callers (Nova Manager Coach's static suggestions and
+// its conversational chat tools) were migrated to real Lane B signals in
+// Lane Separation Remediation PR D. org-risk-trend.ts has no remaining
+// importers and was deleted alongside this.
 
 interface OrgMeetingLoadSnapshot {
   available: boolean;
@@ -8474,8 +8392,8 @@ interface OrgMeetingLoadSnapshot {
   pctWithWeekendMeetings: number | null;
 }
 
-// Same aggregate-only boundary as computeStrainSnapshotForCohort above, for
-// a different real signal: each member's own live_signals/calendar doc
+// Aggregate-only, same as every other org signal in this file: each
+// member's own live_signals/calendar doc
 // (src/lib/calendar-signals.ts, synced client-side from their own Google
 // Calendar with their own OAuth token - see POST /api/signals/calendar).
 // That signal already only ever exists for a member who both opted into
@@ -8646,27 +8564,6 @@ const describeSignalsNeedingAttention = (signals: TeamWorkDesignSignal[]): strin
     .slice(0, MAX_ATTENTION_ITEMS)
     .map((s) => `${s.label} is ${s.bandLabel?.toLowerCase()}.`);
 
-// The cohort-level "did people actually use the app" signal - extracted
-// from the original /api/org/:orgId/dashboard route so the same real
-// engagement math can be reused per-team (team-dashboard, hr-dashboard)
-// without duplicating it. Deliberately never returns anything about a
-// specific uid - only how many of `uids` had any activity, so a caller
-// can only ever learn a percentage, never who.
-const computeEngagementRate = async (db: any, uids: string[], windowDays: number): Promise<number> => {
-  if (uids.length === 0) return 0;
-  const sinceIso = new Date(Date.now() - windowDays * 24 * 60 * 60 * 1000).toISOString();
-  let activeCount = 0;
-  await Promise.all(uids.map(async (uid) => {
-    const moodSnap = await db.collection("users").doc(uid).collection("mood_pulses")
-      .where("createdAt", ">=", sinceIso).limit(1).get();
-    if (!moodSnap.empty) { activeCount++; return; }
-    const bodySnap = await db.collection("users").doc(uid).collection("body_checkins")
-      .where("createdAt", ">=", sinceIso).limit(1).get();
-    if (!bodySnap.empty) activeCount++;
-  }));
-  return Math.round((activeCount / uids.length) * 100);
-};
-
 // computeTrendHistory (the risk_trend_history reader/writer shared by
 // risk-trend/team-dashboard/hr-dashboard) was retired here - team-dashboard
 // and hr-dashboard no longer compute a mood/climate trend at all (see Lane
@@ -8681,9 +8578,7 @@ const computeEngagementRate = async (db: any, uids: string[], windowDays: number
 // Pulse privacy architecture bans from organisation-facing views, and its
 // org-wide + per-team breakdown duplicated what GET .../team-dashboard and
 // GET .../hr-dashboard already compute more narrowly from real Work Design
-// Signals. computeStrainSnapshotForCohort/computeTrendHistory stay in this
-// file for now since those two routes still call them (removed in a
-// follow-up PR once they're migrated off mood/climate strain too).
+// Signals.
 
 // ============ Team Challenges (real creation & participation) ============
 
@@ -10197,47 +10092,23 @@ app.get("/api/org/:orgId/manager-coach", managerCoachLimiter, verifyAppCheck, au
       });
     }
 
-    // Engagement rate this week - same existence-only check as the
-    // Positive Reinforcement Engine's suggestion endpoint above.
-    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
-    const nowIso = new Date().toISOString();
-    let activeMembers = 0;
-    await Promise.all(consentingUids.map(async (uid) => {
-      const moodSnap = await db.collection("users").doc(uid).collection("mood_pulses")
-        .where("createdAt", ">=", sevenDaysAgo).where("createdAt", "<", nowIso).limit(1).get();
-      if (!moodSnap.empty) { activeMembers++; return; }
-      const bodySnap = await db.collection("users").doc(uid).collection("body_checkins")
-        .where("createdAt", ">=", sevenDaysAgo).where("createdAt", "<", nowIso).limit(1).get();
-      if (!bodySnap.empty) activeMembers++;
-    }));
-    const engagementRate = Math.round((activeMembers / consentingUids.length) * 100);
+    // Real Lane B structural signals - organisation work data only, never
+    // anything read from an individual's own mood/body/climate-survey data.
+    const baselineDaysObserved = await getWorkDesignBaselineDays(db, orgId);
+    const meetingPressureSignal = await buildMeetingPressureSignal(db, consentingUids, threshold, baselineDaysObserved);
+    const [debtSnap, interventionsSnap] = await Promise.all([
+      db.collection("organisations").doc(orgId).collection("work_design_debt").get(),
+      db.collection("organisations").doc(orgId).collection("work_design_interventions").get(),
+    ]);
+    const openDebtItems = debtSnap.docs.map((d: any) => d.data()).filter((d: any) => d.status !== 'resolved');
+    const activeInterventionCount = interventionsSnap.docs.filter((d: any) => ACTIVE_INTERVENTION_STATUSES.has(d.data().status)).length;
 
-    // Real climate-survey averages, same 90-day window and aggregation as
-    // GET /api/org/:orgId/climate above.
-    const ninetyDaysAgo = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString();
-    const climateDims = ['demands', 'control', 'support', 'relationships', 'role', 'change'] as const;
-    const climateSums: Record<string, number> = { demands: 0, control: 0, support: 0, relationships: 0, role: 0, change: 0 };
-    let climateResponseCount = 0;
-    await Promise.all(consentingUids.map(async (uid) => {
-      const snap = await db.collection("users").doc(uid).collection("climate_survey_responses")
-        .where("createdAt", ">=", ninetyDaysAgo).orderBy("createdAt", "desc").limit(1).get();
-      if (!snap.empty) {
-        const d = snap.docs[0].data();
-        climateDims.forEach((dim) => { climateSums[dim] += d[dim] || 0; });
-        climateResponseCount++;
-      }
-    }));
-    const climateAverages = climateResponseCount > 0
-      ? { demands: climateSums.demands / climateResponseCount, control: climateSums.control / climateResponseCount, support: climateSums.support / climateResponseCount, relationships: climateSums.relationships / climateResponseCount, role: climateSums.role / climateResponseCount, change: climateSums.change / climateResponseCount }
-      : null;
-    const climateStrain = computeClimateStrain(climateAverages);
-
-    const signals: string[] = [`Engagement this week: ${engagementRate}% of ${consentingUids.length} consenting team members showed any activity`];
-    if (climateStrain !== null) {
-      signals.push(`Team climate strain score: ${climateStrain} out of 100 (0 = no strain, 100 = high strain), from ${climateResponseCount} recent survey responses`);
-    } else {
-      signals.push('No recent team climate survey responses yet');
-    }
+    const signals: string[] = [];
+    signals.push(meetingPressureSignal.band
+      ? `Meeting Pressure: ${meetingPressureSignal.bandLabel} - ${meetingPressureSignal.basis}`
+      : `Meeting Pressure: not enough data yet - ${meetingPressureSignal.sufficiencyMessage}`);
+    signals.push(`Open Work Design Debt items: ${openDebtItems.length}${openDebtItems.filter((d: any) => !d.ownerUid).length > 0 ? ` (${openDebtItems.filter((d: any) => !d.ownerUid).length} with no owner assigned)` : ''}`);
+    signals.push(`Active structural change trials right now: ${activeInterventionCount}`);
 
     const abortController = new AbortController();
     const timeoutId = setTimeout(() => abortController.abort(), 15000);
@@ -10283,29 +10154,8 @@ app.get("/api/org/:orgId/manager-coach", managerCoachLimiter, verifyAppCheck, au
 // to show in the full breakdown, never a narrower or looser answer.
 const NOVA_ORG_COACH_TOOLS = [
   {
-    name: "get_team_climate_trend",
-    description: "Get the organisation's real, aggregate team climate and mood strain score right now, and how it's trending versus about 4 weeks ago. Whole-org level only - never a specific team or person. Use this for anything about overall team wellbeing, strain, or whether things are improving or getting worse.",
-    parameters: { type: Type.OBJECT, properties: {} },
-  },
-  {
-    name: "get_team_breakdown",
-    description: "Get a per-team breakdown of climate/mood strain, but ONLY for teams that already have enough consenting members to protect anonymity - a team too small to safely report on simply won't appear in the results, never shown as blocked or named. Always returns whichever teams currently qualify; never accepts a team name.",
-    parameters: { type: Type.OBJECT, properties: {} },
-  },
-  {
-    name: "get_team_detail",
-    description: "Get climate/mood strain and this week's engagement for ONE specific team by name, if (and only if) that team currently has enough consenting members to report on safely without risking anonymity. Use this when the manager names a specific team; if it can't be safely reported on individually, say so honestly rather than guessing or inventing a number.",
-    parameters: {
-      type: Type.OBJECT,
-      properties: {
-        team: { type: Type.STRING, description: "The exact team name as it appears in the organisation's own team list." },
-      },
-      required: ["team"],
-    },
-  },
-  {
-    name: "get_engagement_and_recognition_signal",
-    description: "Get this week's real engagement rate (the percentage of consenting members who logged any check-in), how it compares to the prior week, and specific, grounded recognition-message suggestions a manager could genuinely post to the team wall this week.",
+    name: "get_meeting_load_signal",
+    description: "Get the organisation's real, aggregate meeting-load signal (average weekly meeting hours, back-to-back meetings, and how many people have evening or weekend meetings), computed only from members who have both opted into org sharing and separately connected their own calendar. Often not enough people have connected a calendar yet for this to be safe to report on - if so, say that honestly rather than guessing. Use this for anything about calendar load, meeting overload, or time pressure.",
     parameters: { type: Type.OBJECT, properties: {} },
   },
   {
@@ -10314,24 +10164,28 @@ const NOVA_ORG_COACH_TOOLS = [
     parameters: { type: Type.OBJECT, properties: {} },
   },
   {
-    name: "get_team_escalation_status",
-    description: "Get, for each team that currently qualifies to report on safely, its real strain level and whether a manager has logged addressing it recently (an honest follow-up trail, not a verified fact or a score on the manager). Use this for anything about which teams need attention or whether elevated concerns have actually been followed up on. Never suggests identifying or contacting a specific person - for a real safeguarding concern, the org's own HR/EAP process is the right next step, not this tool.",
+    name: "get_work_design_debt_status",
+    description: "Get the organisation's real Work Design Debt Ledger status: how many structural problems are currently open, how many of those have no owner assigned yet, and a short list of the open items (team, what signal it's tied to, status, how long it's been open). Use this for anything about outstanding structural problems, accountability, or ownership gaps.",
     parameters: { type: Type.OBJECT, properties: {} },
   },
   {
-    name: "get_meeting_load_signal",
-    description: "Get the organisation's real, aggregate meeting-load signal (average weekly meeting hours, back-to-back meetings, and how many people have evening or weekend meetings), computed only from members who have both opted into org sharing and separately connected their own calendar. Often not enough people have connected a calendar yet for this to be safe to report on - if so, say that honestly rather than guessing. Use this for anything about calendar load, meeting overload, or time pressure.",
+    name: "get_active_interventions_status",
+    description: "Get the organisation's real structural change activity right now: how many trials are active against the organisation's own change budget, and a short list of each active trial (team, proposed change, when it started, when it's due for review). Use this for anything about ongoing trials, change load, or whether the org has room to start another one.",
+    parameters: { type: Type.OBJECT, properties: {} },
+  },
+  {
+    name: "get_local_operating_principles",
+    description: "Get the organisation's own 'What Works Here' library: structural patterns that have accumulated enough real, repeated evidence across teams to be promoted to a Local Operating Principle. Use this for anything about what's already proven to work in this specific organisation.",
     parameters: { type: Type.OBJECT, properties: {} },
   },
 ];
 
-// Dispatch for the tools above - each one is a thin wrapper around an
-// already-gated aggregate computation this file already uses elsewhere
-// (computeStrainSnapshotForCohort for risk-trend, suggestRecognitionPrompts
-// for the Positive Reinforcement Engine), never a fresh per-employee query.
-// Every error is caught and degraded to a plain { error } result rather than
-// failing the whole conversation turn, matching executeNovaTool's own
-// pattern for individual Nova.
+// Dispatch for the tools above - each one is a thin wrapper around a real
+// Lane B computation this file already uses elsewhere (meeting load,
+// Work Design Debt, interventions, Local Operating Principles), never a
+// fresh per-employee query. Every error is caught and degraded to a plain
+// { error } result rather than failing the whole conversation turn,
+// matching executeNovaTool's own pattern for individual Nova.
 async function executeOrgCoachTool(
   name: string,
   args: Record<string, unknown>,
@@ -10343,97 +10197,54 @@ async function executeOrgCoachTool(
 ): Promise<Record<string, unknown>> {
   try {
     switch (name) {
-      case "get_team_climate_trend": {
-        const snapshot = await computeStrainSnapshotForCohort(db, consentingUids);
-        const historySnap = await db.collection("organisations").doc(orgId).collection("risk_trend_history")
-          .orderBy("recordedAt", "desc").limit(90).get();
-        const history = historySnap.docs.map((d: any) => d.data());
-        const twentyEightDaysAgo = Date.now() - 28 * 24 * 60 * 60 * 1000;
-        const priorOverall = history
-          .filter((h: any) => new Date(h.recordedAt).getTime() <= twentyEightDaysAgo && h.overallConcern != null)
-          .sort((a: any, b: any) => Math.abs(new Date(a.recordedAt).getTime() - twentyEightDaysAgo) - Math.abs(new Date(b.recordedAt).getTime() - twentyEightDaysAgo))[0];
-        const trend = computeTrend(snapshot.overallConcern, priorOverall?.overallConcern ?? null);
-        return {
-          cohortSize: snapshot.cohortSize,
-          moodStrain: snapshot.moodConcern,
-          climateStrain: snapshot.climateConcern,
-          climateStrainByDimension: snapshot.climateConcernByDimension,
-          overallStrain: snapshot.overallConcern,
-          trendVsFourWeeksAgo: trend.direction,
-          trendDelta: trend.delta,
-          note: "Scores are 0-100, 0 = no strain, 100 = high strain. This is a transparent trend indicator from real aggregate data, not a prediction or forecast of any outcome.",
-        };
-      }
-      case "get_team_breakdown": {
-        const memberTeams: Record<string, string> = org.memberTeams || {};
-        // Same shared helper (and the same complement-size check) as
-        // GET /api/org/:orgId/risk-trend and the HR/team-welfare dashboards -
-        // see computeQualifyingTeamGroups' own comment for the subtraction-
-        // attack this closes.
-        const { qualifying: teamGroups } = computeQualifyingTeamGroups(consentingUids, memberTeams, threshold);
-        const qualifyingEntries = Object.entries(teamGroups);
-        if (qualifyingEntries.length === 0) {
-          return { teams: [], note: "No individual team currently has enough consenting members to report on safely without risking anonymity - this doesn't mean every team is fine, just that none can be safely broken out yet." };
-        }
-        const teams = await Promise.all(qualifyingEntries.map(async ([team, uids]) => {
-          const snap = await computeStrainSnapshotForCohort(db, uids);
-          return { team, cohortSize: snap.cohortSize, overallStrain: snap.overallConcern };
-        }));
-        return { teams, note: "Scores are 0-100, 0 = no strain, 100 = high strain. Only teams with enough consenting members to protect anonymity are included." };
-      }
-      case "get_team_detail": {
-        const requestedTeam = typeof args?.team === 'string' ? args.team : '';
-        const memberTeams: Record<string, string> = org.memberTeams || {};
-        const { qualifying: teamGroups } = computeQualifyingTeamGroups(consentingUids, memberTeams, threshold);
-        // hasOwnProperty guard: teamGroups is a plain object, and a
-        // hallucinating model could in principle pass a prototype-chain
-        // name like "__proto__" as a team - this makes sure only a team
-        // this org actually has and that genuinely qualifies is ever found.
-        const uids = Object.prototype.hasOwnProperty.call(teamGroups, requestedTeam) ? teamGroups[requestedTeam] : undefined;
-        if (!uids) {
-          return { found: false, note: "That team either doesn't exist, or doesn't currently have enough consenting members to report on safely without risking anonymity - this doesn't necessarily mean anything is wrong, just that it can't be shown individually yet." };
-        }
-        const snap = await computeStrainSnapshotForCohort(db, uids);
-        const engagementRate = await computeEngagementRate(db, uids, 7);
-        return {
-          found: true,
-          team: requestedTeam,
-          cohortSize: snap.cohortSize,
-          moodStrain: snap.moodConcern,
-          climateStrain: snap.climateConcern,
-          overallStrain: snap.overallConcern,
-          engagementRate,
-          note: "Scores are 0-100, 0 = no strain, 100 = high strain.",
-        };
-      }
-      case "get_engagement_and_recognition_signal": {
-        const countActiveInWindow = async (sinceIso: string, untilIso: string): Promise<number> => {
-          let active = 0;
-          await Promise.all(consentingUids.map(async (uid) => {
-            const moodSnap = await db.collection("users").doc(uid).collection("mood_pulses")
-              .where("createdAt", ">=", sinceIso).where("createdAt", "<", untilIso).limit(1).get();
-            if (!moodSnap.empty) { active++; return; }
-            const bodySnap = await db.collection("users").doc(uid).collection("body_checkins")
-              .where("createdAt", ">=", sinceIso).where("createdAt", "<", untilIso).limit(1).get();
-            if (!bodySnap.empty) active++;
-          }));
-          return active;
-        };
+      case "get_work_design_debt_status": {
+        const debtSnap = await db.collection("organisations").doc(orgId).collection("work_design_debt").get();
+        const debtItems = debtSnap.docs.map((d: any) => ({ id: d.id, ...d.data() }));
+        const openItems = debtItems.filter((d: any) => d.status !== 'resolved');
         const now = Date.now();
-        const nowIso = new Date(now).toISOString();
-        const oneWeekAgo = new Date(now - 7 * 24 * 60 * 60 * 1000).toISOString();
-        const twoWeeksAgo = new Date(now - 14 * 24 * 60 * 60 * 1000).toISOString();
-        const [currentActive, previousActive] = await Promise.all([
-          countActiveInWindow(oneWeekAgo, nowIso),
-          countActiveInWindow(twoWeeksAgo, oneWeekAgo),
-        ]);
-        const current = { engagementRate: Math.round((currentActive / consentingUids.length) * 100) };
-        const previous = { engagementRate: Math.round((previousActive / consentingUids.length) * 100) };
+        const openDebtWithoutOwnerCount = openItems.filter((d: any) => !d.ownerUid).length;
+        const items = openItems.slice(0, 5).map((d: any) => ({
+          team: d.team,
+          signalKey: d.signalKey,
+          status: d.status,
+          hasOwner: !!d.ownerUid,
+          ageDays: Math.floor((now - new Date(d.createdAt).getTime()) / (24 * 60 * 60 * 1000)),
+        }));
         return {
-          cohortSize: consentingUids.length,
-          currentWeekEngagementRate: current.engagementRate,
-          previousWeekEngagementRate: previous.engagementRate,
-          recognitionSuggestions: suggestRecognitionPrompts(current, previous),
+          openDebtCount: openItems.length,
+          openDebtWithoutOwnerCount,
+          items,
+          note: "Every open item is a real, logged structural problem a manager or admin created - never a fabricated count. An open item with no owner cannot progress past 'identified' until one is assigned.",
+        };
+      }
+      case "get_active_interventions_status": {
+        const interventionsSnap = await db.collection("organisations").doc(orgId).collection("work_design_interventions").get();
+        const allInterventions = interventionsSnap.docs.map((d: any) => ({ id: d.id, ...d.data() }));
+        const activeInterventions = allInterventions.filter((d: any) => ACTIVE_INTERVENTION_STATUSES.has(d.status));
+        const maxConcurrentActive = getEffectiveActionBudget(org.actionBudget?.maxConcurrentActiveInterventions);
+        const items = activeInterventions.slice(0, 5).map((d: any) => ({
+          team: d.team,
+          proposedChange: d.proposedChange,
+          startDate: d.startDate,
+          reviewDate: d.reviewDate,
+        }));
+        return {
+          activeInterventionCount: activeInterventions.length,
+          maxConcurrentActiveInterventions: maxConcurrentActive,
+          items,
+          note: "The organisation's own change budget - a hard ceiling on how many structural trials can run on employees at once, regardless of team.",
+        };
+      }
+      case "get_local_operating_principles": {
+        const principlesSnap = await db.collection("organisations").doc(orgId).collection("local_operating_principles").get();
+        const principles = principlesSnap.docs.map((d: any) => ({ id: d.id, ...d.data() }));
+        if (principles.length === 0) {
+          return { count: 0, principles: [], note: "No pattern has accumulated enough repeated, real evidence across teams to be promoted yet - this is not the same as nothing having worked, just that nothing has been promoted." };
+        }
+        return {
+          count: principles.length,
+          principles: principles.map((p: any) => ({ signalKey: p.signalKey, promotedAt: p.promotedAt })),
+          note: "Each one required real, repeated evidence across multiple teams before an admin promoted it - never automatic.",
         };
       }
       case "get_cost_of_pressure_snapshot": {
@@ -10446,27 +10257,6 @@ async function executeOrgCoachTool(
           .orderBy("enteredAt", "desc").limit(6).get();
         const history = historySnap.docs.map((d: any) => d.data());
         return { available: true, costInputs, recentHistory: history };
-      }
-      case "get_team_escalation_status": {
-        const memberTeams: Record<string, string> = org.memberTeams || {};
-        const { qualifying: teamGroups } = computeQualifyingTeamGroups(consentingUids, memberTeams, threshold);
-        const qualifyingEntries = Object.entries(teamGroups);
-        if (qualifyingEntries.length === 0) {
-          return { teams: [], note: "No individual team currently has enough consenting members to report on safely without risking anonymity." };
-        }
-        const now = new Date();
-        const teams = await Promise.all(qualifyingEntries.map(async ([team, uids]) => {
-          const snap = await computeStrainSnapshotForCohort(db, uids);
-          const acksSnap = await db.collection("organisations").doc(orgId).collection("team_escalation_acks")
-            .where("team", "==", team).orderBy("createdAt", "desc").limit(5).get();
-          const acks = acksSnap.docs.map((d: any) => d.data());
-          const followUp = describeFollowUp(acks, now);
-          return { team, cohortSize: snap.cohortSize, overallStrain: snap.overallConcern, followUp };
-        }));
-        return {
-          teams,
-          note: "Scores are 0-100, 0 = no strain, 100 = high strain. followUp.status reflects a manager's own logged acknowledgment, not a verified fact - there is no way to confirm a real conversation happened. Never suggest identifying, contacting, or escalating a specific unnamed person - for a real safeguarding concern, the org's own HR/EAP process is the right next step, not this data.",
-        };
       }
       case "get_meeting_load_signal": {
         const snapshot = await computeMeetingLoadSnapshotForCohort(db, consentingUids, threshold);

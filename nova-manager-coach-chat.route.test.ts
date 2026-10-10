@@ -4,9 +4,12 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 // conversational, tool-calling Nova Manager Coach. The point of these:
 // same access-control/k-anonymity/quota gates as the one-shot GET route
 // (nova-manager-coach.route.test.ts), that the tool-calling loop actually
-// dispatches to real, aggregate-only computations, that planTrace reflects
-// what was really called, and - most importantly - that no tool can ever
-// surface a team/cohort below the org's own anonymity threshold.
+// dispatches to real Lane B computations (Work Design Debt, active
+// interventions, Local Operating Principles, cost-of-pressure, meeting
+// load), and that planTrace reflects what was really called. Every tool
+// here takes no parameters at all and returns only org-wide aggregates -
+// there is no team-targeting tool left to probe for an under-threshold
+// cohort (see NOVA_ORG_COACH_TOOLS, server.ts).
 const h = vi.hoisted(() => {
   process.env.TEST_MODE = 'true';
   process.env.NODE_ENV = 'test';
@@ -129,17 +132,13 @@ describe('POST /api/org/:orgId/manager-coach/chat — safety floor and persona',
     expect(systemInstruction).toContain('having a real, ongoing conversation');
   });
 
-  it('declares every tool with no parameters, except get_team_detail which takes only a team name', async () => {
+  it('declares every tool with no parameters at all', async () => {
     seedOrg(3, members(3, true));
     await request(app).post(`/api/org/${ORG}/manager-coach/chat`).set(auth(ADMIN)).send({ message: 'How is the team?' });
     const tools = h.lastConfig?.config?.tools?.[0]?.functionDeclarations;
     expect(tools.length).toBeGreaterThan(0);
     for (const tool of tools) {
-      if (tool.name === 'get_team_detail') {
-        expect(Object.keys(tool.parameters.properties)).toEqual(['team']);
-      } else {
-        expect(Object.keys(tool.parameters.properties)).toEqual([]);
-      }
+      expect(Object.keys(tool.parameters.properties)).toEqual([]);
     }
   });
 });
@@ -147,36 +146,40 @@ describe('POST /api/org/:orgId/manager-coach/chat — safety floor and persona',
 describe('POST /api/org/:orgId/manager-coach/chat — tool-calling loop', () => {
   it('dispatches a requested tool, feeds its real result back, and records it in planTrace', async () => {
     seedOrg(3, members(3, true));
+    const nowIso = new Date().toISOString();
+    seedDoc(`organisations/${ORG}/work_design_debt/d1`, {
+      team: 'A', signalKey: 'meeting_pressure', description: 'x', status: 'identified', ownerUid: null, createdAt: nowIso, updatedAt: nowIso,
+    });
     h.sendMessage
       .mockImplementationOnce(async () => ({
         text: '',
-        functionCalls: [{ name: 'get_engagement_and_recognition_signal', args: {} }],
+        functionCalls: [{ name: 'get_work_design_debt_status', args: {} }],
       }))
-      .mockImplementationOnce(async () => ({ text: 'Engagement is holding steady this week.', functionCalls: [] }));
+      .mockImplementationOnce(async () => ({ text: 'One item is open with no owner.', functionCalls: [] }));
 
-    const res = await request(app).post(`/api/org/${ORG}/manager-coach/chat`).set(auth(ADMIN)).send({ message: "How's engagement this week?" });
+    const res = await request(app).post(`/api/org/${ORG}/manager-coach/chat`).set(auth(ADMIN)).send({ message: "What's outstanding?" });
 
     expect(res.status).toBe(200);
-    expect(res.body.text).toBe('Engagement is holding steady this week.');
+    expect(res.body.text).toBe('One item is open with no owner.');
     expect(res.body.planTrace).toHaveLength(1);
-    expect(res.body.planTrace[0].tool).toBe('get_engagement_and_recognition_signal');
-    expect(res.body.planTrace[0].result.cohortSize).toBe(3);
-    expect(typeof res.body.planTrace[0].result.currentWeekEngagementRate).toBe('number');
+    expect(res.body.planTrace[0].tool).toBe('get_work_design_debt_status');
+    expect(res.body.planTrace[0].result.openDebtCount).toBe(1);
+    expect(res.body.planTrace[0].result.openDebtWithoutOwnerCount).toBe(1);
 
     // The second sendMessage call is where the tool's real result gets fed
     // back to the model - confirm it actually carries a genuine computed
     // number, not a placeholder.
     const secondCallArg = h.sendMessage.mock.calls[1][0];
     const functionResponse = secondCallArg.message[0].functionResponse;
-    expect(functionResponse.name).toBe('get_engagement_and_recognition_signal');
-    expect(functionResponse.response.cohortSize).toBe(3);
+    expect(functionResponse.name).toBe('get_work_design_debt_status');
+    expect(functionResponse.response.openDebtCount).toBe(1);
   });
 
   it('stops after MAX_TOOL_CALL_ROUNDS even if the model keeps requesting tools', async () => {
     seedOrg(3, members(3, true));
     h.sendMessage.mockImplementation(async () => ({
       text: '',
-      functionCalls: [{ name: 'get_team_climate_trend', args: {} }],
+      functionCalls: [{ name: 'get_local_operating_principles', args: {} }],
     }));
 
     const res = await request(app).post(`/api/org/${ORG}/manager-coach/chat`).set(auth(ADMIN)).send({ message: 'Tell me everything' });
@@ -198,135 +201,120 @@ describe('POST /api/org/:orgId/manager-coach/chat — tool-calling loop', () => 
   });
 });
 
-describe('POST /api/org/:orgId/manager-coach/chat — privacy: team breakdown never exposes an under-threshold cohort', () => {
-  it('omits a team whose complement would fall below the threshold, even via the tool', async () => {
-    // 6 consenting members total, threshold 3. Team A has 5 (complement 1 - unsafe).
-    seedOrg(3, [...members(5, true, 'A'), ...members(1, true, 'B')]);
+describe('POST /api/org/:orgId/manager-coach/chat — get_work_design_debt_status', () => {
+  it('reports open count, owner gap, and real items - never a fabricated number', async () => {
+    seedOrg(3, members(3, true));
+    const nowIso = new Date().toISOString();
+    seedDoc(`organisations/${ORG}/work_design_debt/d1`, { team: 'A', signalKey: 'meeting_pressure', description: 'x', status: 'identified', ownerUid: null, createdAt: nowIso, updatedAt: nowIso });
+    seedDoc(`organisations/${ORG}/work_design_debt/d2`, { team: 'B', signalKey: 'focus_fragmentation', description: 'y', status: 'in_progress', ownerUid: ADMIN, createdAt: nowIso, updatedAt: nowIso });
+    seedDoc(`organisations/${ORG}/work_design_debt/d3`, { team: 'A', signalKey: 'meeting_pressure', description: 'z', status: 'resolved', ownerUid: ADMIN, createdAt: nowIso, updatedAt: nowIso });
     h.sendMessage
-      .mockImplementationOnce(async () => ({ text: '', functionCalls: [{ name: 'get_team_breakdown', args: {} }] }))
-      .mockImplementationOnce(async () => ({ text: 'Only the org-wide number is safe to share right now.', functionCalls: [] }));
-
-    await request(app).post(`/api/org/${ORG}/manager-coach/chat`).set(auth(ADMIN)).send({ message: 'How does each team look?' });
-
-    const secondCallArg = h.sendMessage.mock.calls[1][0];
-    const response = secondCallArg.message[0].functionResponse.response;
-    expect(response.teams).toEqual([]);
-  });
-
-  it('includes a team once both it and its complement clear the threshold', async () => {
-    // 3 in team A, 3 in team B, threshold 3 - both team and complement (3) clear it.
-    seedOrg(3, [...members(3, true, 'A'), ...members(3, true, 'B')]);
-    h.sendMessage
-      .mockImplementationOnce(async () => ({ text: '', functionCalls: [{ name: 'get_team_breakdown', args: {} }] }))
-      .mockImplementationOnce(async () => ({ text: 'Here is the breakdown.', functionCalls: [] }));
-
-    await request(app).post(`/api/org/${ORG}/manager-coach/chat`).set(auth(ADMIN)).send({ message: 'How does each team look?' });
-
-    const secondCallArg = h.sendMessage.mock.calls[1][0];
-    const response = secondCallArg.message[0].functionResponse.response;
-    const teamNames = response.teams.map((t: any) => t.team);
-    expect(teamNames.sort()).toEqual(['A', 'B']);
-  });
-
-  it('never lets a tool argument resolve to a specific team - the model cannot pass a team name in', async () => {
-    // Even if a compromised/hallucinating model tried to pass args, the
-    // dispatcher takes no team-identifying parameter at all - args are
-    // ignored entirely for every tool.
-    seedOrg(3, [...members(3, true, 'A'), ...members(3, true, 'B')]);
-    h.sendMessage
-      .mockImplementationOnce(async () => ({
-        text: '',
-        functionCalls: [{ name: 'get_team_breakdown', args: { teamName: 'A', includeIndividuals: true } }],
-      }))
+      .mockImplementationOnce(async () => ({ text: '', functionCalls: [{ name: 'get_work_design_debt_status', args: {} }] }))
       .mockImplementationOnce(async () => ({ text: 'ok', functionCalls: [] }));
 
-    const res = await request(app).post(`/api/org/${ORG}/manager-coach/chat`).set(auth(ADMIN)).send({ message: 'Just show me team A' });
-    expect(res.status).toBe(200);
-    const secondCallArg = h.sendMessage.mock.calls[1][0];
-    const response = secondCallArg.message[0].functionResponse.response;
-    // Both teams still returned - the "teamName" arg had no effect at all.
-    expect(response.teams.map((t: any) => t.team).sort()).toEqual(['A', 'B']);
+    await request(app).post(`/api/org/${ORG}/manager-coach/chat`).set(auth(ADMIN)).send({ message: 'What needs an owner?' });
+
+    const response = h.sendMessage.mock.calls[1][0].message[0].functionResponse.response;
+    // Resolved item excluded from the open count.
+    expect(response.openDebtCount).toBe(2);
+    expect(response.openDebtWithoutOwnerCount).toBe(1);
+    expect(response.items).toHaveLength(2);
+  });
+
+  it('reports zero cleanly when nothing is open', async () => {
+    seedOrg(3, members(3, true));
+    h.sendMessage
+      .mockImplementationOnce(async () => ({ text: '', functionCalls: [{ name: 'get_work_design_debt_status', args: {} }] }))
+      .mockImplementationOnce(async () => ({ text: 'ok', functionCalls: [] }));
+
+    await request(app).post(`/api/org/${ORG}/manager-coach/chat`).set(auth(ADMIN)).send({ message: 'What needs an owner?' });
+
+    const response = h.sendMessage.mock.calls[1][0].message[0].functionResponse.response;
+    expect(response.openDebtCount).toBe(0);
+    expect(response.openDebtWithoutOwnerCount).toBe(0);
+    expect(response.items).toEqual([]);
   });
 });
 
-describe('POST /api/org/:orgId/manager-coach/chat — get_team_detail (the one tool with a parameter)', () => {
-  it('returns real data for a team that qualifies, addressed by name', async () => {
-    // 6 consenting total, threshold 3. Team A (3) and its complement (3)
-    // both clear the threshold, so it's safe to report on individually.
-    seedOrg(3, [...members(3, true, 'A'), ...members(3, true, 'B')]);
+describe('POST /api/org/:orgId/manager-coach/chat — get_active_interventions_status', () => {
+  it('reports the real active count and the organisation\'s own change budget - never a per-team breakdown', async () => {
+    seedOrg(3, members(3, true));
+    const nowIso = new Date().toISOString();
+    seedDoc(`organisations/${ORG}/work_design_interventions/i1`, { team: 'A', signalKey: 'meeting_pressure', proposedChange: 'Protect a block', status: 'trialling', startDate: nowIso, reviewDate: nowIso });
+    seedDoc(`organisations/${ORG}/work_design_interventions/i2`, { team: 'B', signalKey: 'meeting_pressure', proposedChange: 'Shorter defaults', status: 'completed', startDate: nowIso, reviewDate: nowIso });
     h.sendMessage
-      .mockImplementationOnce(async () => ({ text: '', functionCalls: [{ name: 'get_team_detail', args: { team: 'A' } }] }))
-      .mockImplementationOnce(async () => ({ text: 'Team A looks steady.', functionCalls: [] }));
+      .mockImplementationOnce(async () => ({ text: '', functionCalls: [{ name: 'get_active_interventions_status', args: {} }] }))
+      .mockImplementationOnce(async () => ({ text: 'One trial is active.', functionCalls: [] }));
 
-    await request(app).post(`/api/org/${ORG}/manager-coach/chat`).set(auth(ADMIN)).send({ message: 'How is team A doing?' });
-
-    const secondCallArg = h.sendMessage.mock.calls[1][0];
-    const response = secondCallArg.message[0].functionResponse.response;
-    expect(response.found).toBe(true);
-    expect(response.team).toBe('A');
-    expect(response.cohortSize).toBe(3);
-  });
-
-  it('returns found:false for a team that does not qualify or does not exist - never a distinguishing answer', async () => {
-    // Team A has 5 of 6 consenting - its complement is 1, below threshold 3.
-    seedOrg(3, [...members(5, true, 'A'), ...members(1, true, 'B')]);
-    h.sendMessage
-      .mockImplementationOnce(async () => ({ text: '', functionCalls: [{ name: 'get_team_detail', args: { team: 'A' } }] }))
-      .mockImplementationOnce(async () => ({ text: "Can't share that one individually.", functionCalls: [] }));
-
-    await request(app).post(`/api/org/${ORG}/manager-coach/chat`).set(auth(ADMIN)).send({ message: 'How is team A doing?' });
+    await request(app).post(`/api/org/${ORG}/manager-coach/chat`).set(auth(ADMIN)).send({ message: 'What trials are running?' });
 
     const response = h.sendMessage.mock.calls[1][0].message[0].functionResponse.response;
-    expect(response.found).toBe(false);
-  });
-
-  it('a prototype-chain team name never resolves to anything, degrading the same as any other unknown team', async () => {
-    seedOrg(3, [...members(3, true, 'A'), ...members(3, true, 'B')]);
-    h.sendMessage
-      .mockImplementationOnce(async () => ({ text: '', functionCalls: [{ name: 'get_team_detail', args: { team: '__proto__' } }] }))
-      .mockImplementationOnce(async () => ({ text: 'ok', functionCalls: [] }));
-
-    const res = await request(app).post(`/api/org/${ORG}/manager-coach/chat`).set(auth(ADMIN)).send({ message: 'team __proto__?' });
-    expect(res.status).toBe(200);
-    const response = h.sendMessage.mock.calls[1][0].message[0].functionResponse.response;
-    expect(response.found).toBe(false);
+    expect(response.activeInterventionCount).toBe(1);
+    expect(response.maxConcurrentActiveInterventions).toBe(3);
+    expect(response.items).toHaveLength(1);
+    expect(response.items[0].proposedChange).toBe('Protect a block');
   });
 });
 
-describe('POST /api/org/:orgId/manager-coach/chat — get_team_escalation_status (read-only, never creates one)', () => {
-  it('reflects a real, recent acknowledgment for a qualifying team', async () => {
-    seedOrg(3, [...members(3, true, 'A'), ...members(3, true, 'B')]);
-    seedDoc(`organisations/${ORG}/team_escalation_acks/ack_1`, {
-      team: 'A',
-      acknowledgedBy: 'mgr_a',
-      acknowledgedByEmail: 'mgr_a@test.dev',
-      note: 'Held a 1:1 this week.',
-      createdAt: new Date().toISOString(),
+describe('POST /api/org/:orgId/manager-coach/chat — get_local_operating_principles', () => {
+  it('reports count:0 and an honest note when nothing has been promoted yet', async () => {
+    seedOrg(3, members(3, true));
+    h.sendMessage
+      .mockImplementationOnce(async () => ({ text: '', functionCalls: [{ name: 'get_local_operating_principles', args: {} }] }))
+      .mockImplementationOnce(async () => ({ text: 'Nothing promoted yet.', functionCalls: [] }));
+
+    await request(app).post(`/api/org/${ORG}/manager-coach/chat`).set(auth(ADMIN)).send({ message: "What's proven to work here?" });
+
+    const response = h.sendMessage.mock.calls[1][0].message[0].functionResponse.response;
+    expect(response.count).toBe(0);
+    expect(response.principles).toEqual([]);
+  });
+
+  it('reports a real promoted principle', async () => {
+    seedOrg(3, members(3, true));
+    seedDoc(`organisations/${ORG}/local_operating_principles/meeting_pressure`, {
+      signalKey: 'meeting_pressure', label: 'Meeting Pressure', promotedBy: ADMIN, promotedAt: new Date().toISOString(),
     });
     h.sendMessage
-      .mockImplementationOnce(async () => ({ text: '', functionCalls: [{ name: 'get_team_escalation_status', args: {} }] }))
-      .mockImplementationOnce(async () => ({ text: 'Team A was recently followed up on.', functionCalls: [] }));
+      .mockImplementationOnce(async () => ({ text: '', functionCalls: [{ name: 'get_local_operating_principles', args: {} }] }))
+      .mockImplementationOnce(async () => ({ text: 'One pattern has proven out.', functionCalls: [] }));
 
-    await request(app).post(`/api/org/${ORG}/manager-coach/chat`).set(auth(ADMIN)).send({ message: 'Which teams need attention?' });
+    await request(app).post(`/api/org/${ORG}/manager-coach/chat`).set(auth(ADMIN)).send({ message: "What's proven to work here?" });
 
     const response = h.sendMessage.mock.calls[1][0].message[0].functionResponse.response;
-    const teamA = response.teams.find((t: any) => t.team === 'A');
-    const teamB = response.teams.find((t: any) => t.team === 'B');
-    expect(teamA.followUp.status).toBe('acknowledged');
-    expect(teamA.followUp.lastAcknowledgedBy).toBe('mgr_a');
-    expect(teamB.followUp.status).toBe('no_recent_acknowledgment');
+    expect(response.count).toBe(1);
+    expect(response.principles[0].signalKey).toBe('meeting_pressure');
+  });
+});
+
+describe('POST /api/org/:orgId/manager-coach/chat — get_cost_of_pressure_snapshot', () => {
+  it('reports available:false when the org has not entered cost figures yet', async () => {
+    seedOrg(3, members(3, true));
+    h.sendMessage
+      .mockImplementationOnce(async () => ({ text: '', functionCalls: [{ name: 'get_cost_of_pressure_snapshot', args: {} }] }))
+      .mockImplementationOnce(async () => ({ text: 'Nothing entered yet.', functionCalls: [] }));
+
+    await request(app).post(`/api/org/${ORG}/manager-coach/chat`).set(auth(ADMIN)).send({ message: "What's the cost case?" });
+
+    const response = h.sendMessage.mock.calls[1][0].message[0].functionResponse.response;
+    expect(response.available).toBe(false);
   });
 
-  it('never includes a team that does not qualify under the same complement check', async () => {
-    seedOrg(3, [...members(5, true, 'A'), ...members(1, true, 'B')]);
+  it('reports the org\'s own real entered cost figures once set', async () => {
+    seedDoc(`organisations/${ORG}`, {
+      adminUids: [ADMIN], memberUids: members(3, true).map((m) => m.uid), privacyThreshold: 3,
+      costInputs: { headcount: 45, avgDailyCostPerEmployee: 180, annualSicknessDays: 240 },
+    });
+    for (const m of members(3, true)) seedDoc(`users/${m.uid}`, { shareAnonymizedDataWithOrg: true });
     h.sendMessage
-      .mockImplementationOnce(async () => ({ text: '', functionCalls: [{ name: 'get_team_escalation_status', args: {} }] }))
-      .mockImplementationOnce(async () => ({ text: 'ok', functionCalls: [] }));
+      .mockImplementationOnce(async () => ({ text: '', functionCalls: [{ name: 'get_cost_of_pressure_snapshot', args: {} }] }))
+      .mockImplementationOnce(async () => ({ text: 'Here is the cost case.', functionCalls: [] }));
 
-    await request(app).post(`/api/org/${ORG}/manager-coach/chat`).set(auth(ADMIN)).send({ message: 'Which teams need attention?' });
+    await request(app).post(`/api/org/${ORG}/manager-coach/chat`).set(auth(ADMIN)).send({ message: "What's the cost case?" });
 
     const response = h.sendMessage.mock.calls[1][0].message[0].functionResponse.response;
-    expect(response.teams).toEqual([]);
+    expect(response.available).toBe(true);
+    expect(response.costInputs.headcount).toBe(45);
   });
 });
 

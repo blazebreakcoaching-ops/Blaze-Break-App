@@ -19,13 +19,11 @@ interface Message {
 // shown under her reply so "live and agentic" is visible, not just claimed.
 // Matches the tool names in NOVA_ORG_COACH_TOOLS (server.ts).
 const TOOL_LABELS: Record<string, string> = {
-  get_team_climate_trend: 'team climate trend',
-  get_team_breakdown: 'per-team breakdown',
-  get_team_detail: 'team detail',
-  get_engagement_and_recognition_signal: 'engagement & recognition',
-  get_cost_of_pressure_snapshot: 'cost of pressure',
-  get_team_escalation_status: 'escalation follow-up status',
   get_meeting_load_signal: 'meeting load',
+  get_cost_of_pressure_snapshot: 'cost of pressure',
+  get_work_design_debt_status: 'Work Design Debt status',
+  get_active_interventions_status: 'active interventions',
+  get_local_operating_principles: 'what works here',
 };
 
 const HISTORY_LIMIT = 20;
@@ -118,16 +116,16 @@ export const OrgManagerCoachChat = ({ orgId, seedMessage, onSeedConsumed }: OrgM
       <div>
         <h4 className="font-bold text-text-main flex items-center gap-2"><Sparkles className="w-5 h-5 text-primary" /> Nova, your manager coach</h4>
         <p className="text-xs text-text-muted max-w-xl leading-relaxed">
-          Ask her anything about your team's climate, engagement, or the cost case for recovery support - she pulls the org's own real numbers as she answers. Fed only aggregate, anonymised signals; she sees exactly what you see, nothing more.
+          Ask her anything about meeting load, outstanding Work Design Debt, active change trials, or the cost case for structural investment - she pulls the org's own real numbers as she answers. Fed only aggregate, anonymised work data; she sees exactly what you see, nothing more.
         </p>
       </div>
 
       {messages.length === 0 && !loading && (
         <div className="flex flex-wrap gap-2">
           {[
-            "How's the team doing right now?",
-            'Any teams I should look at specifically?',
-            "What's this week's engagement like?",
+            "How's meeting load looking right now?",
+            'Any Work Design Debt that needs an owner?',
+            'What structural trials are active?',
             'Make the cost case for investing here',
           ].map((prompt) => (
             <button
