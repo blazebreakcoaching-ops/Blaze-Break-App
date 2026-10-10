@@ -133,4 +133,60 @@ describe('POST /api/admin/evolution/registry/seed', () => {
     expect(doc?.displayName).toBe('Manually Renamed');
     expect(doc?.notes).toBe('edited by hand');
   });
+
+  // Lane Separation Remediation renamed team_climate_dashboard to
+  // team_work_design_dashboard in the static source. An environment that
+  // already seeded the old id (with real, possibly admin-edited
+  // governance state) must have that doc carried forward to the new id,
+  // not orphaned while a second, fresh doc gets created under the new id
+  // from defaults.
+  it('carries a renamed feature\'s already-seeded doc forward to its new id, preserving real edits', async () => {
+    seedDoc('platform_feature_registry/team_climate_dashboard', {
+      displayName: 'Team Climate Dashboard', description: 'old', lifecycleState: 'live',
+      enforcementState: 'fully_enforced', notes: 'admin-edited before the rename', createdAt: '2020-01-01T00:00:00.000Z',
+    });
+
+    const res = await request(app).post('/api/admin/evolution/registry/seed').set(auth(OWNER));
+    expect(res.status).toBe(200);
+    expect(res.body.renamed).toBe(1);
+
+    const oldDoc = getDocRaw('platform_feature_registry/team_climate_dashboard');
+    expect(oldDoc).toBeUndefined();
+    const newDoc = getDocRaw('platform_feature_registry/team_work_design_dashboard');
+    expect(newDoc?.notes).toBe('admin-edited before the rename');
+    expect(newDoc?.lifecycleState).toBe('live');
+    expect(newDoc?.createdAt).toBe('2020-01-01T00:00:00.000Z');
+
+    // The create-if-absent loop must not then also create a second,
+    // fresh entry at the new id from defaults - the carried-forward doc
+    // already satisfies it.
+    const list = await request(app).get('/api/admin/evolution/registry').set(auth(OWNER));
+    const matches = list.body.entries.filter((e: any) => e.featureId === 'team_work_design_dashboard');
+    expect(matches).toHaveLength(1);
+    expect(matches[0].notes).toBe('admin-edited before the rename');
+  });
+
+  it('is a no-op for the rename when nothing was ever seeded under the old id', async () => {
+    const res = await request(app).post('/api/admin/evolution/registry/seed').set(auth(OWNER));
+    expect(res.status).toBe(200);
+    expect(res.body.renamed).toBe(0);
+    expect(getDocRaw('platform_feature_registry/team_climate_dashboard')).toBeUndefined();
+    const newDoc = getDocRaw('platform_feature_registry/team_work_design_dashboard');
+    expect(newDoc).toBeTruthy();
+  });
+
+  it('does not re-carry a rename once the new id already has a doc, even if an old-id doc reappears', async () => {
+    await request(app).post('/api/admin/evolution/registry/seed').set(auth(OWNER));
+    // Simulate a stale old-id doc existing alongside an already-seeded new one.
+    seedDoc('platform_feature_registry/team_climate_dashboard', {
+      displayName: 'Stale', description: 'stale', lifecycleState: 'live', enforcementState: 'fully_enforced',
+    });
+
+    const res = await request(app).post('/api/admin/evolution/registry/seed').set(auth(OWNER));
+    expect(res.body.renamed).toBe(0);
+    // The stale old-id doc is left alone rather than guessed about - a
+    // human, not this migration, resolves a doc that reappears after
+    // the new id already has real data.
+    expect(getDocRaw('platform_feature_registry/team_climate_dashboard')?.displayName).toBe('Stale');
+  });
 });

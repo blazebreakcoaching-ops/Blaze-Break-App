@@ -348,12 +348,12 @@ export const FEATURE_REGISTRY: Record<string, FeatureDefinition> = {
     riskLevel: 'high',
     usesAI: true,
     usesSensitiveData: true,
-    allowedConnections: ['team_climate_dashboard'],
+    allowedConnections: ['team_work_design_dashboard'],
     protectedBoundaries: ['privacy_vault'],
     featureFlagName: 'enable_anonymous_aggregation_engine'
   },
-  team_climate_dashboard: {
-    id: 'team_climate_dashboard',
+  team_work_design_dashboard: {
+    id: 'team_work_design_dashboard',
     name: 'Team Work Design Dashboard',
     purpose: 'Managers/HR view grouped structural Work Design Signals',
     section: 'Workplace',
@@ -363,7 +363,7 @@ export const FEATURE_REGISTRY: Record<string, FeatureDefinition> = {
     usesSensitiveData: false,
     allowedConnections: ['anonymous_aggregation_engine', 'nova_manager_coach'],
     protectedBoundaries: [],
-    featureFlagName: 'enable_team_climate_dashboard',
+    featureFlagName: 'enable_team_work_design_dashboard',
     visible_roles: ['manager', 'organisation_admin'],
     required_scope: 'team',
     data_zone: 'Anonymous Team Insights',
@@ -381,7 +381,7 @@ export const FEATURE_REGISTRY: Record<string, FeatureDefinition> = {
     riskLevel: 'medium',
     usesAI: true,
     usesSensitiveData: false,
-    allowedConnections: ['team_climate_dashboard'],
+    allowedConnections: ['team_work_design_dashboard'],
     protectedBoundaries: [],
     featureFlagName: 'enable_nova_manager_coach'
   },
@@ -407,7 +407,7 @@ export const FEATURE_REGISTRY: Record<string, FeatureDefinition> = {
     riskLevel: 'medium',
     usesAI: false,
     usesSensitiveData: false,
-    allowedConnections: ['team_climate_dashboard'],
+    allowedConnections: ['team_work_design_dashboard'],
     protectedBoundaries: [],
     featureFlagName: 'enable_anonymous_team_voice'
   },
@@ -433,7 +433,7 @@ export const FEATURE_REGISTRY: Record<string, FeatureDefinition> = {
     riskLevel: 'medium',
     usesAI: false,
     usesSensitiveData: false,
-    allowedConnections: ['team_climate_dashboard', 'management_savings_planner'],
+    allowedConnections: ['team_work_design_dashboard', 'management_savings_planner'],
     protectedBoundaries: ['privacy_vault'],
     featureFlagName: 'enable_people_value_engine'
   },

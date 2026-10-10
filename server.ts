@@ -6811,15 +6811,46 @@ app.post("/api/admin/evolution/registry", verifyAppCheck, authenticateFirebaseUs
   }
 });
 
+// Feature ids that were renamed in the legacy static source after the
+// registry had already been seeded in some environment. A rename in
+// src/lib/feature-registry.ts alone would orphan that environment's real,
+// possibly admin-edited governance doc under the old id - the next seed
+// would just create a second, fresh doc under the new id with default
+// values, silently duplicating the entry rather than carrying the old
+// doc's real lifecycleState/enforcementState/history forward. Recorded
+// here once, permanently, as a historical log - never remove an entry
+// even after the rename has long since landed everywhere, since a stale
+// environment that hasn't called this route since before the rename
+// still needs it applied the first time it does.
+const RENAMED_FEATURE_IDS: Record<string, string> = {
+  // Lane Separation Remediation: the feature itself (an org-wide mood/
+  // climate aggregate) was retired and rebuilt on real Work Design
+  // Signals; this is the one-time carry-forward for the id itself.
+  team_climate_dashboard: 'team_work_design_dashboard',
+};
+
 // One-time (idempotent) migration from the legacy static sources into
 // the real, server-persisted registry. Create-if-absent per entry, so
 // re-running this after a manual edit can never clobber that edit - it
-// only ever fills in features that don't yet have a registry doc.
+// only ever fills in features that don't yet have a registry doc. Runs
+// the id-rename carry-forward above first, so a renamed feature's real
+// doc (if this environment already seeded it under the old id) moves to
+// the new id instead of being orphaned and re-created from defaults.
 app.post("/api/admin/evolution/registry/seed", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
   try {
     requireEvolutionAccess(req);
     await requireEvolutionNotFrozen();
     const db = getDb();
+    let renamed = 0;
+    for (const [oldId, newId] of Object.entries(RENAMED_FEATURE_IDS)) {
+      const oldRef = db.collection("platform_feature_registry").doc(oldId);
+      const newRef = db.collection("platform_feature_registry").doc(newId);
+      const [oldDoc, newDoc] = await Promise.all([oldRef.get(), newRef.get()]);
+      if (!oldDoc.exists || newDoc.exists) continue;
+      await newRef.set(oldDoc.data());
+      await oldRef.delete();
+      renamed++;
+    }
     const initialEntries = buildInitialRegistry(
       LEGACY_FEATURE_REGISTRY as unknown as Record<string, LegacyFeatureDefinition>,
       FEATURE_FLAG_IDS,
@@ -6835,8 +6866,8 @@ app.post("/api/admin/evolution/registry/seed", verifyAppCheck, authenticateFireb
       await ref.set(rest);
       created++;
     }
-    await logAdminAction(req, "seed_feature_registry", "", "", { created, skipped });
-    res.json({ created, skipped, total: initialEntries.length });
+    await logAdminAction(req, "seed_feature_registry", "", "", { created, skipped, renamed });
+    res.json({ created, skipped, renamed, total: initialEntries.length });
   } catch (err: any) {
     res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("frozen") ? 423 : 500).json({ error: err.message });
   }
