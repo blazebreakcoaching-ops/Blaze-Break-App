@@ -672,7 +672,7 @@ export const OrgDashboard = ({ onNavigate }: { onNavigate?: (tab: string) => voi
       {/* Sub Navigation */}
       <div className="flex flex-wrap gap-2 mb-8">
         {[
-           { id: 'pulse', label: 'Resilience Pulse', icon: HeartPulse },
+           { id: 'pulse', label: 'Team Mood Snapshot', icon: HeartPulse },
            { id: 'climate', label: 'Team Climate Dashboard', icon: LineChartIcon },
            { id: 'value', label: 'People Value Engine', icon: Building },
            { id: 'moments', label: 'Blaze Bright Moments', icon: Sparkles },
@@ -709,7 +709,7 @@ export const OrgDashboard = ({ onNavigate }: { onNavigate?: (tab: string) => voi
               </div>
               <div className="relative z-10 max-w-3xl">
                 <div className="flex items-center gap-3 mb-4">
-                  <div className="tag bg-surface dark:bg-card/10 text-text-main border-white/20">Organisational Resilience Pulse</div>
+                  <div className="tag bg-surface dark:bg-card/10 text-text-main border-white/20">Team Mood Snapshot</div>
                 </div>
                 <h3 className="text-4xl font-display font-bold text-text-main tracking-tight leading-tight mb-4">
                   Team Mood, Last {dashboardData.windowDays || 7} Days

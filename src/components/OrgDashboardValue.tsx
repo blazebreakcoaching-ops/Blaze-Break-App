@@ -310,7 +310,7 @@ export const OrgDashboardValue = ({ onNavigateToTrend }: { onNavigateToTrend?: (
                       <div>
                         <h4 className="font-bold text-text-main flex items-center gap-2"><TrendingUp className="w-4 h-4 text-primary" /> See the Wellbeing Concern Trend</h4>
                         <p className="text-xs text-text-muted leading-relaxed mt-1">
-                          The cost figures above are what your organisation actually reported. The Resilience Pulse tab shows a separate, real trend from your team's own mood and climate-survey data - both are real, shown side by side, with no formula connecting one to the other.
+                          The cost figures above are what your organisation actually reported. The Team Mood Snapshot tab shows a separate, real trend from your team's own mood and climate-survey data - both are real, shown side by side, with no formula connecting one to the other.
                         </p>
                       </div>
                       <ArrowRight className="w-4 h-4 text-text-muted shrink-0" />
