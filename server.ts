@@ -100,6 +100,7 @@ import {
 import {
   validateCreateWorkDesignDebtInput, validateAssignOwnerInput, validateStatusTransition,
 } from './work-design-debt';
+import { detectPressureTransfer } from './pressure-transfer-detector';
 import { buildFinancialRangeEstimate } from './executive-work-design';
 
 dotenv.config();
@@ -9341,6 +9342,22 @@ app.post("/api/org/:orgId/work-design-interventions", verifyAppCheck, authentica
       return res.status(403).json({ error: "Forbidden: you don't manage this team." });
     }
 
+    // Pressure Transfer Detector (Work Design Pulse PR6): captured now, at
+    // the moment a trial actually starts, so a later comparison is against
+    // this team's real meeting load right before the change - never a
+    // snapshot reconstructed after the fact. Null (not zero) when the
+    // cohort isn't big enough yet to compute one honestly.
+    const memberTeams: Record<string, string> = org.memberTeams || {};
+    const threshold = org.privacyThreshold || 5;
+    const teamConsentingUids = (await getConsentingMemberUids(db, org.memberUids || [])).filter((uid) => memberTeams[uid] === team);
+    const startSnapshot = await computeMeetingLoadSnapshotForCohort(db, teamConsentingUids, threshold);
+    const signalSnapshotAtStart = startSnapshot.available ? {
+      avgMeetingHoursPerWeek: startSnapshot.avgMeetingHoursPerWeek,
+      avgBackToBackMeetingsPerWeek: startSnapshot.avgBackToBackMeetingsPerWeek,
+      pctWithEveningMeetings: startSnapshot.pctWithEveningMeetings,
+      pctWithWeekendMeetings: startSnapshot.pctWithWeekendMeetings,
+    } : null;
+
     const nowIso = new Date().toISOString();
     const reviewDate = new Date(Date.now() + (reviewInDays ?? DEFAULT_REVIEW_WINDOW_DAYS) * 24 * 60 * 60 * 1000).toISOString();
     const record = {
@@ -9349,6 +9366,8 @@ app.post("/api/org/:orgId/work-design-interventions", verifyAppCheck, authentica
       proposedChange,
       why,
       employeeBurden,
+      signalSnapshotAtStart,
+      pressureTransferCheck: null,
       owner: user.uid,
       ownerEmail: user.email || null,
       status: 'trialling' as const,
@@ -9501,16 +9520,38 @@ app.patch("/api/org/:orgId/work-design-interventions/:id/outcome", verifyAppChec
       return res.status(403).json({ error: "Forbidden: you don't manage this team." });
     }
     const { outcomeRating, actualOutcome, outcomeNotes } = req.body;
+
+    // Pressure Transfer Detector: only ever computed when a real "before"
+    // snapshot exists (captured at trial start) and a real "after" cohort
+    // is big enough right now - never backfilled or estimated from a
+    // smaller or stale cohort just to produce a finding.
+    let pressureTransferCheck: { movedTo: string; message: string } | null = null;
+    if (existing.signalSnapshotAtStart) {
+      const memberTeams: Record<string, string> = org.memberTeams || {};
+      const threshold = org.privacyThreshold || 5;
+      const teamConsentingUids = (await getConsentingMemberUids(db, org.memberUids || [])).filter((uid) => memberTeams[uid] === existing.team);
+      const endSnapshot = await computeMeetingLoadSnapshotForCohort(db, teamConsentingUids, threshold);
+      if (endSnapshot.available) {
+        pressureTransferCheck = detectPressureTransfer(existing.signalSnapshotAtStart, {
+          avgMeetingHoursPerWeek: endSnapshot.avgMeetingHoursPerWeek!,
+          avgBackToBackMeetingsPerWeek: endSnapshot.avgBackToBackMeetingsPerWeek!,
+          pctWithEveningMeetings: endSnapshot.pctWithEveningMeetings!,
+          pctWithWeekendMeetings: endSnapshot.pctWithWeekendMeetings!,
+        });
+      }
+    }
+
     const update = {
       outcomeRating,
       actualOutcome: actualOutcome || null,
       outcomeNotes: outcomeNotes || null,
       status: 'completed' as const,
+      pressureTransferCheck,
       updatedAt: new Date().toISOString(),
     };
     await ref.set(update, { merge: true });
     await logOrgAuditAction(req, orgId, "record_work_design_intervention_outcome", "work_design_intervention", id, { status: existing.status }, { status: update.status, outcomeRating });
-    res.json({ success: true });
+    res.json({ success: true, pressureTransferCheck });
   } catch (err: any) {
     res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("not found") ? 404 : 500).json({ error: err.message });
   }

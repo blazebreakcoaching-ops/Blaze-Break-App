@@ -105,6 +105,13 @@ export const TeamDashboard = () => {
   const [startingTrial, setStartingTrial] = useState<string | null>(null);
   const [outcomeNotes, setOutcomeNotes] = useState<Record<string, string>>({});
   const [recordingOutcome, setRecordingOutcome] = useState<string | null>(null);
+  // Pressure Transfer Detector (Work Design Pulse PR6): the server only
+  // ever computes this at the moment an outcome is recorded (comparing
+  // the real snapshot taken when the trial started against the real
+  // cohort right now) - captured here, keyed by team, since a completed
+  // intervention drops out of activeIntervention on the next refresh and
+  // this is the one moment the finding is available to show.
+  const [pressureTransferFindings, setPressureTransferFindings] = useState<Record<string, { movedTo: string; message: string } | null>>({});
 
   const loadTeams = async (orgIdToUse: string, showSpinner: boolean) => {
     if (showSpinner) setLoading(true);
@@ -169,14 +176,16 @@ export const TeamDashboard = () => {
   // Recording "what happened?" ends the trial (the server sets status to
   // 'completed' itself) - refreshing afterward returns the Nova Manager
   // Coach card to its normal recommend-or-nothing state.
-  const handleRecordOutcome = async (interventionId: string, outcomeRating: OutcomeRating) => {
+  const handleRecordOutcome = async (team: string, interventionId: string, outcomeRating: OutcomeRating) => {
     if (!orgId) return;
     setRecordingOutcome(interventionId);
     try {
-      await secureApiFetch(`/api/org/${orgId}/work-design-interventions/${interventionId}/outcome`, {
+      const res = await secureApiFetch(`/api/org/${orgId}/work-design-interventions/${interventionId}/outcome`, {
         method: 'PATCH',
         data: { outcomeRating, outcomeNotes: outcomeNotes[interventionId]?.trim() || undefined },
       });
+      const data = await res.json();
+      setPressureTransferFindings(prev => ({ ...prev, [team]: data.pressureTransferCheck || null }));
       await loadTeams(orgId, false);
     } catch (e) {
       // Non-critical - the manager can just try again.
@@ -313,6 +322,12 @@ export const TeamDashboard = () => {
                         <WorkDesignSignalCard key={signal.key} signal={signal} />
                       ))}
                     </ul>
+                    {pressureTransferFindings[entry.team] && (
+                      <div className="p-4 bg-warning/10 border border-warning/20 rounded-xl space-y-1.5">
+                        <p className="text-xs font-bold text-text-main">What else changed?</p>
+                        <p className="text-xs text-text-muted">{pressureTransferFindings[entry.team]!.message}</p>
+                      </div>
+                    )}
                     {entry.activeIntervention ? (
                       <div className="p-4 bg-primary/5 border border-primary/20 rounded-xl space-y-3">
                         <p className="text-xs font-bold text-text-main flex items-center gap-1.5">
@@ -328,7 +343,7 @@ export const TeamDashboard = () => {
                             {OUTCOME_RATING_OPTIONS.map((opt) => (
                               <button
                                 key={opt.value}
-                                onClick={() => handleRecordOutcome(entry.activeIntervention!.id, opt.value)}
+                                onClick={() => handleRecordOutcome(entry.team, entry.activeIntervention!.id, opt.value)}
                                 disabled={recordingOutcome === entry.activeIntervention!.id}
                                 className="text-left py-2 px-3 rounded-lg border border-border text-xs font-bold text-text-main hover:border-primary/50 transition-colors disabled:opacity-50"
                               >
