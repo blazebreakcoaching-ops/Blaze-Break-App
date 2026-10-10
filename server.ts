@@ -103,6 +103,7 @@ import {
 import { detectPressureTransfer } from './pressure-transfer-detector';
 import { validateCreateWorkplacePolicyInput, checkPolicyAgainstObservedPattern } from './workplace-policy';
 import { computeEvidenceLevel, canPromoteToLocalOperatingPrinciple, EVIDENCE_LEVEL_LABELS } from './evidence-ladder';
+import { checkWorkDesignDrift } from './work-design-drift-detector';
 import { buildFinancialRangeEstimate } from './executive-work-design';
 
 dotenv.config();
@@ -9860,6 +9861,7 @@ app.post("/api/org/:orgId/what-works-here/:signalKey/promote", verifyAppCheck, a
     }
     await db.collection("organisations").doc(orgId).collection("local_operating_principles").doc(signalKey).set({
       signalKey,
+      label: WORK_DESIGN_SIGNAL_LABELS[signalKey] || signalKey,
       promotedBy: user.uid,
       promotedByEmail: user.email || null,
       promotedAt: new Date().toISOString(),
@@ -9868,6 +9870,45 @@ app.post("/api/org/:orgId/what-works-here/:signalKey/promote", verifyAppCheck, a
     res.json({ success: true });
   } catch (err: any) {
     res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("not found") ? 404 : 500).json({ error: err.message });
+  }
+});
+
+// Work Design Drift Detector (Work Design Pulse PR9) - for every signal
+// this org has already promoted to a Local Operating Principle, checks
+// its real, currently-computed org-wide band and flags regression. Open
+// to any org member - "did the thing we said we fixed come back?" is
+// organisational knowledge, not personal data. Only meeting_pressure has
+// a real band computation today (work-design-signals.ts); a promoted
+// principle for any other signalKey simply has nothing to check yet and
+// is skipped, never faked.
+app.get("/api/org/:orgId/work-design-drift", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const { orgId } = req.params;
+    const user = requireAuth(req);
+    const db = getDb();
+    const orgDoc = await db.collection("organisations").doc(orgId).get();
+    const org = orgDoc.data();
+    if (!orgDoc.exists || !(org?.memberUids || []).includes(user.uid)) {
+      return res.status(403).json({ error: "You're not a member of this organisation." });
+    }
+    const principlesSnap = await db.collection("organisations").doc(orgId).collection("local_operating_principles").get();
+    if (principlesSnap.empty) {
+      return res.json({ findings: [] });
+    }
+    const threshold = org.privacyThreshold || 5;
+    const consentingUids = await getConsentingMemberUids(db, org.memberUids || []);
+    const baselineDaysObserved = await getWorkDesignBaselineDays(db, orgId);
+    const findings: { signalKey: string; message: string }[] = [];
+    for (const doc of principlesSnap.docs) {
+      const principle = doc.data();
+      if (principle.signalKey !== 'meeting_pressure') continue; // No other real band yet - never faked.
+      const signal = await buildMeetingPressureSignal(db, consentingUids, threshold, baselineDaysObserved);
+      const finding = checkWorkDesignDrift({ signalKey: principle.signalKey, label: principle.label || principle.signalKey, promotedAt: principle.promotedAt }, signal.band);
+      if (finding) findings.push(finding);
+    }
+    res.json({ findings });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
   }
 });
 
