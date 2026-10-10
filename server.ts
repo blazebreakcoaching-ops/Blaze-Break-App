@@ -104,6 +104,7 @@ import { detectPressureTransfer } from './pressure-transfer-detector';
 import { validateCreateWorkplacePolicyInput, checkPolicyAgainstObservedPattern } from './workplace-policy';
 import { computeEvidenceLevel, canPromoteToLocalOperatingPrinciple, EVIDENCE_LEVEL_LABELS } from './evidence-ladder';
 import { checkWorkDesignDrift } from './work-design-drift-detector';
+import { deriveSuggestionResponse } from './suggestion-response';
 import { buildFinancialRangeEstimate } from './executive-work-design';
 
 dotenv.config();
@@ -8182,11 +8183,53 @@ app.post("/api/org/:orgId/suggestions", verifyAppCheck, authenticateFirebaseUser
     }
     await db.collection("organisations").doc(orgId).collection("anonymous_suggestions").add({
       message: message.trim(),
+      linkedInterventionId: null,
+      responseNote: null,
       createdAt: FieldValue.serverTimestamp(),
     });
     res.json({ success: true });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+// "You Said -> We Changed" (Work Design Pulse PR10) - an admin closes the
+// trust loop on one suggestion, either by linking it to a real
+// intervention already in progress/completed, or by leaving an honest
+// "we haven't changed this yet" note when nothing has been done. Exactly
+// one of linkedInterventionId/note is ever stored at a time - linking to
+// a real intervention supersedes a stale note, same as the other way
+// around.
+app.patch("/api/org/:orgId/suggestions/:id/respond", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const { orgId, id } = req.params;
+    await requireOrgAdmin(req, orgId);
+    const db = getDb();
+    const { linkedInterventionId, note } = req.body;
+    if (!linkedInterventionId && !note) {
+      return res.status(400).json({ error: "Either linkedInterventionId or note is required." });
+    }
+    if (note !== undefined && note !== null && (typeof note !== 'string' || note.length > 500)) {
+      return res.status(400).json({ error: "note must be a string (max 500 characters) if provided." });
+    }
+    const ref = db.collection("organisations").doc(orgId).collection("anonymous_suggestions").doc(id);
+    const snap = await ref.get();
+    if (!snap.exists) {
+      return res.status(404).json({ error: "Suggestion not found." });
+    }
+    if (linkedInterventionId) {
+      const interventionSnap = await db.collection("organisations").doc(orgId).collection("work_design_interventions").doc(linkedInterventionId).get();
+      if (!interventionSnap.exists) {
+        return res.status(400).json({ error: "That intervention doesn't exist in this organisation." });
+      }
+      await ref.set({ linkedInterventionId, responseNote: null }, { merge: true });
+    } else {
+      await ref.set({ linkedInterventionId: null, responseNote: note }, { merge: true });
+    }
+    await logOrgAuditAction(req, orgId, "respond_to_suggestion", "anonymous_suggestion", id, null, { linkedInterventionId: linkedInterventionId || null, hasNote: !!note });
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("not found") ? 404 : 500).json({ error: err.message });
   }
 });
 
@@ -8214,7 +8257,30 @@ app.get("/api/org/:orgId/suggestions", verifyAppCheck, authenticateFirebaseUser,
     }
     const snap = await db.collection("organisations").doc(orgId).collection("anonymous_suggestions")
       .orderBy("createdAt", "desc").limit(30).get();
-    const suggestions = snap.docs.map(d => ({ id: d.id, message: d.data().message, createdAt: d.data().createdAt }));
+    // "You Said -> We Changed" (Work Design Pulse PR10) - each suggestion's
+    // response is re-derived live from its linked intervention's CURRENT
+    // status/outcome, never cached from whenever the link was made, so a
+    // trial that finishes later is reflected automatically.
+    const suggestions = await Promise.all(snap.docs.map(async (d: any) => {
+      const data = d.data();
+      let interventionStatus: string | null = null;
+      let outcomeRating: string | null = null;
+      if (data.linkedInterventionId) {
+        const interventionSnap = await db.collection("organisations").doc(orgId).collection("work_design_interventions").doc(data.linkedInterventionId).get();
+        if (interventionSnap.exists) {
+          const interventionData = interventionSnap.data();
+          interventionStatus = interventionData.status || null;
+          outcomeRating = interventionData.outcomeRating || null;
+        }
+      }
+      const response = deriveSuggestionResponse({
+        linkedInterventionId: data.linkedInterventionId || null,
+        interventionStatus,
+        outcomeRating: outcomeRating as any,
+        note: data.responseNote || null,
+      });
+      return { id: d.id, message: data.message, createdAt: data.createdAt, response };
+    }));
     res.json({ locked: false, cohortSize: consentingUids.length, threshold, suggestions });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
