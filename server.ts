@@ -31,7 +31,7 @@ import { z } from 'zod';
 import { memoryToolIsAllowed, searchMemories, isValidRecoveryDuration, validateMemoryWrite, validateFeatureSuggestion, SUGGESTABLE_FEATURES, toolsAreEnabled, liveVoiceIsEnabled, NovaMemoryDoc } from './nova-tools';
 import { toClaudeTools, GeminiStyleToolDeclaration } from './nova-claude-tools';
 import { computeClimateStrain, computeClimateStrainByDimension, computeMoodStrain, computeOverallStrain, computeTrend } from './org-risk-trend';
-import { suggestRecognitionPrompts } from './positive-reinforcement';
+import { suggestRecognitionPrompts, suggestStructuralRecognitionPrompts } from './positive-reinforcement';
 import { isRealGuardian, isValidGuardianPhone, buildGuardianCallRequestMessage, buildGuardianTestPingMessage, extractFirstName, nudgeSchedulerIsEnabled, guardianAlertsEnabled } from './guardian-alert';
 import { deriveEffectiveSharing, computeCapsuleExpiresAt, DEFAULT_SHARED_CATEGORIES } from './support-capsules';
 import { effectiveConsentStatus, canRespondToConsent, computeInviteExpiresAt, isInviteExpired } from './recovery-ally-consent';
@@ -7941,78 +7941,34 @@ app.get("/api/org/:orgId/privacy-receipts", verifyAppCheck, authenticateFirebase
   }
 });
 
-// The real, server-side aggregation. This is the only place any individual
-// member's wellbeing data is ever read for org-reporting purposes, and it
-// never returns individual records - only aggregate counts. It refuses to
-// return anything at all below the organisation's configured minimum cohort
-// size, checked against the actual consenting count for this specific
-// request, not the org's total headcount.
+// Work Design Pulse summary for the org admin's default view. This used to
+// read every consenting member's own mood_pulses/body_checkins and
+// aggregate them here - the Work Design Pulse privacy architecture retired
+// that: Lane A (the Private Recovery Vault) must be server-side
+// unreachable by an organisation-scoped route, not just k-anonymity-
+// aggregated. This now renders the exact same real signal computation the
+// Executive Work Design report uses (buildExecutiveWorkDesignPayload,
+// defined below), only ever reading Lane B organisation work data - never
+// recording the org-wide baseline itself (see getWorkDesignBaselineDays),
+// since GET .../executive-work-design already owns that write.
 app.get("/api/org/:orgId/dashboard", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
   try {
     const { orgId } = req.params;
     const { org } = await requireOrgAdmin(req, orgId);
     const db = getDb();
 
-    const threshold = org.privacyThreshold || 5;
-    const memberUids: string[] = org.memberUids || [];
-
-    // Only members who've explicitly opted in count toward anything below.
-    const consentingUids = await getConsentingMemberUids(db, memberUids);
-
-    const sufficiency = checkCohortSufficiency(consentingUids.length, threshold);
-    if (!sufficiency.sufficient) {
-      return res.json(buildLockedAggregateResponse(sufficiency));
-    }
-
-    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
-
-    let moodPositive = 0, moodNegative = 0, moodNeutral = 0, moodIntensitySum = 0, moodCount = 0;
-    let activeMembers = 0;
-    const bodySignalCounts: Record<string, number> = {};
-
-    await Promise.all(consentingUids.map(async (uid) => {
-      let hadActivity = false;
-
-      const moodSnap = await db.collection("users").doc(uid).collection("mood_pulses")
-        .where("createdAt", ">=", sevenDaysAgo).get();
-      moodSnap.forEach(doc => {
-        const d = doc.data();
-        hadActivity = true;
-        moodCount++;
-        moodIntensitySum += d.intensity || 0;
-        if (d.moodLabel === 'calm' || d.moodLabel === 'hopeful' || d.moodLabel === 'focused') moodPositive++;
-        else if (d.moodLabel === 'overwhelmed' || d.moodLabel === 'frustrated' || d.moodLabel === 'pressured' || d.moodLabel === 'tired') moodNegative++;
-        else moodNeutral++;
-      });
-
-      const bodySnap = await db.collection("users").doc(uid).collection("body_checkins")
-        .where("createdAt", ">=", sevenDaysAgo).get();
-      bodySnap.forEach(doc => {
-        hadActivity = true;
-        const signals: string[] = doc.data().signals || [];
-        signals.forEach(s => {
-          if (s === 'calm_settled') return;
-          bodySignalCounts[s] = (bodySignalCounts[s] || 0) + 1;
-        });
-      });
-
-      if (hadActivity) activeMembers++;
-    }));
-
-    const topBodySignals = Object.entries(bodySignalCounts)
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 5)
-      .map(([signal, count]) => ({ signal, count }));
+    const payload = await buildExecutiveWorkDesignPayload(db, orgId, org, false);
+    if (payload.locked) return res.json(payload.lockedResponse);
 
     res.json({
       locked: false,
-      cohortSize: consentingUids.length,
-      threshold,
-      windowDays: 7,
-      engagementRate: Math.round((activeMembers / consentingUids.length) * 100),
-      moodDistribution: { positive: moodPositive, negative: moodNegative, neutral: moodNeutral },
-      avgMoodIntensity: moodCount > 0 ? Number((moodIntensitySum / moodCount).toFixed(1)) : null,
-      topBodySignals,
+      cohortSize: payload.cohortSize,
+      threshold: payload.threshold,
+      workDesignSignals: payload.workDesignSignals,
+      debtSummary: payload.debtSummary,
+      actionBudget: payload.actionBudget,
+      localOperatingPrincipleCount: payload.localOperatingPrincipleCount,
+      narrative: payload.narrative,
     });
   } catch (err: any) {
     res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
@@ -8020,12 +7976,16 @@ app.get("/api/org/:orgId/dashboard", verifyAppCheck, authenticateFirebaseUser, a
 });
 
 // Positive Reinforcement Engine: suggests recognition prompts for the wall
-// below, built entirely from the same k-anonymity-gated engagement-rate
-// signal the dashboard endpoint above already computes - never a named
-// individual, and refuses below the org's cohort threshold exactly like
-// every other aggregate endpoint in this file. Suggestions are just text
-// for a human to review/edit/discard in the composer; nothing here posts
-// anything on anyone's behalf.
+// below. Used to be built from an engagement-rate signal read across every
+// consenting member's own mood_pulses/body_checkins - the Work Design
+// Pulse privacy architecture retired that (Lane A must be server-side
+// unreachable by organisation code). Suggestions are now grounded entirely
+// in Lane B organisation work data: a resolved Work Design Debt item, a
+// genuinely useful intervention outcome, or a real low Meeting Pressure
+// reading - never a named individual, and refused below the org's cohort
+// threshold exactly like every other aggregate endpoint in this file.
+// Still just text for a human to review/edit/discard in the composer;
+// nothing here posts anything on anyone's behalf.
 app.get("/api/org/:orgId/recognition-suggestions", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
   try {
     const { orgId } = req.params;
@@ -8040,40 +8000,30 @@ app.get("/api/org/:orgId/recognition-suggestions", verifyAppCheck, authenticateF
       return res.json({ locked: true, cohortSize: consentingUids.length, threshold, suggestions: [] });
     }
 
-    // Existence-only checks (limit 1), unlike the dashboard endpoint's full
-    // scan - all this needs is "did this member show any activity in this
-    // window", not the full mood/body distribution.
-    const countActiveInWindow = async (sinceIso: string, untilIso: string): Promise<number> => {
-      let active = 0;
-      await Promise.all(consentingUids.map(async (uid) => {
-        const moodSnap = await db.collection("users").doc(uid).collection("mood_pulses")
-          .where("createdAt", ">=", sinceIso).where("createdAt", "<", untilIso).limit(1).get();
-        if (!moodSnap.empty) { active++; return; }
-        const bodySnap = await db.collection("users").doc(uid).collection("body_checkins")
-          .where("createdAt", ">=", sinceIso).where("createdAt", "<", untilIso).limit(1).get();
-        if (!bodySnap.empty) active++;
-      }));
-      return active;
-    };
-
-    const now = Date.now();
-    const nowIso = new Date(now).toISOString();
-    const oneWeekAgo = new Date(now - 7 * 24 * 60 * 60 * 1000).toISOString();
-    const twoWeeksAgo = new Date(now - 14 * 24 * 60 * 60 * 1000).toISOString();
-
-    const [currentActive, previousActive] = await Promise.all([
-      countActiveInWindow(oneWeekAgo, nowIso),
-      countActiveInWindow(twoWeeksAgo, oneWeekAgo),
+    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+    const [debtSnap, interventionsSnap, meetingPressureSignal] = await Promise.all([
+      db.collection("organisations").doc(orgId).collection("work_design_debt").get(),
+      db.collection("organisations").doc(orgId).collection("work_design_interventions").get(),
+      buildMeetingPressureSignal(db, consentingUids, threshold, await getWorkDesignBaselineDays(db, orgId)),
     ]);
-
-    const current = { engagementRate: Math.round((currentActive / consentingUids.length) * 100) };
-    const previous = { engagementRate: Math.round((previousActive / consentingUids.length) * 100) };
+    const debtResolvedThisWeek = debtSnap.docs.filter((d: any) => {
+      const data = d.data();
+      return data.status === 'resolved' && data.updatedAt >= sevenDaysAgo;
+    }).length;
+    const usefulInterventionOutcomesThisWeek = interventionsSnap.docs.filter((d: any) => {
+      const data = d.data();
+      return (data.outcomeRating === 'useful' || data.outcomeRating === 'partly_useful') && data.updatedAt >= sevenDaysAgo;
+    }).length;
 
     res.json({
       locked: false,
       cohortSize: consentingUids.length,
       threshold,
-      suggestions: suggestRecognitionPrompts(current, previous),
+      suggestions: suggestStructuralRecognitionPrompts({
+        debtResolvedThisWeek,
+        usefulInterventionOutcomesThisWeek,
+        meetingPressureBand: meetingPressureSignal.band,
+      }),
     });
   } catch (err: any) {
     res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });

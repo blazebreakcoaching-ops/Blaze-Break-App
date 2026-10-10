@@ -188,17 +188,26 @@ describe('private_data_default_deny', () => {
 });
 
 describe('organisation_aggregate_cohort_threshold', () => {
-  it('GET /api/org/:orgId/dashboard calls the shared checkCohortSufficiency function rather than its own inline comparison', () => {
+  it('GET /api/org/:orgId/dashboard reuses buildExecutiveWorkDesignPayload rather than its own inline cohort comparison', () => {
     const routeStart = serverSource.indexOf('app.get("/api/org/:orgId/dashboard"');
     expect(routeStart).toBeGreaterThan(-1);
     const nextRouteStart = serverSource.slice(routeStart + 10).search(/\bapp\.(get|post|put|delete|patch)\(/);
     expect(nextRouteStart).toBeGreaterThan(-1);
     const handlerSlice = serverSource.slice(routeStart, routeStart + 10 + nextRouteStart);
-    expect(handlerSlice).toMatch(/checkCohortSufficiency\(/);
-    expect(handlerSlice).toMatch(/buildLockedAggregateResponse\(/);
+    expect(handlerSlice).toMatch(/buildExecutiveWorkDesignPayload\(/);
     // The old ad hoc inline comparison this migration replaced must not
     // have simply been left in place alongside the new call.
     expect(handlerSlice).not.toMatch(/consentingUids\.length < threshold/);
+
+    // buildExecutiveWorkDesignPayload is the one real place the cohort
+    // check now lives for this route - it must itself use the shared
+    // helpers, not its own inline comparison either.
+    const payloadStart = serverSource.indexOf('const buildExecutiveWorkDesignPayload =');
+    expect(payloadStart).toBeGreaterThan(-1);
+    const payloadEnd = serverSource.indexOf('\n};', payloadStart);
+    const payloadSlice = serverSource.slice(payloadStart, payloadEnd);
+    expect(payloadSlice).toMatch(/checkCohortSufficiency\(/);
+    expect(payloadSlice).toMatch(/buildLockedAggregateResponse\(/);
   });
 
   it('a cohort below the organisation privacy threshold receives a locked response with no numeric wellbeing figures, never a real aggregate', async () => {
@@ -208,7 +217,9 @@ describe('organisation_aggregate_cohort_threshold', () => {
 
     const res = await request(app).get('/api/org/org_1/dashboard').set(auth('owner_1'));
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ locked: true, cohortSize: 2, threshold: 5 });
+    expect(res.body.locked).toBe(true);
+    expect(res.body.cohortSize).toBe(2);
+    expect(res.body.threshold).toBe(5);
     expect(res.body.moodDistribution).toBeUndefined();
     expect(res.body.engagementRate).toBeUndefined();
   });

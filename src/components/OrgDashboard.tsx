@@ -55,16 +55,6 @@ const ACTIONS = [
   { id: '4', title: 'Make Workload Adjustments', category: 'Demands', impact: 'High', effort: 'High' }
 ];
 
-const BODY_SIGNAL_LABELS: Record<string, string> = {
-  jaw_tension: 'Jaw Tension',
-  shoulder_tension: 'Shoulder/Neck Tension',
-  shallow_breathing: 'Shallow Breathing',
-  headache: 'Headaches',
-  fatigue: 'Fatigue',
-  restlessness: 'Restlessness',
-  stomach_discomfort: 'Stomach Discomfort',
-};
-
 export const OrgDashboard = ({ onNavigate }: { onNavigate?: (tab: string) => void } = {}) => {
   const [activeSubTab, setActiveSubTab] = useState<'climate' | 'pulse' | 'value' | 'moments' | 'team' | 'governance'>('pulse');
   const [alertEnabled, setAlertEnabled] = useState(false);
@@ -74,11 +64,19 @@ export const OrgDashboard = ({ onNavigate }: { onNavigate?: (tab: string) => voi
     locked: boolean;
     cohortSize: number;
     threshold: number;
-    windowDays?: number;
-    engagementRate?: number;
-    moodDistribution?: { positive: number; negative: number; neutral: number };
-    avgMoodIntensity?: number | null;
-    topBodySignals?: { signal: string; count: number }[];
+    workDesignSignals?: {
+      key: string;
+      label: string;
+      band: string | null;
+      bandLabel: string | null;
+      sufficiencyStatus: string;
+      sufficiencyMessage: string;
+      basis: string;
+    }[];
+    debtSummary?: { openDebtCount: number; openDebtWithoutOwnerCount: number };
+    actionBudget?: { maxConcurrentActiveInterventions: number; activeInterventionCount: number };
+    localOperatingPrincipleCount?: number;
+    narrative?: string;
   } | null>(null);
   const [climateData, setClimateData] = useState<{
     locked: boolean;
@@ -672,7 +670,7 @@ export const OrgDashboard = ({ onNavigate }: { onNavigate?: (tab: string) => voi
       {/* Sub Navigation */}
       <div className="flex flex-wrap gap-2 mb-8">
         {[
-           { id: 'pulse', label: 'Team Mood Snapshot', icon: HeartPulse },
+           { id: 'pulse', label: 'Work Design Pulse', icon: HeartPulse },
            { id: 'climate', label: 'Team Climate Dashboard', icon: LineChartIcon },
            { id: 'value', label: 'People Value Engine', icon: Building },
            { id: 'moments', label: 'Blaze Bright Moments', icon: Sparkles },
@@ -709,78 +707,48 @@ export const OrgDashboard = ({ onNavigate }: { onNavigate?: (tab: string) => voi
               </div>
               <div className="relative z-10 max-w-3xl">
                 <div className="flex items-center gap-3 mb-4">
-                  <div className="tag bg-surface dark:bg-card/10 text-text-main border-white/20">Team Mood Snapshot</div>
+                  <div className="tag bg-surface dark:bg-card/10 text-text-main border-white/20">Work Design Pulse</div>
                 </div>
                 <h3 className="text-4xl font-display font-bold text-text-main tracking-tight leading-tight mb-4">
-                  Team Mood, Last {dashboardData.windowDays || 7} Days
+                  Structural Pressure, Right Now
                 </h3>
                 <p className="text-base text-text-muted font-medium leading-relaxed max-w-2xl mb-8">
-                  Aggregated from {dashboardData.cohortSize} teammates who've opted in to anonymized sharing. Individual data is never revealed — only these totals.
+                  Aggregated from {dashboardData.cohortSize} teammates who've opted in to anonymized sharing. Built entirely from organisation work data (calendar/task metadata, interventions, policies) — never from anyone's private recovery data.
                 </p>
+                {dashboardData.narrative && (
+                  <p className="text-sm text-text-main font-medium bg-surface dark:bg-card/40 border border-border rounded-xl p-4 mb-6">{dashboardData.narrative}</p>
+                )}
                 <div className="flex flex-col sm:flex-row gap-4">
-                   <div className="p-4 bg-destructive/10 border border-destructive/20 rounded-2xl flex-1 backdrop-blur-md">
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-xs uppercase font-bold tracking-widest text-destructive dark:text-[#f87171]">Negative Mood Logs</span>
-                      <AlertTriangle className="w-4 h-4 text-destructive dark:text-[#f87171]" />
-                    </div>
-                    <p className="text-3xl font-display font-bold text-text-main">{dashboardData.moodDistribution?.negative ?? 0} <span className="text-sm font-normal text-destructive dark:text-[#f87171]">logs</span></p>
-                  </div>
-                  <div className="p-4 bg-warning/10 border border-warning/20 rounded-2xl flex-1 backdrop-blur-md">
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-xs uppercase font-bold tracking-widest text-[#9a3412] dark:text-warning">Neutral Mood Logs</span>
-                      <TrendingUp className="w-4 h-4 text-[#9a3412] dark:text-warning" />
-                    </div>
-                    <p className="text-3xl font-display font-bold text-text-main">{dashboardData.moodDistribution?.neutral ?? 0} <span className="text-sm font-normal text-[#9a3412] dark:text-warning">logs</span></p>
-                  </div>
-                  <div className="p-4 bg-success/10 border border-success/20 rounded-2xl flex-1 backdrop-blur-md">
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-xs uppercase font-bold tracking-widest text-[#166534] dark:text-[#4ade80]">Positive Mood Logs</span>
-                      <ShieldCheck className="w-4 h-4 text-[#166534] dark:text-[#4ade80]" />
-                    </div>
-                    <p className="text-3xl font-display font-bold text-text-main">{dashboardData.moodDistribution?.positive ?? 0} <span className="text-sm font-normal text-[#166534] dark:text-[#4ade80]">logs</span></p>
-                  </div>
-                </div>
-
-                <div className="mt-8 relative z-10 max-w-4xl grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div className="p-5 bg-surface dark:bg-card/40 border border-border rounded-xl">
-                    <span className="text-xs uppercase font-bold tracking-widest text-text-muted block mb-1">Weekly Engagement</span>
-                    <p className="text-3xl font-display font-bold text-text-main">{dashboardData.engagementRate ?? 0}%</p>
-                    <p className="text-xs text-text-muted mt-1">of opted-in teammates logged at least one check-in this week.</p>
-                  </div>
-                  <div className="p-5 bg-surface dark:bg-card/40 border border-border rounded-xl">
-                    <span className="text-xs uppercase font-bold tracking-widest text-text-muted block mb-1">Avg. Mood Intensity</span>
-                    <p className="text-3xl font-display font-bold text-text-main">{dashboardData.avgMoodIntensity != null ? `${dashboardData.avgMoodIntensity}/10` : '—'}</p>
-                    <p className="text-xs text-text-muted mt-1">across all mood check-ins this week.</p>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="card space-y-6">
-              <div>
-                <h4 className="font-bold text-text-main flex items-center gap-2"><AlertTriangle className="w-5 h-5 text-warning" /> Most Common Body Signals</h4>
-                <p className="text-xs text-text-muted">What your team has most reported feeling physically this week, aggregated.</p>
-              </div>
-              {dashboardData.topBodySignals && dashboardData.topBodySignals.length > 0 ? (
-                <div className="space-y-3">
-                  {dashboardData.topBodySignals.map(({ signal, count }) => {
-                    const max = dashboardData.topBodySignals![0].count || 1;
-                    return (
-                      <div key={signal} className="p-4 bg-surface dark:bg-card/40 border border-border rounded-xl">
-                        <div className="flex justify-between items-center mb-2">
-                          <span className="text-sm font-bold text-text-main">{BODY_SIGNAL_LABELS[signal] || signal}</span>
-                          <span className="text-xs font-black uppercase tracking-widest text-text-muted bg-surface dark:bg-surface px-2 py-1 rounded">{count} reports</span>
-                        </div>
-                        <div className="h-2 w-full bg-surface dark:bg-surface rounded-full overflow-hidden">
-                          <div className="h-full bg-warning" style={{ width: `${Math.max(8, (count / max) * 100)}%` }} />
-                        </div>
+                  {(dashboardData.workDesignSignals || []).map((signal) => (
+                    <div key={signal.key} className="p-4 bg-surface dark:bg-card/40 border border-border rounded-2xl flex-1 backdrop-blur-md">
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-xs uppercase font-bold tracking-widest text-text-muted">{signal.label}</span>
+                        <AlertTriangle className="w-4 h-4 text-text-muted" />
                       </div>
-                    );
-                  })}
+                      <p className="text-3xl font-display font-bold text-text-main">{signal.bandLabel ?? '—'}</p>
+                      <p className="text-xs text-text-muted mt-1">{signal.band ? signal.basis : signal.sufficiencyMessage}</p>
+                    </div>
+                  ))}
                 </div>
-              ) : (
-                <p className="text-sm text-text-muted py-8 text-center">No body check-ins logged by your team this week yet.</p>
-              )}
+
+                <div className="mt-8 relative z-10 max-w-4xl grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <div className="p-5 bg-surface dark:bg-card/40 border border-border rounded-xl">
+                    <span className="text-xs uppercase font-bold tracking-widest text-text-muted block mb-1">Open Work Design Debt</span>
+                    <p className="text-3xl font-display font-bold text-text-main">{dashboardData.debtSummary?.openDebtCount ?? 0}</p>
+                    <p className="text-xs text-text-muted mt-1">{dashboardData.debtSummary?.openDebtWithoutOwnerCount ?? 0} needs an owner.</p>
+                  </div>
+                  <div className="p-5 bg-surface dark:bg-card/40 border border-border rounded-xl">
+                    <span className="text-xs uppercase font-bold tracking-widest text-text-muted block mb-1">Active Interventions</span>
+                    <p className="text-3xl font-display font-bold text-text-main">{dashboardData.actionBudget?.activeInterventionCount ?? 0} <span className="text-sm font-normal text-text-muted">/ {dashboardData.actionBudget?.maxConcurrentActiveInterventions ?? '—'}</span></p>
+                    <p className="text-xs text-text-muted mt-1">of the organisation's change budget.</p>
+                  </div>
+                  <div className="p-5 bg-surface dark:bg-card/40 border border-border rounded-xl">
+                    <span className="text-xs uppercase font-bold tracking-widest text-text-muted block mb-1">Local Operating Principles</span>
+                    <p className="text-3xl font-display font-bold text-text-main">{dashboardData.localOperatingPrincipleCount ?? 0}</p>
+                    <p className="text-xs text-text-muted mt-1">patterns proven to work in this organisation.</p>
+                  </div>
+                </div>
+              </div>
             </div>
 
             {orgStatus?.organisationId && (

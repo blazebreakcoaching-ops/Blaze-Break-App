@@ -2,9 +2,10 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 // Integration tests for GET /api/org/:orgId/recognition-suggestions - the
 // Positive Reinforcement Engine's server route. Same k-anonymity gate as
-// every other aggregate org endpoint (see org-risk-trend.route.test.ts),
-// plus a check that suggestions are honestly derived from a real
-// engagement-rate signal rather than fabricated.
+// every other aggregate org endpoint, plus a check that suggestions are
+// honestly derived from real Lane B organisation work data (resolved Work
+// Design Debt, useful intervention outcomes, meeting pressure) - never
+// from reading anyone's private mood/body check-ins.
 vi.hoisted(() => {
   process.env.TEST_MODE = 'true';
   process.env.NODE_ENV = 'test';
@@ -70,18 +71,33 @@ describe('GET /api/org/:orgId/recognition-suggestions — k-anonymity gate', () 
     expect(res.body.suggestions.length).toBeGreaterThan(0);
   });
 
-  it('reflects a real rise in engagement between the two most recent weeks', async () => {
+  it('flags a Work Design Debt item resolved this week - never reads mood/body data', async () => {
     seedOrg(3, ['a', 'b', 'c'], ['a', 'b', 'c']);
-    const now = Date.now();
-    // All 3 members active in the current week; none active in the prior week.
+    const now = new Date().toISOString();
+    // A mood_pulse exists for every member, but must never influence the
+    // suggestion - this route no longer reads Lane A collections at all.
     for (const uid of ['a', 'b', 'c']) {
-      seedDoc(`users/${uid}/mood_pulses/current`, { createdAt: new Date(now - 1000).toISOString(), moodLabel: 'calm', intensity: 3 });
+      seedDoc(`users/${uid}/mood_pulses/current`, { createdAt: now, moodLabel: 'overwhelmed', intensity: 9 });
     }
+    seedDoc(`organisations/${ORG}/work_design_debt/d1`, { team: 'Team A', status: 'resolved', updatedAt: now });
     const res = await request(app).get(`/api/org/${ORG}/recognition-suggestions`).set(auth(ADMIN));
     expect(res.body.locked).toBe(false);
-    // 100% current-week engagement with no prior-week activity to compare
-    // against still produces the "high sustained engagement" suggestion
-    // honestly, without inventing a week-over-week delta it can't compute.
-    expect(res.body.suggestions.some((s: string) => s.toLowerCase().includes('solid'))).toBe(true);
+    expect(res.body.suggestions.some((s: string) => s.includes('Work Design Debt item was resolved'))).toBe(true);
+  });
+
+  it('flags a genuinely useful intervention outcome recorded this week', async () => {
+    seedOrg(3, ['a', 'b', 'c'], ['a', 'b', 'c']);
+    const now = new Date().toISOString();
+    seedDoc(`organisations/${ORG}/work_design_interventions/i1`, { team: 'Team A', status: 'completed', outcomeRating: 'useful', updatedAt: now });
+    const res = await request(app).get(`/api/org/${ORG}/recognition-suggestions`).set(auth(ADMIN));
+    expect(res.body.locked).toBe(false);
+    expect(res.body.suggestions.some((s: string) => s.toLowerCase().includes('genuinely useful'))).toBe(true);
+  });
+
+  it('falls back to the generic suggestion when no structural signal is available', async () => {
+    seedOrg(3, ['a', 'b', 'c'], ['a', 'b', 'c']);
+    const res = await request(app).get(`/api/org/${ORG}/recognition-suggestions`).set(auth(ADMIN));
+    expect(res.body.locked).toBe(false);
+    expect(res.body.suggestions.some((s: string) => s.includes('Consistent small wins'))).toBe(true);
   });
 });
