@@ -33,7 +33,7 @@ function seedOrg(orgId: string, opts: { adminUids?: string[]; memberUids?: strin
   });
 }
 
-const validBody = { team: 'Team A', signalKey: 'meeting_pressure', proposedChange: 'Protect 14:00-16:00', why: 'High meeting load on Wednesdays' };
+const validBody = { team: 'Team A', signalKey: 'meeting_pressure', proposedChange: 'Protect 14:00-16:00', why: 'High meeting load on Wednesdays', employeeBurden: 'low' };
 
 beforeEach(() => resetStore());
 

@@ -152,7 +152,7 @@ describe('PATCH /api/org/:orgId/work-design-debt/:id/status — mandatory owner 
     await request(app).patch(`/api/org/${ORG}/work-design-debt/${debtId}/owner`).set(auth('mgr_a')).send({ ownerUid: 'mgr_a' });
 
     const interventionRes = await request(app).post(`/api/org/${ORG}/work-design-interventions`).set(auth('mgr_a'))
-      .send({ team: 'Team A', signalKey: 'meeting_pressure', proposedChange: 'Protect 14:00-16:00', why: 'basis' });
+      .send({ team: 'Team A', signalKey: 'meeting_pressure', proposedChange: 'Protect 14:00-16:00', why: 'basis', employeeBurden: 'low' });
     const interventionId = interventionRes.body.intervention.id;
 
     const res = await request(app).patch(`/api/org/${ORG}/work-design-debt/${debtId}/status`).set(auth('mgr_a'))
@@ -167,7 +167,7 @@ describe('PATCH /api/org/:orgId/work-design-debt/:id/status — mandatory owner 
     await request(app).patch(`/api/org/${ORG}/work-design-debt/${debtId}/owner`).set(auth('mgr_a')).send({ ownerUid: 'mgr_a' });
 
     const interventionRes = await request(app).post(`/api/org/${ORG}/work-design-interventions`).set(auth('mgr_a'))
-      .send({ team: 'Team A', signalKey: 'meeting_pressure', proposedChange: 'Protect 14:00-16:00', why: 'basis' });
+      .send({ team: 'Team A', signalKey: 'meeting_pressure', proposedChange: 'Protect 14:00-16:00', why: 'basis', employeeBurden: 'low' });
     const interventionId = interventionRes.body.intervention.id;
     await request(app).patch(`/api/org/${ORG}/work-design-interventions/${interventionId}/outcome`).set(auth('mgr_a')).send({ outcomeRating: 'created_another_problem' });
 
@@ -183,7 +183,7 @@ describe('PATCH /api/org/:orgId/work-design-debt/:id/status — mandatory owner 
     await request(app).patch(`/api/org/${ORG}/work-design-debt/${debtId}/owner`).set(auth('mgr_a')).send({ ownerUid: 'mgr_a' });
 
     const interventionRes = await request(app).post(`/api/org/${ORG}/work-design-interventions`).set(auth('mgr_a'))
-      .send({ team: 'Team A', signalKey: 'meeting_pressure', proposedChange: 'Protect 14:00-16:00', why: 'basis' });
+      .send({ team: 'Team A', signalKey: 'meeting_pressure', proposedChange: 'Protect 14:00-16:00', why: 'basis', employeeBurden: 'low' });
     const interventionId = interventionRes.body.intervention.id;
     await request(app).patch(`/api/org/${ORG}/work-design-interventions/${interventionId}/outcome`).set(auth('mgr_a')).send({ outcomeRating: 'useful' });
 

@@ -240,7 +240,10 @@ describe('GET /api/org/:orgId/team-dashboard — Nova Manager Coach recommendati
     expect(rec).not.toBeNull();
     expect(rec.signalKey).toBe('meeting_pressure');
     expect(rec.primaryActionLabel).toBeTruthy();
-    expect(rec.secondaryActionLabel).toBe('Explore a different change');
+    expect(rec.alternativeActionLabel).toBeTruthy();
+    expect(rec.primaryActionLabel).not.toBe(rec.alternativeActionLabel);
+    expect(rec.primaryActionBurden).toBeTruthy();
+    expect(rec.alternativeActionBurden).toBeTruthy();
   });
 
   it('no recommendation is offered while a trial is already active for this team - activeIntervention is returned instead', async () => {
@@ -260,7 +263,7 @@ describe('GET /api/org/:orgId/team-dashboard — Nova Manager Coach recommendati
       });
     }
     await request(app).post(`/api/org/${ORG}/work-design-interventions`).set(auth('mgr_a'))
-      .send({ team: 'Team A', signalKey: 'meeting_pressure', proposedChange: 'Protect 14:00-16:00', why: 'High meeting load' });
+      .send({ team: 'Team A', signalKey: 'meeting_pressure', proposedChange: 'Protect 14:00-16:00', why: 'High meeting load', employeeBurden: 'low' });
 
     const res = await request(app).get(`/api/org/${ORG}/team-dashboard`).set(auth('mgr_a'));
     const team = res.body.teams[0];
@@ -287,7 +290,7 @@ describe('GET /api/org/:orgId/team-dashboard — Nova Manager Coach recommendati
       });
     }
     const createRes = await request(app).post(`/api/org/${ORG}/work-design-interventions`).set(auth('mgr_a'))
-      .send({ team: 'Team A', signalKey: 'meeting_pressure', proposedChange: 'Protect 14:00-16:00', why: 'High meeting load' });
+      .send({ team: 'Team A', signalKey: 'meeting_pressure', proposedChange: 'Protect 14:00-16:00', why: 'High meeting load', employeeBurden: 'low' });
     await request(app).patch(`/api/org/${ORG}/work-design-interventions/${createRes.body.intervention.id}/outcome`).set(auth('mgr_a'))
       .send({ outcomeRating: 'useful' });
 

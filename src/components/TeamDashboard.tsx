@@ -6,13 +6,21 @@ import { Users, Lock, Loader2, AlertTriangle, ShieldCheck, ArrowUp, ArrowDown, M
 import { WorkDesignSignalCard, type WorkDesignSignal as TeamWorkDesignSignal } from './WorkDesignSignalCard';
 import { WorkDesignDemoPreview } from './WorkDesignDemoPreview';
 
+type EmployeeBurdenLevel = 'removes' | 'neutral' | 'low' | 'moderate' | 'high';
+
 interface ManagerRecommendation {
   signalKey: string;
   headline: string;
   why: string;
   primaryActionLabel: string;
-  secondaryActionLabel: string;
+  primaryActionBurden: EmployeeBurdenLevel;
+  alternativeActionLabel: string;
+  alternativeActionBurden: EmployeeBurdenLevel;
 }
+
+const EMPLOYEE_BURDEN_LABELS: Record<EmployeeBurdenLevel, string> = {
+  removes: 'Removes burden', neutral: 'Neutral burden', low: 'Low burden', moderate: 'Moderate burden', high: 'High burden',
+};
 
 type OutcomeRating = 'useful' | 'partly_useful' | 'no_clear_difference' | 'created_another_problem' | 'stopped_early';
 
@@ -141,13 +149,15 @@ export const TeamDashboard = () => {
   // action - creates a real intervention at status 'trialling' and
   // refreshes so the card now shows the trial-in-progress state instead
   // of offering the same recommendation again.
-  const handleStartTrial = async (team: string, recommendation: ManagerRecommendation) => {
+  const handleStartTrial = async (team: string, recommendation: ManagerRecommendation, choice: 'primary' | 'alternative' = 'primary') => {
     if (!orgId) return;
     setStartingTrial(team);
     try {
+      const proposedChange = choice === 'primary' ? recommendation.primaryActionLabel : recommendation.alternativeActionLabel;
+      const employeeBurden = choice === 'primary' ? recommendation.primaryActionBurden : recommendation.alternativeActionBurden;
       await secureApiFetch(`/api/org/${orgId}/work-design-interventions`, {
         method: 'POST',
-        data: { team, signalKey: recommendation.signalKey, proposedChange: recommendation.primaryActionLabel, why: recommendation.why },
+        data: { team, signalKey: recommendation.signalKey, proposedChange, why: recommendation.why, employeeBurden },
       });
       await loadTeams(orgId, false);
     } catch (e) {
@@ -345,19 +355,36 @@ export const TeamDashboard = () => {
                         </p>
                         <p className="text-sm font-bold text-text-main">{entry.recommendation.headline}</p>
                         <p className="text-xs text-text-muted">{entry.recommendation.why}</p>
-                        <div className="flex items-center gap-4 pt-1">
-                          <button
-                            onClick={() => handleStartTrial(entry.team, entry.recommendation!)}
-                            disabled={startingTrial === entry.team}
-                            className="text-xs font-bold text-primary hover:opacity-70 disabled:opacity-50"
-                          >
-                            {startingTrial === entry.team ? 'Starting...' : entry.recommendation.primaryActionLabel}
-                          </button>
+                        <div className="space-y-2 pt-1">
+                          <div className="flex items-center gap-2">
+                            <button
+                              onClick={() => handleStartTrial(entry.team, entry.recommendation!, 'primary')}
+                              disabled={startingTrial === entry.team}
+                              className="text-xs font-bold text-primary hover:opacity-70 disabled:opacity-50"
+                            >
+                              {startingTrial === entry.team ? 'Starting...' : entry.recommendation.primaryActionLabel}
+                            </button>
+                            <span className="text-[10px] uppercase tracking-wide text-text-muted bg-background border border-border rounded px-1.5 py-0.5">
+                              {EMPLOYEE_BURDEN_LABELS[entry.recommendation.primaryActionBurden]}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <button
+                              onClick={() => handleStartTrial(entry.team, entry.recommendation!, 'alternative')}
+                              disabled={startingTrial === entry.team}
+                              className="text-xs font-bold text-text-main hover:opacity-70 disabled:opacity-50"
+                            >
+                              {startingTrial === entry.team ? 'Starting...' : entry.recommendation.alternativeActionLabel}
+                            </button>
+                            <span className="text-[10px] uppercase tracking-wide text-text-muted bg-background border border-border rounded px-1.5 py-0.5">
+                              {EMPLOYEE_BURDEN_LABELS[entry.recommendation.alternativeActionBurden]}
+                            </span>
+                          </div>
                           <button
                             onClick={() => setDismissedRecommendation(prev => ({ ...prev, [entry.team]: true }))}
                             className="text-xs text-text-muted hover:text-text-main"
                           >
-                            {entry.recommendation.secondaryActionLabel}
+                            Neither — dismiss
                           </button>
                         </div>
                       </div>

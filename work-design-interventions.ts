@@ -40,6 +40,20 @@ const MAX_LONG = 1000;
 // recommendation, overridable per intervention.
 export const DEFAULT_REVIEW_WINDOW_DAYS = 21;
 
+// Employee Burden classification (Work Design Pulse PR5) - the spec's own
+// explicit requirement that every intervention name its expected effect on
+// the employees it touches, not just on the signal it's meant to improve.
+// "removes" means the change takes something off employees' plates
+// entirely (e.g. cancelling a recurring meeting); "high" means it asks
+// more of them even if it may also help (e.g. a new mandatory process).
+// A manager proposing a change must say which this is - never left
+// unstated, and never inferred automatically from the proposed text.
+export const EMPLOYEE_BURDEN_LEVELS = ['removes', 'neutral', 'low', 'moderate', 'high'] as const;
+export type EmployeeBurdenLevel = (typeof EMPLOYEE_BURDEN_LEVELS)[number];
+
+export const isEmployeeBurdenLevel = (value: unknown): value is EmployeeBurdenLevel =>
+  typeof value === 'string' && (EMPLOYEE_BURDEN_LEVELS as readonly string[]).includes(value);
+
 export interface ValidationResult {
   valid: boolean;
   error?: string;
@@ -50,6 +64,7 @@ export interface CreateInterventionInput {
   signalKey: string;
   proposedChange: string;
   why: string;
+  employeeBurden: EmployeeBurdenLevel;
   reviewInDays?: number;
 }
 
@@ -63,6 +78,9 @@ export const validateCreateInterventionInput = (input: unknown): ValidationResul
   }
   if (typeof c.signalKey !== 'string' || c.signalKey.trim().length === 0 || c.signalKey.length > MAX_SHORT) {
     return { valid: false, error: `"signalKey" is required (max ${MAX_SHORT} characters).` };
+  }
+  if (!isEmployeeBurdenLevel(c.employeeBurden)) {
+    return { valid: false, error: `"employeeBurden" is required and must be one of: ${EMPLOYEE_BURDEN_LEVELS.join(', ')}.` };
   }
   if (typeof c.proposedChange !== 'string' || c.proposedChange.trim().length === 0 || c.proposedChange.length > MAX_SHORT) {
     return { valid: false, error: `"proposedChange" is required (max ${MAX_SHORT} characters).` };

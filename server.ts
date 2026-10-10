@@ -9336,7 +9336,7 @@ app.post("/api/org/:orgId/work-design-interventions", verifyAppCheck, authentica
     if (!validation.valid) {
       return res.status(400).json({ error: validation.error });
     }
-    const { team, signalKey, proposedChange, why, reviewInDays } = req.body;
+    const { team, signalKey, proposedChange, why, employeeBurden, reviewInDays } = req.body;
     if (!isTeamManager(org.teamManagers, user.uid, team) && !isAdmin) {
       return res.status(403).json({ error: "Forbidden: you don't manage this team." });
     }
@@ -9348,6 +9348,7 @@ app.post("/api/org/:orgId/work-design-interventions", verifyAppCheck, authentica
       signalKey,
       proposedChange,
       why,
+      employeeBurden,
       owner: user.uid,
       ownerEmail: user.email || null,
       status: 'trialling' as const,

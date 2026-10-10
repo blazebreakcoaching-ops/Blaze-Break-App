@@ -191,7 +191,7 @@ describe('GET /api/org/:orgId/hr-dashboard — Work Design Signals and Intervent
     });
     ['a1', 'a2', 'a3'].forEach(consenting);
     await request(app).post(`/api/org/${ORG}/work-design-interventions`).set(auth('mgr_a'))
-      .send({ team: 'Team A', signalKey: 'meeting_pressure', proposedChange: 'Protect 14:00-16:00', why: 'High meeting load' });
+      .send({ team: 'Team A', signalKey: 'meeting_pressure', proposedChange: 'Protect 14:00-16:00', why: 'High meeting load', employeeBurden: 'low' });
 
     const res = await request(app).get(`/api/org/${ORG}/hr-dashboard`).set(auth('hr_1'));
     const teamA = res.body.teams.find((t: any) => t.team === 'Team A');

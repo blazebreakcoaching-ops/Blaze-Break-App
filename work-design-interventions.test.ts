@@ -1,8 +1,19 @@
 import { describe, it, expect } from 'vitest';
 import {
-  isInterventionStatus, isOutcomeRating, validateCreateInterventionInput,
-  validateStatusUpdateInput, validateRecordOutcomeInput, INTERVENTION_STATUSES, OUTCOME_RATINGS,
+  isInterventionStatus, isOutcomeRating, isEmployeeBurdenLevel, validateCreateInterventionInput,
+  validateStatusUpdateInput, validateRecordOutcomeInput, INTERVENTION_STATUSES, OUTCOME_RATINGS, EMPLOYEE_BURDEN_LEVELS,
 } from './work-design-interventions';
+
+describe('isEmployeeBurdenLevel', () => {
+  it('accepts every spec-named level', () => {
+    for (const l of EMPLOYEE_BURDEN_LEVELS) expect(isEmployeeBurdenLevel(l)).toBe(true);
+  });
+
+  it('rejects an unknown level', () => {
+    expect(isEmployeeBurdenLevel('severe')).toBe(false);
+    expect(isEmployeeBurdenLevel(42)).toBe(false);
+  });
+});
 
 describe('isInterventionStatus', () => {
   it('accepts every spec-named status', () => {
@@ -26,7 +37,7 @@ describe('isOutcomeRating', () => {
 });
 
 describe('validateCreateInterventionInput', () => {
-  const valid = { team: 'Team A', signalKey: 'meeting_pressure', proposedChange: 'Protect 14:00-16:00', why: 'Basis text' };
+  const valid = { team: 'Team A', signalKey: 'meeting_pressure', proposedChange: 'Protect 14:00-16:00', why: 'Basis text', employeeBurden: 'low' };
 
   it('accepts a well-formed input', () => {
     expect(validateCreateInterventionInput(valid)).toEqual({ valid: true });
@@ -39,6 +50,21 @@ describe('validateCreateInterventionInput', () => {
   it('rejects a missing team', () => {
     const { team, ...rest } = valid;
     expect(validateCreateInterventionInput(rest).valid).toBe(false);
+  });
+
+  it('rejects a missing employeeBurden - every intervention must classify its effect on employees', () => {
+    const { employeeBurden, ...rest } = valid;
+    expect(validateCreateInterventionInput(rest).valid).toBe(false);
+  });
+
+  it('rejects an invalid employeeBurden value', () => {
+    expect(validateCreateInterventionInput({ ...valid, employeeBurden: 'severe' }).valid).toBe(false);
+  });
+
+  it('accepts every real employeeBurden level', () => {
+    for (const level of EMPLOYEE_BURDEN_LEVELS) {
+      expect(validateCreateInterventionInput({ ...valid, employeeBurden: level }).valid).toBe(true);
+    }
   });
 
   it('rejects an empty proposedChange', () => {

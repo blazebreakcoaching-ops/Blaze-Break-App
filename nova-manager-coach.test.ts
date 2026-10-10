@@ -17,12 +17,15 @@ describe('buildManagerRecommendation', () => {
     expect(buildManagerRecommendation(meetingPressure(null))).toBeNull();
   });
 
-  it('returns a real recommendation for an elevated band', () => {
+  it('returns a real recommendation for an elevated band, with a distinct primary and alternative action each carrying its own employee burden', () => {
     const rec = buildManagerRecommendation(meetingPressure('elevated'));
     expect(rec).not.toBeNull();
     expect(rec?.signalKey).toBe('meeting_pressure');
     expect(rec?.primaryActionLabel).toBeTruthy();
-    expect(rec?.secondaryActionLabel).toBe('Explore a different change');
+    expect(rec?.alternativeActionLabel).toBeTruthy();
+    expect(rec?.primaryActionLabel).not.toBe(rec?.alternativeActionLabel);
+    expect(rec?.primaryActionBurden).toBeTruthy();
+    expect(rec?.alternativeActionBurden).toBeTruthy();
   });
 
   it('returns a distinct, more urgent recommendation for a sustained band', () => {
@@ -71,7 +74,7 @@ describe('governance - no diagnostic/clinical language in any manager recommenda
   it('every band x the one real signal template is free of banned diagnostic language', () => {
     for (const band of ['elevated', 'sustained'] as const) {
       const rec = buildManagerRecommendation(meetingPressure(band));
-      const text = `${rec?.headline} ${rec?.why} ${rec?.primaryActionLabel} ${rec?.secondaryActionLabel}`.toLowerCase();
+      const text = `${rec?.headline} ${rec?.why} ${rec?.primaryActionLabel} ${rec?.alternativeActionLabel}`.toLowerCase();
       for (const term of BANNED_TERMS) {
         expect(text, `band=${band}: "${text}"`).not.toContain(term);
       }

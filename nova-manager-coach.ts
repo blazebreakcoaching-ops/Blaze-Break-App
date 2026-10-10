@@ -16,6 +16,7 @@
 // that.
 
 import type { SignalBand } from './work-design-signals';
+import type { EmployeeBurdenLevel } from './work-design-interventions';
 
 export interface ManagerSignalInput {
   signalKey: string;
@@ -27,12 +28,21 @@ export interface ManagerSignalInput {
   basis: string;
 }
 
+// Structural Burden Router (Work Design Pulse PR5) - the B2B equivalent of
+// the unrelated Recovery Routing Engine's Decision Compression: ONE
+// primary recommendation plus ONE real alternative, never a longer list.
+// Each concrete action also names its own expected Employee Burden
+// (work-design-interventions.ts's EMPLOYEE_BURDEN_LEVELS) up front, before
+// a manager ever starts a trial from it - so the tradeoff is visible at
+// the moment of choice, not discovered afterward.
 export interface ManagerRecommendation {
   signalKey: string;
   headline: string;
   why: string;
   primaryActionLabel: string;
-  secondaryActionLabel: string;
+  primaryActionBurden: EmployeeBurdenLevel;
+  alternativeActionLabel: string;
+  alternativeActionBurden: EmployeeBurdenLevel;
 }
 
 // Only a genuinely elevated/sustained band warrants a recommendation at
@@ -54,15 +64,35 @@ const MEETING_PRESSURE_PRIMARY_ACTION: Record<AttentionBand, string> = {
   sustained: 'Protect a recurring meeting-free block each week',
 };
 
-// The one non-route escape hatch every recommendation offers - matching
-// recovery-decision-copy.ts's own "Browse everything" pattern. There is
-// no second concrete alternative to offer yet (meeting_pressure is the
-// only signal), so this stays generic rather than inventing a plausible-
-// looking second option.
-const SECONDARY_ACTION_LABEL = 'Explore a different change';
+// The real second option Decision Compression offers alongside the
+// primary action - a genuinely different structural lever on the same
+// signal, not a generic "explore something else" escape hatch. Blocking
+// time off removes the meetings entirely for that window (lower burden on
+// employees); defaulting meetings shorter asks nothing extra of anyone
+// but only reduces load incrementally across every meeting rather than
+// protecting a guaranteed block - a real tradeoff a manager can weigh.
+const MEETING_PRESSURE_ALTERNATIVE_ACTION: Record<AttentionBand, string> = {
+  elevated: 'Default new recurring meetings to 25 minutes instead of 30',
+  sustained: 'Cap every recurring meeting at 25 minutes by default',
+};
 
-const SIGNAL_TEMPLATES: Record<string, { headlines: Record<AttentionBand, string>; primaryActions: Record<AttentionBand, string> }> = {
-  meeting_pressure: { headlines: MEETING_PRESSURE_HEADLINES, primaryActions: MEETING_PRESSURE_PRIMARY_ACTION },
+const MEETING_PRESSURE_PRIMARY_BURDEN: EmployeeBurdenLevel = 'removes';
+const MEETING_PRESSURE_ALTERNATIVE_BURDEN: EmployeeBurdenLevel = 'neutral';
+
+const SIGNAL_TEMPLATES: Record<string, {
+  headlines: Record<AttentionBand, string>;
+  primaryActions: Record<AttentionBand, string>;
+  alternativeActions: Record<AttentionBand, string>;
+  primaryBurden: EmployeeBurdenLevel;
+  alternativeBurden: EmployeeBurdenLevel;
+}> = {
+  meeting_pressure: {
+    headlines: MEETING_PRESSURE_HEADLINES,
+    primaryActions: MEETING_PRESSURE_PRIMARY_ACTION,
+    alternativeActions: MEETING_PRESSURE_ALTERNATIVE_ACTION,
+    primaryBurden: MEETING_PRESSURE_PRIMARY_BURDEN,
+    alternativeBurden: MEETING_PRESSURE_ALTERNATIVE_BURDEN,
+  },
 };
 
 // Builds a recommendation for exactly one signal, or null when that
@@ -77,7 +107,9 @@ export const buildManagerRecommendation = (input: ManagerSignalInput): ManagerRe
     headline: templates.headlines[input.band],
     why: input.basis,
     primaryActionLabel: templates.primaryActions[input.band],
-    secondaryActionLabel: SECONDARY_ACTION_LABEL,
+    primaryActionBurden: templates.primaryBurden,
+    alternativeActionLabel: templates.alternativeActions[input.band],
+    alternativeActionBurden: templates.alternativeBurden,
   };
 };
 
