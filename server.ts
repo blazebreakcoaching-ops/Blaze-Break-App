@@ -101,6 +101,7 @@ import {
   validateCreateWorkDesignDebtInput, validateAssignOwnerInput, validateStatusTransition,
 } from './work-design-debt';
 import { detectPressureTransfer } from './pressure-transfer-detector';
+import { validateCreateWorkplacePolicyInput, checkPolicyAgainstObservedPattern } from './workplace-policy';
 import { buildFinancialRangeEstimate } from './executive-work-design';
 
 dotenv.config();
@@ -9692,6 +9693,88 @@ app.patch("/api/org/:orgId/work-design-debt/:id/status", verifyAppCheck, authent
     if (status === 'resolved') update.linkedInterventionId = linkedInterventionId;
     await ref.set(update, { merge: true });
     await logOrgAuditAction(req, orgId, "update_work_design_debt_status", "work_design_debt", id, { status: existing.status }, { status });
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("not found") ? 404 : 500).json({ error: err.message });
+  }
+});
+
+// Policy-to-Practice Gap (Work Design Pulse PR7) - an org admin declares a
+// workplace policy; this compares it to the org-wide OBSERVED aggregate
+// pattern, never a per-employee violation check. Admin-only, since
+// declaring a policy is an organisational commitment, same tier as the
+// settings/hr-viewers routes above.
+app.post("/api/org/:orgId/workplace-policies", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const { orgId } = req.params;
+    await requireOrgAdmin(req, orgId);
+    const db = getDb();
+    const validation = validateCreateWorkplacePolicyInput(req.body);
+    if (!validation.valid) {
+      return res.status(400).json({ error: validation.error });
+    }
+    const { type, label, thresholdHours } = req.body;
+    const record = {
+      type,
+      label,
+      thresholdHours: type === 'max_meeting_hours_per_week' ? thresholdHours : null,
+      createdAt: new Date().toISOString(),
+    };
+    const ref = await db.collection("organisations").doc(orgId).collection("workplace_policies").add(record);
+    await logOrgAuditAction(req, orgId, "create_workplace_policy", "workplace_policy", ref.id, null, { type, label });
+    res.json({ success: true, policy: { id: ref.id, ...record } });
+  } catch (err: any) {
+    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("not found") ? 404 : 500).json({ error: err.message });
+  }
+});
+
+// Lists every declared policy alongside its own live Policy-to-Practice
+// Gap finding (or null when the org-wide cohort isn't big enough to
+// compute an aggregate honestly, or the policy is actually being
+// followed) - the Policy Drift queue is simply the subset of this list
+// where gap is non-null, left to the UI to filter rather than a second
+// endpoint duplicating the same computation.
+app.get("/api/org/:orgId/workplace-policies", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const { orgId } = req.params;
+    const { org } = await requireOrgAdmin(req, orgId);
+    const db = getDb();
+    const snap = await db.collection("organisations").doc(orgId).collection("workplace_policies").get();
+    const policies = snap.docs.map((d: any) => ({ id: d.id, ...d.data() }));
+    if (policies.length === 0) {
+      return res.json({ policies: [] });
+    }
+    const threshold = org.privacyThreshold || 5;
+    const consentingUids = await getConsentingMemberUids(db, org.memberUids || []);
+    const snapshot = await computeMeetingLoadSnapshotForCohort(db, consentingUids, threshold);
+    const withGaps = policies.map((policy: any) => {
+      const gap = snapshot.available
+        ? checkPolicyAgainstObservedPattern(policy, {
+          avgMeetingHoursPerWeek: snapshot.avgMeetingHoursPerWeek!,
+          pctWithEveningMeetings: snapshot.pctWithEveningMeetings!,
+          pctWithWeekendMeetings: snapshot.pctWithWeekendMeetings!,
+        })
+        : null;
+      return { ...policy, gap, cohortSufficient: snapshot.available };
+    });
+    res.json({ policies: withGaps });
+  } catch (err: any) {
+    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("not found") ? 404 : 500).json({ error: err.message });
+  }
+});
+
+app.delete("/api/org/:orgId/workplace-policies/:id", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const { orgId, id } = req.params;
+    await requireOrgAdmin(req, orgId);
+    const db = getDb();
+    const ref = db.collection("organisations").doc(orgId).collection("workplace_policies").doc(id);
+    const snap = await ref.get();
+    if (!snap.exists) {
+      return res.status(404).json({ error: "Workplace policy not found." });
+    }
+    await ref.delete();
+    await logOrgAuditAction(req, orgId, "delete_workplace_policy", "workplace_policy", id, snap.data(), null);
     res.json({ success: true });
   } catch (err: any) {
     res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("not found") ? 404 : 500).json({ error: err.message });
