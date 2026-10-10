@@ -105,6 +105,7 @@ import { validateCreateWorkplacePolicyInput, checkPolicyAgainstObservedPattern }
 import { computeEvidenceLevel, canPromoteToLocalOperatingPrinciple, EVIDENCE_LEVEL_LABELS } from './evidence-ladder';
 import { checkWorkDesignDrift } from './work-design-drift-detector';
 import { deriveSuggestionResponse } from './suggestion-response';
+import { getEffectiveActionBudget, validateActionBudgetUpdate, canStartNewIntervention } from './action-budget';
 import { buildFinancialRangeEstimate } from './executive-work-design';
 
 dotenv.config();
@@ -9411,6 +9412,20 @@ app.post("/api/org/:orgId/work-design-interventions", verifyAppCheck, authentica
       return res.status(403).json({ error: "Forbidden: you don't manage this team." });
     }
 
+    // Organisational Action Budget (Work Design Pulse PR11): a hard
+    // ceiling on how many structural changes are running on employees
+    // ORG-WIDE at once, regardless of which team is starting the next
+    // one - the whole point is that employees don't experience more
+    // simultaneous disruption than the organisation itself decided was
+    // reasonable, not a per-team allowance that could still add up.
+    const maxConcurrentActive = getEffectiveActionBudget(org.actionBudget?.maxConcurrentActiveInterventions);
+    const activeSnap = await db.collection("organisations").doc(orgId).collection("work_design_interventions").get();
+    const currentActiveCount = activeSnap.docs.filter((d: any) => ACTIVE_INTERVENTION_STATUSES.has(d.data().status)).length;
+    const budgetCheck = canStartNewIntervention(currentActiveCount, maxConcurrentActive);
+    if (!budgetCheck.allowed) {
+      return res.status(400).json({ error: budgetCheck.reason });
+    }
+
     // Pressure Transfer Detector (Work Design Pulse PR6): captured now, at
     // the moment a trial actually starts, so a later comparison is against
     // this team's real meeting load right before the change - never a
@@ -9530,6 +9545,29 @@ app.get("/api/org/:orgId/work-design-interventions-summary", verifyAppCheck, aut
       recent.push({ signalKey: data.signalKey, status: data.status });
     });
     res.json({ totalTried: snap.size, byStatus, byOutcome, recent: recent.slice(0, 10) });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Organisational Action Budget (Work Design Pulse PR11) status - open to
+// any org member, since knowing how much simultaneous change is already
+// running is honest context for anyone, not just the admin who set the
+// limit.
+app.get("/api/org/:orgId/action-budget", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const { orgId } = req.params;
+    const user = requireAuth(req);
+    const db = getDb();
+    const orgDoc = await db.collection("organisations").doc(orgId).get();
+    const org = orgDoc.data();
+    if (!orgDoc.exists || !(org?.memberUids || []).includes(user.uid)) {
+      return res.status(403).json({ error: "You're not a member of this organisation." });
+    }
+    const maxConcurrentActive = getEffectiveActionBudget(org.actionBudget?.maxConcurrentActiveInterventions);
+    const snap = await db.collection("organisations").doc(orgId).collection("work_design_interventions").get();
+    const currentActiveCount = snap.docs.filter((d: any) => ACTIVE_INTERVENTION_STATUSES.has(d.data().status)).length;
+    res.json({ maxConcurrentActive, currentActiveCount, remaining: Math.max(0, maxConcurrentActive - currentActiveCount) });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
@@ -11488,7 +11526,7 @@ app.post("/api/org/:orgId/settings", verifyAppCheck, authenticateFirebaseUser, a
   try {
     const { orgId } = req.params;
     const { org } = await requireOrgAdmin(req, orgId);
-    const { name, privacyThreshold } = req.body;
+    const { name, privacyThreshold, maxConcurrentActiveInterventions } = req.body;
     const update: any = { updatedAt: FieldValue.serverTimestamp() };
     const before: Record<string, unknown> = {};
     const after: Record<string, unknown> = {};
@@ -11507,6 +11545,15 @@ app.post("/api/org/:orgId/settings", verifyAppCheck, authenticateFirebaseUser, a
       update.privacyThreshold = privacyThreshold;
       before.privacyThreshold = org.privacyThreshold || 5;
       after.privacyThreshold = privacyThreshold;
+    }
+    if (maxConcurrentActiveInterventions !== undefined) {
+      const validation = validateActionBudgetUpdate(maxConcurrentActiveInterventions);
+      if (!validation.valid) {
+        return res.status(400).json({ error: validation.error });
+      }
+      update.actionBudget = { maxConcurrentActiveInterventions };
+      before.maxConcurrentActiveInterventions = getEffectiveActionBudget(org.actionBudget?.maxConcurrentActiveInterventions);
+      after.maxConcurrentActiveInterventions = maxConcurrentActiveInterventions;
     }
     const db = getDb();
     await db.collection("organisations").doc(orgId).update(update);
