@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { secureApiFetch } from '../lib/secure-api';
 import { cn } from '../lib/utils';
-import { Building2, Lock, Loader2, AlertTriangle, ShieldCheck, Calendar, Info } from 'lucide-react';
+import { Building2, Lock, Loader2, AlertTriangle, ShieldCheck, Calendar, Info, Plug } from 'lucide-react';
 
 interface WorkDesignSignal {
   key: string;
@@ -10,6 +10,15 @@ interface WorkDesignSignal {
   bandLabel: string | null;
   sufficiencyMessage: string;
   basis: string;
+}
+
+interface ConnectorCoverage {
+  key: string;
+  label: string;
+  totalConsentingMembers: number;
+  connectedCount: number | null;
+  coveragePercent: number | null;
+  sufficiencyMessage: string | null;
 }
 
 interface FinancialRangeEstimate {
@@ -47,6 +56,7 @@ export const ExecutiveWorkDesignReport = () => {
   const [signals, setSignals] = useState<WorkDesignSignal[]>([]);
   const [costInputsAvailable, setCostInputsAvailable] = useState(false);
   const [financialEstimate, setFinancialEstimate] = useState<FinancialRangeEstimate | null>(null);
+  const [connectors, setConnectors] = useState<ConnectorCoverage[]>([]);
 
   useEffect(() => {
     const load = async () => {
@@ -60,9 +70,12 @@ export const ExecutiveWorkDesignReport = () => {
           setLoading(false);
           return;
         }
-        const res = await secureApiFetch(`/api/org/${me.organisationId}/executive-work-design`);
-        const data = await res.json();
-        if (!res.ok) {
+        const [reportRes, coverageRes] = await Promise.all([
+          secureApiFetch(`/api/org/${me.organisationId}/executive-work-design`),
+          secureApiFetch(`/api/org/${me.organisationId}/data-coverage`),
+        ]);
+        const data = await reportRes.json();
+        if (!reportRes.ok) {
           setError(data.error || 'Could not load the Executive Work Design report.');
         } else {
           setLocked(!!data.locked);
@@ -71,6 +84,10 @@ export const ExecutiveWorkDesignReport = () => {
           setSignals(data.workDesignSignals || []);
           setCostInputsAvailable(!!data.costInputsAvailable);
           setFinancialEstimate(data.financialEstimate || null);
+        }
+        const coverageData = await coverageRes.json();
+        if (coverageRes.ok) {
+          setConnectors(coverageData.connectors || []);
         }
       } catch (e) {
         setError('Could not load the Executive Work Design report.');
@@ -175,6 +192,36 @@ export const ExecutiveWorkDesignReport = () => {
             No illustrative range right now - your Work Design Signals aren't currently elevated or sustained, so there's nothing to attribute a cost estimate to.
           </p>
         )}
+      </div>
+
+      <div className="card space-y-4">
+        <h4 className="text-xs uppercase font-bold tracking-widest text-text-muted flex items-center gap-2">
+          <Plug className="w-3.5 h-3.5" /> Data Coverage &amp; Connector Health
+        </h4>
+        <p className="text-xs text-text-muted leading-relaxed">
+          How much of what's shown above you can trust - how many consenting members have actually connected each data source.
+        </p>
+        <ul className="space-y-2.5">
+          {connectors.map((connector) => (
+            <li key={connector.key} className="flex items-center gap-4 p-4 rounded-xl border border-border bg-surface/60 dark:bg-card/40">
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-bold text-text-main truncate">{connector.label}</p>
+                <p className="text-xs text-text-muted mt-0.5">
+                  {connector.connectedCount != null
+                    ? `${connector.connectedCount} of ${connector.totalConsentingMembers} consenting members connected`
+                    : connector.sufficiencyMessage}
+                </p>
+              </div>
+              {connector.coveragePercent != null ? (
+                <span className="shrink-0 text-[11px] font-black uppercase tracking-widest px-2.5 py-1 rounded-full border bg-primary/10 text-primary border-primary/20">
+                  {connector.coveragePercent}%
+                </span>
+              ) : (
+                <span className="shrink-0 text-[11px] text-text-muted">not enough data yet</span>
+              )}
+            </li>
+          ))}
+        </ul>
       </div>
     </div>
   );

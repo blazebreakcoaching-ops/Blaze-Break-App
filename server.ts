@@ -8386,22 +8386,32 @@ interface OrgMeetingLoadSnapshot {
 // membership (fewer people have connected a calendar at all), so it gets
 // its OWN threshold check here rather than assuming the org-wide count
 // already covers it.
+// Shared by computeMeetingLoadSnapshotForCohort and the Data Coverage &
+// Connector Health route below - one place deciding what "has connected
+// a calendar" means, so the two can never silently drift apart. Stale
+// (not synced in 14 days) is treated as no signal, not a zero - an empty
+// calendar and an unsynced browser tab must never look alike.
+const CALENDAR_SIGNAL_FRESHNESS_MS = 14 * 24 * 60 * 60 * 1000;
+const isCalendarConnectedAndFresh = async (db: any, uid: string): Promise<boolean> => {
+  const permDoc = await db.collection("users").doc(uid).collection("nova_permissions").doc("current").get();
+  if (!permDoc.exists || permDoc.data()?.allowCalendarSignals !== true) return false;
+  const calDoc = await db.collection("users").doc(uid).collection("live_signals").doc("calendar").get();
+  if (!calDoc.exists) return false;
+  const data = calDoc.data() || {};
+  if (!data.updatedAt || new Date(data.updatedAt).getTime() < Date.now() - CALENDAR_SIGNAL_FRESHNESS_MS) return false;
+  return true;
+};
+
 const computeMeetingLoadSnapshotForCohort = async (
   db: any,
   uids: string[],
   threshold: number,
 ): Promise<OrgMeetingLoadSnapshot> => {
-  const fourteenDaysAgo = Date.now() - 14 * 24 * 60 * 60 * 1000;
   const contributing: { totalMeetingHours: number; backToBackCount: number; eveningMeetingCount: number; weekendMeetingCount: number }[] = [];
   await Promise.all(uids.map(async (uid) => {
-    const permDoc = await db.collection("users").doc(uid).collection("nova_permissions").doc("current").get();
-    if (!permDoc.exists || permDoc.data()?.allowCalendarSignals !== true) return;
+    if (!(await isCalendarConnectedAndFresh(db, uid))) return;
     const calDoc = await db.collection("users").doc(uid).collection("live_signals").doc("calendar").get();
-    if (!calDoc.exists) return;
     const data = calDoc.data() || {};
-    // Stale (not synced recently) is treated as no signal, not a zero -
-    // an empty calendar and an unsynced browser tab must never look alike.
-    if (!data.updatedAt || new Date(data.updatedAt).getTime() < fourteenDaysAgo) return;
     contributing.push({
       totalMeetingHours: typeof data.totalMeetingHours === 'number' ? data.totalMeetingHours : 0,
       backToBackCount: typeof data.backToBackCount === 'number' ? data.backToBackCount : 0,
@@ -9368,6 +9378,52 @@ app.get("/api/org/:orgId/executive-work-design", verifyAppCheck, authenticateFir
       costInputsAvailable: !!costInputs,
       financialEstimate,
     });
+  } catch (err: any) {
+    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
+  }
+});
+
+// Data Coverage & Connector Health - honestly answers "how much of this
+// can we trust?" rather than letting that question stay scattered across
+// each signal's own sufficiency message. Only one connector is wired to
+// a real Work Design Signal today (calendar, via
+// isCalendarConnectedAndFresh/computeMeetingLoadSnapshotForCohort) - this
+// deliberately doesn't invent coverage rows for connectors nothing
+// consumes yet. Gated the same two ways as every other org aggregate:
+// requireOrgAdmin, then the shared Anonymous Aggregation Engine at the
+// org level AND again at the per-connector level (a small connected
+// count is just as re-identifying as a small signal cohort, so it gets
+// the same "insufficient data" treatment, never a revealed small number).
+app.get("/api/org/:orgId/data-coverage", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const { orgId } = req.params;
+    const { org } = await requireOrgAdmin(req, orgId);
+    const db = getDb();
+
+    const threshold = org.privacyThreshold || 5;
+    const memberUids: string[] = org.memberUids || [];
+    const consentingUids = await getConsentingMemberUids(db, memberUids);
+
+    const sufficiency = checkCohortSufficiency(consentingUids.length, threshold);
+    if (!sufficiency.sufficient) {
+      return res.json(buildLockedAggregateResponse(sufficiency, { connectors: [] }));
+    }
+
+    const connectedResults = await Promise.all(consentingUids.map((uid) => isCalendarConnectedAndFresh(db, uid)));
+    const connectedCount = connectedResults.filter(Boolean).length;
+    const connectorSufficiency = checkCohortSufficiency(connectedCount, threshold);
+    const connectors = [{
+      key: 'calendar',
+      label: 'Calendar',
+      totalConsentingMembers: consentingUids.length,
+      connectedCount: connectorSufficiency.sufficient ? connectedCount : null,
+      coveragePercent: connectorSufficiency.sufficient ? Math.round((connectedCount / consentingUids.length) * 100) : null,
+      sufficiencyMessage: connectorSufficiency.sufficient
+        ? null
+        : 'Not enough members have connected a calendar yet to show this safely.',
+    }];
+
+    res.json({ locked: false, cohortSize: consentingUids.length, threshold, connectors });
   } catch (err: any) {
     res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
   }
