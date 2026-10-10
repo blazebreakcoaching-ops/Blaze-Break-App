@@ -110,6 +110,29 @@ describe('GET /api/org/:orgId/executive-work-design — executive narrative (Wor
   });
 });
 
+describe('Export/API privacy parity (Work Design Pulse PR13)', () => {
+  it('the export route never returns a field the view route does not also expose, beyond its own documented orgName/generatedAt wrapper', async () => {
+    seedOrg(ORG, { adminUids: ['owner_1'], memberUids: ['owner_1', 'a1', 'a2', 'a3'], privacyThreshold: 3 });
+    ['a1', 'a2', 'a3'].forEach(consenting);
+
+    const viewRes = await request(app).get(`/api/org/${ORG}/executive-work-design`).set(auth('owner_1'));
+    const exportRes = await request(app).get(`/api/org/${ORG}/executive-work-design/export`).set(auth('owner_1'));
+    expect(exportRes.status).toBe(200);
+
+    const viewFields = new Set(Object.keys(viewRes.body));
+    const exportOnlyFields = Object.keys(exportRes.body).filter((k) => !viewFields.has(k));
+    expect(new Set(exportOnlyFields)).toEqual(new Set(['orgName', 'generatedAt']));
+  });
+
+  it('the export route is refused to the same non-admin members the view route refuses', async () => {
+    seedOrg(ORG, { adminUids: ['owner_1'], memberUids: ['owner_1', 'member_1'] });
+    const viewRes = await request(app).get(`/api/org/${ORG}/executive-work-design`).set(auth('member_1'));
+    const exportRes = await request(app).get(`/api/org/${ORG}/executive-work-design/export`).set(auth('member_1'));
+    expect(viewRes.status).toBe(403);
+    expect(exportRes.status).toBe(403);
+  });
+});
+
 describe('GET /api/org/:orgId/executive-work-design — financial range estimate', () => {
   it('reports costInputsAvailable:false and financialEstimate:null when the org has not entered cost figures', async () => {
     seedOrg(ORG, { adminUids: ['owner_1'], memberUids: ['owner_1', 'a1', 'a2', 'a3'], privacyThreshold: 3 });

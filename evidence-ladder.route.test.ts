@@ -60,6 +60,13 @@ describe('GET /api/org/:orgId/what-works-here', () => {
     expect(res.body.patterns).toEqual([]);
   });
 
+  it('includes a data provenance label (Work Design Pulse PR13)', async () => {
+    seedOrg(ORG, { memberUids: ['a1'] });
+    const res = await request(app).get(`/api/org/${ORG}/what-works-here`).set(auth('a1'));
+    expect(res.body.provenance).toContain('Derived from work_design_interventions');
+    expect(res.body.provenance).toContain('Privacy Gate: Passed');
+  });
+
   it('computes repeated_one_team when the same team has two positive outcomes', async () => {
     seedOrg(ORG, { adminUids: ['owner_1'], memberUids: ['owner_1', 'mgr_a'], teamManagers: { mgr_a: ['Team A'] } });
     const c1 = await createIntervention('Team A', 'mgr_a');

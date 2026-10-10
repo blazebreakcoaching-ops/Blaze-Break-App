@@ -102,6 +102,16 @@ describe('GET /api/org/:orgId/workplace-policies — Policy-to-Practice Gap', ()
     const res = await request(app).get(`/api/org/${ORG}/workplace-policies`).set(auth('member_1'));
     expect(res.status).toBe(403);
   });
+
+  it('includes a data provenance label (Work Design Pulse PR13)', async () => {
+    seedOrg(ORG, { adminUids: ['owner_1'], memberUids: ['owner_1', 'a1', 'a2', 'a3'] });
+    ['a1', 'a2', 'a3'].forEach((uid) => connectCalendar(uid, { totalMeetingHours: 20, backToBackCount: 2, eveningMeetingCount: 0, weekendMeetingCount: 0 }));
+    await request(app).post(`/api/org/${ORG}/workplace-policies`).set(auth('owner_1')).send({ type: 'no_evening_meetings', label: 'No evenings' });
+
+    const res = await request(app).get(`/api/org/${ORG}/workplace-policies`).set(auth('owner_1'));
+    expect(res.body.provenance).toContain('Derived from calendar connector');
+    expect(res.body.provenance).toContain('Privacy Gate: Passed');
+  });
 });
 
 describe('DELETE /api/org/:orgId/workplace-policies/:id', () => {

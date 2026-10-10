@@ -107,6 +107,7 @@ import { checkWorkDesignDrift } from './work-design-drift-detector';
 import { deriveSuggestionResponse } from './suggestion-response';
 import { getEffectiveActionBudget, validateActionBudgetUpdate, canStartNewIntervention } from './action-budget';
 import { buildExecutiveNarrative } from './executive-narrative';
+import { formatDataProvenance } from './data-provenance';
 import { buildFinancialRangeEstimate } from './executive-work-design';
 
 dotenv.config();
@@ -9545,7 +9546,10 @@ app.get("/api/org/:orgId/work-design-interventions-summary", verifyAppCheck, aut
       if (data.outcomeRating) byOutcome[data.outcomeRating] = (byOutcome[data.outcomeRating] || 0) + 1;
       recent.push({ signalKey: data.signalKey, status: data.status });
     });
-    res.json({ totalTried: snap.size, byStatus, byOutcome, recent: recent.slice(0, 10) });
+    res.json({
+      totalTried: snap.size, byStatus, byOutcome, recent: recent.slice(0, 10),
+      provenance: formatDataProvenance({ source: 'work_design_interventions', windowDays: null, coveragePercent: null, privacyGatePassed: true }),
+    });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
@@ -9864,7 +9868,12 @@ app.get("/api/org/:orgId/workplace-policies", verifyAppCheck, authenticateFireba
         : null;
       return { ...policy, gap, cohortSufficient: snapshot.available };
     });
-    res.json({ policies: withGaps });
+    const provenance = formatDataProvenance({
+      source: 'calendar connector (meeting load)', windowDays: 7,
+      coveragePercent: consentingUids.length > 0 ? Math.round((snapshot.cohortSize / consentingUids.length) * 100) : null,
+      privacyGatePassed: snapshot.available,
+    });
+    res.json({ policies: withGaps, provenance });
   } catch (err: any) {
     res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("not found") ? 404 : 500).json({ error: err.message });
   }
@@ -9939,7 +9948,10 @@ app.get("/api/org/:orgId/what-works-here", verifyAppCheck, authenticateFirebaseU
         teamCount: new Set(records.map((r) => r.team)).size,
       };
     });
-    res.json({ patterns });
+    res.json({
+      patterns,
+      provenance: formatDataProvenance({ source: 'work_design_interventions', windowDays: null, coveragePercent: null, privacyGatePassed: true }),
+    });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }

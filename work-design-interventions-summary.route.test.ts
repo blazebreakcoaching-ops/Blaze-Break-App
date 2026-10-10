@@ -45,7 +45,17 @@ describe('GET /api/org/:orgId/work-design-interventions-summary', () => {
     seedOrg(ORG, ['a1']);
     const res = await request(app).get(`/api/org/${ORG}/work-design-interventions-summary`).set(auth('a1'));
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ totalTried: 0, byStatus: {}, byOutcome: {}, recent: [] });
+    expect(res.body.totalTried).toBe(0);
+    expect(res.body.byStatus).toEqual({});
+    expect(res.body.byOutcome).toEqual({});
+    expect(res.body.recent).toEqual([]);
+  });
+
+  it('includes a data provenance label (Work Design Pulse PR13)', async () => {
+    seedOrg(ORG, ['a1']);
+    const res = await request(app).get(`/api/org/${ORG}/work-design-interventions-summary`).set(auth('a1'));
+    expect(res.body.provenance).toContain('Derived from work_design_interventions');
+    expect(res.body.provenance).toContain('Privacy Gate: Passed');
   });
 
   it('aggregates by status and outcome without ever naming a team', async () => {
