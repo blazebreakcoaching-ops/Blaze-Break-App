@@ -308,9 +308,9 @@ export const OrgDashboardValue = ({ onNavigateToTrend }: { onNavigateToTrend?: (
                       className="card w-full text-left flex items-center justify-between gap-4 hover:border-primary/30 transition-colors max-w-2xl"
                     >
                       <div>
-                        <h4 className="font-bold text-text-main flex items-center gap-2"><TrendingUp className="w-4 h-4 text-primary" /> See the Wellbeing Concern Trend</h4>
+                        <h4 className="font-bold text-text-main flex items-center gap-2"><TrendingUp className="w-4 h-4 text-primary" /> See the Work Design Pulse</h4>
                         <p className="text-xs text-text-muted leading-relaxed mt-1">
-                          The cost figures above are what your organisation actually reported. The Team Mood Snapshot tab shows a separate, real trend from your team's own mood and climate-survey data - both are real, shown side by side, with no formula connecting one to the other.
+                          The cost figures above are what your organisation actually reported. The Work Design Pulse tab shows a separate, real read on structural pressure - meeting load, Work Design Debt, active interventions - built entirely from organisation work data, with no formula connecting one to the other.
                         </p>
                       </div>
                       <ArrowRight className="w-4 h-4 text-text-muted shrink-0" />

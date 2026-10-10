@@ -2,13 +2,11 @@ import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { secureApiFetch } from '../lib/secure-api';
 import { auth } from '../lib/firebase';
-import { RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, ResponsiveContainer, Tooltip, LineChart, Line, XAxis, YAxis, CartesianGrid } from 'recharts';
 import { useFocusTrap } from '../lib/useFocusTrap';
 import { OrgManagerCoachChat } from './OrgManagerCoachChat';
 
 
 import {
-  TrendingUp,
   Users,
   ShieldCheck,
   Sparkles,
@@ -17,7 +15,6 @@ import {
   MessageSquare,
   AlertTriangle,
   Lightbulb,
-  LineChart as LineChartIcon,
   HeartPulse,
   Loader2,
   UserMinus,
@@ -29,14 +26,10 @@ import {
   X,
   Upload,
   RotateCw,
-  ArrowUp,
-  ArrowDown,
-  Minus,
   FileText,
   ClipboardList,
   Eye
 } from 'lucide-react';
-import { buildPrimaryIndicators, buildDimensionIndicators, sortByAttention, LeadingIndicator } from '../../org-leading-indicators';
 import { cn } from '../lib/utils';
 import { OrgDashboardValue } from './OrgDashboardValue';
 import { OrgDashboardMoments } from './OrgDashboardMoments';
@@ -56,7 +49,7 @@ const ACTIONS = [
 ];
 
 export const OrgDashboard = ({ onNavigate }: { onNavigate?: (tab: string) => void } = {}) => {
-  const [activeSubTab, setActiveSubTab] = useState<'climate' | 'pulse' | 'value' | 'moments' | 'team' | 'governance'>('pulse');
+  const [activeSubTab, setActiveSubTab] = useState<'pulse' | 'value' | 'moments' | 'team' | 'governance'>('pulse');
   const [alertEnabled, setAlertEnabled] = useState(false);
 
   const [orgStatus, setOrgStatus] = useState<{ organisationId: string | null; organisationName?: string; isOrgAdmin?: boolean; joinCode?: string; privacyThreshold?: number } | null>(null);
@@ -78,36 +71,6 @@ export const OrgDashboard = ({ onNavigate }: { onNavigate?: (tab: string) => voi
     localOperatingPrincipleCount?: number;
     narrative?: string;
   } | null>(null);
-  const [climateData, setClimateData] = useState<{
-    locked: boolean;
-    cohortSize: number;
-    threshold: number;
-    responseCount?: number;
-    responseRate?: number;
-    averages?: Record<string, number>;
-  } | null>(null);
-  const [riskTrendData, setRiskTrendData] = useState<{
-    locked: boolean;
-    cohortSize: number;
-    threshold: number;
-    moodConcern?: number | null;
-    climateConcern?: number | null;
-    climateConcernByDimension?: Record<string, number> | null;
-    overallConcern?: number | null;
-    trend?: { direction: 'improving' | 'worsening' | 'stable' | 'unknown'; delta: number | null };
-    moodTrend?: { direction: 'improving' | 'worsening' | 'stable' | 'unknown'; delta: number | null };
-    climateTrend?: { direction: 'improving' | 'worsening' | 'stable' | 'unknown'; delta: number | null };
-    comparedAgainst?: string | null;
-    history?: { recordedAt: string; overallConcern: number | null }[];
-    teamBreakdown?: Record<string, {
-      cohortSize: number;
-      overallConcern: number | null;
-      moodConcern: number | null;
-      climateConcern: number | null;
-      trend: { direction: 'improving' | 'worsening' | 'stable' | 'unknown'; delta: number | null };
-    }>;
-  } | null>(null);
-
   const [suggestions, setSuggestions] = useState<{ id: string; message: string }[]>([]);
   const [suggestionsLocked, setSuggestionsLocked] = useState(false);
   // Lets the Manager Action Library cards (climate tab) ask Nova a real
@@ -255,22 +218,6 @@ export const OrgDashboard = ({ onNavigate }: { onNavigate?: (tab: string) => voi
             setError(dash.error || "Could not load your organisation's dashboard.");
           } else {
             setDashboardData(dash);
-          }
-
-          try {
-            const climateRes = await secureApiFetch(`/api/org/${me.organisationId}/climate`);
-            const climate = await climateRes.json();
-            if (climateRes.ok) setClimateData(climate);
-          } catch (e) {
-            // Non-fatal - the pulse dashboard above still works even if this fails.
-          }
-
-          try {
-            const riskRes = await secureApiFetch(`/api/org/${me.organisationId}/risk-trend`);
-            const risk = await riskRes.json();
-            if (riskRes.ok) setRiskTrendData(risk);
-          } catch (e) {
-            // Non-fatal - same reasoning as the climate fetch above.
           }
 
           fetchMembers(me.organisationId);
@@ -671,7 +618,6 @@ export const OrgDashboard = ({ onNavigate }: { onNavigate?: (tab: string) => voi
       <div className="flex flex-wrap gap-2 mb-8">
         {[
            { id: 'pulse', label: 'Work Design Pulse', icon: HeartPulse },
-           { id: 'climate', label: 'Team Climate Dashboard', icon: LineChartIcon },
            { id: 'value', label: 'People Value Engine', icon: Building },
            { id: 'moments', label: 'Blaze Bright Moments', icon: Sparkles },
            { id: 'governance', label: 'Workplace Governance', icon: ShieldCheck },
@@ -757,305 +703,6 @@ export const OrgDashboard = ({ onNavigate }: { onNavigate?: (tab: string) => voi
                 seedMessage={managerCoachSeed}
                 onSeedConsumed={() => setManagerCoachSeed(null)}
               />
-            )}
-
-            {riskTrendData && !riskTrendData.locked && (
-              <div className="card space-y-6">
-                <div>
-                  <h4 className="font-bold text-text-main flex items-center gap-2"><TrendingUp className="w-5 h-5 text-primary" /> Team Climate Trend</h4>
-                  <p className="text-xs text-text-muted max-w-2xl leading-relaxed">
-                    A transparent indicator built from the same real, consented mood and climate-survey data above - not a prediction. It shows whether things are trending better or worse and by how much; it does not estimate absence risk or any figure this app has no real basis to produce.
-                  </p>
-                </div>
-                {riskTrendData.overallConcern == null ? (
-                  <p className="text-sm text-text-muted py-8 text-center">Not enough mood or climate survey data yet to show a trend.</p>
-                ) : (
-                  <>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      <div className="p-5 bg-surface dark:bg-card/40 border border-border rounded-xl">
-                        <span className="text-xs uppercase font-bold tracking-widest text-text-muted block mb-1">Current Strain Level</span>
-                        <p className="text-3xl font-display font-bold text-text-main">{riskTrendData.overallConcern}<span className="text-sm font-normal text-text-muted">/100</span></p>
-                        <p className="text-xs text-text-muted mt-1">Combines mood pulses and, where available, the climate survey. Lower is better.</p>
-                      </div>
-                      <div className="p-5 bg-surface dark:bg-card/40 border border-border rounded-xl">
-                        <span className="text-xs uppercase font-bold tracking-widest text-text-muted block mb-1">Trend vs. ~4 Weeks Ago</span>
-                        {riskTrendData.trend?.direction === 'unknown' ? (
-                          <>
-                            <p className="text-3xl font-display font-bold text-text-main">—</p>
-                            <p className="text-xs text-text-muted mt-1">No snapshot from a month ago yet - check back as data accumulates.</p>
-                          </>
-                        ) : (
-                          <>
-                            <p className={cn(
-                              "text-3xl font-display font-bold",
-                              riskTrendData.trend?.direction === 'worsening' ? "text-destructive dark:text-[#f87171]" :
-                              riskTrendData.trend?.direction === 'improving' ? "text-[#166534] dark:text-[#4ade80]" :
-                              "text-text-main"
-                            )}>
-                              {riskTrendData.trend?.direction === 'stable' ? 'Stable' : `${(riskTrendData.trend?.delta ?? 0) > 0 ? '+' : ''}${riskTrendData.trend?.delta} pts`}
-                            </p>
-                            <p className="text-xs text-text-muted mt-1 capitalize">{riskTrendData.trend?.direction}{riskTrendData.trend?.direction !== 'stable' ? ' since the last comparable snapshot' : ''}.</p>
-                          </>
-                        )}
-                      </div>
-                    </div>
-
-                    {riskTrendData.history && riskTrendData.history.length >= 2 && (
-                      <div>
-                        <span className="text-xs uppercase font-bold tracking-widest text-text-muted block mb-3">Strain Level Over Time</span>
-                        <div className="h-52 w-full" aria-hidden="true">
-                          <ResponsiveContainer width="100%" height="100%">
-                            <LineChart data={riskTrendData.history.map(h => ({ date: new Date(h.recordedAt).toLocaleDateString([], { month: 'short', day: 'numeric' }), value: h.overallConcern }))}>
-                              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#78716c" strokeOpacity={0.2} />
-                              <XAxis dataKey="date" tick={{ fontSize: 11 }} stroke="#78716c" />
-                              <YAxis domain={[0, 100]} tick={{ fontSize: 11 }} stroke="#78716c" />
-                              <Tooltip
-                                contentStyle={{ backgroundColor: '#1c1917', border: '1px solid #3a3532', borderRadius: '8px' }}
-                                itemStyle={{ color: '#fff', fontSize: '12px' }}
-                                formatter={(value: any) => [`${value}/100`, 'Strain']}
-                              />
-                              <Line type="monotone" dataKey="value" stroke="#ea580c" strokeWidth={2} dot={{ r: 3, fill: '#ea580c' }} connectNulls />
-                            </LineChart>
-                          </ResponsiveContainer>
-                        </div>
-                        <table className="sr-only">
-                          <caption>Strain level over time, 0 to 100, lower is better</caption>
-                          <thead>
-                            <tr><th scope="col">Date</th><th scope="col">Strain Level</th></tr>
-                          </thead>
-                          <tbody>
-                            {riskTrendData.history.filter(h => h.overallConcern != null).map(h => (
-                              <tr key={h.recordedAt}>
-                                <td>{new Date(h.recordedAt).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })}</td>
-                                <td>{h.overallConcern}/100</td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    )}
-
-                    {riskTrendData.climateConcernByDimension && (
-                      <div>
-                        <span className="text-xs uppercase font-bold tracking-widest text-text-muted block mb-3">What's Driving It (Climate Survey Dimensions)</span>
-                        <div className="space-y-2">
-                          {Object.entries(riskTrendData.climateConcernByDimension).map(([dim, dimStrain]) => (
-                            <div key={dim} className="flex items-center gap-3">
-                              <span className="text-xs font-bold text-text-main w-28 shrink-0 capitalize">{dim}</span>
-                              <div className="h-2 flex-1 bg-surface dark:bg-surface rounded-full overflow-hidden">
-                                <div className={cn("h-full", dimStrain >= 60 ? "bg-destructive" : dimStrain >= 35 ? "bg-warning" : "bg-success")} style={{ width: `${Math.max(4, dimStrain)}%` }} />
-                              </div>
-                              <span className="text-xs font-mono text-text-muted w-10 text-right">{dimStrain}</span>
-                            </div>
-                          ))}
-                        </div>
-                        <p className="text-xs text-text-muted mt-3">Higher means more strain. From the same climate survey averages shown in the Team Climate tab.</p>
-                      </div>
-                    )}
-                  </>
-                )}
-              </div>
-            )}
-
-            {riskTrendData && !riskTrendData.locked && riskTrendData.overallConcern != null && (() => {
-              const indicators = sortByAttention([
-                ...buildPrimaryIndicators({
-                  overall: riskTrendData.overallConcern ?? null,
-                  mood: riskTrendData.moodConcern ?? null,
-                  climate: riskTrendData.climateConcern ?? null,
-                  overallTrend: riskTrendData.trend,
-                  moodTrend: riskTrendData.moodTrend,
-                  climateTrend: riskTrendData.climateTrend,
-                }),
-                ...buildDimensionIndicators(riskTrendData.climateConcernByDimension),
-              ]);
-              const dirIcon = (d: LeadingIndicator['direction']) =>
-                d === 'worsening' ? <ArrowUp className="w-3.5 h-3.5" aria-hidden="true" />
-                : d === 'improving' ? <ArrowDown className="w-3.5 h-3.5" aria-hidden="true" />
-                : <Minus className="w-3.5 h-3.5" aria-hidden="true" />;
-              const sevClasses: Record<string, string> = {
-                elevated: 'bg-destructive/10 text-destructive dark:text-[#f87171] border-destructive/20',
-                moderate: 'bg-warning/10 text-[#9a3412] dark:text-warning border-warning/20',
-                low: 'bg-success/10 text-[#166534] dark:text-[#4ade80] border-success/20',
-              };
-              // Higher strain = worse, so "worsening" (strain rising) is not-good
-              // and "improving" (strain falling) is good.
-              const dirClasses: Record<string, string> = {
-                worsening: 'text-destructive dark:text-[#f87171]',
-                improving: 'text-[#166534] dark:text-[#4ade80]',
-                stable: 'text-text-muted',
-                unknown: 'text-text-muted',
-              };
-              return (
-                <div className="card space-y-6">
-                  <div>
-                    <h4 className="font-bold text-text-main flex items-center gap-2"><LineChartIcon className="w-5 h-5 text-primary" /> Leading Indicators</h4>
-                    <p className="text-xs text-text-muted max-w-2xl leading-relaxed">
-                      Early, structural signals of working conditions — each one's current level and which way it's moving over the last ~4 weeks. Leading indicators shift <em>before</em> hard outcomes, so this is a prompt to look at workload and support, not a prediction of anything. Every figure is aggregate and anonymised across consenting members; nothing here is ever shown per person, and this is not a forecast of absence or any individual outcome.
-                    </p>
-                  </div>
-                  <ul className="space-y-2.5">
-                    {indicators.map((ind) => (
-                      <li key={ind.key} className="flex items-center gap-4 p-4 rounded-xl border border-border bg-surface/60 dark:bg-card/40">
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-bold text-text-main truncate">{ind.label}</p>
-                          <p className={cn('text-xs flex items-center gap-1 mt-0.5', dirClasses[ind.direction])}>
-                            {ind.direction !== 'unknown' && dirIcon(ind.direction)}
-                            <span className="text-text-muted">{ind.note}</span>
-                          </p>
-                        </div>
-                        {ind.severity ? (
-                          <span className={cn('shrink-0 text-[11px] font-black uppercase tracking-widest px-2.5 py-1 rounded-full border', sevClasses[ind.severity])}>
-                            {ind.severity}
-                          </span>
-                        ) : (
-                          <span className="shrink-0 text-[11px] text-text-muted">no data yet</span>
-                        )}
-                        <span className="shrink-0 w-12 text-right font-mono text-sm text-text-main tabular-nums">
-                          {ind.level == null ? '—' : `${ind.level}`}
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-                  <p className="text-[11px] text-text-muted">Scale 0–100, higher means more strain. Levels: 0–34 low · 35–59 moderate · 60+ elevated. Per-dimension direction isn't shown because the dashboard doesn't retain per-dimension history — we won't infer a trend we can't back up.</p>
-                </div>
-              );
-            })()}
-
-            {riskTrendData?.teamBreakdown && Object.keys(riskTrendData.teamBreakdown).length > 0 && (
-              <div className="card space-y-6">
-                <div>
-                  <h4 className="font-bold text-text-main flex items-center gap-2"><TrendingUp className="w-5 h-5 text-primary" /> By Team</h4>
-                  <p className="text-xs text-text-muted max-w-2xl leading-relaxed">
-                    Only teams with enough consenting members to clear the same anonymity threshold as the org-wide numbers above appear here - a team with too few people simply isn't shown, the same protection as everywhere else in this dashboard. Nobody is ever named.
-                  </p>
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  {Object.entries(riskTrendData.teamBreakdown).map(([team, snap]) => (
-                    <div key={team} className="p-5 bg-surface dark:bg-card/40 border border-border rounded-xl">
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="text-sm font-bold text-text-main truncate">{team}</span>
-                        <span className="text-xs text-text-muted shrink-0">{snap.cohortSize} people</span>
-                      </div>
-                      <div className="flex items-end justify-between">
-                        <div>
-                          <p className="text-2xl font-display font-bold text-text-main">{snap.overallConcern ?? '—'}<span className="text-xs font-normal text-text-muted">/100</span></p>
-                        </div>
-                        <div className="text-right">
-                          {snap.trend.direction === 'unknown' ? (
-                            <span className="text-xs text-text-muted">No trend yet</span>
-                          ) : (
-                            <span className={cn(
-                              "text-sm font-bold capitalize",
-                              snap.trend.direction === 'worsening' ? "text-destructive dark:text-[#f87171]" :
-                              snap.trend.direction === 'improving' ? "text-[#166534] dark:text-[#4ade80]" :
-                              "text-text-muted"
-                            )}>
-                              {snap.trend.direction}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </motion.div>
-        )}
-
-        {activeSubTab === 'climate' && (
-          <motion.div key="climate" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95 }} className="space-y-12 pb-24">
-            {/* Header */}
-            <div className="relative overflow-hidden rounded-xl bg-card border border-border p-8 pt-12">
-              <div className="absolute top-0 right-0 p-8 opacity-5">
-                <LineChartIcon className="w-64 h-64 text-text-main" />
-              </div>
-              <div className="relative z-10 max-w-3xl">
-                <div className="flex items-center gap-3 mb-4">
-                  <div className="tag bg-surface dark:bg-card/10 text-text-main border-white/20">Team Climate Dashboard</div>
-                  {climateData && !climateData.locked && (
-                    <div className="flex items-center gap-2 text-xs font-black uppercase tracking-widest text-[#166534] dark:text-[#4ade80] bg-success/10 px-3 py-1 rounded-full border border-success/20">
-                      <ShieldCheck className="w-3 h-3" /> {climateData.responseCount} responses this quarter
-                    </div>
-                  )}
-                </div>
-                <h3 className="text-4xl sm:text-5xl font-display font-bold text-text-main tracking-tight leading-tight mb-4">
-                  Measure Conditions, Not People.
-                </h3>
-                <p className="text-base text-text-muted font-medium leading-relaxed max-w-2xl">
-                  A real, HSE-aligned climate survey across your six work-design areas — Demands, Control, Support, Relationships, Role, and Change. Individual responses are never shown; only combined averages, once enough teammates have responded.
-                </p>
-              </div>
-            </div>
-
-            {climateData?.locked ? (
-              <div className="card space-y-4 text-center py-12">
-                <ShieldCheck className="w-10 h-10 mx-auto text-text-muted" />
-                <h4 className="font-bold text-text-main">Not Enough Responses Yet</h4>
-                <p className="text-sm text-text-muted max-w-md mx-auto">
-                  {climateData.cohortSize} of {climateData.threshold} needed teammates have completed the survey this quarter. Ask your team to take it from their own Privacy Centre — it takes about a minute.
-                </p>
-              </div>
-            ) : climateData?.averages ? (
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                <div className="card space-y-6">
-                  <div>
-                    <h4 className="font-bold text-text-main">Team Climate, Six Dimensions</h4>
-                    <p className="text-xs text-text-muted">Average score per dimension (1–5), from real survey responses.</p>
-                  </div>
-                  <div className="h-72" role="img" aria-label="Radar chart of team climate across six dimensions - Demands, Control, Support, Relationships, Role, and Change - each scored 1 to 5 from real survey responses. Full values are in the chart's tooltips.">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <RadarChart
-                        cx="50%" cy="50%" outerRadius="75%"
-                        data={[
-                          { subject: 'Demands', value: climateData.averages.demands },
-                          { subject: 'Control', value: climateData.averages.control },
-                          { subject: 'Support', value: climateData.averages.support },
-                          { subject: 'Relationships', value: climateData.averages.relationships },
-                          { subject: 'Role', value: climateData.averages.role },
-                          { subject: 'Change', value: climateData.averages.change },
-                        ]}
-                      >
-                        <PolarGrid stroke="#78716c" strokeOpacity={0.3} />
-                        <PolarAngleAxis dataKey="subject" tick={{ fill: '#78716c', fontSize: 11, fontWeight: 600 }} />
-                        <PolarRadiusAxis angle={30} domain={[0, 5]} tick={false} axisLine={false} />
-                        <Radar name="Team Average" dataKey="value" stroke="#ea580c" fill="#ea580c" fillOpacity={0.35} />
-                        <Tooltip
-                          contentStyle={{ backgroundColor: '#1c1917', border: '1px solid #3a3532', borderRadius: '8px' }}
-                          itemStyle={{ color: '#fff', fontSize: '12px' }}
-                          formatter={(value: any) => [`${value}/5`, 'Average']}
-                        />
-                      </RadarChart>
-                    </ResponsiveContainer>
-                  </div>
-                </div>
-
-                <div className="card space-y-4">
-                  <h4 className="font-bold text-text-main">Breakdown</h4>
-                  <div className="space-y-3">
-                    {Object.entries(climateData.averages).map(([dim, value]) => (
-                      <div key={dim} className="flex items-center justify-between">
-                        <span className="text-sm text-text-main capitalize">{dim}</span>
-                        <div className="flex items-center gap-3 flex-1 max-w-[60%]">
-                          <div className="flex-1 h-2 bg-surface rounded-full overflow-hidden">
-                            <div className="h-full bg-primary" style={{ width: `${(value / 5) * 100}%` }} />
-                          </div>
-                          <span className="text-xs font-mono font-bold text-text-main w-8 text-right">{value}/5</span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                  <p className="text-xs text-text-muted pt-3 border-t border-border">
-                    Response rate: {climateData.responseRate}% of opted-in teammates this quarter.
-                  </p>
-                </div>
-              </div>
-            ) : (
-              <div className="card space-y-4 text-center py-12">
-                <Lock className="w-10 h-10 mx-auto text-text-muted" />
-                <p className="text-sm text-text-muted max-w-md mx-auto">No survey data available yet.</p>
-              </div>
             )}
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">

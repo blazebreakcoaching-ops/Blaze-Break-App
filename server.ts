@@ -8364,67 +8364,14 @@ app.get("/api/admin/orgs/:orgId", verifyAppCheck, authenticateFirebaseUser, asyn
   }
 });
 
-// ============ Team Climate Survey (real HSE-aligned aggregation) ============
-// Individual responses live in each member's own climate_survey_responses
-// subcollection (Firestore rules let them write directly, same as
-// mood_pulses). This endpoint is the only place those get read across
-// members, and - exactly like the pulse dashboard - it only ever returns
-// averaged numbers, gated by the same minimum cohort size.
-
-app.get("/api/org/:orgId/climate", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
-  try {
-    const { orgId } = req.params;
-    const { org } = await requireOrgAdmin(req, orgId);
-    const db = getDb();
-
-    const threshold = org.privacyThreshold || 5;
-    const memberUids: string[] = org.memberUids || [];
-
-    const consentingUids = await getConsentingMemberUids(db, memberUids);
-
-    if (consentingUids.length < threshold) {
-      return res.json({ locked: true, cohortSize: consentingUids.length, threshold, responseCount: 0 });
-    }
-
-    // Climate surveys are periodic, not daily - a 90-day window catches a
-    // quarter's worth of responses rather than the last-7-days window used
-    // for mood/body signals.
-    const ninetyDaysAgo = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString();
-    const dimensions = ['demands', 'control', 'support', 'relationships', 'role', 'change'] as const;
-    const sums: Record<string, number> = { demands: 0, control: 0, support: 0, relationships: 0, role: 0, change: 0 };
-    let responseCount = 0;
-    const respondedUids = new Set<string>();
-
-    await Promise.all(consentingUids.map(async (uid) => {
-      const snap = await db.collection("users").doc(uid).collection("climate_survey_responses")
-        .where("createdAt", ">=", ninetyDaysAgo).orderBy("createdAt", "desc").limit(1).get();
-      if (!snap.empty) {
-        const d = snap.docs[0].data();
-        dimensions.forEach(dim => { sums[dim] += d[dim] || 0; });
-        responseCount++;
-        respondedUids.add(uid);
-      }
-    }));
-
-    if (responseCount < threshold) {
-      return res.json({ locked: true, cohortSize: responseCount, threshold, responseCount });
-    }
-
-    const averages: Record<string, number> = {};
-    dimensions.forEach(dim => { averages[dim] = Number((sums[dim] / responseCount).toFixed(1)); });
-
-    res.json({
-      locked: false,
-      cohortSize: consentingUids.length,
-      responseCount,
-      threshold,
-      averages,
-      responseRate: Math.round((responseCount / consentingUids.length) * 100),
-    });
-  } catch (err: any) {
-    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
-  }
-});
+// GET /api/org/:orgId/climate (the HSE-aligned climate survey aggregate)
+// was retired here - it read each consenting member's own
+// climate_survey_responses, a personal self-report about their own job
+// demands/control/support, which is exactly the kind of "private personal
+// workload interpretation" the Work Design Pulse privacy architecture
+// places in Lane A (the Private Recovery Vault). No Lane B equivalent
+// exists for a subjective self-report survey, so this is a clean
+// retirement rather than a rebuild.
 
 // ============ Wellbeing Risk Trend (real, from existing aggregates - not a trained model) ============
 // Deliberately not a predictive model: this is a transparent trend
@@ -8818,81 +8765,16 @@ const computeTrendHistory = async (
   };
 };
 
-app.get("/api/org/:orgId/risk-trend", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
-  try {
-    const { orgId } = req.params;
-    const { org } = await requireOrgAdmin(req, orgId);
-    const db = getDb();
-
-    const threshold = org.privacyThreshold || 5;
-    const memberUids: string[] = org.memberUids || [];
-    const memberTeams: Record<string, string> = org.memberTeams || {};
-    const consentingUids = await getConsentingMemberUids(db, memberUids);
-
-    if (consentingUids.length < threshold) {
-      return res.json({ locked: true, cohortSize: consentingUids.length, threshold });
-    }
-
-    const orgSnapshot = await computeStrainSnapshotForCohort(db, consentingUids);
-
-    // Team breakdown: group consenting members by their assigned team,
-    // then only compute (and only ever expose) a snapshot for teams that
-    // independently clear the same k-anonymity threshold as the org as a
-    // whole. A team with too few consenting members just doesn't appear
-    // in teamBreakdown at all - not shown as "locked", simply absent,
-    // since listing a locked team by name would itself say more about a
-    // small team's participation than this feature should ever reveal.
-    // A team only qualifies for its own breakdown entry if BOTH it, and
-    // the rest of the org once it's excluded (the "complement"), clear the
-    // threshold. Checking team size alone is not enough: the org-wide
-    // aggregate is already shown once the org clears its own threshold, so
-    // an admin who can see both the org total and a team sized N-1 (every
-    // consenting member except one target person) can back-calculate that
-    // one person's aggregate signal by subtraction - collapsing the
-    // "aggregate >= threshold" guarantee to an effectively single-person
-    // cohort for whoever was excluded, entirely within what each
-    // individual check allows. Team labels are admin-assigned and
-    // reassignable at any time (see the member-management UI), so this
-    // isn't a hypothetical: an admin can construct exactly this team on
-    // purpose. This check closes that specific, demonstrated attack; it
-    // does not (yet) defend against a slower attack built from many
-    // overlapping team combinations - see docs/PRODUCT_SAFETY_PRIVACY.md.
-    // (computeQualifyingTeamGroups is the same shared helper the manager
-    // and HR team-welfare dashboards use, so this rule can never drift
-    // between routes.)
-    const { qualifying: teamGroups } = computeQualifyingTeamGroups(consentingUids, memberTeams, threshold);
-    const teamSnapshots: Record<string, OrgStrainSnapshot> = {};
-    await Promise.all(Object.entries(teamGroups).map(async ([team, uids]) => {
-      teamSnapshots[team] = await computeStrainSnapshotForCohort(db, uids);
-    }));
-
-    const { orgTrend, moodTrend, climateTrend, comparedAgainst, history, teamTrends } =
-      await computeTrendHistory(db, orgId, orgSnapshot, teamSnapshots);
-
-    const teamBreakdown: Record<string, OrgStrainSnapshot & { trend: ReturnType<typeof computeTrend> }> = {};
-    Object.entries(teamSnapshots).forEach(([team, snap]) => {
-      teamBreakdown[team] = { ...snap, trend: teamTrends[team] };
-    });
-
-    res.json({
-      locked: false,
-      cohortSize: consentingUids.length,
-      threshold,
-      moodConcern: orgSnapshot.moodConcern,
-      climateConcern: orgSnapshot.climateConcern,
-      climateConcernByDimension: orgSnapshot.climateConcernByDimension,
-      overallConcern: orgSnapshot.overallConcern,
-      trend: orgTrend,
-      moodTrend,
-      climateTrend,
-      comparedAgainst,
-      history,
-      teamBreakdown,
-    });
-  } catch (err: any) {
-    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
-  }
-});
+// GET /api/org/:orgId/risk-trend (the "Wellbeing Risk Trend"/"Team Climate
+// Trend" view) was retired here - it blended mood_pulses and the climate
+// survey into a single 0-100 "concern" trend, exactly the kind of
+// Collective-Stability-Pulse-shaped aggregate Phase 0 of the Work Design
+// Pulse privacy architecture bans from organisation-facing views, and its
+// org-wide + per-team breakdown duplicated what GET .../team-dashboard and
+// GET .../hr-dashboard already compute more narrowly from real Work Design
+// Signals. computeStrainSnapshotForCohort/computeTrendHistory stay in this
+// file for now since those two routes still call them (removed in a
+// follow-up PR once they're migrated off mood/climate strain too).
 
 // ============ Team Challenges (real creation & participation) ============
 

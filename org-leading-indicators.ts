@@ -56,19 +56,9 @@ export interface LeadingIndicatorInput {
   overallTrend?: TrendResult | null;
   moodTrend?: TrendResult | null;
   climateTrend?: TrendResult | null;
-  byDimension?: Record<string, number> | null;
 }
 
 const UNKNOWN_TREND: TrendResult = { direction: 'unknown', delta: null };
-
-const DIMENSION_LABELS: Record<string, string> = {
-  demands: 'Workload & demands',
-  control: 'Control over work',
-  support: 'Manager & peer support',
-  relationships: 'Working relationships',
-  role: 'Role clarity',
-  change: 'How change is handled',
-};
 
 function indicator(key: string, label: string, level: number | null, trend: TrendResult | null | undefined): LeadingIndicator {
   const t = trend || UNKNOWN_TREND;
@@ -92,17 +82,6 @@ export function buildPrimaryIndicators(input: LeadingIndicatorInput): LeadingInd
     indicator('mood', 'Day-to-day mood (early signal)', input.mood, input.moodTrend),
     indicator('climate', 'Team climate (structural)', input.climate, input.climateTrend),
   ];
-}
-
-// Per-dimension current levels. Direction is deliberately left 'unknown':
-// the dashboard does not retain per-dimension history, and inventing a
-// direction we can't substantiate would be exactly the fabrication this
-// whole view avoids.
-export function buildDimensionIndicators(byDimension: Record<string, number> | null | undefined): LeadingIndicator[] {
-  if (!byDimension) return [];
-  return Object.entries(byDimension).map(([dim, level]) =>
-    indicator(`dim_${dim}`, DIMENSION_LABELS[dim] || dim, level, UNKNOWN_TREND),
-  );
 }
 
 // Orders indicators so the ones that most warrant a look come first: things

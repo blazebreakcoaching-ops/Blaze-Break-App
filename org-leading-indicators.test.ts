@@ -3,7 +3,6 @@ import {
   severityOf,
   directionNote,
   buildPrimaryIndicators,
-  buildDimensionIndicators,
   sortByAttention,
 } from './org-leading-indicators';
 import { TrendResult } from './org-risk-trend';
@@ -65,21 +64,6 @@ describe('buildPrimaryIndicators: three separate signals with their own directio
   });
 });
 
-describe('buildDimensionIndicators: current levels only, honest about direction', () => {
-  it('labels the six HSE dimensions and never fabricates a per-dimension trend', () => {
-    const out = buildDimensionIndicators({ demands: 78, control: 20, support: 15, relationships: 30, role: 10, change: 55 });
-    expect(out).toHaveLength(6);
-    const demands = out.find(i => i.label.startsWith('Workload'))!;
-    expect(demands.level).toBe(78);
-    expect(demands.severity).toBe('elevated');
-    // No per-dimension history exists, so direction must be unknown, not invented.
-    for (const i of out) expect(i.direction).toBe('unknown');
-  });
-  it('returns nothing when there is no dimension data', () => {
-    expect(buildDimensionIndicators(null)).toEqual([]);
-  });
-});
-
 describe('sortByAttention: worsening first, then higher strain', () => {
   it('puts a worsening signal ahead of a higher-but-stable one', () => {
     const worseningLow = buildPrimaryIndicators({ overall: 30, mood: 30, climate: 30, overallTrend: t('worsening', 6) })[0];
@@ -88,8 +72,8 @@ describe('sortByAttention: worsening first, then higher strain', () => {
     expect(sorted[0].direction).toBe('worsening');
   });
   it('among same direction, higher current strain comes first', () => {
-    const a = buildDimensionIndicators({ demands: 20 })[0];
-    const b = buildDimensionIndicators({ control: 90 })[0];
+    const a = buildPrimaryIndicators({ overall: 20, mood: 20, climate: 20 })[0];
+    const b = { ...buildPrimaryIndicators({ overall: 90, mood: 90, climate: 90 })[0], key: 'x' };
     const sorted = sortByAttention([a, b]);
     expect(sorted[0].level).toBe(90);
   });

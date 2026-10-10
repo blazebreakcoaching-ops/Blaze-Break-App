@@ -335,7 +335,7 @@ describe('GET /api/org/:orgId/team-dashboard — never writes the shared org-wid
     expect(historyPaths.length).toBe(0);
   });
 
-  it('risk-trend still writes the correct, complete org-wide snapshot even after team-dashboard was checked first that day', async () => {
+  it('hr-dashboard still writes the correct, complete org-wide snapshot even after team-dashboard was checked first that day', async () => {
     seedOrg(ORG, {
       adminUids: ['owner_1'],
       memberUids: ['owner_1', 'mgr_a', 'a1', 'a2', 'a3', 'b1', 'b2', 'b3'],
@@ -352,14 +352,15 @@ describe('GET /api/org/:orgId/team-dashboard — never writes the shared org-wid
       seedDoc(`users/${uid}/mood_pulses/mp1`, { moodLabel: 'calm', createdAt: recentIso }));
 
     // The manager checks their own team dashboard first, before any org
-    // admin has looked at risk-trend today.
+    // admin (also an owner, so automatically an hr-dashboard viewer) has
+    // looked at hr-dashboard (the real org-wide writer) today.
     await request(app).get(`/api/org/${ORG}/team-dashboard`).set(auth('mgr_a'));
 
-    const riskTrendRes = await request(app).get(`/api/org/${ORG}/risk-trend`).set(auth('owner_1'));
-    expect(riskTrendRes.status).toBe(200);
+    const hrDashboardRes = await request(app).get(`/api/org/${ORG}/hr-dashboard`).set(auth('owner_1'));
+    expect(hrDashboardRes.status).toBe(200);
     // Both teams must be present - proof the day's history entry wasn't
     // already (wrongly) written by team-dashboard with only Team A in it.
-    expect(Object.keys(riskTrendRes.body.teamBreakdown).sort()).toEqual(['Team A', 'Team B']);
+    expect(hrDashboardRes.body.teams.map((t: any) => t.team).sort()).toEqual(['Team A', 'Team B']);
 
     const historyPaths = allPaths().filter(p => p.startsWith(`organisations/${ORG}/risk_trend_history/`));
     expect(historyPaths.length).toBe(1);
