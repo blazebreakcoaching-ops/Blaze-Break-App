@@ -75,6 +75,27 @@ describe('evaluateMeetingPressure - no data != zero', () => {
     expect(result.sufficiency.status).toBe('available');
     expect(result.basis).toBeTruthy();
   });
+
+  it("'not_connected' when nobody in the candidate pool has connected a calendar at all", () => {
+    const result = evaluateMeetingPressure({ available: false, cohortSize: 0, staleCount: 0, threshold: 3 });
+    expect(result.sufficiency.status).toBe('not_connected');
+  });
+
+  it("'stale' when enough people have connected before but their syncs are too old, and resyncing would clear the threshold", () => {
+    const result = evaluateMeetingPressure({ available: false, cohortSize: 1, staleCount: 2, threshold: 3 });
+    expect(result.sufficiency.status).toBe('stale');
+    expect(result.sufficiency.message).toMatch(/synced/);
+  });
+
+  it("falls back to 'insufficient_data' when stale+fresh still wouldn't clear the threshold", () => {
+    const result = evaluateMeetingPressure({ available: false, cohortSize: 1, staleCount: 1, threshold: 5 });
+    expect(result.sufficiency.status).toBe('insufficient_data');
+  });
+
+  it('without staleCount/threshold supplied, behaves exactly as before (backward compatible)', () => {
+    const result = evaluateMeetingPressure({ available: false, cohortSize: 2 });
+    expect(result.sufficiency.status).toBe('insufficient_data');
+  });
 });
 
 describe('dataAvailable / dataUnavailable', () => {

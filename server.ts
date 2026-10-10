@@ -54,7 +54,10 @@ import { FEATURE_FLAG_IDS } from './feature-flag-ids';
 import { FEATURE_REGISTRY as LEGACY_FEATURE_REGISTRY } from './src/lib/feature-registry';
 import { validateProtectedCoreUpsert, buildSeedInvariants } from './protected-core';
 import { checkCohortSufficiency, buildLockedAggregateResponse } from './anonymous-aggregation-engine';
-import { evaluateMeetingPressure, SIGNAL_BAND_LABELS, type SignalBand } from './work-design-signals';
+import {
+  evaluateMeetingPressure, SIGNAL_BAND_LABELS, computeConfidence, MIN_DAYS_FOR_FULL_CONFIDENCE,
+  type SignalBand, type WorkDesignConfidence,
+} from './work-design-signals';
 import { buildTopManagerRecommendation } from './nova-manager-coach';
 import {
   validateChangeProposalCreate, deriveFeatureRegistryApprovalTier, canDecideProposal,
@@ -8403,6 +8406,11 @@ const computeStrainSnapshotForCohort = async (db: any, uids: string[]): Promise<
 interface OrgMeetingLoadSnapshot {
   available: boolean;
   cohortSize: number;
+  // How many of the candidate uids connected a calendar before, but
+  // haven't synced within the freshness window - distinct from never
+  // having connected at all, so the signal can tell a manager "ask
+  // people to resync" instead of the generic "not enough have connected".
+  staleCount: number;
   avgMeetingHoursPerWeek: number | null;
   avgBackToBackMeetingsPerWeek: number | null;
   pctWithEveningMeetings: number | null;
@@ -8427,15 +8435,20 @@ interface OrgMeetingLoadSnapshot {
 // (not synced in 14 days) is treated as no signal, not a zero - an empty
 // calendar and an unsynced browser tab must never look alike.
 const CALENDAR_SIGNAL_FRESHNESS_MS = 14 * 24 * 60 * 60 * 1000;
-const isCalendarConnectedAndFresh = async (db: any, uid: string): Promise<boolean> => {
+// Three real, distinct states - collapsing 'stale' into the same false
+// as 'not_connected' is exactly what used to make a stale sync and an
+// unsynced browser tab look identical to every caller.
+const getCalendarConnectionState = async (db: any, uid: string): Promise<'fresh' | 'stale' | 'not_connected'> => {
   const permDoc = await db.collection("users").doc(uid).collection("nova_permissions").doc("current").get();
-  if (!permDoc.exists || permDoc.data()?.allowCalendarSignals !== true) return false;
+  if (!permDoc.exists || permDoc.data()?.allowCalendarSignals !== true) return 'not_connected';
   const calDoc = await db.collection("users").doc(uid).collection("live_signals").doc("calendar").get();
-  if (!calDoc.exists) return false;
+  if (!calDoc.exists) return 'not_connected';
   const data = calDoc.data() || {};
-  if (!data.updatedAt || new Date(data.updatedAt).getTime() < Date.now() - CALENDAR_SIGNAL_FRESHNESS_MS) return false;
-  return true;
+  if (!data.updatedAt || new Date(data.updatedAt).getTime() < Date.now() - CALENDAR_SIGNAL_FRESHNESS_MS) return 'stale';
+  return 'fresh';
 };
+const isCalendarConnectedAndFresh = async (db: any, uid: string): Promise<boolean> =>
+  (await getCalendarConnectionState(db, uid)) === 'fresh';
 
 const computeMeetingLoadSnapshotForCohort = async (
   db: any,
@@ -8443,8 +8456,11 @@ const computeMeetingLoadSnapshotForCohort = async (
   threshold: number,
 ): Promise<OrgMeetingLoadSnapshot> => {
   const contributing: { totalMeetingHours: number; backToBackCount: number; eveningMeetingCount: number; weekendMeetingCount: number }[] = [];
+  let staleCount = 0;
   await Promise.all(uids.map(async (uid) => {
-    if (!(await isCalendarConnectedAndFresh(db, uid))) return;
+    const state = await getCalendarConnectionState(db, uid);
+    if (state === 'not_connected') return;
+    if (state === 'stale') { staleCount++; return; }
     const calDoc = await db.collection("users").doc(uid).collection("live_signals").doc("calendar").get();
     const data = calDoc.data() || {};
     contributing.push({
@@ -8455,7 +8471,7 @@ const computeMeetingLoadSnapshotForCohort = async (
     });
   }));
   if (contributing.length < threshold) {
-    return { available: false, cohortSize: contributing.length, avgMeetingHoursPerWeek: null, avgBackToBackMeetingsPerWeek: null, pctWithEveningMeetings: null, pctWithWeekendMeetings: null };
+    return { available: false, cohortSize: contributing.length, staleCount, avgMeetingHoursPerWeek: null, avgBackToBackMeetingsPerWeek: null, pctWithEveningMeetings: null, pctWithWeekendMeetings: null };
   }
   const n = contributing.length;
   const avgMeetingHoursPerWeek = contributing.reduce((sum, c) => sum + c.totalMeetingHours, 0) / n;
@@ -8465,11 +8481,47 @@ const computeMeetingLoadSnapshotForCohort = async (
   return {
     available: true,
     cohortSize: n,
+    staleCount,
     avgMeetingHoursPerWeek: Math.round(avgMeetingHoursPerWeek * 10) / 10,
     avgBackToBackMeetingsPerWeek: Math.round(avgBackToBackMeetingsPerWeek * 10) / 10,
     pctWithEveningMeetings,
     pctWithWeekendMeetings,
   };
+};
+
+// Baseline period: how many days has this organisation had a genuinely
+// available org-wide Meeting Pressure signal, looking back up to 90 days
+// (same lookback as risk_trend_history). Org-wide only, matching
+// computeTrendHistory's own precedent of a single shared snapshot rather
+// than per-team history - this measures "how long has this org had real
+// signal", not a per-team fact, so every team/HR/executive view reusing
+// the same org-wide baseline is the correct, honest choice, not a
+// shortcut. Written at most once per day, and only by the one caller
+// that actually computes the org-wide snapshot (executive-work-design);
+// every other caller only reads it.
+const WORK_DESIGN_BASELINE_LOOKBACK = 90;
+const getWorkDesignBaselineDays = async (
+  db: any,
+  orgId: string,
+  record?: { available: boolean },
+): Promise<number> => {
+  const historyRef = db.collection("organisations").doc(orgId).collection("work_design_signal_history");
+  const historySnap = await historyRef.orderBy("recordedAt", "desc").limit(WORK_DESIGN_BASELINE_LOOKBACK).get();
+  const history = historySnap.docs.map((d: any) => d.data() as { recordedAt: string; meetingPressureAvailable: boolean });
+
+  const todayUtc = new Date().toISOString().slice(0, 10);
+  const alreadyRecordedToday = history.some((h) => h.recordedAt.slice(0, 10) === todayUtc);
+  if (record && !alreadyRecordedToday) {
+    const recordedAt = new Date().toISOString();
+    await historyRef.add({ recordedAt, meetingPressureAvailable: record.available });
+    history.unshift({ recordedAt, meetingPressureAvailable: record.available });
+  }
+
+  const availableDays = history.filter((h) => h.meetingPressureAvailable);
+  if (availableDays.length === 0) return 0;
+  const earliestAvailable = availableDays.reduce((earliest, h) => (h.recordedAt < earliest ? h.recordedAt : earliest), availableDays[0].recordedAt);
+  const daysSince = Math.floor((Date.now() - new Date(earliestAvailable).getTime()) / (24 * 60 * 60 * 1000));
+  return Math.max(daysSince, 1);
 };
 
 // Shapes computeMeetingLoadSnapshotForCohort's raw snapshot into the one
@@ -8486,11 +8538,27 @@ interface TeamWorkDesignSignal {
   sufficiencyStatus: string;
   sufficiencyMessage: string;
   basis: string;
+  // null whenever the band itself is null - there is nothing to be
+  // confident or unconfident about when the signal isn't available.
+  confidence: WorkDesignConfidence | null;
+  confidenceExplanation: string | null;
 }
 
-const buildMeetingPressureSignal = async (db: any, uids: string[], threshold: number): Promise<TeamWorkDesignSignal> => {
-  const snapshot = await computeMeetingLoadSnapshotForCohort(db, uids, threshold);
-  const result = evaluateMeetingPressure(snapshot);
+// Pure shaping step, split out from buildMeetingPressureSignal so the
+// executive-work-design route (the one caller that also needs the raw
+// snapshot's availability to record the org-wide baseline) doesn't have
+// to fetch the same cohort's calendar data twice.
+//
+// daysObserved is the org-wide baseline period (getWorkDesignBaselineDays)
+// - every call site passes the SAME org-wide value, so a team's
+// confidence reflects how long the ORGANISATION has had real signal,
+// not an invented per-team figure nothing actually tracks.
+const shapeMeetingPressureSignal = (snapshot: OrgMeetingLoadSnapshot, uids: string[], threshold: number, daysObserved: number): TeamWorkDesignSignal => {
+  const result = evaluateMeetingPressure({ ...snapshot, threshold });
+  const coveragePercent = uids.length > 0 ? Math.round((snapshot.cohortSize / uids.length) * 100) : 0;
+  const confidence = result.sufficiency.status === 'available'
+    ? computeConfidence({ cohortSize: snapshot.cohortSize, cohortThreshold: threshold, daysObserved, minDaysForFullConfidence: MIN_DAYS_FOR_FULL_CONFIDENCE, coveragePercent })
+    : null;
   return {
     key: 'meeting_pressure',
     label: 'Meeting Pressure',
@@ -8499,7 +8567,14 @@ const buildMeetingPressureSignal = async (db: any, uids: string[], threshold: nu
     sufficiencyStatus: result.sufficiency.status,
     sufficiencyMessage: result.sufficiency.message,
     basis: result.basis,
+    confidence: confidence?.level ?? null,
+    confidenceExplanation: confidence?.explanation ?? null,
   };
+};
+
+const buildMeetingPressureSignal = async (db: any, uids: string[], threshold: number, daysObserved: number): Promise<TeamWorkDesignSignal> => {
+  const snapshot = await computeMeetingLoadSnapshotForCohort(db, uids, threshold);
+  return shapeMeetingPressureSignal(snapshot, uids, threshold, daysObserved);
 };
 
 // "What deserves attention?" - capped at a small, genuinely meaningful
@@ -8996,6 +9071,10 @@ app.get("/api/org/:orgId/team-dashboard", verifyAppCheck, authenticateFirebaseUs
     const memberUids: string[] = org.memberUids || [];
     const memberTeams: Record<string, string> = org.memberTeams || {};
     const consentingUids = await getConsentingMemberUids(db, memberUids);
+    // Read-only - this route never computes the org-wide snapshot itself
+    // (only its own managed teams'), so it must never be the one to
+    // record today's org-wide availability; see getWorkDesignBaselineDays.
+    const baselineDaysObserved = await getWorkDesignBaselineDays(db, orgId);
 
     const teams = await Promise.all(managedTeams.map(async (team) => {
       const teamConsentingUids = consentingUids.filter((uid) => memberTeams[uid] === team);
@@ -9037,7 +9116,7 @@ app.get("/api/org/:orgId/team-dashboard", verifyAppCheck, authenticateFirebaseUs
       // of these consenting members has ALSO connected a live calendar,
       // which is typically smaller) - so this can independently come back
       // insufficient even when the team's overall privacy threshold is met.
-      const workDesignSignals = [await buildMeetingPressureSignal(db, teamConsentingUids, threshold)];
+      const workDesignSignals = [await buildMeetingPressureSignal(db, teamConsentingUids, threshold, baselineDaysObserved)];
       const attention = describeSignalsNeedingAttention(workDesignSignals);
       // A trial already running for this team suppresses the recommendation
       // entirely - a manager who already started one shouldn't be offered
@@ -9331,6 +9410,9 @@ app.get("/api/org/:orgId/hr-dashboard", verifyAppCheck, authenticateFirebaseUser
     }));
 
     const { teamTrends } = await computeTrendHistory(db, orgId, orgSnapshot, teamSnapshots);
+    // Read-only, same as team-dashboard - HR sees the same org-wide
+    // baseline, never writes it (only executive-work-design does).
+    const baselineDaysObserved = await getWorkDesignBaselineDays(db, orgId);
 
     const now = new Date();
     const teams = await Promise.all(Object.entries(teamSnapshots).map(async ([team, snap]) => {
@@ -9350,7 +9432,7 @@ app.get("/api/org/:orgId/hr-dashboard", verifyAppCheck, authenticateFirebaseUser
       // visibility into what's running (activeIntervention) via the
       // Intervention Register, not the power to start one on a team they
       // don't manage.
-      const workDesignSignals = [await buildMeetingPressureSignal(db, teamGroups[team], threshold)];
+      const workDesignSignals = [await buildMeetingPressureSignal(db, teamGroups[team], threshold, baselineDaysObserved)];
       const interventionsSnap = await db.collection("organisations").doc(orgId).collection("work_design_interventions")
         .where("team", "==", team).get();
       const activeIntervention = interventionsSnap.docs
@@ -9400,7 +9482,14 @@ app.get("/api/org/:orgId/executive-work-design", verifyAppCheck, authenticateFir
       return res.json(buildLockedAggregateResponse(sufficiency, { workDesignSignals: [], financialEstimate: null }));
     }
 
-    const workDesignSignals = [await buildMeetingPressureSignal(db, consentingUids, threshold)];
+    // The one place that WRITES the org-wide baseline (see
+    // getWorkDesignBaselineDays) - this route is the only caller that
+    // actually computes the org-wide (not per-team) snapshot, so it's
+    // the only one with a real org-wide "was the signal available today"
+    // fact to record.
+    const orgMeetingLoadSnapshot = await computeMeetingLoadSnapshotForCohort(db, consentingUids, threshold);
+    const baselineDaysObserved = await getWorkDesignBaselineDays(db, orgId, { available: orgMeetingLoadSnapshot.available });
+    const workDesignSignals = [shapeMeetingPressureSignal(orgMeetingLoadSnapshot, consentingUids, threshold, baselineDaysObserved)];
     const costInputs = org.costInputs || null;
     const primarySignal = workDesignSignals[0];
     const financialEstimate = buildFinancialRangeEstimate(costInputs, primarySignal.label, primarySignal.band);

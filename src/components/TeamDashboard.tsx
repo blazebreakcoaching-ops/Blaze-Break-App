@@ -3,6 +3,8 @@ import { motion, AnimatePresence } from 'motion/react';
 import { secureApiFetch } from '../lib/secure-api';
 import { cn } from '../lib/utils';
 import { Users, Lock, Loader2, AlertTriangle, ShieldCheck, ArrowUp, ArrowDown, Minus, HeartPulse, Calendar, Sparkles, FlaskConical } from 'lucide-react';
+import { WorkDesignSignalCard, type WorkDesignSignal as TeamWorkDesignSignal } from './WorkDesignSignalCard';
+import { WorkDesignDemoPreview } from './WorkDesignDemoPreview';
 
 interface ManagerRecommendation {
   signalKey: string;
@@ -32,23 +34,6 @@ const OUTCOME_RATING_OPTIONS: { value: OutcomeRating; label: string }[] = [
   { value: 'created_another_problem', label: 'Created Another Problem' },
   { value: 'stopped_early', label: 'Stopped Early' },
 ];
-
-interface TeamWorkDesignSignal {
-  key: string;
-  label: string;
-  band: 'low' | 'typical' | 'elevated' | 'sustained' | null;
-  bandLabel: string | null;
-  sufficiencyStatus: 'available' | 'insufficient_data' | 'not_connected' | 'stale' | 'demo';
-  sufficiencyMessage: string;
-  basis: string;
-}
-
-const bandBadgeClasses: Record<string, string> = {
-  sustained: 'bg-destructive/10 text-destructive dark:text-[#f87171] border-destructive/20',
-  elevated: 'bg-warning/10 text-[#9a3412] dark:text-warning border-warning/20',
-  typical: 'bg-primary/10 text-primary border-primary/20',
-  low: 'bg-success/10 text-[#166534] dark:text-[#4ade80] border-success/20',
-};
 
 interface TeamIndicator {
   key: string;
@@ -254,9 +239,10 @@ export const TeamDashboard = () => {
               <div className="flex flex-col items-center justify-center p-6 text-center bg-surface dark:bg-surface/50 rounded-xl border border-dashed border-border">
                 <Lock className="w-10 h-10 text-text-muted mb-3" />
                 <h5 className="font-bold text-text-main mb-1">Insufficient Cohort Size</h5>
-                <p className="text-text-muted text-sm max-w-md">
+                <p className="text-text-muted text-sm max-w-md mb-6">
                   {entry.cohortSize} of {entry.threshold} required teammates on this team have opted in to anonymised sharing so far. Aggregate insight only becomes available once enough people have joined in, to keep any one person from being identifiable.
                 </p>
+                <WorkDesignDemoPreview />
               </div>
             ) : (
               <>
@@ -314,21 +300,7 @@ export const TeamDashboard = () => {
                     </h5>
                     <ul className="space-y-2.5">
                       {entry.workDesignSignals.map((signal) => (
-                        <li key={signal.key} className="flex items-center gap-4 p-4 rounded-xl border border-border bg-surface/60 dark:bg-card/40">
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm font-bold text-text-main truncate">{signal.label}</p>
-                            <p className="text-xs text-text-muted mt-0.5">
-                              {signal.band ? signal.basis : signal.sufficiencyMessage}
-                            </p>
-                          </div>
-                          {signal.band ? (
-                            <span className={cn('shrink-0 text-[11px] font-black uppercase tracking-widest px-2.5 py-1 rounded-full border', bandBadgeClasses[signal.band])}>
-                              {signal.bandLabel}
-                            </span>
-                          ) : (
-                            <span className="shrink-0 text-[11px] text-text-muted">not enough data yet</span>
-                          )}
-                        </li>
+                        <WorkDesignSignalCard key={signal.key} signal={signal} />
                       ))}
                     </ul>
                     {entry.activeIntervention ? (

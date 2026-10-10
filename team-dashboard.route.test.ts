@@ -168,7 +168,10 @@ describe('GET /api/org/:orgId/team-dashboard — Work Design Signals (Meeting Pr
     expect(team.locked).toBe(false);
     const signal = team.workDesignSignals.find((s: any) => s.key === 'meeting_pressure');
     expect(signal.band).toBeNull();
-    expect(signal.sufficiencyStatus).toBe('insufficient_data');
+    // Nobody has connected a calendar at all (not merely "not enough, but
+    // some have") - this is the more specific 'not_connected' status
+    // PR11 wires up, distinct from 'stale'/'insufficient_data'.
+    expect(signal.sufficiencyStatus).toBe('not_connected');
     expect(signal.sufficiencyMessage).toBeTruthy();
     expect(team.attention).toEqual([]);
   });

@@ -17,7 +17,7 @@ vi.mock('twilio', () => ({ default: () => ({ messages: { create: vi.fn() } }) })
 
 import request from 'supertest';
 import { app } from './server';
-import { seedDoc, resetStore } from './test/fake-firestore';
+import { seedDoc, resetStore, allPaths } from './test/fake-firestore';
 
 const ORG = 'org_1';
 const auth = (uid: string) => ({ Authorization: `Bearer ${uid}` });
@@ -123,5 +123,50 @@ describe('GET /api/org/:orgId/executive-work-design — financial range estimate
     expect(res.body.financialEstimate).not.toBeNull();
     expect(res.body.financialEstimate.lowEstimate).toBeLessThan(res.body.financialEstimate.highEstimate);
     expect(res.body.financialEstimate.assumptionNote).toMatch(/Illustrative only/);
+  });
+});
+
+describe('GET /api/org/:orgId/executive-work-design — baseline period, confidence, and stale handling', () => {
+  const seedFreshCohort = (updatedAt: string) => {
+    seedOrg(ORG, { adminUids: ['owner_1'], memberUids: ['owner_1', 'a1', 'a2', 'a3'], privacyThreshold: 3 });
+    for (const uid of ['a1', 'a2', 'a3']) {
+      consenting(uid);
+      seedDoc(`users/${uid}/nova_permissions/current`, { allowCalendarSignals: true });
+      seedDoc(`users/${uid}/live_signals/calendar`, { updatedAt, totalMeetingHours: 10, backToBackCount: 1, eveningMeetingCount: 0, weekendMeetingCount: 0 });
+    }
+  };
+
+  it('attaches a real confidence level once the signal is available, and records today\'s org-wide baseline exactly once even across two calls', async () => {
+    seedFreshCohort(new Date().toISOString());
+
+    const res1 = await request(app).get(`/api/org/${ORG}/executive-work-design`).set(auth('owner_1'));
+    expect(res1.body.workDesignSignals[0].confidence).not.toBeNull();
+    expect(res1.body.workDesignSignals[0].confidenceExplanation).toBeTruthy();
+
+    const historyAfterFirst = allPaths().filter((p) => p.startsWith(`organisations/${ORG}/work_design_signal_history/`));
+    expect(historyAfterFirst).toHaveLength(1);
+
+    await request(app).get(`/api/org/${ORG}/executive-work-design`).set(auth('owner_1'));
+    const historyAfterSecond = allPaths().filter((p) => p.startsWith(`organisations/${ORG}/work_design_signal_history/`));
+    expect(historyAfterSecond).toHaveLength(1);
+  });
+
+  it('a baseline first observed available ~30 days ago is reflected as a real multi-week daysObserved, not just "today"', async () => {
+    seedFreshCohort(new Date().toISOString());
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+    seedDoc(`organisations/${ORG}/work_design_signal_history/old`, { recordedAt: thirtyDaysAgo, meetingPressureAvailable: true });
+
+    const res = await request(app).get(`/api/org/${ORG}/executive-work-design`).set(auth('owner_1'));
+    expect(res.body.workDesignSignals[0].confidenceExplanation).toMatch(/(29|30) days/);
+  });
+
+  it('reports the stale-specific message when enough members connected a calendar before but none have synced within the freshness window', async () => {
+    const staleIso = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+    seedFreshCohort(staleIso);
+
+    const res = await request(app).get(`/api/org/${ORG}/executive-work-design`).set(auth('owner_1'));
+    expect(res.body.workDesignSignals[0].sufficiencyStatus).toBe('stale');
+    expect(res.body.workDesignSignals[0].sufficiencyMessage).toMatch(/synced/);
+    expect(res.body.workDesignSignals[0].confidence).toBeNull();
   });
 });

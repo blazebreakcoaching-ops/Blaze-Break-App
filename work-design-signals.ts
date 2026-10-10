@@ -125,8 +125,17 @@ export const computeMeetingPressureBand = (input: MeetingPressureInput): { band:
 // one entry point server.ts/components should actually call, so the gate
 // can never accidentally be skipped by a caller that only has the band
 // function in view.
+//
+// staleCount/threshold are optional so existing minimal callers (and
+// existing tests) keep working unchanged; when both are supplied, an
+// unavailable result distinguishes "nobody has connected a calendar at
+// all" (not_connected) from "enough people HAVE connected, but their
+// data is too old to use" (stale) - the type already declared this
+// distinction (DataSufficiencyStatus) but nothing ever produced it,
+// which meant a manager reconnecting a calendar and a manager who'd
+// never been asked to saw the exact same message.
 export const evaluateMeetingPressure = (
-  snapshot: { available: boolean; cohortSize: number } & Partial<MeetingPressureInput>,
+  snapshot: { available: boolean; cohortSize: number; staleCount?: number; threshold?: number } & Partial<MeetingPressureInput>,
 ): SignalResult => {
   if (!snapshot.available
     || typeof snapshot.avgMeetingHoursPerWeek !== 'number'
@@ -134,6 +143,21 @@ export const evaluateMeetingPressure = (
     || typeof snapshot.pctWithEveningMeetings !== 'number'
     || typeof snapshot.pctWithWeekendMeetings !== 'number'
   ) {
+    const staleCount = snapshot.staleCount ?? 0;
+    if (snapshot.cohortSize === 0 && staleCount === 0) {
+      return {
+        band: null,
+        sufficiency: dataUnavailable('not_connected', 'No consenting members have connected a calendar yet.'),
+        basis: '',
+      };
+    }
+    if (staleCount > 0 && snapshot.threshold != null && snapshot.cohortSize + staleCount >= snapshot.threshold && snapshot.cohortSize < snapshot.threshold) {
+      return {
+        band: null,
+        sufficiency: dataUnavailable('stale', `${staleCount} member${staleCount === 1 ? '' : 's'} connected a calendar before, but ${staleCount === 1 ? "hasn't" : "haven't"} synced in over 2 weeks - treated as missing, not shown as an old snapshot.`),
+        basis: '',
+      };
+    }
     return {
       band: null,
       sufficiency: dataUnavailable('insufficient_data', 'Not enough consenting members have connected their calendar yet for this to be shown safely.'),
@@ -196,3 +220,43 @@ export const computeConfidence = (input: ConfidenceInput): { level: WorkDesignCo
 
   return { level, explanation };
 };
+
+// A full confidence window is 28 days - the same month-over-month
+// convention server.ts's risk-trend history already uses (comparing
+// against the snapshot closest to 28 days back), so "how long has this
+// org had real signal" and "how far back do we compare trends" mean the
+// same thing everywhere, rather than two different arbitrary windows.
+export const MIN_DAYS_FOR_FULL_CONFIDENCE = 28;
+
+// ---------- Demo preview ----------
+//
+// Before PR11, a locked ("not enough consenting members yet") Work
+// Design view showed nothing but a bare lock screen - an org evaluating
+// the product, or one still ramping up opt-ins, had no way to see what
+// it would actually show them. DataSufficiencyStatus already declared a
+// 'demo' status for exactly this (see its own comment above), but
+// nothing ever produced it. This is the one canonical demo fixture every
+// WDI view's "preview with sample data" toggle renders - never a
+// bespoke hand-written card per view, so a demo card can never silently
+// diverge from what the real engine would actually produce.
+export const DEMO_MEETING_PRESSURE_SIGNAL: SignalResult = {
+  band: 'elevated',
+  sufficiency: dataUnavailable('demo', 'Sample data - connect real calendars to replace this with your organisation\'s own signal.'),
+  basis: 'Averaging 22h of meetings/week across the contributing cohort, 9 back-to-back/week, 40% with evening meetings.',
+};
+
+// Ready-shaped for the UI's WorkDesignSignalCard - the exact same shape
+// server.ts's buildMeetingPressureSignal returns, so a frontend "preview
+// with sample data" toggle renders through the identical card component
+// a real signal uses, never a bespoke demo-only layout.
+export const DEMO_WORK_DESIGN_SIGNALS = [{
+  key: 'meeting_pressure',
+  label: 'Meeting Pressure',
+  band: DEMO_MEETING_PRESSURE_SIGNAL.band,
+  bandLabel: DEMO_MEETING_PRESSURE_SIGNAL.band ? SIGNAL_BAND_LABELS[DEMO_MEETING_PRESSURE_SIGNAL.band] : null,
+  sufficiencyStatus: DEMO_MEETING_PRESSURE_SIGNAL.sufficiency.status,
+  sufficiencyMessage: DEMO_MEETING_PRESSURE_SIGNAL.sufficiency.message,
+  basis: DEMO_MEETING_PRESSURE_SIGNAL.basis,
+  confidence: null as WorkDesignConfidence | null,
+  confidenceExplanation: null as string | null,
+}];
