@@ -499,7 +499,7 @@ Nova (LLM)
 Firestore + durable queue + append-only audit store
 ```
 
-**[CONFIRMED]** `guardian-policy.ts` contains no I/O, following the existing `nova-tools.ts` / `org-risk-trend.ts` pattern in this repo, so every eligibility, cooldown, and state-transition rule is unit-testable without a live Firestore.
+**[CONFIRMED]** `guardian-policy.ts` contains no I/O, following the existing `nova-tools.ts` / `nova-manager-coach.ts` pattern in this repo, so every eligibility, cooldown, and state-transition rule is unit-testable without a live Firestore.
 
 ### E.2 Data model
 
@@ -778,7 +778,7 @@ Genuinely reusable, verified present:
 | Guardian contact model | `SupportContact` in `types.ts` | Extend → `TrustedContact` |
 | E.164 validation | `NovaGuardianRelay.tsx` | Move to `guardian-policy.ts` |
 | Manual per-contact alert send | `NovaGuardianRelay.tsx` `sendRealAlert` | Foundation for Tier 1 |
-| Pure-logic + unit-test pattern | `nova-tools.ts`, `org-risk-trend.ts` | Model for `guardian-policy.ts` |
+| Pure-logic + unit-test pattern | `nova-tools.ts`, `nova-manager-coach.ts` | Model for `guardian-policy.ts` |
 | Field-validated Firestore rules | `firestore.rules` | Model for new collections |
 | CI enforcement | `.github/workflows/ci.yml` | Hosts the §E.7 copy-safety test |
 
@@ -955,3 +955,28 @@ The recommendation above was accepted. As implemented:
 2. **One deliberate exception — the wire format.** The persisted Firestore field names and the JSON API keys still say `moodConcern` / `climateConcern` / `overallConcern` / `teamConcerns`. This is intentional, **not** an incomplete rename: those names are the on-disk schema of every `risk_trend_history` document already written for any org using the dashboard. Renaming them in place would silently break trend continuity (the month-over-month comparison reads prior snapshots by those keys). **Unifying the wire format to "strain" therefore requires a data migration, not a find-and-replace, and is deliberately deferred until someone chooses to do that migration.** Until then: display and compute say *strain*; storage and API say *concern*. Both `server.ts` and `org-risk-trend.ts` carry inline comments stating this so the split is not mistaken for an oversight.
 
 3. **Architectural decision recorded (done).** `computeStrainSnapshotForCohort` in `server.ts` carries an explicit comment that the snapshot is aggregate-only and must never be computed or exposed for an individual, naming the k-anonymity gate in the route handler (which drops any org or team cohort below the configured threshold before a snapshot is ever computed) as the boundary that enforces it. Recommendation 3 (an automated check that the aggregation path never joins to individual identity) is **not yet implemented** and remains open.
+
+### Final resolution: retired, not just renamed (Lane Separation Remediation)
+
+The keep-and-rename resolution above was later superseded. A separate
+privacy review (the "Lane Separation Remediation") drew a sharper line
+than §0.1's vocabulary check alone: regardless of what the aggregate was
+called, reading `mood_pulses`/`body_checkins`/`climate_survey_responses`
+at all from any organisation-facing route was itself the violation,
+because those collections are Private Recovery Vault data ("Lane A")
+and no org-facing route should ever touch them, aggregate or not.
+
+"Wellbeing Concern Trend" / "Team Climate Trend" (the `GET
+/api/org/:orgId/risk-trend` route), the `GET /api/org/:orgId/climate`
+route, and the parallel mood/climate computation inside
+`team-dashboard`/`hr-dashboard`/`manager-coach` were all retired
+entirely rather than renamed again. `computeStrainSnapshotForCohort`,
+`computeEngagementRate`, and `org-risk-trend.ts` (the module this
+appendix's resolution describes above) no longer exist in the codebase.
+Every org-facing dashboard and Nova Manager Coach surface now computes
+exclusively from Lane B organisation work data (calendar/task metadata,
+the Work Design Debt Ledger, structural intervention trials) - never
+from any individual's self-reported mood, body, or climate-survey
+response, aggregate or otherwise. Recommendation 3 above is moot: there
+is no remaining aggregation path from individual wellbeing data to join
+identity to, because no org-facing route reads that data at all.

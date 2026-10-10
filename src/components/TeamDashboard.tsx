@@ -53,11 +53,11 @@ interface TeamEntry {
   activeIntervention?: ActiveIntervention | null;
 }
 
-// The manager's own view of their team(s): aggregate, anonymised
-// strain/engagement signals only - never anything at the level of a named
+// The manager's own view of their team(s): real, aggregate, anonymised
+// Work Design Signals only - never anything at the level of a named
 // person. Reuses the exact visual vocabulary OrgDashboard.tsx already
-// established (severity badges, direction colors/icons, locked-state
-// panel) so this reads as the same product, not a different one.
+// established (the locked-state panel) so this reads as the same
+// product, not a different one.
 export const TeamDashboard = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');

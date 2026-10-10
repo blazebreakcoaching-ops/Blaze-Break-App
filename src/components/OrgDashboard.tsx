@@ -73,7 +73,7 @@ export const OrgDashboard = ({ onNavigate }: { onNavigate?: (tab: string) => voi
   } | null>(null);
   const [suggestions, setSuggestions] = useState<{ id: string; message: string }[]>([]);
   const [suggestionsLocked, setSuggestionsLocked] = useState(false);
-  // Lets the Manager Action Library cards (climate tab) ask Nova a real
+  // Lets the Manager Action Library cards (pulse tab) ask Nova a real
   // question on the admin's behalf instead of being a static, unclickable
   // reference list - see OrgManagerCoachChat's seedMessage prop.
   const [managerCoachSeed, setManagerCoachSeed] = useState<string | null>(null);

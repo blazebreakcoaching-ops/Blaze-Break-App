@@ -291,9 +291,14 @@ individual signal becomes recoverable by subtracting Team A's numbers
 from the org-wide total - a classic differencing attack. This is now
 closed: a team is only included in the breakdown if **both** it and its
 complement (everyone else in the consenting cohort) independently clear
-the threshold. Fixed in the `/risk-trend` handler in `server.ts`, with
-regression tests in `org-risk-trend.route.test.ts` under
-`describe('differencing / re-identification attack via team composition')`.
+the threshold. Fixed once, centrally, in `computeQualifyingTeamGroups`
+(`org-team-management.ts`) - the single function every multi-team
+aggregate view in this codebase shares rather than reimplementing - with
+regression tests in `org-team-management.test.ts`. (The original fix
+shipped in the `/risk-trend` handler, which has since been retired
+entirely in the Lane Separation Remediation; the protection itself moved
+to this shared function before that happened, so no regression
+coverage was lost.)
 
 **This fix does not fully solve the general problem.** It closes the
 specific, demonstrated "near-total team" attack, but does not defend

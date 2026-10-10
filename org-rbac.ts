@@ -1,6 +1,6 @@
 // Pure logic for Blaze Break Enterprise's organisation-level RBAC, kept
-// I/O-free and unit-tested - same pattern as org-risk-trend.ts and every
-// other pure logic module in this codebase. server.ts is responsible for
+// I/O-free and unit-tested - same pattern as nova-manager-coach.ts and
+// every other pure logic module in this codebase. server.ts is responsible for
 // reading the actual member record from Firestore and handing the role
 // here; nothing in this file talks to a database.
 //

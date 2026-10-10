@@ -91,7 +91,9 @@ employee).
   found and fixed — a team is now only shown if **both** it and its
   complement independently clear the threshold
   (`docs/PRODUCT_SAFETY_PRIVACY.md` §5, regression-tested in
-  `org-risk-trend.route.test.ts`).
+  `org-team-management.test.ts`'s `computeQualifyingTeamGroups` unit
+  tests - the shared function every multi-team aggregate view now
+  calls, rather than reimplementing this check per route).
 - **Residual risk, honestly stated, not glossed over**: this fix closes
   the specific attack found. It does **not** provide a formally complete
   k-anonymity guarantee against a slower attack built from many

@@ -83,10 +83,10 @@ guard on both downgrade and deletion, and non-owner rejection.
 - `user-data-endpoints.route.test.ts` — the actual export/delete routes
   end-to-end: correct scoping to the caller only, `audit_logs`
   deliberately surviving deletion, another user's data never touched.
-- `org-risk-trend.test.ts` / `.route.test.ts` — the k-anonymity/cohort-
-  size gates on aggregate org dashboards, and the differencing-attack
-  protection (repeated reads across overlapping cohorts can't
-  reconstruct an individual's data).
+- `org-team-management.test.ts` — the k-anonymity/cohort-size gates on
+  aggregate org dashboards, and the differencing-attack protection
+  (repeated reads across overlapping cohorts can't reconstruct an
+  individual's data).
 - `crisis-region.test.ts` — region-specific crisis-resource correctness
   (a safety-adjacent, not privacy, concern, grouped here since it's
   small and standalone).
@@ -145,10 +145,10 @@ user-authorised only:
   directives on every response.
 - `notification-router.test.ts`, `positive-reinforcement.test.ts` /
   `.route.test.ts`, `workplace-governance.route.test.ts`,
-  `one-less-thing.route.test.ts`, `org-leading-indicators.test.ts`,
-  `archetype-scoring.test.ts`, `billing-adapter.test.ts`,
-  `weekly-goal-tracker.test.ts` — feature-correctness suites; included
-  in the total test count but not primarily security-relevant.
+  `one-less-thing.route.test.ts`, `archetype-scoring.test.ts`,
+  `billing-adapter.test.ts`, `weekly-goal-tracker.test.ts` —
+  feature-correctness suites; included in the total test count but not
+  primarily security-relevant.
 - `brevo-templates.test.ts`, `src/lib/feedback-format.test.ts`,
   `src/lib/paletteMatch.test.ts` — pure-logic/UI-adjacent tests, same note
   as above.

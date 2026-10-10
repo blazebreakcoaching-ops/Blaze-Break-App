@@ -354,8 +354,8 @@ export const FEATURE_REGISTRY: Record<string, FeatureDefinition> = {
   },
   team_climate_dashboard: {
     id: 'team_climate_dashboard',
-    name: 'Team Climate Dashboard',
-    purpose: 'Managers/HR view grouped morale/work-design trends',
+    name: 'Team Work Design Dashboard',
+    purpose: 'Managers/HR view grouped structural Work Design Signals',
     section: 'Workplace',
     status: 'active',
     riskLevel: 'medium',

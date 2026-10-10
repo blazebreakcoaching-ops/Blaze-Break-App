@@ -3,8 +3,8 @@
 // numeric figure reaches a manager/HR/executive view. Pure functions only
 // (no Firestore, no React) - this module decides WHETHER a cohort is safe
 // to report on; the actual per-route aggregation math stays in server.ts,
-// which already does real work here (see computeStrainSnapshotForCohort,
-// computeMeetingLoadSnapshotForCohort) that this file does not duplicate.
+// which already does real work here (see computeMeetingLoadSnapshotForCohort)
+// that this file does not duplicate.
 //
 // This formalises a k-anonymity check pattern that already existed,
 // correctly, scattered across roughly a dozen call sites in server.ts

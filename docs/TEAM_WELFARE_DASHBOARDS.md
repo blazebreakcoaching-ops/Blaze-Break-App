@@ -1,8 +1,8 @@
 # Manager & HR team-welfare dashboards
 
 Part of the Enterprise backend (depends on the role/audit foundation in
-`docs/ENTERPRISE_RBAC.md` and the aggregate math in `org-risk-trend.ts`/
-`org-leading-indicators.ts`). This feature started as a product pitch —
+`docs/ENTERPRISE_RBAC.md` and the aggregate math in `work-design-signals.ts`/
+`org-team-management.ts`). This feature started as a product pitch —
 a manager sees their team's aggregate stress and gets nudged toward a
 supportive check-in; HR is looped in for duty-of-care escalation. The
 version that shipped is deliberately narrower than the first draft of
@@ -28,10 +28,17 @@ That was not built, on purpose. Three real problems with it:
    recording employee behaviour, triggered regardless of the employer's
    stated intent — a real gate on EU rollout, not a footnote.
 
-What shipped instead: `engagementRate` is a **cohort percentage** ("62%
-of your team had any activity in the last 7 days"), computed the exact
-same way `GET /api/org/:orgId/dashboard` already computes it org-wide —
-never a named list of who did or didn't use the app.
+What shipped instead carries no activity-tracking metric at all, named
+or aggregate: a manager and HR see only real, structural Work Design
+Signals (Meeting Pressure today - see `work-design-signals.ts`),
+computed from calendar/task metadata, Work Design Debt, and
+intervention status - never whether, or how much, anyone used the app.
+(An earlier version of this surface computed a mood/climate-survey
+"concern" trend across the team instead; that was retired in the Lane
+Separation Remediation, since it read Private Recovery Vault data no
+organisation-facing route should ever touch - see the Lane Separation
+Remediation PR history, and the "Lane A"/"Lane B" comments in server.ts
+immediately above `GET /api/org/:orgId/team-dashboard`.)
 
 The pitch's other half — "HR holds the manager accountable" — was also
 reframed. A metric a manager is *evaluated against* creates a direct
@@ -55,19 +62,19 @@ never a score computed on the manager.
   role. Assigned via `GET`/`POST /api/org/:orgId/hr-viewers`.
 - `organisations/{orgId}/team_escalation_acks/{id}` — one document per
   manager acknowledgment: `team, acknowledgedBy, acknowledgedByEmail,
-  note (optional, ≤500 chars), overallConcernAtAck, createdAt`.
+  note (optional, ≤500 chars), createdAt`.
 
 ## Per-team k-anonymity — the same rule everywhere, deliberately
 
 `org-team-management.ts`'s `computeQualifyingTeamGroups` is the single
 function that decides which teams are ever allowed to show aggregate
 data: consenting members grouped by `memberTeams` label, kept only if the
-group clears `org.privacyThreshold` (default 5) — the exact same rule
-`GET /api/org/:orgId/risk-trend` already used, now shared rather than
-reimplemented. A team under threshold is never shown as "locked" in a
-multi-team list (risk-trend, the HR dashboard) — it's silently absent,
-since naming a small team as locked would itself reveal more about its
-size than any of this should expose.
+group clears `org.privacyThreshold` (default 5) — the same rule every
+multi-team aggregate view in this codebase shares rather than
+reimplements (today, the HR dashboard). A team under threshold is never
+shown as "locked" in a multi-team list — it's silently absent, since
+naming a small team as locked would itself reveal more about its size
+than any of this should expose.
 
 **One deliberate exception**: a manager's own single-team view
 (`GET /api/org/:orgId/team-dashboard`) *does* show an explicit `locked:
@@ -109,15 +116,15 @@ Every route follows the existing error-handling idiom
 (`Forbidden` → 403, `not found` → 404, else 500) and audit-logs its
 mutations via the existing `logOrgAuditAction`.
 
-## Nova's nudge
+## The "consider a team check-in" nudge
 
-The "consider a team check-in" banner reuses `org-leading-indicators.ts`
-exactly as it already existed — `buildPrimaryIndicators`/
-`sortByAttention` decide whether the top-attention signal is `elevated`
-or `worsening`; only then does a nudge appear. It is a dashboard banner,
-not a push notification or email — computed when the manager opens their
-dashboard, matching how Leading Indicators already worked (reactive, not
-proactive) rather than adding new notification-delivery infrastructure.
+`describeSignalsNeedingAttention` (server.ts) decides whether the banner
+appears: it filters the team's real Work Design Signals down to those
+reading `elevated` or `sustained`, caps the list at 3 (the "never 14
+recommendations" doctrine applied to signals, not just Nova's copy), and
+only then does a nudge appear. It is a dashboard banner, not a push
+notification or email — computed when the manager opens their dashboard,
+not via any new notification-delivery infrastructure.
 
 ## What a manager and HR do NOT see, ever
 
@@ -144,6 +151,3 @@ proactive) rather than adding new notification-delivery infrastructure.
   over any individual team's count, follow-up status flipping from
   "no_recent_acknowledgment" to "acknowledged" once a real ack is logged,
   and cross-org isolation.
-- `org-risk-trend.route.test.ts` — unchanged assertions, confirming the
-  `computeQualifyingTeamGroups`/`computeTrendHistory` extractions this
-  feature required were pure refactors of already-shipped behaviour.

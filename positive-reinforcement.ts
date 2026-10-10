@@ -2,7 +2,7 @@
 // prompts to an org admin/manager for the Blaze Bright Moments wall
 // (OrgDashboardMoments.tsx / POST /api/org/:orgId/recognition).
 //
-// Deliberately conservative scope, matching org-risk-trend.ts's own
+// Deliberately conservative scope, matching nova-manager-coach.ts's own
 // "transparent, explainable, not a trained model" posture. Nothing here
 // decides WHO to recognise or posts anything on anyone's behalf - it only
 // ever suggests text for a human to review, edit, or discard before the

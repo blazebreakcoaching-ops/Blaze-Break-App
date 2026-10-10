@@ -1,5 +1,5 @@
 // Employee Trust Mirror (Work Design Pulse PR2) - pure logic, no I/O, same
-// pattern as org-rbac.ts/org-leading-indicators.ts. Computes what an
+// pattern as org-rbac.ts/nova-manager-coach.ts. Computes what an
 // organisation can and cannot see from REAL active configuration, never a
 // static marketing-style promise. The "cannot see" list is architectural,
 // not configurable: nothing in server.ts's org-facing routes ever reads

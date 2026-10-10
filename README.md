@@ -43,7 +43,7 @@ automatically rather than left to whoever's committing to remember.
   tool-use/voice endpoints, org dashboard aggregation, Twilio, and more
 - `src/App.tsx` - the main frontend shell and most top-level screens
 - `src/components/` - individual features and screens
-- `nova-tools.ts` / `org-risk-trend.ts` - pure, unit-tested logic kept
+- `nova-tools.ts` / `nova-manager-coach.ts` - pure, unit-tested logic kept
   separate from server.ts so it's testable without live Firestore
 - `firestore.rules` - real, field-validated security rules (not just
   auth checks) for the collections the client can read/write directly

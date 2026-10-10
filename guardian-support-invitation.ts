@@ -2,7 +2,7 @@
 // OPTIONAL way for Nova to offer contacting a trusted person, distinct
 // from Tier 1 (the always-available one-tap button in guardian-alert.ts).
 // Kept free of Firestore/network I/O, same pattern as guardian-alert.ts,
-// nova-tools.ts, org-risk-trend.ts.
+// nova-tools.ts, nova-manager-coach.ts.
 //
 // This is NOT automated crisis detection, risk scoring, or autonomous
 // messaging. See docs/GUARDIAN_SUPPORT_SPEC.md §0.1, which this module is

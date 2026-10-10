@@ -1,6 +1,6 @@
 // Pure logic for the Weekly Recovery Goal Tracker ("System Habit OS"), kept
 // I/O-free and unit-tested - same pattern as the other logic modules in this
-// codebase (guardian-alert.ts, gad7.ts, org-risk-trend.ts).
+// codebase (guardian-alert.ts, gad7.ts, nova-manager-coach.ts).
 //
 // This restores a feature that existed in the original AI Studio prototype
 // this project was uploaded from, but never made it into this repository (a

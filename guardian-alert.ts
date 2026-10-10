@@ -1,6 +1,6 @@
 // Pure logic for Guardian Support Tier 1 (docs/GUARDIAN_SUPPORT_SPEC.md),
 // kept free of Firestore/Twilio I/O so it's genuinely unit-testable without
-// a live backend - same reasoning as nova-tools.ts and org-risk-trend.ts.
+// a live backend - same reasoning as nova-tools.ts and nova-manager-coach.ts.
 //
 // Every function here is deterministic and makes no judgement about a
 // user's state. Per the non-negotiable safety constraint governing this
