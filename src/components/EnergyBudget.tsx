@@ -269,10 +269,14 @@ export const EnergyBudgetTool = ({
       const daysAgo = 6 - i;
       const date = new Date(now.getTime() - daysAgo * 24 * 60 * 60 * 1000);
       const dateStr = date.toISOString().split('T')[0];
-      const dayTasks = tasks.filter(t => t.createdAt?.startsWith(dateStr));
+      // Excludes dropped tasks and applies each task's action-based
+      // reduction, matching netLoad/energyDelta above - otherwise this
+      // chart would double-count load the user already handled and flag
+      // days as overloaded that the real capacity figures don't.
+      const dayTasks = tasks.filter(t => t.createdAt?.startsWith(dateStr) && t.action !== 'drop');
       const byType = { Executive: 0, Social: 0, Emotional: 0, Physical: 0 };
-      dayTasks.forEach(t => { byType[t.type as keyof typeof byType] = (byType[t.type as keyof typeof byType] || 0) + t.cost; });
-      const total = dayTasks.reduce((sum, t) => sum + t.cost, 0);
+      dayTasks.forEach(t => { byType[t.type as keyof typeof byType] = (byType[t.type as keyof typeof byType] || 0) + taskNetValue(t); });
+      const total = dayTasks.reduce((sum, t) => sum + taskNetValue(t), 0);
       return {
         day: date.toLocaleDateString('en-US', { weekday: 'short' }),
         ...byType,

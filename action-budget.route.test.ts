@@ -118,3 +118,52 @@ describe('POST /api/org/:orgId/work-design-interventions — Organisational Acti
     expect(second.status).toBe(200);
   });
 });
+
+describe('PATCH /api/org/:orgId/work-design-interventions/:id/status — Organisational Action Budget enforcement', () => {
+  it('refuses to reactivate a completed intervention via the status route once back at budget', async () => {
+    seedOrg(ORG, {
+      adminUids: ['owner_1'],
+      memberUids: ['owner_1'],
+      actionBudget: { maxConcurrentActiveInterventions: 1 },
+    });
+
+    const first = await createIntervention('Team A', 'owner_1');
+    expect(first.status).toBe(200);
+    await request(app).patch(`/api/org/${ORG}/work-design-interventions/${first.body.intervention.id}/outcome`).set(auth('owner_1')).send({ outcomeRating: 'useful' });
+
+    const second = await createIntervention('Team B', 'owner_1');
+    expect(second.status).toBe(200);
+
+    // Budget is back at 1/1 (second is active, first completed). Reactivating
+    // the first via the generic status route must be refused - otherwise an
+    // org at its ceiling could stop/complete a trial (freeing nothing a
+    // budget check would have counted) and reactivate any number of old
+    // interventions to silently exceed the configured limit.
+    const reactivate = await request(app).patch(`/api/org/${ORG}/work-design-interventions/${first.body.intervention.id}/status`).set(auth('owner_1')).send({ status: 'active' });
+    expect(reactivate.status).toBe(400);
+  });
+
+  it('allows a status change that does not increase the active count', async () => {
+    seedOrg(ORG, {
+      adminUids: ['owner_1'],
+      memberUids: ['owner_1'],
+      actionBudget: { maxConcurrentActiveInterventions: 1 },
+    });
+    const first = await createIntervention('Team A', 'owner_1');
+    expect(first.status).toBe(200);
+    const stop = await request(app).patch(`/api/org/${ORG}/work-design-interventions/${first.body.intervention.id}/status`).set(auth('owner_1')).send({ status: 'stopped' });
+    expect(stop.status).toBe(200);
+  });
+
+  it('allows moving between two active statuses (trialling -> active) since it never increases the count', async () => {
+    seedOrg(ORG, {
+      adminUids: ['owner_1'],
+      memberUids: ['owner_1'],
+      actionBudget: { maxConcurrentActiveInterventions: 1 },
+    });
+    const first = await createIntervention('Team A', 'owner_1');
+    expect(first.status).toBe(200);
+    const promote = await request(app).patch(`/api/org/${ORG}/work-design-interventions/${first.body.intervention.id}/status`).set(auth('owner_1')).send({ status: 'active' });
+    expect(promote.status).toBe(200);
+  });
+});

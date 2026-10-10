@@ -81,6 +81,8 @@ export interface StatusTransitionInput {
 export interface ExistingWorkDesignDebt {
   status: WorkDesignDebtStatus;
   ownerUid: string | null;
+  team?: string;
+  signalKey?: string;
 }
 
 // Whether a linked intervention's own recorded outcome is strong enough to
@@ -94,6 +96,14 @@ export const validateStatusTransition = (
   existing: ExistingWorkDesignDebt,
   input: unknown,
   linkedInterventionOutcomeRating: string | null | undefined,
+  // The linked intervention's own team/signalKey, when the caller looked
+  // it up - optional so every existing caller/test that only cares about
+  // the outcome-rating rule above is unaffected. When given, enforces
+  // that the change being pointed at as "the fix" is actually the one
+  // relevant to THIS debt item, not an unrelated successful intervention
+  // for a different team or signal, which would satisfy the no-coaching-
+  // tolerance rule in letter but not intent.
+  linkedIntervention?: { team: string; signalKey: string } | null,
 ): ValidationResult => {
   if (!input || typeof input !== 'object') {
     return { valid: false, error: 'A status transition object is required.' };
@@ -111,6 +121,9 @@ export const validateStatusTransition = (
     }
     if (!outcomeCanResolveDebt(linkedInterventionOutcomeRating)) {
       return { valid: false, error: 'The linked intervention must have a recorded outcome of "useful" or "partly_useful" before this debt item can be marked resolved.' };
+    }
+    if (linkedIntervention && (linkedIntervention.team !== existing.team || linkedIntervention.signalKey !== existing.signalKey)) {
+      return { valid: false, error: "The linked intervention must be for this debt item's own team and signal - resolving against an unrelated change is not a real fix." };
     }
   }
   return { valid: true };

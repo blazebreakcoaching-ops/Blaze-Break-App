@@ -32,6 +32,7 @@ export const RuminationFurnace = ({ onCleared }: { onCleared?: () => void }) => 
   const [signalFallback, setSignalFallback] = useState(false);
   const [hypothesis, setHypothesis] = useState<string | null>(null);
   const [signalRewrite, setSignalRewrite] = useState('');
+  const [signalConfirmAnswer, setSignalConfirmAnswer] = useState<SignalConfirmation | null>(null);
 
   // Say What I Mean
   const [reframeLoading, setReframeLoading] = useState(false);
@@ -84,6 +85,7 @@ export const RuminationFurnace = ({ onCleared }: { onCleared?: () => void }) => 
     setSignalFallback(false);
     setHypothesis(null);
     setSignalRewrite('');
+    setSignalConfirmAnswer(null);
     setReframeLoading(false);
     setReframeFallback(false);
     setReframe(null);
@@ -151,7 +153,7 @@ export const RuminationFurnace = ({ onCleared }: { onCleared?: () => void }) => 
   };
 
   const handleSignalConfirm = async (answer: SignalConfirmation) => {
-    if (answer === 'rewrite') return; // reveals the rewrite box instead of finishing
+    if (answer === 'rewrite') { setSignalConfirmAnswer('rewrite'); return; } // reveals the rewrite box instead of finishing
     if (shouldKeepNovaPhrasing(answer) && hypothesis && auth.currentUser) {
       await recordRediscoveryClue(auth.currentUser.uid, 'rumination_furnace', 'Keep the Signal - the part that still matters', hypothesis);
     }
@@ -309,17 +311,30 @@ export const RuminationFurnace = ({ onCleared }: { onCleared?: () => void }) => 
                 {!signalLoading && hypothesis && (
                   <div className="space-y-4">
                     <p className="text-text-main font-medium text-lg">"{hypothesis}"</p>
-                    <div className="flex flex-wrap gap-2">
-                      {SIGNAL_CONFIRMATION_OPTIONS.map((opt) => (
-                        <button
-                          key={opt.id}
-                          onClick={() => handleSignalConfirm(opt.id)}
-                          className="px-3 py-1.5 rounded-lg border border-border text-xs font-bold text-text-muted hover:text-text-main hover:border-primary/40 transition-colors"
-                        >
-                          {opt.label}
-                        </button>
-                      ))}
-                    </div>
+                    {signalConfirmAnswer !== 'rewrite' && (
+                      <div className="flex flex-wrap gap-2">
+                        {SIGNAL_CONFIRMATION_OPTIONS.map((opt) => (
+                          <button
+                            key={opt.id}
+                            onClick={() => handleSignalConfirm(opt.id)}
+                            className="px-3 py-1.5 rounded-lg border border-border text-xs font-bold text-text-muted hover:text-text-main hover:border-primary/40 transition-colors"
+                          >
+                            {opt.label}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    {signalConfirmAnswer === 'rewrite' && (
+                      <div className="space-y-2">
+                        <textarea
+                          value={signalRewrite}
+                          onChange={(e) => setSignalRewrite(e.target.value)}
+                          placeholder="The part that still matters is..."
+                          className="w-full h-24 bg-white dark:bg-card border border-border rounded-xl p-4 text-sm text-text-main focus:outline-none focus:border-primary resize-none"
+                        />
+                        <button onClick={handleSignalRewriteSubmit} className="btn-primary py-2.5 px-6 text-sm">Keep this</button>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>

@@ -294,7 +294,7 @@ export const CapacityFirewall = ({ onNavigate }: CapacityFirewallProps) => {
                 </button>
               </div>
             )}
-            {demandDescription && !fit && (
+            {decisionId && !fit && (
               <div className="space-y-3 pt-2 border-t border-border">
                 <p className="text-sm font-bold text-text-main">{QUICK_PAUSE_FIT_QUESTION}</p>
                 <div className="flex flex-wrap gap-2">

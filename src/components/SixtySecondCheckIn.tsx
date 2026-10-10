@@ -5,7 +5,7 @@ import { collection, doc, setDoc, deleteDoc, getDocs, query, orderBy, limit as f
 import { auth } from '../lib/firebase';
 import { db } from '../lib/firestore';
 import { secureApiFetch } from "../lib/secure-api";
-import { addNovaMemory } from "../lib/nova-brain";
+import { addNovaMemory, getNovaBrain, deleteNovaMemory } from "../lib/nova-brain";
 import { cn } from "../lib/utils";
 import { DEMO_VOICE_JOURNAL_ENTRIES } from "../lib/demo-data";
 
@@ -309,6 +309,16 @@ export const SixtySecondCheckIn = ({
     const uid = auth.currentUser?.uid;
     if (!uid || isDemoSession) { setPendingDeleteId(null); return; }
     await deleteDoc(doc(db, "users", uid, "voice_journal_entries", id));
+    // Cascade to the two Nova memories this entry created (confirmSaveCheckIn
+    // above) - the screen promises deletion stays private, and a derived
+    // excerpt/analysis outliving the entry it came from would contradict
+    // that, including the 'preference' one which is canEdit:false (that
+    // flag only blocks manual editing via Memory Centre, not this cascade).
+    const entry = entries.find((e) => e.id === id);
+    if (entry) {
+      const sources = [`60-Second Check-In (${entry.date})`, `Nova 60-Second Check-In Analysis (${entry.date})`];
+      getNovaBrain().filter((m) => sources.includes(m.source)).forEach((m) => deleteNovaMemory(m.id));
+    }
     setEntries((prev) => prev.filter((e) => e.id !== id));
     setActiveEntry((prev) => (prev?.id === id ? null : prev));
     setPendingDeleteId(null);

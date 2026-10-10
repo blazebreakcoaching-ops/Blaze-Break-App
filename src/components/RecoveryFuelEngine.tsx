@@ -177,9 +177,14 @@ export const RecoveryFuelEngine = ({
     if (!uid) return;
     const today = new Date().toISOString().split('T')[0];
     const updates: Record<string, any> = { updatedAt: new Date().toISOString() };
-    if (action === 'eat') updates.hasEaten = true;
-    if (action === 'drink') updates.hydrationGlasses = 1; // a floor, never overwritten downward by handleSaveCheckIn's merge below
-    if (action === 'daylight') updates.morningLight = true;
+    // Mirrors each floor into the Manual Fuel Log's own local state too -
+    // handleSaveCheckIn below sends that state as a full merge write, so
+    // without this a save made after a quick action (with the field still
+    // at its stale pre-action value locally) would silently overwrite the
+    // floor just set in Firestore back down.
+    if (action === 'eat') { updates.hasEaten = true; setHasEaten(true); }
+    if (action === 'drink') { updates.hydrationGlasses = 1; setHydrationGlasses((g) => Math.max(g, 1)); }
+    if (action === 'daylight') { updates.morningLight = true; setMorningLight(true); }
     setDoc(doc(db, 'users', uid, 'recovery_fuel_logs', today), updates, { merge: true }).catch(() => {});
     if (action === 'eat') setTodayAte(true);
   };

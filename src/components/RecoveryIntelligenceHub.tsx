@@ -150,12 +150,35 @@ export const RecoveryIntelligenceHub = () => {
     if (tab) navigateToTab(tab);
   };
 
+  // One representative module per routeType (reversing
+  // recovery-signal-candidates.ts's MODULE_ROUTE_MAP) so picking a
+  // "Something Else" intent routes through the real, already-tested
+  // explicit-request path (buildExplicitRequestCandidate) - which
+  // legitimately bypasses the bandwidth ceiling because the person
+  // asked for it directly - rather than fabricating a
+  // 'reflective_bandwidth' self-report the person never gave, which
+  // would also override their real capacity signal for a low-bandwidth
+  // user and could route them to something they can't actually handle.
+  const SOMETHING_ELSE_ROUTE_MODULE: Partial<Record<RouteType, string>> = {
+    STABILISE: 'reset_studio',
+    REDUCE: 'one_less_thing',
+    PROTECT: 'capacity_firewall',
+    UNDERSTAND: 'my_patterns',
+    ACT: 'action_engine',
+    CONNECT: 'recovery_ally',
+  };
+
   const handleSomethingElse = (intent: { label: string; routeType: RouteType | 'browse' }) => {
     if (intent.routeType === 'browse') {
       setShowExplore(true);
       return;
     }
-    fetchDecision({ explicitBandwidthReport: 'reflective_bandwidth' });
+    const explicitRequestModule = SOMETHING_ELSE_ROUTE_MODULE[intent.routeType];
+    if (explicitRequestModule) {
+      fetchDecision({ explicitRequestModule });
+    } else {
+      setShowExplore(true);
+    }
   };
 
   const handleNotNow = () => {

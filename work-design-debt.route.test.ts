@@ -196,6 +196,41 @@ describe('PATCH /api/org/:orgId/work-design-debt/:id/status — mandatory owner 
     expect(listRes.body.items[0].linkedInterventionId).toBe(interventionId);
   });
 
+  it('refuses to resolve against a successful intervention for a different team', async () => {
+    seedOrg(ORG, { adminUids: ['owner_1'], memberUids: ['owner_1', 'mgr_a', 'mgr_b'], teamManagers: { mgr_a: ['Team A'], mgr_b: ['Team B'] } });
+    const debtRes = await request(app).post(`/api/org/${ORG}/work-design-debt`).set(auth('mgr_a')).send(validBody);
+    const debtId = debtRes.body.debt.id;
+    await request(app).patch(`/api/org/${ORG}/work-design-debt/${debtId}/owner`).set(auth('mgr_a')).send({ ownerUid: 'mgr_a' });
+
+    // A real, successful intervention - but for Team B's meeting_pressure,
+    // not Team A's debt item.
+    const interventionRes = await request(app).post(`/api/org/${ORG}/work-design-interventions`).set(auth('mgr_b'))
+      .send({ team: 'Team B', signalKey: 'meeting_pressure', proposedChange: 'Protect 14:00-16:00', why: 'basis', employeeBurden: 'low' });
+    const interventionId = interventionRes.body.intervention.id;
+    await request(app).patch(`/api/org/${ORG}/work-design-interventions/${interventionId}/outcome`).set(auth('mgr_b')).send({ outcomeRating: 'useful' });
+
+    const res = await request(app).patch(`/api/org/${ORG}/work-design-debt/${debtId}/status`).set(auth('mgr_a'))
+      .send({ status: 'resolved', linkedInterventionId: interventionId });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/own team and signal/i);
+  });
+
+  it('refuses to resolve against a successful intervention for a different signal, same team', async () => {
+    seedOrg(ORG, { adminUids: ['owner_1'], memberUids: ['owner_1', 'mgr_a'], teamManagers: { mgr_a: ['Team A'] } });
+    const debtRes = await request(app).post(`/api/org/${ORG}/work-design-debt`).set(auth('mgr_a')).send(validBody);
+    const debtId = debtRes.body.debt.id;
+    await request(app).patch(`/api/org/${ORG}/work-design-debt/${debtId}/owner`).set(auth('mgr_a')).send({ ownerUid: 'mgr_a' });
+
+    const interventionRes = await request(app).post(`/api/org/${ORG}/work-design-interventions`).set(auth('mgr_a'))
+      .send({ team: 'Team A', signalKey: 'focus_fragmentation', proposedChange: 'No-meeting mornings', why: 'basis', employeeBurden: 'low' });
+    const interventionId = interventionRes.body.intervention.id;
+    await request(app).patch(`/api/org/${ORG}/work-design-interventions/${interventionId}/outcome`).set(auth('mgr_a')).send({ outcomeRating: 'useful' });
+
+    const res = await request(app).patch(`/api/org/${ORG}/work-design-debt/${debtId}/status`).set(auth('mgr_a'))
+      .send({ status: 'resolved', linkedInterventionId: interventionId });
+    expect(res.status).toBe(400);
+  });
+
   it('404s for a non-existent debt item', async () => {
     seedOrg(ORG, { adminUids: ['owner_1'], memberUids: ['owner_1'] });
     const res = await request(app).patch(`/api/org/${ORG}/work-design-debt/does_not_exist/status`).set(auth('owner_1')).send({ status: 'owned' });

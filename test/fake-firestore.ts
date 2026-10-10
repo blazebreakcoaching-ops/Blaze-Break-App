@@ -197,6 +197,14 @@ class CollectionRef {
     if (this.limitN !== null) rows = rows.slice(0, this.limitN);
     return new QuerySnapshot(rows);
   }
+
+  // Real Firestore: null for a root collection, otherwise the document it's
+  // nested under. Derived from the path string rather than tracked
+  // separately, same as everything else in this file.
+  get parent(): DocRef | null {
+    const segs = this.path.split('/');
+    return segs.length > 1 ? new DocRef(this.store, segs.slice(0, -1).join('/')) : null;
+  }
 }
 
 // A collection-group query matches every document whose immediate parent
@@ -244,6 +252,9 @@ class DocRef {
   constructor(private store: FakeStore, public path: string) {}
   get id() { return this.path.split('/').pop() as string; }
   collection(id: string) { return new CollectionRef(this.store, `${this.path}/${id}`); }
+  // Real Firestore: a document's parent is always the collection it lives
+  // in (never null) - see CollectionRef.parent for the other direction.
+  get parent(): CollectionRef { return new CollectionRef(this.store, this.path.split('/').slice(0, -1).join('/')); }
 
   async get(): Promise<DocSnapshot> {
     return new DocSnapshot(this.store, this.path, this.store.docs.get(this.path));

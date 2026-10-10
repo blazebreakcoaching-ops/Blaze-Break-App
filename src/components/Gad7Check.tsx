@@ -244,7 +244,7 @@ export const Gad7Check = ({ onNeedSupport, onNavigate }: Gad7CheckProps) => {
   };
 
   const submitWhyNowAndAct = async (skipped: boolean) => {
-    if (result && (!skipped && contextTags.length > 0) || novaPatternLearningAuthorized) {
+    if (result && ((!skipped && contextTags.length > 0) || novaPatternLearningAuthorized || contextualTagsAuthorized)) {
       try {
         await secureApiFetch(`/api/wellbeing/gad7/${result!.id}`, {
           method: 'PATCH',

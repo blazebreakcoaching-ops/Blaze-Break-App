@@ -866,7 +866,14 @@ export const DecompressionDoorway = ({ onAwardPoints }: DecompressionDoorwayProp
             )}
           </AnimatePresence>
 
-          {step !== 'threshold' && step !== 'recall' && step !== 'cross' && step !== 'through' && (
+          {/* Switching depth mid-flow only makes sense on a step every depth
+              shares. deeper_capacity/deeper_reflect exist only in the
+              'deeper' step array (stepsForDepth) - advance() looks up the
+              NEXT step by index in the array for whatever depth is current,
+              so switching away from 'deeper' while on one of these two
+              steps would silently bounce back to 'threshold' (index -1 ->
+              steps[0]) and discard the user's place in the crossing. */}
+          {step !== 'threshold' && step !== 'recall' && step !== 'cross' && step !== 'through' && step !== 'deeper_capacity' && step !== 'deeper_reflect' && (
             <div className="absolute top-6 right-6 flex items-center gap-3">
               {DOORWAY_DEPTH_ORDER.map((d) => (
                 <button

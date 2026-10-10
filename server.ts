@@ -3730,6 +3730,8 @@ const getPermissionsForRole = (role: string): string[] => {
         "users.read", "users.manage", "content.manage", "nova.manage", 
         "b2b.manage", "billing.manage", "safety.read", "audit.read"
       ];
+    case 'security_admin':
+      return ["users.read", "safety.read", "audit.read"];
     case 'support_admin':
       return ["users.read", "safety.read"];
     case 'content_admin':
@@ -9228,6 +9230,21 @@ app.patch("/api/org/:orgId/work-design-interventions/:id/status", verifyAppCheck
       return res.status(403).json({ error: "Forbidden: you don't manage this team." });
     }
     const { status } = req.body;
+    // Action Budget (Work Design Pulse PR11) applies here too, not just at
+    // creation - otherwise an org at its ceiling could stop/complete a
+    // trial (freeing nothing, since the budget only counted active ones)
+    // then reactivate any number of previously-stopped interventions via
+    // this same route and exceed the configured ceiling with no new
+    // interventions ever created.
+    if (ACTIVE_INTERVENTION_STATUSES.has(status) && !ACTIVE_INTERVENTION_STATUSES.has(existing.status)) {
+      const maxConcurrentActive = getEffectiveActionBudget(org.actionBudget?.maxConcurrentActiveInterventions);
+      const activeSnap = await db.collection("organisations").doc(orgId).collection("work_design_interventions").get();
+      const currentActiveCount = activeSnap.docs.filter((d: any) => ACTIVE_INTERVENTION_STATUSES.has(d.data().status)).length;
+      const budgetCheck = canStartNewIntervention(currentActiveCount, maxConcurrentActive);
+      if (!budgetCheck.allowed) {
+        return res.status(400).json({ error: budgetCheck.reason });
+      }
+    }
     await ref.set({ status, updatedAt: new Date().toISOString() }, { merge: true });
     await logOrgAuditAction(req, orgId, "update_work_design_intervention_status", "work_design_intervention", id, { status: existing.status }, { status });
     res.json({ success: true });
@@ -9417,15 +9434,21 @@ app.patch("/api/org/:orgId/work-design-debt/:id/status", verifyAppCheck, authent
       return res.status(403).json({ error: "Forbidden: you don't manage this team." });
     }
     let linkedInterventionOutcomeRating: string | null = null;
+    let linkedIntervention: { team: string; signalKey: string } | null = null;
     const linkedInterventionId = req.body?.linkedInterventionId;
     if (typeof linkedInterventionId === 'string' && linkedInterventionId.trim().length > 0) {
       const interventionSnap = await db.collection("organisations").doc(orgId).collection("work_design_interventions").doc(linkedInterventionId).get();
-      linkedInterventionOutcomeRating = interventionSnap.exists ? (interventionSnap.data()!.outcomeRating || null) : null;
+      if (interventionSnap.exists) {
+        const interventionData = interventionSnap.data()!;
+        linkedInterventionOutcomeRating = interventionData.outcomeRating || null;
+        linkedIntervention = { team: interventionData.team, signalKey: interventionData.signalKey };
+      }
     }
     const validation = validateStatusTransition(
-      { status: existing.status, ownerUid: existing.ownerUid || null },
+      { status: existing.status, ownerUid: existing.ownerUid || null, team: existing.team, signalKey: existing.signalKey },
       req.body,
       linkedInterventionOutcomeRating,
+      linkedIntervention,
     );
     if (!validation.valid) {
       return res.status(400).json({ error: validation.error });
@@ -12005,7 +12028,7 @@ app.post("/api/ally/view/:token/encourage", verifyAppCheck, async (req, res) => 
     }
     const capsulesSnap = await ownerRef.collection("support_capsules").get();
     const capsules = capsulesSnap.docs.map(d => d.data() as { category: string; expiresAt: string | null });
-    const permissions = deriveEffectiveSharing(capsules as any, new Date().toISOString(), state.permissions || {});
+    const permissions = deriveEffectiveSharing(capsules as any, new Date().toISOString(), state.permissions || {}, state.sharingPaused === true);
     if (!permissions.sendPings) {
       return res.status(403).json({ error: "This person has turned off messages for now." });
     }
