@@ -252,11 +252,19 @@ describe('executive_financial_estimate_is_a_range', () => {
   });
 
   it('GET /api/org/:orgId/executive-work-design calls buildFinancialRangeEstimate rather than computing its own cost figure', () => {
-    const routeStart = serverSource.indexOf('app.get("/api/org/:orgId/executive-work-design"');
+    // The route itself calls the shared buildExecutiveWorkDesignPayload
+    // helper (also used by the /export route below it, so both can never
+    // compute different cost figures from the same org-wide signal) -
+    // search from that helper's own definition, not just the route's
+    // `app.get(...)` line, so this invariant survives that shared
+    // extraction rather than only matching when the call is inlined.
+    const helperStart = serverSource.indexOf('const buildExecutiveWorkDesignPayload =');
+    expect(helperStart).toBeGreaterThan(-1);
+    const routeStart = serverSource.indexOf('app.get("/api/org/:orgId/executive-work-design"', helperStart);
     expect(routeStart).toBeGreaterThan(-1);
     const nextRouteStart = serverSource.slice(routeStart + 10).search(/\bapp\.(get|post|put|delete|patch)\(/);
     expect(nextRouteStart).toBeGreaterThan(-1);
-    const handlerSlice = serverSource.slice(routeStart, routeStart + 10 + nextRouteStart);
+    const handlerSlice = serverSource.slice(helperStart, routeStart + 10 + nextRouteStart);
     expect(handlerSlice).toMatch(/buildFinancialRangeEstimate\(/);
   });
 

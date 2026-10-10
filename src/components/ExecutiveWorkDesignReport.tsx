@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { secureApiFetch } from '../lib/secure-api';
-import { Building2, Lock, Loader2, AlertTriangle, ShieldCheck, Calendar, Info, Plug } from 'lucide-react';
+import { Building2, Lock, Loader2, AlertTriangle, ShieldCheck, Calendar, Info, Plug, Download } from 'lucide-react';
 import { WorkDesignSignalCard, type WorkDesignSignal } from './WorkDesignSignalCard';
 import { WorkDesignDemoPreview } from './WorkDesignDemoPreview';
 
@@ -42,6 +42,9 @@ export const ExecutiveWorkDesignReport = () => {
   const [costInputsAvailable, setCostInputsAvailable] = useState(false);
   const [financialEstimate, setFinancialEstimate] = useState<FinancialRangeEstimate | null>(null);
   const [connectors, setConnectors] = useState<ConnectorCoverage[]>([]);
+  const [orgId, setOrgId] = useState<string | null>(null);
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState('');
 
   useEffect(() => {
     const load = async () => {
@@ -55,6 +58,7 @@ export const ExecutiveWorkDesignReport = () => {
           setLoading(false);
           return;
         }
+        setOrgId(me.organisationId);
         const [reportRes, coverageRes] = await Promise.all([
           secureApiFetch(`/api/org/${me.organisationId}/executive-work-design`),
           secureApiFetch(`/api/org/${me.organisationId}/data-coverage`),
@@ -81,6 +85,51 @@ export const ExecutiveWorkDesignReport = () => {
     };
     load();
   }, []);
+
+  // Builds the download client-side from the export route's real JSON -
+  // never a fake "compiling..." progress animation, and no gamification
+  // points for exporting an org-wide report to leadership (unlike the
+  // unrelated personal "Executive ROI" export this deliberately doesn't
+  // touch - see this file's own header comment).
+  const handleExport = async () => {
+    if (!orgId || exporting) return;
+    setExporting(true);
+    setExportError('');
+    try {
+      const res = await secureApiFetch(`/api/org/${orgId}/executive-work-design/export`);
+      const data = await res.json();
+      if (!res.ok) {
+        setExportError(data.error || 'Could not export the Executive Summary.');
+        setExporting(false);
+        return;
+      }
+      const rows = (data.workDesignSignals || []).map((s: WorkDesignSignal) =>
+        `<tr><td>${s.label}</td><td>${s.bandLabel || 'Not enough data'}</td><td>${s.band ? s.basis : s.sufficiencyMessage}</td></tr>`
+      ).join('');
+      const html = `<!doctype html><html><head><meta charset="utf-8"><title>Executive Summary - ${data.orgName}</title>
+<style>body{font-family:sans-serif;max-width:720px;margin:40px auto;color:#1a1a1a}h1{font-size:20px}table{width:100%;border-collapse:collapse;margin-top:16px}td,th{border:1px solid #ddd;padding:8px;text-align:left;font-size:13px}th{background:#f3f3f3}.note{font-size:12px;color:#666;margin-top:24px}</style>
+</head><body>
+<h1>Executive Work Design Summary - ${data.orgName}</h1>
+<p>Generated ${new Date(data.generatedAt).toLocaleString()} - aggregated across ${data.cohortSize} consenting teammates (minimum group size: ${data.threshold}).</p>
+<p>Shows where work is becoming unnecessarily hard across the organisation - never which employees are struggling, and never any individual's own data.</p>
+<table><thead><tr><th>Signal</th><th>Band</th><th>Basis</th></tr></thead><tbody>${rows}</tbody></table>
+${data.financialEstimate ? `<p><strong>Illustrative cost range:</strong> £${data.financialEstimate.lowEstimate.toLocaleString()} - £${data.financialEstimate.highEstimate.toLocaleString()}. ${data.financialEstimate.assumptionNote}</p>` : ''}
+<p class="note">This export was recorded in your organisation's audit trail.</p>
+</body></html>`;
+      const blob = new Blob([html], { type: 'text/html' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `executive_work_design_summary_${new Date().getTime()}.html`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      setExportError('Could not export the Executive Summary.');
+    }
+    setExporting(false);
+  };
 
   if (loading) {
     return (
@@ -116,17 +165,27 @@ export const ExecutiveWorkDesignReport = () => {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center gap-3">
-        <div className="w-10 h-10 rounded-lg bg-primary/10 border border-primary/20 text-primary flex items-center justify-center shrink-0">
-          <Building2 className="w-5 h-5" />
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-lg bg-primary/10 border border-primary/20 text-primary flex items-center justify-center shrink-0">
+            <Building2 className="w-5 h-5" />
+          </div>
+          <div>
+            <h3 className="text-xl font-display font-bold text-text-main">Executive Work Design</h3>
+            <p className="text-xs text-text-muted leading-relaxed max-w-2xl">
+              Where work is becoming unnecessarily hard across your organisation - never which employees are struggling. Aggregated across {cohortSize} consenting teammates.
+            </p>
+          </div>
         </div>
-        <div>
-          <h3 className="text-xl font-display font-bold text-text-main">Executive Work Design</h3>
-          <p className="text-xs text-text-muted leading-relaxed max-w-2xl">
-            Where work is becoming unnecessarily hard across your organisation - never which employees are struggling. Aggregated across {cohortSize} consenting teammates.
-          </p>
-        </div>
+        <button onClick={handleExport} disabled={exporting} className="btn-secondary shrink-0 flex items-center gap-2 text-xs whitespace-nowrap">
+          {exporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+          Export Executive Summary
+        </button>
       </div>
+
+      {exportError && (
+        <p className="text-xs text-destructive">{exportError}</p>
+      )}
 
       <div className="bg-primary/10 border border-primary/20 rounded-xl p-4 flex items-center gap-3 text-sm font-medium text-text-main">
         <ShieldCheck className="w-5 h-5 text-primary shrink-0" />

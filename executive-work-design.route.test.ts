@@ -17,7 +17,7 @@ vi.mock('twilio', () => ({ default: () => ({ messages: { create: vi.fn() } }) })
 
 import request from 'supertest';
 import { app } from './server';
-import { seedDoc, resetStore, allPaths } from './test/fake-firestore';
+import { seedDoc, resetStore, allPaths, getDocRaw } from './test/fake-firestore';
 
 const ORG = 'org_1';
 const auth = (uid: string) => ({ Authorization: `Bearer ${uid}` });
@@ -168,5 +168,67 @@ describe('GET /api/org/:orgId/executive-work-design — baseline period, confide
     expect(res.body.workDesignSignals[0].sufficiencyStatus).toBe('stale');
     expect(res.body.workDesignSignals[0].sufficiencyMessage).toMatch(/synced/);
     expect(res.body.workDesignSignals[0].confidence).toBeNull();
+  });
+});
+
+describe('GET /api/org/:orgId/executive-work-design/export — Export Executive Summary', () => {
+  it('requires authentication', async () => {
+    seedOrg(ORG, { adminUids: ['owner_1'], memberUids: ['owner_1'] });
+    const res = await request(app).get(`/api/org/${ORG}/executive-work-design/export`);
+    expect(res.status).toBe(401);
+  });
+
+  it('a plain member without admin rights is refused, same gate as the view', async () => {
+    seedOrg(ORG, { adminUids: ['owner_1'], memberUids: ['owner_1', 'member_1'] });
+    const res = await request(app).get(`/api/org/${ORG}/executive-work-design/export`).set(auth('member_1'));
+    expect(res.status).toBe(403);
+  });
+
+  it('refuses to export when the org is still below the privacy threshold, rather than exporting an empty summary', async () => {
+    seedOrg(ORG, { adminUids: ['owner_1'], memberUids: ['owner_1', 'member_1'], privacyThreshold: 5 });
+    consenting('owner_1');
+    consenting('member_1');
+
+    const res = await request(app).get(`/api/org/${ORG}/executive-work-design/export`).set(auth('owner_1'));
+    expect(res.status).toBe(409);
+  });
+
+  it('returns the same real signals and cohort figures as the live view, plus org name and generation timestamp', async () => {
+    seedOrg(ORG, { adminUids: ['owner_1'], memberUids: ['owner_1', 'a1', 'a2', 'a3'], privacyThreshold: 3 });
+    ['a1', 'a2', 'a3'].forEach(consenting);
+
+    const viewRes = await request(app).get(`/api/org/${ORG}/executive-work-design`).set(auth('owner_1'));
+    const exportRes = await request(app).get(`/api/org/${ORG}/executive-work-design/export`).set(auth('owner_1'));
+
+    expect(exportRes.status).toBe(200);
+    expect(exportRes.body.orgName).toBe('Test Org');
+    expect(exportRes.body.generatedAt).toBeTruthy();
+    expect(exportRes.body.cohortSize).toBe(viewRes.body.cohortSize);
+    expect(exportRes.body.workDesignSignals).toEqual(viewRes.body.workDesignSignals);
+  });
+
+  it('writes a structured entry to the org\'s own audit trail - who exported, when, never raw signal content', async () => {
+    seedOrg(ORG, { adminUids: ['owner_1'], memberUids: ['owner_1', 'a1', 'a2', 'a3'], privacyThreshold: 3 });
+    ['a1', 'a2', 'a3'].forEach(consenting);
+
+    await request(app).get(`/api/org/${ORG}/executive-work-design/export`).set(auth('owner_1'));
+
+    const auditPath = allPaths().find((p) => p.startsWith(`organisations/${ORG}/audit_logs/`));
+    expect(auditPath).toBeTruthy();
+    const entry = getDocRaw(auditPath!);
+    expect(entry?.action).toBe('export_executive_summary');
+    expect(entry?.actorUid).toBe('owner_1');
+    expect(entry?.orgId).toBe(ORG);
+    expect(entry?.after).toEqual({ cohortSize: 3, threshold: 3, signalKeys: ['meeting_pressure'] });
+  });
+
+  it('does not write an audit entry when the export is refused for an insufficient cohort', async () => {
+    seedOrg(ORG, { adminUids: ['owner_1'], memberUids: ['owner_1', 'member_1'], privacyThreshold: 5 });
+    consenting('owner_1');
+    consenting('member_1');
+
+    await request(app).get(`/api/org/${ORG}/executive-work-design/export`).set(auth('owner_1'));
+    const auditPath = allPaths().find((p) => p.startsWith(`organisations/${ORG}/audit_logs/`));
+    expect(auditPath).toBeUndefined();
   });
 });

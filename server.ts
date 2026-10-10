@@ -9467,40 +9467,86 @@ app.get("/api/org/:orgId/hr-dashboard", verifyAppCheck, authenticateFirebaseUser
 // Financial figures are only ever a range with a stated assumption
 // (executive-work-design.ts), and only appear at all when the org's own
 // signal is elevated/sustained - never invented when things look fine.
+// Shared by the view route and the export route below, so both ever only
+// have ONE org-wide computation path - the view route calling this twice
+// in a row (once to render, once to export) must see identical numbers,
+// and only this function's own caller decides whether it's also the
+// write-point for the org-wide baseline (see getWorkDesignBaselineDays).
+const buildExecutiveWorkDesignPayload = async (db: any, orgId: string, org: any, recordBaseline: boolean) => {
+  const threshold = org.privacyThreshold || 5;
+  const memberUids: string[] = org.memberUids || [];
+  const consentingUids = await getConsentingMemberUids(db, memberUids);
+
+  const sufficiency = checkCohortSufficiency(consentingUids.length, threshold);
+  if (!sufficiency.sufficient) {
+    return { locked: true, lockedResponse: buildLockedAggregateResponse(sufficiency, { workDesignSignals: [], financialEstimate: null }) } as const;
+  }
+
+  const orgMeetingLoadSnapshot = await computeMeetingLoadSnapshotForCohort(db, consentingUids, threshold);
+  const baselineDaysObserved = await getWorkDesignBaselineDays(db, orgId, recordBaseline ? { available: orgMeetingLoadSnapshot.available } : undefined);
+  const workDesignSignals = [shapeMeetingPressureSignal(orgMeetingLoadSnapshot, consentingUids, threshold, baselineDaysObserved)];
+  const costInputs = org.costInputs || null;
+  const primarySignal = workDesignSignals[0];
+  const financialEstimate = buildFinancialRangeEstimate(costInputs, primarySignal.label, primarySignal.band);
+
+  return {
+    locked: false,
+    cohortSize: consentingUids.length,
+    threshold,
+    workDesignSignals,
+    costInputsAvailable: !!costInputs,
+    financialEstimate,
+  } as const;
+};
+
 app.get("/api/org/:orgId/executive-work-design", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
   try {
     const { orgId } = req.params;
     const { org } = await requireOrgAdmin(req, orgId);
     const db = getDb();
 
-    const threshold = org.privacyThreshold || 5;
-    const memberUids: string[] = org.memberUids || [];
-    const consentingUids = await getConsentingMemberUids(db, memberUids);
+    // The one place that WRITES the org-wide baseline (see
+    // getWorkDesignBaselineDays) - this is the route a dashboard view
+    // actually polls, so it's the one with a real "was the signal
+    // available today" fact worth recording once per day.
+    const payload = await buildExecutiveWorkDesignPayload(db, orgId, org, true);
+    if (payload.locked) return res.json(payload.lockedResponse);
+    res.json(payload);
+  } catch (err: any) {
+    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
+  }
+});
 
-    const sufficiency = checkCohortSufficiency(consentingUids.length, threshold);
-    if (!sufficiency.sufficient) {
-      return res.json(buildLockedAggregateResponse(sufficiency, { workDesignSignals: [], financialEstimate: null }));
+// Export Executive Summary: the same org-wide Work Design Signals,
+// financial estimate, and cohort figures the view above renders, packaged
+// as a downloadable document - never per-employee data, same privacy gate
+// (requireOrgAdmin) as the view itself. Every export is written to the
+// org's own audit trail (logOrgAuditAction) since this is the one WDI
+// action that actually lets someone take the organisation's aggregate
+// data outside the product, which the spec's governance model treats as
+// worth a permanent record of who did it and when - never the content
+// itself, just the structured fact that an export happened.
+app.get("/api/org/:orgId/executive-work-design/export", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const { orgId } = req.params;
+    const { org } = await requireOrgAdmin(req, orgId);
+    const db = getDb();
+
+    const payload = await buildExecutiveWorkDesignPayload(db, orgId, org, false);
+    if (payload.locked) {
+      return res.status(409).json({ error: "Not enough consenting members yet to export a real Executive Summary." });
     }
 
-    // The one place that WRITES the org-wide baseline (see
-    // getWorkDesignBaselineDays) - this route is the only caller that
-    // actually computes the org-wide (not per-team) snapshot, so it's
-    // the only one with a real org-wide "was the signal available today"
-    // fact to record.
-    const orgMeetingLoadSnapshot = await computeMeetingLoadSnapshotForCohort(db, consentingUids, threshold);
-    const baselineDaysObserved = await getWorkDesignBaselineDays(db, orgId, { available: orgMeetingLoadSnapshot.available });
-    const workDesignSignals = [shapeMeetingPressureSignal(orgMeetingLoadSnapshot, consentingUids, threshold, baselineDaysObserved)];
-    const costInputs = org.costInputs || null;
-    const primarySignal = workDesignSignals[0];
-    const financialEstimate = buildFinancialRangeEstimate(costInputs, primarySignal.label, primarySignal.band);
+    await logOrgAuditAction(req, orgId, 'export_executive_summary', 'organisation', orgId, null, {
+      cohortSize: payload.cohortSize,
+      threshold: payload.threshold,
+      signalKeys: payload.workDesignSignals.map((s) => s.key),
+    });
 
     res.json({
-      locked: false,
-      cohortSize: consentingUids.length,
-      threshold,
-      workDesignSignals,
-      costInputsAvailable: !!costInputs,
-      financialEstimate,
+      orgName: org.name || 'Your Organisation',
+      generatedAt: new Date().toISOString(),
+      ...payload,
     });
   } catch (err: any) {
     res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
