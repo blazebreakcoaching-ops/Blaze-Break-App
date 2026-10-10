@@ -39,6 +39,7 @@ import {
   CreditCard,
   ClipboardCheck,
   Navigation,
+  Building2,
 } from "lucide-react";
 
 import {
@@ -138,6 +139,7 @@ const RecoveryPlan = lazy(() => import("./components/RecoveryPlan.tsx").then(m =
 const FocusZone = lazy(() => import("./components/FocusZone.tsx").then(m => ({ default: m.FocusZone })));
 import { SubscriptionTier } from "./types.ts";
 const ExecutiveBoardReport = lazy(() => import("./components/ExecutiveBoardReport.tsx").then(m => ({ default: m.ExecutiveBoardReport })));
+const ExecutiveWorkDesignReport = lazy(() => import("./components/ExecutiveWorkDesignReport.tsx").then(m => ({ default: m.ExecutiveWorkDesignReport })));
 const CalendarDefenseView = lazy(() => import("./components/CalendarDefenseView.tsx").then(m => ({ default: m.CalendarDefenseView })));
 const WhatsNewModal = lazy(() => import("./components/WhatsNewModal.tsx").then(m => ({ default: m.WhatsNewModal })));
 import { secureApiFetch } from "./lib/secure-api";
@@ -170,6 +172,7 @@ type ActiveTab =
   | "evolution"
   | "intelligence"
   | "executive"
+  | "executive_work_design"
   | "admin"
   | "plan";
 
@@ -390,6 +393,7 @@ const Sidebar = ({
   onOpenLauncher,
   hasManagedTeam,
   isHrViewer,
+  isOrgAdmin,
 }: {
   activeTab: string;
   setActiveTab: (t: string) => void;
@@ -403,6 +407,7 @@ const Sidebar = ({
   onOpenLauncher: () => void;
   hasManagedTeam: boolean;
   isHrViewer: boolean;
+  isOrgAdmin: boolean;
 }) => {
   const [pendingTasksCount, setPendingTasksCount] = useState(0);
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
@@ -456,6 +461,9 @@ const Sidebar = ({
   }
   if (isHrViewer) {
     tabs.push({ id: "hr_escalation" as ActiveTab, icon: ClipboardCheck, label: "HR Escalation", roles: [] });
+  }
+  if (isOrgAdmin) {
+    tabs.push({ id: "executive_work_design" as ActiveTab, icon: Building2, label: "Executive Work Design", roles: [] });
   }
 
   const sidebarVariants = {
@@ -964,6 +972,8 @@ const Header = ({
           "Your recovery debt, velocity, energy, and mood trends — computed from what you've actually logged, not a prediction."}
         {activeTab === "executive" &&
           "Cost-avoidance estimates, calendar load, and integration status for reporting up."}
+        {activeTab === "executive_work_design" &&
+          "Where work is becoming unnecessarily hard, across your whole organisation - never which employees are struggling."}
         {activeTab === "admin" &&
           "Live account activity, entitlements, and access across the platform."}
       </p>
@@ -1147,13 +1157,21 @@ export default function App() {
   // backend, not something inferred from onboarding's role picker.
   const [managedTeams, setManagedTeams] = useState<string[]>([]);
   const [isHrViewer, setIsHrViewer] = useState(false);
+  // Organisation Admin here means the real B2B employer-admin role
+  // (org.adminUids) - a completely different thing from the "executive"
+  // tab's role string above, which is actually a consumer subscription
+  // plan tier (entitlements.ts's ENTITLEMENT_PLANS), not a business role.
+  // Executive Work Design is gated on this real org-admin fact, the same
+  // one GET /api/org/:orgId/executive-work-design checks server-side.
+  const [isOrgAdmin, setIsOrgAdmin] = useState(false);
   useEffect(() => {
     if (!user) return;
     secureApiFetch('/api/org/me').then(res => res.json()).then(data => {
       setManagedTeams(data.managedTeams || []);
       setIsHrViewer(data.isHrViewer === true);
+      setIsOrgAdmin(data.isOrgAdmin === true);
     }).catch(() => {
-      // Non-critical - the "My Team"/"HR" nav entries just stay hidden if this fails.
+      // Non-critical - the "My Team"/"HR"/"Executive Work Design" nav entries just stay hidden if this fails.
     });
   }, [user]);
 
@@ -2061,6 +2079,7 @@ export default function App() {
     evolution: "Evolution Engine",
     intelligence: "Recovery Intelligence Layer",
     executive: "Executive ROI",
+    executive_work_design: "Executive Work Design",
     admin: "Command Centre",
     reset: "Reset Studio",
     fuel: "Recovery Fuel",
@@ -2342,6 +2361,7 @@ export default function App() {
         onOpenLauncher={() => setShowLauncher(true)}
         hasManagedTeam={managedTeams.length > 0}
         isHrViewer={isHrViewer}
+        isOrgAdmin={isOrgAdmin}
       />
 
       <motion.main
@@ -2908,6 +2928,12 @@ export default function App() {
             {activeTab === "hr_escalation" && (
               <div className="space-y-32">
                 <HrEscalationDashboard />
+              </div>
+            )}
+
+            {activeTab === "executive_work_design" && (
+              <div className="space-y-32 max-w-7xl mx-auto">
+                <ExecutiveWorkDesignReport />
               </div>
             )}
 
