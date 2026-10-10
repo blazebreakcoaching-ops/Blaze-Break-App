@@ -9409,6 +9409,40 @@ app.get("/api/org/:orgId/work-design-interventions", verifyAppCheck, authenticat
   }
 });
 
+// Work Design Pulse PR3: the employee-safe counterpart to the route above.
+// Open to any org member, not just admins/managers - but deliberately never
+// returns a raw intervention record: no team name (a small team's name
+// could itself be identifying), no free-text proposedChange/why/
+// outcomeNotes (a manager's own free text could name people or specifics).
+// Only counts by status/outcome and a signalKey+status list survive, which
+// is enough to honestly answer "has my organisation tried anything about
+// this?" without exposing anything team- or person-specific.
+app.get("/api/org/:orgId/work-design-interventions-summary", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const { orgId } = req.params;
+    const user = requireAuth(req);
+    const db = getDb();
+    const orgDoc = await db.collection("organisations").doc(orgId).get();
+    const org = orgDoc.data();
+    if (!orgDoc.exists || !(org?.memberUids || []).includes(user.uid)) {
+      return res.status(403).json({ error: "You're not a member of this organisation." });
+    }
+    const snap = await db.collection("organisations").doc(orgId).collection("work_design_interventions").get();
+    const byStatus: Record<string, number> = {};
+    const byOutcome: Record<string, number> = {};
+    const recent: { signalKey: string; status: string }[] = [];
+    snap.docs.forEach((doc: any) => {
+      const data = doc.data();
+      byStatus[data.status] = (byStatus[data.status] || 0) + 1;
+      if (data.outcomeRating) byOutcome[data.outcomeRating] = (byOutcome[data.outcomeRating] || 0) + 1;
+      recent.push({ signalKey: data.signalKey, status: data.status });
+    });
+    res.json({ totalTried: snap.size, byStatus, byOutcome, recent: recent.slice(0, 10) });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.patch("/api/org/:orgId/work-design-interventions/:id/status", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
   try {
     const { orgId, id } = req.params;

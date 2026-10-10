@@ -40,6 +40,7 @@ import { buildPrimaryIndicators, buildDimensionIndicators, sortByAttention, Lead
 import { cn } from '../lib/utils';
 import { OrgDashboardValue } from './OrgDashboardValue';
 import { OrgDashboardMoments } from './OrgDashboardMoments';
+import { WorkDesignPulseEmployeeView } from './WorkDesignPulseEmployeeView';
 
 const SUGGESTIONS = [
   { theme: 'Meeting Overload', count: 18, text: 'Consider reducing recurring syncs to bi-weekly and implementing "No Meeting Wednesdays".' },
@@ -605,15 +606,7 @@ export const OrgDashboard = ({ onNavigate }: { onNavigate?: (tab: string) => voi
   }
 
   if (!orgStatus.isOrgAdmin) {
-    return (
-      <div className="flex flex-col items-center justify-center p-6 sm:p-8 md:p-12 text-center bg-surface dark:bg-surface/50 rounded-xl border border-dashed border-border dark:border-border">
-        <Lock className="w-12 h-12 text-text-muted mb-4" />
-        <h3 className="text-xl font-bold text-text-main mb-2">Admin Access Required</h3>
-        <p className="text-text-muted text-sm max-w-md">
-          This aggregate dashboard is only visible to your organisation's designated admin. You're a member of {orgStatus.organisationName || 'your organisation'}, but don't have admin access to this view.
-        </p>
-      </div>
-    );
+    return <WorkDesignPulseEmployeeView orgId={orgStatus.organisationId} organisationName={orgStatus.organisationName} />;
   }
 
   if (error) {
