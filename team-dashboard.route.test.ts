@@ -95,7 +95,7 @@ describe('GET /api/org/:orgId/team-dashboard — k-anonymity', () => {
     expect(res.body.teams[0].locked).toBe(true);
     expect(res.body.teams[0].cohortSize).toBe(1);
     expect(res.body.teams[0].threshold).toBe(3);
-    expect(res.body.teams[0].overallConcern).toBeUndefined();
+    expect(res.body.teams[0].workDesignSignals).toBeUndefined();
   });
 
   it('unlocks once the team has enough consenting members, with no fabricated trend on first view', async () => {
@@ -113,7 +113,7 @@ describe('GET /api/org/:orgId/team-dashboard — k-anonymity', () => {
     const team = res.body.teams[0];
     expect(team.locked).toBe(false);
     expect(team.cohortSize).toBe(3);
-    expect(Array.isArray(team.indicators)).toBe(true);
+    expect(Array.isArray(team.workDesignSignals)).toBe(true);
   });
 
   it('a non-consenting member never counts toward the team cohort', async () => {
@@ -132,23 +132,6 @@ describe('GET /api/org/:orgId/team-dashboard — k-anonymity', () => {
     const res = await request(app).get(`/api/org/${ORG}/team-dashboard`).set(auth('mgr_a'));
     expect(res.body.teams[0].locked).toBe(true);
     expect(res.body.teams[0].cohortSize).toBe(2);
-  });
-});
-
-describe('GET /api/org/:orgId/team-dashboard — Nova nudge banner', () => {
-  it('surfaces no nudge when nothing is elevated or worsening', async () => {
-    seedOrg(ORG, {
-      adminUids: ['owner_1'],
-      memberUids: ['owner_1', 'mgr_a', 'a1', 'a2', 'a3'],
-      memberTeams: { a1: 'Team A', a2: 'Team A', a3: 'Team A' },
-      teamManagers: { mgr_a: ['Team A'] },
-      privacyThreshold: 3,
-    });
-    ['a1', 'a2', 'a3'].forEach(uid => seedDoc(`users/${uid}`, { shareAnonymizedDataWithOrg: true }));
-
-    const res = await request(app).get(`/api/org/${ORG}/team-dashboard`).set(auth('mgr_a'));
-    // No mood/climate data logged at all -> null concern, not elevated.
-    expect(res.body.teams[0].nudge).toBeNull();
   });
 });
 
@@ -301,8 +284,16 @@ describe('GET /api/org/:orgId/team-dashboard — Nova Manager Coach recommendati
   });
 });
 
-describe('GET /api/org/:orgId/team-dashboard — never writes the shared org-wide history', () => {
-  it('does not create a risk_trend_history entry, even for the org\'s first-ever check today', async () => {
+describe('GET /api/org/:orgId/team-dashboard — never writes any shared org-wide state', () => {
+  // Historically this route (and GET .../hr-dashboard) shared a
+  // risk_trend_history collection, and this describe block guarded
+  // against team-dashboard - which only ever has ONE team's data -
+  // corrupting that shared daily snapshot. Lane Separation Remediation
+  // PR C removed the mood/climate trend entirely from both routes, so
+  // nothing writes that collection anymore; this just confirms
+  // team-dashboard still has no collection of its own it writes to as a
+  // side effect of being viewed.
+  it('creates no risk_trend_history entry, even for the org\'s first-ever check today', async () => {
     seedOrg(ORG, {
       adminUids: ['owner_1'],
       memberUids: ['owner_1', 'mgr_a', 'a1', 'a2', 'a3'],
@@ -318,7 +309,7 @@ describe('GET /api/org/:orgId/team-dashboard — never writes the shared org-wid
     expect(historyPaths.length).toBe(0);
   });
 
-  it('a manager managing two teams does not write two conflicting history entries', async () => {
+  it('a manager managing two teams writes no history entries either', async () => {
     seedOrg(ORG, {
       adminUids: ['owner_1'],
       memberUids: ['owner_1', 'mgr_ab', 'a1', 'a2', 'a3', 'b1', 'b2', 'b3'],
@@ -333,36 +324,5 @@ describe('GET /api/org/:orgId/team-dashboard — never writes the shared org-wid
 
     const historyPaths = allPaths().filter(p => p.startsWith(`organisations/${ORG}/risk_trend_history/`));
     expect(historyPaths.length).toBe(0);
-  });
-
-  it('hr-dashboard still writes the correct, complete org-wide snapshot even after team-dashboard was checked first that day', async () => {
-    seedOrg(ORG, {
-      adminUids: ['owner_1'],
-      memberUids: ['owner_1', 'mgr_a', 'a1', 'a2', 'a3', 'b1', 'b2', 'b3'],
-      memberTeams: { a1: 'Team A', a2: 'Team A', a3: 'Team A', b1: 'Team B', b2: 'Team B', b3: 'Team B' },
-      teamManagers: { mgr_a: ['Team A'] },
-      privacyThreshold: 3,
-    });
-    ['a1', 'a2', 'a3', 'b1', 'b2', 'b3'].forEach(uid => seedDoc(`users/${uid}`, { shareAnonymizedDataWithOrg: true }));
-    // A history entry is only ever written when there's a real strain
-    // signal to record (overallConcern !== null) - seed a recent mood
-    // pulse for everyone so that's true here.
-    const recentIso = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-    ['a1', 'a2', 'a3', 'b1', 'b2', 'b3'].forEach(uid =>
-      seedDoc(`users/${uid}/mood_pulses/mp1`, { moodLabel: 'calm', createdAt: recentIso }));
-
-    // The manager checks their own team dashboard first, before any org
-    // admin (also an owner, so automatically an hr-dashboard viewer) has
-    // looked at hr-dashboard (the real org-wide writer) today.
-    await request(app).get(`/api/org/${ORG}/team-dashboard`).set(auth('mgr_a'));
-
-    const hrDashboardRes = await request(app).get(`/api/org/${ORG}/hr-dashboard`).set(auth('owner_1'));
-    expect(hrDashboardRes.status).toBe(200);
-    // Both teams must be present - proof the day's history entry wasn't
-    // already (wrongly) written by team-dashboard with only Team A in it.
-    expect(hrDashboardRes.body.teams.map((t: any) => t.team).sort()).toEqual(['Team A', 'Team B']);
-
-    const historyPaths = allPaths().filter(p => p.startsWith(`organisations/${ORG}/risk_trend_history/`));
-    expect(historyPaths.length).toBe(1);
   });
 });

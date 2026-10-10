@@ -1,8 +1,7 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { secureApiFetch } from '../lib/secure-api';
-import { cn } from '../lib/utils';
-import { ShieldCheck, Lock, Loader2, AlertTriangle, ArrowUp, ArrowDown, Minus, CheckCircle2, CircleDashed, Calendar, FlaskConical } from 'lucide-react';
+import { ShieldCheck, Lock, Loader2, AlertTriangle, CheckCircle2, CircleDashed, Calendar, FlaskConical } from 'lucide-react';
 import { WorkDesignSignalCard, type WorkDesignSignal } from './WorkDesignSignalCard';
 import { WorkDesignDemoPreview } from './WorkDesignDemoPreview';
 
@@ -10,16 +9,6 @@ interface ActiveIntervention {
   id: string;
   proposedChange: string;
   status: string;
-}
-
-interface TeamIndicator {
-  key: string;
-  label: string;
-  level: number | null;
-  severity: 'low' | 'moderate' | 'elevated' | null;
-  direction: 'improving' | 'worsening' | 'stable' | 'unknown';
-  delta: number | null;
-  note: string;
 }
 
 interface FollowUp {
@@ -32,33 +21,10 @@ interface FollowUp {
 interface HrTeamEntry {
   team: string;
   cohortSize: number;
-  overallConcern: number | null;
-  moodConcern: number | null;
-  climateConcern: number | null;
-  engagementRate: number;
-  indicators: TeamIndicator[];
   followUp: FollowUp;
   workDesignSignals?: WorkDesignSignal[];
   activeIntervention?: ActiveIntervention | null;
 }
-
-const sevClasses: Record<string, string> = {
-  elevated: 'bg-destructive/10 text-destructive dark:text-[#f87171] border-destructive/20',
-  moderate: 'bg-warning/10 text-[#9a3412] dark:text-warning border-warning/20',
-  low: 'bg-success/10 text-[#166534] dark:text-[#4ade80] border-success/20',
-};
-
-const dirClasses: Record<string, string> = {
-  worsening: 'text-destructive dark:text-[#f87171]',
-  improving: 'text-[#166534] dark:text-[#4ade80]',
-  stable: 'text-text-muted',
-  unknown: 'text-text-muted',
-};
-
-const DirIcon = ({ direction }: { direction: TeamIndicator['direction'] }) =>
-  direction === 'worsening' ? <ArrowUp className="w-3.5 h-3.5" aria-hidden="true" />
-  : direction === 'improving' ? <ArrowDown className="w-3.5 h-3.5" aria-hidden="true" />
-  : <Minus className="w-3.5 h-3.5" aria-hidden="true" />;
 
 // HR's escalation view: every qualifying team at once (unlike the
 // manager's own single-team view), the same aggregate signals a manager
@@ -170,36 +136,6 @@ export const HrEscalationDashboard = () => {
                 {entry.followUp.note && (
                   <p className="text-xs text-text-muted italic">"{entry.followUp.note}"</p>
                 )}
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div className="p-4 bg-surface dark:bg-card/40 border border-border rounded-xl">
-                    <span className="text-xs uppercase font-bold tracking-widest text-text-muted block">Engagement This Week</span>
-                    <span className="text-2xl font-display font-bold text-text-main block mt-1">{entry.engagementRate}%</span>
-                  </div>
-                  <div className="p-4 bg-surface dark:bg-card/40 border border-border rounded-xl">
-                    <span className="text-xs uppercase font-bold tracking-widest text-text-muted block">Overall Strain</span>
-                    <span className="text-2xl font-display font-bold text-text-main block mt-1">{entry.overallConcern ?? '—'}</span>
-                  </div>
-                </div>
-
-                <ul className="space-y-2">
-                  {entry.indicators.map((ind) => (
-                    <li key={ind.key} className="flex items-center gap-4 p-3 rounded-xl border border-border bg-surface/60 dark:bg-card/40">
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-bold text-text-main truncate">{ind.label}</p>
-                        <p className={cn('text-xs flex items-center gap-1 mt-0.5', dirClasses[ind.direction])}>
-                          {ind.direction !== 'unknown' && <DirIcon direction={ind.direction} />}
-                          <span className="text-text-muted">{ind.note}</span>
-                        </p>
-                      </div>
-                      {ind.severity && (
-                        <span className={cn('shrink-0 text-[11px] font-black uppercase tracking-widest px-2.5 py-1 rounded-full border', sevClasses[ind.severity])}>
-                          {ind.severity}
-                        </span>
-                      )}
-                    </li>
-                  ))}
-                </ul>
 
                 {entry.workDesignSignals && entry.workDesignSignals.length > 0 && (
                   <div className="space-y-3">

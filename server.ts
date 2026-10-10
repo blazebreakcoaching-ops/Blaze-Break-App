@@ -37,7 +37,6 @@ import { deriveEffectiveSharing, computeCapsuleExpiresAt, DEFAULT_SHARED_CATEGOR
 import { effectiveConsentStatus, canRespondToConsent, computeInviteExpiresAt, isInviteExpired } from './recovery-ally-consent';
 import { guardianSupportInvitationEnabled, validateGuardianSupportOffer, isValidGuardianSupportEventType, isValidGuardianSupportTemplateId, buildGuardianSupportMessage } from './guardian-support-invitation';
 import { quietHoursCheckPasses } from './ally-nudge-quiet-hours';
-import { buildPrimaryIndicators, sortByAttention } from './org-leading-indicators';
 import { collectionsForExport, collectionsForErasure } from './user-data-collections';
 import { htmlToPlainTextFallback, buildEmailVerificationEmail, buildPasswordResetEmail, buildPasswordChangedEmail, buildMfaEnabledEmail, buildMfaDisabledEmail, buildSupportRequestReceivedEmail, buildAllyInviteEmail, buildInactivityWarningEmail } from './brevo-templates';
 import { evaluateRetentionAction, retentionSweepIsEnabled, RetentionCandidate, RETENTION_INACTIVITY_MONTHS, RETENTION_WARNING_DAYS_BEFORE } from './data-retention';
@@ -8668,102 +8667,12 @@ const computeEngagementRate = async (db: any, uids: string[], windowDays: number
   return Math.round((activeCount / uids.length) * 100);
 };
 
-// Reads organisations/{orgId}/risk_trend_history, and - only when
-// `writeSnapshot` is true - writes today's snapshot if none has been
-// recorded yet today (idempotent - once per UTC day regardless of how
-// many routes/times this is called), then derives every trend (org-wide +
-// per-signal + per-team) against whichever prior snapshot sits closest to
-// ~28 days back. Extracted so risk-trend and hr-dashboard read and write
-// the exact same history and can never drift into disagreeing about what
-// "the trend" is for the same underlying data.
-//
-// `writeSnapshot` MUST be false whenever `orgSnapshot` isn't genuinely the
-// whole org's snapshot - e.g. team-dashboard, which only ever has ONE
-// manager's own team's data. Writing there would corrupt the shared daily
-// history: it would mislabel that one team's strain as the org-wide
-// number, and silently drop every other team's concern for that day
-// (including ones that separately qualify) - whichever route happens to
-// run first each day currently "wins" the write, so this MUST stay
-// read-only for any caller that doesn't have the complete picture.
-interface TrendHistoryResult {
-  orgTrend: ReturnType<typeof computeTrend>;
-  moodTrend: ReturnType<typeof computeTrend>;
-  climateTrend: ReturnType<typeof computeTrend>;
-  comparedAgainst: string | null;
-  history: { recordedAt: string; overallConcern: number | null }[];
-  teamTrends: Record<string, ReturnType<typeof computeTrend>>;
-}
-
-const computeTrendHistory = async (
-  db: any,
-  orgId: string,
-  orgSnapshot: OrgStrainSnapshot,
-  teamSnapshots: Record<string, OrgStrainSnapshot>,
-  writeSnapshot: boolean = true
-): Promise<TrendHistoryResult> => {
-  // Read history first so today's write (if any) doesn't contaminate the
-  // "previous" comparison computed just below.
-  const historySnap = await db.collection("organisations").doc(orgId).collection("risk_trend_history")
-    .orderBy("recordedAt", "desc").limit(90).get();
-  const history = historySnap.docs.map((d: any) => d.data() as {
-    recordedAt: string;
-    overallConcern: number | null;
-    moodConcern: number | null;
-    climateConcern: number | null;
-    teamConcerns?: Record<string, number | null>;
-  });
-
-  const todayUtc = new Date().toISOString().slice(0, 10);
-  const alreadySnapshottedToday = history.some((h: any) => h.recordedAt.slice(0, 10) === todayUtc);
-  if (writeSnapshot && !alreadySnapshottedToday && orgSnapshot.overallConcern !== null) {
-    const teamConcerns: Record<string, number | null> = {};
-    Object.entries(teamSnapshots).forEach(([team, snap]) => { teamConcerns[team] = snap.overallConcern; });
-    await db.collection("organisations").doc(orgId).collection("risk_trend_history").add({
-      recordedAt: new Date().toISOString(),
-      overallConcern: orgSnapshot.overallConcern,
-      moodConcern: orgSnapshot.moodConcern,
-      climateConcern: orgSnapshot.climateConcern,
-      teamConcerns,
-    });
-  }
-
-  // Compare against whichever snapshot sits closest to ~28 days back - a
-  // genuine month-over-month read, not noisy day-to-day movement in a
-  // signal built on overlapping 7-day windows.
-  const twentyEightDaysAgo = Date.now() - 28 * 24 * 60 * 60 * 1000;
-  const findClosestPrior = (getValue: (h: any) => number | null | undefined) => history
-    .filter((h: any) => new Date(h.recordedAt).getTime() <= twentyEightDaysAgo && getValue(h) != null)
-    .sort((a: any, b: any) => Math.abs(new Date(a.recordedAt).getTime() - twentyEightDaysAgo) - Math.abs(new Date(b.recordedAt).getTime() - twentyEightDaysAgo))[0];
-
-  const priorOrgSnapshot = findClosestPrior((h: any) => h.overallConcern);
-  const orgTrend = computeTrend(orgSnapshot.overallConcern, priorOrgSnapshot?.overallConcern ?? null);
-
-  // Per-signal direction of travel, for the leading-indicators view. Mood
-  // and climate move at different speeds (mood is the faster, more
-  // volatile early signal), so showing each one's trend separately is the
-  // point - "mood is worsening while climate holds steady" is exactly the
-  // kind of early, structural read this view exists to surface. Aggregate
-  // only; never per person.
-  const priorMood = findClosestPrior((h: any) => h.moodConcern);
-  const moodTrend = computeTrend(orgSnapshot.moodConcern, priorMood?.moodConcern ?? null);
-  const priorClimate = findClosestPrior((h: any) => h.climateConcern);
-  const climateTrend = computeTrend(orgSnapshot.climateConcern, priorClimate?.climateConcern ?? null);
-
-  const teamTrends: Record<string, ReturnType<typeof computeTrend>> = {};
-  Object.entries(teamSnapshots).forEach(([team, snap]) => {
-    const priorTeamSnapshot = findClosestPrior((h: any) => h.teamConcerns?.[team]);
-    teamTrends[team] = computeTrend(snap.overallConcern, priorTeamSnapshot?.teamConcerns?.[team] ?? null);
-  });
-
-  return {
-    orgTrend,
-    moodTrend,
-    climateTrend,
-    comparedAgainst: priorOrgSnapshot?.recordedAt || null,
-    history: history.slice().reverse().map((h: any) => ({ recordedAt: h.recordedAt, overallConcern: h.overallConcern })),
-    teamTrends,
-  };
-};
+// computeTrendHistory (the risk_trend_history reader/writer shared by
+// risk-trend/team-dashboard/hr-dashboard) was retired here - team-dashboard
+// and hr-dashboard no longer compute a mood/climate trend at all (see Lane
+// Separation Remediation PR C), and risk-trend itself was already retired
+// in PR B. Nothing writes organisations/{orgId}/risk_trend_history anymore;
+// existing documents are inert, not read by anything.
 
 // GET /api/org/:orgId/risk-trend (the "Wellbeing Risk Trend"/"Team Climate
 // Trend" view) was retired here - it blended mood_pulses and the climate
@@ -9103,24 +9012,6 @@ app.get("/api/org/:orgId/team-dashboard", verifyAppCheck, authenticateFirebaseUs
       if (teamConsentingUids.length < threshold || !complementSafe) {
         return { team, locked: true, cohortSize: teamConsentingUids.length, threshold };
       }
-      const snapshot = await computeStrainSnapshotForCohort(db, teamConsentingUids);
-      const engagementRate = await computeEngagementRate(db, teamConsentingUids, 7);
-      // Read-only: this route only ever has ONE team's data, never the
-      // whole org's, so it must never write the shared daily snapshot -
-      // see computeTrendHistory's own docstring for why.
-      const { teamTrends } = await computeTrendHistory(db, orgId, snapshot, { [team]: snapshot }, false);
-      const indicators = sortByAttention(buildPrimaryIndicators({
-        overall: snapshot.overallConcern,
-        mood: snapshot.moodConcern,
-        climate: snapshot.climateConcern,
-        overallTrend: teamTrends[team],
-      }));
-      // The Nova nudge: only surfaced when the top-attention indicator
-      // actually warrants one - never invented when things look fine.
-      const topIndicator = indicators[0];
-      const nudge = topIndicator && (topIndicator.severity === 'elevated' || topIndicator.direction === 'worsening')
-        ? { title: 'Consider a team check-in', message: topIndicator.note }
-        : null;
       // Work Design Signals - the new, structural framing this is moving
       // toward (see work-design-signals.ts): meeting load, not mood. Uses
       // the SAME teamConsentingUids/threshold already established above,
@@ -9160,12 +9051,6 @@ app.get("/api/org/:orgId/team-dashboard", verifyAppCheck, authenticateFirebaseUs
         attention,
         recommendation,
         activeIntervention,
-        overallConcern: snapshot.overallConcern,
-        moodConcern: snapshot.moodConcern,
-        climateConcern: snapshot.climateConcern,
-        engagementRate,
-        indicators,
-        nudge,
       };
     }));
 
@@ -9195,24 +9080,11 @@ app.post("/api/org/:orgId/team-dashboard/:team/acknowledge", verifyAppCheck, aut
     }
     const note: string | null = req.body?.note || null;
 
-    // Best-effort context for HR - the team's current strain at the moment
-    // of acknowledgment, if enough consenting members exist to compute one.
-    // Never blocks the ack itself if this comes back null (e.g. the team
-    // is below the k-anonymity threshold right now).
-    const memberTeams: Record<string, string> = org.memberTeams || {};
-    const memberUids: string[] = org.memberUids || [];
-    const consentingUids = await getConsentingMemberUids(db, memberUids);
-    const teamConsentingUids = consentingUids.filter((uid) => memberTeams[uid] === team);
-    const overallConcernAtAck = teamConsentingUids.length >= (org.privacyThreshold || 5)
-      ? (await computeStrainSnapshotForCohort(db, teamConsentingUids)).overallConcern
-      : null;
-
     const record = {
       team,
       acknowledgedBy: user.uid,
       acknowledgedByEmail: user.email || null,
       note,
-      overallConcernAtAck,
       createdAt: new Date().toISOString(),
     };
     await db.collection("organisations").doc(orgId).collection("team_escalation_acks").add(record);
@@ -9894,39 +9766,24 @@ app.get("/api/org/:orgId/hr-dashboard", verifyAppCheck, authenticateFirebaseUser
       return res.json(buildLockedAggregateResponse(sufficiency, { teams: [] }));
     }
 
-    const orgSnapshot = await computeStrainSnapshotForCohort(db, consentingUids);
     const { qualifying: teamGroups } = computeQualifyingTeamGroups(consentingUids, memberTeams, threshold);
-    const teamSnapshots: Record<string, OrgStrainSnapshot> = {};
-    const engagementRates: Record<string, number> = {};
-    await Promise.all(Object.entries(teamGroups).map(async ([team, uids]) => {
-      teamSnapshots[team] = await computeStrainSnapshotForCohort(db, uids);
-      engagementRates[team] = await computeEngagementRate(db, uids, 7);
-    }));
-
-    const { teamTrends } = await computeTrendHistory(db, orgId, orgSnapshot, teamSnapshots);
     // Read-only, same as team-dashboard - HR sees the same org-wide
     // baseline, never writes it (only executive-work-design does).
     const baselineDaysObserved = await getWorkDesignBaselineDays(db, orgId);
 
     const now = new Date();
-    const teams = await Promise.all(Object.entries(teamSnapshots).map(async ([team, snap]) => {
+    const teams = await Promise.all(Object.entries(teamGroups).map(async ([team, uids]) => {
       const acksSnap = await db.collection("organisations").doc(orgId).collection("team_escalation_acks")
         .where("team", "==", team).orderBy("createdAt", "desc").limit(5).get();
       const acks = acksSnap.docs.map((d: any) => d.data());
       const followUp = describeFollowUp(acks, now);
-      const indicators = sortByAttention(buildPrimaryIndicators({
-        overall: snap.overallConcern,
-        mood: snap.moodConcern,
-        climate: snap.climateConcern,
-        overallTrend: teamTrends[team],
-      }));
       // Work Design Signals, read-only for HR - the same structural signal
       // a manager sees (see team-dashboard above), never a recommendation
       // or a "start trial" action: those stay manager-only, HR only gets
       // visibility into what's running (activeIntervention) via the
       // Intervention Register, not the power to start one on a team they
       // don't manage.
-      const workDesignSignals = [await buildMeetingPressureSignal(db, teamGroups[team], threshold, baselineDaysObserved)];
+      const workDesignSignals = [await buildMeetingPressureSignal(db, uids, threshold, baselineDaysObserved)];
       const interventionsSnap = await db.collection("organisations").doc(orgId).collection("work_design_interventions")
         .where("team", "==", team).get();
       const activeIntervention = interventionsSnap.docs
@@ -9934,14 +9791,9 @@ app.get("/api/org/:orgId/hr-dashboard", verifyAppCheck, authenticateFirebaseUser
         .find((iv: any) => ACTIVE_INTERVENTION_STATUSES.has(iv.status)) || null;
       return {
         team,
-        cohortSize: teamGroups[team].length,
+        cohortSize: uids.length,
         workDesignSignals,
         activeIntervention,
-        overallConcern: snap.overallConcern,
-        moodConcern: snap.moodConcern,
-        climateConcern: snap.climateConcern,
-        engagementRate: engagementRates[team],
-        indicators,
         followUp,
       };
     }));

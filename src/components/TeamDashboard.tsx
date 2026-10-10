@@ -1,8 +1,7 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { secureApiFetch } from '../lib/secure-api';
-import { cn } from '../lib/utils';
-import { Users, Lock, Loader2, AlertTriangle, ShieldCheck, ArrowUp, ArrowDown, Minus, HeartPulse, Calendar, Sparkles, FlaskConical } from 'lucide-react';
+import { Users, Lock, Loader2, AlertTriangle, ShieldCheck, HeartPulse, Calendar, Sparkles, FlaskConical } from 'lucide-react';
 import { WorkDesignSignalCard, type WorkDesignSignal as TeamWorkDesignSignal } from './WorkDesignSignalCard';
 import { WorkDesignDemoPreview } from './WorkDesignDemoPreview';
 
@@ -43,50 +42,16 @@ const OUTCOME_RATING_OPTIONS: { value: OutcomeRating; label: string }[] = [
   { value: 'stopped_early', label: 'Stopped Early' },
 ];
 
-interface TeamIndicator {
-  key: string;
-  label: string;
-  level: number | null;
-  severity: 'low' | 'moderate' | 'elevated' | null;
-  direction: 'improving' | 'worsening' | 'stable' | 'unknown';
-  delta: number | null;
-  note: string;
-}
-
 interface TeamEntry {
   team: string;
   locked: boolean;
   cohortSize: number;
   threshold: number;
-  overallConcern?: number | null;
-  moodConcern?: number | null;
-  climateConcern?: number | null;
-  engagementRate?: number;
-  indicators?: TeamIndicator[];
-  nudge?: { title: string; message: string } | null;
   workDesignSignals?: TeamWorkDesignSignal[];
   attention?: string[];
   recommendation?: ManagerRecommendation | null;
   activeIntervention?: ActiveIntervention | null;
 }
-
-const sevClasses: Record<string, string> = {
-  elevated: 'bg-destructive/10 text-destructive dark:text-[#f87171] border-destructive/20',
-  moderate: 'bg-warning/10 text-[#9a3412] dark:text-warning border-warning/20',
-  low: 'bg-success/10 text-[#166534] dark:text-[#4ade80] border-success/20',
-};
-
-const dirClasses: Record<string, string> = {
-  worsening: 'text-destructive dark:text-[#f87171]',
-  improving: 'text-[#166534] dark:text-[#4ade80]',
-  stable: 'text-text-muted',
-  unknown: 'text-text-muted',
-};
-
-const DirIcon = ({ direction }: { direction: TeamIndicator['direction'] }) =>
-  direction === 'worsening' ? <ArrowUp className="w-3.5 h-3.5" aria-hidden="true" />
-  : direction === 'improving' ? <ArrowDown className="w-3.5 h-3.5" aria-hidden="true" />
-  : <Minus className="w-3.5 h-3.5" aria-hidden="true" />;
 
 // The manager's own view of their team(s): aggregate, anonymised
 // strain/engagement signals only - never anything at the level of a named
@@ -270,13 +235,13 @@ export const TeamDashboard = () => {
                   <span><strong>Privacy Rule Active:</strong> Aggregated and anonymised. Cohort size: {entry.cohortSize} teammates.</span>
                 </div>
 
-                {entry.nudge && (
+                {entry.attention && entry.attention.length > 0 && (
                   <div role="status" className="bg-warning/10 border border-warning/20 rounded-xl p-4 space-y-3">
                     <div className="flex items-start gap-3">
                       <HeartPulse className="w-5 h-5 text-warning shrink-0 mt-0.5" aria-hidden="true" />
                       <div>
-                        <p className="font-bold text-text-main text-sm">{entry.nudge.title}</p>
-                        <p className="text-text-muted text-sm mt-0.5">{entry.nudge.message}</p>
+                        <p className="font-bold text-text-main text-sm">Consider a team check-in</p>
+                        <p className="text-text-muted text-sm mt-0.5">{entry.attention[0]}</p>
                       </div>
                     </div>
                     {ackConfirmed[entry.team] ? (
@@ -416,45 +381,6 @@ export const TeamDashboard = () => {
                   </div>
                 )}
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div className="p-5 bg-surface dark:bg-card/40 border border-border rounded-xl">
-                    <span className="text-xs uppercase font-bold tracking-widest text-text-muted block">Engagement This Week</span>
-                    <span className="text-3xl font-display font-bold text-text-main block mt-1">
-                      {entry.engagementRate != null ? `${entry.engagementRate}%` : '—'}
-                    </span>
-                    <p className="text-xs text-text-muted mt-1">Share of consenting teammates with any activity in the last 7 days - never who.</p>
-                  </div>
-                  <div className="p-5 bg-surface dark:bg-card/40 border border-border rounded-xl">
-                    <span className="text-xs uppercase font-bold tracking-widest text-text-muted block">Overall Strain</span>
-                    <span className="text-3xl font-display font-bold text-text-main block mt-1">
-                      {entry.overallConcern != null ? entry.overallConcern : '—'}
-                    </span>
-                    <p className="text-xs text-text-muted mt-1">Scale 0-100, higher means more strain.</p>
-                  </div>
-                </div>
-
-                {entry.indicators && entry.indicators.length > 0 && (
-                  <ul className="space-y-2.5">
-                    {entry.indicators.map((ind) => (
-                      <li key={ind.key} className="flex items-center gap-4 p-4 rounded-xl border border-border bg-surface/60 dark:bg-card/40">
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-bold text-text-main truncate">{ind.label}</p>
-                          <p className={cn('text-xs flex items-center gap-1 mt-0.5', dirClasses[ind.direction])}>
-                            {ind.direction !== 'unknown' && <DirIcon direction={ind.direction} />}
-                            <span className="text-text-muted">{ind.note}</span>
-                          </p>
-                        </div>
-                        {ind.severity ? (
-                          <span className={cn('shrink-0 text-[11px] font-black uppercase tracking-widest px-2.5 py-1 rounded-full border', sevClasses[ind.severity])}>
-                            {ind.severity}
-                          </span>
-                        ) : (
-                          <span className="shrink-0 text-[11px] text-text-muted">no data yet</span>
-                        )}
-                      </li>
-                    ))}
-                  </ul>
-                )}
               </>
             )}
           </motion.div>
