@@ -49,7 +49,7 @@ export const TAB_VISIBILITY_RULES: TabVisibilityRule[] = [
   { id: 'privacy', label: 'Privacy Centre', roles: ['individual', 'employee', 'executive', 'manager', 'organisation_admin'] },
   { id: 'ally', label: 'My Support Circle', roles: ['individual', 'employee', 'executive', 'recovery_ally'] },
   { id: 'guide', label: 'User Guide', roles: ['individual', 'employee', 'recovery_ally', 'manager', 'organisation_admin', 'executive', 'platform_admin', 'security_admin', 'platform_owner', 'support_admin', 'content_admin', 'coach_admin', 'b2b_admin', 'viewer_admin', 'user'] },
-  { id: 'org', label: 'Organisation', roles: ['manager', 'organisation_admin', 'platform_admin', 'security_admin'] },
+  { id: 'org', label: 'Organisation', roles: ['individual', 'employee', 'executive', 'manager', 'organisation_admin', 'platform_admin', 'security_admin'] },
   { id: 'evolution', label: 'Evolution Engine', roles: [...EVOLUTION_ENGINE_ROLES] },
   { id: 'intelligence', label: 'Intelligence Layer', roles: [...EVOLUTION_ENGINE_ROLES] },
   { id: 'executive', label: 'Recovery Report', roles: ['executive', 'platform_admin', 'security_admin'] },

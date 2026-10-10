@@ -17,6 +17,7 @@ import {
   ListChecks,
   CreditCard,
   Navigation,
+  Building2,
 } from 'lucide-react';
 
 interface GuideFeature {
@@ -137,6 +138,9 @@ const SAFETY_NET: GuideFeature[] = [
   },
   { tab: 'privacy', tag: 'Privacy Centre', title: 'Your data, your rules', description: 'See exactly what is stored, export it, or delete it - always on, nothing to go looking for.', icon: Lock },
   { tab: 'subscription', tag: 'Plan & Billing', title: 'Your plan and usage', description: "See your current plan, what's included, how much you've used this month, and change or cancel any time - no calls, no hoops.", icon: CreditCard },
+  {
+    tab: 'org', tag: 'Organisation', title: 'Work Design Pulse', description: "If your employer provides Blaze Break, see exactly what they can and can't see, what they're changing about how work is structured, and whether it's helping - without exposing your private recovery data. Not linked to an employer? You'll see how to join one here, or you can keep using Blaze Break entirely on your own.", icon: Building2,
+  },
 ];
 
 const FEATURE_GROUPS: { label: string; features: GuideFeature[] }[] = [

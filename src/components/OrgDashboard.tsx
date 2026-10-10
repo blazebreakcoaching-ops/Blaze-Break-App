@@ -64,7 +64,7 @@ const BODY_SIGNAL_LABELS: Record<string, string> = {
   stomach_discomfort: 'Stomach Discomfort',
 };
 
-export const OrgDashboard = () => {
+export const OrgDashboard = ({ onNavigate }: { onNavigate?: (tab: string) => void } = {}) => {
   const [activeSubTab, setActiveSubTab] = useState<'climate' | 'pulse' | 'value' | 'moments' | 'team' | 'governance'>('pulse');
   const [alertEnabled, setAlertEnabled] = useState(false);
 
@@ -586,9 +586,20 @@ export const OrgDashboard = () => {
       <div className="flex flex-col items-center justify-center p-6 sm:p-8 md:p-12 text-center bg-surface dark:bg-surface/50 rounded-xl border border-dashed border-border dark:border-border">
         <Building className="w-12 h-12 text-text-muted mb-4" />
         <h3 className="text-xl font-bold text-text-main mb-2">No Organisation Linked</h3>
-        <p className="text-text-muted text-sm max-w-md">
-          Join your employer's organisation from the Trust &amp; Privacy Centre to see this dashboard, or ask your admin to set one up.
+        <p className="text-text-muted text-sm max-w-md mb-6">
+          You're not currently connected to an organisation. If your employer provides Blaze Break, you can join from Trust &amp; Privacy. Your private recovery space remains separate either way.
         </p>
+        <div className="flex flex-col sm:flex-row gap-3">
+          <button onClick={() => onNavigate?.('privacy')} className="btn-primary text-sm">
+            Join Organisation
+          </button>
+          <button onClick={() => onNavigate?.('privacy')} className="btn-secondary text-sm">
+            Learn What Organisations Can See
+          </button>
+          <button onClick={() => onNavigate?.('home')} className="text-sm font-bold text-text-muted hover:text-text-main px-4 py-2">
+            Keep Using Blaze Break Privately
+          </button>
+        </div>
       </div>
     );
   }

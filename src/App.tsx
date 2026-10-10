@@ -321,10 +321,18 @@ export const ALL_TABS: {
     ],
   },
   {
+    // Reachable by every real role, including a plain "individual" with
+    // no organisationId at all - the Work Design Pulse spec requires
+    // that an org-less user can still reach this tab and see an honest
+    // "not linked" state with real next steps (Join Organisation /
+    // Learn What Organisations Can See / Keep Using Blaze Break
+    // Privately), not that the nav entry hides until they're already
+    // linked. Matches the route-protection check below exactly, so the
+    // two can never drift the way they had before this fix.
     id: "org",
     icon: Users,
     label: "Organisation",
-    roles: ["manager", "organisation_admin", "platform_admin", "security_admin"],
+    roles: ["individual", "employee", "executive", "manager", "organisation_admin", "platform_admin", "security_admin"],
   },
   {
     id: "evolution",
@@ -790,7 +798,7 @@ const EYEBROW_LABELS: Record<string, string> = {
   subscription: "Plan & Billing",
   privacy: "Privacy & Trust Centre",
   guide: "How To Use Blaze Break",
-  org: "Collective Stability Pulse",
+  org: "Work Design Pulse",
   evolution: "Feature Configuration",
   intelligence: "Recovery Trends",
   executive: "Executive Reporting",
@@ -965,7 +973,7 @@ const Header = ({
         {activeTab === "guide" &&
           "A plain-English walkthrough — what everything does, and where to start if it feels like a lot."}
         {activeTab === "org" &&
-          "Analysing systemic resilience across the professional ecosystem."}
+          "How work is structured, where unnecessary pressure is building, and what your organisation is doing about it — without exposing your private recovery data."}
         {activeTab === "evolution" &&
           "Turn modules on or off. Most reflect a real on/off state; a few are placeholders not yet wired to anything — each one says which."}
         {activeTab === "intelligence" &&
@@ -1541,7 +1549,12 @@ export default function App() {
     const isProtected = adminTabs.includes(activeTab);
     
     if (isProtected) {
-      if (activeTab === "org" && effectiveRole !== "platform_admin" && !["manager", "organisation_admin", "individual"].includes(effectiveRole)) {
+      // Matches the "org" entry's own roles array above exactly (Work
+      // Design Pulse fix) - previously missing "employee"/"executive"/
+      // "security_admin", which the nav button already allowed through,
+      // so a nav click and a restored/deep-linked activeTab could
+      // disagree on who belongs here.
+      if (activeTab === "org" && effectiveRole !== "platform_admin" && !["individual", "employee", "executive", "manager", "organisation_admin", "security_admin"].includes(effectiveRole)) {
         setActiveTab("home");
       }
       // Previously one combined check lumped "executive" (a customer plan
@@ -2914,8 +2927,7 @@ export default function App() {
 
             {activeTab === "org" && (
               <div className="space-y-32">
-                <OrgDashboard />
-                <OutcomeTracker fingerprint={fingerprint} />
+                <OrgDashboard onNavigate={safeSetActiveTab as any} />
               </div>
             )}
 
@@ -2962,6 +2974,16 @@ export default function App() {
                   fingerprint={fingerprint}
                   isDemoSession={isDemoSession}
                 />
+                {/* Relocated here from the "org" tab (Work Design Pulse PR1) -
+                    OutcomeTracker is entirely personal, per-user data (own
+                    boundary scripts, wins, trigger intensity, capacity) with
+                    no org scoping or aggregation. It was previously rendered
+                    as an unconditional sibling of OrgDashboard, leaking
+                    private recovery metrics underneath organisation framing
+                    regardless of whether the user was even linked to an org.
+                    Its own underlying data (/api/user/outcome-tracker) is
+                    real and honest - only its placement was wrong. */}
+                <OutcomeTracker fingerprint={fingerprint} />
               </div>
             )}
 
