@@ -103,8 +103,22 @@ export interface OrgTrends {
   boundaryPracticesCount: number;
 }
 
-export type AuthRole = 
-  | 'individual' 
+// A Firebase custom-claim role describing what kind of Blaze Break
+// CUSTOMER this is - it gates which consumer-facing nav tabs appear
+// (App.tsx's ALL_TABS/tab-visibility.ts), nothing about real B2B
+// organisation governance. In particular 'organisation_admin' and
+// 'executive' here are self-selected/platform-set consumer roles, NOT
+// the same thing as a real org's own granular admin role - see
+// org-rbac.ts's OrgRole (owner/admin/security_admin/...), which is the
+// only source of truth requireOrgAdmin/requireOrgRole and every WDI/
+// governance route actually check. A user can hold AuthRole
+// 'organisation_admin' and still have zero real access to any
+// organisation's data, or hold AuthRole 'individual' and be a real org
+// owner - these two role axes are deliberately independent (see
+// admin-roles.ts's header for the third, platform-staff axis). Do not
+// use this type to gate anything that touches real org member/role data.
+export type AuthRole =
+  | 'individual'
   | 'employee' 
   | 'recovery_ally' 
   | 'manager' 

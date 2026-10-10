@@ -72,6 +72,41 @@ describe('organisation_privacy_isolation', () => {
       }
     }
   });
+
+  // Role model reconciliation (WDI PR13): isAdmin here must resolve
+  // through the same getOrgMemberRole every real admin-gated route uses,
+  // never a raw org.adminUids check - otherwise this list could show
+  // someone as "not admin" while every actual permission check already
+  // treats them as one.
+  it("GET /api/org/:orgId/members shows isAdmin: true for a member promoted only via the granular role system", async () => {
+    seedDoc('organisations/org_1', { name: 'Test Org', adminUids: ['owner_1'], memberUids: ['owner_1', 'granular_admin'] });
+    seedDoc('organisations/org_1/members/owner_1', { role: 'owner', status: 'active' });
+    seedDoc('organisations/org_1/members/granular_admin', { role: 'admin', status: 'active' });
+
+    const res = await request(app).get('/api/org/org_1/members').set(auth('owner_1'));
+    expect(res.status).toBe(200);
+    const granular = res.body.members.find((m: any) => m.uid === 'granular_admin');
+    expect(granular?.isAdmin).toBe(true);
+  });
+
+  // Structural proof of the same reconciliation, not just a passing
+  // example: the real org-governance resolution functions must never
+  // read the platform/consumer AuthRole claim (req.user.role) - that
+  // claim answers "what kind of customer is this person", a completely
+  // different, independent question from "what is this person's real
+  // role in THIS organisation" (see src/types.ts's AuthRole comment and
+  // org-rbac.ts's header). If either function ever started reading
+  // user.role, a user's self-selected/platform-set consumer tier could
+  // silently start granting or blocking real org admin access.
+  it('getOrgMemberRole and requireOrgRole never read the platform/consumer AuthRole claim (user.role)', () => {
+    const getOrgMemberRoleStart = serverSource.indexOf('const getOrgMemberRole = async');
+    expect(getOrgMemberRoleStart).toBeGreaterThan(-1);
+    const requireOrgRoleStart = serverSource.indexOf('const requireOrgRole = async');
+    expect(requireOrgRoleStart).toBeGreaterThan(getOrgMemberRoleStart);
+    const requireOrgAdminEnd = serverSource.indexOf('const requireOrgAdmin = async') + 300;
+    const block = serverSource.slice(getOrgMemberRoleStart, requireOrgAdminEnd);
+    expect(block).not.toMatch(/user\.role|req\.user\.role|AuthRole/);
+  });
 });
 
 describe('guardian_alert_explicit_trigger_only', () => {

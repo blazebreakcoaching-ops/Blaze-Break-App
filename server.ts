@@ -7790,7 +7790,18 @@ app.get("/api/org/me", verifyAppCheck, authenticateFirebaseUser, async (req, res
       return res.json({ organisationId: null });
     }
     const org = orgDoc.data()!;
-    const isOrgAdmin = (org.adminUids || []).includes(user.uid);
+    // Role model reconciliation: this used to check org.adminUids
+    // directly, bypassing getOrgMemberRole - the same resolution every
+    // real backend guard (requireOrgAdmin, requireOrgRole) already uses.
+    // A member promoted to the granular 'admin'/'owner' OrgRole via
+    // POST .../members/:memberUid/role (which only ever writes the
+    // members/{uid} subdocument, never org.adminUids) would pass every
+    // real admin-gated route but never see isOrgAdmin:true here - a real
+    // admin with no nav entry to reach their own actual access. Resolving
+    // through the same function used server-side everywhere else means
+    // this can never drift from what the backend actually enforces again.
+    const callerRole = await getOrgMemberRole(db, orgId, org, user.uid);
+    const isOrgAdmin = callerRole === 'owner' || callerRole === 'admin';
     res.json({
       organisationId: orgId,
       organisationName: org.name,
@@ -8879,24 +8890,31 @@ app.get("/api/org/:orgId/members", verifyAppCheck, authenticateFirebaseUser, asy
   try {
     const { orgId } = req.params;
     const { org } = await requireOrgAdmin(req, orgId);
+    const db = getDb();
     const memberUids: string[] = org.memberUids || [];
-    const adminUids: string[] = org.adminUids || [];
     const memberTeams: Record<string, string> = org.memberTeams || {};
 
     const members = await Promise.all(memberUids.map(async (uid) => {
       const managesTeams = managedTeamsFor(org.teamManagers, uid);
+      // Role model reconciliation: resolved via getOrgMemberRole (the
+      // same function every real admin-gated route uses), never a raw
+      // org.adminUids check - a member promoted to 'admin'/'owner' only
+      // via their members/{uid} subdocument (the real, current way to
+      // grant it) must show as an admin here too, not just pass the
+      // actual permission check while this list says otherwise.
+      const isAdmin = ['owner', 'admin'].includes(await getOrgMemberRole(db, orgId, org, uid) || '');
       try {
         const authUser = await getAuth().getUser(uid);
         return {
           uid,
           email: authUser.email || null,
           displayName: authUser.displayName || null,
-          isAdmin: adminUids.includes(uid),
+          isAdmin,
           team: memberTeams[uid] || null,
           managesTeams,
         };
       } catch (e) {
-        return { uid, email: null, displayName: null, isAdmin: adminUids.includes(uid), team: memberTeams[uid] || null, managesTeams };
+        return { uid, email: null, displayName: null, isAdmin, team: memberTeams[uid] || null, managesTeams };
       }
     }));
 

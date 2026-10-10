@@ -76,4 +76,30 @@ describe('GET /api/org/me', () => {
     const res = await request(app).get('/api/org/me').set(auth('mgr_1'));
     expect(res.body.managedTeams.sort()).toEqual(['Team A', 'Team B']);
   });
+
+  // Role model reconciliation: a member promoted to 'admin' only via the
+  // granular members/{uid} subdocument (the real, current way to grant
+  // it - see POST /api/org/:orgId/members/:memberUid/role, which never
+  // touches org.adminUids) must see isOrgAdmin: true here too, since
+  // requireOrgAdmin already treats them as a real admin on every actual
+  // backend route. Before this fix, isOrgAdmin checked org.adminUids
+  // directly - a real admin with working API access but no nav entry to
+  // ever reach it.
+  it('a member promoted to admin only via the granular role system (never added to org.adminUids) still gets isOrgAdmin: true', async () => {
+    seedDoc(`organisations/${ORG}`, { adminUids: ['owner_1'], memberUids: ['owner_1', 'granular_admin'], hrViewerUids: [], teamManagers: {} });
+    seedDoc(`organisations/${ORG}/members/granular_admin`, { role: 'admin', status: 'active' });
+    seedDoc('users/granular_admin', { organisationId: ORG });
+    const res = await request(app).get('/api/org/me').set(auth('granular_admin'));
+    expect(res.status).toBe(200);
+    expect(res.body.isOrgAdmin).toBe(true);
+    expect(res.body.isHrViewer).toBe(true);
+  });
+
+  it('a plain member with a granular "member" role (not in org.adminUids either way) still correctly sees isOrgAdmin: false', async () => {
+    seedDoc(`organisations/${ORG}`, { adminUids: ['owner_1'], memberUids: ['owner_1', 'plain_member'], hrViewerUids: [], teamManagers: {} });
+    seedDoc(`organisations/${ORG}/members/plain_member`, { role: 'member', status: 'active' });
+    seedDoc('users/plain_member', { organisationId: ORG });
+    const res = await request(app).get('/api/org/me').set(auth('plain_member'));
+    expect(res.body.isOrgAdmin).toBe(false);
+  });
 });

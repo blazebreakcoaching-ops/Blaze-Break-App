@@ -170,6 +170,34 @@ export const OrgDashboard = () => {
   const [auditLogs, setAuditLogs] = useState<{ id: string; actorEmail: string; action: string; targetResourceType: string; targetResourceId: string; createdAt: any }[]>([]);
   const [auditLogsLoading, setAuditLogsLoading] = useState(false);
   const [auditLogsError, setAuditLogsError] = useState('');
+  // Workplace Governance control panel: which member's role is currently
+  // being changed (disables just that row's dropdown, not the whole
+  // table) and the error for a specific attempt - the real role-change
+  // route (POST .../members/:memberUid/role) already enforces who can
+  // assign what and blocks demoting the last owner; this just surfaces
+  // whatever it decides, never a second, client-side copy of that logic.
+  const [changingRoleUid, setChangingRoleUid] = useState<string | null>(null);
+  const [roleChangeError, setRoleChangeError] = useState('');
+
+  const handleRoleChange = async (orgIdToUse: string, memberUid: string, nextRole: string) => {
+    setChangingRoleUid(memberUid);
+    setRoleChangeError('');
+    try {
+      const res = await secureApiFetch(`/api/org/${orgIdToUse}/members/${memberUid}/role`, {
+        method: 'POST',
+        data: { role: nextRole },
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setRoleChangeError(data.error || 'Could not change that role.');
+      } else {
+        await fetchGovernance(orgIdToUse);
+      }
+    } catch (e) {
+      setRoleChangeError('Could not change that role.');
+    }
+    setChangingRoleUid(null);
+  };
 
   const fetchGovernance = async (currentOrgId: string) => {
     setGovernanceLoading(true);
@@ -1198,11 +1226,24 @@ export const OrgDashboard = () => {
                       </tbody>
                     </table>
                   </div>
+                  {roleChangeError && (
+                    <p role="alert" className="text-xs text-destructive">{roleChangeError}</p>
+                  )}
                   <div className="pt-2 space-y-1.5">
                     {governanceData.members.map(m => (
-                      <div key={m.uid} className="flex items-center justify-between text-xs py-1.5 border-b border-border/30 last:border-0">
-                        <span className="text-text-main">{m.displayName || m.email || m.uid}</span>
-                        <span className="text-text-muted font-bold uppercase tracking-widest">{(m.role || 'member').replace(/_/g, ' ')}</span>
+                      <div key={m.uid} className="flex items-center justify-between gap-3 text-xs py-1.5 border-b border-border/30 last:border-0">
+                        <span className="text-text-main truncate">{m.displayName || m.email || m.uid}</span>
+                        <select
+                          aria-label={`Role for ${m.displayName || m.email || m.uid}`}
+                          value={m.role || 'member'}
+                          disabled={changingRoleUid === m.uid}
+                          onChange={(e) => orgStatus?.organisationId && handleRoleChange(orgStatus.organisationId, m.uid, e.target.value)}
+                          className="shrink-0 bg-surface border border-border rounded-lg px-2 py-1 text-xs font-bold uppercase tracking-widest text-text-muted capitalize disabled:opacity-50"
+                        >
+                          {Object.keys(governanceData.roleReference).map((role) => (
+                            <option key={role} value={role}>{role.replace(/_/g, ' ')}</option>
+                          ))}
+                        </select>
                       </div>
                     ))}
                   </div>
