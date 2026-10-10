@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { secureApiFetch } from '../lib/secure-api';
-import { Building2, Lock, Loader2, AlertTriangle, ShieldCheck, Calendar, Info, Plug, Download } from 'lucide-react';
+import { Building2, Lock, Loader2, AlertTriangle, ShieldCheck, Calendar, Info, Plug, Download, ClipboardList, Gauge, Award } from 'lucide-react';
 import { WorkDesignSignalCard, type WorkDesignSignal } from './WorkDesignSignalCard';
 import { WorkDesignDemoPreview } from './WorkDesignDemoPreview';
 
@@ -20,7 +20,38 @@ interface FinancialRangeEstimate {
   assumptionNote: string;
 }
 
+interface DebtItem {
+  id: string;
+  team: string;
+  signalKey: string;
+  description: string;
+  status: string;
+  ownerUid: string | null;
+}
+
+interface InterventionOutcome {
+  id: string;
+  team: string;
+  signalKey: string;
+  proposedChange: string;
+  status: string;
+  employeeBurden: string;
+  outcomeRating: string | null;
+}
+
 const currencySymbol: Record<string, string> = { GBP: '£' };
+
+const DEBT_STATUS_LABELS: Record<string, string> = {
+  identified: 'Identified', owned: 'Owned', in_progress: 'In Progress',
+  monitoring: 'Monitoring', resolved: 'Resolved', deferred: 'Deferred',
+};
+const OUTCOME_LABELS: Record<string, string> = {
+  useful: 'Useful', partly_useful: 'Partly Useful', no_clear_difference: 'No Clear Difference',
+  created_another_problem: 'Created Another Problem', stopped_early: 'Stopped Early',
+};
+const BURDEN_LABELS: Record<string, string> = {
+  removes: 'Removes Burden', neutral: 'Neutral', low: 'Low Burden', moderate: 'Moderate Burden', high: 'High Burden',
+};
 
 // Executive Work Design - org-wide, never per-employee. Replaces nothing
 // that already existed for this audience (investigation found the old
@@ -46,6 +77,12 @@ export const ExecutiveWorkDesignReport = () => {
   const [orgId, setOrgId] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState('');
+  const [narrative, setNarrative] = useState('');
+  const [actionBudget, setActionBudget] = useState<{ maxConcurrentActiveInterventions: number; activeInterventionCount: number } | null>(null);
+  const [debtSummary, setDebtSummary] = useState<{ openDebtCount: number; openDebtWithoutOwnerCount: number } | null>(null);
+  const [localOperatingPrincipleCount, setLocalOperatingPrincipleCount] = useState(0);
+  const [debtItems, setDebtItems] = useState<DebtItem[]>([]);
+  const [outcomes, setOutcomes] = useState<InterventionOutcome[]>([]);
 
   useEffect(() => {
     const load = async () => {
@@ -60,9 +97,11 @@ export const ExecutiveWorkDesignReport = () => {
           return;
         }
         setOrgId(me.organisationId);
-        const [reportRes, coverageRes] = await Promise.all([
+        const [reportRes, coverageRes, debtRes, interventionsRes] = await Promise.all([
           secureApiFetch(`/api/org/${me.organisationId}/executive-work-design`),
           secureApiFetch(`/api/org/${me.organisationId}/data-coverage`),
+          secureApiFetch(`/api/org/${me.organisationId}/work-design-debt`),
+          secureApiFetch(`/api/org/${me.organisationId}/work-design-interventions`),
         ]);
         const data = await reportRes.json();
         if (!reportRes.ok) {
@@ -74,10 +113,20 @@ export const ExecutiveWorkDesignReport = () => {
           setSignals(data.workDesignSignals || []);
           setCostInputsAvailable(!!data.costInputsAvailable);
           setFinancialEstimate(data.financialEstimate || null);
+          setNarrative(data.narrative || '');
+          setActionBudget(data.actionBudget || null);
+          setDebtSummary(data.debtSummary || null);
+          setLocalOperatingPrincipleCount(data.localOperatingPrincipleCount || 0);
         }
         const coverageData = await coverageRes.json();
         if (coverageRes.ok) {
           setConnectors(coverageData.connectors || []);
+        }
+        const debtData = await debtRes.json();
+        if (debtRes.ok) setDebtItems((debtData.items || []).filter((d: DebtItem) => d.status !== 'resolved'));
+        const interventionsData = await interventionsRes.json();
+        if (interventionsRes.ok) {
+          setOutcomes((interventionsData.interventions || []).filter((iv: InterventionOutcome) => iv.status === 'completed').slice(0, 10));
         }
       } catch (e) {
         setError('Could not load the Executive Work Design report.');
@@ -188,10 +237,87 @@ ${data.financialEstimate ? `<p><strong>Illustrative cost range:</strong> £${dat
         <p className="text-xs text-destructive">{exportError}</p>
       )}
 
+      {narrative && (
+        <div className="card">
+          <p className="text-sm text-text-main leading-relaxed">{narrative}</p>
+        </div>
+      )}
+
       <div className="bg-primary/10 border border-primary/20 rounded-xl p-4 flex items-center gap-3 text-sm font-medium text-text-main">
         <ShieldCheck className="w-5 h-5 text-primary shrink-0" />
         <span>Same privacy rule as every other view: aggregated and anonymised, never an individual's own data.</span>
       </div>
+
+      {actionBudget && (
+        <div className="card space-y-3">
+          <h4 className="text-xs uppercase font-bold tracking-widest text-text-muted flex items-center gap-2">
+            <Gauge className="w-3.5 h-3.5" /> Organisational Action Budget
+          </h4>
+          <p className="text-sm text-text-main">
+            <strong>{actionBudget.activeInterventionCount}</strong> of <strong>{actionBudget.maxConcurrentActiveInterventions}</strong> simultaneous active changes in use.
+          </p>
+          <p className="text-xs text-text-muted leading-relaxed">
+            A deliberate ceiling so employees never experience more simultaneous structural change than your organisation decided was reasonable.
+          </p>
+        </div>
+      )}
+
+      {debtSummary && (
+        <div className="card space-y-4">
+          <h4 className="text-xs uppercase font-bold tracking-widest text-text-muted flex items-center gap-2">
+            <ClipboardList className="w-3.5 h-3.5" /> Work Design Debt
+          </h4>
+          {debtItems.length === 0 ? (
+            <p className="text-sm text-text-muted">No open Work Design Debt items.</p>
+          ) : (
+            <ul className="space-y-2.5">
+              {debtItems.map((item) => (
+                <li key={item.id} className="p-4 rounded-xl border border-border bg-surface/60 dark:bg-card/40 flex items-center justify-between gap-4">
+                  <div className="min-w-0">
+                    <p className="text-sm font-bold text-text-main truncate">{item.description}</p>
+                    <p className="text-xs text-text-muted mt-0.5">{item.team}</p>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    {!item.ownerUid && (
+                      <span className="text-[11px] font-black uppercase tracking-widest px-2.5 py-1 rounded-full border bg-destructive/10 text-destructive border-destructive/20">No Owner</span>
+                    )}
+                    <span className="text-[11px] font-black uppercase tracking-widest px-2.5 py-1 rounded-full border bg-primary/10 text-primary border-primary/20">
+                      {DEBT_STATUS_LABELS[item.status] || item.status}
+                    </span>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+          {localOperatingPrincipleCount > 0 && (
+            <p className="text-xs text-text-muted flex items-center gap-1.5 pt-1">
+              <Award className="w-3.5 h-3.5 text-primary" /> {localOperatingPrincipleCount} practice{localOperatingPrincipleCount === 1 ? '' : 's'} established as a Local Operating Principle.
+            </p>
+          )}
+        </div>
+      )}
+
+      {outcomes.length > 0 && (
+        <div className="card space-y-4">
+          <h4 className="text-xs uppercase font-bold tracking-widest text-text-muted flex items-center gap-2">
+            <ClipboardList className="w-3.5 h-3.5" /> Recent Outcomes
+          </h4>
+          <ul className="grid sm:grid-cols-2 gap-3">
+            {outcomes.map((outcome) => (
+              <li key={outcome.id} className="p-4 rounded-xl border border-border bg-surface/60 dark:bg-card/40 space-y-1.5">
+                <p className="text-sm font-bold text-text-main">{outcome.proposedChange}</p>
+                <p className="text-xs text-text-muted">{outcome.team}</p>
+                <div className="flex items-center gap-2 pt-1">
+                  <span className="text-[11px] font-black uppercase tracking-widest px-2.5 py-1 rounded-full border bg-primary/10 text-primary border-primary/20">
+                    {outcome.outcomeRating ? OUTCOME_LABELS[outcome.outcomeRating] || outcome.outcomeRating : 'No outcome recorded'}
+                  </span>
+                  <span className="text-[11px] text-text-muted uppercase tracking-widest">{BURDEN_LABELS[outcome.employeeBurden] || outcome.employeeBurden}</span>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       <div className="card space-y-4">
         <h4 className="text-xs uppercase font-bold tracking-widest text-text-muted flex items-center gap-2">

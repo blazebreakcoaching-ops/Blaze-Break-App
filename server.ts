@@ -106,6 +106,7 @@ import { computeEvidenceLevel, canPromoteToLocalOperatingPrinciple, EVIDENCE_LEV
 import { checkWorkDesignDrift } from './work-design-drift-detector';
 import { deriveSuggestionResponse } from './suggestion-response';
 import { getEffectiveActionBudget, validateActionBudgetUpdate, canStartNewIntervention } from './action-budget';
+import { buildExecutiveNarrative } from './executive-narrative';
 import { buildFinancialRangeEstimate } from './executive-work-design';
 
 dotenv.config();
@@ -10131,6 +10132,26 @@ const buildExecutiveWorkDesignPayload = async (db: any, orgId: string, org: any,
   const primarySignal = workDesignSignals[0];
   const financialEstimate = buildFinancialRangeEstimate(costInputs, primarySignal.label, primarySignal.band);
 
+  // Executive narrative (Work Design Pulse PR12) - built from the same
+  // real records the Work Design Debt Ledger, Organisational Action
+  // Budget, and What Works Here library already compute from; never
+  // gated behind the signal cohort's own privacy threshold above, since
+  // none of this is personal data.
+  const [debtSnap, interventionsSnap, principlesSnap] = await Promise.all([
+    db.collection("organisations").doc(orgId).collection("work_design_debt").get(),
+    db.collection("organisations").doc(orgId).collection("work_design_interventions").get(),
+    db.collection("organisations").doc(orgId).collection("local_operating_principles").get(),
+  ]);
+  const openDebtItems = debtSnap.docs.map((d: any) => d.data()).filter((d: any) => d.status !== 'resolved');
+  const openDebtCount = openDebtItems.length;
+  const openDebtWithoutOwnerCount = openDebtItems.filter((d: any) => !d.ownerUid).length;
+  const activeInterventionCount = interventionsSnap.docs.filter((d: any) => ACTIVE_INTERVENTION_STATUSES.has(d.data().status)).length;
+  const maxConcurrentActiveInterventions = getEffectiveActionBudget(org.actionBudget?.maxConcurrentActiveInterventions);
+  const localOperatingPrincipleCount = principlesSnap.size;
+  const narrative = buildExecutiveNarrative({
+    activeInterventionCount, maxConcurrentActiveInterventions, openDebtCount, openDebtWithoutOwnerCount, localOperatingPrincipleCount,
+  });
+
   return {
     locked: false,
     cohortSize: consentingUids.length,
@@ -10138,6 +10159,10 @@ const buildExecutiveWorkDesignPayload = async (db: any, orgId: string, org: any,
     workDesignSignals,
     costInputsAvailable: !!costInputs,
     financialEstimate,
+    narrative,
+    actionBudget: { maxConcurrentActiveInterventions, activeInterventionCount },
+    debtSummary: { openDebtCount, openDebtWithoutOwnerCount },
+    localOperatingPrincipleCount,
   } as const;
 };
 

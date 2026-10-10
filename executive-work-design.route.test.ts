@@ -80,6 +80,36 @@ describe('GET /api/org/:orgId/executive-work-design — cohort gating', () => {
   });
 });
 
+describe('GET /api/org/:orgId/executive-work-design — executive narrative (Work Design Pulse PR12)', () => {
+  it('reports an honest zero-state narrative, default action budget, and no debt items', async () => {
+    seedOrg(ORG, { adminUids: ['owner_1'], memberUids: ['owner_1', 'a1', 'a2', 'a3'], privacyThreshold: 3 });
+    ['a1', 'a2', 'a3'].forEach(consenting);
+
+    const res = await request(app).get(`/api/org/${ORG}/executive-work-design`).set(auth('owner_1'));
+    expect(res.body.actionBudget).toEqual({ maxConcurrentActiveInterventions: 3, activeInterventionCount: 0 });
+    expect(res.body.debtSummary).toEqual({ openDebtCount: 0, openDebtWithoutOwnerCount: 0 });
+    expect(res.body.localOperatingPrincipleCount).toBe(0);
+    expect(res.body.narrative).toContain('0 active changes running (of a budget of 3)');
+    expect(res.body.narrative).toContain('no open Work Design Debt items');
+  });
+
+  it('reflects real active interventions, open debt items without an owner, and promoted principles', async () => {
+    seedOrg(ORG, { adminUids: ['owner_1'], memberUids: ['owner_1', 'a1', 'a2', 'a3'], privacyThreshold: 3 });
+    ['a1', 'a2', 'a3'].forEach(consenting);
+
+    await request(app).post(`/api/org/${ORG}/work-design-interventions`).set(auth('owner_1'))
+      .send({ team: 'Team A', signalKey: 'meeting_pressure', proposedChange: 'Protect 14:00-16:00', why: 'basis', employeeBurden: 'low' });
+    await request(app).post(`/api/org/${ORG}/work-design-debt`).set(auth('owner_1'))
+      .send({ team: 'Team A', signalKey: 'meeting_pressure', description: 'Meetings run long' });
+
+    const res = await request(app).get(`/api/org/${ORG}/executive-work-design`).set(auth('owner_1'));
+    expect(res.body.actionBudget.activeInterventionCount).toBe(1);
+    expect(res.body.debtSummary).toEqual({ openDebtCount: 1, openDebtWithoutOwnerCount: 1 });
+    expect(res.body.narrative).toContain('1 active change running');
+    expect(res.body.narrative).toContain('1 open Work Design Debt item, 1 without an owner yet');
+  });
+});
+
 describe('GET /api/org/:orgId/executive-work-design — financial range estimate', () => {
   it('reports costInputsAvailable:false and financialEstimate:null when the org has not entered cost figures', async () => {
     seedOrg(ORG, { adminUids: ['owner_1'], memberUids: ['owner_1', 'a1', 'a2', 'a3'], privacyThreshold: 3 });
