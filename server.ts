@@ -102,6 +102,7 @@ import {
 } from './work-design-debt';
 import { detectPressureTransfer } from './pressure-transfer-detector';
 import { validateCreateWorkplacePolicyInput, checkPolicyAgainstObservedPattern } from './workplace-policy';
+import { computeEvidenceLevel, canPromoteToLocalOperatingPrinciple, EVIDENCE_LEVEL_LABELS } from './evidence-ladder';
 import { buildFinancialRangeEstimate } from './executive-work-design';
 
 dotenv.config();
@@ -9775,6 +9776,95 @@ app.delete("/api/org/:orgId/workplace-policies/:id", verifyAppCheck, authenticat
     }
     await ref.delete();
     await logOrgAuditAction(req, orgId, "delete_workplace_policy", "workplace_policy", id, snap.data(), null);
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("not found") ? 404 : 500).json({ error: err.message });
+  }
+});
+
+// Only used for a signal key's plain-language name in "What Works Here" -
+// not the source of truth for which signals are real (work-design-signals.ts
+// is), just a label lookup for whichever real signalKeys actually show up
+// in this org's own recorded interventions.
+const WORK_DESIGN_SIGNAL_LABELS: Record<string, string> = { meeting_pressure: 'Meeting Pressure' };
+
+// "What Works Here" (Work Design Pulse PR8) - groups this org's OWN real
+// work_design_interventions by signalKey and computes each group's
+// Evidence Ladder level from real recorded outcomes, never borrowed from
+// another organisation. Open to any org member - this is organisational
+// knowledge about what's actually worked here, not personal data.
+app.get("/api/org/:orgId/what-works-here", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const { orgId } = req.params;
+    const user = requireAuth(req);
+    const db = getDb();
+    const orgDoc = await db.collection("organisations").doc(orgId).get();
+    const org = orgDoc.data();
+    if (!orgDoc.exists || !(org?.memberUids || []).includes(user.uid)) {
+      return res.status(403).json({ error: "You're not a member of this organisation." });
+    }
+    const [interventionsSnap, principlesSnap] = await Promise.all([
+      db.collection("organisations").doc(orgId).collection("work_design_interventions").get(),
+      db.collection("organisations").doc(orgId).collection("local_operating_principles").get(),
+    ]);
+    const promotedSignalKeys = new Set(principlesSnap.docs.map((d: any) => d.id));
+
+    const bySignal: Record<string, { team: string; outcomeRating: string | null; pressureTransferDetected: boolean }[]> = {};
+    interventionsSnap.docs.forEach((d: any) => {
+      const data = d.data();
+      if (!bySignal[data.signalKey]) bySignal[data.signalKey] = [];
+      bySignal[data.signalKey].push({
+        team: data.team,
+        outcomeRating: data.outcomeRating || null,
+        pressureTransferDetected: !!data.pressureTransferCheck,
+      });
+    });
+
+    const patterns = Object.entries(bySignal).map(([signalKey, records]) => {
+      const computedLevel = computeEvidenceLevel(records as any);
+      const level = promotedSignalKeys.has(signalKey) ? 'local_operating_principle' : computedLevel;
+      return {
+        signalKey,
+        label: WORK_DESIGN_SIGNAL_LABELS[signalKey] || signalKey,
+        level,
+        levelLabel: EVIDENCE_LEVEL_LABELS[level],
+        canPromote: !promotedSignalKeys.has(signalKey) && canPromoteToLocalOperatingPrinciple(computedLevel),
+        trialCount: records.length,
+        teamCount: new Set(records.map((r) => r.team)).size,
+      };
+    });
+    res.json({ patterns });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Promoting a pattern to Local Operating Principle is a deliberate human
+// endorsement, not a computed outcome - admin-only, and the server still
+// re-derives the real evidence level itself (never trusting whatever
+// level the client last saw) before allowing it.
+app.post("/api/org/:orgId/what-works-here/:signalKey/promote", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const { orgId, signalKey } = req.params;
+    const { user } = await requireOrgAdmin(req, orgId);
+    const db = getDb();
+    const interventionsSnap = await db.collection("organisations").doc(orgId).collection("work_design_interventions")
+      .where("signalKey", "==", signalKey).get();
+    const records = interventionsSnap.docs.map((d: any) => {
+      const data = d.data();
+      return { team: data.team, outcomeRating: data.outcomeRating || null, pressureTransferDetected: !!data.pressureTransferCheck };
+    });
+    const computedLevel = computeEvidenceLevel(records);
+    if (!canPromoteToLocalOperatingPrinciple(computedLevel)) {
+      return res.status(400).json({ error: `This pattern's real evidence (currently "${EVIDENCE_LEVEL_LABELS[computedLevel]}") hasn't reached "${EVIDENCE_LEVEL_LABELS['repeated_across_teams']}" yet.` });
+    }
+    await db.collection("organisations").doc(orgId).collection("local_operating_principles").doc(signalKey).set({
+      signalKey,
+      promotedBy: user.uid,
+      promotedByEmail: user.email || null,
+      promotedAt: new Date().toISOString(),
+    });
+    await logOrgAuditAction(req, orgId, "promote_local_operating_principle", "local_operating_principle", signalKey, null, { signalKey });
     res.json({ success: true });
   } catch (err: any) {
     res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("not found") ? 404 : 500).json({ error: err.message });
