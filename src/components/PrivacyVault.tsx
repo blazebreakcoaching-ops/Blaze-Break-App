@@ -16,7 +16,10 @@ import {
   Brain,
   Network,
   RefreshCw,
-  Loader2
+  Loader2,
+  CheckCircle2,
+  XCircle,
+  Clock
 } from 'lucide-react';
 import { cn } from '../lib/utils.ts';
 import { useFeatureFlags, setFeatureFlag, FeatureFlag } from '../lib/feature-flags.ts';
@@ -71,7 +74,10 @@ export const PrivacyVault = ({
     orgCohortSufficient: boolean;
     myTeam: string | null;
     myTeamCohortSufficient: boolean | null;
+    canSee?: { key: string; label: string; active: boolean; basis: string }[];
+    cannotSee?: string[];
   } | null>(null);
+  const [privacyReceipts, setPrivacyReceipts] = useState<{ id: string; category: string; summary: string; createdAt: string | null }[]>([]);
   const [joinCodeInput, setJoinCodeInput] = useState('');
   const [joining, setJoining] = useState(false);
   const [consentSaving, setConsentSaving] = useState(false);
@@ -100,6 +106,12 @@ export const PrivacyVault = ({
           if (statusRes.ok) setPrivacyStatus(await statusRes.json());
         } catch (e) {
           // Non-fatal - the transparency panel just stays hidden if this fails.
+        }
+        try {
+          const receiptsRes = await secureApiFetch(`/api/org/${data.organisationId}/privacy-receipts`);
+          if (receiptsRes.ok) setPrivacyReceipts((await receiptsRes.json()).receipts || []);
+        } catch (e) {
+          // Non-fatal - the receipts section just stays hidden if this fails.
         }
       }
     } catch (e) {
@@ -499,6 +511,64 @@ export const PrivacyVault = ({
                               </span>
                             </li>
                           )}
+                        </ul>
+
+                        {(privacyStatus.canSee || privacyStatus.cannotSee) && (
+                          <div className="grid sm:grid-cols-2 gap-4 pt-2">
+                            {privacyStatus.canSee && (
+                              <div className="space-y-2">
+                                <h5 className="text-[10px] font-black uppercase tracking-widest text-text-muted">Currently Active</h5>
+                                <ul className="space-y-2 text-xs text-text-muted">
+                                  {privacyStatus.canSee.map((cat) => (
+                                    <li key={cat.key} className="flex items-start gap-2">
+                                      {cat.active
+                                        ? <CheckCircle2 className="w-3.5 h-3.5 text-success mt-0.5 shrink-0" />
+                                        : <Clock className="w-3.5 h-3.5 text-text-muted mt-0.5 shrink-0" />}
+                                      <span>
+                                        <span className={cn(cat.active ? "text-text-main font-semibold" : "")}>{cat.label}</span>
+                                        <span className="block text-text-muted/80 mt-0.5">{cat.basis}</span>
+                                      </span>
+                                    </li>
+                                  ))}
+                                </ul>
+                              </div>
+                            )}
+                            {privacyStatus.cannotSee && (
+                              <div className="space-y-2">
+                                <h5 className="text-[10px] font-black uppercase tracking-widest text-text-muted">Never Visible To Your Organisation</h5>
+                                <ul className="space-y-2 text-xs text-text-muted">
+                                  {privacyStatus.cannotSee.map((item) => (
+                                    <li key={item} className="flex items-start gap-2">
+                                      <XCircle className="w-3.5 h-3.5 text-text-muted mt-0.5 shrink-0" />
+                                      <span>{item}</span>
+                                    </li>
+                                  ))}
+                                </ul>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {privacyReceipts.length > 0 && (
+                      <div className="p-6 rounded-2xl bg-surface border border-border space-y-3">
+                        <h4 className="text-sm font-bold text-text-main">Recent Privacy Changes</h4>
+                        <p className="text-xs text-text-muted leading-relaxed max-w-2xl">
+                          Whenever something that affects what your organisation can see changes, it shows up here — not just in an admin-only log you can't read.
+                        </p>
+                        <ul className="space-y-3">
+                          {privacyReceipts.map((receipt) => (
+                            <li key={receipt.id} className="flex items-start gap-2 text-xs">
+                              <History className="w-3.5 h-3.5 text-primary mt-0.5 shrink-0" />
+                              <span className="text-text-muted">
+                                {receipt.summary}
+                                {receipt.createdAt && (
+                                  <span className="block text-text-muted/60 mt-0.5">{new Date(receipt.createdAt).toLocaleDateString()}</span>
+                                )}
+                              </span>
+                            </li>
+                          ))}
                         </ul>
                       </div>
                     )}

@@ -58,6 +58,7 @@ import {
   evaluateMeetingPressure, SIGNAL_BAND_LABELS, computeConfidence, MIN_DAYS_FOR_FULL_CONFIDENCE,
   type SignalBand, type WorkDesignConfidence,
 } from './work-design-signals';
+import { computeTrustMirrorCanSee, TRUST_MIRROR_CANNOT_SEE } from './trust-mirror';
 import { buildTopManagerRecommendation } from './nova-manager-coach';
 import {
   validateChangeProposalCreate, deriveFeatureRegistryApprovalTier, canDecideProposal,
@@ -7685,6 +7686,29 @@ const logOrgAuditAction = async (
   }
 };
 
+// Privacy Change Receipts (Work Design Pulse PR2): a plain-language,
+// employee-readable record of changes that affect what an organisation can
+// see or who can see it - distinct from logOrgAuditAction's admin-only audit
+// log (which is for compliance/attribution; this is for employee trust, so
+// it deliberately never names which individual gained or lost access, only
+// what changed and how many people were affected).
+const recordPrivacyChangeReceipt = async (
+  orgId: string,
+  category: string,
+  summary: string,
+) => {
+  try {
+    const db = getDb();
+    await db.collection("organisations").doc(orgId).collection("privacy_receipts").add({
+      category,
+      summary,
+      createdAt: FieldValue.serverTimestamp(),
+    });
+  } catch (err: any) {
+    console.error("Failed to write privacy change receipt:", err.message);
+  }
+};
+
 // Kept as the exact function existing call sites already depend on (~19 of
 // them), now a thin wrapper: 'admin' is a new, distinct granular role from
 // the legacy adminUids array, so this now also admits a real admin-role
@@ -7851,7 +7875,56 @@ app.get("/api/org/:orgId/my-privacy-status", verifyAppCheck, authenticateFirebas
       ? checkCohortSufficiency(consentingUids.filter((uid) => memberTeams[uid] === myTeam).length, threshold).sufficient
       : null;
 
-    res.json({ minimumGroupSize: threshold, orgCohortSufficient, myTeam, myTeamCohortSufficient });
+    // Employee Trust Mirror (Work Design Pulse PR2): each category below
+    // is computed from whether the real feature it depends on is
+    // actually in use in THIS org, never a static "we could theoretically
+    // see this" promise - see trust-mirror.ts for why each one is true.
+    const calendarSignalInUse = (await Promise.all(consentingUids.map((uid) => isCalendarConnectedAndFresh(db, uid)))).some(Boolean);
+    const [teamVoiceSnap, interventionsSnap] = await Promise.all([
+      db.collection("organisations").doc(orgId).collection("anonymous_suggestions").limit(1).get(),
+      db.collection("organisations").doc(orgId).collection("work_design_interventions").limit(1).get(),
+    ]);
+    const canSee = computeTrustMirrorCanSee({
+      calendarSignalInUse,
+      teamVoiceInUse: !teamVoiceSnap.empty,
+      interventionsInUse: !interventionsSnap.empty,
+    });
+
+    res.json({
+      minimumGroupSize: threshold, orgCohortSufficient, myTeam, myTeamCohortSufficient,
+      canSee, cannotSee: TRUST_MIRROR_CANNOT_SEE,
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Privacy Change Receipts (Work Design Pulse PR2): open to any org member,
+// not just admins - the point is that employees can see for themselves
+// whenever something that affects what the organisation can see changes,
+// rather than having to trust an admin-only audit log they can't read.
+app.get("/api/org/:orgId/privacy-receipts", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const { orgId } = req.params;
+    const user = requireAuth(req);
+    const db = getDb();
+    const orgDoc = await db.collection("organisations").doc(orgId).get();
+    const org = orgDoc.data();
+    if (!orgDoc.exists || !(org?.memberUids || []).includes(user.uid)) {
+      return res.status(403).json({ error: "You're not a member of this organisation." });
+    }
+    const snap = await db.collection("organisations").doc(orgId).collection("privacy_receipts")
+      .orderBy("createdAt", "desc").limit(20).get();
+    const receipts = snap.docs.map((doc: any) => {
+      const data = doc.data();
+      return {
+        id: doc.id,
+        category: data.category,
+        summary: data.summary,
+        createdAt: data.createdAt?.toDate?.()?.toISOString() || null,
+      };
+    });
+    res.json({ receipts });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
@@ -9058,9 +9131,22 @@ app.post("/api/org/:orgId/hr-viewers", verifyAppCheck, authenticateFirebaseUser,
       return res.status(400).json({ error: `"${unknownUid}" isn't a member of this organisation.` });
     }
     const db = getDb();
-    const before = { uids: org.hrViewerUids || [] };
+    const beforeUids: string[] = org.hrViewerUids || [];
+    const before = { uids: beforeUids };
     await db.collection("organisations").doc(orgId).update({ hrViewerUids: uids });
     await logOrgAuditAction(req, orgId, "update_hr_viewers", "hr_viewers", orgId, before, { uids });
+    const added = uids.filter((uid: string) => !beforeUids.includes(uid)).length;
+    const removed = beforeUids.filter((uid) => !uids.includes(uid)).length;
+    if (added > 0 || removed > 0) {
+      const parts: string[] = [];
+      if (added > 0) parts.push(`${added} person gained`);
+      if (removed > 0) parts.push(`${removed} person lost`);
+      await recordPrivacyChangeReceipt(
+        orgId,
+        "hr_viewers",
+        `The list of who can view HR-level aggregate work-design reports changed: ${parts.join(" and ")} access. No individual recovery or wellbeing data was affected.`,
+      );
+    }
     res.json({ success: true, uids });
   } catch (err: any) {
     res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("not found") ? 404 : 500).json({ error: err.message });
@@ -10925,6 +11011,13 @@ app.post("/api/org/:orgId/settings", verifyAppCheck, authenticateFirebaseUser, a
     const db = getDb();
     await db.collection("organisations").doc(orgId).update(update);
     await logOrgAuditAction(req, orgId, "update_org_settings", "organisation", orgId, before, after);
+    if (privacyThreshold !== undefined && before.privacyThreshold !== after.privacyThreshold) {
+      await recordPrivacyChangeReceipt(
+        orgId,
+        "privacy_threshold",
+        `The minimum group size required before your organisation can see any aggregate report changed from ${before.privacyThreshold} to ${after.privacyThreshold} people.`,
+      );
+    }
     res.json({ success: true });
   } catch (err: any) {
     res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
