@@ -341,7 +341,7 @@ export const ExecutiveBoardReport = ({
         ${includeBurnRate ? `
         <div class="grid">
             <div class="stat-card" style="border-left: 4px solid #6366f1;">
-                <div class="stat-label">Workload Burn Rate</div>
+                <div class="stat-label">Workload Intensity</div>
                 <div class="stat-value">${liveReportData?.burnRatePercent !== null && liveReportData?.burnRatePercent !== undefined ? `${liveReportData.burnRatePercent}%` : 'No data yet'}</div>
                 <div class="stat-desc">Active task energy drain relative to weekly capacity, from your Workload Reality Check.</div>
             </div>
@@ -379,10 +379,10 @@ export const ExecutiveBoardReport = ({
                     <td style="color: ${sleepDebtVal !== null && sleepDebtVal !== undefined ? (sleepDebtVal > 3 ? '#ef4444' : '#f59e0b') : '#6b7280'}; font-weight: bold;">${sleepDebtVal !== null && sleepDebtVal !== undefined ? (sleepDebtVal > 3 ? 'Overloaded' : 'Caution') : 'No data'}</td>
                 </tr>
                 <tr>
-                    <td>Recovery Velocity Return (ROI)</td>
+                    <td>Total Points</td>
                     <td><strong>${pointsTotal} pts</strong></td>
-                    <td>Engagement accomplishments baseline yield</td>
-                    <td style="color: #10b981; font-weight: bold;">Yielding (Streak: ${streak}d)</td>
+                    <td>Total points earned, with current streak</td>
+                    <td style="color: #10b981; font-weight: bold;">Active (Streak: ${streak}d)</td>
                 </tr>
             </tbody>
         </table>
@@ -446,7 +446,7 @@ export const ExecutiveBoardReport = ({
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
           <h2 className="text-3xl font-display font-bold text-text-main tracking-tight">Executive Board Report</h2>
-          <p className="text-sm text-text-muted mt-2 font-mono uppercase tracking-widest">Confidential / Biometric & Workload ROI</p>
+          <p className="text-sm text-text-muted mt-2 font-mono uppercase tracking-widest">Confidential / Personal Recovery Summary</p>
         </div>
         <div className="flex items-center gap-3 w-full md:w-auto shrink-0">
           {/* Save Data Pulse Action */}
@@ -516,7 +516,7 @@ export const ExecutiveBoardReport = ({
         {/* Global Stats */}
         <div className="space-y-6">
           <div className="card p-6 border-l-4 border-l-primary">
-            <p className="text-xs text-text-muted uppercase tracking-widest font-bold mb-2">Workload Burn Rate</p>
+            <p className="text-xs text-text-muted uppercase tracking-widest font-bold mb-2">Workload Intensity</p>
             <div className="flex items-end gap-3">
               <span className="text-4xl font-black text-text-main tracking-tighter">
                 {reportData?.burnRatePercent !== null && reportData?.burnRatePercent !== undefined ? `${reportData.burnRatePercent}%` : '—'}
@@ -540,13 +540,13 @@ export const ExecutiveBoardReport = ({
 
       {/* Week in Review Metrics Grid */}
       <div>
-        <h3 className="text-xs font-black uppercase tracking-[0.2em] text-text-muted mb-4 ml-2">Weekly Yield Metrics</h3>
+        <h3 className="text-xs font-black uppercase tracking-[0.2em] text-text-muted mb-4 ml-2">Weekly Recovery Metrics</h3>
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
           {[
             { label: 'Deep Work Protected', value: reportData ? `${reportData.deepWorkHours} hrs` : '—', icon: Clock },
             { label: 'Sleep Debt Carried', value: reportData?.sleepDebtHours !== null && reportData?.sleepDebtHours !== undefined ? `${reportData.sleepDebtHours} hrs` : 'Not logged', icon: Activity },
             { label: 'Boundaries Practised', value: String(reportData?.boundariesProtected ?? 0), icon: ShieldAlert },
-            { label: 'Recovery ROI', value: userStats?.points ? `${userStats.points} pts` : 'No data yet', icon: TrendingUp },
+            { label: 'Total Points', value: userStats?.points ? `${userStats.points} pts` : 'No data yet', icon: TrendingUp },
           ].map((metric, i) => (
             <div key={i} className="card p-5 group hover:border-primary/30 transition-all cursor-default">
               <div className="flex justify-between items-start mb-4">
@@ -609,8 +609,8 @@ export const ExecutiveBoardReport = ({
                     
                     <div className="border-t border-white/[0.02] pt-4 flex justify-between items-center">
                       <div>
-                        <p id="burn-rate-label" className="text-sm font-bold text-text-main">Biological Burn Metrics</p>
-                        <p className="text-[11px] text-text-muted">Include workload burn rate and boundaries-practiced card</p>
+                        <p id="burn-rate-label" className="text-sm font-bold text-text-main">Workload Metrics</p>
+                        <p className="text-[11px] text-text-muted">Include workload intensity and boundaries-practiced card</p>
                       </div>
                       <input
                         type="checkbox"
@@ -624,7 +624,7 @@ export const ExecutiveBoardReport = ({
                     <div className="border-t border-white/[0.02] pt-4 flex justify-between items-center">
                       <div>
                         <p id="metrics-grid-label" className="text-sm font-bold text-text-main">Weekly Recovery Metrics</p>
-                        <p className="text-[11px] text-text-muted">Generate data grid report with active Sleep Debt, Deep Work duration, and Points ROI</p>
+                        <p className="text-[11px] text-text-muted">Generate data grid report with active Sleep Debt, Deep Work duration, and Total Points</p>
                       </div>
                       <input
                         type="checkbox"

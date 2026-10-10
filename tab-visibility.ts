@@ -52,7 +52,7 @@ export const TAB_VISIBILITY_RULES: TabVisibilityRule[] = [
   { id: 'org', label: 'Organisation', roles: ['manager', 'organisation_admin', 'platform_admin', 'security_admin'] },
   { id: 'evolution', label: 'Evolution Engine', roles: [...EVOLUTION_ENGINE_ROLES] },
   { id: 'intelligence', label: 'Intelligence Layer', roles: [...EVOLUTION_ENGINE_ROLES] },
-  { id: 'executive', label: 'Executive ROI', roles: ['executive', 'platform_admin', 'security_admin'] },
+  { id: 'executive', label: 'Recovery Report', roles: ['executive', 'platform_admin', 'security_admin'] },
   { id: 'admin', label: 'Command Centre', roles: [...PLATFORM_ADMIN_ROLES] },
 ];
 

@@ -348,7 +348,7 @@ export const ALL_TABS: {
   {
     id: "executive",
     icon: Zap,
-    label: "Executive ROI",
+    label: "Recovery Report",
     roles: ["executive", "platform_admin", "security_admin"],
   },
   {
@@ -2078,7 +2078,7 @@ export default function App() {
     guide: "User Guide",
     evolution: "Evolution Engine",
     intelligence: "Recovery Intelligence Layer",
-    executive: "Executive ROI",
+    executive: "Recovery Report",
     executive_work_design: "Executive Work Design",
     admin: "Command Centre",
     reset: "Reset Studio",

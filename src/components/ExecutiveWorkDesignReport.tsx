@@ -24,7 +24,8 @@ const currencySymbol: Record<string, string> = { GBP: '£' };
 
 // Executive Work Design - org-wide, never per-employee. Replaces nothing
 // that already existed for this audience (investigation found the old
-// "Executive ROI" tab/ExecutiveBoardReport.tsx is actually a personal
+// "Executive ROI" tab - since renamed to "Recovery Report" in WDI PR14's
+// language cleanup - and ExecutiveBoardReport.tsx are a personal
 // consumer-subscription report about one person's own data, a completely
 // different feature - see App.tsx's isOrgAdmin comment). This is the
 // spec's real thing: the org's own Work Design Signals, aggregated
