@@ -21,4 +21,10 @@ describe('formatDataProvenance', () => {
     const label = formatDataProvenance({ source: 'meeting_pressure', windowDays: 28, coveragePercent: 40, privacyGatePassed: false });
     expect(label).toContain('Privacy Gate: Insufficient');
   });
+
+  it('reports the gate as not applicable for a figure with no personal data behind it, rather than claiming a check ran', () => {
+    const label = formatDataProvenance({ source: 'work_design_debt', windowDays: null, coveragePercent: null, privacyGatePassed: null });
+    expect(label).toContain('Privacy Gate: Not Applicable');
+    expect(label).not.toContain('Passed');
+  });
 });

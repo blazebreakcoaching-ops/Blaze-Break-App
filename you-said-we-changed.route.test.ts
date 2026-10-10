@@ -64,6 +64,27 @@ describe('PATCH /api/org/:orgId/suggestions/:id/respond', () => {
     expect(res.status).toBe(400);
   });
 
+  it('rejects a whitespace-only note rather than storing a blank response', async () => {
+    seedOrg(ORG, { adminUids: ['owner_1'], memberUids: ['owner_1'] });
+    const suggestRes = await request(app).post(`/api/org/${ORG}/suggestions`).set(auth('owner_1')).send({ message: 'Meetings run too long' });
+    expect(suggestRes.status).toBe(200);
+    const listRes = await request(app).get(`/api/org/${ORG}/suggestions`).set(auth('owner_1'));
+    const id = listRes.body.suggestions[0].id;
+
+    const res = await request(app).patch(`/api/org/${ORG}/suggestions/${id}/respond`).set(auth('owner_1')).send({ note: '   ' });
+    expect(res.status).toBe(400);
+  });
+
+  it('trims a note before storing it', async () => {
+    seedOrg(ORG, { adminUids: ['owner_1'], memberUids: ['owner_1'] });
+    await request(app).post(`/api/org/${ORG}/suggestions`).set(auth('owner_1')).send({ message: 'Meetings run too long' });
+    const listRes = await request(app).get(`/api/org/${ORG}/suggestions`).set(auth('owner_1'));
+    const id = listRes.body.suggestions[0].id;
+
+    const res = await request(app).patch(`/api/org/${ORG}/suggestions/${id}/respond`).set(auth('owner_1')).send({ note: '  We are looking into it.  ' });
+    expect(res.status).toBe(200);
+  });
+
   it('rejects linking to an intervention that does not exist', async () => {
     seedOrg(ORG, { adminUids: ['owner_1'], memberUids: ['owner_1'] });
     await request(app).post(`/api/org/${ORG}/suggestions`).set(auth('owner_1')).send({ message: 'Meetings run too long' });

@@ -66,6 +66,15 @@ describe('POST /api/org/:orgId/workplace-policies', () => {
 });
 
 describe('GET /api/org/:orgId/workplace-policies — Policy-to-Practice Gap', () => {
+  it('still returns a provenance label when no policies have been declared yet', async () => {
+    seedOrg(ORG, { adminUids: ['owner_1'], memberUids: ['owner_1'] });
+
+    const res = await request(app).get(`/api/org/${ORG}/workplace-policies`).set(auth('owner_1'));
+    expect(res.status).toBe(200);
+    expect(res.body.policies).toEqual([]);
+    expect(res.body.provenance).toContain('Derived from calendar connector');
+  });
+
   it('returns gap: null when the cohort is not big enough to compute an aggregate', async () => {
     seedOrg(ORG, { adminUids: ['owner_1'], memberUids: ['owner_1', 'a1'] });
     connectCalendar('a1', { totalMeetingHours: 20, backToBackCount: 2, eveningMeetingCount: 5, weekendMeetingCount: 0 });

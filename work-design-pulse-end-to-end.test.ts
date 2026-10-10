@@ -69,7 +69,7 @@ describe('Work Design Pulse - closing end-to-end checklist', () => {
     // PR3: the employee page's own interventions summary starts empty.
     const summary1 = await request(app).get(`/api/org/${ORG}/work-design-interventions-summary`).set(auth('a1'));
     expect(summary1.body.totalTried).toBe(0);
-    expect(summary1.body.provenance).toContain('Privacy Gate: Passed');
+    expect(summary1.body.provenance).toContain('Privacy Gate: Not Applicable');
 
     // PR4: Work Design Debt Ledger - mandatory owner rule enforced.
     const debt = await request(app).post(`/api/org/${ORG}/work-design-debt`).set(auth('mgr_a'))

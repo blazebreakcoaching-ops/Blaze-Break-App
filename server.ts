@@ -8208,12 +8208,13 @@ app.patch("/api/org/:orgId/suggestions/:id/respond", verifyAppCheck, authenticat
     const { orgId, id } = req.params;
     await requireOrgAdmin(req, orgId);
     const db = getDb();
-    const { linkedInterventionId, note } = req.body;
+    const { linkedInterventionId } = req.body;
+    const note = typeof req.body.note === 'string' ? req.body.note.trim() : req.body.note;
     if (!linkedInterventionId && !note) {
       return res.status(400).json({ error: "Either linkedInterventionId or note is required." });
     }
-    if (note !== undefined && note !== null && (typeof note !== 'string' || note.length > 500)) {
-      return res.status(400).json({ error: "note must be a string (max 500 characters) if provided." });
+    if (note !== undefined && note !== null && (typeof note !== 'string' || note.length === 0 || note.length > 500)) {
+      return res.status(400).json({ error: "note must be a non-empty string (max 500 characters) if provided." });
     }
     const ref = db.collection("organisations").doc(orgId).collection("anonymous_suggestions").doc(id);
     const snap = await ref.get();
@@ -9548,7 +9549,7 @@ app.get("/api/org/:orgId/work-design-interventions-summary", verifyAppCheck, aut
     });
     res.json({
       totalTried: snap.size, byStatus, byOutcome, recent: recent.slice(0, 10),
-      provenance: formatDataProvenance({ source: 'work_design_interventions', windowDays: null, coveragePercent: null, privacyGatePassed: true }),
+      provenance: formatDataProvenance({ source: 'work_design_interventions', windowDays: null, coveragePercent: null, privacyGatePassed: null }),
     });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
@@ -9853,7 +9854,13 @@ app.get("/api/org/:orgId/workplace-policies", verifyAppCheck, authenticateFireba
     const snap = await db.collection("organisations").doc(orgId).collection("workplace_policies").get();
     const policies = snap.docs.map((d: any) => ({ id: d.id, ...d.data() }));
     if (policies.length === 0) {
-      return res.json({ policies: [] });
+      // Still carries a provenance label - nothing declared yet is itself
+      // an honest fact about this org, not a reason to shrink the response
+      // shape a caller would otherwise always expect to find it in.
+      return res.json({
+        policies: [],
+        provenance: formatDataProvenance({ source: 'calendar connector (meeting load)', windowDays: 7, coveragePercent: null, privacyGatePassed: null }),
+      });
     }
     const threshold = org.privacyThreshold || 5;
     const consentingUids = await getConsentingMemberUids(db, org.memberUids || []);
@@ -9950,7 +9957,7 @@ app.get("/api/org/:orgId/what-works-here", verifyAppCheck, authenticateFirebaseU
     });
     res.json({
       patterns,
-      provenance: formatDataProvenance({ source: 'work_design_interventions', windowDays: null, coveragePercent: null, privacyGatePassed: true }),
+      provenance: formatDataProvenance({ source: 'work_design_interventions', windowDays: null, coveragePercent: null, privacyGatePassed: null }),
     });
   } catch (err: any) {
     res.status(500).json({ error: err.message });

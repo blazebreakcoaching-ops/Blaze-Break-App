@@ -55,7 +55,10 @@ describe('GET /api/org/:orgId/work-design-interventions-summary', () => {
     seedOrg(ORG, ['a1']);
     const res = await request(app).get(`/api/org/${ORG}/work-design-interventions-summary`).set(auth('a1'));
     expect(res.body.provenance).toContain('Derived from work_design_interventions');
-    expect(res.body.provenance).toContain('Privacy Gate: Passed');
+    // This route has no real k-anonymity gate behind it (it's a per-member
+    // view of the caller's own org, not a cross-member aggregate), so the
+    // honest label is "Not Applicable", never a claimed "Passed".
+    expect(res.body.provenance).toContain('Privacy Gate: Not Applicable');
   });
 
   it('aggregates by status and outcome without ever naming a team', async () => {

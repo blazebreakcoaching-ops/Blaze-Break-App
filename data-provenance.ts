@@ -21,15 +21,20 @@ export interface DataProvenanceInput {
   // Whether this figure actually passed the Anonymous Aggregation
   // Engine's privacy gate (k-anonymity threshold) - false/omitted data
   // is never shown upstream of this in the first place, so in practice
-  // this is always true by the time a label is built, but it's passed
-  // explicitly rather than hardcoded so nothing can silently drift.
-  privacyGatePassed: boolean;
+  // this is always true by the time a label is built for a figure that
+  // genuinely goes through that gate. Pass null for a figure that never
+  // goes through a k-anonymity gate at all (e.g. an org-level record
+  // count with no personal data behind it) - "Passed" would claim a
+  // check ran when none did, so this is a third, honest state, never
+  // defaulted to true just to avoid handling it.
+  privacyGatePassed: boolean | null;
 }
 
 export const formatDataProvenance = (input: DataProvenanceInput): string => {
   const parts = [`Derived from ${input.source}`];
   parts.push(input.windowDays != null ? `Last ${input.windowDays} days` : 'Live snapshot');
   parts.push(input.coveragePercent != null ? `Coverage: ${input.coveragePercent}%` : 'Coverage: not applicable');
-  parts.push(`Privacy Gate: ${input.privacyGatePassed ? 'Passed' : 'Insufficient'}`);
+  const gateLabel = input.privacyGatePassed === null ? 'Not Applicable (no personal data)' : (input.privacyGatePassed ? 'Passed' : 'Insufficient');
+  parts.push(`Privacy Gate: ${gateLabel}`);
   return parts.join(' · ');
 };

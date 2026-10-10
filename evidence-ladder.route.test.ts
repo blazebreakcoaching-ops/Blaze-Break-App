@@ -64,7 +64,10 @@ describe('GET /api/org/:orgId/what-works-here', () => {
     seedOrg(ORG, { memberUids: ['a1'] });
     const res = await request(app).get(`/api/org/${ORG}/what-works-here`).set(auth('a1'));
     expect(res.body.provenance).toContain('Derived from work_design_interventions');
-    expect(res.body.provenance).toContain('Privacy Gate: Passed');
+    // No real k-anonymity gate runs against this library (it's built from
+    // intervention records, not a per-member aggregate), so the honest
+    // label is "Not Applicable", never a claimed "Passed".
+    expect(res.body.provenance).toContain('Privacy Gate: Not Applicable');
   });
 
   it('computes repeated_one_team when the same team has two positive outcomes', async () => {
