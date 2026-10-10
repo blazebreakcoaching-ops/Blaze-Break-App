@@ -2951,7 +2951,7 @@ export default function App() {
                   onTriggerSync={handleTriggerGlobalSync}
                   onAwardPoints={awardPoints}
                 />
-                <CalendarDefenseView isDemoSession={isDemoSession} />
+                <CalendarDefenseView isDemoSession={isDemoSession} onNavigate={safeSetActiveTab as any} />
                 <IntegrationsDashboard />
               </div>
             )}
