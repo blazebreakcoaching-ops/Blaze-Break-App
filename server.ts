@@ -7808,6 +7808,41 @@ app.get("/api/org/me", verifyAppCheck, authenticateFirebaseUser, async (req, res
   }
 });
 
+// "What My Organisation Can See" - the employee-facing transparency
+// counterpart to every org-admin/HR/executive aggregate route above.
+// Answers two honest questions for the member themselves, never a count:
+// is my organisation's cohort currently large enough for anything org-wide
+// to show, and (if I have a team) is my team's. The minimum group size
+// itself is safe to reveal - it's the org's own configured policy number,
+// not anyone's personal data - but the actual consenting counts behind
+// each boolean are never returned, same "below threshold reveals nothing"
+// rule as every admin-facing aggregate.
+app.get("/api/org/:orgId/my-privacy-status", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const { orgId } = req.params;
+    const user = requireAuth(req);
+    const db = getDb();
+    const orgDoc = await db.collection("organisations").doc(orgId).get();
+    const org = orgDoc.data();
+    if (!orgDoc.exists || !(org?.memberUids || []).includes(user.uid)) {
+      return res.status(403).json({ error: "You're not a member of this organisation." });
+    }
+    const threshold = org?.privacyThreshold || 5;
+    const memberTeams: Record<string, string> = org?.memberTeams || {};
+    const consentingUids = await getConsentingMemberUids(db, org?.memberUids || []);
+    const orgCohortSufficient = checkCohortSufficiency(consentingUids.length, threshold).sufficient;
+
+    const myTeam = memberTeams[user.uid] || null;
+    const myTeamCohortSufficient = myTeam
+      ? checkCohortSufficiency(consentingUids.filter((uid) => memberTeams[uid] === myTeam).length, threshold).sufficient
+      : null;
+
+    res.json({ minimumGroupSize: threshold, orgCohortSufficient, myTeam, myTeamCohortSufficient });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // The real, server-side aggregation. This is the only place any individual
 // member's wellbeing data is ever read for org-reporting purposes, and it
 // never returns individual records - only aggregate counts. It refuses to

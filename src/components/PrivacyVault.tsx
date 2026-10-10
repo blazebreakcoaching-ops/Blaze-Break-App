@@ -66,6 +66,12 @@ export const PrivacyVault = ({
   } | null>(null);
   const [orgLoading, setOrgLoading] = useState(false);
   const [orgError, setOrgError] = useState('');
+  const [privacyStatus, setPrivacyStatus] = useState<{
+    minimumGroupSize: number;
+    orgCohortSufficient: boolean;
+    myTeam: string | null;
+    myTeamCohortSufficient: boolean | null;
+  } | null>(null);
   const [joinCodeInput, setJoinCodeInput] = useState('');
   const [joining, setJoining] = useState(false);
   const [consentSaving, setConsentSaving] = useState(false);
@@ -88,6 +94,14 @@ export const PrivacyVault = ({
       const res = await secureApiFetch('/api/org/me');
       const data = await res.json();
       setOrgStatus(data);
+      if (data.organisationId) {
+        try {
+          const statusRes = await secureApiFetch(`/api/org/${data.organisationId}/my-privacy-status`);
+          if (statusRes.ok) setPrivacyStatus(await statusRes.json());
+        } catch (e) {
+          // Non-fatal - the transparency panel just stays hidden if this fails.
+        }
+      }
     } catch (e) {
       setOrgError('Could not load your organisation status.');
     }
@@ -455,6 +469,39 @@ export const PrivacyVault = ({
                         Leave Organisation
                       </button>
                     </div>
+
+                    {privacyStatus && (
+                      <div className="p-6 rounded-2xl bg-surface border border-border space-y-4">
+                        <h4 className="text-sm font-bold text-text-main">What My Organisation Can See</h4>
+                        <p className="text-xs text-text-muted leading-relaxed max-w-2xl">
+                          Blaze Break does not report which employees are failing to cope. It shows organisations where work is becoming unnecessarily hard — and helps them change it. Here's exactly where things stand right now, honestly.
+                        </p>
+                        <ul className="space-y-2 text-xs text-text-muted">
+                          <li className="flex items-start gap-2">
+                            <ShieldCheck className="w-3.5 h-3.5 text-primary mt-0.5 shrink-0" />
+                            <span>Your organisation requires at least <strong className="text-text-main">{privacyStatus.minimumGroupSize}</strong> consenting teammates before any aggregate is ever shown — never a raw total, never below that minimum.</span>
+                          </li>
+                          <li className="flex items-start gap-2">
+                            <ShieldCheck className="w-3.5 h-3.5 text-primary mt-0.5 shrink-0" />
+                            <span>
+                              {privacyStatus.orgCohortSufficient
+                                ? 'Your organisation currently has enough consenting teammates for org-wide trends to show.'
+                                : "Your organisation doesn't currently have enough consenting teammates for anything org-wide to show - no data is being reported."}
+                            </span>
+                          </li>
+                          {privacyStatus.myTeam && (
+                            <li className="flex items-start gap-2">
+                              <ShieldCheck className="w-3.5 h-3.5 text-primary mt-0.5 shrink-0" />
+                              <span>
+                                {privacyStatus.myTeamCohortSufficient
+                                  ? `Your team (${privacyStatus.myTeam}) currently has enough consenting teammates for its own trends to show.`
+                                  : `Your team (${privacyStatus.myTeam}) doesn't currently have enough consenting teammates for anything specific to it to show.`}
+                              </span>
+                            </li>
+                          )}
+                        </ul>
+                      </div>
+                    )}
 
                     <div className="p-4 rounded-2xl bg-surface border border-border flex flex-col sm:flex-row items-center justify-between gap-4">
                       <div>
