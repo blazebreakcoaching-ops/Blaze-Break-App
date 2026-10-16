@@ -153,6 +153,31 @@ user-authorised only:
   `src/lib/paletteMatch.test.ts` — pure-logic/UI-adjacent tests, same note
   as above.
 
+## CI-level scanning (not part of the vitest suite)
+
+Two checks run in CI (`.github/workflows/`) independently of the test
+suite above - neither is a vitest file, so neither shows up in the test
+counts elsewhere in this document:
+
+- **`npm audit --audit-level=high`** (`ci.yml`) - fails the build on a
+  known high/critical advisory in the resolved dependency tree. The tree
+  was brought to 0 known vulnerabilities when this step was added: 17 of
+  18 findings were fixed by `npm audit fix` (non-breaking); the 1
+  remaining (a high-severity `@grpc/grpc-js` issue, pulled in
+  transitively through the firebase client SDK's own pinned
+  `@firebase/firestore` version) was fixed with a `package.json`
+  `"overrides"` entry pinning `@grpc/grpc-js` to the newer version
+  `firebase-admin`'s own dependency chain already resolves to elsewhere
+  in this exact tree - not an unverified version bump, since the full
+  test suite and production build were re-run against it unchanged. A
+  future failure here means a new advisory was published against
+  something already in the tree, not a standing backlog going unenforced.
+- **CodeQL** (`codeql.yml`) - static analysis (`javascript-typescript`
+  query pack) on push/PR to `main` and weekly. Findings post to the
+  repo's Security tab as code-scanning alerts for a human to triage; this
+  workflow's own job never blocks a merge. It is a static scanner, not a
+  substitute for a real penetration test - see below.
+
 ## What automated testing does NOT cover
 
 Stated plainly rather than left implicit:

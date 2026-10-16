@@ -1,0 +1,41 @@
+name: CodeQL
+
+# Static analysis security scan. Results post to the repo's Security tab
+# (Security > Code scanning alerts), not as a pass/fail CI gate - this
+# workflow's own job can never block a push or a PR from merging, it only
+# surfaces findings for a human to triage. Runs on push/PR to main (so new
+# code is scanned before it lands) plus a weekly schedule (so a newly
+# published query/advisory still gets applied to code that didn't change).
+on:
+  push:
+    branches: ['main']
+  pull_request:
+    branches: ['main']
+  schedule:
+    - cron: '17 3 * * 1'
+
+jobs:
+  analyze:
+    name: Analyze (javascript-typescript)
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: javascript-typescript
+
+      # No manual build step - CodeQL's JS/TS analysis works directly off
+      # the source (it doesn't need a compiled/bundled artifact the way a
+      # compiled-language scan would).
+      - name: Perform CodeQL analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: '/language:javascript-typescript'

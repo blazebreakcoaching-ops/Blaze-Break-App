@@ -34,6 +34,19 @@ jobs:
       - name: Install dependencies
         run: npm install --legacy-peer-deps
 
+      # Fails the build on a new high/critical advisory in the resolved
+      # dependency tree. The tree was at 0 known vulnerabilities when this
+      # step was added (a real @grpc/grpc-js high-severity issue, pulled in
+      # transitively through the firebase client SDK's own pinned
+      # @firebase/firestore version, was fixed via a package.json
+      # "overrides" entry pinning it to the newer version firebase-admin's
+      # own dependency chain already proved compatible in this exact tree -
+      # see docs/SECURITY_TESTING.md). A future failure here means a new
+      # advisory was published against something in the tree, not a
+      # standing backlog silently going unenforced.
+      - name: Dependency audit (npm audit)
+        run: npm audit --audit-level=high
+
       # tsc --noEmit, wired up as "lint" in package.json already -
       # kept as its own named step here (rather than folded into a
       # single "npm run lint" line) so a failure here is immediately
