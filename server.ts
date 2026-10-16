@@ -1072,7 +1072,7 @@ app.post("/api/twilio/send", smsLimiter, verifyAppCheck, authenticateFirebaseUse
     res.json({ success: true, sid: result.sid });
   } catch (error: any) {
     logger.error("Twilio route error:", errorFields(error));
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: GENERIC_SERVER_ERROR });
   }
 });
 
@@ -1346,7 +1346,7 @@ app.post("/api/guardian/alert", guardianAlertLimiter, verifyAppCheck, authentica
     });
   } catch (error: any) {
     logger.error("[Guardian alert] error:", errorFields(error));
-    res.status(500).json({ error: error.message, userMessage: GUARDIAN_STATE_COPY.failed });
+    res.status(500).json({ error: GENERIC_SERVER_ERROR, userMessage: GUARDIAN_STATE_COPY.failed });
   } finally {
     if (inFlightKey) guardianAlertInFlight.delete(inFlightKey);
   }
@@ -1374,7 +1374,8 @@ app.get("/api/guardian/alerts", verifyAppCheck, authenticateFirebaseUser, async 
       }),
     });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(error));
+    res.status(500).json({ error: GENERIC_SERVER_ERROR });
   }
 });
 
@@ -1419,7 +1420,7 @@ app.post("/api/guardian/contacts/:id/test-ping", verifyAppCheck, authenticateFir
     res.json({ success: true, lastTestPingAt: now, userMessage: `Test sent to ${contact.name}.` });
   } catch (error: any) {
     logger.error("[Guardian test ping] error:", errorFields(error));
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: GENERIC_SERVER_ERROR });
   }
 });
 
@@ -1451,7 +1452,8 @@ app.post("/api/nova/voice-sessions", verifyAppCheck, authenticateFirebaseUser, a
     });
     res.json({ success: true });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(error));
+    res.status(500).json({ error: GENERIC_SERVER_ERROR });
   }
 });
 
@@ -1468,7 +1470,8 @@ app.get("/api/nova/voice-sessions", verifyAppCheck, authenticateFirebaseUser, as
       }),
     });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(error));
+    res.status(500).json({ error: GENERIC_SERVER_ERROR });
   }
 });
 
@@ -1517,7 +1520,8 @@ app.put("/api/wellbeing/gad7/draft", verifyAppCheck, authenticateFirebaseUser, a
     });
     res.json({ success: true });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(error));
+    res.status(500).json({ error: GENERIC_SERVER_ERROR });
   }
 });
 
@@ -1528,7 +1532,8 @@ app.get("/api/wellbeing/gad7/draft", verifyAppCheck, authenticateFirebaseUser, a
     const doc = await db.collection("users").doc(uid).collection("wellbeing_drafts").doc("gad7").get();
     res.json({ draft: doc.exists ? doc.data() : null });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(error));
+    res.status(500).json({ error: GENERIC_SERVER_ERROR });
   }
 });
 
@@ -1539,7 +1544,8 @@ app.delete("/api/wellbeing/gad7/draft", verifyAppCheck, authenticateFirebaseUser
     await db.collection("users").doc(uid).collection("wellbeing_drafts").doc("gad7").delete();
     res.json({ success: true });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(error));
+    res.status(500).json({ error: GENERIC_SERVER_ERROR });
   }
 });
 
@@ -1573,7 +1579,8 @@ app.post("/api/wellbeing/gad7", verifyAppCheck, authenticateFirebaseUser, async 
       summary: result.summary, suggestsSupport: result.suggestsSupport,
     });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(error));
+    res.status(500).json({ error: GENERIC_SERVER_ERROR });
   }
 });
 
@@ -1593,7 +1600,8 @@ app.get("/api/wellbeing/gad7", verifyAppCheck, authenticateFirebaseUser, async (
       }),
     });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(error));
+    res.status(500).json({ error: GENERIC_SERVER_ERROR });
   }
 });
 
@@ -1619,7 +1627,8 @@ app.patch("/api/wellbeing/gad7/:id", verifyAppCheck, authenticateFirebaseUser, a
     await ref.update({ ...parsed.data, updatedAt: new Date().toISOString() });
     res.json({ success: true });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(error));
+    res.status(500).json({ error: GENERIC_SERVER_ERROR });
   }
 });
 
@@ -1649,7 +1658,8 @@ app.put("/api/wellbeing/gad7/reminder", verifyAppCheck, authenticateFirebaseUser
     }, { merge: true });
     res.json({ success: true, nextSuggestedAt });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(error));
+    res.status(500).json({ error: GENERIC_SERVER_ERROR });
   }
 });
 
@@ -1661,7 +1671,8 @@ app.get("/api/wellbeing/gad7/reminder", verifyAppCheck, authenticateFirebaseUser
     const data = doc.exists ? doc.data()! : {};
     res.json({ reminderChoice: data.reminderChoice ?? null, nextSuggestedAt: data.nextSuggestedAt ?? null });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(error));
+    res.status(500).json({ error: GENERIC_SERVER_ERROR });
   }
 });
 

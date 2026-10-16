@@ -92,6 +92,44 @@ its own sanity-check test against a synthetic string.
 This closes the one item left open from Batch 3. No known
 `err.message`-to-client leak sites remain in `server.ts`.
 
+## Resolved: the same leak under a different catch-variable spelling (Security Operations Batch 5)
+
+While scoping QA Batch 6 (MFA defensive catch-block coverage) and reading
+nearby routes, found that `POST /api/twilio/send`'s catch block read
+`catch (error: any) { ... res.status(500).json({ error: error.message
+}); }` - the identical unconditional leak Batch 3 fixed, just spelled
+`error` instead of `err`. Batch 3 and Batch 4's sweeps both searched
+specifically for the literal text `err.message`, so anything spelled
+`error.message` (or any other identifier) was invisible to either pass -
+a real gap in the earlier audits, not a new kind of bug.
+
+Searching `server.ts` for every `res.status(500).json({ error:
+<identifier>.message` shape, across every identifier actually used as a
+catch variable in this file (`err`, `error`, `e`), turned up exactly 14
+sites spelled `error.message` (`e.message` never appeared in this shape
+at all). Fixed identically to Batch 3: `GENERIC_SERVER_ERROR` on the
+response, `logger.error` capturing the real error added to the 11 sites
+that had no logging at all (3 already had their own labeled log line -
+only their response body changed, same treatment Batch 3 gave its own 6
+pre-logged sites). One site (`POST /api/guardian/alert`) also returns a
+`userMessage` field alongside `error` - preserved unchanged, only the
+`error` field's value was ever the leak.
+
+Ran the full test suite unchanged after the sweep as the audit, same as
+every prior batch in this series - nothing failed, meaning no test
+anywhere relied on any of these 14 sites' leaked text.
+`error-message-leak-guardrail.test.ts` gained two more tests pinning
+this spelling variant at exactly zero, with its own sanity-check against
+a synthetic string - kept as a separate pair of tests from the
+`err.message` ones above rather than merged, since they're guarding
+against two different ways the same mistake could come back.
+
+No other catch-variable spelling in `server.ts` was found leaking this
+way, but the possibility that a route introduces a fourth spelling this
+audit didn't check for remains - same honesty the guardrail test's own
+comments already practice about what a regex-based scanner can and can't
+catch.
+
 ## Needs a human decision, not more code
 
 - ~~**Data retention window.**~~ **Resolved 2026-09-28** — Option B

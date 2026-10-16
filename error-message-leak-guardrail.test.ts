@@ -60,4 +60,23 @@ describe('error message leak guardrail', () => {
     const matches = synthetic.match(/res\.status\(err\.message\?\.includes\([^)]*\)[^;]*: 500\)\.json\(\{ error: err\.message \}\)/g) || [];
     expect(matches.length).toBeGreaterThan(0);
   });
+
+  it('keeps the same leak at zero under the "error" catch-variable spelling too (Security Operations Batch 5)', () => {
+    // Batches 3-4's sweeps both searched specifically for the literal text
+    // `err.message` - which missed 14 sites that spelled the catch
+    // variable `error` instead of `err` (`catch (error: any) { ...
+    // res.status(500).json({ error: error.message }); }`), the exact same
+    // leak under a different identifier. All 14 are now
+    // GENERIC_SERVER_ERROR too. This guards the naming variant separately
+    // so a future route reintroducing it under either spelling gets caught.
+    const serverSource = fs.readFileSync(path.join(__dirname, 'server.ts'), 'utf8');
+    const matches = serverSource.match(/res\.status\(500\)\.json\(\{ error: error\.message[ ,}]/g) || [];
+    expect(matches).toHaveLength(0);
+  });
+
+  it('the "error"-spelling scanner itself actually detects the leak pattern (sanity check against a synthetic string)', () => {
+    const synthetic = 'app.get("/x", async (req, res) => {\n  try {} catch (error: any) {\n    res.status(500).json({ error: error.message });\n  }\n});';
+    const matches = synthetic.match(/res\.status\(500\)\.json\(\{ error: error\.message[ ,}]/g) || [];
+    expect(matches.length).toBeGreaterThan(0);
+  });
 });
