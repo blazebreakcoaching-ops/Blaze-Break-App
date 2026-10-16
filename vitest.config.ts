@@ -29,5 +29,24 @@ export default defineConfig({
     // Without this exclude, vitest's oxc transform fails outright trying
     // to resolve that tsconfig for any mobile/**/*.test.ts file.
     exclude: ['node_modules/**', 'dist/**', 'functions/**', 'mobile/**'],
+    // Opt-in only (`npm run test:coverage`) - not wired into `npm test`/CI.
+    // Excludes src/** (frontend components) since this project has no DOM
+    // rendering harness (no jsdom/@testing-library) to exercise them; the
+    // real backend/engine coverage this surfaces is for *.ts logic files.
+    coverage: {
+      provider: 'v8',
+      include: ['**/*.ts'],
+      exclude: [
+        'node_modules/**', 'dist/**', 'functions/**', 'mobile/**', 'src/**', '**/*.test.ts', 'test/**', 'vitest.config.ts',
+        // One-off developer/ops CLI scripts, run by hand from a terminal -
+        // never imported by server.ts, never exercised in production, so
+        // 0% here isn't a real app-coverage gap (unit tests over an
+        // execSync wrapper around the Firestore emulator/JRE installer
+        // would just re-assert what child_process does).
+        'download-java.ts', 'make-admin.ts', 'run-rules.ts', 'test-api.ts', 'run-integration-tests.ts', 'emulate-server.ts',
+        'app/applet/**',
+      ],
+      reporter: ['text', 'text-summary'],
+    },
   },
 });
