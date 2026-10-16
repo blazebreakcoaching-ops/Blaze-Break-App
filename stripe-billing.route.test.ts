@@ -104,6 +104,26 @@ describe('POST /api/billing/checkout-session', () => {
       cancel_url: 'https://app.test/cancel',
     }));
   });
+
+  // QA Batch 9: the defensive catch block behind the happy path above -
+  // every other test here exercises a validation branch or the success
+  // path; none had ever made the Stripe API call itself fail.
+  it('returns a generic 500 and logs the real error when Stripe rejects the session creation', async () => {
+    h.checkoutSessionsCreate.mockRejectedValueOnce(new Error('simulated Stripe outage'));
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    const res = await request(app).post('/api/billing/checkout-session').set(auth('user_1')).send({
+      priceId: 'price_core_m', successUrl: 'https://app.test/ok', cancelUrl: 'https://app.test/cancel',
+    });
+
+    expect(res.status).toBe(500);
+    expect(res.body).toEqual({ error: 'Something went wrong on our end. Please try again.' });
+    expect(errorSpy).toHaveBeenCalled();
+    const logged = JSON.parse(errorSpy.mock.calls[0][0] as string);
+    expect(logged.message).toContain('[STRIPE] Failed to create checkout session');
+
+    errorSpy.mockRestore();
+  });
 });
 
 describe('POST /api/webhooks/stripe', () => {

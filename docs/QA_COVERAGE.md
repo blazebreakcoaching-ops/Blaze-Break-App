@@ -327,6 +327,37 @@ down from ~153 before Batch 6, a third of the way through at the current
 pace of 3 batches covering 19 routes. Still substantial, separate work,
 same as every batch in this series has said.
 
+## QA Batch 9: entitlements/me + billing/checkout-session defensive catch blocks
+
+A smaller slice than Batches 6-8, picked for a reason worth naming: this
+is the first batch in this series added to the EXISTING test files that
+already cover these routes' happy paths (`entitlements.route.test.ts`,
+`stripe-billing.route.test.ts`) rather than a new dedicated file. Both
+already carry exactly the mocks/fixtures each test needs - the Stripe
+`checkout.sessions.create` mock in particular - so duplicating that setup
+in a fresh file would have been pure repetition for its own sake, the
+opposite of what this series has tried to avoid.
+
+`GET /api/entitlements/me`'s first real Firestore call
+(`getEntitlementRecord`'s read of `users/{uid}/entitlements/status`) now
+goes through `forceDocError`, same pattern as Batches 6/8.
+`POST /api/billing/checkout-session`'s catch wraps a Stripe API call, not
+Firestore - rejected directly via the test file's own
+`h.checkoutSessionsCreate.mockRejectedValueOnce(...)`, no new fake-store
+helper needed since the mock was already there.
+
+Deliberately skipped: `GET /api/entitlements/pricing`, on the same
+uncovered-catch list as the other two. Its try block does nothing but
+synchronous array/object mapping over static config
+(`PURCHASABLE_PLANS`, `PLAN_PRICING`, `getCapability`) - no I/O, nothing
+user-controlled, nothing that can realistically throw. Same reasoning as
+Batch 7's `support/request`/`twilio/send` exclusions: forcing it would
+mean faking an error with no real analogue, not closing a real gap.
+
+Measured effect: `server.ts` statement coverage rose to 69.25%, branch
+to 57.8%, lines to 70.06%. ~137 routes with a fully uncovered catch
+block remain.
+
 ## What's shipped
 
 - `npm run test:coverage` (`vitest run --coverage`, `@vitest/coverage-v8`):

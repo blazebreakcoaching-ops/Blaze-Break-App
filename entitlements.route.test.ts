@@ -41,7 +41,7 @@ vi.mock('@google/genai', () => ({
 
 import request from 'supertest';
 import { app } from './server';
-import { seedDoc, getDocRaw, resetStore } from './test/fake-firestore';
+import { seedDoc, getDocRaw, resetStore, forceDocError } from './test/fake-firestore';
 
 const USER = 'user_free';
 const ADMIN = 'admin_user';
@@ -125,6 +125,26 @@ describe('GET /api/entitlements/me', () => {
     const res = await request(app).get('/api/entitlements/me').set(auth(USER));
     expect(res.body.capabilities.nova_manager_coach).toBeDefined();
     expect(typeof res.body.capabilities.nova_manager_coach.limit === 'number' || res.body.capabilities.nova_manager_coach.limit === null).toBe(true);
+  });
+
+  // QA Batch 9: the defensive catch block behind the happy path above -
+  // every other test in this describe block exercises the 401/200
+  // branches; none had ever made getEntitlementRecord's own Firestore
+  // read actually throw.
+  it('returns a generic 500 and logs the real error when the Firestore read throws', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const restore = forceDocError(`users/${USER}/entitlements/status`, 'get', new Error('simulated Firestore outage'));
+
+    const res = await request(app).get('/api/entitlements/me').set(auth(USER));
+
+    expect(res.status).toBe(500);
+    expect(res.body).toEqual({ error: 'Something went wrong on our end. Please try again.' });
+    expect(errorSpy).toHaveBeenCalled();
+    const logged = JSON.parse(errorSpy.mock.calls[0][0] as string);
+    expect(logged.message).toContain('Unhandled error on GET /api/entitlements/me');
+
+    restore();
+    errorSpy.mockRestore();
   });
 });
 
