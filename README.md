@@ -29,7 +29,7 @@ and (feature-flagged) support for multiple LLM providers.
 - `npm test` - runs the test suite (`vitest`)
 
 Eslint isn't wired into an npm script - run it directly:
-`npx eslint . --config eslint.cleanup.config.js --ignore-pattern app/`
+`npx eslint . --config eslint.cleanup.config.js`
 
 ## CI
 

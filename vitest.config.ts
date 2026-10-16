@@ -44,7 +44,6 @@ export default defineConfig({
         // execSync wrapper around the Firestore emulator/JRE installer
         // would just re-assert what child_process does).
         'download-java.ts', 'make-admin.ts', 'run-rules.ts', 'test-api.ts', 'run-integration-tests.ts', 'emulate-server.ts',
-        'app/applet/**',
       ],
       reporter: ['text', 'text-summary'],
     },

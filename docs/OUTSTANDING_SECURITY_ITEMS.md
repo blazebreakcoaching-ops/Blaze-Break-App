@@ -104,10 +104,18 @@ what's still open.
   behaviour under sustained real traffic beyond the per-request rate
   limiters — see `docs/SECURITY_TESTING.md`'s "what automated testing
   does NOT cover."
-- **`app/applet/` legacy scripts directory.** Excluded from TypeScript
-  checking and from this hardening pass's scope (per
-  `.github/workflows/ci.yml`'s own exclusion) — contains an older copy of
-  some components (e.g. `ConnectedRecoveryModules.tsx`) with the same
-  Firestore access patterns as the real app. Not shipped, not reachable
-  by a real user, but worth confirming it's genuinely dead code (not
-  imported anywhere) rather than leaving that as an assumption.
+- ~~**`app/applet/` legacy scripts directory.**~~ **Resolved (Security
+  Operations Batch 2).** Confirmed genuinely dead code, not an
+  assumption: zero references from `src/`, `server.ts`, `package.json`,
+  `vite.config.ts`, any CI workflow, or anywhere else in the repo outside
+  this item's own description. Its one component
+  (`ConnectedRecoveryModules.tsx`) was a stale 182-line early-stage copy
+  of the real, actively-imported 1088-line
+  `src/components/ConnectedRecoveryModules.tsx` — different Firestore
+  access patterns than the file it was superseded by, sitting unreferenced
+  in the repo. Once confirmed dead, that's a real liability to leave in
+  place (an old, divergent copy of security-relevant code someone could
+  mistake for current), not something worth merely re-flagging — the
+  whole `app/` directory has been deleted, and the now-unnecessary
+  exclusions it needed (`tsconfig.json`'s `exclude`, `ci.yml`'s
+  `--ignore-pattern app/`) removed with it.

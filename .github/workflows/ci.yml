@@ -58,12 +58,8 @@ jobs:
       # (eslint.cleanup.config.js) isn't wired into any package.json
       # script - run directly here instead of assuming a script exists
       # for it.
-      # The app/ directory is a separate set of utility scripts, already
-      # excluded from TypeScript checking in tsconfig.json - matched
-      # here rather than holding this pipeline to a directory that was
-      # never part of the deployed application's own standard.
       - name: Lint (eslint)
-        run: npx eslint . --config eslint.cleanup.config.js --ignore-pattern app/
+        run: npx eslint . --config eslint.cleanup.config.js
 
       # Real build, not a syntax-only check - runs the same vite build
       # + esbuild backend bundle every commit this session was
