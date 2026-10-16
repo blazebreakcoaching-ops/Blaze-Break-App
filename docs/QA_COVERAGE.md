@@ -241,6 +241,54 @@ gap remains the one deliberately-not-fully-closed item on this list,
 now with a pattern (and reusable fake-firestore helpers) a future batch
 can repeat against the next coherent route group.
 
+## QA Batch 7: Guardian/Support route defensive catch blocks
+
+The next slice of the same gap Batch 6 opened, picked the same way:
+`POST /api/feedback/submit`, `POST /api/guardian/support-event`,
+`GET /api/guardian/alerts`, `POST /api/guardian/contacts/:id/test-ping` -
+all four already have deep happy-path coverage elsewhere
+(`guardian-alert.route.test.ts`, `guardian-support-invitation.route.test.ts`)
+but had never exercised the catch block behind them. All four already
+return their own safe, non-leaking message there, so again pure
+coverage, nothing to fix.
+
+`feedback/submit` and `guardian/support-event` both write via
+`.collection(id).add(...)` (an auto-generated doc id each call, so
+Batch 6's `forceDocError` - which targets one fixed path - can't reach
+them). `GET /api/guardian/alerts` reads via a `.orderBy().limit().get()`
+query on a collection, same issue. Added `forceCollectionError(path,
+'get' | 'add', error)` to `test/fake-firestore.ts` alongside Batch 6's
+two helpers - identical shape, scoped to one collection path via the
+same `this.path` check, so a `CollectionRef`'s `.clone()` (from
+`.orderBy()`/`.limit()`) still gets caught since it preserves `path`.
+`guardian/contacts/:id/test-ping` reads a real, fixed doc path
+(`support_circle/{contactId}`) inside `resolveGuardianContact`, so that
+one reuses `forceDocError` directly.
+
+Deliberately NOT in this batch, despite being on the same uncovered-catch
+list: `POST /api/support/request` and `POST /api/twilio/send`. Read
+closely, both catch blocks are structurally unreachable under the
+current implementation, not just untested - every call either one's try
+block makes already swallows its own failure and returns a typed result
+instead of throwing (`postToBrevoEmail` logs and returns `false`;
+`sendTwilioMessage` has its own inner `try`/`catch` that returns
+`{ success: false, error }`). Forcing either outer catch to fire would
+mean synthesizing a JS-engine-level error with no real-world analogue -
+a different, much lower-value exercise than every other site in this
+series, so left alone rather than padded in just to move a count.
+
+`guardian-support-catch-blocks.route.test.ts`, 4 tests, one per route,
+same three assertions as Batch 6 (existing safe message unchanged,
+status 500, `logger.error` actually captured the real error).
+
+Measured effect: `server.ts` statement coverage rose to 68.88%, branch
+coverage to 57.75%, lines to 69.68% - small, same reasoning as Batch 6's
+own note about why one slice of a ~300-route gap barely moves the
+number (Security Operations Batch 5's restructuring, which landed
+between Batch 6 and this one, also added more if/else surface to the
+denominator - see the baseline note above). ~149 routes with a fully
+uncovered catch block remain on this list.
+
 ## What's shipped
 
 - `npm run test:coverage` (`vitest run --coverage`, `@vitest/coverage-v8`):

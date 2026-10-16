@@ -433,3 +433,23 @@ export function forceTransactionError(error: Error): () => void {
     FakeFirestore.prototype.runTransaction = original;
   };
 }
+
+// Same idea as forceDocError, but for a collection-level call
+// (`.get()` on a query, or `.add()`, which creates its own auto-id doc so
+// there's no fixed doc path to target with forceDocError). Scoped to one
+// exact collection path the same way - `this.path` check inside the
+// override - so e.g. forcing `users/u1/guardian_alerts` to fail on `get`
+// never touches a `guardian_alerts` collection under a different uid, or
+// any other collection in the same request.
+export function forceCollectionError(path: string, method: 'get' | 'add', error: Error): () => void {
+  const probe = fakeDb.collection('__force_collection_error_probe__');
+  const CollectionRefCtor = Object.getPrototypeOf(probe).constructor as any;
+  const original = CollectionRefCtor.prototype[method];
+  CollectionRefCtor.prototype[method] = function (this: any, ...args: any[]) {
+    if (this.path === path) return Promise.reject(error);
+    return original.apply(this, args);
+  };
+  return () => {
+    CollectionRefCtor.prototype[method] = original;
+  };
+}
