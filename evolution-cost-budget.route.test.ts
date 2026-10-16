@@ -21,7 +21,7 @@ vi.mock('twilio', () => ({ default: () => ({ messages: { create: vi.fn() } }) })
 
 import request from 'supertest';
 import { app } from './server';
-import { resetStore } from './test/fake-firestore';
+import { resetStore, forceDocError } from './test/fake-firestore';
 
 const OWNER = 'owner_1';
 const NOT_ADMIN = 'random_person';
@@ -36,6 +36,18 @@ describe('GET /api/admin/evolution/cost-budget', () => {
   it('defaults to 0 when unset', async () => {
     const res = await request(app).get('/api/admin/evolution/cost-budget').set(auth(OWNER));
     expect(res.body.monthlyBudgetUsd).toBe(0);
+  });
+
+  // QA Batch 14: the defensive catch block behind the happy path above.
+  it('500s (never leaking err.message) if the config read throws', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const restore = forceDocError('app_config/evolution_cost_budget', 'get', new Error('simulated Firestore outage'));
+    const res = await request(app).get('/api/admin/evolution/cost-budget').set(auth(OWNER));
+    expect(res.status).toBe(500);
+    expect(res.body).toEqual({ error: 'Something went wrong on our end. Please try again.' });
+    expect(errorSpy).toHaveBeenCalled();
+    restore();
+    errorSpy.mockRestore();
   });
 });
 
@@ -53,5 +65,17 @@ describe('POST /api/admin/evolution/cost-budget', () => {
     expect(post.status).toBe(200);
     const get = await request(app).get('/api/admin/evolution/cost-budget').set(auth(OWNER));
     expect(get.body.monthlyBudgetUsd).toBe(250);
+  });
+
+  // QA Batch 14: the defensive catch block behind the happy path above.
+  it('500s (never leaking err.message) if the config write throws', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const restore = forceDocError('app_config/evolution_cost_budget', 'set', new Error('simulated Firestore outage'));
+    const res = await request(app).post('/api/admin/evolution/cost-budget').set(auth(OWNER)).send({ monthlyBudgetUsd: 100 });
+    expect(res.status).toBe(500);
+    expect(res.body).toEqual({ error: 'Something went wrong on our end. Please try again.' });
+    expect(errorSpy).toHaveBeenCalled();
+    restore();
+    errorSpy.mockRestore();
   });
 });

@@ -488,6 +488,49 @@ fully uncovered catch block remain. This closes the entire OAuth/
 signals group from the original gap list; the ~300-route gap now moves
 into Command Centre/admin/org territory.
 
+## QA Batch 14: Evolution Engine admin routes (change proposals, cost budget, freeze, rollout plans)
+
+Moves into the admin/org territory the Batch 13 note said was next.
+Unlike Batches 6-13, this group already had real happy-path route tests
+in four existing files (`evolution-change-proposals.route.test.ts`,
+`evolution-cost-budget.route.test.ts`, `evolution-freeze.route.test.ts`,
+`evolution-rollout-plans.route.test.ts`) - this batch adds a `defensive
+catch blocks` describe block to each one rather than creating new
+files, the same "extend, don't duplicate" call made in Batches 9-11.
+
+13 new tests across the 4 files, one per route whose catch block's
+generic-500 branch had never fired: `POST`/`GET
+/api/admin/evolution/change-proposals`, `.../submit`, `.../decide`,
+`.../withdraw`, `.../apply`, `GET`/`POST /api/admin/evolution/cost-
+budget`, `GET`/`POST /api/admin/evolution/freeze`, `POST`/`GET
+/api/admin/evolution/rollout-plans`, `.../rollout-plans/:id/status`.
+Every one of these routes' first real Firestore call is a doc `get()`
+(or a `set()` for the two write-only config routes, or an `orderBy().
+get()` query for the two list routes) with no prior `try`/`catch` of
+its own to swallow the failure first, so `forceDocError`/
+`forceCollectionError` reach the route's own catch cleanly in every
+case - no structurally-unreachable findings this batch.
+
+One exclusion, found while scoping: `GET /api/admin/evolution/nova-
+runtime` does no Firestore I/O at all (`buildNovaRuntimeReport` is a
+pure function over already-in-memory provider-configured booleans) -
+its only realistic failure is `requireEvolutionAccess` throwing
+`Forbidden`, already exercised via its 403 path. Same category as the
+Batch 6-13 "structurally unreachable catch" findings (`entitlements/
+pricing`, `log-calendar-decline`, etc.) - documented here rather than
+silently skipped.
+
+`GET /api/admin/evolution/connectors` and `GET /api/admin/evolution/
+context-brain/health` are also Evolution Engine routes with a fully
+uncovered catch block, but have no existing dedicated test file found
+via grep - left for a future batch rather than mixed into this one, to
+keep the "extend existing coverage" scoping clean per route family.
+
+Measured effect: `server.ts` statement coverage rose to 72.8%, branch
+to 60.19%, lines to 73.7%. Routes with a fully uncovered catch block:
+104 (down from 111), closing the entire change-proposals/cost-budget/
+freeze/rollout-plans slice of the Evolution Engine group.
+
 ## What's shipped
 
 - `npm run test:coverage` (`vitest run --coverage`, `@vitest/coverage-v8`):

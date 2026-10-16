@@ -28,7 +28,7 @@ vi.mock('twilio', () => ({ default: () => ({ messages: { create: vi.fn() } }) })
 
 import request from 'supertest';
 import { app } from './server';
-import { seedDoc, getDocRaw, resetStore } from './test/fake-firestore';
+import { seedDoc, getDocRaw, resetStore, forceDocError, forceCollectionError } from './test/fake-firestore';
 
 const OWNER = 'owner_1';
 const PLATFORM_ADMIN = 'admin_1';
@@ -178,5 +178,96 @@ describe('POST /api/admin/evolution/change-proposals/:id/apply', () => {
     });
     const apply = await request(app).post(`/api/admin/evolution/change-proposals/${create.body.proposalId}/apply`).set(auth(PLATFORM_ADMIN));
     expect(apply.status).toBe(400);
+  });
+});
+
+// QA Batch 14: the defensive catch blocks behind every route above's happy
+// path - each one's first real Firestore read forced to throw, proving the
+// route falls through to a generic 500 (never the real err.message) rather
+// than crashing or leaking internals.
+describe('defensive catch blocks', () => {
+  const expectGenericFailure = async (res: any) => {
+    expect(res.status).toBe(500);
+    expect(res.body).toEqual({ error: 'Something went wrong on our end. Please try again.' });
+  };
+
+  it('POST /api/admin/evolution/change-proposals: 500s if the target registry read throws', async () => {
+    seedLiveFeature();
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const restore = forceDocError('platform_feature_registry/energy_budget', 'get', new Error('simulated Firestore outage'));
+    const res = await request(app).post('/api/admin/evolution/change-proposals').set(auth(PLATFORM_ADMIN)).send({
+      targetType: 'feature_registry', targetId: 'energy_budget', title: 'x', rationale: 'x', proposedChanges: {},
+    });
+    await expectGenericFailure(res);
+    expect(errorSpy).toHaveBeenCalled();
+    restore();
+    errorSpy.mockRestore();
+  });
+
+  it('GET /api/admin/evolution/change-proposals: 500s if the list query throws', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const restore = forceCollectionError('platform_change_proposals', 'get', new Error('simulated Firestore outage'));
+    const res = await request(app).get('/api/admin/evolution/change-proposals').set(auth(PLATFORM_ADMIN));
+    await expectGenericFailure(res);
+    expect(errorSpy).toHaveBeenCalled();
+    restore();
+    errorSpy.mockRestore();
+  });
+
+  it('POST .../submit: 500s if the proposal read throws', async () => {
+    seedLiveFeature();
+    const create = await request(app).post('/api/admin/evolution/change-proposals').set(auth(PLATFORM_ADMIN)).send({
+      targetType: 'feature_registry', targetId: 'energy_budget', title: 'x', rationale: 'x', proposedChanges: {},
+    });
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const restore = forceDocError(`platform_change_proposals/${create.body.proposalId}`, 'get', new Error('simulated Firestore outage'));
+    const res = await request(app).post(`/api/admin/evolution/change-proposals/${create.body.proposalId}/submit`).set(auth(PLATFORM_ADMIN));
+    await expectGenericFailure(res);
+    expect(errorSpy).toHaveBeenCalled();
+    restore();
+    errorSpy.mockRestore();
+  });
+
+  it('POST .../decide: 500s if the proposal read throws', async () => {
+    seedLiveFeature();
+    const create = await request(app).post('/api/admin/evolution/change-proposals').set(auth(PLATFORM_ADMIN)).send({
+      targetType: 'feature_registry', targetId: 'energy_budget', title: 'x', rationale: 'x', proposedChanges: {},
+    });
+    await request(app).post(`/api/admin/evolution/change-proposals/${create.body.proposalId}/submit`).set(auth(PLATFORM_ADMIN));
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const restore = forceDocError(`platform_change_proposals/${create.body.proposalId}`, 'get', new Error('simulated Firestore outage'));
+    const res = await request(app).post(`/api/admin/evolution/change-proposals/${create.body.proposalId}/decide`).set(auth(PLATFORM_ADMIN)).send({ approve: true });
+    await expectGenericFailure(res);
+    expect(errorSpy).toHaveBeenCalled();
+    restore();
+    errorSpy.mockRestore();
+  });
+
+  it('POST .../withdraw: 500s if the proposal read throws', async () => {
+    seedLiveFeature();
+    const create = await request(app).post('/api/admin/evolution/change-proposals').set(auth(PLATFORM_ADMIN)).send({
+      targetType: 'feature_registry', targetId: 'energy_budget', title: 'x', rationale: 'x', proposedChanges: {},
+    });
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const restore = forceDocError(`platform_change_proposals/${create.body.proposalId}`, 'get', new Error('simulated Firestore outage'));
+    const res = await request(app).post(`/api/admin/evolution/change-proposals/${create.body.proposalId}/withdraw`).set(auth(PLATFORM_ADMIN));
+    await expectGenericFailure(res);
+    expect(errorSpy).toHaveBeenCalled();
+    restore();
+    errorSpy.mockRestore();
+  });
+
+  it('POST .../apply: 500s if the proposal read throws', async () => {
+    seedLiveFeature();
+    const create = await request(app).post('/api/admin/evolution/change-proposals').set(auth(PLATFORM_ADMIN)).send({
+      targetType: 'feature_registry', targetId: 'energy_budget', title: 'x', rationale: 'x', proposedChanges: {},
+    });
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const restore = forceDocError(`platform_change_proposals/${create.body.proposalId}`, 'get', new Error('simulated Firestore outage'));
+    const res = await request(app).post(`/api/admin/evolution/change-proposals/${create.body.proposalId}/apply`).set(auth(PLATFORM_ADMIN));
+    await expectGenericFailure(res);
+    expect(errorSpy).toHaveBeenCalled();
+    restore();
+    errorSpy.mockRestore();
   });
 });

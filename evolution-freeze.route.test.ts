@@ -26,7 +26,7 @@ vi.mock('twilio', () => ({ default: () => ({ messages: { create: vi.fn() } }) })
 
 import request from 'supertest';
 import { app } from './server';
-import { seedDoc, resetStore } from './test/fake-firestore';
+import { seedDoc, resetStore, forceDocError } from './test/fake-firestore';
 
 const OWNER = 'owner_1';
 const PLATFORM_ADMIN = 'admin_1';
@@ -128,5 +128,32 @@ describe('a real freeze actually blocks mutating Evolution Engine routes', () =>
       lifecycleState: 'live', enforcementState: 'fully_enforced',
     });
     expect(res.status).toBe(200);
+  });
+});
+
+// QA Batch 14: the defensive catch blocks behind GET/POST freeze's own
+// happy paths above (distinct from the 423s this file already proves the
+// freeze mechanism produces in OTHER routes).
+describe('defensive catch blocks', () => {
+  it('GET /api/admin/evolution/freeze: 500s (never leaking err.message) if the config read throws', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const restore = forceDocError('app_config/evolution_freeze', 'get', new Error('simulated Firestore outage'));
+    const res = await request(app).get('/api/admin/evolution/freeze').set(auth(OWNER));
+    expect(res.status).toBe(500);
+    expect(res.body).toEqual({ error: 'Something went wrong on our end. Please try again.' });
+    expect(errorSpy).toHaveBeenCalled();
+    restore();
+    errorSpy.mockRestore();
+  });
+
+  it('POST /api/admin/evolution/freeze: 500s (never leaking err.message) if the config write throws', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const restore = forceDocError('app_config/evolution_freeze', 'set', new Error('simulated Firestore outage'));
+    const res = await request(app).post('/api/admin/evolution/freeze').set(auth(OWNER)).send({ frozen: true });
+    expect(res.status).toBe(500);
+    expect(res.body).toEqual({ error: 'Something went wrong on our end. Please try again.' });
+    expect(errorSpy).toHaveBeenCalled();
+    restore();
+    errorSpy.mockRestore();
   });
 });

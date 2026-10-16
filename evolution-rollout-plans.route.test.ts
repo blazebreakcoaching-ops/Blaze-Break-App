@@ -25,7 +25,7 @@ vi.mock('twilio', () => ({ default: () => ({ messages: { create: vi.fn() } }) })
 
 import request from 'supertest';
 import { app } from './server';
-import { seedDoc, resetStore } from './test/fake-firestore';
+import { seedDoc, resetStore, forceDocError, forceCollectionError } from './test/fake-firestore';
 
 const OWNER = 'owner_1';
 const NOT_ADMIN = 'random_person';
@@ -100,5 +100,48 @@ describe('POST /api/admin/evolution/rollout-plans/:id/status', () => {
   it('404s for a nonexistent plan', async () => {
     const res = await request(app).post('/api/admin/evolution/rollout-plans/does-not-exist/status').set(auth(OWNER)).send({ status: 'active' });
     expect(res.status).toBe(404);
+  });
+});
+
+// QA Batch 14: the defensive catch blocks behind every route above's happy
+// path - each one's first real Firestore read forced to throw, proving the
+// route falls through to a generic 500 (never the real err.message).
+describe('defensive catch blocks', () => {
+  const expectGenericFailure = (res: any) => {
+    expect(res.status).toBe(500);
+    expect(res.body).toEqual({ error: 'Something went wrong on our end. Please try again.' });
+  };
+
+  it('POST /api/admin/evolution/rollout-plans: 500s if the target feature read throws', async () => {
+    seedFeature();
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const restore = forceDocError('platform_feature_registry/energy_budget', 'get', new Error('simulated Firestore outage'));
+    const res = await request(app).post('/api/admin/evolution/rollout-plans').set(auth(OWNER)).send(validBody());
+    expectGenericFailure(res);
+    expect(errorSpy).toHaveBeenCalled();
+    restore();
+    errorSpy.mockRestore();
+  });
+
+  it('GET /api/admin/evolution/rollout-plans: 500s if the list query throws', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const restore = forceCollectionError('platform_rollout_plans', 'get', new Error('simulated Firestore outage'));
+    const res = await request(app).get('/api/admin/evolution/rollout-plans').set(auth(OWNER));
+    expectGenericFailure(res);
+    expect(errorSpy).toHaveBeenCalled();
+    restore();
+    errorSpy.mockRestore();
+  });
+
+  it('POST .../status: 500s if the plan read throws', async () => {
+    seedFeature();
+    const create = await request(app).post('/api/admin/evolution/rollout-plans').set(auth(OWNER)).send(validBody());
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const restore = forceDocError(`platform_rollout_plans/${create.body.rolloutId}`, 'get', new Error('simulated Firestore outage'));
+    const res = await request(app).post(`/api/admin/evolution/rollout-plans/${create.body.rolloutId}/status`).set(auth(OWNER)).send({ status: 'active' });
+    expectGenericFailure(res);
+    expect(errorSpy).toHaveBeenCalled();
+    restore();
+    errorSpy.mockRestore();
   });
 });
