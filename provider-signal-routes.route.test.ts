@@ -36,7 +36,7 @@ vi.mock('twilio', () => ({ default: () => ({ messages: { create: vi.fn() } }) })
 
 import request from 'supertest';
 import { app } from './server';
-import { seedDoc, getDocRaw, resetStore } from './test/fake-firestore';
+import { seedDoc, getDocRaw, resetStore, forceDocError } from './test/fake-firestore';
 
 const auth = (uid: string) => ({ Authorization: `Bearer ${uid}` });
 
@@ -113,6 +113,27 @@ describe('POST /api/signals/asana/refresh', () => {
     const res = await request(app).post('/api/signals/asana/refresh').set(auth('asana_user'));
     expect(res.status).toBe(502);
   });
+
+  // QA Batch 11: the defensive catch block behind the happy path above -
+  // getValidAccessToken's own tokenRef.get() isn't wrapped in its own
+  // inner try/catch, so forcing it to throw propagates to this route's
+  // catch exactly like a genuinely unexpected failure would (confirmed
+  // via Jira in QA Batch 10 - the mechanism is provider-agnostic).
+  it('returns a generic 500 and logs the real error when the Firestore read throws', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const restore = forceDocError('users/asana_user/integration_tokens/asana', 'get', new Error('simulated Firestore outage'));
+
+    const res = await request(app).post('/api/signals/asana/refresh').set(auth('asana_user'));
+
+    expect(res.status).toBe(500);
+    expect(res.body).toEqual({ error: 'Could not refresh Asana data.' });
+    expect(errorSpy).toHaveBeenCalled();
+    const logged = JSON.parse(errorSpy.mock.calls[0][0] as string);
+    expect(logged.message).toContain('[Signals] asana refresh error:');
+
+    restore();
+    errorSpy.mockRestore();
+  });
 });
 
 describe('GET /api/signals/asana', () => {
@@ -126,6 +147,20 @@ describe('GET /api/signals/asana', () => {
     seedDoc('users/asana_user/live_signals/asana', { totalIncompleteTasks: 5, overdueTasks: 2 });
     const res = await request(app).get('/api/signals/asana').set(auth('asana_user'));
     expect(res.body.state).toMatchObject({ totalIncompleteTasks: 5, overdueTasks: 2 });
+  });
+
+  it('returns a generic 500 and logs the real error when the Firestore read throws', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const restore = forceDocError('users/asana_user/live_signals/asana', 'get', new Error('simulated Firestore outage'));
+
+    const res = await request(app).get('/api/signals/asana').set(auth('asana_user'));
+
+    expect(res.status).toBe(500);
+    expect(res.body).toEqual({ error: 'Something went wrong on our end. Please try again.' });
+    expect(errorSpy).toHaveBeenCalled();
+
+    restore();
+    errorSpy.mockRestore();
   });
 });
 
@@ -170,6 +205,22 @@ describe('POST /api/signals/monday/refresh', () => {
     const res = await request(app).post('/api/signals/monday/refresh').set(auth('monday_user'));
     expect(res.status).toBe(502);
   });
+
+  it('returns a generic 500 and logs the real error when the Firestore read throws', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const restore = forceDocError('users/monday_user/integration_tokens/monday', 'get', new Error('simulated Firestore outage'));
+
+    const res = await request(app).post('/api/signals/monday/refresh').set(auth('monday_user'));
+
+    expect(res.status).toBe(500);
+    expect(res.body).toEqual({ error: 'Could not refresh Monday.com data.' });
+    expect(errorSpy).toHaveBeenCalled();
+    const logged = JSON.parse(errorSpy.mock.calls[0][0] as string);
+    expect(logged.message).toContain('[Signals] monday refresh error:');
+
+    restore();
+    errorSpy.mockRestore();
+  });
 });
 
 describe('GET /api/signals/monday', () => {
@@ -177,6 +228,20 @@ describe('GET /api/signals/monday', () => {
     seedDoc('users/monday_user/live_signals/monday', { boardsScanned: 2, totalActiveItems: 10, overdueItems: 1 });
     const res = await request(app).get('/api/signals/monday').set(auth('monday_user'));
     expect(res.body.state).toMatchObject({ boardsScanned: 2 });
+  });
+
+  it('returns a generic 500 and logs the real error when the Firestore read throws', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const restore = forceDocError('users/monday_user/live_signals/monday', 'get', new Error('simulated Firestore outage'));
+
+    const res = await request(app).get('/api/signals/monday').set(auth('monday_user'));
+
+    expect(res.status).toBe(500);
+    expect(res.body).toEqual({ error: 'Something went wrong on our end. Please try again.' });
+    expect(errorSpy).toHaveBeenCalled();
+
+    restore();
+    errorSpy.mockRestore();
   });
 });
 
@@ -233,6 +298,22 @@ describe('POST /api/signals/calendly/refresh', () => {
     const res = await request(app).post('/api/signals/calendly/refresh').set(auth('calendly_user'));
     expect(res.status).toBe(502);
   });
+
+  it('returns a generic 500 and logs the real error when the Firestore read throws', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const restore = forceDocError('users/calendly_user/integration_tokens/calendly', 'get', new Error('simulated Firestore outage'));
+
+    const res = await request(app).post('/api/signals/calendly/refresh').set(auth('calendly_user'));
+
+    expect(res.status).toBe(500);
+    expect(res.body).toEqual({ error: 'Could not refresh Calendly data.' });
+    expect(errorSpy).toHaveBeenCalled();
+    const logged = JSON.parse(errorSpy.mock.calls[0][0] as string);
+    expect(logged.message).toContain('[Signals] calendly refresh error:');
+
+    restore();
+    errorSpy.mockRestore();
+  });
 });
 
 describe('GET /api/signals/calendly', () => {
@@ -240,6 +321,20 @@ describe('GET /api/signals/calendly', () => {
     seedDoc('users/calendly_user/live_signals/calendly', { upcomingBookings7d: 4 });
     const res = await request(app).get('/api/signals/calendly').set(auth('calendly_user'));
     expect(res.body.state).toMatchObject({ upcomingBookings7d: 4 });
+  });
+
+  it('returns a generic 500 and logs the real error when the Firestore read throws', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const restore = forceDocError('users/calendly_user/live_signals/calendly', 'get', new Error('simulated Firestore outage'));
+
+    const res = await request(app).get('/api/signals/calendly').set(auth('calendly_user'));
+
+    expect(res.status).toBe(500);
+    expect(res.body).toEqual({ error: 'Something went wrong on our end. Please try again.' });
+    expect(errorSpy).toHaveBeenCalled();
+
+    restore();
+    errorSpy.mockRestore();
   });
 });
 
@@ -282,6 +377,38 @@ describe('POST/GET /api/signals/calendar (client-computed, no OAuth)', () => {
     const res = await request(app).get('/api/signals/calendar').set(auth('fresh_user'));
     expect(res.body.state).toBeNull();
   });
+
+  it('write: returns a generic 500 and logs the real error when the Firestore write throws', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const restore = forceDocError('users/cal_user/live_signals/calendar', 'set', new Error('simulated Firestore outage'));
+
+    const res = await request(app).post('/api/signals/calendar').set(auth('cal_user')).send(validPayload);
+
+    expect(res.status).toBe(500);
+    expect(res.body).toEqual({ error: 'Could not save calendar signal.' });
+    expect(errorSpy).toHaveBeenCalled();
+    const logged = JSON.parse(errorSpy.mock.calls[0][0] as string);
+    expect(logged.message).toContain('[Signals] calendar write error:');
+
+    restore();
+    errorSpy.mockRestore();
+  });
+
+  it('read: returns a generic 500 and logs the real error when the Firestore read throws', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const restore = forceDocError('users/cal_user/live_signals/calendar', 'get', new Error('simulated Firestore outage'));
+
+    const res = await request(app).get('/api/signals/calendar').set(auth('cal_user'));
+
+    expect(res.status).toBe(500);
+    expect(res.body).toEqual({ error: 'Something went wrong on our end. Please try again.' });
+    expect(errorSpy).toHaveBeenCalled();
+    const logged = JSON.parse(errorSpy.mock.calls[0][0] as string);
+    expect(logged.message).toContain('[Signals] calendar read error:');
+
+    restore();
+    errorSpy.mockRestore();
+  });
 });
 
 describe('POST/GET /api/signals/gmail (client-computed, no OAuth)', () => {
@@ -301,5 +428,37 @@ describe('POST/GET /api/signals/gmail (client-computed, no OAuth)', () => {
     seedDoc('users/gmail_user/live_signals/gmail', { unreadCount: 3, totalInboxCount: 50 });
     const res = await request(app).get('/api/signals/gmail').set(auth('gmail_user'));
     expect(res.body.state).toMatchObject({ unreadCount: 3, totalInboxCount: 50 });
+  });
+
+  it('write: returns a generic 500 and logs the real error when the Firestore write throws', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const restore = forceDocError('users/gmail_user/live_signals/gmail', 'set', new Error('simulated Firestore outage'));
+
+    const res = await request(app).post('/api/signals/gmail').set(auth('gmail_user')).send({ unreadCount: 12, totalInboxCount: 340 });
+
+    expect(res.status).toBe(500);
+    expect(res.body).toEqual({ error: 'Could not save Gmail signal.' });
+    expect(errorSpy).toHaveBeenCalled();
+    const logged = JSON.parse(errorSpy.mock.calls[0][0] as string);
+    expect(logged.message).toContain('[Signals] gmail write error:');
+
+    restore();
+    errorSpy.mockRestore();
+  });
+
+  it('read: returns a generic 500 and logs the real error when the Firestore read throws', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const restore = forceDocError('users/gmail_user/live_signals/gmail', 'get', new Error('simulated Firestore outage'));
+
+    const res = await request(app).get('/api/signals/gmail').set(auth('gmail_user'));
+
+    expect(res.status).toBe(500);
+    expect(res.body).toEqual({ error: 'Something went wrong on our end. Please try again.' });
+    expect(errorSpy).toHaveBeenCalled();
+    const logged = JSON.parse(errorSpy.mock.calls[0][0] as string);
+    expect(logged.message).toContain('[Signals] gmail read error:');
+
+    restore();
+    errorSpy.mockRestore();
   });
 });

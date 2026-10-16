@@ -393,6 +393,32 @@ Calendly, Calendar, Gmail, `signals/blend`, `signals/recovery-explain`,
 Boundary Autopilot's Slack routes, push subscribe/unsubscribe) is the
 natural next slice.
 
+## QA Batch 11: Asana/Monday/Calendly/Calendar/Gmail signal defensive catch blocks
+
+Finishes the rest of the provider-signal-routes group Batch 10 left
+open: Asana/Monday/Calendly's refresh+read routes, and Calendar/Gmail's
+write+read routes - 10 routes total, all added to
+`provider-signal-routes.route.test.ts` (QA Batch 4), which already
+covers every one of their happy paths and upstream-error branches.
+
+The three OAuth-backed refresh routes (Asana/Monday/Calendly) are
+structurally identical to Batch 10's Jira case - `getValidAccessToken`'s
+`tokenRef.get()` sits outside its own inner `try`, so `forceDocError` on
+`integration_tokens/{service}` propagates straight to each route's own
+catch. The three `GET` reads and Calendar/Gmail's `POST` writes are
+single, deterministic doc calls on `live_signals/{service}`, going
+through `forceDocError` directly (`get` for reads, `set` for the two
+writes). No new test infrastructure needed anywhere in this batch - by
+this point the pattern from Batches 6-10 generalizes cleanly across an
+entire route family.
+
+Measured effect: `server.ts` statement coverage rose to 69.8%, lines to
+70.64% (branch unchanged at 57.85% - same reasoning as every batch in
+this series: these were already-counted branches, just never taken).
+~120 routes with a fully uncovered catch block remain. What's left in
+the OAuth/signals group: `signals/blend`, `signals/recovery-explain`,
+Boundary Autopilot's Slack routes, push subscribe/unsubscribe.
+
 ## What's shipped
 
 - `npm run test:coverage` (`vitest run --coverage`, `@vitest/coverage-v8`):
