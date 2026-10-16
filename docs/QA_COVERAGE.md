@@ -813,6 +813,22 @@ hr-dashboard, members role-management routes, governance, device
 management, and beyond into `/api/ally/*`, `/api/nudge-schedules`,
 `/api/legal/*`, `/api/user/*`, `/api/recovery/*`.
 
+## QA Batch 27: Work Design Debt Ledger catch blocks
+
+`work-design-debt.route.test.ts` already had thorough happy-path and
+validation coverage for all four routes but no catch-block test. Each
+route (`POST`/`GET /api/org/:orgId/work-design-debt`, `PATCH
+.../work-design-debt/:id/owner`, `PATCH .../work-design-debt/:id/status`)
+uses `loadOrgAndCallerRole`'s `organisations/<orgId>` read as its first
+real Firestore call, so one `forceDocError` test per route closes the
+gap (the `owner`/`status` tests first create a real debt item via `POST`
+so a valid `:id` reaches the org read).
+
+Measured effect: `server.ts` statement coverage rose to 76.07%, branch
+to 63.12%, lines to 77.11%. Routes with a fully uncovered catch block:
+70 (down from 74). Next: workplace-policies (create/list/delete),
+what-works-here (list + promote), work-design-drift, and hr-dashboard.
+
 ## What's shipped
 
 - `npm run test:coverage` (`vitest run --coverage`, `@vitest/coverage-v8`):

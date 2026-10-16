@@ -17,7 +17,7 @@ vi.mock('twilio', () => ({ default: () => ({ messages: { create: vi.fn() } }) })
 
 import request from 'supertest';
 import { app } from './server';
-import { seedDoc, resetStore } from './test/fake-firestore';
+import { seedDoc, resetStore, forceDocError } from './test/fake-firestore';
 
 const ORG = 'org_1';
 const auth = (uid: string) => ({ Authorization: `Bearer ${uid}` });
@@ -235,5 +235,61 @@ describe('PATCH /api/org/:orgId/work-design-debt/:id/status — mandatory owner 
     seedOrg(ORG, { adminUids: ['owner_1'], memberUids: ['owner_1'] });
     const res = await request(app).patch(`/api/org/${ORG}/work-design-debt/does_not_exist/status`).set(auth('owner_1')).send({ status: 'owned' });
     expect(res.status).toBe(404);
+  });
+});
+
+describe('defensive catch blocks', () => {
+  const expectGenericFailure = (res: any) => {
+    expect(res.status).toBe(500);
+    expect(res.body).toEqual({ error: 'Something went wrong on our end. Please try again.' });
+  };
+
+  it('POST /api/org/:orgId/work-design-debt: 500s if the org read throws', async () => {
+    seedOrg(ORG, { adminUids: ['owner_1'], memberUids: ['owner_1'] });
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const restore = forceDocError(`organisations/${ORG}`, 'get', new Error('simulated Firestore outage'));
+    const res = await request(app).post(`/api/org/${ORG}/work-design-debt`).set(auth('owner_1')).send(validBody);
+    expectGenericFailure(res);
+    expect(errorSpy).toHaveBeenCalled();
+    restore();
+    errorSpy.mockRestore();
+  });
+
+  it('GET /api/org/:orgId/work-design-debt: 500s if the org read throws', async () => {
+    seedOrg(ORG, { adminUids: ['owner_1'], memberUids: ['owner_1'] });
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const restore = forceDocError(`organisations/${ORG}`, 'get', new Error('simulated Firestore outage'));
+    const res = await request(app).get(`/api/org/${ORG}/work-design-debt`).set(auth('owner_1'));
+    expectGenericFailure(res);
+    expect(errorSpy).toHaveBeenCalled();
+    restore();
+    errorSpy.mockRestore();
+  });
+
+  it('PATCH /api/org/:orgId/work-design-debt/:id/owner: 500s if the org read throws', async () => {
+    seedOrg(ORG, { adminUids: ['owner_1'], memberUids: ['owner_1', 'mgr_a'], teamManagers: { mgr_a: ['Team A'] } });
+    const createRes = await request(app).post(`/api/org/${ORG}/work-design-debt`).set(auth('mgr_a')).send(validBody);
+    const id = createRes.body.debt.id;
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const restore = forceDocError(`organisations/${ORG}`, 'get', new Error('simulated Firestore outage'));
+    const res = await request(app).patch(`/api/org/${ORG}/work-design-debt/${id}/owner`).set(auth('mgr_a')).send({ ownerUid: 'mgr_a' });
+    expectGenericFailure(res);
+    expect(errorSpy).toHaveBeenCalled();
+    restore();
+    errorSpy.mockRestore();
+  });
+
+  it('PATCH /api/org/:orgId/work-design-debt/:id/status: 500s if the org read throws', async () => {
+    seedOrg(ORG, { adminUids: ['owner_1'], memberUids: ['owner_1', 'mgr_a'], teamManagers: { mgr_a: ['Team A'] } });
+    const createRes = await request(app).post(`/api/org/${ORG}/work-design-debt`).set(auth('mgr_a')).send(validBody);
+    const id = createRes.body.debt.id;
+    await request(app).patch(`/api/org/${ORG}/work-design-debt/${id}/owner`).set(auth('mgr_a')).send({ ownerUid: 'mgr_a' });
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const restore = forceDocError(`organisations/${ORG}`, 'get', new Error('simulated Firestore outage'));
+    const res = await request(app).patch(`/api/org/${ORG}/work-design-debt/${id}/status`).set(auth('mgr_a')).send({ status: 'owned' });
+    expectGenericFailure(res);
+    expect(errorSpy).toHaveBeenCalled();
+    restore();
+    errorSpy.mockRestore();
   });
 });
