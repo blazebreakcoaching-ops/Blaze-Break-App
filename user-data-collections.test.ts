@@ -6,6 +6,7 @@ import {
   NON_PERSONAL_USERID_COLLECTIONS,
   collectionsForExport,
   collectionsForErasure,
+  userIdFieldsFor,
 } from './user-data-collections';
 
 // The point of this suite is the guardrail test at the bottom: it reads
@@ -70,6 +71,23 @@ describe('user-data-collections registry', () => {
     for (const name of NON_PERSONAL_USERID_COLLECTIONS) {
       expect(stray.has(name), `${name} is in both lists`).toBe(false);
     }
+  });
+
+  // admin_audit_logs (server.ts's logAdminAction) stores this user's uid
+  // under targetUid (they were acted upon) or actorUid (they were the
+  // admin), never under a field literally called "userId" - found by
+  // manual audit, since neither scanner below can see it (see its own
+  // comment in user-data-collections.ts for why). Locking in the
+  // classification here since nothing will catch it drifting back out.
+  it('admin_audit_logs is classified, exported (as both actor and target), and never erased', () => {
+    expect(collectionsForExport()).toContain('admin_audit_logs');
+    expect(collectionsForErasure()).not.toContain('admin_audit_logs');
+    expect(userIdFieldsFor('admin_audit_logs')).toEqual(['targetUid', 'actorUid']);
+  });
+
+  it('userIdFieldsFor defaults to ["userId"] for every collection that does not declare its own fields', () => {
+    expect(userIdFieldsFor('anxiety_reset_events')).toEqual(['userId']);
+    expect(userIdFieldsFor('a_collection_not_in_the_registry_at_all')).toEqual(['userId']);
   });
 });
 

@@ -36,7 +36,7 @@ import { deriveEffectiveSharing, computeCapsuleExpiresAt, DEFAULT_SHARED_CATEGOR
 import { effectiveConsentStatus, canRespondToConsent, computeInviteExpiresAt, isInviteExpired } from './recovery-ally-consent';
 import { guardianSupportInvitationEnabled, validateGuardianSupportOffer, isValidGuardianSupportEventType, isValidGuardianSupportTemplateId, buildGuardianSupportMessage } from './guardian-support-invitation';
 import { quietHoursCheckPasses } from './ally-nudge-quiet-hours';
-import { collectionsForExport, collectionsForErasure } from './user-data-collections';
+import { collectionsForExport, collectionsForErasure, userIdFieldsFor } from './user-data-collections';
 import { htmlToPlainTextFallback, buildEmailVerificationEmail, buildPasswordResetEmail, buildPasswordChangedEmail, buildMfaEnabledEmail, buildMfaDisabledEmail, buildSupportRequestReceivedEmail, buildAllyInviteEmail, buildInactivityWarningEmail } from './brevo-templates';
 import { evaluateRetentionAction, retentionSweepIsEnabled, RetentionCandidate, RETENTION_INACTIVITY_MONTHS, RETENTION_WARNING_DAYS_BEFORE } from './data-retention';
 import { generateTotpSecret, buildOtpauthUri, verifyTotpCode, generateRecoveryCodes, hashRecoveryCode, encryptSecret as encryptTotpSecret, decryptSecret as decryptTotpSecret, isTotpLockedOut, nextLockoutState } from './totp-mfa';
@@ -12867,8 +12867,17 @@ app.get("/api/user/export", exportLimiter, verifyAppCheck, authenticateFirebaseU
     // new such collection is added to server.ts without being classified.
     const strayCollections = collectionsForExport();
     await Promise.all(strayCollections.map(async (colName) => {
-      const snap = await db.collection(colName).where("userId", "==", user.uid).get();
-      data[colName] = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      // Most of these collections key the user by a single `userId` field,
+      // but a doc can identify this user under a different field name
+      // (admin_audit_logs: targetUid OR actorUid) - query every field this
+      // collection is declared under and merge by doc id so a doc matching
+      // more than one field isn't duplicated in the export.
+      const merged = new Map<string, unknown>();
+      for (const field of userIdFieldsFor(colName)) {
+        const snap = await db.collection(colName).where(field, "==", user.uid).get();
+        for (const d of snap.docs) merged.set(d.id, { id: d.id, ...d.data() });
+      }
+      data[colName] = [...merged.values()];
     }));
 
     res.json({
@@ -12943,8 +12952,15 @@ async function eraseUserAccount(uid: string): Promise<{ authDeleted: boolean }> 
   // test, rather than as two hand-maintained arrays that can drift.
   const strayCollections = collectionsForErasure();
   for (const colName of strayCollections) {
-    const snap = await db.collection(colName).where("userId", "==", uid).get();
-    await Promise.all(snap.docs.map(d => d.ref.delete()));
+    // Same multi-field reasoning as the export route above - query every
+    // field this collection is declared under and dedupe by doc id before
+    // deleting, so a doc matching more than one field is only deleted once.
+    const toDelete = new Map<string, any>();
+    for (const field of userIdFieldsFor(colName)) {
+      const snap = await db.collection(colName).where(field, "==", uid).get();
+      for (const d of snap.docs) toDelete.set(d.id, d.ref);
+    }
+    await Promise.all([...toDelete.values()].map((ref) => ref.delete()));
   }
 
   // Delete the auth account itself last. If this fails, the personal

@@ -29,7 +29,17 @@ export interface StrayUserCollection {
   // account it records.
   eraseOnDeletion: boolean;
   reason?: string;
+  // The field(s) that carry this user's uid on each document. Defaults to
+  // ['userId'] when omitted - every collection found so far uses that one
+  // field, except admin_audit_logs below, which identifies a user as
+  // either actorUid or targetUid of the recorded action (a doc can be
+  // "about" this user either way, so both are queried and the results
+  // merged by export/erasure, not just the first match).
+  userIdFields?: string[];
 }
+
+export const userIdFieldsFor = (name: string): string[] =>
+  STRAY_USER_COLLECTIONS.find((c) => c.name === name)?.userIdFields ?? ['userId'];
 
 export const STRAY_USER_COLLECTIONS: StrayUserCollection[] = [
   {
@@ -56,6 +66,26 @@ export const STRAY_USER_COLLECTIONS: StrayUserCollection[] = [
       "Compliance trail - records events like 'deletion completed'. It must " +
       'survive the account it describes to serve as proof the erasure ' +
       'happened, so it is exported but deliberately not erased.',
+  },
+  {
+    // Found during a manual Data Governance audit, not by either scanner
+    // below: logAdminAction (server.ts) builds its entry object (actorUid,
+    // actorEmail, targetUid, targetEmail) several lines before passing it
+    // to .add() by reference, so neither scanner's "look near the .add()
+    // call" regex ever sees the field names. A real AST-aware scanner
+    // would be needed to catch the next collection shaped like this one -
+    // flagging that limitation honestly rather than claiming the guardrail
+    // now covers every case.
+    name: 'admin_audit_logs',
+    userIdFields: ['targetUid', 'actorUid'],
+    exportOnRequest: true,
+    eraseOnDeletion: false,
+    reason:
+      'Compliance trail of admin actions (suspensions, role changes, ' +
+      'entitlement grants) taken against or by this user - the same ' +
+      'reasoning as audit_logs above: it must survive the account it ' +
+      'describes, since it is the only record that the action happened ' +
+      'at all once the account is gone.',
   },
 ];
 

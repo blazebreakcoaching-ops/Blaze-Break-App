@@ -51,12 +51,17 @@ function seedFullUser() {
   seedDoc(`anxiety_reset_events/are1`, { userId: USER, kind: 'panic', createdAt: '2026-01-01T00:00:00Z' });
   seedDoc(`audit_logs/al1`, { userId: USER, action: 'consent_granted', createdAt: '2026-01-01T00:00:00Z' });
   seedDoc(`feedback_submissions/fb1`, { userId: USER, category: 'bug', message: 'Something broke', createdAt: '2026-01-01T00:00:00Z' });
+  // admin_audit_logs is keyed by targetUid/actorUid, not userId - one doc
+  // where USER was acted upon, one where USER was the admin who acted.
+  seedDoc(`admin_audit_logs/aal1`, { actorUid: 'some_admin', actorEmail: 'admin@test.dev', targetUid: USER, targetEmail: 'owner@test.dev', action: 'suspend_user' });
+  seedDoc(`admin_audit_logs/aal2`, { actorUid: USER, actorEmail: 'owner@test.dev', targetUid: 'some_other_target', targetEmail: 'x@test.dev', action: 'grant_entitlement' });
   // Another user's data, in the same collections:
   seedDoc(`users/${OTHER}`, { displayName: 'Someone Else' });
   seedDoc(`users/${OTHER}/mood_pulses/mpx`, { moodLabel: 'calm' });
   seedDoc(`anxiety_reset_events/areX`, { userId: OTHER, kind: 'panic' });
   seedDoc(`audit_logs/alX`, { userId: OTHER, action: 'login' });
   seedDoc(`feedback_submissions/fbX`, { userId: OTHER, category: 'general', message: 'Someone else entirely' });
+  seedDoc(`admin_audit_logs/aalX`, { actorUid: 'some_admin', actorEmail: 'admin@test.dev', targetUid: OTHER, targetEmail: 'other@test.dev', action: 'suspend_user' });
   // The org the user belongs to:
   seedDoc(`organisations/org_1`, { memberUids: [USER, OTHER], adminUids: [USER], memberTeams: { [USER]: 'team_a' } });
 }
@@ -81,6 +86,13 @@ describe('GET /api/user/export — portability (GDPR Art. 15/20)', () => {
     expect(res.body.collections.audit_logs[0].userId).toBe(USER);
     expect(res.body.collections.feedback_submissions).toHaveLength(1);
     expect(res.body.collections.feedback_submissions[0].userId).toBe(USER);
+
+    // admin_audit_logs: both the doc where USER was the target AND the doc
+    // where USER was the acting admin are included - matching on either
+    // field, not just one - while the OTHER user's doc is excluded.
+    expect(res.body.collections.admin_audit_logs).toHaveLength(2);
+    const aalIds = res.body.collections.admin_audit_logs.map((d: any) => d.id).sort();
+    expect(aalIds).toEqual(['aal1', 'aal2']);
   });
 
   it('requires authentication', async () => {
@@ -117,6 +129,15 @@ describe('POST /api/user/delete-account — erasure (GDPR Art. 17)', () => {
     expect(getDocRaw('audit_logs/al1')?.userId).toBe(USER);
   });
 
+  it('deliberately KEEPS admin_audit_logs on both fields — same compliance-trail reasoning as audit_logs', async () => {
+    seedFullUser();
+    await request(app).post('/api/user/delete-account').set(auth(USER));
+    // Neither the doc where USER was the target nor the one where USER was
+    // the acting admin is erased.
+    expect(getDocRaw('admin_audit_logs/aal1')).toBeDefined();
+    expect(getDocRaw('admin_audit_logs/aal2')).toBeDefined();
+  });
+
   it("never touches another user's data", async () => {
     seedFullUser();
     await request(app).post('/api/user/delete-account').set(auth(USER));
@@ -125,6 +146,7 @@ describe('POST /api/user/delete-account — erasure (GDPR Art. 17)', () => {
     expect(getDocRaw('anxiety_reset_events/areX')).toBeDefined();
     expect(getDocRaw('audit_logs/alX')).toBeDefined();
     expect(getDocRaw('feedback_submissions/fbX')).toBeDefined();
+    expect(getDocRaw('admin_audit_logs/aalX')).toBeDefined();
   });
 
   it('removes the user from their organisation membership', async () => {
