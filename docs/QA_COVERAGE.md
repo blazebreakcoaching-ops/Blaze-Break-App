@@ -695,6 +695,32 @@ to 60.69%, lines to 74.55%. Routes with a fully uncovered catch block:
 95 (down from 96). Next: `recognition-suggestions`, the other
 Positive Reinforcement Engine route in this same file region.
 
+## QA Batch 21: Recognition Wall (zero prior coverage) + recognition-suggestions + suggestions catch blocks
+
+Closes three route families flagged as the next slice:
+
+- `GET /api/org/:orgId/recognition-suggestions` (Positive Reinforcement
+  Engine) had real happy-path coverage but no catch-block test - added
+  one to the existing `positive-reinforcement.route.test.ts`.
+- The Recognition Wall (`POST`/`GET /api/org/:orgId/recognition`,
+  `POST .../recognition/:recognitionId/react`) had zero coverage of
+  any kind. New file `recognition-wall.route.test.ts`: membership
+  gating, message length validation, the anonymous-vs-named author
+  distinction, reaction toggling (on then back off for the same
+  user), a 404 for a reaction on a nonexistent post, and the
+  defensive catch block for all three routes.
+- `POST`/`GET /api/org/:orgId/suggestions` (Anonymous Team Voice /
+  "You Said -> We Changed") already had thorough happy-path coverage
+  in `you-said-we-changed.route.test.ts` but no catch-block test -
+  added one for each.
+
+Measured effect: `server.ts` statement coverage rose to 74.38%, branch
+to 61.52%, lines to 75.35% - the largest single-batch jump in this
+series, since the Recognition Wall routes had real untested logic
+(the anonymous/named branch, reaction toggling), not just a catch
+block. Routes with a fully uncovered catch block: 90 (down from 95).
+Next: `POST`/`GET /api/org/:orgId/cost-inputs`.
+
 ## What's shipped
 
 - `npm run test:coverage` (`vitest run --coverage`, `@vitest/coverage-v8`):

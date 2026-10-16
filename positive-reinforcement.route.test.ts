@@ -23,7 +23,7 @@ vi.mock('twilio', () => ({ default: () => ({ messages: { create: vi.fn() } }) })
 
 import request from 'supertest';
 import { app } from './server';
-import { seedDoc, resetStore } from './test/fake-firestore';
+import { seedDoc, resetStore, forceDocError } from './test/fake-firestore';
 
 const ORG = 'org_1';
 const ADMIN = 'admin_uid';
@@ -99,5 +99,20 @@ describe('GET /api/org/:orgId/recognition-suggestions — k-anonymity gate', () 
     const res = await request(app).get(`/api/org/${ORG}/recognition-suggestions`).set(auth(ADMIN));
     expect(res.body.locked).toBe(false);
     expect(res.body.suggestions.some((s: string) => s.includes('Consistent small wins'))).toBe(true);
+  });
+});
+
+// The defensive catch block behind the happy paths above.
+describe('GET /api/org/:orgId/recognition-suggestions — defensive catch block', () => {
+  it('returns a generic 500 and logs the real error when the org read throws', async () => {
+    seedOrg(3, ['a', 'b', 'c'], ['a', 'b', 'c']);
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const restore = forceDocError(`organisations/${ORG}`, 'get', new Error('simulated Firestore outage'));
+    const res = await request(app).get(`/api/org/${ORG}/recognition-suggestions`).set(auth(ADMIN));
+    expect(res.status).toBe(500);
+    expect(res.body).toEqual({ error: 'Something went wrong on our end. Please try again.' });
+    expect(errorSpy).toHaveBeenCalled();
+    restore();
+    errorSpy.mockRestore();
   });
 });
