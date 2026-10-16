@@ -676,6 +676,25 @@ zero coverage of any kind (not just its catch block) and depends on
 so it's deliberately left for its own dedicated batch rather than
 folded in here.
 
+## QA Batch 20: org/:orgId/dashboard (zero prior coverage)
+
+Closes the route flagged at the end of Batch 19. `GET /api/org/:orgId/
+dashboard` - the Work Design Pulse admin default view - had zero
+coverage of any kind. New file `org-dashboard.route.test.ts` mirrors
+`executive-work-design.route.test.ts`'s seeding pattern (same
+`buildExecutiveWorkDesignPayload` dependency) and covers: access
+control (auth required, non-admin refused, admin allowed), the
+locked-cohort response shape, the real-signal/narrative/action-budget/
+debt-summary response shape once the cohort is sufficient (confirming
+this route never leaks the `financialEstimate`/`costInputsAvailable`
+fields that are Executive Work Design's job, not the default
+dashboard's), and the defensive catch block.
+
+Measured effect: `server.ts` statement coverage rose to 73.61%, branch
+to 60.69%, lines to 74.55%. Routes with a fully uncovered catch block:
+95 (down from 96). Next: `recognition-suggestions`, the other
+Positive Reinforcement Engine route in this same file region.
+
 ## What's shipped
 
 - `npm run test:coverage` (`vitest run --coverage`, `@vitest/coverage-v8`):
