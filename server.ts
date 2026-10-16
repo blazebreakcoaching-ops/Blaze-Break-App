@@ -38,6 +38,7 @@ import { guardianSupportInvitationEnabled, validateGuardianSupportOffer, isValid
 import { quietHoursCheckPasses } from './ally-nudge-quiet-hours';
 import { collectionsForExport, collectionsForErasure, userIdFieldsFor } from './user-data-collections';
 import { summarizeModuleOutcomes, RoutingDecisionRecord } from './recovery-outcomes-intelligence';
+import { GEMINI_TEXT_MODEL, GEMINI_TTS_MODEL, GEMINI_LIVE_MODEL, CLAUDE_CHAT_MODEL } from './ai-model-registry';
 import { htmlToPlainTextFallback, buildEmailVerificationEmail, buildPasswordResetEmail, buildPasswordChangedEmail, buildMfaEnabledEmail, buildMfaDisabledEmail, buildSupportRequestReceivedEmail, buildAllyInviteEmail, buildInactivityWarningEmail } from './brevo-templates';
 import { evaluateRetentionAction, retentionSweepIsEnabled, RetentionCandidate, RETENTION_INACTIVITY_MONTHS, RETENTION_WARNING_DAYS_BEFORE } from './data-retention';
 import { generateTotpSecret, buildOtpauthUri, verifyTotpCode, generateRecoveryCodes, hashRecoveryCode, encryptSecret as encryptTotpSecret, decryptSecret as decryptTotpSecret, isTotpLockedOut, nextLockoutState } from './totp-mfa';
@@ -2778,7 +2779,7 @@ async function callClaudeNovaChat(
   }));
   claudeMessages.push({ role: 'user', content: message });
 
-  const MODEL = "claude-sonnet-5";
+  const MODEL = CLAUDE_CHAT_MODEL;
   const MAX_TOKENS = 2048;
 
   let response = await anthropic.messages.create({
@@ -2968,7 +2969,7 @@ app.post("/api/nova/chat", novaChatLimiter, verifyAppCheck, authenticateFirebase
 
     try {
       const chat = geminiClient.chats.create({
-        model: "gemini-3.5-flash",
+        model: GEMINI_TEXT_MODEL,
         config: {
           systemInstruction: mergedSystemPrompt,
           tools: NOVA_TOOLS_ENABLED ? [{ functionDeclarations: NOVA_TOOLS }] : undefined,
@@ -3169,7 +3170,7 @@ app.post("/api/nova/diagnose", novaDiagnoseLimiter, verifyAppCheck, authenticate
 
         try {
           const response = await ai.models.generateContent({
-            model: "gemini-3.5-flash",
+            model: GEMINI_TEXT_MODEL,
             contents: prompt,
           });
           clearTimeout(timeoutId);
@@ -3287,7 +3288,7 @@ app.post("/api/nova/speech", verifyAppCheck, speechLimiter, authenticateFirebase
 
     try {
       const response = await ai.models.generateContent({
-        model: "gemini-3.1-flash-tts-preview",
+        model: GEMINI_TTS_MODEL,
         // The "Say <style>: <content>" prefix is Gemini TTS's documented
         // style-control pattern - the model reads it as a delivery
         // instruction, not literal text to speak. Added because
@@ -3382,7 +3383,7 @@ ${NOVA_ONE_SHOT_SAFETY_FLOOR}`
       };
 
       const response = await ai.models.generateContent({
-        model: "gemini-3.5-flash",
+        model: GEMINI_TEXT_MODEL,
         contents: { parts: [audioPart, promptPart] },
         config: {
           responseMimeType: "application/json",
@@ -3457,7 +3458,7 @@ app.post("/api/nova/one-less-thing", oneLessThingLimiter, verifyAppCheck, authen
     try {
       const styleToneAddendum = await getNovaStyleToneAddendum(oneLessThingUid, getDb());
       const response = await ai.models.generateContent({
-        model: "gemini-3.5-flash",
+        model: GEMINI_TEXT_MODEL,
         contents: {
           parts: [{
             text: `You are Nova, a direct, warm burnout-recovery coach. The user is overloaded right now and has named ONE thing weighing on them. Your job is to help them find a genuine way to carry less of it today - not to make them better at carrying overload.
@@ -3575,7 +3576,7 @@ Respond strictly as JSON, no markdown:
 {"whatHappened": "...", "whatMattered": "...", "whatNeedsSaying": "..."}`;
 
       const response = await ai.models.generateContent({
-        model: "gemini-3.5-flash",
+        model: GEMINI_TEXT_MODEL,
         contents: { parts: [{ text: `${promptBody}\n${NOVA_ONE_SHOT_SAFETY_FLOOR}` }] },
         config: {
           responseMimeType: "application/json",
@@ -10331,7 +10332,7 @@ app.get("/api/org/:orgId/manager-coach", managerCoachLimiter, verifyAppCheck, au
     const timeoutId = setTimeout(() => abortController.abort(), 15000);
     try {
       const response = await ai.models.generateContent({
-        model: "gemini-3.5-flash",
+        model: GEMINI_TEXT_MODEL,
         contents: `${NOVA_MANAGER_COACH_PROMPT}\n\nReal signals for this team:\n${signals.join('\n')}\n${NOVA_MANAGER_COACH_SAFETY_FLOOR}`,
         config: {
           responseMimeType: "application/json",
@@ -10553,7 +10554,7 @@ app.post("/api/org/:orgId/manager-coach/chat", managerCoachLimiter, verifyAppChe
     const timeoutId = setTimeout(() => abortController.abort(), 25000);
     try {
       const chat = ai.chats.create({
-        model: "gemini-3.5-flash",
+        model: GEMINI_TEXT_MODEL,
         config: {
           systemInstruction: mergedSystemPrompt,
           tools: [{ functionDeclarations: NOVA_ORG_COACH_TOOLS }],
@@ -14301,7 +14302,7 @@ Respond strictly in this JSON format, no markdown, no commentary outside the JSO
 ${NOVA_ONE_SHOT_SAFETY_FLOOR}`;
 
     const response = await ai.models.generateContent({
-      model: "gemini-3.5-flash",
+      model: GEMINI_TEXT_MODEL,
       contents: prompt,
       config: { responseMimeType: "application/json" },
     });
@@ -14533,7 +14534,7 @@ ${NOVA_ONE_SHOT_SAFETY_FLOOR}`;
     }
 
     const response = await ai.models.generateContent({
-      model: "gemini-3.5-flash",
+      model: GEMINI_TEXT_MODEL,
       contents: prompt,
       config: { responseMimeType: "application/json" },
     });
@@ -14786,7 +14787,7 @@ Respond strictly in this JSON format, no markdown, no commentary outside the JSO
 ${NOVA_ONE_SHOT_SAFETY_FLOOR}`;
 
     const response = await ai.models.generateContent({
-      model: "gemini-3.5-flash",
+      model: GEMINI_TEXT_MODEL,
       contents: prompt,
       config: { responseMimeType: "application/json" },
     });
@@ -14895,7 +14896,7 @@ Respond strictly in this JSON format, no markdown, no commentary outside the JSO
 ${NOVA_ONE_SHOT_SAFETY_FLOOR}`;
 
     const response = await ai.models.generateContent({
-      model: "gemini-3.5-flash",
+      model: GEMINI_TEXT_MODEL,
       contents: prompt,
       config: { responseMimeType: "application/json" },
     });
@@ -14984,7 +14985,7 @@ Respond strictly in this JSON format, no markdown, no commentary outside the JSO
 ${NOVA_ONE_SHOT_SAFETY_FLOOR}`;
 
     const response = await ai.models.generateContent({
-      model: "gemini-3.5-flash",
+      model: GEMINI_TEXT_MODEL,
       contents: prompt,
       config: { responseMimeType: "application/json" },
     });
@@ -15066,7 +15067,7 @@ app.get("/api/signals/executive-report", executiveReportLimiter, verifyAppCheck,
         const prompt = `You are Nova, a direct, analytical British high-performance recovery coach writing a short (2-3 sentence) executive summary for a workplace wellbeing report the person may share with their manager. Base this ONLY on these real signals - do not invent any number, event, or day not listed here: ${signals.join('; ')}. Be honest and grounded, not alarmist and not falsely reassuring. Do not mention specific days of the week since none were provided.`;
 
         const response = await ai.models.generateContent({
-          model: "gemini-3.5-flash",
+          model: GEMINI_TEXT_MODEL,
           contents: prompt,
         });
         aiAnalysis = response.text ? response.text.trim() : null;
@@ -15414,7 +15415,7 @@ if (process.env.TEST_MODE !== 'true') {
 
       try {
         liveSession = await ai.live.connect({
-          model: "gemini-3.1-flash-live-preview",
+          model: GEMINI_LIVE_MODEL,
           config: {
             responseModalities: [Modality.AUDIO],
             speechConfig: {
