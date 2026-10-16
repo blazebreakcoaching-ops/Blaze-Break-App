@@ -54,7 +54,7 @@ vi.mock('twilio', () => ({ default: () => ({ messages: { create: vi.fn() } }) })
 
 import request from 'supertest';
 import { app } from './server';
-import { seedDoc, getDocRaw, resetStore } from './test/fake-firestore';
+import { seedDoc, getDocRaw, resetStore, forceDocError } from './test/fake-firestore';
 
 const OWNER = 'owner_1';
 const NOT_OWNER = 'random_person';
@@ -208,6 +208,59 @@ describe('requireAuth: temporary privilege escalation expiry', () => {
     const res = await request(app).get('/api/admin/admin-users').set(auth('owner_2'));
     expect(res.status).toBe(403);
     expect(res.body.error).toMatch(/Forbidden/i);
+  });
+});
+
+// QA Batch 16: previously zero coverage of any kind - not just the catch
+// block, this route's happy path had never been exercised either.
+describe('GET /api/admin/users/:uid', () => {
+  it('requires the users.read permission', async () => {
+    const res = await request(app).get('/api/admin/users/target_uid').set(auth(NOT_OWNER));
+    expect(res.status).toBe(403);
+  });
+
+  it('merges Auth account data with the Firestore profile and fingerprint docs', async () => {
+    h.getUser.mockImplementationOnce(async (uid: string) => ({
+      uid, email: `${uid}@test.dev`, emailVerified: true, displayName: 'Target User', disabled: false,
+      customClaims: {}, metadata: { creationTime: '2026-01-01T00:00:00.000Z', lastSignInTime: '2026-01-05T00:00:00.000Z' },
+    }));
+    seedDoc('users/target_uid', { archetype: 'Founder on Fire' });
+    seedDoc('users/target_uid/recovery/fingerprint', { summary: 'Early-stage burnout.' });
+
+    const res = await request(app).get('/api/admin/users/target_uid').set(auth(OWNER));
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({
+      uid: 'target_uid', email: 'target_uid@test.dev', emailVerified: true, displayName: 'Target User',
+      accessStatus: 'active', profile: { archetype: 'Founder on Fire' }, fingerprint: { summary: 'Early-stage burnout.' },
+    });
+  });
+
+  it('reports accessStatus "disabled" for a disabled Auth account, and null profile/fingerprint when neither doc exists', async () => {
+    h.getUser.mockImplementationOnce(async (uid: string) => ({
+      uid, email: `${uid}@test.dev`, emailVerified: false, displayName: null, disabled: true,
+      customClaims: {}, metadata: { creationTime: '2026-01-01T00:00:00.000Z', lastSignInTime: null },
+    }));
+    const res = await request(app).get('/api/admin/users/target_uid').set(auth(OWNER));
+    expect(res.status).toBe(200);
+    expect(res.body.accessStatus).toBe('disabled');
+    expect(res.body.profile).toBeNull();
+    expect(res.body.fingerprint).toBeNull();
+  });
+
+  // The defensive catch block behind the happy paths above.
+  it('returns a generic 500 and logs the real error when the profile read throws', async () => {
+    h.getUser.mockImplementationOnce(async (uid: string) => ({
+      uid, email: `${uid}@test.dev`, emailVerified: true, displayName: null, disabled: false,
+      customClaims: {}, metadata: { creationTime: '2026-01-01T00:00:00.000Z', lastSignInTime: null },
+    }));
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const restore = forceDocError('users/target_uid', 'get', new Error('simulated Firestore outage'));
+    const res = await request(app).get('/api/admin/users/target_uid').set(auth(OWNER));
+    expect(res.status).toBe(500);
+    expect(res.body).toEqual({ error: 'Something went wrong on our end. Please try again.' });
+    expect(errorSpy).toHaveBeenCalled();
+    restore();
+    errorSpy.mockRestore();
   });
 });
 

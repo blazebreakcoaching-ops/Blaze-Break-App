@@ -557,6 +557,47 @@ whole-catch-body metric never counted them as fully uncovered to begin
 with; the generic-500 branch specifically was the real, now-closed gap.
 This closes every Evolution Engine route in the original gap list.
 
+## QA Batch 16: admin/users/:uid + admin/feedback (zero prior coverage), admin/summary false-positive noted
+
+Moves into the core admin/org territory flagged as next after the
+Evolution Engine group closed out. Two genuine gaps closed, plus one
+scoping finding worth recording so it isn't re-investigated later.
+
+`GET /api/admin/users/:uid` had zero coverage of any kind (only its
+sibling mutation routes `.../role` and `.../suspend` were tested in
+`admin-users.route.test.ts`) - added a `describe` block there covering
+the real happy path (Auth account merged with the Firestore profile/
+fingerprint docs, including the `disabled`/missing-doc cases) plus the
+defensive catch block (forced via `forceDocError` on the profile read).
+`GET /api/admin/feedback` was also at zero coverage - new file
+`admin-feedback.route.test.ts` (list/empty-list/catch), reading the
+same `feedback_submissions` collection `POST /api/feedback/submit`
+(covered separately in Batch 7) writes to.
+
+Scoping finding, not acted on: `GET /api/admin/summary` appeared in
+the gap list, but reading it closely shows this is a **false positive**
+in `analyze_coverage.py`'s own heuristic, not a real gap. The script
+locates a route's catch block with a naive "first `} catch (` after
+the route line" regex - but `admin/summary` wraps each of its five
+independent stats queries (`users`, `fingerprint` collectionGroup,
+`public_feature_flags`, `organisations`, `anxiety_reset_events`) in
+its *own* inner `try`/`catch` that degrades to a documented default
+rather than failing the whole response (the same "one query failing
+shouldn't take the others down" pattern used elsewhere in this file) -
+the script finds the FIRST inner catch (`totalUsersCount = 1`), not
+the route's real outer catch 140 lines later, and flags that inner
+one-liner as "fully uncovered" even though the route's actual outer
+catch is already exercised (a `NOT_ADMIN` call already asserts the
+500 in `admin-summary.route.test.ts`). No code or test change needed
+here - noted so a future batch doesn't re-scope this route expecting
+a real gap.
+
+Measured effect: `server.ts` statement coverage rose to 73.15%, branch
+to 60.42%, lines to 74.06%. Routes with a fully uncovered catch block:
+102 (down from 104 - `admin/summary` was never counted as closeable
+work to begin with, so the net-2 drop is exactly the two real routes
+closed).
+
 ## What's shipped
 
 - `npm run test:coverage` (`vitest run --coverage`, `@vitest/coverage-v8`):
