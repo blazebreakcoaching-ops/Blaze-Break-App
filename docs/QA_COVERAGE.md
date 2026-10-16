@@ -102,6 +102,48 @@ Measured effect: `server.ts` statement coverage rose from 67.21% to
 69.33%, branch coverage from 52.87% to 54.99% - overall project coverage
 78.1%→79.47% statements, 68.13%→69.44% branches.
 
+## QA Batch 4: the remaining provider signal routes
+
+Picks up exactly what Batch 3 deliberately left out: Asana, Monday.com,
+and Calendly's own `refresh`/read routes, plus Calendar and Gmail's.
+`provider-signal-routes.route.test.ts`, 24 tests - but NOT a repeat of
+Batch 3's `getValidAccessToken` refresh-branch tests (proven once via
+Jira; it's provider-agnostic, so re-proving it three more times would be
+the exact padding Batch 3 said not to do). Each provider's test instead
+seeds an already-valid, non-expiring token and focuses on what's actually
+different per route: its own upstream API shape and error handling -
+
+- **Asana**: identity lookup (`/users/me`) for the workspace gid, then
+  open tasks for that workspace, overdue-by-`due_on` counting; 502s for a
+  failed identity lookup, no accessible workspace, or a failed task
+  fetch.
+- **Monday.com**: a single GraphQL POST, counting items and
+  overdue-by-date-column across boards (no single "my tasks" concept the
+  way Jira/Asana have - the comment above the route explains why); 502
+  on a GraphQL error response.
+- **Calendly**: identity lookup for the user's own URI, then 7-day
+  upcoming events, with back-to-back-booking detection (consecutive
+  events whose gap is ≤5 minutes); 502s for a failed identity lookup or
+  events fetch.
+- **Calendar and Gmail**: a genuinely different shape - these two never
+  touch an OAuth token or `fetch` at all. The signal is computed
+  client-side against the browser's own Google session
+  (`src/lib/calendar-signals.ts`) and this route only validates
+  (`zod`, `.strict()`) and stores what's submitted. Tests prove a valid
+  payload round-trips, a missing field or an unexpected extra field is
+  rejected with 400, and - explicitly - that `fetch` is never called for
+  either route.
+
+Deliberately still not covered: Slack's incremental conversation-scan
+ticker (`POST /api/signals/slack/tick`) - a stateful, rate-limited,
+multi-call scan loop that's a meaningfully different shape (and risk
+profile) from every other route in this area, worth its own focused
+batch rather than folding in here.
+
+Measured effect: `server.ts` statement coverage rose from 69.33% to
+71.34%, branch coverage from 54.99% to 56.28% - overall project coverage
+79.47%→80.76% statements, 69.44%→70.24% branches.
+
 ## What's shipped
 
 - `npm run test:coverage` (`vitest run --coverage`, `@vitest/coverage-v8`):
@@ -143,14 +185,14 @@ the gap, none fixed in this batch:
 1. **Defensive catch-block branches** across the file's ~300 routes - the
    "something unexpected threw" path behind an already-tested happy path.
    Lower severity (these are backstops, not primary logic) but high volume.
-2. ~~**External integration OAuth/token-refresh code.**~~ **Its core
-   mechanism closed in QA Batch 3** - see below (state signing/CSRF
-   verification, the connect/callback/disconnect/status lifecycle, and
-   `getValidAccessToken`'s refresh branches). Still genuinely open: the
-   provider-specific signal-fetch routes for Asana/Monday/Calendly/
-   Calendar/Gmail and Slack's incremental conversation scanner - each a
-   thin, repetitive layer on top of the mechanism Batch 3 already proved,
-   not a new risk, but still 0% measured.
+2. ~~**External integration OAuth/token-refresh code.**~~ **Closed in QA
+   Batches 3-4** - see below (state signing/CSRF verification, the
+   connect/callback/disconnect/status lifecycle, `getValidAccessToken`'s
+   refresh branches, and every provider's own signal-fetch route).
+   Still genuinely open: Slack's incremental conversation-scan ticker
+   (`POST /api/signals/slack/tick`) - a meaningfully different, stateful,
+   rate-limited multi-call shape, left for its own focused batch rather
+   than folded into Batch 4.
 3. ~~**The Nova Live WebSocket relay.**~~ **Closed in QA Batch 2** - see
    below. It needed a fake WebSocket client, which this batch built.
 
