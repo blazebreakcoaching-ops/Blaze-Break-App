@@ -39,6 +39,7 @@ import { quietHoursCheckPasses } from './ally-nudge-quiet-hours';
 import { collectionsForExport, collectionsForErasure, userIdFieldsFor } from './user-data-collections';
 import { summarizeModuleOutcomes, RoutingDecisionRecord } from './recovery-outcomes-intelligence';
 import { GEMINI_TEXT_MODEL, GEMINI_TTS_MODEL, GEMINI_LIVE_MODEL, CLAUDE_CHAT_MODEL } from './ai-model-registry';
+import { summarizeFeatureUsage, countByDimension } from './product-intelligence';
 import { htmlToPlainTextFallback, buildEmailVerificationEmail, buildPasswordResetEmail, buildPasswordChangedEmail, buildMfaEnabledEmail, buildMfaDisabledEmail, buildSupportRequestReceivedEmail, buildAllyInviteEmail, buildInactivityWarningEmail } from './brevo-templates';
 import { evaluateRetentionAction, retentionSweepIsEnabled, RetentionCandidate, RETENTION_INACTIVITY_MONTHS, RETENTION_WARNING_DAYS_BEFORE } from './data-retention';
 import { generateTotpSecret, buildOtpauthUri, verifyTotpCode, generateRecoveryCodes, hashRecoveryCode, encryptSecret as encryptTotpSecret, decryptSecret as decryptTotpSecret, isTotpLockedOut, nextLockoutState } from './totp-mfa';
@@ -6417,6 +6418,67 @@ app.get("/api/admin/recovery-outcomes", verifyAppCheck, authenticateFirebaseUser
       lookbackDays,
       generatedAt: new Date().toISOString(),
       modules: summarizeModuleOutcomes(decisions),
+    });
+  } catch (err: any) {
+    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
+  }
+});
+
+// Product Intelligence - Batch 1: platform-wide visibility into whether
+// Grounding/Rediscovery, Movement Snacks, and Recovery Recipes are
+// actually being used. Each already records real, abstract,
+// privacy-reviewed telemetry per user (enum eventType plus at most one
+// taxonomy field, validated server-side against a fixed allowlist - see
+// each /api/.../analytics-event route's own comment for why it's safe to
+// aggregate: never raw emotional text, private Nova content, faith
+// preference, or journal content). Nothing before this read any of the
+// three collections back - this route is the first time any of it is
+// used for anything. Same collectionGroup-per-feature + lookback-window
+// pattern as GET /api/admin/recovery-outcomes above.
+const PRODUCT_INTELLIGENCE_DEFAULT_LOOKBACK_DAYS = 90;
+const PRODUCT_INTELLIGENCE_MAX_LOOKBACK_DAYS = 365;
+
+app.get("/api/admin/product-intelligence", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    // Same reasoning as GET /api/admin/recovery-outcomes - "is our
+    // content/features actually being used" is the content.manage
+    // question, not a new permission.
+    requirePermission(req, "content.manage");
+    const db = getDb();
+
+    const requestedDays = Number(req.query.days);
+    const lookbackDays = Number.isFinite(requestedDays) && requestedDays > 0
+      ? Math.min(requestedDays, PRODUCT_INTELLIGENCE_MAX_LOOKBACK_DAYS)
+      : PRODUCT_INTELLIGENCE_DEFAULT_LOOKBACK_DAYS;
+    const cutoffIso = new Date(Date.now() - lookbackDays * 24 * 60 * 60 * 1000).toISOString();
+
+    const [groundingSnap, movementSnap, recipesSnap] = await Promise.all([
+      db.collectionGroup("grounding_analytics_events").where("createdAt", ">=", cutoffIso).get(),
+      db.collectionGroup("movement_analytics_events").where("createdAt", ">=", cutoffIso).get(),
+      db.collectionGroup("recovery_recipes_analytics_events").where("createdAt", ">=", cutoffIso).get(),
+    ]);
+    const groundingEvents = groundingSnap.docs.map((d: any) => d.data());
+    const movementEvents = movementSnap.docs.map((d: any) => d.data());
+    const recipeEvents = recipesSnap.docs.map((d: any) => d.data());
+
+    res.json({
+      lookbackDays,
+      generatedAt: new Date().toISOString(),
+      grounding: {
+        ...summarizeFeatureUsage(groundingEvents),
+        byCategory: countByDimension(groundingEvents, 'category'),
+        byLens: countByDimension(groundingEvents, 'lens'),
+      },
+      movement: {
+        ...summarizeFeatureUsage(movementEvents),
+        byMovementId: countByDimension(movementEvents, 'movementId'),
+        byCategory: countByDimension(movementEvents, 'category'),
+      },
+      recoveryRecipes: {
+        ...summarizeFeatureUsage(recipeEvents),
+        bySituationKey: countByDimension(recipeEvents, 'situationKey'),
+        byStepType: countByDimension(recipeEvents, 'stepType'),
+      },
     });
   } catch (err: any) {
     res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
