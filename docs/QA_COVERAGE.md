@@ -57,6 +57,51 @@ code Batch 1 also flagged (area 2) is untouched - a separate, differently-
 shaped gap (needs mocking each provider's token endpoint, not a WebSocket
 client) left for a future batch, not folded into this one.
 
+## QA Batch 3: OAuth connect/callback/token-refresh
+
+Picks up area (2) from Batch 1's list - deliberately not all ~18 routes
+across Slack/Jira/Asana/Monday/Calendly/Calendar/Gmail, which would mostly
+re-exercise the same mechanism repeatedly. Scoped instead to the core,
+highest-value, provider-agnostic pieces every one of those routes shares:
+
+- **OAuth state signing/CSRF verification** (`signOAuthState`/
+  `verifyOAuthState`) - the single most security-critical piece in this
+  area (HMAC-signed, expiring, service-bound `state` param, since a
+  browser redirect can't carry an `Authorization` header). Tested: a
+  tampered signature, a state signed for a different service, and an
+  expired state are all rejected - and, by design, all surface to the
+  client as the same generic `reason=internal_error`, never a specific
+  "signature mismatch" the client (or an attacker) could use to probe the
+  mechanism.
+- **The full connect → callback → disconnect → status lifecycle**,
+  worked through for the two providers that between them cover both real
+  shape variations: Jira (`tokenStyle: "json"`, `extraAuthorizeParams`,
+  flat `access_token`/`refresh_token`) and Slack (`tokenStyle: "form"`,
+  `userScope` instead of `scope`, the token nested under `authed_user`
+  rather than flat). Also proves raw tokens never leak into the
+  client-readable `integrations/{service}` status doc, only into the
+  locked-down (by `firestore.rules`) `integration_tokens/{service}` one.
+- **`getValidAccessToken`'s token-refresh branches** - the actual
+  "token-refresh" logic the original gap named - exercised through its
+  real consumer, `POST /api/signals/jira/refresh`: a still-valid token
+  used as-is (never calls the refresh endpoint), an expiring token
+  refreshed and persisted (and the *new* token used for the subsequent
+  data calls, not the stale one), expiring-with-no-refresh-token falling
+  back to the stale token rather than erroring, and a failed refresh call
+  degrading the same way rather than throwing.
+
+`oauth-integrations.route.test.ts`, 21 tests, mocks `global.fetch` per
+the convention `account-security.route.test.ts` already established
+(`vi.stubGlobal('fetch', fetchMock)`) - no new mocking pattern needed.
+Deliberately not covered: Asana/Monday/Calendly/Calendar/Gmail's own
+signal-fetch routes and Slack's incremental conversation-scan ticker -
+they share the mechanism just proven via Jira/Slack above, and covering
+each individually would be repetition, not a new finding.
+
+Measured effect: `server.ts` statement coverage rose from 67.21% to
+69.33%, branch coverage from 52.87% to 54.99% - overall project coverage
+78.1%→79.47% statements, 68.13%→69.44% branches.
+
 ## What's shipped
 
 - `npm run test:coverage` (`vitest run --coverage`, `@vitest/coverage-v8`):
@@ -98,14 +143,19 @@ the gap, none fixed in this batch:
 1. **Defensive catch-block branches** across the file's ~300 routes - the
    "something unexpected threw" path behind an already-tested happy path.
    Lower severity (these are backstops, not primary logic) but high volume.
-2. **External integration OAuth/token-refresh code** (Slack, Jira, Asana,
-   Monday, Calendar, Gmail - roughly lines 4550-5980): near-zero coverage,
-   because exercising it meaningfully means mocking each provider's token
-   endpoint, not just Firestore.
+2. ~~**External integration OAuth/token-refresh code.**~~ **Its core
+   mechanism closed in QA Batch 3** - see below (state signing/CSRF
+   verification, the connect/callback/disconnect/status lifecycle, and
+   `getValidAccessToken`'s refresh branches). Still genuinely open: the
+   provider-specific signal-fetch routes for Asana/Monday/Calendly/
+   Calendar/Gmail and Slack's incremental conversation scanner - each a
+   thin, repetitive layer on top of the mechanism Batch 3 already proved,
+   not a new risk, but still 0% measured.
 3. ~~**The Nova Live WebSocket relay.**~~ **Closed in QA Batch 2** - see
    below. It needed a fake WebSocket client, which this batch built.
 
-Closing (1) and (2) meaningfully is substantial, separate work - (1) is
-pure volume across ~300 routes' backstop branches, (2) needs a fake
-OAuth-provider token-endpoint harness - candidates for a future QA batch,
-not padding for this one.
+Closing (1) meaningfully is substantial, separate work - pure volume
+across ~300 routes' backstop branches. The remainder of (2) is smaller
+and mechanical (the same `getValidAccessToken`-via-fetch-mock pattern,
+repeated per remaining provider) - both are candidates for a future QA
+batch, not padding for this one.
