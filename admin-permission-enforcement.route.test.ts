@@ -52,7 +52,7 @@ vi.mock('twilio', () => ({ default: () => ({ messages: { create: vi.fn() } }) })
 
 import request from 'supertest';
 import { app } from './server';
-import { resetStore, seedDoc } from './test/fake-firestore';
+import { resetStore, seedDoc, forceDocError } from './test/fake-firestore';
 
 const auth = (uid: string) => ({ Authorization: `Bearer ${uid}` });
 
@@ -127,6 +127,18 @@ describe('requirePermission enforcement on admin routes', () => {
 
     const allowed = await request(app).post('/api/admin/content-library').set(auth('contentadmin_1')).send({ content: 'hello' });
     expect(allowed.status).toBe(200);
+  });
+
+  // The defensive catch block behind the happy path above.
+  it('content.manage route: returns a generic 500 and logs the real error when the write throws', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const restore = forceDocError('app_config/content_library', 'set', new Error('simulated Firestore outage'));
+    const res = await request(app).post('/api/admin/content-library').set(auth('contentadmin_1')).send({ content: 'hello' });
+    expect(res.status).toBe(500);
+    expect(res.body).toEqual({ error: 'Something went wrong on our end. Please try again.' });
+    expect(errorSpy).toHaveBeenCalled();
+    restore();
+    errorSpy.mockRestore();
   });
 
   it('settings.manage: content_admin cannot flip a feature flag, platform_owner can', async () => {

@@ -598,6 +598,51 @@ to 60.42%, lines to 74.06%. Routes with a fully uncovered catch block:
 work to begin with, so the net-2 drop is exactly the two real routes
 closed).
 
+## QA Batch 17: admin/knowledge-chunks (zero prior coverage) + admin/orgs + admin/content-library catch blocks
+
+Closes out the remaining admin config/org-management routes that sit
+before the large `/api/org/:orgId/*` territory (the next slice to
+scope). Three routes:
+
+- `POST /api/admin/knowledge-chunks` - zero coverage of any kind. New
+  file `admin-knowledge-chunks.route.test.ts`: permission gate, happy
+  path (stores the chunks, audit-logged), and the defensive catch
+  block (`forceDocError` on `app_config/knowledge_chunks` `set`).
+- `POST /api/admin/orgs` - happy path and `orgId` validation already
+  covered in `admin-orgs.route.test.ts`, but not its catch block.
+  Turned out the route's FIRST catch (the one `analyze_coverage.py`'s
+  "first `} catch (` after the route" heuristic actually locates) is
+  an inner one around `getAuth().getUserByEmail(initialAdminEmail)` -
+  a genuine, reachable 400 branch ("no existing account for that
+  email") that had never been exercised, since the test file's
+  `getAuth()` mock didn't even define `getUserByEmail` and no test
+  passed `initialAdminEmail`. Added the mock function (default: reject,
+  so the 400 path is real rather than an accidental "not a function"
+  TypeError) plus three tests: the 400 rejection, a success path that
+  resolves a real admin email and sets them as the org's first
+  owner/member, and the existing-org-lookup outer-catch 500 (`forceDocError`
+  on `organisations/<orgId>` `get`).
+- `POST /api/admin/content-library` - happy path and the permission
+  gate already covered in `admin-permission-enforcement.route.test.ts`
+  (that file's whole purpose), but not its catch block either. Added
+  one test forcing the `app_config/content_library` `set` to throw -
+  slightly off that file's main theme (permission enforcement, not
+  catch blocks) but the same "extend rather than duplicate" call made
+  throughout this series, since the happy-path mocks/auth setup
+  already live there.
+
+Measured effect: `server.ts` statement coverage rose to 73.45%, branch
+to 60.64%, lines to 74.37%. Routes with a fully uncovered catch block:
+100 (down from 102 - `knowledge-chunks` and `orgs` each closed one;
+`content-library`'s catch wasn't flagged in this script's coarse count
+to begin with, for the same reason Batch 16 found with `admin/summary`
+- the script locates only the first `} catch (` after a route
+definition, so a route whose first catch is an inner, narrower one -
+or whose outer catch happens to already be exercised via a 403 test -
+can read as closed, or as still-open after the WRONG catch is fixed,
+until the real one is checked by hand). Next up: the
+`/api/org/:orgId/*` family, starting with `org/leave` and `org/me`.
+
 ## What's shipped
 
 - `npm run test:coverage` (`vitest run --coverage`, `@vitest/coverage-v8`):

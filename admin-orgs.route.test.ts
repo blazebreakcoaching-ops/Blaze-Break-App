@@ -12,9 +12,16 @@ vi.hoisted(() => {
 vi.mock('express-rate-limit', () => ({ default: () => (_req: any, _res: any, next: any) => next() }));
 vi.mock('firebase-admin/app', () => ({ initializeApp: vi.fn(), getApps: () => [{}] }));
 vi.mock('firebase-admin/app-check', () => ({ getAppCheck: () => ({ verifyToken: vi.fn() }) }));
+const h = vi.hoisted(() => ({
+  getUserByEmail: vi.fn(async (email: string): Promise<any> => {
+    throw new Error(`no such user: ${email}`);
+  }),
+}));
+
 vi.mock('firebase-admin/auth', () => ({
   getAuth: () => ({
     verifyIdToken: async (t: string) => ({ uid: t, email: `${t}@test.dev`, role: t === 'owner_1' ? 'platform_owner' : undefined }),
+    getUserByEmail: h.getUserByEmail,
   }),
 }));
 vi.mock('firebase-admin/firestore', async () => {
@@ -25,7 +32,7 @@ vi.mock('twilio', () => ({ default: () => ({ messages: { create: vi.fn() } }) })
 
 import request from 'supertest';
 import { app } from './server';
-import { getDocRaw, resetStore, seedDoc } from './test/fake-firestore';
+import { getDocRaw, resetStore, seedDoc, forceDocError } from './test/fake-firestore';
 
 const OWNER = 'owner_1';
 const NOT_ADMIN = 'random_person';
@@ -33,6 +40,7 @@ const auth = (uid: string) => ({ Authorization: `Bearer ${uid}` });
 
 beforeEach(() => {
   resetStore();
+  h.getUserByEmail.mockClear();
 });
 
 describe('POST /api/admin/orgs — orgId validation', () => {
@@ -78,6 +86,37 @@ describe('POST /api/admin/orgs — orgId validation', () => {
   it('rejects an orgId over 100 characters', async () => {
     const res = await request(app).post('/api/admin/orgs').set(auth(OWNER)).send({ orgId: 'a'.repeat(101), name: 'x' });
     expect(res.status).toBe(400);
+  });
+
+  it('rejects an initialAdminEmail with no matching account, rather than creating the org anyway', async () => {
+    const res = await request(app).post('/api/admin/orgs').set(auth(OWNER))
+      .send({ orgId: 'acme-corp-2', name: 'Acme Corp', initialAdminEmail: 'nobody@nowhere.dev' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/sign up for Blaze Break first/);
+    expect(getDocRaw('organisations/acme-corp-2')).toBeUndefined();
+  });
+
+  it('sets the resolved initialAdminEmail as the org\'s first admin and member', async () => {
+    h.getUserByEmail.mockImplementationOnce(async (email: string) => ({ uid: 'new_admin_uid', email }));
+    const res = await request(app).post('/api/admin/orgs').set(auth(OWNER))
+      .send({ orgId: 'acme-corp-3', name: 'Acme Corp', initialAdminEmail: 'admin@acme.dev' });
+    expect(res.status).toBe(200);
+    const org = getDocRaw('organisations/acme-corp-3');
+    expect(org?.adminUids).toContain('new_admin_uid');
+    expect(org?.memberUids).toContain('new_admin_uid');
+    expect(getDocRaw('organisations/acme-corp-3/members/new_admin_uid')?.role).toBe('owner');
+  });
+
+  // The defensive catch block behind the happy path above.
+  it('returns a generic 500 and logs the real error when the existing-org read throws', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const restore = forceDocError('organisations/acme-corp-1', 'get', new Error('simulated Firestore outage'));
+    const res = await request(app).post('/api/admin/orgs').set(auth(OWNER)).send({ orgId: 'acme-corp-1', name: 'Acme Corp' });
+    expect(res.status).toBe(500);
+    expect(res.body).toEqual({ error: 'Something went wrong on our end. Please try again.' });
+    expect(errorSpy).toHaveBeenCalled();
+    restore();
+    errorSpy.mockRestore();
   });
 });
 
