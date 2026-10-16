@@ -112,3 +112,24 @@ describe('POST /api/nova/one-less-thing — style tone', () => {
     expect(promptText).not.toContain('NOVA STYLE');
   });
 });
+
+// Safety & Safeguarding Batch 1: `task` is genuinely free text (up to 300
+// characters) - "the thing weighing on them" is exactly the kind of prompt
+// someone could use to disclose real distress through, unlike this
+// generator's other inputs. It previously had no safety floor at all; see
+// voice-journal.route.test.ts for the sibling coverage pattern.
+describe('POST /api/nova/one-less-thing — safety floor', () => {
+  it('always includes the crisis-line safety floor in the prompt sent to the model', async () => {
+    await request(app).post('/api/nova/one-less-thing').set(auth(USER)).send({ task: 'the 3pm review' });
+    const promptText = h.generateContent.mock.calls[0][0].contents.parts[0].text as string;
+    expect(promptText).toContain('Samaritans on 116 123');
+    expect(promptText).toContain('988');
+  });
+
+  it('the safety floor forbids fabricating a risk score or clinical classification', async () => {
+    await request(app).post('/api/nova/one-less-thing').set(auth(USER)).send({ task: 'the 3pm review' });
+    const promptText = h.generateContent.mock.calls[0][0].contents.parts[0].text as string;
+    expect(promptText).toContain('Never fabricate clinical facts');
+    expect(promptText).toContain('risk score, risk level, or severity classification');
+  });
+});

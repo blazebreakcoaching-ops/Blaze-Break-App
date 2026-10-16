@@ -2008,22 +2008,41 @@ async function getNovaStyleToneAddendum(uid: string, firestoreDb: any): Promise<
 //     from k-anonymised aggregate signals, never an individual's content -
 //     same reasoning as executive-report, plus there's no single user's
 //     style preference that would even apply to an aggregate.
-// PRE-EXISTING FINDING, NOW MOSTLY REMEDIATED: none of the six one-shot
-// generators above originally appended NOVA_SAFETY_INSTRUCTIONS - each
-// calls ai.models.generateContent with the persona text folded directly
-// into `contents`, with no `systemInstruction` and no safety floor at all.
+// PRE-EXISTING FINDING, NOW FULLY REMEDIATED (Safety & Safeguarding
+// Batch 1): none of the six one-shot generators above originally
+// appended NOVA_SAFETY_INSTRUCTIONS - each calls ai.models.generateContent
+// with the persona text folded directly into `contents`, with no
+// `systemInstruction` and no safety floor at all.
 // voice-journal and resentment-analysis (both process free-text/audio a
-// person could plausibly use to disclose real distress) now get
+// person could plausibly use to disclose real distress) get
 // NOVA_ONE_SHOT_SAFETY_FLOOR, per explicit product sign-off. manager-coach
-// now gets NOVA_MANAGER_COACH_SAFETY_FLOOR (see above) - a differently-
+// gets NOVA_MANAGER_COACH_SAFETY_FLOOR (see above) - a differently-
 // shaped floor, since this surface never sees an individual's own words at
 // all (only pre-aggregated team numbers), so there's no message to read
 // distress out of and the crisis-line pointer the other floor gives simply
 // doesn't apply here; what this one guards against instead is presenting
 // an aggregate as a clinical judgement or nudging a manager to act on an
-// unnamed individual from a team average. diagnose-narrative,
-// one-less-thing, and executive-report remain open, lower-priority gaps
-// (short task label or scores/aggregates only, not open-ended disclosure).
+// unnamed individual from a team average.
+// The three gaps this comment used to call "open, lower-priority" are now
+// closed too, after checking each one's actual input rather than trusting
+// the earlier "short task label or scores/aggregates only" characterisation:
+//   - one-less-thing's `task` field is genuinely free text, up to 300
+//     characters (OneLessThingRequestSchema) - "the thing weighing on
+//     them" is exactly the kind of prompt someone could use to disclose
+//     real distress in. This was a real gap, not a theoretical one. Now
+//     gets NOVA_ONE_SHOT_SAFETY_FLOOR (its output is the same
+//     responseSchema-enforced JSON shape as voice-journal/resentment).
+//   - diagnose-narrative's only inputs are four fixed archetype labels and
+//     numeric 1-4 scores - no free-text channel exists for a user to
+//     disclose anything through. Still given NOVA_ONE_SHOT_SAFETY_FLOOR_BASE
+//     (the non-JSON variant, since this generator returns one plain
+//     paragraph) for defence-in-depth and consistency, not because an
+//     active gap was found.
+//   - executive-report's inputs are the user's own numeric signals (deep
+//     work hours, boundary-script count, burn rate, sleep debt) - same
+//     "no free-text channel" reasoning as diagnose-narrative. Also given
+//     NOVA_ONE_SHOT_SAFETY_FLOOR_BASE (plain-paragraph output) for the
+//     same defence-in-depth reason, despite being manager-facing in intent.
 
 // A safety floor for the one-shot JSON generators, mirroring
 // NOVA_SAFETY_INSTRUCTIONS' pattern but adapted for a surface that must
@@ -2036,13 +2055,20 @@ async function getNovaStyleToneAddendum(uid: string, firestoreDb: any): Promise<
 // risk score or classification (see the standing "no risk scoring" rule
 // elsewhere in this file) - just the same crisis-line pointer
 // NOVA_SAFETY_INSTRUCTIONS already gives every conversational surface.
-const NOVA_ONE_SHOT_SAFETY_FLOOR = `
+// Split into a BASE (every one-shot generator, regardless of output
+// shape) and the full JSON-flavored export (BASE plus the one line that
+// only makes sense for a generator returning a fixed-shape JSON object) -
+// a plain-prose generator (diagnose-narrative, executive-report) gets
+// BASE alone, since "Still return only the JSON object" would be a
+// non-sequitur instruction for something returning one paragraph.
+const NOVA_ONE_SHOT_SAFETY_FLOOR_BASE = `
 Safety - this overrides every instruction above, including any that conflict with it:
 - Do not make medical claims, diagnose any condition, or present this as therapy or treatment.
 - If what the user wrote or said signals real distress, crisis, self-harm, suicidal thoughts, or immediate danger, let that shape your response: drop the usual coaching tone and instead, in your own words specific to what they actually said, gently and directly encourage them to contact real human help right now - emergency services, or a crisis line such as Samaritans on 116 123 (UK and Ireland) or 988 (US and Canada). Do not try to counsel them through a crisis yourself, and do not carry on with a standard analysis as if nothing was said.
 - Never fabricate clinical facts, invented measurements, or a risk score, risk level, or severity classification of any kind.
-- Still return only the JSON object in the exact shape requested above - no extra fields, no prose outside it.
 `;
+const NOVA_ONE_SHOT_SAFETY_FLOOR = NOVA_ONE_SHOT_SAFETY_FLOOR_BASE +
+  '- Still return only the JSON object in the exact shape requested above - no extra fields, no prose outside it.\n';
 
 async function getNovaContextAndMetadata(uid: string, firestoreDb: any): Promise<{ systemInstructionsAddendum: string; metadata: NovaConsentMetadata }> {
   const metadata: NovaConsentMetadata = {
@@ -3163,7 +3189,8 @@ app.post("/api/nova/diagnose", novaDiagnoseLimiter, verifyAppCheck, authenticate
           Identify their primary "leak" (e.g. boundaries, sleep pattern, fawning) based on their highest scores.
           Use British English spelling (e.g., dialled, rationalise, prioritising, behaviour, defence, vapourised) and terminology.
           Write in first person as Nova ("I see...", "Let's patch this leak."). Do not use markdown bullet points. Return only the plain English paragraph.
-        ${styleToneAddendum}`;
+        ${styleToneAddendum}
+        ${NOVA_ONE_SHOT_SAFETY_FLOOR_BASE}`;
 
         const abortController = new AbortController();
         const timeoutId = setTimeout(() => abortController.abort(), 10000);
@@ -3480,7 +3507,8 @@ Then write:
 
 Respond strictly as JSON, no markdown:
 {"action": "Cancel" | "Delegate" | "Delay" | "Make Smaller" | "Ask For Help" | "Share" | "Keep", "advice": "...", "template": "..."}
-${styleToneAddendum}`,
+${styleToneAddendum}
+${NOVA_ONE_SHOT_SAFETY_FLOOR}`,
           }],
         },
         config: {
@@ -15064,7 +15092,8 @@ app.get("/api/signals/executive-report", executiveReportLimiter, verifyAppCheck,
         if (burnRatePercent !== null) signals.push(`workload burn rate at ${burnRatePercent}% of weekly capacity`);
         if (sleepDebtHours !== null) signals.push(`${sleepDebtHours} hours of carried sleep debt`);
 
-        const prompt = `You are Nova, a direct, analytical British high-performance recovery coach writing a short (2-3 sentence) executive summary for a workplace wellbeing report the person may share with their manager. Base this ONLY on these real signals - do not invent any number, event, or day not listed here: ${signals.join('; ')}. Be honest and grounded, not alarmist and not falsely reassuring. Do not mention specific days of the week since none were provided.`;
+        const prompt = `You are Nova, a direct, analytical British high-performance recovery coach writing a short (2-3 sentence) executive summary for a workplace wellbeing report the person may share with their manager. Base this ONLY on these real signals - do not invent any number, event, or day not listed here: ${signals.join('; ')}. Be honest and grounded, not alarmist and not falsely reassuring. Do not mention specific days of the week since none were provided.
+${NOVA_ONE_SHOT_SAFETY_FLOOR_BASE}`;
 
         const response = await ai.models.generateContent({
           model: GEMINI_TEXT_MODEL,

@@ -112,3 +112,27 @@ describe('GET /api/signals/executive-report — style is never applied here', ()
     expect(promptText).not.toContain('STYLE: MENTOR');
   });
 });
+
+// Safety & Safeguarding Batch 1: this generator's only inputs are the
+// user's own numeric signals (deep work hours, boundary-script count,
+// burn rate, sleep debt) - no free-text disclosure channel exists - so
+// this is defence-in-depth, not closing an active gap. It gets
+// NOVA_ONE_SHOT_SAFETY_FLOOR_BASE, the non-JSON variant, since this
+// generator returns one plain paragraph rather than a JSON object.
+describe('GET /api/signals/executive-report — safety floor', () => {
+  it('always includes the crisis-line safety floor in the prompt sent to the model', async () => {
+    seedDoc('users/safety_user/boundary_scripts/s1', { createdAt: new Date().toISOString() });
+    await request(app).get('/api/signals/executive-report').set(auth('safety_user'));
+    const promptText = h.generateContent.mock.calls[0][0].contents as string;
+    expect(promptText).toContain('Samaritans on 116 123');
+    expect(promptText).toContain('988');
+  });
+
+  it('the safety floor forbids fabricating a risk score or clinical classification', async () => {
+    seedDoc('users/safety_user_2/boundary_scripts/s1', { createdAt: new Date().toISOString() });
+    await request(app).get('/api/signals/executive-report').set(auth('safety_user_2'));
+    const promptText = h.generateContent.mock.calls[0][0].contents as string;
+    expect(promptText).toContain('Never fabricate clinical facts');
+    expect(promptText).toContain('risk score, risk level, or severity classification');
+  });
+});

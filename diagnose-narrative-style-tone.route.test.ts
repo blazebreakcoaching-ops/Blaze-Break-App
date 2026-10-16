@@ -81,3 +81,25 @@ describe("POST /api/nova/diagnose — narrative style tone", () => {
     expect(promptText).not.toContain('HOW TO ASK, REGARDLESS OF STYLE');
   });
 });
+
+// Safety & Safeguarding Batch 1: this generator's only inputs are fixed
+// archetype labels and numeric 1-4 scores - no free-text disclosure
+// channel exists - so this is defence-in-depth, not closing an active
+// gap (contrast one-less-thing.route.test.ts, where it is). It gets
+// NOVA_ONE_SHOT_SAFETY_FLOOR_BASE, the non-JSON variant, since this
+// generator returns one plain paragraph rather than a JSON object.
+describe('POST /api/nova/diagnose — safety floor', () => {
+  it('always includes the crisis-line safety floor in the prompt sent to the model', async () => {
+    await request(app).post('/api/nova/diagnose').set(auth('person_5')).send({ answers: {} });
+    const promptText = h.generateContent.mock.calls[0][0].contents as string;
+    expect(promptText).toContain('Samaritans on 116 123');
+    expect(promptText).toContain('988');
+  });
+
+  it('the safety floor forbids fabricating a risk score or clinical classification', async () => {
+    await request(app).post('/api/nova/diagnose').set(auth('person_6')).send({ answers: {} });
+    const promptText = h.generateContent.mock.calls[0][0].contents as string;
+    expect(promptText).toContain('Never fabricate clinical facts');
+    expect(promptText).toContain('risk score, risk level, or severity classification');
+  });
+});
