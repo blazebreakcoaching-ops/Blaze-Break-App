@@ -15515,6 +15515,404 @@ app.use((err: any, req: express.Request, res: express.Response, _next: express.N
 
 export { app };
 
+// Extracted to a named, exported function - previously an inline arrow
+// passed directly to wss.on("connection", ...) below. Pulling it out
+// makes the handler callable directly from a test with a fake WebSocket
+// client, independent of the TEST_MODE-gated app.listen()/WebSocketServer
+// setup it used to live inside - that gate exists so the whole test
+// suite can import server.ts without opening a real port, but it also
+// meant this handler could never execute during a test run. Pure
+// extraction: the body below is unchanged from what used to run inline.
+export async function handleNovaLiveConnection(clientWs: any, req: any): Promise<void> {
+  // Browsers can't set custom headers on WebSocket connections, so auth
+  // travels as query params instead of the Authorization/x-firebase-appcheck
+  // headers used everywhere else in this file. This is the one thing that
+  // was actually missing — everything else (client audio capture/encode,
+  // playback, session lifecycle) was already built; it was just never
+  // safe to open this socket to the world without it.
+  const url = new URL(req.url || "", `http://${req.headers.host}`);
+  const idToken = url.searchParams.get("token");
+  const appCheckToken = url.searchParams.get("appCheckToken");
+  // Selects which capability gates this connection - never a trust
+  // boundary by itself, since the check below is always run
+  // server-authoritatively against the caller's real uid regardless
+  // of what this param says. A Free account passing context=blame
+  // gets blame_voice.enabled===false and is rejected exactly as if
+  // they'd tried nova_voice and failed it.
+  const isBlameContext = url.searchParams.get("context") === "blame";
+
+  // Same fix as the main verifyAppCheck middleware: no magic bypass
+  // string here, since anyone can read it out of the shipped client
+  // bundle and send it directly regardless of environment. Only
+  // genuinely running outside production skips this check.
+  if (process.env.NODE_ENV === "production") {
+    if (!appCheckToken) {
+      clientWs.send(JSON.stringify({ error: "Missing App Check token." }));
+      return clientWs.close();
+    }
+    try {
+      await getAppCheck().verifyToken(appCheckToken);
+    } catch (e) {
+      clientWs.send(JSON.stringify({ error: "Invalid App Check token." }));
+      return clientWs.close();
+    }
+  }
+
+  if (!idToken) {
+    clientWs.send(JSON.stringify({ error: "Missing authentication token." }));
+    return clientWs.close();
+  }
+  let uid: string;
+  try {
+    const decoded = await getAuth().verifyIdToken(idToken);
+    uid = decoded.uid;
+  } catch (e) {
+    clientWs.send(JSON.stringify({ error: "Invalid or expired session. Please refresh and try again." }));
+    return clientWs.close();
+  }
+
+  if (!process.env.GEMINI_API_KEY || process.env.GEMINI_API_KEY === "MY_GEMINI_API_KEY") {
+    clientWs.send(JSON.stringify({ error: "Live voice isn't configured on this server yet." }));
+    return clientWs.close();
+  }
+
+  if (!NOVA_LIVE_VOICE_ENABLED) {
+    clientWs.send(JSON.stringify({ error: "Voice coaching is temporarily unavailable. Continue with Nova by text for now." }));
+    return clientWs.close();
+  }
+
+  // Unlike every other await in this handler, these two weren't
+  // individually try/caught - a Firestore error inside
+  // getEntitlementRecord (permission error, transient network blip)
+  // became an unhandled rejection inside a WS event listener: no error
+  // reached the client, the socket just hung open with no feedback,
+  // and in modern Node an unhandled rejection can terminate the whole
+  // process, not just this one connection.
+  let liveQuota: Awaited<ReturnType<typeof checkAndReserveCapability>>;
+  let minutesQuota: Awaited<ReturnType<typeof checkCapabilityQuota>>;
+  try {
+    // BLAME's voice mode is a separate, hard binary gate (blame_voice)
+    // - NOT stacked on top of nova_voice's general daily session-count
+    // throttle, which would silently reintroduce a cap this feature is
+    // deliberately uncapped-for-paid against.
+    liveQuota = await checkAndReserveCapability(uid, isBlameContext ? 'blame_voice' : 'nova_voice');
+    // Separate from the daily session-COUNT check above: this is the
+    // monthly cumulative-MINUTES allowance (docs/AI_COST_CONTROL.md).
+    // Checked (not reserved) here - the real minutes used are only
+    // known once the session actually ends, recorded via
+    // recordCapabilityUsage in endSession below. Still applies to a
+    // BLAME voice session too, since real Gemini Live spend is the
+    // same regardless of entry point.
+    minutesQuota = await checkCapabilityQuota(uid, 'nova_voice_minutes');
+  } catch (e) {
+    clientWs.send(JSON.stringify({ error: "Couldn't verify your Nova voice access right now. Please try again, or continue with Nova by text." }));
+    return clientWs.close();
+  }
+  if (!liveQuota.allowed) {
+    clientWs.send(JSON.stringify({
+      error: isBlameContext
+        ? "Voice mode for BLAME Reset is a paid feature. Continue by typing, or upgrade for voice."
+        : (liveQuota.plan === 'free'
+            ? "You've used today's free Nova voice session. Upgrade for many more, or continue with Nova by text."
+            : "You've reached today's Nova voice fair-use limit. It resets tomorrow - continue with Nova by text for now."),
+    }));
+    return clientWs.close();
+  }
+  if (!minutesQuota.allowed) {
+    clientWs.send(JSON.stringify({
+      error: "You've used this month's Nova voice minutes. They reset next month - continue with Nova by text for now, or upgrade for a higher monthly allowance.",
+    }));
+    return clientWs.close();
+  }
+  // Set for real once Gemini's own session actually opens (inside
+  // liveSession's onopen callback below) - NOT here. Setting it here,
+  // before ai.live.connect() is even attempted, used to bill the
+  // entire auth/quota/context-fetch/connect setup window as real
+  // voice-minute usage, even though no conversation could happen yet.
+  let novaLiveSessionStartedAt = 0;
+
+  const db = getDb();
+
+  // Same cross-feature awareness packet the text chat endpoint injects
+  // (getNovaContextAndMetadata) - without this, voice-Nova was blind to
+  // everything text-Nova could see: consented check-ins, energy budgets,
+  // mood pulses, derived recovery trends, saved memories. Best-effort by
+  // design (the function itself already degrades to "" on any failure),
+  // so a Firestore hiccup here never blocks the call from starting.
+  // getNovaQuestioningStyleAddendum alongside it means a chosen
+  // questioning style applies to voice too, not just text - same
+  // Firestore-sourced value, so it's consistent across both.
+  const [contextResult, styleAddendum] = await Promise.all([
+    getNovaContextAndMetadata(uid, db),
+    getNovaQuestioningStyleAddendum(uid, db),
+  ]);
+  const liveSystemInstruction = NOVA_LIVE_VOICE_PERSONA + contextResult.systemInstructionsAddendum + styleAddendum;
+
+  // Real per-second cost here (audio in + audio out), so a hard ceiling
+  // matters even for a legitimate, authenticated user — 15 minutes
+  // (NOVA_LIVE_MAX_SESSION_MS) is generous for a coaching check-in
+  // without leaving a session open indefinitely if a client never
+  // explicitly closes it.
+  const MAX_SESSION_MS = NOVA_LIVE_MAX_SESSION_MS;
+  // A live call has no discrete "turn" boundary the way a single chat
+  // request does, so the per-turn memory-write cap becomes a per-session
+  // one instead - generous enough for a real 15-minute conversation,
+  // still a hard ceiling against a runaway loop of writes.
+  const MAX_VOICE_MEMORY_WRITES = 5;
+  let voiceMemoryWriteCount = 0;
+  // sessionTimeout/idleTimeout are assigned exactly once each, but only
+  // after endSession (which reads them via closure) is declared below;
+  // TS requires const to initialize immediately, so these can't be
+  // const without restructuring the timer setup.
+  // eslint-disable-next-line prefer-const
+  let sessionTimeout: NodeJS.Timeout;
+  // Separate from the flat session ceiling above: a connection left
+  // open with no audio flowing in either direction (mic muted, app
+  // backgrounded, network half-dead) shouldn't run the full 15 minutes
+  // billing per-second the whole time. Reset on any real activity.
+  let idleTimeout: NodeJS.Timeout;
+  const resetIdleTimer = () => {
+    clearTimeout(idleTimeout);
+    idleTimeout = setTimeout(() => endSession("This voice session ended after a period of inactivity."), NOVA_LIVE_IDLE_TIMEOUT_MS);
+  };
+  let liveSession: any = null;
+  let sessionEnded = false;
+
+  const endSession = (reason?: string) => {
+    if (sessionEnded) return;
+    sessionEnded = true;
+    clearTimeout(sessionTimeout);
+    clearTimeout(idleTimeout);
+    // Records the REAL elapsed minutes against this account's monthly
+    // Nova Live allowance, now that the actual duration is known -
+    // fire-and-forget (this function is synchronous, called from
+    // several timer/callback paths) but never silently dropped: an
+    // async failure here would otherwise mean an account's real usage
+    // just doesn't count against its monthly minutes, forever.
+    // Guarded on novaLiveSessionStartedAt > 0: it's only set once
+    // Gemini's session actually opened (onopen above) - if endSession
+    // is somehow reached before that (e.g. the upstream session
+    // errored before ever opening), there's no real usage to bill.
+    if (novaLiveSessionStartedAt > 0) {
+      recordCapabilityUsage(uid, 'nova_voice_minutes', liveQuota.plan, minutesUsedForSession(Date.now() - novaLiveSessionStartedAt))
+        .catch((e) => logger.error(`[Nova Live] failed to record voice minutes for uid ${uid}:`, errorFields(e)));
+    }
+    try {
+      liveSession?.close();
+    } catch (e) {
+      // Best-effort - the session may already be closed.
+    }
+    try {
+      if (reason) clientWs.send(JSON.stringify({ error: reason }));
+      clientWs.close();
+    } catch (e) {
+      // Best-effort - the socket may already be closed.
+    }
+  };
+
+  // The client starts capturing and streaming mic audio the instant
+  // ITS OWN socket to us opens - it has no way to know we still need
+  // to verify tokens, check quotas, fetch Firestore context, and
+  // open the actual upstream Gemini session (ai.live.connect below),
+  // all of which take real time. Registering this listener only
+  // AFTER that setup used to mean every word spoken during it was
+  // silently dropped: no listener existed yet to catch it. This is
+  // registered immediately instead, and queues anything that
+  // arrives before liveSession exists rather than losing it - drained
+  // in order once the real session opens (see onopen below).
+  const pendingClientMessages: string[] = [];
+  const MAX_PENDING_CLIENT_MESSAGES = 300; // a few seconds of 16kHz PCM chunks - bounds memory if connect() never resolves
+
+  const processClientMessage = (raw: string) => {
+    try {
+      const parsed = JSON.parse(raw);
+      if (parsed.initialPrompt) {
+        // Prefill context (fingerprint, recent chat, Nova's memory) without
+        // expecting an immediate reply — turnComplete:false per the SDK's
+        // own guidance for priming a conversation before real input starts.
+        liveSession.sendClientContent({ turns: parsed.initialPrompt, turnComplete: false });
+      }
+      if (parsed.audio) {
+        liveSession.sendRealtimeInput({ audio: { data: parsed.audio, mimeType: "audio/pcm;rate=16000" } });
+      }
+    } catch (e: any) {
+      logger.error("[Nova Live] client message parse error:", errorFields(e));
+    }
+  };
+
+  clientWs.on("message", (data) => {
+    if (sessionEnded) return;
+    const raw = data.toString();
+    if (!liveSession) {
+      if (pendingClientMessages.length < MAX_PENDING_CLIENT_MESSAGES) pendingClientMessages.push(raw);
+      return;
+    }
+    resetIdleTimer();
+    processClientMessage(raw);
+  });
+
+  try {
+    liveSession = await ai.live.connect({
+      model: GEMINI_LIVE_MODEL,
+      config: {
+        responseModalities: [Modality.AUDIO],
+        speechConfig: {
+          voiceConfig: { prebuiltVoiceConfig: { voiceName: "Aoede" } }, // Same voice as the existing single-shot TTS endpoint, so Nova sounds consistent everywhere.
+          languageCode: "en-GB", // British accent, matching the single-shot TTS endpoint.
+        },
+        // Native transcription of both sides of the call, relayed to the
+        // client so the voice-call UI can show a live, accessible
+        // transcript (and so a deaf/hard-of-hearing user isn't locked out
+        // of a voice-only feature). This is text ABOUT the audio, not a
+        // second response - the spoken audio remains the real reply.
+        inputAudioTranscription: {},
+        outputAudioTranscription: {},
+        systemInstruction: liveSystemInstruction,
+        // Same tool set text chat uses (search_nova_memories,
+        // propose_recovery_action, remember_about_user, suggest_feature),
+        // dispatched through the same executeNovaTool so voice can never
+        // do anything text chat couldn't already do.
+        tools: NOVA_TOOLS_ENABLED ? [{ functionDeclarations: NOVA_TOOLS }] : undefined,
+      },
+      callbacks: {
+        onopen: () => {
+          logger.info(`[Nova Live] session opened for uid ${uid}`);
+          // This is the one true "Nova can actually hear and respond
+          // now" signal - billing, idle-timeout accounting, and the
+          // client's own "live" UI state all key off it instead of
+          // the much earlier moment our own socket accepted the
+          // connection (see the comment above pendingClientMessages).
+          novaLiveSessionStartedAt = Date.now();
+          resetIdleTimer();
+          try {
+            clientWs.send(JSON.stringify({ ready: true }));
+          } catch (e) {
+            // Best-effort - the socket may already be gone.
+          }
+          while (pendingClientMessages.length > 0) {
+            processClientMessage(pendingClientMessages.shift()!);
+          }
+        },
+        onmessage: (message: LiveServerMessage) => {
+          if (sessionEnded) return;
+          resetIdleTimer();
+          try {
+            if (message.serverContent?.interrupted) {
+              clientWs.send(JSON.stringify({ interrupted: true }));
+            }
+            // Relay transcript fragments so the client can build a live
+            // caption. These arrive incrementally, so the client appends.
+            const userText = message.serverContent?.inputTranscription?.text;
+            if (userText) {
+              clientWs.send(JSON.stringify({ userTranscript: userText }));
+            }
+            const novaText = message.serverContent?.outputTranscription?.text;
+            if (novaText) {
+              clientWs.send(JSON.stringify({ novaTranscript: novaText }));
+            }
+            if (message.data) {
+              clientWs.send(JSON.stringify({ audio: message.data }));
+            }
+            // Marks the end of one of Nova's spoken turns, so the client
+            // can settle its "Nova is speaking" indicator honestly rather
+            // than guessing from audio timing alone.
+            if (message.serverContent?.turnComplete) {
+              clientWs.send(JSON.stringify({ turnComplete: true }));
+            }
+            // Function calls from the Live API arrive as a distinct
+            // message shape (message.toolCall), not inline with
+            // serverContent - handled async since dispatching a tool can
+            // mean a Firestore read/write, but onmessage itself stays
+            // synchronous so the audio/transcript relay above is never
+            // delayed by a slow tool call.
+            const functionCalls = message.toolCall?.functionCalls;
+            if (functionCalls && functionCalls.length > 0) {
+              void (async () => {
+                const functionResponses = await Promise.all(functionCalls.map(async (call) => {
+                  const name = call.name || "";
+                  const args = (call.args || {}) as Record<string, unknown>;
+                  let output: Record<string, unknown>;
+                  if (name === "remember_about_user") {
+                    // Checked and incremented synchronously before the
+                    // await inside executeNovaTool, same race-safety
+                    // reasoning as the chat loops' per-turn cap.
+                    if (voiceMemoryWriteCount >= MAX_VOICE_MEMORY_WRITES) {
+                      output = { saved: false, error: `Already saved ${MAX_VOICE_MEMORY_WRITES} memories this call - that's enough for one conversation.` };
+                    } else {
+                      voiceMemoryWriteCount++;
+                      output = await executeNovaTool(name, args, uid, db);
+                    }
+                  } else {
+                    output = await executeNovaTool(name, args, uid, db);
+                  }
+                  // Relay a successful feature suggestion to the client the
+                  // same way the text-chat endpoint's planTrace does, so the
+                  // voice call UI can render the same real, validated
+                  // "go there" link - never silent navigation.
+                  if (name === "suggest_feature" && output.suggested) {
+                    try {
+                      clientWs.send(JSON.stringify({
+                        featureSuggestion: { featureId: output.featureId, label: output.label, reason: output.reason },
+                      }));
+                    } catch (e) {
+                      // Best-effort - the call continues even if this relay fails.
+                    }
+                  }
+                  // Same relay pattern for the Guardian Support
+                  // Invitation - the card is rendered from this
+                  // WebSocket message alone. Nova's spoken reply never
+                  // needs to (and must not) say the guardian's name or
+                  // read out message content; only this visual card,
+                  // populated client-side from the user's own saved
+                  // contacts, ever shows that.
+                  if (name === "offer_guardian_support" && output.offered) {
+                    try {
+                      clientWs.send(JSON.stringify({
+                        guardianSupportOffer: { reason: output.reason },
+                      }));
+                    } catch (e) {
+                      // Best-effort - the call continues even if this relay fails.
+                    }
+                  }
+                  return { id: call.id, name, response: output };
+                }));
+                try {
+                  liveSession?.sendToolResponse({ functionResponses });
+                } catch (e: any) {
+                  logger.error("[Nova Live] failed to send tool response:", errorFields(e));
+                }
+              })();
+            }
+          } catch (e: any) {
+            logger.error("[Nova Live] relay-to-client error:", errorFields(e));
+          }
+        },
+        onerror: (e: any) => {
+          logger.error(`[Nova Live] upstream error for uid ${uid}:`, errorFields(e));
+          endSession("Voice session hit an error and had to end.");
+        },
+        onclose: () => {
+          endSession();
+        },
+      },
+    });
+  } catch (e: any) {
+    logger.error("[Nova Live] failed to open upstream session:", errorFields(e));
+    clientWs.send(JSON.stringify({ error: "Could not start the live voice session. Please try again." }));
+    return clientWs.close();
+  }
+
+  // resetIdleTimer()'s first call now happens inside onopen above,
+  // the same real-ready moment everything else keys off - not here.
+  sessionTimeout = setTimeout(() => endSession("This voice session has reached its time limit."), MAX_SESSION_MS);
+
+  clientWs.on("close", () => endSession());
+  clientWs.on("error", (e) => {
+    logger.error(`[Nova Live] client socket error for uid ${uid}:`, errorFields(e));
+    endSession();
+  });
+}
+
 if (process.env.TEST_MODE !== 'true') {
   setupVite().then(() => {
     const server = app.listen(PORT, "0.0.0.0", () => {
@@ -15522,394 +15920,6 @@ if (process.env.TEST_MODE !== 'true') {
     });
 
     const wss = new WebSocketServer({ server, path: "/api/nova/live" });
-    wss.on("connection", async (clientWs, req) => {
-      // Browsers can't set custom headers on WebSocket connections, so auth
-      // travels as query params instead of the Authorization/x-firebase-appcheck
-      // headers used everywhere else in this file. This is the one thing that
-      // was actually missing — everything else (client audio capture/encode,
-      // playback, session lifecycle) was already built; it was just never
-      // safe to open this socket to the world without it.
-      const url = new URL(req.url || "", `http://${req.headers.host}`);
-      const idToken = url.searchParams.get("token");
-      const appCheckToken = url.searchParams.get("appCheckToken");
-      // Selects which capability gates this connection - never a trust
-      // boundary by itself, since the check below is always run
-      // server-authoritatively against the caller's real uid regardless
-      // of what this param says. A Free account passing context=blame
-      // gets blame_voice.enabled===false and is rejected exactly as if
-      // they'd tried nova_voice and failed it.
-      const isBlameContext = url.searchParams.get("context") === "blame";
-
-      // Same fix as the main verifyAppCheck middleware: no magic bypass
-      // string here, since anyone can read it out of the shipped client
-      // bundle and send it directly regardless of environment. Only
-      // genuinely running outside production skips this check.
-      if (process.env.NODE_ENV === "production") {
-        if (!appCheckToken) {
-          clientWs.send(JSON.stringify({ error: "Missing App Check token." }));
-          return clientWs.close();
-        }
-        try {
-          await getAppCheck().verifyToken(appCheckToken);
-        } catch (e) {
-          clientWs.send(JSON.stringify({ error: "Invalid App Check token." }));
-          return clientWs.close();
-        }
-      }
-
-      if (!idToken) {
-        clientWs.send(JSON.stringify({ error: "Missing authentication token." }));
-        return clientWs.close();
-      }
-      let uid: string;
-      try {
-        const decoded = await getAuth().verifyIdToken(idToken);
-        uid = decoded.uid;
-      } catch (e) {
-        clientWs.send(JSON.stringify({ error: "Invalid or expired session. Please refresh and try again." }));
-        return clientWs.close();
-      }
-
-      if (!process.env.GEMINI_API_KEY || process.env.GEMINI_API_KEY === "MY_GEMINI_API_KEY") {
-        clientWs.send(JSON.stringify({ error: "Live voice isn't configured on this server yet." }));
-        return clientWs.close();
-      }
-
-      if (!NOVA_LIVE_VOICE_ENABLED) {
-        clientWs.send(JSON.stringify({ error: "Voice coaching is temporarily unavailable. Continue with Nova by text for now." }));
-        return clientWs.close();
-      }
-
-      // Unlike every other await in this handler, these two weren't
-      // individually try/caught - a Firestore error inside
-      // getEntitlementRecord (permission error, transient network blip)
-      // became an unhandled rejection inside a WS event listener: no error
-      // reached the client, the socket just hung open with no feedback,
-      // and in modern Node an unhandled rejection can terminate the whole
-      // process, not just this one connection.
-      let liveQuota: Awaited<ReturnType<typeof checkAndReserveCapability>>;
-      let minutesQuota: Awaited<ReturnType<typeof checkCapabilityQuota>>;
-      try {
-        // BLAME's voice mode is a separate, hard binary gate (blame_voice)
-        // - NOT stacked on top of nova_voice's general daily session-count
-        // throttle, which would silently reintroduce a cap this feature is
-        // deliberately uncapped-for-paid against.
-        liveQuota = await checkAndReserveCapability(uid, isBlameContext ? 'blame_voice' : 'nova_voice');
-        // Separate from the daily session-COUNT check above: this is the
-        // monthly cumulative-MINUTES allowance (docs/AI_COST_CONTROL.md).
-        // Checked (not reserved) here - the real minutes used are only
-        // known once the session actually ends, recorded via
-        // recordCapabilityUsage in endSession below. Still applies to a
-        // BLAME voice session too, since real Gemini Live spend is the
-        // same regardless of entry point.
-        minutesQuota = await checkCapabilityQuota(uid, 'nova_voice_minutes');
-      } catch (e) {
-        clientWs.send(JSON.stringify({ error: "Couldn't verify your Nova voice access right now. Please try again, or continue with Nova by text." }));
-        return clientWs.close();
-      }
-      if (!liveQuota.allowed) {
-        clientWs.send(JSON.stringify({
-          error: isBlameContext
-            ? "Voice mode for BLAME Reset is a paid feature. Continue by typing, or upgrade for voice."
-            : (liveQuota.plan === 'free'
-                ? "You've used today's free Nova voice session. Upgrade for many more, or continue with Nova by text."
-                : "You've reached today's Nova voice fair-use limit. It resets tomorrow - continue with Nova by text for now."),
-        }));
-        return clientWs.close();
-      }
-      if (!minutesQuota.allowed) {
-        clientWs.send(JSON.stringify({
-          error: "You've used this month's Nova voice minutes. They reset next month - continue with Nova by text for now, or upgrade for a higher monthly allowance.",
-        }));
-        return clientWs.close();
-      }
-      // Set for real once Gemini's own session actually opens (inside
-      // liveSession's onopen callback below) - NOT here. Setting it here,
-      // before ai.live.connect() is even attempted, used to bill the
-      // entire auth/quota/context-fetch/connect setup window as real
-      // voice-minute usage, even though no conversation could happen yet.
-      let novaLiveSessionStartedAt = 0;
-
-      const db = getDb();
-
-      // Same cross-feature awareness packet the text chat endpoint injects
-      // (getNovaContextAndMetadata) - without this, voice-Nova was blind to
-      // everything text-Nova could see: consented check-ins, energy budgets,
-      // mood pulses, derived recovery trends, saved memories. Best-effort by
-      // design (the function itself already degrades to "" on any failure),
-      // so a Firestore hiccup here never blocks the call from starting.
-      // getNovaQuestioningStyleAddendum alongside it means a chosen
-      // questioning style applies to voice too, not just text - same
-      // Firestore-sourced value, so it's consistent across both.
-      const [contextResult, styleAddendum] = await Promise.all([
-        getNovaContextAndMetadata(uid, db),
-        getNovaQuestioningStyleAddendum(uid, db),
-      ]);
-      const liveSystemInstruction = NOVA_LIVE_VOICE_PERSONA + contextResult.systemInstructionsAddendum + styleAddendum;
-
-      // Real per-second cost here (audio in + audio out), so a hard ceiling
-      // matters even for a legitimate, authenticated user — 15 minutes
-      // (NOVA_LIVE_MAX_SESSION_MS) is generous for a coaching check-in
-      // without leaving a session open indefinitely if a client never
-      // explicitly closes it.
-      const MAX_SESSION_MS = NOVA_LIVE_MAX_SESSION_MS;
-      // A live call has no discrete "turn" boundary the way a single chat
-      // request does, so the per-turn memory-write cap becomes a per-session
-      // one instead - generous enough for a real 15-minute conversation,
-      // still a hard ceiling against a runaway loop of writes.
-      const MAX_VOICE_MEMORY_WRITES = 5;
-      let voiceMemoryWriteCount = 0;
-      // sessionTimeout/idleTimeout are assigned exactly once each, but only
-      // after endSession (which reads them via closure) is declared below;
-      // TS requires const to initialize immediately, so these can't be
-      // const without restructuring the timer setup.
-      // eslint-disable-next-line prefer-const
-      let sessionTimeout: NodeJS.Timeout;
-      // Separate from the flat session ceiling above: a connection left
-      // open with no audio flowing in either direction (mic muted, app
-      // backgrounded, network half-dead) shouldn't run the full 15 minutes
-      // billing per-second the whole time. Reset on any real activity.
-      let idleTimeout: NodeJS.Timeout;
-      const resetIdleTimer = () => {
-        clearTimeout(idleTimeout);
-        idleTimeout = setTimeout(() => endSession("This voice session ended after a period of inactivity."), NOVA_LIVE_IDLE_TIMEOUT_MS);
-      };
-      let liveSession: any = null;
-      let sessionEnded = false;
-
-      const endSession = (reason?: string) => {
-        if (sessionEnded) return;
-        sessionEnded = true;
-        clearTimeout(sessionTimeout);
-        clearTimeout(idleTimeout);
-        // Records the REAL elapsed minutes against this account's monthly
-        // Nova Live allowance, now that the actual duration is known -
-        // fire-and-forget (this function is synchronous, called from
-        // several timer/callback paths) but never silently dropped: an
-        // async failure here would otherwise mean an account's real usage
-        // just doesn't count against its monthly minutes, forever.
-        // Guarded on novaLiveSessionStartedAt > 0: it's only set once
-        // Gemini's session actually opened (onopen above) - if endSession
-        // is somehow reached before that (e.g. the upstream session
-        // errored before ever opening), there's no real usage to bill.
-        if (novaLiveSessionStartedAt > 0) {
-          recordCapabilityUsage(uid, 'nova_voice_minutes', liveQuota.plan, minutesUsedForSession(Date.now() - novaLiveSessionStartedAt))
-            .catch((e) => logger.error(`[Nova Live] failed to record voice minutes for uid ${uid}:`, errorFields(e)));
-        }
-        try {
-          liveSession?.close();
-        } catch (e) {
-          // Best-effort - the session may already be closed.
-        }
-        try {
-          if (reason) clientWs.send(JSON.stringify({ error: reason }));
-          clientWs.close();
-        } catch (e) {
-          // Best-effort - the socket may already be closed.
-        }
-      };
-
-      // The client starts capturing and streaming mic audio the instant
-      // ITS OWN socket to us opens - it has no way to know we still need
-      // to verify tokens, check quotas, fetch Firestore context, and
-      // open the actual upstream Gemini session (ai.live.connect below),
-      // all of which take real time. Registering this listener only
-      // AFTER that setup used to mean every word spoken during it was
-      // silently dropped: no listener existed yet to catch it. This is
-      // registered immediately instead, and queues anything that
-      // arrives before liveSession exists rather than losing it - drained
-      // in order once the real session opens (see onopen below).
-      const pendingClientMessages: string[] = [];
-      const MAX_PENDING_CLIENT_MESSAGES = 300; // a few seconds of 16kHz PCM chunks - bounds memory if connect() never resolves
-
-      const processClientMessage = (raw: string) => {
-        try {
-          const parsed = JSON.parse(raw);
-          if (parsed.initialPrompt) {
-            // Prefill context (fingerprint, recent chat, Nova's memory) without
-            // expecting an immediate reply — turnComplete:false per the SDK's
-            // own guidance for priming a conversation before real input starts.
-            liveSession.sendClientContent({ turns: parsed.initialPrompt, turnComplete: false });
-          }
-          if (parsed.audio) {
-            liveSession.sendRealtimeInput({ audio: { data: parsed.audio, mimeType: "audio/pcm;rate=16000" } });
-          }
-        } catch (e: any) {
-          logger.error("[Nova Live] client message parse error:", errorFields(e));
-        }
-      };
-
-      clientWs.on("message", (data) => {
-        if (sessionEnded) return;
-        const raw = data.toString();
-        if (!liveSession) {
-          if (pendingClientMessages.length < MAX_PENDING_CLIENT_MESSAGES) pendingClientMessages.push(raw);
-          return;
-        }
-        resetIdleTimer();
-        processClientMessage(raw);
-      });
-
-      try {
-        liveSession = await ai.live.connect({
-          model: GEMINI_LIVE_MODEL,
-          config: {
-            responseModalities: [Modality.AUDIO],
-            speechConfig: {
-              voiceConfig: { prebuiltVoiceConfig: { voiceName: "Aoede" } }, // Same voice as the existing single-shot TTS endpoint, so Nova sounds consistent everywhere.
-              languageCode: "en-GB", // British accent, matching the single-shot TTS endpoint.
-            },
-            // Native transcription of both sides of the call, relayed to the
-            // client so the voice-call UI can show a live, accessible
-            // transcript (and so a deaf/hard-of-hearing user isn't locked out
-            // of a voice-only feature). This is text ABOUT the audio, not a
-            // second response - the spoken audio remains the real reply.
-            inputAudioTranscription: {},
-            outputAudioTranscription: {},
-            systemInstruction: liveSystemInstruction,
-            // Same tool set text chat uses (search_nova_memories,
-            // propose_recovery_action, remember_about_user, suggest_feature),
-            // dispatched through the same executeNovaTool so voice can never
-            // do anything text chat couldn't already do.
-            tools: NOVA_TOOLS_ENABLED ? [{ functionDeclarations: NOVA_TOOLS }] : undefined,
-          },
-          callbacks: {
-            onopen: () => {
-              logger.info(`[Nova Live] session opened for uid ${uid}`);
-              // This is the one true "Nova can actually hear and respond
-              // now" signal - billing, idle-timeout accounting, and the
-              // client's own "live" UI state all key off it instead of
-              // the much earlier moment our own socket accepted the
-              // connection (see the comment above pendingClientMessages).
-              novaLiveSessionStartedAt = Date.now();
-              resetIdleTimer();
-              try {
-                clientWs.send(JSON.stringify({ ready: true }));
-              } catch (e) {
-                // Best-effort - the socket may already be gone.
-              }
-              while (pendingClientMessages.length > 0) {
-                processClientMessage(pendingClientMessages.shift()!);
-              }
-            },
-            onmessage: (message: LiveServerMessage) => {
-              if (sessionEnded) return;
-              resetIdleTimer();
-              try {
-                if (message.serverContent?.interrupted) {
-                  clientWs.send(JSON.stringify({ interrupted: true }));
-                }
-                // Relay transcript fragments so the client can build a live
-                // caption. These arrive incrementally, so the client appends.
-                const userText = message.serverContent?.inputTranscription?.text;
-                if (userText) {
-                  clientWs.send(JSON.stringify({ userTranscript: userText }));
-                }
-                const novaText = message.serverContent?.outputTranscription?.text;
-                if (novaText) {
-                  clientWs.send(JSON.stringify({ novaTranscript: novaText }));
-                }
-                if (message.data) {
-                  clientWs.send(JSON.stringify({ audio: message.data }));
-                }
-                // Marks the end of one of Nova's spoken turns, so the client
-                // can settle its "Nova is speaking" indicator honestly rather
-                // than guessing from audio timing alone.
-                if (message.serverContent?.turnComplete) {
-                  clientWs.send(JSON.stringify({ turnComplete: true }));
-                }
-                // Function calls from the Live API arrive as a distinct
-                // message shape (message.toolCall), not inline with
-                // serverContent - handled async since dispatching a tool can
-                // mean a Firestore read/write, but onmessage itself stays
-                // synchronous so the audio/transcript relay above is never
-                // delayed by a slow tool call.
-                const functionCalls = message.toolCall?.functionCalls;
-                if (functionCalls && functionCalls.length > 0) {
-                  void (async () => {
-                    const functionResponses = await Promise.all(functionCalls.map(async (call) => {
-                      const name = call.name || "";
-                      const args = (call.args || {}) as Record<string, unknown>;
-                      let output: Record<string, unknown>;
-                      if (name === "remember_about_user") {
-                        // Checked and incremented synchronously before the
-                        // await inside executeNovaTool, same race-safety
-                        // reasoning as the chat loops' per-turn cap.
-                        if (voiceMemoryWriteCount >= MAX_VOICE_MEMORY_WRITES) {
-                          output = { saved: false, error: `Already saved ${MAX_VOICE_MEMORY_WRITES} memories this call - that's enough for one conversation.` };
-                        } else {
-                          voiceMemoryWriteCount++;
-                          output = await executeNovaTool(name, args, uid, db);
-                        }
-                      } else {
-                        output = await executeNovaTool(name, args, uid, db);
-                      }
-                      // Relay a successful feature suggestion to the client the
-                      // same way the text-chat endpoint's planTrace does, so the
-                      // voice call UI can render the same real, validated
-                      // "go there" link - never silent navigation.
-                      if (name === "suggest_feature" && output.suggested) {
-                        try {
-                          clientWs.send(JSON.stringify({
-                            featureSuggestion: { featureId: output.featureId, label: output.label, reason: output.reason },
-                          }));
-                        } catch (e) {
-                          // Best-effort - the call continues even if this relay fails.
-                        }
-                      }
-                      // Same relay pattern for the Guardian Support
-                      // Invitation - the card is rendered from this
-                      // WebSocket message alone. Nova's spoken reply never
-                      // needs to (and must not) say the guardian's name or
-                      // read out message content; only this visual card,
-                      // populated client-side from the user's own saved
-                      // contacts, ever shows that.
-                      if (name === "offer_guardian_support" && output.offered) {
-                        try {
-                          clientWs.send(JSON.stringify({
-                            guardianSupportOffer: { reason: output.reason },
-                          }));
-                        } catch (e) {
-                          // Best-effort - the call continues even if this relay fails.
-                        }
-                      }
-                      return { id: call.id, name, response: output };
-                    }));
-                    try {
-                      liveSession?.sendToolResponse({ functionResponses });
-                    } catch (e: any) {
-                      logger.error("[Nova Live] failed to send tool response:", errorFields(e));
-                    }
-                  })();
-                }
-              } catch (e: any) {
-                logger.error("[Nova Live] relay-to-client error:", errorFields(e));
-              }
-            },
-            onerror: (e: any) => {
-              logger.error(`[Nova Live] upstream error for uid ${uid}:`, errorFields(e));
-              endSession("Voice session hit an error and had to end.");
-            },
-            onclose: () => {
-              endSession();
-            },
-          },
-        });
-      } catch (e: any) {
-        logger.error("[Nova Live] failed to open upstream session:", errorFields(e));
-        clientWs.send(JSON.stringify({ error: "Could not start the live voice session. Please try again." }));
-        return clientWs.close();
-      }
-
-      // resetIdleTimer()'s first call now happens inside onopen above,
-      // the same real-ready moment everything else keys off - not here.
-      sessionTimeout = setTimeout(() => endSession("This voice session has reached its time limit."), MAX_SESSION_MS);
-
-      clientWs.on("close", () => endSession());
-      clientWs.on("error", (e) => {
-        logger.error(`[Nova Live] client socket error for uid ${uid}:`, errorFields(e));
-        endSession();
-      });
-    });
+    wss.on("connection", handleNovaLiveConnection);
   });
 }
