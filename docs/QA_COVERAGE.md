@@ -531,6 +531,32 @@ to 60.19%, lines to 73.7%. Routes with a fully uncovered catch block:
 104 (down from 111), closing the entire change-proposals/cost-budget/
 freeze/rollout-plans slice of the Evolution Engine group.
 
+## QA Batch 15: Evolution Engine Connector Layer + Context Brain Health
+
+Closes the last two Evolution Engine routes flagged in Batch 14's
+scoping note: `GET /api/admin/evolution/connectors` and `GET
+/api/admin/evolution/context-brain/health`. Both already had dedicated
+test files (`evolution-connectors.route.test.ts`,
+`evolution-context-brain.route.test.ts`) with real happy-path
+coverage - same "extend, don't duplicate" call as Batch 14.
+
+Both routes' first (and only) Firestore read is a `db.collectionGroup
+(id).get()` scan across every org/user - a different underlying class
+from the single-collection `CollectionRef` that `forceCollectionError`
+already targets, so neither existing helper could reach it. Added
+`forceCollectionGroupError(collectionId, error)` to
+`test/fake-firestore.ts`, same monkey-patch-the-prototype shape as
+`forceDocError`/`forceCollectionError`, scoped by collection id (a
+collection-group query has no single fixed path to key off of).
+
+Measured effect: `server.ts` statement coverage rose to 72.85%, branch
+to 60.23%, lines to 73.76%. The "fully uncovered catch block" route
+count (104) didn't move - both routes already had their `Forbidden`
+branch exercised by an existing 403 test, so the script's coarser
+whole-catch-body metric never counted them as fully uncovered to begin
+with; the generic-500 branch specifically was the real, now-closed gap.
+This closes every Evolution Engine route in the original gap list.
+
 ## What's shipped
 
 - `npm run test:coverage` (`vitest run --coverage`, `@vitest/coverage-v8`):

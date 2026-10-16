@@ -22,7 +22,7 @@ vi.mock('twilio', () => ({ default: () => ({ messages: { create: vi.fn() } }) })
 
 import request from 'supertest';
 import { app } from './server';
-import { seedDoc, resetStore } from './test/fake-firestore';
+import { seedDoc, resetStore, forceCollectionGroupError } from './test/fake-firestore';
 
 const OWNER = 'owner_1';
 const NOT_ADMIN = 'random_person';
@@ -64,5 +64,17 @@ describe('GET /api/admin/evolution/connectors', () => {
     const res = await request(app).get('/api/admin/evolution/connectors').set(auth(OWNER));
     expect(res.status).toBe(200);
     expect(res.body.connectors.filter((c: any) => c.scope === 'organisation')).toEqual([]);
+  });
+
+  // QA Batch 15: the defensive catch block behind the happy paths above.
+  it('500s (never leaking err.message) if the cross-org connectors scan throws', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const restore = forceCollectionGroupError('connectors', new Error('simulated Firestore outage'));
+    const res = await request(app).get('/api/admin/evolution/connectors').set(auth(OWNER));
+    expect(res.status).toBe(500);
+    expect(res.body).toEqual({ error: 'Something went wrong on our end. Please try again.' });
+    expect(errorSpy).toHaveBeenCalled();
+    restore();
+    errorSpy.mockRestore();
   });
 });

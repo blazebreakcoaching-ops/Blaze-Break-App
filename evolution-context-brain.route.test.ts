@@ -24,7 +24,7 @@ vi.mock('twilio', () => ({ default: () => ({ messages: { create: vi.fn() } }) })
 
 import request from 'supertest';
 import { app } from './server';
-import { seedDoc, resetStore } from './test/fake-firestore';
+import { seedDoc, resetStore, forceCollectionGroupError } from './test/fake-firestore';
 
 const OWNER = 'owner_1';
 const NOT_ADMIN = 'random_person';
@@ -68,5 +68,17 @@ describe('GET /api/admin/evolution/context-brain/health', () => {
     const res = await request(app).get('/api/admin/evolution/context-brain/health').set(auth(OWNER));
     expect(res.body.duplicateCandidateGroups).toBe(1);
     expect(res.body.duplicateCandidateMemories).toBe(2);
+  });
+
+  // QA Batch 15: the defensive catch block behind the happy paths above.
+  it('500s (never leaking err.message) if the cross-user memory scan throws', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const restore = forceCollectionGroupError('nova_memories', new Error('simulated Firestore outage'));
+    const res = await request(app).get('/api/admin/evolution/context-brain/health').set(auth(OWNER));
+    expect(res.status).toBe(500);
+    expect(res.body).toEqual({ error: 'Something went wrong on our end. Please try again.' });
+    expect(errorSpy).toHaveBeenCalled();
+    restore();
+    errorSpy.mockRestore();
   });
 });

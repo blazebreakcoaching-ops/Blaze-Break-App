@@ -453,3 +453,22 @@ export function forceCollectionError(path: string, method: 'get' | 'add', error:
     CollectionRefCtor.prototype[method] = original;
   };
 }
+
+// Same idea again, but for db.collectionGroup(id).get() - a different
+// class from CollectionRef (no fixed parent path, matches a collection id
+// at any depth), used by the handful of routes that scan one collection
+// id across every user/org rather than reading a single fixed path.
+// Scoped by collection id rather than a path, since that's the only
+// identifier a collection-group query has.
+export function forceCollectionGroupError(collectionId: string, error: Error): () => void {
+  const probe = fakeDb.collectionGroup('__force_collection_group_error_probe__');
+  const CollectionGroupRefCtor = Object.getPrototypeOf(probe).constructor as any;
+  const original = CollectionGroupRefCtor.prototype.get;
+  CollectionGroupRefCtor.prototype.get = function (this: any, ...args: any[]) {
+    if (this.collectionId === collectionId) return Promise.reject(error);
+    return original.apply(this, args);
+  };
+  return () => {
+    CollectionGroupRefCtor.prototype.get = original;
+  };
+}
