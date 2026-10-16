@@ -758,6 +758,25 @@ to 62.38%, lines to 76.31%. Routes with a fully uncovered catch block:
 84 (down from 88). Next: `GET /api/org/:orgId/members` and `POST
 .../members/:memberUid/team`.
 
+## QA Batch 24: org/:orgId/members + members/:memberUid/team coverage
+
+`GET /api/org/:orgId/members` had zero coverage of any kind. `POST
+/api/org/:orgId/members/:memberUid/team` had only a happy-path
+audit-log assertion (in `workplace-governance.route.test.ts`), with
+no validation or catch-block tests. New file
+`org-members.route.test.ts`: admin-only access, real Auth email/
+displayName/team/admin-status per member (resolved through
+`getOrgMemberRole`, not a raw `adminUids` check), the documented
+per-member Auth-lookup-failure degrade (`catch (e)` inside the
+`Promise.all`, not the route's own outer catch), non-member/invalid-
+team-value/over-length-team-name rejections, clearing a team label
+with `team: null`, and the defensive catch block for both routes.
+
+Measured effect: `server.ts` statement coverage rose to 75.45%, branch
+to 62.64%, lines to 76.46%. Routes with a fully uncovered catch block:
+82 (down from 84). Next: `GET /api/org/:orgId/team-dashboard` and
+`POST .../team-dashboard/:team/acknowledge`.
+
 ## What's shipped
 
 - `npm run test:coverage` (`vitest run --coverage`, `@vitest/coverage-v8`):
