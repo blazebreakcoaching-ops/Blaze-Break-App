@@ -721,6 +721,23 @@ series, since the Recognition Wall routes had real untested logic
 block. Routes with a fully uncovered catch block: 90 (down from 95).
 Next: `POST`/`GET /api/org/:orgId/cost-inputs`.
 
+## QA Batch 22: org/:orgId/cost-inputs coverage
+
+`POST /api/org/:orgId/cost-inputs` already had partial happy-path
+coverage (an audit-log assertion in `workplace-governance.route.test.ts`)
+but no catch-block test. `GET /api/org/:orgId/cost-inputs` had zero
+coverage of any kind. Extended the same file: membership gating, the
+honest null/empty-history default, the real figures + history entry
+after a save, and the defensive catch block for both routes (forced
+via the shared `organisations/<orgId>` membership-check read).
+
+Measured effect: `server.ts` statement coverage rose to 74.6%, branch
+to 61.71%, lines to 75.57%. Routes with a fully uncovered catch block:
+88 (down from 90). This closes the last route directly in the main
+org.ts admin-console section before the much larger
+challenges/members/team-dashboard/work-design-interventions/work-design-debt
+block that follows - the next slice to scope.
+
 ## What's shipped
 
 - `npm run test:coverage` (`vitest run --coverage`, `@vitest/coverage-v8`):

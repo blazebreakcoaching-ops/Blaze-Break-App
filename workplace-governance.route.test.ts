@@ -27,7 +27,7 @@ vi.mock('twilio', () => ({ default: () => ({ messages: { create: vi.fn() } }) })
 
 import request from 'supertest';
 import { app } from './server';
-import { seedDoc, resetStore } from './test/fake-firestore';
+import { seedDoc, resetStore, forceDocError } from './test/fake-firestore';
 
 const ORG = 'org_1';
 const OWNER = 'owner_uid';
@@ -109,5 +109,58 @@ describe('audit trail now covers previously-unlogged Workplace actions', () => {
     expect(entry).toBeTruthy();
     expect(entry.before.privacyThreshold).toBe(5);
     expect(entry.after.privacyThreshold).toBe(10);
+  });
+});
+
+describe('GET /api/org/:orgId/cost-inputs', () => {
+  it('requires membership', async () => {
+    seedOrg();
+    const res = await request(app).get(`/api/org/${ORG}/cost-inputs`).set(auth('stranger'));
+    expect(res.status).toBe(403);
+  });
+
+  it('returns null costInputs and empty history before anything has been entered', async () => {
+    seedOrg();
+    const res = await request(app).get(`/api/org/${ORG}/cost-inputs`).set(auth(OWNER));
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ costInputs: null, history: [] });
+  });
+
+  it('reflects the current figures and a real history entry after a save', async () => {
+    seedOrg();
+    await request(app).post(`/api/org/${ORG}/cost-inputs`).set(auth(OWNER))
+      .send({ annualSicknessDays: 10, avgDailyCostPerEmployee: 200, headcount: 50 });
+
+    const res = await request(app).get(`/api/org/${ORG}/cost-inputs`).set(auth(OWNER));
+    expect(res.body.costInputs).toEqual({ annualSicknessDays: 10, avgDailyCostPerEmployee: 200, headcount: 50 });
+    expect(res.body.history).toHaveLength(1);
+    expect(res.body.history[0]).toMatchObject({ annualSicknessDays: 10, avgDailyCostPerEmployee: 200, headcount: 50 });
+  });
+});
+
+describe('POST/GET /api/org/:orgId/cost-inputs — defensive catch blocks', () => {
+  it('POST: returns a generic 500 and logs the real error when the org read throws', async () => {
+    seedOrg();
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const restore = forceDocError(`organisations/${ORG}`, 'get', new Error('simulated Firestore outage'));
+    const res = await request(app).post(`/api/org/${ORG}/cost-inputs`).set(auth(OWNER))
+      .send({ annualSicknessDays: 10, avgDailyCostPerEmployee: 200, headcount: 50 });
+    expect(res.status).toBe(500);
+    expect(res.body).toEqual({ error: 'Something went wrong on our end. Please try again.' });
+    expect(errorSpy).toHaveBeenCalled();
+    restore();
+    errorSpy.mockRestore();
+  });
+
+  it('GET: returns a generic 500 and logs the real error when the org read throws', async () => {
+    seedOrg();
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const restore = forceDocError(`organisations/${ORG}`, 'get', new Error('simulated Firestore outage'));
+    const res = await request(app).get(`/api/org/${ORG}/cost-inputs`).set(auth(OWNER));
+    expect(res.status).toBe(500);
+    expect(res.body).toEqual({ error: 'Something went wrong on our end. Please try again.' });
+    expect(errorSpy).toHaveBeenCalled();
+    restore();
+    errorSpy.mockRestore();
   });
 });
