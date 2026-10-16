@@ -777,6 +777,19 @@ to 62.64%, lines to 76.46%. Routes with a fully uncovered catch block:
 82 (down from 84). Next: `GET /api/org/:orgId/team-dashboard` and
 `POST .../team-dashboard/:team/acknowledge`.
 
+## QA Batch 25: team-dashboard + team-dashboard/:team/acknowledge catch blocks
+
+Both routes already had thorough happy-path coverage
+(`team-dashboard.route.test.ts`, `team-escalation.route.test.ts`) but
+no catch-block test. Both share `loadOrgAndCallerRole`'s
+`organisations/<orgId>` read as their first real Firestore call, so
+one `forceDocError` test closes each.
+
+Measured effect: `server.ts` statement coverage rose to 75.56%, branch
+to 62.74%, lines to 76.58%. Routes with a fully uncovered catch block:
+80 (down from 82). Next: `POST`/`GET /api/org/:orgId/work-design-
+interventions` and the summary/action-budget routes alongside them.
+
 ## What's shipped
 
 - `npm run test:coverage` (`vitest run --coverage`, `@vitest/coverage-v8`):
