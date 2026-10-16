@@ -450,6 +450,44 @@ Boundary Autopilot's Slack routes and push subscribe/unsubscribe close
 out the OAuth/signals group, then the ~300-route gap moves into
 Command Centre/admin/org territory.
 
+## QA Batch 13: Boundary Autopilot + push subscribe/unsubscribe (zero prior route coverage)
+
+Closes out the OAuth/signals group. Same situation as Batch 12:
+`boundary-autopilot-schemas.test.ts` only unit-tests the Zod schemas in
+isolation - none of the 6 Boundary Autopilot routes, or the 2 push
+routes, had ever been exercised through an actual request. New file
+`boundary-autopilot-push.route.test.ts` covers a real happy path for
+each (listing/filtering Slack workspace members, sending a DM, setting
+DND/status, logging a calendar decline, reading history back, storing/
+removing a push subscription) plus the defensive catch block.
+
+A genuine finding while writing the `log-calendar-decline` catch-block
+test: it isn't reachable. `logAutopilotAction` - the one Firestore call
+in that route's try block - has its *own* inner `try`/`catch` that
+swallows a write failure and logs it, specifically so "a logging
+failure shouldn't mask the actual action's result" (the function's own
+comment). This is the exact same resilience contract
+`admin-audit-log-resilience.route.test.ts` already proved for admin
+actions, just not yet proved for autopilot actions. The test was
+corrected to assert that real contract (the route still returns 200,
+and the failure is still visible via `logger.error`) instead of a 500
+that can never actually happen - caught by running the suite itself:
+the original wrong assertion failed immediately, and because the test
+aborted before its own `restore()`/`mockRestore()` cleanup ran, the
+leaked Firestore-method override and the leaked `console.error` spy
+cascaded into three unrelated-looking failures later in the same file,
+which resolved the moment the root assertion was fixed - a reminder of
+why this series always calls `restore()` unconditionally in spirit, and
+why a cascade of odd failures in one file is often one real bug, not
+four.
+
+Measured effect: `server.ts` statement coverage rose to 72.22%, branch
+to 59.69% (moved again, same reason as Batch 12 - real route logic was
+untested, not just catch blocks), lines to 73.1%. ~111 routes with a
+fully uncovered catch block remain. This closes the entire OAuth/
+signals group from the original gap list; the ~300-route gap now moves
+into Command Centre/admin/org territory.
+
 ## What's shipped
 
 - `npm run test:coverage` (`vitest run --coverage`, `@vitest/coverage-v8`):
