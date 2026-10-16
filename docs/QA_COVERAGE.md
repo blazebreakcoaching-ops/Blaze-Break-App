@@ -419,6 +419,37 @@ this series: these were already-counted branches, just never taken).
 the OAuth/signals group: `signals/blend`, `signals/recovery-explain`,
 Boundary Autopilot's Slack routes, push subscribe/unsubscribe.
 
+## QA Batch 12: signals/blend + signals/recovery-explain (zero prior coverage)
+
+Different from every other batch in this series: `GET /api/signals/blend`
+and `POST /api/signals/recovery-explain` had **no test coverage of any
+kind** before this batch, not just an untested catch block - unlike
+everything else on the original gap list, which already had deep
+happy-path tests elsewhere. New file
+`signals-blend-recovery-explain.route.test.ts` covers a minimal real
+happy path for each (auth requirement, the no-baseline early-return and
+a calendar-driven drift nudge for `/blend`; the self-report baseline
+scoring for `/recovery-explain`) plus the defensive catch block for
+both, same as every other route in this series. `computeBlend` itself is
+a pure function already covered by `archetype-scoring.test.ts` - this
+file is about the route's own Firestore orchestration and drift-nudge
+logic, not re-proving the blend math.
+
+Both routes read 2-3 docs via `Promise.all` before doing anything else -
+`forceDocError` on the first one listed (`diagnostics/latest` for
+`/blend`, `live_signals/calendar` for `/recovery-explain`) is enough to
+hit the catch, since a `Promise.all` rejects as soon as any one of its
+promises does.
+
+Measured effect: `server.ts` statement coverage rose to 70.66%, branch
+to 58.87% (branch coverage actually moved this time, unlike every prior
+batch in this series - these two routes' real conditional drift-nudge
+logic was previously untested too, not just their catch blocks), lines
+to 71.51%. ~118 routes with a fully uncovered catch block remain:
+Boundary Autopilot's Slack routes and push subscribe/unsubscribe close
+out the OAuth/signals group, then the ~300-route gap moves into
+Command Centre/admin/org territory.
+
 ## What's shipped
 
 - `npm run test:coverage` (`vitest run --coverage`, `@vitest/coverage-v8`):
