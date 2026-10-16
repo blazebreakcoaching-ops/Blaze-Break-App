@@ -289,6 +289,44 @@ between Batch 6 and this one, also added more if/else surface to the
 denominator - see the baseline note above). ~149 routes with a fully
 uncovered catch block remain on this list.
 
+## QA Batch 8: Nova voice-session + GAD-7 defensive catch blocks
+
+Another coherent slice, same shape as Batches 6-7: the two Nova
+voice-call-continuity routes (`POST`/`GET /api/nova/voice-sessions`,
+already happy-path-tested in `messaging-and-voice.route.test.ts`) plus
+all 8 GAD-7 wellbeing routes (`gad7.route.test.ts` covers their happy
+paths and validation errors in depth) - draft PUT/GET/DELETE, the
+submit/history POST/GET, the context-tags PATCH, and the reminder-
+preference PUT/GET. All 10 already used `GENERIC_SERVER_ERROR` +
+`logger.error` (closed by Security Operations Batch 5's sweep, since
+every one of these already used the `error` catch-variable spelling);
+none had ever had that catch block actually exercised.
+
+Needed both of Batch 6's existing helpers (`forceDocError` for the
+fixed-path doc reads/writes - `wellbeing_drafts/gad7`,
+`gad7_assessments/{id}`, `preferences/gad7_checkin`) and Batch 7's
+`forceCollectionError` (for the auto-id `.add()` writes and the
+`.orderBy().limit().get()` queries - `nova_voice_sessions`,
+`gad7_assessments`). No new test infrastructure needed - this batch is
+mostly what makes it a good next slice: it proves last batch's helpers
+generalize cleanly to a different feature area rather than needing
+their own bespoke mechanism each time.
+
+`nova-gad7-catch-blocks.route.test.ts`, 10 tests - one per route, same
+three assertions as Batches 6-7 (existing safe message unchanged, status
+500, `logger.error` actually captured the real error), via a small
+shared `expectGenericFailure` helper since all 10 routes share the exact
+same `GENERIC_SERVER_ERROR` response shape (unlike Batches 6-7, where
+each route had its own distinct message).
+
+Measured effect: `server.ts` statement coverage rose to 69.16%, lines to
+69.97% (branch coverage unchanged at 57.75% - same reasoning as Batch 6:
+these catch blocks were already-counted branches, just never taken).
+~139 routes with a fully uncovered catch block remain on this list -
+down from ~153 before Batch 6, a third of the way through at the current
+pace of 3 batches covering 19 routes. Still substantial, separate work,
+same as every batch in this series has said.
+
 ## What's shipped
 
 - `npm run test:coverage` (`vitest run --coverage`, `@vitest/coverage-v8`):
