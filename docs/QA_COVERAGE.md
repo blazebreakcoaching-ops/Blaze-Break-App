@@ -738,6 +738,26 @@ org.ts admin-console section before the much larger
 challenges/members/team-dashboard/work-design-interventions/work-design-debt
 block that follows - the next slice to scope.
 
+## QA Batch 23: Team Challenges coverage (zero prior coverage)
+
+Team Challenges (`POST`/`GET /api/org/:orgId/challenges`, `POST
+.../challenges/:challengeId/join`, `POST .../leave`) had zero
+coverage of any kind. New file `team-challenges.route.test.ts`:
+admin-only creation, title/description validation, a real
+participation-rate calculation and per-caller `joined` flag, join/
+leave actually mutating `participantUids`, and the defensive catch
+block for all four routes. The `leave` route's catch is reached
+differently from the other three - it has no membership pre-check of
+its own, so a nonexistent `challengeId` (rather than a forced
+Firestore error) is what exercises it, the same way the fake
+Firestore's `update`-on-missing-doc throw mirrors the real Admin
+SDK's behaviour.
+
+Measured effect: `server.ts` statement coverage rose to 75.3%, branch
+to 62.38%, lines to 76.31%. Routes with a fully uncovered catch block:
+84 (down from 88). Next: `GET /api/org/:orgId/members` and `POST
+.../members/:memberUid/team`.
+
 ## What's shipped
 
 - `npm run test:coverage` (`vitest run --coverage`, `@vitest/coverage-v8`):
