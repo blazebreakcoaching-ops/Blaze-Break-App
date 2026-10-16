@@ -1,13 +1,14 @@
 # Observability
 
-Status as of this document, Site Reliability Batch 1. This is the first batch
-of the "Site Reliability" capability from the Operations Intelligence Hub
-audit — application-side instrumentation only. It does not include any GCP
-console configuration (alerting, uptime checks, dashboards), which no agent
-in this environment has credentials to perform; those remain explicitly
-outstanding below.
+Status as of this document, Site Reliability Batch 1 (plus its Batch 2
+follow-up, the full logger migration below). This is the first work on the
+"Site Reliability" capability from the Operations Intelligence Hub audit —
+application-side instrumentation only. It does not include any GCP console
+configuration (alerting, uptime checks, dashboards), which no agent in this
+environment has credentials to perform; those remain explicitly outstanding
+below.
 
-## What's shipped (this batch)
+## What's shipped
 
 - **Structured JSON logging** (`logger.ts`): every log line is one JSON
   object with a `severity` field (`DEBUG`/`INFO`/`WARNING`/`ERROR`/`CRITICAL`)
@@ -15,12 +16,16 @@ outstanding below.
   Cloud Run ingests container stdout/stderr into Cloud Logging automatically
   — no SDK, API key, or extra dependency is needed for this to work in
   production. A JSON line gets parsed into `jsonPayload` with the `severity`
-  field promoted to the log entry's own severity; a plain string (the old
-  `console.log`/`console.error` calls scattered through `server.ts` still in
-  place) lands as `DEFAULT` severity with everything crammed into
-  `textPayload`. This batch did not migrate those ~90 existing
-  `console.error` call sites — that's a larger, separate, lower-risk cleanup,
-  not required for the infrastructure added here to work.
+  field promoted to the log entry's own severity; a plain string lands as
+  `DEFAULT` severity with everything crammed into `textPayload`. Every
+  `console.log`/`console.warn`/`console.error` call site in `server.ts`
+  (108 of them) has been migrated to `logger.info`/`logger.warning`/
+  `logger.error` — there are no unstructured log lines left in this file.
+  A handful that logged a raw HTTP response body instead of an error
+  (`tokenBody`, `await res.text()`) now log it under an explicit
+  `responseBody` field rather than through `errorFields()`, since it isn't
+  an `Error` and stringifying it directly would have produced
+  `[object Object]`.
 - **Request correlation id**: every request gets an `X-Request-Id`, reusing
   Cloud Run's own `X-Cloud-Trace-Context` header when present so this app's
   request log and Cloud Trace refer to the same id for the same request.
@@ -64,9 +69,6 @@ outstanding below.
   Monitoring.
 - The **Error Reporting API** has not been confirmed enabled on either GCP
   project (`gen-lang-client-0537893432` production, `blaze-break-staging`).
-- The ~90 pre-existing `console.error` call sites across `server.ts` still
-  log unstructured text; migrating them to `logger.error` is optional
-  follow-up, not blocking.
 
 No dashboards, alerts, or monitoring statistics are claimed as configured
 anywhere in this document beyond what's listed under "shipped" above — the

@@ -366,7 +366,7 @@ app.use((req, res, next) => {
 const logRateLimitExceeded = (limiterName: string) =>
   (req: express.Request, res: express.Response, _next: express.NextFunction, options: any) => {
     const uid = (req as any).user?.uid;
-    console.warn(`[RATE LIMIT] ${limiterName} exceeded by IP ${req.ip}${uid ? ` (uid ${uid})` : ''} on ${req.method} ${req.originalUrl}`);
+    logger.warning(`[RATE LIMIT] ${limiterName} exceeded by IP ${req.ip}${uid ? ` (uid ${uid})` : ''} on ${req.method} ${req.originalUrl}`);
     res.status(options.statusCode).json(options.message);
   };
 
@@ -670,7 +670,7 @@ const verifyAppCheck = async (req: express.Request, res: express.Response, next:
     (req as any).appCheckVerified = true;
     next();
   } catch (e) {
-    console.warn(`[APP CHECK] Invalid token received from IP ${req.ip}`);
+    logger.warning(`[APP CHECK] Invalid token received from IP ${req.ip}`);
     res.status(401).json({ error: 'Unauthorized. Invalid Firebase App Check token.' });
     return;
   }
@@ -722,7 +722,7 @@ const authenticateFirebaseUser = async (req: express.Request, res: express.Respo
     next();
   } catch (error) {
     // Redacted logging: Do not log the token itself
-    console.warn(`[AUTH] Invalid or expired Firebase ID token from IP ${req.ip}. Error:`, (error as Error).message);
+    logger.warning(`[AUTH] Invalid or expired Firebase ID token from IP ${req.ip}. Error:`, errorFields(error));
     return res.status(401).json({ error: 'Invalid or expired Firebase ID token.' });
   }
 };
@@ -744,7 +744,7 @@ const initTwilio = () => {
 const postToBrevoEmail = async (payload: Record<string, unknown>): Promise<boolean> => {
   const brevoKey = process.env.BREVO_API_KEY;
   if (!brevoKey) {
-    console.warn("[BREVO] API key not found. Email not sent.");
+    logger.warning("[BREVO] API key not found. Email not sent.");
     return false;
   }
   try {
@@ -758,12 +758,12 @@ const postToBrevoEmail = async (payload: Record<string, unknown>): Promise<boole
       body: JSON.stringify(payload)
     });
     if (!res.ok) {
-      console.error("[BREVO] Failed to send email:", await res.text());
+      logger.error("[BREVO] Failed to send email", { responseBody: await res.text() });
       return false;
     }
     return true;
   } catch (error) {
-    console.error("[BREVO] Error sending email:", error);
+    logger.error("[BREVO] Error sending email:", errorFields(error));
     return false;
   }
 };
@@ -801,7 +801,7 @@ app.post("/api/support/request", verifyAppCheck, authenticateFirebaseUser, async
     const { type, details } = req.body;
     
     // Log to console (safe metadata only)
-    console.log(`[SUPPORT] Support request received. Type: ${type}, UID: ${uid}`);
+    logger.info(`[SUPPORT] Support request received. Type: ${type}, UID: ${uid}`);
     
     const subject = `Blaze Break - ${type === 'deletion' ? 'Account Deletion' : 'Support'} Request`;
     const body = `
@@ -821,7 +821,7 @@ Details: ${details || 'No details provided'}
 
     res.json({ success: true });
   } catch (err: any) {
-    console.error("[SUPPORT] Error processing support request:", err.message);
+    logger.error("[SUPPORT] Error processing support request:", errorFields(err));
     res.status(500).json({ error: "Failed to process request" });
   }
 });
@@ -857,7 +857,7 @@ app.post("/api/feedback/submit", feedbackLimiter, verifyAppCheck, authenticateFi
       createdAt: FieldValue.serverTimestamp(),
     });
 
-    console.log(`[FEEDBACK] Submission received. Category: ${category}, UID: ${user.uid}`);
+    logger.info(`[FEEDBACK] Submission received. Category: ${category}, UID: ${user.uid}`);
 
     const subject = `Blaze Break - New ${category === 'testimonial' ? 'Testimonial' : 'Feedback'} Submission`;
     const body = `
@@ -874,7 +874,7 @@ ${message}
 
     res.json({ success: true, id: docRef.id });
   } catch (err: any) {
-    console.error("[FEEDBACK] Error processing submission:", err.message);
+    logger.error("[FEEDBACK] Error processing submission:", errorFields(err));
     res.status(500).json({ error: "Failed to submit feedback" });
   }
 });
@@ -1001,7 +1001,7 @@ async function sendTwilioMessage(
     ]);
     return { success: true, sid: m.sid };
   } catch (error: any) {
-    console.error("Twilio error:", error);
+    logger.error("Twilio error:", errorFields(error));
     await logAutopilotAction(uid, "sms_send", { error: error.message, category }, false);
     return { success: false, error: error.message };
   }
@@ -1021,7 +1021,7 @@ app.post("/api/twilio/send", smsLimiter, verifyAppCheck, authenticateFirebaseUse
     }
     res.json({ success: true, sid: result.sid });
   } catch (error: any) {
-    console.error("Twilio route error:", error);
+    logger.error("Twilio route error:", errorFields(error));
     res.status(500).json({ error: error.message });
   }
 });
@@ -1083,7 +1083,7 @@ app.post("/api/guardian/support-event", verifyAppCheck, authenticateFirebaseUser
   } catch (error: any) {
     // Non-fatal by design on the client side (this is analytics, not a
     // safety-critical write) - but still a real server error if it does fail.
-    console.error("[Guardian support event] error:", error?.message || error);
+    logger.error("[Guardian support event] error:", errorFields(error));
     res.status(500).json({ error: "Could not record that." });
   }
 });
@@ -1295,7 +1295,7 @@ app.post("/api/guardian/alert", guardianAlertLimiter, verifyAppCheck, authentica
       contactDisplayName: contact.name,
     });
   } catch (error: any) {
-    console.error("[Guardian alert] error:", error?.message || error);
+    logger.error("[Guardian alert] error:", errorFields(error));
     res.status(500).json({ error: error.message, userMessage: GUARDIAN_STATE_COPY.failed });
   } finally {
     if (inFlightKey) guardianAlertInFlight.delete(inFlightKey);
@@ -1368,7 +1368,7 @@ app.post("/api/guardian/contacts/:id/test-ping", verifyAppCheck, authenticateFir
     }
     res.json({ success: true, lastTestPingAt: now, userMessage: `Test sent to ${contact.name}.` });
   } catch (error: any) {
-    console.error("[Guardian test ping] error:", error?.message || error);
+    logger.error("[Guardian test ping] error:", errorFields(error));
     res.status(500).json({ error: error.message });
   }
 });
@@ -1619,7 +1619,7 @@ app.get("/api/wellbeing/gad7/reminder", verifyAppCheck, authenticateFirebaseUser
 const apiKey = process.env.GEMINI_API_KEY;
 
 if (!apiKey || apiKey === "MY_GEMINI_API_KEY") {
-  console.warn("Warning: GEMINI_API_KEY is missing or placeholder. Nova AI features will fail until a valid key is provided in Settings > Secrets.");
+  logger.warning("Warning: GEMINI_API_KEY is missing or placeholder. Nova AI features will fail until a valid key is provided in Settings > Secrets.");
 }
 
 const ai = new GoogleGenAI({
@@ -1700,10 +1700,10 @@ if (firebaseConfigProject) {
       location: VERTEX_LOCATION,
     });
   } catch (e) {
-    console.warn("Note: Vertex AI client failed to initialize. Nova chat will continue running on the Gemini Developer API unless NOVA_CHAT_PROVIDER=vertex is unset.", e);
+    logger.warning("Note: Vertex AI client failed to initialize. Nova chat will continue running on the Gemini Developer API unless NOVA_CHAT_PROVIDER=vertex is unset.", errorFields(e));
   }
 } else {
-  console.warn("Note: firebaseConfigProject is not set, so the Vertex AI client was not initialized. Set NOVA_CHAT_PROVIDER=vertex only once this resolves.");
+  logger.warning("Note: firebaseConfigProject is not set, so the Vertex AI client was not initialized. Set NOVA_CHAT_PROVIDER=vertex only once this resolves.");
 }
 
 // Anthropic (Claude) Initialization
@@ -1713,7 +1713,7 @@ if (firebaseConfigProject) {
 // currently on. See callClaudeNovaChat for where this is actually used.
 const anthropicApiKey = process.env.ANTHROPIC_API_KEY;
 if (!anthropicApiKey) {
-  console.warn("Note: ANTHROPIC_API_KEY is not set. Nova chat will continue running on Gemini; set NOVA_CHAT_PROVIDER=claude and this key together to enable Claude for Nova chat.");
+  logger.warning("Note: ANTHROPIC_API_KEY is not set. Nova chat will continue running on Gemini; set NOVA_CHAT_PROVIDER=claude and this key together to enable Claude for Nova chat.");
 }
 const anthropic = anthropicApiKey ? new Anthropic({ apiKey: anthropicApiKey }) : null;
 
@@ -1729,7 +1729,7 @@ const anthropic = anthropicApiKey ? new Anthropic({ apiKey: anthropicApiKey }) :
 // regardless of which provider it is.
 const openaiApiKey = process.env.OPENAI_API_KEY;
 if (!openaiApiKey) {
-  console.warn("Note: OPENAI_API_KEY is not set. No feature currently depends on this - it's unused until a real consumer is built.");
+  logger.warning("Note: OPENAI_API_KEY is not set. No feature currently depends on this - it's unused until a real consumer is built.");
 }
 const openai = openaiApiKey ? new OpenAI({ apiKey: openaiApiKey }) : null;
 
@@ -1743,7 +1743,7 @@ if (pushConfigured) {
     VAPID_PRIVATE_KEY
   );
 } else {
-  console.warn("[Push] VAPID keys not configured — push notifications are disabled until they are.");
+  logger.warning("[Push] VAPID keys not configured — push notifications are disabled until they are.");
 }
 
 // API Routes
@@ -2503,7 +2503,7 @@ RESPONSE CONSTRAINTS (MANDATORY):
       return { systemInstructionsAddendum: "", metadata };
     }
   } catch (err) {
-    console.warn("Context Builder failed to retrieve or transform safely.", err);
+    logger.warning("Context Builder failed to retrieve or transform safely.", errorFields(err));
     metadata.rationale = "This response was constructed without any personal context because permissions are disabled.";
     return { systemInstructionsAddendum: "", metadata };
   }
@@ -2732,7 +2732,7 @@ async function executeNovaTool(name: string, args: Record<string, unknown>, uid:
     // and failing the entire conversation turn over one tool's transient
     // problem. Logged server-side for real visibility; the model only
     // sees a generic message, not internal error details.
-    console.error(`Nova tool "${name}" threw unexpectedly:`, err);
+    logger.error(`Nova tool "${name}" threw unexpectedly:`, errorFields(err));
     return { error: `The ${name} tool is temporarily unavailable. Continue without it if possible, or let the user know this specific capability isn't working right now.` };
   }
 }
@@ -2863,13 +2863,9 @@ async function callClaudeNovaChat(
 // client - the res.json() calls at each site keep their own generic,
 // unchanged "safe operational error occurred" message.
 function logRouteError(label: string, error: any): void {
-  console.error(
+  logger.error(
     label,
-    JSON.stringify({
-      name: error?.name,
-      message: error?.message,
-      status: error?.status ?? error?.code,
-    })
+    { errorName: error?.name, errorMessage: error?.message, status: error?.status ?? error?.code }
   );
 }
 
@@ -2929,7 +2925,7 @@ app.post("/api/nova/chat", novaChatLimiter, verifyAppCheck, authenticateFirebase
         contextAddendum = contextResult.systemInstructionsAddendum + styleAddendum;
         contextMetadata = contextResult.metadata;
       } catch (e) {
-        console.warn("Nova context build failed - continuing without it.", e);
+        logger.warning("Nova context build failed - continuing without it.", errorFields(e));
       }
     }
 
@@ -3235,7 +3231,7 @@ app.post("/api/nova/diagnose", novaDiagnoseLimiter, verifyAppCheck, authenticate
         });
       } catch (persistErr: any) {
         // Don't fail the whole diagnosis just because the baseline write hiccuped.
-        console.error("[Diagnose] baseline persistence error:", persistErr.message);
+        logger.error("[Diagnose] baseline persistence error:", errorFields(persistErr));
       }
     }
 
@@ -3412,14 +3408,14 @@ ${NOVA_ONE_SHOT_SAFETY_FLOOR}`
       }
     } catch (modelError: any) {
       clearTimeout(timeoutId);
-      console.error("Voice Journal Gemini error:", modelError);
+      logger.error("Voice Journal Gemini error:", errorFields(modelError));
       if (modelError.name === 'AbortError') {
         return res.status(504).json({ error: "Voice analysis request timed out." });
       }
       throw modelError;
     }
   } catch (error: any) {
-    console.error("Voice Journal API error:", error);
+    logger.error("Voice Journal API error:", errorFields(error));
     res.status(500).json({ error: "Check-in analysis failed. Please try speaking clearly." });
   }
 });
@@ -3523,7 +3519,7 @@ ${styleToneAddendum}`,
       throw modelError;
     }
   } catch (error: any) {
-    console.error("One Less Thing API error:", error);
+    logger.error("One Less Thing API error:", errorFields(error));
     res.status(500).json({ error: "Could not reach Nova for analysis right now." });
   }
 });
@@ -3621,7 +3617,7 @@ Respond strictly as JSON, no markdown:
       throw modelError;
     }
   } catch (error: any) {
-    console.error("Reset Studio reframe API error:", error);
+    logger.error("Reset Studio reframe API error:", errorFields(error));
     res.status(500).json({ error: "Could not reach Nova for analysis right now." });
   }
 });
@@ -3861,7 +3857,7 @@ const logAdminAction = async (req: any, action: string, targetUid: string, targe
     // grants and role changes) leaves zero trace, so log the full entry
     // inline - not just the error - so it's recoverable from Cloud Run logs
     // even though it never reached Firestore.
-    console.error("Failed to write admin audit log:", err.message, JSON.stringify(entry));
+    logger.error("Failed to write admin audit log", { ...errorFields(err), entry });
   }
 };
 
@@ -3924,11 +3920,11 @@ app.post("/api/auth/verify-email/send", verifyAppCheck, authenticateFirebaseUser
       // Soft-fail like every other Brevo-backed send in this app — the
       // person can just ask to resend, rather than seeing a hard error for
       // something that isn't actionable from their side.
-      console.error(`[AUTH] generateEmailVerificationLink failed. ${ACCOUNT_LINK_PERMISSION_HINT}`, linkError?.message || linkError);
+      logger.error(`[AUTH] generateEmailVerificationLink failed. ${ACCOUNT_LINK_PERMISSION_HINT}`, errorFields(linkError));
     }
     res.json({ success: true });
   } catch (error: any) {
-    console.error("[AUTH] verify-email/send error:", error.message);
+    logger.error("[AUTH] verify-email/send error:", errorFields(error));
     res.status(500).json({ error: "Could not send verification email right now." });
   }
 });
@@ -3971,7 +3967,7 @@ app.post("/api/auth/password-reset/request", verifyAppCheck, passwordResetReques
       // no account — anything else (most likely the signBlob IAM permission)
       // is worth a clear, actionable log line.
       if (error?.code !== 'auth/user-not-found') {
-        console.error(`[AUTH] generatePasswordResetLink failed. ${ACCOUNT_LINK_PERMISSION_HINT}`, error?.message || error);
+        logger.error(`[AUTH] generatePasswordResetLink failed. ${ACCOUNT_LINK_PERMISSION_HINT}`, errorFields(error));
       }
     }
   })();
@@ -4071,7 +4067,7 @@ const setMfaEnabledClaim = async (uid: string, enabled: boolean) => {
     const existing = await getAuth().getUser(uid);
     await getAuth().setCustomUserClaims(uid, { ...(existing.customClaims || {}), mfaEnabled: enabled });
   } catch (error) {
-    console.error(`[MFA] Failed to sync mfaEnabled claim for ${uid} to ${enabled}:`, (error as Error).message);
+    logger.error(`[MFA] Failed to sync mfaEnabled claim for ${uid} to ${enabled}:`, errorFields(error));
   }
 };
 
@@ -4083,7 +4079,7 @@ app.get("/api/auth/mfa/status", verifyAppCheck, authenticateFirebaseUser, async 
     const data = snap.exists ? snap.data() : undefined;
     res.json({ enabled: data?.enabled === true, enrolledAt: data?.enrolledAt || null });
   } catch (error: any) {
-    console.error("[MFA] status error:", error.message);
+    logger.error("[MFA] status error:", errorFields(error));
     res.status(500).json({ error: "Could not check two-factor status right now." });
   }
 });
@@ -4107,7 +4103,7 @@ app.post("/api/auth/mfa/totp/enroll/start", verifyAppCheck, authenticateFirebase
     }, { merge: true });
     res.json({ otpauthUri, secretForManualEntry: secret });
   } catch (error: any) {
-    console.error("[MFA] enroll/start error:", error.message);
+    logger.error("[MFA] enroll/start error:", errorFields(error));
     res.status(500).json({ error: "Could not start two-factor setup right now." });
   }
 });
@@ -4166,7 +4162,7 @@ app.post("/api/auth/mfa/totp/enroll/confirm", verifyAppCheck, authenticateFireba
     // server only ever stores their hashes from this point on.
     res.json({ recoveryCodes, mfaSessionToken: signMfaSessionToken(user.uid) });
   } catch (error: any) {
-    console.error("[MFA] enroll/confirm error:", error.message);
+    logger.error("[MFA] enroll/confirm error:", errorFields(error));
     res.status(500).json({ error: "Could not confirm two-factor setup right now." });
   }
 });
@@ -4238,7 +4234,7 @@ const verifyMfaAttempt = async (
     // Deterministic signal only (attempt count, lockout state) — never a
     // record of what was guessed or any inference about the person.
     if (!success) {
-      console.warn(`[MFA] Failed verification attempt for uid ${uid} (failedAttempts=${lockout.failedAttempts}${lockout.lockedUntil ? ', now locked out until ' + lockout.lockedUntil : ''}).`);
+      logger.warning(`[MFA] Failed verification attempt for uid ${uid} (failedAttempts=${lockout.failedAttempts}${lockout.lockedUntil ? ', now locked out until ' + lockout.lockedUntil : ''}).`);
     }
 
     return success ? { ok: true } : { ok: false, reason: 'invalid' };
@@ -4264,7 +4260,7 @@ app.post("/api/auth/mfa/totp/verify-at-signin", verifyAppCheck, authenticateFire
     }
     res.json({ verified: true, mfaSessionToken: signMfaSessionToken(user.uid) });
   } catch (error: any) {
-    console.error("[MFA] verify-at-signin error:", error.message);
+    logger.error("[MFA] verify-at-signin error:", errorFields(error));
     res.status(500).json({ error: "Could not verify your code right now." });
   }
 });
@@ -4316,7 +4312,7 @@ app.post("/api/auth/mfa/totp/disable", verifyAppCheck, authenticateFirebaseUser,
 
     res.json({ success: true });
   } catch (error: any) {
-    console.error("[MFA] disable error:", error.message);
+    logger.error("[MFA] disable error:", errorFields(error));
     res.status(500).json({ error: "Could not turn off two-factor authentication right now." });
   }
 });
@@ -4631,7 +4627,7 @@ app.post("/api/integrations/:service/connect", verifyAppCheck, authenticateFireb
 
     res.json({ authorizeUrl: `${provider.authorizeUrl}?${params.toString()}` });
   } catch (err: any) {
-    console.error(`[Integrations] connect error:`, err.message);
+    logger.error(`[Integrations] connect error:`, errorFields(err));
     res.status(500).json({ error: err.message });
   }
 });
@@ -4685,13 +4681,13 @@ app.get("/api/integrations/callback/:service", async (req, res) => {
 
     const tokenBody = await tokenResponse.json();
     if (!tokenResponse.ok || tokenBody?.ok === false || tokenBody?.error) {
-      console.error(`[Integrations] ${service} token exchange failed:`, tokenBody);
+      logger.error(`[Integrations] ${service} token exchange failed`, { responseBody: tokenBody });
       return failRedirect("token_exchange_failed");
     }
 
     const { accessToken, refreshToken, expiresIn } = provider.extractTokens(tokenBody);
     if (!accessToken) {
-      console.error(`[Integrations] ${service} response had no access token:`, tokenBody);
+      logger.error(`[Integrations] ${service} response had no access token`, { responseBody: tokenBody });
       return failRedirect("no_access_token");
     }
 
@@ -4716,7 +4712,7 @@ app.get("/api/integrations/callback/:service", async (req, res) => {
 
     res.redirect(`${appBase}/?integration=${service}&status=connected`);
   } catch (err: any) {
-    console.error(`[Integrations] ${service} callback error:`, err.message);
+    logger.error(`[Integrations] ${service} callback error:`, errorFields(err));
     return failRedirect("internal_error");
   }
 });
@@ -4737,7 +4733,7 @@ app.get("/api/integrations/status", verifyAppCheck, authenticateFirebaseUser, as
     }
     res.json({ integrations: statusByService });
   } catch (err: any) {
-    console.error("[Integrations] status error:", err.message);
+    logger.error("[Integrations] status error:", errorFields(err));
     res.status(500).json({ error: err.message });
   }
 });
@@ -4758,7 +4754,7 @@ app.post("/api/integrations/:service/disconnect", verifyAppCheck, authenticateFi
     });
     res.json({ success: true });
   } catch (err: any) {
-    console.error("[Integrations] disconnect error:", err.message);
+    logger.error("[Integrations] disconnect error:", errorFields(err));
     res.status(500).json({ error: err.message });
   }
 });
@@ -4884,7 +4880,7 @@ app.post("/api/signals/slack/tick", verifyAppCheck, authenticateFirebaseUser, as
     await signalRef.set(state);
     res.json({ ticked: true, state: redactSlackState(state) });
   } catch (err: any) {
-    console.error("[Signals] slack tick error:", err.message);
+    logger.error("[Signals] slack tick error:", errorFields(err));
     res.status(500).json({ error: "Could not update Slack signal." });
   }
 });
@@ -4899,7 +4895,7 @@ app.get("/api/signals/slack", verifyAppCheck, authenticateFirebaseUser, async (r
     }
     res.json({ state: redactSlackState(signalDoc.data()!) });
   } catch (err: any) {
-    console.error("[Signals] slack read error:", err.message);
+    logger.error("[Signals] slack read error:", errorFields(err));
     res.status(500).json({ error: err.message });
   }
 });
@@ -4939,7 +4935,7 @@ async function getValidAccessToken(uid: string, service: string): Promise<string
 
     const body = await tokenResponse.json();
     if (!tokenResponse.ok || body?.error) {
-      console.error(`[Integrations] ${service} token refresh failed:`, body);
+      logger.error(`[Integrations] ${service} token refresh failed`, { responseBody: body });
       return data.accessToken || null;
     }
     const { accessToken, refreshToken, expiresIn } = provider.extractTokens(body);
@@ -4954,7 +4950,7 @@ async function getValidAccessToken(uid: string, service: string): Promise<string
 
     return accessToken;
   } catch (e) {
-    console.error(`[Integrations] ${service} token refresh error:`, e);
+    logger.error(`[Integrations] ${service} token refresh error:`, errorFields(e));
     return data.accessToken || null;
   }
 }
@@ -5011,7 +5007,7 @@ app.post("/api/signals/jira/refresh", verifyAppCheck, authenticateFirebaseUser, 
 
     res.json({ refreshed: true, state: signal });
   } catch (err: any) {
-    console.error("[Signals] jira refresh error:", err.message);
+    logger.error("[Signals] jira refresh error:", errorFields(err));
     res.status(500).json({ error: "Could not refresh Jira data." });
   }
 });
@@ -5078,7 +5074,7 @@ app.post("/api/signals/asana/refresh", verifyAppCheck, authenticateFirebaseUser,
 
     res.json({ refreshed: true, state: signal });
   } catch (err: any) {
-    console.error("[Signals] asana refresh error:", err.message);
+    logger.error("[Signals] asana refresh error:", errorFields(err));
     res.status(500).json({ error: "Could not refresh Asana data." });
   }
 });
@@ -5165,7 +5161,7 @@ app.post("/api/signals/monday/refresh", verifyAppCheck, authenticateFirebaseUser
 
     res.json({ refreshed: true, state: signal });
   } catch (err: any) {
-    console.error("[Signals] monday refresh error:", err.message);
+    logger.error("[Signals] monday refresh error:", errorFields(err));
     res.status(500).json({ error: "Could not refresh Monday.com data." });
   }
 });
@@ -5245,7 +5241,7 @@ app.post("/api/signals/calendly/refresh", verifyAppCheck, authenticateFirebaseUs
 
     res.json({ refreshed: true, state: signal });
   } catch (err: any) {
-    console.error("[Signals] calendly refresh error:", err.message);
+    logger.error("[Signals] calendly refresh error:", errorFields(err));
     res.status(500).json({ error: "Could not refresh Calendly data." });
   }
 });
@@ -5309,7 +5305,7 @@ app.post("/api/signals/calendar", verifyAppCheck, authenticateFirebaseUser, asyn
     });
     res.json({ success: true });
   } catch (err: any) {
-    console.error("[Signals] calendar write error:", err.message);
+    logger.error("[Signals] calendar write error:", errorFields(err));
     res.status(500).json({ error: "Could not save calendar signal." });
   }
 });
@@ -5321,7 +5317,7 @@ app.get("/api/signals/calendar", verifyAppCheck, authenticateFirebaseUser, async
     const doc = await db.collection("users").doc(uid).collection("live_signals").doc("calendar").get();
     res.json({ state: doc.exists ? doc.data() : null });
   } catch (err: any) {
-    console.error("[Signals] calendar read error:", err.message);
+    logger.error("[Signals] calendar read error:", errorFields(err));
     res.status(500).json({ error: err.message });
   }
 });
@@ -5349,7 +5345,7 @@ app.post("/api/signals/gmail", verifyAppCheck, authenticateFirebaseUser, async (
     });
     res.json({ success: true });
   } catch (err: any) {
-    console.error("[Signals] gmail write error:", err.message);
+    logger.error("[Signals] gmail write error:", errorFields(err));
     res.status(500).json({ error: "Could not save Gmail signal." });
   }
 });
@@ -5361,7 +5357,7 @@ app.get("/api/signals/gmail", verifyAppCheck, authenticateFirebaseUser, async (r
     const doc = await db.collection("users").doc(uid).collection("live_signals").doc("gmail").get();
     res.json({ state: doc.exists ? doc.data() : null });
   } catch (err: any) {
-    console.error("[Signals] gmail read error:", err.message);
+    logger.error("[Signals] gmail read error:", errorFields(err));
     res.status(500).json({ error: err.message });
   }
 });
@@ -5443,7 +5439,7 @@ app.get("/api/signals/blend", verifyAppCheck, authenticateFirebaseUser, async (r
       baselineComputedAt: baseline.computedAt,
     });
   } catch (err: any) {
-    console.error("[Signals] blend error:", err.message);
+    logger.error("[Signals] blend error:", errorFields(err));
     res.status(500).json({ error: "Could not compute archetype blend." });
   }
 });
@@ -5586,7 +5582,7 @@ app.post("/api/signals/recovery-explain", verifyAppCheck, authenticateFirebaseUs
 
     res.json({ score, factors, hasRealSignals });
   } catch (err: any) {
-    console.error("[Signals] recovery-explain error:", err.message);
+    logger.error("[Signals] recovery-explain error:", errorFields(err));
     res.status(500).json({ error: "Could not compute explainable recovery score." });
   }
 });
@@ -5638,7 +5634,7 @@ const logAutopilotAction = async (uid: string, action: string, detail: Record<st
     });
   } catch (e) {
     // A logging failure shouldn't mask the actual action's result to the caller.
-    console.error("[Boundary Autopilot] audit log failed:", e);
+    logger.error("[Boundary Autopilot] audit log failed:", errorFields(e));
   }
 };
 
@@ -5659,7 +5655,7 @@ app.get("/api/boundary-autopilot/slack/users", verifyAppCheck, authenticateFireb
       .map((m: any) => ({ id: m.id, name: m.real_name || m.name, avatar: m.profile?.image_48 }));
     res.json({ members });
   } catch (err: any) {
-    console.error("[Boundary Autopilot] slack users error:", err.message);
+    logger.error("[Boundary Autopilot] slack users error:", errorFields(err));
     res.status(500).json({ error: "Could not load Slack contacts." });
   }
 });
@@ -5694,7 +5690,7 @@ app.post("/api/boundary-autopilot/slack/send", verifyAppCheck, authenticateFireb
     await logAutopilotAction(uid, "slack_send", { recipientId, recipientName, message }, true);
     res.json({ success: true });
   } catch (err: any) {
-    console.error("[Boundary Autopilot] slack send error:", err.message);
+    logger.error("[Boundary Autopilot] slack send error:", errorFields(err));
     await logAutopilotAction(uid, "slack_send", { error: err.message }, false);
     res.status(500).json({ error: "Could not send the message." });
   }
@@ -5720,7 +5716,7 @@ app.post("/api/boundary-autopilot/slack/dnd", verifyAppCheck, authenticateFireba
     await logAutopilotAction(uid, "slack_dnd", { minutes }, true);
     res.json({ success: true, snoozeEndtime: result.snooze_endtime });
   } catch (err: any) {
-    console.error("[Boundary Autopilot] slack dnd error:", err.message);
+    logger.error("[Boundary Autopilot] slack dnd error:", errorFields(err));
     await logAutopilotAction(uid, "slack_dnd", { error: err.message }, false);
     res.status(500).json({ error: "Could not set Do Not Disturb." });
   }
@@ -5748,7 +5744,7 @@ app.post("/api/boundary-autopilot/slack/status", verifyAppCheck, authenticateFir
     await logAutopilotAction(uid, "slack_status", { statusText, statusEmoji }, true);
     res.json({ success: true });
   } catch (err: any) {
-    console.error("[Boundary Autopilot] slack status error:", err.message);
+    logger.error("[Boundary Autopilot] slack status error:", errorFields(err));
     await logAutopilotAction(uid, "slack_status", { error: err.message }, false);
     res.status(500).json({ error: "Could not update your Slack status." });
   }
@@ -5773,7 +5769,7 @@ app.post("/api/boundary-autopilot/log-calendar-decline", verifyAppCheck, authent
     await logAutopilotAction(uid, "calendar_decline", { eventSummary: parsed.data.eventSummary }, true);
     res.json({ success: true });
   } catch (err: any) {
-    console.error("[Boundary Autopilot] calendar decline log error:", err.message);
+    logger.error("[Boundary Autopilot] calendar decline log error:", errorFields(err));
     res.status(500).json({ error: "Could not log this action." });
   }
 });
@@ -5785,7 +5781,7 @@ app.get("/api/boundary-autopilot/history", verifyAppCheck, authenticateFirebaseU
       .orderBy("takenAt", "desc").limit(20).get();
     res.json({ actions: snap.docs.map((d) => ({ id: d.id, ...d.data() })) });
   } catch (err: any) {
-    console.error("[Boundary Autopilot] history error:", err.message);
+    logger.error("[Boundary Autopilot] history error:", errorFields(err));
     res.status(500).json({ error: "Could not load action history." });
   }
 });
@@ -5814,7 +5810,7 @@ const sendPushToUser = async (uid: string, payload: { title: string; body: strin
       if (err.statusCode === 404 || err.statusCode === 410) {
         await doc.ref.delete();
       } else {
-        console.error(`[Push] send failed for uid ${uid}:`, err.message);
+        logger.error(`[Push] send failed for uid ${uid}:`, errorFields(err));
       }
     }
   }
@@ -5853,7 +5849,7 @@ app.post("/api/push/subscribe", verifyAppCheck, authenticateFirebaseUser, async 
     });
     res.json({ success: true });
   } catch (err: any) {
-    console.error("[Push] subscribe error:", err.message);
+    logger.error("[Push] subscribe error:", errorFields(err));
     res.status(500).json({ error: "Could not save your push subscription." });
   }
 });
@@ -5872,7 +5868,7 @@ app.post("/api/push/unsubscribe", verifyAppCheck, authenticateFirebaseUser, asyn
     }
     res.json({ success: true });
   } catch (err: any) {
-    console.error("[Push] unsubscribe error:", err.message);
+    logger.error("[Push] unsubscribe error:", errorFields(err));
     res.status(500).json({ error: "Could not remove your push subscription." });
   }
 });
@@ -5897,7 +5893,7 @@ app.post("/api/pulse/report", verifyAppCheck, authenticateFirebaseUser, async (r
     });
     res.json({ success: true });
   } catch (err: any) {
-    console.error("[Pulse] report error:", err.message);
+    logger.error("[Pulse] report error:", errorFields(err));
     res.status(500).json({ error: "Could not report pulse status." });
   }
 });
@@ -5976,7 +5972,7 @@ const runScheduledPulseCheck = async () => {
       await pulseDoc.ref.set({ lastPushSentAt: new Date().toISOString() }, { merge: true });
     }
   } catch (err: any) {
-    console.error("[Push] scheduled pulse check error:", err.message);
+    logger.error("[Push] scheduled pulse check error:", errorFields(err));
   }
 };
 
@@ -6302,10 +6298,12 @@ app.get("/api/admin/summary", verifyAppCheck, authenticateFirebaseUser, async (r
 // data-retention.ts), and the real (static) rate-limit configuration.
 // Deliberately does NOT claim uptime, error rate, or "last cron run
 // succeeded/failed" - none of that is persisted anywhere in this
-// codebase today (every failure path here only ever does console.error/
-// console.warn - see docs/INCIDENT_RESPONSE.md section 5), and
-// fabricating it here would be exactly the kind of made-up-but-
-// plausible number the Command Centre spec rules out.
+// codebase today (every failure path here only ever logs structurally
+// to stdout/stderr via logger.ts, which Cloud Logging picks up but this
+// route does not read back - see docs/INCIDENT_RESPONSE.md section 5
+// and docs/OBSERVABILITY.md), and fabricating it here would be exactly
+// the kind of made-up-but-plausible number the Command Centre spec
+// rules out.
 app.get("/api/admin/system-health", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
   try {
     requireAdmin(req);
@@ -6330,9 +6328,9 @@ app.get("/api/admin/system-health", verifyAppCheck, authenticateFirebaseUser, as
         { id: 'guardian_support_invitation', label: 'Guardian Support Invitation', enabled: guardianSupportInvitationEnabled(process.env.GUARDIAN_SUPPORT_INVITATION_ENABLED), defaultPolarity: 'off' as const },
       ],
       // Static config, not live violation counts - rate-limit rejections
-      // are only ever console.warn'd (logRateLimitExceeded), never
-      // persisted anywhere, so there is no real "N rejections today" to
-      // report.
+      // are only ever logged (logRateLimitExceeded, via logger.warning),
+      // never persisted anywhere, so there is no real "N rejections
+      // today" to report.
       rateLimits: [
         { name: 'apiLimiter', windowMinutes: 15, max: 600, note: 'Default per-IP ceiling across the whole API' },
         { name: 'smsLimiter', windowMinutes: 15, max: 10, note: 'SMS costs real money per message' },
@@ -6437,7 +6435,7 @@ app.get("/api/admin/users", verifyAppCheck, authenticateFirebaseUser, async (req
     if (err.message?.includes("Forbidden")) {
       return res.status(403).json({ error: err.message });
     }
-    console.error("[ADMIN] Error fetching users:", err.message);
+    logger.error("[ADMIN] Error fetching users:", errorFields(err));
     res.status(500).json({ error: "Failed to fetch admin data." });
   }
 });
@@ -7823,7 +7821,7 @@ const logOrgAuditAction = async (
     // we log the full entry inline rather than block/retry - otherwise a
     // Firestore hiccup here leaves an org's own compliance trail with a
     // silent gap and nothing pointing to what was missed.
-    console.error("Failed to write org audit log:", err.message, JSON.stringify(entry));
+    logger.error("Failed to write org audit log", { ...errorFields(err), entry });
   }
 };
 
@@ -7846,7 +7844,7 @@ const recordPrivacyChangeReceipt = async (
       createdAt: FieldValue.serverTimestamp(),
     });
   } catch (err: any) {
-    console.error("Failed to write privacy change receipt:", err.message);
+    logger.error("Failed to write privacy change receipt:", errorFields(err));
   }
 };
 
@@ -11582,7 +11580,7 @@ app.post("/api/ally/invite", verifyAppCheck, authenticateFirebaseUser, async (re
       // silently falling back to "" here used to produce a bare relative
       // /ally/<token> link with no domain, which is exactly the kind of
       // "nonsensical link" a recipient can't click.
-      console.error("[Ally Invite] APP_URL is not configured on the server - cannot build a real invite link.");
+      logger.error("[Ally Invite] APP_URL is not configured on the server - cannot build a real invite link.");
       return res.status(500).json({ error: "Could not build the invite link. Please try again shortly." });
     }
     const link = `${appBase}/ally/${shareToken}`;
@@ -11894,11 +11892,11 @@ async function processNudgeSchedules() {
           lastSendResult: result.success ? 'sent' : 'failed',
         });
       } catch (innerErr: any) {
-        console.error(`[NudgeScheduler] Failed processing schedule ${doc.id}:`, innerErr.message);
+        logger.error(`[NudgeScheduler] Failed processing schedule ${doc.id}:`, errorFields(innerErr));
       }
     }
   } catch (err: any) {
-    console.error("[NudgeScheduler] Failed to process nudge schedules:", err.message);
+    logger.error("[NudgeScheduler] Failed to process nudge schedules:", errorFields(err));
   }
 }
 
@@ -11975,16 +11973,16 @@ async function processInactivityRetentionSweep() {
             deleted++;
           }
         } catch (innerErr: any) {
-          console.error(`[Retention] Failed processing uid ${authUser.uid}:`, innerErr?.message || innerErr);
+          logger.error(`[Retention] Failed processing uid ${authUser.uid}:`, errorFields(innerErr));
         }
       }
     } while (pageToken);
 
     if (warned || deleted) {
-      console.log(`[Retention] Sweep complete - warned ${warned}, deleted ${deleted}.`);
+      logger.info(`[Retention] Sweep complete - warned ${warned}, deleted ${deleted}.`);
     }
   } catch (err: any) {
-    console.error("[Retention] Sweep failed:", err?.message || err);
+    logger.error("[Retention] Sweep failed:", errorFields(err));
   }
 }
 
@@ -12234,7 +12232,7 @@ app.post("/api/audit-log", verifyAppCheck, authenticateFirebaseUser, async (req,
     });
     res.json({ success: true });
   } catch (err: any) {
-    console.error("[Audit] write error:", err.message);
+    logger.error("[Audit] write error:", errorFields(err));
     res.status(500).json({ error: "Could not save that audit entry." });
   }
 });
@@ -12716,7 +12714,7 @@ app.get("/api/legal/documents", verifyAppCheck, async (req, res) => {
     }));
     res.json({ documents: docs });
   } catch (err: any) {
-    console.error("[Legal] Failed to list documents:", err.message);
+    logger.error("[Legal] Failed to list documents:", errorFields(err));
     res.status(500).json({ error: "Could not load legal documents right now." });
   }
 });
@@ -12731,7 +12729,7 @@ app.get("/api/legal/documents/:docType", verifyAppCheck, async (req, res) => {
     const doc = await getLegalDocument(db, docType);
     res.json(doc);
   } catch (err: any) {
-    console.error("[Legal] Failed to load document:", err.message);
+    logger.error("[Legal] Failed to load document:", errorFields(err));
     res.status(500).json({ error: "Could not load this document right now." });
   }
 });
@@ -12754,7 +12752,7 @@ app.post("/api/legal/documents/:docType/accept", legalAcceptLimiter, verifyAppCh
     });
     res.json({ accepted: true, docType, version: doc.version });
   } catch (err: any) {
-    console.error("[Legal] Failed to record acceptance:", err.message);
+    logger.error("[Legal] Failed to record acceptance:", errorFields(err));
     res.status(500).json({ error: "Could not record acceptance right now." });
   }
 });
@@ -12779,7 +12777,7 @@ app.get("/api/legal/acceptance-status", verifyAppCheck, authenticateFirebaseUser
     }
     res.json({ outstanding });
   } catch (err: any) {
-    console.error("[Legal] Failed to check acceptance status:", err.message);
+    logger.error("[Legal] Failed to check acceptance status:", errorFields(err));
     res.status(500).json({ error: "Could not check acceptance status right now." });
   }
 });
@@ -12823,7 +12821,7 @@ app.post("/api/admin/legal/:docType/publish", verifyAppCheck, authenticateFireba
     });
     res.json({ published: true, docType, version: parsed.data.version });
   } catch (err: any) {
-    console.error("[Legal] Failed to publish document:", err.message);
+    logger.error("[Legal] Failed to publish document:", errorFields(err));
     res.status(500).json({ error: "Could not publish this document right now." });
   }
 });
@@ -12881,7 +12879,7 @@ app.get("/api/user/export", exportLimiter, verifyAppCheck, authenticateFirebaseU
       collections: data,
     });
   } catch (err: any) {
-    console.error("[Export] failed:", err?.message || err);
+    logger.error("[Export] failed:", errorFields(err));
     res.status(500).json({ error: "Could not build your data export right now. Please try again." });
   }
 });
@@ -12957,7 +12955,7 @@ async function eraseUserAccount(uid: string): Promise<{ authDeleted: boolean }> 
     await getAuth().deleteUser(uid);
   } catch (e: any) {
     authDeleted = false;
-    console.error("[Delete] auth account deletion failed:", e?.message || e);
+    logger.error("[Delete] auth account deletion failed:", errorFields(e));
   }
 
   return { authDeleted };
@@ -12969,7 +12967,7 @@ app.post("/api/user/delete-account", verifyAppCheck, authenticateFirebaseUser, a
     const { authDeleted } = await eraseUserAccount(user.uid);
     res.json({ success: true, authDeleted });
   } catch (err: any) {
-    console.error("[Delete] failed:", err?.message || err);
+    logger.error("[Delete] failed:", errorFields(err));
     res.status(500).json({ error: "The deletion did not complete. Some data may have been removed already - please try again, and contact support if this keeps happening." });
   }
 });
@@ -14217,7 +14215,7 @@ ${NOVA_ONE_SHOT_SAFETY_FLOOR}`;
 
     res.json(validated.data);
   } catch (err: any) {
-    console.error("[Nova] resentment analysis error:", err.message);
+    logger.error("[Nova] resentment analysis error:", errorFields(err));
     res.status(500).json({ error: "Could not analyze that right now." });
   }
 });
@@ -14467,7 +14465,7 @@ ${NOVA_ONE_SHOT_SAFETY_FLOOR}`;
 
     res.json(validated.data);
   } catch (err: any) {
-    console.error("[Grounding] reflect error:", err.message);
+    logger.error("[Grounding] reflect error:", errorFields(err));
     res.status(500).json({ error: "Could not build that reflection right now." });
   }
 });
@@ -14498,7 +14496,7 @@ app.post("/api/grounding/analytics-event", verifyAppCheck, authenticateFirebaseU
     });
     res.json({ recorded: true });
   } catch (error: any) {
-    console.error("[Grounding analytics event] error:", error?.message || error);
+    logger.error("[Grounding analytics event] error:", errorFields(error));
     res.status(500).json({ error: "Could not record that." });
   }
 });
@@ -14534,7 +14532,7 @@ app.post("/api/movement/analytics-event", verifyAppCheck, authenticateFirebaseUs
     });
     res.json({ recorded: true });
   } catch (error: any) {
-    console.error("[Movement analytics event] error:", error?.message || error);
+    logger.error("[Movement analytics event] error:", errorFields(error));
     res.status(500).json({ error: "Could not record that." });
   }
 });
@@ -14571,7 +14569,7 @@ app.post("/api/recovery-recipes/analytics-event", verifyAppCheck, authenticateFi
     });
     res.json({ recorded: true });
   } catch (error: any) {
-    console.error("[Recovery Recipes analytics event] error:", error?.message || error);
+    logger.error("[Recovery Recipes analytics event] error:", errorFields(error));
     res.status(500).json({ error: "Could not record that." });
   }
 });
@@ -14716,7 +14714,7 @@ ${NOVA_ONE_SHOT_SAFETY_FLOOR}`;
 
     res.json(validated.data);
   } catch (err: any) {
-    console.error("[Recovery Recipes] enhance error:", err.message);
+    logger.error("[Recovery Recipes] enhance error:", errorFields(err));
     // Section 29/30/38: AI must remain optional and the recipe must
     // already be complete without it - a failure here is never meant to
     // block the user, just an empty/no-op enhancement the client falls
@@ -14812,7 +14810,7 @@ ${NOVA_ONE_SHOT_SAFETY_FLOOR}`;
 
     res.json(validated.data);
   } catch (err: any) {
-    console.error("[Responsibility Reset] close error:", err.message);
+    logger.error("[Responsibility Reset] close error:", errorFields(err));
     // The close-out summary is a refinement on top of a conversation that
     // already happened, never a gate on finishing - a failure here must
     // never block the person from ending the session (see the client's
@@ -14900,7 +14898,7 @@ ${NOVA_ONE_SHOT_SAFETY_FLOOR}`;
 
     res.json(validated.data);
   } catch (err: any) {
-    console.error("[Grounding] community draft error:", err.message);
+    logger.error("[Grounding] community draft error:", errorFields(err));
     res.status(500).json({ error: "Could not draft that right now." });
   }
 });
@@ -15081,7 +15079,7 @@ export { app };
 if (process.env.TEST_MODE !== 'true') {
   setupVite().then(() => {
     const server = app.listen(PORT, "0.0.0.0", () => {
-      console.log(`Server running on http://localhost:${PORT}`);
+      logger.info(`Server running on http://localhost:${PORT}`);
     });
 
     const wss = new WebSocketServer({ server, path: "/api/nova/live" });
@@ -15257,7 +15255,7 @@ if (process.env.TEST_MODE !== 'true') {
         // errored before ever opening), there's no real usage to bill.
         if (novaLiveSessionStartedAt > 0) {
           recordCapabilityUsage(uid, 'nova_voice_minutes', liveQuota.plan, minutesUsedForSession(Date.now() - novaLiveSessionStartedAt))
-            .catch((e) => console.error(`[Nova Live] failed to record voice minutes for uid ${uid}:`, e?.message || e));
+            .catch((e) => logger.error(`[Nova Live] failed to record voice minutes for uid ${uid}:`, errorFields(e)));
         }
         try {
           liveSession?.close();
@@ -15298,7 +15296,7 @@ if (process.env.TEST_MODE !== 'true') {
             liveSession.sendRealtimeInput({ audio: { data: parsed.audio, mimeType: "audio/pcm;rate=16000" } });
           }
         } catch (e: any) {
-          console.error("[Nova Live] client message parse error:", e?.message || e);
+          logger.error("[Nova Live] client message parse error:", errorFields(e));
         }
       };
 
@@ -15338,7 +15336,7 @@ if (process.env.TEST_MODE !== 'true') {
           },
           callbacks: {
             onopen: () => {
-              console.log(`[Nova Live] session opened for uid ${uid}`);
+              logger.info(`[Nova Live] session opened for uid ${uid}`);
               // This is the one true "Nova can actually hear and respond
               // now" signal - billing, idle-timeout accounting, and the
               // client's own "live" UI state all key off it instead of
@@ -15441,16 +15439,16 @@ if (process.env.TEST_MODE !== 'true') {
                     try {
                       liveSession?.sendToolResponse({ functionResponses });
                     } catch (e: any) {
-                      console.error("[Nova Live] failed to send tool response:", e?.message || e);
+                      logger.error("[Nova Live] failed to send tool response:", errorFields(e));
                     }
                   })();
                 }
               } catch (e: any) {
-                console.error("[Nova Live] relay-to-client error:", e?.message || e);
+                logger.error("[Nova Live] relay-to-client error:", errorFields(e));
               }
             },
             onerror: (e: any) => {
-              console.error(`[Nova Live] upstream error for uid ${uid}:`, e?.message || e);
+              logger.error(`[Nova Live] upstream error for uid ${uid}:`, errorFields(e));
               endSession("Voice session hit an error and had to end.");
             },
             onclose: () => {
@@ -15459,7 +15457,7 @@ if (process.env.TEST_MODE !== 'true') {
           },
         });
       } catch (e: any) {
-        console.error("[Nova Live] failed to open upstream session:", e.message);
+        logger.error("[Nova Live] failed to open upstream session:", errorFields(e));
         clientWs.send(JSON.stringify({ error: "Could not start the live voice session. Please try again." }));
         return clientWs.close();
       }
@@ -15470,7 +15468,7 @@ if (process.env.TEST_MODE !== 'true') {
 
       clientWs.on("close", () => endSession());
       clientWs.on("error", (e) => {
-        console.error(`[Nova Live] client socket error for uid ${uid}:`, e.message);
+        logger.error(`[Nova Live] client socket error for uid ${uid}:`, errorFields(e));
         endSession();
       });
     });
