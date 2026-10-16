@@ -298,7 +298,10 @@ class DocRef {
 class FakeTransaction {
   constructor(private store: FakeStore) {}
 
-  async get(ref: DocRef): Promise<DocSnapshot> {
+  async get(ref: DocRef): Promise<DocSnapshot>;
+  async get(ref: CollectionRef): Promise<QuerySnapshot>;
+  async get(ref: DocRef | CollectionRef): Promise<DocSnapshot | QuerySnapshot> {
+    if (ref instanceof CollectionRef) return ref.get();
     return new DocSnapshot(this.store, ref.path, this.store.docs.get(ref.path));
   }
 
@@ -322,6 +325,10 @@ class FakeTransaction {
 }
 
 export class FakeFirestore {
+  // FIFO queue so concurrent runTransaction calls below never interleave
+  // their bodies - see the comment there for why this matters.
+  private txQueue: Promise<void> = Promise.resolve();
+
   constructor(private store: FakeStore) {}
   collection(id: string) { return new CollectionRef(this.store, id); }
   collectionGroup(id: string) { return new CollectionGroupRef(this.store, id); }
@@ -344,8 +351,23 @@ export class FakeFirestore {
     }
   }
 
+  // Real Firestore transactions are serialized against each other - two
+  // concurrent calls never interleave their reads and writes. The fake has
+  // no real I/O to naturally serialize on, and FakeTransaction.get is an
+  // async function (so awaiting it already yields to the microtask queue),
+  // so without this, two "concurrent" callers here could interleave at
+  // that await point exactly the way a real race does - silently
+  // defeating the whole point of a route using a transaction to close one.
   async runTransaction<T>(fn: (tx: FakeTransaction) => Promise<T>): Promise<T> {
-    return fn(new FakeTransaction(this.store));
+    let release!: () => void;
+    const prior = this.txQueue;
+    this.txQueue = new Promise((resolve) => { release = resolve; });
+    await prior;
+    try {
+      return await fn(new FakeTransaction(this.store));
+    } finally {
+      release();
+    }
   }
 }
 

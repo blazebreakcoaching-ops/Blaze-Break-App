@@ -206,7 +206,7 @@ describe('requireAuth: temporary privilege escalation expiry', () => {
     // claims before any of the three guards see them, with no Firestore
     // read and no cron job involved.
     const res = await request(app).get('/api/admin/admin-users').set(auth('owner_2'));
-    expect(res.status).toBe(500);
+    expect(res.status).toBe(403);
     expect(res.body.error).toMatch(/Forbidden/i);
   });
 });
@@ -250,7 +250,7 @@ describe('POST /api/admin/users/:uid/role (app-level AuthRole)', () => {
 describe('POST /api/admin/users/:uid/suspend', () => {
   it('requires admin', async () => {
     const res = await request(app).post('/api/admin/users/target_uid/suspend').set(auth(NOT_OWNER)).send({ suspend: true });
-    expect(res.status).toBe(500);
+    expect(res.status).toBe(403);
     expect(h.updateUser).not.toHaveBeenCalled();
   });
 

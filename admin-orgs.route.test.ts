@@ -38,7 +38,7 @@ beforeEach(() => {
 describe('POST /api/admin/orgs — orgId validation', () => {
   it('requires admin', async () => {
     const res = await request(app).post('/api/admin/orgs').set(auth(NOT_ADMIN)).send({ orgId: 'valid-org', name: 'Valid Org' });
-    expect(res.status).toBe(500); // requireAdmin throws, caught by the generic 500 handler in this route
+    expect(res.status).toBe(403);
   });
 
   it('accepts a valid lowercase-alphanumeric-hyphen orgId', async () => {
@@ -104,7 +104,7 @@ describe('GET /api/admin/orgs', () => {
 describe('GET /api/admin/orgs/:orgId', () => {
   it('requires admin', async () => {
     const res = await request(app).get('/api/admin/orgs/acme').set(auth(NOT_ADMIN));
-    expect(res.status).toBe(500);
+    expect(res.status).toBe(403);
   });
 
   it('returns 404 for a non-existent org', async () => {

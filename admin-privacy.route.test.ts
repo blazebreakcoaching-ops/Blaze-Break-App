@@ -47,7 +47,7 @@ beforeEach(() => {
 describe('GET /api/admin/privacy/retention-queue', () => {
   it('requires admin', async () => {
     const res = await request(app).get('/api/admin/privacy/retention-queue').set(auth(NOT_ADMIN));
-    expect(res.status).toBe(500);
+    expect(res.status).toBe(403);
   });
 
   it('reports the real sweep kill-switch state and policy numbers', async () => {

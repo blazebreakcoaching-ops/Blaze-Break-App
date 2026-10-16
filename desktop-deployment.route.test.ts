@@ -180,7 +180,7 @@ describe('POST /api/org/:orgId/devices/:deviceId/check-for-update', () => {
 describe('platform release-channel config', () => {
   it('a non-admin cannot set the release channel config', async () => {
     const res = await request(app).post('/api/admin/release-channels').set(auth('random_user')).send({ channel: 'stable', minVersion: '1.0.0', latestVersion: '1.5.0' });
-    expect(res.status).toBe(500);
+    expect(res.status).toBe(403);
     const doc = await request(app).get('/api/app-config/release-channels').set(auth('random_user'));
     expect(doc.body.channels).toEqual({});
   });

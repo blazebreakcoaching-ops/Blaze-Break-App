@@ -3747,6 +3747,34 @@ const getPermissionsForRole = (role: string): string[] => {
   }
 };
 
+// Narrower than requireAdmin: also checks the caller's role actually
+// carries the specific permission a route needs, per getPermissionsForRole
+// above - closing the gap where every requireAdmin-gated route accepted
+// any of the 8 platform-staff roles regardless of their own role's much
+// narrower stated permission set (e.g. a content_admin, whose own
+// permissions are only content.manage/nova.manage, could previously still
+// suspend a user account or create a B2B organisation - actions
+// getPermissionsForRole never granted them). Only applied to routes with
+// an unambiguous permission match; most requireAdmin routes stay as they
+// are - see the comment on each call site below for why.
+const requirePermission = (req: any, permission: string) => {
+  const user = requireAdmin(req);
+  // requireAdmin's own check also allows legacy admin/platform_admin
+  // boolean claims and the owner-bootstrap email with no `role` claim set
+  // at all - getPermissionsForRole(undefined) defaults to [], which would
+  // wrongly deny these accounts the exact blanket access requireAdmin
+  // just granted them. Treated as full access, the same as platform_owner.
+  const isLegacyOrBootstrapSuperAdmin = user.platform_admin === true || user.admin === true || isOwnerBootstrapEmail(user.email);
+  if (isLegacyOrBootstrapSuperAdmin) {
+    return user;
+  }
+  const perms = getPermissionsForRole(user.role);
+  if (!perms.includes(permission) && !perms.includes('admin.full_access')) {
+    throw new Error(`Forbidden: "${permission}" permission required.`);
+  }
+  return user;
+};
+
 const logAdminAction = async (req: any, action: string, targetUid: string, targetEmail: string, metadata: any) => {
   const actor = req.user;
   const entry = {
@@ -6265,7 +6293,7 @@ const ADMIN_USERS_PAGE_LIMIT = 100;
 
 app.get("/api/admin/users", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
   try {
-    requireAdmin(req);
+    requirePermission(req, "users.read");
     const db = getDb();
     const usersSnap = await db.collection("users").limit(ADMIN_USERS_PAGE_LIMIT).get();
     // Email/join-date/last-active come from the real Firebase Auth record,
@@ -6345,6 +6373,9 @@ app.get("/api/admin/users", verifyAppCheck, authenticateFirebaseUser, async (req
     // past the page size, instead of a real (if approximate) "100+".
     res.json({ users, total: users.length, capped: usersSnap.size >= ADMIN_USERS_PAGE_LIMIT });
   } catch (err: any) {
+    if (err.message?.includes("Forbidden")) {
+      return res.status(403).json({ error: err.message });
+    }
     console.error("[ADMIN] Error fetching users:", err.message);
     res.status(500).json({ error: "Failed to fetch admin data." });
   }
@@ -6352,7 +6383,7 @@ app.get("/api/admin/users", verifyAppCheck, authenticateFirebaseUser, async (req
 
 app.get("/api/admin/users/:uid", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
   try {
-    requireAdmin(req);
+    requirePermission(req, "users.read");
     const targetUid = req.params.uid;
     const db = getDb();
     
@@ -6372,7 +6403,7 @@ app.get("/api/admin/users/:uid", verifyAppCheck, authenticateFirebaseUser, async
       fingerprint: fingerprintDoc.exists ? fingerprintDoc.data() : null
     });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
   }
 });
 
@@ -6421,7 +6452,7 @@ app.post("/api/admin/users/:uid/role", verifyAppCheck, authenticateFirebaseUser,
 // provider record reconciled by a webhook.
 app.post("/api/admin/users/:uid/entitlement", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
   try {
-    requireAdmin(req);
+    requirePermission(req, "users.manage");
     const targetUid = req.params.uid;
     const validation = validateAdminGrant(req.body || {});
     if (!validation.valid) {
@@ -6458,7 +6489,7 @@ const AdminSuspendSchema = z.object({ suspend: z.boolean() }).strict();
 
 app.post("/api/admin/users/:uid/suspend", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
   try {
-    requireAdmin(req);
+    requirePermission(req, "users.manage");
     const parsed = AdminSuspendSchema.safeParse(req.body);
     if (!parsed.success) {
       return res.status(400).json({ error: '"suspend" must be a boolean.' });
@@ -6470,13 +6501,17 @@ app.post("/api/admin/users/:uid/suspend", verifyAppCheck, authenticateFirebaseUs
     await logAdminAction(req, suspend ? "suspend_user" : "unsuspend_user", targetUid, "", {});
     res.json({ success: true });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
   }
 });
 
 app.get("/api/admin/admin-users", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
   try {
-    requireAdmin(req);
+    // This is the Security & Audit view's own data source (see the
+    // mfaEnabled comment just below) - gated on audit.read, not a bare
+    // requireAdmin, so a role without that permission (e.g. content_admin)
+    // can't see the roster of the platform's own most powerful accounts.
+    requirePermission(req, "audit.read");
     const db = getDb();
     const snap = await db.collection("admin_users").get();
     // mfaEnabled lives on the Firebase Auth custom claims, not the
@@ -6496,7 +6531,7 @@ app.get("/api/admin/admin-users", verifyAppCheck, authenticateFirebaseUser, asyn
     }));
     res.json({ admins });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
   }
 });
 
@@ -6630,7 +6665,7 @@ app.delete("/api/admin/admin-users/:uid", verifyAppCheck, authenticateFirebaseUs
 
 app.get("/api/admin/audit-logs", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
   try {
-    requireAdmin(req);
+    requirePermission(req, "audit.read");
     const db = getDb();
     const snap = await db.collection("admin_audit_logs").orderBy("createdAt", "desc").limit(100).get();
     const logs = snap.docs.map((doc) => {
@@ -6639,7 +6674,7 @@ app.get("/api/admin/audit-logs", verifyAppCheck, authenticateFirebaseUser, async
     });
     res.json({ logs });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
   }
 });
 
@@ -7400,7 +7435,11 @@ app.get("/api/admin/feature-flags", verifyAppCheck, authenticateFirebaseUser, as
 
 app.post("/api/admin/feature-flags", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
   try {
-    requireAdmin(req);
+    // Toggling a platform-wide flag is a settings.manage action - the GET
+    // list just above stays open to any admin role (visibility into the
+    // Platform Controls tab), but flipping one is reserved the same way
+    // release-channels below is.
+    requirePermission(req, "settings.manage");
     const { featureId, enabled } = req.body;
     const db = getDb();
     await db.collection("public_feature_flags").doc(featureId).set({
@@ -7411,13 +7450,13 @@ app.post("/api/admin/feature-flags", verifyAppCheck, authenticateFirebaseUser, a
     await logAdminAction(req, "manage_feature_flags", "", featureId, { enabled });
     res.json({ success: true });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
   }
 });
 
 app.post("/api/admin/nova-settings", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
   try {
-    requireAdmin(req);
+    requirePermission(req, "nova.manage");
     const { settings } = req.body;
     const db = getDb();
     await db.collection("app_config").doc("nova_settings").set({
@@ -7428,13 +7467,13 @@ app.post("/api/admin/nova-settings", verifyAppCheck, authenticateFirebaseUser, a
     await logAdminAction(req, "manage_nova_settings", "", "", { settings });
     res.json({ success: true });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
   }
 });
 
 app.post("/api/admin/knowledge-chunks", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
   try {
-    requireAdmin(req);
+    requirePermission(req, "nova.manage");
     const { chunks } = req.body;
     const db = getDb();
     await db.collection("app_config").doc("knowledge_chunks").set({
@@ -7445,13 +7484,13 @@ app.post("/api/admin/knowledge-chunks", verifyAppCheck, authenticateFirebaseUser
     await logAdminAction(req, "manage_knowledge_chunks", "", "", { chunkCount: chunks?.length });
     res.json({ success: true });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
   }
 });
 
 app.post("/api/admin/content-library", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
   try {
-    requireAdmin(req);
+    requirePermission(req, "content.manage");
     const { content } = req.body;
     const db = getDb();
     await db.collection("app_config").doc("content_library").set({
@@ -7462,7 +7501,7 @@ app.post("/api/admin/content-library", verifyAppCheck, authenticateFirebaseUser,
     await logAdminAction(req, "manage_content_library", "", "", { contentType: typeof content });
     res.json({ success: true });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
   }
 });
 
@@ -7475,7 +7514,7 @@ const OrgIdSchema = z.string().min(1).max(100).regex(/^[a-z0-9-]+$/, 'orgId must
 
 app.post("/api/admin/orgs", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
   try {
-    requireAdmin(req);
+    requirePermission(req, "b2b.manage");
     const { orgId, name, privacyThreshold, initialAdminEmail } = req.body;
     const parsedOrgId = OrgIdSchema.safeParse(orgId);
     if (!parsedOrgId.success) {
@@ -7539,7 +7578,7 @@ app.post("/api/admin/orgs", verifyAppCheck, authenticateFirebaseUser, async (req
     await logAdminAction(req, "manage_organisation", "", orgId, { name, privacyThreshold });
     res.json({ success: true, joinCode });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
   }
 });
 
@@ -8330,7 +8369,7 @@ app.get("/api/org/:orgId/cost-inputs", verifyAppCheck, authenticateFirebaseUser,
 // before creating something new or looking up a join code to resend.
 app.get("/api/admin/orgs", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
   try {
-    requireAdmin(req);
+    requirePermission(req, "b2b.manage");
     const db = getDb();
     const snap = await db.collection("organisations").orderBy("createdAt", "desc").limit(200).get();
     const orgs = snap.docs.map(d => {
@@ -8348,7 +8387,7 @@ app.get("/api/admin/orgs", verifyAppCheck, authenticateFirebaseUser, async (req,
     });
     res.json({ orgs });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
   }
 });
 
@@ -8360,7 +8399,7 @@ app.get("/api/admin/orgs", verifyAppCheck, authenticateFirebaseUser, async (req,
 // and at what level, not what any member has written in Blaze Break.
 app.get("/api/admin/orgs/:orgId", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
   try {
-    requireAdmin(req);
+    requirePermission(req, "b2b.manage");
     const { orgId } = req.params;
     const db = getDb();
     const orgDoc = await db.collection("organisations").doc(orgId).get();
@@ -8390,7 +8429,7 @@ app.get("/api/admin/orgs/:orgId", verifyAppCheck, authenticateFirebaseUser, asyn
       members,
     });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
   }
 });
 
@@ -9052,14 +9091,12 @@ app.post("/api/org/:orgId/work-design-interventions", verifyAppCheck, authentica
     // ORG-WIDE at once, regardless of which team is starting the next
     // one - the whole point is that employees don't experience more
     // simultaneous disruption than the organisation itself decided was
-    // reasonable, not a per-team allowance that could still add up.
+    // reasonable, not a per-team allowance that could still add up. The
+    // count-then-create below runs inside a transaction (not a plain
+    // read-then-add) so two concurrent requests can't both read a count
+    // just under the ceiling and both create, pushing the org over budget.
     const maxConcurrentActive = getEffectiveActionBudget(org.actionBudget?.maxConcurrentActiveInterventions);
-    const activeSnap = await db.collection("organisations").doc(orgId).collection("work_design_interventions").get();
-    const currentActiveCount = activeSnap.docs.filter((d: any) => ACTIVE_INTERVENTION_STATUSES.has(d.data().status)).length;
-    const budgetCheck = canStartNewIntervention(currentActiveCount, maxConcurrentActive);
-    if (!budgetCheck.allowed) {
-      return res.status(400).json({ error: budgetCheck.reason });
-    }
+    const interventionsRef = db.collection("organisations").doc(orgId).collection("work_design_interventions");
 
     // Pressure Transfer Detector (Work Design Pulse PR6): captured now, at
     // the moment a trial actually starts, so a later comparison is against
@@ -9099,9 +9136,21 @@ app.post("/api/org/:orgId/work-design-interventions", verifyAppCheck, authentica
       createdAt: nowIso,
       updatedAt: nowIso,
     };
-    const ref = await db.collection("organisations").doc(orgId).collection("work_design_interventions").add(record);
-    await logOrgAuditAction(req, orgId, "create_work_design_intervention", "work_design_intervention", ref.id, null, { team, signalKey, status: record.status });
-    res.json({ success: true, intervention: { id: ref.id, ...record } });
+    const newRef = interventionsRef.doc();
+    const budgetCheck = await db.runTransaction(async (tx) => {
+      const activeSnap = await tx.get(interventionsRef);
+      const currentActiveCount = activeSnap.docs.filter((d: any) => ACTIVE_INTERVENTION_STATUSES.has(d.data().status)).length;
+      const check = canStartNewIntervention(currentActiveCount, maxConcurrentActive);
+      if (check.allowed) {
+        tx.set(newRef, record);
+      }
+      return check;
+    });
+    if (!budgetCheck.allowed) {
+      return res.status(400).json({ error: budgetCheck.reason });
+    }
+    await logOrgAuditAction(req, orgId, "create_work_design_intervention", "work_design_intervention", newRef.id, null, { team, signalKey, status: record.status });
+    res.json({ success: true, intervention: { id: newRef.id, ...record } });
   } catch (err: any) {
     res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("not found") ? 404 : 500).json({ error: err.message });
   }
@@ -9235,17 +9284,25 @@ app.patch("/api/org/:orgId/work-design-interventions/:id/status", verifyAppCheck
     // trial (freeing nothing, since the budget only counted active ones)
     // then reactivate any number of previously-stopped interventions via
     // this same route and exceed the configured ceiling with no new
-    // interventions ever created.
-    if (ACTIVE_INTERVENTION_STATUSES.has(status) && !ACTIVE_INTERVENTION_STATUSES.has(existing.status)) {
-      const maxConcurrentActive = getEffectiveActionBudget(org.actionBudget?.maxConcurrentActiveInterventions);
-      const activeSnap = await db.collection("organisations").doc(orgId).collection("work_design_interventions").get();
-      const currentActiveCount = activeSnap.docs.filter((d: any) => ACTIVE_INTERVENTION_STATUSES.has(d.data().status)).length;
-      const budgetCheck = canStartNewIntervention(currentActiveCount, maxConcurrentActive);
-      if (!budgetCheck.allowed) {
-        return res.status(400).json({ error: budgetCheck.reason });
+    // interventions ever created. The check-then-write runs inside a
+    // transaction (not a plain read-then-write) so two concurrent
+    // reactivations can't both read a count just under the ceiling and
+    // both write, exceeding it the same way the creation route could.
+    const interventionsRef = db.collection("organisations").doc(orgId).collection("work_design_interventions");
+    const budgetCheck = await db.runTransaction(async (tx) => {
+      if (ACTIVE_INTERVENTION_STATUSES.has(status) && !ACTIVE_INTERVENTION_STATUSES.has(existing.status)) {
+        const maxConcurrentActive = getEffectiveActionBudget(org.actionBudget?.maxConcurrentActiveInterventions);
+        const activeSnap = await tx.get(interventionsRef);
+        const currentActiveCount = activeSnap.docs.filter((d: any) => ACTIVE_INTERVENTION_STATUSES.has(d.data().status)).length;
+        const check = canStartNewIntervention(currentActiveCount, maxConcurrentActive);
+        if (!check.allowed) return check;
       }
+      tx.set(ref, { status, updatedAt: new Date().toISOString() }, { merge: true });
+      return { allowed: true };
+    });
+    if (!budgetCheck.allowed) {
+      return res.status(400).json({ error: budgetCheck.reason });
     }
-    await ref.set({ status, updatedAt: new Date().toISOString() }, { merge: true });
     await logOrgAuditAction(req, orgId, "update_work_design_intervention_status", "work_design_intervention", id, { status: existing.status }, { status });
     res.json({ success: true });
   } catch (err: any) {
@@ -10741,7 +10798,7 @@ app.get("/api/app-config/release-channels", verifyAppCheck, authenticateFirebase
 
 app.post("/api/admin/release-channels", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
   try {
-    requireAdmin(req);
+    requirePermission(req, "settings.manage");
     const { channel, minVersion, latestVersion } = req.body;
     if (!isDeviceChannel(channel)) {
       return res.status(400).json({ error: `"channel" must be one of: ${DEVICE_CHANNELS.join(', ')}.` });
@@ -10754,7 +10811,7 @@ app.post("/api/admin/release-channels", verifyAppCheck, authenticateFirebaseUser
     await logAdminAction(req, "update_release_channel", "", channel, { channel, minVersion, latestVersion });
     res.json({ success: true });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
   }
 });
 
@@ -11890,7 +11947,7 @@ if (process.env.TEST_MODE !== 'true') {
 // batched pass; `capped` says so honestly rather than silently truncating.
 app.get("/api/admin/privacy/retention-queue", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
   try {
-    requireAdmin(req);
+    requirePermission(req, "safety.read");
     const db = getDb();
     const warnedPending: { uid: string; email: string | null; lastSignInTime: string | null; warnedAt: string | null }[] = [];
     const eligibleForDeletion: { uid: string; email: string | null; lastSignInTime: string | null; warnedAt: string | null }[] = [];
@@ -11926,7 +11983,7 @@ app.get("/api/admin/privacy/retention-queue", verifyAppCheck, authenticateFireba
       eligibleForDeletion,
     });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
   }
 });
 
@@ -13539,20 +13596,29 @@ const loadRoutingSessionState = async (db: FirebaseFirestore.Firestore, uid: str
 // Increments one session_state counter the same day-aware way
 // loadRoutingSessionState reads it - never a raw FieldValue.increment here,
 // since that would partially update a stale (previous-day) doc instead of
-// resetting it the way every read of this doc already assumes.
-type SessionCounterField = 'recommendationsDeclined' | 'interventionsStarted' | 'interventionsCompleted' | 'interventionsAbandoned';
+// resetting it the way every read of this doc already assumes. Runs inside
+// a transaction (not a plain read-then-write) so two concurrent routing
+// requests for the same user - e.g. a retried network call racing the
+// original - can't both read the same pre-increment count and each write
+// current+1, silently dropping one of the increments.
+type SessionCounterField = 'recommendationsOffered' | 'recommendationsDeclined' | 'interventionsStarted' | 'interventionsCompleted' | 'interventionsAbandoned';
 const incrementSessionCounter = async (db: FirebaseFirestore.Firestore, uid: string, field: SessionCounterField): Promise<void> => {
-  const sessionState = await loadRoutingSessionState(db, uid);
-  const next = { ...sessionState, [field]: sessionState[field] + 1 };
-  await db.collection("users").doc(uid).collection("recovery_routing").doc("session_state").set({
-    day: todayUtcDateKey(),
-    recommendationsOffered: next.recommendationsOffered,
-    recommendationsDeclined: next.recommendationsDeclined,
-    interventionsStarted: next.interventionsStarted,
-    interventionsCompleted: next.interventionsCompleted,
-    interventionsAbandoned: next.interventionsAbandoned,
-    updatedAt: new Date().toISOString(),
-  }, { merge: true });
+  const ref = db.collection("users").doc(uid).collection("recovery_routing").doc("session_state");
+  const today = todayUtcDateKey();
+  await db.runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    const current = snap.exists && snap.data()?.day === today ? snap.data()! : { ...EMPTY_SESSION_STATE };
+    tx.set(ref, {
+      day: today,
+      recommendationsOffered: current.recommendationsOffered || 0,
+      recommendationsDeclined: current.recommendationsDeclined || 0,
+      interventionsStarted: current.interventionsStarted || 0,
+      interventionsCompleted: current.interventionsCompleted || 0,
+      interventionsAbandoned: current.interventionsAbandoned || 0,
+      [field]: (current[field] || 0) + 1,
+      updatedAt: new Date().toISOString(),
+    }, { merge: true });
+  });
 };
 
 // Reads recent routing_decisions once and derives both real per-module
@@ -13720,15 +13786,7 @@ app.post("/api/recovery/routing-decision", verifyAppCheck, authenticateFirebaseU
     // recommendation actually having been offered - NONE outcomes (nothing
     // needed, or suppressed by budget) never consume the budget themselves.
     if (decision.routingOutcome === 'selected' || decision.routingOutcome === 'needs_clarification') {
-      await db.collection("users").doc(user.uid).collection("recovery_routing").doc("session_state").set({
-        day: todayUtcDateKey(),
-        recommendationsOffered: sessionState.recommendationsOffered + 1,
-        recommendationsDeclined: sessionState.recommendationsDeclined,
-        interventionsStarted: sessionState.interventionsStarted,
-        interventionsCompleted: sessionState.interventionsCompleted,
-        interventionsAbandoned: sessionState.interventionsAbandoned,
-        updatedAt: new Date().toISOString(),
-      }, { merge: true });
+      await incrementSessionCounter(db, user.uid, 'recommendationsOffered');
     }
 
     // Awaited (not fire-and-forget) so the real doc ID can be returned to
