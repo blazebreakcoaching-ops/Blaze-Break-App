@@ -23,7 +23,7 @@ vi.mock('twilio', () => ({ default: () => ({ messages: { create: vi.fn() } }) })
 
 import request from 'supertest';
 import { app } from './server';
-import { seedDoc, getDocRaw, resetStore } from './test/fake-firestore';
+import { seedDoc, getDocRaw, resetStore, forceDocError } from './test/fake-firestore';
 
 const ORG = 'org_1';
 const OTHER_ORG = 'org_2';
@@ -347,5 +347,18 @@ describe('membership record lifecycle', () => {
 
     await request(app).post('/api/org/leave').set(auth('leaver'));
     expect(getDocRaw(`organisations/${ORG}/members/leaver`)).toBeUndefined();
+  });
+
+  // The defensive catch block behind the happy path above.
+  it('POST /api/org/leave: returns a generic 500 and logs the real error when the user profile read throws', async () => {
+    seedDoc(`users/leaver2`, { organisationId: ORG });
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const restore = forceDocError('users/leaver2', 'get', new Error('simulated Firestore outage'));
+    const res = await request(app).post('/api/org/leave').set(auth('leaver2'));
+    expect(res.status).toBe(500);
+    expect(res.body).toEqual({ error: 'Something went wrong on our end. Please try again.' });
+    expect(errorSpy).toHaveBeenCalled();
+    restore();
+    errorSpy.mockRestore();
   });
 });

@@ -643,6 +643,21 @@ can read as closed, or as still-open after the WRONG catch is fixed,
 until the real one is checked by hand). Next up: the
 `/api/org/:orgId/*` family, starting with `org/leave` and `org/me`.
 
+## QA Batch 18: org/leave + org/me catch blocks (first of the /api/org/:orgId/* territory)
+
+Opens the large `/api/org/:orgId/*` family flagged at the end of
+Batch 17 - starting with the two non-`:orgId` membership routes that
+sit just before it. Both already had real happy-path coverage
+(`org-rbac.route.test.ts` for `POST /api/org/leave`,
+`org-me.route.test.ts` for `GET /api/org/me`) but no catch-block test.
+Added one `forceDocError` test to each, targeting each route's first
+real Firestore call (`users/<uid>` `get` in both cases).
+
+Measured effect: `server.ts` statement coverage rose to 73.5%, branch
+to 60.64%, lines to 74.43%. Routes with a fully uncovered catch block:
+98 (down from 100). Next: the `/api/org/:orgId/*` routes proper,
+starting with `my-privacy-status`, `privacy-receipts`, and `dashboard`.
+
 ## What's shipped
 
 - `npm run test:coverage` (`vitest run --coverage`, `@vitest/coverage-v8`):

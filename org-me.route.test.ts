@@ -23,7 +23,7 @@ vi.mock('firebase-admin/firestore', async () => {
 
 import request from 'supertest';
 import { app } from './server';
-import { resetStore, seedDoc } from './test/fake-firestore';
+import { resetStore, seedDoc, forceDocError } from './test/fake-firestore';
 
 const ORG = 'org_1';
 const auth = (uid: string) => ({ Authorization: `Bearer ${uid}` });
@@ -101,5 +101,17 @@ describe('GET /api/org/me', () => {
     seedDoc('users/plain_member', { organisationId: ORG });
     const res = await request(app).get('/api/org/me').set(auth('plain_member'));
     expect(res.body.isOrgAdmin).toBe(false);
+  });
+
+  // The defensive catch block behind the happy paths above.
+  it('returns a generic 500 and logs the real error when the user profile read throws', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const restore = forceDocError('users/lone_user', 'get', new Error('simulated Firestore outage'));
+    const res = await request(app).get('/api/org/me').set(auth('lone_user'));
+    expect(res.status).toBe(500);
+    expect(res.body).toEqual({ error: 'Something went wrong on our end. Please try again.' });
+    expect(errorSpy).toHaveBeenCalled();
+    restore();
+    errorSpy.mockRestore();
   });
 });
