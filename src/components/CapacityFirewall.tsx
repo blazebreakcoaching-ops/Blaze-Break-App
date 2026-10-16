@@ -272,7 +272,7 @@ export const CapacityFirewall = ({ onNavigate }: CapacityFirewallProps) => {
                 </div>
 
                 {capacityLoaded && (
-                  <div className="grid grid-cols-3 gap-3 text-center">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-center">
                     <div><p className="text-[10px] uppercase font-bold text-text-muted">Available Capacity</p><p className="text-lg font-display font-bold text-text-main">{capacityScore ?? '—'}</p></div>
                     <div><p className="text-[10px] uppercase font-bold text-text-muted">Planned Load</p><p className="text-lg font-display font-bold text-text-main">{plannedLoad ?? '—'}</p></div>
                     <div><p className="text-[10px] uppercase font-bold text-text-muted">Remaining Buffer</p><p className="text-lg font-display font-bold text-text-main">{capacityScore !== null && plannedLoad !== null ? capacityScore - plannedLoad : '—'}</p></div>
@@ -311,7 +311,7 @@ export const CapacityFirewall = ({ onNavigate }: CapacityFirewallProps) => {
 
         {step === 'capacity_gate' && (
           <motion.div key="capacity_gate" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-5">
-            <div className="grid grid-cols-3 gap-3 text-center">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-center">
               <div><p className="text-[10px] uppercase font-bold text-text-muted">Current Capacity</p><p className="text-lg font-display font-bold text-text-main">{capacityScore ?? '—'}</p></div>
               <div><p className="text-[10px] uppercase font-bold text-text-muted">Current Planned Load</p><p className="text-lg font-display font-bold text-text-main">{plannedLoad ?? '—'}</p></div>
               <div><p className="text-[10px] uppercase font-bold text-text-muted">Available Buffer</p><p className="text-lg font-display font-bold text-text-main">{capacityScore !== null && plannedLoad !== null ? capacityScore - plannedLoad : '—'}</p></div>
