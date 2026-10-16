@@ -17,7 +17,7 @@ vi.mock('twilio', () => ({ default: () => ({ messages: { create: vi.fn() } }) })
 
 import request from 'supertest';
 import { app } from './server';
-import { seedDoc, resetStore } from './test/fake-firestore';
+import { seedDoc, resetStore, forceDocError } from './test/fake-firestore';
 
 const ORG = 'org_1';
 const auth = (uid: string) => ({ Authorization: `Bearer ${uid}` });
@@ -137,5 +137,34 @@ describe('POST /api/org/:orgId/what-works-here/:signalKey/promote', () => {
     const pattern = listRes.body.patterns.find((p: any) => p.signalKey === 'meeting_pressure');
     expect(pattern.level).toBe('local_operating_principle');
     expect(pattern.canPromote).toBe(false);
+  });
+});
+
+describe('defensive catch blocks', () => {
+  const expectGenericFailure = (res: any) => {
+    expect(res.status).toBe(500);
+    expect(res.body).toEqual({ error: 'Something went wrong on our end. Please try again.' });
+  };
+
+  it('GET /api/org/:orgId/what-works-here: 500s if the org read throws', async () => {
+    seedOrg(ORG, { memberUids: ['a1'] });
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const restore = forceDocError(`organisations/${ORG}`, 'get', new Error('simulated Firestore outage'));
+    const res = await request(app).get(`/api/org/${ORG}/what-works-here`).set(auth('a1'));
+    expectGenericFailure(res);
+    expect(errorSpy).toHaveBeenCalled();
+    restore();
+    errorSpy.mockRestore();
+  });
+
+  it('POST /api/org/:orgId/what-works-here/:signalKey/promote: 500s if the org read throws', async () => {
+    seedOrg(ORG, { adminUids: ['owner_1'], memberUids: ['owner_1'] });
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const restore = forceDocError(`organisations/${ORG}`, 'get', new Error('simulated Firestore outage'));
+    const res = await request(app).post(`/api/org/${ORG}/what-works-here/meeting_pressure/promote`).set(auth('owner_1'));
+    expectGenericFailure(res);
+    expect(errorSpy).toHaveBeenCalled();
+    restore();
+    errorSpy.mockRestore();
   });
 });

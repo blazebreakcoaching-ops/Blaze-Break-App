@@ -17,7 +17,7 @@ vi.mock('twilio', () => ({ default: () => ({ messages: { create: vi.fn() } }) })
 
 import request from 'supertest';
 import { app } from './server';
-import { seedDoc, resetStore } from './test/fake-firestore';
+import { seedDoc, resetStore, forceDocError } from './test/fake-firestore';
 
 const ORG = 'org_1';
 const auth = (uid: string) => ({ Authorization: `Bearer ${uid}` });
@@ -95,5 +95,18 @@ describe('GET /api/org/:orgId/work-design-drift', () => {
     expect(res.body.findings).toHaveLength(1);
     expect(res.body.findings[0].signalKey).toBe('meeting_pressure');
     expect(res.body.findings[0].message).toContain('Sustained');
+  });
+
+  // The defensive catch block behind the happy paths above.
+  it('returns a generic 500 and logs the real error when the org read throws', async () => {
+    seedOrg(ORG, { memberUids: ['a1'] });
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const restore = forceDocError(`organisations/${ORG}`, 'get', new Error('simulated Firestore outage'));
+    const res = await request(app).get(`/api/org/${ORG}/work-design-drift`).set(auth('a1'));
+    expect(res.status).toBe(500);
+    expect(res.body).toEqual({ error: 'Something went wrong on our end. Please try again.' });
+    expect(errorSpy).toHaveBeenCalled();
+    restore();
+    errorSpy.mockRestore();
   });
 });

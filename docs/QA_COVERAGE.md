@@ -829,6 +829,26 @@ to 63.12%, lines to 77.11%. Routes with a fully uncovered catch block:
 70 (down from 74). Next: workplace-policies (create/list/delete),
 what-works-here (list + promote), work-design-drift, and hr-dashboard.
 
+## QA Batch 28: workplace-policies, what-works-here, work-design-drift, hr-dashboard catch blocks
+
+All seven routes already had thorough happy-path coverage with no
+catch-block test. `POST`/`GET`/`DELETE /api/org/:orgId/workplace-
+policies[/:id]` go through `requireOrgAdmin` -> `requireOrgRole` ->
+`loadOrgAndCallerRole`, so a `forceDocError` on the `organisations/<orgId>`
+read closes all three. `GET /api/org/:orgId/what-works-here` and `GET
+/api/org/:orgId/work-design-drift` call `requireAuth` then read the org
+doc directly (no role check, just membership), each with a single
+generic catch - same `forceDocError` target closes both. `POST
+/api/org/:orgId/what-works-here/:signalKey/promote` goes through
+`requireOrgAdmin` the same as the policies routes. `GET
+/api/org/:orgId/hr-dashboard` uses `loadOrgAndCallerRole` directly.
+
+Measured effect: `server.ts` statement coverage rose to 76.36%, branch
+to 63.36%, lines to 77.42%. Routes with a fully uncovered catch block:
+66 (down from 70). Next: members role-management routes
+(make-admin/revoke-admin/roles/reactivate), governance, device
+management routes.
+
 ## What's shipped
 
 - `npm run test:coverage` (`vitest run --coverage`, `@vitest/coverage-v8`):

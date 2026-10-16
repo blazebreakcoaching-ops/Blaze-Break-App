@@ -17,7 +17,7 @@ vi.mock('twilio', () => ({ default: () => ({ messages: { create: vi.fn() } }) })
 
 import request from 'supertest';
 import { app } from './server';
-import { seedDoc, resetStore } from './test/fake-firestore';
+import { seedDoc, resetStore, forceDocError } from './test/fake-firestore';
 
 const ORG = 'org_1';
 const auth = (uid: string) => ({ Authorization: `Bearer ${uid}` });
@@ -140,5 +140,47 @@ describe('DELETE /api/org/:orgId/workplace-policies/:id', () => {
     seedOrg(ORG, { adminUids: ['owner_1'], memberUids: ['owner_1'] });
     const res = await request(app).delete(`/api/org/${ORG}/workplace-policies/does_not_exist`).set(auth('owner_1'));
     expect(res.status).toBe(404);
+  });
+});
+
+describe('defensive catch blocks', () => {
+  const expectGenericFailure = (res: any) => {
+    expect(res.status).toBe(500);
+    expect(res.body).toEqual({ error: 'Something went wrong on our end. Please try again.' });
+  };
+
+  it('POST /api/org/:orgId/workplace-policies: 500s if the org read throws', async () => {
+    seedOrg(ORG, { adminUids: ['owner_1'], memberUids: ['owner_1'] });
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const restore = forceDocError(`organisations/${ORG}`, 'get', new Error('simulated Firestore outage'));
+    const res = await request(app).post(`/api/org/${ORG}/workplace-policies`).set(auth('owner_1')).send({ type: 'no_evening_meetings', label: 'No evenings' });
+    expectGenericFailure(res);
+    expect(errorSpy).toHaveBeenCalled();
+    restore();
+    errorSpy.mockRestore();
+  });
+
+  it('GET /api/org/:orgId/workplace-policies: 500s if the org read throws', async () => {
+    seedOrg(ORG, { adminUids: ['owner_1'], memberUids: ['owner_1'] });
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const restore = forceDocError(`organisations/${ORG}`, 'get', new Error('simulated Firestore outage'));
+    const res = await request(app).get(`/api/org/${ORG}/workplace-policies`).set(auth('owner_1'));
+    expectGenericFailure(res);
+    expect(errorSpy).toHaveBeenCalled();
+    restore();
+    errorSpy.mockRestore();
+  });
+
+  it('DELETE /api/org/:orgId/workplace-policies/:id: 500s if the org read throws', async () => {
+    seedOrg(ORG, { adminUids: ['owner_1'], memberUids: ['owner_1'] });
+    const createRes = await request(app).post(`/api/org/${ORG}/workplace-policies`).set(auth('owner_1')).send({ type: 'no_evening_meetings', label: 'No evenings' });
+    const id = createRes.body.policy.id;
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const restore = forceDocError(`organisations/${ORG}`, 'get', new Error('simulated Firestore outage'));
+    const res = await request(app).delete(`/api/org/${ORG}/workplace-policies/${id}`).set(auth('owner_1'));
+    expectGenericFailure(res);
+    expect(errorSpy).toHaveBeenCalled();
+    restore();
+    errorSpy.mockRestore();
   });
 });
