@@ -790,6 +790,29 @@ to 62.74%, lines to 76.58%. Routes with a fully uncovered catch block:
 80 (down from 82). Next: `POST`/`GET /api/org/:orgId/work-design-
 interventions` and the summary/action-budget routes alongside them.
 
+## QA Batch 26: work-design-interventions + summary + action-budget catch blocks
+
+All three happy-path files already existed
+(`work-design-interventions.route.test.ts`,
+`work-design-interventions-summary.route.test.ts`,
+`action-budget.route.test.ts`). Each route uses `loadOrgAndCallerRole`'s
+`organisations/<orgId>` read as its first real Firestore call, so a
+`forceDocError` test closes the gap for each: `POST` and `GET
+/api/org/:orgId/work-design-interventions`, `PATCH
+.../work-design-interventions/:id/status`, `PATCH
+.../work-design-interventions/:id/outcome` (the PATCH tests first create
+a real intervention via `POST` so a valid `:id` reaches the org read),
+`GET /api/org/:orgId/work-design-interventions-summary`, and `GET
+/api/org/:orgId/action-budget`.
+
+Measured effect: `server.ts` statement coverage rose to 75.84%, branch
+to 62.93%, lines to 76.87%. Routes with a fully uncovered catch block:
+74 (down from 80). Next: the remaining `/api/org/:orgId/*` territory —
+work-design-debt, workplace-policies, what-works-here, work-design-drift,
+hr-dashboard, members role-management routes, governance, device
+management, and beyond into `/api/ally/*`, `/api/nudge-schedules`,
+`/api/legal/*`, `/api/user/*`, `/api/recovery/*`.
+
 ## What's shipped
 
 - `npm run test:coverage` (`vitest run --coverage`, `@vitest/coverage-v8`):
