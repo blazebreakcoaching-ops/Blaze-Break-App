@@ -52,11 +52,54 @@ it across users before this.
   renders it yet. This mirrors how the Recovery Routing Engine itself
   shipped (PR1 engine, PR2 server wiring, PR3 UI) and avoids combining a
   new data capability with new UI/navigation design in one batch.
-- **No per-archetype or per-org breakdown.** This batch answers "which
-  modules help, platform-wide" - slicing by archetype or Fingerprint
-  profile is a natural follow-up once the top-level view exists, not
-  something to invent speculatively now.
+- **No per-archetype breakdown.** This batch answers "which modules
+  help, platform-wide" - slicing by archetype or Fingerprint profile is
+  a natural follow-up once the top-level view exists, not something to
+  invent speculatively now.
 - **No Firestore index changes.** The route's one filter
   (`createdAt >= cutoff`) is a single-field inequality, which Firestore's
   default automatic indexing already covers for collection-group queries
   without an explicit entry in `firestore.indexes.json`.
+
+## Why there is no org-scoped (B2B) variant, and will not be one
+
+`recovery_routing_decisions` records which recovery module was
+recommended to someone - Breathing Reset, Anxiety Reset, Decompression
+Doorway, etc. That is squarely **Lane A, the Private Recovery Vault** -
+the exact class of data `docs/TEAM_WELFARE_DASHBOARDS.md` and the
+comments above `GET /api/org/:orgId/dashboard` in `server.ts` already
+state, deliberately and in hard terms, "must be server-side unreachable
+by an organisation-scoped route, not just k-anonymity-aggregated." The
+Lane Separation Remediation project (see that doc's history) retired an
+earlier feature that let org-facing code read this exact kind of
+personal wellbeing signal, for real, documented reasons: it breaks the
+product's own safety premise (using a mental-health-adjacent tool stops
+being safe the moment an employee's manager could see it), and creates
+real DPIA/Betriebsrat exposure under UK ICO and German works-council law.
+That document is explicit that even a fully anonymous, no-detail
+"activity" metric was rejected for manager/HR views - not only granular
+data - so there is no lesser-aggregated version of this that would be
+safe to build for an org admin. The platform-admin route above is a
+different risk entirely (Blaze Break's own staff doing product analytics
+across the whole base, not an employer watching its employees), which is
+why it was built and this is not.
+
+## Member-facing variant (also shipped this batch)
+
+`GET /api/recovery/my-outcomes` runs the identical
+`summarizeModuleOutcomes` math over just the caller's own
+`recovery_routing_decisions` subcollection - "which of my own recommended
+modules have actually helped me." This has no Lane A conflict: it is the
+person looking at their own data, the same category every other
+member-facing recovery feature in this app already reads and writes.
+Two differences from the admin route, both deliberate:
+
+- **Lower reliability threshold (3, not 20)** - "have I tried this
+  enough times to trust the pattern" is a different question at personal
+  scale than "is this platform-wide number statistically noisy."
+- **Never hides a module below threshold.** The admin route's
+  `sufficientSample` flag exists to withhold an unreliable platform
+  figure; for a person's own history, hiding their own data from them
+  would be wrong regardless of sample size - the flag here is for an
+  eventual UI to show an honest "early days, N tries so far" caveat, not
+  a reason to omit the module from the response.

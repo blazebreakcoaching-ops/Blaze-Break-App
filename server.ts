@@ -14004,6 +14004,44 @@ app.post("/api/recovery/routing-outcome", verifyAppCheck, authenticateFirebaseUs
   }
 });
 
+// Recovery Outcomes Intelligence - member-facing variant. The admin
+// version (GET /api/admin/recovery-outcomes) aggregates this same
+// recovery_routing_decisions data across every user via a Firestore
+// collectionGroup query; this route runs the identical pure math
+// (summarizeModuleOutcomes) over just the caller's own subcollection, so
+// a member can see "which of my own recommended modules have actually
+// helped me" - the one slice of this data a Private Recovery Vault rule
+// never applies to, since it's the person looking at their own data, not
+// an organisation looking at an employee's (see docs/
+// RECOVERY_OUTCOMES_INTELLIGENCE.md for why the org-scoped variant was
+// deliberately never built).
+//
+// The reliability-floor threshold is far lower than the admin route's
+// (platform-scale statistical noise vs. "have I tried this enough times
+// to trust the pattern yet") and, unlike the admin route, a module below
+// it is still returned, just flagged - a person should never have their
+// own history hidden from them, only told honestly that it's early days.
+const RECOVERY_OUTCOMES_PERSONAL_SAMPLE_THRESHOLD = 3;
+
+app.get("/api/recovery/my-outcomes", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const user = requireAuth(req);
+    const db = getDb();
+    const snap = await db.collection("users").doc(user.uid).collection("recovery_routing_decisions").get();
+    const decisions: RoutingDecisionRecord[] = snap.docs.map((d: any) => {
+      const data = d.data();
+      return { selectedModule: data.selectedModule ?? null, outcome: data.outcome, helpfulness: data.helpfulness };
+    });
+
+    res.json({
+      generatedAt: new Date().toISOString(),
+      modules: summarizeModuleOutcomes(decisions, RECOVERY_OUTCOMES_PERSONAL_SAMPLE_THRESHOLD),
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ============ Recovery Direction ============
 // The one deterministic trend replacing the three independent, disagreeing
 // "Recovery Velocity" formulas found during this rebuild's investigation
