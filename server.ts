@@ -107,8 +107,29 @@ import { getEffectiveActionBudget, validateActionBudgetUpdate, canStartNewInterv
 import { buildExecutiveNarrative } from './executive-narrative';
 import { formatDataProvenance } from './data-provenance';
 import { buildFinancialRangeEstimate } from './executive-work-design';
+import { logger, errorFields } from './logger';
 
 dotenv.config();
+
+// Registered before anything else in the process can throw. Without these,
+// an uncaught exception prints Node's default stack trace to stderr as
+// plain text (no severity, no structured fields - effectively invisible to
+// any Cloud Logging-based alert) and an unhandled rejection does the same
+// AND, depending on Node version/flags, can silently do nothing at all.
+// Either way the container may keep running in a broken state with no
+// record of why. `uncaughtException` exits after logging - the process is
+// in an undefined state at that point, and Cloud Run will simply start a
+// fresh instance; `unhandledRejection` only logs, since in this codebase
+// those are far more often a forgotten `await` in one non-critical code
+// path than a fatal error, and exiting on every one of those would turn a
+// minor bug into a full outage.
+process.on('uncaughtException', (err) => {
+  logger.critical('Uncaught exception - exiting', errorFields(err));
+  process.exit(1);
+});
+process.on('unhandledRejection', (reason) => {
+  logger.critical('Unhandled promise rejection', errorFields(reason));
+});
 
 // Initialize Firebase Admin with Application Default Credentials
 // In Cloud Run, this securely acquires credentials from the runtime metadata.
@@ -140,6 +161,46 @@ app.set('trust proxy', 1);
 // commonly 8080, and require the app to listen on it), falling back to 3000
 // for local dev so nothing changes when running `npm run dev`.
 const PORT = Number(process.env.PORT) || 3000;
+
+// Correlation id + structured request log for every request, registered
+// before CORS/body-parsing so even a request that gets rejected there still
+// gets a request id and a completion log. Cloud Run's load balancer sets
+// X-Cloud-Trace-Context on every request it forwards; reusing it (instead of
+// minting an unrelated id) means this app's own request log for a given
+// request can be found by the same id Cloud Trace already uses for it.
+app.use((req, res, next) => {
+  const traceHeader = req.headers['x-cloud-trace-context'];
+  const requestId = (typeof traceHeader === 'string' && traceHeader.split('/')[0]) || crypto.randomUUID();
+  (req as any).requestId = requestId;
+  res.setHeader('X-Request-Id', requestId);
+  const startedAt = Date.now();
+  res.on('finish', () => {
+    const fields = {
+      requestId,
+      method: req.method,
+      path: req.path,
+      status: res.statusCode,
+      durationMs: Date.now() - startedAt,
+    };
+    if (res.statusCode >= 500) {
+      logger.error(`${req.method} ${req.path} ${res.statusCode}`, fields);
+    } else if (res.statusCode >= 400) {
+      logger.warning(`${req.method} ${req.path} ${res.statusCode}`, fields);
+    } else {
+      logger.info(`${req.method} ${req.path} ${res.statusCode}`, fields);
+    }
+  });
+  next();
+});
+
+// Unauthenticated liveness endpoint - deliberately ahead of App Check/CORS
+// so it never depends on either being correctly configured. This is the
+// hook a future Cloud Monitoring uptime check would call; nothing currently
+// polls it (no uptime check is configured - that's a GCP console action,
+// not application code, and is still outstanding).
+app.get('/healthz', (_req, res) => {
+  res.status(200).json({ status: 'ok' });
+});
 
 // Set up CORS
 const allowedOrigins = [
@@ -15001,6 +15062,19 @@ async function setupVite() {
     });
   }
 }
+
+// Last middleware in the stack: catches any error a route forwarded via
+// next(err) instead of handling itself (the existing per-route try/catch
+// blocks already cover the vast majority of routes - this is the backstop
+// for the rest, not a replacement for them). Must be registered after every
+// route/middleware above for Express to reach it on error.
+app.use((err: any, req: express.Request, res: express.Response, _next: express.NextFunction) => {
+  logger.error('Unhandled route error', { requestId: (req as any).requestId, path: req.path, method: req.method, ...errorFields(err) });
+  if (res.headersSent) {
+    return;
+  }
+  res.status(500).json({ error: 'Internal server error.' });
+});
 
 export { app };
 
