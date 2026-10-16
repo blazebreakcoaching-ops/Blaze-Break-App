@@ -41,7 +41,7 @@ vi.mock('twilio', () => ({ default: () => ({ messages: { create: vi.fn() } }) })
 
 import request from 'supertest';
 import { app } from './server';
-import { seedDoc, getDocRaw, resetStore } from './test/fake-firestore';
+import { seedDoc, getDocRaw, resetStore, forceDocError, forceCollectionError } from './test/fake-firestore';
 
 const auth = (uid: string) => ({ Authorization: `Bearer ${uid}` });
 
@@ -89,6 +89,29 @@ describe('POST /api/integrations/:service/connect', () => {
     const url = new URL(res.body.authorizeUrl);
     expect(url.searchParams.get('user_scope')).toContain('chat:write');
     expect(url.searchParams.get('scope')).toBeNull();
+  });
+
+  // QA Batch 10: the defensive catch block behind the happy path above.
+  // This route makes no Firestore call at all (signOAuthState is a pure
+  // HMAC sign) - its one real, realistic failure is getOAuthRedirectUri()
+  // throwing when APP_URL isn't configured, a genuine misconfiguration
+  // this route is already written to catch and convert to a safe 500
+  // rather than crash the process.
+  it('returns a generic 500 and logs the real error when APP_URL is not configured', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const realAppUrl = process.env.APP_URL;
+    delete process.env.APP_URL;
+
+    const res = await request(app).post('/api/integrations/jira/connect').set(auth('user_1'));
+
+    expect(res.status).toBe(500);
+    expect(res.body).toEqual({ error: 'Something went wrong on our end. Please try again.' });
+    expect(errorSpy).toHaveBeenCalled();
+    const logged = JSON.parse(errorSpy.mock.calls[0][0] as string);
+    expect(logged.message).toContain('[Integrations] connect error:');
+
+    process.env.APP_URL = realAppUrl;
+    errorSpy.mockRestore();
   });
 });
 
@@ -217,6 +240,38 @@ describe('POST /api/integrations/:service/disconnect and GET /api/integrations/s
     expect(res.body.integrations.slack).toEqual({ connected: false });
     expect(res.body.integrations.asana).toEqual({ connected: false });
   });
+
+  // QA Batch 10: the defensive catch block behind each happy path above.
+  it('disconnect returns a generic 500 and logs the real error when the Firestore delete throws', async () => {
+    seedDoc('users/user_1/integration_tokens/jira', { accessToken: 'at', refreshToken: 'rt' });
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const restore = forceDocError('users/user_1/integration_tokens/jira', 'delete', new Error('simulated Firestore outage'));
+
+    const res = await request(app).post('/api/integrations/jira/disconnect').set(auth('user_1'));
+
+    expect(res.status).toBe(500);
+    expect(res.body).toEqual({ error: 'Something went wrong on our end. Please try again.' });
+    expect(errorSpy).toHaveBeenCalled();
+
+    restore();
+    errorSpy.mockRestore();
+  });
+
+  it('status returns a generic 500 and logs the real error when the Firestore read throws', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const restore = forceCollectionError('users/user_1/integrations', 'get', new Error('simulated Firestore outage'));
+
+    const res = await request(app).get('/api/integrations/status').set(auth('user_1'));
+
+    expect(res.status).toBe(500);
+    expect(res.body).toEqual({ error: 'Something went wrong on our end. Please try again.' });
+    expect(errorSpy).toHaveBeenCalled();
+    const logged = JSON.parse(errorSpy.mock.calls[0][0] as string);
+    expect(logged.message).toContain('[Integrations] status error:');
+
+    restore();
+    errorSpy.mockRestore();
+  });
 });
 
 describe('getValidAccessToken (via POST /api/signals/jira/refresh)', () => {
@@ -306,5 +361,43 @@ describe('getValidAccessToken (via POST /api/signals/jira/refresh)', () => {
     const res = await request(app).post('/api/signals/jira/refresh').set(auth('refresh_fails_user'));
     expect(res.status).toBe(200);
     expect(getDocRaw('users/refresh_fails_user/integration_tokens/jira')).toMatchObject({ accessToken: 'old_at' });
+  });
+
+  // QA Batch 10: the defensive catch block behind the happy paths above -
+  // getValidAccessToken's own tokenRef.get() isn't wrapped in its inner
+  // try/catch (only the refresh network call is), so it propagates to the
+  // route's own catch exactly like a totally-unexpected failure would.
+  it('returns a generic 500 and logs the real error when the Firestore read throws', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const restore = forceDocError('users/owner_1/integration_tokens/jira', 'get', new Error('simulated Firestore outage'));
+
+    const res = await request(app).post('/api/signals/jira/refresh').set(auth('owner_1'));
+
+    expect(res.status).toBe(500);
+    expect(res.body).toEqual({ error: 'Could not refresh Jira data.' });
+    expect(errorSpy).toHaveBeenCalled();
+    const logged = JSON.parse(errorSpy.mock.calls[0][0] as string);
+    expect(logged.message).toContain('[Signals] jira refresh error:');
+
+    restore();
+    errorSpy.mockRestore();
+  });
+});
+
+describe('GET /api/signals/jira — defensive catch block', () => {
+  it('returns a generic 500 and logs the real error when the Firestore read throws', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const restore = forceDocError('users/owner_1/live_signals/jira', 'get', new Error('simulated Firestore outage'));
+
+    const res = await request(app).get('/api/signals/jira').set(auth('owner_1'));
+
+    expect(res.status).toBe(500);
+    expect(res.body).toEqual({ error: 'Something went wrong on our end. Please try again.' });
+    expect(errorSpy).toHaveBeenCalled();
+    const logged = JSON.parse(errorSpy.mock.calls[0][0] as string);
+    expect(logged.message).toContain('Unhandled error on GET /api/signals/jira');
+
+    restore();
+    errorSpy.mockRestore();
   });
 });

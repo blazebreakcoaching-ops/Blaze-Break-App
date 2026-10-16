@@ -30,7 +30,7 @@ vi.mock('twilio', () => ({ default: () => ({ messages: { create: vi.fn() } }) })
 
 import request from 'supertest';
 import { app } from './server';
-import { seedDoc, getDocRaw, resetStore } from './test/fake-firestore';
+import { seedDoc, getDocRaw, resetStore, forceDocError } from './test/fake-firestore';
 
 const auth = (uid: string) => ({ Authorization: `Bearer ${uid}` });
 
@@ -299,5 +299,41 @@ describe('GET /api/signals/slack', () => {
     const res = await request(app).get('/api/signals/slack').set(auth('read_user'));
     expect(res.body.state).toMatchObject({ scanProgress: '1/2', inProgress: { totalMessages: 3 } });
     expect(JSON.stringify(res.body)).not.toContain('U_SECRET');
+  });
+
+  // QA Batch 10: the defensive catch block behind the happy path above.
+  it('returns a generic 500 and logs the real error when the Firestore read throws', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const restore = forceDocError('users/read_user/live_signals/slack', 'get', new Error('simulated Firestore outage'));
+
+    const res = await request(app).get('/api/signals/slack').set(auth('read_user'));
+
+    expect(res.status).toBe(500);
+    expect(res.body).toEqual({ error: 'Something went wrong on our end. Please try again.' });
+    expect(errorSpy).toHaveBeenCalled();
+    const logged = JSON.parse(errorSpy.mock.calls[0][0] as string);
+    expect(logged.message).toContain('[Signals] slack read error:');
+
+    restore();
+    errorSpy.mockRestore();
+  });
+});
+
+describe('POST /api/signals/slack/tick — defensive catch block', () => {
+  it('returns a generic 500 and logs the real error when the Firestore read throws', async () => {
+    seedSlackToken('owner_1');
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const restore = forceDocError('users/owner_1/integration_tokens/slack', 'get', new Error('simulated Firestore outage'));
+
+    const res = await request(app).post('/api/signals/slack/tick').set(auth('owner_1'));
+
+    expect(res.status).toBe(500);
+    expect(res.body).toEqual({ error: 'Could not update Slack signal.' });
+    expect(errorSpy).toHaveBeenCalled();
+    const logged = JSON.parse(errorSpy.mock.calls[0][0] as string);
+    expect(logged.message).toContain('[Signals] slack tick error:');
+
+    restore();
+    errorSpy.mockRestore();
   });
 });

@@ -358,6 +358,41 @@ Measured effect: `server.ts` statement coverage rose to 69.25%, branch
 to 57.8%, lines to 70.06%. ~137 routes with a fully uncovered catch
 block remain.
 
+## QA Batch 10: OAuth integration lifecycle + Slack/Jira signal defensive catch blocks
+
+The first batch to move into the big OAuth/signals route group - 7
+routes: `POST /api/integrations/:service/connect`,
+`POST .../disconnect`, `GET /api/integrations/status`, `POST`/`GET
+/api/signals/slack`, `POST`/`GET /api/signals/jira`. All added to the
+existing test files that already cover their happy paths
+(`oauth-integrations.route.test.ts`, `slack-signal-ticker.route.test.ts`
+- QA Batches 3 and 5), same reasoning as Batch 9: the mocks each test
+needs already live there.
+
+`connect` doesn't touch Firestore at all - `signOAuthState` is a pure
+HMAC sign - so its one realistic failure is `getOAuthRedirectUri()`
+throwing when `APP_URL` isn't configured on the server, a genuine
+misconfiguration this route is already written to catch. Tested by
+temporarily deleting `process.env.APP_URL` for one request and
+restoring it after - the first time this series has forced a
+route's catch via environment rather than Firestore/a provider mock.
+`disconnect`/`status`/the two `GET` reads go through Batch 6/7's
+`forceDocError`/`forceCollectionError` on their real, deterministic
+paths (`integration_tokens/{service}`, `integrations`,
+`live_signals/slack`, `live_signals/jira`). `jira/refresh` is the
+interesting one: `getValidAccessToken`'s own `tokenRef.get()` call sits
+*outside* its own inner `try` (only the refresh network call is wrapped
+there), so forcing that read to throw propagates all the way up to the
+route's own catch exactly like a genuinely unexpected failure would -
+confirmed by reading the function, not assumed.
+
+Measured effect: `server.ts` statement coverage rose to 69.52%, branch
+to 57.85%, lines to 70.34%. ~130 routes with a fully uncovered catch
+block remain - the rest of this OAuth/signals group (Asana, Monday,
+Calendly, Calendar, Gmail, `signals/blend`, `signals/recovery-explain`,
+Boundary Autopilot's Slack routes, push subscribe/unsubscribe) is the
+natural next slice.
+
 ## What's shipped
 
 - `npm run test:coverage` (`vitest run --coverage`, `@vitest/coverage-v8`):
