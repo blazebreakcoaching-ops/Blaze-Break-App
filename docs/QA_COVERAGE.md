@@ -658,6 +658,24 @@ to 60.64%, lines to 74.43%. Routes with a fully uncovered catch block:
 98 (down from 100). Next: the `/api/org/:orgId/*` routes proper,
 starting with `my-privacy-status`, `privacy-receipts`, and `dashboard`.
 
+## QA Batch 19: org/:orgId/my-privacy-status + privacy-receipts catch blocks
+
+Continues into the `/api/org/:orgId/*` family proper. Both routes
+already had real happy-path coverage (`my-privacy-status.route.test.ts`,
+`trust-mirror-privacy-receipts.route.test.ts`) but no catch-block
+test. Both routes' first real Firestore call is the same
+`organisations/<orgId>` `get` used for the membership check, so one
+`forceDocError` test closes each.
+
+Measured effect: `server.ts` statement coverage rose to 73.56%, branch
+to 60.64%, lines to 74.49%. Routes with a fully uncovered catch block:
+96 (down from 98). `GET /api/org/:orgId/dashboard` - the Work Design
+Pulse admin default view, next in file order - turned out to have
+zero coverage of any kind (not just its catch block) and depends on
+`buildExecutiveWorkDesignPayload`'s full locked/unlocked cohort logic,
+so it's deliberately left for its own dedicated batch rather than
+folded in here.
+
 ## What's shipped
 
 - `npm run test:coverage` (`vitest run --coverage`, `@vitest/coverage-v8`):
