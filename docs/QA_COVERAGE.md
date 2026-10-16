@@ -144,6 +144,39 @@ Measured effect: `server.ts` statement coverage rose from 69.33% to
 71.34%, branch coverage from 54.99% to 56.28% - overall project coverage
 79.47%→80.76% statements, 69.44%→70.24% branches.
 
+## QA Batch 5: the Slack conversation-scan ticker
+
+Closes the last item Batch 4 explicitly left open: `POST
+/api/signals/slack/tick`. Genuinely a different shape from every other
+route in this area - not one fetch and one write, but a persisted scan
+cursor advanced one conversation per call (Slack rate-limits
+`conversations.history` to 1 request/minute for non-Marketplace apps, so
+a full workspace scan can't happen synchronously - see the comment above
+the route). Proving this needed driving the route through several ticks
+against a seeded in-progress state, not just one request/response.
+
+`slack-signal-ticker.route.test.ts`, 14 tests, cover: not-connected 404,
+the 60-second rate limit (refuses to tick again that soon, and never
+calls Slack at all while limited), the first-ever tick (identity lookup
++ conversation list + the *first* conversation's history all in the same
+call), an account with zero conversations short-circuiting cleanly, both
+`auth.test` and `conversations.list` failure 502s, a mid-cycle tick
+reusing the already-known `selfUserId` (no re-verification) while
+advancing to the next conversation, a single conversation's history call
+failing without aborting the scan or losing progress, correct
+UTC after-hours/weekend message classification, full-cycle completion
+rolling the in-progress counts into `lastCompleted` and starting a fresh
+cycle (list re-fetched, identity reused), and proof `redactSlackState`
+never leaks `selfUserId` or the raw conversation ID list to the client
+on either the tick response or `GET /api/signals/slack`.
+
+This closes every item flagged in this document's OAuth/signals area
+across Batches 3-5.
+
+Measured effect: `server.ts` statement coverage rose from 71.34% to
+72.36%, branch coverage from 56.28% to 57.61% - overall project coverage
+80.76%→81.41% statements, 70.24%→71.07% branches.
+
 ## What's shipped
 
 - `npm run test:coverage` (`vitest run --coverage`, `@vitest/coverage-v8`):
@@ -186,18 +219,16 @@ the gap, none fixed in this batch:
    "something unexpected threw" path behind an already-tested happy path.
    Lower severity (these are backstops, not primary logic) but high volume.
 2. ~~**External integration OAuth/token-refresh code.**~~ **Closed in QA
-   Batches 3-4** - see below (state signing/CSRF verification, the
+   Batches 3-5** - see below (state signing/CSRF verification, the
    connect/callback/disconnect/status lifecycle, `getValidAccessToken`'s
-   refresh branches, and every provider's own signal-fetch route).
-   Still genuinely open: Slack's incremental conversation-scan ticker
-   (`POST /api/signals/slack/tick`) - a meaningfully different, stateful,
-   rate-limited multi-call shape, left for its own focused batch rather
-   than folded into Batch 4.
+   refresh branches, every provider's own signal-fetch route, and
+   Slack's conversation-scan ticker). Nothing flagged in this area
+   remains open.
 3. ~~**The Nova Live WebSocket relay.**~~ **Closed in QA Batch 2** - see
    below. It needed a fake WebSocket client, which this batch built.
 
 Closing (1) meaningfully is substantial, separate work - pure volume
-across ~300 routes' backstop branches. The remainder of (2) is smaller
-and mechanical (the same `getValidAccessToken`-via-fetch-mock pattern,
-repeated per remaining provider) - both are candidates for a future QA
-batch, not padding for this one.
+across ~300 routes' backstop branches, lower severity (these are
+backstops behind already-tested happy paths, not primary logic) but
+high enough volume that a single batch wouldn't make a visible dent.
+The only concrete, fully-open item left on this list.
