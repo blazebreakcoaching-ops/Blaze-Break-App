@@ -1952,6 +1952,14 @@ service cloud.firestore {
       allow write: if false; // Server-only
     }
 
+    // webhook_events/{eventId} - Stripe webhook idempotency records (see
+    // POST /api/webhooks/stripe in server.ts and docs/STRIPE_PRODUCTS.md).
+    // Deliberately has NO client rule at all, not even admin read - same
+    // reasoning as users/{uid}/usage_counters above: Firestore denies any
+    // path with no matching rule, and nothing (not even an admin UI) ever
+    // has a legitimate reason to read or write this collection directly.
+    // Backend/Admin SDK only.
+
     // Canonical feature registry (Evolution Engine) - supersedes the old
     // static, client-only FEATURE_REGISTRY. Same admin-read/server-write-
     // only pattern as admin_audit_logs/platform_incidents; the real

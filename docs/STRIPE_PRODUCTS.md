@@ -1,17 +1,33 @@
-# Stripe product/price mapping — design only, not a live integration
+# Stripe product/price mapping — real code, mock-tested, not live-verified
 
-**There is no `stripe` npm dependency in `package.json`, no Stripe account
-configured anywhere in this codebase, and no webhook handler.** This
-document is the design for the price-ID-to-plan mapping a real Stripe
-integration would plug into `entitlements.ts`'s adapter boundary —
-written so that work is scoped and bounded, not built speculatively
-against credentials that don't exist (the same reasoning
-`billing-adapter.ts` already gives for Enterprise billing, and
-`docs/FREE_PREMIUM_ENTITLEMENTS.md`'s "What real Stripe/Apple/Google
-wiring would add" section gives for the webhook handler itself). Nothing
-in this file is deployed or callable today.
+**Update:** the checkout-session and webhook routes this document
+describes are now real, built, and fully mock-tested code — `stripe` is a
+real npm dependency, `POST /api/billing/checkout-session` and
+`POST /api/webhooks/stripe` both exist in `server.ts`, and the pure
+price/status-resolution logic lives in `stripe-billing.ts`
+(`stripe-billing.test.ts`, `stripe-billing.route.test.ts`). **What has
+NOT changed: there is still no real Stripe account, and no
+`STRIPE_SECRET_KEY`/`STRIPE_WEBHOOK_SECRET`/`STRIPE_PRICE_*` configured
+anywhere** - both routes fail closed with a clear "not configured" 503
+until those exist (see `.env.example`). Everything below was tested by
+mocking the `stripe` SDK's documented shapes, the same way every other
+provider in this codebase (Gemini, Firebase, Twilio) is mocked in tests -
+it has never been run against Stripe's real API, even in test mode. The
+original design (left below, unchanged except for this notice) was
+checked line-by-line against the real `entitlements.ts` code before this
+batch started and the implementation follows it exactly - no mapping,
+price figure, or event-handling decision here was improvised.
 
-## The mapping shape (already built, unwired)
+The one thing still genuinely missing before this can go live: a real
+Stripe account with the three products/six prices below actually created,
+and its real secret/webhook-signing keys in the deployed environment's
+secrets (see `docs/OUTSTANDING_TASKS.md`). That step was explicitly out of
+scope for this batch - it requires a commercial decision (a real Stripe
+account, real prices going live) this document's own original text
+flagged as needing separate approval, not something to do speculatively
+inside a code-writing pass.
+
+## The mapping shape (now wired into stripe-billing.ts)
 
 `entitlements.ts` exports:
 
@@ -69,62 +85,88 @@ These are the agreed launch prices; this document does not propose
 changing them (see the final report for a flagged concern, if any, rather
 than a silent change here).
 
-## Checkout Session design
+## Checkout Session (built)
 
-A `POST /api/billing/checkout-session` (not built) would:
+`POST /api/billing/checkout-session` (`server.ts`):
 
 1. `authenticateFirebaseUser` — the caller must already have a Blaze
    Break account (this app's anonymous-then-linked auth pattern, see
    `src/lib/auth.tsx`).
-2. Accept a `priceId` from a fixed, server-side allowlist built from the
-   env vars above — never an arbitrary client-supplied Stripe price ID,
-   to prevent a client requesting an unlisted/discounted price.
-3. Create a Stripe Checkout Session with `client_reference_id` (or
-   `metadata.firebaseUid`) set to the caller's Firebase uid — this is how
-   the webhook below knows which `users/{uid}/entitlements/status` doc to
-   write to, without trusting anything the client sends at webhook time.
-4. Return the Checkout Session URL for the client to redirect to.
+2. Accepts a `priceId` from a fixed, server-side allowlist built from the
+   env vars above (`buildPriceIdMap` in `stripe-billing.ts`) — never an
+   arbitrary client-supplied Stripe price ID, to prevent a client
+   requesting an unlisted/discounted price.
+3. Creates a Stripe Checkout Session with `client_reference_id` set to
+   the caller's Firebase uid — this is how the webhook below knows which
+   `users/{uid}/entitlements/status` doc to write to, without trusting
+   anything the client sends at webhook time.
+4. Returns the Checkout Session URL for the client to redirect to.
 
-## Webhook handler design
+## Webhook handler (built)
 
-A `POST /api/webhooks/stripe` (not built) would:
+`POST /api/webhooks/stripe` (`server.ts`), fed raw (unparsed) request
+bodies by a dedicated `express.raw()` branch in the body-parser routing
+near the top of the file — `stripe.webhooks.constructEvent` verifies the
+`Stripe-Signature` header against the exact bytes Stripe sent, which a
+re-serialized JSON body (even byte-identical) would fail:
 
-1. Verify `Stripe-Signature` against `STRIPE_WEBHOOK_SECRET` via
-   `stripe.webhooks.constructEvent` — never trust an unsigned request
-   claiming to be Stripe.
-2. Be idempotent on Stripe's own event ID, via a `webhook_events/{eventId}`
+1. Verifies `Stripe-Signature` against `STRIPE_WEBHOOK_SECRET` via
+   `stripe.webhooks.constructEvent` — never trusts an unsigned request
+   claiming to be Stripe; a bad signature is rejected with 400.
+2. Is idempotent on Stripe's own event ID, via a `webhook_events/{eventId}`
    create-once Firestore doc — the identical idempotency-key pattern this
    codebase already uses for guardian alerts
    (`guardian_alerts` idempotency, see `guardian-alert.route.test.ts`),
    so a duplicate delivery (Stripe's own retry behaviour) never double-
    applies an entitlement change.
-3. Handle at minimum:
-   - `checkout.session.completed` — resolve the price ID via
-     `resolvePlanFromPriceId`, write `plan`/`status: 'active'`/
+3. Handles exactly the four events this document always specified, via
+   `stripe-billing.ts`'s pure `resolveStripeSubscriptionPatch`/
+   `buildPastDuePatch`:
+   - `checkout.session.completed` — retrieves the full subscription (the
+     checkout session itself doesn't carry a price ID), resolves its
+     price via `resolvePlanFromPriceId`, and writes `plan`/`status`/
      `billingSource: 'stripe'`/`providerCustomerId`/
      `providerSubscriptionId`/`providerPriceId`/`lastVerifiedAt` into
      `entitlements/status` for the uid in `client_reference_id`.
-   - `customer.subscription.updated` — re-resolve plan/status (covers
+   - `customer.subscription.updated` — re-resolves plan/status (covers
      upgrades, downgrades, and `cancel_at_period_end` toggling —
      `cancelAtPeriodEnd` in the entitlement record maps directly to
-     Stripe's own field of the same meaning).
-   - `customer.subscription.deleted` — `status: 'cancelled'`.
-   - `invoice.payment_failed` — `status: 'past_due'`, which
-     `hasPaidEntitlement()` already treats as access-ending immediately
-     (a deliberate, conservative, already-documented product decision —
-     see `docs/FREE_PREMIUM_ENTITLEMENTS.md` — not something this
-     document changes).
-4. All three ultimately write the same shape into `entitlements/status`
+     Stripe's own field of the same meaning). Resolves the uid from
+     `subscription.metadata.firebaseUid` when present, otherwise by
+     looking up the existing entitlement record carrying the same
+     `providerCustomerId` (this event never carries
+     `client_reference_id` — that field only ever exists on the
+     Checkout Session itself).
+   - `customer.subscription.deleted` — same resolver; Stripe sends
+     `status: 'canceled'` on the subscription object itself, which maps
+     to `status: 'cancelled'` and sets `entitlementEnd` to the period end.
+   - `invoice.payment_failed` — a narrower, merge-only patch
+     (`buildPastDuePatch`): flips only `status` to `'past_due'` via the
+     same `providerCustomerId` lookup, never touching `plan` (the invoice
+     doesn't reliably carry one) - `hasPaidEntitlement()` already treats
+     `past_due` as access-ending immediately (a deliberate, conservative,
+     already-documented product decision — see
+     `docs/FREE_PREMIUM_ENTITLEMENTS.md` — not something this batch
+     changes).
+4. All four ultimately write the same shape into `entitlements/status`
    that Apple/Google webhooks would (see `docs/MOBILE_SUBSCRIPTIONS.md`)
    — nothing else in the app needs to change when any provider is added,
    that's the entire point of the `EntitlementProvider` adapter boundary.
+   An event whose price ID isn't in the allowlist (or any other
+   unresolvable event) is logged and skipped, never writing a half-formed
+   entitlement — but is still marked processed in `webhook_events`, since
+   the *delivery* was handled correctly even if its data wasn't
+   actionable.
 
-## What this document deliberately does not do
+## What is still deliberately not done
 
-It does not install the `stripe` npm package, does not add a live route,
-does not fabricate a working checkout, and does not guess at Stripe API
-behaviour beyond what's documented in Stripe's own public API reference.
-Building the handler above against a real (even test-mode) Stripe account
-is the next real step when picked up — see
+This batch does not create a real Stripe account, does not configure any
+real `STRIPE_SECRET_KEY`/`STRIPE_WEBHOOK_SECRET`/`STRIPE_PRICE_*` value
+anywhere, and does not run against Stripe's real API even in test mode —
+that is a commercial/account-setup step or the next phase of work, see
 `docs/OUTSTANDING_TASKS.md` for the manual account-configuration
-checklist this already lists.
+checklist. It also does not add a Command Centre UI tab for any of this
+(same discipline as every other Operations Intelligence Hub batch this
+session) and does not touch Apple/Google mobile subscriptions
+(`docs/MOBILE_SUBSCRIPTIONS.md`, explicitly staged after web Stripe in
+`docs/FINANCIAL_OPERATIONS.md`).

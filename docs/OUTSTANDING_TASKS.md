@@ -13,13 +13,16 @@ separate audience, kept deliberately un-merged with this one.
 
 ## Needs real provider credentials (can't be built untestable)
 
-- **Stripe checkout + webhook handler.** No `stripe` npm dependency
-  installed, no live/test Stripe account configured here. Building a
-  webhook signature-verification handler against credentials that don't
-  exist would be unverifiable code, not a real integration — deliberately
-  not done, matching the same honest gap `billing-adapter.ts` already
-  documented for Enterprise billing. Scoped in detail in
-  `docs/STRIPE_PRODUCTS.md`.
+- **Stripe checkout + webhook handler.** The code now exists and is
+  mock-tested — `stripe` is a real npm dependency, `POST
+  /api/billing/checkout-session` and `POST /api/webhooks/stripe` are both
+  built in `server.ts` against `stripe-billing.ts`'s pure logic. What's
+  still genuinely missing is what this section is actually about: there
+  is no live/test Stripe account configured here, so both routes fail
+  closed with a 503 until real `STRIPE_SECRET_KEY`/`STRIPE_WEBHOOK_SECRET`/
+  `STRIPE_PRICE_*` values exist (none of this has ever been run against
+  Stripe's real API, even in test mode). See `docs/STRIPE_PRODUCTS.md`'s
+  updated header for the full detail.
 - **Apple App Store Server Notifications v2 + receipt verification.**
   Needs an App Store Connect API key. Scoped in `docs/MOBILE_SUBSCRIPTIONS.md`.
 - **Google Play Real-time Developer Notifications + Play Developer API

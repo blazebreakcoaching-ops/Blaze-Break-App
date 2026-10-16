@@ -9,6 +9,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import OpenAI from "openai";
 import dotenv from "dotenv";
 import twilio from "twilio";
+import Stripe from "stripe";
 import cron from "node-cron";
 import { WebSocketServer } from 'ws';
 import webpush from 'web-push';
@@ -40,6 +41,9 @@ import { collectionsForExport, collectionsForErasure, userIdFieldsFor } from './
 import { summarizeModuleOutcomes, RoutingDecisionRecord } from './recovery-outcomes-intelligence';
 import { GEMINI_TEXT_MODEL, GEMINI_TTS_MODEL, GEMINI_LIVE_MODEL, CLAUDE_CHAT_MODEL } from './ai-model-registry';
 import { summarizeFeatureUsage, countByDimension } from './product-intelligence';
+import {
+  buildPriceIdMap, resolveStripeSubscriptionPatch, buildPastDuePatch, extractPriceIdFromSubscriptionItems,
+} from './stripe-billing';
 import { htmlToPlainTextFallback, buildEmailVerificationEmail, buildPasswordResetEmail, buildPasswordChangedEmail, buildMfaEnabledEmail, buildMfaDisabledEmail, buildSupportRequestReceivedEmail, buildAllyInviteEmail, buildInactivityWarningEmail } from './brevo-templates';
 import { evaluateRetentionAction, retentionSweepIsEnabled, RetentionCandidate, RETENTION_INACTIVITY_MONTHS, RETENTION_WARNING_DAYS_BEFORE } from './data-retention';
 import { generateTotpSecret, buildOtpauthUri, verifyTotpCode, generateRecoveryCodes, hashRecoveryCode, encryptSecret as encryptTotpSecret, decryptSecret as decryptTotpSecret, isTotpLockedOut, nextLockoutState } from './totp-mfa';
@@ -338,7 +342,18 @@ app.use(cors({
 // other route keeps the strict 10kb ceiling.
 const strictJsonParser = express.json({ limit: '10kb' });
 const voiceJournalJsonParser = express.json({ limit: '15mb' });
+// Stripe's stripe.webhooks.constructEvent needs the RAW, unparsed request
+// body to verify the Stripe-Signature header (it HMACs the exact bytes
+// Stripe sent - re-serialized JSON, even byte-for-byte "equivalent," would
+// fail verification). This has to be its own branch ahead of every JSON
+// parser above, the same way voice-journal already gets its own branch for
+// a different reason (size, not shape) - a request to this one path must
+// never reach express.json() at all.
+const stripeWebhookRawParser = express.raw({ type: 'application/json', limit: '1mb' });
 app.use((req, res, next) => {
+  if (req.path === '/api/webhooks/stripe') {
+    return stripeWebhookRawParser(req, res, next);
+  }
   if (req.path === '/api/nova/voice-journal') {
     return voiceJournalJsonParser(req, res, next);
   }
@@ -741,6 +756,23 @@ const initTwilio = () => {
     }
   }
   return twilioClient;
+};
+
+// Stripe Initialization - same lazy, env-gated pattern as Twilio above.
+// Routes that need it check initStripe() for null and return a clear "not
+// configured" error rather than throwing, exactly like every other
+// provider client in this file - there is no STRIPE_SECRET_KEY configured
+// anywhere today, so this stays null in every environment until a real
+// Stripe account exists (see docs/STRIPE_PRODUCTS.md).
+let stripeClient: Stripe | null = null;
+const initStripe = () => {
+  if (!stripeClient) {
+    const secretKey = process.env.STRIPE_SECRET_KEY;
+    if (secretKey) {
+      stripeClient = new Stripe(secretKey);
+    }
+  }
+  return stripeClient;
 };
 
 // Brevo Initialization
@@ -4488,6 +4520,219 @@ app.get("/api/entitlements/pricing", verifyAppCheck, authenticateFirebaseUser, a
 });
 
 // ============================================================================
+// Stripe billing (web checkout + webhook)
+// ============================================================================
+// Real code against docs/STRIPE_PRODUCTS.md's already-approved design - see
+// that document for the full reasoning. Still cannot be live-verified from
+// this environment: there is no STRIPE_SECRET_KEY/STRIPE_WEBHOOK_SECRET/
+// STRIPE_PRICE_* configured anywhere, so initStripe() returns null and both
+// routes below fail closed with a clear "not configured" error until a real
+// Stripe account exists. stripe-billing.ts holds the pure, fully unit-tested
+// logic; this section is only the I/O (Stripe API calls, Firestore reads/
+// writes, idempotency) wrapped around it.
+
+// Caller must already have a Blaze Break account - this app's anonymous-
+// then-linked auth pattern (src/lib/auth.tsx) means every real signup has a
+// Firebase uid well before they ever see a paywall.
+app.post("/api/billing/checkout-session", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const stripe = initStripe();
+    if (!stripe) {
+      return res.status(503).json({ error: "Billing is not configured yet." });
+    }
+    const uid = (req as any).user?.uid;
+    if (!uid) throw new Error("Unauthorized.");
+
+    // Server-side allowlist built from STRIPE_PRICE_* env vars - never an
+    // arbitrary client-supplied Stripe price ID (docs/STRIPE_PRODUCTS.md),
+    // which would let a client request an unlisted/discounted price.
+    const priceIdMap = buildPriceIdMap(process.env);
+    const priceId = req.body?.priceId;
+    if (typeof priceId !== "string" || !priceIdMap[priceId]) {
+      return res.status(400).json({ error: "Unknown or unlisted priceId." });
+    }
+
+    const successUrl = typeof req.body?.successUrl === "string" ? req.body.successUrl : undefined;
+    const cancelUrl = typeof req.body?.cancelUrl === "string" ? req.body.cancelUrl : undefined;
+    if (!successUrl || !cancelUrl) {
+      return res.status(400).json({ error: "successUrl and cancelUrl are required." });
+    }
+
+    const session = await stripe.checkout.sessions.create({
+      mode: "subscription",
+      line_items: [{ price: priceId, quantity: 1 }],
+      // How the webhook knows which users/{uid}/entitlements/status doc to
+      // write to, without trusting anything the client sends at webhook
+      // time (docs/STRIPE_PRODUCTS.md).
+      client_reference_id: uid,
+      success_url: successUrl,
+      cancel_url: cancelUrl,
+    });
+
+    res.json({ url: session.url });
+  } catch (err: any) {
+    logger.error("[STRIPE] Failed to create checkout session", errorFields(err));
+    res.status(err.message?.includes("Unauthorized") ? 401 : 500).json({ error: err.message });
+  }
+});
+
+// Applies a Stripe entitlement patch to users/{uid}/entitlements/status.
+// Shared by every event handler below so a patch is always a merge (never
+// clobbers fields a different event type didn't touch).
+const applyStripeEntitlementPatch = async (uid: string, patch: object) => {
+  const db = getDb();
+  await db.collection("users").doc(uid).collection("entitlements").doc("status").set(patch, { merge: true });
+};
+
+// Resolves a Stripe customer ID back to a Blaze Break uid by looking up the
+// one entitlement record already carrying it as providerCustomerId -
+// needed because customer.subscription.updated/deleted and
+// invoice.payment_failed don't carry client_reference_id (that field only
+// ever exists on the Checkout Session itself). A collectionGroup query
+// bounded to a single match, same read pattern as every other admin
+// collectionGroup query in this file.
+const lookupUidByStripeCustomerId = async (customerId: string): Promise<string | null> => {
+  const db = getDb();
+  const snap = await db.collectionGroup("entitlements")
+    .where("providerCustomerId", "==", customerId)
+    .limit(1)
+    .get();
+  if (snap.empty) return null;
+  // users/{uid}/entitlements/status - the uid is the grandparent segment.
+  return snap.docs[0].ref.parent.parent?.id ?? null;
+};
+
+app.post("/api/webhooks/stripe", async (req, res) => {
+  try {
+    const stripe = initStripe();
+    const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
+    if (!stripe || !webhookSecret) {
+      return res.status(503).json({ error: "Billing is not configured yet." });
+    }
+
+    // Never trust an unsigned request claiming to be Stripe - verified
+    // against the RAW body express.raw() captured for this one route (see
+    // the body-parser routing near the top of this file).
+    const signature = req.headers["stripe-signature"];
+    let event: Stripe.Event;
+    try {
+      event = stripe.webhooks.constructEvent(req.body, signature as string, webhookSecret);
+    } catch (err: any) {
+      logger.warning("[STRIPE] Webhook signature verification failed", errorFields(err));
+      return res.status(400).json({ error: "Invalid signature." });
+    }
+
+    // Idempotent on Stripe's own event ID - the exact idempotency-key-as-
+    // document-ID pattern already used for guardian alerts, so a duplicate
+    // delivery (Stripe's own retry behaviour) never double-applies an
+    // entitlement change.
+    const db = getDb();
+    const eventRef = db.collection("webhook_events").doc(event.id);
+    const existing = await eventRef.get();
+    if (existing.exists) {
+      return res.json({ received: true, duplicate: true });
+    }
+
+    const priceIdMap = buildPriceIdMap(process.env);
+
+    switch (event.type) {
+      case "checkout.session.completed": {
+        const session = event.data.object as Stripe.Checkout.Session;
+        const uid = session.client_reference_id;
+        const subscriptionId = typeof session.subscription === "string" ? session.subscription : session.subscription?.id;
+        if (uid && subscriptionId) {
+          const subscription = await stripe.subscriptions.retrieve(subscriptionId);
+          const resolution = resolveStripeSubscriptionPatch({
+            priceId: extractPriceIdFromSubscriptionItems(subscription.items),
+            stripeStatus: subscription.status,
+            cancelAtPeriodEnd: subscription.cancel_at_period_end,
+            customerId: typeof subscription.customer === "string" ? subscription.customer : subscription.customer?.id ?? null,
+            subscriptionId: subscription.id,
+            currentPeriodEnd: (subscription as any).current_period_end ?? null,
+            priceIdMap,
+          });
+          if (resolution.ok && resolution.patch) {
+            await applyStripeEntitlementPatch(uid, resolution.patch);
+          } else {
+            logger.warning("[STRIPE] checkout.session.completed with unresolvable price", { uid, reason: resolution.reason });
+          }
+        }
+        break;
+      }
+      case "customer.subscription.updated":
+      case "customer.subscription.deleted": {
+        const subscription = event.data.object as Stripe.Subscription;
+        const uid = (subscription.metadata as Record<string, string> | undefined)?.firebaseUid;
+        if (uid) {
+          const resolution = resolveStripeSubscriptionPatch({
+            priceId: extractPriceIdFromSubscriptionItems(subscription.items),
+            stripeStatus: subscription.status,
+            cancelAtPeriodEnd: subscription.cancel_at_period_end,
+            customerId: typeof subscription.customer === "string" ? subscription.customer : subscription.customer?.id ?? null,
+            subscriptionId: subscription.id,
+            currentPeriodEnd: (subscription as any).current_period_end ?? null,
+            priceIdMap,
+          });
+          if (resolution.ok && resolution.patch) {
+            await applyStripeEntitlementPatch(uid, resolution.patch);
+          } else {
+            logger.warning(`[STRIPE] ${event.type} with unresolvable price`, { uid, reason: resolution.reason });
+          }
+        } else {
+          // client_reference_id is only present on the Checkout Session
+          // itself, not on later subscription events - lookupStripeCustomerUid
+          // below resolves the uid from a prior checkout's stored
+          // providerCustomerId instead.
+          const customerId = typeof subscription.customer === "string" ? subscription.customer : subscription.customer?.id;
+          const foundUid = customerId ? await lookupUidByStripeCustomerId(customerId) : null;
+          if (foundUid) {
+            const resolution = resolveStripeSubscriptionPatch({
+              priceId: extractPriceIdFromSubscriptionItems(subscription.items),
+              stripeStatus: subscription.status,
+              cancelAtPeriodEnd: subscription.cancel_at_period_end,
+              customerId: customerId ?? null,
+              subscriptionId: subscription.id,
+              currentPeriodEnd: (subscription as any).current_period_end ?? null,
+              priceIdMap,
+            });
+            if (resolution.ok && resolution.patch) {
+              await applyStripeEntitlementPatch(foundUid, resolution.patch);
+            }
+          } else {
+            logger.warning(`[STRIPE] ${event.type} - could not resolve a Blaze Break uid for this subscription`, { subscriptionId: subscription.id });
+          }
+        }
+        break;
+      }
+      case "invoice.payment_failed": {
+        const invoice = event.data.object as Stripe.Invoice;
+        const customerId = typeof invoice.customer === "string" ? invoice.customer : invoice.customer?.id;
+        const foundUid = customerId ? await lookupUidByStripeCustomerId(customerId) : null;
+        if (foundUid) {
+          await applyStripeEntitlementPatch(foundUid, buildPastDuePatch());
+        } else {
+          logger.warning("[STRIPE] invoice.payment_failed - could not resolve a Blaze Break uid", { customerId });
+        }
+        break;
+      }
+      default:
+        // Every other event type is deliberately ignored - this handler
+        // only implements the four events docs/STRIPE_PRODUCTS.md specifies.
+        break;
+    }
+
+    // Recorded last, only once the event has actually been handled - if
+    // anything above throws, Stripe's retry will find no record here and
+    // try again rather than this event being silently marked done.
+    await eventRef.set({ type: event.type, processedAt: new Date().toISOString() });
+    res.json({ received: true });
+  } catch (err: any) {
+    logger.error("[STRIPE] Webhook handler failed", errorFields(err));
+    res.status(500).json({ error: "Webhook handler failed." });
+  }
+});
+
+// ============================================================================
 // Third-Party OAuth Integrations (Slack, Jira, Asana, Calendly, Monday.com)
 // ============================================================================
 // Each provider requires its own registered OAuth app (Client ID + Secret),
@@ -6347,6 +6592,7 @@ app.get("/api/admin/system-health", verifyAppCheck, authenticateFirebaseUser, as
         twilio: { configured: !!(process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN), label: 'Twilio (SMS)' },
         brevo: { configured: !!process.env.BREVO_API_KEY, label: 'Brevo (Email)' },
         push: { configured: pushConfigured, label: 'Web Push' },
+        stripe: { configured: !!(process.env.STRIPE_SECRET_KEY && process.env.STRIPE_WEBHOOK_SECRET), label: 'Stripe (Billing)' },
       },
       killSwitches: [
         { id: 'nova_tools', label: 'Nova Tool Use', enabled: NOVA_TOOLS_ENABLED, defaultPolarity: 'on' as const },

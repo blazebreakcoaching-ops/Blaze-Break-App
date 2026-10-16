@@ -117,3 +117,19 @@ step, once the processor and credentials are chosen, is building
 against `docs/STRIPE_PRODUCTS.md`'s design - that is real engineering
 work for a future, separately-approved batch, not something to begin
 speculatively here.
+
+## Batch 2: the code now exists (still not live)
+
+Step 2-3 of the staged rollout above ("Stripe web checkout first," "the
+webhook handler, built and tested") are now real, shipped code -
+`stripe-billing.ts` (pure price/status resolution, fully unit-tested),
+`POST /api/billing/checkout-session`, and `POST /api/webhooks/stripe` in
+`server.ts`, both mock-tested against the `stripe` SDK's documented
+shapes. See `docs/STRIPE_PRODUCTS.md`'s updated header for the exact
+detail. Step 1 - "pick the processor and get real credentials" - is
+still explicitly NOT done: there is no Stripe account, and the six
+`STRIPE_PRICE_*`/`STRIPE_SECRET_KEY`/`STRIPE_WEBHOOK_SECRET` env vars
+(`.env.example`) are all blank in every environment, so both routes
+return a 503 "not configured" today. Steps 4 (Apple/Google) and 5
+(organisation-sponsored auto-provisioning) remain exactly as staged -
+untouched by this batch.
