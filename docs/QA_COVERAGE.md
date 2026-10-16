@@ -177,6 +177,70 @@ Measured effect: `server.ts` statement coverage rose from 71.34% to
 72.36%, branch coverage from 56.28% to 57.61% - overall project coverage
 80.76%→81.41% statements, 70.24%→71.07% branches.
 
+(Note: the baseline below this section, and the starting point Batch 6
+below measures from, reads lower than the numbers just above - 78.44%/
+71.07% overall, `server.ts` 68.5%/57.61% - not a regression. Security
+Operations Batches 3-4, between Batch 5 and Batch 6, restructured ~174
+single-line `err.message` fallbacks into explicit `if`/`else` chains so
+the generic-500 branch could get its own `GENERIC_SERVER_ERROR` message
+and `logger.error` call. That's more statements and branches in
+`server.ts` - mostly the newly-explicit `else` arms, which existing
+happy-path tests were never exercising in either shape - so the
+denominator grew faster than the numerator. No behavior changed and no
+coverage was lost; the percentage just measures more surface now.)
+
+## QA Batch 6: MFA route defensive catch blocks
+
+The first concrete slice of this document's one remaining fully-open
+item - "defensive catch-block branches across the file's ~300 routes."
+That gap is too large for one batch (the baseline section below says so
+explicitly), so this picks one coherent, self-contained, already-tested
+group rather than attempting breadth: the 5 TOTP two-factor routes
+(`GET /api/auth/mfa/status`, `POST .../enroll/start`, `.../enroll/confirm`,
+`.../verify-at-signin`, `.../disable`). `account-security.route.test.ts`
+already covers every one of these routes' happy paths and validation
+errors in depth; what it never exercised is the `catch` block behind
+each - the "Firestore itself threw" backstop. Security-critical, and a
+clean place to start: each route already returns its own specific, safe,
+non-leaking message on that branch (confirmed during Security Operations
+Batch 3's audit - these were among the 6 sites that already had their
+own labeled logging), so there's nothing to fix here, only to prove the
+backstop actually does what its comment says.
+
+Forcing a Firestore throw at exactly the right point needed two small,
+reusable additions to `test/fake-firestore.ts` (useful for every future
+slice of this same gap, not just this one): `forceDocError(path, method,
+error)` monkey-patches one specific document's `get`/`set`/`update`/
+`delete` to reject - scoped to that single path via a `this.path` check
+inside the override, so every other document in the same request still
+behaves normally - and `forceTransactionError(error)` does the same for
+`db.runTransaction(...)` itself, needed because the two routes that read/
+write through a transaction (`verify-at-signin`/`disable`, sharing
+`verifyMfaAttempt`'s lockout logic) never call a `DocRef`'s own methods
+directly. Neither helper imports `vitest` - `fake-firestore.ts` stays
+test-framework-agnostic, same as its existing exports - the caller's own
+`try`/`finally` or end-of-test call restores the original behavior.
+
+`mfa-defensive-errors.route.test.ts`, 5 tests - one per route, each
+forcing that route's first real Firestore call to fail and asserting
+three things: the client gets the route's existing generic, safe
+message (unchanged - nothing here needed fixing), the status code is
+500, and the real error is actually captured via `logger.error` (not
+silently dropped). `status`/`enroll/start`/`enroll/confirm` go through
+`forceDocError` (the `get`/`set`/`get` each route's catch wraps);
+`verify-at-signin`/`disable` go through `forceTransactionError`.
+
+Measured effect: `server.ts` statement coverage rose from 68.5% to
+68.64%, lines from 69.27% to 69.42% (branch coverage unchanged at
+57.61% - these 5 catch blocks were already-counted branches, just never
+taken) - overall project coverage 78.44%→78.53% statements. Deliberately
+small and expected: the baseline note above already explains why a
+single slice of a ~300-route gap won't move the overall number much.
+This is a down payment on area (1), not a close of it - the ~300-route
+gap remains the one deliberately-not-fully-closed item on this list,
+now with a pattern (and reusable fake-firestore helpers) a future batch
+can repeat against the next coherent route group.
+
 ## What's shipped
 
 - `npm run test:coverage` (`vitest run --coverage`, `@vitest/coverage-v8`):

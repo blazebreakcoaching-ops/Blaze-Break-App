@@ -395,3 +395,41 @@ export function resetStore() {
 export function setFakeNow(iso: string) {
   fakeNowIso = iso;
 }
+
+// Forces one specific document's get/set/update/delete to reject, so a
+// test can exercise a route's defensive catch-block (the "Firestore itself
+// threw" backstop behind an already-tested happy path) without having to
+// fake an entire outage. Scoped to a single doc path - every other
+// document in the same request still behaves normally - by checking
+// `this.path` inside the override before deciding whether to delegate to
+// the real implementation. DocRef itself isn't exported (this file keeps
+// its internals private), so the class is reached the same way any caller
+// would reach an instance of it: off a real doc. No vitest import here -
+// this file stays test-framework-agnostic; the returned restore function
+// is what a test's own afterEach/try-finally calls.
+export function forceDocError(path: string, method: 'get' | 'set' | 'update' | 'delete', error: Error): () => void {
+  const probe = fakeDb.collection('__force_doc_error_probe__').doc('__probe__');
+  const DocRefCtor = Object.getPrototypeOf(probe).constructor as any;
+  const original = DocRefCtor.prototype[method];
+  DocRefCtor.prototype[method] = function (this: any, ...args: any[]) {
+    if (this.path === path) return Promise.reject(error);
+    return original.apply(this, args);
+  };
+  return () => {
+    DocRefCtor.prototype[method] = original;
+  };
+}
+
+// Same idea for db.runTransaction(...) itself - the routes that read/write
+// through a transaction (e.g. the MFA verify/disable lockout logic) never
+// call DocRef.get()/.set() directly, so forceDocError above can't reach
+// them.
+export function forceTransactionError(error: Error): () => void {
+  const original = FakeFirestore.prototype.runTransaction;
+  FakeFirestore.prototype.runTransaction = function (): Promise<never> {
+    return Promise.reject(error);
+  };
+  return () => {
+    FakeFirestore.prototype.runTransaction = original;
+  };
+}
