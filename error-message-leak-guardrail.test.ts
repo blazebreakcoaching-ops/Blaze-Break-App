@@ -40,4 +40,24 @@ describe('error message leak guardrail', () => {
     const matches = synthetic.match(/res\.status\(500\)\.json\(\{ error: err\.message \}\)/g) || [];
     expect(matches.length).toBeGreaterThan(0);
   });
+
+  it('keeps the conditional-ternary 500-fallback err.message leak at zero (Security Operations Batch 4)', () => {
+    // The ~100+ sites of the shape
+    // res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message })
+    // were restructured into if/else chains: recognized branches (Forbidden/
+    // not found/frozen/Rejected/Unauthorized) still echo err.message (same
+    // deliberate-safe-message reasoning as the admin-users exceptions above),
+    // but the implicit 500 fallback - the one branch that was never
+    // authored to be user-facing - now uses GENERIC_SERVER_ERROR like every
+    // other unanticipated-failure site. This pins that at exactly zero.
+    const serverSource = fs.readFileSync(path.join(__dirname, 'server.ts'), 'utf8');
+    const matches = serverSource.match(/res\.status\(err\.message\?\.includes\([^)]*\)[^;]*: 500\)\.json\(\{ error: err\.message \}\)/g) || [];
+    expect(matches).toHaveLength(0);
+  });
+
+  it('the ternary scanner itself actually detects the old leak shape (sanity check against a synthetic string)', () => {
+    const synthetic = 'res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });';
+    const matches = synthetic.match(/res\.status\(err\.message\?\.includes\([^)]*\)[^;]*: 500\)\.json\(\{ error: err\.message \}\)/g) || [];
+    expect(matches.length).toBeGreaterThan(0);
+  });
 });

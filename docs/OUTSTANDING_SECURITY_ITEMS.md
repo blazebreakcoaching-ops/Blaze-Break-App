@@ -57,6 +57,41 @@ restructuring (split the body into its own branch, not just the status
 code) rather than a safe find-and-replace. Real, same-shaped residual
 risk, left for a future batch rather than rushed here.
 
+**Resolved in Security Operations Batch 4.** See below.
+
+## Resolved: conditional-ternary err.message leak on the implicit 500 fallback (Security Operations Batch 4)
+
+Restructured all 109 of the sites flagged above. Each
+`res.status(err.message?.includes("X") ? CODE : ... : 500).json({ error:
+err.message })` one-liner became an `if`/`else if`/`else` chain: every
+recognized branch (`"Forbidden"` → 403, `"not found"` → 404, `"frozen"` →
+423, `"Rejected"` → 400, `"Unauthorized"` → 401) still echoes `err.message`
+unchanged - same reasoning as the admin-users exceptions in Batch 3, these
+are deliberately-thrown, safe, user-facing messages. Only the final `else`
+branch (the true "we never anticipated this" fallback) now returns
+`GENERIC_SERVER_ERROR` and, like Batch 3, gets a `logger.error` call so the
+real error is still captured. One site
+(`POST /api/billing/checkout-session`) already had its own labeled
+`logger.error("[STRIPE] Failed to create checkout session", ...)` call
+immediately above the original ternary covering every branch, not just the
+500 fallback - left alone rather than duplicated, matching how Batch 3
+treated the 6 sites that already had their own logging.
+
+Two sites were deliberately left as ternaries and untouched: both
+Nova Manager Coach routes already return a hardcoded safe string
+(`"Nova Manager Coach Sync Failure: A safe operational error occurred."`),
+never `err.message`, on their 500 branch - there was no leak there to fix.
+
+Ran the full test suite (2939 tests) unchanged after the sweep as the same
+kind of audit Batch 3 used - nothing failed, meaning no test anywhere
+relied on the specific text of a message that only ever reached the 500
+fallback branch. `error-message-leak-guardrail.test.ts` gained two more
+tests pinning the conditional-ternary leak pattern at exactly zero, with
+its own sanity-check test against a synthetic string.
+
+This closes the one item left open from Batch 3. No known
+`err.message`-to-client leak sites remain in `server.ts`.
+
 ## Needs a human decision, not more code
 
 - ~~**Data retention window.**~~ **Resolved 2026-09-28** — Option B

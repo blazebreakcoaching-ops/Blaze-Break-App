@@ -4505,7 +4505,12 @@ app.get("/api/entitlements/me", verifyAppCheck, authenticateFirebaseUser, async 
     });
     res.json({ plan, status: record.status, billingSource: record.billingSource, entitlementEnd: record.entitlementEnd, renewalDate: record.renewalDate, cancelAtPeriodEnd: record.cancelAtPeriodEnd, capabilities });
   } catch (err: any) {
-    res.status(err.message?.includes("Unauthorized") ? 401 : 500).json({ error: err.message });
+    if (err.message?.includes("Unauthorized")) {
+      res.status(401).json({ error: err.message });
+    } else {
+      logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+      res.status(500).json({ error: GENERIC_SERVER_ERROR });
+    }
   }
 });
 
@@ -4588,7 +4593,11 @@ app.post("/api/billing/checkout-session", verifyAppCheck, authenticateFirebaseUs
     res.json({ url: session.url });
   } catch (err: any) {
     logger.error("[STRIPE] Failed to create checkout session", errorFields(err));
-    res.status(err.message?.includes("Unauthorized") ? 401 : 500).json({ error: err.message });
+    if (err.message?.includes("Unauthorized")) {
+      res.status(401).json({ error: err.message });
+    } else {
+      res.status(500).json({ error: GENERIC_SERVER_ERROR });
+    }
   }
 });
 
@@ -6434,7 +6443,12 @@ app.get("/api/admin/cost-usage", verifyAppCheck, authenticateFirebaseUser, async
       },
     });
   } catch (err: any) {
-    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
+    if (err.message?.includes("Forbidden")) {
+      res.status(403).json({ error: err.message });
+    } else {
+      logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+      res.status(500).json({ error: GENERIC_SERVER_ERROR });
+    }
   }
 });
 
@@ -6688,7 +6702,12 @@ app.get("/api/admin/recovery-outcomes", verifyAppCheck, authenticateFirebaseUser
       modules: summarizeModuleOutcomes(decisions),
     });
   } catch (err: any) {
-    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
+    if (err.message?.includes("Forbidden")) {
+      res.status(403).json({ error: err.message });
+    } else {
+      logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+      res.status(500).json({ error: GENERIC_SERVER_ERROR });
+    }
   }
 });
 
@@ -6749,7 +6768,12 @@ app.get("/api/admin/product-intelligence", verifyAppCheck, authenticateFirebaseU
       },
     });
   } catch (err: any) {
-    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
+    if (err.message?.includes("Forbidden")) {
+      res.status(403).json({ error: err.message });
+    } else {
+      logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+      res.status(500).json({ error: GENERIC_SERVER_ERROR });
+    }
   }
 });
 
@@ -6868,7 +6892,12 @@ app.get("/api/admin/users/:uid", verifyAppCheck, authenticateFirebaseUser, async
       fingerprint: fingerprintDoc.exists ? fingerprintDoc.data() : null
     });
   } catch (err: any) {
-    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
+    if (err.message?.includes("Forbidden")) {
+      res.status(403).json({ error: err.message });
+    } else {
+      logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+      res.status(500).json({ error: GENERIC_SERVER_ERROR });
+    }
   }
 });
 
@@ -6947,7 +6976,12 @@ app.post("/api/admin/users/:uid/entitlement", verifyAppCheck, authenticateFireba
     await logAdminAction(req, "grant_entitlement", targetUid, "", { plan, status, durationDays: durationDays ?? null, previousPlan, planChange });
     res.json({ success: true });
   } catch (err: any) {
-    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
+    if (err.message?.includes("Forbidden")) {
+      res.status(403).json({ error: err.message });
+    } else {
+      logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+      res.status(500).json({ error: GENERIC_SERVER_ERROR });
+    }
   }
 });
 
@@ -6967,7 +7001,12 @@ app.post("/api/admin/users/:uid/suspend", verifyAppCheck, authenticateFirebaseUs
     await logAdminAction(req, suspend ? "suspend_user" : "unsuspend_user", targetUid, "", {});
     res.json({ success: true });
   } catch (err: any) {
-    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
+    if (err.message?.includes("Forbidden")) {
+      res.status(403).json({ error: err.message });
+    } else {
+      logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+      res.status(500).json({ error: GENERIC_SERVER_ERROR });
+    }
   }
 });
 
@@ -6997,7 +7036,12 @@ app.get("/api/admin/admin-users", verifyAppCheck, authenticateFirebaseUser, asyn
     }));
     res.json({ admins });
   } catch (err: any) {
-    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
+    if (err.message?.includes("Forbidden")) {
+      res.status(403).json({ error: err.message });
+    } else {
+      logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+      res.status(500).json({ error: GENERIC_SERVER_ERROR });
+    }
   }
 });
 
@@ -7149,7 +7193,12 @@ app.get("/api/admin/audit-logs", verifyAppCheck, authenticateFirebaseUser, async
     });
     res.json({ logs });
   } catch (err: any) {
-    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
+    if (err.message?.includes("Forbidden")) {
+      res.status(403).json({ error: err.message });
+    } else {
+      logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+      res.status(500).json({ error: GENERIC_SERVER_ERROR });
+    }
   }
 });
 
@@ -7266,7 +7315,12 @@ app.post("/api/admin/incidents/:id/update", verifyAppCheck, authenticateFirebase
     await logAdminAction(req, "update_incident", "", req.params.id, { status: nextStatus, severity: nextSeverity, note: parsed.data.note });
     res.json({ success: true });
   } catch (err: any) {
-    res.status(err.message?.includes("not found") ? 404 : 500).json({ error: err.message });
+    if (err.message?.includes("not found")) {
+      res.status(404).json({ error: err.message });
+    } else {
+      logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+      res.status(500).json({ error: GENERIC_SERVER_ERROR });
+    }
   }
 });
 
@@ -7297,7 +7351,12 @@ app.get("/api/admin/evolution/registry", verifyAppCheck, authenticateFirebaseUse
     const entries = snap.docs.map((doc: any) => ({ featureId: doc.id, ...doc.data() }));
     res.json({ entries });
   } catch (err: any) {
-    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
+    if (err.message?.includes("Forbidden")) {
+      res.status(403).json({ error: err.message });
+    } else {
+      logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+      res.status(500).json({ error: GENERIC_SERVER_ERROR });
+    }
   }
 });
 
@@ -7322,7 +7381,14 @@ app.post("/api/admin/evolution/registry", verifyAppCheck, authenticateFirebaseUs
     await logAdminAction(req, "update_feature_registry", "", featureId, { lifecycleState: rest.lifecycleState, enforcementState: rest.enforcementState });
     res.json({ success: true, featureId });
   } catch (err: any) {
-    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("frozen") ? 423 : 500).json({ error: err.message });
+    if (err.message?.includes("Forbidden")) {
+      res.status(403).json({ error: err.message });
+    } else if (err.message?.includes("frozen")) {
+      res.status(423).json({ error: err.message });
+    } else {
+      logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+      res.status(500).json({ error: GENERIC_SERVER_ERROR });
+    }
   }
 });
 
@@ -7384,7 +7450,14 @@ app.post("/api/admin/evolution/registry/seed", verifyAppCheck, authenticateFireb
     await logAdminAction(req, "seed_feature_registry", "", "", { created, skipped, renamed });
     res.json({ created, skipped, renamed, total: initialEntries.length });
   } catch (err: any) {
-    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("frozen") ? 423 : 500).json({ error: err.message });
+    if (err.message?.includes("Forbidden")) {
+      res.status(403).json({ error: err.message });
+    } else if (err.message?.includes("frozen")) {
+      res.status(423).json({ error: err.message });
+    } else {
+      logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+      res.status(500).json({ error: GENERIC_SERVER_ERROR });
+    }
   }
 });
 
@@ -7402,7 +7475,12 @@ app.get("/api/admin/evolution/protected-core", verifyAppCheck, authenticateFireb
     const invariants = snap.docs.map((doc: any) => ({ invariantId: doc.id, ...doc.data() }));
     res.json({ invariants });
   } catch (err: any) {
-    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
+    if (err.message?.includes("Forbidden")) {
+      res.status(403).json({ error: err.message });
+    } else {
+      logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+      res.status(500).json({ error: GENERIC_SERVER_ERROR });
+    }
   }
 });
 
@@ -7421,7 +7499,14 @@ app.post("/api/admin/evolution/protected-core", verifyAppCheck, authenticateFire
     await logAdminAction(req, "update_protected_core", "", invariantId, { requiredApproval: rest.requiredApproval, testStatus: rest.testStatus });
     res.json({ success: true, invariantId });
   } catch (err: any) {
-    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("frozen") ? 423 : 500).json({ error: err.message });
+    if (err.message?.includes("Forbidden")) {
+      res.status(403).json({ error: err.message });
+    } else if (err.message?.includes("frozen")) {
+      res.status(423).json({ error: err.message });
+    } else {
+      logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+      res.status(500).json({ error: GENERIC_SERVER_ERROR });
+    }
   }
 });
 
@@ -7448,7 +7533,14 @@ app.post("/api/admin/evolution/protected-core/seed", verifyAppCheck, authenticat
     await logAdminAction(req, "seed_protected_core", "", "", { created, skipped });
     res.json({ created, skipped, total: seedEntries.length });
   } catch (err: any) {
-    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("frozen") ? 423 : 500).json({ error: err.message });
+    if (err.message?.includes("Forbidden")) {
+      res.status(403).json({ error: err.message });
+    } else if (err.message?.includes("frozen")) {
+      res.status(423).json({ error: err.message });
+    } else {
+      logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+      res.status(500).json({ error: GENERIC_SERVER_ERROR });
+    }
   }
 });
 
@@ -7496,7 +7588,14 @@ app.post("/api/admin/evolution/change-proposals", verifyAppCheck, authenticateFi
     await logAdminAction(req, "create_change_proposal", "", ref.id, { targetType, targetId, requiredApproval });
     res.json({ proposalId: ref.id, ...proposal });
   } catch (err: any) {
-    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("frozen") ? 423 : 500).json({ error: err.message });
+    if (err.message?.includes("Forbidden")) {
+      res.status(403).json({ error: err.message });
+    } else if (err.message?.includes("frozen")) {
+      res.status(423).json({ error: err.message });
+    } else {
+      logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+      res.status(500).json({ error: GENERIC_SERVER_ERROR });
+    }
   }
 });
 
@@ -7508,7 +7607,12 @@ app.get("/api/admin/evolution/change-proposals", verifyAppCheck, authenticateFir
     const proposals = snap.docs.map((doc: any) => ({ proposalId: doc.id, ...doc.data() }));
     res.json({ proposals });
   } catch (err: any) {
-    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
+    if (err.message?.includes("Forbidden")) {
+      res.status(403).json({ error: err.message });
+    } else {
+      logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+      res.status(500).json({ error: GENERIC_SERVER_ERROR });
+    }
   }
 });
 
@@ -7530,7 +7634,14 @@ app.post("/api/admin/evolution/change-proposals/:id/submit", verifyAppCheck, aut
     await logAdminAction(req, "submit_change_proposal", "", req.params.id, {});
     res.json({ success: true });
   } catch (err: any) {
-    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("frozen") ? 423 : 500).json({ error: err.message });
+    if (err.message?.includes("Forbidden")) {
+      res.status(403).json({ error: err.message });
+    } else if (err.message?.includes("frozen")) {
+      res.status(423).json({ error: err.message });
+    } else {
+      logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+      res.status(500).json({ error: GENERIC_SERVER_ERROR });
+    }
   }
 });
 
@@ -7564,7 +7675,14 @@ app.post("/api/admin/evolution/change-proposals/:id/decide", verifyAppCheck, aut
     await logAdminAction(req, "decide_change_proposal", "", req.params.id, { approve, requiredApproval: current?.requiredApproval });
     res.json({ success: true, status: nextStatus });
   } catch (err: any) {
-    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("frozen") ? 423 : 500).json({ error: err.message });
+    if (err.message?.includes("Forbidden")) {
+      res.status(403).json({ error: err.message });
+    } else if (err.message?.includes("frozen")) {
+      res.status(423).json({ error: err.message });
+    } else {
+      logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+      res.status(500).json({ error: GENERIC_SERVER_ERROR });
+    }
   }
 });
 
@@ -7589,7 +7707,14 @@ app.post("/api/admin/evolution/change-proposals/:id/withdraw", verifyAppCheck, a
     await logAdminAction(req, "withdraw_change_proposal", "", req.params.id, {});
     res.json({ success: true });
   } catch (err: any) {
-    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("frozen") ? 423 : 500).json({ error: err.message });
+    if (err.message?.includes("Forbidden")) {
+      res.status(403).json({ error: err.message });
+    } else if (err.message?.includes("frozen")) {
+      res.status(423).json({ error: err.message });
+    } else {
+      logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+      res.status(500).json({ error: GENERIC_SERVER_ERROR });
+    }
   }
 });
 
@@ -7631,7 +7756,14 @@ app.post("/api/admin/evolution/change-proposals/:id/apply", verifyAppCheck, auth
     await logAdminAction(req, "apply_change_proposal", "", req.params.id, { targetId: current?.targetId });
     res.json({ success: true });
   } catch (err: any) {
-    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("frozen") ? 423 : 500).json({ error: err.message });
+    if (err.message?.includes("Forbidden")) {
+      res.status(403).json({ error: err.message });
+    } else if (err.message?.includes("frozen")) {
+      res.status(423).json({ error: err.message });
+    } else {
+      logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+      res.status(500).json({ error: GENERIC_SERVER_ERROR });
+    }
   }
 });
 
@@ -7663,7 +7795,12 @@ app.get("/api/admin/evolution/connectors", verifyAppCheck, authenticateFirebaseU
     });
     res.json({ connectors: [...platformViews, ...orgViews] });
   } catch (err: any) {
-    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
+    if (err.message?.includes("Forbidden")) {
+      res.status(403).json({ error: err.message });
+    } else {
+      logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+      res.status(500).json({ error: GENERIC_SERVER_ERROR });
+    }
   }
 });
 
@@ -7679,7 +7816,12 @@ app.get("/api/admin/evolution/cost-budget", verifyAppCheck, authenticateFirebase
     const doc = await db.collection("app_config").doc("evolution_cost_budget").get();
     res.json({ monthlyBudgetUsd: Number(doc.data()?.monthlyBudgetUsd) || 0 });
   } catch (err: any) {
-    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
+    if (err.message?.includes("Forbidden")) {
+      res.status(403).json({ error: err.message });
+    } else {
+      logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+      res.status(500).json({ error: GENERIC_SERVER_ERROR });
+    }
   }
 });
 
@@ -7696,7 +7838,14 @@ app.post("/api/admin/evolution/cost-budget", verifyAppCheck, authenticateFirebas
     await logAdminAction(req, "update_evolution_cost_budget", "", "", { monthlyBudgetUsd });
     res.json({ success: true, monthlyBudgetUsd });
   } catch (err: any) {
-    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("frozen") ? 423 : 500).json({ error: err.message });
+    if (err.message?.includes("Forbidden")) {
+      res.status(403).json({ error: err.message });
+    } else if (err.message?.includes("frozen")) {
+      res.status(423).json({ error: err.message });
+    } else {
+      logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+      res.status(500).json({ error: GENERIC_SERVER_ERROR });
+    }
   }
 });
 
@@ -7722,7 +7871,12 @@ app.get("/api/admin/evolution/freeze", verifyAppCheck, authenticateFirebaseUser,
       frozenAt: data?.frozenAt ?? null,
     });
   } catch (err: any) {
-    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
+    if (err.message?.includes("Forbidden")) {
+      res.status(403).json({ error: err.message });
+    } else {
+      logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+      res.status(500).json({ error: GENERIC_SERVER_ERROR });
+    }
   }
 });
 
@@ -7746,7 +7900,12 @@ app.post("/api/admin/evolution/freeze", verifyAppCheck, authenticateFirebaseUser
     await logAdminAction(req, frozen ? "freeze_evolution_engine" : "unfreeze_evolution_engine", "", "", { reason: reason || null });
     res.json({ success: true, frozen });
   } catch (err: any) {
-    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
+    if (err.message?.includes("Forbidden")) {
+      res.status(403).json({ error: err.message });
+    } else {
+      logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+      res.status(500).json({ error: GENERIC_SERVER_ERROR });
+    }
   }
 });
 
@@ -7769,7 +7928,12 @@ app.get("/api/admin/evolution/nova-runtime", verifyAppCheck, authenticateFirebas
     });
     res.json({ surfaces });
   } catch (err: any) {
-    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
+    if (err.message?.includes("Forbidden")) {
+      res.status(403).json({ error: err.message });
+    } else {
+      logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+      res.status(500).json({ error: GENERIC_SERVER_ERROR });
+    }
   }
 });
 
@@ -7808,7 +7972,14 @@ app.post("/api/admin/evolution/rollout-plans", verifyAppCheck, authenticateFireb
     await logAdminAction(req, "create_rollout_plan", "", ref.id, { targetFeatureId, targetPercentage });
     res.json({ rolloutId: ref.id, ...plan });
   } catch (err: any) {
-    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("frozen") ? 423 : 500).json({ error: err.message });
+    if (err.message?.includes("Forbidden")) {
+      res.status(403).json({ error: err.message });
+    } else if (err.message?.includes("frozen")) {
+      res.status(423).json({ error: err.message });
+    } else {
+      logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+      res.status(500).json({ error: GENERIC_SERVER_ERROR });
+    }
   }
 });
 
@@ -7820,7 +7991,12 @@ app.get("/api/admin/evolution/rollout-plans", verifyAppCheck, authenticateFireba
     const plans = snap.docs.map((doc: any) => ({ rolloutId: doc.id, ...doc.data() }));
     res.json({ plans });
   } catch (err: any) {
-    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
+    if (err.message?.includes("Forbidden")) {
+      res.status(403).json({ error: err.message });
+    } else {
+      logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+      res.status(500).json({ error: GENERIC_SERVER_ERROR });
+    }
   }
 });
 
@@ -7852,7 +8028,14 @@ app.post("/api/admin/evolution/rollout-plans/:id/status", verifyAppCheck, authen
     await logAdminAction(req, "update_rollout_plan_status", "", req.params.id, { from, to: status });
     res.json({ success: true, status });
   } catch (err: any) {
-    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("frozen") ? 423 : 500).json({ error: err.message });
+    if (err.message?.includes("Forbidden")) {
+      res.status(403).json({ error: err.message });
+    } else if (err.message?.includes("frozen")) {
+      res.status(423).json({ error: err.message });
+    } else {
+      logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+      res.status(500).json({ error: GENERIC_SERVER_ERROR });
+    }
   }
 });
 
@@ -7885,7 +8068,12 @@ app.get("/api/admin/evolution/context-brain/health", verifyAppCheck, authenticat
     const summary = summarizeMemoryHealth(entries);
     res.json({ ...summary, capped: snap.size >= CONTEXT_BRAIN_HEALTH_SCAN_LIMIT });
   } catch (err: any) {
-    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
+    if (err.message?.includes("Forbidden")) {
+      res.status(403).json({ error: err.message });
+    } else {
+      logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+      res.status(500).json({ error: GENERIC_SERVER_ERROR });
+    }
   }
 });
 
@@ -7929,7 +8117,12 @@ app.post("/api/admin/feature-flags", verifyAppCheck, authenticateFirebaseUser, a
     await logAdminAction(req, "manage_feature_flags", "", featureId, { enabled });
     res.json({ success: true });
   } catch (err: any) {
-    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
+    if (err.message?.includes("Forbidden")) {
+      res.status(403).json({ error: err.message });
+    } else {
+      logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+      res.status(500).json({ error: GENERIC_SERVER_ERROR });
+    }
   }
 });
 
@@ -7946,7 +8139,12 @@ app.post("/api/admin/nova-settings", verifyAppCheck, authenticateFirebaseUser, a
     await logAdminAction(req, "manage_nova_settings", "", "", { settings });
     res.json({ success: true });
   } catch (err: any) {
-    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
+    if (err.message?.includes("Forbidden")) {
+      res.status(403).json({ error: err.message });
+    } else {
+      logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+      res.status(500).json({ error: GENERIC_SERVER_ERROR });
+    }
   }
 });
 
@@ -7963,7 +8161,12 @@ app.post("/api/admin/knowledge-chunks", verifyAppCheck, authenticateFirebaseUser
     await logAdminAction(req, "manage_knowledge_chunks", "", "", { chunkCount: chunks?.length });
     res.json({ success: true });
   } catch (err: any) {
-    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
+    if (err.message?.includes("Forbidden")) {
+      res.status(403).json({ error: err.message });
+    } else {
+      logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+      res.status(500).json({ error: GENERIC_SERVER_ERROR });
+    }
   }
 });
 
@@ -7980,7 +8183,12 @@ app.post("/api/admin/content-library", verifyAppCheck, authenticateFirebaseUser,
     await logAdminAction(req, "manage_content_library", "", "", { contentType: typeof content });
     res.json({ success: true });
   } catch (err: any) {
-    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
+    if (err.message?.includes("Forbidden")) {
+      res.status(403).json({ error: err.message });
+    } else {
+      logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+      res.status(500).json({ error: GENERIC_SERVER_ERROR });
+    }
   }
 });
 
@@ -8057,7 +8265,12 @@ app.post("/api/admin/orgs", verifyAppCheck, authenticateFirebaseUser, async (req
     await logAdminAction(req, "manage_organisation", "", orgId, { name, privacyThreshold });
     res.json({ success: true, joinCode });
   } catch (err: any) {
-    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
+    if (err.message?.includes("Forbidden")) {
+      res.status(403).json({ error: err.message });
+    } else {
+      logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+      res.status(500).json({ error: GENERIC_SERVER_ERROR });
+    }
   }
 });
 
@@ -8524,7 +8737,12 @@ app.get("/api/org/:orgId/dashboard", verifyAppCheck, authenticateFirebaseUser, a
       narrative: payload.narrative,
     });
   } catch (err: any) {
-    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
+    if (err.message?.includes("Forbidden")) {
+      res.status(403).json({ error: err.message });
+    } else {
+      logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+      res.status(500).json({ error: GENERIC_SERVER_ERROR });
+    }
   }
 });
 
@@ -8579,7 +8797,12 @@ app.get("/api/org/:orgId/recognition-suggestions", verifyAppCheck, authenticateF
       }),
     });
   } catch (err: any) {
-    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
+    if (err.message?.includes("Forbidden")) {
+      res.status(403).json({ error: err.message });
+    } else {
+      logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+      res.status(500).json({ error: GENERIC_SERVER_ERROR });
+    }
   }
 });
 
@@ -8740,7 +8963,14 @@ app.patch("/api/org/:orgId/suggestions/:id/respond", verifyAppCheck, authenticat
     await logOrgAuditAction(req, orgId, "respond_to_suggestion", "anonymous_suggestion", id, null, { linkedInterventionId: linkedInterventionId || null, hasNote: !!note });
     res.json({ success: true });
   } catch (err: any) {
-    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("not found") ? 404 : 500).json({ error: err.message });
+    if (err.message?.includes("Forbidden")) {
+      res.status(403).json({ error: err.message });
+    } else if (err.message?.includes("not found")) {
+      res.status(404).json({ error: err.message });
+    } else {
+      logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+      res.status(500).json({ error: GENERIC_SERVER_ERROR });
+    }
   }
 });
 
@@ -8831,7 +9061,12 @@ app.post("/api/org/:orgId/cost-inputs", verifyAppCheck, authenticateFirebaseUser
     });
     res.json({ success: true });
   } catch (err: any) {
-    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
+    if (err.message?.includes("Forbidden")) {
+      res.status(403).json({ error: err.message });
+    } else {
+      logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+      res.status(500).json({ error: GENERIC_SERVER_ERROR });
+    }
   }
 });
 
@@ -8877,7 +9112,12 @@ app.get("/api/admin/orgs", verifyAppCheck, authenticateFirebaseUser, async (req,
     });
     res.json({ orgs });
   } catch (err: any) {
-    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
+    if (err.message?.includes("Forbidden")) {
+      res.status(403).json({ error: err.message });
+    } else {
+      logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+      res.status(500).json({ error: GENERIC_SERVER_ERROR });
+    }
   }
 });
 
@@ -8919,7 +9159,12 @@ app.get("/api/admin/orgs/:orgId", verifyAppCheck, authenticateFirebaseUser, asyn
       members,
     });
   } catch (err: any) {
-    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
+    if (err.message?.includes("Forbidden")) {
+      res.status(403).json({ error: err.message });
+    } else {
+      logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+      res.status(500).json({ error: GENERIC_SERVER_ERROR });
+    }
   }
 });
 
@@ -9165,7 +9410,12 @@ app.post("/api/org/:orgId/challenges", verifyAppCheck, authenticateFirebaseUser,
     });
     res.json({ success: true, id: ref.id });
   } catch (err: any) {
-    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
+    if (err.message?.includes("Forbidden")) {
+      res.status(403).json({ error: err.message });
+    } else {
+      logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+      res.status(500).json({ error: GENERIC_SERVER_ERROR });
+    }
   }
 });
 
@@ -9271,7 +9521,12 @@ app.get("/api/org/:orgId/members", verifyAppCheck, authenticateFirebaseUser, asy
 
     res.json({ members, existingTeams: Array.from(new Set(Object.values(memberTeams))), hrViewerUids: org.hrViewerUids || [] });
   } catch (err: any) {
-    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
+    if (err.message?.includes("Forbidden")) {
+      res.status(403).json({ error: err.message });
+    } else {
+      logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+      res.status(500).json({ error: GENERIC_SERVER_ERROR });
+    }
   }
 });
 
@@ -9306,7 +9561,14 @@ app.post("/api/org/:orgId/members/:memberUid/remove", verifyAppCheck, authentica
     await logOrgAuditAction(req, orgId, "remove_member", "member", memberUid);
     res.json({ success: true });
   } catch (err: any) {
-    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("Rejected") ? 400 : 500).json({ error: err.message });
+    if (err.message?.includes("Forbidden")) {
+      res.status(403).json({ error: err.message });
+    } else if (err.message?.includes("Rejected")) {
+      res.status(400).json({ error: err.message });
+    } else {
+      logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+      res.status(500).json({ error: GENERIC_SERVER_ERROR });
+    }
   }
 });
 
@@ -9342,7 +9604,12 @@ app.post("/api/org/:orgId/members/:memberUid/team", verifyAppCheck, authenticate
     await logOrgAuditAction(req, orgId, "assign_member_team", "member", memberUid, { team: previousTeam }, { team: nextTeam });
     res.json({ success: true });
   } catch (err: any) {
-    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
+    if (err.message?.includes("Forbidden")) {
+      res.status(403).json({ error: err.message });
+    } else {
+      logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+      res.status(500).json({ error: GENERIC_SERVER_ERROR });
+    }
   }
 });
 
@@ -9378,7 +9645,14 @@ app.post("/api/org/:orgId/members/:memberUid/manage-teams", verifyAppCheck, auth
     await logOrgAuditAction(req, orgId, "assign_team_manager", "team_manager", memberUid, before, { teams });
     res.json({ success: true, teams });
   } catch (err: any) {
-    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("not found") ? 404 : 500).json({ error: err.message });
+    if (err.message?.includes("Forbidden")) {
+      res.status(403).json({ error: err.message });
+    } else if (err.message?.includes("not found")) {
+      res.status(404).json({ error: err.message });
+    } else {
+      logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+      res.status(500).json({ error: GENERIC_SERVER_ERROR });
+    }
   }
 });
 
@@ -9388,7 +9662,14 @@ app.get("/api/org/:orgId/hr-viewers", verifyAppCheck, authenticateFirebaseUser, 
     const { org } = await requireOrgAdmin(req, orgId);
     res.json({ uids: org.hrViewerUids || [] });
   } catch (err: any) {
-    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("not found") ? 404 : 500).json({ error: err.message });
+    if (err.message?.includes("Forbidden")) {
+      res.status(403).json({ error: err.message });
+    } else if (err.message?.includes("not found")) {
+      res.status(404).json({ error: err.message });
+    } else {
+      logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+      res.status(500).json({ error: GENERIC_SERVER_ERROR });
+    }
   }
 });
 
@@ -9427,7 +9708,14 @@ app.post("/api/org/:orgId/hr-viewers", verifyAppCheck, authenticateFirebaseUser,
     }
     res.json({ success: true, uids });
   } catch (err: any) {
-    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("not found") ? 404 : 500).json({ error: err.message });
+    if (err.message?.includes("Forbidden")) {
+      res.status(403).json({ error: err.message });
+    } else if (err.message?.includes("not found")) {
+      res.status(404).json({ error: err.message });
+    } else {
+      logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+      res.status(500).json({ error: GENERIC_SERVER_ERROR });
+    }
   }
 });
 
@@ -9516,7 +9804,14 @@ app.get("/api/org/:orgId/team-dashboard", verifyAppCheck, authenticateFirebaseUs
 
     res.json({ teams });
   } catch (err: any) {
-    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("not found") ? 404 : 500).json({ error: err.message });
+    if (err.message?.includes("Forbidden")) {
+      res.status(403).json({ error: err.message });
+    } else if (err.message?.includes("not found")) {
+      res.status(404).json({ error: err.message });
+    } else {
+      logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+      res.status(500).json({ error: GENERIC_SERVER_ERROR });
+    }
   }
 });
 
@@ -9553,7 +9848,14 @@ app.post("/api/org/:orgId/team-dashboard/:team/acknowledge", verifyAppCheck, aut
     await logOrgAuditAction(req, orgId, "acknowledge_team_signal", "team_escalation_ack", team, null, { notePresent: !!note });
     res.json({ success: true, ack: record });
   } catch (err: any) {
-    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("not found") ? 404 : 500).json({ error: err.message });
+    if (err.message?.includes("Forbidden")) {
+      res.status(403).json({ error: err.message });
+    } else if (err.message?.includes("not found")) {
+      res.status(404).json({ error: err.message });
+    } else {
+      logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+      res.status(500).json({ error: GENERIC_SERVER_ERROR });
+    }
   }
 });
 
@@ -9645,7 +9947,14 @@ app.post("/api/org/:orgId/work-design-interventions", verifyAppCheck, authentica
     await logOrgAuditAction(req, orgId, "create_work_design_intervention", "work_design_intervention", newRef.id, null, { team, signalKey, status: record.status });
     res.json({ success: true, intervention: { id: newRef.id, ...record } });
   } catch (err: any) {
-    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("not found") ? 404 : 500).json({ error: err.message });
+    if (err.message?.includes("Forbidden")) {
+      res.status(403).json({ error: err.message });
+    } else if (err.message?.includes("not found")) {
+      res.status(404).json({ error: err.message });
+    } else {
+      logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+      res.status(500).json({ error: GENERIC_SERVER_ERROR });
+    }
   }
 });
 
@@ -9689,7 +9998,14 @@ app.get("/api/org/:orgId/work-design-interventions", verifyAppCheck, authenticat
     const interventions = snap.docs.map((d: any) => ({ id: d.id, ...d.data() }));
     res.json({ interventions });
   } catch (err: any) {
-    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("not found") ? 404 : 500).json({ error: err.message });
+    if (err.message?.includes("Forbidden")) {
+      res.status(403).json({ error: err.message });
+    } else if (err.message?.includes("not found")) {
+      res.status(404).json({ error: err.message });
+    } else {
+      logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+      res.status(500).json({ error: GENERIC_SERVER_ERROR });
+    }
   }
 });
 
@@ -9801,7 +10117,14 @@ app.patch("/api/org/:orgId/work-design-interventions/:id/status", verifyAppCheck
     await logOrgAuditAction(req, orgId, "update_work_design_intervention_status", "work_design_intervention", id, { status: existing.status }, { status });
     res.json({ success: true });
   } catch (err: any) {
-    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("not found") ? 404 : 500).json({ error: err.message });
+    if (err.message?.includes("Forbidden")) {
+      res.status(403).json({ error: err.message });
+    } else if (err.message?.includes("not found")) {
+      res.status(404).json({ error: err.message });
+    } else {
+      logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+      res.status(500).json({ error: GENERIC_SERVER_ERROR });
+    }
   }
 });
 
@@ -9865,7 +10188,14 @@ app.patch("/api/org/:orgId/work-design-interventions/:id/outcome", verifyAppChec
     await logOrgAuditAction(req, orgId, "record_work_design_intervention_outcome", "work_design_intervention", id, { status: existing.status }, { status: update.status, outcomeRating });
     res.json({ success: true, pressureTransferCheck });
   } catch (err: any) {
-    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("not found") ? 404 : 500).json({ error: err.message });
+    if (err.message?.includes("Forbidden")) {
+      res.status(403).json({ error: err.message });
+    } else if (err.message?.includes("not found")) {
+      res.status(404).json({ error: err.message });
+    } else {
+      logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+      res.status(500).json({ error: GENERIC_SERVER_ERROR });
+    }
   }
 });
 
@@ -9902,7 +10232,14 @@ app.post("/api/org/:orgId/work-design-debt", verifyAppCheck, authenticateFirebas
     await logOrgAuditAction(req, orgId, "create_work_design_debt", "work_design_debt", ref.id, null, { team, signalKey, status: record.status });
     res.json({ success: true, debt: { id: ref.id, ...record } });
   } catch (err: any) {
-    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("not found") ? 404 : 500).json({ error: err.message });
+    if (err.message?.includes("Forbidden")) {
+      res.status(403).json({ error: err.message });
+    } else if (err.message?.includes("not found")) {
+      res.status(404).json({ error: err.message });
+    } else {
+      logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+      res.status(500).json({ error: GENERIC_SERVER_ERROR });
+    }
   }
 });
 
@@ -9936,7 +10273,14 @@ app.get("/api/org/:orgId/work-design-debt", verifyAppCheck, authenticateFirebase
     const items = snap.docs.map((d: any) => ({ id: d.id, ...d.data() }));
     res.json({ items });
   } catch (err: any) {
-    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("not found") ? 404 : 500).json({ error: err.message });
+    if (err.message?.includes("Forbidden")) {
+      res.status(403).json({ error: err.message });
+    } else if (err.message?.includes("not found")) {
+      res.status(404).json({ error: err.message });
+    } else {
+      logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+      res.status(500).json({ error: GENERIC_SERVER_ERROR });
+    }
   }
 });
 
@@ -9967,7 +10311,14 @@ app.patch("/api/org/:orgId/work-design-debt/:id/owner", verifyAppCheck, authenti
     await logOrgAuditAction(req, orgId, "assign_work_design_debt_owner", "work_design_debt", id, before, { ownerUid });
     res.json({ success: true });
   } catch (err: any) {
-    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("not found") ? 404 : 500).json({ error: err.message });
+    if (err.message?.includes("Forbidden")) {
+      res.status(403).json({ error: err.message });
+    } else if (err.message?.includes("not found")) {
+      res.status(404).json({ error: err.message });
+    } else {
+      logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+      res.status(500).json({ error: GENERIC_SERVER_ERROR });
+    }
   }
 });
 
@@ -10012,7 +10363,14 @@ app.patch("/api/org/:orgId/work-design-debt/:id/status", verifyAppCheck, authent
     await logOrgAuditAction(req, orgId, "update_work_design_debt_status", "work_design_debt", id, { status: existing.status }, { status });
     res.json({ success: true });
   } catch (err: any) {
-    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("not found") ? 404 : 500).json({ error: err.message });
+    if (err.message?.includes("Forbidden")) {
+      res.status(403).json({ error: err.message });
+    } else if (err.message?.includes("not found")) {
+      res.status(404).json({ error: err.message });
+    } else {
+      logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+      res.status(500).json({ error: GENERIC_SERVER_ERROR });
+    }
   }
 });
 
@@ -10041,7 +10399,14 @@ app.post("/api/org/:orgId/workplace-policies", verifyAppCheck, authenticateFireb
     await logOrgAuditAction(req, orgId, "create_workplace_policy", "workplace_policy", ref.id, null, { type, label });
     res.json({ success: true, policy: { id: ref.id, ...record } });
   } catch (err: any) {
-    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("not found") ? 404 : 500).json({ error: err.message });
+    if (err.message?.includes("Forbidden")) {
+      res.status(403).json({ error: err.message });
+    } else if (err.message?.includes("not found")) {
+      res.status(404).json({ error: err.message });
+    } else {
+      logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+      res.status(500).json({ error: GENERIC_SERVER_ERROR });
+    }
   }
 });
 
@@ -10087,7 +10452,14 @@ app.get("/api/org/:orgId/workplace-policies", verifyAppCheck, authenticateFireba
     });
     res.json({ policies: withGaps, provenance });
   } catch (err: any) {
-    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("not found") ? 404 : 500).json({ error: err.message });
+    if (err.message?.includes("Forbidden")) {
+      res.status(403).json({ error: err.message });
+    } else if (err.message?.includes("not found")) {
+      res.status(404).json({ error: err.message });
+    } else {
+      logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+      res.status(500).json({ error: GENERIC_SERVER_ERROR });
+    }
   }
 });
 
@@ -10105,7 +10477,14 @@ app.delete("/api/org/:orgId/workplace-policies/:id", verifyAppCheck, authenticat
     await logOrgAuditAction(req, orgId, "delete_workplace_policy", "workplace_policy", id, snap.data(), null);
     res.json({ success: true });
   } catch (err: any) {
-    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("not found") ? 404 : 500).json({ error: err.message });
+    if (err.message?.includes("Forbidden")) {
+      res.status(403).json({ error: err.message });
+    } else if (err.message?.includes("not found")) {
+      res.status(404).json({ error: err.message });
+    } else {
+      logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+      res.status(500).json({ error: GENERIC_SERVER_ERROR });
+    }
   }
 });
 
@@ -10199,7 +10578,14 @@ app.post("/api/org/:orgId/what-works-here/:signalKey/promote", verifyAppCheck, a
     await logOrgAuditAction(req, orgId, "promote_local_operating_principle", "local_operating_principle", signalKey, null, { signalKey });
     res.json({ success: true });
   } catch (err: any) {
-    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("not found") ? 404 : 500).json({ error: err.message });
+    if (err.message?.includes("Forbidden")) {
+      res.status(403).json({ error: err.message });
+    } else if (err.message?.includes("not found")) {
+      res.status(404).json({ error: err.message });
+    } else {
+      logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+      res.status(500).json({ error: GENERIC_SERVER_ERROR });
+    }
   }
 });
 
@@ -10303,7 +10689,14 @@ app.get("/api/org/:orgId/hr-dashboard", verifyAppCheck, authenticateFirebaseUser
 
     res.json({ locked: false, cohortSize: consentingUids.length, threshold, teams });
   } catch (err: any) {
-    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("not found") ? 404 : 500).json({ error: err.message });
+    if (err.message?.includes("Forbidden")) {
+      res.status(403).json({ error: err.message });
+    } else if (err.message?.includes("not found")) {
+      res.status(404).json({ error: err.message });
+    } else {
+      logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+      res.status(500).json({ error: GENERIC_SERVER_ERROR });
+    }
   }
 });
 
@@ -10386,7 +10779,12 @@ app.get("/api/org/:orgId/executive-work-design", verifyAppCheck, authenticateFir
     if (payload.locked) return res.json(payload.lockedResponse);
     res.json(payload);
   } catch (err: any) {
-    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
+    if (err.message?.includes("Forbidden")) {
+      res.status(403).json({ error: err.message });
+    } else {
+      logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+      res.status(500).json({ error: GENERIC_SERVER_ERROR });
+    }
   }
 });
 
@@ -10422,7 +10820,12 @@ app.get("/api/org/:orgId/executive-work-design/export", verifyAppCheck, authenti
       ...payload,
     });
   } catch (err: any) {
-    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
+    if (err.message?.includes("Forbidden")) {
+      res.status(403).json({ error: err.message });
+    } else {
+      logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+      res.status(500).json({ error: GENERIC_SERVER_ERROR });
+    }
   }
 });
 
@@ -10468,7 +10871,12 @@ app.get("/api/org/:orgId/data-coverage", verifyAppCheck, authenticateFirebaseUse
 
     res.json({ locked: false, cohortSize: consentingUids.length, threshold, connectors });
   } catch (err: any) {
-    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
+    if (err.message?.includes("Forbidden")) {
+      res.status(403).json({ error: err.message });
+    } else {
+      logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+      res.status(500).json({ error: GENERIC_SERVER_ERROR });
+    }
   }
 });
 
@@ -10494,7 +10902,12 @@ app.post("/api/org/:orgId/members/:memberUid/make-admin", verifyAppCheck, authen
     await logOrgAuditAction(req, orgId, "grant_admin", "member", memberUid, null, { role: 'admin' });
     res.json({ success: true });
   } catch (err: any) {
-    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
+    if (err.message?.includes("Forbidden")) {
+      res.status(403).json({ error: err.message });
+    } else {
+      logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+      res.status(500).json({ error: GENERIC_SERVER_ERROR });
+    }
   }
 });
 
@@ -10520,7 +10933,12 @@ app.post("/api/org/:orgId/members/:memberUid/revoke-admin", verifyAppCheck, auth
     await logOrgAuditAction(req, orgId, "revoke_admin", "member", memberUid, { role: 'admin' }, { role: 'member' });
     res.json({ success: true });
   } catch (err: any) {
-    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
+    if (err.message?.includes("Forbidden")) {
+      res.status(403).json({ error: err.message });
+    } else {
+      logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+      res.status(500).json({ error: GENERIC_SERVER_ERROR });
+    }
   }
 });
 
@@ -10546,7 +10964,14 @@ app.get("/api/org/:orgId/members/roles", verifyAppCheck, authenticateFirebaseUse
     const roles = membersSnap.docs.map((d: any) => ({ uid: d.id, ...d.data() }));
     res.json({ members: roles });
   } catch (err: any) {
-    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("not found") ? 404 : 500).json({ error: err.message });
+    if (err.message?.includes("Forbidden")) {
+      res.status(403).json({ error: err.message });
+    } else if (err.message?.includes("not found")) {
+      res.status(404).json({ error: err.message });
+    } else {
+      logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+      res.status(500).json({ error: GENERIC_SERVER_ERROR });
+    }
   }
 });
 
@@ -10584,7 +11009,16 @@ app.post("/api/org/:orgId/members/:memberUid/role", verifyAppCheck, authenticate
     await logOrgAuditAction(req, orgId, "change_member_role", "member", memberUid, { role: beforeRole }, { role: nextRole });
     res.json({ success: true, role: nextRole });
   } catch (err: any) {
-    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("Rejected") ? 400 : err.message?.includes("not found") ? 404 : 500).json({ error: err.message });
+    if (err.message?.includes("Forbidden")) {
+      res.status(403).json({ error: err.message });
+    } else if (err.message?.includes("Rejected")) {
+      res.status(400).json({ error: err.message });
+    } else if (err.message?.includes("not found")) {
+      res.status(404).json({ error: err.message });
+    } else {
+      logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+      res.status(500).json({ error: GENERIC_SERVER_ERROR });
+    }
   }
 });
 
@@ -10598,7 +11032,12 @@ app.post("/api/org/:orgId/members/:memberUid/suspend", verifyAppCheck, authentic
     await logOrgAuditAction(req, orgId, "suspend_member", "member", memberUid, { status: 'active' }, { status: 'suspended' });
     res.json({ success: true });
   } catch (err: any) {
-    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
+    if (err.message?.includes("Forbidden")) {
+      res.status(403).json({ error: err.message });
+    } else {
+      logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+      res.status(500).json({ error: GENERIC_SERVER_ERROR });
+    }
   }
 });
 
@@ -10612,7 +11051,12 @@ app.post("/api/org/:orgId/members/:memberUid/reactivate", verifyAppCheck, authen
     await logOrgAuditAction(req, orgId, "reactivate_member", "member", memberUid, { status: 'suspended' }, { status: 'active' });
     res.json({ success: true });
   } catch (err: any) {
-    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
+    if (err.message?.includes("Forbidden")) {
+      res.status(403).json({ error: err.message });
+    } else {
+      logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+      res.status(500).json({ error: GENERIC_SERVER_ERROR });
+    }
   }
 });
 
@@ -10629,7 +11073,14 @@ app.get("/api/org/:orgId/audit-logs", verifyAppCheck, authenticateFirebaseUser, 
     const logs = snap.docs.map((d: any) => ({ id: d.id, ...d.data() }));
     res.json({ logs });
   } catch (err: any) {
-    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("not found") ? 404 : 500).json({ error: err.message });
+    if (err.message?.includes("Forbidden")) {
+      res.status(403).json({ error: err.message });
+    } else if (err.message?.includes("not found")) {
+      res.status(404).json({ error: err.message });
+    } else {
+      logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+      res.status(500).json({ error: GENERIC_SERVER_ERROR });
+    }
   }
 });
 
@@ -10661,7 +11112,14 @@ app.get("/api/org/:orgId/governance", verifyAppCheck, authenticateFirebaseUser, 
       roleReference: ORG_ROLE_PERMISSIONS,
     });
   } catch (err: any) {
-    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("not found") ? 404 : 500).json({ error: err.message });
+    if (err.message?.includes("Forbidden")) {
+      res.status(403).json({ error: err.message });
+    } else if (err.message?.includes("not found")) {
+      res.status(404).json({ error: err.message });
+    } else {
+      logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+      res.status(500).json({ error: GENERIC_SERVER_ERROR });
+    }
   }
 });
 
@@ -10998,7 +11456,14 @@ app.get("/api/org/:orgId/data-policy", verifyAppCheck, authenticateFirebaseUser,
     const { org } = await requireOrgPermission(req, orgId, 'org.data_policy.view');
     res.json({ policy: getEffectiveDataPolicy(org.dataPolicy) });
   } catch (err: any) {
-    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("not found") ? 404 : 500).json({ error: err.message });
+    if (err.message?.includes("Forbidden")) {
+      res.status(403).json({ error: err.message });
+    } else if (err.message?.includes("not found")) {
+      res.status(404).json({ error: err.message });
+    } else {
+      logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+      res.status(500).json({ error: GENERIC_SERVER_ERROR });
+    }
   }
 });
 
@@ -11019,7 +11484,14 @@ app.post("/api/org/:orgId/data-policy", verifyAppCheck, authenticateFirebaseUser
     await logOrgAuditAction(req, orgId, "update_data_policy", "data_policy", orgId, { ...before }, { ...after });
     res.json({ success: true, policy: after });
   } catch (err: any) {
-    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("not found") ? 404 : 500).json({ error: err.message });
+    if (err.message?.includes("Forbidden")) {
+      res.status(403).json({ error: err.message });
+    } else if (err.message?.includes("not found")) {
+      res.status(404).json({ error: err.message });
+    } else {
+      logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+      res.status(500).json({ error: GENERIC_SERVER_ERROR });
+    }
   }
 });
 
@@ -11065,7 +11537,14 @@ app.get("/api/org/:orgId/connectors", verifyAppCheck, authenticateFirebaseUser, 
     const connectors = snap.docs.map((d: any) => redactConnector(d.id, d.data(), showDetail));
     res.json({ connectors, availableTypes: Object.keys(ORG_CONNECTOR_TYPES) });
   } catch (err: any) {
-    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("not found") ? 404 : 500).json({ error: err.message });
+    if (err.message?.includes("Forbidden")) {
+      res.status(403).json({ error: err.message });
+    } else if (err.message?.includes("not found")) {
+      res.status(404).json({ error: err.message });
+    } else {
+      logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+      res.status(500).json({ error: GENERIC_SERVER_ERROR });
+    }
   }
 });
 
@@ -11100,7 +11579,14 @@ app.post("/api/org/:orgId/connectors", verifyAppCheck, authenticateFirebaseUser,
     await logOrgAuditAction(req, orgId, "create_connector", "connector", ref.id, null, { type, displayName });
     res.json({ success: true, connector: redactConnector(ref.id, record, true) });
   } catch (err: any) {
-    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("not found") ? 404 : 500).json({ error: err.message });
+    if (err.message?.includes("Forbidden")) {
+      res.status(403).json({ error: err.message });
+    } else if (err.message?.includes("not found")) {
+      res.status(404).json({ error: err.message });
+    } else {
+      logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+      res.status(500).json({ error: GENERIC_SERVER_ERROR });
+    }
   }
 });
 
@@ -11123,7 +11609,14 @@ app.post("/api/org/:orgId/connectors/:connectorId/enable", verifyAppCheck, authe
     await logOrgAuditAction(req, orgId, "enable_connector", "connector", connectorId, before, { status: "active", enabled: true });
     res.json({ success: true });
   } catch (err: any) {
-    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("not found") ? 404 : 500).json({ error: err.message });
+    if (err.message?.includes("Forbidden")) {
+      res.status(403).json({ error: err.message });
+    } else if (err.message?.includes("not found")) {
+      res.status(404).json({ error: err.message });
+    } else {
+      logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+      res.status(500).json({ error: GENERIC_SERVER_ERROR });
+    }
   }
 });
 
@@ -11137,7 +11630,14 @@ app.post("/api/org/:orgId/connectors/:connectorId/disable", verifyAppCheck, auth
     await logOrgAuditAction(req, orgId, "disable_connector", "connector", connectorId, before, { status: "disabled", enabled: false });
     res.json({ success: true });
   } catch (err: any) {
-    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("not found") ? 404 : 500).json({ error: err.message });
+    if (err.message?.includes("Forbidden")) {
+      res.status(403).json({ error: err.message });
+    } else if (err.message?.includes("not found")) {
+      res.status(404).json({ error: err.message });
+    } else {
+      logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+      res.status(500).json({ error: GENERIC_SERVER_ERROR });
+    }
   }
 });
 
@@ -11155,7 +11655,14 @@ app.post("/api/org/:orgId/connectors/:connectorId/revoke", verifyAppCheck, authe
     await logOrgAuditAction(req, orgId, "revoke_connector", "connector", connectorId, before, after);
     res.json({ success: true });
   } catch (err: any) {
-    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("not found") ? 404 : 500).json({ error: err.message });
+    if (err.message?.includes("Forbidden")) {
+      res.status(403).json({ error: err.message });
+    } else if (err.message?.includes("not found")) {
+      res.status(404).json({ error: err.message });
+    } else {
+      logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+      res.status(500).json({ error: GENERIC_SERVER_ERROR });
+    }
   }
 });
 
@@ -11172,7 +11679,14 @@ app.post("/api/org/:orgId/connectors/:connectorId/reindex", verifyAppCheck, auth
     await logOrgAuditAction(req, orgId, "request_connector_reindex", "connector", connectorId, null, { reindexStatus: "pending" });
     res.json({ success: true, reindexStatus: "pending", note: "No background indexing worker is wired up yet - this request is recorded but not yet processed." });
   } catch (err: any) {
-    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("not found") ? 404 : 500).json({ error: err.message });
+    if (err.message?.includes("Forbidden")) {
+      res.status(403).json({ error: err.message });
+    } else if (err.message?.includes("not found")) {
+      res.status(404).json({ error: err.message });
+    } else {
+      logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+      res.status(500).json({ error: GENERIC_SERVER_ERROR });
+    }
   }
 });
 
@@ -11212,7 +11726,14 @@ app.post("/api/org/:orgId/devices/register", verifyAppCheck, authenticateFirebas
     await logOrgAuditAction(req, orgId, "register_device", "device", ref.id, null, { channel, appVersion });
     res.json({ success: true, device: { id: ref.id, ...record } });
   } catch (err: any) {
-    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("not found") ? 404 : 500).json({ error: err.message });
+    if (err.message?.includes("Forbidden")) {
+      res.status(403).json({ error: err.message });
+    } else if (err.message?.includes("not found")) {
+      res.status(404).json({ error: err.message });
+    } else {
+      logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+      res.status(500).json({ error: GENERIC_SERVER_ERROR });
+    }
   }
 });
 
@@ -11226,7 +11747,14 @@ app.get("/api/org/:orgId/devices", verifyAppCheck, authenticateFirebaseUser, asy
     const devices = snap.docs.map((d: any) => ({ id: d.id, ...d.data() }));
     res.json({ devices });
   } catch (err: any) {
-    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("not found") ? 404 : 500).json({ error: err.message });
+    if (err.message?.includes("Forbidden")) {
+      res.status(403).json({ error: err.message });
+    } else if (err.message?.includes("not found")) {
+      res.status(404).json({ error: err.message });
+    } else {
+      logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+      res.status(500).json({ error: GENERIC_SERVER_ERROR });
+    }
   }
 });
 
@@ -11244,7 +11772,14 @@ app.post("/api/org/:orgId/devices/:deviceId/revoke", verifyAppCheck, authenticat
     await logOrgAuditAction(req, orgId, "revoke_device", "device", deviceId, before, { status: "revoked" });
     res.json({ success: true });
   } catch (err: any) {
-    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("not found") ? 404 : 500).json({ error: err.message });
+    if (err.message?.includes("Forbidden")) {
+      res.status(403).json({ error: err.message });
+    } else if (err.message?.includes("not found")) {
+      res.status(404).json({ error: err.message });
+    } else {
+      logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+      res.status(500).json({ error: GENERIC_SERVER_ERROR });
+    }
   }
 });
 
@@ -11276,7 +11811,14 @@ app.post("/api/org/:orgId/devices/:deviceId/check-for-update", verifyAppCheck, a
     const channelConfig = configDoc.exists ? (configDoc.data()?.[device.channel] || null) : null;
     res.json(evaluateUpdateStatus(device.appVersion, channelConfig));
   } catch (err: any) {
-    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("not found") ? 404 : 500).json({ error: err.message });
+    if (err.message?.includes("Forbidden")) {
+      res.status(403).json({ error: err.message });
+    } else if (err.message?.includes("not found")) {
+      res.status(404).json({ error: err.message });
+    } else {
+      logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+      res.status(500).json({ error: GENERIC_SERVER_ERROR });
+    }
   }
 });
 
@@ -11309,7 +11851,12 @@ app.post("/api/admin/release-channels", verifyAppCheck, authenticateFirebaseUser
     await logAdminAction(req, "update_release_channel", "", channel, { channel, minVersion, latestVersion });
     res.json({ success: true });
   } catch (err: any) {
-    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
+    if (err.message?.includes("Forbidden")) {
+      res.status(403).json({ error: err.message });
+    } else {
+      logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+      res.status(500).json({ error: GENERIC_SERVER_ERROR });
+    }
   }
 });
 
@@ -11362,7 +11909,14 @@ app.get("/api/org/:orgId/billing", verifyAppCheck, authenticateFirebaseUser, asy
     const { org } = await requireOrgPermission(req, orgId, 'org.billing.view');
     res.json({ billing: getEffectiveBillingState(org.billing), provider: billingProvider.name });
   } catch (err: any) {
-    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("not found") ? 404 : 500).json({ error: err.message });
+    if (err.message?.includes("Forbidden")) {
+      res.status(403).json({ error: err.message });
+    } else if (err.message?.includes("not found")) {
+      res.status(404).json({ error: err.message });
+    } else {
+      logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+      res.status(500).json({ error: GENERIC_SERVER_ERROR });
+    }
   }
 });
 
@@ -11387,7 +11941,14 @@ app.post("/api/org/:orgId/billing", verifyAppCheck, authenticateFirebaseUser, as
     await logOrgAuditAction(req, orgId, "update_billing", "billing", orgId, { ...before }, { ...after });
     res.json({ success: true, billing: after });
   } catch (err: any) {
-    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("not found") ? 404 : 500).json({ error: err.message });
+    if (err.message?.includes("Forbidden")) {
+      res.status(403).json({ error: err.message });
+    } else if (err.message?.includes("not found")) {
+      res.status(404).json({ error: err.message });
+    } else {
+      logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+      res.status(500).json({ error: GENERIC_SERVER_ERROR });
+    }
   }
 });
 
@@ -11411,7 +11972,14 @@ app.get("/api/org/:orgId/sso", verifyAppCheck, authenticateFirebaseUser, async (
     }
     res.json({ configured: true, config: redactSsoConfig(doc.data() as StoredSsoConfig) });
   } catch (err: any) {
-    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("not found") ? 404 : 500).json({ error: err.message });
+    if (err.message?.includes("Forbidden")) {
+      res.status(403).json({ error: err.message });
+    } else if (err.message?.includes("not found")) {
+      res.status(404).json({ error: err.message });
+    } else {
+      logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+      res.status(500).json({ error: GENERIC_SERVER_ERROR });
+    }
   }
 });
 
@@ -11452,7 +12020,14 @@ app.post("/api/org/:orgId/sso", verifyAppCheck, authenticateFirebaseUser, async 
     );
     res.json({ success: true, config: redactSsoConfig(record) });
   } catch (err: any) {
-    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("not found") ? 404 : 500).json({ error: err.message });
+    if (err.message?.includes("Forbidden")) {
+      res.status(403).json({ error: err.message });
+    } else if (err.message?.includes("not found")) {
+      res.status(404).json({ error: err.message });
+    } else {
+      logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+      res.status(500).json({ error: GENERIC_SERVER_ERROR });
+    }
   }
 });
 
@@ -11487,7 +12062,14 @@ app.post("/api/org/:orgId/sso/enforce", verifyAppCheck, authenticateFirebaseUser
     await logOrgAuditAction(req, orgId, enabled ? "enable_sso_enforcement" : "disable_sso_enforcement", "sso_config", orgId, before, { enforceSso: enabled });
     res.json({ success: true, enforceSso: enabled });
   } catch (err: any) {
-    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("not found") ? 404 : 500).json({ error: err.message });
+    if (err.message?.includes("Forbidden")) {
+      res.status(403).json({ error: err.message });
+    } else if (err.message?.includes("not found")) {
+      res.status(404).json({ error: err.message });
+    } else {
+      logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+      res.status(500).json({ error: GENERIC_SERVER_ERROR });
+    }
   }
 });
 
@@ -11537,7 +12119,14 @@ app.post("/api/org/:orgId/sso/test", verifyAppCheck, authenticateFirebaseUser, a
       note: "This checks configuration shape and metadata URL reachability only - it is not a real authentication handshake and does not validate any SAML/OIDC assertion.",
     });
   } catch (err: any) {
-    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("not found") ? 404 : 500).json({ error: err.message });
+    if (err.message?.includes("Forbidden")) {
+      res.status(403).json({ error: err.message });
+    } else if (err.message?.includes("not found")) {
+      res.status(404).json({ error: err.message });
+    } else {
+      logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+      res.status(500).json({ error: GENERIC_SERVER_ERROR });
+    }
   }
 });
 
@@ -11582,7 +12171,14 @@ app.post("/api/org/:orgId/search/resources", verifyAppCheck, authenticateFirebas
     await logOrgAuditAction(req, orgId, "register_search_resource", "searchable_resource", ref.id, null, { title, contentType });
     res.json({ success: true, resource: { id: ref.id, ...record } });
   } catch (err: any) {
-    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("not found") ? 404 : 500).json({ error: err.message });
+    if (err.message?.includes("Forbidden")) {
+      res.status(403).json({ error: err.message });
+    } else if (err.message?.includes("not found")) {
+      res.status(404).json({ error: err.message });
+    } else {
+      logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+      res.status(500).json({ error: GENERIC_SERVER_ERROR });
+    }
   }
 });
 
@@ -11594,7 +12190,14 @@ app.get("/api/org/:orgId/search/resources", verifyAppCheck, authenticateFirebase
     const resources = snap.docs.map((d: any) => ({ id: d.id, ...d.data() }));
     res.json({ resources });
   } catch (err: any) {
-    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("not found") ? 404 : 500).json({ error: err.message });
+    if (err.message?.includes("Forbidden")) {
+      res.status(403).json({ error: err.message });
+    } else if (err.message?.includes("not found")) {
+      res.status(404).json({ error: err.message });
+    } else {
+      logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+      res.status(500).json({ error: GENERIC_SERVER_ERROR });
+    }
   }
 });
 
@@ -11611,7 +12214,14 @@ app.post("/api/org/:orgId/search/resources/:resourceId/remove", verifyAppCheck, 
     await logOrgAuditAction(req, orgId, "remove_search_resource", "searchable_resource", resourceId, { title: doc.data().title }, null);
     res.json({ success: true });
   } catch (err: any) {
-    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("not found") ? 404 : 500).json({ error: err.message });
+    if (err.message?.includes("Forbidden")) {
+      res.status(403).json({ error: err.message });
+    } else if (err.message?.includes("not found")) {
+      res.status(404).json({ error: err.message });
+    } else {
+      logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+      res.status(500).json({ error: GENERIC_SERVER_ERROR });
+    }
   }
 });
 
@@ -11630,7 +12240,14 @@ app.post("/api/org/:orgId/search", verifyAppCheck, authenticateFirebaseUser, asy
     const results = searchOrgResources(resources, { uid: user.uid, role, team }, query || '', filters);
     res.json({ results });
   } catch (err: any) {
-    res.status(err.message?.includes("Forbidden") ? 403 : err.message?.includes("not found") ? 404 : 500).json({ error: err.message });
+    if (err.message?.includes("Forbidden")) {
+      res.status(403).json({ error: err.message });
+    } else if (err.message?.includes("not found")) {
+      res.status(404).json({ error: err.message });
+    } else {
+      logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+      res.status(500).json({ error: GENERIC_SERVER_ERROR });
+    }
   }
 });
 
@@ -11646,7 +12263,12 @@ app.post("/api/org/:orgId/regenerate-join-code", verifyAppCheck, authenticateFir
     });
     res.json({ success: true, joinCode: newCode });
   } catch (err: any) {
-    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
+    if (err.message?.includes("Forbidden")) {
+      res.status(403).json({ error: err.message });
+    } else {
+      logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+      res.status(500).json({ error: GENERIC_SERVER_ERROR });
+    }
   }
 });
 
@@ -11695,7 +12317,12 @@ app.post("/api/org/:orgId/settings", verifyAppCheck, authenticateFirebaseUser, a
     }
     res.json({ success: true });
   } catch (err: any) {
-    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
+    if (err.message?.includes("Forbidden")) {
+      res.status(403).json({ error: err.message });
+    } else {
+      logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+      res.status(500).json({ error: GENERIC_SERVER_ERROR });
+    }
   }
 });
 
@@ -11757,7 +12384,12 @@ app.post("/api/org/:orgId/invite", verifyAppCheck, authenticateFirebaseUser, asy
 
     res.json({ success: true, results });
   } catch (err: any) {
-    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
+    if (err.message?.includes("Forbidden")) {
+      res.status(403).json({ error: err.message });
+    } else {
+      logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+      res.status(500).json({ error: GENERIC_SERVER_ERROR });
+    }
   }
 });
 
@@ -11771,7 +12403,12 @@ app.get("/api/org/:orgId/invites", verifyAppCheck, authenticateFirebaseUser, asy
     const invites = snap.docs.map(d => ({ id: d.id, ...d.data() }));
     res.json({ invites });
   } catch (err: any) {
-    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
+    if (err.message?.includes("Forbidden")) {
+      res.status(403).json({ error: err.message });
+    } else {
+      logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+      res.status(500).json({ error: GENERIC_SERVER_ERROR });
+    }
   }
 });
 
@@ -11783,7 +12420,12 @@ app.post("/api/org/:orgId/invites/:email/cancel", verifyAppCheck, authenticateFi
     await db.collection("organisations").doc(orgId).collection("pending_invites").doc(email).delete();
     res.json({ success: true });
   } catch (err: any) {
-    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
+    if (err.message?.includes("Forbidden")) {
+      res.status(403).json({ error: err.message });
+    } else {
+      logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+      res.status(500).json({ error: GENERIC_SERVER_ERROR });
+    }
   }
 });
 
@@ -11797,7 +12439,12 @@ app.post("/api/org/:orgId/recognition/:recognitionId/delete", verifyAppCheck, au
     await db.collection("organisations").doc(orgId).collection("recognition_wall").doc(recognitionId).delete();
     res.json({ success: true });
   } catch (err: any) {
-    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
+    if (err.message?.includes("Forbidden")) {
+      res.status(403).json({ error: err.message });
+    } else {
+      logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+      res.status(500).json({ error: GENERIC_SERVER_ERROR });
+    }
   }
 });
 
@@ -11814,7 +12461,12 @@ app.post("/api/org/:orgId/challenges/:challengeId/toggle-active", verifyAppCheck
     await db.collection("organisations").doc(orgId).collection("challenges").doc(challengeId).update({ active: newActive });
     res.json({ success: true, active: newActive });
   } catch (err: any) {
-    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
+    if (err.message?.includes("Forbidden")) {
+      res.status(403).json({ error: err.message });
+    } else {
+      logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+      res.status(500).json({ error: GENERIC_SERVER_ERROR });
+    }
   }
 });
 
@@ -11838,7 +12490,12 @@ app.post("/api/org/:orgId/challenges/:challengeId/edit", verifyAppCheck, authent
     await challengeRef.update({ title: title.trim(), description: (description || '').trim() });
     res.json({ success: true });
   } catch (err: any) {
-    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
+    if (err.message?.includes("Forbidden")) {
+      res.status(403).json({ error: err.message });
+    } else {
+      logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+      res.status(500).json({ error: GENERIC_SERVER_ERROR });
+    }
   }
 });
 
@@ -12491,7 +13148,12 @@ app.get("/api/admin/privacy/retention-queue", verifyAppCheck, authenticateFireba
       eligibleForDeletion,
     });
   } catch (err: any) {
-    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
+    if (err.message?.includes("Forbidden")) {
+      res.status(403).json({ error: err.message });
+    } else {
+      logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+      res.status(500).json({ error: GENERIC_SERVER_ERROR });
+    }
   }
 });
 
