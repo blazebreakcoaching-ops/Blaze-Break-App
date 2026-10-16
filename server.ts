@@ -37,6 +37,7 @@ import { effectiveConsentStatus, canRespondToConsent, computeInviteExpiresAt, is
 import { guardianSupportInvitationEnabled, validateGuardianSupportOffer, isValidGuardianSupportEventType, isValidGuardianSupportTemplateId, buildGuardianSupportMessage } from './guardian-support-invitation';
 import { quietHoursCheckPasses } from './ally-nudge-quiet-hours';
 import { collectionsForExport, collectionsForErasure, userIdFieldsFor } from './user-data-collections';
+import { summarizeModuleOutcomes, RoutingDecisionRecord } from './recovery-outcomes-intelligence';
 import { htmlToPlainTextFallback, buildEmailVerificationEmail, buildPasswordResetEmail, buildPasswordChangedEmail, buildMfaEnabledEmail, buildMfaDisabledEmail, buildSupportRequestReceivedEmail, buildAllyInviteEmail, buildInactivityWarningEmail } from './brevo-templates';
 import { evaluateRetentionAction, retentionSweepIsEnabled, RetentionCandidate, RETENTION_INACTIVITY_MONTHS, RETENTION_WARNING_DAYS_BEFORE } from './data-retention';
 import { generateTotpSecret, buildOtpauthUri, verifyTotpCode, generateRecoveryCodes, hashRecoveryCode, encryptSecret as encryptTotpSecret, decryptSecret as decryptTotpSecret, isTotpLockedOut, nextLockoutState } from './totp-mfa';
@@ -6344,6 +6345,52 @@ app.get("/api/admin/system-health", verifyAppCheck, authenticateFirebaseUser, as
     });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+// Recovery Outcomes Intelligence - Batch 1: platform-wide, privacy-safe
+// visibility into whether the Recovery Routing Engine's recommendations
+// actually help, aggregated across every member rather than the
+// per-member view the Recovery Intelligence page already shows. Reads
+// via a Firestore collectionGroup query (the data already exists at
+// users/{uid}/recovery_routing_decisions - this just aggregates it across
+// users for the first time) bounded to a lookback window so the read
+// stays cheap; the actual math is recovery-outcomes-intelligence.ts's
+// summarizeModuleOutcomes, kept pure and unit-tested separately from this
+// route's Firestore plumbing.
+const RECOVERY_OUTCOMES_DEFAULT_LOOKBACK_DAYS = 90;
+const RECOVERY_OUTCOMES_MAX_LOOKBACK_DAYS = 365;
+
+app.get("/api/admin/recovery-outcomes", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    // Reusing content.manage rather than minting a new permission for one
+    // route - "is our recovery content/modules actually working" is
+    // squarely the content/product-performance question that permission
+    // already exists to gate.
+    requirePermission(req, "content.manage");
+    const db = getDb();
+
+    const requestedDays = Number(req.query.days);
+    const lookbackDays = Number.isFinite(requestedDays) && requestedDays > 0
+      ? Math.min(requestedDays, RECOVERY_OUTCOMES_MAX_LOOKBACK_DAYS)
+      : RECOVERY_OUTCOMES_DEFAULT_LOOKBACK_DAYS;
+    const cutoffIso = new Date(Date.now() - lookbackDays * 24 * 60 * 60 * 1000).toISOString();
+
+    const snap = await db.collectionGroup("recovery_routing_decisions")
+      .where("createdAt", ">=", cutoffIso)
+      .get();
+    const decisions: RoutingDecisionRecord[] = snap.docs.map((d: any) => {
+      const data = d.data();
+      return { selectedModule: data.selectedModule ?? null, outcome: data.outcome, helpfulness: data.helpfulness };
+    });
+
+    res.json({
+      lookbackDays,
+      generatedAt: new Date().toISOString(),
+      modules: summarizeModuleOutcomes(decisions),
+    });
+  } catch (err: any) {
+    res.status(err.message?.includes("Forbidden") ? 403 : 500).json({ error: err.message });
   }
 });
 
