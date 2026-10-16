@@ -118,6 +118,21 @@ import { logger, errorFields } from './logger';
 
 dotenv.config();
 
+// The message every route's genuinely-unexpected-failure catch (the
+// `catch (err: any) { ... }` block that was never written to recognize a
+// specific, already-safe error - contrast with the many routes that check
+// `err.message?.includes("Forbidden")`/`"Unauthorized"` to pick a real
+// status code for an error THIS codebase itself threw with a deliberately
+// user-safe sentence) returns to the client instead of the real
+// `err.message`. That real message was never authored to be user-facing -
+// it can be a raw Firestore/Admin-SDK error, a third-party provider's own
+// error text, or a bug's "Cannot read properties of undefined" - none of
+// which should reach a client, even though none of them are secrets
+// either. The real error is always still captured via `logger.error`
+// immediately before this is used, so nothing about this trades away
+// visibility - only what a client is shown changes.
+const GENERIC_SERVER_ERROR = "Something went wrong on our end. Please try again.";
+
 // Registered before anything else in the process can throw. Without these,
 // an uncaught exception prints Node's default stack trace to stderr as
 // plain text (no severity, no structured fields - effectively invisible to
@@ -4515,7 +4530,8 @@ app.get("/api/entitlements/pricing", verifyAppCheck, authenticateFirebaseUser, a
     }));
     res.json({ plans });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    logger.error(`Unhandled error on ${_req.method} ${_req.path}`, errorFields(err));
+    res.status(500).json({ error: GENERIC_SERVER_ERROR });
   }
 });
 
@@ -4904,7 +4920,7 @@ app.post("/api/integrations/:service/connect", verifyAppCheck, authenticateFireb
     res.json({ authorizeUrl: `${provider.authorizeUrl}?${params.toString()}` });
   } catch (err: any) {
     logger.error(`[Integrations] connect error:`, errorFields(err));
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: GENERIC_SERVER_ERROR });
   }
 });
 
@@ -5010,7 +5026,7 @@ app.get("/api/integrations/status", verifyAppCheck, authenticateFirebaseUser, as
     res.json({ integrations: statusByService });
   } catch (err: any) {
     logger.error("[Integrations] status error:", errorFields(err));
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: GENERIC_SERVER_ERROR });
   }
 });
 
@@ -5031,7 +5047,7 @@ app.post("/api/integrations/:service/disconnect", verifyAppCheck, authenticateFi
     res.json({ success: true });
   } catch (err: any) {
     logger.error("[Integrations] disconnect error:", errorFields(err));
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: GENERIC_SERVER_ERROR });
   }
 });
 
@@ -5172,7 +5188,7 @@ app.get("/api/signals/slack", verifyAppCheck, authenticateFirebaseUser, async (r
     res.json({ state: redactSlackState(signalDoc.data()!) });
   } catch (err: any) {
     logger.error("[Signals] slack read error:", errorFields(err));
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: GENERIC_SERVER_ERROR });
   }
 });
 
@@ -5298,7 +5314,8 @@ app.get("/api/signals/jira", verifyAppCheck, authenticateFirebaseUser, async (re
     }
     res.json({ state: signalDoc.data() });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+    res.status(500).json({ error: GENERIC_SERVER_ERROR });
   }
 });
 
@@ -5365,7 +5382,8 @@ app.get("/api/signals/asana", verifyAppCheck, authenticateFirebaseUser, async (r
     }
     res.json({ state: signalDoc.data() });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+    res.status(500).json({ error: GENERIC_SERVER_ERROR });
   }
 });
 
@@ -5452,7 +5470,8 @@ app.get("/api/signals/monday", verifyAppCheck, authenticateFirebaseUser, async (
     }
     res.json({ state: signalDoc.data() });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+    res.status(500).json({ error: GENERIC_SERVER_ERROR });
   }
 });
 
@@ -5532,7 +5551,8 @@ app.get("/api/signals/calendly", verifyAppCheck, authenticateFirebaseUser, async
     }
     res.json({ state: signalDoc.data() });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+    res.status(500).json({ error: GENERIC_SERVER_ERROR });
   }
 });
 
@@ -5594,7 +5614,7 @@ app.get("/api/signals/calendar", verifyAppCheck, authenticateFirebaseUser, async
     res.json({ state: doc.exists ? doc.data() : null });
   } catch (err: any) {
     logger.error("[Signals] calendar read error:", errorFields(err));
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: GENERIC_SERVER_ERROR });
   }
 });
 
@@ -5634,7 +5654,7 @@ app.get("/api/signals/gmail", verifyAppCheck, authenticateFirebaseUser, async (r
     res.json({ state: doc.exists ? doc.data() : null });
   } catch (err: any) {
     logger.error("[Signals] gmail read error:", errorFields(err));
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: GENERIC_SERVER_ERROR });
   }
 });
 
@@ -6563,7 +6583,8 @@ app.get("/api/admin/summary", verifyAppCheck, authenticateFirebaseUser, async (r
       crisisReferrals
     });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+    res.status(500).json({ error: GENERIC_SERVER_ERROR });
   }
 });
 
@@ -6620,7 +6641,8 @@ app.get("/api/admin/system-health", verifyAppCheck, authenticateFirebaseUser, as
       ],
     });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+    res.status(500).json({ error: GENERIC_SERVER_ERROR });
   }
 });
 
@@ -6882,7 +6904,8 @@ app.post("/api/admin/users/:uid/role", verifyAppCheck, authenticateFirebaseUser,
     await logAdminAction(req, "update_user_role", targetUid, "", { role });
     res.json({ success: true });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+    res.status(500).json({ error: GENERIC_SERVER_ERROR });
   }
 });
 
@@ -7045,7 +7068,8 @@ app.post("/api/admin/admin-users", verifyAppCheck, authenticateFirebaseUser, asy
     await logAdminAction(req, "create_admin_user", targetUid, email, { role, reason, expiresAt });
     res.json({ success: true });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+    res.status(500).json({ error: GENERIC_SERVER_ERROR });
   }
 });
 
@@ -7081,6 +7105,11 @@ app.post("/api/admin/admin-users/:uid/role", verifyAppCheck, authenticateFirebas
     await logAdminAction(req, "update_admin_role", targetUid, "", { role, reason, expiresAt });
     res.json({ success: true });
   } catch (err: any) {
+    logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+    // Unlike the generic 500 fallback elsewhere, this route's own safety
+    // check (assertNotLastPlatformOwner) throws a message specifically
+    // written to be shown to the admin attempting the change - preserved
+    // here rather than genericized.
     res.status(500).json({ error: err.message });
   }
 });
@@ -7102,6 +7131,9 @@ app.delete("/api/admin/admin-users/:uid", verifyAppCheck, authenticateFirebaseUs
     await logAdminAction(req, "remove_admin_user", targetUid, "", {});
     res.json({ success: true });
   } catch (err: any) {
+    logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+    // Same reasoning as the role-update route above: preserve
+    // assertNotLastPlatformOwner's own deliberately admin-facing message.
     res.status(500).json({ error: err.message });
   }
 });
@@ -7129,7 +7161,8 @@ app.get("/api/admin/feedback", verifyAppCheck, authenticateFirebaseUser, async (
     const submissions = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
     res.json({ submissions });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+    res.status(500).json({ error: GENERIC_SERVER_ERROR });
   }
 });
 
@@ -7186,7 +7219,8 @@ app.post("/api/admin/incidents", verifyAppCheck, authenticateFirebaseUser, async
     await logAdminAction(req, "create_incident", "", ref.id, { title: record.title, severity: record.severity });
     res.json({ id: ref.id, ...record });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+    res.status(500).json({ error: GENERIC_SERVER_ERROR });
   }
 });
 
@@ -7198,7 +7232,8 @@ app.get("/api/admin/incidents", verifyAppCheck, authenticateFirebaseUser, async 
     const incidents = snap.docs.map((doc: any) => ({ id: doc.id, ...doc.data() }));
     res.json({ incidents });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+    res.status(500).json({ error: GENERIC_SERVER_ERROR });
   }
 });
 
@@ -7872,7 +7907,8 @@ app.get("/api/admin/feature-flags", verifyAppCheck, authenticateFirebaseUser, as
     });
     res.json({ flags });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+    res.status(500).json({ error: GENERIC_SERVER_ERROR });
   }
 });
 
@@ -8061,7 +8097,8 @@ app.post("/api/org/leave", verifyAppCheck, authenticateFirebaseUser, async (req,
 
     res.json({ success: true });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+    res.status(500).json({ error: GENERIC_SERVER_ERROR });
   }
 });
 
@@ -8316,7 +8353,8 @@ app.post("/api/org/join", verifyAppCheck, authenticateFirebaseUser, async (req, 
 
     res.json({ success: true, organisationId: orgDoc.id, organisationName: orgDoc.data().name });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+    res.status(500).json({ error: GENERIC_SERVER_ERROR });
   }
 });
 
@@ -8365,7 +8403,8 @@ app.get("/api/org/me", verifyAppCheck, authenticateFirebaseUser, async (req, res
       isHrViewer: isHrViewer(org.hrViewerUids, user.uid) || isOrgAdmin,
     });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+    res.status(500).json({ error: GENERIC_SERVER_ERROR });
   }
 });
 
@@ -8418,7 +8457,8 @@ app.get("/api/org/:orgId/my-privacy-status", verifyAppCheck, authenticateFirebas
       canSee, cannotSee: TRUST_MIRROR_CANNOT_SEE,
     });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+    res.status(500).json({ error: GENERIC_SERVER_ERROR });
   }
 });
 
@@ -8449,7 +8489,8 @@ app.get("/api/org/:orgId/privacy-receipts", verifyAppCheck, authenticateFirebase
     });
     res.json({ receipts });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+    res.status(500).json({ error: GENERIC_SERVER_ERROR });
   }
 });
 
@@ -8568,7 +8609,8 @@ app.post("/api/org/:orgId/recognition", verifyAppCheck, authenticateFirebaseUser
     });
     res.json({ success: true, id: ref.id });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+    res.status(500).json({ error: GENERIC_SERVER_ERROR });
   }
 });
 
@@ -8597,7 +8639,8 @@ app.get("/api/org/:orgId/recognition", verifyAppCheck, authenticateFirebaseUser,
     });
     res.json({ items });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+    res.status(500).json({ error: GENERIC_SERVER_ERROR });
   }
 });
 
@@ -8622,7 +8665,8 @@ app.post("/api/org/:orgId/recognition/:recognitionId/react", verifyAppCheck, aut
     });
     res.json({ success: true, reacted: !alreadyReacted });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+    res.status(500).json({ error: GENERIC_SERVER_ERROR });
   }
 });
 
@@ -8654,7 +8698,8 @@ app.post("/api/org/:orgId/suggestions", verifyAppCheck, authenticateFirebaseUser
     });
     res.json({ success: true });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+    res.status(500).json({ error: GENERIC_SERVER_ERROR });
   }
 });
 
@@ -8749,7 +8794,8 @@ app.get("/api/org/:orgId/suggestions", verifyAppCheck, authenticateFirebaseUser,
     }));
     res.json({ locked: false, cohortSize: consentingUids.length, threshold, suggestions });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+    res.status(500).json({ error: GENERIC_SERVER_ERROR });
   }
 });
 
@@ -8803,7 +8849,8 @@ app.get("/api/org/:orgId/cost-inputs", verifyAppCheck, authenticateFirebaseUser,
     const history = historySnap.docs.map(d => d.data());
     res.json({ costInputs: orgDoc.data()?.costInputs || null, history });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+    res.status(500).json({ error: GENERIC_SERVER_ERROR });
   }
 });
 
@@ -9149,7 +9196,8 @@ app.get("/api/org/:orgId/challenges", verifyAppCheck, authenticateFirebaseUser, 
     });
     res.json({ challenges });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+    res.status(500).json({ error: GENERIC_SERVER_ERROR });
   }
 });
 
@@ -9167,7 +9215,8 @@ app.post("/api/org/:orgId/challenges/:challengeId/join", verifyAppCheck, authent
     });
     res.json({ success: true });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+    res.status(500).json({ error: GENERIC_SERVER_ERROR });
   }
 });
 
@@ -9181,7 +9230,8 @@ app.post("/api/org/:orgId/challenges/:challengeId/leave", verifyAppCheck, authen
     });
     res.json({ success: true });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+    res.status(500).json({ error: GENERIC_SERVER_ERROR });
   }
 });
 
@@ -9676,7 +9726,8 @@ app.get("/api/org/:orgId/work-design-interventions-summary", verifyAppCheck, aut
       provenance: formatDataProvenance({ source: 'work_design_interventions', windowDays: null, coveragePercent: null, privacyGatePassed: null }),
     });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+    res.status(500).json({ error: GENERIC_SERVER_ERROR });
   }
 });
 
@@ -9699,7 +9750,8 @@ app.get("/api/org/:orgId/action-budget", verifyAppCheck, authenticateFirebaseUse
     const currentActiveCount = snap.docs.filter((d: any) => ACTIVE_INTERVENTION_STATUSES.has(d.data().status)).length;
     res.json({ maxConcurrentActive, currentActiveCount, remaining: Math.max(0, maxConcurrentActive - currentActiveCount) });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+    res.status(500).json({ error: GENERIC_SERVER_ERROR });
   }
 });
 
@@ -10113,7 +10165,8 @@ app.get("/api/org/:orgId/what-works-here", verifyAppCheck, authenticateFirebaseU
       provenance: formatDataProvenance({ source: 'work_design_interventions', windowDays: null, coveragePercent: null, privacyGatePassed: null }),
     });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+    res.status(500).json({ error: GENERIC_SERVER_ERROR });
   }
 });
 
@@ -10185,7 +10238,8 @@ app.get("/api/org/:orgId/work-design-drift", verifyAppCheck, authenticateFirebas
     }
     res.json({ findings });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+    res.status(500).json({ error: GENERIC_SERVER_ERROR });
   }
 });
 
@@ -11235,7 +11289,8 @@ app.get("/api/app-config/release-channels", verifyAppCheck, authenticateFirebase
     const doc = await db.collection("app_config").doc("release_channels").get();
     res.json({ channels: doc.exists ? doc.data() : {} });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+    res.status(500).json({ error: GENERIC_SERVER_ERROR });
   }
 });
 
@@ -11290,7 +11345,8 @@ app.get("/api/admin/release-centre/devices", verifyAppCheck, authenticateFirebas
     });
     res.json({ devices });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+    res.status(500).json({ error: GENERIC_SERVER_ERROR });
   }
 });
 
@@ -11989,7 +12045,8 @@ app.post("/api/ally/invite", verifyAppCheck, authenticateFirebaseUser, async (re
 
     res.json({ success: true, emailSent, shareToken });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+    res.status(500).json({ error: GENERIC_SERVER_ERROR });
   }
 });
 
@@ -12015,7 +12072,8 @@ app.post("/api/ally/revoke", verifyAppCheck, authenticateFirebaseUser, async (re
     await db.recursiveDelete(db.collection("users").doc(user.uid).collection("support_capsules"));
     res.json({ success: true });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+    res.status(500).json({ error: GENERIC_SERVER_ERROR });
   }
 });
 
@@ -12045,7 +12103,8 @@ app.post("/api/ally/regenerate-link", verifyAppCheck, authenticateFirebaseUser, 
     }, { merge: true });
     res.json({ success: true, shareToken });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+    res.status(500).json({ error: GENERIC_SERVER_ERROR });
   }
 });
 
@@ -12066,7 +12125,8 @@ app.post("/api/ally/pause-sharing", verifyAppCheck, authenticateFirebaseUser, as
     await stateRef.set({ sharingPaused: true, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
     res.json({ success: true });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+    res.status(500).json({ error: GENERIC_SERVER_ERROR });
   }
 });
 
@@ -12084,7 +12144,8 @@ app.post("/api/ally/resume-sharing", verifyAppCheck, authenticateFirebaseUser, a
     await stateRef.set({ sharingPaused: false, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
     res.json({ success: true });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+    res.status(500).json({ error: GENERIC_SERVER_ERROR });
   }
 });
 
@@ -12169,7 +12230,8 @@ app.post("/api/nudge-schedules", verifyAppCheck, authenticateFirebaseUser, async
     await logAutopilotAction(user.uid, "nudge_schedule_created", { contactName: parsed.data.contactName }, true);
     res.json({ success: true, id: ref.id });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+    res.status(500).json({ error: GENERIC_SERVER_ERROR });
   }
 });
 
@@ -12180,7 +12242,8 @@ app.get("/api/nudge-schedules", verifyAppCheck, authenticateFirebaseUser, async 
     const snap = await db.collection("users").doc(user.uid).collection("nudge_schedules").orderBy("createdAt", "desc").get();
     res.json({ schedules: snap.docs.map(d => ({ id: d.id, ...d.data() })) });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+    res.status(500).json({ error: GENERIC_SERVER_ERROR });
   }
 });
 
@@ -12204,7 +12267,8 @@ app.patch("/api/nudge-schedules/:id", verifyAppCheck, authenticateFirebaseUser, 
     await ref.update({ ...parsed.data, updatedAt: new Date().toISOString() });
     res.json({ success: true });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+    res.status(500).json({ error: GENERIC_SERVER_ERROR });
   }
 });
 
@@ -12215,7 +12279,8 @@ app.delete("/api/nudge-schedules/:id", verifyAppCheck, authenticateFirebaseUser,
     await db.collection("users").doc(user.uid).collection("nudge_schedules").doc(req.params.id).delete();
     res.json({ success: true });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+    res.status(500).json({ error: GENERIC_SERVER_ERROR });
   }
 });
 
@@ -12633,7 +12698,8 @@ app.get("/api/audit-log", verifyAppCheck, authenticateFirebaseUser, async (req, 
     const logs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
     res.json({ logs });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+    res.status(500).json({ error: GENERIC_SERVER_ERROR });
   }
 });
 
@@ -12647,7 +12713,8 @@ app.get("/api/anxiety-reset", verifyAppCheck, authenticateFirebaseUser, async (r
     const events = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
     res.json({ events });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+    res.status(500).json({ error: GENERIC_SERVER_ERROR });
   }
 });
 
@@ -12708,7 +12775,8 @@ app.post("/api/anxiety-reset", verifyAppCheck, authenticateFirebaseUser, async (
 
     res.json({ success: true, event: savedEvent });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+    res.status(500).json({ error: GENERIC_SERVER_ERROR });
   }
 });
 
@@ -13387,7 +13455,8 @@ app.post("/api/user/mark-activity", verifyAppCheck, authenticateFirebaseUser, as
     }, { merge: true });
     res.json({ success: true });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+    res.status(500).json({ error: GENERIC_SERVER_ERROR });
   }
 });
 
@@ -13539,7 +13608,8 @@ app.get("/api/user/resume-prompt", verifyAppCheck, authenticateFirebaseUser, asy
       points: 0,
     });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+    res.status(500).json({ error: GENERIC_SERVER_ERROR });
   }
 });
 
@@ -13603,7 +13673,8 @@ app.get("/api/user/weekly-recap", verifyAppCheck, authenticateFirebaseUser, asyn
       weekEnd: new Date().toISOString(),
     });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+    res.status(500).json({ error: GENERIC_SERVER_ERROR });
   }
 });
 
@@ -13897,7 +13968,8 @@ app.get("/api/user/recommendation", verifyAppCheck, authenticateFirebaseUser, as
 
     res.json({ ...recommendation, shipStage });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+    res.status(500).json({ error: GENERIC_SERVER_ERROR });
   }
 });
 
@@ -13910,7 +13982,8 @@ app.get("/api/user/recommendation-ledger", verifyAppCheck, authenticateFirebaseU
     const entries = snap.docs.map(d => ({ id: d.id, ...d.data() }));
     res.json({ entries });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+    res.status(500).json({ error: GENERIC_SERVER_ERROR });
   }
 });
 
@@ -14000,7 +14073,8 @@ app.get("/api/recovery/velocity-map", verifyAppCheck, authenticateFirebaseUser, 
 
     res.json({ days, hasAnyData: anyRealData });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+    res.status(500).json({ error: GENERIC_SERVER_ERROR });
   }
 });
 
@@ -14288,7 +14362,8 @@ app.post("/api/recovery/routing-decision", verifyAppCheck, authenticateFirebaseU
       pendingOutcomeCheck,
     });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+    res.status(500).json({ error: GENERIC_SERVER_ERROR });
   }
 });
 
@@ -14337,7 +14412,8 @@ app.post("/api/recovery/routing-outcome", verifyAppCheck, authenticateFirebaseUs
 
     res.json({ ok: true });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+    res.status(500).json({ error: GENERIC_SERVER_ERROR });
   }
 });
 
@@ -14375,7 +14451,8 @@ app.get("/api/recovery/my-outcomes", verifyAppCheck, authenticateFirebaseUser, a
       modules: summarizeModuleOutcomes(decisions, RECOVERY_OUTCOMES_PERSONAL_SAMPLE_THRESHOLD),
     });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+    res.status(500).json({ error: GENERIC_SERVER_ERROR });
   }
 });
 
@@ -14440,7 +14517,8 @@ app.get("/api/recovery/direction", verifyAppCheck, authenticateFirebaseUser, asy
 
     res.json(summary);
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+    res.status(500).json({ error: GENERIC_SERVER_ERROR });
   }
 });
 
@@ -14562,7 +14640,8 @@ app.get("/api/user/outcome-tracker", verifyAppCheck, authenticateFirebaseUser, a
       },
     });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+    res.status(500).json({ error: GENERIC_SERVER_ERROR });
   }
 });
 
@@ -15422,7 +15501,8 @@ ${NOVA_ONE_SHOT_SAFETY_FLOOR_BASE}`;
       hasEnoughData,
     });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+    res.status(500).json({ error: GENERIC_SERVER_ERROR });
   }
 });
 

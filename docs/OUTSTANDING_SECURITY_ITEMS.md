@@ -12,6 +12,51 @@ Everything genuinely fixed in this pass is in
 `docs/SECURITY_HARDENING.md`, not repeated here. This file is only
 what's still open.
 
+## Resolved: unexpected-error responses leaking err.message (Security Operations Batch 3)
+
+Audited every client-facing `error: err.message` site in `server.ts`
+(~178 total). Found 65 in the unconditional `res.status(500).json({
+error: err.message })` shape - the generic "we never anticipated this
+specific failure" fallback, with no status-code branching on the
+message at all. `err.message` reaching that branch was never authored
+to be user-facing - it can be a raw Firestore/Admin-SDK error, a
+third-party provider's own error text, or a bug's own "Cannot read
+properties of undefined" - none of which are secrets, but none of which
+should reach a client either.
+
+Of those 65, 59 had **no server-side logging at all** before the
+response - meaning the real error wasn't just over-exposed to the
+client, it was invisible everywhere, including Cloud Logging. Fixed
+both at once: added a shared `GENERIC_SERVER_ERROR` constant for the
+client-facing message, and `logger.error(\`Unhandled error on
+${req.method} ${req.path}\`, errorFields(err))` to every site that
+didn't already log (the 6 that already logged their own labeled message
+were left as they were - only their response body changed).
+
+Exactly 2 sites were reverted after the full test suite caught them:
+`POST /api/admin/admin-users/:uid/role` and `DELETE
+/api/admin/admin-users/:uid` both call `assertNotLastPlatformOwner`,
+which throws a message specifically authored to be shown to the admin
+attempting the change ("Cannot remove or downgrade the last Platform
+Owner") - a deliberately safe, UX-relevant message, not an
+unanticipated failure. Both are commented in place as reviewed
+exceptions, and `error-message-leak-guardrail.test.ts` pins the count at
+exactly 2 so a future change can't silently reintroduce a real leak
+without the test catching it.
+
+**Deliberately not touched in this batch**: the ~100+ sites using the
+conditional-ternary shape (`res.status(err.message?.includes("Forbidden")
+? 403 : 500).json({ error: err.message })`) - these already recognize
+specific, deliberately-thrown safe errors (`"Forbidden"`, `"Unauthorized"`,
+`"not found"`, `"frozen"`) and give them real status codes, but still
+return the raw `err.message` on the implicit 500 fallback branch
+*within that same line* - the identical leak, just harder to fix
+mechanically, since the status-code selection and the response body are
+combined in one ternary expression and each site would need individual
+restructuring (split the body into its own branch, not just the status
+code) rather than a safe find-and-replace. Real, same-shaped residual
+risk, left for a future batch rather than rushed here.
+
 ## Needs a human decision, not more code
 
 - ~~**Data retention window.**~~ **Resolved 2026-09-28** — Option B
