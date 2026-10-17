@@ -81,4 +81,14 @@ describe('POST /api/nova/chat - crisis-safety instruction can never be dropped',
     await request(app).post('/api/nova/chat').set(auth(USER)).send({ message: 'Hello Nova' });
     expect(h.lastConfig.config.systemInstruction).toContain('Never fabricate clinical facts');
   });
+
+  it('500s if the model call throws', async () => {
+    h.sendMessage.mockImplementationOnce(async () => { throw new Error('simulated model outage'); });
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const res = await request(app).post('/api/nova/chat').set(auth(USER)).send({ message: 'Hello Nova' });
+    expect(res.status).toBe(500);
+    expect(errorSpy).toHaveBeenCalled();
+    errorSpy.mockRestore();
+  });
+
 });

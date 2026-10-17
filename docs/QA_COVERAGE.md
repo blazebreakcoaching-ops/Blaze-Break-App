@@ -1149,6 +1149,48 @@ the 4 structurally-unreachable routes and 2 recurring false-positive
 re-flags (`admin/summary`, `org/:orgId/governance`) that remain
 permanently excluded.
 
+## QA Batch 41: Nova chat/diagnose/speech catch blocks + a 5th structurally-unreachable site
+
+`POST /api/nova/diagnose` had happy-path coverage only - closed with a
+`forceDocError` on `users/<uid>/entitlements/status` (the unguarded
+`checkAndReserveCapability` call, outside both the Gemini-narrative and
+baseline-persistence steps' own non-fatal inner try/catches) for the real
+outer catch, plus a second test forcing `generateContent` to throw to
+prove the route degrades to its static fallback analysis rather than
+erroring - that second test closes the *inner* `catch (modelError)`
+`analyze_coverage.py` actually flags for this route (the picked-by-the-
+script catch is whichever one textually comes first, not necessarily the
+outer one). `POST /api/nova/speech` had zero coverage of any kind - new
+dedicated file `nova-speech.route.test.ts` covers the happy path (base64
+audio, British English voice config) plus two catch paths: the model
+throwing, and the model returning no audio data (`candidates: []`).
+
+`POST /api/nova/chat` got a real, valuable addition - `h.sendMessage`
+forced to reject closes its inner `catch (modelError)`/outer `catch
+(error)` pair - but investigating the specific line the analyzer flags
+(the context-builder's `catch (e) { logger.warning(...) }` around the
+`getNovaContextAndMetadata`/`getNovaQuestioningStyleAddendum` Promise.all)
+found a 5th structurally-unreachable catch block: both of those helper
+functions already swallow every Firestore error internally and always
+resolve (never reject) - `getNovaContextAndMetadata`'s own `catch (err)`
+closes ~460 lines down from where it opens (long past where a quick
+scan would expect it), and `getUserQuestioningStyle`'s `catch { return
+undefined; }` does the same one level down. A `forceDocError` on
+`nova_permissions/current` was confirmed (via a throwaway scratch test,
+since discarded) to never reach the route's catch at all for exactly
+this reason. Documented here rather than chased further, joining
+`POST /api/support/request`, `POST /api/twilio/send`, `GET
+/api/entitlements/pricing`, and `POST /api/boundary-autopilot/log-
+calendar-decline`.
+
+Measured effect: `server.ts` statement coverage rose to 84.04%, branch to
+68.77%, lines to 85.18%. Routes with a fully uncovered catch block: 12
+(down from 14 - excludes the now-5 structurally-unreachable routes and
+the 2 recurring false-positive re-flags, `GET /api/admin/summary` and
+`GET /api/org/:orgId/governance`). Remaining real gaps:
+`auth/password-reset/confirm-notify`, `pulse/report`, and the
+analytics-event trio (`grounding`/`movement`/`recovery-recipes`).
+
 ## What's shipped
 
 - `npm run test:coverage` (`vitest run --coverage`, `@vitest/coverage-v8`):

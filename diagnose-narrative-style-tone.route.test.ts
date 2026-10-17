@@ -36,7 +36,7 @@ vi.mock('@google/genai', () => ({
 
 import request from 'supertest';
 import { app } from './server';
-import { resetStore, seedDoc } from './test/fake-firestore';
+import { resetStore, seedDoc, forceDocError } from './test/fake-firestore';
 
 const auth = (uid: string) => ({ Authorization: `Bearer ${uid}` });
 
@@ -101,5 +101,25 @@ describe('POST /api/nova/diagnose — safety floor', () => {
     const promptText = h.generateContent.mock.calls[0][0].contents as string;
     expect(promptText).toContain('Never fabricate clinical facts');
     expect(promptText).toContain('risk score, risk level, or severity classification');
+  });
+
+  it('500s if the entitlement-record read throws (outside the Gemini/persistence steps\' own non-fatal guards)', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const restore = forceDocError('users/person_7/entitlements/status', 'get', new Error('simulated Firestore outage'));
+    const res = await request(app).post('/api/nova/diagnose').set(auth('person_7')).send({ answers: {} });
+    expect(res.status).toBe(500);
+    expect(errorSpy).toHaveBeenCalled();
+    restore();
+    errorSpy.mockRestore();
+  });
+
+  it('degrades gracefully to the static fallback analysis when the Gemini model call throws', async () => {
+    h.generateContent.mockImplementationOnce(async () => { throw new Error('simulated model outage'); });
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const res = await request(app).post('/api/nova/diagnose').set(auth('person_8')).send({ answers: {} });
+    expect(res.status).toBe(200);
+    expect(res.body.analysis).toContain('Having analysed your metrics');
+    expect(errorSpy).toHaveBeenCalled();
+    errorSpy.mockRestore();
   });
 });
