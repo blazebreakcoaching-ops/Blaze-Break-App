@@ -201,6 +201,135 @@ describe('RBAC matrix on role-management routes', () => {
   });
 });
 
+describe('legacy admin grant/revoke routes', () => {
+  it('POST /api/org/:orgId/members/:memberUid/make-admin: an admin can grant admin to a plain member', async () => {
+    seedOrg(ORG, { adminUids: ['owner_1'], memberUids: ['owner_1', 'target'] });
+    const res = await request(app).post(`/api/org/${ORG}/members/target/make-admin`).set(auth('owner_1'));
+    expect(res.status).toBe(200);
+    const raw = getDocRaw(`organisations/${ORG}`);
+    expect(raw?.adminUids).toContain('target');
+    expect(getDocRaw(`organisations/${ORG}/members/target`)?.role).toBe('admin');
+  });
+
+  it('POST /api/org/:orgId/members/:memberUid/make-admin: refuses to grant admin to a non-member', async () => {
+    seedOrg(ORG, { adminUids: ['owner_1'], memberUids: ['owner_1'] });
+    const res = await request(app).post(`/api/org/${ORG}/members/stranger/make-admin`).set(auth('owner_1'));
+    expect(res.status).toBe(400);
+  });
+
+  it('POST /api/org/:orgId/members/:memberUid/make-admin: refuses a non-admin caller', async () => {
+    seedOrg(ORG, { adminUids: ['owner_1'], memberUids: ['owner_1', 'member_1'] });
+    const res = await request(app).post(`/api/org/${ORG}/members/member_1/make-admin`).set(auth('member_1'));
+    expect(res.status).toBe(403);
+  });
+
+  it('POST /api/org/:orgId/members/:memberUid/make-admin: 500s if the org read throws', async () => {
+    seedOrg(ORG, { adminUids: ['owner_1'], memberUids: ['owner_1', 'target'] });
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const restore = forceDocError(`organisations/${ORG}`, 'get', new Error('simulated Firestore outage'));
+    const res = await request(app).post(`/api/org/${ORG}/members/target/make-admin`).set(auth('owner_1'));
+    expect(res.status).toBe(500);
+    expect(res.body).toEqual({ error: 'Something went wrong on our end. Please try again.' });
+    expect(errorSpy).toHaveBeenCalled();
+    restore();
+    errorSpy.mockRestore();
+  });
+
+  it('POST /api/org/:orgId/members/:memberUid/revoke-admin: an admin can revoke another admin', async () => {
+    seedOrg(ORG, { adminUids: ['owner_1', 'admin_1'], memberUids: ['owner_1', 'admin_1'] });
+    const res = await request(app).post(`/api/org/${ORG}/members/admin_1/revoke-admin`).set(auth('owner_1'));
+    expect(res.status).toBe(200);
+    const raw = getDocRaw(`organisations/${ORG}`);
+    expect(raw?.adminUids).not.toContain('admin_1');
+    expect(getDocRaw(`organisations/${ORG}/members/admin_1`)?.role).toBe('member');
+  });
+
+  it("POST /api/org/:orgId/members/:memberUid/revoke-admin: can't revoke your own admin access", async () => {
+    seedOrg(ORG, { adminUids: ['owner_1', 'admin_1'], memberUids: ['owner_1', 'admin_1'] });
+    const res = await request(app).post(`/api/org/${ORG}/members/owner_1/revoke-admin`).set(auth('owner_1'));
+    expect(res.status).toBe(400);
+  });
+
+  it('POST /api/org/:orgId/members/:memberUid/revoke-admin: refuses to leave the org with zero admins', async () => {
+    seedOrg(ORG, { adminUids: ['owner_1'], memberUids: ['owner_1'] });
+    const res = await request(app).post(`/api/org/${ORG}/members/owner_1/revoke-admin`).set(auth('owner_1'));
+    expect(res.status).toBe(400);
+  });
+
+  it('POST /api/org/:orgId/members/:memberUid/revoke-admin: 500s if the org read throws', async () => {
+    seedOrg(ORG, { adminUids: ['owner_1', 'admin_1'], memberUids: ['owner_1', 'admin_1'] });
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const restore = forceDocError(`organisations/${ORG}`, 'get', new Error('simulated Firestore outage'));
+    const res = await request(app).post(`/api/org/${ORG}/members/admin_1/revoke-admin`).set(auth('owner_1'));
+    expect(res.status).toBe(500);
+    expect(res.body).toEqual({ error: 'Something went wrong on our end. Please try again.' });
+    expect(errorSpy).toHaveBeenCalled();
+    restore();
+    errorSpy.mockRestore();
+  });
+});
+
+describe('GET /api/org/:orgId/members/roles', () => {
+  it('returns every member\'s granular role', async () => {
+    seedOrg(ORG, { adminUids: ['owner_1'], memberUids: ['owner_1', 'member_1'] });
+    seedMember(ORG, 'owner_1', 'owner');
+    seedMember(ORG, 'member_1', 'member');
+    const res = await request(app).get(`/api/org/${ORG}/members/roles`).set(auth('owner_1'));
+    expect(res.status).toBe(200);
+    const uids = res.body.members.map((m: any) => m.uid).sort();
+    expect(uids).toEqual(['member_1', 'owner_1']);
+  });
+
+  it('refuses a non-member', async () => {
+    seedOrg(ORG, { adminUids: ['owner_1'], memberUids: ['owner_1'] });
+    const res = await request(app).get(`/api/org/${ORG}/members/roles`).set(auth('stranger'));
+    expect(res.status).toBe(403);
+  });
+
+  it('500s if the org read throws', async () => {
+    seedOrg(ORG, { adminUids: ['owner_1'], memberUids: ['owner_1'] });
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const restore = forceDocError(`organisations/${ORG}`, 'get', new Error('simulated Firestore outage'));
+    const res = await request(app).get(`/api/org/${ORG}/members/roles`).set(auth('owner_1'));
+    expect(res.status).toBe(500);
+    expect(res.body).toEqual({ error: 'Something went wrong on our end. Please try again.' });
+    expect(errorSpy).toHaveBeenCalled();
+    restore();
+    errorSpy.mockRestore();
+  });
+});
+
+describe('POST /api/org/:orgId/members/:memberUid/reactivate', () => {
+  it('an admin can reactivate a suspended member', async () => {
+    seedOrg(ORG, { adminUids: ['owner_1'], memberUids: ['owner_1', 'target'] });
+    seedMember(ORG, 'owner_1', 'owner');
+    seedMember(ORG, 'target', 'member', 'suspended');
+    const res = await request(app).post(`/api/org/${ORG}/members/target/reactivate`).set(auth('owner_1'));
+    expect(res.status).toBe(200);
+    expect(getDocRaw(`organisations/${ORG}/members/target`)?.status).toBe('active');
+  });
+
+  it('refuses a plain member', async () => {
+    seedOrg(ORG, { adminUids: ['owner_1'], memberUids: ['owner_1', 'member_1', 'target'] });
+    seedMember(ORG, 'member_1', 'member');
+    const res = await request(app).post(`/api/org/${ORG}/members/target/reactivate`).set(auth('member_1'));
+    expect(res.status).toBe(403);
+  });
+
+  it('500s if the org read throws', async () => {
+    seedOrg(ORG, { adminUids: ['owner_1'], memberUids: ['owner_1', 'target'] });
+    seedMember(ORG, 'target', 'member', 'suspended');
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const restore = forceDocError(`organisations/${ORG}`, 'get', new Error('simulated Firestore outage'));
+    const res = await request(app).post(`/api/org/${ORG}/members/target/reactivate`).set(auth('owner_1'));
+    expect(res.status).toBe(500);
+    expect(res.body).toEqual({ error: 'Something went wrong on our end. Please try again.' });
+    expect(errorSpy).toHaveBeenCalled();
+    restore();
+    errorSpy.mockRestore();
+  });
+});
+
 describe('last-owner protection', () => {
   it('blocks demoting the sole owner away from owner', async () => {
     seedOrg(ORG, { adminUids: ['owner_1'], memberUids: ['owner_1'] });

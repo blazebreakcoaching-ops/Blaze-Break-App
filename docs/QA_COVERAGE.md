@@ -849,6 +849,26 @@ to 63.36%, lines to 77.42%. Routes with a fully uncovered catch block:
 (make-admin/revoke-admin/roles/reactivate), governance, device
 management routes.
 
+## QA Batch 29: members role-management routes (make-admin/revoke-admin/roles/reactivate)
+
+All four routes had zero prior coverage - no test ever called them.
+`org-rbac.route.test.ts` already had a thorough matrix for the granular
+`.../role` and `.../suspend` routes, so a new `legacy admin grant/revoke
+routes` describe block covers `POST .../make-admin` and `POST
+.../revoke-admin` (grant/non-member/non-admin/catch for make-admin;
+grant/self-revoke-refused/last-admin-refused/catch for revoke-admin),
+plus standalone describe blocks for `GET /api/org/:orgId/members/roles`
+and `POST .../members/:memberUid/reactivate` (happy path, access
+control, and a `forceDocError` catch test each). All four go through
+`requireOrgAdmin`/`requireOrgRole`/`requireOrgPermission` ->
+`loadOrgAndCallerRole`, so the same `organisations/<orgId>` read is the
+catch target throughout.
+
+Measured effect: `server.ts` statement coverage rose to 77.11%, branch
+to 63.71%, lines to 78.19%. Routes with a fully uncovered catch block:
+62 (down from 66). Next: governance routes and device management
+routes.
+
 ## What's shipped
 
 - `npm run test:coverage` (`vitest run --coverage`, `@vitest/coverage-v8`):
