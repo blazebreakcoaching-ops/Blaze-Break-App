@@ -972,6 +972,28 @@ export/delete/weekly-recap/recommendation, recovery velocity-map/
 routing-outcome/direction, grounding/movement/recovery-recipes
 analytics-event).
 
+## QA Batch 35: /api/nudge-schedules CRUD coverage (zero prior coverage)
+
+All four routes (`POST`/`GET`/`PATCH`/`DELETE
+/api/nudge-schedules[/:id]`) had zero coverage of their actual CRUD
+behaviour - the only existing test file,
+`nudge-scheduler-kill-switch.route.test.ts`, exercises
+`NUDGE_SCHEDULER_ENABLED` being OFF (the default) and deliberately
+never turns it on. Since the flag is read once at module load from
+`process.env.NUDGE_SCHEDULER_ENABLED`, a separate test file
+(`nudge-schedules-crud.route.test.ts`) sets it to `'true'` in its own
+`vi.hoisted` block before importing `./server`, giving it an
+independent module instance with the switch on. Added full
+happy-path, validation, the 10-schedule limit, and catch coverage
+(`forceCollectionError`/`forceDocError`) for all four routes.
+
+Measured effect: `server.ts` statement coverage rose to 80.71%, branch
+to 66.17%, lines to 81.93%. Routes with a fully uncovered catch block:
+36 (down from 40). Next: the remaining long tail - support/twilio,
+nova chat/diagnose/speech, audit-log, anxiety-reset, legal documents,
+user export/delete/weekly-recap/recommendation, recovery
+velocity-map/routing-outcome/direction, and the analytics-event trio.
+
 ## What's shipped
 
 - `npm run test:coverage` (`vitest run --coverage`, `@vitest/coverage-v8`):
