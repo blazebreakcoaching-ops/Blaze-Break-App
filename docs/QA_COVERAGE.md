@@ -1115,6 +1115,40 @@ the 4 structurally-unreachable routes and 2 recurring false-positive
 re-flags (`admin/summary`, `org/:orgId/governance`) that remain
 permanently excluded.
 
+## QA Batch 40: audit-log and anxiety-reset route coverage (zero prior coverage)
+
+`POST+GET /api/audit-log` and `GET+POST /api/anxiety-reset` each had zero
+test coverage at the route layer (anxiety-reset-engine.test.ts covers only
+the pure engine logic the POST route's UI consumes, never the route
+itself) - both got full happy-path + catch coverage in two new dedicated
+files. `audit-log.route.test.ts` covers the member-facing audit trail
+(distinct from admin_audit_logs): schema validation (invalid `status`,
+unknown field via `.strict()`), that a logged entry is scoped to the
+authenticated caller regardless of payload, and that `GET` returns only
+the caller's own entries ordered newest-first - closed via
+`forceCollectionError` on `audit_logs` for both `add` and `get`.
+`anxiety-reset-routes.route.test.ts` covers caller-scoping on `GET`,
+schema rejection of unknown fields, that `POST` always overrides a
+client-supplied `userId` with the real authenticated uid, and that
+logging an event awards 50 engagement points onto any existing
+`derived/stats.points` - closed via `forceCollectionError` on
+`anxiety_reset_events` for `GET`'s `get`, a `forceDocError` on
+`derived/stats` for the points-write catch, and (since the event write
+is `.collection(...).doc().set(...)` with an auto-generated id, which
+neither `forceDocError` nor `forceCollectionError`'s `add` variant can
+reach) a small inline prototype patch matching any `.set()` call under
+the `anxiety_reset_events/` path prefix, following the same technique
+`forceDocError`/`forceCollectionError` use internally.
+
+Measured effect: `server.ts` statement coverage rose to 83.6%, branch to
+68.46%, lines to 84.72%. Routes with a fully uncovered catch block: 14
+(down from 18). Remaining: `nova/chat`, `nova/diagnose`, `nova/speech`,
+`auth/password-reset/confirm-notify`, `pulse/report`, and the
+analytics-event trio (`grounding`/`movement`/`recovery-recipes`) - plus
+the 4 structurally-unreachable routes and 2 recurring false-positive
+re-flags (`admin/summary`, `org/:orgId/governance`) that remain
+permanently excluded.
+
 ## What's shipped
 
 - `npm run test:coverage` (`vitest run --coverage`, `@vitest/coverage-v8`):
