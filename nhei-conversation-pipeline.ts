@@ -34,6 +34,7 @@ import { buildTimeline, deriveRecurrenceRelations, type NheiTemporalRelation } f
 import { detectBehaviouralPatterns } from './nhei-adaptive-behaviour-engine';
 import { retrieveApprovedKnowledge } from './nhei-knowledge-service';
 import { type NheiKnowledgeTopic } from './nhei-knowledge-types';
+import { normalizeAgeBand } from './nhei-knowledge-retrieval-engine';
 import { composeEducationalResponse, type NheiEducationalResponsePackage } from './nhei-educational-response-composer';
 import type { FirestoreLike } from './nhei-persistence-service';
 
@@ -58,6 +59,14 @@ export type NheiPipelineResult = NheiPipelineBlockedResult | NheiPipelineSuccess
 export interface RunEducationalModeInput {
   mode: 'educational';
   requestedTopics: NheiKnowledgeTopic[];
+  // Section 4: omitted, undefined, or anything that isn't exactly 'adult'
+  // or 'youth' is normalised to the most restrictive band ('unknown') by
+  // normalizeAgeBand before any retrieval happens - a caller cannot get
+  // adult-only content simply by not setting this field. This is NOT
+  // itself a trusted age-verification boundary; it is whatever a future,
+  // separately-authorised route supplies from a verified source (see the
+  // Phase 3C-2A delivery report, section 5).
+  ageBand?: unknown;
 }
 
 export interface RunReflectiveModeInput {
@@ -71,6 +80,9 @@ export interface RunReflectiveModeInput {
   // nhei-persistence-service.ts's readNheiEvidence; here it is always a
   // plain in-memory fixture.
   priorEvidence?: NheiEvidenceRecord[];
+  // Same fail-closed normalisation as RunEducationalModeInput.ageBand -
+  // see that comment.
+  ageBand?: unknown;
 }
 
 export type RunNheiConversationPipelineInput = RunEducationalModeInput | RunReflectiveModeInput;
@@ -90,7 +102,7 @@ export async function runNheiConversationPipeline(
     // evidence, even ephemerally, exactly per "must not persist
     // sensitive personal evidence" read conservatively as "must not
     // CREATE sensitive personal evidence objects in the first place."
-    const knowledge = await retrieveApprovedKnowledge(knowledgeDb, { topics: input.requestedTopics });
+    const knowledge = await retrieveApprovedKnowledge(knowledgeDb, { topics: input.requestedTopics, ageBand: normalizeAgeBand(input.ageBand) });
     const response = composeEducationalResponse({
       mode: 'educational',
       timeline: [],
@@ -132,8 +144,9 @@ export async function runNheiConversationPipeline(
     ...(behaviouralPatterns.length > 0 ? ['ADAPTIVE_BEHAVIOUR' as const] : []),
   ] as NheiKnowledgeTopic[];
 
+  const ageBand = normalizeAgeBand(input.ageBand);
   const knowledge = activeTopics.length > 0
-    ? await retrieveApprovedKnowledge(knowledgeDb, { topics: activeTopics })
+    ? await retrieveApprovedKnowledge(knowledgeDb, { topics: activeTopics, ageBand })
     : { found: false, entries: [], invalidTopics: [] };
 
   const response = composeEducationalResponse({

@@ -12,14 +12,56 @@
 // nothing matches. Nothing in this file invents, paraphrases, or
 // generates replacement content.
 
-import { type NheiKnowledgeEntry, type NheiKnowledgeTopic, type NheiEvidenceCategory, isValidNheiKnowledgeTopic } from './nhei-knowledge-types';
+import { type NheiKnowledgeEntry, type NheiKnowledgeTopic, type NheiEvidenceCategory, type NheiKnowledgeAgeGroup, isValidNheiKnowledgeTopic } from './nhei-knowledge-types';
 
 export const DEFAULT_RETRIEVAL_LIMIT = 10;
 export const MAX_RETRIEVAL_LIMIT = 50;
 
+// ---- Phase 3C-2A: age eligibility (section 4) ---------------------------
+//
+// A VIEWER'S age band, never inferred from conversation content (no
+// function in this file reads conversation text at all) and never trusted
+// as a final boundary from this file alone - normalizeAgeBand's job is
+// purely "what does an untrusted/absent input resolve to," which is always
+// the most restrictive band. The caller (eventually, a real route) is
+// responsible for sourcing this from a verified, trusted age-band source
+// per the phase instruction - nothing here claims to BE that verification.
+export type NheiAgeBand = 'adult' | 'youth' | 'unknown';
+
+export const isValidNheiAgeBand = (value: unknown): value is NheiAgeBand =>
+  value === 'adult' || value === 'youth' || value === 'unknown';
+
+// Fail-closed normalisation: anything that isn't exactly a recognised,
+// valid age band - missing, undefined, malformed, or an unrecognised
+// string - resolves to 'unknown', the most restrictive band. There is no
+// path through this function that turns "I don't know this viewer's age"
+// into "treat them as an adult."
+export const normalizeAgeBand = (value: unknown): NheiAgeBand => (isValidNheiAgeBand(value) ? value : 'unknown');
+
+// Which ageGroup values are eligible for which viewer band. 'unknown' gets
+// exactly the same (most restrictive) eligibility as 'youth' - an
+// unverified age must never be treated more permissively than a known
+// youth viewer, which is the concrete form "unknown age does not bypass
+// eligibility restrictions" takes here.
+const AGE_GROUP_ELIGIBILITY: Record<NheiAgeBand, ReadonlySet<NheiKnowledgeAgeGroup>> = {
+  adult: new Set(['all_ages', 'adult_only', 'not_recommended_for_youth']),
+  youth: new Set(['all_ages']),
+  unknown: new Set(['all_ages']),
+};
+
+export const isAgeEligibleKnowledgeEntry = (entry: NheiKnowledgeEntry, ageBand: NheiAgeBand): boolean =>
+  AGE_GROUP_ELIGIBILITY[ageBand].has(entry.ageGroup);
+
+export const filterByAgeEligibility = (entries: NheiKnowledgeEntry[], ageBand: NheiAgeBand): NheiKnowledgeEntry[] =>
+  entries.filter((e) => isAgeEligibleKnowledgeEntry(e, ageBand));
+
 export interface NheiKnowledgeRetrievalQuery {
   topics: NheiKnowledgeTopic[]; // OR match - an entry matching ANY listed topic is included
   evidenceCategories?: NheiEvidenceCategory[]; // optional filter; omitted = all categories
+  // Omitted, undefined, or any unrecognised value is normalised to
+  // 'unknown' (the most restrictive band) by retrieveKnowledge below - a
+  // caller cannot bypass age eligibility by simply not setting this field.
+  ageBand?: unknown;
   limit?: number;
 }
 
@@ -77,8 +119,10 @@ export function retrieveKnowledge(
   }
 
   const limit = Math.min(Math.max(1, query.limit ?? DEFAULT_RETRIEVAL_LIMIT), MAX_RETRIEVAL_LIMIT);
+  const ageBand = normalizeAgeBand(query.ageBand);
 
   let candidates = filterApprovedOnly(allEntries);
+  candidates = filterByAgeEligibility(candidates, ageBand);
   candidates = filterByTopics(candidates, validTopics);
   if (query.evidenceCategories && query.evidenceCategories.length > 0) {
     candidates = filterByEvidenceCategories(candidates, query.evidenceCategories);

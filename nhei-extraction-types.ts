@@ -77,6 +77,21 @@ export interface NheiExtractionCandidate {
   // an actual temporal relation still goes through nhei-temporal-engine.ts's
   // existing SEQUENCE/COOCCURRENCE logic, never taken as pre-computed.
   relatedCandidateIds: string[];
+  // Phase 3C-2A (section 3): which distinct reported experience/occasion
+  // within THIS conversation a candidate belongs to - an opaque, bounded
+  // integer label the model assigns, never a timestamp or free text.
+  // Two candidates with the SAME episodeIndex are facets of one single
+  // story (e.g. the anticipation, the event, and the feeling from one
+  // retelling of "I asked my manager for time off"); two candidates with
+  // DIFFERENT episodeIndex values are genuinely separate episodes, even
+  // within the same conversation (e.g. the user separately describes
+  // asking twice, on two different occasions). Optional and, when
+  // omitted, every candidate in the batch defaults to episode 0 - the
+  // conservative choice of treating an entire conversation as one episode
+  // unless the model actively distinguishes otherwise, which never
+  // OVER-counts recurrence (see nhei-temporal-engine.ts's
+  // deriveRecurrenceRelations).
+  episodeIndex?: number;
 }
 
 export interface NheiExtractionCandidateValidationResult {
@@ -87,6 +102,21 @@ export interface NheiExtractionCandidateValidationResult {
 
 const MAX_CANDIDATES_PER_BATCH = 30;
 
+// Phase 3C-2A section 2 finding: candidateId/relatedCandidateIds were the
+// one remaining place in this schema with no length or shape bound at
+// all - every OTHER field is either an enum or a bounded number, but a
+// model could in principle write an entire paragraph into candidateId
+// (it is just `Type.STRING` in the Gemini schema, with no `enum`) and it
+// would still pass the pre-3C-2A version of this check, since only
+// non-emptiness was verified. candidateId is meant to be a short,
+// structural, caller-assigned label (e.g. "c1", "candidate_3") - never a
+// place for narrative text, a claim, or an injection attempt to land.
+// This closes that gap at the schema-validation level, the same
+// "structural, not merely tested" discipline this project already
+// applies to every other field here.
+const CANDIDATE_ID_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
+const isValidCandidateIdShape = (value: unknown): value is string => typeof value === 'string' && CANDIDATE_ID_PATTERN.test(value);
+
 export function validateExtractionCandidate(input: unknown): NheiExtractionCandidateValidationResult {
   const errors: string[] = [];
   if (typeof input !== 'object' || input === null || Array.isArray(input)) {
@@ -94,7 +124,7 @@ export function validateExtractionCandidate(input: unknown): NheiExtractionCandi
   }
   const raw = input as Record<string, unknown>;
 
-  if (typeof raw.candidateId !== 'string' || raw.candidateId.length === 0) errors.push('candidateId must be a non-empty string');
+  if (!isValidCandidateIdShape(raw.candidateId)) errors.push('candidateId must be a short identifier (letters, digits, underscore, hyphen; 1-64 characters) - never free text');
   if (typeof raw.abstain !== 'boolean') errors.push('abstain must be a boolean');
   if (!isValidNheiExtractableSourceType(raw.sourceType)) errors.push('sourceType must be a valid NheiExtractableSourceType');
 
@@ -111,8 +141,12 @@ export function validateExtractionCandidate(input: unknown): NheiExtractionCandi
   if (!isValidEvidenceQuality(raw.evidenceQuality)) errors.push('evidenceQuality must be a valid EvidenceQuality');
 
   const relatedCandidateIds = raw.relatedCandidateIds === undefined ? [] : raw.relatedCandidateIds;
-  if (!Array.isArray(relatedCandidateIds) || !relatedCandidateIds.every((v) => typeof v === 'string')) {
-    errors.push('relatedCandidateIds must be an array of strings when present');
+  if (!Array.isArray(relatedCandidateIds) || !relatedCandidateIds.every(isValidCandidateIdShape)) {
+    errors.push('relatedCandidateIds must be an array of short identifiers in the same shape as candidateId');
+  }
+
+  if (raw.episodeIndex !== undefined && (typeof raw.episodeIndex !== 'number' || !Number.isInteger(raw.episodeIndex) || raw.episodeIndex < 0 || raw.episodeIndex > MAX_CANDIDATES_PER_BATCH)) {
+    errors.push(`episodeIndex must be a non-negative integer no greater than ${MAX_CANDIDATES_PER_BATCH} when present`);
   }
 
   if (errors.length > 0) return { ok: false, errors };
@@ -127,6 +161,7 @@ export function validateExtractionCandidate(input: unknown): NheiExtractionCandi
     timeUncertainty: raw.timeUncertainty as TimeUncertainty,
     evidenceQuality: raw.evidenceQuality as EvidenceQuality,
     relatedCandidateIds: [...(relatedCandidateIds as string[])],
+    ...(raw.episodeIndex !== undefined ? { episodeIndex: raw.episodeIndex as number } : {}),
   };
   return { ok: true, candidate, errors: [] };
 }
@@ -184,6 +219,11 @@ export function toNheiEvidenceRecord(candidate: NheiExtractionCandidate, batchId
     selfSystems: candidate.selfSystems,
     dimensions: candidate.dimensions,
     relatedEventIds: candidate.relatedCandidateIds.map((id) => `extracted_${batchId}_${id}`),
+    // Namespaced to this batch (conversation), so the same episodeIndex
+    // in two DIFFERENT conversations never collides into "the same
+    // episode" - only candidates within THIS batch sharing an
+    // episodeIndex are treated as one episode by the temporal engine.
+    episodeId: `${batchId}_ep${candidate.episodeIndex ?? 0}`,
   };
   const validation = validateEvidenceRecord(input);
   if (!validation.ok || !validation.record) return { ok: false, errors: validation.errors };

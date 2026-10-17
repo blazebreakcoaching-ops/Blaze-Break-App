@@ -16,12 +16,40 @@
 // pre-approved, pre-reviewed text, or a fixed template string defined in
 // this file.
 //
-// Trust boundary (section 7): retrieved knowledge entries are consumed
-// here as DATA ONLY - their `title`/`educationalSummary` text is copied
-// into the output verbatim, never interpreted as an instruction, never
-// concatenated into anything that could change this function's control
-// flow. See nhei-educational-response-composer.test.ts's dedicated
-// injection tests.
+// Trust boundary (Phase 3C-1 section 7, hardened in Phase 3C-2A section 5):
+// retrieved knowledge entries are consumed here as DATA ONLY - their
+// `title`/`educationalSummary` text is copied into the output verbatim,
+// never interpreted as an instruction, never concatenated into anything
+// that could change this function's control flow. See
+// nhei-educational-response-composer.test.ts's dedicated injection tests.
+//
+// Two SEPARATE guarantees, not one (Phase 3C-2A section 5's explicit
+// instruction not to conflate them):
+//   A. Malicious content cannot change this function's deterministic
+//      control flow. TRUE and verified here: this function has no
+//      branch, loop bound, or side effect whose behaviour depends on the
+//      CONTENT of any string field (only on counts/booleans from
+//      selfSystemSummaries/dimensionSummaries/behaviouralPatterns/
+//      timeline) - a knowledge entry's title or educationalSummary could
+//      contain any text at all and composeEducationalResponse would take
+//      the exact same code path. MAX_COMPOSED_FIELD_LENGTH below adds a
+//      defence-in-depth length clamp on top of that - belt-and-suspenders
+//      given validateKnowledgeEntry (nhei-knowledge-types.ts) already caps
+//      these fields at write time, in case a document is ever read
+//      without having gone through that validation (e.g. a future direct
+//      Firestore edit bypassing the service layer).
+//   B. Malicious content cannot cause a DOWNSTREAM LANGUAGE MODEL to
+//      disregard its higher-priority instructions. NOT APPLICABLE to this
+//      file, and NOT verified by anything in this file's tests - this
+//      function never calls a model, so there is no "downstream language
+//      model" code path here for B to even describe. Guarantee B is a
+//      property of a knowledge-to-model INTERFACE that does not exist yet
+//      anywhere in this pipeline (buildExtractionPrompt's only input is
+//      conversation turns - see nhei-extraction-schema.ts - never
+//      knowledge entries). nhei-knowledge-model-interface.ts prepares a
+//      structural design for that interface, ready for Phase 3C-2B, but
+//      per instruction this phase does not claim B is verified by A's
+//      tests, here or anywhere else in this delivery.
 
 import { type NheiConversationMode } from './nhei-conversation-modes';
 import { type SelfSystemSummary } from './nhei-trifecta-engine';
@@ -77,6 +105,16 @@ export interface ComposeEducationalResponseInput {
   retrievedKnowledge: NheiKnowledgeEntry[]; // caller guarantees these are already approved-only (the retrieval engine's own job)
 }
 
+// Defence-in-depth only - see the guarantee-A comment above. Generous
+// enough to never truncate any entry that actually passed
+// validateKnowledgeEntry (whose own MAX_LONG is 4000), so this never
+// changes behaviour for legitimate content; it exists purely as a second,
+// independent backstop against an oversized field reaching composed
+// output at all, from whatever source.
+const MAX_COMPOSED_FIELD_LENGTH = 4000;
+const boundField = (value: string): string =>
+  value.length > MAX_COMPOSED_FIELD_LENGTH ? value.slice(0, MAX_COMPOSED_FIELD_LENGTH) : value;
+
 export function composeEducationalResponse(input: ComposeEducationalResponseInput): NheiEducationalResponsePackage {
   const recognizedExperiences: NheiRecognizedExperience[] = [
     ...input.selfSystemSummaries
@@ -91,9 +129,15 @@ export function composeEducationalResponse(input: ComposeEducationalResponseInpu
   // summarises further, or combines two entries' sentences into one new
   // sentence (which could accidentally assert a connection neither
   // entry itself asserts).
+  // Structurally, only title/educationalSummary/id/evidenceCategory are
+  // ever read from an entry here - detailedExplanation, sourceReferences,
+  // exampleScenarios, reflectionQuestions, authorId, and reviewerId have
+  // no code path into this output at all, adversarial or not (see
+  // nhei-educational-response-composer.test.ts's dedicated tests proving
+  // this for each of those fields individually).
   const sections: NheiEducationalResponseSection[] = input.retrievedKnowledge.map((entry) => ({
-    heading: entry.title,
-    body: entry.educationalSummary,
+    heading: boundField(entry.title),
+    body: boundField(entry.educationalSummary),
     sourceKnowledgeEntryId: entry.id,
     evidenceCategory: entry.evidenceCategory,
   }));

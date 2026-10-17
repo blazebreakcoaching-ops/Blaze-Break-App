@@ -100,6 +100,97 @@ describe('GET /api/user/export — portability (GDPR Art. 15/20)', () => {
     expect(res.status).toBe(401);
   });
 
+  describe('Phase 3C-2A section 8 - NHEI data export (evidence, corrections, temporal relations)', () => {
+    function seedNheiEvidence(uid: string) {
+      seedDoc(`users/${uid}/nhei_evidence/ev1`, {
+        id: 'ev1', sourceType: 'USER_REPORTED_EVENT', timeUncertainty: 'approximate', evidenceQuality: 'medium',
+        confirmationState: 'not_applicable', selfSystems: ['INTERNAL_SELF'], dimensions: ['EMOTIONAL'], relatedEventIds: [],
+        sourceRef: null, createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z',
+      });
+      // ev1 has a nested correction - a user later disputed, then
+      // reconfirmed, their own earlier interpretation.
+      seedDoc(`users/${uid}/nhei_evidence/ev1/corrections/corr1`, {
+        previousConfirmationState: 'unconfirmed', newConfirmationState: 'user_disputed', changedAt: '2026-01-02T00:00:00.000Z',
+      });
+      // ev2 has NO corrections at all - the "partial data" case: not every
+      // evidence record has correction history, and the export must
+      // handle that as an empty array, not an error or an omission.
+      seedDoc(`users/${uid}/nhei_evidence/ev2`, {
+        id: 'ev2', sourceType: 'USER_REPORTED_EMOTION', timeUncertainty: 'unknown', evidenceQuality: 'low',
+        confirmationState: 'not_applicable', selfSystems: [], dimensions: ['PHYSICAL'], relatedEventIds: [],
+        sourceRef: null, createdAt: '2026-01-03T00:00:00.000Z', updatedAt: '2026-01-03T00:00:00.000Z',
+      });
+      seedDoc(`users/${uid}/nhei_temporal_relations/rel1`, {
+        fromEventId: 'ev1', toEventId: 'ev2', relationType: 'SEQUENCE', interpretationConfidence: 'low',
+        derivedBy: 'engine_computed', rationale: 'reported_order_only', createdAt: '2026-01-03T00:00:00.000Z',
+      });
+    }
+
+    it('includes NHEI evidence, nested correction history, and temporal relations in the export - complete and partial data both handled', async () => {
+      seedFullUser();
+      seedNheiEvidence(USER);
+      const res = await request(app).get('/api/user/export').set(auth(USER));
+
+      expect(res.status).toBe(200);
+      expect(res.body.nhei).toBeDefined();
+      expect(res.body.nhei.evidence).toHaveLength(2);
+
+      const ev1 = res.body.nhei.evidence.find((e: any) => e.evidence.id === 'ev1');
+      expect(ev1.corrections).toHaveLength(1);
+      expect(ev1.corrections[0].newConfirmationState).toBe('user_disputed');
+
+      // ev2 - the partial case - has an empty corrections array, not
+      // missing, undefined, or an error.
+      const ev2 = res.body.nhei.evidence.find((e: any) => e.evidence.id === 'ev2');
+      expect(ev2.corrections).toEqual([]);
+
+      expect(res.body.nhei.temporalRelations).toHaveLength(1);
+      expect(res.body.nhei.temporalRelations[0].relationType).toBe('SEQUENCE');
+    });
+
+    it('does not duplicate NHEI evidence in the generic collections dump - it only ever appears under the dedicated nhei key', async () => {
+      seedFullUser();
+      seedNheiEvidence(USER);
+      const res = await request(app).get('/api/user/export').set(auth(USER));
+      expect(res.body.collections.nhei_evidence).toBeUndefined();
+      expect(res.body.collections.nhei_temporal_relations).toBeUndefined();
+    });
+
+    it('exports NHEI data regardless of current NHEI consent state - a withdrawal stops new processing, not access to data already collected', async () => {
+      seedFullUser();
+      seedNheiEvidence(USER);
+      // Consent explicitly WITHDRAWN (or never granted) for every NHEI
+      // purpose - the export must still return the evidence already on
+      // record.
+      seedDoc(`users/${USER}/nova_permissions/current`, {
+        allowNheiReflectionStorage: false, allowNheiLongitudinalTracking: false, allowNheiRoutingInsights: false,
+      });
+      const res = await request(app).get('/api/user/export').set(auth(USER));
+      expect(res.status).toBe(200);
+      expect(res.body.nhei.evidence).toHaveLength(2);
+    });
+
+    it('never includes another user\'s NHEI evidence, corrections, or temporal relations', async () => {
+      seedFullUser();
+      seedNheiEvidence(USER);
+      seedNheiEvidence(OTHER);
+      const res = await request(app).get('/api/user/export').set(auth(USER));
+      const ids = res.body.nhei.evidence.map((e: any) => e.evidence.id);
+      expect(ids.sort()).toEqual(['ev1', 'ev2']);
+      // Confirm OTHER's data is present in the store (so this is a real
+      // isolation check, not a false pass from OTHER simply having no
+      // data) but entirely absent from USER's export.
+      expect(getDocRaw(`users/${OTHER}/nhei_evidence/ev1`)).toBeDefined();
+    });
+
+    it('returns an empty NHEI bundle, not an error, for a user with no NHEI data at all', async () => {
+      seedFullUser();
+      const res = await request(app).get('/api/user/export').set(auth(USER));
+      expect(res.status).toBe(200);
+      expect(res.body.nhei).toEqual({ evidence: [], temporalRelations: [] });
+    });
+  });
+
   it('500s if the root profile read throws', async () => {
     seedFullUser();
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});

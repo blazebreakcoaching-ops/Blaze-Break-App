@@ -255,8 +255,8 @@ describe('long conversations and low-signal (terse) turns', () => {
   });
 });
 
-describe('age-appropriate content is preserved end to end (youth-appropriate response data)', () => {
-  it('a retrieved knowledge entry\'s ageGroup is visible in the composed response for a future caller to filter on', async () => {
+describe('age-appropriate content is enforced end to end (Phase 3C-2A section 4 - closes the Phase 3C-1 gap)', () => {
+  it('an adult_only entry is excluded by default (no ageBand supplied) - the fail-closed default, not a bypass', async () => {
     const db = createFakeFirestore();
     await createDraftKnowledgeEntry(db, 'author1', {
       id: 'adult_only_entry', title: 'T', educationalSummary: 'S', detailedExplanation: 'D',
@@ -268,12 +268,44 @@ describe('age-appropriate content is preserved end to end (youth-appropriate res
     await approveKnowledgeEntry(db, 'adult_only_entry', 'reviewer1', FULL_CHECKLIST);
     const result = await runNheiConversationPipeline(NO_CONSENT, { mode: 'educational', requestedTopics: ['SHIP'] }, db);
     expect(result.ok).toBe(true);
-    // The response package exposes evidenceCategory per section, but not
-    // yet ageGroup directly - flagged in the delivery report as a real
-    // gap: age-based FILTERING is not implemented this phase, since no
-    // age-context signal exists anywhere in this pipeline's input yet.
-    // This test exists to make that gap explicit and checkable, not to
-    // claim it is solved.
+    // Phase 3C-1 left ageGroup unenforced (documented gap). Phase 3C-2A
+    // closes it: with no ageBand supplied at all, normalizeAgeBand treats
+    // this request as 'unknown', which is restricted exactly like
+    // 'youth' - an adult_only entry must never leak through simply
+    // because the caller didn't say who's asking.
+    if (result.ok) expect(result.response.sections).toHaveLength(0);
+  });
+
+  it('the same adult_only entry IS returned when the caller explicitly supplies ageBand: \'adult\'', async () => {
+    const db = createFakeFirestore();
+    await createDraftKnowledgeEntry(db, 'author1', {
+      id: 'adult_only_entry', title: 'T', educationalSummary: 'S', detailedExplanation: 'D',
+      topics: ['SHIP'], learningObjective: 'L', selfSystems: [], dimensions: [],
+      exampleScenarios: [], reflectionQuestions: [], recoveryToolReferences: [],
+      evidenceCategory: 'BLAZE_BREAK_PROPRIETARY_CONCEPT', sourceReferences: [], sourcePublicationInfo: null,
+      safetyRestrictions: [], ageGroup: 'adult_only', perceivedReceivedSelfDistinctions: null,
+    });
+    await approveKnowledgeEntry(db, 'adult_only_entry', 'reviewer1', FULL_CHECKLIST);
+    const result = await runNheiConversationPipeline(NO_CONSENT, { mode: 'educational', requestedTopics: ['SHIP'], ageBand: 'adult' }, db);
+    expect(result.ok).toBe(true);
     if (result.ok) expect(result.response.sections).toHaveLength(1);
+  });
+
+  it('an all_ages entry is returned for a youth-band request, an adult_only entry is not', async () => {
+    const db = createFakeFirestore();
+    await createDraftKnowledgeEntry(db, 'author1', {
+      id: 'all_ages_entry', title: 'T', educationalSummary: 'S', detailedExplanation: 'D',
+      topics: ['SHIP'], learningObjective: 'L', selfSystems: [], dimensions: [],
+      exampleScenarios: [], reflectionQuestions: [], recoveryToolReferences: [],
+      evidenceCategory: 'BLAZE_BREAK_PROPRIETARY_CONCEPT', sourceReferences: [], sourcePublicationInfo: null,
+      safetyRestrictions: [], ageGroup: 'all_ages', perceivedReceivedSelfDistinctions: null,
+    });
+    await approveKnowledgeEntry(db, 'all_ages_entry', 'reviewer1', FULL_CHECKLIST);
+    const result = await runNheiConversationPipeline(NO_CONSENT, { mode: 'educational', requestedTopics: ['SHIP'], ageBand: 'youth' }, db);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.response.sections).toHaveLength(1);
+      expect(result.response.sections[0].sourceKnowledgeEntryId).toBe('all_ages_entry');
+    }
   });
 });

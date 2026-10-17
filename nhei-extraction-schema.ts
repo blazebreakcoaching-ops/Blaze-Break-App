@@ -36,6 +36,7 @@ export const NHEI_EXTRACTION_RESPONSE_SCHEMA = {
           timeUncertainty: { type: Type.STRING, enum: [...TIME_UNCERTAINTIES] },
           evidenceQuality: { type: Type.STRING, enum: [...EVIDENCE_QUALITIES] },
           relatedCandidateIds: { type: Type.ARRAY, items: { type: Type.STRING } },
+          episodeIndex: { type: Type.INTEGER },
         },
         required: ['candidateId', 'abstain', 'sourceType', 'selfSystems', 'dimensions', 'relativeOrder', 'timeUncertainty', 'evidenceQuality'],
       },
@@ -66,6 +67,7 @@ export function buildExtractionPrompt(input: NheiExtractionPromptInput): string 
 - its relativeOrder (0-based position in the narrative, not a real timestamp),
 - your own confidence in this classification as evidenceQuality.
 Set abstain: true, with the other fields left at reasonable defaults, whenever you cannot confidently classify something - never guess to fill a field. Never assert that one event CAUSED another; relatedCandidateIds only records that two candidates are connected in the narrative, never that one produced the other. Never claim to know what a third party (e.g. a manager) privately thought - only classify what the user themselves reported.
+Also set episodeIndex: a 0-based label for which distinct reported experience or occasion this candidate belongs to. If the user describes ONE story (even with several beats - anticipating something, the event happening, how they felt, what they did, what happened after), every candidate from that one story gets the SAME episodeIndex. Only give a candidate a DIFFERENT episodeIndex when the user is describing a genuinely separate occasion - a different time this kind of thing happened, not just a different moment within the same retelling. If the whole conversation is one story, every candidate's episodeIndex should be 0; you may omit episodeIndex entirely if you are not distinguishing separate occasions, which is treated the same as episodeIndex: 0 for all candidates.
 
 Conversation turns:
 ${numberedTurns}`;

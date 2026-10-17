@@ -270,6 +270,74 @@ describe('Phase 3C-1 - bounded, invalidated-on-write cache (section 8 performanc
   });
 });
 
+describe('Phase 3C-2A section 12 - cross-instance cache correctness via a shared version stamp', () => {
+  it('a rejection becomes visible on the NEXT read even without this process ever calling clearKnowledgeCache - simulating another instance writing', async () => {
+    const db = createFakeFirestore();
+    await createDraftKnowledgeEntry(db, 'author1', draftInput());
+    await approveKnowledgeEntry(db, 'entry1', 'reviewer1', FULL_CHECKLIST);
+
+    // Populate this process's cache with the approved entry.
+    const before = await retrieveApprovedKnowledge(db, { topics: ['INTERNAL_SELF'] });
+    expect(before.entries.map((e) => e.id)).toEqual(['entry1']);
+
+    // Simulate ANOTHER instance rejecting the entry - write the new
+    // status AND bump the shared version stamp directly against the
+    // underlying store, deliberately bypassing this process's own
+    // clearKnowledgeCache (which a real second instance could never call,
+    // since that function only clears ITS OWN process-local WeakMap
+    // entry).
+    await db.collection('nhei_knowledge_entries').doc('entry1').update({ approvalStatus: 'rejected' });
+    await db.collection('nhei_knowledge_meta').doc('cache_version').set({ stamp: 'other-instance-wrote-this' }, { merge: true });
+
+    // This process's local WeakMap cache entry is still sitting there,
+    // well within its TTL - but the version stamp it was built from no
+    // longer matches, so the next read must see the rejection, not the
+    // stale cached approval.
+    const after = await retrieveApprovedKnowledge(db, { topics: ['INTERNAL_SELF'] });
+    expect(after.entries).toEqual([]);
+  });
+
+  it('a cache hit costs exactly one small version-document read, never a full collection read, when nothing has changed', async () => {
+    const db = createFakeFirestore();
+    await db_setApproved(db, 'e1');
+
+    let entryCollectionReads = 0;
+    let versionDocReads = 0;
+    const countingDb: typeof db = {
+      collection(path: string) {
+        const real = db.collection(path);
+        return {
+          ...real,
+          get: async () => {
+            if (path === 'nhei_knowledge_entries') entryCollectionReads += 1;
+            return real.get();
+          },
+          doc(id?: string) {
+            const realDoc = real.doc(id);
+            return {
+              ...realDoc,
+              get: async () => {
+                if (path === 'nhei_knowledge_meta') versionDocReads += 1;
+                return realDoc.get();
+              },
+            };
+          },
+        };
+      },
+    };
+    // First call populates the cache (one entries read, one version
+    // read). The SAME countingDb reference is reused for the second call,
+    // since the cache is keyed by object identity - this is what makes
+    // the second call a genuine cache-hit check.
+    await retrieveApprovedKnowledge(countingDb, { topics: ['INTERNAL_SELF'] });
+    entryCollectionReads = 0;
+    versionDocReads = 0;
+    await retrieveApprovedKnowledge(countingDb, { topics: ['INTERNAL_SELF'] });
+    expect(entryCollectionReads).toBe(0); // served from cache
+    expect(versionDocReads).toBe(1); // the one cheap check that proved the cache was still valid
+  });
+});
+
 async function db_setApproved(db: FirestoreLike, id: string): Promise<void> {
   await db.collection('nhei_knowledge_entries').doc(id).set({
     id, title: 'T', educationalSummary: 'S', detailedExplanation: 'D',

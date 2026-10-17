@@ -46,6 +46,61 @@ import type { FirestoreLike } from './nhei-persistence-service';
 const KNOWLEDGE_COLLECTION = 'nhei_knowledge_entries';
 const nowIso = (): string => new Date().toISOString();
 
+// ---- Phase 3C-2A section 12: cross-instance cache correctness ----------
+//
+// The Phase 3C-1 cache (below) was TTL-only: on a multi-instance
+// deployment, a write on instance A would never invalidate instance B's
+// cache until B's own 30s TTL happened to expire independently. Section
+// 12's explicit instruction treats that asymmetrically: "a newly approved
+// article becoming visible slightly late may be acceptable" (fine to
+// leave as pure TTL), but "a revoked or unsafe article continuing to be
+// served must be treated more strictly" (NOT fine to leave as pure TTL) -
+// a rejected/unapproved entry staying visible on another instance for up
+// to 30 seconds is exactly the failure mode this section calls out.
+//
+// The fix uses EXISTING Firestore - no new service, queue, or external
+// cache - which is the "avoid new infrastructure unless justified"
+// instruction's own escape hatch applied to a genuine correctness need.
+// One extra tiny document (`nhei_knowledge_meta/cache_version`) records a
+// version stamp, bumped by every write this file makes. Every retrieval -
+// even a cache hit - reads that ONE small document first. If its stamp
+// doesn't match what the local cache was built from, the cache is treated
+// as stale regardless of TTL, and a fresh collection read happens. This
+// means:
+//   * A cache hit now costs one tiny single-document read instead of
+//     zero reads (a modest, bounded cost increase, not proportional to
+//     collection size) - still a large win over a full collection scan
+//     as the content library grows, which is what section 8's original
+//     cache was justified by and what this section also asks to keep.
+//   * Cross-instance revocation becomes correct on the NEXT read from any
+//     instance, not after up to 30 seconds (or longer, on an even higher
+//     TTL) - because the version stamp is shared, real Firestore state,
+//     not a per-process in-memory value.
+// The TTL is kept too, but widened (from 30s to 5 minutes) now that it is
+// a pure cleanup/safety-net bound rather than the primary correctness
+// mechanism - the version check is what actually decides staleness.
+const KNOWLEDGE_VERSION_COLLECTION = 'nhei_knowledge_meta';
+const KNOWLEDGE_VERSION_DOC_ID = 'cache_version';
+
+async function bumpKnowledgeCacheVersion(db: FirestoreLike): Promise<void> {
+  // A timestamp-plus-random-suffix stamp, not a numeric increment -
+  // FirestoreLike (the minimal interface this file and
+  // nhei-persistence-service.ts share) has no atomic increment operation,
+  // and a plain read-then-write increment would itself be a race under
+  // concurrent writers. A fresh, almost-certainly-unique stamp on every
+  // write needs no read-before-write and no atomicity guarantee at all -
+  // it only ever needs to be DIFFERENT from the previous stamp, never a
+  // specific next integer.
+  const stamp = `${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+  await db.collection(KNOWLEDGE_VERSION_COLLECTION).doc(KNOWLEDGE_VERSION_DOC_ID).set({ stamp }, { merge: true });
+}
+
+async function readKnowledgeCacheVersion(db: FirestoreLike): Promise<string | null> {
+  const snap = await db.collection(KNOWLEDGE_VERSION_COLLECTION).doc(KNOWLEDGE_VERSION_DOC_ID).get();
+  const data = snap.data();
+  return snap.exists && typeof data?.stamp === 'string' ? data.stamp : null;
+}
+
 // ---- Phase 3C-1: bounded, invalidated-on-write cache --------------------
 //
 // Section 8's performance review: a collection-wide read on every single
@@ -75,8 +130,8 @@ const nowIso = (): string => new Date().toISOString();
 // becomes a real problem - not introduced now, since nothing in this
 // codebase runs multi-instance today and adding one would be exactly the
 // unjustified new infrastructure this section warns against.
-const KNOWLEDGE_CACHE_TTL_MS = 30_000;
-const knowledgeCache = new WeakMap<FirestoreLike, { entries: NheiKnowledgeEntry[]; invalidCount: number; expiresAt: number }>();
+const KNOWLEDGE_CACHE_TTL_MS = 5 * 60_000;
+const knowledgeCache = new WeakMap<FirestoreLike, { entries: NheiKnowledgeEntry[]; invalidCount: number; expiresAt: number; versionStamp: string | null }>();
 
 export function clearKnowledgeCache(db: FirestoreLike): void {
   knowledgeCache.delete(db);
@@ -127,6 +182,7 @@ export async function createDraftKnowledgeEntry(
 
   await db.collection(KNOWLEDGE_COLLECTION).doc(entry.id).set(entry as unknown as Record<string, unknown>);
   clearKnowledgeCache(db);
+  await bumpKnowledgeCacheVersion(db);
   return { ok: true, value: entry };
 }
 
@@ -155,6 +211,7 @@ export async function approveKnowledgeEntry(
     lastReviewedAt: decision.lastReviewedAt,
   });
   clearKnowledgeCache(db);
+  await bumpKnowledgeCacheVersion(db);
   return { ok: true, value: { ...entry, ...decision } };
 }
 
@@ -175,6 +232,7 @@ export async function rejectKnowledgeEntry(
     lastReviewedAt: decision.lastReviewedAt,
   });
   clearKnowledgeCache(db);
+  await bumpKnowledgeCacheVersion(db);
   return { ok: true, value: { ...entry, ...decision } };
 }
 
@@ -183,8 +241,15 @@ export async function rejectKnowledgeEntry(
 // into the approved set, matching "reject malformed records." Cached per
 // `db` for KNOWLEDGE_CACHE_TTL_MS - see the cache comment above.
 async function fetchAllValidatedEntries(db: FirestoreLike): Promise<{ valid: NheiKnowledgeEntry[]; invalidCount: number }> {
+  const currentVersionStamp = await readKnowledgeCacheVersion(db);
   const cached = knowledgeCache.get(db);
-  if (cached && cached.expiresAt > Date.now()) {
+  // Valid only if BOTH the TTL has not elapsed (the pure-safety-net bound)
+  // AND the version stamp still matches what the cache was built from
+  // (the real correctness check - see the section-12 comment above). A
+  // version mismatch means some writer - this process or another instance
+  // entirely - has written since this cache entry was built, so it is
+  // treated as stale regardless of how little time has passed.
+  if (cached && cached.expiresAt > Date.now() && cached.versionStamp === currentVersionStamp) {
     return { valid: cached.entries, invalidCount: cached.invalidCount };
   }
 
@@ -196,7 +261,7 @@ async function fetchAllValidatedEntries(db: FirestoreLike): Promise<{ valid: Nhe
     if (validation.ok && validation.entry) valid.push(validation.entry);
     else invalidCount += 1;
   }
-  knowledgeCache.set(db, { entries: valid, invalidCount, expiresAt: Date.now() + KNOWLEDGE_CACHE_TTL_MS });
+  knowledgeCache.set(db, { entries: valid, invalidCount, expiresAt: Date.now() + KNOWLEDGE_CACHE_TTL_MS, versionStamp: currentVersionStamp });
   return { valid, invalidCount };
 }
 

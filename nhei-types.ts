@@ -127,6 +127,19 @@ export interface NheiEvidenceRecord {
   selfSystems: SelfSystem[];  // zero or more; empty = not yet classified, never forced
   dimensions: Dimension[];    // zero or more; empty = not yet classified, never forced
   relatedEventIds: string[];  // optional links to other evidence records, by id
+  // Phase 3C-2A (section 3): which single reported experience/occasion this
+  // record is a facet of. Two records from the SAME episode that happen to
+  // share a self-system or dimension tag are NOT a recurring pattern - they
+  // are two aspects of one story (e.g. "felt anxious asking" and "felt
+  // guilty afterward" both tagged EMOTIONAL, from one single retelling).
+  // Only records from DIFFERENT episodes sharing a tag are genuine
+  // recurrence candidates - see nhei-temporal-engine.ts's
+  // deriveRecurrenceRelations. Optional and absent on every record from
+  // Phase 1 through 3C-1 (none of them ever set this) - deriveRecurrenceRelations
+  // treats an absent episodeId as "this record is its own singleton
+  // episode," which reproduces those phases' exact prior behaviour
+  // unchanged. Never raw text - just an opaque grouping label.
+  episodeId?: string;
 }
 
 export interface EvidenceValidationResult {
@@ -183,6 +196,10 @@ export function validateEvidenceRecord(input: unknown): EvidenceValidationResult
     errors.push('relatedEventIds must be an array of strings when present');
   }
 
+  if (raw.episodeId !== undefined && (typeof raw.episodeId !== 'string' || raw.episodeId.length === 0)) {
+    errors.push('episodeId must be a non-empty string when present');
+  }
+
   if (
     raw.sourceType === 'EXTERNALLY_VERIFIED_EVENT' &&
     (confirmationState === 'unconfirmed')
@@ -205,6 +222,7 @@ export function validateEvidenceRecord(input: unknown): EvidenceValidationResult
     selfSystems: [...(selfSystems as SelfSystem[])],
     dimensions: [...(dimensions as Dimension[])],
     relatedEventIds: [...(relatedEventIds as string[])],
+    ...(raw.episodeId !== undefined ? { episodeId: raw.episodeId as string } : {}),
   };
   return { ok: true, record, errors: [] };
 }

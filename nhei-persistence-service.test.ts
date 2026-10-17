@@ -504,3 +504,188 @@ describe('exportAllNheiData - GDPR export completeness', () => {
     expect(bundle).toEqual({ evidence: [], temporalRelations: [] });
   });
 });
+
+describe('Phase 3C-2A section 9 - closing the consent/write race condition', () => {
+  // Wraps a fake FirestoreLike so that the FIRST write to one specific
+  // collection path triggers a caller-supplied side effect immediately
+  // after it commits - this is how these tests deterministically
+  // reproduce "a withdrawal request's write lands in the exact window
+  // between this function's write and its own re-check," without needing
+  // real concurrency or timing.
+  function withWriteSideEffect(db: FirestoreLike, triggerPath: string, sideEffect: () => Promise<void>): FirestoreLike {
+    let fired = false;
+    return {
+      collection(path: string) {
+        const real = db.collection(path);
+        return {
+          ...real,
+          doc(id?: string) {
+            const realDoc = real.doc(id);
+            return {
+              ...realDoc,
+              set: async (data: Record<string, unknown>, options?: { merge?: boolean }) => {
+                const result = await realDoc.set(data, options);
+                if (path === triggerPath && !fired) {
+                  fired = true;
+                  await sideEffect();
+                }
+                return result;
+              },
+            };
+          },
+        };
+      },
+    };
+  }
+
+  it('reproduces the race: a withdrawal landing between the evidence write and the post-write check rolls the write back, not merely hides it', async () => {
+    const db = createFakeFirestore();
+    await setNheiConsent(db, 'userA', 'reflection_storage', true);
+
+    const racingDb = withWriteSideEffect(db, 'users/userA/nhei_evidence', async () => {
+      await setNheiConsent(db, 'userA', 'reflection_storage', false);
+    });
+
+    const result = await writeNheiEvidence(racingDb, 'userA', validRecord());
+    expect(result.ok).toBe(false);
+    if (result.ok === false) expect(result.reason).toBe('consent_required');
+
+    // Not merely excluded from a consent-gated read - actually gone from
+    // the store. readNheiEvidence would return [] anyway (consent is now
+    // false), so this reads the raw store directly to prove deletion,
+    // not just read-side filtering.
+    const rawDoc = await db.collection('users/userA/nhei_evidence').doc('ev1').get();
+    expect(rawDoc.exists).toBe(false);
+  });
+
+  it('a write with no concurrent withdrawal still succeeds normally - the fix adds no false rejections', async () => {
+    const db = createFakeFirestore();
+    await setNheiConsent(db, 'userA', 'reflection_storage', true);
+    const result = await writeNheiEvidence(db, 'userA', validRecord());
+    expect(result.ok).toBe(true);
+    const stored = await db.collection('users/userA/nhei_evidence').doc('ev1').get();
+    expect(stored.exists).toBe(true);
+  });
+
+  it('reproduces the same race for a confirmation-state change: a withdrawal lands between the update and the re-check, and is reverted to its previous state', async () => {
+    const db = createFakeFirestore();
+    await setNheiConsent(db, 'userA', 'reflection_storage', true);
+    await writeNheiEvidence(db, 'userA', validRecord());
+
+    // withWriteSideEffect's trigger fires on .set(), but confirmNheiEvidence
+    // uses .update() internally for the actual state change - a second,
+    // update-aware wrapper races the withdrawal in at that point instead:
+    // write succeeds (already happened above) -> update (confirm) ->
+    // withdrawal lands -> post-check reverts.
+    const updateRacingDb: FirestoreLike = {
+      collection(path: string) {
+        const real = db.collection(path);
+        return {
+          ...real,
+          doc(id?: string) {
+            const realDoc = real.doc(id);
+            let fired = false;
+            return {
+              ...realDoc,
+              update: async (data: Record<string, unknown>) => {
+                const result = await realDoc.update(data);
+                if (path === 'users/userA/nhei_evidence' && !fired) {
+                  fired = true;
+                  await setNheiConsent(db, 'userA', 'reflection_storage', false);
+                }
+                return result;
+              },
+            };
+          },
+        };
+      },
+    };
+
+    const result = await confirmNheiEvidence(updateRacingDb, 'userA', 'ev1');
+    expect(result.ok).toBe(false);
+    if (result.ok === false) expect(result.reason).toBe('consent_required');
+
+    // Reverted back to its pre-confirmation state ('not_applicable' per
+    // validRecord()'s default), not left half-confirmed under revoked
+    // consent.
+    const rawDoc = await db.collection('users/userA/nhei_evidence').doc('ev1').get();
+    expect(rawDoc.data()?.confirmationState).toBe('not_applicable');
+  });
+
+  it('reproduces the same race for an asserted-influence write: a withdrawal lands between the write and the re-check, and the relation is rolled back', async () => {
+    const db = createFakeFirestore();
+    await setNheiConsent(db, 'userA', 'reflection_storage', true);
+    await setNheiConsent(db, 'userA', 'longitudinal_tracking', true);
+    await writeNheiEvidence(db, 'userA', validRecord({ id: 'a' }));
+    await writeNheiEvidence(db, 'userA', validRecord({ id: 'b' }));
+
+    const racingDb = withWriteSideEffect(db, 'users/userA/nhei_temporal_relations', async () => {
+      await setNheiConsent(db, 'userA', 'longitudinal_tracking', false);
+    });
+
+    const result = await writeNheiAssertedInfluence(racingDb, 'userA', {
+      fromEventId: 'a', toEventId: 'b', relationType: 'USER_ATTRIBUTED_INFLUENCE', interpretationConfidence: 'medium',
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok === false) expect(result.reason).toBe('consent_required');
+
+    const rawDoc = await db.collection('users/userA/nhei_temporal_relations').doc('a__b__USER_ATTRIBUTED_INFLUENCE').get();
+    expect(rawDoc.exists).toBe(false);
+  });
+
+  it('distinguishes this race-closing rollback from withdrawNheiConsent itself - withdrawal alone still never deletes pre-existing, validly-written data', async () => {
+    const db = createFakeFirestore();
+    await setNheiConsent(db, 'userA', 'reflection_storage', true);
+    const writeResult = await writeNheiEvidence(db, 'userA', validRecord());
+    expect(writeResult.ok).toBe(true); // validly written, no race this time
+
+    await withdrawNheiConsent(db, 'userA', 'reflection_storage');
+    // The record itself is untouched by withdrawal alone.
+    const rawDoc = await db.collection('users/userA/nhei_evidence').doc('ev1').get();
+    expect(rawDoc.exists).toBe(true);
+  });
+
+  it('error handling: a post-write consent read failure fails closed (treated as not consented), never silently treated as success', async () => {
+    const db = createFakeFirestore();
+    await setNheiConsent(db, 'userA', 'reflection_storage', true);
+
+    let readCount = 0;
+    const throwingDb: FirestoreLike = {
+      collection(path: string) {
+        const real = db.collection(path);
+        if (path === 'users/userA/nova_permissions') {
+          return {
+            ...real,
+            doc(id?: string) {
+              const realDoc = real.doc(id);
+              return {
+                ...realDoc,
+                get: async () => {
+                  readCount += 1;
+                  // First read (pre-write check) succeeds normally;
+                  // second read (the post-write race-closing check)
+                  // throws, simulating a transient Firestore error at
+                  // exactly the point this fix added a new read.
+                  if (readCount >= 2) throw new Error('simulated transient read failure');
+                  return realDoc.get();
+                },
+              };
+            },
+          };
+        }
+        return real;
+      },
+    };
+
+    // getNheiConsent already fails closed on any error (see its own
+    // try/catch) - so the post-write check reads back "not consented"
+    // rather than throwing further, and the write is correctly rolled
+    // back rather than the function crashing or (worse) returning
+    // success despite being unable to verify consent held.
+    const result = await writeNheiEvidence(throwingDb, 'userA', validRecord());
+    expect(result.ok).toBe(false);
+    if (result.ok === false) expect(result.reason).toBe('consent_required');
+    const rawDoc = await db.collection('users/userA/nhei_evidence').doc('ev1').get();
+    expect(rawDoc.exists).toBe(false);
+  });
+});

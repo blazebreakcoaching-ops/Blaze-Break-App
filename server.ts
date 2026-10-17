@@ -38,6 +38,16 @@ import { effectiveConsentStatus, canRespondToConsent, computeInviteExpiresAt, is
 import { guardianSupportInvitationEnabled, validateGuardianSupportOffer, isValidGuardianSupportEventType, isValidGuardianSupportTemplateId, buildGuardianSupportMessage } from './guardian-support-invitation';
 import { quietHoursCheckPasses } from './ally-nudge-quiet-hours';
 import { collectionsForExport, collectionsForErasure, userIdFieldsFor } from './user-data-collections';
+// Phase 3C-2A section 8: the only NHEI import anywhere in server.ts. This
+// wires a READ-ONLY data-export function into the existing GDPR export
+// route - it creates no evidence, activates no conversational
+// intelligence, and is not gated by (or affected by) any consent choice,
+// matching exportAllNheiData's own deliberate design (see
+// nhei-persistence-service.ts's header comment on why: withdrawing
+// consent stops new processing, it does not forfeit the right to see
+// data already collected). Nothing else from the NHEI pipeline is
+// imported or called from this file.
+import { exportAllNheiData } from './nhei-persistence-service';
 import { summarizeModuleOutcomes, RoutingDecisionRecord } from './recovery-outcomes-intelligence';
 import { GEMINI_TEXT_MODEL, GEMINI_TTS_MODEL, GEMINI_LIVE_MODEL, CLAUDE_CHAT_MODEL } from './ai-model-registry';
 import { summarizeFeatureUsage, countByDimension } from './product-intelligence';
@@ -13976,13 +13986,27 @@ app.get("/api/user/export", exportLimiter, verifyAppCheck, authenticateFirebaseU
     const userRef = db.collection("users").doc(user.uid);
 
     const rootSnap = await userRef.get();
-    const collections = await userRef.listCollections();
+    const allCollections = await userRef.listCollections();
+    // nhei_evidence and nhei_temporal_relations are excluded from this
+    // generic, direct-children-only dump - they get their own properly-
+    // assembled export below (exportAllNheiData), which correctly walks
+    // each evidence record's nested corrections subcollection. Letting
+    // both run would duplicate the same records in two inconsistent
+    // shapes: a flat dump here missing corrections entirely, alongside
+    // the correct nested bundle below.
+    const collections = allCollections.filter((col) => col.id !== 'nhei_evidence' && col.id !== 'nhei_temporal_relations');
 
     const data: Record<string, unknown> = {};
     await Promise.all(collections.map(async (col) => {
       const snap = await col.get();
       data[col.id] = snap.docs.map(d => ({ id: d.id, ...d.data() }));
     }));
+
+    // Phase 3C-2A section 8: NHEI evidence, temporal relations, and each
+    // evidence record's nested correction history, provenance-complete -
+    // never gated by NHEI consent state, since an export request is a
+    // data-access right independent of any processing purpose consent.
+    const nheiExport = await exportAllNheiData(db, user.uid);
 
     // Top-level collections keyed by userId rather than nested under the
     // user document - listCollections() above cannot see these, so they
@@ -14011,6 +14035,7 @@ app.get("/api/user/export", exportLimiter, verifyAppCheck, authenticateFirebaseU
       email: user.email || null,
       profile: rootSnap.exists ? rootSnap.data() : null,
       collections: data,
+      nhei: nheiExport,
     });
   } catch (err: any) {
     logger.error("[Export] failed:", errorFields(err));

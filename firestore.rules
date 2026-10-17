@@ -64,17 +64,59 @@ service cloud.firestore {
       }
       
       // C. users/{uid}/preferences/notifications
+      //
+      // Phase 3C-2A: the key allowlist alone let ANY value through for every
+      // field - e.g. nudgeFrequency: 'anything-at-all' passed `hasOnly`
+      // because hasOnly only checks which KEYS are present, never their
+      // values. This is the exact "notification-preferences validation
+      // issue" that blocked the full rules suite: test-rules.cjs's own
+      // `assertFails(nudgePrefsRef.update({ nudgeFrequency: 'super_high' }))`
+      // was failing (the write was wrongly succeeding) because nothing here
+      // ever rejected it.
+      //
+      // The enum/type checks added below intentionally match the ACTUAL,
+      // currently-deployed client (NotificationSettingsView.tsx writes
+      // nudgeFrequency as 'low'|'medium'|'high' and quietHoursStart/End as
+      // 'HH:MM' strings) - not notification-router.ts's newer
+      // 'discreet'|'supportive'|'detailed'|'off' + numeric-hour shape, which
+      // no client anywhere in this codebase writes yet and which
+      // getEffectiveNotificationPreferences already defends against
+      // receiving anything else by defaulting unrecognised values. Enforcing
+      // the newer shape here would reject every write the real, live
+      // Settings screen makes today - exactly the kind of break this
+      // section's instructions warn against. This mismatch between the two
+      // shapes is a real, pre-existing product inconsistency, not something
+      // this phase's rules fix can safely resolve on its own judgement - see
+      // the Phase 3C-2A delivery report, section 8, for the documented
+      // dependency this surfaces rather than silently picks a side of.
+      // preferredNudgeWindow and privacyMode have no consumer anywhere in
+      // this codebase (grep-confirmed) - they are left allowed-but-untyped
+      // rather than given an invented enum this phase has no basis for.
       match /preferences/notifications {
         allow read: if isOwner(uid);
         allow write: if isOwner(uid) &&
             request.resource.data.keys().hasOnly([
-              'notificationsEnabled', 'allowedNudgeCategories', 'nudgeFrequency', 
-              'maxNudgesPerDay', 'maxNudgesPerWeek', 'quietHoursStart', 
-              'quietHoursEnd', 'timezone', 'pauseUntil', 'weekendNudgesEnabled', 
-              'preferredNudgeWindow', 'allowMemoryReviewNudges', 
-              'allowWeeklyReviewNudges', 'allowCheckInNudges', 
+              'notificationsEnabled', 'allowedNudgeCategories', 'nudgeFrequency',
+              'maxNudgesPerDay', 'maxNudgesPerWeek', 'quietHoursStart',
+              'quietHoursEnd', 'timezone', 'pauseUntil', 'weekendNudgesEnabled',
+              'preferredNudgeWindow', 'allowMemoryReviewNudges',
+              'allowWeeklyReviewNudges', 'allowCheckInNudges',
               'allowRecoveryActionNudges', 'privacyMode', 'updatedAt'
-            ]);
+            ])
+            && (!('notificationsEnabled' in request.resource.data) || request.resource.data.notificationsEnabled is bool)
+            && (!('nudgeFrequency' in request.resource.data) || request.resource.data.nudgeFrequency in ['low', 'medium', 'high'])
+            && (!('allowedNudgeCategories' in request.resource.data) || (request.resource.data.allowedNudgeCategories is list && request.resource.data.allowedNudgeCategories.size() <= 20))
+            && (!('maxNudgesPerDay' in request.resource.data) || (request.resource.data.maxNudgesPerDay is number && request.resource.data.maxNudgesPerDay >= 0))
+            && (!('maxNudgesPerWeek' in request.resource.data) || (request.resource.data.maxNudgesPerWeek is number && request.resource.data.maxNudgesPerWeek >= 0))
+            && (!('quietHoursStart' in request.resource.data) || request.resource.data.quietHoursStart is string)
+            && (!('quietHoursEnd' in request.resource.data) || request.resource.data.quietHoursEnd is string)
+            && (!('timezone' in request.resource.data) || request.resource.data.timezone is string)
+            && (!('pauseUntil' in request.resource.data) || request.resource.data.pauseUntil == null || request.resource.data.pauseUntil is string)
+            && (!('weekendNudgesEnabled' in request.resource.data) || request.resource.data.weekendNudgesEnabled is bool)
+            && (!('allowMemoryReviewNudges' in request.resource.data) || request.resource.data.allowMemoryReviewNudges is bool)
+            && (!('allowWeeklyReviewNudges' in request.resource.data) || request.resource.data.allowWeeklyReviewNudges is bool)
+            && (!('allowCheckInNudges' in request.resource.data) || request.resource.data.allowCheckInNudges is bool)
+            && (!('allowRecoveryActionNudges' in request.resource.data) || request.resource.data.allowRecoveryActionNudges is bool);
       }
 
       // C2. users/{uid}/preferences/fuel_reminders - Recovery Fuel Engine's

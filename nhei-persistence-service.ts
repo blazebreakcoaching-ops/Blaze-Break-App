@@ -320,6 +320,30 @@ export async function writeNheiEvidence(
     updatedAt: timestamp,
   };
   await db.collection(evidenceCollectionPath(uid)).doc(record.id).set(persisted as unknown as Record<string, unknown>);
+
+  // Phase 3C-2A section 9: close the consent/write race. FirestoreLike (as
+  // shared across every NHEI file) has no cross-document transaction
+  // primitive, so this is the "equivalently robust" alternative the
+  // instruction explicitly allows rather than a literal DB transaction: a
+  // withdrawal that commits in the window between the pre-write check
+  // above and this point must not be allowed to leave the write in
+  // place. Re-reading consent AFTER the write and compensating
+  // (deleting) on a mismatch means this function never RETURNS success
+  // for a write whose consent didn't hold for the write's entire
+  // duration - "do not rely solely on hiding data after withdrawal"
+  // means the record is actually removed here, not merely left for a
+  // later read-time filter to exclude. This is a different operation
+  // from withdrawNheiConsent (which never deletes anything) or
+  // deleteNheiEvidenceRecord (a user-invoked deletion of a PREVIOUSLY,
+  // validly persisted record) - this is a same-call rollback of a write
+  // that should never have landed, never a response to the withdrawal
+  // being correct in itself.
+  const consentAfterWrite = await getNheiConsent(db, uid);
+  if (!isNheiPurposeConsented(consentAfterWrite, 'reflection_storage')) {
+    await db.collection(evidenceCollectionPath(uid)).doc(record.id).delete();
+    return { ok: false, reason: 'consent_required' };
+  }
+
   return { ok: true, value: persisted };
 }
 
@@ -356,11 +380,25 @@ async function setConfirmationState(
 
   await ref.update({ confirmationState: newState, updatedAt: nowIso() });
 
+  // Phase 3C-2A section 9: same race-closing re-check as writeNheiEvidence
+  // above, applied to a mutation of an EXISTING record rather than a
+  // fresh create - the compensating action here is reverting the update
+  // back to its previous state, not deleting the record outright (the
+  // record itself may have been validly persisted long before this
+  // withdrawal; only THIS state change is being undone).
+  const consentAfterWrite = await getNheiConsent(db, uid);
+  if (!isNheiPurposeConsented(consentAfterWrite, 'reflection_storage')) {
+    await ref.update({ confirmationState: previousState ?? 'not_applicable', updatedAt: nowIso() });
+    return { ok: false, reason: 'consent_required' };
+  }
+
   // "Preserve correction history only where appropriately consented and
   // required" - only written at all when longitudinal tracking is
   // separately consented; otherwise the state changes in place with no
-  // history kept, which is the honest default.
-  if (isNheiPurposeConsented(consent, 'longitudinal_tracking') && previousState !== newState) {
+  // history kept, which is the honest default. Uses the freshest
+  // (post-write) consent read, not the pre-write one, for the same
+  // race-closing reason.
+  if (isNheiPurposeConsented(consentAfterWrite, 'longitudinal_tracking') && previousState !== newState) {
     const correctionId = `corr_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
     await db.collection(correctionsCollectionPath(uid, evidenceId)).doc(correctionId).set({
       previousConfirmationState: previousState,
@@ -446,6 +484,15 @@ export async function writeNheiAssertedInfluence(
 
   const relationId = `${assertion.fromEventId}__${assertion.toEventId}__${assertion.relationType}`;
   await db.collection(relationsCollectionPath(uid)).doc(relationId).set({ ...relation, createdAt: nowIso() });
+
+  // Phase 3C-2A section 9: same race-closing re-check, for the
+  // longitudinal_tracking purpose this write is gated on.
+  const consentAfterWrite = await getNheiConsent(db, uid);
+  if (!isNheiPurposeConsented(consentAfterWrite, 'longitudinal_tracking')) {
+    await db.collection(relationsCollectionPath(uid)).doc(relationId).delete();
+    return { ok: false, reason: 'consent_required' };
+  }
+
   return { ok: true, value: relation };
 }
 

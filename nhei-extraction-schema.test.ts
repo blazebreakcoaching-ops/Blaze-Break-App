@@ -5,7 +5,7 @@ describe('NHEI_EXTRACTION_RESPONSE_SCHEMA', () => {
   it('has no field capable of holding raw text - only structural classification fields', () => {
     const itemProps = Object.keys((NHEI_EXTRACTION_RESPONSE_SCHEMA.properties.candidates.items as any).properties);
     expect(itemProps.sort()).toEqual([
-      'abstain', 'candidateId', 'dimensions', 'evidenceQuality', 'relatedCandidateIds',
+      'abstain', 'candidateId', 'dimensions', 'episodeIndex', 'evidenceQuality', 'relatedCandidateIds',
       'relativeOrder', 'selfSystems', 'sourceType', 'timeUncertainty',
     ]);
     expect(itemProps).not.toContain('text');

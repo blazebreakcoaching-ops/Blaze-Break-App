@@ -122,12 +122,35 @@ export function deriveRelationBetween(
   };
 }
 
-// RECURRENCE: a record is a recurrence of an earlier one when they share at
-// least one self-system or dimension tag and there are at least
-// MIN_OCCURRENCES_FOR_RECURRENCE such records in the set. A single
-// occurrence never produces a RECURRENCE relation, however strongly it's
-// tagged - "repeated versus isolated" is exactly what this threshold
-// enforces.
+// Phase 3C-2A (section 3): which episode a record belongs to, for the
+// purpose of recurrence detection only. A record with an explicit
+// episodeId (see nhei-types.ts) uses it directly - any two records
+// sharing the same episodeId are the SAME episode, however many tags they
+// share. A record with no episodeId at all is treated as its own
+// singleton episode, keyed by its own id - this is what makes every
+// pre-3C-2A record (none of which ever set episodeId) behave under this
+// function EXACTLY as it did before this section existed: a set of N
+// untagged-episode records produces N distinct singleton "episodes," so
+// counting distinct episodes below is numerically identical to the old
+// "count records" logic whenever episodeId is never used.
+function episodeKeyOf(record: NheiEvidenceRecord): string {
+  return record.episodeId !== undefined ? `ep:${record.episodeId}` : `singleton:${record.id}`;
+}
+
+// RECURRENCE: a record is a recurrence of an earlier one when they belong
+// to DIFFERENT episodes that share at least one self-system or dimension
+// tag, and there are at least MIN_OCCURRENCES_FOR_RECURRENCE such distinct
+// episodes in the set. Counting DISTINCT EPISODES (not raw records) is
+// the fix this section exists for: two records that are both part of one
+// single reported experience (e.g. "felt anxious asking my manager" and
+// "felt guilty afterward," both tagged EMOTIONAL, told as one story) must
+// never register as a second "occurrence" of the first just because they
+// share a tag - they are one occurrence, told with two facets. Only a
+// genuinely SEPARATE episode - a different reported event, conversation,
+// or occasion - sharing a tag with an earlier one counts as a repeat.
+// A single occurrence (one episode, however many tagged records it
+// contains) never produces a RECURRENCE relation - "repeated versus
+// isolated" is what this threshold enforces, now measured correctly.
 export function deriveRecurrenceRelations(records: NheiEvidenceRecord[]): NheiTemporalRelation[] {
   const relations: NheiTemporalRelation[] = [];
   const sharesTag = (a: NheiEvidenceRecord, b: NheiEvidenceRecord): boolean =>
@@ -135,7 +158,8 @@ export function deriveRecurrenceRelations(records: NheiEvidenceRecord[]): NheiTe
 
   for (let i = 0; i < records.length; i++) {
     const group = [records[i], ...records.slice(i + 1).filter((r) => sharesTag(records[i], r))];
-    if (group.length < MIN_OCCURRENCES_FOR_RECURRENCE) continue;
+    const distinctEpisodeKeys = new Set(group.map(episodeKeyOf));
+    if (distinctEpisodeKeys.size < MIN_OCCURRENCES_FOR_RECURRENCE) continue;
 
     const ordered = group
       .map((r) => ({ record: r, order: bestEffortOrder(r) }))
@@ -145,6 +169,10 @@ export function deriveRecurrenceRelations(records: NheiEvidenceRecord[]): NheiTe
     for (let j = 1; j < ordered.length; j++) {
       const earlier = ordered[j - 1];
       const later = ordered[j];
+      // Same episode, adjacent in time - this is "multiple records within
+      // one experience," never a recurrence of that experience against
+      // itself.
+      if (episodeKeyOf(earlier.record) === episodeKeyOf(later.record)) continue;
       // Avoid duplicating a pair already covered by an earlier group in
       // this loop (recurrence is reported once per adjacent repeat, not
       // once per combinatorial pairing).
@@ -156,7 +184,7 @@ export function deriveRecurrenceRelations(records: NheiEvidenceRecord[]): NheiTe
         fromEventId: earlier.record.id,
         toEventId: later.record.id,
         relationType: 'RECURRENCE',
-        interpretationConfidence: group.length >= MIN_OCCURRENCES_FOR_RECURRENCE + 1 ? 'medium' : 'low',
+        interpretationConfidence: distinctEpisodeKeys.size >= MIN_OCCURRENCES_FOR_RECURRENCE + 1 ? 'medium' : 'low',
         derivedBy: 'engine_computed',
         rationale: 'repeated_tag_overlap',
       });
