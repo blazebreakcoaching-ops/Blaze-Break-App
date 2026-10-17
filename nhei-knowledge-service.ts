@@ -46,6 +46,42 @@ import type { FirestoreLike } from './nhei-persistence-service';
 const KNOWLEDGE_COLLECTION = 'nhei_knowledge_entries';
 const nowIso = (): string => new Date().toISOString();
 
+// ---- Phase 3C-1: bounded, invalidated-on-write cache --------------------
+//
+// Section 8's performance review: a collection-wide read on every single
+// conversation turn does not scale as the content library grows, and
+// "do not introduce new infrastructure unless justified" rules out
+// reaching for a new caching service for what is, today, a few dozen
+// small documents. A process-local, TTL-bounded cache - invalidated
+// immediately on any write this file makes - is the minimal, justified
+// fix: it removes the "every turn re-reads the whole collection" cost
+// for the common case (many reads between writes) without adding any
+// new infrastructure, new dependency, or new collection.
+//
+// Keyed by the `db` instance itself (a WeakMap, not a global object), so
+// multiple FirestoreLike instances (e.g. one per test) never share a
+// cache entry and a garbage-collected db's cache entry is cleaned up
+// automatically - this also means a real production db and a test fake
+// can never cross-contaminate.
+//
+// Known limitation, disclosed rather than hidden: this cache is
+// PROCESS-LOCAL. A multi-instance deployment (more than one server
+// process) would have each instance cache independently, so a write on
+// one instance would not invalidate another instance's cache until its
+// TTL expires. At today's scale (platform content edited rarely, by a
+// small admin team) a short TTL makes that window small; a shared cache
+// (e.g. keyed in Firestore itself via a version counter, or a real
+// external cache) would be the fix if multi-instance staleness ever
+// becomes a real problem - not introduced now, since nothing in this
+// codebase runs multi-instance today and adding one would be exactly the
+// unjustified new infrastructure this section warns against.
+const KNOWLEDGE_CACHE_TTL_MS = 30_000;
+const knowledgeCache = new WeakMap<FirestoreLike, { entries: NheiKnowledgeEntry[]; invalidCount: number; expiresAt: number }>();
+
+export function clearKnowledgeCache(db: FirestoreLike): void {
+  knowledgeCache.delete(db);
+}
+
 export type NheiKnowledgeWriteBlockedReason =
   | 'invalid_entry'
   | 'not_found'
@@ -90,6 +126,7 @@ export async function createDraftKnowledgeEntry(
   if (existing.exists) return { ok: false, reason: 'id_already_exists' };
 
   await db.collection(KNOWLEDGE_COLLECTION).doc(entry.id).set(entry as unknown as Record<string, unknown>);
+  clearKnowledgeCache(db);
   return { ok: true, value: entry };
 }
 
@@ -117,6 +154,7 @@ export async function approveKnowledgeEntry(
     reviewerId: decision.reviewerId,
     lastReviewedAt: decision.lastReviewedAt,
   });
+  clearKnowledgeCache(db);
   return { ok: true, value: { ...entry, ...decision } };
 }
 
@@ -136,13 +174,20 @@ export async function rejectKnowledgeEntry(
     reviewerId: decision.reviewerId,
     lastReviewedAt: decision.lastReviewedAt,
   });
+  clearKnowledgeCache(db);
   return { ok: true, value: { ...entry, ...decision } };
 }
 
 // Fetches every document in the collection and validates each one -
 // malformed documents are reported separately, never silently dropped
-// into the approved set, matching "reject malformed records."
+// into the approved set, matching "reject malformed records." Cached per
+// `db` for KNOWLEDGE_CACHE_TTL_MS - see the cache comment above.
 async function fetchAllValidatedEntries(db: FirestoreLike): Promise<{ valid: NheiKnowledgeEntry[]; invalidCount: number }> {
+  const cached = knowledgeCache.get(db);
+  if (cached && cached.expiresAt > Date.now()) {
+    return { valid: cached.entries, invalidCount: cached.invalidCount };
+  }
+
   const snap = await db.collection(KNOWLEDGE_COLLECTION).get();
   const valid: NheiKnowledgeEntry[] = [];
   let invalidCount = 0;
@@ -151,6 +196,7 @@ async function fetchAllValidatedEntries(db: FirestoreLike): Promise<{ valid: Nhe
     if (validation.ok && validation.entry) valid.push(validation.entry);
     else invalidCount += 1;
   }
+  knowledgeCache.set(db, { entries: valid, invalidCount, expiresAt: Date.now() + KNOWLEDGE_CACHE_TTL_MS });
   return { valid, invalidCount };
 }
 

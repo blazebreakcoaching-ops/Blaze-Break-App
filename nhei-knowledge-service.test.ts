@@ -4,6 +4,7 @@ import {
   approveKnowledgeEntry,
   rejectKnowledgeEntry,
   retrieveApprovedKnowledge,
+  clearKnowledgeCache,
 } from './nhei-knowledge-service';
 import type { FirestoreLike, FirestoreCollectionRefLike } from './nhei-persistence-service';
 import type { NheiKnowledgeReviewChecklist } from './nhei-knowledge-governance';
@@ -174,3 +175,108 @@ describe('retrieveApprovedKnowledge - malformed documents and no-content behavio
     expect(result.entries).toEqual([]);
   });
 });
+
+describe('Phase 3C-1 - bounded, invalidated-on-write cache (section 8 performance review)', () => {
+  it('a second retrieval within the TTL does not need a fresh collection read - the cache serves it', async () => {
+    const db = createFakeFirestore();
+    await createDraftKnowledgeEntry(db, 'author1', {
+      id: 'e1', title: 'T', educationalSummary: 'S', detailedExplanation: 'D',
+      topics: ['INTERNAL_SELF'], learningObjective: 'L', selfSystems: [], dimensions: [],
+      exampleScenarios: [], reflectionQuestions: [], recoveryToolReferences: [],
+      evidenceCategory: 'BLAZE_BREAK_PROPRIETARY_CONCEPT', sourceReferences: [], sourcePublicationInfo: null,
+      safetyRestrictions: [], ageGroup: 'all_ages', perceivedReceivedSelfDistinctions: null,
+    });
+    const checklist: NheiKnowledgeReviewChecklist = {
+      noUnsupportedPsychologicalClaims: true, noUnnecessaryMedicalisation: true, noMisleadingCausation: true,
+      noUnsupportedIdentityAssumptions: true, noExcessiveEmotionalAiDependence: true,
+      appropriateForYouthLanguageWhereRelevant: true, noUnnecessarySensitiveDataCollection: true, noCulturalOrPhilosophicalBias: true,
+    };
+    await approveKnowledgeEntry(db, 'e1', 'reviewer1', checklist);
+
+    let collectionReads = 0;
+    const countingDb: typeof db = {
+      collection(path: string) {
+        const real = db.collection(path);
+        return {
+          ...real,
+          get: async () => {
+            if (path === 'nhei_knowledge_entries') collectionReads += 1;
+            return real.get();
+          },
+        };
+      },
+    };
+
+    await retrieveApprovedKnowledge(countingDb, { topics: ['INTERNAL_SELF'] });
+    await retrieveApprovedKnowledge(countingDb, { topics: ['INTERNAL_SELF'] });
+    await retrieveApprovedKnowledge(countingDb, { topics: ['INTERNAL_SELF'] });
+    // Three calls, but only the first should have actually read the
+    // collection - the next two are served from the per-db cache.
+    expect(collectionReads).toBe(1);
+  });
+
+  it('a write (approve) invalidates the cache - a subsequent read sees the new state, not stale data', async () => {
+    const db = createFakeFirestore();
+    await createDraftKnowledgeEntry(db, 'author1', {
+      id: 'e1', title: 'T', educationalSummary: 'S', detailedExplanation: 'D',
+      topics: ['INTERNAL_SELF'], learningObjective: 'L', selfSystems: [], dimensions: [],
+      exampleScenarios: [], reflectionQuestions: [], recoveryToolReferences: [],
+      evidenceCategory: 'BLAZE_BREAK_PROPRIETARY_CONCEPT', sourceReferences: [], sourcePublicationInfo: null,
+      safetyRestrictions: [], ageGroup: 'all_ages', perceivedReceivedSelfDistinctions: null,
+    });
+    // Not yet approved - populates the cache with an empty approved set.
+    const before = await retrieveApprovedKnowledge(db, { topics: ['INTERNAL_SELF'] });
+    expect(before.found).toBe(false);
+
+    const checklist: NheiKnowledgeReviewChecklist = {
+      noUnsupportedPsychologicalClaims: true, noUnnecessaryMedicalisation: true, noMisleadingCausation: true,
+      noUnsupportedIdentityAssumptions: true, noExcessiveEmotionalAiDependence: true,
+      appropriateForYouthLanguageWhereRelevant: true, noUnnecessarySensitiveDataCollection: true, noCulturalOrPhilosophicalBias: true,
+    };
+    await approveKnowledgeEntry(db, 'e1', 'reviewer1', checklist);
+
+    const after = await retrieveApprovedKnowledge(db, { topics: ['INTERNAL_SELF'] });
+    expect(after.found).toBe(true);
+  });
+
+  it('clearKnowledgeCache lets a test force a fresh read without waiting for the TTL', async () => {
+    const db = createFakeFirestore();
+    await retrieveApprovedKnowledge(db, { topics: ['INTERNAL_SELF'] }); // populates the cache
+    clearKnowledgeCache(db);
+    // Writing directly (bypassing this service) then reading again proves
+    // the cache was actually cleared, not just coincidentally fresh.
+    await db.collection('nhei_knowledge_entries').doc('direct1').set({
+      id: 'direct1', title: 'T', educationalSummary: 'S', detailedExplanation: 'D',
+      topics: ['INTERNAL_SELF'], learningObjective: 'L', selfSystems: [], dimensions: [],
+      exampleScenarios: [], reflectionQuestions: [], recoveryToolReferences: [],
+      evidenceCategory: 'BLAZE_BREAK_PROPRIETARY_CONCEPT', sourceReferences: [], sourcePublicationInfo: null,
+      contentVersion: 1, approvalStatus: 'approved', authorId: 'a', reviewerId: 'r', lastReviewedAt: '2026-01-01T00:00:00.000Z',
+      safetyRestrictions: [], ageGroup: 'all_ages', perceivedReceivedSelfDistinctions: null,
+    });
+    clearKnowledgeCache(db);
+    const result = await retrieveApprovedKnowledge(db, { topics: ['INTERNAL_SELF'] });
+    expect(result.found).toBe(true);
+  });
+
+  it('two different db instances never share a cache entry', async () => {
+    const dbA = createFakeFirestore();
+    const dbB = createFakeFirestore();
+    await db_setApproved(dbA, 'onlyInA');
+
+    const resultA = await retrieveApprovedKnowledge(dbA, { topics: ['INTERNAL_SELF'] });
+    const resultB = await retrieveApprovedKnowledge(dbB, { topics: ['INTERNAL_SELF'] });
+    expect(resultA.entries.map((e) => e.id)).toEqual(['onlyInA']);
+    expect(resultB.entries).toEqual([]);
+  });
+});
+
+async function db_setApproved(db: FirestoreLike, id: string): Promise<void> {
+  await db.collection('nhei_knowledge_entries').doc(id).set({
+    id, title: 'T', educationalSummary: 'S', detailedExplanation: 'D',
+    topics: ['INTERNAL_SELF'], learningObjective: 'L', selfSystems: [], dimensions: [],
+    exampleScenarios: [], reflectionQuestions: [], recoveryToolReferences: [],
+    evidenceCategory: 'BLAZE_BREAK_PROPRIETARY_CONCEPT', sourceReferences: [], sourcePublicationInfo: null,
+    contentVersion: 1, approvalStatus: 'approved', authorId: 'a', reviewerId: 'r', lastReviewedAt: '2026-01-01T00:00:00.000Z',
+    safetyRestrictions: [], ageGroup: 'all_ages', perceivedReceivedSelfDistinctions: null,
+  });
+}
