@@ -890,6 +890,28 @@ to 63.86%, lines to 78.38%. Routes with a fully uncovered catch block:
 invites, invites/:email/cancel) and the standalone recognition/
 challenges delete-edit-toggle routes.
 
+## QA Batch 31: sso/test, search/resources, regenerate-join-code, settings catch blocks
+
+All six routes resolve the caller via `requireOrgPermission`/
+`requireOrgAdmin` -> `loadOrgAndCallerRole`'s `organisations/<orgId>`
+read, so one `forceDocError` test per route closes each. `POST
+/api/org/:orgId/sso/test` and `POST`/`GET
+/api/org/:orgId/search/resources` already had happy-path coverage but
+no catch test. `GET /api/org/:orgId/search/resources` itself had zero
+prior coverage (never called by any test) - added a full happy-path +
+access-control + catch describe block. `POST
+/api/org/:orgId/search/resources/:resourceId/remove`, `POST
+/api/org/:orgId/regenerate-join-code`, and `POST
+/api/org/:orgId/settings` each got a catch test added to their
+existing coverage; `settings` and `regenerate-join-code` also picked
+up the validation/RBAC checks they were missing (out-of-range
+`privacyThreshold`, empty `name`, non-admin refusal).
+
+Measured effect: `server.ts` statement coverage rose to 77.85%, branch
+to 64.21%, lines to 78.96%. Routes with a fully uncovered catch block:
+54 (down from 59). Next: `invite`/`invites`/`invites/:email/cancel`
+and the standalone recognition/challenges delete-edit-toggle routes.
+
 ## What's shipped
 
 - `npm run test:coverage` (`vitest run --coverage`, `@vitest/coverage-v8`):

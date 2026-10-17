@@ -17,7 +17,7 @@ vi.mock('twilio', () => ({ default: () => ({ messages: { create: vi.fn() } }) })
 
 import request from 'supertest';
 import { app } from './server';
-import { seedDoc, resetStore } from './test/fake-firestore';
+import { seedDoc, resetStore, forceDocError } from './test/fake-firestore';
 
 const ORG = 'org_1';
 const OTHER_ORG = 'org_2';
@@ -67,6 +67,52 @@ describe('POST /api/org/:orgId/search/resources — RBAC (reuses connector_admin
     seedMember(ORG, 'owner_1', 'owner');
     const res = await registerResource(ORG, 'owner_1', { title: 'Doc', contentType: 'document' });
     expect(res.status).toBe(400);
+  });
+
+  it('500s if the org read throws', async () => {
+    seedOrg(ORG, { adminUids: ['owner_1'], memberUids: ['owner_1'] });
+    seedMember(ORG, 'owner_1', 'owner');
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const restore = forceDocError(`organisations/${ORG}`, 'get', new Error('simulated Firestore outage'));
+    const res = await registerResource(ORG, 'owner_1', { title: 'Doc', contentType: 'document', chunkText: 'text' });
+    expect(res.status).toBe(500);
+    expect(res.body).toEqual({ error: 'Something went wrong on our end. Please try again.' });
+    expect(errorSpy).toHaveBeenCalled();
+    restore();
+    errorSpy.mockRestore();
+  });
+});
+
+describe('GET /api/org/:orgId/search/resources', () => {
+  it('owner can list every registered resource', async () => {
+    seedOrg(ORG, { adminUids: ['owner_1'], memberUids: ['owner_1'] });
+    seedMember(ORG, 'owner_1', 'owner');
+    await registerResource(ORG, 'owner_1', { title: 'Doc A', contentType: 'document', chunkText: 'text a' });
+    await registerResource(ORG, 'owner_1', { title: 'Doc B', contentType: 'document', chunkText: 'text b' });
+
+    const res = await request(app).get(`/api/org/${ORG}/search/resources`).set(auth('owner_1'));
+    expect(res.status).toBe(200);
+    expect(res.body.resources.map((r: any) => r.title).sort()).toEqual(['Doc A', 'Doc B']);
+  });
+
+  it('a viewer cannot list resources', async () => {
+    seedOrg(ORG, { adminUids: ['owner_1'], memberUids: ['owner_1', 'viewer_1'] });
+    seedMember(ORG, 'viewer_1', 'viewer');
+    const res = await request(app).get(`/api/org/${ORG}/search/resources`).set(auth('viewer_1'));
+    expect(res.status).toBe(403);
+  });
+
+  it('500s if the org read throws', async () => {
+    seedOrg(ORG, { adminUids: ['owner_1'], memberUids: ['owner_1'] });
+    seedMember(ORG, 'owner_1', 'owner');
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const restore = forceDocError(`organisations/${ORG}`, 'get', new Error('simulated Firestore outage'));
+    const res = await request(app).get(`/api/org/${ORG}/search/resources`).set(auth('owner_1'));
+    expect(res.status).toBe(500);
+    expect(res.body).toEqual({ error: 'Something went wrong on our end. Please try again.' });
+    expect(errorSpy).toHaveBeenCalled();
+    restore();
+    errorSpy.mockRestore();
   });
 });
 
@@ -193,6 +239,21 @@ describe('search resource lifecycle', () => {
     seedMember(ORG, 'owner_1', 'owner');
     const res = await request(app).post(`/api/org/${ORG}/search/resources/does_not_exist/remove`).set(auth('owner_1'));
     expect(res.status).toBe(404);
+  });
+
+  it('500s if the org read throws', async () => {
+    seedOrg(ORG, { adminUids: ['owner_1'], memberUids: ['owner_1'] });
+    seedMember(ORG, 'owner_1', 'owner');
+    const created = await registerResource(ORG, 'owner_1', { title: 'Doc', contentType: 'document', chunkText: 'text' });
+    const id = created.body.resource.id;
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const restore = forceDocError(`organisations/${ORG}`, 'get', new Error('simulated Firestore outage'));
+    const res = await request(app).post(`/api/org/${ORG}/search/resources/${id}/remove`).set(auth('owner_1'));
+    expect(res.status).toBe(500);
+    expect(res.body).toEqual({ error: 'Something went wrong on our end. Please try again.' });
+    expect(errorSpy).toHaveBeenCalled();
+    restore();
+    errorSpy.mockRestore();
   });
 });
 

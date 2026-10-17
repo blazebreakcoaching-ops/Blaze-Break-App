@@ -176,3 +176,62 @@ describe('POST/GET /api/org/:orgId/cost-inputs — defensive catch blocks', () =
     errorSpy.mockRestore();
   });
 });
+
+describe('POST /api/org/:orgId/settings — validation and catch block', () => {
+  it('rejects an out-of-range privacyThreshold', async () => {
+    seedOrg();
+    const res = await request(app).post(`/api/org/${ORG}/settings`).set(auth(OWNER)).send({ privacyThreshold: 2 });
+    expect(res.status).toBe(400);
+  });
+
+  it('rejects an empty name', async () => {
+    seedOrg();
+    const res = await request(app).post(`/api/org/${ORG}/settings`).set(auth(OWNER)).send({ name: '' });
+    expect(res.status).toBe(400);
+  });
+
+  it('refuses a non-admin', async () => {
+    seedOrg({ memberUids: [OWNER, 'member_a'] });
+    const res = await request(app).post(`/api/org/${ORG}/settings`).set(auth('member_a')).send({ privacyThreshold: 10 });
+    expect(res.status).toBe(403);
+  });
+
+  it('500s if the org read throws', async () => {
+    seedOrg();
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const restore = forceDocError(`organisations/${ORG}`, 'get', new Error('simulated Firestore outage'));
+    const res = await request(app).post(`/api/org/${ORG}/settings`).set(auth(OWNER)).send({ privacyThreshold: 10 });
+    expect(res.status).toBe(500);
+    expect(res.body).toEqual({ error: 'Something went wrong on our end. Please try again.' });
+    expect(errorSpy).toHaveBeenCalled();
+    restore();
+    errorSpy.mockRestore();
+  });
+});
+
+describe('POST /api/org/:orgId/regenerate-join-code', () => {
+  it('an admin can regenerate the join code', async () => {
+    seedOrg();
+    const res = await request(app).post(`/api/org/${ORG}/regenerate-join-code`).set(auth(OWNER));
+    expect(res.status).toBe(200);
+    expect(res.body.joinCode).toMatch(/^[A-Z0-9]{6}$/);
+  });
+
+  it('refuses a non-admin', async () => {
+    seedOrg({ memberUids: [OWNER, 'member_a'] });
+    const res = await request(app).post(`/api/org/${ORG}/regenerate-join-code`).set(auth('member_a'));
+    expect(res.status).toBe(403);
+  });
+
+  it('500s if the org read throws', async () => {
+    seedOrg();
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const restore = forceDocError(`organisations/${ORG}`, 'get', new Error('simulated Firestore outage'));
+    const res = await request(app).post(`/api/org/${ORG}/regenerate-join-code`).set(auth(OWNER));
+    expect(res.status).toBe(500);
+    expect(res.body).toEqual({ error: 'Something went wrong on our end. Please try again.' });
+    expect(errorSpy).toHaveBeenCalled();
+    restore();
+    errorSpy.mockRestore();
+  });
+});

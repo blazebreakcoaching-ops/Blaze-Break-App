@@ -26,7 +26,7 @@ vi.mock('dns', () => ({ default: { promises: { lookup: h.dnsLookup } } }));
 
 import request from 'supertest';
 import { app } from './server';
-import { seedDoc, resetStore } from './test/fake-firestore';
+import { seedDoc, resetStore, forceDocError } from './test/fake-firestore';
 
 const ORG = 'org_1';
 const auth = (uid: string) => ({ Authorization: `Bearer ${uid}` });
@@ -233,6 +233,19 @@ describe('POST /api/org/:orgId/sso/test', () => {
     seedMember(ORG, 'owner_1', 'owner');
     const res = await request(app).post(`/api/org/${ORG}/sso/test`).set(auth('owner_1'));
     expect(res.status).toBe(400);
+  });
+
+  it('500s if the org read throws', async () => {
+    seedOrg(ORG, { adminUids: ['owner_1'], memberUids: ['owner_1'] });
+    seedMember(ORG, 'owner_1', 'owner');
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const restore = forceDocError(`organisations/${ORG}`, 'get', new Error('simulated Firestore outage'));
+    const res = await request(app).post(`/api/org/${ORG}/sso/test`).set(auth('owner_1'));
+    expect(res.status).toBe(500);
+    expect(res.body).toEqual({ error: 'Something went wrong on our end. Please try again.' });
+    expect(errorSpy).toHaveBeenCalled();
+    restore();
+    errorSpy.mockRestore();
   });
 
   describe('metadataUrl SSRF guard', () => {
