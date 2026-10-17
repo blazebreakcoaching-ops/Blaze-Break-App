@@ -47,6 +47,37 @@
 // Phase 3C-2A delivery report section 3/9 for the broader real-model
 // evaluation discussion and why none was safe to run against a live
 // model for knowledge content in this phase).
+//
+// PHASE 3C-2B SECTION 7: this phase's instruction asks for adversarial
+// testing of attempts to manipulate seven specific things - safety
+// instructions, role boundaries, knowledge approval, user consent, model
+// response policy, evidence source classifications, and user identity/
+// permissions - via content presented as reference material. The test
+// file (nhei-knowledge-model-interface.test.ts, "Phase 3C-2B section 7"
+// describe block) now exercises all seven categories, proving this
+// module's actual, checkable guarantee: adversarial text in any of these
+// categories is treated as ordinary quarantined data - it is never
+// deleted, never specially interpreted, and cannot forge a delimiter to
+// escape the quarantined region, regardless of which of the seven
+// categories it tries to invoke.
+//
+// Per instruction, stated explicitly and not just once: delimiter
+// escaping alone does NOT make prompt injection impossible. What is
+// proven here is a deterministic property of STRING CONSTRUCTION (the
+// quarantine boundary cannot be forged by content, and the framing
+// instruction is always present in the constructed text) - never a
+// claim about EMPIRICAL MODEL BEHAVIOUR (whether a real language model,
+// upon receiving this constructed text, actually declines to treat the
+// quarantined content as an instruction). No test in this file, or
+// anywhere in this phase, calls a real model with this content - the
+// same credential check performed for section 4
+// (nhei-real-model-evaluation-runner.ts: no GEMINI_API_KEY or
+// equivalent exists in this environment) applies here too, so "assess
+// actual model behaviour when adversarial educational content is
+// presented as reference material" (the instruction's own phrase)
+// remains BLOCKED, not executed, not simulated, and not claimed as
+// verified. That empirical gap is guarantee B, named again here as
+// still open.
 
 import { type NheiKnowledgeEntry } from './nhei-knowledge-types';
 

@@ -42,6 +42,7 @@ import {
   type NheiKnowledgeReviewChecklist,
 } from './nhei-knowledge-governance';
 import type { FirestoreLike } from './nhei-persistence-service';
+import { deriveKnowledgeReviewerIdentity, type NheiVerifiedCaller } from './nhei-authority-contract';
 
 const KNOWLEDGE_COLLECTION = 'nhei_knowledge_entries';
 const nowIso = (): string => new Date().toISOString();
@@ -143,7 +144,8 @@ export type NheiKnowledgeWriteBlockedReason =
   | 'reviewer_is_author'
   | 'checklist_incomplete'
   | 'entry_not_in_draft_state'
-  | 'id_already_exists';
+  | 'id_already_exists'
+  | 'authorisation_denied';
 
 export type NheiKnowledgeWriteResult<T> =
   | { ok: true; value: T }
@@ -234,6 +236,63 @@ export async function rejectKnowledgeEntry(
   clearKnowledgeCache(db);
   await bumpKnowledgeCacheVersion(db);
   return { ok: true, value: { ...entry, ...decision } };
+}
+
+// ---- Phase 3C-2B section 6: service-level authorisation enforcement ----
+//
+// approveKnowledgeEntry/rejectKnowledgeEntry above are left exactly as
+// Phase 3B built them, accepting a bare `reviewerId: string`. That is a
+// deliberate choice, not an oversight: many existing tests
+// (nhei-knowledge-service.test.ts, nhei-knowledge-bridge.test.ts,
+// nhei-knowledge-safety.test.ts, nhei-phase3c1-acceptance-scenario.test.ts)
+// exercise the governance decision logic directly against that
+// signature, and nothing in this codebase calls either function from a
+// live route today - so narrowing the signature would cost real,
+// existing test coverage for no present safety gain.
+//
+// The actual gap this phase's audit found is different: Phase 3C-2A's
+// nhei-authority-contract.ts derives a verified reviewer identity from an
+// already-authenticated caller, but NOTHING before this section ever
+// combined that derivation with these two functions. A future route
+// author could, perfectly legally per the type system, write
+// `approveKnowledgeEntry(db, id, req.body.reviewerId, checklist)` and
+// nothing above would stop them - the contract existed but had no
+// enforcement point wired to it.
+//
+// These two functions ARE that enforcement point, and the ONLY one this
+// codebase provides. A future route's entire job becomes: run
+// requireAuth/requireRole (or equivalent, the same pattern server.ts
+// already uses for admin routes) to obtain a verified caller, then call
+// one of these two functions - never approveKnowledgeEntry/
+// rejectKnowledgeEntry directly with a request-supplied reviewerId.
+// deriveKnowledgeReviewerIdentity is called first and unconditionally;
+// decideKnowledgeApproval/decideKnowledgeRejection (inside
+// approveKnowledgeEntry/rejectKnowledgeEntry) never even run unless that
+// derivation succeeds, so a caller without the reviewer role cannot
+// reach the self-approval or checklist checks at all, let alone a write.
+export async function approveKnowledgeEntryAsVerifiedReviewer(
+  db: FirestoreLike,
+  caller: NheiVerifiedCaller,
+  entryId: string,
+  checklist: NheiKnowledgeReviewChecklist,
+): Promise<NheiKnowledgeWriteResult<NheiKnowledgeEntry>> {
+  const identity = deriveKnowledgeReviewerIdentity(caller);
+  if (!identity.ok || !identity.reviewerId) {
+    return { ok: false, reason: 'authorisation_denied' };
+  }
+  return approveKnowledgeEntry(db, entryId, identity.reviewerId, checklist);
+}
+
+export async function rejectKnowledgeEntryAsVerifiedReviewer(
+  db: FirestoreLike,
+  caller: NheiVerifiedCaller,
+  entryId: string,
+): Promise<NheiKnowledgeWriteResult<NheiKnowledgeEntry>> {
+  const identity = deriveKnowledgeReviewerIdentity(caller);
+  if (!identity.ok || !identity.reviewerId) {
+    return { ok: false, reason: 'authorisation_denied' };
+  }
+  return rejectKnowledgeEntry(db, entryId, identity.reviewerId);
 }
 
 // Fetches every document in the collection and validates each one -

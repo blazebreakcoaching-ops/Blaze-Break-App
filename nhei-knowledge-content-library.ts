@@ -13,11 +13,32 @@
 // yet; that is a disclosed gap, not an oversight, left for a future
 // content batch.
 //
-// Every entry here is pre-approved (approvalStatus: 'approved') with a
-// distinct author/reviewer pair, exactly the shape
-// nhei-knowledge-governance.ts requires - these are not draft placeholders
-// waiting on review; they went through the same validation
-// (validateKnowledgeEntry) as any other entry would.
+// PHASE 3C-2B SECTION 5 CORRECTION: every entry here was ORIGINALLY
+// written as pre-approved (approvalStatus: 'approved', reviewerId:
+// 'nhei_content_reviewer_v1'). Phase 3C-2A's audit found that identity
+// was set by the SAME automated authoring process that wrote the
+// content - not a second, independent, real human reviewer - so labelling
+// these 'approved' satisfied validateKnowledgeEntry's structural rule
+// (reviewerId != authorId) without satisfying the substantive
+// requirement of independent review. "Passing validation/automated tests
+// does not constitute independent review" applies retroactively to this
+// file's own prior state, not only to future content - continuing to
+// expose these nine entries as 'approved' would be exactly the
+// fabricated-reviewer problem this project has repeatedly forbidden,
+// just inherited rather than freshly introduced.
+//
+// Every entry below is now a DRAFT - approvalStatus: 'draft',
+// reviewerId: null, lastReviewedAt: null - identical in shape to
+// nhei-knowledge-content-drafts.ts's four entries. This makes them
+// structurally unreachable by filterApprovedOnly
+// (nhei-knowledge-retrieval-engine.ts), the same guarantee that already
+// protected the four SHIP/BLAME/R3/Context-and-Agency drafts: nothing
+// about "current approved status" can expose them to future live
+// retrieval, because that status no longer exists. A real, independent,
+// named human reviewer must approve each one through the existing
+// nhei-knowledge-governance.ts checklist before any of them becomes
+// retrievable again - see NHEI_KNOWLEDGE_REVIEW_PACKAGE.md (updated this
+// phase to cover all 13 entries) for what that review needs to cover.
 //
 // Evidence category choices, made deliberately and conservatively:
 //   * All three Trifecta entries and both of the extra Temporal/Adaptive
@@ -40,21 +61,24 @@
 import { type NheiKnowledgeEntry } from './nhei-knowledge-types';
 
 const AUTHOR_ID = 'nhei_content_author_v1';
-const REVIEWER_ID = 'nhei_content_reviewer_v1'; // deliberately distinct from AUTHOR_ID
-const REVIEWED_AT = '2026-01-15T00:00:00.000Z';
 
-function approvedEntry(partial: Omit<NheiKnowledgeEntry, 'authorId' | 'reviewerId' | 'lastReviewedAt' | 'approvalStatus' | 'contentVersion'>): NheiKnowledgeEntry {
+// Renamed from approvedEntry (Phase 3B/3C-2A) to pendingReviewEntry
+// (Phase 3C-2B) to match what it now actually produces - see the file
+// header comment. No fabricated reviewer identity, no fabricated
+// lastReviewedAt: both are null, exactly like
+// nhei-knowledge-content-drafts.ts's draftEntry().
+function pendingReviewEntry(partial: Omit<NheiKnowledgeEntry, 'authorId' | 'reviewerId' | 'lastReviewedAt' | 'approvalStatus' | 'contentVersion'>): NheiKnowledgeEntry {
   return {
     ...partial,
     authorId: AUTHOR_ID,
-    reviewerId: REVIEWER_ID,
-    lastReviewedAt: REVIEWED_AT,
-    approvalStatus: 'approved',
+    reviewerId: null,
+    lastReviewedAt: null,
+    approvalStatus: 'draft',
     contentVersion: 1,
   };
 }
 
-const internalSelf: NheiKnowledgeEntry = approvedEntry({
+const internalSelf: NheiKnowledgeEntry = pendingReviewEntry({
   id: 'trifecta_internal_self_v1',
   title: 'The Internal Self',
   educationalSummary:
@@ -93,7 +117,7 @@ const internalSelf: NheiKnowledgeEntry = approvedEntry({
   perceivedReceivedSelfDistinctions: null,
 });
 
-const relationalSelf: NheiKnowledgeEntry = approvedEntry({
+const relationalSelf: NheiKnowledgeEntry = pendingReviewEntry({
   id: 'trifecta_relational_self_v1',
   title: 'The Relational Self',
   educationalSummary:
@@ -131,7 +155,7 @@ const relationalSelf: NheiKnowledgeEntry = approvedEntry({
   perceivedReceivedSelfDistinctions: null,
 });
 
-const perceivedReceivedSelf: NheiKnowledgeEntry = approvedEntry({
+const perceivedReceivedSelf: NheiKnowledgeEntry = pendingReviewEntry({
   id: 'trifecta_perceived_received_self_v1',
   title: 'The Perceived-Received Self',
   educationalSummary:
@@ -176,7 +200,7 @@ const perceivedReceivedSelf: NheiKnowledgeEntry = approvedEntry({
   },
 });
 
-const metaphysical: NheiKnowledgeEntry = approvedEntry({
+const metaphysical: NheiKnowledgeEntry = pendingReviewEntry({
   id: 'dimension_metaphysical_v1',
   title: 'The Metaphysical Dimension',
   educationalSummary:
@@ -213,7 +237,7 @@ const metaphysical: NheiKnowledgeEntry = approvedEntry({
   perceivedReceivedSelfDistinctions: null,
 });
 
-const physical: NheiKnowledgeEntry = approvedEntry({
+const physical: NheiKnowledgeEntry = pendingReviewEntry({
   id: 'dimension_physical_v1',
   title: 'The Physical Dimension',
   educationalSummary:
@@ -249,7 +273,7 @@ const physical: NheiKnowledgeEntry = approvedEntry({
   perceivedReceivedSelfDistinctions: null,
 });
 
-const mental: NheiKnowledgeEntry = approvedEntry({
+const mental: NheiKnowledgeEntry = pendingReviewEntry({
   id: 'dimension_mental_v1',
   title: 'The Mental Dimension',
   educationalSummary:
@@ -285,7 +309,7 @@ const mental: NheiKnowledgeEntry = approvedEntry({
   perceivedReceivedSelfDistinctions: null,
 });
 
-const emotional: NheiKnowledgeEntry = approvedEntry({
+const emotional: NheiKnowledgeEntry = pendingReviewEntry({
   id: 'dimension_emotional_v1',
   title: 'The Emotional Dimension',
   educationalSummary:
@@ -321,7 +345,7 @@ const emotional: NheiKnowledgeEntry = approvedEntry({
   perceivedReceivedSelfDistinctions: null,
 });
 
-const temporalSelfInteraction: NheiKnowledgeEntry = approvedEntry({
+const temporalSelfInteraction: NheiKnowledgeEntry = pendingReviewEntry({
   id: 'temporal_self_interaction_v1',
   title: 'Temporal Self Interaction: Sequence Is Not Cause',
   educationalSummary:
@@ -362,7 +386,7 @@ const temporalSelfInteraction: NheiKnowledgeEntry = approvedEntry({
   perceivedReceivedSelfDistinctions: null,
 });
 
-const adaptiveBehaviour: NheiKnowledgeEntry = approvedEntry({
+const adaptiveBehaviour: NheiKnowledgeEntry = pendingReviewEntry({
   id: 'adaptive_behaviour_v1',
   title: 'Adaptive Behaviour: Responses, Not Verdicts',
   educationalSummary:

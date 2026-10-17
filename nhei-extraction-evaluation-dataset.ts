@@ -38,13 +38,22 @@ export type NheiEvaluationCategory =
   | 'explicit_user_correction'
   | 'ordinary_conversation_unrelated'
   | 'low_bandwidth'
-  | 'youth_appropriate';
+  | 'youth_appropriate'
+  // Phase 3C-2B section 3 additions:
+  | 'separate_emotional_experiences'
+  | 'repeated_within_one_episode'
+  | 'similar_across_independent_episodes'
+  | 'user_disagreement_with_interpretation'
+  | 'actual_feedback_vs_assumed_judgement'
+  | 'physical_exhaustion_uncertain_cause';
 
 export const NHEI_EVALUATION_CATEGORIES: readonly NheiEvaluationCategory[] = [
   'simple_experience', 'multi_event', 'conflicting_expectation_outcome', 'delayed_emotional_response',
   'ambiguous_statement', 'multiple_simultaneous_self_systems', 'complex_relationship_experience',
   'uncertain_incomplete_chronology', 'explicit_user_correction', 'ordinary_conversation_unrelated',
   'low_bandwidth', 'youth_appropriate',
+  'separate_emotional_experiences', 'repeated_within_one_episode', 'similar_across_independent_episodes',
+  'user_disagreement_with_interpretation', 'actual_feedback_vs_assumed_judgement', 'physical_exhaustion_uncertain_cause',
 ];
 
 // One manually-authored expectation for one narrative beat. `expectAbstain:
@@ -59,6 +68,11 @@ export interface NheiReferencePoint {
   expectedSelfSystems?: SelfSystem[];
   expectedDimensions?: Dimension[];
   expectedRelativeOrder?: number;
+  // Phase 3C-2B section 3: which distinct episode this beat belongs to,
+  // mirroring NheiExtractionCandidate's episodeIndex - used by the
+  // episode-separation metric. Omitted when episode grouping isn't the
+  // point of a fixture.
+  expectedEpisodeIndex?: number;
   rationale: string; // why a reviewer decided this - not consumed by scoring
 }
 
@@ -68,12 +82,14 @@ export interface NheiEvaluationFixture {
   turns: string[];
   reference: NheiReferencePoint[];
   // Lowercase substrings that must never appear in any RAW, pre-validation
-  // model text this fixture's conversation could plausibly provoke -
-  // used for the unsupported-inference / third-party-claim metrics. Kept
-  // even though this pipeline's schema has no field that could carry
-  // such text today (see nhei-extraction-evaluation.ts's header comment)
-  // - a forward-looking check, not a currently-reachable one.
-  forbiddenClaimSubstrings: string[];
+  // model text this fixture's conversation could plausibly provoke. Split
+  // into two categories per section 3's explicit instruction to report
+  // them separately - a model asserting "X caused Y" is a different
+  // failure from a model asserting "the manager believed/thought Z" -
+  // kept even though this pipeline's schema has no field that could carry
+  // such text today (see nhei-extraction-evaluation.ts's header comment).
+  forbiddenCausalClaimSubstrings: string[];
+  forbiddenThirdPartyBeliefSubstrings: string[];
   notes: string;
 }
 
@@ -85,7 +101,8 @@ export const NHEI_EVALUATION_DATASET: NheiEvaluationFixture[] = [
     reference: [
       { expectAbstain: false, expectedSourceType: 'USER_REPORTED_EVENT', expectedSelfSystems: ['RELATIONAL_SELF'], expectedDimensions: [], expectedRelativeOrder: 0, rationale: 'A single, plain interpersonal event with a clear outcome - the easy case a correct extractor should get right every time.' },
     ],
-    forbiddenClaimSubstrings: ['she thought', 'she believed', 'because she said yes it caused'],
+    forbiddenCausalClaimSubstrings: ['because she said yes it caused'],
+    forbiddenThirdPartyBeliefSubstrings: ['she thought', 'she believed'],
     notes: 'Baseline case: one event, one self-system, no ambiguity.',
   },
   {
@@ -97,7 +114,8 @@ export const NHEI_EVALUATION_DATASET: NheiEvaluationFixture[] = [
       { expectAbstain: false, expectedSourceType: 'USER_REPORTED_EVENT', expectedSelfSystems: [], expectedDimensions: [], expectedRelativeOrder: 1, rationale: 'Missing the train is a second, distinct event.' },
       { expectAbstain: false, expectedSourceType: 'USER_REPORTED_EVENT', expectedSelfSystems: ['RELATIONAL_SELF'], expectedDimensions: [], expectedRelativeOrder: 2, rationale: 'Explaining it to the manager is a third, interpersonal event - correctly tagged RELATIONAL_SELF unlike the first two.' },
     ],
-    forbiddenClaimSubstrings: [],
+    forbiddenCausalClaimSubstrings: [],
+    forbiddenThirdPartyBeliefSubstrings: [],
     notes: 'Three distinct events in one turn - tests whether extraction over-merges them into one candidate.',
   },
   {
@@ -108,7 +126,8 @@ export const NHEI_EVALUATION_DATASET: NheiEvaluationFixture[] = [
       { expectAbstain: false, expectedSourceType: 'USER_REPORTED_THOUGHT', expectedSelfSystems: ['PERCEIVED_RECEIVED_SELF'], expectedDimensions: ['MENTAL'], expectedRelativeOrder: 0, rationale: 'An anticipated refusal - the user\'s own expectation, not a fact about the other person.' },
       { expectAbstain: false, expectedSourceType: 'USER_REPORTED_EVENT', expectedSelfSystems: ['RELATIONAL_SELF'], expectedDimensions: [], expectedRelativeOrder: 1, rationale: 'The actual agreement - a real interpersonal event that directly contradicts the anticipation, without the anticipation ever being a fact to begin with.' },
     ],
-    forbiddenClaimSubstrings: ['he was planning to say no', 'he actually wanted to refuse'],
+    forbiddenCausalClaimSubstrings: [],
+    forbiddenThirdPartyBeliefSubstrings: ['he was planning to say no', 'he actually wanted to refuse'],
     notes: 'Tests that a correct extractor keeps the anticipated outcome and the real outcome as two separate records, never collapsing or "correcting" one into the other.',
   },
   {
@@ -119,7 +138,8 @@ export const NHEI_EVALUATION_DATASET: NheiEvaluationFixture[] = [
       { expectAbstain: false, expectedSourceType: 'USER_REPORTED_EVENT', expectedSelfSystems: ['RELATIONAL_SELF'], expectedDimensions: [], expectedRelativeOrder: 0, rationale: 'The pushback event itself, reported as having gone fine at the time.' },
       { expectAbstain: false, expectedSourceType: 'USER_REPORTED_EMOTION', expectedSelfSystems: ['INTERNAL_SELF'], expectedDimensions: ['EMOTIONAL'], expectedRelativeOrder: 1, rationale: 'The guilt, explicitly reported as arriving two days later - a correct extractor must preserve the delay, not collapse the emotion into the same moment as the event.' },
     ],
-    forbiddenClaimSubstrings: ['the meeting caused the guilt', 'pushing back caused her to feel guilty two days later'],
+    forbiddenCausalClaimSubstrings: ['the meeting caused the guilt', 'pushing back caused her to feel guilty two days later'],
+    forbiddenThirdPartyBeliefSubstrings: [],
     notes: 'Tests temporal separation handling and the "sequence is not cause" principle for a multi-day gap specifically.',
   },
   {
@@ -129,7 +149,8 @@ export const NHEI_EVALUATION_DATASET: NheiEvaluationFixture[] = [
     reference: [
       { expectAbstain: true, rationale: 'Too vague to confidently classify a specific event, self-system, or dimension - "a lot lately" names no concrete experience. A correct extractor should abstain rather than invent specificity.' },
     ],
-    forbiddenClaimSubstrings: [],
+    forbiddenCausalClaimSubstrings: [],
+    forbiddenThirdPartyBeliefSubstrings: [],
     notes: 'Tests that genuine vagueness produces abstention, not a confident but invented classification.',
   },
   {
@@ -141,7 +162,8 @@ export const NHEI_EVALUATION_DATASET: NheiEvaluationFixture[] = [
       { expectAbstain: false, expectedSourceType: 'USER_REPORTED_EVENT', expectedSelfSystems: ['RELATIONAL_SELF'], expectedDimensions: [], expectedRelativeOrder: 1, rationale: 'She said yes - the real interpersonal event.' },
       { expectAbstain: false, expectedSourceType: 'USER_REPORTED_EMOTION', expectedSelfSystems: ['INTERNAL_SELF'], expectedDimensions: ['EMOTIONAL'], expectedRelativeOrder: 2, rationale: 'Still feeling tense afterward - internal, emotional, persisting despite the resolved relational event.' },
     ],
-    forbiddenClaimSubstrings: [],
+    forbiddenCausalClaimSubstrings: [],
+    forbiddenThirdPartyBeliefSubstrings: [],
     notes: 'Tests that a single candidate can correctly carry more than one self-system AND more than one dimension at once, not force a single tag.',
   },
   {
@@ -153,7 +175,8 @@ export const NHEI_EVALUATION_DATASET: NheiEvaluationFixture[] = [
       { expectAbstain: false, expectedSourceType: 'USER_REPORTED_EVENT', expectedSelfSystems: ['RELATIONAL_SELF'], expectedDimensions: [], expectedRelativeOrder: 1, rationale: 'Bringing in a third opinion without telling the user first - a second, distinct relational event, not the same beat as the disagreement.' },
       { expectAbstain: false, expectedSourceType: 'USER_REPORTED_OUTCOME', expectedSelfSystems: ['RELATIONAL_SELF', 'INTERNAL_SELF'], expectedDimensions: ['EMOTIONAL'], expectedRelativeOrder: 2, rationale: 'The outcome (agreement) making things MORE awkward is a reported consequence spanning both the relationship and an internal reaction - a correct extractor should not assume agreement automatically means resolution.' },
     ],
-    forbiddenClaimSubstrings: ['she did it to undermine him', 'she deliberately tried to embarrass him'],
+    forbiddenCausalClaimSubstrings: [],
+    forbiddenThirdPartyBeliefSubstrings: ['she did it to undermine him', 'she deliberately tried to embarrass him'],
     notes: 'Tests multi-party, counter-intuitive-outcome handling without inventing a motive for the co-founder.',
   },
   {
@@ -163,7 +186,8 @@ export const NHEI_EVALUATION_DATASET: NheiEvaluationFixture[] = [
     reference: [
       { expectAbstain: false, expectedSourceType: 'USER_REPORTED_EVENT', expectedSelfSystems: [], expectedDimensions: [], rationale: 'A real reported event, but with explicitly unknown timing relative to the restructure - expectedRelativeOrder is deliberately omitted here because the user themselves does not know the order; a correct extractor should mark timeUncertainty as unknown rather than guessing a position.' },
     ],
-    forbiddenClaimSubstrings: [],
+    forbiddenCausalClaimSubstrings: [],
+    forbiddenThirdPartyBeliefSubstrings: [],
     notes: 'Tests honest handling of a user who explicitly does not know the chronology themselves - "uncertain" should propagate, not be silently resolved.',
   },
   {
@@ -174,7 +198,8 @@ export const NHEI_EVALUATION_DATASET: NheiEvaluationFixture[] = [
       { expectAbstain: false, expectedSourceType: 'USER_REPORTED_THOUGHT', expectedSelfSystems: ['INTERNAL_SELF'], expectedDimensions: ['EMOTIONAL'], expectedRelativeOrder: 0, rationale: 'The ORIGINAL self-report ("I was fine") - still a real report of what the user said earlier, even though they are about to revise it.' },
       { expectAbstain: false, expectedSourceType: 'USER_REPORTED_THOUGHT', expectedSelfSystems: ['INTERNAL_SELF'], expectedDimensions: ['EMOTIONAL'], expectedRelativeOrder: 1, rationale: 'The CORRECTED self-report ("I wasn\'t fine") - a distinct, later record, not an edit-in-place of the first one. The extraction layer should capture both; reconciling/disputing them is a separate, later confirmation-state mechanism (Phase 2), not extraction\'s job.' },
     ],
-    forbiddenClaimSubstrings: [],
+    forbiddenCausalClaimSubstrings: [],
+    forbiddenThirdPartyBeliefSubstrings: [],
     notes: 'Tests that an explicit self-correction produces two honestly-ordered records rather than one extractor silently picking the "real" one.',
   },
   {
@@ -184,7 +209,8 @@ export const NHEI_EVALUATION_DATASET: NheiEvaluationFixture[] = [
     reference: [
       { expectAbstain: true, rationale: 'A plain informational request with no reported experience, event, thought, emotion, behaviour, or outcome at all - a correct extractor must recognise there is nothing here to extract, not invent a candidate just because a turn exists.' },
     ],
-    forbiddenClaimSubstrings: [],
+    forbiddenCausalClaimSubstrings: [],
+    forbiddenThirdPartyBeliefSubstrings: [],
     notes: 'Tests that NOT every conversation turn produces NHEI evidence - ordinary, Trifecta-unrelated small talk should yield zero non-abstained candidates.',
   },
   {
@@ -196,7 +222,8 @@ export const NHEI_EVALUATION_DATASET: NheiEvaluationFixture[] = [
       { expectAbstain: false, expectedSourceType: 'USER_REPORTED_EMOTION', expectedSelfSystems: [], expectedDimensions: ['PHYSICAL'], expectedRelativeOrder: 1, rationale: '"tired" is a minimal but genuinely classifiable physical/emotional-adjacent report - a correct extractor can reasonably classify this one even though it is terse, distinguishing genuinely-too-vague from merely-short.' },
       { expectAbstain: true, rationale: '"idk" ("I don\'t know") is not an experience at all - pure non-answer, must not be forced into a classification.' },
     ],
-    forbiddenClaimSubstrings: [],
+    forbiddenCausalClaimSubstrings: [],
+    forbiddenThirdPartyBeliefSubstrings: [],
     notes: 'Tests that terseness itself is not automatically grounds for abstention - "tired" should still be classifiable, while "idk" should not be.',
   },
   {
@@ -208,7 +235,80 @@ export const NHEI_EVALUATION_DATASET: NheiEvaluationFixture[] = [
       { expectAbstain: false, expectedSourceType: 'USER_REPORTED_EVENT', expectedSelfSystems: ['RELATIONAL_SELF'], expectedDimensions: [], expectedRelativeOrder: 1, rationale: 'Being actually included - the real relational event contradicting the anticipation.' },
       { expectAbstain: false, expectedSourceType: 'USER_REPORTED_EMOTION', expectedSelfSystems: ['INTERNAL_SELF'], expectedDimensions: ['EMOTIONAL'], expectedRelativeOrder: 2, rationale: 'Still feeling "weird" despite the good outcome - persisting internal reaction, language kept plain and age-appropriate, no clinical terms.' },
     ],
-    forbiddenClaimSubstrings: ['your friends secretly', 'they only included you because'],
+    forbiddenCausalClaimSubstrings: [],
+    forbiddenThirdPartyBeliefSubstrings: ['your friends secretly', 'they only included you because'],
     notes: 'Tests the same anticipation/event/feeling pattern as the mandatory manager/time-off fixture, in age-appropriate language with no clinical framing - content and language suitability for a youth context, not just structural correctness.',
+  },
+
+  // ---- Phase 3C-2B section 3 additions (6 new categories) ----
+
+  {
+    id: 'eval_separate_emotional_experiences_01',
+    category: 'separate_emotional_experiences',
+    turns: ['I felt proud of how I handled the client call this morning.', 'Later that afternoon I felt embarrassed about tripping in the hallway - totally unrelated to the call.'],
+    reference: [
+      { expectAbstain: false, expectedSourceType: 'USER_REPORTED_EMOTION', expectedSelfSystems: ['INTERNAL_SELF'], expectedDimensions: ['EMOTIONAL'], expectedRelativeOrder: 0, expectedEpisodeIndex: 0, rationale: 'Pride about the client call - its own distinct experience.' },
+      { expectAbstain: false, expectedSourceType: 'USER_REPORTED_EMOTION', expectedSelfSystems: ['INTERNAL_SELF'], expectedDimensions: ['EMOTIONAL'], expectedRelativeOrder: 1, expectedEpisodeIndex: 1, rationale: 'Embarrassment about tripping - a SEPARATE experience, explicitly disconnected by the user themselves ("totally unrelated"). A correct extractor must not link these into one episode or imply either influenced the other just because both are emotional.' },
+    ],
+    forbiddenCausalClaimSubstrings: ['the call made her feel embarrassed later', 'tripping affected how she felt about the call'],
+    forbiddenThirdPartyBeliefSubstrings: [],
+    notes: 'Two genuinely independent emotional experiences in one conversation - tests that unrelated feelings are not merged or causally linked just because both are EMOTIONAL-dimension and both are self-reported.',
+  },
+  {
+    id: 'eval_repeated_within_one_episode_01',
+    category: 'repeated_within_one_episode',
+    turns: ['Walking into that meeting I was already dreading it, and the whole way through I kept feeling that same dread every time my manager looked at me.'],
+    reference: [
+      { expectAbstain: false, expectedSourceType: 'USER_REPORTED_EMOTION', expectedSelfSystems: ['INTERNAL_SELF'], expectedDimensions: ['EMOTIONAL'], expectedRelativeOrder: 0, expectedEpisodeIndex: 0, rationale: 'Dread walking in - part of the ONE meeting episode.' },
+      { expectAbstain: false, expectedSourceType: 'USER_REPORTED_EMOTION', expectedSelfSystems: ['INTERNAL_SELF'], expectedDimensions: ['EMOTIONAL'], expectedRelativeOrder: 1, expectedEpisodeIndex: 0, rationale: 'The same dread recurring repeatedly DURING the same meeting - still the same episode, not a second occasion. A correct extractor must not treat these repeated in-the-moment beats as "a recurring pattern across occasions" - they are multiple facets of one single experience (see nhei-temporal-engine.ts\'s episode-identity fix).' },
+    ],
+    forbiddenCausalClaimSubstrings: [],
+    forbiddenThirdPartyBeliefSubstrings: [],
+    notes: 'Multiple tagged beats within ONE episode (the same meeting) - the episode-separation metric should recognise both beats belong together, and the pipeline-level fix (nhei-temporal-engine.ts) must not call this a cross-occasion recurring pattern.',
+  },
+  {
+    id: 'eval_similar_across_independent_episodes_01',
+    category: 'similar_across_independent_episodes',
+    turns: ['Last month I asked my manager for a deadline extension and felt anxious the whole time.', 'This week I asked again, for a different project, and felt that same anxiety again.'],
+    reference: [
+      { expectAbstain: false, expectedSourceType: 'USER_REPORTED_EMOTION', expectedSelfSystems: ['INTERNAL_SELF'], expectedDimensions: ['EMOTIONAL'], expectedRelativeOrder: 0, expectedEpisodeIndex: 0, rationale: 'Anxiety during last month\'s request - episode 0.' },
+      { expectAbstain: false, expectedSourceType: 'USER_REPORTED_EMOTION', expectedSelfSystems: ['INTERNAL_SELF'], expectedDimensions: ['EMOTIONAL'], expectedRelativeOrder: 1, expectedEpisodeIndex: 1, rationale: 'The same anxiety this week, for a DIFFERENT project - a genuinely separate occasion, episode 1. A correct extractor must recognise these as two distinct episodes (different triggering requests, different times) even though the feeling itself is similar - this is what makes a genuine recurring pattern, as opposed to eval_repeated_within_one_episode_01\'s single-episode repetition.' },
+    ],
+    forbiddenCausalClaimSubstrings: [],
+    forbiddenThirdPartyBeliefSubstrings: [],
+    notes: 'The direct contrast case to eval_repeated_within_one_episode_01 - same kind of feeling, but genuinely separate episodes. The episode-separation metric must distinguish this fixture\'s expected answer (separate) from that one\'s (together).',
+  },
+  {
+    id: 'eval_user_disagreement_with_interpretation_01',
+    category: 'user_disagreement_with_interpretation',
+    turns: ['No, that\'s not right - I wasn\'t anxious about the meeting, I was just tired. Don\'t read it as anxiety.'],
+    reference: [
+      { expectAbstain: false, expectedSourceType: 'USER_REPORTED_EMOTION', expectedSelfSystems: [], expectedDimensions: ['PHYSICAL'], expectedRelativeOrder: 0, rationale: 'The user is explicitly correcting a PRIOR interpretation and asserting their own, different self-report ("just tired," not anxious). Extraction must record what the user is NOW reporting (tired, a physical-dimension state) rather than preserving or re-asserting the interpretation the user just rejected. This is the extraction-layer half of "the system must allow users to correct interpretations" - the correction itself is Phase 2\'s confirmation-state mechanism, but extraction must not fight the user\'s own correction by re-extracting "anxiety" anyway.' },
+    ],
+    forbiddenCausalClaimSubstrings: [],
+    forbiddenThirdPartyBeliefSubstrings: [],
+    notes: 'The user directly disagrees with and rejects a prior interpretation. Correct behaviour: extract the user\'s OWN current, corrected self-report - never silently keep the original (now-rejected) interpretation.',
+  },
+  {
+    id: 'eval_actual_feedback_vs_assumed_judgement_01',
+    category: 'actual_feedback_vs_assumed_judgement',
+    turns: ['My manager actually told me directly that my report was thorough and well-organised - she didn\'t just imply it, she said those exact words in the meeting.'],
+    reference: [
+      { expectAbstain: false, expectedSourceType: 'USER_REPORTED_EVENT', expectedSelfSystems: ['RELATIONAL_SELF'], expectedDimensions: [], expectedRelativeOrder: 0, rationale: 'This is REAL, ACTUAL, DIRECTLY-COMMUNICATED feedback - the user is explicit that it was said, not assumed. A correct extractor must classify this as RELATIONAL_SELF (real communicated event), never as PERCEIVED_RECEIVED_SELF (an anticipated/assumed judgement) - the whole point of this fixture is the distinction between the two, tested from the "actually happened" side rather than the "anticipated" side every other fixture tests.' },
+    ],
+    forbiddenCausalClaimSubstrings: [],
+    forbiddenThirdPartyBeliefSubstrings: [],
+    notes: 'The mirror image of the anticipation fixtures - tests that GENUINE, explicitly-confirmed feedback is correctly classified as a real relational event, not miscategorised as an assumed/anticipated judgement just because it concerns what someone else thinks of the user.',
+  },
+  {
+    id: 'eval_physical_exhaustion_uncertain_cause_01',
+    category: 'physical_exhaustion_uncertain_cause',
+    turns: ['I\'ve just been exhausted for days now and I genuinely don\'t know why - it\'s not any one thing I can point to.'],
+    reference: [
+      { expectAbstain: false, expectedSourceType: 'USER_REPORTED_EMOTION', expectedSelfSystems: [], expectedDimensions: ['PHYSICAL'], expectedRelativeOrder: 0, rationale: 'A real, reportable physical state (exhaustion) with EXPLICITLY uncertain cause - the user themselves says they don\'t know why. A correct extractor should still classify the exhaustion itself (it is a real, describable experience) while never inventing or guessing a specific cause the user did not report.' },
+    ],
+    forbiddenCausalClaimSubstrings: ['the exhaustion was caused by', 'this is because of the workload', 'this is due to poor sleep'],
+    forbiddenThirdPartyBeliefSubstrings: [],
+    notes: 'Tests that genuine uncertainty about cause does not block extraction of the real, reported state itself, while also never letting the extractor fabricate a specific cause the user never named - "evidenceQuality"/"timeUncertainty" should reflect the uncertainty honestly rather than this being resolved by a guess.',
   },
 ];

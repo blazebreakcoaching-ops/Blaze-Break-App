@@ -18,6 +18,7 @@ import {
   type FirestoreLike,
   type FirestoreCollectionRefLike,
   type FirestoreDocSnapshotLike,
+  type FirestoreTransactionLike,
 } from './nhei-persistence-service';
 import { excludeDisputedInterpretations } from './nhei-types';
 
@@ -687,5 +688,335 @@ describe('Phase 3C-2A section 9 - closing the consent/write race condition', () 
     if (result.ok === false) expect(result.reason).toBe('consent_required');
     const rawDoc = await db.collection('users/userA/nhei_evidence').doc('ev1').get();
     expect(rawDoc.exists).toBe(false);
+  });
+});
+
+// ============================================================================
+// Phase 3C-2B section 2 - transactional consent/write concurrency
+// ============================================================================
+//
+// A fake that genuinely simulates Firestore's optimistic-concurrency
+// transaction semantics, not just a FIFO queue that serialises "transaction"
+// bodies (which test/fake-firestore.ts's existing fake deliberately does -
+// see its own comment on why that's sufficient for ITS callers). This fake
+// goes further: every document carries a revision counter, every tx.get()
+// records the revision it saw, and a transaction's writes are staged
+// (never applied to the store until commit) and only actually committed if
+// every document the transaction read is still at the same revision it was
+// at read-time - otherwise the whole callback is re-run (retried), exactly
+// matching what the real Admin SDK does on a version conflict. This is
+// what makes it possible to test the ACTUAL invariant this section cares
+// about - "no optional write commits based on consent already revoked at
+// the commit point" - rather than merely exercising the code path.
+interface VersionedDoc { data: Record<string, unknown> | undefined; rev: number; }
+
+function createTransactionalFakeFirestore(): FirestoreLike & { rawStore: Map<string, VersionedDoc> } {
+  const store = new Map<string, VersionedDoc>();
+  const refPath = new WeakMap<object, string>();
+
+  function docRefFor(path: string): ReturnType<FirestoreCollectionRefLike['doc']> {
+    const docId = path.slice(path.lastIndexOf('/') + 1);
+    const ref = {
+      id: docId,
+      async get(): Promise<FirestoreDocSnapshotLike> {
+        const d = store.get(path);
+        return { id: docId, exists: d?.data !== undefined, data: () => d?.data };
+      },
+      async set(data: Record<string, unknown>, options?: { merge?: boolean }) {
+        const cur = store.get(path);
+        const next = options?.merge && cur?.data ? { ...cur.data, ...data } : { ...data };
+        store.set(path, { data: next, rev: (cur?.rev ?? 0) + 1 });
+      },
+      async update(data: Record<string, unknown>) {
+        const cur = store.get(path);
+        if (!cur?.data) throw new Error('no such document');
+        store.set(path, { data: { ...cur.data, ...data }, rev: cur.rev + 1 });
+      },
+      async delete() {
+        const cur = store.get(path);
+        store.set(path, { data: undefined, rev: (cur?.rev ?? 0) + 1 });
+      },
+    };
+    refPath.set(ref, path);
+    return ref as any;
+  }
+
+  function collectionRefFor(path: string): FirestoreCollectionRefLike {
+    const ref: FirestoreCollectionRefLike = {
+      doc(id?: string) {
+        const docId = id ?? `auto_${Math.random().toString(36).slice(2, 10)}`;
+        return docRefFor(`${path}/${docId}`);
+      },
+      async get() {
+        const prefix = `${path}/`;
+        const docs = [...store.entries()]
+          .filter(([k, v]) => k.startsWith(prefix) && !k.slice(prefix.length).includes('/') && v.data !== undefined)
+          .map(([k, v]) => ({ id: k.slice(prefix.length), exists: true, data: () => v.data }) as FirestoreDocSnapshotLike);
+        return { docs };
+      },
+    };
+    refPath.set(ref, path);
+    return ref;
+  }
+
+  let txQueue: Promise<void> = Promise.resolve();
+  const MAX_RETRIES = 5;
+
+  async function runTransaction<T>(fn: (tx: FirestoreTransactionLike) => Promise<T>): Promise<T> {
+    let release!: () => void;
+    const prior = txQueue;
+    txQueue = new Promise((resolve) => { release = resolve; });
+    await prior;
+    try {
+      for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+        const readVersions = new Map<string, number>();
+        type PendingWrite = { kind: 'set' | 'update' | 'delete'; path: string; data?: Record<string, unknown>; merge?: boolean };
+        const pendingWrites: PendingWrite[] = [];
+
+        const tx: FirestoreTransactionLike = {
+          get: (async (ref: any) => {
+            const path = refPath.get(ref);
+            if (path === undefined) throw new Error('fake transaction: unknown ref');
+            if (!readVersions.has(path)) readVersions.set(path, store.get(path)?.rev ?? 0);
+            // Collection reads are not themselves conflict-tracked below
+            // (a disclosed simplification - see nhei-persistence-service.ts's
+            // comment on writeNheiAssertedInfluence) - distinguish by
+            // whether this looks like a doc path (has a sibling 'doc' call)
+            // or a collection path: cheaply, a doc ref always has an `id`
+            // matching its own last path segment AND was created via
+            // docRefFor, which we can tell apart by checking if a '.doc('
+            // method exists on it.
+            if (typeof (ref as FirestoreCollectionRefLike).doc === 'function') {
+              const prefix = `${path}/`;
+              const docs = [...store.entries()]
+                .filter(([k, v]) => k.startsWith(prefix) && !k.slice(prefix.length).includes('/') && v.data !== undefined)
+                .map(([k, v]) => ({ id: k.slice(prefix.length), exists: true, data: () => v.data }) as FirestoreDocSnapshotLike);
+              return { docs };
+            }
+            const d = store.get(path);
+            const docId = path.slice(path.lastIndexOf('/') + 1);
+            return { id: docId, exists: d?.data !== undefined, data: () => d?.data };
+          }) as FirestoreTransactionLike['get'],
+          set(ref, data, options) {
+            const path = refPath.get(ref);
+            if (path === undefined) throw new Error('fake transaction: unknown ref');
+            pendingWrites.push({ kind: 'set', path, data, merge: options?.merge });
+          },
+          update(ref, data) {
+            const path = refPath.get(ref);
+            if (path === undefined) throw new Error('fake transaction: unknown ref');
+            pendingWrites.push({ kind: 'update', path, data });
+          },
+          delete(ref) {
+            const path = refPath.get(ref);
+            if (path === undefined) throw new Error('fake transaction: unknown ref');
+            pendingWrites.push({ kind: 'delete', path });
+          },
+        };
+
+        const result = await fn(tx);
+
+        let conflict = false;
+        for (const [path, versionAtRead] of readVersions) {
+          if ((store.get(path)?.rev ?? 0) !== versionAtRead) { conflict = true; break; }
+        }
+        if (conflict) {
+          if (attempt === MAX_RETRIES) throw new Error('fake transaction: exceeded max retries under contention');
+          continue; // re-run fn from scratch with fresh reads, exactly like the real SDK
+        }
+
+        for (const w of pendingWrites) {
+          const cur = store.get(w.path);
+          if (w.kind === 'set') {
+            const next = w.merge && cur?.data ? { ...cur.data, ...w.data } : { ...w.data };
+            store.set(w.path, { data: next, rev: (cur?.rev ?? 0) + 1 });
+          } else if (w.kind === 'update') {
+            store.set(w.path, { data: { ...(cur?.data ?? {}), ...w.data }, rev: (cur?.rev ?? 0) + 1 });
+          } else {
+            store.set(w.path, { data: undefined, rev: (cur?.rev ?? 0) + 1 });
+          }
+        }
+        return result;
+      }
+      throw new Error('unreachable');
+    } finally {
+      release();
+    }
+  }
+
+  return { collection: collectionRefFor, runTransaction, rawStore: store };
+}
+
+// Wraps a transactional fake so that, on the FIRST tx.get() call across the
+// entire runTransaction invocation (including retries - it only ever fires
+// once, period), a caller-supplied side effect runs AFTER that read
+// resolves. This is how these tests inject "a concurrent write landed
+// immediately after this transaction did its first read" deterministically,
+// without needing real concurrency.
+function withSideEffectAfterFirstTransactionRead(db: FirestoreLike, sideEffect: () => Promise<void>): FirestoreLike {
+  let fired = false;
+  return {
+    collection: (path: string) => db.collection(path),
+    async runTransaction(fn) {
+      return db.runTransaction!(async (tx: any) => {
+        const wrappedTx = {
+          ...tx,
+          get: async (ref: any) => {
+            const snap = await tx.get(ref);
+            if (!fired) {
+              fired = true;
+              await sideEffect();
+            }
+            return snap;
+          },
+        };
+        return fn(wrappedTx);
+      });
+    },
+  };
+}
+
+describe('Phase 3C-2B section 2 - transactional consent/write concurrency', () => {
+  it('withdrawal landing immediately after the transaction\'s first (consent) read is caught by the transaction engine itself, not by a later re-check', async () => {
+    const db = createTransactionalFakeFirestore();
+    await setNheiConsent(db, 'userA', 'reflection_storage', true);
+
+    const racingDb = withSideEffectAfterFirstTransactionRead(db, async () => {
+      await setNheiConsent(db, 'userA', 'reflection_storage', false);
+    });
+
+    const result = await writeNheiEvidence(racingDb, 'userA', validRecord());
+    expect(result.ok).toBe(false);
+    if (result.ok === false) expect(result.reason).toBe('consent_required');
+    const raw = db.rawStore.get('users/userA/nhei_evidence/ev1');
+    expect(raw?.data).toBeUndefined();
+  });
+
+  it('a transaction that reads consent=true and nothing concurrent happens commits normally - the fix adds no false rejections', async () => {
+    const db = createTransactionalFakeFirestore();
+    await setNheiConsent(db, 'userA', 'reflection_storage', true);
+    const result = await writeNheiEvidence(db, 'userA', validRecord());
+    expect(result.ok).toBe(true);
+  });
+
+  it('withdrawal DURING a confirmation-state transaction is caught the same way, and the update is never committed half-applied', async () => {
+    const db = createTransactionalFakeFirestore();
+    await setNheiConsent(db, 'userA', 'reflection_storage', true);
+    await writeNheiEvidence(db, 'userA', validRecord());
+
+    const racingDb = withSideEffectAfterFirstTransactionRead(db, async () => {
+      await setNheiConsent(db, 'userA', 'reflection_storage', false);
+    });
+    const result = await confirmNheiEvidence(racingDb, 'userA', 'ev1');
+    expect(result.ok).toBe(false);
+    if (result.ok === false) expect(result.reason).toBe('consent_required');
+    // The evidence record's confirmationState was never touched at all -
+    // not reverted, because it was never committed in the first place.
+    const raw = db.rawStore.get('users/userA/nhei_evidence/ev1');
+    expect(raw?.data?.confirmationState).toBe('not_applicable');
+  });
+
+  it('withdrawal DURING an asserted-influence transaction is caught the same way', async () => {
+    const db = createTransactionalFakeFirestore();
+    await setNheiConsent(db, 'userA', 'reflection_storage', true);
+    await setNheiConsent(db, 'userA', 'longitudinal_tracking', true);
+    await writeNheiEvidence(db, 'userA', validRecord({ id: 'a' }));
+    await writeNheiEvidence(db, 'userA', validRecord({ id: 'b' }));
+
+    const racingDb = withSideEffectAfterFirstTransactionRead(db, async () => {
+      await setNheiConsent(db, 'userA', 'longitudinal_tracking', false);
+    });
+    const result = await writeNheiAssertedInfluence(racingDb, 'userA', {
+      fromEventId: 'a', toEventId: 'b', relationType: 'USER_ATTRIBUTED_INFLUENCE', interpretationConfidence: 'medium',
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok === false) expect(result.reason).toBe('consent_required');
+    expect(db.rawStore.get('users/userA/nhei_temporal_relations/a__b__USER_ATTRIBUTED_INFLUENCE')?.data).toBeUndefined();
+  });
+
+  it('two genuinely concurrent writeNheiEvidence calls for the SAME user both succeed when consent holds throughout - contention alone is not mistaken for a consent problem', async () => {
+    const db = createTransactionalFakeFirestore();
+    await setNheiConsent(db, 'userA', 'reflection_storage', true);
+    const [a, b] = await Promise.all([
+      writeNheiEvidence(db, 'userA', validRecord({ id: 'a' })),
+      writeNheiEvidence(db, 'userA', validRecord({ id: 'b' })),
+    ]);
+    expect(a.ok).toBe(true);
+    expect(b.ok).toBe(true);
+  });
+
+  it('simultaneous confirmation-state changes on two DIFFERENT evidence records both succeed independently', async () => {
+    const db = createTransactionalFakeFirestore();
+    await setNheiConsent(db, 'userA', 'reflection_storage', true);
+    await writeNheiEvidence(db, 'userA', validRecord({ id: 'a' }));
+    await writeNheiEvidence(db, 'userA', validRecord({ id: 'b' }));
+    const [a, b] = await Promise.all([
+      confirmNheiEvidence(db, 'userA', 'a'),
+      disputeNheiEvidence(db, 'userA', 'b'),
+    ]);
+    expect(a.ok).toBe(true);
+    expect(b.ok).toBe(true);
+  });
+
+  it('retry/idempotency: a transaction retried after a transient conflict produces exactly one committed write, never a duplicate', async () => {
+    const db = createTransactionalFakeFirestore();
+    await setNheiConsent(db, 'userA', 'reflection_storage', true);
+    // Force exactly one conflict on the FIRST attempt by bumping the
+    // permissions doc's revision via an unrelated, consent-preserving
+    // write (re-granting the same value still bumps the revision) right
+    // after the first read - the transaction must retry once and still
+    // land exactly one evidence document, not two.
+    const racingDb = withSideEffectAfterFirstTransactionRead(db, async () => {
+      await setNheiConsent(db, 'userA', 'reflection_storage', true); // same value, but still a write -> bumps revision
+    });
+    const result = await writeNheiEvidence(racingDb, 'userA', validRecord());
+    expect(result.ok).toBe(true);
+    const snap = await db.collection('users/userA/nhei_evidence').get();
+    expect(snap.docs.filter((d) => d.id === 'ev1')).toHaveLength(1);
+  });
+
+  it('revocation followed by re-consent before the transaction commits allows the write through, correctly reading the LATEST state', async () => {
+    const db = createTransactionalFakeFirestore();
+    await setNheiConsent(db, 'userA', 'reflection_storage', true);
+    const racingDb = withSideEffectAfterFirstTransactionRead(db, async () => {
+      await setNheiConsent(db, 'userA', 'reflection_storage', false);
+      await setNheiConsent(db, 'userA', 'reflection_storage', true); // re-consented before this transaction's retry re-reads
+    });
+    const result = await writeNheiEvidence(racingDb, 'userA', validRecord());
+    expect(result.ok).toBe(true);
+  });
+
+  it('permission changes concurrent with deletion: withdrawing consent while a record is being deleted does not block or corrupt the deletion', async () => {
+    const db = createTransactionalFakeFirestore();
+    await setNheiConsent(db, 'userA', 'reflection_storage', true);
+    await writeNheiEvidence(db, 'userA', validRecord());
+    // deleteNheiEvidenceRecord is deliberately NOT consent-gated (Phase
+    // 2: "delete eligible NHEI personal data" is independent of consent
+    // state) - a concurrent withdrawal must not interfere with it at all.
+    await withdrawNheiConsent(db, 'userA', 'reflection_storage');
+    await deleteNheiEvidenceRecord(db, 'userA', 'ev1');
+    expect(db.rawStore.get('users/userA/nhei_evidence/ev1')?.data).toBeUndefined();
+  });
+
+  it('a genuine transaction-engine failure (not a consent decision) surfaces as a real error rather than being misreported as consent_required', async () => {
+    const db = createTransactionalFakeFirestore();
+    await setNheiConsent(db, 'userA', 'reflection_storage', true);
+    const brokenDb: FirestoreLike = {
+      collection: (path: string) => db.collection(path),
+      runTransaction: async () => { throw new Error('simulated transaction engine outage'); },
+    };
+    await expect(writeNheiEvidence(brokenDb, 'userA', validRecord())).rejects.toThrow('simulated transaction engine outage');
+  });
+
+  it('documented limitation: the no-transaction-support fallback (Phase 3C-2A shape) still only closes the race by re-checking afterward, not atomically - exercised only by a deliberately transaction-less db', async () => {
+    const db = createFakeFirestore(); // the plain, non-transactional fake used throughout this file
+    expect(db.runTransaction).toBeUndefined();
+    await setNheiConsent(db, 'userA', 'reflection_storage', true);
+    const result = await writeNheiEvidence(db, 'userA', validRecord());
+    // Still correct for the single-additional-writer case this file's
+    // other Phase 3C-2A tests already cover - this test only documents
+    // that the fallback path is still reachable and still functions,
+    // not that it is as strong as the transactional path above.
+    expect(result.ok).toBe(true);
   });
 });

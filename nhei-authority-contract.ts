@@ -36,6 +36,55 @@
 // approval/evidence-authority routes stay OUT of this codebase entirely
 // until a route is built against this contract and tested - there is
 // nothing disabled here because nothing exists yet to disable.
+//
+// PHASE 3C-2B SECTION 6 VALIDATION: this contract was audited again this
+// phase, specifically for whether it is actually WIRED to anything, not
+// just correct in isolation. Finding: deriveKnowledgeReviewerIdentity was
+// never combined with nhei-knowledge-service.ts's approveKnowledgeEntry/
+// rejectKnowledgeEntry - a future route author could have called those
+// two functions directly with a request-supplied reviewerId and nothing
+// in the type system would have stopped them. Fix: two new functions,
+// approveKnowledgeEntryAsVerifiedReviewer/
+// rejectKnowledgeEntryAsVerifiedReviewer (nhei-knowledge-service.ts),
+// are now the one sanctioned entry point - they call
+// deriveKnowledgeReviewerIdentity first and unconditionally, and the
+// underlying governance checks (self-approval, checklist completeness)
+// never run at all unless that derivation succeeds. End-to-end tests
+// (nhei-knowledge-service.test.ts, "Phase 3C-2B section 6" describe
+// block) prove an unroled or wrongly-roled caller is denied before
+// reaching those checks, and that a correctly-roled caller's audit
+// reviewerId is always exactly caller.uid.
+//
+// deriveEvidenceAuthorityGrant needed no equivalent new wrapper - it
+// already IS the sanctioned entry point for minting an
+// NheiSystemAuthorityToken - but had never been tested glued to the
+// function that actually checks that token
+// (nhei-persistence-service.ts's writeNheiEvidence). That gap is now
+// closed too (nhei-authority-contract.test.ts, "glued together, end to
+// end" describe block): a token derived from a correctly-roled caller
+// is proven to actually unlock a privileged SYSTEM_HYPOTHESIS write, and
+// a caller lacking the role is proven to never receive a token and to
+// have that same write correctly refused.
+//
+// Residual, disclosed limitation: grantNheiSystemAuthority itself
+// (nhei-persistence-service.ts) remains exported and directly callable
+// by any code that imports that module - it is not reachable from a
+// request body (its brand is a module-private Symbol, see that file's
+// comment), but nothing in the TYPE SYSTEM stops a future, careless
+// route handler from importing it directly and calling it with a label
+// built from request data, bypassing this file's role check entirely.
+// The only thing enforcing "route authors must go through
+// deriveEvidenceAuthorityGrant, never grantNheiSystemAuthority directly"
+// today is this comment and code review discipline, not a compiler
+// guarantee. Making grantNheiSystemAuthority module-private would close
+// that gap but would also break grantNheiSystemAuthority's direct use as
+// a test fixture helper across nhei-persistence-service.test.ts and
+// nhei-context-integration.test.ts - a larger, riskier change this
+// checkpoint's "preserve existing tests and interfaces where possible"
+// instruction counsels against making without a dedicated pass. Flagged
+// here explicitly, as a known gap, rather than silently left unstated:
+// a real administrative route built against this contract must be
+// reviewed for this specifically before it ships.
 
 import { grantNheiSystemAuthority, type NheiSystemAuthorityToken } from './nhei-persistence-service';
 

@@ -10,12 +10,11 @@ describe('NHEI_KNOWLEDGE_CONTENT_LIBRARY - structural integrity', () => {
     }
   });
 
-  it('every entry is already approved, with a reviewer distinct from the author', () => {
+  it('Phase 3C-2B section 5: every entry is now a draft, pending real independent review - none carries a reviewer identity', () => {
     for (const entry of NHEI_KNOWLEDGE_CONTENT_LIBRARY) {
-      expect(entry.approvalStatus).toBe('approved');
-      expect(entry.reviewerId).not.toBeNull();
-      expect(entry.reviewerId).not.toBe(entry.authorId);
-      expect(entry.lastReviewedAt).not.toBeNull();
+      expect(entry.approvalStatus).toBe('draft');
+      expect(entry.reviewerId).toBeNull();
+      expect(entry.lastReviewedAt).toBeNull();
     }
   });
 

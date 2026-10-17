@@ -3,11 +3,14 @@ import {
   createDraftKnowledgeEntry,
   approveKnowledgeEntry,
   rejectKnowledgeEntry,
+  approveKnowledgeEntryAsVerifiedReviewer,
+  rejectKnowledgeEntryAsVerifiedReviewer,
   retrieveApprovedKnowledge,
   clearKnowledgeCache,
 } from './nhei-knowledge-service';
 import type { FirestoreLike, FirestoreCollectionRefLike } from './nhei-persistence-service';
 import type { NheiKnowledgeReviewChecklist } from './nhei-knowledge-governance';
+import { NHEI_KNOWLEDGE_REVIEWER_ROLE } from './nhei-authority-contract';
 
 // Same minimal in-memory fake pattern used across every NHEI persistence
 // test file in this repo.
@@ -151,6 +154,94 @@ describe('approveKnowledgeEntry / rejectKnowledgeEntry - unauthorised content ap
     await rejectKnowledgeEntry(db, 'entry1', 'reviewer1');
     const result = await retrieveApprovedKnowledge(db, { topics: ['INTERNAL_SELF'] });
     expect(result.found).toBe(false);
+  });
+});
+
+describe('Phase 3C-2B section 6: approveKnowledgeEntryAsVerifiedReviewer / rejectKnowledgeEntryAsVerifiedReviewer', () => {
+  it('denies a caller with no role at all, before the self-approval/checklist checks ever run', async () => {
+    const db = createFakeFirestore();
+    await createDraftKnowledgeEntry(db, 'author1', draftInput());
+    const result = await approveKnowledgeEntryAsVerifiedReviewer(db, { uid: 'reviewer1' }, 'entry1', FULL_CHECKLIST);
+    expect(result.ok).toBe(false);
+    if (result.ok === false) expect(result.reason).toBe('authorisation_denied');
+  });
+
+  it('denies a caller with an unrelated role (e.g. a general platform_admin) - the reviewer role is specific, not implied by admin status', async () => {
+    const db = createFakeFirestore();
+    await createDraftKnowledgeEntry(db, 'author1', draftInput());
+    const result = await approveKnowledgeEntryAsVerifiedReviewer(db, { uid: 'admin1', role: 'platform_admin' }, 'entry1', FULL_CHECKLIST);
+    expect(result.ok).toBe(false);
+    if (result.ok === false) expect(result.reason).toBe('authorisation_denied');
+  });
+
+  it('a request-supplied reviewerId cannot substitute for a verified caller - the wrapper never reads one from anywhere but caller.uid', async () => {
+    const db = createFakeFirestore();
+    await createDraftKnowledgeEntry(db, 'author1', draftInput());
+    // Simulating a forged/spoofed field that a request body could carry -
+    // the wrapper's signature has no reviewerId parameter at all, so there
+    // is nothing for such a field to reach even if a caller tried.
+    const spoofedCaller = { uid: 'real_caller_uid' } as const;
+    const result = await approveKnowledgeEntryAsVerifiedReviewer(db, spoofedCaller, 'entry1', FULL_CHECKLIST);
+    expect(result.ok).toBe(false); // no role present - denied regardless of what uid claims to be
+  });
+
+  it('approves end to end for a caller with the correct reviewer role, using exactly caller.uid as the audit reviewerId', async () => {
+    const db = createFakeFirestore();
+    await createDraftKnowledgeEntry(db, 'author1', draftInput());
+    const result = await approveKnowledgeEntryAsVerifiedReviewer(
+      db,
+      { uid: 'real_reviewer', role: NHEI_KNOWLEDGE_REVIEWER_ROLE },
+      'entry1',
+      FULL_CHECKLIST,
+    );
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.value.reviewerId).toBe('real_reviewer');
+
+    const retrieved = await retrieveApprovedKnowledge(db, { topics: ['INTERNAL_SELF'] });
+    expect(retrieved.found).toBe(true);
+  });
+
+  it('still refuses self-approval through the wrapper, even when the author happens to also hold the reviewer role', async () => {
+    const db = createFakeFirestore();
+    await createDraftKnowledgeEntry(db, 'author1', draftInput());
+    const result = await approveKnowledgeEntryAsVerifiedReviewer(
+      db,
+      { uid: 'author1', role: NHEI_KNOWLEDGE_REVIEWER_ROLE },
+      'entry1',
+      FULL_CHECKLIST,
+    );
+    expect(result.ok).toBe(false);
+    if (result.ok === false) expect(result.reason).toBe('reviewer_is_author');
+  });
+
+  it('the checklist is still enforced through the wrapper - holding the role does not bypass it', async () => {
+    const db = createFakeFirestore();
+    await createDraftKnowledgeEntry(db, 'author1', draftInput());
+    const incomplete = { ...FULL_CHECKLIST, noMisleadingCausation: false };
+    const result = await approveKnowledgeEntryAsVerifiedReviewer(
+      db,
+      { uid: 'real_reviewer', role: NHEI_KNOWLEDGE_REVIEWER_ROLE },
+      'entry1',
+      incomplete,
+    );
+    expect(result.ok).toBe(false);
+    if (result.ok === false) expect(result.reason).toBe('checklist_incomplete');
+  });
+
+  it('rejectKnowledgeEntryAsVerifiedReviewer denies an unroled caller the same way', async () => {
+    const db = createFakeFirestore();
+    await createDraftKnowledgeEntry(db, 'author1', draftInput());
+    const result = await rejectKnowledgeEntryAsVerifiedReviewer(db, { uid: 'someone' }, 'entry1');
+    expect(result.ok).toBe(false);
+    if (result.ok === false) expect(result.reason).toBe('authorisation_denied');
+  });
+
+  it('rejectKnowledgeEntryAsVerifiedReviewer succeeds end to end for a correctly-roled caller', async () => {
+    const db = createFakeFirestore();
+    await createDraftKnowledgeEntry(db, 'author1', draftInput());
+    const result = await rejectKnowledgeEntryAsVerifiedReviewer(db, { uid: 'real_reviewer', role: NHEI_KNOWLEDGE_REVIEWER_ROLE }, 'entry1');
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.value.reviewerId).toBe('real_reviewer');
   });
 });
 
