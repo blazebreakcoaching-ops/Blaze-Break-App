@@ -23,7 +23,7 @@ vi.mock('twilio', () => ({ default: () => ({ messages: { create: vi.fn() } }) })
 import { vi } from 'vitest';
 import request from 'supertest';
 import { app } from './server';
-import { seedDoc, resetStore } from './test/fake-firestore';
+import { seedDoc, resetStore, forceCollectionError } from './test/fake-firestore';
 
 const USER = 'user_1';
 const auth = (uid: string) => ({ Authorization: `Bearer ${uid}` });
@@ -78,5 +78,15 @@ describe('GET /api/user/weekly-recap', () => {
     expect(res.body.checkinsCount).toBe(1);
     expect(res.body.energyDirection).toBe('unknown');
     expect(res.body.highlight).toBeNull();
+  });
+
+  it('500s if the check-ins read throws', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const restore = forceCollectionError(`users/${USER}/checkins`, 'get', new Error('simulated Firestore outage'));
+    const res = await request(app).get('/api/user/weekly-recap').set(auth(USER));
+    expect(res.status).toBe(500);
+    expect(errorSpy).toHaveBeenCalled();
+    restore();
+    errorSpy.mockRestore();
   });
 });

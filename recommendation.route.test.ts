@@ -23,7 +23,7 @@ vi.mock('twilio', () => ({ default: () => ({ messages: { create: vi.fn() } }) })
 import { vi } from 'vitest';
 import request from 'supertest';
 import { app } from './server';
-import { seedDoc, getDocRaw, resetStore } from './test/fake-firestore';
+import { seedDoc, getDocRaw, resetStore, forceDocError, forceCollectionError } from './test/fake-firestore';
 
 const USER = 'user_1';
 const auth = (uid: string) => ({ Authorization: `Bearer ${uid}` });
@@ -109,6 +109,16 @@ describe('GET /api/user/recommendation', () => {
     const res = await request(app).get('/api/user/recommendation').set(auth(USER));
     expect(res.status).toBe(200);
     expect(['Safety', 'Habits', 'Purpose']).toContain(res.body.shipStage);
+  });
+
+  it('500s if the derived stats read throws', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const restore = forceDocError(`users/${USER}/derived/stats`, 'get', new Error('simulated Firestore outage'));
+    const res = await request(app).get('/api/user/recommendation').set(auth(USER));
+    expect(res.status).toBe(500);
+    expect(errorSpy).toHaveBeenCalled();
+    restore();
+    errorSpy.mockRestore();
   });
 });
 
@@ -282,5 +292,42 @@ describe('GET /api/user/recommendation - stage-aware tiebreaking (Phase C)', () 
     const res = await request(app).get('/api/user/recommendation').set(auth(USER));
     expect(res.body.tool).toBe('Nervous System Reset');
     expect(res.body.type).toBe('overload_warning');
+  });
+});
+
+// GET /api/user/recommendation-ledger - previously zero coverage. Returns
+// the caller's own history of past recommendations, newest first.
+describe('GET /api/user/recommendation-ledger', () => {
+  it('requires authentication', async () => {
+    expect((await request(app).get('/api/user/recommendation-ledger')).status).toBe(401);
+  });
+
+  it('returns an empty ledger when nothing has ever been logged', async () => {
+    const res = await request(app).get('/api/user/recommendation-ledger').set(auth(USER));
+    expect(res.status).toBe(200);
+    expect(res.body.entries).toEqual([]);
+  });
+
+  it('returns logged entries newest first, scoped to the caller only', async () => {
+    const OTHER = 'user_other';
+    seedDoc(`users/${USER}/recommendation_ledger/r1`, { timestamp: '2026-01-01T00:00:00.000Z', tool: 'Energy Budget' });
+    seedDoc(`users/${USER}/recommendation_ledger/r2`, { timestamp: '2026-01-05T00:00:00.000Z', tool: 'Boundary Rehearsal' });
+    seedDoc(`users/${OTHER}/recommendation_ledger/rX`, { timestamp: '2026-01-10T00:00:00.000Z', tool: 'Nova Coach' });
+
+    const res = await request(app).get('/api/user/recommendation-ledger').set(auth(USER));
+    expect(res.status).toBe(200);
+    expect(res.body.entries).toHaveLength(2);
+    expect(res.body.entries[0].id).toBe('r2');
+    expect(res.body.entries[1].id).toBe('r1');
+  });
+
+  it('500s if the ledger read throws', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const restore = forceCollectionError(`users/${USER}/recommendation_ledger`, 'get', new Error('simulated Firestore outage'));
+    const res = await request(app).get('/api/user/recommendation-ledger').set(auth(USER));
+    expect(res.status).toBe(500);
+    expect(errorSpy).toHaveBeenCalled();
+    restore();
+    errorSpy.mockRestore();
   });
 });

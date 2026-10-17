@@ -1051,6 +1051,39 @@ block: 27 (down from 31). Next: `user/weekly-recap`,
 velocity-map`/`routing-outcome`/`my-outcomes`/`direction`/`recalculate`,
 `audit-log`, `anxiety-reset`, and the analytics-event trio.
 
+## QA Batch 38: user weekly-recap/recommendation(-ledger)/outcome-tracker catch blocks
+
+`GET /api/user/weekly-recap` and `GET /api/user/recommendation` each had
+thorough happy-path coverage with no catch test - closed with a
+`forceCollectionError` on `users/<uid>/checkins` (the first element of
+the route's `Promise.all`) and a `forceDocError` on
+`users/<uid>/derived/stats` respectively. `GET
+/api/user/recommendation-ledger` and `GET /api/user/outcome-tracker` had
+zero test coverage of any kind - both got full happy-path + catch
+coverage: the ledger as a new describe block appended to
+`recommendation.route.test.ts` (thematically adjacent, orderBy+limit(50)
+read, scoped-to-caller assertion, `forceCollectionError` on
+`recommendation_ledger`), and outcome-tracker as a new dedicated file
+`outcome-tracker.route.test.ts` given its larger seeding needs (6-week
+trend derived from a `Promise.all` of 5 filtered collection reads plus a
+`workload_reality_check/state` doc, honest `hasAnyData: false`/null-KPI
+default for a brand-new account, real weekly trend computation, and the
+`overcapacityDaysPerWeek` derivation from an active high-drain workload
+snapshot) - closed via `forceCollectionError` on `stress_triggers`, the
+first array element.
+
+Measured effect: `server.ts` statement coverage rose to 82.07%, branch to
+67.55%, lines to 83.19%. Routes with a fully uncovered catch block: 23
+(down from 27, confirmed via `analyze_coverage.py` - excludes the 4
+structurally-unreachable routes and the 2 recurring false-positive
+re-flags, `GET /api/admin/summary` and `GET /api/org/:orgId/governance`,
+already documented in earlier batches). Next: `recovery/`
+`velocity-map`/`routing-outcome`/`my-outcomes`/`direction`/`recalculate`,
+`audit-log` (POST+GET), `anxiety-reset` (POST+GET), `nova/chat`,
+`nova/diagnose`, `nova/speech`, `auth/password-reset/confirm-notify`,
+`pulse/report`, and the analytics-event trio
+(`grounding`/`movement`/`recovery-recipes`).
+
 ## What's shipped
 
 - `npm run test:coverage` (`vitest run --coverage`, `@vitest/coverage-v8`):
