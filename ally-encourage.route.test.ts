@@ -20,7 +20,7 @@ vi.mock('firebase-admin/firestore', async () => {
 
 import request from 'supertest';
 import { app } from './server';
-import { resetStore, seedDoc, allPaths } from './test/fake-firestore';
+import { resetStore, seedDoc, allPaths, forceCollectionGroupError } from './test/fake-firestore';
 
 const TOKEN = 'a'.repeat(32);
 const OWNER = 'owner_1';
@@ -51,5 +51,13 @@ describe('POST /api/ally/view/:token/encourage — honours Stop Sharing', () => 
     const res = await request(app).post(`/api/ally/view/${TOKEN}/encourage`).send({ message: 'Thinking of you!' });
     expect(res.status).toBe(200);
     expect(res.body.success).toBe(true);
+  });
+
+  it('500s if the lookup query throws', async () => {
+    seedAcceptedAlly({ sharingPaused: false });
+    const restore = forceCollectionGroupError('recovery_ally', new Error('simulated Firestore outage'));
+    const res = await request(app).post(`/api/ally/view/${TOKEN}/encourage`).send({ message: 'Thinking of you!' });
+    expect(res.status).toBe(500);
+    restore();
   });
 });

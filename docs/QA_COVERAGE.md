@@ -947,6 +947,31 @@ to 65.1%, lines to 80.45%. Routes with a fully uncovered catch block:
 44 (down from 48). Next: `view/:token`, `preview`, `encourage`'s
 remaining catch path, `consent`, and `/api/nudge-schedules` CRUD.
 
+## QA Batch 34: Recovery Ally public/consent surface catch blocks
+
+`GET /api/ally/view/:token`, `GET /api/ally/preview`, and `POST
+/api/ally/view/:token/consent` had zero prior coverage of any kind.
+The three token-based routes (`view/:token`, `view/:token/encourage`,
+`view/:token/consent`) all resolve the token via a
+`db.collectionGroup("recovery_ally").where("shareToken", "==",
+token).limit(1).get()` lookup with a single generic catch, closed
+with `forceCollectionGroupError('recovery_ally', ...)`. `preview` reads
+the owner's own `recovery_ally/state` doc directly, closed with the
+usual `forceDocError`. New file `ally-public-view.route.test.ts` adds
+full happy-path (pending/accepted/declined/expired/already-decided)
+and catch coverage for the first and third; `encourage`'s remaining
+catch path was added to the existing
+`ally-encourage.route.test.ts`.
+
+Measured effect: `server.ts` statement coverage rose to 80.07%, branch
+to 65.84%, lines to 81.28%. Routes with a fully uncovered catch block:
+40 (down from 44). Next: `/api/nudge-schedules` CRUD (POST/GET/PATCH/
+DELETE) and the remaining long tail (support/twilio, nova chat/
+diagnose/speech, audit-log, anxiety-reset, legal documents, user
+export/delete/weekly-recap/recommendation, recovery velocity-map/
+routing-outcome/direction, grounding/movement/recovery-recipes
+analytics-event).
+
 ## What's shipped
 
 - `npm run test:coverage` (`vitest run --coverage`, `@vitest/coverage-v8`):
