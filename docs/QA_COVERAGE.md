@@ -932,6 +932,21 @@ to 64.81%, lines to 79.82%. Routes with a fully uncovered catch block:
 regenerate-link, pause/resume-sharing, view/:token, preview,
 encourage, consent) and `/api/nudge-schedules` CRUD.
 
+## QA Batch 33: Recovery Ally lifecycle catch blocks (revoke/regenerate-link/pause/resume)
+
+`POST /api/ally/revoke`, `POST /api/ally/regenerate-link`, `POST
+/api/ally/pause-sharing`, and `POST /api/ally/resume-sharing` had zero
+prior coverage of any kind - none was ever called by a test. All four
+act on `users/<uid>/recovery_ally/state` directly (no org, no role
+gate), with a single generic catch each. New file
+`ally-lifecycle.route.test.ts` adds full happy-path, 404-when-no-ally,
+and `forceDocError` catch coverage for all four.
+
+Measured effect: `server.ts` statement coverage rose to 79.28%, branch
+to 65.1%, lines to 80.45%. Routes with a fully uncovered catch block:
+44 (down from 48). Next: `view/:token`, `preview`, `encourage`'s
+remaining catch path, `consent`, and `/api/nudge-schedules` CRUD.
+
 ## What's shipped
 
 - `npm run test:coverage` (`vitest run --coverage`, `@vitest/coverage-v8`):
