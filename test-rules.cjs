@@ -400,6 +400,103 @@ async function runTests() {
   });
   await assertFails(userA.firestore().collection('anxiety_reset_events').doc('eB').get());
 
+  console.log("Testing NHEI Phase 2 rules...");
+
+  // nhei_evidence / nhei_evidence/{id}/corrections / nhei_temporal_relations
+  // are server (Admin SDK) only - "if false" for every operation,
+  // including read, for the owner themselves. nhei-persistence-service.ts
+  // is the only code that ever touches these paths, and it enforces
+  // consent server-side before any Firestore call - there is no client
+  // write path at all, so a "trusted"/"verified" sourceType can never be
+  // created by a client simply naming it.
+  const nheiEvidenceRef = userA.firestore().collection('users').doc('userA').collection('nhei_evidence').doc('ev1');
+
+  // * user A cannot read their own NHEI evidence directly.
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    await ctx.firestore().collection('users').doc('userA').collection('nhei_evidence').doc('ev1').set({
+      id: 'ev1', sourceType: 'USER_REPORTED_EVENT', timeUncertainty: 'unknown',
+      evidenceQuality: 'medium', confirmationState: 'not_applicable',
+      selfSystems: [], dimensions: [], relatedEventIds: [], sourceRef: null,
+      createdAt: '2026-06-01', updatedAt: '2026-06-01',
+    });
+  });
+  await assertFails(nheiEvidenceRef.get());
+
+  // * user A cannot create NHEI evidence directly, with a benign sourceType...
+  await assertFails(userA.firestore().collection('users').doc('userA').collection('nhei_evidence').doc('ev2').set({
+    id: 'ev2', sourceType: 'USER_REPORTED_EVENT', timeUncertainty: 'unknown',
+    evidenceQuality: 'medium', confirmationState: 'not_applicable',
+    selfSystems: [], dimensions: [], relatedEventIds: [],
+  }));
+
+  // * ...or with a "trusted" sourceType a client should never be able to
+  //   self-assert - proving the restriction holds at the data layer, not
+  //   just via application-code validation.
+  await assertFails(userA.firestore().collection('users').doc('userA').collection('nhei_evidence').doc('ev3').set({
+    id: 'ev3', sourceType: 'EXTERNALLY_VERIFIED_EVENT', timeUncertainty: 'unknown',
+    evidenceQuality: 'high', confirmationState: 'user_confirmed',
+    selfSystems: [], dimensions: [], relatedEventIds: [],
+  }));
+
+  // * user A cannot update or delete an existing NHEI evidence record either.
+  await assertFails(nheiEvidenceRef.update({ confirmationState: 'user_confirmed' }));
+  await assertFails(nheiEvidenceRef.delete());
+
+  // * user A cannot read user B's NHEI evidence.
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    await ctx.firestore().collection('users').doc('userB').collection('nhei_evidence').doc('evB').set({
+      id: 'evB', sourceType: 'USER_REPORTED_EVENT', timeUncertainty: 'unknown',
+      evidenceQuality: 'medium', confirmationState: 'not_applicable',
+      selfSystems: [], dimensions: [], relatedEventIds: [], sourceRef: null,
+      createdAt: '2026-06-01', updatedAt: '2026-06-01',
+    });
+  });
+  await assertFails(userA.firestore().collection('users').doc('userB').collection('nhei_evidence').doc('evB').get());
+
+  // * the nested corrections subcollection is equally locked down.
+  const correctionRef = userA.firestore().collection('users').doc('userA')
+    .collection('nhei_evidence').doc('ev1').collection('corrections').doc('c1');
+  await assertFails(correctionRef.set({ previousConfirmationState: null, newConfirmationState: 'user_disputed', changedAt: '2026-06-01' }));
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    await ctx.firestore().collection('users').doc('userA').collection('nhei_evidence').doc('ev1')
+      .collection('corrections').doc('c1').set({ previousConfirmationState: null, newConfirmationState: 'user_disputed', changedAt: '2026-06-01' });
+  });
+  await assertFails(correctionRef.get());
+
+  // * nhei_temporal_relations is the same server-only shape.
+  const relationRef = userA.firestore().collection('users').doc('userA').collection('nhei_temporal_relations').doc('r1');
+  await assertFails(relationRef.set({
+    fromEventId: 'a', toEventId: 'b', relationType: 'USER_ATTRIBUTED_INFLUENCE',
+    interpretationConfidence: 'high', derivedBy: 'caller_asserted', rationale: 'caller_supplied', createdAt: '2026-06-01',
+  }));
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    await ctx.firestore().collection('users').doc('userA').collection('nhei_temporal_relations').doc('r1').set({
+      fromEventId: 'a', toEventId: 'b', relationType: 'USER_ATTRIBUTED_INFLUENCE',
+      interpretationConfidence: 'high', derivedBy: 'caller_asserted', rationale: 'caller_supplied', createdAt: '2026-06-01',
+    });
+  });
+  await assertFails(relationRef.get());
+
+  // * the three new NHEI consent fields on nova_permissions/current
+  //   behave like every other optional field there: owner-writable,
+  //   bool-only, and additive (not required by hasAll) so an existing
+  //   write that has never heard of NHEI still succeeds.
+  const nheiPermRef = userA.firestore().collection('users').doc('userA').collection('nova_permissions').doc('current');
+  await assertSucceeds(nheiPermRef.set({
+    allowCheckins: true, allowEnergyBudgets: true, allowMoodPulses: true, allowBodyCheckins: true,
+    allowWins: true, allowWeeklyReviews: true, allowBoundaryScripts: true, allowGoals: true,
+    allowRecoveryDebt: true, allowRecoveryVelocity: true, allowEnergyTrend: true, allowMoodTrend: true,
+    allowNovaMemory: true, allowNovaUseSavedMemories: true,
+    allowNheiReflectionStorage: true, allowNheiLongitudinalTracking: false, allowNheiRoutingInsights: false,
+  }));
+  await assertFails(nheiPermRef.set({
+    allowCheckins: true, allowEnergyBudgets: true, allowMoodPulses: true, allowBodyCheckins: true,
+    allowWins: true, allowWeeklyReviews: true, allowBoundaryScripts: true, allowGoals: true,
+    allowRecoveryDebt: true, allowRecoveryVelocity: true, allowEnergyTrend: true, allowMoodTrend: true,
+    allowNovaMemory: true, allowNovaUseSavedMemories: true,
+    allowNheiReflectionStorage: 'yes', // wrong type - must fail, not coerce
+  }));
+
   console.log("All rule tests passed successfully!");
   await testEnv.cleanup();
 }

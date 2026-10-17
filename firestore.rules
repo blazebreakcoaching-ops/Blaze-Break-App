@@ -994,8 +994,19 @@ service cloud.firestore {
       match /nova_permissions/current {
         allow read: if isOwner(uid);
         allow delete: if isOwner(uid);
+        // allowNheiReflectionStorage/allowNheiLongitudinalTracking/
+        // allowNheiRoutingInsights: NHEI Phase 2's three independently
+        // enforceable consent purposes, added to this same document per
+        // "prefer existing nova_permissions... conventions" (NHEI Phase 2
+        // approval, section 3). All default to false (missing == false,
+        // enforced in application code by nhei-consent.ts's
+        // deriveNheiConsentState, which fails CLOSED - the opposite of
+        // this doc's other, default-on categories). Added to hasOnly
+        // only, deliberately NOT to hasAll, so every existing write path
+        // that has never heard of NHEI (onboarding, the memory-consent
+        // toggle, Settings) keeps working unchanged.
         allow create, update: if isOwner(uid)
-            && hasOnly(['allowCheckins', 'allowEnergyBudgets', 'allowMoodPulses', 'allowBodyCheckins', 'allowWins', 'allowWeeklyReviews', 'allowBoundaryScripts', 'allowGoals', 'allowRecoveryDebt', 'allowRecoveryVelocity', 'allowEnergyTrend', 'allowMoodTrend', 'allowCalendarSignals', 'allowFingerprint', 'allowOnboardingProfile', 'allowRecoveryPlanProgress', 'allowDiagnosisProgress', 'allowEnergyCommitments', 'allowStressTriggers', 'allowHabitCycles', 'allowFuelLogs', 'allowFocusSessions', 'allowSomaticResets', 'allowRecoveryAlly', 'allowNovaMemory', 'allowNovaUseSavedMemories', 'updatedAt'])
+            && hasOnly(['allowCheckins', 'allowEnergyBudgets', 'allowMoodPulses', 'allowBodyCheckins', 'allowWins', 'allowWeeklyReviews', 'allowBoundaryScripts', 'allowGoals', 'allowRecoveryDebt', 'allowRecoveryVelocity', 'allowEnergyTrend', 'allowMoodTrend', 'allowCalendarSignals', 'allowFingerprint', 'allowOnboardingProfile', 'allowRecoveryPlanProgress', 'allowDiagnosisProgress', 'allowEnergyCommitments', 'allowStressTriggers', 'allowHabitCycles', 'allowFuelLogs', 'allowFocusSessions', 'allowSomaticResets', 'allowRecoveryAlly', 'allowNovaMemory', 'allowNovaUseSavedMemories', 'allowNheiReflectionStorage', 'allowNheiLongitudinalTracking', 'allowNheiRoutingInsights', 'updatedAt'])
             && hasAll(['allowCheckins', 'allowEnergyBudgets', 'allowMoodPulses', 'allowBodyCheckins', 'allowWins', 'allowWeeklyReviews', 'allowBoundaryScripts', 'allowGoals', 'allowRecoveryDebt', 'allowRecoveryVelocity', 'allowEnergyTrend', 'allowMoodTrend', 'allowNovaMemory', 'allowNovaUseSavedMemories'])
             && request.resource.data.allowCheckins is bool
             && request.resource.data.allowEnergyBudgets is bool
@@ -1022,7 +1033,36 @@ service cloud.firestore {
             && (!('allowSomaticResets' in request.resource.data) || request.resource.data.allowSomaticResets is bool)
             && (!('allowRecoveryAlly' in request.resource.data) || request.resource.data.allowRecoveryAlly is bool)
             && request.resource.data.allowNovaMemory is bool
-            && request.resource.data.allowNovaUseSavedMemories is bool;
+            && request.resource.data.allowNovaUseSavedMemories is bool
+            && (!('allowNheiReflectionStorage' in request.resource.data) || request.resource.data.allowNheiReflectionStorage is bool)
+            && (!('allowNheiLongitudinalTracking' in request.resource.data) || request.resource.data.allowNheiLongitudinalTracking is bool)
+            && (!('allowNheiRoutingInsights' in request.resource.data) || request.resource.data.allowNheiRoutingInsights is bool);
+      }
+
+      // K2. NHEI evidence and temporal-relation storage - server (Admin
+      // SDK) only. The persistence/consent service
+      // (nhei-persistence-service.ts) is the only code that ever reads or
+      // writes these paths, and it enforces consent itself before any
+      // Firestore call. Deliberately "if false" for every operation,
+      // including read, rather than "allow read: if isOwner(uid)" - this
+      // is what makes "do not allow clients to create trusted, verified
+      // or system-confirmed evidence merely by submitting those labels"
+      // (NHEI Phase 2 approval, section 6) hold at the data layer: there
+      // is no client write path to this collection at all, trusted
+      // sourceType or otherwise. No Phase 2 code calls these paths from
+      // anything but the server - nothing is wired to a route or UI yet.
+      match /nhei_evidence/{evidenceId} {
+        allow read, write: if false;
+
+        // Correction history - same server-only reasoning, nested so a
+        // delete of the parent evidence doc's corrections stays scoped
+        // to that one record.
+        match /corrections/{correctionId} {
+          allow read, write: if false;
+        }
+      }
+      match /nhei_temporal_relations/{relationId} {
+        allow read, write: if false;
       }
 
       // K. derived summaries
