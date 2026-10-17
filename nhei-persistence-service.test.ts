@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   writeNheiEvidence,
   readNheiEvidence,
+  readNheiEvidenceForLongitudinalMode,
   disputeNheiEvidence,
   confirmNheiEvidence,
   deleteNheiEvidenceRecord,
@@ -12,7 +13,7 @@ import {
   setNheiConsent,
   withdrawNheiConsent,
   exportAllNheiData,
-  grantNheiSystemAuthority,
+  grantNheiSystemAuthorityForTestingOnly,
   isValidNheiSourceRef,
   buildNheiSourceRefPath,
   type FirestoreLike,
@@ -27,6 +28,16 @@ import { excludeDisputedInterpretations } from './nhei-types';
 // child of a collection from a doc nested further down (e.g. a
 // corrections subcollection) so collection.get() only returns immediate
 // children, the same way a real Firestore collection listing would.
+// Phase 3C-2B Checkpoint 2 section 5: writeNheiEvidence/setConfirmationState/
+// writeNheiAssertedInfluence now REQUIRE db.runTransaction to exist at all -
+// there is no more nontransactional fallback in production code for them to
+// silently take. Every fake used with those three functions therefore needs
+// a working (if simple - no real conflict detection, that rigor lives only
+// in createTransactionalFakeFirestore below, for the tests that specifically
+// need it) runTransaction, or every such call would now correctly fail with
+// 'transaction_support_required' - which is exactly the point, and exactly
+// what createFakeFirestoreWithoutTransactionSupport (below) exists to prove,
+// deliberately, as isolated test scaffolding rather than a production path.
 function createFakeFirestore(): FirestoreLike {
   const store = new Map<string, Record<string, unknown>>();
 
@@ -70,6 +81,33 @@ function createFakeFirestore(): FirestoreLike {
     };
   }
 
+  // Simple, non-rigorous transaction support: runs the callback, with
+  // tx.get() delegating straight to the ref's own .get() (this fake applies
+  // writes immediately rather than staging them, so there is nothing
+  // elaborate to stage either) - sufficient for every test that is not
+  // specifically about race/conflict detection. Tests that need the real
+  // thing use createTransactionalFakeFirestore below.
+  async function runTransaction<T>(fn: (tx: FirestoreTransactionLike) => Promise<T>): Promise<T> {
+    const tx: FirestoreTransactionLike = {
+      get: ((ref: any) => ref.get()) as FirestoreTransactionLike['get'],
+      set: (ref, data, options) => { void ref.set(data, options); },
+      update: (ref, data) => { void ref.update(data); },
+      delete: (ref) => { void ref.delete(); },
+    };
+    return fn(tx);
+  }
+
+  return { collection, runTransaction };
+}
+
+// Phase 3C-2B Checkpoint 2 section 5: deliberately isolated test scaffolding
+// for the "fails closed without transaction support" requirement - the
+// fallback this simulates no longer exists as a reachable code path in
+// nhei-persistence-service.ts itself; this fake exists only so these specific
+// tests can prove the three functions refuse to run at all against a `db`
+// shaped like one, rather than silently degrading to a weaker strategy.
+function createFakeFirestoreWithoutTransactionSupport(): FirestoreLike {
+  const { collection } = createFakeFirestore();
   return { collection };
 }
 
@@ -126,7 +164,7 @@ describe('writeNheiEvidence / readNheiEvidence - default-off consent', () => {
     const allowed = await writeNheiEvidence(
       db, 'userA',
       validRecord({ sourceType: 'SYSTEM_HYPOTHESIS', confirmationState: 'unconfirmed' }),
-      { systemAuthority: grantNheiSystemAuthority('test-suite') },
+      { systemAuthority: grantNheiSystemAuthorityForTestingOnly('test-suite') },
     );
     expect(allowed.ok).toBe(true);
   });
@@ -149,8 +187,15 @@ describe('writeNheiEvidence / readNheiEvidence - default-off consent', () => {
     if (result.ok === false) expect(result.reason).toBe('source_type_not_permitted');
   });
 
-  it('grantNheiSystemAuthority requires a non-empty audit label', () => {
-    expect(() => grantNheiSystemAuthority('')).toThrow();
+  it('grantNheiSystemAuthorityForTestingOnly requires a non-empty audit label', () => {
+    expect(() => grantNheiSystemAuthorityForTestingOnly('')).toThrow();
+  });
+
+  it('Phase 3C-2B Checkpoint 2 section 7: the old, bare grantNheiSystemAuthority export no longer exists on this module - only deriveEvidenceAuthorityGrant (role-checked) and grantNheiSystemAuthorityForTestingOnly (explicitly test-only) can ever produce a token', async () => {
+    const module = await import('./nhei-persistence-service');
+    expect((module as Record<string, unknown>).grantNheiSystemAuthority).toBeUndefined();
+    expect(typeof module.grantNheiSystemAuthorityForTestingOnly).toBe('function');
+    expect(typeof module.deriveEvidenceAuthorityGrant).toBe('function');
   });
 
   it('rejects a record that arrives already confirmed or disputed at creation time - only dispute/confirm can set that', async () => {
@@ -170,10 +215,106 @@ describe('writeNheiEvidence / readNheiEvidence - default-off consent', () => {
     const withAuthority = await writeNheiEvidence(
       db, 'userA',
       validRecord({ sourceType: 'SYSTEM_HYPOTHESIS', confirmationState: 'user_confirmed' }),
-      { systemAuthority: grantNheiSystemAuthority('test-suite') },
+      { systemAuthority: grantNheiSystemAuthorityForTestingOnly('test-suite') },
     );
     expect(withAuthority.ok).toBe(false);
     if (withAuthority.ok === false) expect(withAuthority.reason).toBe('confirmation_state_not_settable_at_creation');
+  });
+});
+
+describe('Phase 3C-2B Checkpoint 2 section 6 - readNheiEvidence consent gating, audited', () => {
+  it('readNheiEvidence re-checks CURRENT consent on every call, not a stale write-time snapshot - withdrawal immediately blocks it', async () => {
+    const db = createFakeFirestore();
+    await setNheiConsent(db, 'userA', 'reflection_storage', true);
+    await writeNheiEvidence(db, 'userA', validRecord());
+    expect(await readNheiEvidence(db, 'userA')).toHaveLength(1);
+
+    await withdrawNheiConsent(db, 'userA', 'reflection_storage');
+    // The record is still physically stored (consent withdrawal alone
+    // never deletes - see the "consent withdrawal vs. deletion" describe
+    // block below) - but the read path returns nothing the instant
+    // consent is withdrawn, without needing any separate action.
+    expect(await readNheiEvidence(db, 'userA')).toEqual([]);
+    const rawDoc = await db.collection('users/userA/nhei_evidence').doc('ev1').get();
+    expect(rawDoc.exists).toBe(true); // still physically stored
+  });
+
+  it('re-granting consent after a withdrawal immediately restores readNheiEvidence access to the still-stored record - no re-write needed', async () => {
+    const db = createFakeFirestore();
+    await setNheiConsent(db, 'userA', 'reflection_storage', true);
+    await writeNheiEvidence(db, 'userA', validRecord());
+    await withdrawNheiConsent(db, 'userA', 'reflection_storage');
+    expect(await readNheiEvidence(db, 'userA')).toEqual([]);
+
+    await setNheiConsent(db, 'userA', 'reflection_storage', true);
+    expect(await readNheiEvidence(db, 'userA')).toHaveLength(1);
+  });
+});
+
+describe('Phase 3C-2B Checkpoint 2 section 6 - readNheiEvidenceForLongitudinalMode: the dedicated, stricter read interface', () => {
+  it('returns [] when reflection_storage alone is held but longitudinal_tracking is not - plain storage consent is not enough for this use', async () => {
+    const db = createFakeFirestore();
+    await setNheiConsent(db, 'userA', 'reflection_storage', true);
+    await writeNheiEvidence(db, 'userA', validRecord());
+
+    // The plain read interface correctly returns the record under
+    // reflection_storage consent alone - that purpose IS sufficient for
+    // Personal Reflection Mode's own single-session use.
+    expect(await readNheiEvidence(db, 'userA')).toHaveLength(1);
+    // The Longitudinal Mode interface requires the MORE SPECIFIC purpose
+    // too, and refuses without it, even though the data is the same data.
+    expect(await readNheiEvidenceForLongitudinalMode(db, 'userA')).toEqual([]);
+  });
+
+  it('returns [] when longitudinal_tracking alone is held but reflection_storage is not - both purposes are required, not just the longitudinal one', async () => {
+    const db = createFakeFirestore();
+    await setNheiConsent(db, 'userA', 'reflection_storage', true);
+    await writeNheiEvidence(db, 'userA', validRecord());
+    await setNheiConsent(db, 'userA', 'longitudinal_tracking', true);
+    await setNheiConsent(db, 'userA', 'reflection_storage', false);
+
+    expect(await readNheiEvidenceForLongitudinalMode(db, 'userA')).toEqual([]);
+  });
+
+  it('returns the evidence only once BOTH reflection_storage and longitudinal_tracking are currently held', async () => {
+    const db = createFakeFirestore();
+    await setNheiConsent(db, 'userA', 'reflection_storage', true);
+    await writeNheiEvidence(db, 'userA', validRecord());
+    await setNheiConsent(db, 'userA', 'longitudinal_tracking', true);
+
+    const result = await readNheiEvidenceForLongitudinalMode(db, 'userA');
+    expect(result).toHaveLength(1);
+    expect(result[0].id).toBe('ev1');
+  });
+
+  it('withdrawing longitudinal_tracking alone immediately blocks this interface, even though reflection_storage (and the plain read path) remain unaffected', async () => {
+    const db = createFakeFirestore();
+    await setNheiConsent(db, 'userA', 'reflection_storage', true);
+    await setNheiConsent(db, 'userA', 'longitudinal_tracking', true);
+    await writeNheiEvidence(db, 'userA', validRecord());
+    expect(await readNheiEvidenceForLongitudinalMode(db, 'userA')).toHaveLength(1);
+
+    await withdrawNheiConsent(db, 'userA', 'longitudinal_tracking');
+    expect(await readNheiEvidenceForLongitudinalMode(db, 'userA')).toEqual([]);
+    // The plain read path is a different purpose and is correctly
+    // unaffected by withdrawing this specific one.
+    expect(await readNheiEvidence(db, 'userA')).toHaveLength(1);
+  });
+
+  it('never makes a Firestore read at all when reflection_storage is absent - same no-attempted-read discipline as readNheiEvidence', async () => {
+    const db = createFakeFirestore();
+    let evidenceCollectionGetCalls = 0;
+    const spyingDb: FirestoreLike = {
+      collection(path: string) {
+        const real = db.collection(path);
+        if (path === 'users/userA/nhei_evidence') {
+          return { ...real, async get() { evidenceCollectionGetCalls += 1; return real.get(); } };
+        }
+        return real;
+      },
+    };
+    await readNheiEvidenceForLongitudinalMode(spyingDb, 'userA');
+    expect(evidenceCollectionGetCalls).toBe(0);
   });
 });
 
@@ -506,188 +647,85 @@ describe('exportAllNheiData - GDPR export completeness', () => {
   });
 });
 
-describe('Phase 3C-2A section 9 - closing the consent/write race condition', () => {
-  // Wraps a fake FirestoreLike so that the FIRST write to one specific
-  // collection path triggers a caller-supplied side effect immediately
-  // after it commits - this is how these tests deterministically
-  // reproduce "a withdrawal request's write lands in the exact window
-  // between this function's write and its own re-check," without needing
-  // real concurrency or timing.
-  function withWriteSideEffect(db: FirestoreLike, triggerPath: string, sideEffect: () => Promise<void>): FirestoreLike {
-    let fired = false;
-    return {
-      collection(path: string) {
-        const real = db.collection(path);
-        return {
-          ...real,
-          doc(id?: string) {
-            const realDoc = real.doc(id);
-            return {
-              ...realDoc,
-              set: async (data: Record<string, unknown>, options?: { merge?: boolean }) => {
-                const result = await realDoc.set(data, options);
-                if (path === triggerPath && !fired) {
-                  fired = true;
-                  await sideEffect();
-                }
-                return result;
-              },
-            };
-          },
-        };
-      },
-    };
-  }
-
-  it('reproduces the race: a withdrawal landing between the evidence write and the post-write check rolls the write back, not merely hides it', async () => {
-    const db = createFakeFirestore();
+// Phase 3C-2A section 9's original race-closing tests (a nontransactional
+// write-then-recheck-then-compensate pattern, deliberately raced via a
+// write-side-effect wrapper) are superseded, not merely renamed: Phase
+// 3C-2B Checkpoint 1 built the REAL transactional fix for the same races
+// (see the "Phase 3C-2B section 2" describe block below, which exercises
+// the identical scenarios - evidence write, confirmation-state change,
+// asserted-influence write, all raced against a concurrent withdrawal -
+// but against a `db` with genuine per-document conflict detection, which
+// is strictly stronger evidence than racing the old compensating-rollback
+// fallback ever was). Checkpoint 2 section 5 goes a step further: that
+// fallback is no longer reachable from writeNheiEvidence/
+// setConfirmationState/writeNheiAssertedInfluence at all. This block now
+// tests the one thing that changed - that all three functions fail
+// closed, immediately, with no write of any kind, when transaction
+// support is unavailable - rather than re-testing races the section 2
+// block below already covers more rigorously.
+describe('Phase 3C-2B Checkpoint 2 section 5 - transaction support is required; no nontransactional fallback remains', () => {
+  it('writeNheiEvidence fails closed with transaction_support_required against a db with no runTransaction, and writes nothing', async () => {
+    const db = createFakeFirestoreWithoutTransactionSupport();
+    expect(db.runTransaction).toBeUndefined();
     await setNheiConsent(db, 'userA', 'reflection_storage', true);
 
-    const racingDb = withWriteSideEffect(db, 'users/userA/nhei_evidence', async () => {
-      await setNheiConsent(db, 'userA', 'reflection_storage', false);
-    });
-
-    const result = await writeNheiEvidence(racingDb, 'userA', validRecord());
+    const result = await writeNheiEvidence(db, 'userA', validRecord());
     expect(result.ok).toBe(false);
-    if (result.ok === false) expect(result.reason).toBe('consent_required');
+    if (result.ok === false) expect(result.reason).toBe('transaction_support_required');
 
-    // Not merely excluded from a consent-gated read - actually gone from
-    // the store. readNheiEvidence would return [] anyway (consent is now
-    // false), so this reads the raw store directly to prove deletion,
-    // not just read-side filtering.
     const rawDoc = await db.collection('users/userA/nhei_evidence').doc('ev1').get();
     expect(rawDoc.exists).toBe(false);
   });
 
-  it('a write with no concurrent withdrawal still succeeds normally - the fix adds no false rejections', async () => {
-    const db = createFakeFirestore();
+  it('confirmNheiEvidence (setConfirmationState) fails closed the same way, leaving any existing record unmodified', async () => {
+    // A db that genuinely has no runTransaction - the record is placed
+    // directly via a raw .set() (not through writeNheiEvidence, which
+    // would itself now correctly refuse on this same db) purely to give
+    // confirmNheiEvidence something pre-existing to (not) modify.
+    const db = createFakeFirestoreWithoutTransactionSupport();
     await setNheiConsent(db, 'userA', 'reflection_storage', true);
-    const result = await writeNheiEvidence(db, 'userA', validRecord());
-    expect(result.ok).toBe(true);
-    const stored = await db.collection('users/userA/nhei_evidence').doc('ev1').get();
-    expect(stored.exists).toBe(true);
-  });
+    await db.collection('users/userA/nhei_evidence').doc('ev1').set(validRecord() as unknown as Record<string, unknown>);
 
-  it('reproduces the same race for a confirmation-state change: a withdrawal lands between the update and the re-check, and is reverted to its previous state', async () => {
-    const db = createFakeFirestore();
-    await setNheiConsent(db, 'userA', 'reflection_storage', true);
-    await writeNheiEvidence(db, 'userA', validRecord());
-
-    // withWriteSideEffect's trigger fires on .set(), but confirmNheiEvidence
-    // uses .update() internally for the actual state change - a second,
-    // update-aware wrapper races the withdrawal in at that point instead:
-    // write succeeds (already happened above) -> update (confirm) ->
-    // withdrawal lands -> post-check reverts.
-    const updateRacingDb: FirestoreLike = {
-      collection(path: string) {
-        const real = db.collection(path);
-        return {
-          ...real,
-          doc(id?: string) {
-            const realDoc = real.doc(id);
-            let fired = false;
-            return {
-              ...realDoc,
-              update: async (data: Record<string, unknown>) => {
-                const result = await realDoc.update(data);
-                if (path === 'users/userA/nhei_evidence' && !fired) {
-                  fired = true;
-                  await setNheiConsent(db, 'userA', 'reflection_storage', false);
-                }
-                return result;
-              },
-            };
-          },
-        };
-      },
-    };
-
-    const result = await confirmNheiEvidence(updateRacingDb, 'userA', 'ev1');
+    const result = await confirmNheiEvidence(db, 'userA', 'ev1');
     expect(result.ok).toBe(false);
-    if (result.ok === false) expect(result.reason).toBe('consent_required');
+    if (result.ok === false) expect(result.reason).toBe('transaction_support_required');
 
-    // Reverted back to its pre-confirmation state ('not_applicable' per
-    // validRecord()'s default), not left half-confirmed under revoked
-    // consent.
     const rawDoc = await db.collection('users/userA/nhei_evidence').doc('ev1').get();
-    expect(rawDoc.data()?.confirmationState).toBe('not_applicable');
+    expect(rawDoc.data()?.confirmationState).toBe('not_applicable'); // untouched
   });
 
-  it('reproduces the same race for an asserted-influence write: a withdrawal lands between the write and the re-check, and the relation is rolled back', async () => {
-    const db = createFakeFirestore();
+  it('writeNheiAssertedInfluence fails closed the same way, writing no relation', async () => {
+    const db = createFakeFirestoreWithoutTransactionSupport();
     await setNheiConsent(db, 'userA', 'reflection_storage', true);
     await setNheiConsent(db, 'userA', 'longitudinal_tracking', true);
-    await writeNheiEvidence(db, 'userA', validRecord({ id: 'a' }));
-    await writeNheiEvidence(db, 'userA', validRecord({ id: 'b' }));
 
-    const racingDb = withWriteSideEffect(db, 'users/userA/nhei_temporal_relations', async () => {
-      await setNheiConsent(db, 'userA', 'longitudinal_tracking', false);
-    });
-
-    const result = await writeNheiAssertedInfluence(racingDb, 'userA', {
+    const result = await writeNheiAssertedInfluence(db, 'userA', {
       fromEventId: 'a', toEventId: 'b', relationType: 'USER_ATTRIBUTED_INFLUENCE', interpretationConfidence: 'medium',
     });
     expect(result.ok).toBe(false);
-    if (result.ok === false) expect(result.reason).toBe('consent_required');
+    if (result.ok === false) expect(result.reason).toBe('transaction_support_required');
 
     const rawDoc = await db.collection('users/userA/nhei_temporal_relations').doc('a__b__USER_ATTRIBUTED_INFLUENCE').get();
     expect(rawDoc.exists).toBe(false);
   });
 
-  it('distinguishes this race-closing rollback from withdrawNheiConsent itself - withdrawal alone still never deletes pre-existing, validly-written data', async () => {
-    const db = createFakeFirestore();
+  it('this fail-closed check happens even when consent IS held - lacking transaction support is never "fine because consent was fine"', async () => {
+    const db = createFakeFirestoreWithoutTransactionSupport();
     await setNheiConsent(db, 'userA', 'reflection_storage', true);
-    const writeResult = await writeNheiEvidence(db, 'userA', validRecord());
-    expect(writeResult.ok).toBe(true); // validly written, no race this time
-
-    await withdrawNheiConsent(db, 'userA', 'reflection_storage');
-    // The record itself is untouched by withdrawal alone.
-    const rawDoc = await db.collection('users/userA/nhei_evidence').doc('ev1').get();
-    expect(rawDoc.exists).toBe(true);
+    const result = await writeNheiEvidence(db, 'userA', validRecord());
+    // Not consent_required (consent was in fact granted) - specifically
+    // transaction_support_required, so the real cause is never misreported
+    // as a consent problem a user might think they can fix by re-consenting.
+    expect(result.ok).toBe(false);
+    if (result.ok === false) expect(result.reason).toBe('transaction_support_required');
   });
 
-  it('error handling: a post-write consent read failure fails closed (treated as not consented), never silently treated as success', async () => {
-    const db = createFakeFirestore();
+  it('an invalid record is still rejected as invalid_record before the transaction-support check even matters - validation order is unchanged', async () => {
+    const db = createFakeFirestoreWithoutTransactionSupport();
     await setNheiConsent(db, 'userA', 'reflection_storage', true);
-
-    let readCount = 0;
-    const throwingDb: FirestoreLike = {
-      collection(path: string) {
-        const real = db.collection(path);
-        if (path === 'users/userA/nova_permissions') {
-          return {
-            ...real,
-            doc(id?: string) {
-              const realDoc = real.doc(id);
-              return {
-                ...realDoc,
-                get: async () => {
-                  readCount += 1;
-                  // First read (pre-write check) succeeds normally;
-                  // second read (the post-write race-closing check)
-                  // throws, simulating a transient Firestore error at
-                  // exactly the point this fix added a new read.
-                  if (readCount >= 2) throw new Error('simulated transient read failure');
-                  return realDoc.get();
-                },
-              };
-            },
-          };
-        }
-        return real;
-      },
-    };
-
-    // getNheiConsent already fails closed on any error (see its own
-    // try/catch) - so the post-write check reads back "not consented"
-    // rather than throwing further, and the write is correctly rolled
-    // back rather than the function crashing or (worse) returning
-    // success despite being unable to verify consent held.
-    const result = await writeNheiEvidence(throwingDb, 'userA', validRecord());
+    const result = await writeNheiEvidence(db, 'userA', { id: 'bad' });
     expect(result.ok).toBe(false);
-    if (result.ok === false) expect(result.reason).toBe('consent_required');
-    const rawDoc = await db.collection('users/userA/nhei_evidence').doc('ev1').get();
-    expect(rawDoc.exists).toBe(false);
+    if (result.ok === false) expect(result.reason).toBe('invalid_record');
   });
 });
 
@@ -1008,15 +1046,17 @@ describe('Phase 3C-2B section 2 - transactional consent/write concurrency', () =
     await expect(writeNheiEvidence(brokenDb, 'userA', validRecord())).rejects.toThrow('simulated transaction engine outage');
   });
 
-  it('documented limitation: the no-transaction-support fallback (Phase 3C-2A shape) still only closes the race by re-checking afterward, not atomically - exercised only by a deliberately transaction-less db', async () => {
-    const db = createFakeFirestore(); // the plain, non-transactional fake used throughout this file
+  it('superseded by Checkpoint 2 section 5: a db without transaction support no longer gets a weaker fallback - it fails closed instead, with no write at all', async () => {
+    const db = createFakeFirestoreWithoutTransactionSupport();
     expect(db.runTransaction).toBeUndefined();
     await setNheiConsent(db, 'userA', 'reflection_storage', true);
     const result = await writeNheiEvidence(db, 'userA', validRecord());
-    // Still correct for the single-additional-writer case this file's
-    // other Phase 3C-2A tests already cover - this test only documents
-    // that the fallback path is still reachable and still functions,
-    // not that it is as strong as the transactional path above.
-    expect(result.ok).toBe(true);
+    // Previously (Phase 3C-2A/Checkpoint 1) this fell back to a
+    // compensating-rollback write-then-recheck strategy and succeeded.
+    // Checkpoint 2 section 5 removed that fallback from production code
+    // entirely - see the dedicated describe block earlier in this file -
+    // so this now fails closed instead, which is the whole point.
+    expect(result.ok).toBe(false);
+    if (result.ok === false) expect(result.reason).toBe('transaction_support_required');
   });
 });

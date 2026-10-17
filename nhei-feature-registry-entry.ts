@@ -32,6 +32,7 @@
 
 import type { FeatureRegistryEntry } from './feature-registry-v2';
 import { NHEI_CONSENT_FIELD } from './nhei-consent';
+import { NHEI_EDUCATIONAL_MODE_ENV_VAR } from './nhei-educational-mode-flag';
 
 export const NHEI_FEATURE_ID = 'nova_human_experience_intelligence';
 
@@ -43,13 +44,28 @@ export const NHEI_FEATURE_REGISTRY_ENTRY: Omit<FeatureRegistryEntry, 'createdAt'
     'Temporal Self Interaction, Adaptive Behaviour and Context & Agency engines. ' +
     'A coaching intelligence system, not a diagnostic or psychological ' +
     'surveillance system. Phase 1 (pure engines) and Phase 2 (consent-gated ' +
-    'Firestore persistence) are built; disabled for all users; not wired into ' +
-    'any route, UI or live Nova prompt.',
+    'Firestore persistence) are built. Phase 3C-2B Checkpoint 2 wires ' +
+    'Educational Mode only into POST /api/nova/chat, behind a server-only, ' +
+    'default-OFF flag (see featureFlag) - Personal Reflection and ' +
+    'Longitudinal Mode remain entirely unwired. Disabled for all users.',
   productOwner: null,
   technicalOwner: null,
   lifecycleState: 'draft',
-  enforcementState: 'not_wired',
-  featureFlag: null,
+  // Partially, not fully, enforced: Educational Mode now has a real,
+  // tested code path reachable from a live route (gated by featureFlag
+  // below, defaulting off) - but Personal Reflection and Longitudinal
+  // Mode remain exactly as 'not_wired' as the whole feature was before
+  // this checkpoint. A single enforcementState value cannot represent
+  // "one of three modes is wired" precisely, so this is the closest
+  // accurate value; the notes field spells out the real split.
+  enforcementState: 'partially_enforced',
+  // Server-only env var (nhei-educational-mode-flag.ts), never a
+  // client-visible/client-settable flag from feature-flag-ids.ts's list -
+  // deliberate, since this checkpoint's own instruction is "no
+  // client-provided field may bypass this gate." Recorded here purely
+  // for Evolution Engine governance visibility; the real check is the
+  // env-var read in server.ts's /api/nova/chat handler.
+  featureFlag: NHEI_EDUCATIONAL_MODE_ENV_VAR,
   entitlementRequirement: null,
   dataZones: ['private_recovery_vault'],
   dependencies: [],
@@ -58,14 +74,20 @@ export const NHEI_FEATURE_REGISTRY_ENTRY: Omit<FeatureRegistryEntry, 'createdAt'
   // The three nova_permissions fields any future wiring of this feature
   // must check before reading or writing NHEI data - named here so the
   // registry records the real requirement rather than leaving it
-  // implicit in code only.
+  // implicit in code only. Educational Mode itself needs none of these -
+  // it is explicitly accessible without NHEI tracking consent - but they
+  // remain listed because Personal Reflection/Longitudinal Mode (still
+  // unwired) will need them the moment either is ever connected.
   requiredPermissions: Object.values(NHEI_CONSENT_FIELD),
   minAppVersion: null,
   fallbackMode: 'disabled',
-  rollbackMethod: 'Set lifecycleState back to draft / featureFlag stays unset; no persisted NHEI data is read by any other feature, so rollback cannot cascade.',
+  rollbackMethod:
+    `Unset ${NHEI_EDUCATIONAL_MODE_ENV_VAR} (or set to anything but "true") and redeploy - stops immediately, ` +
+    'nothing to clean up (Educational Mode never persists), cannot cascade.',
   expectedFlagRetirement: null,
   notes:
-    'Registered at Phase 2 checkpoint per architecture approval. No feature flag ' +
-    'exists yet because nothing reads one - see enforcementState. Do not flip ' +
-    'lifecycleState past draft without a separate approval checkpoint.',
+    'Registered at Phase 2 checkpoint per architecture approval; updated at Phase 3C-2B Checkpoint 2 once ' +
+    'Educational Mode gained a real, flagged, default-off code path. Do not set the featureFlag env var to "true" ' +
+    'and do not flip lifecycleState past draft without a separate approval checkpoint - this registration ' +
+    'describes what exists and is tested, not an activation decision.',
 };

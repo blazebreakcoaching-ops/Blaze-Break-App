@@ -137,6 +137,30 @@ describe('retrieveKnowledge', () => {
     expect(result.found).toBe(false);
     expect(result.entries).toEqual([]);
   });
+
+  it('Phase 3C-2B Checkpoint 2 section 3: the retrieval interface preserves source attribution, approval status, evidence limitations and age suitability - full fields, not a stripped-down projection', () => {
+    const fullyPopulated = entry({
+      id: 'full_entry',
+      topics: ['PHYSICAL'],
+      approvalStatus: 'approved',
+      evidenceCategory: 'ESTABLISHED_SCIENCE',
+      sourceReferences: ['Smith et al. 2021, Journal of Sleep Research'],
+      sourcePublicationInfo: 'Peer-reviewed, 2021',
+      ageGroup: 'adult_only',
+      reviewerId: 'real_reviewer_uid',
+      lastReviewedAt: '2026-03-01T00:00:00.000Z',
+      safetyRestrictions: ['never_assert_unreported_third_party_beliefs'],
+    });
+    const result = retrieveKnowledge([fullyPopulated], { topics: ['PHYSICAL'], ageBand: 'adult' });
+    expect(result.entries).toHaveLength(1);
+    // Exact deep equality, not a field-by-field spot check - proves
+    // nothing is dropped, renamed, or summarised away by this interface.
+    expect(result.entries[0]).toEqual(fullyPopulated);
+    expect(result.entries[0].sourceReferences).toEqual(['Smith et al. 2021, Journal of Sleep Research']);
+    expect(result.entries[0].evidenceCategory).toBe('ESTABLISHED_SCIENCE');
+    expect(result.entries[0].approvalStatus).toBe('approved');
+    expect(result.entries[0].ageGroup).toBe('adult_only');
+  });
 });
 
 describe('retrieveKnowledgeForTopic', () => {

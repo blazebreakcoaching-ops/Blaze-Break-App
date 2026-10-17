@@ -1,5 +1,12 @@
 import { describe, it, expect } from 'vitest';
-import { extractEvidenceFromConversation, createGeminiExtractionCaller, type NheiModelCaller } from './nhei-extraction-service';
+import {
+  extractEvidenceFromConversation,
+  createGeminiExtractionCaller,
+  createGeminiExtractionCallerWithUsage,
+  type NheiModelCaller,
+  type NheiGeminiClientLike,
+  type NheiGeminiCallTokenUsage,
+} from './nhei-extraction-service';
 
 function fixtureCaller(response: string): NheiModelCaller {
   return async () => response;
@@ -25,6 +32,83 @@ describe('extractEvidenceFromConversation - well-formed synthetic model output',
     const outcome = await extractEvidenceFromConversation(caller, { turns: ['ambiguous turn'] }, 'batch1');
     expect(outcome.records).toEqual([]);
     expect(outcome.abstainedCount).toBe(1);
+  });
+
+  it('Phase 3C-2B Checkpoint 2 section 8 gap A: exposes validCandidates/abstainedCandidates/invalidCandidates - the pre-conversion shape evaluateExtractionRun actually needs, not just converted records', async () => {
+    const caller = fixtureCaller(JSON.stringify({
+      candidates: [
+        { candidateId: 'a', abstain: false, sourceType: 'USER_REPORTED_EVENT', selfSystems: ['RELATIONAL_SELF'], dimensions: [], relativeOrder: 0, timeUncertainty: 'unknown', evidenceQuality: 'medium', relatedCandidateIds: [] },
+        { candidateId: 'b', abstain: true, sourceType: 'USER_REPORTED_EVENT', selfSystems: [], dimensions: [], relativeOrder: 1, timeUncertainty: 'unknown', evidenceQuality: 'unknown', relatedCandidateIds: [] },
+        { candidateId: 'c', sourceType: 'NOT_A_REAL_SOURCE_TYPE', relativeOrder: 2 },
+      ],
+    }));
+    const outcome = await extractEvidenceFromConversation(caller, { turns: ['t1', 't2', 't3'] }, 'batch1');
+
+    expect(outcome.validCandidates).toHaveLength(1);
+    expect(outcome.validCandidates[0].candidateId).toBe('a');
+    expect(outcome.validCandidates[0].abstain).toBe(false);
+
+    expect(outcome.abstainedCandidates).toHaveLength(1);
+    expect(outcome.abstainedCandidates[0].candidateId).toBe('b');
+    expect(outcome.abstainedCandidates[0].abstain).toBe(true);
+
+    expect(outcome.invalidCandidates).toHaveLength(1);
+    expect(outcome.invalidCandidates[0].ok).toBe(false);
+    expect(outcome.invalidCandidates[0].errors.length).toBeGreaterThan(0);
+  });
+
+  it('gap A: the candidate arrays are present and empty (not undefined) even on malformed model output - never throws trying to read them', async () => {
+    const caller = fixtureCaller('not json at all');
+    const outcome = await extractEvidenceFromConversation(caller, { turns: ['t1'] }, 'batch1');
+    expect(outcome.validCandidates).toEqual([]);
+    expect(outcome.abstainedCandidates).toEqual([]);
+    expect(outcome.invalidCandidates).toEqual([]);
+  });
+});
+
+describe('createGeminiExtractionCallerWithUsage - Phase 3C-2B Checkpoint 2 section 8 gap B', () => {
+  function fakeGeminiClient(text: string, usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number }): NheiGeminiClientLike {
+    return { models: { generateContent: async () => ({ text, usageMetadata }) } };
+  }
+
+  it('still returns a plain string, satisfying NheiModelCaller exactly like createGeminiExtractionCaller does - no breaking change to the interface extractEvidenceFromConversation depends on', async () => {
+    const client = fakeGeminiClient('{"candidates":[]}', { promptTokenCount: 10, candidatesTokenCount: 5 });
+    const usageSink: NheiGeminiCallTokenUsage[] = [];
+    const caller = createGeminiExtractionCallerWithUsage(client, 'gemini-2.0-flash', usageSink);
+    const result = await caller('a prompt');
+    expect(typeof result).toBe('string');
+    expect(result).toBe('{"candidates":[]}');
+  });
+
+  it('records real token usage from the response into the sink, one entry per call', async () => {
+    const client = fakeGeminiClient('{"candidates":[]}', { promptTokenCount: 123, candidatesTokenCount: 45 });
+    const usageSink: NheiGeminiCallTokenUsage[] = [];
+    const caller = createGeminiExtractionCallerWithUsage(client, 'gemini-2.0-flash', usageSink);
+    await caller('prompt one');
+    await caller('prompt two');
+    expect(usageSink).toEqual([
+      { promptTokens: 123, outputTokens: 45 },
+      { promptTokens: 123, outputTokens: 45 },
+    ]);
+  });
+
+  it('degrades missing/malformed usage metadata to 0 rather than throwing - a model response with no usage data should not break extraction', async () => {
+    const client = fakeGeminiClient('{"candidates":[]}', undefined);
+    const usageSink: NheiGeminiCallTokenUsage[] = [];
+    const caller = createGeminiExtractionCallerWithUsage(client, 'gemini-2.0-flash', usageSink);
+    await caller('a prompt');
+    expect(usageSink).toEqual([{ promptTokens: 0, outputTokens: 0 }]);
+  });
+
+  it('this usage-tracking caller drops straight into extractEvidenceFromConversation unchanged, proving real interface compatibility', async () => {
+    const client = fakeGeminiClient(JSON.stringify({
+      candidates: [{ candidateId: 'a', abstain: false, sourceType: 'USER_REPORTED_EVENT', selfSystems: [], dimensions: [], relativeOrder: 0, timeUncertainty: 'unknown', evidenceQuality: 'medium', relatedCandidateIds: [] }],
+    }), { promptTokenCount: 50, candidatesTokenCount: 20 });
+    const usageSink: NheiGeminiCallTokenUsage[] = [];
+    const caller = createGeminiExtractionCallerWithUsage(client, 'gemini-2.0-flash', usageSink);
+    const outcome = await extractEvidenceFromConversation(caller, { turns: ['t1'] }, 'batch1');
+    expect(outcome.records).toHaveLength(1);
+    expect(usageSink).toEqual([{ promptTokens: 50, outputTokens: 20 }]);
   });
 });
 

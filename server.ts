@@ -48,6 +48,14 @@ import { collectionsForExport, collectionsForErasure, userIdFieldsFor } from './
 // data already collected). Nothing else from the NHEI pipeline is
 // imported or called from this file.
 import { exportAllNheiData } from './nhei-persistence-service';
+// Phase 3C-2B Checkpoint 2 section 1/2: Educational Mode only, gated by a
+// server-only env-var flag that defaults OFF (see
+// nhei-educational-mode-flag.ts's own header comment for why this is NOT
+// the client-facing FEATURE_FLAG_IDS list). Nothing else from NHEI
+// (extraction, persistence, Personal Reflection/Longitudinal Mode) is
+// imported or called from this file.
+import { nheiEducationalModeIsEnabledNow } from './nhei-educational-mode-flag';
+import { buildNheiEducationalChatAddendum } from './nhei-nova-chat-educational-integration';
 import { summarizeModuleOutcomes, RoutingDecisionRecord } from './recovery-outcomes-intelligence';
 import { GEMINI_TEXT_MODEL, GEMINI_TTS_MODEL, GEMINI_LIVE_MODEL, CLAUDE_CHAT_MODEL } from './ai-model-registry';
 import { summarizeFeatureUsage, countByDimension } from './product-intelligence';
@@ -3026,6 +3034,36 @@ app.post("/api/nova/chat", novaChatLimiter, verifyAppCheck, authenticateFirebase
       }
     }
 
+    // NHEI Phase 3C-2B Checkpoint 2, section 1/2/10/11: Educational Mode
+    // only, strictly opt-in via a server-only flag that defaults OFF (no
+    // client-provided field can reach or bypass this check - the flag is
+    // read from process.env, never from req.body or any client context).
+    // When disabled (today, and until a separate approval checkpoint
+    // flips it), this block does not run buildNheiEducationalChatAddendum
+    // at all - NHEI performs zero processing, not even a Firestore read,
+    // exactly per "when disabled, NHEI must execute no processing."
+    // Accessible without any NHEI tracking consent (uid is not even used
+    // here) - "Educational requests must continue to work without
+    // granting NHEI tracking consent." No trusted server-side age source
+    // exists anywhere in this codebase yet (see
+    // nhei-nova-chat-educational-integration.ts's header comment and the
+    // Checkpoint 2 delivery report, section 10) - `undefined` is passed
+    // deliberately, which normalises to the most restrictive age band
+    // rather than inferring anything from the conversation. The call
+    // itself is already internally bounded (timeout + section cap) and
+    // never throws; this try/catch is defence in depth only, matching
+    // "a timeout or retrieval error must not prevent existing Nova
+    // functionality from continuing safely."
+    let nheiEducationalAddendum = "";
+    if (nheiEducationalModeIsEnabledNow()) {
+      try {
+        const nheiResult = await buildNheiEducationalChatAddendum(getDb(), undefined);
+        nheiEducationalAddendum = nheiResult.addendum;
+      } catch (e) {
+        logger.warning("NHEI educational-mode addendum build failed - continuing without it.", errorFields(e));
+      }
+    }
+
     // NOVA_SYSTEM_PROMPT (persona, coaching style, the full knowledge base -
     // methodology, creator knowledge, coaching philosophy, founder Q&A) must
     // always be present, not just when the caller happens to omit its own
@@ -3037,7 +3075,7 @@ app.post("/api/nova/chat", novaChatLimiter, verifyAppCheck, authenticateFirebase
     // outright. Same category of bug as the one the comment above
     // NOVA_SAFETY_INSTRUCTIONS already fixed for the safety floor; this
     // closes it for the knowledge base too.
-    const mergedSystemPrompt = NOVA_SYSTEM_PROMPT + (systemInstruction ? `\n\n${systemInstruction}` : "") + contextAddendum + NOVA_SAFETY_INSTRUCTIONS;
+    const mergedSystemPrompt = NOVA_SYSTEM_PROMPT + (systemInstruction ? `\n\n${systemInstruction}` : "") + contextAddendum + nheiEducationalAddendum + NOVA_SAFETY_INSTRUCTIONS;
 
     const abortController = new AbortController();
     const timeoutId = setTimeout(() => abortController.abort(), 25000); // 25s timeout - raised from 15s to accommodate one or more tool-call round-trips

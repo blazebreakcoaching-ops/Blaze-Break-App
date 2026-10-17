@@ -53,6 +53,10 @@ import {
   isNheiPurposeConsented,
   NHEI_CONSENT_FIELD,
 } from './nhei-consent';
+// Type-only import used solely for the compile-time Admin SDK
+// compatibility assertion below (Phase 3C-2B Checkpoint 2 section 5) -
+// never instantiated, never used for any runtime value.
+import type { Firestore as RealAdminFirestore } from 'firebase-admin/firestore';
 
 // ---- Minimal Firestore surface this file depends on ----------------------
 // Deliberately narrow - only the methods actually called below. Matches
@@ -100,17 +104,21 @@ export interface FirestoreTransactionLike {
 
 export interface FirestoreLike {
   collection(path: string): FirestoreCollectionRefLike;
-  // Optional, not required, for backward compatibility with every
-  // FirestoreLike fake written before this section existed (none of
-  // which ever needed transactions) and with any future minimal fake
-  // that genuinely has no transaction support. Every function in this
-  // file that needs atomicity checks for this at runtime and falls back
-  // to the Phase 3C-2A compensating-rollback behaviour when it is
-  // absent - a real `db` (the actual Firebase Admin SDK) always has
-  // this, so the fallback is only ever exercised by a deliberately
-  // transaction-less test double. See the section-2 "unavoidable
-  // limitations" note below each affected function for what the
-  // fallback path does NOT guarantee that the transactional path does.
+  // Still typed optional at the INTERFACE level - not every FirestoreLike
+  // consumer in this codebase needs transactions (nhei-knowledge-service.ts
+  // never calls runTransaction at all), so making it required here would
+  // force every unrelated fake to implement it for no reason. What changed
+  // in Phase 3C-2B Checkpoint 2 section 5 is the CALLER side, not this
+  // interface: writeNheiEvidence/setConfirmationState/
+  // writeNheiAssertedInfluence now explicitly check `if (!db.runTransaction)`
+  // and fail closed with 'transaction_support_required' rather than falling
+  // back to a weaker nontransactional write strategy, which is what used to
+  // happen here through Checkpoint 1. A real `db` (the actual Firebase
+  // Admin SDK) always has runTransaction, so that fail-closed branch is
+  // only ever exercised by a deliberately transaction-less test double
+  // (see nhei-persistence-service.test.ts's
+  // createFakeFirestoreWithoutTransactionSupport) - there is no
+  // production code path left that silently accepts its absence.
   //
   // Typed loosely (`tx: any`) at this boundary deliberately - the real
   // Admin SDK's Transaction type is far richer than FirestoreTransactionLike
@@ -122,9 +130,24 @@ export interface FirestoreLike {
   // `(tx: FirestoreTransactionLike)` explicitly, so this file's own code
   // keeps full type-checking on what it calls on `tx` - only the
   // boundary against the real SDK (and any other caller's `db`) is
-  // loosened.
+  // loosened. Compile-time proof that a real Firebase Admin SDK Firestore
+  // instance actually satisfies this interface - not just an assumption -
+  // is below, immediately after this declaration.
   runTransaction?<T>(fn: (tx: any) => Promise<T>): Promise<T>;
 }
+
+// Phase 3C-2B Checkpoint 2 section 5: "confirm server-side Firebase Admin
+// SDK compatibility." This is type-only, dead code - `undefined as any`
+// never runs, and the assignment itself is never reached at runtime - but
+// if a future Admin SDK major version ever changes `Firestore.collection`,
+// `Firestore.runTransaction`, or `Transaction`'s shape in a way that is no
+// longer structurally assignable to FirestoreLike, `npx tsc --noEmit` fails
+// right here, at this line, rather than only being discovered when a real
+// route tries to pass a real `db` at runtime. This is strictly more
+// confidence than "we assume the real SDK satisfies this interface" -
+// it is checked, by the compiler, every time this file is typechecked.
+const _adminSdkCompatibilityCheck: FirestoreLike = undefined as unknown as RealAdminFirestore;
+void _adminSdkCompatibilityCheck;
 
 const nowIso = (): string => new Date().toISOString();
 
@@ -245,7 +268,18 @@ export type NheiWriteBlockedReason =
   | 'source_type_not_permitted'
   | 'confirmation_state_not_settable_at_creation'
   | 'invalid_source_ref'
-  | 'not_found';
+  | 'not_found'
+  // Phase 3C-2B Checkpoint 2 section 5: Checkpoint 1 flagged the
+  // nontransactional compensating-rollback fallback as a real concern -
+  // it closes the race for every scenario this codebase's own tests
+  // construct, but it is not a mathematical guarantee the way a real
+  // transaction is, and leaving it reachable from production code meant
+  // any `db` without transaction support would silently get a WEAKER
+  // write strategy instead of a clear failure. This reason is now
+  // returned instead of ever falling back - see the three functions
+  // below (writeNheiEvidence/setConfirmationState/writeNheiAssertedInfluence),
+  // none of which has a nontransactional code path left in this file.
+  | 'transaction_support_required';
 
 export type NheiWriteResult<T> =
   | { ok: true; value: T }
@@ -296,15 +330,23 @@ export interface NheiSystemAuthorityToken {
   readonly grantedBy: string;
 }
 
-// The ONLY function in this codebase that can mint a token. Nothing in
-// Phase 3A calls this - it exists so a later, separately-reviewed,
-// genuinely server-verified caller (e.g. a real external-verification
-// pipeline) has an explicit, auditable, non-boolean way to opt in,
-// instead of this restriction being one stray `true` away from being
-// silently bypassed.
-export function grantNheiSystemAuthority(grantedBy: string): NheiSystemAuthorityToken {
+// The ONLY function in this codebase that can mint a token - and, as of
+// Phase 3C-2B Checkpoint 2 section 7, no longer exported at all. Checkpoint
+// 1 disclosed a real gap: this function used to be exported directly
+// (as `grantNheiSystemAuthority`), reachable by any code that imported
+// this module - a Symbol-branded token stops a REQUEST BODY from forging
+// one, but nothing stopped a careless future route handler from importing
+// this function directly and calling it with a label built from request
+// data, bypassing the role-verification contract
+// (deriveEvidenceAuthorityGrant, below) entirely. "An importable helper
+// is not the same thing as verified user authorisation" - so the fix is
+// structural, not a comment: this function is no longer part of this
+// module's public surface. The only exported way to obtain a real token
+// is deriveEvidenceAuthorityGrant, which requires an already-verified
+// caller object and checks its role before ever calling this.
+function mintSystemAuthorityToken(grantedBy: string): NheiSystemAuthorityToken {
   if (!grantedBy || typeof grantedBy !== 'string') {
-    throw new Error('grantNheiSystemAuthority requires a non-empty grantedBy label for audit purposes.');
+    throw new Error('mintSystemAuthorityToken requires a non-empty grantedBy label for audit purposes.');
   }
   return { [SYSTEM_AUTHORITY_BRAND]: true, grantedBy };
 }
@@ -313,6 +355,60 @@ function isValidSystemAuthorityToken(token: unknown): token is NheiSystemAuthori
   if (typeof token !== 'object' || token === null) return false;
   const t = token as Record<symbol, unknown> & Record<string, unknown>;
   return t[SYSTEM_AUTHORITY_BRAND] === true && typeof t.grantedBy === 'string' && t.grantedBy.length > 0;
+}
+
+// Deliberately isolated test scaffolding - the ONLY other way to obtain a
+// real NheiSystemAuthorityToken, named loudly so it cannot be mistaken for
+// a production entry point and so a code reviewer sees exactly what it is
+// at the import site. Existing tests that previously called the old
+// exported `grantNheiSystemAuthority('test-suite')` directly (as a stand-in
+// for "we are trusted, in-process test code") now call this instead -
+// same behaviour, honestly named. Nothing in server.ts or any route may
+// import this; if one ever does, that import itself is the review flag.
+export function grantNheiSystemAuthorityForTestingOnly(grantedBy: string): NheiSystemAuthorityToken {
+  return mintSystemAuthorityToken(grantedBy);
+}
+
+export type NheiEvidenceAuthorityDenialReason = 'role_not_granted' | 'missing_uid';
+
+// Mirrors nhei-authority-contract.ts's NheiVerifiedCaller shape exactly,
+// deliberately redeclared here (not imported) rather than creating a
+// dependency between the two files in either direction - a verified
+// caller is just {uid, role}, the same minimal shape server.ts's
+// requireAuth/requireRole already produce, and restating that two-field
+// shape locally is a smaller cost than a cross-file type dependency for
+// what is otherwise a self-contained module.
+export interface NheiVerifiedEvidenceAuthorityCaller {
+  uid: string;
+  role?: string;
+}
+
+export interface NheiEvidenceAuthorityResult {
+  ok: boolean;
+  token?: NheiSystemAuthorityToken;
+  reason?: NheiEvidenceAuthorityDenialReason;
+}
+
+// The two new, narrow roles contract this introduces - deliberately NOT
+// the general admin/platform_admin roles. Asserting evidence authority is
+// a specific, auditable responsibility, not a side effect of being a
+// platform admin for unrelated reasons.
+export const NHEI_EVIDENCE_AUTHORITY_ROLE = 'nhei_evidence_authority';
+
+// THE sanctioned, exported entry point for obtaining a real
+// NheiSystemAuthorityToken in production code. A future route's entire
+// job is: run requireAuth/requireRole (or equivalent) to get a verified
+// caller, then call this - never mintSystemAuthorityToken (which this
+// module no longer even exports) and never
+// grantNheiSystemAuthorityForTestingOnly (whose very name says it isn't
+// for this). caller.role must be exactly NHEI_EVIDENCE_AUTHORITY_ROLE -
+// not a general admin/platform_admin role, which would conflate "is an
+// admin for unrelated reasons" with "is specifically authorised to assert
+// privileged evidence."
+export function deriveEvidenceAuthorityGrant(caller: NheiVerifiedEvidenceAuthorityCaller): NheiEvidenceAuthorityResult {
+  if (!caller.uid) return { ok: false, reason: 'missing_uid' };
+  if (caller.role !== NHEI_EVIDENCE_AUTHORITY_ROLE) return { ok: false, reason: 'role_not_granted' };
+  return { ok: true, token: mintSystemAuthorityToken(`nhei_evidence_authority:${caller.uid}`) };
 }
 
 export interface WriteNheiEvidenceOptions {
@@ -373,61 +469,44 @@ export async function writeNheiEvidence(
     return { ...record, sourceRef: options.sourceRef ?? null, createdAt: timestamp, updatedAt: timestamp };
   };
 
-  // Phase 3C-2B section 2: the invariant is "no optional NHEI write may
-  // successfully commit based on consent that has already been revoked
-  // at the transaction's commit point." A real Firestore transaction
-  // gives this directly: it reads the permissions doc as PART of the
-  // transaction, so if that doc changes (e.g. a concurrent withdrawal
-  // commits) before this transaction commits, Firestore detects the
-  // conflict against what it READ and automatically retries the whole
-  // callback - which re-reads consent, now sees it revoked, and aborts
-  // cleanly. This is a property of the transaction engine itself, not
-  // application logic re-checking after the fact - see the Phase 3C-2B
-  // delivery report section 2 for why this is strictly stronger than
-  // 3C-2A's compensating-rollback approach (which still exists below as
-  // the documented fallback for a `db` with no transaction support at
-  // all - the real Admin SDK always has one).
-  if (db.runTransaction) {
-    try {
-      const persisted = await db.runTransaction(async (tx: FirestoreTransactionLike) => {
-        const permSnap = await tx.get(db.collection(permissionsDocPath(uid)).doc('current'));
-        const consent = deriveNheiConsentState(permSnap.exists ? permSnap.data() : undefined);
-        if (!isNheiPurposeConsented(consent, 'reflection_storage')) throw new NheiConsentRevokedDuringTransaction();
-        const toWrite = buildPersisted();
-        tx.set(db.collection(evidenceCollectionPath(uid)).doc(record.id), toWrite as unknown as Record<string, unknown>);
-        return toWrite;
-      });
-      return { ok: true, value: persisted };
-    } catch (err) {
-      if (err instanceof NheiConsentRevokedDuringTransaction) return { ok: false, reason: 'consent_required' };
-      throw err;
-    }
-  }
-
-  // ---- Fallback: no transaction support on this `db` (Phase 3C-2A shape) ----
-  // Documented limitation, not silently accepted: this path has a real,
-  // if narrow, window where a withdrawal landing strictly between the
-  // write and the post-write re-check could - in a true multi-process
-  // race - still be missed if the re-check itself races against a THIRD
-  // concurrent operation. The transactional path above closes that
-  // window structurally; this one only closes it by re-checking and
-  // compensating, which is correct for every race this phase's own tests
-  // construct (single additional concurrent writer) but is not a
+  // Phase 3C-2B Checkpoint 2 section 5: transaction support is now
+  // REQUIRED, not merely preferred. Checkpoint 1's compensating-rollback
+  // fallback (re-check consent after writing, delete on mismatch) closed
+  // every race this codebase's own tests construct, but it was never a
   // mathematical guarantee under unbounded concurrency the way a real
-  // transaction is. Never exercised by a real `db` - only by a
-  // deliberately transaction-less test double.
-  const consentBefore = await getNheiConsent(db, uid);
-  if (!isNheiPurposeConsented(consentBefore, 'reflection_storage')) {
-    return { ok: false, reason: 'consent_required' };
+  // transaction is - and leaving it reachable from production code meant
+  // a `db` without transaction support would silently receive a WEAKER
+  // write strategy instead of a clear, fail-closed failure. That fallback
+  // no longer exists as a reachable code path in this function; it is
+  // preserved ONLY as isolated test scaffolding
+  // (`nhei-persistence-service.test.ts`'s own
+  // `createFakeFirestoreWithoutTransactionSupport` helper and its
+  // dedicated "fails closed" tests), never as an authorised production
+  // persistence pathway. The invariant this transaction gives directly:
+  // it reads the permissions doc as PART of the transaction, so if that
+  // doc changes (e.g. a concurrent withdrawal commits) before this
+  // transaction commits, Firestore detects the conflict against what it
+  // READ and automatically retries the whole callback - which re-reads
+  // consent, now sees it revoked, and aborts cleanly. This is a property
+  // of the transaction engine itself, not application logic re-checking
+  // after the fact.
+  if (!db.runTransaction) {
+    return { ok: false, reason: 'transaction_support_required' };
   }
-  const persisted = buildPersisted();
-  await db.collection(evidenceCollectionPath(uid)).doc(record.id).set(persisted as unknown as Record<string, unknown>);
-  const consentAfterWrite = await getNheiConsent(db, uid);
-  if (!isNheiPurposeConsented(consentAfterWrite, 'reflection_storage')) {
-    await db.collection(evidenceCollectionPath(uid)).doc(record.id).delete();
-    return { ok: false, reason: 'consent_required' };
+  try {
+    const persisted = await db.runTransaction(async (tx: FirestoreTransactionLike) => {
+      const permSnap = await tx.get(db.collection(permissionsDocPath(uid)).doc('current'));
+      const consent = deriveNheiConsentState(permSnap.exists ? permSnap.data() : undefined);
+      if (!isNheiPurposeConsented(consent, 'reflection_storage')) throw new NheiConsentRevokedDuringTransaction();
+      const toWrite = buildPersisted();
+      tx.set(db.collection(evidenceCollectionPath(uid)).doc(record.id), toWrite as unknown as Record<string, unknown>);
+      return toWrite;
+    });
+    return { ok: true, value: persisted };
+  } catch (err) {
+    if (err instanceof NheiConsentRevokedDuringTransaction) return { ok: false, reason: 'consent_required' };
+    throw err;
   }
-  return { ok: true, value: persisted };
 }
 
 // Internal, unchecked fetch - consent is the CALLER's responsibility.
@@ -440,9 +519,69 @@ async function fetchEvidenceUnchecked(db: FirestoreLike, uid: string): Promise<N
 
 // Returns [] - never an error, never a partial read - when reflection
 // storage isn't consented. No Firestore call is made in that case at all.
+//
+// PHASE 3C-2B CHECKPOINT 2 SECTION 6 AUDIT NOTE: the Checkpoint 1
+// integration-readiness design document claimed "readNheiEvidence has no
+// consent gate today... the write-time check alone." That claim was
+// WRONG - as the two lines above show, this function re-checks CURRENT
+// `reflection_storage` consent on every single call, not a stale
+// snapshot from write time, and returns [] (no Firestore read even
+// attempted) the moment that consent is not presently held. Withdrawal
+// therefore already blocks this read path immediately, even though the
+// underlying evidence remains physically stored - exactly what this
+// checkpoint's instruction requires. This function's gate was correct
+// before this checkpoint; the PRIOR DOCUMENT describing it was not, and
+// is corrected here rather than left to propagate. See
+// readNheiEvidenceForLongitudinalMode below for the real, distinct gap
+// this audit DID find.
 export async function readNheiEvidence(db: FirestoreLike, uid: string): Promise<NheiPersistedEvidenceRecord[]> {
   const consent = await getNheiConsent(db, uid);
   if (!isNheiPurposeConsented(consent, 'reflection_storage')) return [];
+  return fetchEvidenceUnchecked(db, uid);
+}
+
+// PHASE 3C-2B CHECKPOINT 2 SECTION 6: the real gap this audit found,
+// distinct from the inaccurate claim corrected above. readNheiEvidence
+// gates on `reflection_storage` - the purpose that governs whether
+// evidence may be STORED at all - which is the correct and sufficient
+// gate for Personal Reflection Mode re-displaying a user's own evidence
+// within a session. It is NOT the correct gate for a longitudinal/
+// cross-session use: `longitudinal_tracking` is the specific,
+// independently-grantable purpose (nhei-consent.ts) that governs whether
+// evidence may be used for pattern-finding ACROSS sessions - and nothing
+// before this function existed would have stopped a future route wiring
+// Longitudinal Mode's `priorEvidence` (nhei-conversation-pipeline.ts's
+// RunReflectiveModeInput) from naively calling readNheiEvidence and
+// handing back a user's full reflection evidence for cross-session
+// reasoning based on storage consent alone, never checking the more
+// specific purpose this particular USE actually requires.
+//
+// This is THE dedicated, server-enforced Longitudinal Mode read
+// interface this checkpoint's instruction asks for: it requires BOTH
+// `reflection_storage` (the data must be legitimately stored/readable at
+// all) AND `longitudinal_tracking` (this specific cross-session use must
+// be currently authorised), checked fresh on every call exactly like
+// readNheiEvidence above - a withdrawal of either purpose immediately
+// returns [] for this function, even though the evidence remains
+// physically stored and still readable via plain readNheiEvidence for
+// Personal Reflection Mode's own, different purpose. No client-provided
+// permission state can reach this check at all - it reads
+// users/{uid}/nova_permissions itself via getNheiConsent, the same
+// trusted path every other consent check in this file uses.
+//
+// Per instruction, this function is NOT wired into
+// nhei-conversation-pipeline.ts or any route by this checkpoint -
+// RunReflectiveModeInput's `priorEvidence` remains caller-supplied, as
+// Phase 3C-1 designed it. This function exists so that whenever a future,
+// separately-approved checkpoint DOES wire Longitudinal Mode into a live
+// route, it has a correct, already-tested function to fetch
+// `priorEvidence` from, rather than reaching for the wrong one
+// (readNheiEvidence) because it happened to already exist and have a
+// similar name.
+export async function readNheiEvidenceForLongitudinalMode(db: FirestoreLike, uid: string): Promise<NheiPersistedEvidenceRecord[]> {
+  const consent = await getNheiConsent(db, uid);
+  if (!isNheiPurposeConsented(consent, 'reflection_storage')) return [];
+  if (!isNheiPurposeConsented(consent, 'longitudinal_tracking')) return [];
   return fetchEvidenceUnchecked(db, uid);
 }
 
@@ -452,77 +591,50 @@ async function setConfirmationState(
   evidenceId: string,
   newState: 'user_confirmed' | 'user_disputed',
 ): Promise<NheiWriteResult<{ previousState: string | null }>> {
-  // Phase 3C-2B section 2: consent read, evidence read, the state update,
-  // and (when applicable) the correction-history write all happen inside
-  // ONE transaction - every document this function's correctness depends
-  // on is read and written atomically, so a concurrent withdrawal is
-  // caught by the transaction engine itself, not by re-checking afterward.
-  if (db.runTransaction) {
-    try {
-      const result = await db.runTransaction(async (tx: FirestoreTransactionLike) => {
-        const permSnap = await tx.get(db.collection(permissionsDocPath(uid)).doc('current'));
-        const consent = deriveNheiConsentState(permSnap.exists ? permSnap.data() : undefined);
-        if (!isNheiPurposeConsented(consent, 'reflection_storage')) throw new NheiConsentRevokedDuringTransaction();
-
-        const ref = db.collection(evidenceCollectionPath(uid)).doc(evidenceId);
-        const snap = await tx.get(ref);
-        if (!snap.exists) throw new NheiNotFoundDuringTransaction();
-        const previous = snap.data() as Record<string, unknown>;
-        const previousState = typeof previous.confirmationState === 'string' ? previous.confirmationState : null;
-
-        tx.update(ref, { confirmationState: newState, updatedAt: nowIso() });
-
-        // Same "preserve correction history only where consented" rule as
-        // before, decided from the SAME transactionally-read consent -
-        // never a second, separately-racing read.
-        if (isNheiPurposeConsented(consent, 'longitudinal_tracking') && previousState !== newState) {
-          const correctionId = `corr_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-          tx.set(db.collection(correctionsCollectionPath(uid, evidenceId)).doc(correctionId), {
-            previousConfirmationState: previousState,
-            newConfirmationState: newState,
-            changedAt: nowIso(),
-          });
-        }
-        return { previousState };
-      });
-      return { ok: true, value: result };
-    } catch (err) {
-      if (err instanceof NheiConsentRevokedDuringTransaction) return { ok: false, reason: 'consent_required' };
-      if (err instanceof NheiNotFoundDuringTransaction) return { ok: false, reason: 'not_found' };
-      throw err;
-    }
+  // Phase 3C-2B Checkpoint 2 section 5: transaction support is required,
+  // same as writeNheiEvidence above - no nontransactional fallback
+  // remains reachable from production code. Consent read, evidence read,
+  // the state update, and (when applicable) the correction-history write
+  // all happen inside ONE transaction - every document this function's
+  // correctness depends on is read and written atomically, so a
+  // concurrent withdrawal is caught by the transaction engine itself,
+  // not by re-checking afterward.
+  if (!db.runTransaction) {
+    return { ok: false, reason: 'transaction_support_required' };
   }
+  try {
+    const result = await db.runTransaction(async (tx: FirestoreTransactionLike) => {
+      const permSnap = await tx.get(db.collection(permissionsDocPath(uid)).doc('current'));
+      const consent = deriveNheiConsentState(permSnap.exists ? permSnap.data() : undefined);
+      if (!isNheiPurposeConsented(consent, 'reflection_storage')) throw new NheiConsentRevokedDuringTransaction();
 
-  // ---- Fallback: no transaction support on this `db` ----
-  // Same documented limitation as writeNheiEvidence's fallback above -
-  // never exercised by a real `db`.
-  const consent = await getNheiConsent(db, uid);
-  if (!isNheiPurposeConsented(consent, 'reflection_storage')) return { ok: false, reason: 'consent_required' };
+      const ref = db.collection(evidenceCollectionPath(uid)).doc(evidenceId);
+      const snap = await tx.get(ref);
+      if (!snap.exists) throw new NheiNotFoundDuringTransaction();
+      const previous = snap.data() as Record<string, unknown>;
+      const previousState = typeof previous.confirmationState === 'string' ? previous.confirmationState : null;
 
-  const ref = db.collection(evidenceCollectionPath(uid)).doc(evidenceId);
-  const snap = await ref.get();
-  if (!snap.exists) return { ok: false, reason: 'not_found' };
-  const previous = snap.data() as Record<string, unknown>;
-  const previousState = typeof previous.confirmationState === 'string' ? previous.confirmationState : null;
+      tx.update(ref, { confirmationState: newState, updatedAt: nowIso() });
 
-  await ref.update({ confirmationState: newState, updatedAt: nowIso() });
-
-  const consentAfterWrite = await getNheiConsent(db, uid);
-  if (!isNheiPurposeConsented(consentAfterWrite, 'reflection_storage')) {
-    await ref.update({ confirmationState: previousState ?? 'not_applicable', updatedAt: nowIso() });
-    return { ok: false, reason: 'consent_required' };
-  }
-
-  if (isNheiPurposeConsented(consentAfterWrite, 'longitudinal_tracking') && previousState !== newState) {
-    const correctionId = `corr_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-    await db.collection(correctionsCollectionPath(uid, evidenceId)).doc(correctionId).set({
-      previousConfirmationState: previousState,
-      newConfirmationState: newState,
-      changedAt: nowIso(),
+      // Same "preserve correction history only where consented" rule as
+      // before, decided from the SAME transactionally-read consent -
+      // never a second, separately-racing read.
+      if (isNheiPurposeConsented(consent, 'longitudinal_tracking') && previousState !== newState) {
+        const correctionId = `corr_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+        tx.set(db.collection(correctionsCollectionPath(uid, evidenceId)).doc(correctionId), {
+          previousConfirmationState: previousState,
+          newConfirmationState: newState,
+          changedAt: nowIso(),
+        });
+      }
+      return { previousState };
     });
+    return { ok: true, value: result };
+  } catch (err) {
+    if (err instanceof NheiConsentRevokedDuringTransaction) return { ok: false, reason: 'consent_required' };
+    if (err instanceof NheiNotFoundDuringTransaction) return { ok: false, reason: 'not_found' };
+    throw err;
   }
-
-  return { ok: true, value: { previousState } };
 }
 
 // Disputing never deletes the record - it is read-side exclusion
@@ -591,58 +703,43 @@ export async function writeNheiAssertedInfluence(
 ): Promise<NheiWriteResult<NheiTemporalRelation>> {
   const relationId = `${assertion.fromEventId}__${assertion.toEventId}__${assertion.relationType}`;
 
-  // Phase 3C-2B section 2: consent, the evidence-existence check, and the
-  // relation write all happen inside one transaction - see
-  // writeNheiEvidence's comment above for why this closes the race
-  // structurally rather than by re-checking afterward. The evidence
-  // COLLECTION read here is not itself conflict-tracked the way the
-  // single permissions document is (this fake/engine's conflict
-  // detection is per-document) - an evidence record written concurrently
-  // with this call is a pre-existing, documented limitation of
-  // transacting over a collection query, not something this phase's fix
-  // claims to close. The consent read is what actually matters for this
-  // section's invariant, and that IS conflict-tracked.
-  if (db.runTransaction) {
-    try {
-      const relation = await db.runTransaction(async (tx: FirestoreTransactionLike) => {
-        const permSnap = await tx.get(db.collection(permissionsDocPath(uid)).doc('current'));
-        const consent = deriveNheiConsentState(permSnap.exists ? permSnap.data() : undefined);
-        if (!isNheiPurposeConsented(consent, 'longitudinal_tracking')) throw new NheiConsentRevokedDuringTransaction();
-
-        const evidenceSnap = await tx.get(db.collection(evidenceCollectionPath(uid)));
-        const records = evidenceSnap.docs.map((d) => d.data() as unknown as NheiPersistedEvidenceRecord);
-        const relation = carryAssertedInfluence(records, assertion);
-        if (!relation) throw new NheiNotFoundDuringTransaction();
-
-        tx.set(db.collection(relationsCollectionPath(uid)).doc(relationId), { ...relation, createdAt: nowIso() });
-        return relation;
-      });
-      return { ok: true, value: relation };
-    } catch (err) {
-      if (err instanceof NheiConsentRevokedDuringTransaction) return { ok: false, reason: 'consent_required' };
-      if (err instanceof NheiNotFoundDuringTransaction) return { ok: false, reason: 'not_found' };
-      throw err;
-    }
+  // Phase 3C-2B Checkpoint 2 section 5: transaction support is required,
+  // same as writeNheiEvidence/setConfirmationState above - no
+  // nontransactional fallback remains reachable from production code.
+  // Consent, the evidence-existence check, and the relation write all
+  // happen inside one transaction - see writeNheiEvidence's comment above
+  // for why this closes the race structurally rather than by re-checking
+  // afterward. The evidence COLLECTION read here is not itself
+  // conflict-tracked the way the single permissions document is (this
+  // fake/engine's conflict detection is per-document) - an evidence
+  // record written concurrently with this call is a pre-existing,
+  // documented limitation of transacting over a collection query, not
+  // something this phase's fix claims to close. The consent read is what
+  // actually matters for this section's invariant, and that IS
+  // conflict-tracked.
+  if (!db.runTransaction) {
+    return { ok: false, reason: 'transaction_support_required' };
   }
+  try {
+    const relation = await db.runTransaction(async (tx: FirestoreTransactionLike) => {
+      const permSnap = await tx.get(db.collection(permissionsDocPath(uid)).doc('current'));
+      const consent = deriveNheiConsentState(permSnap.exists ? permSnap.data() : undefined);
+      if (!isNheiPurposeConsented(consent, 'longitudinal_tracking')) throw new NheiConsentRevokedDuringTransaction();
 
-  // ---- Fallback: no transaction support on this `db` ----
-  const consent = await getNheiConsent(db, uid);
-  if (!isNheiPurposeConsented(consent, 'longitudinal_tracking')) {
-    return { ok: false, reason: 'consent_required' };
+      const evidenceSnap = await tx.get(db.collection(evidenceCollectionPath(uid)));
+      const records = evidenceSnap.docs.map((d) => d.data() as unknown as NheiPersistedEvidenceRecord);
+      const relation = carryAssertedInfluence(records, assertion);
+      if (!relation) throw new NheiNotFoundDuringTransaction();
+
+      tx.set(db.collection(relationsCollectionPath(uid)).doc(relationId), { ...relation, createdAt: nowIso() });
+      return relation;
+    });
+    return { ok: true, value: relation };
+  } catch (err) {
+    if (err instanceof NheiConsentRevokedDuringTransaction) return { ok: false, reason: 'consent_required' };
+    if (err instanceof NheiNotFoundDuringTransaction) return { ok: false, reason: 'not_found' };
+    throw err;
   }
-  const records = await fetchEvidenceUnchecked(db, uid);
-  const relation = carryAssertedInfluence(records, assertion);
-  if (!relation) return { ok: false, reason: 'not_found' };
-
-  await db.collection(relationsCollectionPath(uid)).doc(relationId).set({ ...relation, createdAt: nowIso() });
-
-  const consentAfterWrite = await getNheiConsent(db, uid);
-  if (!isNheiPurposeConsented(consentAfterWrite, 'longitudinal_tracking')) {
-    await db.collection(relationsCollectionPath(uid)).doc(relationId).delete();
-    return { ok: false, reason: 'consent_required' };
-  }
-
-  return { ok: true, value: relation };
 }
 
 // ---- Export (GDPR Art. 15/20) -------------------------------------------

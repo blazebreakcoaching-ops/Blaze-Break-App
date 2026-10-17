@@ -15,6 +15,7 @@ import {
   type FirestoreLike,
   type FirestoreCollectionRefLike,
   type FirestoreDocSnapshotLike,
+  type FirestoreTransactionLike,
 } from './nhei-persistence-service';
 
 describe('deriveKnowledgeReviewerIdentity', () => {
@@ -121,7 +122,22 @@ function createFakeFirestore(): FirestoreLike {
       },
     };
   }
-  return { collection };
+  // Phase 3C-2B Checkpoint 2 section 5: writeNheiEvidence now requires
+  // db.runTransaction to exist at all - see nhei-persistence-service.ts's
+  // own comment. A simple, non-rigorous implementation (this fake applies
+  // writes immediately rather than staging them, so there's nothing to
+  // stage) is sufficient here, since this file's "glued together" tests
+  // are not about race/conflict detection.
+  async function runTransaction<T>(fn: (tx: FirestoreTransactionLike) => Promise<T>): Promise<T> {
+    const tx: FirestoreTransactionLike = {
+      get: ((ref: any) => ref.get()) as FirestoreTransactionLike['get'],
+      set: (ref, data, options) => { void ref.set(data, options); },
+      update: (ref, data) => { void ref.update(data); },
+      delete: (ref) => { void ref.delete(); },
+    };
+    return fn(tx);
+  }
+  return { collection, runTransaction };
 }
 
 function systemHypothesisRecord() {

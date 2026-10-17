@@ -25,6 +25,8 @@ import {
   validateExtractionBatch,
   toNheiEvidenceRecord,
   type NheiExtractionValidationResult,
+  type NheiExtractionCandidate,
+  type NheiExtractionCandidateValidationResult,
 } from './nhei-extraction-types';
 import { type NheiEvidenceRecord } from './nhei-types';
 
@@ -41,6 +43,20 @@ export interface NheiExtractionOutcome {
   invalidCandidateCount: number;
   rejectedForBatchLimit: number;
   recordConversionErrors: string[];
+  // Phase 3C-2B Checkpoint 2 section 8, gap A: nhei-extraction-evaluation.ts's
+  // evaluateExtractionRun scores against the pre-conversion
+  // NheiExtractionCandidate shape (it needs `abstain`, `relativeOrder`,
+  // etc. - fields a converted NheiEvidenceRecord does not carry), not the
+  // `records` field above. Checkpoint 1 left this as an open gap because
+  // nothing exposed the validated candidates themselves; these three
+  // fields close it. validCandidates/abstainedCandidates are both
+  // schema-valid (the distinction is only whether the model abstained);
+  // invalidCandidates are the ones validateExtractionBatch rejected -
+  // "access to validated AND rejected extraction candidates," per
+  // instruction, not just the successfully converted subset.
+  validCandidates: NheiExtractionCandidate[];
+  abstainedCandidates: NheiExtractionCandidate[];
+  invalidCandidates: NheiExtractionCandidateValidationResult[];
 }
 
 function parseModelJson(raw: string): { ok: true; candidates: unknown[] } | { ok: false; error: string } {
@@ -69,7 +85,10 @@ export async function extractEvidenceFromConversation(
 
   const parsed = parseModelJson(raw);
   if (parsed.ok === false) {
-    return { batchId, records: [], abstainedCount: 0, invalidCandidateCount: 0, rejectedForBatchLimit: 0, recordConversionErrors: [parsed.error] };
+    return {
+      batchId, records: [], abstainedCount: 0, invalidCandidateCount: 0, rejectedForBatchLimit: 0,
+      recordConversionErrors: [parsed.error], validCandidates: [], abstainedCandidates: [], invalidCandidates: [],
+    };
   }
 
   const validation: NheiExtractionValidationResult = validateExtractionBatch(parsed.candidates);
@@ -89,6 +108,9 @@ export async function extractEvidenceFromConversation(
     invalidCandidateCount: validation.invalid.length,
     rejectedForBatchLimit: validation.rejectedForBatchLimit,
     recordConversionErrors,
+    validCandidates: validation.valid,
+    abstainedCandidates: validation.abstained,
+    invalidCandidates: validation.invalid,
   };
 }
 
@@ -106,7 +128,15 @@ export interface NheiGeminiClientLike {
       model: string;
       contents: string;
       config: { responseMimeType: string; responseSchema: unknown };
-    }) => Promise<{ text?: string }>;
+    }) => Promise<{
+      text?: string;
+      // Phase 3C-2B Checkpoint 2 section 8, gap B: the real @google/genai
+      // response carries usageMetadata - optional here because a fixture
+      // caller in a test has no reason to construct it, and the plain
+      // createGeminiExtractionCaller below still ignores it entirely
+      // (unchanged from Phase 3C-1, since nothing there ever needed it).
+      usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number };
+    }>;
   };
 }
 
@@ -118,6 +148,46 @@ export function createGeminiExtractionCaller(client: NheiGeminiClientLike, model
       config: { responseMimeType: 'application/json', responseSchema: NHEI_EXTRACTION_RESPONSE_SCHEMA },
     });
     if (!response.text) throw new Error('Empty response from extraction model.');
+    return response.text;
+  };
+}
+
+export interface NheiGeminiCallTokenUsage {
+  promptTokens: number;
+  outputTokens: number;
+}
+
+// Phase 3C-2B Checkpoint 2 section 8, gap B fix. createGeminiExtractionCaller
+// above deliberately keeps NheiModelCaller's plain `Promise<string>`
+// signature unchanged - extractEvidenceFromConversation, every existing
+// test, and every other caller in this codebase depends on that exact
+// shape, and widening it to also return usage would be a breaking change
+// for no benefit to any of them. This function returns something that
+// STILL satisfies NheiModelCaller (so it drops straight into
+// extractEvidenceFromConversation with no other change), but also
+// appends one NheiGeminiCallTokenUsage entry to the caller-supplied
+// `usageSink` array per call - an output parameter, not a return-type
+// change, specifically so a cost-tracking caller (the real-model
+// evaluation runner) can read usage after the fact without altering the
+// interface everything else relies on. Missing/malformed usage fields
+// are recorded as 0, never thrown - a model response with no usage
+// metadata should degrade the cost estimate, not break extraction.
+export function createGeminiExtractionCallerWithUsage(
+  client: NheiGeminiClientLike,
+  model: string,
+  usageSink: NheiGeminiCallTokenUsage[],
+): NheiModelCaller {
+  return async (prompt: string): Promise<string> => {
+    const response = await client.models.generateContent({
+      model,
+      contents: prompt,
+      config: { responseMimeType: 'application/json', responseSchema: NHEI_EXTRACTION_RESPONSE_SCHEMA },
+    });
+    if (!response.text) throw new Error('Empty response from extraction model.');
+    usageSink.push({
+      promptTokens: typeof response.usageMetadata?.promptTokenCount === 'number' ? response.usageMetadata.promptTokenCount : 0,
+      outputTokens: typeof response.usageMetadata?.candidatesTokenCount === 'number' ? response.usageMetadata.candidatesTokenCount : 0,
+    });
     return response.text;
   };
 }

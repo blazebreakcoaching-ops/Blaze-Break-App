@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { buildNheiPersonalContextSummary, NHEI_CONTEXT_PROVENANCE_NOTE } from './nhei-context-integration';
-import { writeNheiEvidence, setNheiConsent, disputeNheiEvidence, grantNheiSystemAuthority, type FirestoreLike, type FirestoreCollectionRefLike } from './nhei-persistence-service';
+import { writeNheiEvidence, setNheiConsent, disputeNheiEvidence, grantNheiSystemAuthorityForTestingOnly, type FirestoreLike, type FirestoreCollectionRefLike, type FirestoreTransactionLike } from './nhei-persistence-service';
 
 // Same minimal in-memory fake pattern as nhei-persistence-service.test.ts.
 function createFakeFirestore(): FirestoreLike {
@@ -36,7 +36,20 @@ function createFakeFirestore(): FirestoreLike {
       },
     };
   }
-  return { collection };
+  // Phase 3C-2B Checkpoint 2 section 5: writeNheiEvidence now requires
+  // db.runTransaction to exist at all - see nhei-persistence-service.ts's
+  // own comment. Simple, non-rigorous implementation; this file's tests
+  // are not about race/conflict detection.
+  async function runTransaction<T>(fn: (tx: FirestoreTransactionLike) => Promise<T>): Promise<T> {
+    const tx: FirestoreTransactionLike = {
+      get: ((ref: any) => ref.get()) as FirestoreTransactionLike['get'],
+      set: (ref, data, options) => { void ref.set(data, options); },
+      update: (ref, data) => { void ref.update(data); },
+      delete: (ref) => { void ref.delete(); },
+    };
+    return fn(tx);
+  }
+  return { collection, runTransaction };
 }
 
 function validRecord(overrides: Record<string, unknown> = {}) {
@@ -99,7 +112,7 @@ describe('buildNheiPersonalContextSummary - confirmed interpretations vs. open h
   it('keeps USER_CONFIRMED_INTERPRETATION and SYSTEM_HYPOTHESIS evidence in separate, distinctly labelled buckets', async () => {
     const db = createFakeFirestore();
     await setNheiConsent(db, 'userA', 'reflection_storage', true);
-    const authority = grantNheiSystemAuthority('test-suite');
+    const authority = grantNheiSystemAuthorityForTestingOnly('test-suite');
     await writeNheiEvidence(db, 'userA', validRecord({ id: 'confirmed1', sourceType: 'USER_CONFIRMED_INTERPRETATION', confirmationState: 'not_applicable' }), { systemAuthority: authority });
     await writeNheiEvidence(db, 'userA', validRecord({ id: 'hypothesis1', sourceType: 'SYSTEM_HYPOTHESIS', confirmationState: 'unconfirmed' }), { systemAuthority: authority });
     await writeNheiEvidence(db, 'userA', validRecord({ id: 'plain1' }));
@@ -115,7 +128,7 @@ describe('buildNheiPersonalContextSummary - confirmed interpretations vs. open h
   it('a disputed interpretation never appears in either bucket', async () => {
     const db = createFakeFirestore();
     await setNheiConsent(db, 'userA', 'reflection_storage', true);
-    const authority = grantNheiSystemAuthority('test-suite');
+    const authority = grantNheiSystemAuthorityForTestingOnly('test-suite');
     await writeNheiEvidence(db, 'userA', validRecord({ id: 'hyp1', sourceType: 'SYSTEM_HYPOTHESIS', confirmationState: 'unconfirmed' }), { systemAuthority: authority });
     await disputeNheiEvidence(db, 'userA', 'hyp1');
 

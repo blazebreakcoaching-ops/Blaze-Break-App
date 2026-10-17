@@ -427,6 +427,33 @@ describe('Phase 3C-2A section 12 - cross-instance cache correctness via a shared
     expect(entryCollectionReads).toBe(0); // served from cache
     expect(versionDocReads).toBe(1); // the one cheap check that proved the cache was still valid
   });
+
+  it('Phase 3C-2B Checkpoint 2 section 11: an APPROVAL becomes visible on the next read too, not only a revocation - simulating another instance approving what this process had cached as "nothing found"', async () => {
+    const db = createFakeFirestore();
+    await createDraftKnowledgeEntry(db, 'author1', draftInput());
+
+    // This process reads first, while the entry is still draft, and
+    // caches the "nothing approved" result.
+    const before = await retrieveApprovedKnowledge(db, { topics: ['INTERNAL_SELF'] });
+    expect(before.found).toBe(false);
+    expect(before.entries).toEqual([]);
+
+    // Simulate ANOTHER instance approving the entry - same pattern as the
+    // revocation test above: write the new status and bump the shared
+    // version stamp directly, never calling this process's own
+    // clearKnowledgeCache.
+    await db.collection('nhei_knowledge_entries').doc('entry1').update({
+      approvalStatus: 'approved', reviewerId: 'real_reviewer', lastReviewedAt: new Date().toISOString(),
+    });
+    await db.collection('nhei_knowledge_meta').doc('cache_version').set({ stamp: 'other-instance-approved-this' }, { merge: true });
+
+    // This process's local cache entry ("nothing found") is still within
+    // TTL, but the version mismatch must force a fresh read, surfacing
+    // the approval immediately rather than up to TTL seconds late.
+    const after = await retrieveApprovedKnowledge(db, { topics: ['INTERNAL_SELF'] });
+    expect(after.found).toBe(true);
+    expect(after.entries.map((e) => e.id)).toEqual(['entry1']);
+  });
 });
 
 async function db_setApproved(db: FirestoreLike, id: string): Promise<void> {
