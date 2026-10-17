@@ -17,7 +17,7 @@ vi.mock('twilio', () => ({ default: () => ({ messages: { create: vi.fn() } }) })
 
 import request from 'supertest';
 import { app } from './server';
-import { seedDoc, resetStore } from './test/fake-firestore';
+import { seedDoc, resetStore, forceDocError } from './test/fake-firestore';
 
 const ORG = 'org_1';
 const OTHER_ORG = 'org_2';
@@ -60,6 +60,18 @@ describe('POST /api/org/:orgId/devices/register', () => {
     seedMember(ORG, 'owner_1', 'owner');
     expect((await request(app).post(`/api/org/${ORG}/devices/register`).set(auth('owner_1')).send({ channel: 'nightly', appVersion: '1.0.0' })).status).toBe(400);
     expect((await request(app).post(`/api/org/${ORG}/devices/register`).set(auth('owner_1')).send({ channel: 'stable', appVersion: 'latest' })).status).toBe(400);
+  });
+
+  it('500s if the org read throws', async () => {
+    seedOrg(ORG, { adminUids: ['owner_1'], memberUids: ['owner_1'] });
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const restore = forceDocError(`organisations/${ORG}`, 'get', new Error('simulated Firestore outage'));
+    const res = await request(app).post(`/api/org/${ORG}/devices/register`).set(auth('owner_1')).send({ channel: 'stable', appVersion: '1.0.0' });
+    expect(res.status).toBe(500);
+    expect(res.body).toEqual({ error: 'Something went wrong on our end. Please try again.' });
+    expect(errorSpy).toHaveBeenCalled();
+    restore();
+    errorSpy.mockRestore();
   });
 });
 
@@ -175,6 +187,21 @@ describe('POST /api/org/:orgId/devices/:deviceId/check-for-update', () => {
     expect(res.body.updateAvailable).toBe(true);
     expect(res.body.latestVersion).toBe('1.5.0');
   });
+
+  it('500s if the org read throws', async () => {
+    seedOrg(ORG, { adminUids: ['owner_1'], memberUids: ['owner_1', 'member_1'] });
+    seedMember(ORG, 'member_1', 'member');
+    const reg = await request(app).post(`/api/org/${ORG}/devices/register`).set(auth('member_1')).send({ channel: 'stable', appVersion: '1.0.0' });
+    const id = reg.body.device.id;
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const restore = forceDocError(`organisations/${ORG}`, 'get', new Error('simulated Firestore outage'));
+    const res = await request(app).post(`/api/org/${ORG}/devices/${id}/check-for-update`).set(auth('member_1'));
+    expect(res.status).toBe(500);
+    expect(res.body).toEqual({ error: 'Something went wrong on our end. Please try again.' });
+    expect(errorSpy).toHaveBeenCalled();
+    restore();
+    errorSpy.mockRestore();
+  });
 });
 
 describe('platform release-channel config', () => {
@@ -190,6 +217,17 @@ describe('platform release-channel config', () => {
     const res = await request(app).get('/api/app-config/release-channels').set(auth('anyone'));
     expect(res.status).toBe(200);
     expect(res.body.channels.stable).toEqual({ minVersion: '1.0.0', latestVersion: '1.5.0' });
+  });
+
+  it('GET /api/app-config/release-channels: 500s if the config read throws', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const restore = forceDocError('app_config/release_channels', 'get', new Error('simulated Firestore outage'));
+    const res = await request(app).get('/api/app-config/release-channels').set(auth('anyone'));
+    expect(res.status).toBe(500);
+    expect(res.body).toEqual({ error: 'Something went wrong on our end. Please try again.' });
+    expect(errorSpy).toHaveBeenCalled();
+    restore();
+    errorSpy.mockRestore();
   });
 });
 

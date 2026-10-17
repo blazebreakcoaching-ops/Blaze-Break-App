@@ -869,6 +869,27 @@ to 63.71%, lines to 78.19%. Routes with a fully uncovered catch block:
 62 (down from 66). Next: governance routes and device management
 routes.
 
+## QA Batch 30: governance, device management, and release-channel catch blocks
+
+All four routes already had thorough happy-path coverage with no
+catch-block test. `GET /api/org/:orgId/governance` resolves via
+`requireOrgPermission` -> `loadOrgAndCallerRole`, so a `forceDocError`
+on the `organisations/<orgId>` read closes it. `POST
+/api/org/:orgId/devices/register` and `POST
+/api/org/:orgId/devices/:deviceId/check-for-update` call
+`loadOrgAndCallerRole` directly (role gate inline, not via a
+`requireOrg*` helper) - same target. `GET
+/api/app-config/release-channels` has no org at all: it's a flat
+`app_config/release_channels` doc read, closed with a `forceDocError`
+on that path instead.
+
+Measured effect: `server.ts` statement coverage rose to 77.29%, branch
+to 63.86%, lines to 78.38%. Routes with a fully uncovered catch block:
+59 (down from 62). Next: the remaining org-settings/invite family
+(sso/test, search/resources, regenerate-join-code, settings, invite,
+invites, invites/:email/cancel) and the standalone recognition/
+challenges delete-edit-toggle routes.
+
 ## What's shipped
 
 - `npm run test:coverage` (`vitest run --coverage`, `@vitest/coverage-v8`):

@@ -72,6 +72,18 @@ describe('GET /api/org/:orgId/governance', () => {
     expect(res.body.roleReference.owner).toEqual(expect.arrayContaining(['org.roles.manage', 'org.audit.read']));
     expect(res.body.roleReference.member).not.toContain('org.roles.manage');
   });
+
+  it('returns a generic 500 and logs the real error when the org read throws', async () => {
+    seedOrg();
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const restore = forceDocError(`organisations/${ORG}`, 'get', new Error('simulated Firestore outage'));
+    const res = await request(app).get(`/api/org/${ORG}/governance`).set(auth(OWNER));
+    expect(res.status).toBe(500);
+    expect(res.body).toEqual({ error: 'Something went wrong on our end. Please try again.' });
+    expect(errorSpy).toHaveBeenCalled();
+    restore();
+    errorSpy.mockRestore();
+  });
 });
 
 describe('audit trail now covers previously-unlogged Workplace actions', () => {
