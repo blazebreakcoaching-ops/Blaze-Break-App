@@ -27,7 +27,7 @@ vi.mock('@google/genai', () => ({
 
 import request from 'supertest';
 import { app } from './server';
-import { resetStore, fakeDb } from './test/fake-firestore';
+import { resetStore, fakeDb, forceCollectionError } from './test/fake-firestore';
 
 const auth = (uid: string) => ({ Authorization: `Bearer ${uid}` });
 
@@ -72,5 +72,15 @@ describe('POST /api/grounding/analytics-event', () => {
       eventType: 'pattern_explored', category: 'made_up_category',
     });
     expect(res.status).toBe(400);
+  });
+
+  it('500s if the write throws', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const restore = forceCollectionError('users/u5/grounding_analytics_events', 'add', new Error('simulated Firestore outage'));
+    const res = await request(app).post('/api/grounding/analytics-event').set(auth('u5')).send({ eventType: 'pattern_explored' });
+    expect(res.status).toBe(500);
+    expect(errorSpy).toHaveBeenCalled();
+    restore();
+    errorSpy.mockRestore();
   });
 });

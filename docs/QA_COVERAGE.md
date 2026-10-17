@@ -1191,6 +1191,53 @@ the 2 recurring false-positive re-flags, `GET /api/admin/summary` and
 `auth/password-reset/confirm-notify`, `pulse/report`, and the
 analytics-event trio (`grounding`/`movement`/`recovery-recipes`).
 
+## QA Batch 42: pulse/report + the analytics-event trio - gap closed
+
+`POST /api/pulse/report` had zero coverage of any kind - new dedicated
+file `pulse-report.route.test.ts` covers schema validation, that the
+score persists with a server-stamped `reportedAt`, and the catch via
+`forceDocError` on `pulse_status/latest`'s `set`. The analytics-event
+trio mirrors each other exactly (an event NAME plus at most one or two
+allowlisted enum fields, validated server-side, never free text):
+`grounding/analytics-event` had happy-path coverage only - closed with a
+`forceCollectionError` on `grounding_analytics_events`'s `add`;
+`movement/analytics-event` and `recovery-recipes/analytics-event` had
+zero coverage - two new dedicated files give both full happy-path (valid
+event accepted, only allowlisted fields recorded, unknown event/field
+rejected) and catch coverage, same pattern.
+
+While investigating `POST /api/auth/password-reset/confirm-notify`
+(flagged as fully uncovered), found it has **no catch block of its own
+at all** - `sendBrevoHtmlEmail`/`postToBrevoEmail` already catches every
+error internally and always resolves `true`/`false`, so this route
+genuinely cannot 500 from anything inside it. The "catch" the analyzer
+reports belongs to the unrelated `setMfaEnabledClaim` helper defined
+between this route and the next one - its regex finds the nearest
+textual `} catch (` after a route's line, with no sense of function
+boundaries, so a helper's catch sitting between two routes can be
+misattributed to the first one. Documented as a 6th
+structurally-unreachable site.
+
+Measured effect: `server.ts` statement coverage rose to 84.47%, branch to
+69.15%, lines to 85.64%. Routes with a fully uncovered catch block: **8**
+(down from 12) - and all 8 remaining are now accounted for as permanent
+exclusions, not real gaps:
+- Structurally unreachable (every I/O call already self-guards, so the
+  outer catch can never fire): `POST /api/support/request`, `POST
+  /api/twilio/send`, `GET /api/entitlements/pricing`, `POST
+  /api/boundary-autopilot/log-calendar-decline`, `POST /api/nova/chat`
+  (Batch 41), `POST /api/auth/password-reset/confirm-notify` (this batch).
+- Recurring false-positive re-flags (the analyzer's "first catch after
+  the route" heuristic picks an inner try/catch guarding a sub-operation
+  instead of the route's real, already-tested outer catch): `GET
+  /api/admin/summary`, `GET /api/org/:orgId/governance`.
+
+This closes the defensive-catch-block coverage gap that QA Batches
+26-42 worked through: every route in `server.ts` with a genuinely
+reachable, untested catch block now has one. Future batches would need
+`analyze_coverage.py` to flag a *new* route (e.g. one added after this
+point) rather than working through a backlog.
+
 ## What's shipped
 
 - `npm run test:coverage` (`vitest run --coverage`, `@vitest/coverage-v8`):
