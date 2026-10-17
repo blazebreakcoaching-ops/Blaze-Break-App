@@ -1,4 +1,4 @@
-// NHEI PHASE 2 - FIRESTORE PERSISTENCE / CONSENT SERVICE
+// NHEI PHASE 2/3A - FIRESTORE PERSISTENCE / CONSENT SERVICE
 //
 // The thin, consent-gated I/O layer Phase 1's pure engines never had and
 // were never meant to have. Every exported function here takes a
@@ -123,15 +123,85 @@ export async function withdrawNheiConsent(db: FirestoreLike, uid: string, purpos
 
 // ---- Evidence ----------------------------------------------------------
 
+// Phase 3A: "define an explicit allowlist of source collections that NHEI
+// may reference." A sourceRef is a pointer by id, never dereferenced, but
+// it is still DATA stored at rest - an unconstrained `collection: string`
+// would let a careless or malicious caller record a pointer into any
+// Firestore collection at all, which is itself a disclosure/confusion
+// risk even without ever being dereferenced (e.g. a pointer dressed up to
+// look like it references another user's document, or a collection this
+// app doesn't even recognise). Restricting it to a known, closed set of
+// collections that this app's own architecture already understands to be
+// per-user content sources closes that off.
+export const NHEI_ALLOWED_SOURCE_COLLECTIONS = [
+  'checkins',
+  'mood_pulses',
+  'body_checkins',
+  'wins',
+  'weekly_reviews',
+  'boundary_scripts',
+  'boundary_outcomes',
+  'nova_memories',
+  'nova_voice_sessions',
+  'recovery_fuel_logs',
+  'anxiety_reset_events',
+] as const;
+export type NheiAllowedSourceCollection = (typeof NHEI_ALLOWED_SOURCE_COLLECTIONS)[number];
+
+export const isAllowedNheiSourceCollection = (value: unknown): value is NheiAllowedSourceCollection =>
+  typeof value === 'string' && (NHEI_ALLOWED_SOURCE_COLLECTIONS as readonly string[]).includes(value);
+
+// Deliberately NOT a full Firestore path. Only a (collection, docId) pair
+// drawn from the allowlist above - there is no field here that could ever
+// be interpreted as an absolute path, a different user's uid segment, or
+// a collection this app doesn't recognise. "Ensure source references
+// cannot escape the authenticated user's authorised scope": the implied
+// full path is always `users/${uid}/${collection}/${docId}` for exactly
+// the uid the write is already scoped to (see buildSourceRefPath below) -
+// there is no way to express a cross-user reference in this shape at all.
+export interface NheiSourceRef {
+  collection: NheiAllowedSourceCollection;
+  docId: string;
+}
+
+const MAX_DOC_ID_LENGTH = 1500; // Firestore's own document id limit
+
+export function isValidNheiSourceRef(value: unknown): value is NheiSourceRef {
+  if (typeof value !== 'object' || value === null) return false;
+  const v = value as Record<string, unknown>;
+  return (
+    isAllowedNheiSourceCollection(v.collection) &&
+    typeof v.docId === 'string' &&
+    v.docId.length > 0 &&
+    v.docId.length <= MAX_DOC_ID_LENGTH &&
+    !v.docId.includes('/') // a slash would make this look like a multi-segment path, not a single doc id
+  );
+}
+
+// The full path a sourceRef implies, for whichever future, separately
+// authorised phase actually dereferences it. Exported so that future
+// dereferencing code builds the path the exact same way this file
+// validates it - always scoped under the SAME uid the evidence record
+// itself belongs to, never a path segment taken from the sourceRef data.
+export const buildNheiSourceRefPath = (uid: string, ref: NheiSourceRef): string =>
+  `users/${uid}/${ref.collection}/${ref.docId}`;
+
 export interface NheiPersistedEvidenceRecord extends NheiEvidenceRecord {
-  // Pointer only, by id - never the content it points at, and nothing in
-  // this file (or any other Phase 2 file) ever dereferences it.
-  sourceRef: { collection: string; docId: string } | null;
+  // Pointer only, by id, drawn from the allowlist above - never the
+  // content it points at, and nothing in this file (or any other Phase 2
+  // or Phase 3A file) ever dereferences it. See NHEI_ALLOWED_SOURCE_COLLECTIONS.
+  sourceRef: NheiSourceRef | null;
   createdAt: string;
   updatedAt: string;
 }
 
-export type NheiWriteBlockedReason = 'consent_required' | 'invalid_record' | 'source_type_not_permitted' | 'not_found';
+export type NheiWriteBlockedReason =
+  | 'consent_required'
+  | 'invalid_record'
+  | 'source_type_not_permitted'
+  | 'confirmation_state_not_settable_at_creation'
+  | 'invalid_source_ref'
+  | 'not_found';
 
 export type NheiWriteResult<T> =
   | { ok: true; value: T }
@@ -144,17 +214,68 @@ const SYSTEM_AUTHORED_SOURCE_TYPES: ReadonlySet<EvidenceSourceType> = new Set([
   'USER_CONFIRMED_INTERPRETATION',
 ]);
 
+// confirmationState values that represent a conclusion about evidence,
+// never a plain unexamined report of it. Phase 3A: "verify that user
+// confirmation states cannot be forged through future API requests."
+// These may ONLY be reached via the dedicated disputeNheiEvidence /
+// confirmNheiEvidence transition functions below (which ignore caller
+// input entirely and set a fixed literal) - a plain writeNheiEvidence
+// call can never create a record that is already confirmed or disputed
+// on arrival, which is exactly the forgery path a future request-body-
+// driven route could otherwise open.
+const CONCLUSORY_CONFIRMATION_STATES = new Set(['user_confirmed', 'user_disputed']);
+
 const evidenceCollectionPath = (uid: string) => `users/${uid}/nhei_evidence`;
 const correctionsCollectionPath = (uid: string, evidenceId: string) => `users/${uid}/nhei_evidence/${evidenceId}/corrections`;
 const relationsCollectionPath = (uid: string) => `users/${uid}/nhei_temporal_relations`;
 
+// Phase 3A: "privileged classifications must be derived from a verified
+// server-side authority, not merely a Boolean supplied by an external
+// caller." SYSTEM_AUTHORITY_BRAND is a module-private Symbol, never
+// exported. A JSON request body - from any route, present or future - can
+// never contain a JavaScript Symbol: JSON has no syntax for one, and
+// JSON.parse cannot produce one. So `{ [SYSTEM_AUTHORITY_BRAND]: true }`
+// can only ever be constructed by code that imports this exact symbol
+// value, which only this module's own grantNheiSystemAuthority function
+// does - there is no way to forge a token by crafting request data, only
+// by being trusted, in-process, hand-written server code that explicitly
+// calls the grant function below. This replaces the old plain
+// `allowSystemAuthoredSourceTypes?: boolean` flag, which a careless
+// future route handler could have set simply by spreading req.body.
+const SYSTEM_AUTHORITY_BRAND = Symbol('nhei:system-authority');
+
+export interface NheiSystemAuthorityToken {
+  readonly [SYSTEM_AUTHORITY_BRAND]: true;
+  // A short, required, human-readable label naming WHO granted this and
+  // why - never used for access control itself, only so a token shows up
+  // meaningfully in logs/audits rather than as an opaque true/false.
+  readonly grantedBy: string;
+}
+
+// The ONLY function in this codebase that can mint a token. Nothing in
+// Phase 3A calls this - it exists so a later, separately-reviewed,
+// genuinely server-verified caller (e.g. a real external-verification
+// pipeline) has an explicit, auditable, non-boolean way to opt in,
+// instead of this restriction being one stray `true` away from being
+// silently bypassed.
+export function grantNheiSystemAuthority(grantedBy: string): NheiSystemAuthorityToken {
+  if (!grantedBy || typeof grantedBy !== 'string') {
+    throw new Error('grantNheiSystemAuthority requires a non-empty grantedBy label for audit purposes.');
+  }
+  return { [SYSTEM_AUTHORITY_BRAND]: true, grantedBy };
+}
+
+function isValidSystemAuthorityToken(token: unknown): token is NheiSystemAuthorityToken {
+  if (typeof token !== 'object' || token === null) return false;
+  const t = token as Record<symbol, unknown> & Record<string, unknown>;
+  return t[SYSTEM_AUTHORITY_BRAND] === true && typeof t.grantedBy === 'string' && t.grantedBy.length > 0;
+}
+
 export interface WriteNheiEvidenceOptions {
-  sourceRef?: { collection: string; docId: string } | null;
-  // Never set to true by anything in Phase 2. Exists so a deliberately
-  // authorised future caller (e.g. a verified-event ingestion step with
-  // its own separate authorisation) has a documented, explicit opt-in
-  // rather than this restriction being silently workable around.
-  allowSystemAuthoredSourceTypes?: boolean;
+  sourceRef?: NheiSourceRef | null;
+  // Replaces the old boolean flag - see NheiSystemAuthorityToken above.
+  // Nothing in Phase 3A ever passes this.
+  systemAuthority?: NheiSystemAuthorityToken;
 }
 
 export async function writeNheiEvidence(
@@ -173,9 +294,22 @@ export async function writeNheiEvidence(
     return { ok: false, reason: 'invalid_record', errors: validation.errors };
   }
   const record = validation.record;
+  const hasSystemAuthority = isValidSystemAuthorityToken(options.systemAuthority);
 
-  if (SYSTEM_AUTHORED_SOURCE_TYPES.has(record.sourceType) && !options.allowSystemAuthoredSourceTypes) {
+  if (SYSTEM_AUTHORED_SOURCE_TYPES.has(record.sourceType) && !hasSystemAuthority) {
     return { ok: false, reason: 'source_type_not_permitted' };
+  }
+
+  // Even with system authority for the sourceType, a record cannot arrive
+  // already confirmed/disputed - that transition only ever happens via
+  // the dedicated functions below, so there is exactly one code path that
+  // can ever produce it, not two.
+  if (CONCLUSORY_CONFIRMATION_STATES.has(record.confirmationState)) {
+    return { ok: false, reason: 'confirmation_state_not_settable_at_creation' };
+  }
+
+  if (options.sourceRef != null && !isValidNheiSourceRef(options.sourceRef)) {
+    return { ok: false, reason: 'invalid_source_ref' };
   }
 
   const timestamp = nowIso();
@@ -248,6 +382,28 @@ export const disputeNheiEvidence = (db: FirestoreLike, uid: string, evidenceId: 
 export const confirmNheiEvidence = (db: FirestoreLike, uid: string, evidenceId: string) =>
   setConfirmationState(db, uid, evidenceId, 'user_confirmed');
 
+// Phase 3A: "identify any temporal relations referencing evidence that
+// has been deleted. Define and test suitable handling for those
+// references." Only PERSISTED relations can orphan this way -
+// SEQUENCE/COOCCURRENCE/RECURRENCE are always recomputed fresh from
+// whatever evidence currently exists (readNheiTemporalView), so a deleted
+// record simply stops appearing in them with nothing left to clean up.
+// Persisted asserted-influence relations are different: they are stored
+// documents that name specific event ids, and those ids can go stale the
+// moment the evidence they name is deleted. The handling chosen here is
+// cascade deletion, not orphan-tolerant reads - a relation that claims an
+// influence between two events is meaningless once one of those events no
+// longer exists, and silently keeping it around risks a future reader
+// treating a stale reference as if it still pointed at something real.
+async function deleteRelationsReferencingEvidence(db: FirestoreLike, uid: string, evidenceId: string): Promise<void> {
+  const snap = await db.collection(relationsCollectionPath(uid)).get();
+  const stale = snap.docs.filter((d) => {
+    const data = d.data() as Record<string, unknown> | undefined;
+    return data?.fromEventId === evidenceId || data?.toEventId === evidenceId;
+  });
+  await Promise.all(stale.map((d) => db.collection(relationsCollectionPath(uid)).doc(d.id).delete()));
+}
+
 // "Delete eligible NHEI personal data" - independent of consent state and
 // independent of full account deletion (which already covers this via
 // recursiveDelete, since this is a subcollection under users/{uid} - see
@@ -255,6 +411,7 @@ export const confirmNheiEvidence = (db: FirestoreLike, uid: string, evidenceId: 
 export async function deleteNheiEvidenceRecord(db: FirestoreLike, uid: string, evidenceId: string): Promise<void> {
   const correctionsSnap = await db.collection(correctionsCollectionPath(uid, evidenceId)).get();
   await Promise.all(correctionsSnap.docs.map((d) => db.collection(correctionsCollectionPath(uid, evidenceId)).doc(d.id).delete()));
+  await deleteRelationsReferencingEvidence(db, uid, evidenceId);
   await db.collection(evidenceCollectionPath(uid)).doc(evidenceId).delete();
 }
 
@@ -290,6 +447,59 @@ export async function writeNheiAssertedInfluence(
   const relationId = `${assertion.fromEventId}__${assertion.toEventId}__${assertion.relationType}`;
   await db.collection(relationsCollectionPath(uid)).doc(relationId).set({ ...relation, createdAt: nowIso() });
   return { ok: true, value: relation };
+}
+
+// ---- Export (GDPR Art. 15/20) -------------------------------------------
+//
+// Phase 3A: "confirm that nested correction-history records are included
+// in user data export, or correct the export implementation where
+// necessary." Checked against the REAL export endpoint
+// (/api/user/export in server.ts): it calls `userRef.listCollections()`,
+// which lists only the user document's DIRECT child collections, then
+// `.get()`s each one - it does not recurse into a document's own
+// subcollections. `users/{uid}/nhei_evidence` would be picked up that
+// way, but `users/{uid}/nhei_evidence/{id}/corrections` is a
+// subcollection of an EVIDENCE DOCUMENT, not of the user document, so it
+// would be silently missed by that endpoint exactly as written today.
+// (Account deletion does not have this problem: recursiveDelete walks
+// every descendant at any depth, not just direct children - deletion and
+// export are not symmetric here, which is exactly the kind of gap this
+// phase was asked to check for rather than assume away.)
+//
+// This export function is the fix: it is correct on its own (it walks
+// the nested corrections subcollection per evidence record explicitly)
+// and is what server.ts's export endpoint should call for NHEI data once
+// NHEI is wired into it - not currently done, since that wiring is itself
+// route/integration work outside Phase 3A's scope (see the delivery
+// report). Deliberately NOT consent-gated like the other read functions:
+// a GDPR export request must return a user's data regardless of whether
+// a given processing PURPOSE is currently consented to - withdrawing
+// consent stops NEW processing, it does not forfeit the right to see
+// what was already collected.
+export interface NheiExportedEvidenceRecord {
+  evidence: NheiPersistedEvidenceRecord;
+  corrections: Record<string, unknown>[];
+}
+
+export interface NheiExportBundle {
+  evidence: NheiExportedEvidenceRecord[];
+  temporalRelations: Record<string, unknown>[];
+}
+
+export async function exportAllNheiData(db: FirestoreLike, uid: string): Promise<NheiExportBundle> {
+  const evidenceSnap = await db.collection(evidenceCollectionPath(uid)).get();
+  const evidence = await Promise.all(evidenceSnap.docs.map(async (d) => {
+    const correctionsSnap = await db.collection(correctionsCollectionPath(uid, d.id)).get();
+    return {
+      evidence: d.data() as unknown as NheiPersistedEvidenceRecord,
+      corrections: correctionsSnap.docs.map((c) => c.data() as Record<string, unknown>),
+    };
+  }));
+  const relationsSnap = await db.collection(relationsCollectionPath(uid)).get();
+  return {
+    evidence,
+    temporalRelations: relationsSnap.docs.map((d) => d.data() as Record<string, unknown>),
+  };
 }
 
 export interface NheiTemporalView {

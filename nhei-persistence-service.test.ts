@@ -11,6 +11,10 @@ import {
   getNheiConsent,
   setNheiConsent,
   withdrawNheiConsent,
+  exportAllNheiData,
+  grantNheiSystemAuthority,
+  isValidNheiSourceRef,
+  buildNheiSourceRefPath,
   type FirestoreLike,
   type FirestoreCollectionRefLike,
   type FirestoreDocSnapshotLike,
@@ -111,7 +115,7 @@ describe('writeNheiEvidence / readNheiEvidence - default-off consent', () => {
     expect(await readNheiEvidence(db, 'userA')).toEqual([]);
   });
 
-  it('rejects a system-authored sourceType unless explicitly authorised', async () => {
+  it('rejects a system-authored sourceType unless granted a real NheiSystemAuthorityToken', async () => {
     const db = createFakeFirestore();
     await setNheiConsent(db, 'userA', 'reflection_storage', true);
     const blocked = await writeNheiEvidence(db, 'userA', validRecord({ sourceType: 'SYSTEM_HYPOTHESIS', confirmationState: 'unconfirmed' }));
@@ -121,9 +125,97 @@ describe('writeNheiEvidence / readNheiEvidence - default-off consent', () => {
     const allowed = await writeNheiEvidence(
       db, 'userA',
       validRecord({ sourceType: 'SYSTEM_HYPOTHESIS', confirmationState: 'unconfirmed' }),
-      { allowSystemAuthoredSourceTypes: true },
+      { systemAuthority: grantNheiSystemAuthority('test-suite') },
     );
     expect(allowed.ok).toBe(true);
+  });
+
+  it('a plain object imitating the token shape (as JSON from a request body would produce) is NOT a valid authority', async () => {
+    const db = createFakeFirestore();
+    await setNheiConsent(db, 'userA', 'reflection_storage', true);
+    // This is exactly what `JSON.parse('{"allowSystemAuthoredSourceTypes":true}')`
+    // or any other plain, request-body-shaped object would produce - no
+    // amount of plain-data impersonation can satisfy the real check, since
+    // the real token's brand is a module-private Symbol that cannot appear
+    // in anything deserialized from JSON.
+    const forgedToken = { allowSystemAuthoredSourceTypes: true, grantedBy: 'attacker' } as any;
+    const result = await writeNheiEvidence(
+      db, 'userA',
+      validRecord({ sourceType: 'SYSTEM_HYPOTHESIS', confirmationState: 'unconfirmed' }),
+      { systemAuthority: forgedToken },
+    );
+    expect(result.ok).toBe(false);
+    if (result.ok === false) expect(result.reason).toBe('source_type_not_permitted');
+  });
+
+  it('grantNheiSystemAuthority requires a non-empty audit label', () => {
+    expect(() => grantNheiSystemAuthority('')).toThrow();
+  });
+
+  it('rejects a record that arrives already confirmed or disputed at creation time - only dispute/confirm can set that', async () => {
+    const db = createFakeFirestore();
+    await setNheiConsent(db, 'userA', 'reflection_storage', true);
+    const confirmedAtCreation = await writeNheiEvidence(db, 'userA', validRecord({ confirmationState: 'user_confirmed' }));
+    expect(confirmedAtCreation.ok).toBe(false);
+    if (confirmedAtCreation.ok === false) expect(confirmedAtCreation.reason).toBe('confirmation_state_not_settable_at_creation');
+
+    const disputedAtCreation = await writeNheiEvidence(db, 'userA', validRecord({ confirmationState: 'user_disputed' }));
+    expect(disputedAtCreation.ok).toBe(false);
+    if (disputedAtCreation.ok === false) expect(disputedAtCreation.reason).toBe('confirmation_state_not_settable_at_creation');
+
+    // Even with real system authority, the same creation-time rule applies -
+    // there is exactly one path to a confirmed/disputed record (the
+    // dedicated transition functions), never two.
+    const withAuthority = await writeNheiEvidence(
+      db, 'userA',
+      validRecord({ sourceType: 'SYSTEM_HYPOTHESIS', confirmationState: 'user_confirmed' }),
+      { systemAuthority: grantNheiSystemAuthority('test-suite') },
+    );
+    expect(withAuthority.ok).toBe(false);
+    if (withAuthority.ok === false) expect(withAuthority.reason).toBe('confirmation_state_not_settable_at_creation');
+  });
+});
+
+describe('source provenance - sourceRef allowlist', () => {
+  it('accepts a sourceRef whose collection is on the allowlist', async () => {
+    const db = createFakeFirestore();
+    await setNheiConsent(db, 'userA', 'reflection_storage', true);
+    const result = await writeNheiEvidence(db, 'userA', validRecord(), { sourceRef: { collection: 'checkins', docId: 'c1' } });
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.value.sourceRef).toEqual({ collection: 'checkins', docId: 'c1' });
+  });
+
+  it('rejects a sourceRef whose collection is not on the allowlist, writing nothing', async () => {
+    const db = createFakeFirestore();
+    await setNheiConsent(db, 'userA', 'reflection_storage', true);
+    const result = await writeNheiEvidence(db, 'userA', validRecord(), { sourceRef: { collection: 'users', docId: 'userB' } as any });
+    expect(result.ok).toBe(false);
+    if (result.ok === false) expect(result.reason).toBe('invalid_source_ref');
+    expect(await readNheiEvidence(db, 'userA')).toEqual([]);
+  });
+
+  it('rejects a docId containing a slash, which would otherwise look like a multi-segment path', async () => {
+    const db = createFakeFirestore();
+    await setNheiConsent(db, 'userA', 'reflection_storage', true);
+    const result = await writeNheiEvidence(db, 'userA', validRecord(), { sourceRef: { collection: 'checkins', docId: '../other_uid/secret' } });
+    expect(result.ok).toBe(false);
+    if (result.ok === false) expect(result.reason).toBe('invalid_source_ref');
+  });
+
+  it('isValidNheiSourceRef rejects a non-object and an unknown collection', () => {
+    expect(isValidNheiSourceRef(null)).toBe(false);
+    expect(isValidNheiSourceRef('checkins')).toBe(false);
+    expect(isValidNheiSourceRef({ collection: 'users', docId: 'x' })).toBe(false);
+    expect(isValidNheiSourceRef({ collection: 'checkins', docId: 'x' })).toBe(true);
+  });
+
+  it('buildNheiSourceRefPath always scopes the implied path under the SAME uid the evidence belongs to', () => {
+    // The uid comes from the function's own argument, never from the
+    // sourceRef data itself - there is no field on NheiSourceRef capable
+    // of naming a different user's uid, so this can never resolve to a
+    // path outside the caller-supplied uid's own subtree.
+    const path = buildNheiSourceRefPath('userA', { collection: 'checkins', docId: 'c1' });
+    expect(path).toBe('users/userA/checkins/c1');
   });
 });
 
@@ -244,6 +336,25 @@ describe('deletion - independent of consent state', () => {
     const relations = await db.collection('users/userA/nhei_temporal_relations').get();
     expect(relations.docs).toHaveLength(0);
   });
+
+  it('deleting one of two events referenced by a persisted influence relation cascades - no orphaned relation remains', async () => {
+    const db = createFakeFirestore();
+    await setNheiConsent(db, 'userA', 'reflection_storage', true);
+    await setNheiConsent(db, 'userA', 'longitudinal_tracking', true);
+    await writeNheiEvidence(db, 'userA', validRecord({ id: 'a' }));
+    await writeNheiEvidence(db, 'userA', validRecord({ id: 'b' }));
+    await writeNheiEvidence(db, 'userA', validRecord({ id: 'c' }));
+    await writeNheiAssertedInfluence(db, 'userA', { fromEventId: 'a', toEventId: 'b', relationType: 'USER_ATTRIBUTED_INFLUENCE', interpretationConfidence: 'medium' });
+    // An unrelated relation between b and c must survive deleting 'a'.
+    await writeNheiAssertedInfluence(db, 'userA', { fromEventId: 'b', toEventId: 'c', relationType: 'HYPOTHESISED_INFLUENCE', interpretationConfidence: 'low' });
+
+    await deleteNheiEvidenceRecord(db, 'userA', 'a');
+
+    const relationsSnap = await db.collection('users/userA/nhei_temporal_relations').get();
+    const remaining = relationsSnap.docs.map((d) => d.data());
+    expect(remaining.some((r: any) => r.fromEventId === 'a' || r.toEventId === 'a')).toBe(false);
+    expect(remaining.some((r: any) => r.fromEventId === 'b' && r.toEventId === 'c')).toBe(true);
+  });
 });
 
 describe('writeNheiAssertedInfluence - longitudinal_tracking gate', () => {
@@ -338,5 +449,58 @@ describe('getNheiConsent', () => {
     expect(state.reflection_storage).toBe(true);
     expect(state.longitudinal_tracking).toBe(false);
     expect(state.routing_insights).toBe(false);
+  });
+});
+
+describe('exportAllNheiData - GDPR export completeness', () => {
+  it('includes nested correction-history records per evidence item, not just the evidence itself', async () => {
+    const db = createFakeFirestore();
+    await setNheiConsent(db, 'userA', 'reflection_storage', true);
+    await setNheiConsent(db, 'userA', 'longitudinal_tracking', true);
+    await writeNheiEvidence(db, 'userA', validRecord({ confirmationState: 'unconfirmed' }));
+    await disputeNheiEvidence(db, 'userA', 'ev1');
+    await confirmNheiEvidence(db, 'userA', 'ev1');
+
+    const bundle = await exportAllNheiData(db, 'userA');
+    expect(bundle.evidence).toHaveLength(1);
+    expect(bundle.evidence[0].evidence.id).toBe('ev1');
+    // Two transitions (unconfirmed->disputed, disputed->confirmed) means
+    // two correction-history entries - this is exactly the data a naive
+    // `listCollections()`-based export would miss, since it is nested
+    // under the evidence document, not the user document.
+    expect(bundle.evidence[0].corrections).toHaveLength(2);
+  });
+
+  it('includes persisted temporal relations', async () => {
+    const db = createFakeFirestore();
+    await setNheiConsent(db, 'userA', 'reflection_storage', true);
+    await setNheiConsent(db, 'userA', 'longitudinal_tracking', true);
+    await writeNheiEvidence(db, 'userA', validRecord({ id: 'a' }));
+    await writeNheiEvidence(db, 'userA', validRecord({ id: 'b' }));
+    await writeNheiAssertedInfluence(db, 'userA', { fromEventId: 'a', toEventId: 'b', relationType: 'USER_ATTRIBUTED_INFLUENCE', interpretationConfidence: 'high' });
+
+    const bundle = await exportAllNheiData(db, 'userA');
+    expect(bundle.temporalRelations).toHaveLength(1);
+  });
+
+  it('is NOT gated by consent - a GDPR export right survives consent withdrawal', async () => {
+    const db = createFakeFirestore();
+    await setNheiConsent(db, 'userA', 'reflection_storage', true);
+    await writeNheiEvidence(db, 'userA', validRecord());
+    await withdrawNheiConsent(db, 'userA', 'reflection_storage');
+
+    // The ordinary read path is now hidden (see "consent withdrawal vs.
+    // deletion" above) but the export path must still return the data -
+    // withdrawing consent stops new processing, it does not forfeit the
+    // Article 15/20 right to what was already collected.
+    expect(await readNheiEvidence(db, 'userA')).toEqual([]);
+    const bundle = await exportAllNheiData(db, 'userA');
+    expect(bundle.evidence).toHaveLength(1);
+  });
+
+  it('handles a uid with no NHEI data at all', async () => {
+    const db = createFakeFirestore();
+    const bundle = await exportAllNheiData(db, 'userA');
+    expect(bundle).toEqual({ evidence: [], temporalRelations: [] });
   });
 });
