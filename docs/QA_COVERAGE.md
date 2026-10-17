@@ -1084,6 +1084,37 @@ already documented in earlier batches). Next: `recovery/`
 `pulse/report`, and the analytics-event trio
 (`grounding`/`movement`/`recovery-recipes`).
 
+## QA Batch 39: recovery/recalculate, direction, my-outcomes, routing-outcome, velocity-map catch blocks
+
+`POST /api/recovery/recalculate` had happy-path coverage only - closed
+with a `forceDocError` on the first `derived/{key}.set()` write
+(`derived/recovery_debt`) inside its `Promise.all`. `GET
+/api/recovery/direction`, `GET /api/recovery/my-outcomes`, and `POST
+/api/recovery/routing-outcome` each had thorough happy-path coverage with
+no catch test: `direction`'s target is `capacity_checkins` (the first
+`Promise.all` read, reached before its own persistence write, which is
+already wrapped in its own non-fatal `.catch(() => {})` and so was never a
+usable catch target); `my-outcomes` via `forceCollectionError` on
+`recovery_routing_decisions`; `routing-outcome` via a `forceDocError` on
+the specific seeded decision doc's `get` (the lookup that precedes the
+existing 404-for-missing-decision branch). `GET /api/recovery/velocity-
+map` had zero coverage of any kind - got full happy-path + catch coverage
+in a new dedicated file `recovery-velocity-map.route.test.ts` (honest
+`hasAnyData: false` default, real day-bucketed energyOutput/recoveryInput
+computation from `stress_triggers`/`energy_budgets`/`focus_sessions`/
+`wins`/`mood_pulses`, 30-day window exclusion), closed via
+`forceCollectionError` on `stress_triggers`, the first array element.
+
+Measured effect: `server.ts` statement coverage rose to 82.91%, branch to
+68.2%, lines to 84.02%. Routes with a fully uncovered catch block: 18
+(down from 23). Next: `audit-log` (POST+GET), `anxiety-reset` (POST+GET),
+`nova/chat`, `nova/diagnose`, `nova/speech`,
+`auth/password-reset/confirm-notify`, `pulse/report`, and the
+analytics-event trio (`grounding`/`movement`/`recovery-recipes`) - plus
+the 4 structurally-unreachable routes and 2 recurring false-positive
+re-flags (`admin/summary`, `org/:orgId/governance`) that remain
+permanently excluded.
+
 ## What's shipped
 
 - `npm run test:coverage` (`vitest run --coverage`, `@vitest/coverage-v8`):

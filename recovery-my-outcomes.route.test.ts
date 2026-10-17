@@ -19,7 +19,7 @@ vi.mock('twilio', () => ({ default: () => ({ messages: { create: vi.fn() } }) })
 
 import request from 'supertest';
 import { app } from './server';
-import { resetStore, seedDoc } from './test/fake-firestore';
+import { resetStore, seedDoc, forceCollectionError } from './test/fake-firestore';
 
 const auth = (uid: string) => ({ Authorization: `Bearer ${uid}` });
 
@@ -57,5 +57,15 @@ describe('GET /api/recovery/my-outcomes', () => {
     expect(summary.sampleThreshold).toBe(3);
     expect(summary.sufficientSample).toBe(false); // 1 resolved < 3
     expect(summary.recommended).toBe(1); // still returned, not hidden
+  });
+
+  it('500s if the recovery_routing_decisions read throws', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const restore = forceCollectionError('users/user_me/recovery_routing_decisions', 'get', new Error('simulated Firestore outage'));
+    const res = await request(app).get('/api/recovery/my-outcomes').set(auth('user_me'));
+    expect(res.status).toBe(500);
+    expect(errorSpy).toHaveBeenCalled();
+    restore();
+    errorSpy.mockRestore();
   });
 });

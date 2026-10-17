@@ -27,7 +27,7 @@ vi.mock('twilio', () => ({ default: () => ({ messages: { create: vi.fn() } }) })
 import { vi } from 'vitest';
 import request from 'supertest';
 import { app } from './server';
-import { getDocRaw, resetStore } from './test/fake-firestore';
+import { getDocRaw, resetStore, forceDocError } from './test/fake-firestore';
 
 const USER = 'user_1';
 const auth = (uid: string) => ({ Authorization: `Bearer ${uid}` });
@@ -87,5 +87,15 @@ describe('POST /api/recovery/recalculate', () => {
     const stored = getDocRaw(`users/${USER}/derived/recovery_debt`);
     expect(stored).toBeDefined();
     expect((stored as any).status).toBe('not_enough_data');
+  });
+
+  it('500s if persisting a derived summary throws', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const restore = forceDocError(`users/${USER}/derived/recovery_debt`, 'set', new Error('simulated Firestore outage'));
+    const res = await request(app).post('/api/recovery/recalculate').set(auth(USER)).send({});
+    expect(res.status).toBe(500);
+    expect(errorSpy).toHaveBeenCalled();
+    restore();
+    errorSpy.mockRestore();
   });
 });
