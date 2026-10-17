@@ -17,7 +17,7 @@ vi.mock('twilio', () => ({ default: () => ({ messages: { create: vi.fn() } }) })
 
 import request from 'supertest';
 import { app } from './server';
-import { seedDoc, resetStore } from './test/fake-firestore';
+import { seedDoc, resetStore, forceDocError } from './test/fake-firestore';
 
 const ORG = 'org_1';
 const auth = (uid: string) => ({ Authorization: `Bearer ${uid}` });
@@ -182,5 +182,67 @@ describe('audit logging', () => {
     expect(entry.before.plan).toBe('free');
     expect(entry.after.plan).toBe('business');
     expect(entry.after.seatCount).toBe(50);
+  });
+});
+
+describe('POST/GET /api/org/:orgId/invite(s) — defensive catch blocks', () => {
+  it('POST /invite: 500s if the org read throws', async () => {
+    seedOrg(ORG, { adminUids: ['owner_1'], memberUids: ['owner_1'] });
+    seedMember(ORG, 'owner_1', 'owner');
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const restore = forceDocError(`organisations/${ORG}`, 'get', new Error('simulated Firestore outage'));
+    const res = await request(app).post(`/api/org/${ORG}/invite`).set(auth('owner_1')).send({ emails: ['a@example.com'] });
+    expect(res.status).toBe(500);
+    expect(res.body).toEqual({ error: 'Something went wrong on our end. Please try again.' });
+    expect(errorSpy).toHaveBeenCalled();
+    restore();
+    errorSpy.mockRestore();
+  });
+
+  it('GET /invites: 500s if the org read throws', async () => {
+    seedOrg(ORG, { adminUids: ['owner_1'], memberUids: ['owner_1'] });
+    seedMember(ORG, 'owner_1', 'owner');
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const restore = forceDocError(`organisations/${ORG}`, 'get', new Error('simulated Firestore outage'));
+    const res = await request(app).get(`/api/org/${ORG}/invites`).set(auth('owner_1'));
+    expect(res.status).toBe(500);
+    expect(res.body).toEqual({ error: 'Something went wrong on our end. Please try again.' });
+    expect(errorSpy).toHaveBeenCalled();
+    restore();
+    errorSpy.mockRestore();
+  });
+});
+
+describe('POST /api/org/:orgId/invites/:email/cancel', () => {
+  it('an admin can cancel a pending invite', async () => {
+    seedOrg(ORG, { adminUids: ['owner_1'], memberUids: ['owner_1'] });
+    seedMember(ORG, 'owner_1', 'owner');
+    await request(app).post(`/api/org/${ORG}/invite`).set(auth('owner_1')).send({ emails: ['a@example.com'] });
+
+    const res = await request(app).post(`/api/org/${ORG}/invites/a@example.com/cancel`).set(auth('owner_1'));
+    expect(res.status).toBe(200);
+
+    const invitesRes = await request(app).get(`/api/org/${ORG}/invites`).set(auth('owner_1'));
+    expect(invitesRes.body.invites.length).toBe(0);
+  });
+
+  it('refuses a non-admin', async () => {
+    seedOrg(ORG, { adminUids: ['owner_1'], memberUids: ['owner_1', 'member_1'] });
+    seedMember(ORG, 'member_1', 'member');
+    const res = await request(app).post(`/api/org/${ORG}/invites/a@example.com/cancel`).set(auth('member_1'));
+    expect(res.status).toBe(403);
+  });
+
+  it('500s if the org read throws', async () => {
+    seedOrg(ORG, { adminUids: ['owner_1'], memberUids: ['owner_1'] });
+    seedMember(ORG, 'owner_1', 'owner');
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const restore = forceDocError(`organisations/${ORG}`, 'get', new Error('simulated Firestore outage'));
+    const res = await request(app).post(`/api/org/${ORG}/invites/a@example.com/cancel`).set(auth('owner_1'));
+    expect(res.status).toBe(500);
+    expect(res.body).toEqual({ error: 'Something went wrong on our end. Please try again.' });
+    expect(errorSpy).toHaveBeenCalled();
+    restore();
+    errorSpy.mockRestore();
   });
 });

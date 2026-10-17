@@ -912,6 +912,26 @@ to 64.21%, lines to 78.96%. Routes with a fully uncovered catch block:
 54 (down from 59). Next: `invite`/`invites`/`invites/:email/cancel`
 and the standalone recognition/challenges delete-edit-toggle routes.
 
+## QA Batch 32: invite/invites/cancel + recognition delete + challenges toggle-active/edit catch blocks
+
+All six routes resolve via `requireOrgAdmin` -> `loadOrgAndCallerRole`'s
+`organisations/<orgId>` read. `POST /invite` and `GET /invites` already
+had happy-path coverage (incidentally, via the seat-limit tests in
+`org-billing.route.test.ts`) but no catch test. `POST
+/invites/:email/cancel`, `POST /recognition/:recognitionId/delete`,
+`POST /challenges/:challengeId/toggle-active`, and `POST
+/challenges/:challengeId/edit` had zero prior coverage of any kind -
+added full happy-path + RBAC + catch describe blocks for each, in the
+file that already owns that feature's other routes
+(`org-billing.route.test.ts`, `recognition-wall.route.test.ts`,
+`team-challenges.route.test.ts`).
+
+Measured effect: `server.ts` statement coverage rose to 78.67%, branch
+to 64.81%, lines to 79.82%. Routes with a fully uncovered catch block:
+48 (down from 54). Next: the `/api/ally/*` family (invite, revoke,
+regenerate-link, pause/resume-sharing, view/:token, preview,
+encourage, consent) and `/api/nudge-schedules` CRUD.
+
 ## What's shipped
 
 - `npm run test:coverage` (`vitest run --coverage`, `@vitest/coverage-v8`):

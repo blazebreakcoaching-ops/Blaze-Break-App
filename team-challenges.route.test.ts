@@ -168,3 +168,87 @@ describe('POST /api/org/:orgId/challenges/:challengeId/leave', () => {
     errorSpy.mockRestore();
   });
 });
+
+describe('POST /api/org/:orgId/challenges/:challengeId/toggle-active', () => {
+  it('an admin can toggle a challenge active/inactive', async () => {
+    seedOrg([OWNER], [OWNER]);
+    const create = await request(app).post(`/api/org/${ORG}/challenges`).set(auth(OWNER)).send({ title: 'x' });
+
+    const off = await request(app).post(`/api/org/${ORG}/challenges/${create.body.id}/toggle-active`).set(auth(OWNER));
+    expect(off.status).toBe(200);
+    expect(off.body.active).toBe(false);
+
+    const on = await request(app).post(`/api/org/${ORG}/challenges/${create.body.id}/toggle-active`).set(auth(OWNER));
+    expect(on.body.active).toBe(true);
+  });
+
+  it('refuses a non-admin', async () => {
+    seedOrg([OWNER], [OWNER, 'member_1']);
+    const create = await request(app).post(`/api/org/${ORG}/challenges`).set(auth(OWNER)).send({ title: 'x' });
+    const res = await request(app).post(`/api/org/${ORG}/challenges/${create.body.id}/toggle-active`).set(auth('member_1'));
+    expect(res.status).toBe(403);
+  });
+
+  it('404s for a nonexistent challenge', async () => {
+    seedOrg([OWNER], [OWNER]);
+    const res = await request(app).post(`/api/org/${ORG}/challenges/does-not-exist/toggle-active`).set(auth(OWNER));
+    expect(res.status).toBe(404);
+  });
+
+  it('500s if the org read throws', async () => {
+    seedOrg([OWNER], [OWNER]);
+    const create = await request(app).post(`/api/org/${ORG}/challenges`).set(auth(OWNER)).send({ title: 'x' });
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const restore = forceDocError(`organisations/${ORG}`, 'get', new Error('simulated Firestore outage'));
+    const res = await request(app).post(`/api/org/${ORG}/challenges/${create.body.id}/toggle-active`).set(auth(OWNER));
+    expect(res.status).toBe(500);
+    expect(res.body).toEqual({ error: 'Something went wrong on our end. Please try again.' });
+    expect(errorSpy).toHaveBeenCalled();
+    restore();
+    errorSpy.mockRestore();
+  });
+});
+
+describe('POST /api/org/:orgId/challenges/:challengeId/edit', () => {
+  it('an admin can edit title and description', async () => {
+    seedOrg([OWNER], [OWNER]);
+    const create = await request(app).post(`/api/org/${ORG}/challenges`).set(auth(OWNER)).send({ title: 'x' });
+    const res = await request(app).post(`/api/org/${ORG}/challenges/${create.body.id}/edit`).set(auth(OWNER))
+      .send({ title: 'Updated title', description: 'Updated description' });
+    expect(res.status).toBe(200);
+    expect(getDocRaw(`organisations/${ORG}/challenges/${create.body.id}`)?.title).toBe('Updated title');
+  });
+
+  it('rejects an empty or over-length title', async () => {
+    seedOrg([OWNER], [OWNER]);
+    const create = await request(app).post(`/api/org/${ORG}/challenges`).set(auth(OWNER)).send({ title: 'x' });
+    const empty = await request(app).post(`/api/org/${ORG}/challenges/${create.body.id}/edit`).set(auth(OWNER)).send({ title: '  ' });
+    expect(empty.status).toBe(400);
+  });
+
+  it('refuses a non-admin', async () => {
+    seedOrg([OWNER], [OWNER, 'member_1']);
+    const create = await request(app).post(`/api/org/${ORG}/challenges`).set(auth(OWNER)).send({ title: 'x' });
+    const res = await request(app).post(`/api/org/${ORG}/challenges/${create.body.id}/edit`).set(auth('member_1')).send({ title: 'y' });
+    expect(res.status).toBe(403);
+  });
+
+  it('404s for a nonexistent challenge', async () => {
+    seedOrg([OWNER], [OWNER]);
+    const res = await request(app).post(`/api/org/${ORG}/challenges/does-not-exist/edit`).set(auth(OWNER)).send({ title: 'y' });
+    expect(res.status).toBe(404);
+  });
+
+  it('500s if the org read throws', async () => {
+    seedOrg([OWNER], [OWNER]);
+    const create = await request(app).post(`/api/org/${ORG}/challenges`).set(auth(OWNER)).send({ title: 'x' });
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const restore = forceDocError(`organisations/${ORG}`, 'get', new Error('simulated Firestore outage'));
+    const res = await request(app).post(`/api/org/${ORG}/challenges/${create.body.id}/edit`).set(auth(OWNER)).send({ title: 'y' });
+    expect(res.status).toBe(500);
+    expect(res.body).toEqual({ error: 'Something went wrong on our end. Please try again.' });
+    expect(errorSpy).toHaveBeenCalled();
+    restore();
+    errorSpy.mockRestore();
+  });
+});

@@ -150,3 +150,41 @@ describe('POST /api/org/:orgId/recognition/:recognitionId/react', () => {
     errorSpy.mockRestore();
   });
 });
+
+describe('POST /api/org/:orgId/recognition/:recognitionId/delete', () => {
+  function seedOrgWithAdmin(adminUids: string[], memberUids: string[]) {
+    seedDoc(`organisations/${ORG}`, { name: 'Test Org', adminUids, memberUids });
+  }
+
+  it('an admin can delete a recognition post', async () => {
+    seedOrgWithAdmin(['owner_1'], ['owner_1', 'a1']);
+    const post = await request(app).post(`/api/org/${ORG}/recognition`).set(auth('a1')).send({ message: 'Nice job!' });
+
+    const res = await request(app).post(`/api/org/${ORG}/recognition/${post.body.id}/delete`).set(auth('owner_1'));
+    expect(res.status).toBe(200);
+
+    const list = await request(app).get(`/api/org/${ORG}/recognition`).set(auth('owner_1'));
+    expect(list.body.items.find((i: any) => i.id === post.body.id)).toBeUndefined();
+  });
+
+  it('refuses a non-admin member', async () => {
+    seedOrgWithAdmin(['owner_1'], ['owner_1', 'a1']);
+    const post = await request(app).post(`/api/org/${ORG}/recognition`).set(auth('a1')).send({ message: 'Nice job!' });
+
+    const res = await request(app).post(`/api/org/${ORG}/recognition/${post.body.id}/delete`).set(auth('a1'));
+    expect(res.status).toBe(403);
+  });
+
+  it('500s if the org read throws', async () => {
+    seedOrgWithAdmin(['owner_1'], ['owner_1', 'a1']);
+    const post = await request(app).post(`/api/org/${ORG}/recognition`).set(auth('a1')).send({ message: 'Nice job!' });
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const restore = forceDocError(`organisations/${ORG}`, 'get', new Error('simulated Firestore outage'));
+    const res = await request(app).post(`/api/org/${ORG}/recognition/${post.body.id}/delete`).set(auth('owner_1'));
+    expect(res.status).toBe(500);
+    expect(res.body).toEqual({ error: 'Something went wrong on our end. Please try again.' });
+    expect(errorSpy).toHaveBeenCalled();
+    restore();
+    errorSpy.mockRestore();
+  });
+});
