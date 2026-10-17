@@ -994,6 +994,40 @@ nova chat/diagnose/speech, audit-log, anxiety-reset, legal documents,
 user export/delete/weekly-recap/recommendation, recovery
 velocity-map/routing-outcome/direction, and the analytics-event trio.
 
+## QA Batch 36: ally/invite + legal-documents catch blocks; two confirmed structurally-unreachable/false-positive exclusions
+
+`POST /api/ally/invite` had happy-path coverage but no catch test -
+its Firestore writes (the `recovery_ally/state` doc, the Support
+Capsule defaults) aren't guarded by their own try/catch, so a
+`forceDocError` on that write closes a real gap. The four `/api/legal/*`
+routes (`GET /documents`, `GET /documents/:docType`, `POST
+/documents/:docType/accept`, `GET /acceptance-status`) all route
+through `getLegalDocument`, whose own `legal_documents/<docType>` read
+has no inner guard either - one `forceDocError` target closes all four.
+
+Two routes re-surfaced on this batch's uncovered list but are **not**
+new gaps: `GET /api/org/:orgId/governance` has an inner `try/catch`
+around a per-member `getAuth().getUser(uid)` lookup inside its
+`Promise.all` - the analyzer's "first catch after route" heuristic
+flags that inner catch instead of the real outer one, which Batch 30
+already covers (same false-positive pattern documented for
+`admin/summary` in Batch 16). `GET /api/admin/summary` is the same
+already-documented false positive recurring. Neither needs further
+work.
+
+Measured effect: `server.ts` statement coverage rose to 80.85%, branch
+to 66.17%, lines to 82.08%. Routes with a fully uncovered catch block:
+31 (down from 36, after confirming 2 of the 36 are the pre-existing
+false positives above rather than new work). Next: user
+export/delete-account/mark-activity/resume-prompt/weekly-recap/
+recommendation(-ledger)/outcome-tracker, recovery velocity-map/
+routing-outcome/my-outcomes/direction/recalculate, audit-log,
+anxiety-reset, and the analytics-event trio - `support/request`,
+`twilio/send`, `entitlements/pricing`, and
+`boundary-autopilot/log-calendar-decline` remain deliberately excluded
+as structurally-unreachable (documented in Batch 7 and this session's
+earlier findings).
+
 ## What's shipped
 
 - `npm run test:coverage` (`vitest run --coverage`, `@vitest/coverage-v8`):

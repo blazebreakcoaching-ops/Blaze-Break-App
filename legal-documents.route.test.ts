@@ -29,7 +29,7 @@ vi.mock('twilio', () => ({ default: () => ({ messages: { create: vi.fn() } }) })
 
 import request from 'supertest';
 import { app } from './server';
-import { resetStore, getDocRaw } from './test/fake-firestore';
+import { resetStore, getDocRaw, forceDocError } from './test/fake-firestore';
 import { DEFAULT_LEGAL_DOCUMENTS } from './legal-documents';
 
 const OWNER = 'owner_1';
@@ -60,6 +60,24 @@ describe('GET /api/legal/documents', () => {
     const res = await request(app).get('/api/legal/documents/NOT_A_REAL_DOC');
     expect(res.status).toBe(404);
   });
+
+  it('500s if the documents read throws', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const restore = forceDocError('legal_documents/TERMS', 'get', new Error('simulated Firestore outage'));
+    const res = await request(app).get('/api/legal/documents');
+    expect(res.status).toBe(500);
+    restore();
+    errorSpy.mockRestore();
+  });
+
+  it('GET /api/legal/documents/:docType: 500s if the document read throws', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const restore = forceDocError('legal_documents/TERMS', 'get', new Error('simulated Firestore outage'));
+    const res = await request(app).get('/api/legal/documents/TERMS');
+    expect(res.status).toBe(500);
+    restore();
+    errorSpy.mockRestore();
+  });
 });
 
 describe('POST /api/legal/documents/:docType/accept', () => {
@@ -88,6 +106,15 @@ describe('POST /api/legal/documents/:docType/accept', () => {
     const res = await request(app).post('/api/legal/documents/NOT_REAL/accept').set(auth(USER_A));
     expect(res.status).toBe(404);
   });
+
+  it('500s if the document read throws', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const restore = forceDocError('legal_documents/TERMS', 'get', new Error('simulated Firestore outage'));
+    const res = await request(app).post('/api/legal/documents/TERMS/accept').set(auth(USER_A));
+    expect(res.status).toBe(500);
+    restore();
+    errorSpy.mockRestore();
+  });
 });
 
 describe('GET /api/legal/acceptance-status', () => {
@@ -111,6 +138,15 @@ describe('GET /api/legal/acceptance-status', () => {
     const res = await request(app).get('/api/legal/acceptance-status').set(auth(USER_A));
     const outstandingTypes = res.body.outstanding.map((o: any) => o.docType);
     expect(outstandingTypes).not.toContain('COOKIE_NOTICE');
+  });
+
+  it('500s if a document read throws', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const restore = forceDocError('legal_documents/TERMS', 'get', new Error('simulated Firestore outage'));
+    const res = await request(app).get('/api/legal/acceptance-status').set(auth(USER_A));
+    expect(res.status).toBe(500);
+    restore();
+    errorSpy.mockRestore();
   });
 });
 

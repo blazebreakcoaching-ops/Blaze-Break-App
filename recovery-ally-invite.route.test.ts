@@ -25,7 +25,7 @@ vi.mock('firebase-admin/firestore', async () => {
 
 import request from 'supertest';
 import { app } from './server';
-import { resetStore, seedDoc } from './test/fake-firestore';
+import { resetStore, seedDoc, forceDocError } from './test/fake-firestore';
 
 const auth = (uid: string) => ({ Authorization: `Bearer ${uid}` });
 
@@ -89,5 +89,16 @@ describe('POST /api/ally/invite', () => {
     const res = await request(app).post('/api/ally/invite').set(auth('person_1')).send({ allyEmail: 'not-an-email' });
     expect(res.status).toBe(400);
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('500s if the state write throws', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const restore = forceDocError('users/person_1/recovery_ally/state', 'set', new Error('simulated Firestore outage'));
+    const res = await request(app).post('/api/ally/invite').set(auth('person_1')).send({ allyEmail: 'friend@example.com' });
+    expect(res.status).toBe(500);
+    expect(res.body).toEqual({ error: 'Something went wrong on our end. Please try again.' });
+    expect(errorSpy).toHaveBeenCalled();
+    restore();
+    errorSpy.mockRestore();
   });
 });
