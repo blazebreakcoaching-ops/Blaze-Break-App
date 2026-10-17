@@ -30,7 +30,7 @@ vi.mock('@google/genai', () => ({
 
 import request from 'supertest';
 import { app } from './server';
-import { seedDoc, resetStore } from './test/fake-firestore';
+import { seedDoc, resetStore, forceDocError } from './test/fake-firestore';
 import { getIsoWeekId } from './weekly-goal-tracker';
 
 const USER = 'user_owner';
@@ -253,5 +253,16 @@ describe('GET /api/user/resume-prompt', () => {
     });
     const res = await request(app).get('/api/user/resume-prompt').set(auth(USER));
     expect(res.body.tool).toBe('SHIP Journey'); // the most recent of the four seeded here
+  });
+
+  it('500s if the Recovery Plan progress read throws', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const restore = forceDocError(`users/${USER}/recovery_plan_progress/state`, 'get', new Error('simulated Firestore outage'));
+    const res = await request(app).get('/api/user/resume-prompt').set(auth(USER));
+    expect(res.status).toBe(500);
+    expect(res.body).toEqual({ error: 'Something went wrong on our end. Please try again.' });
+    expect(errorSpy).toHaveBeenCalled();
+    restore();
+    errorSpy.mockRestore();
   });
 });

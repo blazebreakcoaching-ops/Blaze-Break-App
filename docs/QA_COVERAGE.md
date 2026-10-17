@@ -1028,6 +1028,29 @@ anxiety-reset, and the analytics-event trio - `support/request`,
 as structurally-unreachable (documented in Batch 7 and this session's
 earlier findings).
 
+## QA Batch 37: user export/delete-account/mark-activity/resume-prompt catch blocks
+
+All four routes already had thorough happy-path coverage with no
+catch test. `GET /api/user/export`'s `forceDocError` targets the
+`users/<uid>` root-profile read (the first real call, before
+`listCollections()`/the stray-collection loop ever run). `POST
+/api/user/delete-account` routes through `eraseUserAccount`, whose
+org-membership cleanup is already wrapped in its own non-fatal
+try/catch - the real outer catch is reached instead via a
+`forceCollectionError` on `anxiety_reset_events` (an
+`eraseOnDeletion: true` stray collection), which is outside any
+guard. `POST /api/user/mark-activity` and `GET
+/api/user/resume-prompt` each close with a `forceDocError` on their
+own first real Firestore call (`derived/stats` write,
+`recovery_plan_progress/state` read).
+
+Measured effect: `server.ts` statement coverage rose to 80.97%, branch
+holds at 66.17%, lines to 82.2%. Routes with a fully uncovered catch
+block: 27 (down from 31). Next: `user/weekly-recap`,
+`user/recommendation(-ledger)`, `user/outcome-tracker`, `recovery/
+velocity-map`/`routing-outcome`/`my-outcomes`/`direction`/`recalculate`,
+`audit-log`, `anxiety-reset`, and the analytics-event trio.
+
 ## What's shipped
 
 - `npm run test:coverage` (`vitest run --coverage`, `@vitest/coverage-v8`):

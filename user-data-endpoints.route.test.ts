@@ -28,7 +28,7 @@ vi.mock('twilio', () => ({ default: () => ({ messages: { create: vi.fn() } }) })
 
 import request from 'supertest';
 import { app } from './server';
-import { seedDoc, getDocRaw, resetStore } from './test/fake-firestore';
+import { seedDoc, getDocRaw, resetStore, forceDocError, forceCollectionError } from './test/fake-firestore';
 
 const USER = 'user_owner';
 const OTHER = 'user_other';
@@ -98,6 +98,17 @@ describe('GET /api/user/export — portability (GDPR Art. 15/20)', () => {
   it('requires authentication', async () => {
     const res = await request(app).get('/api/user/export');
     expect(res.status).toBe(401);
+  });
+
+  it('500s if the root profile read throws', async () => {
+    seedFullUser();
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const restore = forceDocError(`users/${USER}`, 'get', new Error('simulated Firestore outage'));
+    const res = await request(app).get('/api/user/export').set(auth(USER));
+    expect(res.status).toBe(500);
+    expect(errorSpy).toHaveBeenCalled();
+    restore();
+    errorSpy.mockRestore();
   });
 });
 
@@ -177,5 +188,16 @@ describe('POST /api/user/delete-account — erasure (GDPR Art. 17)', () => {
   it('requires authentication', async () => {
     const res = await request(app).post('/api/user/delete-account');
     expect(res.status).toBe(401);
+  });
+
+  it('500s if erasing a stray collection throws', async () => {
+    seedFullUser();
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const restore = forceCollectionError('anxiety_reset_events', 'get', new Error('simulated Firestore outage'));
+    const res = await request(app).post('/api/user/delete-account').set(auth(USER));
+    expect(res.status).toBe(500);
+    expect(errorSpy).toHaveBeenCalled();
+    restore();
+    errorSpy.mockRestore();
   });
 });

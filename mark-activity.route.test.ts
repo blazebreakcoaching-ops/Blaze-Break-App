@@ -26,7 +26,7 @@ vi.mock('twilio', () => ({ default: () => ({ messages: { create: vi.fn() } }) })
 
 import request from 'supertest';
 import { app } from './server';
-import { getDocRaw, resetStore } from './test/fake-firestore';
+import { getDocRaw, resetStore, forceDocError } from './test/fake-firestore';
 
 const USER = 'user_1';
 const auth = (uid: string) => ({ Authorization: `Bearer ${uid}` });
@@ -55,5 +55,16 @@ describe('POST /api/user/mark-activity', () => {
     expect(res.status).toBe(200);
     const stored = getDocRaw(`users/${USER}/derived/stats`);
     expect(typeof stored?.lastSparkCheck).toBe('string');
+  });
+
+  it('500s if the stats write throws', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const restore = forceDocError(`users/${USER}/derived/stats`, 'set', new Error('simulated Firestore outage'));
+    const res = await request(app).post('/api/user/mark-activity').set(auth(USER)).send({ activity: 'blameReset' });
+    expect(res.status).toBe(500);
+    expect(res.body).toEqual({ error: 'Something went wrong on our end. Please try again.' });
+    expect(errorSpy).toHaveBeenCalled();
+    restore();
+    errorSpy.mockRestore();
   });
 });
