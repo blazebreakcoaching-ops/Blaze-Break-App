@@ -639,6 +639,50 @@ summarised here because it closes gaps this document itself was tracking.
   (`useNovaLiveVoice.ts`'s `buildInitialPrompt`) was reviewed and needs
   no component change to accept the same formatted string in a future
   phase — it is already a caller-supplied function.
+  **Phase 5F correction (directive §4):** the design above put this
+  content into `config.systemInstruction` — Gemini's elevated-trust
+  channel, the same one `NOVA_SYSTEM_PROMPT` and `NOVA_SAFETY_INSTRUCTIONS`
+  occupy — with no framing marking it as untrusted user text and nothing
+  stopping it from forging a fake instruction boundary. A real audit
+  finding, not a hypothetical: anything typed into Before Words sat at
+  the same trust level as Blaze Break's own safety rules. Fixed by adding
+  a new, separate, strictly-bounded, `.strict()`-validated
+  `beforeWordsContext` field to `ChatRequestSchema`
+  (`server.ts`); `quarantineTemporaryBeforeWordsContextForPrompt`
+  (`nova-before-words-temporary-context.ts`) wraps it in the same
+  nonce-delimited, delimiter-defusing, explicit "this is not an
+  instruction" pattern `quarantineKnowledgeEntryForPrompt`
+  (`nhei-knowledge-model-interface.ts`) already established for a
+  different kind of untrusted text, and the server places the result in
+  the ORDINARY MESSAGE text sent to the model (`chat.sendMessage`/
+  `callClaudeNovaChat`'s `message` argument), never in
+  `mergedSystemPrompt`. `NovaChat.tsx` no longer builds a
+  `beforeWordsAddendum` into `fullSystemInstruction` at all — it sends the
+  raw structured context as its own request field and lets the server do
+  the quarantining. Covered by `nova-before-words-temporary-context.test.ts`
+  (quarantine primitive: framing present, nonce-delimiter forgery
+  defused, prompt-injection content contained) and
+  `nova-chat-before-words-trust-boundary.route.test.ts` (end-to-end
+  through the real Express route: content never reaches the mocked
+  Gemini client's `config.systemInstruction`, does reach the ordinary
+  message text, oversized/malformed/extra-field payloads are rejected by
+  the schema). The Nova Live voice path was re-reviewed under this same
+  question and found NOT currently wired to Before Words at all —
+  `buildVoiceContext` (`NovaChat.tsx`) has no Before Words reference, and
+  the live-voice `initialPrompt` message is already sent via
+  `liveSession.sendClientContent({ turns, turnComplete: false })`
+  (`server.ts`) — ordinary conversation turns, not `systemInstruction` —
+  so there is no equivalent live-voice bug to fix, but also no live-voice
+  Before Words continuity to claim either; this remains unbuilt, not
+  merely unverified. Ordinary chat history is unaffected and separately
+  disclosed to the user: `NovaChat.tsx`'s `messages` state (persisted
+  client-side only, in `nova_chat_history` localStorage, never read or
+  written by the server) is built from the raw `messageText` the person
+  typed, never from the quarantined Before Words block, and
+  `src/components/NheiBeforeWords.tsx`'s own 'decided'-step copy now
+  names that existing, separate, on-device chat history explicitly, so
+  "temporary, not saved" (Before Words) is never confused with "kept on
+  this device so you can scroll back" (ordinary Nova chat).
 - **Browser-level and real-emulator test coverage, both new this phase**:
   a Firestore emulator integration suite (`npm run test:emulator`,
   `vitest.emulator.config.ts`) exercising the real Firebase Admin SDK

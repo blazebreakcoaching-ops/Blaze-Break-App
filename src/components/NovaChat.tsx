@@ -30,7 +30,7 @@ import { getFeatureFlags } from "../lib/feature-flags";
 import { GuardianSupportInvitation } from "./GuardianSupportInvitation";
 import { useGuardianSupportInvitationEnabled } from "../lib/useGuardianSupportInvitationEnabled";
 import { logGuardianSupportEvent } from "../lib/guardian-support-analytics";
-import { formatTemporaryBeforeWordsContextForNova, type NovaTemporaryBeforeWordsContext } from "../../nova-before-words-temporary-context";
+import type { NovaTemporaryBeforeWordsContext } from "../../nova-before-words-temporary-context";
 
 // The server's ChatRequestSchema (server.ts) caps history at 50 entries
 // and systemInstruction at 3000 characters, and rejects the whole request
@@ -112,12 +112,13 @@ export const NovaChat = ({
   // unprompted.
   autoOpenVoice?: boolean;
   onVoiceAutoOpened?: () => void;
-  // Phase 5E (directive §5): a session-only Before Words handoff, folded
-  // into this ONE outgoing turn's systemInstruction via
-  // formatTemporaryBeforeWordsContextForNova and never persisted by this
-  // component - the same no-new-storage, no-extra-model-call channel
-  // `systemInstruction` itself already is. The caller (not this
-  // component) owns the context's lifetime; `onTemporaryBeforeWordsContextConsumed`
+  // Phase 5E (directive §5), corrected by Phase 5F (directive §4): a
+  // session-only Before Words handoff for this ONE outgoing turn only,
+  // never persisted by this component. Sent as its own `beforeWordsContext`
+  // field in the request body (see handleSend) - the server quarantines
+  // and places it in the model's ordinary message channel, never in
+  // `systemInstruction`/the elevated-trust channel Phase 5E's version used.
+  // The caller (not this component) owns the context's lifetime; `onTemporaryBeforeWordsContextConsumed`
   // fires once it has actually been sent so the caller can clear its own
   // state - "allow skipping and withdrawing temporary context" means the
   // caller can simply never set this prop, or clear it before the next
@@ -735,21 +736,28 @@ We are now in real-time voice mode. Be concise and conversational, you don't nee
           "TONE OVERRIDE: Validate their resentment as valuable data. Encourage radical candor and setting boundaries, even if it causes minor friction.";
       }
 
-      // Phase 5E (directive §5): included for THIS turn only - never
-      // stored in `messages`/localStorage history, never re-sent on a
-      // later turn unless the caller explicitly keeps setting the prop.
-      const beforeWordsAddendum = temporaryBeforeWordsContext
-        ? `\n${formatTemporaryBeforeWordsContextForNova(temporaryBeforeWordsContext)}\n`
-        : "";
-
       const fullSystemInstruction = `
             ${systemInstruction || ""}
             User Burnout Fingerprint: ${JSON.stringify(fingerprint || "Not taken yet")}.
             ${dynamicContext}
-            ${beforeWordsAddendum}
             Conversation context is critical. Refer to past behaviors mentioned in history if relevant. Match the user's preferred tone noted above. Gently call out performance-identity fawning or anxiety-driven overwork if they're pretending things are urgent, but stay warm - this is a person going through burnout, not a performance review.
             ${toneModifier}
           `;
+      // Phase 5F (directive §4): Before Words content travels as its own
+      // field now, never folded into `fullSystemInstruction` above. Phase
+      // 5E's version concatenated the person's own words into the exact
+      // string sent as `systemInstruction` - the model's elevated-trust
+      // channel, the same one Blaze Break's own safety rules occupy - with
+      // no framing marking it as untrusted and nothing stopping it from
+      // forging a fake instruction boundary. The server now quarantines
+      // this field itself (nonce-delimited, explicitly framed as "not an
+      // instruction") and sends it in the ordinary message channel instead -
+      // see server.ts's `/api/nova/chat` handler and
+      // quarantineTemporaryBeforeWordsContextForPrompt. Included for THIS
+      // turn only - never stored in `messages`/localStorage history
+      // (`userMsg` above is built from the raw `messageText`, untouched by
+      // this), never re-sent on a later turn unless the caller explicitly
+      // keeps setting the prop.
       if (temporaryBeforeWordsContext) onTemporaryBeforeWordsContextConsumed?.();
 
       const response = await secureApiFetch("/api/nova/chat", {
@@ -769,6 +777,7 @@ We are now in real-time voice mode. Be concise and conversational, you don't nee
           systemInstruction: fullSystemInstruction.length > NOVA_SYSTEM_INSTRUCTION_LIMIT
             ? fullSystemInstruction.slice(0, NOVA_SYSTEM_INSTRUCTION_LIMIT)
             : fullSystemInstruction,
+          ...(temporaryBeforeWordsContext ? { beforeWordsContext: temporaryBeforeWordsContext } : {}),
         },
       });
 

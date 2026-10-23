@@ -191,8 +191,11 @@ export const NheiBeforeWords = ({
       </p>
       {temporaryContext ? (
         <p className="text-xs text-text-muted/80 p-3 bg-surface/50 rounded-lg">
-          What you just shared is available to Nova for this conversation only - it is not saved as a reflection and
-          will not be remembered after this session ends.
+          What you just shared is available to Nova for this one reply only - it is not saved as a reflection and
+          will not be remembered after this session ends. This is different from your regular Nova chat, where
+          Blaze Break does keep your message history on this device so you can scroll back through past
+          conversations - what you share here specifically, through Before Words, is kept apart from that and is not
+          added to it.
         </p>
       ) : (
         <p className="text-xs text-text-muted/60 italic">Nothing was shared, so there is nothing for Nova to use here.</p>

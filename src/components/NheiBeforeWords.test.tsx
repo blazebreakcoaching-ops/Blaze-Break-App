@@ -47,7 +47,8 @@ describe('NheiBeforeWords', () => {
     await userEvent.click(screen.getByRole('button', { name: /start whenever you're ready/i }));
     await userEvent.type(screen.getByLabelText(/free expression/i), 'Work has been relentless.');
     await userEvent.click(screen.getByRole('button', { name: /i'd rather not write anything right now/i }));
-    expect(screen.getByText(/available to nova for this conversation only/i)).toBeInTheDocument();
+    expect(screen.getByText(/available to nova for this one reply only/i)).toBeInTheDocument();
+    expect(screen.getByText(/different from your regular nova chat/i)).toBeInTheDocument();
   });
 
   it('proceeding with nothing written at all shows there is nothing for Nova to use', async () => {

@@ -38,6 +38,8 @@ import { effectiveConsentStatus, canRespondToConsent, computeInviteExpiresAt, is
 import { guardianSupportInvitationEnabled, validateGuardianSupportOffer, isValidGuardianSupportEventType, isValidGuardianSupportTemplateId, buildGuardianSupportMessage } from './guardian-support-invitation';
 import { quietHoursCheckPasses } from './ally-nudge-quiet-hours';
 import { collectionsForExport, collectionsForErasure, userIdFieldsFor } from './user-data-collections';
+import { sanitiseExportDoc, sanitiseExportCollectionsMap } from './export-credential-sanitiser';
+import { quarantineTemporaryBeforeWordsContextForPrompt } from './nova-before-words-temporary-context';
 // Phase 3C-2A section 8 wired exportAllNheiData (read-only GDPR export).
 // Phase 5C (directive §2, "implement real NHEI consent-writing
 // infrastructure") adds getNheiConsent/setNheiConsent/withdrawNheiConsent
@@ -2623,10 +2625,34 @@ RESPONSE CONSTRAINTS (MANDATORY):
   }
 }
 
+// Phase 5F (directive §4): the person's own Before Words content, as a
+// separate, strictly-bounded, structured field - never accepted as part
+// of `systemInstruction` (that field's 3000-char cap was never meant to
+// carry it, and folding it in there is exactly the trust-boundary bug
+// this phase closes). Shape mirrors NovaTemporaryBeforeWordsContext
+// (nova-before-words-temporary-context.ts) field-for-field; `.strict()`
+// on both this and the outer schema rejects any extra field a client
+// might try to smuggle in under this object.
+const BeforeWordsPromptResponseSchema = z.object({
+  category: z.enum(['what_happened', 'how_my_body_feels', 'what_im_thinking', 'what_i_need_right_now']),
+  text: z.string().max(1000),
+  uncertain: z.boolean(),
+}).strict();
+
+const BeforeWordsContextSchema = z.object({
+  kind: z.literal('temporary_before_words_context'),
+  freeExpressionText: z.string().max(2000),
+  promptResponses: z.array(BeforeWordsPromptResponseSchema).max(4),
+  corrections: z.array(z.string().max(1000)).max(10),
+  hasUncertainty: z.boolean(),
+  persisted: z.literal(false),
+}).strict();
+
 const ChatRequestSchema = z.object({
   message: z.string().min(1).max(2000),
   history: z.array(z.any()).max(50).optional().default([]), // loose type for history, but limited size
-  systemInstruction: z.string().max(3000).optional()
+  systemInstruction: z.string().max(3000).optional(),
+  beforeWordsContext: BeforeWordsContextSchema.optional()
 }).strict();
 
 // Nova tool use, phase 1: read-only tools only. Nothing here writes,
@@ -2989,7 +3015,23 @@ app.post("/api/nova/chat", novaChatLimiter, verifyAppCheck, authenticateFirebase
     if (!parsedParams.success) {
       return res.status(400).json({ error: "Invalid request payload or forbidden fields detected.", details: (parsedParams as any).error?.errors || [] });
     }
-    const { message, history, systemInstruction } = parsedParams.data;
+    const { message, history, systemInstruction, beforeWordsContext } = parsedParams.data;
+
+    // Phase 5F (directive §4): this is the actual trust-boundary fix.
+    // `beforeWordsContext`, if present, is quarantined (nonce delimiter +
+    // explicit "this is not an instruction" framing, from
+    // quarantineTemporaryBeforeWordsContextForPrompt) and prepended to the
+    // ORDINARY MESSAGE text sent to the model - never merged into
+    // `mergedSystemPrompt`/`config.systemInstruction` below, which is the
+    // elevated-trust channel NOVA_SYSTEM_PROMPT and NOVA_SAFETY_INSTRUCTIONS
+    // occupy. Built fresh from this one request's body only: nothing here
+    // reads or writes Firestore, so it cannot persist past this request,
+    // and it is never echoed back into `history` for a later turn to
+    // re-send - the client's own `message`/`history` fields are completely
+    // untouched by this.
+    const effectiveMessage = beforeWordsContext
+      ? `${quarantineTemporaryBeforeWordsContextForPrompt(beforeWordsContext).quarantinedText}\n\nTheir message for this reply:\n${message}`
+      : message;
 
     // Provider selection: Gemini's Developer API remains the default,
     // proven path every real user is currently on. Claude and Vertex each
@@ -3114,7 +3156,7 @@ app.post("/api/nova/chat", novaChatLimiter, verifyAppCheck, authenticateFirebase
 
     if (useClaudeForThisChat) {
       try {
-        const claudeResult = await callClaudeNovaChat(mergedSystemPrompt, history || [], message, uid, getDb(), abortController.signal);
+        const claudeResult = await callClaudeNovaChat(mergedSystemPrompt, history || [], effectiveMessage, uid, getDb(), abortController.signal);
         clearTimeout(timeoutId);
         return res.json({ text: claudeResult.text, privacyMetadata: contextMetadata, planTrace: claudeResult.planTrace });
       } catch (modelError: any) {
@@ -3142,7 +3184,7 @@ app.post("/api/nova/chat", novaChatLimiter, verifyAppCheck, authenticateFirebase
         history: history || [],
       });
 
-      let result = await chat.sendMessage({ message });
+      let result = await chat.sendMessage({ message: effectiveMessage });
 
       // Bounded loop: execute any requested tool calls, send results back,
       // and let the model continue - capped so a misbehaving model can't
@@ -5230,14 +5272,20 @@ app.get("/api/integrations/callback/:service", async (req, res) => {
     }
 
     const tokenBody = await tokenResponse.json();
+    // Phase 5F, directive §2 (PRIORITY ZERO - diagnostic-output audit):
+    // this is the provider's raw token-endpoint response - by definition
+    // the one payload in this whole flow most likely to carry a real
+    // access/refresh token, even on a response shaped like a failure (a
+    // provider can return a short-lived token alongside an error, or omit
+    // only one of the two expected fields). Never log it unsanitised.
     if (!tokenResponse.ok || tokenBody?.ok === false || tokenBody?.error) {
-      logger.error(`[Integrations] ${service} token exchange failed`, { responseBody: tokenBody });
+      logger.error(`[Integrations] ${service} token exchange failed`, { responseBody: sanitiseExportDoc(tokenBody || {}).doc });
       return failRedirect("token_exchange_failed");
     }
 
     const { accessToken, refreshToken, expiresIn } = provider.extractTokens(tokenBody);
     if (!accessToken) {
-      logger.error(`[Integrations] ${service} response had no access token`, { responseBody: tokenBody });
+      logger.error(`[Integrations] ${service} response had no access token`, { responseBody: sanitiseExportDoc(tokenBody || {}).doc });
       return failRedirect("no_access_token");
     }
 
@@ -5496,7 +5544,10 @@ async function getValidAccessToken(uid: string, service: string): Promise<string
 
     const body = await tokenResponse.json();
     if (!tokenResponse.ok || body?.error) {
-      logger.error(`[Integrations] ${service} token refresh failed`, { responseBody: body });
+      // See the §2 diagnostic-output note above the /callback route's own
+      // identical pattern - a refresh response can carry a real token
+      // alongside an error shape, so it's never logged unsanitised.
+      logger.error(`[Integrations] ${service} token refresh failed`, { responseBody: sanitiseExportDoc(body || {}).doc });
       // Phase 5E (directive §2, "expired or revoked token handling"): a
       // refresh that fails with the OAuth2-standard `invalid_grant` means
       // the refresh token itself is dead (revoked at the provider, or the
@@ -14710,13 +14761,32 @@ app.get("/api/user/export", exportLimiter, verifyAppCheck, authenticateFirebaseU
       data[colName] = [...merged.values()];
     }));
 
+    // PRIORITY ZERO security fix (Phase 5F, directive §2): the generic
+    // per-collection dump above (`data`) copied every direct subcollection
+    // under users/{uid} into this response verbatim, with only
+    // nhei_evidence/nhei_temporal_relations excluded. That never excluded
+    // integration_tokens (raw OAuth access/refresh tokens), oauth_pkce (a
+    // live PKCE code_verifier), security (the encrypted TOTP secret and
+    // hashed recovery codes), or recovery_ally (a live bearer shareToken) -
+    // see export-credential-sanitiser.ts's own header for the full
+    // reasoning. Applied to every representation this route assembles:
+    // the collections map (both the listCollections() walk and the stray
+    // top-level collections merged into it above), the NHEI export, and
+    // the root profile document - defense-in-depth even where a given
+    // source is not currently known to hold a secret field, since the
+    // whole point of the naming-pattern layer is to catch a FUTURE one
+    // without anyone having to remember to update this route.
+    const sanitisedData = sanitiseExportCollectionsMap(data as Record<string, Record<string, unknown>[]>);
+    const sanitisedNheiExport = sanitiseExportDoc(nheiExport as unknown as Record<string, unknown>);
+    const sanitisedProfile = rootSnap.exists ? sanitiseExportDoc(rootSnap.data() as Record<string, unknown>).doc : null;
+
     res.json({
       exportedAt: new Date().toISOString(),
       uid: user.uid,
       email: user.email || null,
-      profile: rootSnap.exists ? rootSnap.data() : null,
-      collections: data,
-      nhei: nheiExport,
+      profile: sanitisedProfile,
+      collections: sanitisedData,
+      nhei: sanitisedNheiExport.doc,
     });
   } catch (err: any) {
     logger.error("[Export] failed:", errorFields(err));

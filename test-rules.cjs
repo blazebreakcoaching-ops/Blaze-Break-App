@@ -497,6 +497,106 @@ async function runTests() {
     allowNheiReflectionStorage: 'yes', // wrong type - must fail, not coerce
   }));
 
+  // ------------------------------------------------------------------
+  // Phase 5F, directive §3: real Firestore-emulator rules tests for the
+  // server-only secret/action-record collections. Each gets the full
+  // three-identity sweep (unauthenticated, an unrelated authenticated
+  // user, and the document's own owner) PLUS a proof that the real
+  // server's own access path - the Admin SDK, via withSecurityRulesDisabled
+  // - still works, since these rules exist specifically to block the
+  // CLIENT SDK, never the Admin SDK server.ts actually uses.
+  console.log("Testing Phase 5F secret/action-record rules...");
+
+  const userB = testEnv.authenticatedContext('userB');
+
+  async function assertDeniedToEveryoneButAdmin(path, sampleData) {
+    const ownerRef = userA.firestore().doc(path);
+    const otherRef = userB.firestore().doc(path);
+    const unauthRef = unauth.firestore().doc(path);
+
+    // Seed via the Admin SDK first (exactly how the real server writes
+    // these) so the read-denial assertions below have a real doc to deny
+    // access to, not just an absent one (Firestore denies reads of
+    // nonexistent docs too, which would make the assertion meaningless).
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await ctx.firestore().doc(path).set(sampleData);
+    });
+
+    await assertFails(ownerRef.get());
+    await assertFails(ownerRef.set(sampleData));
+    await assertFails(otherRef.get());
+    await assertFails(otherRef.set(sampleData));
+    await assertFails(unauthRef.get());
+    await assertFails(unauthRef.set(sampleData));
+
+    // The real server's own access path must still work - these rules
+    // exist to block the client SDK, never the Admin SDK.
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await assertSucceeds(ctx.firestore().doc(path).get());
+      await assertSucceeds(ctx.firestore().doc(path).set(sampleData));
+    });
+  }
+
+  // * integration_tokens: raw OAuth access/refresh tokens.
+  await assertDeniedToEveryoneButAdmin(
+    'users/userA/integration_tokens/slack',
+    { accessToken: 'at', refreshToken: 'rt', expiresAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z' },
+  );
+
+  // * oauth_pkce: a live PKCE code_verifier mid-flow.
+  await assertDeniedToEveryoneButAdmin(
+    'users/userA/oauth_pkce/google_calendar_actions',
+    { codeVerifier: 'verifier-value', createdAt: '2026-01-01T00:00:00.000Z' },
+  );
+
+  // * security: the encrypted TOTP secret and hashed recovery codes.
+  await assertDeniedToEveryoneButAdmin(
+    'users/userA/security/mfa_totp',
+    { secretEncrypted: 'enc', enabled: true, enrolledAt: '2026-01-01T00:00:00.000Z', recoveryCodesHashed: [], failedAttempts: 0, lockedUntil: null, updatedAt: '2026-01-01T00:00:00.000Z' },
+  );
+
+  // * calendar_protection_proposals: server-authoritative proposal state
+  //   (directive's own "secrets AND server-authoritative action records
+  //   cannot be modified or accessed directly by ordinary clients").
+  await assertDeniedToEveryoneButAdmin(
+    'users/userA/calendar_protection_proposals/cpp_test1',
+    { proposalId: 'cpp_test1', state: 'awaiting_approval', startIso: '2026-01-01T00:00:00.000Z', endIso: '2026-01-01T01:00:00.000Z', title: 'Protected block', approvalFingerprint: 'fp', failureReason: null, retryCount: 0, approvedAt: null, approvalExpiresAt: null, activeAttemptId: null, externalEventId: null, lastTransitionAt: '2026-01-01T00:00:00.000Z' },
+  );
+
+  // * calendar_protection_audit: the append-only audit trail for the above.
+  await assertDeniedToEveryoneButAdmin(
+    'users/userA/calendar_protection_audit/entry1',
+    { proposalId: 'cpp_test1', event: 'prepared', detail: {}, at: '2026-01-01T00:00:00.000Z' },
+  );
+
+  // * Calendar action permission (allowCalendarActions, on the shared
+  //   nova_permissions/current doc) - explicitly named separately from
+  //   the NHEI consent fields above, even though it's the same doc/rule:
+  //   owner can set it with the right type, an unrelated user and an
+  //   unauthenticated caller cannot read or write it at all, and a wrong
+  //   type is rejected rather than coerced.
+  const calendarActionsPermRef = userA.firestore().collection('users').doc('userA').collection('nova_permissions').doc('current');
+  await assertSucceeds(calendarActionsPermRef.set({
+    allowCheckins: true, allowEnergyBudgets: true, allowMoodPulses: true, allowBodyCheckins: true,
+    allowWins: true, allowWeeklyReviews: true, allowBoundaryScripts: true, allowGoals: true,
+    allowRecoveryDebt: true, allowRecoveryVelocity: true, allowEnergyTrend: true, allowMoodTrend: true,
+    allowNovaMemory: true, allowNovaUseSavedMemories: true,
+    allowCalendarActions: true, allowCalendarActionsGrantedAt: '2026-01-01T00:00:00.000Z', allowCalendarActionsWithdrawnAt: null,
+  }));
+  await assertFails(calendarActionsPermRef.set({
+    allowCheckins: true, allowEnergyBudgets: true, allowMoodPulses: true, allowBodyCheckins: true,
+    allowWins: true, allowWeeklyReviews: true, allowBoundaryScripts: true, allowGoals: true,
+    allowRecoveryDebt: true, allowRecoveryVelocity: true, allowEnergyTrend: true, allowMoodTrend: true,
+    allowNovaMemory: true, allowNovaUseSavedMemories: true,
+    allowCalendarActions: 'yes', // wrong type - must fail, not coerce
+  }));
+  const otherUserCalendarActionsRef = userB.firestore().collection('users').doc('userA').collection('nova_permissions').doc('current');
+  await assertFails(otherUserCalendarActionsRef.get());
+  await assertFails(otherUserCalendarActionsRef.set({ allowCalendarActions: true }));
+  const unauthCalendarActionsRef = unauth.firestore().collection('users').doc('userA').collection('nova_permissions').doc('current');
+  await assertFails(unauthCalendarActionsRef.get());
+  await assertFails(unauthCalendarActionsRef.set({ allowCalendarActions: true }));
+
   console.log("All rule tests passed successfully!");
   await testEnv.cleanup();
 }

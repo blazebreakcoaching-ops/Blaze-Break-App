@@ -201,6 +201,68 @@ describe('GET /api/user/export — portability (GDPR Art. 15/20)', () => {
     restore();
     errorSpy.mockRestore();
   });
+
+  // Phase 5F, directive §2 (PRIORITY ZERO): this generic export route's own
+  // listCollections() dump used to copy integration_tokens, oauth_pkce,
+  // security, and recovery_ally into the response VERBATIM - no secret
+  // ever had to come back through a code path with its own tests, because
+  // nothing here explicitly excluded them. A deliberately injected
+  // sentinel value, distinctive enough that its presence anywhere in the
+  // raw response body is unambiguous, proves the fix at the one boundary
+  // that actually matters: the real HTTP response this route sends.
+  describe('PRIORITY ZERO (Phase 5F directive §2): secret-bearing collections are sanitised, never exported verbatim', () => {
+    const SENTINEL = 'SENTINEL_SECRET_MUST_NEVER_LEAK_9f3a7c';
+
+    function seedSecrets() {
+      seedDoc(`users/${USER}/integration_tokens/slack`, { accessToken: SENTINEL, refreshToken: SENTINEL, expiresAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z' });
+      seedDoc(`users/${USER}/oauth_pkce/google_calendar_actions`, { codeVerifier: SENTINEL, createdAt: '2026-01-01T00:00:00Z' });
+      seedDoc(`users/${USER}/security/mfa_totp`, {
+        secretEncrypted: SENTINEL, pendingSecretEncrypted: SENTINEL,
+        recoveryCodesHashed: [{ hash: SENTINEL, usedAt: null }],
+        enabled: true, enrolledAt: '2026-01-01T00:00:00Z', failedAttempts: 0, lockedUntil: null, updatedAt: '2026-01-01T00:00:00Z',
+      });
+      seedDoc(`users/${USER}/recovery_ally/state`, {
+        isInvited: true, allyName: 'Jordan', allyEmail: 'jordan@example.com', shareToken: SENTINEL,
+        invitedAt: '2026-01-01T00:00:00Z', consentStatus: 'pending', inviteExpiresAt: '2026-01-08T00:00:00Z',
+      });
+    }
+
+    it('never returns the sentinel secret anywhere in the response body', async () => {
+      seedFullUser();
+      seedSecrets();
+      const res = await request(app).get('/api/user/export').set(auth(USER));
+      expect(res.status).toBe(200);
+      expect(JSON.stringify(res.body)).not.toContain(SENTINEL);
+    });
+
+    it('still includes safe, non-secret metadata for each of those collections', async () => {
+      seedFullUser();
+      seedSecrets();
+      const res = await request(app).get('/api/user/export').set(auth(USER));
+
+      expect(res.body.collections.integration_tokens[0]).toMatchObject({ id: 'slack', expiresAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z', redactedForSecurity: true });
+      expect(res.body.collections.integration_tokens[0].accessToken).toBeUndefined();
+      expect(res.body.collections.integration_tokens[0].refreshToken).toBeUndefined();
+
+      expect(res.body.collections.oauth_pkce[0]).toMatchObject({ id: 'google_calendar_actions', createdAt: '2026-01-01T00:00:00Z', redactedForSecurity: true });
+      expect(res.body.collections.oauth_pkce[0].codeVerifier).toBeUndefined();
+
+      expect(res.body.collections.security[0]).toMatchObject({ id: 'mfa_totp', enabled: true, enrolledAt: '2026-01-01T00:00:00Z', failedAttempts: 0, redactedForSecurity: true });
+      expect(res.body.collections.security[0].secretEncrypted).toBeUndefined();
+      expect(res.body.collections.security[0].recoveryCodesHashed).toBeUndefined();
+
+      expect(res.body.collections.recovery_ally[0]).toMatchObject({ id: 'state', allyName: 'Jordan', allyEmail: 'jordan@example.com', consentStatus: 'pending', redactedForSecurity: true });
+      expect(res.body.collections.recovery_ally[0].shareToken).toBeUndefined();
+    });
+
+    it('a collection with nothing secret in it is completely unaffected (no redactedForSecurity marker)', async () => {
+      seedFullUser();
+      seedSecrets();
+      const res = await request(app).get('/api/user/export').set(auth(USER));
+      expect(res.body.collections.mood_pulses[0].redactedForSecurity).toBeUndefined();
+      expect(res.body.collections.guardian_alerts[0].redactedForSecurity).toBeUndefined();
+    });
+  });
 });
 
 describe('POST /api/user/delete-account — erasure (GDPR Art. 17)', () => {

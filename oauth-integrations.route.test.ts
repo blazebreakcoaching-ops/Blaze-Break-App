@@ -220,6 +220,29 @@ describe('GET /api/integrations/callback/:service - token exchange', () => {
     const res = await request(app).get(`/api/integrations/callback/jira?code=weird-response&state=${encodeURIComponent(state)}`);
     expect(res.headers.location).toContain('reason=no_access_token');
   });
+
+  // Phase 5F, directive §2 (PRIORITY ZERO - "audit whether security
+  // material is inadvertently exposed through logs"): a token-endpoint
+  // response shaped like a failure (an error field present) can still
+  // carry a real access_token alongside it - some providers do this. The
+  // failure-path logger.error call used to log that whole response body
+  // verbatim; it must never do that regardless of why the exchange failed.
+  it('never logs a real token that arrives alongside a failure-shaped token response', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const state = await getSignedState('jira_user', 'jira');
+    fetchMock.mockImplementationOnce(async () => ({
+      ok: false,
+      json: async () => ({ error: 'invalid_grant', access_token: 'LEAKED_TOKEN_MUST_NOT_BE_LOGGED', client_secret: 'LEAKED_SECRET_MUST_NOT_BE_LOGGED' }),
+    }));
+
+    const res = await request(app).get(`/api/integrations/callback/jira?code=bad-code&state=${encodeURIComponent(state)}`);
+    expect(res.headers.location).toContain('reason=token_exchange_failed');
+
+    const loggedText = JSON.stringify(errorSpy.mock.calls);
+    expect(loggedText).not.toContain('LEAKED_TOKEN_MUST_NOT_BE_LOGGED');
+    expect(loggedText).not.toContain('LEAKED_SECRET_MUST_NOT_BE_LOGGED');
+    errorSpy.mockRestore();
+  });
 });
 
 describe('POST /api/integrations/:service/disconnect and GET /api/integrations/status', () => {
