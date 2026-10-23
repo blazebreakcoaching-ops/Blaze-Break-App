@@ -38,6 +38,7 @@ import { effectiveConsentStatus, canRespondToConsent, computeInviteExpiresAt, is
 import { guardianSupportInvitationEnabled, validateGuardianSupportOffer, isValidGuardianSupportEventType, isValidGuardianSupportTemplateId, buildGuardianSupportMessage } from './guardian-support-invitation';
 import { quietHoursCheckPasses } from './ally-nudge-quiet-hours';
 import { collectionsForExport, collectionsForErasure, userIdFieldsFor } from './user-data-collections';
+import { sanitiseExportDoc, sanitiseExportCollectionsMap, extractOAuthFailureDiagnostics } from './export-credential-sanitiser';
 import { summarizeModuleOutcomes, RoutingDecisionRecord } from './recovery-outcomes-intelligence';
 import { GEMINI_TEXT_MODEL, GEMINI_TTS_MODEL, GEMINI_LIVE_MODEL, CLAUDE_CHAT_MODEL } from './ai-model-registry';
 import { summarizeFeatureUsage, countByDimension } from './product-intelligence';
@@ -4992,14 +4993,24 @@ app.get("/api/integrations/callback/:service", async (req, res) => {
     }
 
     const tokenBody = await tokenResponse.json();
+    // SECURITY HOTFIX (independent review): this is the provider's raw
+    // token-endpoint response - by definition the one payload in this
+    // flow most likely to carry a real access/refresh token, even on a
+    // response shaped like a failure (a provider can return a short-lived
+    // token alongside an error, or omit only one of the two expected
+    // fields). It used to be logged verbatim. extractOAuthFailureDiagnostics
+    // collects ONLY a fixed, known-safe set of standard OAuth2 diagnostic
+    // fields (plus Slack's own `ok` flag) and reduces everything else to
+    // its field NAME, never its value - see that function's own header
+    // comment in export-credential-sanitiser.ts.
     if (!tokenResponse.ok || tokenBody?.ok === false || tokenBody?.error) {
-      logger.error(`[Integrations] ${service} token exchange failed`, { responseBody: tokenBody });
+      logger.error(`[Integrations] ${service} token exchange failed`, extractOAuthFailureDiagnostics(tokenBody));
       return failRedirect("token_exchange_failed");
     }
 
     const { accessToken, refreshToken, expiresIn } = provider.extractTokens(tokenBody);
     if (!accessToken) {
-      logger.error(`[Integrations] ${service} response had no access token`, { responseBody: tokenBody });
+      logger.error(`[Integrations] ${service} response had no access token`, extractOAuthFailureDiagnostics(tokenBody));
       return failRedirect("no_access_token");
     }
 
@@ -5247,7 +5258,11 @@ async function getValidAccessToken(uid: string, service: string): Promise<string
 
     const body = await tokenResponse.json();
     if (!tokenResponse.ok || body?.error) {
-      logger.error(`[Integrations] ${service} token refresh failed`, { responseBody: body });
+      // SECURITY HOTFIX (independent review): same reasoning as the
+      // /callback route's own identical pattern above - a refresh
+      // response can carry a real token alongside an error shape, so
+      // only the bounded, known-safe diagnostic fields are ever logged.
+      logger.error(`[Integrations] ${service} token refresh failed`, extractOAuthFailureDiagnostics(body));
       return data.accessToken || null;
     }
     const { accessToken, refreshToken, expiresIn } = provider.extractTokens(body);
@@ -14005,12 +14020,27 @@ app.get("/api/user/export", exportLimiter, verifyAppCheck, authenticateFirebaseU
       data[colName] = [...merged.values()];
     }));
 
+    // SECURITY HOTFIX (independent review, see
+    // SECURITY_HOTFIX_INDEPENDENT_REVIEW_REPORT.md): this route's generic
+    // listCollections() dump above copied every direct subcollection under
+    // users/{uid} into the export response VERBATIM, with nothing
+    // excluded - including integration_tokens (raw OAuth access/refresh
+    // tokens), security (the encrypted TOTP secret and hashed recovery
+    // codes), recovery_ally (a live bearer shareToken), and
+    // push_subscriptions (a Web Push authentication secret). The root
+    // profile document went out unsanitised too. Applied to every
+    // representation this route assembles, as defense-in-depth, not just
+    // the collections already known to hold a secret - see
+    // export-credential-sanitiser.ts's own header for the full policy.
+    const sanitisedData = sanitiseExportCollectionsMap(data as Record<string, Record<string, unknown>[]>);
+    const sanitisedProfile = rootSnap.exists ? sanitiseExportDoc(rootSnap.data() as Record<string, unknown>).doc : null;
+
     res.json({
       exportedAt: new Date().toISOString(),
       uid: user.uid,
       email: user.email || null,
-      profile: rootSnap.exists ? rootSnap.data() : null,
-      collections: data,
+      profile: sanitisedProfile,
+      collections: sanitisedData,
     });
   } catch (err: any) {
     logger.error("[Export] failed:", errorFields(err));
