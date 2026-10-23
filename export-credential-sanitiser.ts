@@ -261,6 +261,15 @@ export interface OAuthFailureDiagnostics {
   errorUri: string | null;
   ok: boolean | null;
   otherFieldNames: string[];
+  // logger.ts's LogFields carries its own index signature (`[key: string]:
+  // unknown`) so arbitrary extra fields can be attached at any log call
+  // site; TypeScript only allows passing a named interface where an
+  // index-signature type is expected if that interface declares a
+  // compatible index signature of its own (passing a literal avoids this,
+  // but this value is built and returned from a function, never written
+  // inline at the call site). This line carries no runtime meaning - nothing
+  // ever reads an arbitrary key off a value typed as OAuthFailureDiagnostics.
+  [key: string]: unknown;
 }
 
 export function extractOAuthFailureDiagnostics(body: Record<string, unknown> | null | undefined): OAuthFailureDiagnostics {
