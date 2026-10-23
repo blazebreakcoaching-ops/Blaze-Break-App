@@ -1,4 +1,22 @@
-// NHEI PHASE 3C-2A - SECTION 5: SECURE KNOWLEDGE-TO-MODEL INTERFACE (PREPARED, NOT WIRED)
+// NHEI PHASE 3C-2A - SECTION 5: SECURE KNOWLEDGE-TO-MODEL INTERFACE
+//
+// UPDATED - Phase 3C-2B Checkpoint 2 §1 wired this in for real:
+// quarantineKnowledgeEntryForPrompt is now called by
+// nhei-nova-chat-educational-integration.ts's buildNheiEducationalChatAddendum,
+// which server.ts's POST /api/nova/chat route calls whenever both
+// Educational Mode gates are on. The paragraph below describing this file
+// as "prepared, not wired" and "nothing in this file is called by any
+// other file" is now historical - correcting it here (Phase 3
+// Operational Acceptance §1) rather than leaving a stale claim in place.
+// What is STILL true, unchanged: this defends the PROMPT CONSTRUCTION
+// step only (a deterministic, tested property of string construction),
+// never a claim about empirical model behaviour - guarantee B (whether a
+// real model actually honours this framing) remains open, see
+// docs/NHEI_REAL_MODEL_EVALUATION_PROCEDURE.md Part B and
+// nhei-real-model-adversarial-evaluation-runner.ts (Phase 3 Operational
+// Acceptance §5 - the harness that runs that empirical test, still
+// unexercised in this environment for the same credential reason as
+// nhei-real-model-evaluation-runner.ts).
 //
 // Nothing in this pipeline currently sends a retrieved NheiKnowledgeEntry
 // to a language model - composeEducationalResponse
@@ -16,6 +34,8 @@
 // text, it has an already-reviewed, already-tested starting point rather
 // than an ad-hoc string concatenation invented under deadline.
 //
+// The next paragraph is the ORIGINAL claim, left in place as history, and
+// is no longer accurate - see the UPDATED note above:
 // Nothing in this file is called by any other file in this phase, exactly
 // like nhei-extraction-service.ts's createGeminiExtractionCaller - it
 // exists for forward compatibility and review, not for current use.

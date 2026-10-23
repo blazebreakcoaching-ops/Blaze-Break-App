@@ -106,6 +106,29 @@ Mode would eventually retrieve from. Not accessible to ordinary users.
   that models Firestore's optimistic-concurrency retry, not just a
   sequential call order that would pass even against the old,
   non-transactional code).
+- **Admin UI** (Phase 3 Operational Acceptance §2): a small, focused
+  "NHEI Knowledge Review" tab inside the existing `AdminDashboard.tsx` -
+  not a new interface. Lists every entry, lets a reviewer inspect the
+  full entry (explanation, taxonomy, sources, evidence category,
+  reflection questions, safety restrictions, existing review status),
+  complete the 8-item checklist, and approve or reject - all through the
+  routes above. A separate small card lets a Platform Owner grant/revoke
+  the `nheiKnowledgeReviewer` claim by uid. A 403 from any call (e.g. an
+  admin with no reviewer grant) renders as a calm, specific message, not
+  an error banner - most admins who open this tab are expected to see it.
+- **Reviewer-claim revocation** (Phase 3 Operational Acceptance §3,
+  finding and fix): removing the `nheiKnowledgeReviewer` custom claim
+  alone does NOT invalidate an ID token already issued before the
+  revocation - `verifyIdToken(token, true)`'s revocation check only looks
+  at `getAuth().revokeRefreshTokens()`'s timestamp, never a specific
+  claim's value. The revoke branch of the grant/revoke route now calls
+  `revokeRefreshTokens` for the target uid, forcing every session for
+  that account to re-authenticate before its next request succeeds
+  anywhere in the app - the same immediate-effect tradeoff the existing
+  MFA-disable route already makes, for the same reason. Deliberately NOT
+  applied on grant (no comparable urgency, and it would be an unannounced
+  forced logout for a purely beneficial change). Tested directly
+  (`nhei-knowledge-review-admin.route.test.ts`).
 - **Draft-content import** (`nhei-knowledge-import-service.ts`): the 13
   entries in `nhei-knowledge-content-library.ts`/
   `nhei-knowledge-content-drafts.ts` were, until this phase, never

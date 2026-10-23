@@ -201,7 +201,7 @@ export const AdminDashboard = () => {
 
   const isAdmin = isPlatformAdminRole(appRole);
 
-  const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'entitlements' | 'admins' | 'orgs' | 'communications' | 'privacy' | 'audit' | 'health' | 'controls' | 'release' | 'incidents' | 'somatic' | 'feedback'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'entitlements' | 'admins' | 'orgs' | 'communications' | 'privacy' | 'audit' | 'health' | 'controls' | 'release' | 'incidents' | 'somatic' | 'feedback' | 'nheiKnowledge'>('overview');
   // Which account's Access Timeline is expanded in the Plans &
   // Entitlements tab - at most one open at a time, same pattern as other
   // single-item expand/collapse state in this file.
@@ -322,6 +322,48 @@ export const AdminDashboard = () => {
   const [expandedIncidentId, setExpandedIncidentId] = useState<string | null>(null);
   const [incidentUpdateForm, setIncidentUpdateForm] = useState<{ status: string; severity: string; note: string }>({ status: '', severity: '', note: '' });
   const [isUpdatingIncidentId, setIsUpdatingIncidentId] = useState<string | null>(null);
+
+  // NHEI Phase 3 Operational Acceptance §2: a small, focused internal
+  // review screen reusing the Phase 3 Closure admin endpoints - not a new
+  // interface, one more tab on this existing dashboard. nheiEntries holds
+  // EVERY entry regardless of approvalStatus (the reviewer needs to see
+  // drafts, not just approved ones); nheiError is separate from the page's
+  // global `error` banner because a 403 here ("you hold no reviewer grant")
+  // is an expected, calm state for most admins, not an alarm.
+  const [nheiEntries, setNheiEntries] = useState<{
+    id: string; title: string; educationalSummary: string; detailedExplanation: string;
+    topics: string[]; selfSystems: string[]; dimensions: string[]; evidenceCategory: string;
+    sourceReferences: string[]; reflectionQuestions: string[]; safetyRestrictions: string[];
+    ageGroup: string; approvalStatus: string; authorId: string; reviewerId: string | null;
+    lastReviewedAt: string | null;
+  }[] | null>(null);
+  const [isLoadingNheiEntries, setIsLoadingNheiEntries] = useState(false);
+  const [nheiError, setNheiError] = useState<string | null>(null);
+  const [selectedNheiEntryId, setSelectedNheiEntryId] = useState<string | null>(null);
+  const NHEI_CHECKLIST_KEYS = [
+    'noUnsupportedPsychologicalClaims', 'noUnnecessaryMedicalisation', 'noMisleadingCausation',
+    'noUnsupportedIdentityAssumptions', 'noExcessiveEmotionalAiDependence',
+    'appropriateForYouthLanguageWhereRelevant', 'noUnnecessarySensitiveDataCollection',
+    'noCulturalOrPhilosophicalBias',
+  ] as const;
+  const NHEI_CHECKLIST_LABELS: Record<typeof NHEI_CHECKLIST_KEYS[number], string> = {
+    noUnsupportedPsychologicalClaims: 'Makes no unsupported psychological claims',
+    noUnnecessaryMedicalisation: 'Does not unnecessarily medicalise ordinary experience',
+    noMisleadingCausation: 'Draws no misleading causal claims (sequence is not treated as cause)',
+    noUnsupportedIdentityAssumptions: 'Makes no unsupported assumptions about the reader’s identity',
+    noExcessiveEmotionalAiDependence: 'Does not encourage excessive emotional dependence on Nova',
+    appropriateForYouthLanguageWhereRelevant: 'Language is appropriate for a younger reader where relevant',
+    noUnnecessarySensitiveDataCollection: 'Collects no unnecessary sensitive data',
+    noCulturalOrPhilosophicalBias: 'Carries no unexamined cultural or philosophical bias',
+  };
+  const [nheiChecklist, setNheiChecklist] = useState<Record<string, boolean>>(
+    Object.fromEntries(NHEI_CHECKLIST_KEYS.map((k) => [k, false]))
+  );
+  const [isSubmittingNheiReview, setIsSubmittingNheiReview] = useState<'approve' | 'reject' | null>(null);
+  const [isRunningNheiImport, setIsRunningNheiImport] = useState(false);
+  const [nheiImportResult, setNheiImportResult] = useState<{ imported: number; alreadyImported: number; conflicts: number; rejected: number } | null>(null);
+  const [nheiReviewerGrantUid, setNheiReviewerGrantUid] = useState('');
+  const [isSettingNheiReviewerGrant, setIsSettingNheiReviewerGrant] = useState<'grant' | 'revoke' | null>(null);
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -917,6 +959,120 @@ export const AdminDashboard = () => {
     }
   };
 
+  // NHEI Phase 3 Operational Acceptance §2: the review screen's own data
+  // calls, against the Phase 3 Closure routes
+  // (GET/POST /api/admin/nhei-knowledge/...). Every call goes through
+  // secureApiFetch exactly like every other admin action on this page -
+  // reviewer identity is derived server-side from the verified ID token
+  // (requireNheiKnowledgeReviewer, server.ts), never sent from here.
+  const fetchNheiEntries = async () => {
+    setIsLoadingNheiEntries(true);
+    setNheiError(null);
+    try {
+      const res = await secureApiFetch('/api/admin/nhei-knowledge/entries');
+      if (res.status === 403) {
+        setNheiError("You don't hold NHEI knowledge reviewer access. A Platform Owner can grant it from the Promote Platform Admins tab's reviewer control.");
+        setNheiEntries([]);
+        return;
+      }
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}));
+        throw new Error(errorData.error || "Couldn't load knowledge entries.");
+      }
+      const data = await res.json();
+      setNheiEntries(data.entries || []);
+    } catch (e: any) {
+      setNheiError(e.message || "Couldn't load knowledge entries.");
+    } finally {
+      setIsLoadingNheiEntries(false);
+    }
+  };
+
+  const handleRunNheiImport = async () => {
+    setIsRunningNheiImport(true);
+    setNheiError(null);
+    try {
+      const res = await secureApiFetch('/api/admin/nhei-knowledge/import', { method: 'POST' });
+      if (res.status === 403) {
+        setNheiError("You don't hold NHEI knowledge reviewer access.");
+        return;
+      }
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}));
+        throw new Error(errorData.error || "Import failed.");
+      }
+      const report = await res.json();
+      setNheiImportResult(report);
+      showSuccess(`Import complete: ${report.imported} imported, ${report.alreadyImported} already imported, ${report.conflicts} conflicts, ${report.rejected} rejected.`);
+      await fetchNheiEntries();
+    } catch (e: any) {
+      setNheiError(e.message || 'Import failed.');
+    } finally {
+      setIsRunningNheiImport(false);
+    }
+  };
+
+  // decision is 'approve' or 'reject' - the checklist is only sent (and
+  // only required server-side) for 'approve'; rejectKnowledgeEntry takes
+  // no checklist, matching nhei-knowledge-governance.ts.
+  const handleNheiReview = async (entryId: string, decision: 'approve' | 'reject') => {
+    setIsSubmittingNheiReview(decision);
+    setNheiError(null);
+    try {
+      const res = await secureApiFetch(`/api/admin/nhei-knowledge/entries/${entryId}/review`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(decision === 'approve' ? { decision, checklist: nheiChecklist } : { decision }),
+      });
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}));
+        // Surfaced verbatim - these are the real, specific denial reasons
+        // (checklist_incomplete / reviewer_is_author / entry_not_in_draft_state /
+        // role_not_granted), not a generic failure message, so a reviewer
+        // can tell exactly why an action was refused.
+        throw new Error(errorData.error || 'Review action failed.');
+      }
+      showSuccess(decision === 'approve' ? 'Entry approved.' : 'Entry rejected.');
+      setSelectedNheiEntryId(null);
+      setNheiChecklist(Object.fromEntries(NHEI_CHECKLIST_KEYS.map((k) => [k, false])));
+      await fetchNheiEntries();
+    } catch (e: any) {
+      setNheiError(e.message || 'Review action failed.');
+    } finally {
+      setIsSubmittingNheiReview(null);
+    }
+  };
+
+  // Platform-Owner-only (server-enforced by requirePlatformOwner,
+  // server.ts) - a non-owner who tries this gets a 403 back, same as
+  // every other action on this screen. uid, not email, because the
+  // underlying claim is keyed by uid and this mirrors the grant route's
+  // own shape exactly - look up the uid from the Users tab first.
+  const handleSetNheiReviewerGrant = async (grant: boolean) => {
+    if (!nheiReviewerGrantUid.trim()) return;
+    setIsSettingNheiReviewerGrant(grant ? 'grant' : 'revoke');
+    setNheiError(null);
+    try {
+      const res = await secureApiFetch(`/api/admin/users/${nheiReviewerGrantUid.trim()}/nhei-knowledge-reviewer`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ grant }),
+      });
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}));
+        throw new Error(errorData.error || 'Could not update reviewer access.');
+      }
+      showSuccess(grant
+        ? `Granted NHEI knowledge reviewer access to ${nheiReviewerGrantUid.trim()}.`
+        : `Revoked NHEI knowledge reviewer access from ${nheiReviewerGrantUid.trim()}.`);
+      setNheiReviewerGrantUid('');
+    } catch (e: any) {
+      setNheiError(e.message || 'Could not update reviewer access.');
+    } finally {
+      setIsSettingNheiReviewerGrant(null);
+    }
+  };
+
   useEffect(() => {
     loadAllData();
   }, []);
@@ -940,6 +1096,9 @@ export const AdminDashboard = () => {
     }
     if (activeTab === 'incidents' && incidents === null && !isLoadingIncidents) {
       fetchIncidents();
+    }
+    if (activeTab === 'nheiKnowledge' && nheiEntries === null && !isLoadingNheiEntries) {
+      fetchNheiEntries();
     }
   }, [activeTab]);
 
@@ -1489,6 +1648,7 @@ export const AdminDashboard = () => {
           { id: 'controls', label: 'Platform Controls', icon: Settings2 },
           { id: 'release', label: 'Release Centre', icon: Rocket },
           { id: 'incidents', label: 'Incidents', icon: AlertTriangle },
+          { id: 'nheiKnowledge', label: 'NHEI Knowledge Review', icon: FileText },
           { id: 'somatic', label: 'Somatic De-escalation Stats', icon: Heart },
           { id: 'feedback', label: 'Feedback & Testimonials', icon: MessageSquare }
         ].map((tab) => {
@@ -2925,6 +3085,195 @@ export const AdminDashboard = () => {
                     <div className="py-12 text-center text-text-muted text-sm italic">
                       {(incidents || []).length === 0 ? 'No incidents have been logged yet.' : 'No incidents match this filter.'}
                     </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Tab: NHEI Knowledge Review (Phase 3 Operational Acceptance §2) */}
+        {activeTab === 'nheiKnowledge' && (
+          <div className="space-y-6">
+            <div className="p-4 bg-primary/5 border border-primary/20 rounded-xl text-xs text-text-muted leading-relaxed">
+              Internal review of NHEI's educational knowledge entries. Nothing here is visible to end users, and
+              approving an entry here never activates Educational Mode itself - that stays gated separately, off by
+              default, behind NHEI_EDUCATIONAL_MODE_ENABLED and the Firestore feature-governance doc. This screen
+              requires its own, separately-granted reviewer claim - holding any admin role, including Platform Owner,
+              is not by itself enough.
+            </div>
+
+            {nheiError && (
+              <div className="p-4 bg-red-500/10 border border-red-500/30 rounded-xl text-xs text-red-500">
+                {nheiError}
+              </div>
+            )}
+
+            <div className="card p-6 bg-surface dark:bg-card border border-border rounded-2xl">
+              <h4 className="font-display text-sm font-bold text-text-main mb-1">Reviewer access (Platform Owner only)</h4>
+              <p className="text-xs text-text-muted mb-3 max-w-xl">
+                Grants or revokes the separate nheiKnowledgeReviewer claim for a user, by uid (find it in the User
+                Roles & claims tab). Purely additive - this never touches that account's existing role or admin
+                permissions, and holding this claim grants nothing beyond this one screen.
+              </p>
+              <div className="flex items-center gap-2 flex-wrap">
+                <input
+                  aria-label="User uid"
+                  placeholder="User uid"
+                  value={nheiReviewerGrantUid}
+                  onChange={(e) => setNheiReviewerGrantUid(e.target.value)}
+                  className="flex-1 min-w-[200px] p-2.5 bg-background border border-border rounded-xl text-xs text-text-main placeholder:text-text-muted focus:outline-none focus:border-primary"
+                />
+                <button
+                  onClick={() => handleSetNheiReviewerGrant(true)}
+                  disabled={isSettingNheiReviewerGrant !== null || !nheiReviewerGrantUid.trim()}
+                  className="px-4 py-2.5 bg-primary hover:bg-primary-dark text-white text-xs font-bold uppercase tracking-wider rounded-lg transition-all disabled:opacity-50"
+                >
+                  {isSettingNheiReviewerGrant === 'grant' ? <Loader2 className="w-3.5 h-3.5 animate-spin inline" /> : 'Grant'}
+                </button>
+                <button
+                  onClick={() => handleSetNheiReviewerGrant(false)}
+                  disabled={isSettingNheiReviewerGrant !== null || !nheiReviewerGrantUid.trim()}
+                  className="px-4 py-2.5 bg-surface hover:bg-border text-text-main text-xs font-bold uppercase tracking-wider rounded-lg transition-all disabled:opacity-50"
+                >
+                  {isSettingNheiReviewerGrant === 'revoke' ? <Loader2 className="w-3.5 h-3.5 animate-spin inline" /> : 'Revoke'}
+                </button>
+              </div>
+            </div>
+
+            <div className="card p-6 bg-surface dark:bg-card border border-border rounded-2xl flex items-center justify-between flex-wrap gap-3">
+              <div>
+                <h4 className="font-display text-sm font-bold text-text-main">Draft-content import</h4>
+                <p className="text-xs text-text-muted mt-1 max-w-xl">
+                  Explicitly invoked only - creates the known knowledge-library entries as drafts if they don't
+                  already exist in this environment's Firestore. Never overwrites an existing or already-reviewed
+                  entry; a conflict is reported, never silently resolved.
+                </p>
+              </div>
+              <button
+                onClick={handleRunNheiImport}
+                disabled={isRunningNheiImport}
+                className="px-4 py-2.5 bg-primary hover:bg-primary-dark text-white text-xs font-bold uppercase tracking-wider rounded-lg transition-all flex items-center gap-2 disabled:opacity-50 shrink-0"
+              >
+                {isRunningNheiImport ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+                Run Import
+              </button>
+            </div>
+            {nheiImportResult && (
+              <div className="text-xs text-text-muted px-1">
+                Last import: {nheiImportResult.imported} imported, {nheiImportResult.alreadyImported} already imported,{' '}
+                {nheiImportResult.conflicts} conflicts, {nheiImportResult.rejected} rejected.
+              </div>
+            )}
+
+            <div className="card p-6 bg-surface dark:bg-card border border-border rounded-2xl">
+              <div className="flex items-center justify-between mb-4">
+                <h4 className="font-display text-sm font-bold text-text-main">Knowledge entries ({(nheiEntries || []).length})</h4>
+                <button onClick={fetchNheiEntries} disabled={isLoadingNheiEntries} className="text-text-muted hover:text-text-main transition-colors">
+                  <RefreshCw className={`w-4 h-4 ${isLoadingNheiEntries ? 'animate-spin' : ''}`} />
+                </button>
+              </div>
+              {isLoadingNheiEntries && (nheiEntries === null) ? (
+                <div className="py-8 flex justify-center"><Loader2 className="w-5 h-5 animate-spin text-text-muted" /></div>
+              ) : (
+                <div className="space-y-2">
+                  {(nheiEntries || []).map((entry) => {
+                    const isSelected = selectedNheiEntryId === entry.id;
+                    return (
+                      <div key={entry.id} className="border border-border rounded-xl overflow-hidden">
+                        <button
+                          onClick={() => setSelectedNheiEntryId(isSelected ? null : entry.id)}
+                          className="w-full flex items-center justify-between p-3 text-left hover:bg-background/50 transition-colors"
+                        >
+                          <div className="flex items-center gap-3 min-w-0">
+                            <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full shrink-0 ${
+                              entry.approvalStatus === 'approved' ? 'bg-green-500/10 text-green-500'
+                              : entry.approvalStatus === 'rejected' ? 'bg-red-500/10 text-red-500'
+                              : 'bg-yellow-500/10 text-yellow-500'
+                            }`}>
+                              {entry.approvalStatus}
+                            </span>
+                            <span className="text-sm text-text-main font-medium truncate">{entry.title}</span>
+                          </div>
+                          <span className="text-[10px] text-text-muted font-mono shrink-0">{entry.id}</span>
+                        </button>
+                        {isSelected && (
+                          <div className="p-4 border-t border-border bg-background/30 space-y-4">
+                            <div className="grid grid-cols-2 gap-3 text-xs">
+                              <div><span className="text-text-muted">Author:</span> <span className="text-text-main font-mono">{entry.authorId}</span></div>
+                              <div><span className="text-text-muted">Age group:</span> <span className="text-text-main">{entry.ageGroup}</span></div>
+                              <div><span className="text-text-muted">Evidence category:</span> <span className="text-text-main">{entry.evidenceCategory}</span></div>
+                              <div><span className="text-text-muted">Reviewer:</span> <span className="text-text-main font-mono">{entry.reviewerId || '—'}</span></div>
+                              <div className="col-span-2"><span className="text-text-muted">Topics:</span> <span className="text-text-main">{entry.topics.join(', ') || '—'}</span></div>
+                              <div className="col-span-2"><span className="text-text-muted">Self-systems / dimensions:</span> <span className="text-text-main">{[...entry.selfSystems, ...entry.dimensions].join(', ') || '—'}</span></div>
+                              <div className="col-span-2"><span className="text-text-muted">Safety restrictions:</span> <span className="text-text-main">{entry.safetyRestrictions.join(', ') || 'none'}</span></div>
+                            </div>
+                            <div>
+                              <p className="text-text-muted text-[10px] uppercase tracking-wider font-bold mb-1">Educational summary</p>
+                              <p className="text-xs text-text-main leading-relaxed">{entry.educationalSummary}</p>
+                            </div>
+                            <div>
+                              <p className="text-text-muted text-[10px] uppercase tracking-wider font-bold mb-1">Detailed explanation</p>
+                              <p className="text-xs text-text-main leading-relaxed whitespace-pre-wrap">{entry.detailedExplanation}</p>
+                            </div>
+                            <div>
+                              <p className="text-text-muted text-[10px] uppercase tracking-wider font-bold mb-1">Source references</p>
+                              {entry.sourceReferences.length > 0 ? (
+                                <ul className="text-xs text-text-main list-disc list-inside">
+                                  {entry.sourceReferences.map((s, i) => <li key={i}>{s}</li>)}
+                                </ul>
+                              ) : <p className="text-xs text-text-muted italic">None cited.</p>}
+                            </div>
+                            <div>
+                              <p className="text-text-muted text-[10px] uppercase tracking-wider font-bold mb-1">Reflection questions</p>
+                              <ul className="text-xs text-text-main list-disc list-inside">
+                                {entry.reflectionQuestions.map((q, i) => <li key={i}>{q}</li>)}
+                              </ul>
+                            </div>
+
+                            {entry.approvalStatus === 'draft' && (
+                              <div className="pt-3 border-t border-border space-y-3">
+                                <p className="text-text-muted text-[10px] uppercase tracking-wider font-bold">Review checklist (all required to approve)</p>
+                                <div className="space-y-1.5">
+                                  {NHEI_CHECKLIST_KEYS.map((key) => (
+                                    <label key={key} className="flex items-start gap-2 text-xs text-text-main cursor-pointer">
+                                      <input
+                                        type="checkbox"
+                                        checked={!!nheiChecklist[key]}
+                                        onChange={(e) => setNheiChecklist({ ...nheiChecklist, [key]: e.target.checked })}
+                                        className="mt-0.5"
+                                      />
+                                      <span>{NHEI_CHECKLIST_LABELS[key]}</span>
+                                    </label>
+                                  ))}
+                                </div>
+                                <div className="flex gap-2 pt-1">
+                                  <button
+                                    onClick={() => handleNheiReview(entry.id, 'approve')}
+                                    disabled={isSubmittingNheiReview !== null || !NHEI_CHECKLIST_KEYS.every((k) => nheiChecklist[k])}
+                                    className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-xs font-bold uppercase tracking-wider rounded-lg transition-all flex items-center gap-2 disabled:opacity-50"
+                                  >
+                                    {isSubmittingNheiReview === 'approve' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                                    Approve
+                                  </button>
+                                  <button
+                                    onClick={() => handleNheiReview(entry.id, 'reject')}
+                                    disabled={isSubmittingNheiReview !== null}
+                                    className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-xs font-bold uppercase tracking-wider rounded-lg transition-all flex items-center gap-2 disabled:opacity-50"
+                                  >
+                                    {isSubmittingNheiReview === 'reject' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <AlertCircle className="w-3.5 h-3.5" />}
+                                    Reject
+                                  </button>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                  {(nheiEntries || []).length === 0 && !isLoadingNheiEntries && !nheiError && (
+                    <p className="text-xs text-text-muted italic py-6 text-center">No knowledge entries exist in this environment yet - run the import above.</p>
                   )}
                 </div>
               )}

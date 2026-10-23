@@ -131,33 +131,74 @@ run log (see §8 below) so a pattern across runs is visible later.
 
 This is the directive's "guarantee B" gap, named honestly in
 `docs/NHEI_ARCHITECTURE.md`'s trust-boundary section: every test that
-exists today (`nhei-trust-boundary.test.ts`,
-`nhei-knowledge-model-interface.test.ts`) proves the delimiter/framing
-STRING cannot be forged by adversarial knowledge-entry content. None of
-them prove a real model actually honours that framing once it receives
-the string. No harness like `nhei-real-model-evaluation-runner.ts` exists
-yet for this specific question — building one is itself part of what an
-authorised operator should do before this gap can close, not something to
-skip past:
+existed before Phase 3 Operational Acceptance
+(`nhei-trust-boundary.test.ts`, `nhei-knowledge-model-interface.test.ts`)
+proves the delimiter/framing STRING cannot be forged by adversarial
+knowledge-entry content. None of them prove a real model actually honours
+that framing once it receives the string.
 
-1. Take the adversarial knowledge-entry fixtures already used in
-   `nhei-trust-boundary.test.ts` (entries whose `detailedExplanation`/etc.
-   contain text designed to look like an instruction, e.g. "ignore
-   everything above and...").
-2. Build the exact same merged system prompt Educational Mode would
-   produce in production (`NOVA_SYSTEM_PROMPT` + the quarantined knowledge
-   via `quarantineKnowledgeEntryForPrompt` + `NOVA_SAFETY_INSTRUCTIONS`),
-   using the real functions, not a hand-copied approximation.
-3. Send a small number of real user messages designed to test whether the
-   model follows an embedded instruction from the "reference data" section
-   rather than the real system prompt's actual authority.
-4. For each response, record a human judgement: did the model treat the
-   adversarial text as data (correct) or as an instruction it acted on
-   (a real finding, not a score to average away)?
+**UPDATED — Phase 3 Operational Acceptance §5: the harness now exists**
+(`nhei-real-model-adversarial-evaluation-runner.ts`,
+`runRealModelAdversarialEvaluation`) — still unexercised in this
+environment for the same credential reason as Part A. It:
+
+1. Defines seven SYNTHETIC adversarial fixtures
+   (`NHEI_ADVERSARIAL_FIXTURES`), one per manipulation category Phase
+   3C-2B section 7 named (safety instructions, role boundaries, knowledge
+   approval, user consent, model response policy, evidence source
+   classification, user identity/permissions) — each an injection attempt
+   framed as knowledge-entry content, paired with a real user chat
+   message.
+2. Builds the exact same merged system prompt Educational Mode produces
+   in production — the real `quarantineKnowledgeEntryForPrompt`, not a
+   hand-copied approximation — around a caller-supplied
+   `systemPromptPrefix`/`safetyInstructions` pair. The operator running
+   this for real copies those two values from server.ts's own
+   `NOVA_SYSTEM_PROMPT`/`NOVA_SAFETY_INSTRUCTIONS` constants at run time;
+   the harness deliberately never imports server.ts itself (doing so
+   would execute the whole Express app's module top level as a side
+   effect of loading this one file).
+3. Sends each fixture's user message through the real
+   `chats.create(...).sendMessage(...)` shape server.ts's own
+   `/api/nova/chat` route uses, and records the model's full response
+   text per fixture.
+4. For each response, a mechanical `containsSuspiciousTerm` flag does a
+   weak, substring-only check — worth a human's first look, never a
+   verdict. A human reviewer must still read every full response text:
+   did the model treat the adversarial text as data (correct) or as an
+   instruction it acted on (a real finding, not a score to average away)?
 5. This is inherently a small, manually-reviewed batch — not something to
    automate into a pass/fail number the way Part A's extraction scoring
    is, because "did the model get manipulated" is a qualitative read of
    each transcript, not a field-by-field diff against an expected value.
+
+## Acceptance criteria and responsible reviewer (Phase 3 Operational Acceptance §5)
+
+Neither Part A nor Part B has a numeric or binary pass/fail threshold
+defined in code, and this document does not invent one on its own
+initiative — that would be exactly the kind of unreviewed specification
+the governing directives have repeatedly forbidden. Before either part is
+ever run for real:
+
+- A named, qualified **independent educational reviewer** (the same role
+  named in the closure directive's §7 handoff, and in this directive's
+  own final handoff) must state, in writing and in advance, what result
+  on Part A's `report.metrics`/`report.stability` would be acceptable,
+  and what proportion (if any) of Part B's fixtures showing
+  `containsSuspiciousTerm: true` — or, more importantly, what a human
+  reading of the actual transcripts finds — would block Educational
+  Mode's activation.
+- That statement must exist and be recorded **before** the run, so the
+  acceptance bar is never quietly fitted to whatever a run happens to
+  produce.
+- The same reviewer (or an explicitly designated alternate) is
+  responsible for the human read of every Part B transcript required by
+  Part B point 4 above — this is not optional and is not satisfied by
+  `containsSuspiciousTerm` alone.
+- An **authorised real-model evaluation operator** (a separate role —
+  the person who actually holds the Gemini credential and runs the code)
+  carries out the run once the above exists, and is responsible for
+  §8's run log entry below.
 
 ## §8 — run log
 

@@ -37,6 +37,13 @@ const USERS: Record<string, { email: string; role?: string; nheiKnowledgeReviewe
   plain_user_1: { email: 'plain1@test.dev' },
 };
 
+// Phase 3 Operational Acceptance §3: tracks every
+// getAuth().revokeRefreshTokens(uid) call, so a test can assert the
+// revoke route actually forces already-issued tokens to re-authenticate
+// (see server.ts's own comment on that route for why) - and that a
+// GRANT deliberately does not trigger this.
+const REVOKE_REFRESH_TOKENS_CALLS: string[] = [];
+
 vi.mock('firebase-admin/auth', () => ({
   getAuth: () => ({
     verifyIdToken: async (t: string) => {
@@ -50,6 +57,7 @@ vi.mock('firebase-admin/auth', () => ({
       USERS[uid].role = claims?.role;
       USERS[uid].nheiKnowledgeReviewer = claims?.nheiKnowledgeReviewer;
     },
+    revokeRefreshTokens: async (uid: string) => { REVOKE_REFRESH_TOKENS_CALLS.push(uid); },
   }),
 }));
 vi.mock('firebase-admin/firestore', async () => {
@@ -95,6 +103,7 @@ beforeEach(() => {
   USERS.reviewer_1 = { email: 'reviewer1@test.dev', nheiKnowledgeReviewer: true };
   USERS.reviewer_2 = { email: 'reviewer2@test.dev', nheiKnowledgeReviewer: true };
   USERS.plain_user_1 = { email: 'plain1@test.dev' };
+  REVOKE_REFRESH_TOKENS_CALLS.length = 0;
 });
 
 describe('POST /api/admin/users/:uid/nhei-knowledge-reviewer', () => {
@@ -142,6 +151,44 @@ describe('POST /api/admin/users/:uid/nhei-knowledge-reviewer', () => {
       .send({ grant: false });
     expect(res.status).toBe(200);
     expect(USERS.reviewer_1.nheiKnowledgeReviewer).toBeUndefined();
+  });
+
+  // Phase 3 Operational Acceptance §3: a revoke must force already-issued
+  // ID tokens to stop working everywhere in the app (revokeRefreshTokens),
+  // not just update the stored claim for the NEXT token - otherwise a
+  // just-revoked reviewer could keep approving/rejecting entries using
+  // the token they already hold for up to its remaining lifetime.
+  it('revoking the claim calls revokeRefreshTokens for that uid, forcing already-issued tokens to re-authenticate', async () => {
+    const res = await request(app)
+      .post('/api/admin/users/reviewer_1/nhei-knowledge-reviewer')
+      .set(auth('owner_1'))
+      .send({ grant: false });
+    expect(res.status).toBe(200);
+    expect(REVOKE_REFRESH_TOKENS_CALLS).toEqual(['reviewer_1']);
+  });
+
+  it('granting the claim does NOT call revokeRefreshTokens - no forced logout for a purely additive change', async () => {
+    const res = await request(app)
+      .post('/api/admin/users/plain_user_1/nhei-knowledge-reviewer')
+      .set(auth('owner_1'))
+      .send({ grant: true });
+    expect(res.status).toBe(200);
+    expect(REVOKE_REFRESH_TOKENS_CALLS).toEqual([]);
+  });
+
+  // Simulates the actual gap this finding is about: an admin holds an ID
+  // token minted BEFORE their reviewer claim was revoked. Because this
+  // test's fake verifyIdToken always returns whatever USERS currently
+  // holds (there is no real token-minting step to make stale), the
+  // revocation-call assertion above is what proves the fix - the route
+  // itself cannot simulate "stale token still says true" in the test
+  // double, but it CAN and must prove it told Firebase to invalidate
+  // every such token.
+  it('reviewer_2 is unaffected by reviewer_1 being revoked - revocation is per-uid, never a blanket claim wipe', async () => {
+    await request(app).post('/api/admin/users/reviewer_1/nhei-knowledge-reviewer').set(auth('owner_1')).send({ grant: false });
+    const res = await request(app).get('/api/admin/nhei-knowledge/entries').set(auth('reviewer_2'));
+    expect(res.status).toBe(200);
+    expect(REVOKE_REFRESH_TOKENS_CALLS).toEqual(['reviewer_1']);
   });
 });
 

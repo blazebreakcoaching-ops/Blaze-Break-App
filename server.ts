@@ -7121,9 +7121,35 @@ app.post("/api/admin/users/:uid/nhei-knowledge-reviewer", verifyAppCheck, authen
     }
     const targetUid = req.params.uid;
     if (parsed.data.grant) {
+      // A grant is tolerant of the normal custom-claims propagation delay
+      // (a new claim only appears on a NEWLY MINTED ID token - the next
+      // sign-in, a forced getIdToken(true), or the SDK's own ~1 hour
+      // auto-refresh) - exactly the same latency every other admin claim
+      // grant in this app already accepts (mergeCustomClaims alone, no
+      // extra step), so this is not a new weaker guarantee.
       await mergeCustomClaims(targetUid, { nheiKnowledgeReviewer: true });
     } else {
       await removeCustomClaimKeys(targetUid, ['nheiKnowledgeReviewer']);
+      // NHEI Phase 3 Operational Acceptance §3 finding: removing a custom
+      // claim does NOT invalidate an ID token already issued before this
+      // moment - verifyIdToken(token, true)'s revocation check
+      // (authenticateFirebaseUser) only rejects tokens issued before
+      // getAuth().revokeRefreshTokens()'s timestamp, never a specific
+      // claim's value. Without this call, a reviewer whose access was
+      // just revoked could keep approving/rejecting entries for the rest
+      // of their current ID token's life (up to ~1 hour) using the
+      // now-stale token they already hold. Revoking refresh tokens here
+      // forces every session for this account to re-authenticate before
+      // its next request succeeds anywhere in the app - the same
+      // immediate-effect tradeoff the MFA-disable route already makes
+      // (see its own comment, same file) for the same reason: a
+      // revocation of elevated access should take effect now, not at the
+      // mercy of whenever this account's token happens to next refresh.
+      // Deliberately NOT applied to the grant branch above - there is no
+      // comparable urgency to force a newly-granted reviewer to
+      // re-authenticate immediately, and doing so there would just be an
+      // unannounced forced logout for a strictly beneficial change.
+      await getAuth().revokeRefreshTokens(targetUid);
     }
     await logAdminAction(req, "set_nhei_knowledge_reviewer", targetUid, "", { grant: parsed.data.grant });
     res.json({ success: true });

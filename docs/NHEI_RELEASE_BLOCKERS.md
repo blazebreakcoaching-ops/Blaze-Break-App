@@ -4,7 +4,10 @@ What stands between NHEI's current, fully-disabled state and activating
 any part of it for a real user, kept current in version control rather
 than only in a per-checkpoint delivery report. See `docs/NHEI_ARCHITECTURE.md`
 for what exists and how it fits together; this file is only the list of
-what's still blocking, organised by which mode it blocks.
+what's still blocking, organised by which mode it blocks. See
+`docs/NHEI_STAGING_EVALUATION_PLAN.md` for the plan (not yet executed) to
+evaluate Educational Mode in an isolated, non-production environment once
+enough of this register has moved to "decided and implemented."
 
 Each item is marked exactly one of:
 - **Decided and implemented** — built, tested, and verified in this codebase.
@@ -54,7 +57,14 @@ settled" — the whole point of this register is that they are not.
    four routes are tested end-to-end, including unauthorised-caller
    denial, self-approval rejection, and two-reviewer approval/rejection
    concurrency (see `nhei-knowledge-review-admin.route.test.ts`,
-   `nhei-knowledge-service.test.ts`). What remains is a product/governance
+   `nhei-knowledge-service.test.ts`). Phase 3 Operational Acceptance added
+   a small review tab inside the existing `AdminDashboard.tsx` (no new
+   interface) so a reviewer can actually use this without hand-rolled API
+   calls, and fixed a real finding: revoking the claim now also calls
+   `getAuth().revokeRefreshTokens()`, since removing a custom claim alone
+   does not invalidate an ID token already issued before the revocation —
+   without this, a just-revoked reviewer could keep acting for up to that
+   token's remaining lifetime. What remains is a product/governance
    decision, not engineering: granting the `nheiKnowledgeReviewer` claim
    to a specific, real, named human in a real environment.
 3. **Two operational governance gates, both currently OFF.**
@@ -64,15 +74,22 @@ settled" — the whole point of this register is that they are not.
    is a separate, future authorisation decision this register does not
    make.
 4. **Real-model verification of the quarantine boundary (guarantee B).**
-   *Not started — blocked on credentials.* No usable Gemini credential
-   exists in this environment. Every adversarial test that exists proves
-   the prompt-construction string cannot be forged; none proves a real
-   model actually honours the "this is reference data" framing. The exact
+   *Harness decided and implemented; the actual run is not started —
+   blocked on credentials.* No usable Gemini credential exists in this
+   environment. Every string-construction test that exists proves the
+   prompt-construction delimiter cannot be forged; none, until Phase 3
+   Operational Acceptance, had an executable harness to prove a real
+   model actually honours the "this is reference data" framing.
+   `nhei-real-model-adversarial-evaluation-runner.ts`
+   (`runRealModelAdversarialEvaluation`) is that harness now — seven
+   synthetic fixtures across the seven manipulation categories Phase
+   3C-2B section 7 named, built on the real `quarantineKnowledgeEntryForPrompt`
+   construction, wired and tested against a mocked client
+   (`nhei-real-model-adversarial-evaluation-runner.test.ts`), still
+   UNEXERCISED against a real model in this environment. The exact
    procedure an authorised operator would follow, once a credential and
    spending approval exist, is `docs/NHEI_REAL_MODEL_EVALUATION_PROCEDURE.md`
-   Part B — including the honest note that no harness for this specific
-   question exists yet either, so part of the work is building one, not
-   only running it.
+   Part B.
 
 ## Blocking Personal Reflection Mode (in addition to all of the above, since Educational Mode's own approval does not carry over)
 
