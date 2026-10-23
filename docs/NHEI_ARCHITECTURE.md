@@ -65,6 +65,62 @@ unaffected output (tested directly via Firestore-call spies). The
 educational addendum is always appended **before** the real safety floor,
 never after and never in place of it.
 
+## Internal knowledge-review workflow (Phase 3 Closure)
+
+Separate from Educational Mode's own activation gates (below), and
+touching neither of them: a real, auth-gated internal workflow for a
+human to inspect, approve, or reject the knowledge entries Educational
+Mode would eventually retrieve from. Not accessible to ordinary users.
+
+- **Reviewer identity**: a separate, ADDITIVE Firebase custom claim,
+  `nheiKnowledgeReviewer: true` — never a value in the single-valued
+  `APP_USER_ROLES` claim `/api/admin/users/:uid/role` writes, since that
+  would replace/strip whatever role the target already holds. Granted or
+  revoked only via `POST /api/admin/users/:uid/nhei-knowledge-reviewer`
+  (Platform-Owner-only). Checked server-side by
+  `requireNheiKnowledgeReviewer(req)` (`server.ts`), which has no
+  platform-owner or legacy-admin bypass — holding `platform_owner` alone
+  does not grant review authority, by design (mirrors
+  `nhei-authority-contract.ts`'s own stated principle that approving
+  educational content is a specific, auditable responsibility, not a side
+  effect of a broader admin role).
+- **Routes** (all behind `requireNheiKnowledgeReviewer`, except the grant
+  route which is Platform-Owner-only):
+  - `GET /api/admin/nhei-knowledge/entries` — lists every entry
+    regardless of `approvalStatus` (`listAllKnowledgeEntriesForReview`,
+    `nhei-knowledge-service.ts`), for inspection.
+  - `POST /api/admin/nhei-knowledge/entries/:entryId/review` — approve or
+    reject, via `handleNheiKnowledgeReviewRequest`
+    (`nhei-knowledge-review-service-boundary.ts`), which derives reviewer
+    identity from the verified caller only, never a request body field.
+  - `POST /api/admin/nhei-knowledge/import` — the idempotent,
+    explicitly-invoked import described below.
+- **Approve/reject concurrency**: `approveKnowledgeEntry`/
+  `rejectKnowledgeEntry` (`nhei-knowledge-service.ts`) now run inside a
+  real Firestore transaction (`db.runTransaction`), reading the entry
+  inside the transaction and failing closed with
+  `transaction_support_required` if no transaction support exists. Two
+  reviewers racing on the same still-draft entry can no longer silently
+  overwrite each other — one succeeds, the other correctly sees
+  `entry_not_in_draft_state` (tested directly against a fake Firestore
+  that models Firestore's optimistic-concurrency retry, not just a
+  sequential call order that would pass even against the old,
+  non-transactional code).
+- **Draft-content import** (`nhei-knowledge-import-service.ts`): the 13
+  entries in `nhei-knowledge-content-library.ts`/
+  `nhei-knowledge-content-drafts.ts` were, until this phase, never
+  imported into Firestore by any production code path — confirmed by
+  exhaustive grep, only test files ever referenced them. This file
+  creates each as a real draft via the existing
+  `createDraftKnowledgeEntry` (which itself refuses to overwrite an
+  existing document id). Idempotent: re-running reports
+  `already_imported` for anything unchanged, and a clear
+  `conflict_existing_entry_differs` (never an overwrite) for a document
+  whose content has diverged since — including a document a reviewer has
+  since approved or rejected, since the comparison only ever looks at
+  content fields, never governance ones. Never auto-publishes anything;
+  every created document is a draft.
+
 ## Other engines that exist, offline/unwired today
 
 - `nhei-trifecta-engine.ts` / `nhei-dimensions-engine.ts` — summarise
@@ -144,7 +200,8 @@ forge a fake closing boundary. This is a proven, tested property of
 safety floor always lands after it. It is **not**, and is never claimed
 to be, a proof that a real model will always honour that framing; no
 real-model test has been run against this content (no usable credential
-exists in this environment — see `docs/NHEI_RELEASE_BLOCKERS.md`).
+exists in this environment — see `docs/NHEI_RELEASE_BLOCKERS.md` and the
+operator procedure in `docs/NHEI_REAL_MODEL_EVALUATION_PROCEDURE.md` Part B).
 
 ## Where this document can go stale
 

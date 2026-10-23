@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { topicsFromNheiPersonalContextSummary, retrieveEducationForNheiContext } from './nhei-knowledge-bridge';
 import { createDraftKnowledgeEntry, approveKnowledgeEntry } from './nhei-knowledge-service';
-import type { FirestoreLike, FirestoreCollectionRefLike } from './nhei-persistence-service';
+import type { FirestoreLike, FirestoreCollectionRefLike, FirestoreTransactionLike } from './nhei-persistence-service';
 import type { NheiPersonalContextSummary } from './nhei-context-integration';
 import type { NheiKnowledgeReviewChecklist } from './nhei-knowledge-governance';
 
@@ -35,7 +35,16 @@ function createFakeFirestore(): FirestoreLike {
       },
     };
   }
-  return { collection };
+  async function runTransaction<T>(fn: (tx: FirestoreTransactionLike) => Promise<T>): Promise<T> {
+    const tx: FirestoreTransactionLike = {
+      get: ((ref: any) => ref.get()) as FirestoreTransactionLike['get'],
+      set: (ref, data, options) => { void ref.set(data, options); },
+      update: (ref, data) => { void ref.update(data); },
+      delete: (ref) => { void ref.delete(); },
+    };
+    return fn(tx);
+  }
+  return { collection, runTransaction };
 }
 
 const FULL_CHECKLIST: NheiKnowledgeReviewChecklist = {

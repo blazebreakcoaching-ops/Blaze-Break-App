@@ -18,18 +18,45 @@ settled" — the whole point of this register is that they are not.
 ## Blocking Educational Mode specifically
 
 1. **Independent human review of all 13 knowledge entries.** *Not
-   started.* All 13 entries (9 in `nhei-knowledge-content-library.ts`, 4
-   in `nhei-knowledge-content-drafts.ts`) are `approvalStatus: 'draft'`.
-   The procedure a reviewer would follow, and the service boundary that
-   would let them act through verified identity, both exist
-   (`nhei-knowledge-review-service-boundary.ts`) — but no review has
-   happened, and the mechanism to actually invoke it is not yet mounted
-   as a route (see item 2).
-2. **Registering a knowledge-reviewer role and mounting one route.** *Not
-   started.* `NHEI_KNOWLEDGE_REVIEWER_ROLE` is not in `admin-roles.ts`'s
-   real role vocabulary. The exact route to add is documented (not
-   written as live code) in `nhei-knowledge-review-service-boundary.ts`'s
-   footer comment.
+   started (mechanism now decided and implemented; the review itself has
+   not happened).* All 13 entries (9 in
+   `nhei-knowledge-content-library.ts`, 4 in
+   `nhei-knowledge-content-drafts.ts`) exist only as TypeScript source
+   constants — **not one of them has ever existed as a real
+   `nhei_knowledge_entries` Firestore document in any environment**
+   (confirmed by Phase 3 Closure's exhaustive-grep audit: nothing but
+   test files ever imported them). The Phase 3 Closure batch built a real,
+   explicitly-invoked, idempotent import mechanism
+   (`nhei-knowledge-import-service.ts`, mounted at
+   `POST /api/admin/nhei-knowledge/import`) that creates all 13 as real
+   Firestore drafts — but running it is itself an operator action nobody
+   has taken in any real environment yet, and this register does not
+   treat "the import mechanism exists" as "the entries have been
+   imported," let alone "reviewed." Even once imported, every entry
+   remains `approvalStatus: 'draft'` until a real, named, authorised human
+   reviewer acts on each one individually. No automated test, synthetic
+   fixture, or this phase's own code ever approves a real entry — see
+   `nhei-knowledge-import-service.test.ts`'s explicit self-check that it
+   never does.
+2. **Registering a knowledge-reviewer role and mounting the review
+   routes.** *Decided and implemented.* Phase 3 Closure added a separate,
+   ADDITIVE Firebase custom claim (`nheiKnowledgeReviewer: true` —
+   deliberately NOT a new value in `admin-roles.ts`'s single-valued
+   `APP_USER_ROLES`, which would have replaced/stripped an existing
+   admin's role to grant it), a strict `requireNheiKnowledgeReviewer(req)`
+   checker with no platform-owner/legacy-admin bypass, a
+   Platform-Owner-only grant/revoke route
+   (`POST /api/admin/users/:uid/nhei-knowledge-reviewer`), and three
+   reviewer-gated routes: listing all entries
+   (`GET /api/admin/nhei-knowledge/entries`), approving/rejecting
+   (`POST /api/admin/nhei-knowledge/entries/:entryId/review`), and
+   triggering the import (`POST /api/admin/nhei-knowledge/import`). All
+   four routes are tested end-to-end, including unauthorised-caller
+   denial, self-approval rejection, and two-reviewer approval/rejection
+   concurrency (see `nhei-knowledge-review-admin.route.test.ts`,
+   `nhei-knowledge-service.test.ts`). What remains is a product/governance
+   decision, not engineering: granting the `nheiKnowledgeReviewer` claim
+   to a specific, real, named human in a real environment.
 3. **Two operational governance gates, both currently OFF.**
    *Decided and implemented* (the mechanism itself): `NHEI_EDUCATIONAL_MODE_ENABLED`
    (env var) AND `app_config/nhei_feature_state.educationalModeEnabled`
@@ -41,8 +68,11 @@ settled" — the whole point of this register is that they are not.
    exists in this environment. Every adversarial test that exists proves
    the prompt-construction string cannot be forged; none proves a real
    model actually honours the "this is reference data" framing. The exact
-   command to run this, once an authorised credential and budget exist,
-   is documented in the Checkpoint 3 section 4 delivery notes.
+   procedure an authorised operator would follow, once a credential and
+   spending approval exist, is `docs/NHEI_REAL_MODEL_EVALUATION_PROCEDURE.md`
+   Part B — including the honest note that no harness for this specific
+   question exists yet either, so part of the work is building one, not
+   only running it.
 
 ## Blocking Personal Reflection Mode (in addition to all of the above, since Educational Mode's own approval does not carry over)
 
@@ -63,7 +93,11 @@ settled" — the whole point of this register is that they are not.
 8. **Real-model extraction accuracy.** *Not started — same credential
    blocker as item 4.* The evaluation harness's real-execution path is
    implemented and its wiring is proven against a mocked client; no run
-   against an actual model has occurred.
+   against an actual model has occurred. The operator procedure is
+   `docs/NHEI_REAL_MODEL_EVALUATION_PROCEDURE.md` Part A, including the
+   explicit note that this register does not set a numeric pass/fail
+   threshold — an authorised reviewer must state acceptance criteria
+   before any run, not after seeing its results.
 
 ## Blocking Longitudinal Mode (in addition to all of the above)
 

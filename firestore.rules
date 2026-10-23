@@ -2057,10 +2057,19 @@ service cloud.firestore {
     // anywhere in this collection), same admin-read/server-write-only
     // pattern as app_config/platform_feature_registry above. The real
     // governance boundary (draft vs. approved, author cannot approve
-    // their own content) is enforced server-side by
-    // nhei-knowledge-service.ts / nhei-knowledge-governance.ts, not by
-    // this rule - this rule only keeps the collection server-only, since
-    // nothing in Phase 3B wires it into any client-facing read path yet.
+    // their own content, who may review at all) is enforced server-side by
+    // nhei-knowledge-service.ts / nhei-knowledge-governance.ts /
+    // requireNheiKnowledgeReviewer (server.ts), not by this rule - this
+    // rule only keeps the collection server-only. UPDATED - Phase 3
+    // Closure: the admin review/import routes added that phase read and
+    // write this collection exclusively through the Admin SDK (getDb()),
+    // which is not subject to these rules at all; no client ever reads or
+    // writes this collection directly, with or without the `admin` custom
+    // claim this rule checks for. request.auth.token.admin is also a
+    // DIFFERENT claim from the reviewer grant (nheiKnowledgeReviewer) -
+    // holding one implies nothing about holding the other, and this rule
+    // was never meant to express the review boundary, only to keep any
+    // direct client read/write off the table entirely.
     match /nhei_knowledge_entries/{entryId} {
       allow read: if isSignedIn() && request.auth.token.admin == true;
       allow write: if false; // Server-only

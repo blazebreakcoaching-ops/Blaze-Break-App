@@ -23,9 +23,13 @@
 // header comment for why the existing app_config/knowledge_chunks single-
 // document shape could not support this.
 //
-// Nothing in this file is imported by server.ts or any live route in
-// Phase 3B - per instruction, this stays a standalone, directly-testable
-// module until a later, separately-approved phase wires it in.
+// UPDATED - Phase 3 Closure: this file is now imported by server.ts. The
+// reviewer-facing admin routes added in that batch call
+// listAllKnowledgeEntriesForReview and the *AsVerifiedReviewer functions
+// below. They are reachable only behind requireNheiKnowledgeReviewer
+// (server.ts) - educational-mode activation itself (the two-gate
+// NHEI_EDUCATIONAL_MODE_ENABLED / app_config/nhei_feature_state check) is
+// untouched by any of this and remains fully disabled.
 
 import {
   type NheiKnowledgeEntry,
@@ -41,7 +45,7 @@ import {
   decideKnowledgeRejection,
   type NheiKnowledgeReviewChecklist,
 } from './nhei-knowledge-governance';
-import type { FirestoreLike } from './nhei-persistence-service';
+import type { FirestoreLike, FirestoreTransactionLike } from './nhei-persistence-service';
 import { deriveKnowledgeReviewerIdentity, type NheiVerifiedCaller } from './nhei-authority-contract';
 
 const KNOWLEDGE_COLLECTION = 'nhei_knowledge_entries';
@@ -145,7 +149,8 @@ export type NheiKnowledgeWriteBlockedReason =
   | 'checklist_incomplete'
   | 'entry_not_in_draft_state'
   | 'id_already_exists'
-  | 'authorisation_denied';
+  | 'authorisation_denied'
+  | 'transaction_support_required';
 
 export type NheiKnowledgeWriteResult<T> =
   | { ok: true; value: T }
@@ -188,11 +193,61 @@ export async function createDraftKnowledgeEntry(
   return { ok: true, value: entry };
 }
 
-async function fetchEntry(db: FirestoreLike, id: string): Promise<NheiKnowledgeEntry | null> {
-  const snap = await db.collection(KNOWLEDGE_COLLECTION).doc(id).get();
-  if (!snap.exists) return null;
-  const validation = validateKnowledgeEntry(snap.data());
-  return validation.ok && validation.entry ? validation.entry : null;
+// ---- Phase 3 Closure: transactional approve/reject -----------------------
+//
+// Through the prior phase, both functions below did a plain read (fetchEntry)
+// then a separate, later write (.update()), with no Firestore transaction
+// linking them. That is a real race: two concurrent review actions on the
+// same entry could both read the same draft, both pass decideKnowledgeApproval/
+// decideKnowledgeRejection's "is draft" check against that same stale read,
+// and both write - the second silently overwriting the first's reviewerId/
+// lastReviewedAt instead of correctly failing with entry_not_in_draft_state.
+// That gap was deliberately deferred (see the still-accurate reasoning in
+// the section below about why the SIGNATURE stayed a bare reviewerId) on
+// the explicit grounds that "nothing in this codebase calls either function
+// from a live route today." This closure batch wires both into live,
+// reachable admin routes and explicitly requires concurrency tests, which
+// removes that justification. The fix mirrors nhei-persistence-service.ts's
+// own established pattern exactly: read the document INSIDE the transaction
+// (tx.get), decide, then stage the write (tx.update) - Firestore detects if
+// anyone else modified the document between the read and the commit and
+// retries the whole callback, so the second of two concurrent reviewers
+// re-reads the now-already-reviewed entry and correctly gets
+// entry_not_in_draft_state instead of silently clobbering the first
+// reviewer's decision. Fails closed (transaction_support_required) if the
+// given db has no runTransaction, exactly like every other transactional
+// write in this codebase - never a silent nontransactional fallback.
+async function runReviewTransaction(
+  db: FirestoreLike,
+  entryId: string,
+  decide: (entry: NheiKnowledgeEntry) => { ok: true; approvalStatus: 'approved' | 'rejected'; reviewerId: string; lastReviewedAt: string } | { ok: false; reason: NheiKnowledgeWriteBlockedReason },
+): Promise<NheiKnowledgeWriteResult<NheiKnowledgeEntry>> {
+  if (!db.runTransaction) {
+    return { ok: false, reason: 'transaction_support_required' };
+  }
+  const outcome = await db.runTransaction(async (tx: FirestoreTransactionLike) => {
+    const ref = db.collection(KNOWLEDGE_COLLECTION).doc(entryId);
+    const snap = await tx.get(ref);
+    if (!snap.exists) return { ok: false as const, reason: 'not_found' as const };
+    const validation = validateKnowledgeEntry(snap.data());
+    if (!validation.ok || !validation.entry) return { ok: false as const, reason: 'not_found' as const };
+    const entry = validation.entry;
+
+    const decision = decide(entry);
+    if (decision.ok === false) return { ok: false as const, reason: decision.reason };
+
+    tx.update(ref, {
+      approvalStatus: decision.approvalStatus,
+      reviewerId: decision.reviewerId,
+      lastReviewedAt: decision.lastReviewedAt,
+    });
+    return { ok: true as const, value: { ...entry, ...decision } };
+  });
+
+  if (!outcome.ok) return outcome;
+  clearKnowledgeCache(db);
+  await bumpKnowledgeCacheVersion(db);
+  return outcome;
 }
 
 export async function approveKnowledgeEntry(
@@ -201,20 +256,7 @@ export async function approveKnowledgeEntry(
   reviewerId: string,
   checklist: NheiKnowledgeReviewChecklist,
 ): Promise<NheiKnowledgeWriteResult<NheiKnowledgeEntry>> {
-  const entry = await fetchEntry(db, entryId);
-  if (!entry) return { ok: false, reason: 'not_found' };
-
-  const decision = decideKnowledgeApproval(entry, reviewerId, checklist, nowIso());
-  if (decision.ok === false) return { ok: false, reason: decision.reason };
-
-  await db.collection(KNOWLEDGE_COLLECTION).doc(entryId).update({
-    approvalStatus: decision.approvalStatus,
-    reviewerId: decision.reviewerId,
-    lastReviewedAt: decision.lastReviewedAt,
-  });
-  clearKnowledgeCache(db);
-  await bumpKnowledgeCacheVersion(db);
-  return { ok: true, value: { ...entry, ...decision } };
+  return runReviewTransaction(db, entryId, (entry) => decideKnowledgeApproval(entry, reviewerId, checklist, nowIso()));
 }
 
 export async function rejectKnowledgeEntry(
@@ -222,20 +264,7 @@ export async function rejectKnowledgeEntry(
   entryId: string,
   reviewerId: string,
 ): Promise<NheiKnowledgeWriteResult<NheiKnowledgeEntry>> {
-  const entry = await fetchEntry(db, entryId);
-  if (!entry) return { ok: false, reason: 'not_found' };
-
-  const decision = decideKnowledgeRejection(entry, reviewerId, nowIso());
-  if (decision.ok === false) return { ok: false, reason: decision.reason };
-
-  await db.collection(KNOWLEDGE_COLLECTION).doc(entryId).update({
-    approvalStatus: decision.approvalStatus,
-    reviewerId: decision.reviewerId,
-    lastReviewedAt: decision.lastReviewedAt,
-  });
-  clearKnowledgeCache(db);
-  await bumpKnowledgeCacheVersion(db);
-  return { ok: true, value: { ...entry, ...decision } };
+  return runReviewTransaction(db, entryId, (entry) => decideKnowledgeRejection(entry, reviewerId, nowIso()));
 }
 
 // ---- Phase 3C-2B section 6: service-level authorisation enforcement ----
@@ -334,4 +363,22 @@ export async function retrieveApprovedKnowledge(
 ): Promise<NheiKnowledgeRetrievalResult> {
   const { valid } = await fetchAllValidatedEntries(db);
   return retrieveKnowledge(valid, query);
+}
+
+// Phase 3 Closure §2: the reviewer dashboard's read side. Deliberately a
+// SEPARATE function from retrieveApprovedKnowledge, not a parameter on it -
+// that function's whole contract is "approved-only, age-filtered, ranked for
+// a chat turn," and a reviewer needs the opposite: every entry regardless of
+// approvalStatus, unranked, unfiltered, so a draft can actually be inspected
+// before anyone decides whether to approve it. Reuses
+// fetchAllValidatedEntries's existing cache/validation rather than a second
+// Firestore-reading code path. Returns malformed-document diagnostics
+// alongside the valid entries, matching the review workflow's requirement to
+// surface "existing review status" and other current authoritative state
+// accurately, including when a document on record cannot even be parsed.
+export async function listAllKnowledgeEntriesForReview(
+  db: FirestoreLike,
+): Promise<{ entries: NheiKnowledgeEntry[]; invalidDocumentCount: number }> {
+  const { valid, invalidCount } = await fetchAllValidatedEntries(db);
+  return { entries: valid, invalidDocumentCount: invalidCount };
 }

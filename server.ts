@@ -57,6 +57,10 @@ import { exportAllNheiData } from './nhei-persistence-service';
 import { nheiEducationalModeIsEnabledNow } from './nhei-educational-mode-flag';
 import { buildNheiEducationalChatAddendum } from './nhei-nova-chat-educational-integration';
 import { isNheiModeEnabledInGovernance } from './nhei-feature-governance';
+import { NHEI_KNOWLEDGE_REVIEWER_ROLE } from './nhei-authority-contract';
+import { handleNheiKnowledgeReviewRequest } from './nhei-knowledge-review-service-boundary';
+import { listAllKnowledgeEntriesForReview } from './nhei-knowledge-service';
+import { importKnowledgeContentLibrary } from './nhei-knowledge-import-service';
 import { summarizeModuleOutcomes, RoutingDecisionRecord } from './recovery-outcomes-intelligence';
 import { GEMINI_TEXT_MODEL, GEMINI_TTS_MODEL, GEMINI_LIVE_MODEL, CLAUDE_CHAT_MODEL } from './ai-model-registry';
 import { summarizeFeatureUsage, countByDimension } from './product-intelligence';
@@ -3872,6 +3876,33 @@ const requirePlatformOwner = (req: any) => {
   return user;
 };
 
+// NHEI Phase 3 Closure §2: a deliberately separate, additive custom claim
+// (nheiKnowledgeReviewer: true), never a value stored in the single-valued
+// `role` claim APP_USER_ROLES/requireRole check. Granting review authority
+// through /api/admin/users/:uid/role would REPLACE whatever role a user
+// already holds (stripping their existing admin permissions to grant this
+// one, narrower one) - exactly what the directive's "without weakening or
+// bypassing current administrator permissions" forbids. This claim is
+// granted/revoked through its own route below, via mergeCustomClaims
+// (additive - see that helper's own comment), so a platform_admin, a
+// support_admin, or an ordinary non-admin account can all be granted this
+// one specific capability without anything else about their access
+// changing. Deliberately mirrors nhei-authority-contract.ts's own design
+// principle: reviewing educational content is "a specific, auditable
+// responsibility, not a side effect of being a platform admin for
+// unrelated reasons" - so this check has NO isUserPlatformOwner or
+// isSuperAdmin bypass, unlike requireRole's bootstrap-email fallback. A
+// platform owner must explicitly grant this claim to themselves or anyone
+// else before they can use the review routes; holding platform_owner alone
+// is never sufficient.
+const requireNheiKnowledgeReviewer = (req: any) => {
+  const user = requireAuth(req);
+  if (user.nheiKnowledgeReviewer !== true) {
+    throw new Error("Forbidden: NHEI knowledge reviewer privileges required.");
+  }
+  return user;
+};
+
 // Checked by every mutating Evolution Engine route, after its own auth
 // check (so a non-evolution-access caller still gets 403 first, not
 // 423) - see evolution-freeze.ts for why this is deliberately a
@@ -7058,6 +7089,115 @@ app.post("/api/admin/users/:uid/entitlement", verifyAppCheck, authenticateFireba
     const planChange = isUpgrade(previousPlan, plan) ? 'upgrade' : isDowngrade(previousPlan, plan) ? 'downgrade' : 'lateral';
     await logAdminAction(req, "grant_entitlement", targetUid, "", { plan, status, durationDays: durationDays ?? null, previousPlan, planChange });
     res.json({ success: true });
+  } catch (err: any) {
+    if (err.message?.includes("Forbidden")) {
+      res.status(403).json({ error: err.message });
+    } else {
+      logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+      res.status(500).json({ error: GENERIC_SERVER_ERROR });
+    }
+  }
+});
+
+// ---- NHEI Phase 3 Closure §2/§3: internal knowledge-review workflow -----
+//
+// Four routes, all new this batch, none reachable by an ordinary user:
+//   1. Grant/revoke the nheiKnowledgeReviewer claim - Platform Owner only,
+//      since granting review authority is itself a sensitive admin action.
+//   2. List all knowledge entries for review - reviewer only.
+//   3. Approve/reject one entry - reviewer only, server-derived identity.
+//   4. Run the idempotent draft-content import - reviewer only.
+// None of these routes, or anything they call, touches
+// NHEI_EDUCATIONAL_MODE_ENABLED or app_config/nhei_feature_state -
+// approving an entry changes that one entry's approvalStatus and nothing
+// else; Educational Mode activation remains a fully separate decision (see
+// docs/NHEI_RELEASE_BLOCKERS.md item 3).
+app.post("/api/admin/users/:uid/nhei-knowledge-reviewer", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    requirePlatformOwner(req);
+    const parsed = z.object({ grant: z.boolean() }).strict().safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: '"grant" must be a boolean.' });
+    }
+    const targetUid = req.params.uid;
+    if (parsed.data.grant) {
+      await mergeCustomClaims(targetUid, { nheiKnowledgeReviewer: true });
+    } else {
+      await removeCustomClaimKeys(targetUid, ['nheiKnowledgeReviewer']);
+    }
+    await logAdminAction(req, "set_nhei_knowledge_reviewer", targetUid, "", { grant: parsed.data.grant });
+    res.json({ success: true });
+  } catch (err: any) {
+    if (err.message?.includes("Forbidden")) {
+      res.status(403).json({ error: err.message });
+    } else {
+      logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+      res.status(500).json({ error: GENERIC_SERVER_ERROR });
+    }
+  }
+});
+
+app.get("/api/admin/nhei-knowledge/entries", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    requireNheiKnowledgeReviewer(req);
+    const db = getDb();
+    const result = await listAllKnowledgeEntriesForReview(db);
+    res.json(result);
+  } catch (err: any) {
+    if (err.message?.includes("Forbidden")) {
+      res.status(403).json({ error: err.message });
+    } else {
+      logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+      res.status(500).json({ error: GENERIC_SERVER_ERROR });
+    }
+  }
+});
+
+// Reviewer identity is ALWAYS derived from the verified Firebase ID token
+// (user.uid, via requireNheiKnowledgeReviewer above), never from
+// req.body - nothing in req.body can claim to be a different reviewer.
+// handleNheiKnowledgeReviewRequest/deriveKnowledgeReviewerIdentity
+// (nhei-authority-contract.ts) re-derive and re-check this role server-side
+// again before any write, so this route adds no trust this function
+// doesn't already enforce - it is simply the first place a real route
+// calls it, replacing the "future route" snippet that previously only
+// existed as a footer comment in nhei-knowledge-review-service-boundary.ts.
+app.post("/api/admin/nhei-knowledge/entries/:entryId/review", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const user = requireNheiKnowledgeReviewer(req);
+    const db = getDb();
+    const result = await handleNheiKnowledgeReviewRequest(
+      db,
+      { uid: user.uid, role: NHEI_KNOWLEDGE_REVIEWER_ROLE },
+      { entryId: req.params.entryId, decision: req.body?.decision, checklist: req.body?.checklist },
+    );
+    if (!result.ok) {
+      return res.status(400).json({ error: result.reason });
+    }
+    await logAdminAction(req, "nhei_knowledge_review_decision", req.params.entryId, "", { decision: req.body?.decision });
+    res.json({ success: true });
+  } catch (err: any) {
+    if (err.message?.includes("Forbidden")) {
+      res.status(403).json({ error: err.message });
+    } else {
+      logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+      res.status(500).json({ error: GENERIC_SERVER_ERROR });
+    }
+  }
+});
+
+// Explicitly invoked only - never run on startup, a schedule, or any other
+// automatic trigger. Every entry this creates is a draft (see
+// nhei-knowledge-import-service.ts); running this never makes anything
+// newly retrievable to a real user, since Educational Mode's retrieval
+// path only ever reads approved entries and remains gated off regardless.
+app.post("/api/admin/nhei-knowledge/import", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    requireNheiKnowledgeReviewer(req);
+    const db = getDb();
+    const report = await importKnowledgeContentLibrary(db);
+    await logAdminAction(req, "nhei_knowledge_import", "", "", { imported: report.imported, alreadyImported: report.alreadyImported, conflicts: report.conflicts, rejected: report.rejected });
+    res.json(report);
   } catch (err: any) {
     if (err.message?.includes("Forbidden")) {
       res.status(403).json({ error: err.message });

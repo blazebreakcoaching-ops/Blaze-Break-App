@@ -7,8 +7,9 @@ import {
   rejectKnowledgeEntryAsVerifiedReviewer,
   retrieveApprovedKnowledge,
   clearKnowledgeCache,
+  listAllKnowledgeEntriesForReview,
 } from './nhei-knowledge-service';
-import type { FirestoreLike, FirestoreCollectionRefLike } from './nhei-persistence-service';
+import type { FirestoreLike, FirestoreCollectionRefLike, FirestoreTransactionLike } from './nhei-persistence-service';
 import type { NheiKnowledgeReviewChecklist } from './nhei-knowledge-governance';
 import { NHEI_KNOWLEDGE_REVIEWER_ROLE } from './nhei-authority-contract';
 
@@ -47,7 +48,124 @@ function createFakeFirestore(): FirestoreLike {
       },
     };
   }
+  // Phase 3 Closure §2: approveKnowledgeEntry/rejectKnowledgeEntry now
+  // require db.runTransaction (see nhei-knowledge-service.ts's
+  // runReviewTransaction) - same simple, non-rigorous transaction support
+  // used by every other NHEI fake Firestore in this repo (writes apply
+  // immediately rather than being staged; sufficient for every test here
+  // that is not specifically about race/conflict detection, which uses
+  // createRaceableFakeFirestore below instead).
+  async function runTransaction<T>(fn: (tx: FirestoreTransactionLike) => Promise<T>): Promise<T> {
+    const tx: FirestoreTransactionLike = {
+      get: ((ref: any) => ref.get()) as FirestoreTransactionLike['get'],
+      set: (ref, data, options) => { void ref.set(data, options); },
+      update: (ref, data) => { void ref.update(data); },
+      delete: (ref) => { void ref.delete(); },
+    };
+    return fn(tx);
+  }
+  return { collection, runTransaction };
+}
+
+// Phase 3 Closure §2/§8: isolated scaffolding for the "fails closed
+// without transaction support" requirement, mirroring
+// nhei-persistence-service.test.ts's own createFakeFirestoreWithoutTransactionSupport.
+function createFakeFirestoreWithoutTransactionSupport(): FirestoreLike {
+  const { collection } = createFakeFirestore();
   return { collection };
+}
+
+// A true concurrency test needs a fake where tx.get() inside the
+// transaction can observe a write made by ANOTHER transaction that
+// started earlier but has not yet "committed" - this fake models exactly
+// that: writes staged via tx.set/tx.update only land in the store once the
+// callback's promise resolves, in commit order, and a transaction that
+// read a document before a conflicting commit landed is itself retried
+// (by simply re-running the callback once) - a close enough approximation
+// of real Firestore optimistic-concurrency semantics to prove
+// approveKnowledgeEntry/rejectKnowledgeEntry's two-caller race is actually
+// closed, without needing the real emulator.
+function createRaceableFakeFirestore(): FirestoreLike {
+  const store = new Map<string, Record<string, unknown>>();
+  function docRef(path: string, id: string) {
+    const key = `${path}/${id}`;
+    return {
+      id,
+      async get() {
+        const data = store.get(key);
+        return { id, exists: data !== undefined, data: () => data };
+      },
+      async set(data: Record<string, unknown>) { store.set(key, { ...data }); },
+      async update(data: Record<string, unknown>) {
+        if (!store.has(key)) throw new Error('no such document');
+        store.set(key, { ...store.get(key), ...data });
+      },
+      async delete() { store.delete(key); },
+    };
+  }
+  function collection(path: string): FirestoreCollectionRefLike {
+    return {
+      doc(id?: string) {
+        return docRef(path, id ?? `auto_${Math.random().toString(36).slice(2, 10)}`);
+      },
+      async get() {
+        const prefix = `${path}/`;
+        const docs = [...store.entries()]
+          .filter(([k]) => k.startsWith(prefix) && !k.slice(prefix.length).includes('/'))
+          .map(([k, data]) => ({ id: k.slice(prefix.length), exists: true, data: () => data }));
+        return { docs };
+      },
+    };
+  }
+  // Each transaction snapshots the version of every document it reads;
+  // when it goes to commit, if any read document's version has since
+  // changed (another transaction committed first), this one is retried
+  // from scratch - a direct analogue of real Firestore optimistic locking,
+  // which is the exact mechanism approveKnowledgeEntry/rejectKnowledgeEntry
+  // depend on to close the read-then-write race.
+  const versions = new Map<string, number>();
+  const versionOf = (key: string) => versions.get(key) ?? 0;
+  async function runTransaction<T>(fn: (tx: FirestoreTransactionLike) => Promise<T>): Promise<T> {
+    for (;;) {
+      const readVersions = new Map<string, number>();
+      const staged: Array<{ key: string; op: 'set' | 'update' | 'delete'; data?: Record<string, unknown> }> = [];
+      const tx: FirestoreTransactionLike = {
+        get: (async (ref: any) => {
+          const snap = await ref.get();
+          const refKey = ref.__key ?? null;
+          if (refKey) readVersions.set(refKey, versionOf(refKey));
+          return snap;
+        }) as FirestoreTransactionLike['get'],
+        set: (ref, data) => { staged.push({ key: (ref as any).__key, op: 'set', data }); },
+        update: (ref, data) => { staged.push({ key: (ref as any).__key, op: 'update', data }); },
+        delete: (ref) => { staged.push({ key: (ref as any).__key, op: 'delete' }); },
+      };
+      const result = await fn(tx);
+      const conflict = [...readVersions.entries()].some(([key, seenVersion]) => versionOf(key) !== seenVersion);
+      if (conflict) continue;
+      for (const op of staged) {
+        if (op.op === 'delete') { store.delete(op.key); }
+        else if (op.op === 'set') { store.set(op.key, { ...op.data }); }
+        else { store.set(op.key, { ...(store.get(op.key) ?? {}), ...op.data }); }
+        versions.set(op.key, versionOf(op.key) + 1);
+      }
+      return result;
+    }
+  }
+  // Tag every doc ref with its storage key so the transaction wrapper
+  // above can track read/write versions without re-deriving the path.
+  const taggedCollection = (path: string): FirestoreCollectionRefLike => {
+    const base = collection(path);
+    return {
+      ...base,
+      doc(id?: string) {
+        const ref: any = base.doc(id);
+        ref.__key = `${path}/${ref.id}`;
+        return ref;
+      },
+    };
+  };
+  return { collection: taggedCollection, runTransaction };
 }
 
 const FULL_CHECKLIST: NheiKnowledgeReviewChecklist = {
@@ -453,6 +571,89 @@ describe('Phase 3C-2A section 12 - cross-instance cache correctness via a shared
     const after = await retrieveApprovedKnowledge(db, { topics: ['INTERNAL_SELF'] });
     expect(after.found).toBe(true);
     expect(after.entries.map((e) => e.id)).toEqual(['entry1']);
+  });
+});
+
+// Phase 3 Closure §2/§8 - listAllKnowledgeEntriesForReview
+describe('listAllKnowledgeEntriesForReview', () => {
+  it('returns entries of every approvalStatus, not just approved ones', async () => {
+    const db = createFakeFirestore();
+    await createDraftKnowledgeEntry(db, 'author1', draftInput({ id: 'draft1' }));
+    await db_setApproved(db, 'approved1');
+    const { entries, invalidDocumentCount } = await listAllKnowledgeEntriesForReview(db);
+    expect(entries.map((e) => e.id).sort()).toEqual(['approved1', 'draft1']);
+    expect(invalidDocumentCount).toBe(0);
+  });
+
+  it('reports a malformed stored document as an invalid-count, never silently drops or crashes', async () => {
+    const db = createFakeFirestore();
+    await db.collection('nhei_knowledge_entries').doc('broken1').set({ id: 'broken1' }); // missing required fields
+    const { entries, invalidDocumentCount } = await listAllKnowledgeEntriesForReview(db);
+    expect(entries).toEqual([]);
+    expect(invalidDocumentCount).toBe(1);
+  });
+});
+
+// Phase 3 Closure §2/§8 - transactional concurrency. The read-then-write
+// race this closes: two reviewers acting on the same still-draft entry at
+// the same time used to risk the second write silently overwriting the
+// first's reviewerId/lastReviewedAt. Both tests below call
+// approveKnowledgeEntry/rejectKnowledgeEntry via Promise.all against
+// createRaceableFakeFirestore, which actually models Firestore's
+// optimistic-concurrency retry (see that helper's own comment) rather than
+// just running both calls sequentially - a sequential run would pass even
+// against the OLD, non-transactional implementation and prove nothing.
+describe('approveKnowledgeEntry / rejectKnowledgeEntry - concurrency (Phase 3 Closure)', () => {
+  it('two concurrent review actions on the same draft: exactly one succeeds, the other correctly sees entry_not_in_draft_state - never a silent overwrite', async () => {
+    const db = createRaceableFakeFirestore();
+    await createDraftKnowledgeEntry(db, 'author1', draftInput({ id: 'race1' }));
+
+    const [approveResult, rejectResult] = await Promise.all([
+      approveKnowledgeEntry(db, 'race1', 'reviewerA', FULL_CHECKLIST),
+      rejectKnowledgeEntry(db, 'race1', 'reviewerB'),
+    ]);
+
+    const outcomes = [approveResult, rejectResult];
+    const succeeded = outcomes.filter((r) => r.ok);
+    const blocked = outcomes.filter((r) => !r.ok);
+    expect(succeeded.length).toBe(1);
+    expect(blocked.length).toBe(1);
+    expect((blocked[0] as { ok: false; reason: string }).reason).toBe('entry_not_in_draft_state');
+
+    // The entry's final stored state must match whichever one actually
+    // won, with no field left half-applied from the other.
+    const finalEntries = (await listAllKnowledgeEntriesForReview(db)).entries;
+    const final = finalEntries.find((e) => e.id === 'race1')!;
+    if (succeeded[0] === approveResult) {
+      expect(final.approvalStatus).toBe('approved');
+      expect(final.reviewerId).toBe('reviewerA');
+    } else {
+      expect(final.approvalStatus).toBe('rejected');
+      expect(final.reviewerId).toBe('reviewerB');
+    }
+  });
+
+  it('approveKnowledgeEntry fails closed with transaction_support_required against a db with no runTransaction, and writes nothing', async () => {
+    const db = createFakeFirestoreWithoutTransactionSupport();
+    await createDraftKnowledgeEntry(db, 'author1', draftInput({ id: 'e1' }));
+    expect(db.runTransaction).toBeUndefined();
+
+    const result = await approveKnowledgeEntry(db, 'e1', 'reviewer1', FULL_CHECKLIST);
+    expect(result).toEqual({ ok: false, reason: 'transaction_support_required' });
+
+    const stillDraft = (await listAllKnowledgeEntriesForReview(db)).entries.find((e) => e.id === 'e1')!;
+    expect(stillDraft.approvalStatus).toBe('draft');
+  });
+
+  it('rejectKnowledgeEntry fails closed with transaction_support_required against a db with no runTransaction, and writes nothing', async () => {
+    const db = createFakeFirestoreWithoutTransactionSupport();
+    await createDraftKnowledgeEntry(db, 'author1', draftInput({ id: 'e1' }));
+
+    const result = await rejectKnowledgeEntry(db, 'e1', 'reviewer1');
+    expect(result).toEqual({ ok: false, reason: 'transaction_support_required' });
+
+    const stillDraft = (await listAllKnowledgeEntriesForReview(db)).entries.find((e) => e.id === 'e1')!;
+    expect(stillDraft.approvalStatus).toBe('draft');
   });
 });
 

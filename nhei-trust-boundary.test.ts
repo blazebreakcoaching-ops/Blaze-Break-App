@@ -13,7 +13,7 @@ import { describe, it, expect } from 'vitest';
 import { runNheiConversationPipeline } from './nhei-conversation-pipeline';
 import { createDraftKnowledgeEntry, approveKnowledgeEntry } from './nhei-knowledge-service';
 import { isValidNheiSourceRef } from './nhei-persistence-service';
-import type { FirestoreLike, FirestoreCollectionRefLike } from './nhei-persistence-service';
+import type { FirestoreLike, FirestoreCollectionRefLike, FirestoreTransactionLike } from './nhei-persistence-service';
 import type { NheiConsentState } from './nhei-consent';
 import type { NheiModelCaller } from './nhei-extraction-service';
 import type { NheiKnowledgeReviewChecklist } from './nhei-knowledge-governance';
@@ -48,7 +48,16 @@ function createFakeFirestore(): FirestoreLike {
       },
     };
   }
-  return { collection };
+  async function runTransaction<T>(fn: (tx: FirestoreTransactionLike) => Promise<T>): Promise<T> {
+    const tx: FirestoreTransactionLike = {
+      get: ((ref: any) => ref.get()) as FirestoreTransactionLike['get'],
+      set: (ref, data, options) => { void ref.set(data, options); },
+      update: (ref, data) => { void ref.update(data); },
+      delete: (ref) => { void ref.delete(); },
+    };
+    return fn(tx);
+  }
+  return { collection, runTransaction };
 }
 
 const NO_CONSENT: NheiConsentState = { reflection_storage: false, longitudinal_tracking: false, routing_insights: false };
