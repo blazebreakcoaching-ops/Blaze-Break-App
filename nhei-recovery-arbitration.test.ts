@@ -60,18 +60,23 @@ describe('arbitrateNheiRecoverySuggestions - abstention', () => {
     });
     expect(result.selected).toBeNull();
     expect(result.abstentionReason).toBe('all_unsuitable_for_capacity');
-    // Still surfaced as an alternative, never silently discarded.
-    expect(result.alternatives).toHaveLength(1);
+    // Still surfaced, never silently discarded - but in its own field,
+    // never as an ordinary alternative (directive: "capacity-unsuitable
+    // suggestions must not appear as ordinary default or equivalent
+    // alternatives").
+    expect(result.unsuitableForCapacity).toHaveLength(1);
+    expect(result.alternatives).toHaveLength(0);
   });
 });
 
 describe('arbitrateNheiRecoverySuggestions - capacity never overridden by a default pick', () => {
-  it('skips an unsuitable suggestion in favour of a suitable one for a DIFFERENT route', () => {
+  it('skips an unsuitable suggestion in favour of a suitable one for a DIFFERENT route, keeping it out of alternatives', () => {
     const unsuitable = suggestion({ targetModule: 'action_engine', routeType: 'ACT', capacitySuitability: 'unsuitable' });
     const suitable = suggestion({ targetModule: 'reset_studio', routeType: 'STABILISE', capacitySuitability: 'suitable' });
     const result = arbitrateNheiRecoverySuggestions({ suggestions: [unsuitable, suitable] });
     expect(result.selected?.targetModule).toBe('reset_studio');
-    expect(result.alternatives.some((a) => a.targetModule === 'action_engine')).toBe(true);
+    expect(result.unsuitableForCapacity.some((a) => a.targetModule === 'action_engine')).toBe(true);
+    expect(result.alternatives.some((a) => a.targetModule === 'action_engine')).toBe(false);
   });
 
   it('preserves unknown capacity as unknown - an unknown-capacity suggestion can still be selected (never promoted to suitable, never treated as unsuitable)', () => {
@@ -107,15 +112,22 @@ describe('arbitrateNheiRecoverySuggestions - stated goal respected', () => {
 });
 
 describe('arbitrateNheiRecoverySuggestions - deduplication and reconciliation', () => {
-  it('reconciles two suggestions targeting the SAME routeType into one winner, keeping the loser in dedupedAway (never silently dropped)', () => {
-    const weaker = suggestion({ targetModule: 'guided_reset', routeType: 'STABILISE', interpretationKind: 'educational' });
-    const stronger = suggestion({ targetModule: 'reset_studio', routeType: 'STABILISE', interpretationKind: 'confirmed' });
+  it('reconciles two suggestions targeting the exact SAME module into one winner, keeping the loser in dedupedAway (never silently dropped)', () => {
+    const weaker: NheiRecoverySuggestion = { ...suggestion({ targetModule: 'reset_studio', routeType: 'STABILISE', interpretationKind: 'educational' }), suggestionId: 'reset_studio_weaker' };
+    const stronger: NheiRecoverySuggestion = { ...suggestion({ targetModule: 'reset_studio', routeType: 'STABILISE', interpretationKind: 'confirmed' }), suggestionId: 'reset_studio_stronger' };
     const result = arbitrateNheiRecoverySuggestions({ suggestions: [weaker, stronger] });
+    expect(result.selected?.suggestionId).toBe('reset_studio_stronger');
+    expect(result.dedupedAway.map((d) => d.suggestionId)).toEqual(['reset_studio_weaker']);
+    expect(result.alternatives).toHaveLength(0);
+  });
+
+  it('does NOT reconcile two DIFFERENT modules that merely share a routeType - both survive as real, distinct options (Phase 5 fix)', () => {
+    const resetStudio = suggestion({ targetModule: 'reset_studio', routeType: 'STABILISE', interpretationKind: 'confirmed' });
+    const anxietyReset = suggestion({ targetModule: 'anxiety_reset', routeType: 'STABILISE', interpretationKind: 'tentative' });
+    const result = arbitrateNheiRecoverySuggestions({ suggestions: [resetStudio, anxietyReset] });
+    expect(result.dedupedAway).toHaveLength(0);
     expect(result.selected?.targetModule).toBe('reset_studio');
-    expect(result.dedupedAway.map((d) => d.targetModule)).toEqual(['guided_reset']);
-    // The deduped suggestion is not also listed as a free-standing alternative -
-    // it was reconciled, not merely set aside.
-    expect(result.alternatives.some((a) => a.targetModule === 'guided_reset')).toBe(false);
+    expect(result.alternatives.map((a) => a.targetModule)).toEqual(['anxiety_reset']);
   });
 
   it('is deterministic - running arbitration twice on the same input yields the same winner', () => {

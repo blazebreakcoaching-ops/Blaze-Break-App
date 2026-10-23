@@ -195,6 +195,47 @@ settled" — the whole point of this register is that they are not.
     items 12–16 above still holds at the real call site, not assume this
     phase's "offline, tested" status implies readiness.
 
+## Blocking the Phase 5 experience/consent/agentic UI
+
+18. **A real, working consent-writing backend for any NHEI purpose.**
+    *Not started.* `NheiPrivacyConsent.tsx` (Phase 5) exists but every
+    consent-requiring toggle is rendered visibly disabled — confirmed by
+    grep that `server.ts` has no route for setting or withdrawing
+    `reflection_storage`, `longitudinal_tracking`, or `routing_insights`.
+    This is the same underlying gap as items 7, 9, and 13 above, now also
+    blocking the consent *screen* specifically, not only the modes it
+    gates. No real consent grant has been saved through this or any other
+    incomplete flow.
+19. **Independent human review of the Phase 5 UI's own user-facing text and
+    presentation**, including the recovery suggestion card, the reflection/
+    correction preview, and the Before Words prompts, in a youth age band.
+    *Not started.* This is in addition to item 16 (the underlying bridge
+    suggestion text), since Phase 5 adds its own new copy (consent
+    explanations, Before Words prompts, agentic-action descriptions) that
+    register has never covered.
+20. **Wiring any Phase 5 component into live navigation.** *Decided and
+    implemented offline; wiring is not started.* All six new `.tsx` files
+    are reachable only from each other and the `NheiPhase5Preview.tsx`
+    harness — confirmed by `grep -rln` returning no other importer. A
+    future phase wiring any of them in must independently re-verify every
+    prerequisite above (consent backend, safeguarding, human review) still
+    holds, not assume "offline, tested" implies readiness.
+21. **A real connector integration for any agentic action.** *Not started.*
+    `nhei-agentic-action-contract.ts`'s state machine and
+    `NheiAgenticActionPreview.tsx`'s worked example are both fully
+    synthetic — the "connector" is a `setTimeout`, not a real calendar or
+    task-list API call. No credential, authorisation flow, or real external
+    write path exists anywhere in this codebase for any connector today.
+22. **Automated rendering/accessibility verification for the Phase 5 UI (or
+    any UI in this codebase).** *Not started — and not currently possible.*
+    This repository has no jsdom/@testing-library harness
+    (`vitest.config.ts` is `environment: 'node'`, `.test.ts` only). Mobile/
+    accessibility claims for the six new components rest on code review of
+    real semantic markup (`<button>`/`<input>`/`aria-*` attributes) and a
+    manual dev-server check, never an automated test — this register does
+    not claim otherwise, and a future phase should not claim component-test
+    coverage that cannot exist without first adding that harness.
+
 ## Explicitly not a blocker (confirmed working, independent of any NHEI activation)
 
 - Data export, correction, and deletion already work today through this

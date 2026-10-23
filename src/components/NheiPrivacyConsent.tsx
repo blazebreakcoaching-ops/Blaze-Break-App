@@ -1,0 +1,174 @@
+import { useState } from 'react';
+import { ShieldCheck, Lock, Download, Trash2, Info } from 'lucide-react';
+import { cn } from '../lib/utils.ts';
+
+// NHEI PHASE 5 - Privacy & consent screens (directive §2).
+//
+// AUDIT FINDING this component is built around: server.ts has NO route
+// of any kind for setting or withdrawing reflection_storage/
+// longitudinal_tracking/routing_insights consent - setNheiConsent
+// (nhei-persistence-service.ts) is called only from test files today.
+// So every toggle below is rendered disabled with an explicit "not yet
+// available" status, never a working-looking control wired to nothing -
+// directive: "If a proposed control has no working backend, leave it
+// visibly unavailable in the development preview rather than pretending
+// it functions... Do not save real consent grants through incomplete or
+// unapproved flows." This component makes zero network calls of its
+// own, by design - it is a preview of what these screens would contain,
+// not a live settings page.
+//
+// Export and full-account deletion ARE real, already-working backend
+// capabilities (GET /api/user/export includes NHEI data via
+// exportAllNheiData; POST /api/user/delete-account erases everything,
+// NHEI included) - those two affordances are described as REAL here,
+// distinct from the disabled toggles, consistent with
+// docs/NHEI_RELEASE_BLOCKERS.md's own "explicitly not a blocker"
+// section. There is no granular, NHEI-purpose-specific partial deletion
+// route today - only whole-account export/erase - and this component
+// says so rather than implying otherwise.
+//
+// Reuses this app's existing toggle visual convention (ConsentMatrix.tsx)
+// and card/typography conventions elsewhere in this file set, rather
+// than inventing a new visual language for NHEI specifically.
+//
+// OFFLINE AT THIS PHASE: not mounted into App.tsx's live navigation -
+// see NheiPhase5Preview.tsx.
+
+export type NheiConsentMode = 'educational' | 'reflection' | 'longitudinal' | 'routing_insights';
+
+interface NheiModeDescriptor {
+  mode: NheiConsentMode;
+  title: string;
+  requiresConsent: boolean;
+  requiresPurposes: string[]; // human-readable, not the literal NheiConsentPurpose strings
+  description: string;
+  dataHandling: string;
+}
+
+const NHEI_MODES: NheiModeDescriptor[] = [
+  {
+    mode: 'educational',
+    title: 'Educational Mode',
+    requiresConsent: false,
+    requiresPurposes: [],
+    description: 'General education about burnout recovery concepts, drawn from reviewed reference material. Nothing you say is stored as personal evidence, and no personal tracking consent is needed to use it.',
+    dataHandling: 'No NHEI personal evidence is extracted or stored. Your chat messages are used only to pick relevant topics, the same way a search works - nothing is kept afterward.',
+  },
+  {
+    mode: 'reflection',
+    title: 'Personal Reflection',
+    requiresConsent: true,
+    requiresPurposes: ['reflection_storage'],
+    description: 'Optional analysis of experiences you choose to share, so Nova can reflect patterns back to you over time.',
+    dataHandling: 'With this on, specific things you report (never a full transcript) are tagged by category and kept as structured records - never free text. You can see, correct, or delete these at any time (see below).',
+  },
+  {
+    mode: 'longitudinal',
+    title: 'Longitudinal Intelligence',
+    requiresConsent: true,
+    requiresPurposes: ['reflection_storage', 'longitudinal_tracking'],
+    description: 'Optional comparison across your prior reflections, so Nova can notice when something echoes an earlier experience.',
+    dataHandling: 'Requires Personal Reflection to also be on. With both on, Nova may reference how a past, already-recorded reflection relates to a new one - always shown as a pattern to consider, never a settled fact.',
+  },
+  {
+    mode: 'routing_insights',
+    title: 'Recovery Insights',
+    requiresConsent: true,
+    requiresPurposes: ['reflection_storage', 'routing_insights'],
+    description: 'Optional, NHEI-informed suggestions for which recovery tool might help, based on what you’ve reflected on.',
+    dataHandling: 'Requires Personal Reflection to also be on. With this on, Nova may suggest a specific recovery tool and explain why - always something you choose to try or skip, never automatic.',
+  },
+];
+
+function DisabledToggle({ label }: { label: string }) {
+  return (
+    <button
+      disabled
+      role="switch"
+      aria-checked={false}
+      aria-disabled="true"
+      aria-label={`${label} - not yet available`}
+      title="Not yet available - no backend exists for this control yet"
+      className="w-12 h-6 rounded-full bg-surface opacity-40 cursor-not-allowed relative flex-shrink-0"
+    >
+      <div className="w-4 h-4 rounded-full bg-white absolute top-1 left-1" />
+    </button>
+  );
+}
+
+function ModeCard({ descriptor }: { descriptor: NheiModeDescriptor }) {
+  const [expanded, setExpanded] = useState(false);
+  return (
+    <div className={cn('p-5 rounded-2xl border transition-all', 'bg-surface/50 border-white/[0.05]')}>
+      <div className="flex items-start justify-between gap-4">
+        <div className="flex items-start gap-3">
+          <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 border bg-surface text-text-muted border-border">
+            {descriptor.requiresConsent ? <Lock className="w-4 h-4" /> : <ShieldCheck className="w-4 h-4" />}
+          </div>
+          <div>
+            <h4 className="text-sm font-bold tracking-tight text-text-main">{descriptor.title}</h4>
+            <p className="text-[11px] text-text-muted mt-1 max-w-md">{descriptor.description}</p>
+          </div>
+        </div>
+        {descriptor.requiresConsent ? (
+          <DisabledToggle label={descriptor.title} />
+        ) : (
+          <span className="px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-widest bg-card text-text-muted border border-border">No consent needed</span>
+        )}
+      </div>
+
+      {descriptor.requiresConsent && (
+        <p className="text-[10px] text-text-muted/80 mt-2 pl-12">
+          Not yet available - granting this requires a backend control that does not exist yet. Viewing this screen never grants anything by itself.
+        </p>
+      )}
+
+      <button onClick={() => setExpanded((v) => !v)} className="text-[11px] font-bold text-primary mt-3 pl-12 hover:underline">
+        {expanded ? 'Hide details' : 'What happens with this on?'}
+      </button>
+      {expanded && (
+        <p className="text-[11px] text-text-muted leading-relaxed mt-2 pl-12 max-w-md">{descriptor.dataHandling}</p>
+      )}
+    </div>
+  );
+}
+
+export const NheiPrivacyConsent = () => {
+  return (
+    <div className="card space-y-6 bg-background border border-border">
+      <div>
+        <h3 className="text-xl font-bold text-text-main flex items-center gap-2 mb-2">
+          <ShieldCheck className="w-5 h-5 text-primary" /> Nova Personal Intelligence (NHEI) - Privacy & Consent
+        </h3>
+        <p className="text-xs text-text-muted max-w-xl leading-relaxed flex items-start gap-1.5">
+          <Info className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+          Viewing this page never changes anything. Every mode below that requires consent is currently unavailable to turn on,
+          because the control to grant it doesn't exist in this product yet - this screen is a preview of what that choice will look like.
+        </p>
+      </div>
+
+      <div className="grid grid-cols-1 gap-4">
+        {NHEI_MODES.map((descriptor) => <ModeCard key={descriptor.mode} descriptor={descriptor} />)}
+      </div>
+
+      <div className="pt-4 border-t border-border space-y-3">
+        <h4 className="text-xs font-bold uppercase tracking-wide text-text-muted">Your data</h4>
+        <div className="flex flex-col sm:flex-row gap-3">
+          <a
+            href="/api/user/export"
+            className="flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg border border-border text-xs font-bold text-text-main hover:border-primary/50 transition-colors"
+          >
+            <Download className="w-3.5 h-3.5" /> Export everything (real, works today)
+          </a>
+          <span className="flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg border border-border text-xs font-bold text-text-muted">
+            <Trash2 className="w-3.5 h-3.5" /> Delete just my reflections - not yet available (whole-account deletion already works, in Settings)
+          </span>
+        </div>
+        <p className="text-[10px] text-text-muted/80">
+          There is no way yet to delete only your NHEI reflections while keeping the rest of your account - deleting your whole account
+          (Settings → Delete Account) does remove them, along with everything else.
+        </p>
+      </div>
+    </div>
+  );
+};

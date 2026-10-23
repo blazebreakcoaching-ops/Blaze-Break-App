@@ -89,10 +89,36 @@ const baseRequest = (db: FirestoreLike, uid: string, overrides: Record<string, u
   ...overrides,
 });
 
-describe('orchestrateNheiRecoveryRequest - no personal context available', () => {
-  it('returns no_personal_context_available when reflection_storage was never consented', async () => {
+describe('orchestrateNheiRecoveryRequest - data-minimised ordering (Phase 5 fix)', () => {
+  it('returns consent_not_granted before ever reading personal evidence, when routing_insights was never consented', async () => {
     const db = createFakeFirestore();
+    // Deliberately seed NOTHING - not even reflection_storage - to prove
+    // the consent check alone is enough to short-circuit before any
+    // personal-context read is attempted.
     const result = await orchestrateNheiRecoveryRequest(baseRequest(db, 'userA'));
+    expect(result.status).toBe('consent_not_granted');
+  });
+
+  it('returns safeguarding_not_cleared before reading personal evidence, once routing_insights is consented but the gate still blocks', async () => {
+    const db = createFakeFirestore();
+    await setNheiConsent(db, 'userA', 'routing_insights', true);
+    // Deliberately NOT consenting reflection_storage either - if this
+    // reached the context check it would hit no_personal_context_available
+    // instead, which would prove the ordering fix did NOT short-circuit
+    // on safeguarding first.
+    const result = await orchestrateNheiRecoveryRequest(baseRequest(db, 'userA'));
+    expect(result.status).toBe('safeguarding_not_cleared');
+    if (result.status === 'safeguarding_not_cleared') expect(result.safeguardingClearance.cleared).toBe(false);
+  });
+
+  it('only reaches no_personal_context_available once BOTH consent and safeguarding have already passed', async () => {
+    const db = createFakeFirestore();
+    await setNheiConsent(db, 'userA', 'routing_insights', true);
+    // Deliberately NOT consenting reflection_storage - this is the one
+    // remaining gap this status exists for.
+    const result = await orchestrateNheiRecoveryRequest(
+      baseRequest(db, 'userA', { safeguardingGate: SIMULATED_TEST_ONLY_CLEARED_GATE }),
+    );
     expect(result.status).toBe('no_personal_context_available');
   });
 });
@@ -102,11 +128,9 @@ describe('orchestrateNheiRecoveryRequest - fail-closed safeguarding by default',
     const db = createFakeFirestore();
     await seedUser(db, 'userA');
     const result = await orchestrateNheiRecoveryRequest(baseRequest(db, 'userA'));
-    expect(result.status).toBe('completed');
-    if (result.status === 'completed') {
+    expect(result.status).toBe('safeguarding_not_cleared');
+    if (result.status === 'safeguarding_not_cleared') {
       expect(result.safeguardingClearance.cleared).toBe(false);
-      expect(result.bridgeResult.noSuggestionReason).toBe('safeguarding_not_cleared');
-      expect(result.arbitration.selected).toBeNull();
     }
   });
 
@@ -118,13 +142,13 @@ describe('orchestrateNheiRecoveryRequest - fail-closed safeguarding by default',
     // so the real gate (UNINTEGRATED_SAFEGUARDING_GATE) still decides.
     const smuggled = { ...baseRequest(db, 'userA'), safeguardingClearance: { cleared: true, ageBand: 'adult' } } as any;
     const result = await orchestrateNheiRecoveryRequest(smuggled);
-    expect(result.status).toBe('completed');
-    if (result.status === 'completed') expect(result.safeguardingClearance.cleared).toBe(false);
+    expect(result.status).toBe('safeguarding_not_cleared');
+    if (result.status === 'safeguarding_not_cleared') expect(result.safeguardingClearance.cleared).toBe(false);
   });
 });
 
 describe('orchestrateNheiRecoveryRequest - consent is read, never accepted as a boolean', () => {
-  it('routingInsightsConsented is false when the user never consented, regardless of what a caller might wish were true', async () => {
+  it('returns consent_not_granted when the user never consented, regardless of what a caller might wish were true', async () => {
     const db = createFakeFirestore();
     await setNheiConsent(db, 'userA', 'reflection_storage', true);
     // Deliberately NOT consenting to routing_insights.
@@ -132,11 +156,7 @@ describe('orchestrateNheiRecoveryRequest - consent is read, never accepted as a 
     await writeNheiEvidence(db, 'userA', validRecord(), { systemAuthority: authority });
     const smuggled = { ...baseRequest(db, 'userA'), routingInsightsConsented: true } as any;
     const result = await orchestrateNheiRecoveryRequest(smuggled);
-    expect(result.status).toBe('completed');
-    if (result.status === 'completed') {
-      expect(result.routingInsightsConsented).toBe(false);
-      expect(result.bridgeResult.noSuggestionReason).toBe('consent_not_granted');
-    }
+    expect(result.status).toBe('consent_not_granted');
   });
 
   it('routingInsightsConsented is true only once the user’s own permissions document actually says so', async () => {

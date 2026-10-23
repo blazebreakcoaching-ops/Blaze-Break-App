@@ -97,11 +97,19 @@ export interface NheiRecoveryOrchestrationRequest {
 }
 
 export type NheiRecoveryOrchestrationOutcome =
+  // routing_insights is not consented - returned before any personal
+  // evidence is ever read (see the reordering note below).
+  | { status: 'consent_not_granted' }
+  // The safeguarding gate did not clear this request - same
+  // early-return property. safeguardingClearance is still returned so a
+  // caller can see the real reason (today, always
+  // 'safeguarding_layer_not_integrated' via the real default gate).
+  | { status: 'safeguarding_not_cleared'; safeguardingClearance: NheiSafeguardingClearance }
   // buildNheiPersonalContextSummary itself returned null - this is
-  // distinct from the bridge's own 'consent_not_granted', because it
-  // means reflection_storage (the summary's own prerequisite, a
-  // DIFFERENT consent purpose from routing_insights) isn't held, so
-  // there is no summary to even evaluate routing_insights against.
+  // distinct from 'consent_not_granted' above, because it means
+  // reflection_storage (the summary's own prerequisite, a DIFFERENT
+  // consent purpose from routing_insights) isn't held, checked only
+  // once routing_insights and safeguarding have both already passed.
   | { status: 'no_personal_context_available' }
   | {
       status: 'completed';
@@ -113,21 +121,38 @@ export type NheiRecoveryOrchestrationOutcome =
 
 // The one entry point. Every field of its output is derived from a
 // verified source - nothing here is an echo of untrusted caller input.
+//
+// PHASE 5 FIX (directive §9, "review data-access ordering so
+// unnecessary personal-context retrieval is avoided"): consent and
+// safeguarding are checked FIRST, before buildNheiPersonalContextSummary
+// is ever called - Phase 4B's original order read the user's full
+// personal evidence from Firestore unconditionally, even though the
+// real safeguarding gate (UNINTEGRATED_SAFEGUARDING_GATE) rejects every
+// request today regardless of what that evidence contained. Checking
+// consent/safeguarding first (neither of which requires touching
+// personal evidence at all) means a request that was always going to be
+// blocked never causes a personal-evidence read in the first place.
 export async function orchestrateNheiRecoveryRequest(
   request: NheiRecoveryOrchestrationRequest,
 ): Promise<NheiRecoveryOrchestrationOutcome> {
-  const contextSummary = await buildNheiPersonalContextSummary(request.db, request.uid);
-  if (contextSummary === null) {
-    return { status: 'no_personal_context_available' };
-  }
-
   const consentState = await getNheiConsent(request.db, request.uid);
   const routingInsightsConsented = isNheiPurposeConsented(consentState, 'routing_insights');
+  if (!routingInsightsConsented) {
+    return { status: 'consent_not_granted' };
+  }
 
   const safeguardingClearance = await request.safeguardingGate({
     uid: request.uid,
     conversationId: request.conversationId,
   });
+  if (!safeguardingClearance.cleared) {
+    return { status: 'safeguarding_not_cleared', safeguardingClearance };
+  }
+
+  const contextSummary = await buildNheiPersonalContextSummary(request.db, request.uid);
+  if (contextSummary === null) {
+    return { status: 'no_personal_context_available' };
+  }
 
   const capacityResult = determineBandwidth(request.capacityGateInput);
 

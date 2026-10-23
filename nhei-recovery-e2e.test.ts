@@ -151,19 +151,20 @@ describe('E2E 5: low and unknown capacity - never conflated, never a default pic
     expect(arbitration.selected?.capacitySuitability).toBe('unknown');
   });
 
-  it('low capacity makes a higher-effort suggestion unsuitable and it is never the default pick', () => {
+  it('low capacity makes a higher-effort suggestion unsuitable and it is never the default pick - surfaced separately, never as an ordinary alternative', () => {
     const { arbitration } = runPipeline(baseInput({
       contextSummary: emptySummary({ behaviouralPatterns: [pattern({ selfSystems: ['RELATIONAL_SELF'] })] }), // boundary_architect needs some_bandwidth
       capacityBand: 'low_bandwidth',
     }));
     expect(arbitration.selected).toBeNull();
     expect(arbitration.abstentionReason).toBe('all_unsuitable_for_capacity');
-    expect(arbitration.alternatives.some((a) => a.targetModule === 'boundary_architect')).toBe(true);
+    expect(arbitration.unsuitableForCapacity.some((a) => a.targetModule === 'boundary_architect')).toBe(true);
+    expect(arbitration.alternatives).toHaveLength(0);
   });
 });
 
-describe('E2E 6: multiple conflicting suggestions for the same route - reconciled, not duplicated', () => {
-  it('reset_studio and anxiety_reset both target STABILISE - arbitration picks one, keeps the other in dedupedAway', () => {
+describe('E2E 6: multiple distinct suggestions for the same broad route - both kept, never falsely merged (Phase 5 fix)', () => {
+  it('reset_studio and anxiety_reset both target STABILISE but are different real tools - arbitration picks one, keeps the OTHER as a genuine alternative, not a reconciled duplicate', () => {
     const { bridgeResult, arbitration } = runPipeline(baseInput({
       contextSummary: emptySummary({
         confirmedInterpretations: [{ evidenceId: 'ev3', selfSystems: ['INTERNAL_SELF'], dimensions: ['EMOTIONAL'], evidenceQuality: 'high' }],
@@ -173,7 +174,10 @@ describe('E2E 6: multiple conflicting suggestions for the same route - reconcile
     const stabiliseCandidates = bridgeResult.suggestions.filter((s) => s.routeType === 'STABILISE');
     expect(stabiliseCandidates.length).toBeGreaterThanOrEqual(2);
     expect(arbitration.selected?.routeType).toBe('STABILISE');
-    expect(arbitration.dedupedAway.some((d) => d.routeType === 'STABILISE')).toBe(true);
+    // Not reconciled away - the other STABILISE suggestion is a real,
+    // distinct alternative module, kept visible.
+    expect(arbitration.dedupedAway).toHaveLength(0);
+    expect(arbitration.alternatives.some((a) => a.routeType === 'STABILISE' && a.targetModule !== arbitration.selected?.targetModule)).toBe(true);
   });
 });
 

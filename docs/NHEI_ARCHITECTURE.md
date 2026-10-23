@@ -345,6 +345,121 @@ these files and the Phase 4 bridge itself.
   offering `recovery_fuel` as a genuinely, independently matching
   alternative rather than a disguised substitute.
 
+## Experience, consent, and agentic-permission UI (Phase 5, offline/unwired today)
+
+Phase 5 builds the user-facing half of Phase 4B's arbitration/orchestration/
+interaction work, plus three new, independent UX foundations. Every new
+`.tsx` file below is confirmed, by repeated `grep -rln`, to be imported only
+by the other new Phase 5 files (the `NheiPhase5Preview.tsx` harness composes
+the rest) — none is imported by `App.tsx` or reachable by any real user, the
+same "prepare but do not activate" discipline every earlier phase used for
+its backend-only work.
+
+- **Arbitration fix — deduplication was keyed on the wrong field.**
+  `nhei-recovery-arbitration.ts` previously grouped candidate suggestions by
+  `routeType` before picking a winner, which silently merged two genuinely
+  different real tools (e.g. a Reset Studio suggestion and an Anxiety Reset
+  suggestion, both `STABILISE`) into one, erasing a real alternative. The
+  grouping key is now `targetModule` — a true duplicate is now only ever the
+  same exact module suggested twice (no current bridge rule produces this,
+  but a future rule could). `arbitrateNheiRecoverySuggestions`'s result also
+  gained a new, structurally separate `unsuitableForCapacity` field: a
+  capacity-unsuitable suggestion is now returned there, never mixed into
+  `alternatives`, so a future UI consumer cannot accidentally render it as
+  an ordinary, equivalent choice.
+- **Orchestration fix — personal evidence was read before consent/safeguarding
+  were checked.** `orchestrateNheiRecoveryRequest` previously called
+  `buildNheiPersonalContextSummary` (a real personal-evidence Firestore read)
+  unconditionally, before checking either `routing_insights` consent or the
+  safeguarding gate — meaning every call read personal evidence even though
+  `UNINTEGRATED_SAFEGUARDING_GATE` always rejects every request today. The
+  function now checks consent first, then safeguarding, and only calls
+  `buildNheiPersonalContextSummary` once both have passed. Two new outcome
+  statuses, `consent_not_granted` and `safeguarding_not_cleared`, are
+  returned before any personal-context read — this is a data-minimisation
+  fix, not a behaviour change for any real caller, since the safeguarding
+  gate's answer is unchanged.
+- **`nhei-recovery-navigation.ts`**: a pure helper pairing a target module
+  with an explicit anchor element id, via a new, deliberately small
+  `NHEI_MODULE_ANCHOR_ID` map (today: only `energy_delta` →
+  `'energy-delta-tool'` — no anchor is invented for any unaudited module).
+  `src/App.tsx` gained a second, purely additive window event listener,
+  `'nhei_recovery_tool_focus'`, alongside the existing `'navigate_tab'`
+  event (whose ~20 existing call sites and bare-string contract are
+  unchanged); the new listener does bounded `requestAnimationFrame` polling
+  for the target element, then `scrollIntoView`. `EnergyBudget.tsx`'s root
+  element gained `id="energy-delta-tool"`. This exists because the
+  `'recover'` tab stacks seven different tools in one scroll — landing on
+  the tab alone does not reliably put a user on Energy Delta Management
+  specifically; nothing here invents a new route or destination.
+- **`src/components/NheiRecoverySuggestionCard.tsx`**: the user-facing card
+  for a `NheiRecoveryArbitrationResult`, built on the same shell and
+  "never more than one primary recommendation, always a way out" discipline
+  as the existing, live `NovaRecommendationCard.tsx`. Every button (accept /
+  dismiss / explain / view alternative / correct interpretation / decline
+  all) is wired to the real `applyNheiRecoveryInteraction` reducer from
+  Phase 4B — no decorative control lacks a state transition. Accepting a
+  suggestion only changes this component's own local state; nothing it does
+  can reach an external system. Renders `unsuitableForCapacity` suggestions
+  in a visually distinct section, never alongside ordinary alternatives, and
+  renders the bridge/arbitration's abstention reasons explicitly rather than
+  an empty card.
+- **`src/components/NheiPrivacyConsent.tsx`**: four consent-mode screens
+  (Educational / Personal Reflection / Longitudinal / Recovery Insights),
+  each separating *granting* from *viewing*. Confirmed by grep
+  (`server.ts` has no route matching `routing_insights|longitudinal_tracking
+  |reflection_storage|setNheiConsent`) that no backend exists yet to write
+  any NHEI consent purpose — so every consent-requiring toggle renders
+  visibly `disabled` with an explicit "not yet available" label, rather than
+  appearing to save a grant that cannot be persisted anywhere.
+  Export/deletion link to the real, existing `GET /api/user/export` and the
+  real, existing whole-account `POST /api/user/delete-account` honestly
+  (noting no granular per-purpose NHEI deletion route exists). Educational
+  Mode is shown as needing no consent at all, matching
+  `authoriseConversationMode`'s real behaviour.
+- **`src/components/NheiReflectionPreview.tsx`** +
+  `nhei-reflection-preview-fixtures.ts`: a feature-disabled preview of what
+  a real reflection view would show, built entirely on a new,
+  explicitly-synthetic `NheiReflectionPreviewEntry` fixture type — never the
+  real `NheiEvidenceRecord`, which deliberately has no raw-text field.
+  Visibly distinguishes what the person reported, Nova's tentative
+  interpretation (hypothesis entries only), user-confirmed information, and
+  a disputed/corrected entry, grouped by synthetic episode, each tagged with
+  its Self(s)/Dimension(s). Local dismiss/correct actions change only this
+  component's own state; no Firestore call exists anywhere in this file.
+- **`nhei-before-words-contract.ts`** + `src/components/NheiBeforeWords.tsx`:
+  a brand-new, from-scratch pure state model (confirmed by a case-insensitive
+  repo-wide search: no prior "Before Words" code existed) for an optional,
+  low-friction entry experience — free text, four optional, individually
+  skippable prompts, an uncertainty flag per prompt, additive corrections
+  (never overwritten), and two equally-presented endings,
+  `proceed_without_retaining` and `retain_as_reflection_evidence`. The
+  contract file has zero import statements (verified by a test reading its
+  own source) — no model call, no persistence path, no diagnostic label is
+  ever required to finish the flow.
+- **`nhei-agentic-action-contract.ts`** +
+  `src/components/NheiAgenticActionPreview.tsx`: prepares the permission
+  contract a future, separately-authorised phase would need before Nova
+  could ever take a real external action (calendar/task adjustment). A
+  strict state machine (`suggested → prepared → awaiting_approval →
+  approved/declined → executing → confirmed/failed`, plus `undone`) with a
+  `VALID_TRANSITIONS` map that throws on any other transition.
+  `recordApprovalDecision` is the only function that can move a proposal out
+  of `awaiting_approval` — structurally, not just by convention, an NHEI
+  interpretation alone can never authorise an external action. The contract
+  file has zero import statements, so no connector, Guardian, calendar, or
+  messaging code is reachable from it. The preview component only ever
+  simulates a connector via `setTimeout` — no real API call of any kind
+  exists in this codebase for any connector today.
+- **No automated rendering/accessibility test exists for any of the six new
+  `.tsx` files above, or for any other `.tsx` file in this codebase.**
+  `vitest.config.ts` runs with `environment: 'node'` and only includes
+  `**/*.test.ts` — there is no jsdom/@testing-library harness anywhere in
+  this repository. Every prior phase's UI work, and this one, has only ever
+  been verified by manual review and a dev-server check, never an automated
+  component test; this is a pre-existing, repo-wide limitation, not
+  something new to Phase 5.
+
 ## Feature governance (both default OFF, AND-combined)
 
 1. `NHEI_EDUCATIONAL_MODE_ENABLED` — a server-only `process.env` read

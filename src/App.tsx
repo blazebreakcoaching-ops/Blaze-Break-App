@@ -1263,6 +1263,37 @@ export default function App() {
     return () => window.removeEventListener('navigate_tab', handleNav);
   }, [safeSetActiveTab]);
 
+  // NHEI Phase 5 (directive §5, "verify Energy Delta navigation"): a
+  // second, purely additive event alongside 'navigate_tab' above - that
+  // event only ever carries a bare tab id, and several tabs (the
+  // "recover" tab among them) stack multiple real tools in one scroll,
+  // so landing on the tab alone doesn't put the user on any specific
+  // one. This listener scrolls to a specific element id once its tab
+  // has actually rendered - bounded retries (not a fixed timeout) since
+  // the tab switch above is itself async (a state update + re-render).
+  // See nhei-recovery-navigation.ts for the pure id-lookup half of this
+  // fix; nothing here invents a new route - it only brings an existing,
+  // already-rendered element into view.
+  useEffect(() => {
+    const handleFocus = (e: Event) => {
+      const anchorId = (e as CustomEvent).detail;
+      if (!anchorId || typeof anchorId !== 'string') return;
+      let attempts = 0;
+      const tryScroll = () => {
+        const el = document.getElementById(anchorId);
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          return;
+        }
+        attempts += 1;
+        if (attempts < 30) requestAnimationFrame(tryScroll); // ~0.5s ceiling at 60fps
+      };
+      requestAnimationFrame(tryScroll);
+    };
+    window.addEventListener('nhei_recovery_tool_focus', handleFocus);
+    return () => window.removeEventListener('nhei_recovery_tool_focus', handleFocus);
+  }, []);
+
   // Settings State
   const [showSettings, setShowSettings] = useState(false);
   const [showWalkthrough, setShowWalkthrough] = useState(false);
