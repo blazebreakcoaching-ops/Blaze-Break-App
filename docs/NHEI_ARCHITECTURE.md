@@ -501,6 +501,34 @@ unambiguous. Three corrections, plus one pointer:
   one workstream of that larger picture (workstream A there), not a
   synonym for Nova as a whole.
 
+## Real consent-writing routes (Phase 5C, directive §2)
+
+`GET`/`POST /api/nhei/consent` (`server.ts`) are real, server-authored
+routes backed by the already-existing, already-tested
+`getNheiConsent`/`setNheiConsent`/`withdrawNheiConsent`
+(`nhei-persistence-service.ts`) — no new persistence logic was written,
+only the route wiring. `uid` comes only from the verified ID token
+(`requireAuth(req).uid`), never the request body, so a request can only
+ever grant or withdraw consent for the caller's own account. Each of the
+three purposes is set independently — one purpose's write never touches
+another's field. Withdrawal only flips the flag; it never deletes
+anything already persisted, matching `withdrawNheiConsent`'s own
+pre-existing "withdrawal and deletion are not equivalent" design.
+
+**This is consent bookkeeping only — it activates no personal NHEI
+processing by itself.** Educational Mode is governed entirely by its own
+two separate gates (unaffected); Personal Reflection/Longitudinal/
+Recovery Insights remain unwired into any conversation route; the
+independent safeguarding system remains unbuilt. `src/components/
+NheiPrivacyConsent.tsx`'s three personal-purpose toggles are now wired
+to this real route (fetch on mount, write on toggle, a real error state
+on a rejected write) — still an offline preview, not mounted into
+`App.tsx`'s live navigation.
+
+See `docs/NOVA_FULL_VISION_CAPABILITY_REGISTER.md` workstream O for the
+full account, including the Phase 5B finding (`ConnectedNovaPermissions`)
+this route's design follows.
+
 ## Feature governance (both default OFF, AND-combined)
 
 1. `NHEI_EDUCATIONAL_MODE_ENABLED` — a server-only `process.env` read

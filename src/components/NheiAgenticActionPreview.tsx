@@ -20,6 +20,10 @@ import {
 export const NheiAgenticActionPreview = () => {
   const [proposal, setProposal] = useState<NheiAgenticActionProposal | null>(null);
   const [simulating, setSimulating] = useState(false);
+  // Phase 5C (directive §7, "external action failure" UI test coverage):
+  // an explicit toggle so this preview can demonstrate BOTH simulated
+  // outcomes, not only the happy path - still never a real connector call.
+  const [simulateFailure, setSimulateFailure] = useState(false);
 
   const start = () => {
     const p = proposeAgenticAction({
@@ -41,7 +45,7 @@ export const NheiAgenticActionPreview = () => {
       setProposal(executing);
       // Simulated connector delay only - no real API call of any kind.
       setTimeout(() => {
-        setProposal(recordExecutionOutcome(executing, 'confirmed'));
+        setProposal(recordExecutionOutcome(executing, simulateFailure ? 'failed' : 'confirmed'));
         setSimulating(false);
       }, 900);
     }
@@ -63,9 +67,15 @@ export const NheiAgenticActionPreview = () => {
       </div>
 
       {!proposal && (
-        <button onClick={start} className="btn-primary py-2.5 px-4 text-xs">
-          Show a worked example
-        </button>
+        <div className="space-y-2">
+          <label className="flex items-center gap-2 text-xs text-text-muted">
+            <input type="checkbox" checked={simulateFailure} onChange={(e) => setSimulateFailure(e.target.checked)} />
+            Simulate a connector failure instead of success
+          </label>
+          <button onClick={start} className="btn-primary py-2.5 px-4 text-xs">
+            Show a worked example
+          </button>
+        </div>
       )}
 
       {proposal && (

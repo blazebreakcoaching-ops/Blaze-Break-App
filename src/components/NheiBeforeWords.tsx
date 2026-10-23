@@ -137,7 +137,21 @@ export const NheiBeforeWords = () => {
           </button>
         </div>
         <button onClick={() => setState(decideProceedWithoutRetaining(state))} className="btn-primary py-2.5 px-4 text-xs w-full justify-center flex items-center gap-2">
-          <Check className="w-3.5 h-3.5" /> Done for now
+          <Check className="w-3.5 h-3.5" /> Done for now - don't save this
+        </button>
+        {/* Phase 5C (directive §3): "if retention is unavailable, explain
+            this clearly in the UI" - shown, not hidden, but genuinely
+            disabled, since no real reflection_storage write exists yet
+            to receive decideRetainAsReflectionEvidence's outcome. Matches
+            NheiPrivacyConsent.tsx's own "visibly disabled, honest" pattern
+            rather than silently omitting the option. */}
+        <button
+          disabled
+          aria-disabled="true"
+          title="Not yet available - there is no way to save this as a reflection yet"
+          className="py-2.5 px-4 text-xs w-full justify-center flex items-center gap-2 rounded-lg border border-border text-text-muted/50 cursor-not-allowed"
+        >
+          Save this as a reflection - not yet available
         </button>
       </div>
     );

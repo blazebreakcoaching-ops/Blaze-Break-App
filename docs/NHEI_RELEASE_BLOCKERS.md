@@ -105,8 +105,14 @@ settled" — the whole point of this register is that they are not.
    copy. *Not started — explicitly deferred to the safeguarding
    reviewer*, not an engineering decision.
 7. **A real, user-facing consent-granting UI for `reflection_storage`.**
-   *Not started.* The consent-purpose plumbing exists and is enforced in
-   code; no screen anywhere in this app presents this choice to a user.
+   *Partial — the writing route now exists (Phase 5C); the screen remains
+   offline.* `GET`/`POST /api/nhei/consent` (`server.ts`) now really
+   reads/writes this purpose, server-side, per-user, and
+   `NheiPrivacyConsent.tsx`'s toggle for it is wired to that route - but
+   that component is still not mounted into `App.tsx`'s live navigation
+   (see Phase 5's own "offline preview" design), so no real user has
+   reached this control yet. The remaining gap is purely "put this screen
+   in front of a real user," not "build the backend" or "build the UI."
 8. **Real-model extraction accuracy.** *Not started — same credential
    blocker as item 4.* The evaluation harness's real-execution path is
    implemented and its wiring is proven against a mocked client; no run
@@ -119,9 +125,13 @@ settled" — the whole point of this register is that they are not.
 ## Blocking Longitudinal Mode (in addition to all of the above)
 
 9. **A separate, user-facing consent surface for `longitudinal_tracking`.**
-   *Not started.* The dedicated, stricter read interface
-   (`readNheiEvidenceForLongitudinalMode`, requiring both purposes) is
-   implemented and tested; no consent UI or route wiring exists.
+   *Partial, same as item 7 — the writing route exists (Phase 5C,
+   `POST /api/nhei/consent`), the screen is still offline.* The dedicated,
+   stricter read interface (`readNheiEvidenceForLongitudinalMode`,
+   requiring both purposes) is implemented and tested, and setting this
+   purpose alone (without `reflection_storage`) is explicitly proven,
+   by test, not to grant it — that structural guarantee is unaffected by
+   the new route existing.
 
 ## Cross-cutting, blocking any persistent-evidence mode
 
@@ -148,11 +158,12 @@ settled" — the whole point of this register is that they are not.
     wires it in, that phase must independently re-confirm every
     prerequisite below is actually satisfied at the real call site, not
     merely that this file's types require it.
-13. **The `routing_insights` consent purpose has no user-facing consent
-    UI**, same gap as `reflection_storage` (item 7) and
-    `longitudinal_tracking` (item 9) — `isNheiPurposeConsented(state,
-    'routing_insights')` is enforced in code but no screen anywhere
-    presents this choice to a user. *Not started.*
+13. **The `routing_insights` consent purpose's user-facing consent
+    screen remains offline**, same partial status as `reflection_storage`
+    (item 7) and `longitudinal_tracking` (item 9) — the writing route
+    (`POST /api/nhei/consent`) is real and this purpose is one of the
+    three it independently supports; `isNheiPurposeConsented(state,
+    'routing_insights')` is unaffected. *Partial.*
 14. **The independent safeguarding system** (item 5) blocks the bridge
     identically to Personal Reflection Mode — the bridge takes the full
     `NheiSafeguardingClearance` as a required input and only
@@ -236,21 +247,23 @@ settled" — the whole point of this register is that they are not.
     not claim otherwise, and a future phase should not claim component-test
     coverage that cannot exist without first adding that harness.
 
-## Phase 5B finding: item 18 now has two reusable, working precedents (still not a resolution)
+## Phase 5B finding, Phase 5C resolution: item 18 (and items 7, 9, 13's writing half)
 
 Phase 5B's wider audit (`docs/NOVA_FULL_VISION_CAPABILITY_REGISTER.md`,
 workstream O) found that a real, working, NON-NHEI consent-writing
-pattern already exists in this codebase and is directly reusable for
-item 18 above: `ConnectedNovaPermissions`
+pattern already existed in this codebase: `ConnectedNovaPermissions`
 (`src/components/ConnectedRecoveryModules.tsx:681`) — a real,
 rules-enforced, per-user Firestore permissions document the client reads
-and writes directly, already used for ~20 other "let Nova use my X"
-toggles. `/api/ally/view/:token/consent` is a second, server-route
-alternative, also real. **This closes the "is there a pattern to build
-on" question, not item 18 itself** — no NHEI-specific consent-writing
-route has been built on either pattern; that remains a future phase's
-own, separate engineering work, now with a clear starting point instead
-of an open design question.
+and writes directly. Phase 5C built the NHEI-specific equivalent on that
+same pattern, server-authored instead of client-written:
+`GET`/`POST /api/nhei/consent` (`server.ts`), backed by the
+already-existing `getNheiConsent`/`setNheiConsent`/`withdrawNheiConsent`
+(`nhei-persistence-service.ts`). **Item 18 is now resolved for the
+writing route itself** — `uid` from the verified token only, each
+purpose independent, withdrawal never deletes. What remains open (items
+7, 9, 13) is putting a real screen in front of a real user:
+`NheiPrivacyConsent.tsx`'s toggles are wired to this route but the
+component is still not mounted into `App.tsx`'s live navigation.
 
 ## Explicitly not a blocker (confirmed working, independent of any NHEI activation)
 

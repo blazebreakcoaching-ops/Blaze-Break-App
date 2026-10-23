@@ -29,6 +29,12 @@ export interface NovaInvisibleLoadItem {
   /** Whether the user is sure this belongs here at all - preserved, never resolved away. */
   userCertain: boolean;
   corrections: string[];
+  // Phase 5C (directive §4, "allow users to... defer"): a deferred item
+  // stays recorded (unlike remove, which deletes it) but is excluded from
+  // buildTakeTheLoadProblemsFromInvisibleLoad below - "I don't want to
+  // act on this right now" is a real, distinct choice from "this isn't
+  // true" (correct) or "take this off the list" (remove).
+  deferred: boolean;
 }
 
 export interface NovaInvisibleLoadContext {
@@ -61,8 +67,19 @@ export function addInvisibleLoadItem(
     source: 'user_reported',
     userCertain,
     corrections: [],
+    deferred: false,
   };
   return { ...context, items: [...context.items, item] };
+}
+
+/** "Not now" - stays in the list, just excluded from any Take the Load problem built from this context. */
+export function deferInvisibleLoadItem(context: NovaInvisibleLoadContext, itemId: string): NovaInvisibleLoadContext {
+  return { ...context, items: context.items.map((item) => (item.id === itemId ? { ...item, deferred: true } : item)) };
+}
+
+/** Reverses a defer - an explicit, equally-available "actually, now" action, never automatic. */
+export function undeferInvisibleLoadItem(context: NovaInvisibleLoadContext, itemId: string): NovaInvisibleLoadContext {
+  return { ...context, items: context.items.map((item) => (item.id === itemId ? { ...item, deferred: false } : item)) };
 }
 
 /** Additive only - never overwrites the original description, matching nhei-before-words-contract.ts's own discipline. */

@@ -38,16 +38,20 @@ import { effectiveConsentStatus, canRespondToConsent, computeInviteExpiresAt, is
 import { guardianSupportInvitationEnabled, validateGuardianSupportOffer, isValidGuardianSupportEventType, isValidGuardianSupportTemplateId, buildGuardianSupportMessage } from './guardian-support-invitation';
 import { quietHoursCheckPasses } from './ally-nudge-quiet-hours';
 import { collectionsForExport, collectionsForErasure, userIdFieldsFor } from './user-data-collections';
-// Phase 3C-2A section 8: the only NHEI import anywhere in server.ts. This
-// wires a READ-ONLY data-export function into the existing GDPR export
-// route - it creates no evidence, activates no conversational
-// intelligence, and is not gated by (or affected by) any consent choice,
-// matching exportAllNheiData's own deliberate design (see
-// nhei-persistence-service.ts's header comment on why: withdrawing
-// consent stops new processing, it does not forfeit the right to see
-// data already collected). Nothing else from the NHEI pipeline is
-// imported or called from this file.
-import { exportAllNheiData } from './nhei-persistence-service';
+// Phase 3C-2A section 8 wired exportAllNheiData (read-only GDPR export).
+// Phase 5C (directive §2, "implement real NHEI consent-writing
+// infrastructure") adds getNheiConsent/setNheiConsent/withdrawNheiConsent
+// below - these ONLY read/write the three boolean consent flags on the
+// user's own nova_permissions/current document. Calling them activates
+// NOTHING by themselves: Educational Mode is governed entirely by its own
+// two separate gates above (unaffected by these flags), and Personal
+// Reflection/Longitudinal/Recovery Insights processing has no route
+// anywhere in this file that reads these flags to do anything with a
+// real conversation - the routes below are consent bookkeeping only.
+// Still nothing else from the NHEI pipeline (extraction, evidence
+// writes, the recovery bridge) is imported or called from this file.
+import { exportAllNheiData, getNheiConsent, setNheiConsent, withdrawNheiConsent } from './nhei-persistence-service';
+import { isValidNheiConsentPurpose, NHEI_CONSENT_PURPOSES } from './nhei-consent';
 // Phase 3C-2B Checkpoint 2 section 1/2: Educational Mode only, gated by a
 // server-only env-var flag that defaults OFF (see
 // nhei-educational-mode-flag.ts's own header comment for why this is NOT
@@ -5742,6 +5746,131 @@ app.get("/api/signals/calendar", verifyAppCheck, authenticateFirebaseUser, async
 });
 
 // ============================================================================
+// Nova Take the Load - Calendar Protection (Phase 5C, directive §5).
+//
+// The first complete Agentic Nova workflow: prepare -> approve -> execute,
+// server-authorised at every step. `CALENDAR_PROTECTION_EXECUTION_ENABLED`
+// is hardcoded false in nova-calendar-protection-service.ts, so the
+// execute route below always passes `null` for the connector - this file
+// imports NO connector, real or fake, of any kind. No real external
+// calendar modification is reachable from any route in this app today.
+//
+// Permission check: requires the same `allowCalendarSignals` consent the
+// existing read-only calendar signal already requires
+// (getCalendarConnectionState, below in this file) - this is a practical
+// proxy, not a verified check of the real `calendar.events` OAuth scope
+// (which would require a Google tokeninfo call); since execution stays
+// disabled regardless, this is sufficient for this phase's scope.
+// ============================================================================
+import {
+  prepareCalendarProtectionProposal, presentCalendarProtectionForApproval,
+  recordCalendarProtectionApproval, executeCalendarProtectionProposal,
+  retryCalendarProtectionExecution, undoCalendarProtectionProposal,
+} from './nova-calendar-protection-service';
+
+const NovaCalendarProposeSchema = z.object({
+  idempotencyKey: z.string().min(1).max(200),
+  startIso: z.string(),
+  endIso: z.string(),
+  title: z.string().min(1).max(200),
+}).strict();
+
+app.post("/api/nova/calendar-protection/propose", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const uid = requireAuth(req).uid;
+    const db = getDb();
+    if ((await getCalendarConnectionState(db, uid)) === 'not_connected') {
+      return res.status(403).json({ error: "Calendar signals are not enabled for this account - connect and enable calendar signals first." });
+    }
+    const parsed = NovaCalendarProposeSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: "Invalid calendar protection request.", details: (parsed as any).error?.errors || [] });
+    }
+    const proposal = await prepareCalendarProtectionProposal(db, uid, parsed.data.idempotencyKey, parsed.data);
+    res.json({ proposal });
+  } catch (err: any) {
+    logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+    res.status(500).json({ error: GENERIC_SERVER_ERROR });
+  }
+});
+
+app.post("/api/nova/calendar-protection/:proposalId/present", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const uid = requireAuth(req).uid;
+    const proposal = await presentCalendarProtectionForApproval(getDb(), uid, req.params.proposalId);
+    res.json({ proposal });
+  } catch (err: any) {
+    logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+    res.status(500).json({ error: GENERIC_SERVER_ERROR });
+  }
+});
+
+const NovaCalendarApprovalSchema = z.object({
+  approved: z.boolean(),
+  approvalFingerprint: z.string().min(1),
+}).strict();
+
+// The server-side authorisation gate. A bare `{approved: true}` is
+// rejected by this schema itself (approvalFingerprint is required, not
+// optional) - there is no code path here that accepts approval without
+// the fingerprint the server computed when the proposal was prepared.
+app.post("/api/nova/calendar-protection/:proposalId/approve", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const uid = requireAuth(req).uid;
+    const parsed = NovaCalendarApprovalSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: "Both \"approved\" and \"approvalFingerprint\" are required." });
+    }
+    const outcome = await recordCalendarProtectionApproval(getDb(), uid, req.params.proposalId, parsed.data);
+    if (outcome.status === 'fingerprint_mismatch') {
+      return res.status(409).json({ error: "This approval does not match the proposal currently on record - please review the current proposal and try again." });
+    }
+    res.json(outcome);
+  } catch (err: any) {
+    logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+    res.status(500).json({ error: GENERIC_SERVER_ERROR });
+  }
+});
+
+app.post("/api/nova/calendar-protection/:proposalId/execute", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const uid = requireAuth(req).uid;
+    // `null`: see this block's own header - no connector of any kind is
+    // ever imported into this route, so execution always reports disabled.
+    const outcome = await executeCalendarProtectionProposal(getDb(), uid, req.params.proposalId, null);
+    res.json(outcome);
+  } catch (err: any) {
+    logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+    res.status(500).json({ error: GENERIC_SERVER_ERROR });
+  }
+});
+
+app.post("/api/nova/calendar-protection/:proposalId/retry", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const uid = requireAuth(req).uid;
+    const proposal = await retryCalendarProtectionExecution(getDb(), uid, req.params.proposalId);
+    res.json({ proposal });
+  } catch (err: any) {
+    logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+    res.status(500).json({ error: GENERIC_SERVER_ERROR });
+  }
+});
+
+app.post("/api/nova/calendar-protection/:proposalId/undo", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const uid = requireAuth(req).uid;
+    // Undo would also require a real connector to do anything - with
+    // execution disabled, no proposal can ever reach 'confirmed' via this
+    // route, so this always throws "Can only undo a confirmed proposal."
+    // (the service's own real behaviour), never performing a real action.
+    const proposal = await undoCalendarProtectionProposal(getDb(), uid, req.params.proposalId, null);
+    res.json({ proposal });
+  } catch (err: any) {
+    res.status(409).json({ error: err.message || "Could not undo this proposal." });
+  }
+});
+
+// ============================================================================
 // Real Signals: Gmail (genuinely fetched, not the "inbox shielding" claim
 // this used to make - honestly scoped to real inbox-load tracking instead)
 // ============================================================================
@@ -7231,6 +7360,80 @@ app.post("/api/admin/nhei-knowledge/import", verifyAppCheck, authenticateFirebas
       logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
       res.status(500).json({ error: GENERIC_SERVER_ERROR });
     }
+  }
+});
+
+// ---- NHEI Phase 5C (directive §2): real consent-writing infrastructure --
+//
+// Reuses ConnectedNovaPermissions's own pattern (a per-user document the
+// caller's own verified uid writes to, one boolean per purpose) rather
+// than inventing a new mechanism - see
+// docs/NOVA_FULL_VISION_CAPABILITY_REGISTER.md workstream O. Unlike
+// ConnectedNovaPermissions (a direct client Firestore write under
+// Firestore rules), these two routes write server-side via the Admin
+// SDK: `uid` comes only from `requireAuth(req).uid` (the verified ID
+// token), never from the request body, so a request cannot grant or
+// withdraw consent for any account but the caller's own. Each of the
+// three purposes (reflection_storage, longitudinal_tracking,
+// routing_insights) is set independently - setting one never touches
+// the other two (setNheiConsent only ever merges its own single field).
+// Withdrawal (`granted: false`) only flips the flag; it NEVER deletes
+// anything already persisted - deletion remains the separate,
+// already-existing GDPR delete-account/export flow, matching
+// nhei-persistence-service.ts's own "withdrawal and deletion are not
+// equivalent" design. Longitudinal consent alone still does not grant
+// reflection evidence access - that boundary lives in
+// readNheiEvidenceForLongitudinalMode (nhei-persistence-service.ts),
+// unaffected by and not touched by this route.
+//
+// This is consent bookkeeping only. It activates no personal NHEI
+// processing by itself - Personal Reflection/Longitudinal/Recovery
+// Insights modes remain unwired into any conversation route, and the
+// independent safeguarding system remains unbuilt
+// (UNINTEGRATED_SAFEGUARDING_GATE, unaffected by this file).
+app.get("/api/nhei/consent", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const uid = requireAuth(req).uid;
+    const consent = await getNheiConsent(getDb(), uid);
+    res.json({ consent });
+  } catch (err: any) {
+    logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+    res.status(500).json({ error: GENERIC_SERVER_ERROR });
+  }
+});
+
+const NheiConsentWriteSchema = z.object({
+  purpose: z.string(),
+  granted: z.boolean(),
+}).strict();
+
+app.post("/api/nhei/consent", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const uid = requireAuth(req).uid;
+    const parsed = NheiConsentWriteSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: '"purpose" (string) and "granted" (boolean) are required.' });
+    }
+    const { purpose, granted } = parsed.data;
+    if (!isValidNheiConsentPurpose(purpose)) {
+      return res.status(400).json({ error: `"purpose" must be one of: ${NHEI_CONSENT_PURPOSES.join(', ')}.` });
+    }
+    const db = getDb();
+    if (granted) {
+      await setNheiConsent(db, uid, purpose, true);
+    } else {
+      // Same effect as setNheiConsent(db, uid, purpose, false), named
+      // explicitly here so this route's own log line is honest about
+      // which direction happened, matching withdrawNheiConsent's own
+      // "never deletes anything" contract.
+      await withdrawNheiConsent(db, uid, purpose);
+    }
+    const consent = await getNheiConsent(db, uid);
+    logger.info(`NHEI consent ${granted ? 'granted' : 'withdrawn'} for purpose "${purpose}"`, { uid, purpose, granted });
+    res.json({ success: true, consent });
+  } catch (err: any) {
+    logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+    res.status(500).json({ error: GENERIC_SERVER_ERROR });
   }
 });
 

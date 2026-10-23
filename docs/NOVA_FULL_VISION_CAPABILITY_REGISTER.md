@@ -86,31 +86,39 @@ rather than duplicating ~20 phases of detail.
 - **Next work**: nothing further this phase — correctly stopped short of
   building a consent-writing route.
 
-## C. Invisible Load Intelligence — **BUILT BUT OFFLINE (new this phase)**
+## C. Invisible Load Intelligence — **BUILT BUT OFFLINE** (Phase 5C: now has a real UI and a Take the Load bridge)
 
-- **Existing code before this phase**: none. A repo-wide, case-insensitive
+- **Existing code before Phase 5B**: none. A repo-wide, case-insensitive
   search found only a single colloquial phrase in `RecoveryPlan.tsx`
   ("naming the invisible load, not carrying it silently") — prose, not a
   data model.
-- **Existing code now**: `nova-invisible-load-contract.ts` (this phase) —
-  user-reported obligations/commitments/practical-friction items, plain
-  text, `userCertain` flag, additive corrections, explicit opt-out that
-  clears retained items.
-- **Missing**: any UI component, any connection to Recovery Intelligence
-  or NHEI (deliberately not built this phase — see architectural
-  separation note below), any persistence.
+- **Existing code now**: `nova-invisible-load-contract.ts` (Phase 5B;
+  Phase 5C added `deferred`/`deferInvisibleLoadItem`/
+  `undeferInvisibleLoadItem`), `src/components/NovaInvisibleLoad.tsx`
+  (Phase 5C, mobile-first: stacked layout, full-width 44px-minimum
+  touch-target buttons, no hover-only affordance), and
+  `nova-invisible-load-take-the-load-bridge.ts` (Phase 5C) — a
+  single-item-only function connecting one explicitly-chosen item to a
+  Take the Load problem, refusing a deferred item outright.
+- **Missing**: any connection to NHEI/Recovery Intelligence as context
+  (deliberately not built — see architectural separation note), any
+  persistence (component state is session-only, by design).
 - **Credentials/approval needed**: none.
-- **Safeguarding/privacy dependencies**: none created — this file has
-  zero import statements and no hidden score (`score`/`rating`/`index`/
-  `severity` fields do not exist on `NovaInvisibleLoadItem`).
-- **Required UX**: not yet designed — this phase built the data contract
-  only, per the directive's own scope ("Add an Invisible Load
-  representation," not a UI).
-- **Verification status**: unit tested (8 tests); no UI exists yet to
-  test.
-- **Next work**: a UI component (future phase), and a deliberate decision
-  about whether/how it feeds Recovery Intelligence as context — never as
-  a hidden score.
+- **Safeguarding/privacy dependencies**: none — the contract file has
+  zero import statements; no hidden score field exists on
+  `NovaInvisibleLoadItem` (checked structurally by key enumeration, not
+  text search); the bridge never acts on more than one explicitly-chosen
+  item at a time ("do not turn every obligation into a task
+  automatically").
+- **Required UX**: built this phase — add/correct/remove/defer/opt-out,
+  a per-item "get help with this" action, real `<textarea>`/`<select>`/
+  `<input>` elements with `aria-label`s.
+- **Verification status**: unit tested (18 tests across the contract and
+  bridge files) + 6 real rendered-DOM component tests (`@testing-library/
+  react`, see workstream-independent note on the new component-test
+  foundation).
+- **Next work**: a deliberate decision about whether/how it should ever
+  feed Recovery Intelligence as context — never as a hidden score.
 
 ## D. Recovery Friction and Recovery Environment — **NOT STARTED** (as named concepts; adjacent features exist under other names)
 
@@ -131,40 +139,53 @@ rather than duplicating ~20 phases of detail.
   was confirmed; a future phase should decide reconciliation vs. a new
   build before writing any code here.
 
-## E. Nova — Take the Load — **BUILT BUT OFFLINE (new this phase)**
+## E. Nova — Take the Load — **BUILT BUT OFFLINE** (Phase 5C added a complete, real calendar-protection route; still no real connector)
 
-- **Existing code before this phase**: none.
-- **Existing code now**: `nova-take-the-load-types.ts`,
+- **Existing code before Phase 5B**: none.
+- **Phase 5B**: `nova-take-the-load-types.ts`,
   `nova-take-the-load-connector-contract.ts`,
-  `nova-take-the-load-engine.ts` (directive §4's orchestration layer).
-- **Current capabilities**: identify candidate actions (two synthetic
-  categories: calendar protection, task deferral) from a user-stated
-  problem; prepare (dependency/feasibility + capacity-fit check, reusing
-  the real `isEffortWithinBandwidth`); explicit approval gate; execute
-  through an abstract connector; confirm/fail/retry/undo.
-- **Missing**: any real connector implementation. The only
-  `NovaExternalConnector` in this codebase is
-  `createFakeConnectorForTesting` — test-only, statically guarded (see
-  `nova-take-the-load-connector-contract.test.ts`) against ever being
-  imported from `server.ts` or any `.tsx` file.
+  `nova-take-the-load-engine.ts` — the generic orchestration layer
+  (identify/prepare/approve/execute/confirm/fail/retry/undo) for two
+  synthetic categories (calendar protection, task deferral), reusing the
+  real `isEffortWithinBandwidth` for capacity fit, with zero `nhei-`
+  imports.
+- **Phase 5C**: `nova-calendar-protection-service.ts` applies this same
+  discipline to calendar protection SPECIFICALLY, as a real, persisted,
+  server-authorised workflow — see workstream L below for the full
+  account (server routes, fingerprint-based approval, idempotency,
+  replay protection, audit log). `CALENDAR_PROTECTION_EXECUTION_ENABLED`
+  is a separate, hardcoded `false` kill-switch in this new file,
+  independent of (in addition to) the generic engine's own lack of a
+  real connector.
+- **Missing**: any real connector implementation for either the generic
+  engine or the calendar-specific service. The only `NovaExternalConnector`
+  in this codebase is `createFakeConnectorForTesting` — test-only,
+  statically guarded against being imported from `server.ts` or any
+  `.tsx` file (two separate guard tests, one per phase).
 - **Working integrations reviewed before building this**: none reused.
   Boundary Autopilot (workstream G) already sends real Slack
-  messages/DND/status today — this engine deliberately does not touch
-  that connector or any of the read-only OAuth integration tokens
-  (workstream L) found during this phase's audit.
+  messages/DND/status today; the real, already-granted
+  `calendar.events` OAuth write scope (`signInWithGoogleCalendar`,
+  `src/lib/auth.tsx`, Phase 5C finding) is likewise not touched — no
+  write call to Google Calendar exists anywhere in this codebase.
 - **Credentials/approval needed**: a real, authorised connector (a future
   phase's own decision, explicitly out of scope here) before any
   execution could touch a real calendar or task list.
-- **Safeguarding/privacy dependencies**: none — structurally independent
-  of NHEI consent (zero `nhei-` imports, verified by test); approval is
-  its own, separate, required gate.
-- **Required UX**: not built this phase (engine/contract only, per
-  directive §4's own scope).
-- **Verification status**: 21 unit tests (engine + connector contract),
-  all against the fake connector; no real-world execution has ever
+- **Safeguarding/privacy dependencies**: none for the engine itself
+  (structurally independent of NHEI consent); the calendar-specific
+  service additionally requires `allowCalendarSignals` consent before a
+  proposal can even be prepared (Phase 5C).
+- **Required UX**: not built this phase for the generic engine (API/
+  service only); no UI calls the new calendar-protection routes yet
+  either — this phase delivered the server-side workflow, not a screen.
+- **Verification status**: Phase 5B: 21 unit tests (engine + connector
+  contract). Phase 5C: 20 service-level tests + 8 route-level tests
+  (supertest against the real Express app) + 4 static no-real-execution
+  guard tests + 12 combined-journey tests — all against the fake
+  connector or with execution disabled; no real-world execution has ever
   occurred.
-- **Next work**: a UI, and — as a separate, later, explicitly-approved
-  decision — a real connector for one category at a time.
+- **Next work**: a UI for the calendar-protection flow, and — as a
+  separate, later, explicitly-approved decision — a real connector.
 
 ## F. Calendar Protection and Workload Coordination — **BUILT AND INTEGRATED** (read-only)
 
@@ -278,31 +299,62 @@ rather than duplicating ~20 phases of detail.
 - **Missing**: nothing identified this phase.
 - **Next work**: none.
 
-## L. Proactive Assistance and Authorised Agentic Actions — **PARTIAL**
+## L. Proactive Assistance and Authorised Agentic Actions — **PARTIAL** (Phase 5C: a complete, real, server-authorised workflow now exists for one category — still never executes for real)
 
 - **Existing code**: `nhei-agentic-action-contract.ts` +
-  `NheiAgenticActionPreview.tsx` (Phase 5, offline/synthetic), this
-  phase's `nova-take-the-load-*` files (also offline/synthetic), and a
-  real OAuth integration system in `server.ts` (~line 4902+:
-  `OAUTH_PROVIDERS` — Slack, Asana, Monday, Calendly, Google Calendar,
-  Gmail — with working connect/callback/status/disconnect routes and
-  real token storage).
-- **Current capabilities**: real OAuth, real **read-only** signal
-  ingestion from every one of those providers (confirmed this phase: no
-  `POST`/write-method call to any of them exists anywhere in `server.ts`
-  outside Boundary Autopilot's separate Slack-send routes, workstream G).
+  `NheiAgenticActionPreview.tsx` (Phase 5, offline/synthetic),
+  `nova-take-the-load-*` (Phase 5B, offline/synthetic), a real OAuth
+  integration system in `server.ts` (`OAUTH_PROVIDERS` — Slack, Asana,
+  Monday, Calendly, Google Calendar, Gmail — with working connect/
+  callback/status/disconnect routes and real token storage), and —
+  Phase 5C's main deliverable — `nova-calendar-protection-service.ts`
+  plus six real server routes (`POST /api/nova/calendar-protection/
+  propose|:id/present|:id/approve|:id/execute|:id/retry|:id/undo`).
+- **Current capabilities (Phase 5C addition)**: a real, persisted,
+  idempotent prepare → present → approve → execute → retry/undo
+  workflow. `propose` requires real `allowCalendarSignals` consent
+  (server-verified, 403 otherwise) and persists a specific proposal
+  (exact start/end/title) keyed by a caller-supplied idempotency key —
+  a repeated propose with the same key returns the SAME proposal, never
+  a duplicate. `approve` requires the exact SHA-256 fingerprint the
+  server computed when the proposal was prepared — a bare
+  `{approved: true}` is rejected by the request schema itself (the field
+  is required, not optional), and a fingerprint that doesn't match the
+  stored proposal is rejected with 409, never partially honoured. Every
+  transition writes a real audit-log entry
+  (`users/{uid}/calendar_protection_audit`).
+- **Execution is categorically disabled**: `execute` always passes
+  `null` for the connector — `server.ts` imports no connector, real or
+  fake, of any kind for this workflow. `CALENDAR_PROTECTION_EXECUTION_ENABLED`
+  is a hardcoded `false` constant in `nova-calendar-protection-service.ts`,
+  checked before the connector parameter is ever used; only this file's
+  own test suite can force it on, via a loudly-named, statically-guarded
+  `TEST_ONLY_FORCE_EXECUTION_ENABLED` symbol. A duplicate execute call
+  for an already-`confirmed`/`failed` proposal returns the stored result
+  without ever calling a connector again (idempotent, replay-safe).
 - **Missing**: zero write/send capability for Asana, Monday, Calendly,
-  Google Calendar, or Gmail today; Nova Take the Load's real connector
-  (workstream E).
+  Google Calendar, or Gmail today (read-only, confirmed again this
+  phase); any real connector for calendar protection or any other
+  category; any UI for the new routes.
+- **Phase 5C finding on real-world readiness**: `signInWithGoogleCalendar`
+  (`src/lib/auth.tsx`) already requests the write-capable
+  `calendar.events` OAuth scope at sign-in time for anyone who has ever
+  connected their calendar through `CalendarDefenseView.tsx`/
+  `MicroRecovery.tsx`/`IntegrationsDashboard.tsx` — the scope exists for
+  many real accounts today, but no code anywhere uses it to write
+  anything. A future, separately-approved connector could use this
+  already-granted scope rather than requesting a new one — that
+  decision is explicitly not made by this phase.
 - **Credentials/approval needed**: a real, separately-authorised
   connector per category, explicitly future work.
 - **Safeguarding/privacy dependencies**: "never allow NHEI interpretation
-  alone to authorise an external action" is enforced structurally in both
-  existing agentic contracts (zero NHEI imports, approval-only exit from
-  `awaiting_approval`).
-- **Next work**: pick one category (most likely calendar protection,
-  given F's existing read-only precedent) for a real, reviewed connector
-  — a distinct future phase, not this one.
+  alone to authorise an external action" is enforced structurally in all
+  three agentic contracts (zero NHEI imports anywhere); the calendar
+  service's own approval gate is a second, independent authorisation
+  layer on top of that.
+- **Next work**: a UI for the calendar-protection flow; then, as a
+  separate, later, explicitly-approved decision, a real connector —
+  most plausibly reusing the already-granted `calendar.events` scope.
 
 ## M. Personal Recovery Outcomes and Coaching Review — **PARTIAL**
 
@@ -330,33 +382,49 @@ rather than duplicating ~20 phases of detail.
 - **Missing**: nothing identified this phase.
 - **Next work**: none.
 
-## O. Privacy Vault, Consent, Trust Centre and Governance — **PARTIAL**
+## O. Privacy Vault, Consent, Trust Centre and Governance — **PARTIAL** (Phase 5C: real NHEI consent-writing routes now exist)
 
 - **Existing code**: `PrivacyVault.tsx`, `TrustCentrePage.tsx`,
   `audit-logger.ts`, `RetentionSchedule.tsx`, real GDPR
   `/api/user/export`/`/api/user/delete-account`, Evolution Engine
-  governance tiers, `/api/ally/view/:token/consent`.
-- **The key finding for the known NHEI consent-writing gap**: a general,
-  working, NON-NHEI consent-writing pattern already exists and is
-  directly reusable — `ConnectedNovaPermissions`
+  governance tiers, `/api/ally/view/:token/consent`, and — Phase 5C's
+  addition — `GET`/`POST /api/nhei/consent`.
+- **Phase 5B finding**: a general, working, NON-NHEI consent-writing
+  pattern already existed and was directly reusable —
+  `ConnectedNovaPermissions`
   (`src/components/ConnectedRecoveryModules.tsx:681`) renders ~20
   individually-labelled "Let Nova use my X" toggles backed by a real,
   rules-enforced, per-user Firestore permissions document the client
-  reads/writes directly — not a mockup. `/api/ally/view/:token/consent`
-  is a second, server-route alternative, also real. **A future NHEI
-  consent-writing capability does not need to invent a new mechanism —
-  either precedent is directly reusable.** This closes part of the
-  investigation behind `NHEI_RELEASE_BLOCKERS.md` item 18, though not the
-  item itself (no NHEI-specific route has been built on either pattern
-  yet — that remains a future phase's decision and work).
-- **Missing**: an NHEI-specific consent-writing route on either pattern.
-- **Credentials/approval needed**: none for the patterns themselves (both
-  already live); building the NHEI-specific route is an engineering
-  decision for a future phase, not blocked on anything external.
-- **Next work**: recorded as a pointer for a future phase in
-  `docs/NHEI_RELEASE_BLOCKERS.md` (see the architecture-doc update below)
-  — not built this phase, since this phase's scope was audit and
-  foundation work, not NHEI consent-route implementation.
+  reads/writes directly.
+- **Phase 5C build**: real, server-side `GET`/`POST /api/nhei/consent`
+  routes, following that same "one document, one boolean per purpose"
+  pattern but server-authored (via the Admin SDK, `uid` from the
+  verified token only, never the request body) rather than a direct
+  client write — closing `docs/NHEI_RELEASE_BLOCKERS.md` item 18 for
+  real. Each of the three purposes (`reflection_storage`,
+  `longitudinal_tracking`, `routing_insights`) is set independently (the
+  route never touches a second field); withdrawal (`granted: false`)
+  only flips the flag, never deleting anything already persisted,
+  reusing the already-existing, already-tested
+  `setNheiConsent`/`withdrawNheiConsent`/`getNheiConsent`
+  (`nhei-persistence-service.ts`) rather than writing new persistence
+  logic. `src/components/NheiPrivacyConsent.tsx`'s three personal-purpose
+  toggles are now wired to this real route (still an offline preview —
+  not mounted into `App.tsx`'s live navigation).
+- **This is consent bookkeeping only** — it activates no personal NHEI
+  processing by itself. Personal Reflection/Longitudinal/Recovery
+  Insights modes remain unwired into any conversation route, and the
+  independent safeguarding system remains unbuilt, both completely
+  unaffected by this addition.
+- **Missing**: granular per-purpose NHEI data deletion (only whole-
+  account deletion exists); any NHEI mode activation (unchanged,
+  deliberately out of scope for this or any consent-writing work).
+- **Credentials/approval needed**: none for the consent-writing route
+  itself; NHEI mode activation remains gated on the independent
+  safeguarding system and human review, unaffected by this change.
+- **Verification status**: 10 route-level tests (supertest against the
+  real Express app) + 4 new rendered-DOM component tests covering the
+  toggle, the write, and permission-denial (a rejected write).
 
 ## P. Optional Health/Wearable Integration — **NOT STARTED**
 
@@ -431,9 +499,16 @@ Load files are all named and scoped outside it for exactly this reason.
 
 ## Cross-cutting gap, independent of any single workstream
 
-No workstream above, old or new, has an automated UI-rendering test.
-This repository has no jsdom/@testing-library harness at all
-(`vitest.config.ts`: `environment: 'node'`, `.test.ts` only) — every
-`.tsx` file in this codebase, across all 18 workstreams, is verified by
-code review and manual dev-server checks only. This is a real,
-repo-wide gap, not specific to NHEI or to this phase's new UI work.
+**Updated in Phase 5C.** A real component-test foundation now exists —
+`vitest.components.config.ts` (`environment: 'jsdom'`, `@testing-library/
+react`), run separately via `npm run test:components` so the main
+suite's hundreds of `environment: 'node'` tests are untouched. It
+currently covers five new Phase 5 components (`NheiPrivacyConsent`,
+`NheiBeforeWords`, `NovaInvisibleLoad`, `NheiRecoverySuggestionCard`,
+`NheiAgenticActionPreview` — 23 tests total, real rendered-DOM
+interaction via `userEvent`, not markup inspection), not every `.tsx`
+file in this codebase. The hundreds of pre-existing `.tsx` components
+across all 18 workstreams remain verified by code review and manual
+dev-server checks only — this is a real, partially-closed gap, not a
+fully-closed one, and no workstream above should be read as having
+automated UI coverage unless its own entry says so explicitly.

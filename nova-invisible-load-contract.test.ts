@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   initNovaInvisibleLoadContext, addInvisibleLoadItem, correctInvisibleLoadItem,
-  removeInvisibleLoadItem, optOutOfInvisibleLoad,
+  removeInvisibleLoadItem, optOutOfInvisibleLoad, deferInvisibleLoadItem, undeferInvisibleLoadItem,
 } from './nova-invisible-load-contract';
 
 describe('nova-invisible-load-contract', () => {
@@ -51,7 +51,23 @@ describe('nova-invisible-load-contract', () => {
 
   it('an item has only the expected keys - no hidden numeric score/rating field', () => {
     const context = addInvisibleLoadItem(initNovaInvisibleLoadContext(), 'A', 'commitment', true);
-    expect(Object.keys(context.items[0]).sort()).toEqual(['category', 'corrections', 'description', 'id', 'source', 'userCertain']);
+    expect(Object.keys(context.items[0]).sort()).toEqual(['category', 'corrections', 'deferred', 'description', 'id', 'source', 'userCertain']);
+  });
+
+  it('deferring an item keeps it in the list, distinct from removing it', () => {
+    let context = addInvisibleLoadItem(initNovaInvisibleLoadContext(), 'Covering a shift', 'practical_friction', true);
+    const id = context.items[0].id;
+    context = deferInvisibleLoadItem(context, id);
+    expect(context.items).toHaveLength(1);
+    expect(context.items[0].deferred).toBe(true);
+  });
+
+  it('undeferring reverses a defer - an explicit, equal action', () => {
+    let context = addInvisibleLoadItem(initNovaInvisibleLoadContext(), 'A', 'obligation', true);
+    const id = context.items[0].id;
+    context = deferInvisibleLoadItem(context, id);
+    context = undeferInvisibleLoadItem(context, id);
+    expect(context.items[0].deferred).toBe(false);
   });
 
   it('has zero import statements - no persistence, no model call', async () => {
