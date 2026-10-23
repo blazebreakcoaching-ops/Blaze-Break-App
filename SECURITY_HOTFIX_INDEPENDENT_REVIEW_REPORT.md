@@ -89,14 +89,36 @@ All new tests are real sentinel-value tests against the real Express app (via `s
 
 ## 9. Production deployment prerequisites
 
-**Central finding of this review**: `main` (the repository's configured default/`HEAD` branch, confirmed via `git remote show origin`) contains the **complete, unpatched version of this vulnerability today** — not a historical state, not something fixed and then regressed, but code that has never received any part of the Phase 5F fix, because `claude/nhei-phase-1` (where that fix lives) has never been merged (confirmed via `git merge-base --is-ancestor claude/nhei-phase-1 origin/main`, which returns false). If `main` is what Cloud Run deploys from, this vulnerability is live in production right now, independent of anything on `claude/nhei-phase-1`.
+**Central finding of this review**: `main` contains the **complete, unpatched version of this vulnerability today** — not a historical state, not something fixed and then regressed, but code that has never received any part of the Phase 5F fix, because `claude/nhei-phase-1` (where that fix lives) has never been merged (confirmed via `git merge-base --is-ancestor claude/nhei-phase-1 origin/main`, which returns false).
 
-Before any deployment of either fix:
-1. **Confirm what `main` actually deploys to.** This review infers production relevance from `main` being the repo's default branch; it has not confirmed Cloud Run's build trigger configuration.
+**Deployment provenance — confirmed, not inferred** (this review initially inferred production relevance only from `main` being the repo's default branch; it has since confirmed this directly against GitHub Actions run history, per the founder's follow-up instruction):
+- `.github/workflows/deploy.yml` triggers on every push to `main` (and manual `workflow_dispatch`), and runs `gcloud run deploy blaze-break --source . --region europe-west2 --project gen-lang-client-0537893432` (builds via Cloud Build + Buildpacks directly from the checked-out source — no Docker image reference to inspect) followed by a Firestore rules/indexes deploy.
+- The most recent completed run of this workflow (**run #186, id `39017640133`**) ran on `head_branch: main`, `head_sha: 42c441fdd24ba2b4e2f704cab6cfe2199771a288`, with **both** its "Deploy to Cloud Run" and "Deploy Firestore rules + indexes" steps reporting `conclusion: success`, completed `2026-10-17T08:34:24Z`.
+- `42c441f` is `origin/main`'s current HEAD commit, re-confirmed via `git fetch origin main` immediately before writing this — main has not moved since that deploy. **The commit currently serving production is, with high confidence, exactly the commit this review audited and found vulnerable.**
+- **What remains genuinely inaccessible from this session**: the actual deployed container image digest / Cloud Run revision ID. This session has no `gcloud` CLI, no GCP credentials, and no Cloud Run console access (confirmed: `gcloud` is not installed in this environment). The GitHub Actions evidence above establishes that a successful deploy FROM commit `42c441f` happened and nothing has superseded it since — it does not independently verify the live revision's digest against that commit the way `gcloud run services describe blaze-break --format=json` would. An operator with GCP console/CLI access can close this last gap directly; this review cannot.
+
+Before shipping either fix:
+1. ~~Confirm what `main` actually deploys to~~ — **done, see above.**
 2. **An independent reviewer should re-read `export-credential-sanitiser.ts`'s allowlist against both branches' actual current field shapes** (this review did so manually, documented in §3/§4, but a second reader should not take that on faith).
 3. **A decision on the §7 historical-exposure questions** (log search, possible precautionary token revocation) should happen before or alongside deployment, not be silently skipped because this review couldn't do it.
-4. **The `security/credential-export-hotfix` branch is NOT pushed to `origin`** — it exists only in this session's local worktree. Pushing it (so it can be opened as a PR against `main`) requires the explicit go-ahead the standing instructions for this session require before pushing a new branch. This review stops here rather than doing so unilaterally.
+4. **The `security/credential-export-hotfix` branch is NOT pushed to `origin`** — it exists only in this session's local worktree (base commit `42c441f`, hotfix commit `894e53c`, confirmed still current against `origin/main`). Pushing it (so it can be opened as a PR against `main`) requires explicit authorisation. This review stops here rather than doing so unilaterally.
 5. **Merging the `claude/nhei-phase-1` commits containing this fix is a separate decision** from shipping the `main`-targeted hotfix — the two branches have diverged by hundreds of unrelated commits (NHEI, Agentic Nova, Calendar Protection, none of it reviewed or authorised for production here), so the right path is very likely the isolated `main`-targeted branch, not a merge of the feature branch itself.
+
+### Deployment checklist (once authorised)
+
+1. Push `security/credential-export-hotfix` (base `42c441f`) to `origin`.
+2. Open a PR against `main`; let `ci.yml` run (independent of this review's local runs).
+3. Get one independent human approval on the diff itself (5 files, +723/-5 lines — see §4).
+4. Merge. `deploy.yml` fires automatically on the merge commit landing on `main`.
+5. Watch the "Deploy to Cloud Run" and "Deploy Firestore rules + indexes" steps both report success (same two steps audited in run #186 above).
+6. Smoke-test in production: one real `GET /api/user/export` for a test account with a connected integration, confirming `redactedForSecurity: true` appears on `integration_tokens`/`security`/`recovery_ally`/`push_subscriptions` docs and no raw secret value is present in the response.
+
+### Rollback checklist (if the deploy misbehaves)
+
+1. `deploy.yml` has no automatic rollback step — Cloud Run keeps the prior revision available. Rollback is: `gcloud run services update-traffic blaze-break --region europe-west2 --to-revisions <previous-revision>=100` (an operator with gcloud access must identify `<previous-revision>` from the Cloud Run console/CLI, which this review cannot do — see the provenance gap above).
+2. Alternatively, `git revert` the merge commit on `main` and push — `deploy.yml` will redeploy the reverted state automatically.
+3. Firestore rules/indexes deployed in the same run are additive in this change set (none were touched by this hotfix — only `server.ts` application code and a new pure module), so no separate rules rollback is needed.
+4. This hotfix makes no Firestore schema change and no behavioural change to connect/refresh/disconnect beyond what gets logged — a rollback carries no data-migration risk in either direction.
 
 ## 10. Ship/no-ship recommendation
 
