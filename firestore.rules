@@ -537,6 +537,31 @@ service cloud.firestore {
         allow read, write: if false;
       }
 
+      // task_deferral_proposals/task_deferral_audit (Phase 5F Agentic
+      // Expansion, directive §2) - the Nova Take the Load / Task Deferral
+      // proposal lifecycle and its append-only audit trail. Server-only
+      // for exactly the same reason calendar_protection_proposals above
+      // is: a client that could write its own proposal state directly
+      // could forge an "approved"/"confirmed" transition, or skip the
+      // userControlsDeadline/userControlsOwnership clarification step
+      // entirely. Every real read goes through the dedicated
+      // GET /api/nova/task-deferral/history and /:proposalId routes
+      // (server.ts), never direct Firestore access.
+      match /task_deferral_proposals/{proposalId} {
+        allow read, write: if false;
+      }
+      match /task_deferral_audit/{entryId} {
+        allow read, write: if false;
+      }
+      // task_assistance_outcomes (Phase 5F Agentic Expansion, directive
+      // §7) - simple user-confirmed outcome feedback ("this helped" etc.)
+      // for a practical-assistance workflow. Server-only so a client
+      // cannot forge a feedback record under another workflow/item id;
+      // written only via POST /api/nova/task-deferral/:proposalId/outcome.
+      match /task_assistance_outcomes/{recordId} {
+        allow read, write: if false;
+      }
+
       // security holds the opt-in TOTP 2FA record (AES-256-GCM encrypted
       // secret, hashed single-use recovery codes, failed-attempt/lockout
       // counters) — never client-readable or client-writable, even a

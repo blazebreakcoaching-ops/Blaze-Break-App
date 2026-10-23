@@ -132,7 +132,7 @@ rather than duplicating ~20 phases of detail.
   future phase could extend the same formatted-addendum approach to the
   voice path once Nova Live itself has a live, reachable entry point.
 
-## C. Invisible Load Intelligence — **BUILT BUT OFFLINE** (Phase 5C: now has a real UI and a Take the Load bridge)
+## C. Invisible Load Intelligence — **BUILT BUT OFFLINE** (Phase 5C: now has a real UI and a Take the Load bridge; Phase 5F Agentic Expansion: now offers five explicit help choices per item, routing to both real Take the Load categories)
 
 - **Existing code before Phase 5B**: none. A repo-wide, case-insensitive
   search found only a single colloquial phrase in `RecoveryPlan.tsx`
@@ -170,6 +170,21 @@ rather than duplicating ~20 phases of detail.
   bridge files) + 6 real rendered-DOM component tests (`@testing-library/
   react`, see workstream-independent note on the new component-test
   foundation).
+- **Phase 5F Agentic Expansion addition (directive §3)**: "Get help with
+  this" is no longer a single bridge call — it opens an explicit,
+  per-item menu of five choices (`nova-invisible-load-help-contract.ts`):
+  protect time (routes to the real Calendar Protection UI, unchanged from
+  Phase 5D), defer or reprioritise (routes to the new real Task Deferral
+  UI — see workstream E), break it into steps (a new additive
+  `breakdownSteps: string[]` field on `NovaInvisibleLoadItem`, the user's
+  own words only, never generated), explore a recovery tool (a fixed,
+  honestly-scoped, per-category suggestion naming a real existing tool —
+  deliberately NOT a `selectRoute`/`compareCandidates` call, since this
+  item has no honest way to supply the signal-derived fields that engine
+  requires — see that file's own header), or leave unchanged (no
+  callback fires at all). Deferred items are refused every choice except
+  leave-unchanged — "not now" still means not now. 9 new unit tests +
+  9 new/updated component tests.
 - **Next work**: a deliberate decision about whether/how it should ever
   feed Recovery Intelligence as context — never as a hidden score.
 
@@ -192,7 +207,7 @@ rather than duplicating ~20 phases of detail.
   was confirmed; a future phase should decide reconciliation vs. a new
   build before writing any code here.
 
-## E. Nova — Take the Load — **BUILT BUT OFFLINE** (Phase 5C added a complete, real calendar-protection route; Phase 5D added a real UI for it; Phase 5E added a real, still-disabled connector — see workstream L)
+## E. Nova — Take the Load — **BUILT BUT OFFLINE** (Phase 5C added a complete, real calendar-protection route; Phase 5D added a real UI for it; Phase 5E added a real, still-disabled connector — see workstream L; Phase 5F Agentic Expansion gave `task_deferral` its own complete, real, dedicated workflow — this entry's own long-standing "next work" item)
 
 - **Existing code before Phase 5B**: none.
 - **Phase 5B**: `nova-take-the-load-types.ts`,
@@ -266,10 +281,39 @@ rather than duplicating ~20 phases of detail.
   still against the fake connector, a fake/emulated Firestore, mocked
   provider responses, or with execution disabled; no real-world
   execution has ever occurred.
-- **Next work**: a UI for the generic engine/task_deferral category, and
-  — as a separate, later, explicitly-approved decision — flipping
-  `CALENDAR_PROTECTION_EXECUTION_ENABLED` and wiring the now-real
-  connector into `server.ts` (see workstream L).
+- **Phase 5F Agentic Expansion addition (directive §2)**: `task_deferral`
+  now has its own complete, dedicated, real workflow —
+  `nova-task-deferral-types.ts`/`-service.ts`/`-connector-contract.ts`,
+  nine real `server.ts` routes (`POST /api/nova/task-deferral/identify`,
+  `:id/clarify-control`, `:id/prepare`, `:id/present`, `:id/approve`,
+  `:id/execute`, `:id/retry`, `:id/outcome`, `GET .../history`,
+  `GET .../:id`), and a real UI (`src/components/NovaTaskDeferral.tsx`).
+  Built on the SAME production-grade pattern as Calendar Protection
+  (idempotent preparation, a fingerprint-bound approval gate, a
+  Firestore-transaction-claimed execute step, capped retries, an
+  append-only audit trail) — not the generic offline engine, and not a
+  fourth near-duplicate state machine (an independent audit before
+  writing this found three already-existing ones and recommended
+  consolidating; this reuses the Calendar Protection template instead of
+  adding a fourth). Two deliberate differences from Calendar Protection,
+  both explained in the service file's own header: no `ambiguous`/
+  reconciliation states (the connector is permanently mock-only per the
+  directive, so a thrown call is this codebase's own code failing, not a
+  real system's unknown outcome — recorded directly as `failed`), and a
+  new `requires_other_person` terminal state reachable the moment the
+  user answers "no" or "unsure" to either "do you control the deadline?"
+  or "do you own this alone?" — structurally no function in the service
+  can move a proposal out of that state, so no execution is ever reachable
+  for a task the user doesn't control. 39 new unit/route tests +
+  1 static audit test (no Asana/Monday/Jira SDK or raw network import
+  anywhere in the three Task Deferral files).
+- **Next work**: as a separate, later, explicitly-approved decision —
+  flipping `CALENDAR_PROTECTION_EXECUTION_ENABLED` and wiring the now-real
+  connector into `server.ts` (see workstream L). Task Deferral's own
+  connector remains permanently mock-only per this phase's own directive,
+  not a gap — a future phase would need its own separate, explicitly
+  authorised review before any real Asana/Monday/Jira write capability is
+  added, the same bar Calendar Protection's real connector went through.
 
 ## F. Calendar Protection and Workload Coordination — **BUILT AND INTEGRATED** (read-only)
 
@@ -553,11 +597,32 @@ rather than duplicating ~20 phases of detail.
   service's own approval gate plus the `allowCalendarActions` permission
   are two independent authorisation layers on top of that; Phase 5E adds
   no new NHEI dependency anywhere in this chain.
+- **Phase 5F Agentic Expansion addition (directive §5)**: a new, formal
+  "possible suggestion" stage — `nova-proactive-assistance-contract.ts`'s
+  `generateProactiveSuggestions` plus `POST /api/nova/proactive-
+  suggestions` — sitting BEFORE the `prepared_for_review` stage every
+  workflow above already implements. Pure, synchronous, deterministic:
+  given a user-stated goal/voluntarily-shared obligation/capacity band/
+  prior confirmed plan, it returns zero or more suggestions, each
+  carrying a transparent `basedOn` list and a literal `stage:
+  'possible_suggestion'` field it can never advance past itself. A
+  `calendar_protection` suggestion is only ever returned when the server
+  route has independently verified the real `allowCalendarActions` grant
+  is current; a `task_deferral` suggestion only when a real, existing
+  task-provider integration token (Asana/Monday/Jira) is found — neither
+  is ever assumed. Turning a suggestion into a real stage-2 proposal is
+  always a separate, explicit user action through the real Calendar
+  Protection/Task Deferral UIs — this file has no function that calls
+  either `prepare*` function for the caller, no scheduling/cron/queue,
+  and zero `nhei-` imports. 16 new unit/route tests.
 - **Next work**: as a separate, later, explicitly-approved decision —
   flipping `CALENDAR_PROTECTION_EXECUTION_ENABLED` to `true` and wiring
   the real connector into `server.ts`, which this phase deliberately does
   not do. Also unstarted: the equivalent OAuth/connector work for
-  task_deferral's own categories.
+  task_deferral's own categories (deliberately out of scope — see
+  workstream E); surfacing the new possible-suggestion stage in
+  `NovaAgenticJourney.tsx`'s own UI (the contract and route exist; no
+  screen calls the route yet).
 
 ## M. Personal Recovery Outcomes and Coaching Review — **PARTIAL**
 
@@ -570,9 +635,27 @@ rather than duplicating ~20 phases of detail.
   (`checkCohortSufficiency`, threshold 20).
 - **Missing**: no dedicated human-coach review UI exists — this is a
   platform-intelligence feature, not a coaching-handoff tool (see Q).
+- **Phase 5F Agentic Expansion addition (directive §7)**: a new, separate,
+  deliberately simpler feedback contract for practical task assistance —
+  `nova-task-assistance-outcome.ts`'s `recordTaskAssistanceOutcome`, wired
+  to `POST /api/nova/task-deferral/:proposalId/outcome` and
+  `NovaTaskDeferral.tsx`'s own post-confirmation prompt. NOT the same
+  shape as the Recovery Routing outcome model above (`'declined'|
+  'completed'|'abandoned'` + a helpfulness rating) — the directive's own
+  four options ("this helped" / "I changed the plan" / "I didn't use it" /
+  "I need another approach") have no equivalent in that model, so reusing
+  its enum would have misrepresented what was actually being asked. Keeps
+  the same discipline: no causal claim, an unrated proposal is never
+  silently counted as helped, and declining/not-using is recorded as a
+  plain fact, never surfaced as a trait of the user. One record per
+  (workflow, itemId) — a resubmission replaces the prior answer. Covered
+  by the Task Deferral route tests (workstream E).
 - **Next work**: a coach-facing review surface, if this workstream is
   meant to include one — not built this phase (no request for it in
-  directive §4's specific scope).
+  directive §4's specific scope). The new task-assistance outcome
+  contract is workflow-scoped to `task_deferral` only today — extending it
+  to other practical-assistance workflows (e.g. an Invisible Load action)
+  is additive, future work.
 
 ## N. Identity, Values and Purpose-Based Support — **BUILT AND INTEGRATED**
 
@@ -724,12 +807,16 @@ Load files are all named and scoped outside it for exactly this reason.
 foundation now exists — `vitest.components.config.ts`
 (`environment: 'jsdom'`, `@testing-library/react`), run separately via
 `npm run test:components` so the main suite's hundreds of
-`environment: 'node'` tests are untouched. It now covers six Phase 5
-components (`NheiPrivacyConsent`, `NheiBeforeWords`, `NovaInvisibleLoad`,
-`NheiRecoverySuggestionCard`, `NheiAgenticActionPreview`,
-`NovaTakeTheLoad` — 31 tests total, real rendered-DOM interaction via
-`userEvent`, not markup inspection), not every `.tsx` file in this
-codebase. The hundreds of pre-existing `.tsx` components across all 18
+`environment: 'node'` tests are untouched. It now covers seven Phase 5/5F
+Agentic Expansion components (`NheiPrivacyConsent`, `NheiBeforeWords`,
+`NovaInvisibleLoad`, `NheiRecoverySuggestionCard`,
+`NheiAgenticActionPreview`, `NovaTakeTheLoad`, and — Phase 5F Agentic
+Expansion — the newly-added `NovaAgenticJourney`; `NovaInvisibleLoad`'s
+own suite also grew from 6 to 11 tests for the new five-choice help menu
+— 43 tests total, real rendered-DOM interaction via `userEvent`, not
+markup inspection), not every `.tsx` file in this codebase.
+`NovaTaskDeferral.tsx` has no dedicated component test yet — its real
+behaviour is covered by the route-level tests in workstream E instead. The hundreds of pre-existing `.tsx` components across all 18
 workstreams remain verified by code review and manual dev-server checks
 only — this is a real, partially-closed gap, not a fully-closed one,
 and no workstream above should be read as having automated UI coverage
@@ -739,3 +826,50 @@ suite is not evidence of responsive mobile layout or WCAG conformance**
 actual rendered geometry or a screen reader's real behaviour. Phase 5D
 attempted no browser-level (Playwright) pass for this UI; that remains
 unattempted, not merely unclaimed.
+
+## Phase 5F Agentic Expansion reconciliation (directive §8)
+
+This phase's own scope: Task Deferral end to end (workstream E), Invisible
+Load's five-choice help menu (workstream C), the unified
+`NovaAgenticJourney` sequencer with direct-chat entry and back navigation
+(workstream B/E — see that component's own header), a formal
+possible-suggestion stage (workstream L), and a task-assistance outcome
+contract (workstream M). It deliberately did not attempt every remaining
+gap this register lists — per the directive's own "avoid building every
+remaining feature in this batch."
+
+**Recommended next workstream: F (Calendar Protection and Workload
+Coordination) and L's own long-deferred execution decision, taken
+together — NOT a new workstream.** Reasoning, by integration value and
+actual missing capability rather than novelty:
+
+- Workstream L (Proactive Assistance) has had a fully real, tested,
+  server-authorised Calendar Protection workflow since Phase 5C, a real
+  (if structurally unreachable) connector since Phase 5E, and the
+  founder/Google-Cloud-Console prerequisites documented since Phase 5E —
+  everything engineering can build without a human decision has now been
+  built twice over (once for calendar protection, once for task deferral
+  this phase). The single highest-leverage next step is not more
+  engineering — it is the standing "separate, later, explicitly-approved
+  decision" this register has deferred since Phase 5C: whether to flip
+  `CALENDAR_PROTECTION_EXECUTION_ENABLED` for a real, allow-listed test
+  cohort. Every workstream downstream of "Nova can actually do something,
+  not just propose it" (L's own UI, the new possible-suggestion stage in
+  L, Invisible Load's "protect time" choice in C) stays a complete,
+  honestly-labelled simulation until that decision is made — this is
+  integration value realised by a decision, not by more code.
+- Failing that decision, the next-highest engineering-only value is
+  surfacing workstream L's new possible-suggestion stage
+  (`generateProactiveSuggestions`/`POST /api/nova/proactive-suggestions`)
+  in `NovaAgenticJourney.tsx`'s own UI — the contract and route exist and
+  are tested, but no screen calls the route yet, so today it is reachable
+  only by a direct API call. This is a small, bounded addition (one new
+  journey step, no new backend) that would make the "useful options"
+  stage of the target journey (directive §4) genuinely end-to-end for the
+  first time, rather than skipping straight from Invisible Load's
+  explicit choices to a proposal.
+- Workstreams D (Recovery Friction/Environment), P (wearables), and Q
+  (coaching handoffs) remain NOT STARTED and are real gaps, but none of
+  them integrates with anything this phase touched — building any of them
+  now would not compound with Task Deferral/Invisible Load/the proactive-
+  suggestion stage the way finishing L's own standing decision would.

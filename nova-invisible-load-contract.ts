@@ -35,6 +35,12 @@ export interface NovaInvisibleLoadItem {
   // act on this right now" is a real, distinct choice from "this isn't
   // true" (correct) or "take this off the list" (remove).
   deferred: boolean;
+  // Phase 5F Agentic Expansion (directive §3, "break it into manageable
+  // steps"): the user's own plain-language steps, additive only, never
+  // generated or reworded by anything in this file - same discipline as
+  // `corrections`. Defaults to an empty array so every pre-existing
+  // caller that never set this keeps working unchanged.
+  breakdownSteps: string[];
 }
 
 export interface NovaInvisibleLoadContext {
@@ -68,6 +74,7 @@ export function addInvisibleLoadItem(
     userCertain,
     corrections: [],
     deferred: false,
+    breakdownSteps: [],
   };
   return { ...context, items: [...context.items, item] };
 }
@@ -87,6 +94,25 @@ export function correctInvisibleLoadItem(context: NovaInvisibleLoadContext, item
   return {
     ...context,
     items: context.items.map((item) => (item.id === itemId ? { ...item, corrections: [...item.corrections, correction] } : item)),
+  };
+}
+
+/**
+ * Directive §3's "break it into manageable steps" - purely the user's own
+ * words, appended one at a time. No step is ever generated for them; this
+ * only ever stores what they typed.
+ */
+export function addBreakdownStep(context: NovaInvisibleLoadContext, itemId: string, step: string): NovaInvisibleLoadContext {
+  return {
+    ...context,
+    items: context.items.map((item) => (item.id === itemId ? { ...item, breakdownSteps: [...item.breakdownSteps, step] } : item)),
+  };
+}
+
+export function removeBreakdownStep(context: NovaInvisibleLoadContext, itemId: string, stepIndex: number): NovaInvisibleLoadContext {
+  return {
+    ...context,
+    items: context.items.map((item) => (item.id === itemId ? { ...item, breakdownSteps: item.breakdownSteps.filter((_, i) => i !== stepIndex) } : item)),
   };
 }
 

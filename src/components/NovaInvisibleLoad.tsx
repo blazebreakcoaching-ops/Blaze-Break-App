@@ -1,14 +1,23 @@
 import { useState } from 'react';
-import { Layers, X, Clock3, RotateCcw, HandHeart, HelpCircle } from 'lucide-react';
+import { Layers, X, Clock3, RotateCcw, HandHeart, HelpCircle, ListChecks, Compass, Trash2 } from 'lucide-react';
 import {
   initNovaInvisibleLoadContext, addInvisibleLoadItem, correctInvisibleLoadItem,
   removeInvisibleLoadItem, deferInvisibleLoadItem, undeferInvisibleLoadItem, optOutOfInvisibleLoad,
+  addBreakdownStep, removeBreakdownStep,
   type NovaInvisibleLoadContext, type NovaInvisibleLoadCategory, type NovaInvisibleLoadItem,
 } from '../../nova-invisible-load-contract';
-import { buildTakeTheLoadProblemFromInvisibleLoadItem } from '../../nova-invisible-load-take-the-load-bridge';
+import { resolveInvisibleLoadHelpChoice, type NovaInvisibleLoadHelpChoice } from '../../nova-invisible-load-help-contract';
 import type { NovaStatedPracticalProblem } from '../../nova-take-the-load-types';
 
-// NOVA PHASE 5C - Invisible Load experience (directive §4).
+// NOVA PHASE 5C - Invisible Load experience (directive §4), extended
+// Phase 5F Agentic Expansion (directive §3): "the user can select one
+// obligation and choose what help they want" among five appropriate
+// actions - protect time, defer/reprioritise, break into steps, explore
+// an existing recovery tool, or leave unchanged. See
+// nova-invisible-load-help-contract.ts for exactly how each choice is
+// resolved and why (reuse was deliberate where it was honest, and
+// deliberately skipped where it would have required inventing a signal
+// this item doesn't carry).
 //
 // Mobile-first: single-column stack, full-width controls, no hover-only
 // affordance (every action is a real <button>, always visible, never
@@ -21,9 +30,10 @@ import type { NovaStatedPracticalProblem } from '../../nova-take-the-load-types'
 // nhei-before-words-contract.ts's own "proceed without retaining" default.
 //
 // "Do not turn every obligation into a task automatically": there is no
-// bulk action anywhere in this file. Getting help with an item is a
-// single, per-item button (onRequestHelp), calling the bridge's
-// single-item function - never a loop over every item in the list.
+// bulk action anywhere in this file. Choosing help is a single, per-item
+// menu - never a loop over every item in the list. Declining to choose
+// any help (closing the menu, or choosing "leave unchanged") is never
+// treated as resistance or recorded anywhere as a trait of the user.
 
 const CATEGORY_LABEL: Record<NovaInvisibleLoadCategory, string> = {
   commitment: 'Commitment',
@@ -31,17 +41,40 @@ const CATEGORY_LABEL: Record<NovaInvisibleLoadCategory, string> = {
   practical_friction: 'Practical friction',
 };
 
+const HELP_CHOICE_LABEL: Record<NovaInvisibleLoadHelpChoice, string> = {
+  protect_time: 'Protect time for it',
+  defer_or_reprioritise: 'Defer or reprioritise it',
+  break_into_steps: 'Break it into steps',
+  explore_recovery_tool: 'Explore a recovery tool',
+  leave_unchanged: 'Leave it unchanged',
+};
+
 function ItemRow({
-  item, onCorrect, onRemove, onToggleDefer, onRequestHelp,
+  item, onCorrect, onRemove, onToggleDefer, onHelpChoice, onAddStep, onRemoveStep, exploreNote,
 }: {
   item: NovaInvisibleLoadItem;
   onCorrect: (text: string) => void;
   onRemove: () => void;
   onToggleDefer: () => void;
-  onRequestHelp: () => void;
+  onHelpChoice: (choice: NovaInvisibleLoadHelpChoice) => void;
+  onAddStep: (step: string) => void;
+  onRemoveStep: (index: number) => void;
+  exploreNote: { tool: string; reason: string } | null;
 }) {
   const [showCorrection, setShowCorrection] = useState(false);
   const [draft, setDraft] = useState('');
+  const [showHelpMenu, setShowHelpMenu] = useState(false);
+  const [showSteps, setShowSteps] = useState(false);
+  const [stepDraft, setStepDraft] = useState('');
+
+  const chooseHelp = (choice: NovaInvisibleLoadHelpChoice) => {
+    setShowHelpMenu(false);
+    if (choice === 'break_into_steps') {
+      setShowSteps(true);
+      return;
+    }
+    onHelpChoice(choice);
+  };
 
   return (
     <div className="p-4 rounded-xl border border-white/[0.05] bg-surface/50 space-y-3">
@@ -77,13 +110,63 @@ function ItemRow({
         </button>
         {!item.deferred && (
           <button
-            onClick={onRequestHelp}
+            onClick={() => setShowHelpMenu((v) => !v)}
             className="min-h-11 flex-1 sm:flex-none px-3 py-2 text-xs font-bold rounded-lg bg-primary/10 text-primary flex items-center justify-center gap-1.5"
           >
             <HandHeart className="w-3.5 h-3.5" /> Get help with this
           </button>
         )}
       </div>
+
+      {showHelpMenu && !item.deferred && (
+        <div className="p-3 rounded-lg border border-border bg-background space-y-1.5">
+          <p className="text-[11px] text-text-muted">What kind of help would be useful?</p>
+          {(['protect_time', 'defer_or_reprioritise', 'break_into_steps', 'explore_recovery_tool', 'leave_unchanged'] as NovaInvisibleLoadHelpChoice[]).map((choice) => (
+            <button
+              key={choice}
+              onClick={() => chooseHelp(choice)}
+              className="w-full min-h-10 text-left text-xs px-3 py-2 rounded-lg border border-border text-text-main hover:border-primary"
+            >
+              {HELP_CHOICE_LABEL[choice]}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {showSteps && (
+        <div className="p-3 rounded-lg border border-border bg-background space-y-2">
+          <p className="text-[11px] text-text-muted flex items-center gap-1.5"><ListChecks className="w-3.5 h-3.5" /> Your own steps - Nova doesn't generate these.</p>
+          {item.breakdownSteps.map((step, i) => (
+            <div key={i} className="flex items-center justify-between gap-2 text-xs text-text-main bg-surface/40 rounded-lg px-2.5 py-1.5">
+              <span>{step}</span>
+              <button onClick={() => onRemoveStep(i)} aria-label={`Remove step: ${step}`} className="text-text-muted hover:text-destructive"><Trash2 className="w-3.5 h-3.5" /></button>
+            </div>
+          ))}
+          <div className="flex gap-2">
+            <input
+              value={stepDraft}
+              onChange={(e) => setStepDraft(e.target.value)}
+              placeholder="Add a step"
+              aria-label="Add a breakdown step"
+              className="flex-1 min-h-10 text-xs px-3 rounded-lg border border-border bg-surface text-text-main"
+            />
+            <button
+              onClick={() => { if (stepDraft.trim()) { onAddStep(stepDraft.trim()); setStepDraft(''); } }}
+              aria-label="Add step"
+              className="min-h-10 text-xs font-bold px-3 rounded-lg bg-primary/10 text-primary"
+            >
+              Add
+            </button>
+          </div>
+        </div>
+      )}
+
+      {exploreNote && (
+        <p className="text-xs text-text-main p-3 rounded-lg border border-border bg-background flex items-start gap-1.5">
+          <Compass className="w-3.5 h-3.5 shrink-0 mt-0.5 text-primary" />
+          <span><span className="font-bold">{exploreNote.tool}</span> - {exploreNote.reason}</span>
+        </p>
+      )}
 
       {showCorrection && (
         <div className="flex flex-col sm:flex-row gap-2">
@@ -108,15 +191,18 @@ function ItemRow({
 
 export const NovaInvisibleLoad = ({
   capacityBand = null,
-  onRequestHelp,
+  onProtectTime,
+  onDeferTask,
 }: {
   capacityBand?: NovaStatedPracticalProblem['capacityBand'];
-  onRequestHelp?: (problem: NovaStatedPracticalProblem) => void;
+  onProtectTime?: (problem: NovaStatedPracticalProblem) => void;
+  onDeferTask?: (taskDescription: string) => void;
 }) => {
   const [context, setContext] = useState<NovaInvisibleLoadContext>(initNovaInvisibleLoadContext);
   const [draftText, setDraftText] = useState('');
   const [draftCategory, setDraftCategory] = useState<NovaInvisibleLoadCategory>('obligation');
   const [draftUncertain, setDraftUncertain] = useState(false);
+  const [exploreNotes, setExploreNotes] = useState<Record<string, { tool: string; reason: string }>>({});
 
   const submit = () => {
     if (!draftText.trim()) return;
@@ -125,9 +211,13 @@ export const NovaInvisibleLoad = ({
     setDraftUncertain(false);
   };
 
-  const requestHelpWith = (item: NovaInvisibleLoadItem) => {
-    const result = buildTakeTheLoadProblemFromInvisibleLoadItem(item, capacityBand);
-    if (result.ok) onRequestHelp?.(result.problem);
+  const handleHelpChoice = (item: NovaInvisibleLoadItem, choice: NovaInvisibleLoadHelpChoice) => {
+    const outcome = resolveInvisibleLoadHelpChoice(item, choice, capacityBand);
+    if (outcome.kind === 'protect_time') onProtectTime?.(outcome.problem);
+    else if (outcome.kind === 'defer_or_reprioritise') onDeferTask?.(outcome.taskDescription);
+    else if (outcome.kind === 'explore_recovery_tool') setExploreNotes((prev) => ({ ...prev, [item.id]: { tool: outcome.suggestedTool, reason: outcome.reason } }));
+    // 'break_into_steps', 'leave_unchanged', and 'refused' need no further action here -
+    // the row itself opens its own step editor, and a refusal is never surfaced as an error.
   };
 
   if (context.optedOut) {
@@ -160,7 +250,10 @@ export const NovaInvisibleLoad = ({
             onCorrect={(text) => setContext((prev) => correctInvisibleLoadItem(prev, item.id, text))}
             onRemove={() => setContext((prev) => removeInvisibleLoadItem(prev, item.id))}
             onToggleDefer={() => setContext((prev) => (item.deferred ? undeferInvisibleLoadItem(prev, item.id) : deferInvisibleLoadItem(prev, item.id)))}
-            onRequestHelp={() => requestHelpWith(item)}
+            onHelpChoice={(choice) => handleHelpChoice(item, choice)}
+            onAddStep={(step) => setContext((prev) => addBreakdownStep(prev, item.id, step))}
+            onRemoveStep={(index) => setContext((prev) => removeBreakdownStep(prev, item.id, index))}
+            exploreNote={exploreNotes[item.id] ?? null}
           />
         ))}
       </div>

@@ -683,6 +683,29 @@ summarised here because it closes gaps this document itself was tracking.
   names that existing, separate, on-device chat history explicitly, so
   "temporary, not saved" (Before Words) is never confused with "kept on
   this device so you can scroll back" (ordinary Nova chat).
+  **Phase 5F Agentic Expansion re-verification (directive §6):**
+  re-audited after this phase's `NovaAgenticJourney.tsx` rework (directive
+  §4) — the quarantine mechanism itself
+  (`quarantineTemporaryBeforeWordsContextForPrompt`, the `beforeWordsContext`
+  schema field, the ordinary-message-text placement) was not touched this
+  phase; confirmed by grep that nothing new in `nova-task-deferral-*.ts`,
+  `nova-proactive-assistance-contract.ts`, or
+  `nova-invisible-load-help-contract.ts` imports anything under the
+  `nhei-` prefix, and the full `nova-before-words-temporary-context.test.ts`
+  / `nova-chat-before-words-trust-boundary.route.test.ts` suite still
+  passes unchanged. What DID change: `NovaAgenticJourney.tsx` gained an
+  explicit `entry` step offering "say what's on your mind first" (Before
+  Words) or "just talk to Nova" (skips it entirely) — directive §4's "allow
+  users to enter directly through ordinary Nova chat without forcing them
+  through Before Words." This does not weaken the trust boundary; it only
+  changes whether a user reaches Before Words at all before chatting —
+  once they do, the temporary context still only ever reaches the
+  ordinary message text, exactly as before. A new back-navigation stack
+  lets a user return to a prior step (including back to Before Words from
+  chat) without resetting the whole journey, but a step that has already
+  been consumed by `NovaChat`'s one-shot `onTemporaryBeforeWordsContextConsumed`
+  is not resurrected by going back — going back re-renders the step, it
+  never replays an already-sent request.
 - **Browser-level and real-emulator test coverage, both new this phase**:
   a Firestore emulator integration suite (`npm run test:emulator`,
   `vitest.emulator.config.ts`) exercising the real Firebase Admin SDK

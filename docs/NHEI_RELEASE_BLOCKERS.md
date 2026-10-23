@@ -325,6 +325,36 @@ component is still not mounted into `App.tsx`'s live navigation.
   `docs/NOVA_FULL_VISION_CAPABILITY_REGISTER.md` workstream O for the
   full reasoning.
 
+## Phase 5F Agentic Expansion findings (not NHEI consent itself — recorded here for completeness since this phase re-verified the boundary)
+
+- **No item in this file's numbered list changed state.** This phase's
+  work (Task Deferral, Invisible Load's help menu, the unified
+  `NovaAgenticJourney` sequencer, the new possible-suggestion contract,
+  the task-assistance outcome contract) is entirely Agentic Nova/
+  non-NHEI code — confirmed by grep: zero `from '...nhei-...'` imports in
+  `nova-task-deferral-types.ts`, `nova-task-deferral-service.ts`,
+  `nova-task-deferral-connector-contract.ts`,
+  `nova-task-assistance-outcome.ts`, `nova-invisible-load-help-contract.ts`,
+  or `nova-proactive-assistance-contract.ts`. The full Before Words
+  trust-boundary regression suite
+  (`nova-before-words-temporary-context.test.ts`,
+  `nova-chat-before-words-trust-boundary.route.test.ts`,
+  `nova-support-circle-no-auto-contact-audit.test.ts`,
+  `nhei-safeguarding-contract.test.ts`) was re-run unchanged and passes.
+- **Export/erasure coverage**: the three new Firestore subcollections
+  this phase adds — `task_deferral_proposals`, `task_deferral_audit`,
+  `task_assistance_outcomes` — are all real subcollections of
+  `users/{uid}` (never top-level, userId-keyed collections), the same
+  shape `calendar_protection_proposals`/`-audit` already established in
+  Phase 5D; they are already covered by the existing whole-account
+  `recursiveDelete`/`listCollections()` export and deletion paths with no
+  separate registration needed, for the same reason recorded above.
+- **No new NHEI consent purpose was added.** Task Deferral's own
+  `userControlsDeadline`/`userControlsOwnership` clarification is an
+  Agentic Nova workflow input, answered fresh on every proposal, never
+  persisted as a standing consent — it has no relationship to
+  `nhei-persistence-service.ts`'s consent model.
+
 ## Explicitly not a blocker (confirmed working, independent of any NHEI activation)
 
 - Data export, correction, and deletion already work today through this

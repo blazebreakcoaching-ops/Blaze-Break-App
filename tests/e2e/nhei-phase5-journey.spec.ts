@@ -186,6 +186,7 @@ test.describe('NHEI Phase 5E integrated journey (directive §8)', () => {
     await expect(invisibleLoad.getByText('Finish the quarterly board deck')).toBeVisible();
 
     await invisibleLoad.getByRole('button', { name: /Get help with this/i }).click();
+    await invisibleLoad.getByRole('button', { name: /^Protect time for it$/i }).click();
 
     const takeTheLoad = page.locator('text=0b. Take the Load').locator('xpath=ancestor::section[1]');
     await expect(takeTheLoad.getByPlaceholder('What should this protected time be called?')).toHaveValue(/Finish the quarterly board deck/);
@@ -298,12 +299,26 @@ test.describe('NHEI Phase 5E integrated journey (directive §8)', () => {
     await enterMockAuthAndGoto(page);
 
     const journey = page.locator('text=6. Integrated Agentic Nova Journey').locator('xpath=ancestor::section[1]');
+    // Phase 5F Agentic Expansion (directive §4): the journey now opens on
+    // an explicit entry step offering Before Words or direct chat entry,
+    // rather than forcing Before Words first.
+    await expect(journey.getByRole('button', { name: /Just talk to Nova/i })).toBeVisible();
+    await journey.getByRole('button', { name: /Say what's on your mind first/i }).click();
     await journey.getByRole('button', { name: "Start whenever you're ready" }).click();
     await journey.getByRole('button', { name: "I'd rather not write anything right now" }).click();
     await expect(journey.getByPlaceholder(/./).first()).toBeVisible(); // now on the Nova Chat step
 
     await journey.getByRole('button', { name: 'Start over' }).click();
     await expect(journey.getByText('Before Break')).toHaveCount(0); // sanity: no leftover chat UI text
-    await expect(journey.getByRole('button', { name: "Start whenever you're ready" })).toBeVisible();
+    await expect(journey.getByRole('button', { name: /Just talk to Nova/i })).toBeVisible();
+  });
+
+  test('integrated journey: choosing "Just talk to Nova" skips Before Words entirely', async ({ page }) => {
+    await mockApis(page);
+    await enterMockAuthAndGoto(page);
+    const journey = page.locator('text=6. Integrated Agentic Nova Journey').locator('xpath=ancestor::section[1]');
+    await journey.getByRole('button', { name: /Just talk to Nova/i }).click();
+    await expect(journey.getByRole('button', { name: "Start whenever you're ready" })).toHaveCount(0);
+    await expect(journey.getByPlaceholder(/./).first()).toBeVisible(); // directly on the Nova Chat step
   });
 });

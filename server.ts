@@ -6181,6 +6181,261 @@ app.post("/api/nova/calendar-protection/:proposalId/undo", verifyAppCheck, authe
 });
 
 // ============================================================================
+// Nova Take the Load: Task Deferral (Phase 5F Agentic Expansion, directive
+// §2). Every route below is self-scoped (writes only to `users/{uid}/...`
+// under the caller's own verified uid) and self-authorising only - there
+// is no path here, or in nova-task-deferral-service.ts, that can affect
+// another person's task or commitment. The execute route below always
+// passes the permanently mock-only connector from
+// nova-task-deferral-connector-contract.ts - no real Asana/Monday/Jira
+// write capability is imported anywhere in this block.
+// ============================================================================
+import {
+  identifyTaskDeferralCandidate, clarifyTaskDeferralControl, prepareTaskDeferralProposal,
+  presentTaskDeferralForApproval, recordTaskDeferralApprovalDecision, executeTaskDeferralProposal,
+  retryTaskDeferralExecution,
+} from './nova-task-deferral-service';
+import { createMockTaskDeferralConnector } from './nova-task-deferral-connector-contract';
+import { recordTaskAssistanceOutcome } from './nova-task-assistance-outcome';
+import { generateProactiveSuggestions } from './nova-proactive-assistance-contract';
+
+const NovaTaskDeferralIdentifySchema = z.object({
+  idempotencyKey: z.string().min(1).max(200),
+  taskDescription: z.string().min(1).max(500),
+  currentDueDescription: z.string().max(200).nullable(),
+}).strict();
+
+app.post("/api/nova/task-deferral/identify", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const uid = requireAuth(req).uid;
+    const parsed = NovaTaskDeferralIdentifySchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: "Invalid task deferral request.", details: (parsed as any).error?.errors || [] });
+    }
+    const { idempotencyKey, taskDescription, currentDueDescription } = parsed.data;
+    const proposal = await identifyTaskDeferralCandidate(getDb(), uid, idempotencyKey, { taskDescription, currentDueDescription: currentDueDescription ?? null });
+    res.json({ proposal });
+  } catch (err: any) {
+    logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+    res.status(500).json({ error: GENERIC_SERVER_ERROR });
+  }
+});
+
+const NovaTaskDeferralControlAnswerSchema = z.enum(['yes', 'no', 'unsure']);
+const NovaTaskDeferralClarifySchema = z.object({
+  userControlsDeadline: NovaTaskDeferralControlAnswerSchema,
+  userControlsOwnership: NovaTaskDeferralControlAnswerSchema,
+}).strict();
+
+app.post("/api/nova/task-deferral/:proposalId/clarify-control", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const uid = requireAuth(req).uid;
+    const parsed = NovaTaskDeferralClarifySchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: "Both \"userControlsDeadline\" and \"userControlsOwnership\" are required (one of 'yes', 'no', 'unsure')." });
+    }
+    const outcome = await clarifyTaskDeferralControl(getDb(), uid, req.params.proposalId, parsed.data);
+    if (outcome.status === 'not_identified') {
+      return res.status(409).json({ error: "This proposal is not awaiting control clarification." });
+    }
+    res.json(outcome);
+  } catch (err: any) {
+    logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+    res.status(500).json({ error: GENERIC_SERVER_ERROR });
+  }
+});
+
+const NovaTaskDeferralPrepareSchema = z.object({
+  reasonablyPostponable: z.boolean(),
+  postponementReasoning: z.string().min(1).max(500),
+  proposedNewDueDescription: z.string().max(200).nullable(),
+  proposedNewPriority: z.enum(['lower', 'unchanged', 'higher']).nullable(),
+  consequences: z.array(z.string().max(300)).max(10),
+  uncertainties: z.array(z.string().max(300)).max(10),
+}).strict();
+
+app.post("/api/nova/task-deferral/:proposalId/prepare", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const uid = requireAuth(req).uid;
+    const parsed = NovaTaskDeferralPrepareSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: "Invalid task deferral proposal.", details: (parsed as any).error?.errors || [] });
+    }
+    const { reasonablyPostponable, postponementReasoning, proposedNewDueDescription, proposedNewPriority, consequences, uncertainties } = parsed.data;
+    let proposal;
+    try {
+      proposal = await prepareTaskDeferralProposal(getDb(), uid, req.params.proposalId, {
+        postponementConsideration: { reasonablyPostponable, reasoning: postponementReasoning },
+        proposedChange: { proposedNewDueDescription, proposedNewPriority },
+        consequences: { consequences, uncertainties },
+      });
+    } catch (prepareErr: any) {
+      if (typeof prepareErr?.message === 'string' && prepareErr.message.startsWith('invalid_proposed_change:')) {
+        return res.status(400).json({ error: prepareErr.message });
+      }
+      throw prepareErr;
+    }
+    res.json({ proposal });
+  } catch (err: any) {
+    logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+    res.status(500).json({ error: GENERIC_SERVER_ERROR });
+  }
+});
+
+app.post("/api/nova/task-deferral/:proposalId/present", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const uid = requireAuth(req).uid;
+    const proposal = await presentTaskDeferralForApproval(getDb(), uid, req.params.proposalId);
+    res.json({ proposal });
+  } catch (err: any) {
+    logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+    res.status(500).json({ error: GENERIC_SERVER_ERROR });
+  }
+});
+
+const NovaTaskDeferralApprovalSchema = z.object({
+  approved: z.boolean(),
+  approvalFingerprint: z.string().min(1),
+}).strict();
+
+app.post("/api/nova/task-deferral/:proposalId/approve", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const uid = requireAuth(req).uid;
+    const parsed = NovaTaskDeferralApprovalSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: "Both \"approved\" and \"approvalFingerprint\" are required." });
+    }
+    const outcome = await recordTaskDeferralApprovalDecision(getDb(), uid, req.params.proposalId, parsed.data);
+    if (outcome.status === 'fingerprint_mismatch') {
+      return res.status(409).json({ error: "This approval does not match the proposal currently on record - please review the current proposal and try again." });
+    }
+    res.json(outcome);
+  } catch (err: any) {
+    logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+    res.status(500).json({ error: GENERIC_SERVER_ERROR });
+  }
+});
+
+app.post("/api/nova/task-deferral/:proposalId/execute", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const uid = requireAuth(req).uid;
+    // Always the mock-only connector - see this block's own header.
+    const outcome = await executeTaskDeferralProposal(getDb(), uid, req.params.proposalId, createMockTaskDeferralConnector());
+    res.json(outcome);
+  } catch (err: any) {
+    logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+    res.status(500).json({ error: GENERIC_SERVER_ERROR });
+  }
+});
+
+app.post("/api/nova/task-deferral/:proposalId/retry", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const uid = requireAuth(req).uid;
+    const proposal = await retryTaskDeferralExecution(getDb(), uid, req.params.proposalId);
+    res.json({ proposal });
+  } catch (err: any) {
+    res.status(409).json({ error: err.message || "Could not retry this proposal." });
+  }
+});
+
+// Read-only history/status routes (directive §2's "review the resulting
+// action state" and "return to the task later").
+app.get("/api/nova/task-deferral/history", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const uid = requireAuth(req).uid;
+    const snap = await getDb().collection(`users/${uid}/task_deferral_proposals`).get();
+    const proposals = snap.docs.map((d: any) => d.data()).sort((a: any, b: any) => (b.lastTransitionAt || '').localeCompare(a.lastTransitionAt || ''));
+    res.json({ proposals });
+  } catch (err: any) {
+    logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+    res.status(500).json({ error: GENERIC_SERVER_ERROR });
+  }
+});
+
+app.get("/api/nova/task-deferral/:proposalId", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const uid = requireAuth(req).uid;
+    const snap = await getDb().collection(`users/${uid}/task_deferral_proposals`).doc(req.params.proposalId).get();
+    if (!snap.exists) return res.status(404).json({ error: "No such task deferral proposal." });
+    res.json({ proposal: snap.data() });
+  } catch (err: any) {
+    logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+    res.status(500).json({ error: GENERIC_SERVER_ERROR });
+  }
+});
+
+// Directive §7 — simple, optional, user-confirmed outcome feedback. See
+// nova-task-assistance-outcome.ts's own header: no causal claim, no
+// inferred improvement from approval/completion alone, "not_sure"-style
+// answers never silently treated as positive.
+const NovaTaskAssistanceOutcomeSchema = z.object({
+  outcome: z.enum(['helped', 'changed_plan', 'not_used', 'need_another_approach']),
+}).strict();
+
+app.post("/api/nova/task-deferral/:proposalId/outcome", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const uid = requireAuth(req).uid;
+    const parsed = NovaTaskAssistanceOutcomeSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: "\"outcome\" must be one of 'helped', 'changed_plan', 'not_used', 'need_another_approach'." });
+    }
+    const record = await recordTaskAssistanceOutcome(getDb(), uid, {
+      workflow: 'task_deferral',
+      itemId: req.params.proposalId,
+      outcome: parsed.data.outcome,
+    });
+    res.json({ record });
+  } catch (err: any) {
+    logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+    res.status(500).json({ error: GENERIC_SERVER_ERROR });
+  }
+});
+
+// Phase 5F Agentic Expansion, directive §5 - possible-suggestion stage
+// only (see nova-proactive-assistance-contract.ts's own header for the
+// full five-stage breakdown). This route never prepares, approves, or
+// executes anything - it only represents what might be worth proposing,
+// using exclusively this one request's own user-supplied text plus two
+// REAL, already-verified authorisation checks (never assumed).
+const NovaProactiveSuggestionsRequestSchema = z.object({
+  statedGoal: z.string().max(300).nullable(),
+  voluntarilySharedObligation: z.string().max(300).nullable(),
+  capacityBand: z.enum(['low_bandwidth', 'some_bandwidth', 'reflective_bandwidth']).nullable(),
+  priorUserConfirmedPlan: z.string().max(300).nullable(),
+}).strict();
+
+app.post("/api/nova/proactive-suggestions", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const uid = requireAuth(req).uid;
+    const parsed = NovaProactiveSuggestionsRequestSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: "Invalid proactive-suggestions request.", details: (parsed as any).error?.errors || [] });
+    }
+    const db = getDb();
+    const hasAuthorisedCalendarActionContext = (await getCalendarActionPermission(db, uid)).granted;
+    // "Existing authorised... task context" (directive §5) - a real,
+    // already-connected task-provider OAuth token, never assumed. This
+    // checks existence only, never reads the token's value.
+    const taskProviderDocs = await Promise.all(
+      ['asana', 'monday', 'jira'].map((service) => db.collection(`users/${uid}/integration_tokens`).doc(service).get()),
+    );
+    const hasAuthorisedTaskContext = taskProviderDocs.some((d: any) => d.exists);
+    const suggestions = generateProactiveSuggestions({
+      statedGoal: parsed.data.statedGoal,
+      voluntarilySharedObligation: parsed.data.voluntarilySharedObligation,
+      capacityBand: parsed.data.capacityBand,
+      hasAuthorisedCalendarActionContext,
+      hasAuthorisedTaskContext,
+      priorUserConfirmedPlan: parsed.data.priorUserConfirmedPlan,
+    });
+    res.json({ suggestions });
+  } catch (err: any) {
+    logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+    res.status(500).json({ error: GENERIC_SERVER_ERROR });
+  }
+});
+
+// ============================================================================
 // Real Signals: Gmail (genuinely fetched, not the "inbox shielding" claim
 // this used to make - honestly scoped to real inbox-load tracking instead)
 // ============================================================================

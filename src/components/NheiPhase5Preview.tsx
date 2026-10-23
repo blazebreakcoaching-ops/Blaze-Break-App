@@ -7,6 +7,7 @@ import { NheiBeforeWords } from './NheiBeforeWords';
 import { NheiAgenticActionPreview } from './NheiAgenticActionPreview';
 import { NovaInvisibleLoad } from './NovaInvisibleLoad';
 import { NovaTakeTheLoad } from './NovaTakeTheLoad';
+import { NovaTaskDeferral } from './NovaTaskDeferral';
 import { NovaChat } from './NovaChat';
 import { NovaAgenticJourney } from './NovaAgenticJourney';
 import { arbitrateNheiRecoverySuggestions } from '../../nhei-recovery-arbitration';
@@ -57,6 +58,7 @@ const PREVIEW_ARBITRATION = arbitrateNheiRecoverySuggestions({
 
 export const NheiPhase5Preview = () => {
   const [requestedHelp, setRequestedHelp] = useState<NovaStatedPracticalProblem | null>(null);
+  const [requestedDeferralTask, setRequestedDeferralTask] = useState<string>('');
   // Phase 5E (directive §5): the one place this still-offline harness
   // demonstrates the real handoff - Before Words' `onDecided` feeds a
   // genuinely mounted NovaChat instance's `temporaryBeforeWordsContext`
@@ -83,17 +85,32 @@ export const NheiPhase5Preview = () => {
 
     <section className="space-y-3">
       <h2 className="text-sm font-bold text-text-muted uppercase tracking-wide">0. Invisible Load</h2>
-      <NovaInvisibleLoad onRequestHelp={setRequestedHelp} />
+      <p className="text-xs text-text-muted">
+        Phase 5F Agentic Expansion (directive §3): choosing "Get help with this" on an item now offers five options -
+        protect time, defer/reprioritise, break into steps, explore a recovery tool, or leave unchanged. The first two
+        hand off to the real sections below; the other three are handled inline on the item itself.
+      </p>
+      <NovaInvisibleLoad onProtectTime={setRequestedHelp} onDeferTask={setRequestedDeferralTask} />
     </section>
 
     <section className="space-y-3">
       <h2 className="text-sm font-bold text-text-muted uppercase tracking-wide">0b. Take the Load - Calendar Protection</h2>
       <p className="text-xs text-text-muted">
         {requestedHelp
-          ? <>Pre-filled from the Invisible Load item you just asked for help with: <span className="italic text-text-main">"{requestedHelp.description}"</span> - everything below this is a real server call, per NovaTakeTheLoad.tsx's own header.</>
-          : 'Ask for help with an Invisible Load item above to pre-fill this, or start one directly below.'}
+          ? <>Pre-filled from the Invisible Load item you chose "Protect time for it" on: <span className="italic text-text-main">"{requestedHelp.description}"</span> - everything below this is a real server call, per NovaTakeTheLoad.tsx's own header.</>
+          : 'Choose "Protect time for it" on an Invisible Load item above to pre-fill this, or start one directly below.'}
       </p>
       <NovaTakeTheLoad initialTitle={requestedHelp?.description ?? ''} />
+    </section>
+
+    <section className="space-y-3">
+      <h2 className="text-sm font-bold text-text-muted uppercase tracking-wide">0c. Take the Load - Task Deferral</h2>
+      <p className="text-xs text-text-muted">
+        {requestedDeferralTask
+          ? <>Pre-filled from the Invisible Load item you chose "Defer or reprioritise it" on: <span className="italic text-text-main">"{requestedDeferralTask}"</span> - the proposal lifecycle below is real; the final "apply" step always goes through a mock-only connector, per NovaTaskDeferral.tsx's own header.</>
+          : 'Choose "Defer or reprioritise it" on an Invisible Load item above to pre-fill this, or start one directly below.'}
+      </p>
+      <NovaTaskDeferral initialTaskDescription={requestedDeferralTask} />
     </section>
 
     <section className="space-y-3">
