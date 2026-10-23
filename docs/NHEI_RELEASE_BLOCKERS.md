@@ -160,23 +160,40 @@ settled" — the whole point of this register is that they are not.
     `cleared: false`. A future wiring phase gets `safeguarding_not_cleared`
     for every real user until this is built — this is intentional, not a
     bug to work around.
-15. **Energy Delta Management has no entry in `recovery-signal-candidates.ts`'s
-    `MODULE_ROUTE_MAP`**, discovered during the Phase 4 audit. The
-    bridge's Physical-dimension rule targets `recovery_fuel` instead,
-    documented in `docs/NHEI_ARCHITECTURE.md`. *Proposed, not approved*:
-    whether Energy Delta Management should ever become a routable
-    Recovery Routing module is a separate, future product/engineering
-    decision this register does not make — it would require editing
-    `recovery-signal-candidates.ts`, which this phase deliberately never
-    touches.
+15. **Energy Delta Management now has an entry in `recovery-signal-candidates.ts`'s
+    `MODULE_ROUTE_MAP`.** *Decided and implemented (Phase 4B)* — resolved
+    the Phase 4 finding. `recovery-decision-copy.ts`'s
+    `MODULE_DISPLAY_NAMES`/`MODULE_TARGET_TAB` gained the matching entry,
+    and `nhei-recovery-bridge.ts`'s Physical-dimension rule now targets
+    it directly, with `recovery_fuel` offered as a genuinely-matching
+    alternative. *Proposed, not approved*: whether this registration is
+    the right long-term product decision (vs., say, a different Recovery
+    Routing treatment for Energy Delta) has not been reviewed by anyone
+    with product authority — this register tracks that the registration
+    exists and is tested, not that it has been product-approved.
 16. **Independent human review of how `NheiRecoverySuggestion`'s
     user-facing text (`reason`, `explanationForUser`) would actually read
-    to a real user**, including in a youth age band. *Not started.* This
-    phase wrote and unit-tested that text for tone (no causal claims, no
-    promised outcomes, no resistance framing on decline) but no product/
-    clinical/safeguarding reviewer has read it as a real user would see
-    it — the same category of review item 1 and item 6 already require
-    for knowledge content and youth safeguarding respectively.
+    to a real user**, including in a youth age band. *Not started —
+    preparation exists.* Phase 4B added
+    `nhei-recovery-suggestion-review-register.ts`, a static list of every
+    user-visible string the bridge's six rules can produce, each flagged
+    (`causal_sounding`, `culturally_narrow`,
+    `age_appropriateness_unverified`, etc.) for a reviewer's attention —
+    but the file is explicitly preparation, not review: nothing in it or
+    its drift-guard test marks any entry approved, and no product/
+    clinical/safeguarding reviewer has actually read this text yet, the
+    same category item 1 and item 6 already require for knowledge
+    content and youth safeguarding respectively.
+17. **Wiring `nhei-recovery-arbitration.ts`,
+    `nhei-recovery-orchestration.ts`, and
+    `nhei-recovery-interaction-contract.ts` into a real route and a real
+    UI.** *Decided and implemented (offline, fully tested); wiring is not
+    started.* All three are pure/composition functions with zero
+    production call sites — confirmed by `grep -rl "nhei-recovery-"`
+    returning only the Phase 4/4B files themselves. A future phase
+    wiring these in must independently re-verify every prerequisite in
+    items 12–16 above still holds at the real call site, not assume this
+    phase's "offline, tested" status implies readiness.
 
 ## Explicitly not a blocker (confirmed working, independent of any NHEI activation)
 

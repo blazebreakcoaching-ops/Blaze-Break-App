@@ -256,6 +256,95 @@ gated on its own approval.
   invariant), capacity-suitability, candidate cross-referencing, and the
   Energy Delta finding.
 
+## Recovery arbitration, orchestration, interaction, and review prep (Phase 4B, offline/unwired today)
+
+Phase 4B completes the Recovery Intelligence Bridge's missing pieces -
+the bridge alone produced candidates but never picked one, had no
+trusted boundary for real consent/safeguarding, and had no tested way
+for a user to actually respond to a suggestion. None of the four new
+files below is imported by `server.ts`, any route, or any `.tsx`
+component - confirmed by `grep -rl "nhei-recovery-"`, which returns only
+these files and the Phase 4 bridge itself.
+
+- **`nhei-recovery-arbitration.ts`** (`arbitrateNheiRecoverySuggestions`):
+  picks at most one suggestion as a default recommendation from the
+  bridge's candidate list, deterministically. Never selects a
+  `capacitySuitability: 'unsuitable'` suggestion as the default (it stays
+  visible as an alternative, never silently dropped); `'unknown'`
+  capacity is preserved as `'unknown'`, never promoted or treated as
+  unsuitable. Deduplicates suggestions that target the same `RouteType`
+  into one winner (ranked by `interpretationKind`, then
+  `matchesStatedGoal`, then capacity fit - an ORDERING, not an invented
+  numeric score), keeping every loser in `dedupedAway` rather than
+  discarding it. Takes an optional caller-supplied `unavailableModules`
+  set for modules that are known but currently paused, and abstains
+  honestly (`all_targets_unavailable` / `all_unsuitable_for_capacity` /
+  `no_candidates`) rather than inventing a substitute. Deliberately does
+  **not** call `selectRoute`/`compareCandidates`
+  (`recovery-routing-engine.ts`) - doing so would require fabricating
+  `InterventionCandidate` fields (urgency, recentlyUsed,
+  userPreferenceMatch, etc.) that NHEI suggestions have no honest way to
+  supply; see the file's own header comment for the full reasoning.
+- **`nhei-recovery-orchestration.ts`** (`orchestrateNheiRecoveryRequest`):
+  the trusted consent/safeguarding boundary. Its request type has no
+  field for a consent or clearance boolean - consent is read live via
+  `getNheiConsent`/`isNheiPurposeConsented`, and safeguarding clearance
+  comes only from invoking a required `NheiSafeguardingGate` function
+  parameter (never a boolean a caller could assert). The real default for
+  any caller is `UNINTEGRATED_SAFEGUARDING_GATE`, so every call through
+  this file behaves exactly like every other NHEI call site that gate
+  guards - no bypass is invented here. `uid` must be the server's own
+  already-verified identity (documented, not re-enforced - this file
+  does no authentication of its own, matching every other NHEI
+  persistence function). Capacity comes from running the real
+  `determineBandwidth` (`recovery-capacity-gate.ts`) over caller-supplied,
+  already-fetched signals - no capacity-relevant Firestore read of its
+  own. `SIMULATED_TEST_ONLY_CLEARED_GATE` is exported solely for this
+  file's own test suite to exercise the `cleared: true` path no real gate
+  can produce yet.
+- **`nhei-recovery-interaction-contract.ts`** (`initNheiRecoveryInteractionState`
+  / `applyNheiRecoveryInteraction`): a pure reducer over six real actions
+  - `accept`, `dismiss`, `explain`, `view_alternative`,
+  `correct_interpretation`, `decline_all`. Structural guarantees, not just
+  comments: this file imports nothing from any Firestore client (no
+  persistence path exists for a correction, which is recorded only as a
+  session-scoped suggestion id, never raw text); `dismissedSuggestionIds`/
+  `declinedAll` are plain unscored flags with no cross-session counting,
+  so a decline is never treated as resistance or a trait; the file
+  imports nothing from Guardian, calendar, messaging, or navigation code,
+  so no action here can trigger one even by accident.
+- **`nhei-recovery-suggestion-review-register.ts`**: a static list of
+  every user-visible `reason`/`explanationForUser` string the bridge's
+  six rules can produce, each tagged with its governing rule and an
+  honest (non-approving) set of flags - `causal_sounding`,
+  `culturally_narrow`, `age_appropriateness_unverified`, etc. - for a
+  future human reviewer. Nothing in this file marks any entry approved;
+  `nhei-recovery-suggestion-review-register.test.ts` is a drift guard
+  only, proving the recorded text still matches what the live rules
+  produce, never a stand-in for the actual review.
+- **`nhei-recovery-bridge.ts` hardening this phase**: every rule that
+  reads `NheiBehaviouralPattern.occurrenceCount` now also requires
+  `relationTypesObserved.includes('RECURRENCE')` - a bare `SEQUENCE`
+  relation (`nhei-temporal-engine.ts`'s `deriveRelationBetween`) only
+  means "chronologically ordered," not "from a different episode," so
+  `occurrenceCount >= 2` alone was not a sufficient cross-episode
+  guarantee at this file's own reading point, even though the real
+  pipeline (`readNheiTemporalView`) only ever supplies genuine,
+  already-episode-aware `RECURRENCE` relations today. See
+  `NHEI_PHASE4B_RECOVERY_COMPLETION_REPORT.md` section 7 for the full
+  audit.
+- **Energy Delta Management is now registered**: `recovery-signal-candidates.ts`'s
+  `MODULE_ROUTE_MAP` and `recovery-decision-copy.ts`'s
+  `MODULE_DISPLAY_NAMES`/`MODULE_TARGET_TAB` each gained an `energy_delta`
+  entry (→ `RECOVER`, hosted on the same `'recover'` tab as
+  `recovery_fuel`/`one_less_thing`). Purely additive - no existing
+  candidate-builder function ever produced `sourceModule: 'energy_delta'`
+  before this, so no existing route's behaviour changed.
+  `nhei-recovery-bridge.ts`'s Physical-dimension rule now targets
+  `energy_delta` directly (the directive's own named destination),
+  offering `recovery_fuel` as a genuinely, independently matching
+  alternative rather than a disguised substitute.
+
 ## Feature governance (both default OFF, AND-combined)
 
 1. `NHEI_EDUCATIONAL_MODE_ENABLED` — a server-only `process.env` read

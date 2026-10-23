@@ -30,6 +30,15 @@ export const MODULE_ROUTE_MAP: Record<string, RouteType> = {
   boundary_architect: 'PROTECT',
   digital_boundary_shield: 'PROTECT',
   recovery_fuel: 'RECOVER',
+  // NHEI Phase 4B: registered so Energy Delta Management (EnergyBudget.tsx,
+  // hosted on the same 'recover' tab as recovery_fuel/one_less_thing - see
+  // recovery-decision-copy.ts's MODULE_TARGET_TAB) is a genuine, verifiable
+  // Recovery Routing destination. Purely additive: no existing
+  // candidate-builder function in this file ever set sourceModule to
+  // 'energy_delta' before this line existed, so this changes no existing
+  // route's behaviour - see NHEI_PHASE4B_RECOVERY_COMPLETION_REPORT.md
+  // section 5 for the full investigation.
+  energy_delta: 'RECOVER',
   my_patterns: 'UNDERSTAND',
   weekly_review: 'UNDERSTAND',
   action_engine: 'ACT',

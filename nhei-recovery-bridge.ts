@@ -17,15 +17,20 @@
 // activate" framing, and this phase's delivery report for what remains
 // before any future phase could wire this in.
 //
-// AUDIT FINDING (Phase 4 §2): recovery-signal-candidates.ts's MODULE_ROUTE_MAP
-// has no entry for Energy Delta Management - it is reachable today only as
-// its own standalone page (EnergyBudget.tsx), never through Recovery
-// Routing. The directive's own example ("Energy and recovery management
-// questions -> Energy Delta Management") is therefore NOT a verified,
-// routable mapping today - this file targets 'recovery_fuel' instead
-// (MODULE_ROUTE_MAP: RECOVER), the nearest module that both already exists
-// in the registry and addresses the same depleted-foundation signal,
-// rather than inventing a route Recovery Routing cannot actually reach.
+// PHASE 4B UPDATE: Energy Delta Management is now a registered Recovery
+// Routing destination (recovery-signal-candidates.ts's MODULE_ROUTE_MAP
+// and recovery-decision-copy.ts's MODULE_DISPLAY_NAMES/MODULE_TARGET_TAB
+// each gained an 'energy_delta' entry this phase - see those files' own
+// comments and NHEI_PHASE4B_RECOVERY_COMPLETION_REPORT.md section 5 for
+// why this is a safe, purely additive registration that changes no
+// existing route's behaviour). ruleRecoveryFoundationLow below now
+// targets 'energy_delta' as its primary suggestion - the directive's own
+// wording ("energy and recovery management questions") is Energy Delta's
+// literal purpose, not Recovery Fuel's. Recovery Fuel remains in
+// alternativeModules because it genuinely, independently matches the same
+// Physical-dimension signal (its own real-pipeline role is exactly this),
+// never as a disguised substitute for an unreachable destination the way
+// Phase 4 originally had to use it.
 
 import { MODULE_ROUTE_MAP, isKnownRoutingModule } from './recovery-signal-candidates';
 import { isEffortWithinBandwidth, type BandwidthBand } from './recovery-capacity-gate';
@@ -57,6 +62,7 @@ const RECOVERY_CAPABILITY_LABELS: Record<string, string> = {
   one_less_thing: 'One Less Thing',
   workload_reality_check: 'Workload Reality Check',
   digital_boundary_shield: 'Digital Boundary Shield',
+  energy_delta: 'Energy & Capacity',
 };
 
 function capabilityLabel(sourceModule: string): string {
@@ -69,6 +75,31 @@ function capabilityLabel(sourceModule: string): string {
 // (directive §11, scenario 11). This never blocks a BEHAVIOURAL PATTERN-
 // based rule, which has its own, separate interpretationConfidence gate.
 const USABLE_EVIDENCE_QUALITIES: EvidenceQuality[] = ['high', 'medium'];
+
+// PHASE 4B HARDENING (item 5, temporal/evidence accuracy): every rule
+// below that reads NheiBehaviouralPattern.occurrenceCount additionally
+// requires relationTypesObserved to include 'RECURRENCE', not just
+// occurrenceCount >= 2. detectBehaviouralPatterns
+// (nhei-adaptive-behaviour-engine.ts) counts relation PAIRS of type
+// SEQUENCE *or* RECURRENCE toward occurrenceCount, and a bare SEQUENCE
+// relation (nhei-temporal-engine.ts's deriveRelationBetween) only means
+// "these two records are chronologically ordered" - it carries no
+// guarantee the two records come from different episodes, so two tagged
+// facets of one single reported experience could in principle produce a
+// SEQUENCE pair. In today's real pipeline
+// (nhei-persistence-service.ts's readNheiTemporalView) every relation
+// actually fed to detectBehaviouralPatterns comes from
+// deriveRecurrenceRelations, which is already episode-aware and only
+// ever emits RECURRENCE across genuinely distinct episodeIds - so this
+// hardening changes no real-pipeline suggestion today. It exists so this
+// file's own guarantee ("recurrence means independent episodes, not two
+// observations within one episode") is enforced structurally at the
+// point this file reads a pattern, rather than inherited only by
+// accident from how one particular caller happens to build its relations
+// array today.
+function isGenuineCrossEpisodeRecurrence(pattern: { relationTypesObserved: string[] }): boolean {
+  return pattern.relationTypesObserved.includes('RECURRENCE');
+}
 
 let suggestionCounter = 0;
 function nextSuggestionId(prefix: string): string {
@@ -148,7 +179,9 @@ function finishSuggestion(
 // evidence exists" - one relational experience is an anecdote, not yet a
 // boundary struggle worth suggesting a tool for.
 function ruleBoundaryRelated(ctx: BuildContext): NheiRecoverySuggestion | null {
-  const pattern = ctx.input.contextSummary.behaviouralPatterns.find((p) => p.selfSystems.includes('RELATIONAL_SELF'));
+  const pattern = ctx.input.contextSummary.behaviouralPatterns.find(
+    (p) => p.selfSystems.includes('RELATIONAL_SELF') && isGenuineCrossEpisodeRecurrence(p),
+  );
   if (!pattern) return null;
 
   return finishSuggestion(ctx, {
@@ -240,7 +273,9 @@ function ruleShortGroundingRequest(ctx: BuildContext): NheiRecoverySuggestion | 
 // pathways," which specifically proves ACT does not win by default).
 function ruleActionWithStatedGoal(ctx: BuildContext): NheiRecoverySuggestion | null {
   if (ctx.input.userStatedGoal?.preferredRouteType !== 'ACT') return null;
-  const pattern = ctx.input.contextSummary.behaviouralPatterns.find((p) => p.occurrenceCount >= 2);
+  const pattern = ctx.input.contextSummary.behaviouralPatterns.find(
+    (p) => p.occurrenceCount >= 2 && isGenuineCrossEpisodeRecurrence(p),
+  );
   if (!pattern) return null;
 
   return finishSuggestion(ctx, {
@@ -261,9 +296,14 @@ function ruleActionWithStatedGoal(ctx: BuildContext): NheiRecoverySuggestion | n
   });
 }
 
-// Rule 5 - energy/recovery-foundation signal (Physical dimension). Targets
-// recovery_fuel, not Energy Delta Management - see this file's header
-// comment for why (MODULE_ROUTE_MAP has no entry for Energy Delta).
+// Rule 5 - energy/recovery-foundation signal (Physical dimension). Phase
+// 4B: now targets energy_delta (Energy Delta Management), the directive's
+// own named destination for "energy and recovery management questions" -
+// see this file's header for why that's now a real, registered target.
+// recovery_fuel is listed as an alternative because the same
+// Physical-dimension signal genuinely, independently matches its own
+// real-pipeline role too - never a disguised substitute standing in for
+// an unreachable module.
 function ruleRecoveryFoundationLow(ctx: BuildContext): NheiRecoverySuggestion | null {
   const { confirmedInterpretations, openHypotheses } = ctx.input.contextSummary;
   const confirmed = confirmedInterpretations.filter((c) => USABLE_EVIDENCE_QUALITIES.includes(c.evidenceQuality) && c.dimensions.includes('PHYSICAL'));
@@ -272,20 +312,20 @@ function ruleRecoveryFoundationLow(ctx: BuildContext): NheiRecoverySuggestion | 
   if (matches.length === 0) return null;
 
   return finishSuggestion(ctx, {
-    targetModule: 'recovery_fuel',
+    targetModule: 'energy_delta',
     routeType: 'RECOVER',
     requiredEffort: 'low_bandwidth',
     reason: 'A physical-dimension signal (e.g. fatigue) is present in what you’ve described.',
     explanationForUser:
       'You’ve described something in this physical territory - tiredness, depleted energy, that kind of thing. ' +
-      'Nova doesn’t know what’s causing it, and isn’t claiming to - Recovery Fuel is a quick check on the basics ' +
-      '(food, drink, rest), which sometimes helps regardless of the underlying cause.',
+      'Nova doesn’t know what’s causing it, and isn’t claiming to - Energy & Capacity is a place to look at your ' +
+      'current load against what you actually have available, which sometimes helps regardless of the underlying cause.',
     evidenceReferences: matches.map((m) => m.evidenceId),
     selfSystems: Array.from(new Set(matches.flatMap((m) => m.selfSystems))),
     dimensions: ['PHYSICAL'],
     interpretationKind: confirmed.length > 0 ? 'confirmed' : 'tentative',
     safetyRestrictions: ['not_diagnostic', 'not_a_substitute_for_professional_care'],
-    alternativeModules: ['one_less_thing'],
+    alternativeModules: ['recovery_fuel', 'one_less_thing'],
   });
 }
 
@@ -294,7 +334,9 @@ function ruleRecoveryFoundationLow(ctx: BuildContext): NheiRecoverySuggestion | 
 // genuine recurrence worth reflecting on, offered as UNDERSTAND/
 // reflective, never as something requiring immediate action.
 function ruleGeneralRepeatedPattern(ctx: BuildContext): NheiRecoverySuggestion | null {
-  const pattern = ctx.input.contextSummary.behaviouralPatterns.find((p) => !p.selfSystems.includes('RELATIONAL_SELF'));
+  const pattern = ctx.input.contextSummary.behaviouralPatterns.find(
+    (p) => !p.selfSystems.includes('RELATIONAL_SELF') && isGenuineCrossEpisodeRecurrence(p),
+  );
   if (!pattern) return null;
 
   return finishSuggestion(ctx, {

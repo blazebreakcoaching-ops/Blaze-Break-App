@@ -128,18 +128,20 @@ describe('Phase 4 §11 synthetic acceptance scenarios', () => {
   });
 
   // 4. Unexplained fatigue with no established cause - still surfaces a
-  // Physical-dimension suggestion (Recovery Fuel, substituting for the
-  // non-routable Energy Delta module) without asserting a cause.
+  // Physical-dimension suggestion (Energy & Capacity as of Phase 4B, with
+  // Recovery Fuel offered as a genuinely-matching alternative) without
+  // asserting a cause.
   it('4. unexplained fatigue with no established cause', () => {
     const result = buildNheiRecoverySuggestions(baseInput({
       contextSummary: emptySummary({
         openHypotheses: [{ evidenceId: 'ev_3', selfSystems: ['INTERNAL_SELF'], dimensions: ['PHYSICAL'], evidenceQuality: 'medium' }],
       }),
     }));
-    const fuel = result.suggestions.find((s) => s.targetModule === 'recovery_fuel');
-    expect(fuel).toBeDefined();
-    expect(fuel!.interpretationKind).toBe('tentative');
-    expect(fuel!.reason).not.toMatch(/caused by|because/i);
+    const energy = result.suggestions.find((s) => s.targetModule === 'energy_delta');
+    expect(energy).toBeDefined();
+    expect(energy!.interpretationKind).toBe('tentative');
+    expect(energy!.reason).not.toMatch(/caused by|because/i);
+    expect(energy!.alternativeModules).toContain('recovery_fuel');
   });
 
   // 5. A difficult relationship interaction, reported once (no recurrence
@@ -364,16 +366,98 @@ describe('cross-referencing existing Recovery Routing candidates', () => {
   });
 });
 
-describe('Energy Delta audit finding', () => {
-  it('never emits a suggestion targeting energy_delta, since it is not in MODULE_ROUTE_MAP', () => {
-    expect(isKnownRoutingModule('energy_delta')).toBe(false);
+describe('Energy Delta registration (Phase 4B)', () => {
+  it('energy_delta is now a known, registered routing module', () => {
+    expect(isKnownRoutingModule('energy_delta')).toBe(true);
+  });
+
+  it('a Physical-dimension suggestion now targets energy_delta, with recovery_fuel as a genuinely-matching alternative', () => {
     const result = buildNheiRecoverySuggestions(baseInput({
       contextSummary: emptySummary({
         confirmedInterpretations: [{ evidenceId: 'ev_11', selfSystems: ['INTERNAL_SELF'], dimensions: ['PHYSICAL'], evidenceQuality: 'high' }],
       }),
     }));
-    expect(result.suggestions.some((s) => s.targetModule === 'energy_delta')).toBe(false);
-    expect(result.suggestions.find((s) => s.dimensions.includes('PHYSICAL'))?.targetModule).toBe('recovery_fuel');
+    const physical = result.suggestions.find((s) => s.dimensions.includes('PHYSICAL'));
+    expect(physical?.targetModule).toBe('energy_delta');
+    expect(physical?.alternativeModules).toContain('recovery_fuel');
+  });
+});
+
+describe('Phase 4B item 5: recurrence must mean independent episodes', () => {
+  // occurrenceCount >= 2 alone is NOT sufficient - a pattern whose
+  // relationTypesObserved is only ['SEQUENCE'] could in principle have
+  // come from two tagged facets of a single reported episode
+  // (nhei-temporal-engine.ts's deriveRelationBetween does not require
+  // different episodes), so every pattern-consuming rule must also check
+  // relationTypesObserved includes 'RECURRENCE'.
+  it('a pattern with occurrenceCount >= 2 but only SEQUENCE relations does not trigger the boundary rule', () => {
+    const result = buildNheiRecoverySuggestions(baseInput({
+      contextSummary: emptySummary({
+        behaviouralPatterns: [pattern({ selfSystems: ['RELATIONAL_SELF'], occurrenceCount: 3, relationTypesObserved: ['SEQUENCE'] })],
+      }),
+    }));
+    expect(result.suggestions.some((s) => s.targetModule === 'boundary_architect')).toBe(false);
+  });
+
+  it('a pattern with occurrenceCount >= 2 but only SEQUENCE relations does not trigger the general-pattern rule', () => {
+    const result = buildNheiRecoverySuggestions(baseInput({
+      contextSummary: emptySummary({
+        behaviouralPatterns: [pattern({ selfSystems: ['INTERNAL_SELF'], occurrenceCount: 3, relationTypesObserved: ['SEQUENCE'] })],
+      }),
+    }));
+    expect(result.suggestions.some((s) => s.targetModule === 'my_patterns')).toBe(false);
+  });
+
+  it('a pattern with occurrenceCount >= 2 but only SEQUENCE relations does not trigger Action Engine even with a stated ACT goal', () => {
+    const result = buildNheiRecoverySuggestions(baseInput({
+      contextSummary: emptySummary({
+        behaviouralPatterns: [pattern({ selfSystems: ['INTERNAL_SELF'], occurrenceCount: 3, relationTypesObserved: ['SEQUENCE'] })],
+      }),
+      userStatedGoal: { preferredRouteType: 'ACT' },
+    }));
+    expect(result.suggestions.some((s) => s.targetModule === 'action_engine')).toBe(false);
+  });
+
+  it('the same pattern DOES trigger once relationTypesObserved includes RECURRENCE (a genuine cross-episode repeat)', () => {
+    const result = buildNheiRecoverySuggestions(baseInput({
+      contextSummary: emptySummary({
+        behaviouralPatterns: [pattern({ selfSystems: ['RELATIONAL_SELF'], occurrenceCount: 2, relationTypesObserved: ['RECURRENCE'] })],
+      }),
+    }));
+    expect(result.suggestions.some((s) => s.targetModule === 'boundary_architect')).toBe(true);
+  });
+
+  it('a mixed SEQUENCE+RECURRENCE pattern still counts as genuine (at least one real cross-episode repeat is present)', () => {
+    const result = buildNheiRecoverySuggestions(baseInput({
+      contextSummary: emptySummary({
+        behaviouralPatterns: [pattern({ selfSystems: ['RELATIONAL_SELF'], occurrenceCount: 3, relationTypesObserved: ['SEQUENCE', 'RECURRENCE'] })],
+      }),
+    }));
+    expect(result.suggestions.some((s) => s.targetModule === 'boundary_architect')).toBe(true);
+  });
+});
+
+describe('Phase 4B: interpretationKind is never upgraded post-hoc', () => {
+  it('calling the bridge twice with identical input produces identical interpretationKind values (no feedback loop)', () => {
+    const input = baseInput({
+      contextSummary: emptySummary({
+        confirmedInterpretations: [{ evidenceId: 'ev_20', selfSystems: ['INTERNAL_SELF'], dimensions: ['EMOTIONAL'], evidenceQuality: 'high' }],
+      }),
+    });
+    const first = buildNheiRecoverySuggestions(input);
+    const second = buildNheiRecoverySuggestions(input);
+    expect(first.suggestions.map((s) => s.interpretationKind)).toEqual(second.suggestions.map((s) => s.interpretationKind));
+  });
+
+  it('a tentative suggestion stays tentative regardless of how many times it is produced', () => {
+    const input = baseInput({
+      contextSummary: emptySummary({ behaviouralPatterns: [pattern({ selfSystems: ['RELATIONAL_SELF'] })] }),
+    });
+    for (let i = 0; i < 3; i++) {
+      const result = buildNheiRecoverySuggestions(input);
+      const boundary = result.suggestions.find((s) => s.targetModule === 'boundary_architect');
+      expect(boundary?.interpretationKind).toBe('tentative');
+    }
   });
 });
 
