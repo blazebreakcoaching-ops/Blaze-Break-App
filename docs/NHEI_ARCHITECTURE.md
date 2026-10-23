@@ -226,18 +226,18 @@ gated on its own approval.
   target via `isKnownRoutingModule` before emitting — a suggestion naming
   a module that isn't a real, already-routable destination is structurally
   impossible, not just avoided by convention.
-- **Audit finding (Phase 4 §2)**: `recovery-signal-candidates.ts`'s
-  `MODULE_ROUTE_MAP` has no entry for Energy Delta Management — it is
-  reachable today only as its own standalone page (`EnergyBudget.tsx`),
-  never through Recovery Routing. The directive's own worked example
-  ("energy and recovery management questions → Energy Delta Management")
-  is therefore not a verified, routable mapping today; the Physical-
-  dimension rule targets `recovery_fuel` instead (the nearest module that
-  both exists in the registry and addresses the same depleted-foundation
-  signal) rather than inventing a route Recovery Routing cannot actually
-  reach. Wiring Energy Delta Management into Recovery Routing, if ever
-  wanted, is a separate, future `recovery-signal-candidates.ts` change —
-  explicitly out of scope here, since this phase never edits that file.
+- **Audit finding (Phase 4 §2) — superseded by Phase 4B, see below.** At
+  the time of Phase 4, `recovery-signal-candidates.ts`'s `MODULE_ROUTE_MAP`
+  had no entry for Energy Delta Management — it was reachable only as its
+  own standalone page (`EnergyBudget.tsx`), never through Recovery
+  Routing, so the Physical-dimension rule targeted `recovery_fuel`
+  instead. **This finding is historical and no longer describes the
+  current state** — the "Energy Delta Management is now registered"
+  bullet in the Phase 4B section immediately below resolved it: the
+  module is registered, the Physical-dimension rule now targets it
+  directly, and Phase 5 added anchor-level navigation to it (see that
+  phase's own section). A reader should treat this bullet as the record
+  of what Phase 4 found, not as the current routing behaviour.
 - **Capacity suitability never invents a score**: `null` capacityBand
   (no reliable information) yields `'unknown'`, distinct from
   `'unsuitable'` (a real band exists but `isEffortWithinBandwidth` says
@@ -459,6 +459,47 @@ its backend-only work.
   been verified by manual review and a dev-server check, never an automated
   component test; this is a pre-existing, repo-wide limitation, not
   something new to Phase 5.
+
+## Phase 5B corrections and the wider Nova picture
+
+Phase 5B's directive asked specifically for documentation drift to be
+corrected and for synthetic-preview vs. integrated status to be
+unambiguous. Three corrections, plus one pointer:
+
+- **Energy Delta**: see the "superseded by Phase 4B" note added to the
+  Phase 4 section above — the Phase 4 finding is historical, not current.
+- **Before Words retention**: `nhei-before-words-contract.ts` has always
+  had two real, equally-valid endings, but
+  `src/components/NheiBeforeWords.tsx` only ever calls
+  `decideProceedWithoutRetaining` — nothing in this codebase calls
+  `decideRetainAsReflectionEvidence`. This was reviewed explicitly this
+  phase and confirmed correct, not an oversight: no real
+  `reflection_storage` write exists to receive a "retained" session, so a
+  UI button offering it would be exactly the "simulated option mistaken
+  for working persistence" risk the directive warns against. The retain
+  ending's data shape is prepared offline
+  (`nova-before-words-handoff-contract.ts`'s `NovaIntakeSummary`) for a
+  future phase that builds the real write path and, only then, a UI
+  control for it.
+- **Synthetic preview vs. integrated, unambiguous legend**: every file
+  under the `nhei-` prefix in this document is offline/unwired unless a
+  section explicitly says otherwise (Educational Mode's pipeline is the
+  one exception, and even that is default-OFF behind two gates). Every
+  `.tsx` component named here is reachable only from
+  `src/components/NheiPhase5Preview.tsx`, a developer-only harness not
+  imported by `App.tsx` — never from a real user's navigation. This is
+  stated once here, deliberately, so no later section needs to repeat it
+  per-component.
+- **The wider Nova picture**: this document and
+  `docs/NHEI_RELEASE_BLOCKERS.md` describe NHEI specifically. Blaze
+  Break's full Nova vision is larger than NHEI — see
+  `docs/NOVA_FULL_VISION_CAPABILITY_REGISTER.md` (Phase 5B) for the
+  18-workstream register covering Support Circle, Boundary Autopilot,
+  Calendar/Workload signals, Voice, the new offline Nova Take the Load
+  agentic layer, and more, including which of them are real and
+  integrated today versus offline, specified, or not started. NHEI is
+  one workstream of that larger picture (workstream A there), not a
+  synonym for Nova as a whole.
 
 ## Feature governance (both default OFF, AND-combined)
 

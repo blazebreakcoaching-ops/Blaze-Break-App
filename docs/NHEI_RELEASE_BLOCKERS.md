@@ -236,6 +236,22 @@ settled" — the whole point of this register is that they are not.
     not claim otherwise, and a future phase should not claim component-test
     coverage that cannot exist without first adding that harness.
 
+## Phase 5B finding: item 18 now has two reusable, working precedents (still not a resolution)
+
+Phase 5B's wider audit (`docs/NOVA_FULL_VISION_CAPABILITY_REGISTER.md`,
+workstream O) found that a real, working, NON-NHEI consent-writing
+pattern already exists in this codebase and is directly reusable for
+item 18 above: `ConnectedNovaPermissions`
+(`src/components/ConnectedRecoveryModules.tsx:681`) — a real,
+rules-enforced, per-user Firestore permissions document the client reads
+and writes directly, already used for ~20 other "let Nova use my X"
+toggles. `/api/ally/view/:token/consent` is a second, server-route
+alternative, also real. **This closes the "is there a pattern to build
+on" question, not item 18 itself** — no NHEI-specific consent-writing
+route has been built on either pattern; that remains a future phase's
+own, separate engineering work, now with a clear starting point instead
+of an open design question.
+
 ## Explicitly not a blocker (confirmed working, independent of any NHEI activation)
 
 - Data export, correction, and deletion already work today through this
