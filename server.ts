@@ -56,6 +56,7 @@ import { exportAllNheiData } from './nhei-persistence-service';
 // imported or called from this file.
 import { nheiEducationalModeIsEnabledNow } from './nhei-educational-mode-flag';
 import { buildNheiEducationalChatAddendum } from './nhei-nova-chat-educational-integration';
+import { isNheiModeEnabledInGovernance } from './nhei-feature-governance';
 import { summarizeModuleOutcomes, RoutingDecisionRecord } from './recovery-outcomes-intelligence';
 import { GEMINI_TEXT_MODEL, GEMINI_TTS_MODEL, GEMINI_LIVE_MODEL, CLAUDE_CHAT_MODEL } from './ai-model-registry';
 import { summarizeFeatureUsage, countByDimension } from './product-intelligence';
@@ -3054,10 +3055,33 @@ app.post("/api/nova/chat", novaChatLimiter, verifyAppCheck, authenticateFirebase
     // never throws; this try/catch is defence in depth only, matching
     // "a timeout or retrieval error must not prevent existing Nova
     // functionality from continuing safely."
+    // Phase 3C Checkpoint 3 section 1: `message` (the user's own chat
+    // text, already parsed/validated above) is now passed through so
+    // buildNheiEducationalChatAddendum can select which topics are
+    // actually relevant before ever calling retrieval - see that file's
+    // own header comment and nhei-educational-topic-selector.ts for why
+    // this is topic classification, not evidence extraction, and why it
+    // needs no consent.
+    // Phase 3C Checkpoint 3 section 2: the env var alone is checked
+    // FIRST, exactly as before - this is a zero-cost, in-memory check,
+    // and leaving it first means the governance-document read below
+    // never happens at all while the env var is off (today, in
+    // production), so this section adds no Firestore cost to the common
+    // case. Only once the env var is also true does
+    // isNheiModeEnabledInGovernance run its own Firestore read - a
+    // SEPARATE, Cloud-Run-revision-free kill switch
+    // (app_config/nhei_feature_state, read fresh, no cache, propagating
+    // to every instance on its next request exactly like
+    // evolution_freeze already does) layered on top of, never instead
+    // of, the env var. See nhei-feature-governance.ts's own header
+    // comment for the audit finding this responds to: an env var change
+    // on this app's actual Cloud Run deployment requires a new service
+    // revision, which is fast but not the zero-latency "immediate kill
+    // switch" Checkpoint 2's own report implied without verifying.
     let nheiEducationalAddendum = "";
-    if (nheiEducationalModeIsEnabledNow()) {
+    if (nheiEducationalModeIsEnabledNow() && await isNheiModeEnabledInGovernance(getDb(), 'educational')) {
       try {
-        const nheiResult = await buildNheiEducationalChatAddendum(getDb(), undefined);
+        const nheiResult = await buildNheiEducationalChatAddendum(getDb(), undefined, message);
         nheiEducationalAddendum = nheiResult.addendum;
       } catch (e) {
         logger.warning("NHEI educational-mode addendum build failed - continuing without it.", errorFields(e));

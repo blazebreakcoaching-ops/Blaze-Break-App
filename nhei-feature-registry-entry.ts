@@ -46,7 +46,10 @@ export const NHEI_FEATURE_REGISTRY_ENTRY: Omit<FeatureRegistryEntry, 'createdAt'
     'surveillance system. Phase 1 (pure engines) and Phase 2 (consent-gated ' +
     'Firestore persistence) are built. Phase 3C-2B Checkpoint 2 wires ' +
     'Educational Mode only into POST /api/nova/chat, behind a server-only, ' +
-    'default-OFF flag (see featureFlag) - Personal Reflection and ' +
+    'default-OFF flag (see featureFlag). Phase 3C Checkpoint 3 added a second, ' +
+    'independently-propagating gate (app_config/nhei_feature_state, AND-combined ' +
+    'with the flag) that can disable the feature with one Firestore write, no ' +
+    'redeploy - see nhei-feature-governance.ts. Personal Reflection and ' +
     'Longitudinal Mode remain entirely unwired. Disabled for all users.',
   productOwner: null,
   technicalOwner: null,
@@ -82,8 +85,8 @@ export const NHEI_FEATURE_REGISTRY_ENTRY: Omit<FeatureRegistryEntry, 'createdAt'
   minAppVersion: null,
   fallbackMode: 'disabled',
   rollbackMethod:
-    `Unset ${NHEI_EDUCATIONAL_MODE_ENV_VAR} (or set to anything but "true") and redeploy - stops immediately, ` +
-    'nothing to clean up (Educational Mode never persists), cannot cascade.',
+    'Fast path: set app_config/nhei_feature_state.educationalModeEnabled=false (one Firestore write, no deploy). ' +
+    'Slow path: unset the env var - Cloud Run needs a new revision for that, not instant.',
   expectedFlagRetirement: null,
   notes:
     'Registered at Phase 2 checkpoint per architecture approval; updated at Phase 3C-2B Checkpoint 2 once ' +

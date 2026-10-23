@@ -1,5 +1,12 @@
 // NHEI PHASE 3C-2B CHECKPOINT 2 - SECTIONS 1, 4, 10, 11: EDUCATIONAL MODE
 // <-> NOVA CHAT INTEGRATION TESTS
+// UPDATED PHASE 3C CHECKPOINT 3 SECTION 1: buildNheiEducationalChatAddendum
+// now takes a third `userMessage` argument and only retrieves knowledge
+// for topics selectEducationalTopics finds relevant to it - every call
+// below passes a message that is actually relevant to the fixture
+// entry's own topic ('INTERNAL_SELF'), and a new describe block proves
+// the opposite: an irrelevant message gets nothing, even with approved
+// content sitting in the store.
 
 import { describe, it, expect } from 'vitest';
 import { buildNheiEducationalChatAddendum } from './nhei-nova-chat-educational-integration';
@@ -69,16 +76,42 @@ function draftInput(overrides: Record<string, unknown> = {}) {
 describe('buildNheiEducationalChatAddendum - the real state of this library today: empty', () => {
   it('returns an empty addendum when the knowledge library has no approved entries (today\'s actual state - every entry is draft)', async () => {
     const db = createFakeFirestore();
-    const result = await buildNheiEducationalChatAddendum(db, undefined);
+    const result = await buildNheiEducationalChatAddendum(db, undefined, "Tell me about the internal self.");
     expect(result).toEqual({ addendum: '', sectionCount: 0 });
   });
 
   it('a draft (unreviewed) entry never reaches the addendum, even though it exists in the store', async () => {
     const db = createFakeFirestore();
     await createDraftKnowledgeEntry(db, 'author1', draftInput());
-    const result = await buildNheiEducationalChatAddendum(db, undefined);
+    const result = await buildNheiEducationalChatAddendum(db, undefined, "Tell me about the internal self.");
     expect(result.addendum).toBe('');
     expect(result.sectionCount).toBe(0);
+  });
+});
+
+describe('buildNheiEducationalChatAddendum - Checkpoint 3 section 1: relevance gating', () => {
+  it('an unrelated message never reaches retrieval at all, even with a real approved entry sitting in the store', async () => {
+    const db = createFakeFirestore();
+    await createDraftKnowledgeEntry(db, 'author1', draftInput());
+    await approveKnowledgeEntryAsVerifiedReviewer(db, { uid: 'real_reviewer', role: NHEI_KNOWLEDGE_REVIEWER_ROLE }, 'entry1', FULL_CHECKLIST);
+    const result = await buildNheiEducationalChatAddendum(db, undefined, "What's the weather like today?");
+    expect(result).toEqual({ addendum: '', sectionCount: 0 });
+  });
+
+  it('a relevant message does retrieve the matching approved entry', async () => {
+    const db = createFakeFirestore();
+    await createDraftKnowledgeEntry(db, 'author1', draftInput());
+    await approveKnowledgeEntryAsVerifiedReviewer(db, { uid: 'real_reviewer', role: NHEI_KNOWLEDGE_REVIEWER_ROLE }, 'entry1', FULL_CHECKLIST);
+    const result = await buildNheiEducationalChatAddendum(db, undefined, "Tell me about the internal self.");
+    expect(result.sectionCount).toBeGreaterThan(0);
+  });
+
+  it('a non-string/empty message selects no topics and never retrieves', async () => {
+    const db = createFakeFirestore();
+    await createDraftKnowledgeEntry(db, 'author1', draftInput());
+    await approveKnowledgeEntryAsVerifiedReviewer(db, { uid: 'real_reviewer', role: NHEI_KNOWLEDGE_REVIEWER_ROLE }, 'entry1', FULL_CHECKLIST);
+    expect(await buildNheiEducationalChatAddendum(db, undefined, "")).toEqual({ addendum: '', sectionCount: 0 });
+    expect(await buildNheiEducationalChatAddendum(db, undefined, undefined)).toEqual({ addendum: '', sectionCount: 0 });
   });
 });
 
@@ -94,7 +127,7 @@ describe('buildNheiEducationalChatAddendum - once a real approved entry exists',
     );
     expect(approval.ok).toBe(true);
 
-    const result = await buildNheiEducationalChatAddendum(db, undefined);
+    const result = await buildNheiEducationalChatAddendum(db, undefined, "Tell me about the internal self.");
     expect(result.sectionCount).toBeGreaterThan(0);
     // Framing instruction and quarantine delimiters must be present -
     // this is the real quarantineKnowledgeEntryForPrompt output, not a
@@ -110,7 +143,7 @@ describe('buildNheiEducationalChatAddendum - once a real approved entry exists',
       await createDraftKnowledgeEntry(db, 'author1', draftInput({ id: `entry${i}`, title: `Title ${i}` }));
       await approveKnowledgeEntryAsVerifiedReviewer(db, { uid: 'real_reviewer', role: NHEI_KNOWLEDGE_REVIEWER_ROLE }, `entry${i}`, FULL_CHECKLIST);
     }
-    const result = await buildNheiEducationalChatAddendum(db, undefined);
+    const result = await buildNheiEducationalChatAddendum(db, undefined, "Tell me about the internal self.");
     expect(result.sectionCount).toBeLessThanOrEqual(3);
   });
 });
@@ -122,13 +155,37 @@ describe('buildNheiEducationalChatAddendum - never throws, fails safe', () => {
         throw new Error('simulated Firestore outage');
       },
     };
-    const result = await buildNheiEducationalChatAddendum(brokenDb, undefined);
+    const result = await buildNheiEducationalChatAddendum(brokenDb, undefined, "Tell me about the internal self.");
     expect(result).toEqual({ addendum: '', sectionCount: 0 });
   });
 
   it('age band is passed through unchanged, never inferred - an invalid/garbage ageBand normalises to the restrictive "unknown" band inside the pipeline rather than throwing', async () => {
     const db = createFakeFirestore();
-    const result = await buildNheiEducationalChatAddendum(db, { notARealAgeBand: true });
+    const result = await buildNheiEducationalChatAddendum(db, { notARealAgeBand: true }, "Tell me about the internal self.");
     expect(result).toEqual({ addendum: '', sectionCount: 0 });
+  });
+});
+
+describe('buildNheiEducationalChatAddendum - Checkpoint 3 section 8: bounded total addendum size', () => {
+  it('even with many approved entries at the schema\'s own maximum field lengths, the total addendum stays bounded - MAX_SECTIONS_PER_TURN (3) times each field\'s own cap, not unbounded', async () => {
+    const db = createFakeFirestore();
+    // 6 approved entries, more than MAX_SECTIONS_PER_TURN (3) - each at
+    // title's MAX_SHORT (200) and educationalSummary's MAX_LONG (4000)
+    // field maximums (nhei-knowledge-types.ts), the actual worst case a
+    // real, validly-sized entry could ever present.
+    for (let i = 1; i <= 6; i++) {
+      await createDraftKnowledgeEntry(db, 'author1', draftInput({
+        id: `entry${i}`,
+        title: 'T'.repeat(200),
+        educationalSummary: 'S'.repeat(4000),
+      }));
+      await approveKnowledgeEntryAsVerifiedReviewer(db, { uid: 'real_reviewer', role: NHEI_KNOWLEDGE_REVIEWER_ROLE }, `entry${i}`, FULL_CHECKLIST);
+    }
+    const result = await buildNheiEducationalChatAddendum(db, undefined, "Tell me about the internal self.");
+    expect(result.sectionCount).toBeLessThanOrEqual(3);
+    // 3 sections * (200 title + 4000 body + ~250 chars of quarantine
+    // framing/delimiter overhead per section) is comfortably under 15000
+    // - a real, calculable ceiling, not "however large the library gets."
+    expect(result.addendum.length).toBeLessThan(15000);
   });
 });

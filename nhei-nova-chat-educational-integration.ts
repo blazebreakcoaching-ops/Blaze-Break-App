@@ -1,5 +1,9 @@
 // NHEI PHASE 3C-2B CHECKPOINT 2 - SECTIONS 1, 4, 10, 11: EDUCATIONAL MODE
 // INTEGRATION WITH POST /api/nova/chat
+// UPDATED PHASE 3C CHECKPOINT 3 SECTION 1: topic selection is now relevant
+// to the user's actual message, not every topic unconditionally - see
+// nhei-educational-topic-selector.ts and the "Checkpoint 3" paragraph
+// below.
 //
 // This is the one function server.ts's chat route calls. Everything it
 // needs to get right is concentrated here, deliberately, so the route
@@ -55,6 +59,20 @@
 //     its only inputs are a Firestore handle and an age band. There is
 //     nothing personal in its parameters to log in the first place.
 //
+// Checkpoint 3 section 1: Checkpoint 2's version of this function
+// requested every topic in the taxonomy on every call - its own prior
+// comment admitted this was "unfiltered by any guess at what the
+// conversation is about." This version calls selectEducationalTopics on
+// the user's own message FIRST, and only proceeds to the pipeline/
+// retrieval engine at all if at least one topic clears that selector's
+// threshold - an unrelated question (confirmed by this file's own tests)
+// never reaches retrieveApprovedKnowledge, which is both the relevance
+// fix and a further Firestore-cost bound beyond MAX_SECTIONS_PER_TURN.
+// selectEducationalTopics performs no extraction, creates no evidence
+// record, and needs no consent - see that file's own header comment for
+// why a topic-selection function is not itself an interpretation of the
+// user's psychology.
+//
 // What this function deliberately does NOT do: check the feature flag
 // itself. That check belongs to the call site (server.ts), one line
 // before this function is ever invoked, so that the flag's effect is
@@ -68,7 +86,7 @@
 import { runNheiConversationPipeline, type RunEducationalModeInput } from './nhei-conversation-pipeline';
 import { NHEI_CONSENT_DEFAULTS } from './nhei-consent';
 import { quarantineKnowledgeEntryForPrompt } from './nhei-knowledge-model-interface';
-import { NHEI_KNOWLEDGE_TOPICS } from './nhei-knowledge-types';
+import { selectEducationalTopics } from './nhei-educational-topic-selector';
 import type { FirestoreLike } from './nhei-persistence-service';
 
 // Bounds how many quarantined knowledge sections can ever be spliced into
@@ -100,18 +118,28 @@ const EMPTY_RESULT: NheiEducationalChatAddendumResult = { addendum: '', sectionC
 // Firestore access through retrieveApprovedKnowledge, nothing else.
 // `trustedAgeBand` must come from a verified server-side source if one
 // ever exists; today, every call site passes `undefined` because none
-// does (see this file's header comment and section 10).
+// does (see this file's header comment and section 10). `userMessage` is
+// the person's own chat turn, read ONLY by selectEducationalTopics (a
+// pure, local, non-persisting classifier - see that file) to decide
+// which topics are even worth asking retrieveApprovedKnowledge about;
+// this function itself never stores, logs, or forwards that text
+// anywhere else.
 export async function buildNheiEducationalChatAddendum(
   knowledgeDb: FirestoreLike,
   trustedAgeBand: unknown,
+  userMessage: unknown,
 ): Promise<NheiEducationalChatAddendumResult> {
+  const topicSelection = selectEducationalTopics(userMessage);
+  // Checkpoint 3 acceptance item: "unrelated questions are not forced
+  // through NHEI." Zero selected topics means retrieveApprovedKnowledge
+  // is never called at all - not called-and-discarded, never called -
+  // which is also a further bound on Firestore read cost beyond
+  // MAX_SECTIONS_PER_TURN (section 8).
+  if (topicSelection.topics.length === 0) return EMPTY_RESULT;
+
   const input: RunEducationalModeInput = {
     mode: 'educational',
-    // All topics requested, unfiltered by any guess at what the
-    // conversation is about - approval status and age eligibility are
-    // what actually gate what comes back, not a topic heuristic this
-    // checkpoint has no basis to invent from the user's raw message.
-    requestedTopics: [...NHEI_KNOWLEDGE_TOPICS],
+    requestedTopics: topicSelection.topics,
     ageBand: trustedAgeBand,
   };
 
