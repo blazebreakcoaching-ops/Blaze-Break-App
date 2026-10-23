@@ -7,3 +7,8 @@ coverage/
 .env*
 !.env.example
 functions/lib/
+test-results/
+playwright-report/
+blob-report/
+firestore-debug.log
+ui-debug.log

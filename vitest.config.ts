@@ -28,7 +28,12 @@ export default defineConfig({
     // node_modules, never installed by this root project's `npm install`.
     // Without this exclude, vitest's oxc transform fails outright trying
     // to resolve that tsconfig for any mobile/**/*.test.ts file.
-    exclude: ['node_modules/**', 'dist/**', 'functions/**', 'mobile/**'],
+    // *.emulator.test.ts files (Phase 5E, directive §7) need a real,
+    // separately-started Firestore emulator and are run on purpose via
+    // `npm run test:emulator` / vitest.emulator.config.ts - never as part
+    // of the default suite, which must stay runnable with no emulator and
+    // no Java present at all.
+    exclude: ['node_modules/**', 'dist/**', 'functions/**', 'mobile/**', '**/*.emulator.test.ts'],
     // Opt-in only (`npm run test:coverage`) - not wired into `npm test`/CI.
     // Excludes src/** (frontend components) since this project has no DOM
     // rendering harness (no jsdom/@testing-library) to exercise them; the

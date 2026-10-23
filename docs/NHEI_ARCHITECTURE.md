@@ -552,16 +552,18 @@ agentic workflow NHEI's own docs have been tracking since Phase 5B/5C.
   `transaction_support_required` if no transaction support exists — the
   same discipline this file's own `nhei-persistence-service.ts` already
   established for its own transactional writes.
-- **Honest limitation, not a fabricated check**: directive §3 also asked
-  for a server-side re-check of "ownership of the connected calendar" and
-  "provider-granted scopes" at execute time. Neither is possible today —
-  `server.ts`'s `OAUTH_PROVIDERS` has no Google Calendar entry (confirmed
-  again this phase; see the correction recorded in
-  `docs/NOVA_FULL_VISION_CAPABILITY_REGISTER.md` workstream L), so there
-  is no server-side Google OAuth token or scope list to check against.
-  `allowCalendarActions` plus the permanent `CALENDAR_PROTECTION_EXECUTION_ENABLED`
-  kill-switch are what actually stand in for that gap; no code in this
-  phase pretends to verify ownership or scopes it cannot see.
+- **Honest limitation, not a fabricated check (Phase 5D)**: directive §3
+  also asked for a server-side re-check of "ownership of the connected
+  calendar" and "provider-granted scopes" at execute time. Neither was
+  possible then — `server.ts`'s `OAUTH_PROVIDERS` had no Google Calendar
+  entry, so there was no server-side Google OAuth token or scope list to
+  check against. `allowCalendarActions` plus the permanent
+  `CALENDAR_PROTECTION_EXECUTION_ENABLED` kill-switch stood in for that
+  gap; no code in that phase pretended to verify ownership or scopes it
+  couldn't see. **Updated Phase 5E: this specific gap is now closed** —
+  see the new section immediately below. The kill-switch itself remains
+  unchanged (still permanently `false`), so this correction changes what
+  is now POSSIBLE to check, not what is currently enabled.
 - **`nova-google-calendar-adapter.ts`**: pure request-construction
   functions for what a real Google Calendar Events API call would need,
   plus a `NovaExternalConnector` that is structurally incapable of a real
@@ -578,6 +580,82 @@ agentic workflow NHEI's own docs have been tracking since Phase 5B/5C.
   alone was never enough for `proceed_without_retaining`.
 
 See `docs/NOVA_FULL_VISION_CAPABILITY_REGISTER.md` workstreams B, C and L
+for the full account.
+
+## Secure connectors and conversational continuity (Phase 5E, directive §2–§8)
+
+Like Phase 5D, almost entirely on the Agentic Nova (`nova-` prefix) side,
+plus one real piece of NHEI-adjacent wiring (Before Words → Nova chat).
+Full account in `docs/NOVA_PHASE5E_CONNECTOR_AND_CONTINUITY_DELIVERY_REPORT.md`;
+summarised here because it closes gaps this document itself was tracking.
+
+- **The Google Calendar OAuth gap above is closed**: `server.ts`'s
+  `OAUTH_PROVIDERS` now has a real `google_calendar_actions` entry — a
+  GENUINELY separate provider/scope/token from the pre-existing
+  client-side-only Google Calendar read connection (never a reuse of
+  it), using the existing generic connect/callback/disconnect/status
+  routes extended with three new optional hooks: PKCE (server-only
+  verifier storage, one-shot read-then-delete), `fetchAccountIdentity`
+  (records `connectedAccountEmail` on the redacted status doc only — the
+  real ownership check directive §3 asked for), and `revoke` (calls
+  Google's own revoke endpoint on disconnect). `getValidAccessToken` was
+  also hardened: an `invalid_grant` refresh failure now disconnects the
+  integration and returns `null`, rather than returning an already-expired
+  token forever.
+- **A real connector now exists**: `nova-google-calendar-connector.ts` —
+  dependency-injected HTTP transport, genuine Events API request/response
+  handling (unit-tested against fake responses AND a real local
+  `http.Server`, zero real network calls), still structurally unreachable
+  from production (its own static audit test confirms no `fetch`/`http`/
+  `googleapis` import and no import from `server.ts` or any `.tsx` file).
+  `CALENDAR_PROTECTION_EXECUTION_ENABLED` remains the permanent `false`
+  kill-switch from Phase 5D — this connector existing does not change
+  whether real execution is reachable today.
+- **Provider-level idempotency and reconciliation**: every created event
+  is tagged with `extendedProperties.private.novaProposalId`; a dedicated
+  search function can find it after the fact. Two reconciliation
+  functions in `nova-calendar-protection-service.ts` —
+  `reconcileAmbiguousCalendarProtectionProposal` (Phase 5E, for a
+  connector call that threw) and
+  `reconcileStuckExecutingCalendarProtectionProposal` (Phase 5E, for a
+  DIFFERENT failure — a worker that died after claiming `executing` but
+  before finalising, which the normal retry path cannot reach at all,
+  since a second `execute` call deliberately short-circuits to
+  `already_executing` forever) — both change state only on a genuine
+  search answer, never on an inconclusive one, and neither is wired into
+  any production route.
+- **Before Words reaches a real Nova chat turn**: audited both real Nova
+  conversation entry points and found `NovaChat.tsx`'s existing,
+  client-composed, per-request, never-persisted `systemInstruction`
+  already sanctioned for exactly this. `formatTemporaryBeforeWordsContextForNova`
+  (`nova-before-words-temporary-context.ts`) formats a bounded (≤1,200
+  char), plainly-worded addendum with an explicit "temporary, not saved,
+  not a diagnosis" framing sentence; two new optional `NovaChat.tsx`
+  props fold it into exactly one outgoing `/api/nova/chat` request, then
+  the caller clears it — no new persistence, no extra model call. Wired
+  end-to-end in the same offline preview harness via a new
+  `src/components/NovaAgenticJourney.tsx` sequencer (still not
+  `App.tsx`'s live navigation). The Nova Live voice path
+  (`useNovaLiveVoice.ts`'s `buildInitialPrompt`) was reviewed and needs
+  no component change to accept the same formatted string in a future
+  phase — it is already a caller-supplied function.
+- **Browser-level and real-emulator test coverage, both new this phase**:
+  a Firestore emulator integration suite (`npm run test:emulator`,
+  `vitest.emulator.config.ts`) exercising the real Firebase Admin SDK
+  against a genuinely running local emulator — concurrent approvals,
+  concurrent execution claims, idempotency, account isolation, approval
+  expiry, stuck-execution recovery, audit consistency, export/deletion —
+  skipped (not falsely passed) when no emulator is reachable. A
+  Playwright suite (`npm run test:e2e`, `playwright.config.ts`) driving a
+  real Chromium browser against a dedicated dev-only page
+  (`dev-nhei-phase5-preview.html`, never linked from the real app) with
+  every provider response mocked at the network layer — mobile and
+  desktop viewports, keyboard-only interaction, a real focus-trapped
+  modal, consent withdrawal, the suggested-vs-executed distinction,
+  permission denial, and failed/ambiguous connector responses. Neither
+  suite makes WCAG certification claims.
+
+See `docs/NOVA_FULL_VISION_CAPABILITY_REGISTER.md` workstreams B and L
 for the full account.
 
 ## Feature governance (both default OFF, AND-combined)

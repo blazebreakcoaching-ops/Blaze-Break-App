@@ -18,6 +18,14 @@ import type { NovaPracticalActionCategory, NovaConnectorOutcome } from './nova-t
 export interface NovaExternalConnectorRequest {
   category: NovaPracticalActionCategory;
   proposedChangeDescription: string;
+  /**
+   * Optional - the caller's own proposal id, for a connector that supports
+   * provider-level duplicate prevention/identity verification (Phase 5E,
+   * directive §4). Added as an optional field so every existing caller
+   * that never set this keeps working unchanged; a connector that doesn't
+   * use it (e.g. the generic fake-for-testing one) simply ignores it.
+   */
+  proposalId?: string;
 }
 
 /**

@@ -24,6 +24,8 @@ const h = vi.hoisted(() => {
   process.env.SLACK_CLIENT_SECRET = 'slack_client_secret';
   process.env.JIRA_CLIENT_ID = 'jira_client_id';
   process.env.JIRA_CLIENT_SECRET = 'jira_client_secret';
+  process.env.GOOGLE_CALENDAR_ACTIONS_CLIENT_ID = 'gcal_actions_client_id';
+  process.env.GOOGLE_CALENDAR_ACTIONS_CLIENT_SECRET = 'gcal_actions_client_secret';
   return {};
 });
 
@@ -344,12 +346,12 @@ describe('getValidAccessToken (via POST /api/signals/jira/refresh)', () => {
     expect(getDocRaw('users/no_refresh_user/integration_tokens/jira')).toMatchObject({ accessToken: 'old_at' });
   });
 
-  it('falls back to the old token when the refresh call itself fails, without throwing', async () => {
+  it('falls back to the old token when the refresh call fails with a non-invalid_grant error, without throwing', async () => {
     seedJiraToken('refresh_fails_user', { accessToken: 'old_at', refreshToken: 'old_rt', expiresAt: new Date(Date.now() + 1000).toISOString() });
 
     fetchMock.mockImplementation(async (url: string, opts: any) => {
       if (url === 'https://auth.atlassian.com/oauth/token') {
-        return { ok: false, json: async () => ({ error: 'invalid_grant' }) };
+        return { ok: false, json: async () => ({ error: 'server_error' }) };
       }
       if (url.includes('accessible-resources')) {
         expect(opts.headers.Authorization).toBe('Bearer old_at');
@@ -361,6 +363,31 @@ describe('getValidAccessToken (via POST /api/signals/jira/refresh)', () => {
     const res = await request(app).post('/api/signals/jira/refresh').set(auth('refresh_fails_user'));
     expect(res.status).toBe(200);
     expect(getDocRaw('users/refresh_fails_user/integration_tokens/jira')).toMatchObject({ accessToken: 'old_at' });
+  });
+
+  // Phase 5E (directive §2, "expired or revoked token handling"): a
+  // refresh token that the provider reports as invalid_grant (revoked, or
+  // the user disconnected on the provider's own side) must never be
+  // treated as "still works, just use the stale access token" - that
+  // would leave the integration looking connected forever while every
+  // real call to it fails. The fix disconnects it for real, so the next
+  // check (and a UI built on it) can honestly say "not connected."
+  it('disconnects for real when the refresh call fails with invalid_grant (a revoked token), rather than returning a stale token', async () => {
+    seedJiraToken('revoked_user', { accessToken: 'old_at', refreshToken: 'dead_rt', expiresAt: new Date(Date.now() + 1000).toISOString() });
+    seedDoc('users/revoked_user/integrations/jira', { service: 'jira', connected: true });
+
+    fetchMock.mockImplementation(async (url: string) => {
+      if (url === 'https://auth.atlassian.com/oauth/token') {
+        return { ok: false, json: async () => ({ error: 'invalid_grant' }) };
+      }
+      return { ok: true, json: async () => ({ issues: [] }) };
+    });
+
+    const res = await request(app).post('/api/signals/jira/refresh').set(auth('revoked_user'));
+    expect(res.status).toBe(404);
+    expect(res.body.error).toBe('Jira is not connected.');
+    expect(getDocRaw('users/revoked_user/integration_tokens/jira')).toBeUndefined();
+    expect(getDocRaw('users/revoked_user/integrations/jira')).toMatchObject({ connected: false, disconnectReason: 'revoked' });
   });
 
   // QA Batch 10: the defensive catch block behind the happy paths above -
@@ -381,6 +408,142 @@ describe('getValidAccessToken (via POST /api/signals/jira/refresh)', () => {
 
     restore();
     errorSpy.mockRestore();
+  });
+});
+
+// Phase 5E (directive §2): the new server-side Google Calendar connection,
+// distinct from both allowCalendarSignals (read-only client-side consent)
+// and allowCalendarActions (nova-calendar-action-permission.ts's app-level
+// permission) - this describe block covers only what's NEW about this
+// provider (PKCE, identity capture, revoke-on-disconnect), not the generic
+// connect/callback/disconnect/refresh mechanics already proven above.
+describe('google_calendar_actions - PKCE, ownership identity, and revoke', () => {
+  const getConnectResponse = (uid: string) => request(app).post('/api/integrations/google_calendar_actions/connect').set(auth(uid));
+
+  it('connect generates a real PKCE challenge and stores the verifier server-side only', async () => {
+    const res = await getConnectResponse('gcal_user');
+    expect(res.status).toBe(200);
+    const url = new URL(res.body.authorizeUrl);
+    expect(url.searchParams.get('code_challenge_method')).toBe('S256');
+    const challenge = url.searchParams.get('code_challenge');
+    expect(challenge).toBeTruthy();
+
+    const pkceDoc = getDocRaw('users/gcal_user/oauth_pkce/google_calendar_actions');
+    expect(pkceDoc?.codeVerifier).toBeTruthy();
+    // The stored verifier must actually correspond to the sent challenge -
+    // S256(verifier) === challenge - proving this isn't just a random,
+    // unrelated pair sitting next to each other.
+    const crypto = await import('node:crypto');
+    const expectedChallenge = crypto.createHash('sha256').update(pkceDoc!.codeVerifier as string).digest('base64url');
+    expect(challenge).toBe(expectedChallenge);
+  });
+
+  it('requests offline access and forced consent so a refresh token is actually returned', async () => {
+    const res = await getConnectResponse('gcal_user');
+    const url = new URL(res.body.authorizeUrl);
+    expect(url.searchParams.get('access_type')).toBe('offline');
+    expect(url.searchParams.get('prompt')).toBe('consent');
+    expect(url.searchParams.get('scope')).toContain('calendar.events');
+  });
+
+  it('callback sends the stored code_verifier in the token exchange and deletes it afterward (one-shot)', async () => {
+    const connectRes = await getConnectResponse('gcal_user');
+    const state = new URL(connectRes.body.authorizeUrl).searchParams.get('state')!;
+    const storedVerifier = getDocRaw('users/gcal_user/oauth_pkce/google_calendar_actions')?.codeVerifier;
+
+    fetchMock.mockImplementation(async (url: string, opts: any) => {
+      if (url === 'https://oauth2.googleapis.com/token') {
+        const sent = new URLSearchParams(opts.body);
+        expect(sent.get('code_verifier')).toBe(storedVerifier);
+        return { ok: true, json: async () => ({ access_token: 'gcal_at', refresh_token: 'gcal_rt', expires_in: 3600 }) };
+      }
+      if (url === 'https://www.googleapis.com/oauth2/v3/userinfo') {
+        return { ok: true, json: async () => ({ email: 'founder@blazebreak.example' }) };
+      }
+      return { ok: true, json: async () => ({}) };
+    });
+
+    const res = await request(app).get(`/api/integrations/callback/google_calendar_actions?code=real-code&state=${encodeURIComponent(state)}`);
+    expect(res.headers.location).toContain('status=connected');
+    expect(getDocRaw('users/gcal_user/oauth_pkce/google_calendar_actions')).toBeUndefined();
+  });
+
+  it('callback fails cleanly if the PKCE verifier is missing (e.g. a replayed or forged callback)', async () => {
+    const connectRes = await getConnectResponse('gcal_user');
+    const state = new URL(connectRes.body.authorizeUrl).searchParams.get('state')!;
+    // Simulates an attacker who has a valid signed state but never went
+    // through this server's own /connect step to generate a verifier.
+    await (await import('./test/fake-firestore')).fakeDb.collection('users').doc('gcal_user').collection('oauth_pkce').doc('google_calendar_actions').delete();
+
+    const res = await request(app).get(`/api/integrations/callback/google_calendar_actions?code=real-code&state=${encodeURIComponent(state)}`);
+    expect(res.headers.location).toContain('reason=pkce_verifier_missing');
+  });
+
+  it('records which Google account connected, on the redacted status doc only - never on the token doc', async () => {
+    const connectRes = await getConnectResponse('gcal_user');
+    const state = new URL(connectRes.body.authorizeUrl).searchParams.get('state')!;
+
+    fetchMock.mockImplementation(async (url: string) => {
+      if (url === 'https://oauth2.googleapis.com/token') {
+        return { ok: true, json: async () => ({ access_token: 'gcal_at', refresh_token: 'gcal_rt', expires_in: 3600 }) };
+      }
+      if (url === 'https://www.googleapis.com/oauth2/v3/userinfo') {
+        return { ok: true, json: async () => ({ email: 'founder@blazebreak.example' }) };
+      }
+      return { ok: true, json: async () => ({}) };
+    });
+
+    await request(app).get(`/api/integrations/callback/google_calendar_actions?code=real-code&state=${encodeURIComponent(state)}`);
+
+    const statusDoc = getDocRaw('users/gcal_user/integrations/google_calendar_actions');
+    expect(statusDoc?.connectedAccountEmail).toBe('founder@blazebreak.example');
+    const tokenDoc = getDocRaw('users/gcal_user/integration_tokens/google_calendar_actions');
+    expect(tokenDoc?.connectedAccountEmail).toBeUndefined();
+  });
+
+  it('connects successfully even if the identity lookup itself fails - never fatal', async () => {
+    const connectRes = await getConnectResponse('gcal_user');
+    const state = new URL(connectRes.body.authorizeUrl).searchParams.get('state')!;
+
+    fetchMock.mockImplementation(async (url: string) => {
+      if (url === 'https://oauth2.googleapis.com/token') {
+        return { ok: true, json: async () => ({ access_token: 'gcal_at', refresh_token: 'gcal_rt', expires_in: 3600 }) };
+      }
+      if (url === 'https://www.googleapis.com/oauth2/v3/userinfo') {
+        return { ok: false, json: async () => ({ error: 'server_error' }) };
+      }
+      return { ok: true, json: async () => ({}) };
+    });
+
+    const res = await request(app).get(`/api/integrations/callback/google_calendar_actions?code=real-code&state=${encodeURIComponent(state)}`);
+    expect(res.headers.location).toContain('status=connected');
+    expect(getDocRaw('users/gcal_user/integrations/google_calendar_actions')?.connectedAccountEmail).toBeUndefined();
+  });
+
+  it('disconnect calls the provider\'s own revoke endpoint before deleting the local token', async () => {
+    seedDoc('users/gcal_user/integration_tokens/google_calendar_actions', { accessToken: 'gcal_at', refreshToken: 'gcal_rt' });
+    let revokeCalledWith: string | null = null;
+    fetchMock.mockImplementation(async (url: string) => {
+      if (url.startsWith('https://oauth2.googleapis.com/revoke')) {
+        revokeCalledWith = new URL(url).searchParams.get('token');
+        return { ok: true, json: async () => ({}) };
+      }
+      return { ok: true, json: async () => ({}) };
+    });
+
+    const res = await request(app).post('/api/integrations/google_calendar_actions/disconnect').set(auth('gcal_user'));
+    expect(res.status).toBe(200);
+    expect(revokeCalledWith).toBe('gcal_at');
+    expect(getDocRaw('users/gcal_user/integration_tokens/google_calendar_actions')).toBeUndefined();
+  });
+
+  it('disconnect still succeeds locally even if the provider revoke call itself fails', async () => {
+    seedDoc('users/gcal_user/integration_tokens/google_calendar_actions', { accessToken: 'gcal_at', refreshToken: 'gcal_rt' });
+    fetchMock.mockImplementation(async () => { throw new Error('simulated network failure'); });
+
+    const res = await request(app).post('/api/integrations/google_calendar_actions/disconnect').set(auth('gcal_user'));
+    expect(res.status).toBe(200);
+    expect(getDocRaw('users/gcal_user/integration_tokens/google_calendar_actions')).toBeUndefined();
   });
 });
 

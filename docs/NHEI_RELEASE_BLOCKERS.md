@@ -234,38 +234,53 @@ settled" — the whole point of this register is that they are not.
     them in must independently re-verify every prerequisite above (consent
     backend, safeguarding, human review) still holds, not assume "offline,
     tested" implies readiness.
-21. **A real connector integration for any agentic action.** *Not started.*
+21. **A real connector integration for any agentic action.** *Partially
+    addressed, Phase 5E — credential/connector gap for calendar
+    protection specifically is closed; execution is still disabled.*
     `nhei-agentic-action-contract.ts`'s state machine and
-    `NheiAgenticActionPreview.tsx`'s worked example are both fully
-    synthetic — the "connector" is a `setTimeout`, not a real calendar or
-    task-list API call. Phase 5C/5D's real, server-authorised calendar
-    protection workflow (`nova-calendar-protection-service.ts`) is a
-    different, non-synthetic system with the same underlying gap: its
-    execution path is real code with a hardcoded, permanently-disabled
-    kill-switch, not a demo — but still no credential, authorisation flow,
-    or real external write path exists anywhere in this codebase for any
-    connector today. The Phase 5D-added Google Calendar adapter stub
-    (`nova-google-calendar-adapter.ts`) is pure request-construction only,
-    structurally incapable of a real network call, for the same reason:
-    there is no server-side Google OAuth token anywhere in this codebase
-    to give a real one (`server.ts`'s `OAUTH_PROVIDERS` has no Google
-    Calendar entry — confirmed again this phase).
+    `NheiAgenticActionPreview.tsx`'s worked example remain fully
+    synthetic — the "connector" there is still a `setTimeout`. For
+    calendar protection specifically, Phase 5E closed the exact gap this
+    item previously named: `server.ts`'s `OAUTH_PROVIDERS` now has a
+    real `google_calendar_actions` entry (server-side PKCE token
+    exchange, refresh with `invalid_grant` disconnect-handling, a
+    real `fetchAccountIdentity` ownership check, real `revoke` on
+    disconnect), and `nova-google-calendar-connector.ts` is a real
+    connector against the actual Events API — unit-tested with fake
+    responses AND a real local HTTP server, still structurally
+    unreachable from production (its own static audit test confirms
+    this, same pattern as the Phase 5D stub it replaces).
+    `CALENDAR_PROTECTION_EXECUTION_ENABLED` remains the permanent `false`
+    kill-switch — turning it on, and wiring the real connector into
+    `server.ts`, is still a separate, later, explicitly-approved decision
+    this phase deliberately does not take. No other category (Asana,
+    Monday, Calendly task-deferral) has a real connector or credential
+    flow of any kind — unaffected by this phase.
 22. **Automated rendering/accessibility verification for the Phase 5 UI (or
-    any UI in this codebase).** *Partially addressed, Phase 5C/5D — still
-    not WCAG/responsive-layout proof.* This item's original text ("this
-    repository has no jsdom/@testing-library harness") is now STALE and
-    has been corrected here rather than left to mislead a future reader:
-    Phase 5C added `vitest.components.config.ts`
+    any UI in this codebase).** *Partially addressed, Phase 5C/5D/5E —
+    still not WCAG/responsive-layout proof.* This item's original text
+    ("this repository has no jsdom/@testing-library harness") is now
+    STALE and has been corrected here rather than left to mislead a
+    future reader: Phase 5C added `vitest.components.config.ts`
     (`environment: 'jsdom'`, run via `npm run test:components`,
     separate from the main `environment: 'node'` suite), and Phase 5D
     extended it to a sixth component (`NovaTakeTheLoad.tsx`), 31 tests
     total. What this DOES verify: real rendered DOM state, computed
     `aria-*` attributes after real user interaction, and keyboard/focus
-    behaviour — not markup inspection. What it does NOT verify, and this
-    register continues not to claim: actual rendered geometry at any
-    viewport width, or real screen-reader behaviour. No Playwright or
-    other browser-level pass has been attempted for any Phase 5 component,
-    this phase included — that remains unattempted, not merely unclaimed.
+    behaviour — not markup inspection. **Updated Phase 5E: a real
+    browser-level pass HAS now been attempted and run** — `npm run
+    test:e2e` (`playwright.config.ts`, `tests/e2e/nhei-phase5-journey.spec.ts`)
+    drives real Chromium (desktop AND mobile viewport configurations,
+    26 passing test runs — 13 scenarios × 2 viewports) against a
+    dedicated dev-only page, with every provider response mocked at the
+    network layer, covering keyboard-only interaction, a real
+    focus-trapped modal (`role="dialog"`/`aria-modal`/Escape-to-close),
+    and real rendered layout at both viewport sizes (confirmed: no
+    horizontal overflow). What it still does NOT verify, and this
+    register continues not to claim: WCAG conformance of any kind, or
+    real screen-reader/assistive-technology behaviour — the directive's
+    own explicit instruction for this suite was "do not claim WCAG
+    certification from these tests," and this entry doesn't.
 
 ## Phase 5B finding, Phase 5C resolution: item 18 (and items 7, 9, 13's writing half)
 

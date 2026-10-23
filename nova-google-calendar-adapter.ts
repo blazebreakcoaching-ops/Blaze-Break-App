@@ -64,10 +64,22 @@ export interface GoogleCalendarHttpRequest {
  * no I/O, no fetch. The `accessToken` parameter exists only so this shape
  * is complete and testable; nothing in this codebase has a real one to
  * pass in (see this file's own header).
+ *
+ * `proposalId`, when given, is embedded as a Google Calendar "private
+ * extended property" (`extendedProperties.private.novaProposalId`) -
+ * Google's own supported mechanism for tagging an event with an
+ * application-defined id, queryable later via
+ * `privateExtendedProperty=novaProposalId=<id>` (see
+ * nova-google-calendar-connector.ts's search support, Phase 5E directive
+ * §4). This is what makes genuine provider-level reconciliation possible
+ * for an ambiguous outcome: a connector call that throws with the outcome
+ * genuinely unknown can later SEARCH for an event tagged with this exact
+ * proposal id, rather than needing to have already remembered one.
  */
 export function buildGoogleCalendarEventInsertRequest(
   accessToken: string,
   change: { startIso: string; endIso: string; title: string },
+  proposalId?: string,
 ): GoogleCalendarHttpRequest {
   return {
     method: 'POST',
@@ -77,6 +89,7 @@ export function buildGoogleCalendarEventInsertRequest(
       summary: change.title,
       start: { dateTime: change.startIso },
       end: { dateTime: change.endIso },
+      ...(proposalId ? { extendedProperties: { private: { novaProposalId: proposalId } } } : {}),
     },
   };
 }

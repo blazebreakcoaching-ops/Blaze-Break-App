@@ -4901,6 +4901,46 @@ interface OAuthProviderConfig {
   // Extracts the token fields from that provider's token-endpoint JSON response,
   // since Slack nests the user token under `authed_user` while others return it flat.
   extractTokens: (body: any) => { accessToken: string | null; refreshToken: string | null; expiresIn: number | null };
+  // Phase 5E (directive §2): when true, /connect generates a PKCE
+  // code_verifier/code_challenge pair, stores the verifier server-side
+  // (users/{uid}/oauth_pkce/{service}, never in the state param or any
+  // client-visible response), and /callback reads it back for the token
+  // exchange. Belt-and-suspenders for a confidential (client-secret-
+  // holding) server flow like this one - the client_secret is already the
+  // primary protection - but required by the directive and genuinely
+  // defends against authorization-code mix-up across concurrent flows.
+  pkce?: boolean;
+  // Phase 5E (directive §2): "connected-calendar ownership checks" need a
+  // real anchor to check against. When set, called once right after a
+  // successful token exchange; its result (if any) is stored on the
+  // client-readable `integrations/{service}` status doc as
+  // `connectedAccountEmail` - never on the server-only token doc, and
+  // never logged. Optional because most existing providers (Slack, Jira,
+  // Asana, Calendly, Monday) have no such requirement from this directive
+  // and are deliberately left unchanged.
+  fetchAccountIdentity?: (accessToken: string) => Promise<{ email: string | null }>;
+  // Phase 5E (directive §2): called on disconnect, before local tokens are
+  // deleted, for a provider whose own revoke endpoint should genuinely be
+  // told the grant is over (not just forgotten locally) - "explicit
+  // account linking and unlinking" meaning something at the provider's
+  // end too, not only in this app's own Firestore. Best-effort: a failure
+  // here never blocks the local disconnect, since the user's own intent
+  // (stop this app's access) is satisfied either way by deleting the
+  // local token.
+  revoke?: (accessToken: string) => Promise<void>;
+}
+
+function base64UrlEncode(input: Buffer): string {
+  return input.toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+// RFC 7636 PKCE pair - S256 only (plain is deliberately not offered; every
+// provider this codebase talks to, and every modern OAuth guidance, treats
+// S256 as the only method worth using).
+function generatePkcePair(): { codeVerifier: string; codeChallenge: string } {
+  const codeVerifier = base64UrlEncode(crypto.randomBytes(32));
+  const codeChallenge = base64UrlEncode(crypto.createHash("sha256").update(codeVerifier).digest());
+  return { codeVerifier, codeChallenge };
 }
 
 const OAUTH_PROVIDERS: Record<string, OAuthProviderConfig> = {
@@ -4968,6 +5008,67 @@ const OAUTH_PROVIDERS: Record<string, OAuthProviderConfig> = {
       expiresIn: body?.expires_in || null,
     }),
   },
+  // Phase 5E (directive §2): a REAL server-side Google Calendar
+  // connection, distinct from the pre-existing client-side Firebase popup
+  // flow (signInWithCalendar, src/lib/auth.tsx) whose token lives only in
+  // transient React state and is never seen by this server - that gap was
+  // the actual finding Phase 5D's audit recorded, and this entry is what
+  // closes it structurally, not just by adding a token field somewhere.
+  //
+  // Deliberately its OWN provider id, not a generic "google" - this is
+  // the WRITE-capable connection Nova Take the Load's connector (section 3)
+  // would use, kept distinct from both `allowCalendarSignals` (the
+  // existing read-only consent flag) and `allowCalendarActions` (the
+  // app-level action permission, nova-calendar-action-permission.ts).
+  // Granting THIS OAuth connection authorises nothing by itself - the
+  // calendar protection execute route still requires allowCalendarActions
+  // AND still has CALENDAR_PROTECTION_EXECUTION_ENABLED hardcoded false
+  // regardless of whether this connection exists.
+  //
+  // Minimal necessary scope: `calendar.events` (event-level create/
+  // read/delete on the primary calendar) rather than the broader
+  // `calendar` scope, which also permits calendar list management this
+  // app never needs. `email`/`openid` are requested ONLY so
+  // fetchAccountIdentity below can record which Google account is
+  // actually connected - "connected-calendar ownership checks" needs a
+  // real anchor, and this is the minimal one that provides it.
+  // `access_type=offline`+`prompt=consent` are required to reliably get a
+  // refresh_token back from Google (it is otherwise only issued on a
+  // user's very first consent, which would silently break reconnection).
+  google_calendar_actions: {
+    authorizeUrl: "https://accounts.google.com/o/oauth2/v2/auth",
+    tokenUrl: "https://oauth2.googleapis.com/token",
+    clientIdEnv: "GOOGLE_CALENDAR_ACTIONS_CLIENT_ID",
+    clientSecretEnv: "GOOGLE_CALENDAR_ACTIONS_CLIENT_SECRET",
+    tokenStyle: "form",
+    scope: "https://www.googleapis.com/auth/calendar.events openid email",
+    extraAuthorizeParams: { access_type: "offline", prompt: "consent" },
+    pkce: true,
+    extractTokens: (body) => ({
+      accessToken: body?.access_token || null,
+      refreshToken: body?.refresh_token || null,
+      expiresIn: body?.expires_in || null,
+    }),
+    fetchAccountIdentity: async (accessToken: string) => {
+      try {
+        const res = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
+          headers: { Authorization: `Bearer ${accessToken}` },
+        });
+        if (!res.ok) return { email: null };
+        const body = await res.json();
+        return { email: typeof body?.email === "string" ? body.email : null };
+      } catch {
+        return { email: null }; // Never fatal - connection still succeeds without a recorded identity.
+      }
+    },
+    revoke: async (accessToken: string) => {
+      try {
+        await fetch(`https://oauth2.googleapis.com/revoke?token=${encodeURIComponent(accessToken)}`, { method: "POST" });
+      } catch {
+        // Best-effort, per this field's own header comment.
+      }
+    },
+  },
 };
 
 // Stateless, signed `state` param: binds the OAuth callback back to the Firebase
@@ -5034,6 +5135,19 @@ app.post("/api/integrations/:service/connect", verifyAppCheck, authenticateFireb
     const state = signOAuthState(uid, service);
     const redirectUri = getOAuthRedirectUri(service);
 
+    const pkceParams: Record<string, string> = {};
+    if (provider.pkce) {
+      const { codeVerifier, codeChallenge } = generatePkcePair();
+      // Server-side only, keyed by uid+service, never returned to the
+      // client or embedded in `state` - see this field's own header
+      // comment on why that matters even for a confidential-client flow.
+      await getDb().collection("users").doc(uid).collection("oauth_pkce").doc(service).set({
+        codeVerifier, createdAt: new Date().toISOString(),
+      });
+      pkceParams.code_challenge = codeChallenge;
+      pkceParams.code_challenge_method = "S256";
+    }
+
     const params = new URLSearchParams({
       client_id: clientId,
       redirect_uri: redirectUri,
@@ -5042,6 +5156,7 @@ app.post("/api/integrations/:service/connect", verifyAppCheck, authenticateFireb
       ...(provider.scope ? { scope: provider.scope } : {}),
       ...(provider.userScope ? { user_scope: provider.userScope } : {}),
       ...(provider.extraAuthorizeParams || {}),
+      ...pkceParams,
     });
 
     res.json({ authorizeUrl: `${provider.authorizeUrl}?${params.toString()}` });
@@ -5075,12 +5190,28 @@ app.get("/api/integrations/callback/:service", async (req, res) => {
     if (!clientId || !clientSecret) return failRedirect("not_configured");
 
     const redirectUri = getOAuthRedirectUri(service);
+    const db = getDb();
+
+    let codeVerifier: string | undefined;
+    if (provider.pkce) {
+      const pkceRef = db.collection("users").doc(uid).collection("oauth_pkce").doc(service);
+      const pkceDoc = await pkceRef.get();
+      if (!pkceDoc.exists) return failRedirect("pkce_verifier_missing");
+      codeVerifier = pkceDoc.data()?.codeVerifier;
+      // One-shot - a verifier is never reused across two callback attempts,
+      // the same idempotency discipline the rest of this codebase applies
+      // to one-time tokens generally.
+      await pkceRef.delete();
+      if (!codeVerifier) return failRedirect("pkce_verifier_missing");
+    }
+
     const tokenParams = {
       grant_type: "authorization_code",
       client_id: clientId,
       client_secret: clientSecret,
       code,
       redirect_uri: redirectUri,
+      ...(codeVerifier ? { code_verifier: codeVerifier } : {}),
     };
 
     let tokenResponse: Response;
@@ -5110,7 +5241,6 @@ app.get("/api/integrations/callback/:service", async (req, res) => {
       return failRedirect("no_access_token");
     }
 
-    const db = getDb();
     const now = new Date().toISOString();
 
     // Raw tokens: locked down in firestore.rules, never client-readable. Admin
@@ -5122,11 +5252,17 @@ app.get("/api/integrations/callback/:service", async (req, res) => {
       updatedAt: now,
     });
 
+    // "Connected-calendar ownership checks" (directive §2) need a real
+    // anchor - fetched once here, stored only on the redacted status doc
+    // (never logged, never alongside the raw token).
+    const identity = provider.fetchAccountIdentity ? await provider.fetchAccountIdentity(accessToken) : null;
+
     // Redacted status doc: client-readable, contains no secrets.
     await db.collection("users").doc(uid).collection("integrations").doc(service).set({
       service,
       connected: true,
       connectedAt: now,
+      ...(identity?.email ? { connectedAccountEmail: identity.email } : {}),
     });
 
     res.redirect(`${appBase}/?integration=${service}&status=connected`);
@@ -5165,6 +5301,12 @@ app.post("/api/integrations/:service/disconnect", verifyAppCheck, authenticateFi
     }
     const uid = requireAuth(req).uid;
     const db = getDb();
+    const provider = OAUTH_PROVIDERS[service];
+    if (provider.revoke) {
+      const tokenDoc = await db.collection("users").doc(uid).collection("integration_tokens").doc(service).get();
+      const accessToken = tokenDoc.exists ? tokenDoc.data()?.accessToken : null;
+      if (accessToken) await provider.revoke(accessToken);
+    }
     await db.collection("users").doc(uid).collection("integration_tokens").doc(service).delete();
     await db.collection("users").doc(uid).collection("integrations").doc(service).set({
       service,
@@ -5355,6 +5497,23 @@ async function getValidAccessToken(uid: string, service: string): Promise<string
     const body = await tokenResponse.json();
     if (!tokenResponse.ok || body?.error) {
       logger.error(`[Integrations] ${service} token refresh failed`, { responseBody: body });
+      // Phase 5E (directive §2, "expired or revoked token handling"): a
+      // refresh that fails with the OAuth2-standard `invalid_grant` means
+      // the refresh token itself is dead (revoked at the provider, or the
+      // user disconnected the app on the provider's own side) - returning
+      // the old, already-expired accessToken here would hand every caller
+      // a token guaranteed to fail, forever, without ever surfacing that
+      // reconnection is needed. Mark it disconnected instead, so the next
+      // status check (and the UI built on it) honestly shows "not
+      // connected" rather than a connection that looks alive but can never
+      // actually work again.
+      if (body?.error === "invalid_grant") {
+        await tokenRef.delete();
+        await db.collection("users").doc(uid).collection("integrations").doc(service).set({
+          service, connected: false, disconnectedAt: new Date().toISOString(), disconnectReason: "revoked",
+        });
+        return null;
+      }
       return data.accessToken || null;
     }
     const { accessToken, refreshToken, expiresIn } = provider.extractTokens(body);

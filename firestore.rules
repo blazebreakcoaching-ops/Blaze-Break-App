@@ -509,6 +509,33 @@ service cloud.firestore {
       match /integration_tokens/{serviceName} {
         allow read, write: if false;
       }
+      // oauth_pkce holds a short-lived PKCE code_verifier between /connect
+      // and /callback for a provider that requests it (Phase 5E, directive
+      // §2) - server-only for the same reason integration_tokens is:
+      // nothing here should ever be client-readable or client-writable.
+      match /oauth_pkce/{serviceName} {
+        allow read, write: if false;
+      }
+
+      // calendar_protection_proposals/calendar_protection_audit (Phase 5D/5E,
+      // directive §9 audit) - the Nova Take the Load / Calendar Protection
+      // proposal lifecycle and its append-only audit trail. Server-only for
+      // the same reason every other state-claiming, transaction-backed
+      // record in this app is: a client that could write its own proposal
+      // state directly could forge an "approved"/"confirmed" transition
+      // without ever actually being approved or executed, or tamper with
+      // its own audit history. Every real read of this data goes through
+      // the dedicated GET /api/nova/calendar-protection/history and
+      // /:proposalId/status routes (server.ts), never direct Firestore
+      // access - those routes return exactly the fields NovaTakeTheLoad.tsx
+      // needs (title/state/times/failureReason/retryCount/externalEventId),
+      // never anything beyond what the proposal itself already was.
+      match /calendar_protection_proposals/{proposalId} {
+        allow read, write: if false;
+      }
+      match /calendar_protection_audit/{entryId} {
+        allow read, write: if false;
+      }
 
       // security holds the opt-in TOTP 2FA record (AES-256-GCM encrypted
       // secret, hashed single-use recovery codes, failed-attempt/lockout

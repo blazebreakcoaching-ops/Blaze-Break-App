@@ -1,11 +1,11 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Feather, SkipForward, Check } from 'lucide-react';
 import {
   initNheiBeforeWordsState, beginFreeExpression, setFreeExpressionText, moveToOptionalPrompts,
   answerPrompt, skipPrompt, moveToReview, addCorrection, decideProceedWithoutRetaining,
   NHEI_BEFORE_WORDS_PROMPTS, type NheiBeforeWordsPromptCategory, type NheiBeforeWordsState,
 } from '../../nhei-before-words-contract';
-import { buildTemporaryNovaContextFromBeforeWords } from '../../nova-before-words-temporary-context';
+import { buildTemporaryNovaContextFromBeforeWords, type NovaTemporaryBeforeWordsContext } from '../../nova-before-words-temporary-context';
 
 // NHEI PHASE 5 - "Before Words" UX foundation (directive §7).
 //
@@ -20,9 +20,24 @@ import { buildTemporaryNovaContextFromBeforeWords } from '../../nova-before-word
 
 const PROMPT_CATEGORIES = Object.keys(NHEI_BEFORE_WORDS_PROMPTS) as NheiBeforeWordsPromptCategory[];
 
-export const NheiBeforeWords = () => {
+export const NheiBeforeWords = ({
+  onDecided,
+}: {
+  // Phase 5E (directive §5): fires once, the moment this component
+  // reaches 'decided', with the same temporary context this component
+  // already shows a message about below - lets a parent (e.g. a real
+  // NovaChat instance) pick it up for one turn. `null` when the session
+  // was empty, matching the existing "nothing was shared" message.
+  onDecided?: (context: NovaTemporaryBeforeWordsContext | null) => void;
+} = {}) => {
   const [state, setState] = useState<NheiBeforeWordsState>(initNheiBeforeWordsState);
   const [correctionDraft, setCorrectionDraft] = useState('');
+
+  useEffect(() => {
+    if (state.step !== 'decided') return;
+    onDecided?.(buildTemporaryNovaContextFromBeforeWords(state));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.step]);
 
   if (state.step === 'intro') {
     return (

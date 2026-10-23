@@ -545,3 +545,160 @@ export async function undoCalendarProtectionProposal(
   }
   return final;
 }
+
+export type NovaCalendarReconciliationOutcome =
+  | { status: 'reconciled_confirmed'; proposal: NovaCalendarProtectionProposal }
+  | { status: 'reconciled_failed'; proposal: NovaCalendarProtectionProposal }
+  | { status: 'still_unknown'; detail: string }
+  | { status: 'not_ambiguous' }
+  | { status: 'not_executing' }
+  | { status: 'not_stuck' };
+
+// How long a proposal can sit in `executing` before it is treated as
+// stuck rather than merely slow (Phase 5E, directive §4 - "process
+// termination during execution"). `executeCalendarProtectionProposal`'s
+// own activeAttemptId claim only ever gets finalised by the SAME process
+// invocation that made the claim - if that process is killed (not just
+// the connector call throwing, which already produces `ambiguous`)
+// between claiming `executing` and finalising, nothing else will ever
+// move this proposal on: a second `execute` call short-circuits to
+// `already_executing` forever, by design, to avoid two concurrent
+// connector calls. Deliberately shorter than the 15-minute approval TTL
+// - a real connector call that is still running this long after a crash
+// is far less likely than the process simply having died.
+export const CALENDAR_PROTECTION_STUCK_EXECUTION_THRESHOLD_MS = 10 * 60 * 1000;
+
+/**
+ * Reconciliation for an `ambiguous` proposal (Phase 5E, directive §4) -
+ * "do not automatically retry an ambiguous provider operation unless the
+ * system can establish that doing so cannot duplicate the action." This
+ * function is that establishment step: it takes a caller-supplied `search`
+ * function (in practice, `findGoogleCalendarEventByProposalId` from
+ * nova-google-calendar-connector.ts, searching by the exact proposal id
+ * tagged onto the event at creation time - see that file's own header) and
+ * only ever changes the proposal's state when the search gives a genuine
+ * answer:
+ *  - an event tagged with this proposal id was actually found -> the
+ *    connector call DID succeed despite the ambiguous response; move to
+ *    `confirmed` with the real externalEventId, so undo can work correctly
+ *    against it.
+ *  - no such event exists -> the connector call genuinely did not create
+ *    anything; move to `failed`, which (unlike `ambiguous`) IS retryable
+ *    through the normal retryCalendarProtectionExecution path.
+ *  - the search itself could not give a clear answer (a timeout, a
+ *    provider error, more than one match) -> no state change at all;
+ *    `ambiguous` stays `ambiguous` rather than being guessed at. This is
+ *    the one outcome that requires a human to actually look, not another
+ *    automatic call.
+ *
+ * This function is not called from anywhere in server.ts - like the
+ * connector it is designed to be used with, it exists as real, tested
+ * logic for the day reconciliation is needed for real, not as a currently
+ * reachable production code path.
+ */
+export async function reconcileAmbiguousCalendarProtectionProposal(
+  db: FirestoreLike,
+  uid: string,
+  proposalId: string,
+  search: (proposalId: string) => Promise<{ status: 'found'; eventId: string } | { status: 'not_found' } | { status: 'unknown'; detail: string }>,
+): Promise<NovaCalendarReconciliationOutcome> {
+  const snap = await proposalDoc(db, uid, proposalId).get();
+  if (!snap.exists) throw new Error('No such calendar protection proposal.');
+  const proposal = snap.data() as NovaCalendarProtectionProposal;
+  if (proposal.state !== 'ambiguous') return { status: 'not_ambiguous' };
+
+  const searchResult = await search(proposal.proposalId);
+
+  if (searchResult.status === 'unknown') {
+    await recordAuditEntry(db, uid, proposalId, 'reconciliation_inconclusive', { detail: searchResult.detail });
+    return { status: 'still_unknown', detail: searchResult.detail };
+  }
+
+  const ref = proposalDoc(db, uid, proposalId);
+  const final = await requireTransaction(db, async (tx) => {
+    const current = (await tx.get(ref)).data() as NovaCalendarProtectionProposal;
+    // Re-checked inside the transaction - another reconciliation attempt,
+    // or a fresh retry, could have already moved this proposal on.
+    if (current.state !== 'ambiguous') return current;
+    const next: NovaCalendarProtectionProposal = searchResult.status === 'found'
+      ? { ...current, state: 'confirmed', externalEventId: searchResult.eventId, failureReason: null, lastTransitionAt: new Date().toISOString() }
+      : { ...current, state: 'failed', failureReason: 'Reconciliation found no matching event - the original attempt did not actually create anything.', lastTransitionAt: new Date().toISOString() };
+    tx.set(ref, next);
+    return next;
+  });
+
+  if (final.state === proposal.state) {
+    // Someone else already resolved this between our read and our write.
+    return { status: 'not_ambiguous' };
+  }
+
+  await recordAuditEntry(db, uid, proposalId, searchResult.status === 'found' ? 'reconciled_confirmed' : 'reconciled_failed', {});
+  return searchResult.status === 'found'
+    ? { status: 'reconciled_confirmed', proposal: final }
+    : { status: 'reconciled_failed', proposal: final };
+}
+
+/**
+ * Reconciliation for a proposal stuck in `executing` (Phase 5E, directive
+ * §4 - "process termination during execution"). This is a DIFFERENT
+ * failure mode from `ambiguous`: `ambiguous` means the connector call
+ * itself returned or threw and the ORIGINAL attempt's own finalising
+ * transaction recorded that outcome. A proposal stuck in `executing` means
+ * the process that claimed it (via `activeAttemptId`) never got that far at
+ * all - it was killed mid-flight - so nothing has ever finalised this
+ * attempt, and no amount of waiting or retrying through the normal routes
+ * will either: a second `execute` call short-circuits to
+ * `already_executing` forever, by design, specifically so two live
+ * connector calls can never race. This function is the only way such a
+ * proposal can ever move again.
+ *
+ * Same conservative shape as `reconcileAmbiguousCalendarProtectionProposal`:
+ * only ever changes state on a genuine search answer, and only once the
+ * claim has been stale for at least
+ * `CALENDAR_PROTECTION_STUCK_EXECUTION_THRESHOLD_MS` - a proposal that
+ * claimed `executing` a few seconds ago is far more likely still
+ * genuinely in flight than crashed.
+ */
+export async function reconcileStuckExecutingCalendarProtectionProposal(
+  db: FirestoreLike,
+  uid: string,
+  proposalId: string,
+  search: (proposalId: string) => Promise<{ status: 'found'; eventId: string } | { status: 'not_found' } | { status: 'unknown'; detail: string }>,
+): Promise<NovaCalendarReconciliationOutcome> {
+  const ref = proposalDoc(db, uid, proposalId);
+  const snap = await ref.get();
+  if (!snap.exists) throw new Error('No such calendar protection proposal.');
+  const proposal = snap.data() as NovaCalendarProtectionProposal;
+  if (proposal.state !== 'executing') return { status: 'not_executing' };
+  const staleForMs = Date.now() - new Date(proposal.lastTransitionAt).getTime();
+  if (staleForMs < CALENDAR_PROTECTION_STUCK_EXECUTION_THRESHOLD_MS) return { status: 'not_stuck' };
+
+  const searchResult = await search(proposal.proposalId);
+
+  if (searchResult.status === 'unknown') {
+    await recordAuditEntry(db, uid, proposalId, 'reconciliation_inconclusive', { detail: searchResult.detail, from: 'stuck_executing' });
+    return { status: 'still_unknown', detail: searchResult.detail };
+  }
+
+  const final = await requireTransaction(db, async (tx) => {
+    const current = (await tx.get(ref)).data() as NovaCalendarProtectionProposal;
+    // Re-checked inside the transaction - the original attempt could have
+    // finalised (or a prior reconciliation already resolved this) between
+    // our read above and this write.
+    if (current.state !== 'executing') return current;
+    const next: NovaCalendarProtectionProposal = searchResult.status === 'found'
+      ? { ...current, state: 'confirmed', externalEventId: searchResult.eventId, failureReason: null, activeAttemptId: null, lastTransitionAt: new Date().toISOString() }
+      : { ...current, state: 'failed', failureReason: 'The attempt that claimed this never finished and no matching event was found - safe to retry.', activeAttemptId: null, lastTransitionAt: new Date().toISOString() };
+    tx.set(ref, next);
+    return next;
+  });
+
+  if (final.state === proposal.state) {
+    return { status: 'not_executing' };
+  }
+
+  await recordAuditEntry(db, uid, proposalId, searchResult.status === 'found' ? 'reconciled_confirmed' : 'reconciled_failed', { from: 'stuck_executing' });
+  return searchResult.status === 'found'
+    ? { status: 'reconciled_confirmed', proposal: final }
+    : { status: 'reconciled_failed', proposal: final };
+}

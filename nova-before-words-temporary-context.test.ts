@@ -1,7 +1,7 @@
 // Before Words -> temporary Nova context (Phase 5D, directive §6).
 
 import { describe, it, expect } from 'vitest';
-import { buildTemporaryNovaContextFromBeforeWords } from './nova-before-words-temporary-context';
+import { buildTemporaryNovaContextFromBeforeWords, formatTemporaryBeforeWordsContextForNova } from './nova-before-words-temporary-context';
 import {
   initNheiBeforeWordsState, setFreeExpressionText, decideProceedWithoutRetaining, decideRetainAsReflectionEvidence,
   answerPrompt, addCorrection,
@@ -53,5 +53,54 @@ describe('buildTemporaryNovaContextFromBeforeWords', () => {
     state = decideProceedWithoutRetaining(state);
     const context = buildTemporaryNovaContextFromBeforeWords(state);
     expect(context).toEqual(expect.objectContaining({ kind: 'temporary_before_words_context', persisted: false }));
+  });
+});
+
+// Phase 5E (directive §5): the session-scoped formatter a real chat/voice
+// turn folds into its own per-turn system instruction.
+describe('formatTemporaryBeforeWordsContextForNova', () => {
+  it('carries the free text through in plain language, with an explicit "temporary, not saved" framing', () => {
+    let state = setFreeExpressionText(initNheiBeforeWordsState(), 'Work has been relentless this week.');
+    state = decideProceedWithoutRetaining(state);
+    const context = buildTemporaryNovaContextFromBeforeWords(state)!;
+    const formatted = formatTemporaryBeforeWordsContextForNova(context);
+    expect(formatted).toContain('Work has been relentless this week.');
+    expect(formatted).toMatch(/temporary context for THIS reply only/i);
+    expect(formatted).toMatch(/not saved/i);
+  });
+
+  it('includes prompt responses and marks uncertainty without resolving it', () => {
+    let state = answerPrompt(initNheiBeforeWordsState(), 'what_happened', 'A hard meeting.', true);
+    state = decideProceedWithoutRetaining(state);
+    const context = buildTemporaryNovaContextFromBeforeWords(state)!;
+    const formatted = formatTemporaryBeforeWordsContextForNova(context);
+    expect(formatted).toContain('A hard meeting.');
+    expect(formatted).toMatch(/not sure/i);
+  });
+
+  it('includes corrections', () => {
+    let state = setFreeExpressionText(initNheiBeforeWordsState(), 'x');
+    state = addCorrection(state, 'Actually, it was worse than I said.');
+    state = decideRetainAsReflectionEvidence(state);
+    const context = buildTemporaryNovaContextFromBeforeWords(state)!;
+    const formatted = formatTemporaryBeforeWordsContextForNova(context);
+    expect(formatted).toContain('Actually, it was worse than I said.');
+  });
+
+  it('never exceeds a bounded length, so it can never silently blow a real chat request\'s own instruction cap', () => {
+    const longText = 'x'.repeat(5000);
+    let state = setFreeExpressionText(initNheiBeforeWordsState(), longText);
+    state = decideProceedWithoutRetaining(state);
+    const context = buildTemporaryNovaContextFromBeforeWords(state)!;
+    const formatted = formatTemporaryBeforeWordsContextForNova(context);
+    expect(formatted.length).toBeLessThanOrEqual(1201);
+  });
+
+  it('adds no diagnostic label of its own - only the user\'s own carried-over words plus the fixed framing sentences', () => {
+    let state = setFreeExpressionText(initNheiBeforeWordsState(), 'I feel stuck.');
+    state = decideProceedWithoutRetaining(state);
+    const context = buildTemporaryNovaContextFromBeforeWords(state)!;
+    const formatted = formatTemporaryBeforeWordsContextForNova(context);
+    expect(formatted).not.toMatch(/burnout type|disorder|their profile is|this means/i);
   });
 });

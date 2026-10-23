@@ -18,15 +18,24 @@ interface SecureApiOptions extends RequestInit {
 }
 
 export async function secureApiFetch(path: string, options: SecureApiOptions = {}, retryCount = 0): Promise<Response> {
-  const user = auth.currentUser;
-  
-  if (!user) {
+  // Phase 5E (directive §8) browser-level test escape hatch ONLY: a real
+  // signed-in Firebase user is not available to the dev-only Playwright
+  // preview entry (nhei-phase5-preview-e2e-entry.tsx), which runs against
+  // a local mock API server, not real Firestore/Auth - see that file's
+  // own header. Gated on BOTH `import.meta.env.DEV` (statically false,
+  // dead-code-eliminated out of any production build) AND a window flag
+  // only that dev-only entry ever sets, so this can never fire for a real
+  // user or in a production bundle.
+  const e2eMockAuth = (import.meta as any).env.DEV && (window as any).__E2E_MOCK_AUTH__ === true;
+  const user = e2eMockAuth ? null : auth.currentUser;
+
+  if (!e2eMockAuth && !user) {
     throw new SecureApiError("Unauthorized: User not signed in.", 401);
   }
 
   // Force refresh ID token if retrying
   const forceRefresh = retryCount > 0;
-  const idToken = await user.getIdToken(forceRefresh);
+  const idToken = e2eMockAuth ? 'e2e-mock-id-token' : await user!.getIdToken(forceRefresh);
 
   if (!idToken) {
     throw new SecureApiError("Unauthorized: Could not obtain Firebase Auth ID token.", 401);
@@ -43,7 +52,7 @@ export async function secureApiFetch(path: string, options: SecureApiOptions = {
   // No-op for an account without 2FA, or before it's been verified this
   // session - the server only enforces this header once it knows the
   // account has 2FA enabled (see authenticateFirebaseUser in server.ts).
-  const mfaSessionToken = getMfaSessionToken(user.uid);
+  const mfaSessionToken = user ? getMfaSessionToken(user.uid) : null;
   if (mfaSessionToken) {
     headers.set('X-MFA-Session-Token', mfaSessionToken);
   }

@@ -23,6 +23,20 @@ describe('buildGoogleCalendarEventInsertRequest - pure request construction', ()
       end: { dateTime: '2026-02-02T14:30:00.000Z' },
     });
   });
+
+  it('embeds the proposal id as a private extended property when given, for later provider-level reconciliation', () => {
+    const req = buildGoogleCalendarEventInsertRequest('fake-token', {
+      startIso: '2026-02-02T14:00:00.000Z', endIso: '2026-02-02T14:30:00.000Z', title: 'x',
+    }, 'cpp_abc123');
+    expect(req.body?.extendedProperties).toEqual({ private: { novaProposalId: 'cpp_abc123' } });
+  });
+
+  it('omits extendedProperties entirely when no proposal id is given', () => {
+    const req = buildGoogleCalendarEventInsertRequest('fake-token', {
+      startIso: '2026-02-02T14:00:00.000Z', endIso: '2026-02-02T14:30:00.000Z', title: 'x',
+    });
+    expect(req.body?.extendedProperties).toBeUndefined();
+  });
 });
 
 describe('buildGoogleCalendarEventDeleteRequest - pure request construction', () => {

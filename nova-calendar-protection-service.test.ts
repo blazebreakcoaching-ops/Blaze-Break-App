@@ -3,10 +3,11 @@ import {
   identifyCalendarPressure, prepareCalendarProtectionProposal, presentCalendarProtectionForApproval,
   recordCalendarProtectionApproval, executeCalendarProtectionProposal, retryCalendarProtectionExecution,
   undoCalendarProtectionProposal, CALENDAR_PROTECTION_EXECUTION_ENABLED, TEST_ONLY_FORCE_EXECUTION_ENABLED,
-  validateCalendarChangeTimes, CALENDAR_PROTECTION_MAX_RETRIES,
+  validateCalendarChangeTimes, CALENDAR_PROTECTION_MAX_RETRIES, reconcileAmbiguousCalendarProtectionProposal,
+  reconcileStuckExecutingCalendarProtectionProposal, CALENDAR_PROTECTION_STUCK_EXECUTION_THRESHOLD_MS,
 } from './nova-calendar-protection-service';
 import { createFakeConnectorForTesting } from './nova-take-the-load-connector-contract';
-import { resetStore, fakeDb } from './test/fake-firestore';
+import { resetStore, fakeDb, seedDoc, getDocRaw } from './test/fake-firestore';
 import type { CalendarSignalState } from './calendar-workload-defence-engine';
 import crypto from 'node:crypto';
 
@@ -285,6 +286,123 @@ describe('undo requires proof of what was actually created (Phase 5D, directive 
     expect(first.state).toBe('undone');
     const second = await undoCalendarProtectionProposal(fakeDb as any, UID, proposal.proposalId, createFakeConnectorForTesting());
     expect(second.state).toBe('undone');
+  });
+});
+
+describe('reconcileAmbiguousCalendarProtectionProposal (Phase 5E, directive §4)', () => {
+  async function ambiguousProposal(key: string) {
+    const proposal = await approvedProposal(key);
+    const throwingConnector = { ...createFakeConnectorForTesting(), execute: async () => { throw new Error('timeout'); } };
+    const outcome = await executeCalendarProtectionProposal(fakeDb as any, UID, proposal.proposalId, throwingConnector as any, TEST_ONLY_FORCE_EXECUTION_ENABLED);
+    if (outcome.status !== 'ambiguous') throw new Error('setup failed - expected ambiguous');
+    return proposal.proposalId;
+  }
+
+  it('moves to confirmed with the real externalEventId when the search finds a matching event', async () => {
+    const proposalId = await ambiguousProposal('reconcile-found-key');
+    const outcome = await reconcileAmbiguousCalendarProtectionProposal(fakeDb as any, UID, proposalId, async () => ({ status: 'found', eventId: 'evt_real_123' }));
+    expect(outcome.status).toBe('reconciled_confirmed');
+    if (outcome.status === 'reconciled_confirmed') {
+      expect(outcome.proposal.state).toBe('confirmed');
+      expect(outcome.proposal.externalEventId).toBe('evt_real_123');
+    }
+  });
+
+  it('moves to failed (retryable) when the search finds no matching event', async () => {
+    const proposalId = await ambiguousProposal('reconcile-notfound-key');
+    const outcome = await reconcileAmbiguousCalendarProtectionProposal(fakeDb as any, UID, proposalId, async () => ({ status: 'not_found' }));
+    expect(outcome.status).toBe('reconciled_failed');
+    if (outcome.status === 'reconciled_failed') expect(outcome.proposal.state).toBe('failed');
+
+    // Now genuinely retryable through the normal path, unlike ambiguous.
+    const retried = await retryCalendarProtectionExecution(fakeDb as any, UID, proposalId);
+    expect(retried.state).toBe('approved');
+  });
+
+  it('makes no state change at all when the search itself is inconclusive - never guesses', async () => {
+    const proposalId = await ambiguousProposal('reconcile-unknown-key');
+    const outcome = await reconcileAmbiguousCalendarProtectionProposal(fakeDb as any, UID, proposalId, async () => ({ status: 'unknown', detail: 'provider timeout during search' }));
+    expect(outcome).toEqual({ status: 'still_unknown', detail: 'provider timeout during search' });
+
+    const snap = await (fakeDb as any).collection(`users/${UID}/calendar_protection_proposals`).doc(proposalId).get();
+    expect(snap.data().state).toBe('ambiguous');
+  });
+
+  it('reports not_ambiguous for a proposal that was never ambiguous in the first place', async () => {
+    const proposal = await approvedProposal('reconcile-not-ambiguous-key');
+    const outcome = await reconcileAmbiguousCalendarProtectionProposal(fakeDb as any, UID, proposal.proposalId, async () => ({ status: 'found', eventId: 'evt_1' }));
+    expect(outcome).toEqual({ status: 'not_ambiguous' });
+  });
+
+  it('throws for a proposal that does not exist at all', async () => {
+    await expect(reconcileAmbiguousCalendarProtectionProposal(fakeDb as any, UID, 'cpp_does_not_exist', async () => ({ status: 'not_found' })))
+      .rejects.toThrow(/No such calendar protection proposal/);
+  });
+});
+
+describe('reconcileStuckExecutingCalendarProtectionProposal (Phase 5E, directive §4 - "process termination during execution")', () => {
+  // Simulates the one failure mode `ambiguousProposal` above cannot: the
+  // process that claimed `executing` dying before it ever finalises - not
+  // the connector call throwing (that already produces `ambiguous` via the
+  // ORIGINAL attempt's own finalising transaction). Directly seeds the doc
+  // in the stuck shape, since no connector call can ever "half-happen" in
+  // this fake.
+  async function stuckProposal(key: string, staleForMs: number) {
+    const proposal = await approvedProposal(key);
+    const path = `users/${UID}/calendar_protection_proposals/${proposal.proposalId}`;
+    seedDoc(path, {
+      ...getDocRaw(path),
+      state: 'executing',
+      activeAttemptId: 'attempt_from_a_process_that_died',
+      lastTransitionAt: new Date(Date.now() - staleForMs).toISOString(),
+    });
+    return proposal.proposalId;
+  }
+
+  it('reports not_stuck for a proposal that only just started executing', async () => {
+    const proposalId = await stuckProposal('stuck-too-recent-key', 5_000);
+    const outcome = await reconcileStuckExecutingCalendarProtectionProposal(fakeDb as any, UID, proposalId, async () => ({ status: 'found', eventId: 'evt_should_not_be_used' }));
+    expect(outcome).toEqual({ status: 'not_stuck' });
+    expect(getDocRaw(`users/${UID}/calendar_protection_proposals/${proposalId}`)?.state).toBe('executing');
+  });
+
+  it('moves to confirmed with the real externalEventId once stale and the search finds a matching event', async () => {
+    const proposalId = await stuckProposal('stuck-found-key', CALENDAR_PROTECTION_STUCK_EXECUTION_THRESHOLD_MS + 1_000);
+    const outcome = await reconcileStuckExecutingCalendarProtectionProposal(fakeDb as any, UID, proposalId, async () => ({ status: 'found', eventId: 'evt_real_456' }));
+    expect(outcome.status).toBe('reconciled_confirmed');
+    if (outcome.status === 'reconciled_confirmed') {
+      expect(outcome.proposal.state).toBe('confirmed');
+      expect(outcome.proposal.externalEventId).toBe('evt_real_456');
+      expect(outcome.proposal.activeAttemptId).toBeNull();
+    }
+  });
+
+  it('moves to failed (retryable) once stale and the search finds no matching event', async () => {
+    const proposalId = await stuckProposal('stuck-notfound-key', CALENDAR_PROTECTION_STUCK_EXECUTION_THRESHOLD_MS + 1_000);
+    const outcome = await reconcileStuckExecutingCalendarProtectionProposal(fakeDb as any, UID, proposalId, async () => ({ status: 'not_found' }));
+    expect(outcome.status).toBe('reconciled_failed');
+    if (outcome.status === 'reconciled_failed') expect(outcome.proposal.state).toBe('failed');
+
+    const retried = await retryCalendarProtectionExecution(fakeDb as any, UID, proposalId);
+    expect(retried.state).toBe('approved');
+  });
+
+  it('makes no state change when stale but the search itself is inconclusive', async () => {
+    const proposalId = await stuckProposal('stuck-unknown-key', CALENDAR_PROTECTION_STUCK_EXECUTION_THRESHOLD_MS + 1_000);
+    const outcome = await reconcileStuckExecutingCalendarProtectionProposal(fakeDb as any, UID, proposalId, async () => ({ status: 'unknown', detail: 'provider unreachable' }));
+    expect(outcome).toEqual({ status: 'still_unknown', detail: 'provider unreachable' });
+    expect(getDocRaw(`users/${UID}/calendar_protection_proposals/${proposalId}`)?.state).toBe('executing');
+  });
+
+  it('reports not_executing for a proposal that is not currently executing', async () => {
+    const proposal = await approvedProposal('stuck-not-executing-key');
+    const outcome = await reconcileStuckExecutingCalendarProtectionProposal(fakeDb as any, UID, proposal.proposalId, async () => ({ status: 'found', eventId: 'evt_1' }));
+    expect(outcome).toEqual({ status: 'not_executing' });
+  });
+
+  it('throws for a proposal that does not exist at all', async () => {
+    await expect(reconcileStuckExecutingCalendarProtectionProposal(fakeDb as any, UID, 'cpp_does_not_exist', async () => ({ status: 'not_found' })))
+      .rejects.toThrow(/No such calendar protection proposal/);
   });
 });
 

@@ -74,3 +74,45 @@ export function buildTemporaryNovaContextFromBeforeWords(state: NheiBeforeWordsS
     persisted: false,
   };
 }
+
+// Phase 5E (directive §5): "the real Nova text-chat and voice architecture"
+// both build their per-turn system instruction client-side
+// (NovaChat.tsx's `fullSystemInstruction`, useNovaLiveVoice's caller-
+// supplied `buildInitialPrompt`) and send it fresh with every request -
+// neither persists it server-side beyond that one request/connection.
+// This function formats a NovaTemporaryBeforeWordsContext into the exact
+// plain-text addendum a caller folds into that per-turn instruction - the
+// session-scoped handoff this directive asks for, using a channel that
+// already exists rather than adding a new one or an extra model call.
+//
+// Deliberately plain and literal: this is a carry-over of the user's own
+// words, never a diagnosis, trait, or "here is what this means"
+// interpretation - the one rule nhei-before-words-contract.ts and
+// nova-before-words-handoff-contract.ts both already hold to. Bounded in
+// length (NOVA_SYSTEM_INSTRUCTION_LIMIT in NovaChat.tsx is 2800 characters
+// for the WHOLE instruction, not just this addendum) so a long free-text
+// entry can never silently push a real chat request over that cap and
+// break the whole turn.
+const MAX_FORMATTED_LENGTH = 1200;
+
+export function formatTemporaryBeforeWordsContextForNova(context: NovaTemporaryBeforeWordsContext): string {
+  const lines: string[] = [
+    'The person just shared the following before this message, as part of a "Before Words" check-in. ' +
+    'This is temporary context for THIS reply only - it is not saved anywhere, and must not be treated as a diagnosis or a label.',
+  ];
+  if (context.freeExpressionText.trim()) {
+    lines.push(`In their own words: "${context.freeExpressionText.trim()}"`);
+  }
+  for (const response of context.promptResponses) {
+    if (!response.text.trim()) continue;
+    lines.push(`${response.category.replace(/_/g, ' ')}: "${response.text.trim()}"${response.uncertain ? ' (they marked this as not sure)' : ''}`);
+  }
+  for (const correction of context.corrections) {
+    if (correction.trim()) lines.push(`They later corrected/added: "${correction.trim()}"`);
+  }
+  if (context.hasUncertainty) {
+    lines.push('Treat anything marked "not sure" as genuinely uncertain, not as something to resolve for them.');
+  }
+  const formatted = lines.join('\n');
+  return formatted.length > MAX_FORMATTED_LENGTH ? `${formatted.slice(0, MAX_FORMATTED_LENGTH)}…` : formatted;
+}

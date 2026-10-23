@@ -7,9 +7,12 @@ import { NheiBeforeWords } from './NheiBeforeWords';
 import { NheiAgenticActionPreview } from './NheiAgenticActionPreview';
 import { NovaInvisibleLoad } from './NovaInvisibleLoad';
 import { NovaTakeTheLoad } from './NovaTakeTheLoad';
+import { NovaChat } from './NovaChat';
+import { NovaAgenticJourney } from './NovaAgenticJourney';
 import { arbitrateNheiRecoverySuggestions } from '../../nhei-recovery-arbitration';
 import type { NheiRecoverySuggestion } from '../../nhei-recovery-bridge-types';
 import type { NovaStatedPracticalProblem } from '../../nova-take-the-load-types';
+import type { NovaTemporaryBeforeWordsContext } from '../../nova-before-words-temporary-context';
 
 // NHEI PHASE 5 - OFFLINE DEVELOPER PREVIEW HARNESS
 //
@@ -54,17 +57,27 @@ const PREVIEW_ARBITRATION = arbitrateNheiRecoverySuggestions({
 
 export const NheiPhase5Preview = () => {
   const [requestedHelp, setRequestedHelp] = useState<NovaStatedPracticalProblem | null>(null);
+  // Phase 5E (directive §5): the one place this still-offline harness
+  // demonstrates the real handoff - Before Words' `onDecided` feeds a
+  // genuinely mounted NovaChat instance's `temporaryBeforeWordsContext`
+  // prop, which folds it into the very next outgoing
+  // `/api/nova/chat` request (NovaChat.tsx's own `fullSystemInstruction`),
+  // then clears itself once `onTemporaryBeforeWordsContextConsumed` fires.
+  // This is the "connect meaningfully to Nova's actual conversation
+  // system" step the directive asks for - not a second, parallel preview.
+  const [beforeWordsContext, setBeforeWordsContext] = useState<NovaTemporaryBeforeWordsContext | null>(null);
   return (
   <div className="max-w-2xl mx-auto space-y-10 p-6">
     <div className="rounded-xl border border-destructive/30 bg-destructive/10 p-4 flex items-start gap-3">
       <AlertTriangle className="w-5 h-5 text-destructive shrink-0 mt-0.5" />
       <p className="text-xs text-destructive leading-relaxed">
-        NHEI/Nova offline developer preview (Phase 5-5D). Not reachable by any real user, not wired to any live route, not
+        NHEI/Nova offline developer preview (Phase 5-5E). Not reachable by any real user, not wired to any live route, not
         feature-flag-gated for activation - this page exists only to review this UI work. Every control on this
-        page operates on local/synthetic state only, except the Privacy & Consent toggles and the Take the Load section
-        below, which make REAL calls to this account's own server routes (see NheiPrivacyConsent.tsx's and
-        NovaTakeTheLoad.tsx's own headers) - still never activating any personal NHEI processing, and never reaching a
-        real external calendar, since real execution stays disabled platform-wide.
+        page operates on local/synthetic state only, except the Privacy & Consent toggles, the Take the Load section,
+        and the Nova Chat section below, which make REAL calls to this account's own server routes (see
+        NheiPrivacyConsent.tsx's, NovaTakeTheLoad.tsx's, and NovaChat.tsx's own headers) - still never activating any
+        personal NHEI processing, and never reaching a real external calendar, since real execution stays disabled
+        platform-wide.
       </p>
     </div>
 
@@ -100,12 +113,35 @@ export const NheiPhase5Preview = () => {
 
     <section className="space-y-3">
       <h2 className="text-sm font-bold text-text-muted uppercase tracking-wide">4. Before Words</h2>
-      <NheiBeforeWords />
+      <NheiBeforeWords onDecided={setBeforeWordsContext} />
+    </section>
+
+    <section className="space-y-3">
+      <h2 className="text-sm font-bold text-text-muted uppercase tracking-wide">4b. Nova Chat - real conversational continuity</h2>
+      <p className="text-xs text-text-muted">
+        {beforeWordsContext
+          ? 'What you just shared above will be folded into your very next message to Nova below, for that one reply only, then cleared - this is a REAL call to /api/nova/chat, per NovaChat.tsx\'s own header.'
+          : 'Finish a Before Words session above (either ending) to see its temporary context carried into a real Nova conversation turn below. You can also just chat with Nova directly - this section makes a REAL call to /api/nova/chat.'}
+      </p>
+      <NovaChat
+        temporaryBeforeWordsContext={beforeWordsContext}
+        onTemporaryBeforeWordsContextConsumed={() => setBeforeWordsContext(null)}
+      />
     </section>
 
     <section className="space-y-3">
       <h2 className="text-sm font-bold text-text-muted uppercase tracking-wide">5. Agentic Action Permission</h2>
       <NheiAgenticActionPreview />
+    </section>
+
+    <section className="space-y-3">
+      <h2 className="text-sm font-bold text-text-muted uppercase tracking-wide">6. Integrated Agentic Nova Journey</h2>
+      <p className="text-xs text-text-muted">
+        The full chain in one place, per directive §6: Before Words - temporary context - Nova chat - what's on your
+        plate - Take the Load/Calendar Protection - approval - result, with an explicit stage label at every step.
+        The sections above remain for reviewing each piece on its own; this is the one a real user would actually see.
+      </p>
+      <NovaAgenticJourney />
     </section>
   </div>
   );

@@ -30,6 +30,7 @@ import { getFeatureFlags } from "../lib/feature-flags";
 import { GuardianSupportInvitation } from "./GuardianSupportInvitation";
 import { useGuardianSupportInvitationEnabled } from "../lib/useGuardianSupportInvitationEnabled";
 import { logGuardianSupportEvent } from "../lib/guardian-support-analytics";
+import { formatTemporaryBeforeWordsContextForNova, type NovaTemporaryBeforeWordsContext } from "../../nova-before-words-temporary-context";
 
 // The server's ChatRequestSchema (server.ts) caps history at 50 entries
 // and systemInstruction at 3000 characters, and rejects the whole request
@@ -84,6 +85,8 @@ export const NovaChat = ({
   onStyleChange,
   autoOpenVoice,
   onVoiceAutoOpened,
+  temporaryBeforeWordsContext,
+  onTemporaryBeforeWordsContextConsumed,
 }: {
   systemInstruction?: string;
   initialMessage?: string;
@@ -109,6 +112,19 @@ export const NovaChat = ({
   // unprompted.
   autoOpenVoice?: boolean;
   onVoiceAutoOpened?: () => void;
+  // Phase 5E (directive §5): a session-only Before Words handoff, folded
+  // into this ONE outgoing turn's systemInstruction via
+  // formatTemporaryBeforeWordsContextForNova and never persisted by this
+  // component - the same no-new-storage, no-extra-model-call channel
+  // `systemInstruction` itself already is. The caller (not this
+  // component) owns the context's lifetime; `onTemporaryBeforeWordsContextConsumed`
+  // fires once it has actually been sent so the caller can clear its own
+  // state - "allow skipping and withdrawing temporary context" means the
+  // caller can simply never set this prop, or clear it before the next
+  // send, rather than this component offering its own separate controls
+  // for something that isn't its own data.
+  temporaryBeforeWordsContext?: NovaTemporaryBeforeWordsContext | null;
+  onTemporaryBeforeWordsContextConsumed?: () => void;
 }) => {
   // How Nova should sound, re-tunable at any time. Source of truth for the
   // chat's own context is localStorage's blaze_profile (what getDynamicContext
@@ -719,13 +735,22 @@ We are now in real-time voice mode. Be concise and conversational, you don't nee
           "TONE OVERRIDE: Validate their resentment as valuable data. Encourage radical candor and setting boundaries, even if it causes minor friction.";
       }
 
+      // Phase 5E (directive §5): included for THIS turn only - never
+      // stored in `messages`/localStorage history, never re-sent on a
+      // later turn unless the caller explicitly keeps setting the prop.
+      const beforeWordsAddendum = temporaryBeforeWordsContext
+        ? `\n${formatTemporaryBeforeWordsContextForNova(temporaryBeforeWordsContext)}\n`
+        : "";
+
       const fullSystemInstruction = `
             ${systemInstruction || ""}
             User Burnout Fingerprint: ${JSON.stringify(fingerprint || "Not taken yet")}.
             ${dynamicContext}
+            ${beforeWordsAddendum}
             Conversation context is critical. Refer to past behaviors mentioned in history if relevant. Match the user's preferred tone noted above. Gently call out performance-identity fawning or anxiety-driven overwork if they're pretending things are urgent, but stay warm - this is a person going through burnout, not a performance review.
             ${toneModifier}
           `;
+      if (temporaryBeforeWordsContext) onTemporaryBeforeWordsContextConsumed?.();
 
       const response = await secureApiFetch("/api/nova/chat", {
         method: "POST",

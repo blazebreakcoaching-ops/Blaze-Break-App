@@ -57,12 +57,15 @@ rather than duplicating ~20 phases of detail.
   this phase added no new NHEI-specific blockers beyond items 18–22
   (already recorded there from Phase 5).
 
-## B. Before Words / Unspoken Experience — **BUILT BUT OFFLINE** (Phase 5D: real session-only temporary context for BOTH endings)
+## B. Before Words / Unspoken Experience — **BUILT BUT OFFLINE** (Phase 5E: the temporary context now reaches a real Nova chat turn, not just a preview message)
 
 - **Existing code**: `nhei-before-words-contract.ts` (Phase 5),
   `src/components/NheiBeforeWords.tsx`, `nova-before-words-handoff-contract.ts`
-  (Phase 5B, the retain-gated structured handoff), and Phase 5D's
-  `nova-before-words-temporary-context.ts`.
+  (Phase 5B, the retain-gated structured handoff), Phase 5D's
+  `nova-before-words-temporary-context.ts`, and Phase 5E's addition to
+  that same file (`formatTemporaryBeforeWordsContextForNova`) plus new
+  props on `src/components/NovaChat.tsx` and a new
+  `src/components/NovaAgenticJourney.tsx` sequencer.
 - **Current capabilities**: free expression, four optional skippable
   prompts, additive corrections, two equally-presented endings. The
   Phase 5B handoff contract maps a `retain_as_reflection_evidence`
@@ -70,36 +73,64 @@ rather than duplicating ~20 phases of detail.
   for `proceed_without_retaining`, by construction, since that function
   is specifically the precursor to a permanent `reflection_storage`
   write that doesn't exist yet.
-- **Phase 5D addition (directive §6)**: that left `proceed_without_retaining`
-  — an equally real, equally common ending — with no handoff of any
-  kind. `buildTemporaryNovaContextFromBeforeWords` now produces a
-  session-scoped `NovaTemporaryBeforeWordsContext` for EITHER ending
-  (`persisted: false` is a literal, not a flag; the function performs no
-  Firestore write, no model call, and no logging of any kind) — wired
-  into the live `NheiBeforeWords.tsx` preview so the pathway is
-  demonstrable, not just unit-tested. Independent of, and does not
-  replace, the still-unreachable retain path.
+- **Phase 5D addition (directive §6)**: `buildTemporaryNovaContextFromBeforeWords`
+  produces a session-scoped `NovaTemporaryBeforeWordsContext` for EITHER
+  ending (`persisted: false` is a literal, not a flag; no Firestore
+  write, no model call, no logging) — but Phase 5D itself only ever
+  displayed a static message ABOUT this pathway in the preview; nothing
+  actually fed it into a live chat turn yet.
+- **Phase 5E addition (directive §5, "Before Words must connect
+  meaningfully to Nova's actual conversation system rather than stopping
+  at an isolated preview")**: audited both real Nova conversation
+  entry points (`/api/nova/chat` via `NovaChat.tsx`'s client-composed,
+  per-request, never-persisted `systemInstruction`; `/api/nova/live` via
+  `useNovaLiveVoice.ts`'s caller-supplied `buildInitialPrompt`) and found
+  `NovaChat.tsx`'s channel already sanctioned and reusable without new
+  storage or an extra model call. `formatTemporaryBeforeWordsContextForNova`
+  formats the context into a bounded (≤1,200 char), plainly-worded
+  addendum with an explicit "temporary, not saved, not a diagnosis"
+  framing sentence; `NovaChat.tsx` takes two new optional props
+  (`temporaryBeforeWordsContext`, `onTemporaryBeforeWordsContextConsumed`)
+  that fold it into exactly one outgoing `fullSystemInstruction`, then
+  the caller clears it. `NovaAgenticJourney.tsx` wires
+  `NheiBeforeWords`'s new `onDecided` callback straight into a genuinely
+  mounted `NovaChat` instance — a real `/api/nova/chat` POST now carries
+  what the person just said, for that one reply, in the SAME offline
+  preview harness (not yet App.tsx's live navigation). The voice path
+  (`buildInitialPrompt`) was reviewed and needs no component change — it
+  is already a caller-supplied function a future live integration could
+  pass the same formatted string into.
 - **Missing**: the live UI still never actually exposes
   `decideRetainAsReflectionEvidence` — correctly, since no real
-  `reflection_storage` write exists to receive it yet.
-- **Working integrations**: none — zero import statements in any of the
-  three contract files besides the shared `nhei-before-words-contract.ts`
-  type import (the same precedent `nova-before-words-handoff-contract.ts`
-  already established in Phase 5B).
+  `reflection_storage` write exists to receive it yet. The voice path's
+  own equivalent handoff remains unexercised (reviewed, not wired) since
+  Nova Live voice itself is not reachable from this same offline harness.
+- **Working integrations**: none persistent — the Phase 5E wiring adds a
+  REAL network call (`/api/nova/chat`) where Phase 5D had none, but still
+  zero Firestore writes and zero new model calls beyond the one the user
+  already triggers by sending a chat message.
 - **Credentials/approval needed**: none to keep it offline; a real
   `reflection_storage` write path (same gap as NHEI generally) before the
-  retain ending could ever be real.
+  retain ending could ever be real; activating this handoff for a real
+  user still depends on the same independent safeguarding review every
+  other NHEI-adjacent capability in this register is gated behind.
 - **Safeguarding/privacy dependencies**: same as NHEI Personal Reflection
   Mode generally (items 5, 7).
 - **Required UX**: already built to directive spec (uncertainty, skip,
-  correct, no forced labels); Phase 5D added the temporary-context
-  explanation text to the 'decided' step.
+  correct, no forced labels); Phase 5E's `NovaAgenticJourney.tsx` adds an
+  explicit "Understanding" journey-stage label covering this step.
 - **Verification status**: unit tested (15 tests across the original two
-  contract files, +6 for the Phase 5D temporary-context module); +6
-  component tests for `NheiBeforeWords.tsx` (2 new this phase, covering
-  both the temporary-context message and the empty-session case).
+  contract files, +6 for the Phase 5D temporary-context module, +5 for
+  Phase 5E's `formatTemporaryBeforeWordsContextForNova`); +6 component
+  tests for `NheiBeforeWords.tsx`; Phase 5E's `NovaChat`/journey wiring
+  is exercised by the real-browser Playwright suite (directive §8:
+  `tests/e2e/nhei-phase5-journey.spec.ts`), not a new unit-test file,
+  since the thing being proven — a real page, in a real browser, actually
+  sending the real request — is exactly what that suite is for.
 - **Next work**: nothing further this phase for the retain path —
-  correctly stopped short of building a consent-writing route for it.
+  correctly stopped short of building a consent-writing route for it; a
+  future phase could extend the same formatted-addendum approach to the
+  voice path once Nova Live itself has a live, reachable entry point.
 
 ## C. Invisible Load Intelligence — **BUILT BUT OFFLINE** (Phase 5C: now has a real UI and a Take the Load bridge)
 
@@ -161,7 +192,7 @@ rather than duplicating ~20 phases of detail.
   was confirmed; a future phase should decide reconciliation vs. a new
   build before writing any code here.
 
-## E. Nova — Take the Load — **BUILT BUT OFFLINE** (Phase 5C added a complete, real calendar-protection route; Phase 5D added a real UI for it; still no real connector)
+## E. Nova — Take the Load — **BUILT BUT OFFLINE** (Phase 5C added a complete, real calendar-protection route; Phase 5D added a real UI for it; Phase 5E added a real, still-disabled connector — see workstream L)
 
 - **Existing code before Phase 5B**: none.
 - **Phase 5B**: `nova-take-the-load-types.ts`,
@@ -179,20 +210,31 @@ rather than duplicating ~20 phases of detail.
   is a separate, hardcoded `false` kill-switch in this new file,
   independent of (in addition to) the generic engine's own lack of a
   real connector.
-- **Missing**: any real connector implementation for either the generic
-  engine or the calendar-specific service. The only `NovaExternalConnector`
-  in this codebase is `createFakeConnectorForTesting` — test-only,
-  statically guarded against being imported from `server.ts` or any
-  `.tsx` file (two separate guard tests, one per phase).
-- **Working integrations reviewed before building this**: none reused.
-  Boundary Autopilot (workstream G) already sends real Slack
-  messages/DND/status today; the real, already-granted
-  `calendar.events` OAuth write scope (`signInWithGoogleCalendar`,
-  `src/lib/auth.tsx`, Phase 5C finding) is likewise not touched — no
-  write call to Google Calendar exists anywhere in this codebase.
-- **Credentials/approval needed**: a real, authorised connector (a future
-  phase's own decision, explicitly out of scope here) before any
-  execution could touch a real calendar or task list.
+- **Missing (updated Phase 5E)**: a real connector now exists for the
+  calendar-specific service specifically (`nova-google-calendar-connector.ts`
+  — see workstream L for the full account) — but the GENERIC engine
+  (`nova-take-the-load-engine.ts`, `task_deferral`) still has none; its
+  only `NovaExternalConnector` is still `createFakeConnectorForTesting`
+  — test-only, statically guarded against being imported from `server.ts`
+  or any `.tsx` file (a separate, dedicated guard test for each
+  connector-adjacent file added across Phase 5B/5C/5D/5E).
+- **Working integrations reviewed before building this**: Boundary
+  Autopilot (workstream G) already sends real Slack messages/DND/status
+  today, still not reused here — a deliberately separate connector per
+  category, not a shared one. The real, already-granted `calendar.events`
+  OAuth write scope (`signInWithGoogleCalendar`, `src/lib/auth.tsx`,
+  Phase 5C finding) remains untouched — Phase 5E's `google_calendar_actions`
+  is a GENUINELY separate, server-side OAuth provider/token from that
+  client-side-only one, never a reuse of it (the directive's own
+  explicit instruction: "do not assume that previously granted
+  client-side scopes are sufficient").
+- **Credentials/approval needed**: for calendar protection specifically,
+  only founder/Google-Cloud-Console configuration remains (see workstream
+  L) — the connector and server-side OAuth infrastructure are both
+  implemented and tested; turning on real execution is still a separate,
+  later, explicitly-approved decision this phase deliberately does not
+  take. The generic engine's other category (task_deferral) still needs
+  its own connector entirely, unaffected by this phase.
 - **Safeguarding/privacy dependencies**: none for the engine itself
   (structurally independent of NHEI consent); the calendar-specific
   service additionally requires `allowCalendarSignals` consent before a
@@ -209,13 +251,25 @@ rather than duplicating ~20 phases of detail.
   service-level hardening tests (expiry, ambiguity, transaction-required,
   retry cap, undo-requires-externalEventId), +9 route-level tests for the
   new permission/history routes, +6 component tests for the new UI, +11
-  tests for the Google Calendar adapter stub — all against the fake
-  connector, a fake Firestore, or with execution disabled; no real-world
+  tests for the Google Calendar adapter stub. Phase 5E: +6 more
+  service-level tests for `reconcileStuckExecutingCalendarProtectionProposal`,
+  +42 tests for the real connector (fake-transport unit tests AND a real
+  local-HTTP-server integration test), +1 new static audit test, +9
+  real Firestore EMULATOR integration tests (directive §7 — concurrent
+  approvals/execution claims, idempotency, account isolation, expiry,
+  stuck-execution recovery, audit consistency, export/deletion
+  coverage — against the actual Firebase Admin SDK and emulator
+  transaction semantics, not only the in-memory fake), +13 real-browser
+  Playwright scenarios (directive §8, ×2 viewports) covering the
+  suggested-vs-executed distinction, permission denial, and failed/
+  ambiguous connector responses specifically for this workflow — all
+  still against the fake connector, a fake/emulated Firestore, mocked
+  provider responses, or with execution disabled; no real-world
   execution has ever occurred.
 - **Next work**: a UI for the generic engine/task_deferral category, and
-  — as a separate, later, explicitly-approved decision — a real
-  connector (which needs the Google Calendar OAuth infrastructure named
-  in workstream L first).
+  — as a separate, later, explicitly-approved decision — flipping
+  `CALENDAR_PROTECTION_EXECUTION_ENABLED` and wiring the now-real
+  connector into `server.ts` (see workstream L).
 
 ## F. Calendar Protection and Workload Coordination — **BUILT AND INTEGRATED** (read-only)
 
@@ -329,7 +383,7 @@ rather than duplicating ~20 phases of detail.
 - **Missing**: nothing identified this phase.
 - **Next work**: none.
 
-## L. Proactive Assistance and Authorised Agentic Actions — **PARTIAL** (Phase 5C: a complete, real, server-authorised workflow now exists for one category; Phase 5D: real UI, a separate action-permission boundary, and concurrency hardening — still never executes for real)
+## L. Proactive Assistance and Authorised Agentic Actions — **PARTIAL** (Phase 5C: a complete, real, server-authorised workflow now exists for one category; Phase 5D: real UI, a separate action-permission boundary, and concurrency hardening; Phase 5E: the Google Calendar OAuth gap this entry has flagged since Phase 5C/5D is now closed, and a real connector exists behind the still-disabled execution boundary — still never executes for real)
 
 - **Existing code**: `nhei-agentic-action-contract.ts` +
   `NheiAgenticActionPreview.tsx` (Phase 5, offline/synthetic),
@@ -438,20 +492,72 @@ rather than duplicating ~20 phases of detail.
     single, explicitly-chosen item's description into
     `NovaTakeTheLoad`'s initial title (`NheiPhase5Preview.tsx`) — no bulk
     conversion, no automatic task creation, still no hidden score.
-- **Credentials/approval needed**: a real, separately-authorised
-  connector per category, explicitly future work; for Google Calendar
-  specifically, that first requires a Google Calendar `OAUTH_PROVIDERS`
-  entry (server-side refresh-token storage) that does not exist today —
-  itself a separate, explicitly out-of-scope decision.
+- **Phase 5E additions (directive §2/§3/§4)** — this closes the exact gap
+  the Phase 5D correction above identified:
+  - A real, server-side `google_calendar_actions` `OAUTH_PROVIDERS`
+    entry (`server.ts`) — a GENUINELY separate provider/scope/token from
+    the pre-existing client-side-only Google Calendar read connection
+    (directive's own "distinguish calendar reading from event
+    modification"), using the existing generic connect/callback/
+    disconnect/status routes, extended with three new OPTIONAL hooks
+    every other provider defaults away from: PKCE (S256
+    code_challenge/code_verifier, server-only verifier storage at
+    `users/{uid}/oauth_pkce/{service}`, one-shot read-then-delete),
+    `fetchAccountIdentity` (records `connectedAccountEmail` on the
+    redacted status doc only, never the token doc, never logged — the
+    real "connected-calendar ownership check"), and `revoke` (calls
+    Google's own revoke endpoint on disconnect, best-effort, never blocks
+    the local disconnect). `getValidAccessToken` was also hardened
+    codebase-wide: an `invalid_grant` refresh failure now disconnects the
+    integration and returns `null`, instead of the previous behaviour of
+    silently returning an already-expired token forever.
+  - A real (not stub) connector, `nova-google-calendar-connector.ts`:
+    dependency-injected HTTP transport (unit-tested with fake responses
+    AND a real local `http.Server` integration test — genuine HTTP
+    request/response handling, zero real network calls), genuine
+    create/verify/search-by-tag/undo logic against the real Events API
+    request/response shapes, 204/410 both treated as a successful undo
+    (the end state is what matters), a 2xx response with no `id` field
+    never claimed as success. Still STRUCTURALLY unreachable from
+    production — confirmed, same as the Phase 5D stub it replaces, by
+    its own static audit test (no `fetch`/`http`/`googleapis` import, and
+    `server.ts`/every `.tsx` file confirmed to never import it).
+  - Provider-level idempotency/reconciliation: every created event is
+    tagged with `extendedProperties.private.novaProposalId`
+    (`buildGoogleCalendarEventInsertRequest`'s new optional third
+    parameter), and `findGoogleCalendarEventByProposalId` can search for
+    it after the fact. Two new reconciliation functions in
+    `nova-calendar-protection-service.ts` — `reconcileAmbiguousCalendarProtectionProposal`
+    (for a connector call that threw) and
+    `reconcileStuckExecutingCalendarProtectionProposal` (for the DIFFERENT
+    failure the directive's own "process termination during execution"
+    names — a worker that died after claiming `executing` but before
+    ever finalising, which no existing retry path can reach, since a
+    second `execute` call deliberately short-circuits to
+    `already_executing` forever) — both only ever change state on a
+    genuine search answer, never on an inconclusive one, and both are
+    additive, never wired into any production route.
+- **Credentials/approval needed**: the server-side OAuth infrastructure
+  above is implemented and tested; what remains is entirely
+  founder/Google-Cloud-Console work (documented in
+  `docs/INTEGRATIONS_SETUP.md`'s new "Google Calendar Actions" section):
+  enabling the Calendar API, configuring the OAuth consent screen, and —
+  before this scope could ever be offered outside a small allow-listed
+  test-user group — Google's own app-verification review for a sensitive
+  write scope. No paid tier is required. A real connector per OTHER
+  category (Asana, Monday, Calendly task-deferral) remains explicitly
+  future work, unaffected by this phase.
 - **Safeguarding/privacy dependencies**: "never allow NHEI interpretation
   alone to authorise an external action" is enforced structurally in all
   three agentic contracts (zero NHEI imports anywhere); the calendar
-  service's own approval gate plus the new `allowCalendarActions`
-  permission are two independent authorisation layers on top of that.
-- **Next work**: as a separate, later, explicitly-approved decision, a
-  real connector — which first requires the Google Calendar OAuth
-  infrastructure named above, since the current client-side-only token
-  cannot support one securely.
+  service's own approval gate plus the `allowCalendarActions` permission
+  are two independent authorisation layers on top of that; Phase 5E adds
+  no new NHEI dependency anywhere in this chain.
+- **Next work**: as a separate, later, explicitly-approved decision —
+  flipping `CALENDAR_PROTECTION_EXECUTION_ENABLED` to `true` and wiring
+  the real connector into `server.ts`, which this phase deliberately does
+  not do. Also unstarted: the equivalent OAuth/connector work for
+  task_deferral's own categories.
 
 ## M. Personal Recovery Outcomes and Coaching Review — **PARTIAL**
 
