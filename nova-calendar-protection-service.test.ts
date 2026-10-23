@@ -3,6 +3,7 @@ import {
   identifyCalendarPressure, prepareCalendarProtectionProposal, presentCalendarProtectionForApproval,
   recordCalendarProtectionApproval, executeCalendarProtectionProposal, retryCalendarProtectionExecution,
   undoCalendarProtectionProposal, CALENDAR_PROTECTION_EXECUTION_ENABLED, TEST_ONLY_FORCE_EXECUTION_ENABLED,
+  validateCalendarChangeTimes, CALENDAR_PROTECTION_MAX_RETRIES,
 } from './nova-calendar-protection-service';
 import { createFakeConnectorForTesting } from './nova-take-the-load-connector-contract';
 import { resetStore, fakeDb } from './test/fake-firestore';
@@ -166,6 +167,124 @@ describe('retry and undo', () => {
   it('undo throws if the proposal was never confirmed', async () => {
     const proposal = await approvedProposal('undo-unconfirmed');
     await expect(undoCalendarProtectionProposal(fakeDb as any, UID, proposal.proposalId, createFakeConnectorForTesting())).rejects.toThrow();
+  });
+});
+
+describe('validateCalendarChangeTimes - timezone/DST correctness (Phase 5D, directive §4)', () => {
+  it('accepts a real, offset-qualified, end-after-start range', () => {
+    expect(validateCalendarChangeTimes(CHANGE)).toEqual({ ok: true });
+  });
+
+  it('rejects a bare local time with no UTC/offset designator - the ambiguous-instant shape a DST transition creates', () => {
+    const result = validateCalendarChangeTimes({ startIso: '2026-11-01T02:30:00', endIso: '2026-11-01T03:00:00' });
+    expect(result.ok).toBe(false);
+  });
+
+  it('rejects endIso at or before startIso', () => {
+    expect(validateCalendarChangeTimes({ startIso: CHANGE.startIso, endIso: CHANGE.startIso }).ok).toBe(false);
+    expect(validateCalendarChangeTimes({ startIso: CHANGE.endIso, endIso: CHANGE.startIso }).ok).toBe(false);
+  });
+
+  it('prepareCalendarProtectionProposal rejects an invalid time range before ever touching Firestore', async () => {
+    await expect(prepareCalendarProtectionProposal(fakeDb as any, UID, 'bad-times', { startIso: 'not-a-date', endIso: CHANGE.endIso, title: 'x' }))
+      .rejects.toThrow(/invalid_time_range/);
+  });
+});
+
+describe('approval expiry (Phase 5D, directive §3/§4)', () => {
+  it('executing after the approval has expired reverts to awaiting_approval instead of executing', async () => {
+    const proposal = await approvedProposal('expiry-key');
+    // Simulate time passing past the TTL by writing an already-expired approvalExpiresAt directly.
+    await (fakeDb as any).collection(`users/${UID}/calendar_protection_proposals`).doc(proposal.proposalId).set({
+      ...proposal, approvalExpiresAt: new Date(Date.now() - 1000).toISOString(),
+    });
+    const outcome = await executeCalendarProtectionProposal(fakeDb as any, UID, proposal.proposalId, createFakeConnectorForTesting(), TEST_ONLY_FORCE_EXECUTION_ENABLED);
+    expect(outcome.status).toBe('approval_expired');
+    if (outcome.status === 'approval_expired') expect(outcome.proposal.state).toBe('awaiting_approval');
+  });
+
+  it('a fresh approval has not expired and executes normally', async () => {
+    const proposal = await approvedProposal('fresh-key');
+    expect(new Date(proposal.approvalExpiresAt!).getTime()).toBeGreaterThan(Date.now());
+    const outcome = await executeCalendarProtectionProposal(fakeDb as any, UID, proposal.proposalId, createFakeConnectorForTesting(), TEST_ONLY_FORCE_EXECUTION_ENABLED);
+    expect(outcome.status).toBe('confirmed');
+  });
+});
+
+describe('transaction support is required, not optional (Phase 5D, directive §4)', () => {
+  it('execute fails closed with transaction_support_required if db has no runTransaction', async () => {
+    const proposal = await approvedProposal('no-tx-key');
+    const dbWithoutTx = { ...(fakeDb as any), runTransaction: undefined };
+    const outcome = await executeCalendarProtectionProposal(dbWithoutTx, UID, proposal.proposalId, createFakeConnectorForTesting(), TEST_ONLY_FORCE_EXECUTION_ENABLED);
+    expect(outcome.status).toBe('transaction_support_required');
+  });
+});
+
+describe('ambiguous execution outcomes (Phase 5D, directive §4)', () => {
+  it('a connector that THROWS rather than resolving moves the proposal to ambiguous, not failed', async () => {
+    const proposal = await approvedProposal('ambiguous-key');
+    const throwingConnector = { ...createFakeConnectorForTesting(), execute: async () => { throw new Error('network timeout'); } };
+    const outcome = await executeCalendarProtectionProposal(fakeDb as any, UID, proposal.proposalId, throwingConnector as any, TEST_ONLY_FORCE_EXECUTION_ENABLED);
+    expect(outcome.status).toBe('ambiguous');
+  });
+
+  it('an ambiguous proposal is structurally unretryable - retry only accepts failed', async () => {
+    const proposal = await approvedProposal('ambiguous-retry-key');
+    const throwingConnector = { ...createFakeConnectorForTesting(), execute: async () => { throw new Error('timeout'); } };
+    await executeCalendarProtectionProposal(fakeDb as any, UID, proposal.proposalId, throwingConnector as any, TEST_ONLY_FORCE_EXECUTION_ENABLED);
+    await expect(retryCalendarProtectionExecution(fakeDb as any, UID, proposal.proposalId)).rejects.toThrow(/Can only retry a failed proposal/);
+  });
+
+  it('a second execute call against an ambiguous proposal reports ambiguous again, never a fresh connector call', async () => {
+    const proposal = await approvedProposal('ambiguous-dup-key');
+    const throwingConnector = { ...createFakeConnectorForTesting(), execute: async () => { throw new Error('timeout'); } };
+    await executeCalendarProtectionProposal(fakeDb as any, UID, proposal.proposalId, throwingConnector as any, TEST_ONLY_FORCE_EXECUTION_ENABLED);
+    let calledAgain = false;
+    const spy = { ...createFakeConnectorForTesting(), execute: async () => { calledAgain = true; return { ok: true, detail: 'x' }; } };
+    const second = await executeCalendarProtectionProposal(fakeDb as any, UID, proposal.proposalId, spy as any, TEST_ONLY_FORCE_EXECUTION_ENABLED);
+    expect(second.status).toBe('ambiguous');
+    expect(calledAgain).toBe(false);
+  });
+});
+
+describe('retry is capped (Phase 5D, directive §4)', () => {
+  it(`cannot be retried more than ${CALENDAR_PROTECTION_MAX_RETRIES} times`, async () => {
+    const proposal = await approvedProposal('max-retry-key');
+    const failing = createFakeConnectorForTesting({ executeResult: { ok: false, detail: 'down' } });
+    await executeCalendarProtectionProposal(fakeDb as any, UID, proposal.proposalId, failing, TEST_ONLY_FORCE_EXECUTION_ENABLED);
+    for (let i = 0; i < CALENDAR_PROTECTION_MAX_RETRIES; i++) {
+      await retryCalendarProtectionExecution(fakeDb as any, UID, proposal.proposalId);
+      await executeCalendarProtectionProposal(fakeDb as any, UID, proposal.proposalId, failing, TEST_ONLY_FORCE_EXECUTION_ENABLED);
+    }
+    await expect(retryCalendarProtectionExecution(fakeDb as any, UID, proposal.proposalId)).rejects.toThrow(/maximum allowed/);
+  });
+});
+
+describe('undo requires proof of what was actually created (Phase 5D, directive §4)', () => {
+  it('refuses to undo a confirmed proposal with no recorded externalEventId', async () => {
+    const proposal = await approvedProposal('no-external-id-key');
+    const connectorWithoutId = { ...createFakeConnectorForTesting(), execute: async () => ({ ok: true, detail: 'done' }) };
+    const confirmed = await executeCalendarProtectionProposal(fakeDb as any, UID, proposal.proposalId, connectorWithoutId as any, TEST_ONLY_FORCE_EXECUTION_ENABLED);
+    if (confirmed.status === 'confirmed') expect(confirmed.proposal.externalEventId).toBeNull();
+    await expect(undoCalendarProtectionProposal(fakeDb as any, UID, proposal.proposalId, createFakeConnectorForTesting()))
+      .rejects.toThrow(/No external event id/);
+  });
+
+  it('a confirmed proposal with a real externalEventId can be undone', async () => {
+    const proposal = await approvedProposal('with-external-id-key');
+    const confirmed = await executeCalendarProtectionProposal(fakeDb as any, UID, proposal.proposalId, createFakeConnectorForTesting(), TEST_ONLY_FORCE_EXECUTION_ENABLED);
+    if (confirmed.status === 'confirmed') expect(confirmed.proposal.externalEventId).toBe('fake_external_id_test_only');
+    const undone = await undoCalendarProtectionProposal(fakeDb as any, UID, proposal.proposalId, createFakeConnectorForTesting());
+    expect(undone.state).toBe('undone');
+  });
+
+  it('a second undo call for an already-undone proposal is idempotent', async () => {
+    const proposal = await approvedProposal('double-undo-key');
+    await executeCalendarProtectionProposal(fakeDb as any, UID, proposal.proposalId, createFakeConnectorForTesting(), TEST_ONLY_FORCE_EXECUTION_ENABLED);
+    const first = await undoCalendarProtectionProposal(fakeDb as any, UID, proposal.proposalId, createFakeConnectorForTesting());
+    expect(first.state).toBe('undone');
+    const second = await undoCalendarProtectionProposal(fakeDb as any, UID, proposal.proposalId, createFakeConnectorForTesting());
+    expect(second.state).toBe('undone');
   });
 });
 

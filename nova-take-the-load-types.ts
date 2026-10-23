@@ -66,6 +66,17 @@ export interface NovaTakeTheLoadProposal {
 export interface NovaConnectorOutcome {
   ok: boolean;
   detail: string;
+  /**
+   * Optional provider-assigned id for the thing that was actually created
+   * (e.g. a calendar event id) — present only on a genuine `ok: true`
+   * outcome from a real connector that returns one. Added Phase 5D
+   * (directive §4) so a category whose connector supports undo-by-id
+   * (calendar_protection) can bind its later undo call to the exact
+   * object it created, rather than undoing "whatever the most recent
+   * proposal was." Optional and additive — every existing caller that
+   * never set this keeps working unchanged.
+   */
+  externalId?: string | null;
 }
 
 export class NovaTakeTheLoadInvalidTransitionError extends Error {

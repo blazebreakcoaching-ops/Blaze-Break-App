@@ -6,6 +6,7 @@ import { NheiReflectionPreview } from './NheiReflectionPreview';
 import { NheiBeforeWords } from './NheiBeforeWords';
 import { NheiAgenticActionPreview } from './NheiAgenticActionPreview';
 import { NovaInvisibleLoad } from './NovaInvisibleLoad';
+import { NovaTakeTheLoad } from './NovaTakeTheLoad';
 import { arbitrateNheiRecoverySuggestions } from '../../nhei-recovery-arbitration';
 import type { NheiRecoverySuggestion } from '../../nhei-recovery-bridge-types';
 import type { NovaStatedPracticalProblem } from '../../nova-take-the-load-types';
@@ -58,23 +59,28 @@ export const NheiPhase5Preview = () => {
     <div className="rounded-xl border border-destructive/30 bg-destructive/10 p-4 flex items-start gap-3">
       <AlertTriangle className="w-5 h-5 text-destructive shrink-0 mt-0.5" />
       <p className="text-xs text-destructive leading-relaxed">
-        NHEI/Nova offline developer preview (Phase 5-5C). Not reachable by any real user, not wired to any live route, not
+        NHEI/Nova offline developer preview (Phase 5-5D). Not reachable by any real user, not wired to any live route, not
         feature-flag-gated for activation - this page exists only to review this UI work. Every control on this
-        page operates on local/synthetic state only, except the Privacy & Consent toggles below, which write a REAL
-        per-purpose consent flag to your own account (see NheiPrivacyConsent.tsx's own header) - still never activating
-        any personal NHEI processing by itself.
+        page operates on local/synthetic state only, except the Privacy & Consent toggles and the Take the Load section
+        below, which make REAL calls to this account's own server routes (see NheiPrivacyConsent.tsx's and
+        NovaTakeTheLoad.tsx's own headers) - still never activating any personal NHEI processing, and never reaching a
+        real external calendar, since real execution stays disabled platform-wide.
       </p>
     </div>
 
     <section className="space-y-3">
       <h2 className="text-sm font-bold text-text-muted uppercase tracking-wide">0. Invisible Load</h2>
       <NovaInvisibleLoad onRequestHelp={setRequestedHelp} />
-      {requestedHelp && (
-        <div className="rounded-xl border border-primary/30 bg-primary/5 p-4 text-xs text-text-main">
-          This would become a Take the Load request: <span className="italic">"{requestedHelp.description}"</span>
-          <br />(see section 5 below for the agentic action contract this would feed into - not wired together in this preview)
-        </div>
-      )}
+    </section>
+
+    <section className="space-y-3">
+      <h2 className="text-sm font-bold text-text-muted uppercase tracking-wide">0b. Take the Load - Calendar Protection</h2>
+      <p className="text-xs text-text-muted">
+        {requestedHelp
+          ? <>Pre-filled from the Invisible Load item you just asked for help with: <span className="italic text-text-main">"{requestedHelp.description}"</span> - everything below this is a real server call, per NovaTakeTheLoad.tsx's own header.</>
+          : 'Ask for help with an Invisible Load item above to pre-fill this, or start one directly below.'}
+      </p>
+      <NovaTakeTheLoad initialTitle={requestedHelp?.description ?? ''} />
     </section>
 
     <section className="space-y-3">

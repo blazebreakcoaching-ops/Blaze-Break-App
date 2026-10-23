@@ -1048,7 +1048,7 @@ service cloud.firestore {
         // that has never heard of NHEI (onboarding, the memory-consent
         // toggle, Settings) keeps working unchanged.
         allow create, update: if isOwner(uid)
-            && hasOnly(['allowCheckins', 'allowEnergyBudgets', 'allowMoodPulses', 'allowBodyCheckins', 'allowWins', 'allowWeeklyReviews', 'allowBoundaryScripts', 'allowGoals', 'allowRecoveryDebt', 'allowRecoveryVelocity', 'allowEnergyTrend', 'allowMoodTrend', 'allowCalendarSignals', 'allowFingerprint', 'allowOnboardingProfile', 'allowRecoveryPlanProgress', 'allowDiagnosisProgress', 'allowEnergyCommitments', 'allowStressTriggers', 'allowHabitCycles', 'allowFuelLogs', 'allowFocusSessions', 'allowSomaticResets', 'allowRecoveryAlly', 'allowNovaMemory', 'allowNovaUseSavedMemories', 'allowNheiReflectionStorage', 'allowNheiLongitudinalTracking', 'allowNheiRoutingInsights', 'updatedAt'])
+            && hasOnly(['allowCheckins', 'allowEnergyBudgets', 'allowMoodPulses', 'allowBodyCheckins', 'allowWins', 'allowWeeklyReviews', 'allowBoundaryScripts', 'allowGoals', 'allowRecoveryDebt', 'allowRecoveryVelocity', 'allowEnergyTrend', 'allowMoodTrend', 'allowCalendarSignals', 'allowFingerprint', 'allowOnboardingProfile', 'allowRecoveryPlanProgress', 'allowDiagnosisProgress', 'allowEnergyCommitments', 'allowStressTriggers', 'allowHabitCycles', 'allowFuelLogs', 'allowFocusSessions', 'allowSomaticResets', 'allowRecoveryAlly', 'allowNovaMemory', 'allowNovaUseSavedMemories', 'allowNheiReflectionStorage', 'allowNheiLongitudinalTracking', 'allowNheiRoutingInsights', 'allowCalendarActions', 'allowCalendarActionsGrantedAt', 'allowCalendarActionsWithdrawnAt', 'updatedAt'])
             && hasAll(['allowCheckins', 'allowEnergyBudgets', 'allowMoodPulses', 'allowBodyCheckins', 'allowWins', 'allowWeeklyReviews', 'allowBoundaryScripts', 'allowGoals', 'allowRecoveryDebt', 'allowRecoveryVelocity', 'allowEnergyTrend', 'allowMoodTrend', 'allowNovaMemory', 'allowNovaUseSavedMemories'])
             && request.resource.data.allowCheckins is bool
             && request.resource.data.allowEnergyBudgets is bool
@@ -1078,7 +1078,16 @@ service cloud.firestore {
             && request.resource.data.allowNovaUseSavedMemories is bool
             && (!('allowNheiReflectionStorage' in request.resource.data) || request.resource.data.allowNheiReflectionStorage is bool)
             && (!('allowNheiLongitudinalTracking' in request.resource.data) || request.resource.data.allowNheiLongitudinalTracking is bool)
-            && (!('allowNheiRoutingInsights' in request.resource.data) || request.resource.data.allowNheiRoutingInsights is bool);
+            && (!('allowNheiRoutingInsights' in request.resource.data) || request.resource.data.allowNheiRoutingInsights is bool)
+            // allowCalendarActions: Nova Calendar Protection's separate
+            // external-action permission (Phase 5D, directive §3) -
+            // distinct from allowCalendarSignals (read-only). Defaults to
+            // false in application code (nova-calendar-action-permission.ts
+            // fails closed on a missing field), never granted implicitly by
+            // any other flag here.
+            && (!('allowCalendarActions' in request.resource.data) || request.resource.data.allowCalendarActions is bool)
+            && (!('allowCalendarActionsGrantedAt' in request.resource.data) || request.resource.data.allowCalendarActionsGrantedAt is string)
+            && (!('allowCalendarActionsWithdrawnAt' in request.resource.data) || request.resource.data.allowCalendarActionsWithdrawnAt == null || request.resource.data.allowCalendarActionsWithdrawnAt is string);
       }
 
       // K2. NHEI evidence and temporal-relation storage - server (Admin

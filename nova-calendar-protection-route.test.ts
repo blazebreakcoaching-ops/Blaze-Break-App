@@ -45,7 +45,10 @@ beforeEach(async () => {
 });
 
 async function connectCalendar() {
-  await (fakeDb as any).collection('users').doc('user_a').collection('nova_permissions').doc('current').set({ allowCalendarSignals: true });
+  // allowCalendarActions (Phase 5D, directive §3): the separate
+  // action-authorisation permission, distinct from the read-only
+  // allowCalendarSignals consent - both are required to reach `propose`.
+  await (fakeDb as any).collection('users').doc('user_a').collection('nova_permissions').doc('current').set({ allowCalendarSignals: true, allowCalendarActions: true });
   await (fakeDb as any).collection('users').doc('user_a').collection('live_signals').doc('calendar').set({
     totalMeetingHours: 10, meetingCount: 8, backToBackCount: 1, eveningMeetingCount: 0, weekendMeetingCount: 0, windowDays: 7,
     updatedAt: new Date().toISOString(),
@@ -122,5 +125,82 @@ describe('full prepare -> present -> approve -> execute flow', () => {
     await request(app).post(`/api/nova/calendar-protection/${proposalId}/execute`).set(auth('user_a'));
     const undoRes = await request(app).post(`/api/nova/calendar-protection/${proposalId}/undo`).set(auth('user_a'));
     expect(undoRes.status).toBe(409);
+  });
+
+  it('invalid (non-offset-qualified) start/end times are rejected with 400, not 500', async () => {
+    await connectCalendar();
+    const res = await request(app).post('/api/nova/calendar-protection/propose').set(auth('user_a')).send({
+      idempotencyKey: 'bad-times', startIso: '2026-03-01T10:00:00', endIso: '2026-03-01T10:30:00', title: 'No offset',
+    });
+    expect(res.status).toBe(400);
+  });
+});
+
+describe('allowCalendarActions - the separate external-action permission boundary (Phase 5D, directive §3)', () => {
+  it('defaults to not granted', async () => {
+    const res = await request(app).get('/api/nova/calendar-protection/action-permission').set(auth('user_a'));
+    expect(res.status).toBe(200);
+    expect(res.body.permission.granted).toBe(false);
+  });
+
+  it('propose is refused with allowCalendarSignals alone - read consent does not authorise an action', async () => {
+    await (fakeDb as any).collection('users').doc('user_a').collection('nova_permissions').doc('current').set({ allowCalendarSignals: true });
+    await (fakeDb as any).collection('users').doc('user_a').collection('live_signals').doc('calendar').set({
+      totalMeetingHours: 10, meetingCount: 8, backToBackCount: 1, eveningMeetingCount: 0, weekendMeetingCount: 0, windowDays: 7,
+      updatedAt: new Date().toISOString(),
+    });
+    const res = await request(app).post('/api/nova/calendar-protection/propose').set(auth('user_a')).send(CHANGE);
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe('calendar_action_permission_required');
+  });
+
+  it('can be granted and withdrawn through its own route, with a visible timestamp either way', async () => {
+    const grant = await request(app).post('/api/nova/calendar-protection/action-permission').set(auth('user_a')).send({ granted: true });
+    expect(grant.body.permission.granted).toBe(true);
+    expect(typeof grant.body.permission.grantedAt).toBe('string');
+
+    const withdraw = await request(app).post('/api/nova/calendar-protection/action-permission').set(auth('user_a')).send({ granted: false });
+    expect(withdraw.body.permission.granted).toBe(false);
+    expect(typeof withdraw.body.permission.withdrawnAt).toBe('string');
+  });
+
+  it('execute is refused if the permission was withdrawn after approval - the re-check at execute time is authoritative', async () => {
+    await connectCalendar(); // grants both allowCalendarSignals and allowCalendarActions
+    const prepared = await request(app).post('/api/nova/calendar-protection/propose').set(auth('user_a')).send(CHANGE);
+    const proposalId = prepared.body.proposal.proposalId;
+    const fingerprint = prepared.body.proposal.approvalFingerprint;
+    await request(app).post(`/api/nova/calendar-protection/${proposalId}/present`).set(auth('user_a'));
+    await request(app).post(`/api/nova/calendar-protection/${proposalId}/approve`).set(auth('user_a')).send({ approved: true, approvalFingerprint: fingerprint });
+
+    await request(app).post('/api/nova/calendar-protection/action-permission').set(auth('user_a')).send({ granted: false });
+
+    const executeRes = await request(app).post(`/api/nova/calendar-protection/${proposalId}/execute`).set(auth('user_a'));
+    expect(executeRes.status).toBe(403);
+    expect(executeRes.body.code).toBe('calendar_action_permission_required');
+  });
+});
+
+describe('read-only status and history routes', () => {
+  it('GET a single proposal by id returns 404 for one that does not exist', async () => {
+    const res = await request(app).get('/api/nova/calendar-protection/no-such-proposal').set(auth('user_a'));
+    expect(res.status).toBe(404);
+  });
+
+  it('GET a single proposal returns its current state', async () => {
+    await connectCalendar();
+    const prepared = await request(app).post('/api/nova/calendar-protection/propose').set(auth('user_a')).send(CHANGE);
+    const proposalId = prepared.body.proposal.proposalId;
+    const res = await request(app).get(`/api/nova/calendar-protection/${proposalId}`).set(auth('user_a'));
+    expect(res.status).toBe(200);
+    expect(res.body.proposal.proposalId).toBe(proposalId);
+  });
+
+  it('GET history lists this user\'s proposals, most recently transitioned first', async () => {
+    await connectCalendar();
+    await request(app).post('/api/nova/calendar-protection/propose').set(auth('user_a')).send(CHANGE);
+    await request(app).post('/api/nova/calendar-protection/propose').set(auth('user_a')).send({ ...CHANGE, idempotencyKey: 'route-test-2' });
+    const res = await request(app).get('/api/nova/calendar-protection/history').set(auth('user_a'));
+    expect(res.status).toBe(200);
+    expect(res.body.proposals.length).toBe(2);
   });
 });

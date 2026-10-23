@@ -5746,7 +5746,8 @@ app.get("/api/signals/calendar", verifyAppCheck, authenticateFirebaseUser, async
 });
 
 // ============================================================================
-// Nova Take the Load - Calendar Protection (Phase 5C, directive §5).
+// Nova Take the Load - Calendar Protection (Phase 5C, directive §5;
+// hardened Phase 5D, directive §3/§4).
 //
 // The first complete Agentic Nova workflow: prepare -> approve -> execute,
 // server-authorised at every step. `CALENDAR_PROTECTION_EXECUTION_ENABLED`
@@ -5755,18 +5756,36 @@ app.get("/api/signals/calendar", verifyAppCheck, authenticateFirebaseUser, async
 // imports NO connector, real or fake, of any kind. No real external
 // calendar modification is reachable from any route in this app today.
 //
-// Permission check: requires the same `allowCalendarSignals` consent the
-// existing read-only calendar signal already requires
-// (getCalendarConnectionState, below in this file) - this is a practical
-// proxy, not a verified check of the real `calendar.events` OAuth scope
-// (which would require a Google tokeninfo call); since execution stays
-// disabled regardless, this is sufficient for this phase's scope.
+// Permission boundary (Phase 5D, directive §3): `allowCalendarSignals` is
+// a READ-signal consent flag and was never meant to authorise a write -
+// "do not assume that read consent also authorises writes." `propose`
+// below still requires it (there is no point proposing a change for a
+// calendar Nova cannot even read pressure from), but the actual
+// action-authorisation gate is the separate `allowCalendarActions`
+// permission (nova-calendar-action-permission.ts), checked here at
+// propose time AND again, authoritatively, at execute time - a grant
+// recorded when the proposal was prepared is not treated as still valid
+// by the time execution is attempted.
+//
+// Honest limitation (recorded here and in this phase's delivery report,
+// not hidden): directive §3 also asks the server to re-check "ownership
+// of the connected calendar" and "provider-granted scopes" at execute
+// time. Google Calendar is NOT one of this file's OAUTH_PROVIDERS
+// entries - there is no server-side storage of a Google OAuth token or
+// its granted scopes anywhere in this codebase (the only connection is
+// the client-side Firebase popup flow, whose token lives only in
+// transient React state). Those two specific checks are therefore not
+// implementable server-side today, and this file does not pretend
+// otherwise with a fabricated check. `allowCalendarActions` plus the
+// permanent execution kill-switch are what actually stand in for that
+// gap until real server-side Google OAuth infrastructure exists.
 // ============================================================================
 import {
   prepareCalendarProtectionProposal, presentCalendarProtectionForApproval,
   recordCalendarProtectionApproval, executeCalendarProtectionProposal,
   retryCalendarProtectionExecution, undoCalendarProtectionProposal,
 } from './nova-calendar-protection-service';
+import { getCalendarActionPermission, setCalendarActionPermission } from './nova-calendar-action-permission';
 
 const NovaCalendarProposeSchema = z.object({
   idempotencyKey: z.string().min(1).max(200),
@@ -5775,6 +5794,35 @@ const NovaCalendarProposeSchema = z.object({
   title: z.string().min(1).max(200),
 }).strict();
 
+app.get("/api/nova/calendar-protection/action-permission", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const uid = requireAuth(req).uid;
+    const permission = await getCalendarActionPermission(getDb(), uid);
+    res.json({ permission });
+  } catch (err: any) {
+    logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+    res.status(500).json({ error: GENERIC_SERVER_ERROR });
+  }
+});
+
+const NovaCalendarActionPermissionWriteSchema = z.object({ granted: z.boolean() }).strict();
+
+app.post("/api/nova/calendar-protection/action-permission", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const uid = requireAuth(req).uid;
+    const parsed = NovaCalendarActionPermissionWriteSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: '"granted" (boolean) is required.' });
+    }
+    const permission = await setCalendarActionPermission(getDb(), uid, parsed.data.granted);
+    logger.info(`Calendar action permission ${parsed.data.granted ? 'granted' : 'withdrawn'}`, { uid, granted: parsed.data.granted });
+    res.json({ success: true, permission });
+  } catch (err: any) {
+    logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+    res.status(500).json({ error: GENERIC_SERVER_ERROR });
+  }
+});
+
 app.post("/api/nova/calendar-protection/propose", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
   try {
     const uid = requireAuth(req).uid;
@@ -5782,11 +5830,22 @@ app.post("/api/nova/calendar-protection/propose", verifyAppCheck, authenticateFi
     if ((await getCalendarConnectionState(db, uid)) === 'not_connected') {
       return res.status(403).json({ error: "Calendar signals are not enabled for this account - connect and enable calendar signals first." });
     }
+    if (!(await getCalendarActionPermission(db, uid)).granted) {
+      return res.status(403).json({ error: "Calendar action permission has not been granted - grant it before proposing a calendar change.", code: "calendar_action_permission_required" });
+    }
     const parsed = NovaCalendarProposeSchema.safeParse(req.body);
     if (!parsed.success) {
       return res.status(400).json({ error: "Invalid calendar protection request.", details: (parsed as any).error?.errors || [] });
     }
-    const proposal = await prepareCalendarProtectionProposal(db, uid, parsed.data.idempotencyKey, parsed.data);
+    let proposal;
+    try {
+      proposal = await prepareCalendarProtectionProposal(db, uid, parsed.data.idempotencyKey, parsed.data);
+    } catch (prepareErr: any) {
+      if (typeof prepareErr?.message === 'string' && prepareErr.message.startsWith('invalid_time_range:')) {
+        return res.status(400).json({ error: prepareErr.message });
+      }
+      throw prepareErr;
+    }
     res.json({ proposal });
   } catch (err: any) {
     logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
@@ -5835,10 +5894,42 @@ app.post("/api/nova/calendar-protection/:proposalId/approve", verifyAppCheck, au
 app.post("/api/nova/calendar-protection/:proposalId/execute", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
   try {
     const uid = requireAuth(req).uid;
+    const db = getDb();
+    // Authoritative re-check (directive §3) - a grant recorded at propose
+    // time is not assumed still current at execute time.
+    if (!(await getCalendarActionPermission(db, uid)).granted) {
+      return res.status(403).json({ error: "Calendar action permission is no longer granted - this action cannot be executed.", code: "calendar_action_permission_required" });
+    }
     // `null`: see this block's own header - no connector of any kind is
     // ever imported into this route, so execution always reports disabled.
-    const outcome = await executeCalendarProtectionProposal(getDb(), uid, req.params.proposalId, null);
+    const outcome = await executeCalendarProtectionProposal(db, uid, req.params.proposalId, null);
     res.json(outcome);
+  } catch (err: any) {
+    logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+    res.status(500).json({ error: GENERIC_SERVER_ERROR });
+  }
+});
+
+// Read-only history/status routes (directive §2's "inspecting current
+// action status" and "reviewing action history where authorised").
+app.get("/api/nova/calendar-protection/history", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const uid = requireAuth(req).uid;
+    const snap = await getDb().collection(`users/${uid}/calendar_protection_proposals`).get();
+    const proposals = snap.docs.map((d: any) => d.data()).sort((a: any, b: any) => (b.lastTransitionAt || '').localeCompare(a.lastTransitionAt || ''));
+    res.json({ proposals });
+  } catch (err: any) {
+    logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+    res.status(500).json({ error: GENERIC_SERVER_ERROR });
+  }
+});
+
+app.get("/api/nova/calendar-protection/:proposalId", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const uid = requireAuth(req).uid;
+    const snap = await getDb().collection(`users/${uid}/calendar_protection_proposals`).doc(req.params.proposalId).get();
+    if (!snap.exists) return res.status(404).json({ error: "No such calendar protection proposal." });
+    res.json({ proposal: snap.data() });
   } catch (err: any) {
     logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
     res.status(500).json({ error: GENERIC_SERVER_ERROR });

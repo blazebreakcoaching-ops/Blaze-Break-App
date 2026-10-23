@@ -529,6 +529,57 @@ See `docs/NOVA_FULL_VISION_CAPABILITY_REGISTER.md` workstream O for the
 full account, including the Phase 5B finding (`ConnectedNovaPermissions`)
 this route's design follows.
 
+## Calendar Protection vertical slice (Phase 5D, directive §2–§6)
+
+This phase's work is almost entirely on the Agentic Nova (`nova-` prefix)
+side, not NHEI itself — recorded here because it completes the one
+agentic workflow NHEI's own docs have been tracking since Phase 5B/5C.
+
+- **`allowCalendarActions`** (`nova-calendar-action-permission.ts`): a
+  SEPARATE, fail-closed permission from the pre-existing
+  `allowCalendarSignals` (a read-only consent flag that was never meant
+  to authorise a write). Stored on the same `nova_permissions/current`
+  document, defaulting to `false` on any missing doc/field/error — the
+  opposite default direction from `allowCalendarSignals`'s own fail-OPEN
+  behaviour, deliberately, since granting an action permission is a
+  higher-stakes default than a read signal. `server.ts` checks it at
+  `propose` time and again, authoritatively, at `execute` time.
+- **Real Firestore-transaction concurrency hardening** in
+  `nova-calendar-protection-service.ts`: the `approved → executing` and
+  `confirmed → undoing` transitions are each claimed inside a real
+  `db.runTransaction` with a fresh per-attempt id, closing the
+  "two workers execute the same proposal" race. Fails closed with
+  `transaction_support_required` if no transaction support exists — the
+  same discipline this file's own `nhei-persistence-service.ts` already
+  established for its own transactional writes.
+- **Honest limitation, not a fabricated check**: directive §3 also asked
+  for a server-side re-check of "ownership of the connected calendar" and
+  "provider-granted scopes" at execute time. Neither is possible today —
+  `server.ts`'s `OAUTH_PROVIDERS` has no Google Calendar entry (confirmed
+  again this phase; see the correction recorded in
+  `docs/NOVA_FULL_VISION_CAPABILITY_REGISTER.md` workstream L), so there
+  is no server-side Google OAuth token or scope list to check against.
+  `allowCalendarActions` plus the permanent `CALENDAR_PROTECTION_EXECUTION_ENABLED`
+  kill-switch are what actually stand in for that gap; no code in this
+  phase pretends to verify ownership or scopes it cannot see.
+- **`nova-google-calendar-adapter.ts`**: pure request-construction
+  functions for what a real Google Calendar Events API call would need,
+  plus a `NovaExternalConnector` that is structurally incapable of a real
+  network call (no `fetch`/`http` import anywhere in the file) rather
+  than a flag it could someday flip — there is no server-side token to
+  give it regardless.
+- **`src/components/NovaTakeTheLoad.tsx`**: the first real UI for this
+  workflow, wired to all 6 Phase 5C routes plus 2 new read-only ones.
+  Makes the suggested-vs-executed distinction explicit at every state.
+- **`nova-before-words-temporary-context.ts`**: a session-only, never-
+  persisted context Nova could use for one turn, built for EITHER Before
+  Words ending (not just the still-unreachable retain path) — see the
+  Phase 5B section above for why `buildNovaIntakeSummaryFromBeforeWords`
+  alone was never enough for `proceed_without_retaining`.
+
+See `docs/NOVA_FULL_VISION_CAPABILITY_REGISTER.md` workstreams B, C and L
+for the full account.
+
 ## Feature governance (both default OFF, AND-combined)
 
 1. `NHEI_EDUCATIONAL_MODE_ENABLED` — a server-only `process.env` read

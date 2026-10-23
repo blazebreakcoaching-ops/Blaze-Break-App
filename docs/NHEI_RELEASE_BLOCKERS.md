@@ -225,27 +225,47 @@ settled" — the whole point of this register is that they are not.
     explanations, Before Words prompts, agentic-action descriptions) that
     register has never covered.
 20. **Wiring any Phase 5 component into live navigation.** *Decided and
-    implemented offline; wiring is not started.* All six new `.tsx` files
-    are reachable only from each other and the `NheiPhase5Preview.tsx`
-    harness — confirmed by `grep -rln` returning no other importer. A
-    future phase wiring any of them in must independently re-verify every
-    prerequisite above (consent backend, safeguarding, human review) still
-    holds, not assume "offline, tested" implies readiness.
+    implemented offline; wiring is not started.* As of Phase 5D, seven
+    `.tsx` files (`NheiPrivacyConsent`, `NheiRecoverySuggestionCard`,
+    `NheiReflectionPreview`, `NheiBeforeWords`, `NheiAgenticActionPreview`,
+    `NovaInvisibleLoad`, `NovaTakeTheLoad`) are reachable only from each
+    other and the `NheiPhase5Preview.tsx` harness — confirmed by
+    `grep -rln` returning no other importer. A future phase wiring any of
+    them in must independently re-verify every prerequisite above (consent
+    backend, safeguarding, human review) still holds, not assume "offline,
+    tested" implies readiness.
 21. **A real connector integration for any agentic action.** *Not started.*
     `nhei-agentic-action-contract.ts`'s state machine and
     `NheiAgenticActionPreview.tsx`'s worked example are both fully
     synthetic — the "connector" is a `setTimeout`, not a real calendar or
-    task-list API call. No credential, authorisation flow, or real external
-    write path exists anywhere in this codebase for any connector today.
+    task-list API call. Phase 5C/5D's real, server-authorised calendar
+    protection workflow (`nova-calendar-protection-service.ts`) is a
+    different, non-synthetic system with the same underlying gap: its
+    execution path is real code with a hardcoded, permanently-disabled
+    kill-switch, not a demo — but still no credential, authorisation flow,
+    or real external write path exists anywhere in this codebase for any
+    connector today. The Phase 5D-added Google Calendar adapter stub
+    (`nova-google-calendar-adapter.ts`) is pure request-construction only,
+    structurally incapable of a real network call, for the same reason:
+    there is no server-side Google OAuth token anywhere in this codebase
+    to give a real one (`server.ts`'s `OAUTH_PROVIDERS` has no Google
+    Calendar entry — confirmed again this phase).
 22. **Automated rendering/accessibility verification for the Phase 5 UI (or
-    any UI in this codebase).** *Not started — and not currently possible.*
-    This repository has no jsdom/@testing-library harness
-    (`vitest.config.ts` is `environment: 'node'`, `.test.ts` only). Mobile/
-    accessibility claims for the six new components rest on code review of
-    real semantic markup (`<button>`/`<input>`/`aria-*` attributes) and a
-    manual dev-server check, never an automated test — this register does
-    not claim otherwise, and a future phase should not claim component-test
-    coverage that cannot exist without first adding that harness.
+    any UI in this codebase).** *Partially addressed, Phase 5C/5D — still
+    not WCAG/responsive-layout proof.* This item's original text ("this
+    repository has no jsdom/@testing-library harness") is now STALE and
+    has been corrected here rather than left to mislead a future reader:
+    Phase 5C added `vitest.components.config.ts`
+    (`environment: 'jsdom'`, run via `npm run test:components`,
+    separate from the main `environment: 'node'` suite), and Phase 5D
+    extended it to a sixth component (`NovaTakeTheLoad.tsx`), 31 tests
+    total. What this DOES verify: real rendered DOM state, computed
+    `aria-*` attributes after real user interaction, and keyboard/focus
+    behaviour — not markup inspection. What it does NOT verify, and this
+    register continues not to claim: actual rendered geometry at any
+    viewport width, or real screen-reader behaviour. No Playwright or
+    other browser-level pass has been attempted for any Phase 5 component,
+    this phase included — that remains unattempted, not merely unclaimed.
 
 ## Phase 5B finding, Phase 5C resolution: item 18 (and items 7, 9, 13's writing half)
 
@@ -264,6 +284,31 @@ purpose independent, withdrawal never deletes. What remains open (items
 7, 9, 13) is putting a real screen in front of a real user:
 `NheiPrivacyConsent.tsx`'s toggles are wired to this route but the
 component is still not mounted into `App.tsx`'s live navigation.
+
+## Phase 5D findings (not NHEI consent itself — recorded here since they touch items 20–22 and the agentic-action gap)
+
+- **Items 20 and 22 updated in place above** rather than appended here,
+  since both were simple corrections (an importer count, and a stale "no
+  jsdom harness" claim) rather than new findings.
+- **`allowCalendarActions`** (`nova-calendar-action-permission.ts`): a
+  new, separate, fail-closed permission for calendar WRITE actions,
+  distinct from the pre-existing `allowCalendarSignals` read consent —
+  this is NOT an NHEI consent purpose and does not change anything in
+  this file's own numbered list; it is Agentic Nova's own permission
+  boundary, recorded here only because item 21's "no credential or
+  authorisation flow exists" remains true despite it (granting this
+  permission authorises nothing today, since real execution stays
+  disabled regardless).
+- **Export/erasure coverage audit (directive §9)**: confirmed
+  `calendar_protection_proposals`/`calendar_protection_audit` are real
+  Firestore subcollections of `users/{uid}` (not top-level,
+  userId-keyed collections), so they are already covered by the existing
+  whole-account `recursiveDelete`/`listCollections()` export and
+  deletion paths — no registration in `user-data-collections.ts` was
+  needed, and no new gap like the historical `anxiety_reset_events`/
+  `audit_logs` one was found. See
+  `docs/NOVA_FULL_VISION_CAPABILITY_REGISTER.md` workstream O for the
+  full reasoning.
 
 ## Explicitly not a blocker (confirmed working, independent of any NHEI activation)
 

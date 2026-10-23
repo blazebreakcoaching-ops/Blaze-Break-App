@@ -5,6 +5,7 @@ import {
   answerPrompt, skipPrompt, moveToReview, addCorrection, decideProceedWithoutRetaining,
   NHEI_BEFORE_WORDS_PROMPTS, type NheiBeforeWordsPromptCategory, type NheiBeforeWordsState,
 } from '../../nhei-before-words-contract';
+import { buildTemporaryNovaContextFromBeforeWords } from '../../nova-before-words-temporary-context';
 
 // NHEI PHASE 5 - "Before Words" UX foundation (directive §7).
 //
@@ -158,12 +159,29 @@ export const NheiBeforeWords = () => {
   }
 
   // state.step === 'decided'
+  // Phase 5D (directive §6): a temporary, session-scoped context Nova
+  // could use to respond to THIS turn - built for either ending, never
+  // persisted (buildTemporaryNovaContextFromBeforeWords's own `persisted`
+  // field is always false). Shown here only as a concrete demonstration
+  // that the pathway exists and is distinct from the still-unavailable
+  // "save as reflection" write above - this preview itself does not pass
+  // the context into a real Nova chat turn, since that wiring belongs to
+  // whatever surface hosts this component live.
+  const temporaryContext = buildTemporaryNovaContextFromBeforeWords(state);
   return (
-    <div className="card space-y-2 bg-background border border-border max-w-lg">
+    <div className="card space-y-3 bg-background border border-border max-w-lg">
       <p className="text-sm text-text-muted">
         Thanks for sharing that. This preview doesn't retain anything you wrote - in a real version, whether to keep
         this as a reflection would always be your own, separate choice.
       </p>
+      {temporaryContext ? (
+        <p className="text-xs text-text-muted/80 p-3 bg-surface/50 rounded-lg">
+          What you just shared is available to Nova for this conversation only - it is not saved as a reflection and
+          will not be remembered after this session ends.
+        </p>
+      ) : (
+        <p className="text-xs text-text-muted/60 italic">Nothing was shared, so there is nothing for Nova to use here.</p>
+      )}
     </div>
   );
 };

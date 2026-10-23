@@ -41,4 +41,19 @@ describe('NheiBeforeWords', () => {
     await userEvent.click(screen.getByRole('button', { name: /i'd rather not write anything right now/i }));
     expect(screen.getByText(/doesn't retain anything you wrote/i)).toBeInTheDocument();
   });
+
+  it('Phase 5D directive §6: proceeding without retaining after writing something still offers a temporary, session-only context to Nova', async () => {
+    render(<NheiBeforeWords />);
+    await userEvent.click(screen.getByRole('button', { name: /start whenever you're ready/i }));
+    await userEvent.type(screen.getByLabelText(/free expression/i), 'Work has been relentless.');
+    await userEvent.click(screen.getByRole('button', { name: /i'd rather not write anything right now/i }));
+    expect(screen.getByText(/available to nova for this conversation only/i)).toBeInTheDocument();
+  });
+
+  it('proceeding with nothing written at all shows there is nothing for Nova to use', async () => {
+    render(<NheiBeforeWords />);
+    await userEvent.click(screen.getByRole('button', { name: /start whenever you're ready/i }));
+    await userEvent.click(screen.getByRole('button', { name: /i'd rather not write anything right now/i }));
+    expect(screen.getByText(/nothing was shared/i)).toBeInTheDocument();
+  });
 });

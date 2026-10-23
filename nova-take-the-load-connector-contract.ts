@@ -50,7 +50,14 @@ export function createFakeConnectorForTesting(options?: {
   return {
     connectorKind: 'fake_test_only',
     checkReady: async () => options?.readyResult ?? { ready: true, reason: null },
-    execute: async () => options?.executeResult ?? { ok: true, detail: 'simulated success (test-only fake connector)' },
+    // Includes a fake externalId by default - a realistic successful
+    // connector response identifies the thing it created, which
+    // nova-calendar-protection-service.ts's undo path requires before it
+    // will even attempt a reversal (Phase 5D, directive §4: "never
+    // promise an undo unless the actual connector can provide it"). A
+    // caller exercising a failure path supplies its own executeResult
+    // and this default is never used.
+    execute: async () => options?.executeResult ?? { ok: true, detail: 'simulated success (test-only fake connector)', externalId: 'fake_external_id_test_only' },
     undo: async () => options?.undoResult ?? { ok: true, detail: 'simulated undo (test-only fake connector)' },
   };
 }
