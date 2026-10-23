@@ -262,6 +262,89 @@ describe('GET /api/user/export — portability (GDPR Art. 15/20)', () => {
       expect(res.body.collections.mood_pulses[0].redactedForSecurity).toBeUndefined();
       expect(res.body.collections.guardian_alerts[0].redactedForSecurity).toBeUndefined();
     });
+
+    // Independent security-hotfix review, directive §1/§4: push_subscriptions
+    // was NOT one of the four collections the original Phase 5F audit named -
+    // this review found it independently. Its `keys.auth` field is a real,
+    // reusable Web Push authentication secret (RFC 8291) that matched no
+    // naming pattern the original fix checked for.
+    describe('independent review finding: push_subscriptions.keys.auth (a real Web Push secret missed by the original audit)', () => {
+      function seedPushSubscription() {
+        seedDoc(`users/${USER}/push_subscriptions/sub1`, {
+          endpoint: 'https://fcm.googleapis.com/fcm/send/abc123',
+          expirationTime: null,
+          keys: { p256dh: 'PUBLIC_KEY_NOT_SECRET', auth: SENTINEL },
+          subscribedAt: '2026-01-01T00:00:00Z',
+        });
+      }
+
+      it('never returns the sentinel Web Push auth secret anywhere in the response body', async () => {
+        seedFullUser();
+        seedPushSubscription();
+        const res = await request(app).get('/api/user/export').set(auth(USER));
+        expect(res.status).toBe(200);
+        expect(JSON.stringify(res.body)).not.toContain(SENTINEL);
+      });
+
+      it('drops the entire keys object (including the non-secret p256dh) and marks the doc redacted, while keeping safe metadata', async () => {
+        seedFullUser();
+        seedPushSubscription();
+        const res = await request(app).get('/api/user/export').set(auth(USER));
+        const sub = res.body.collections.push_subscriptions[0];
+        expect(sub).toMatchObject({
+          id: 'sub1',
+          endpoint: 'https://fcm.googleapis.com/fcm/send/abc123',
+          subscribedAt: '2026-01-01T00:00:00Z',
+          redactedForSecurity: true,
+        });
+        expect(sub.keys).toBeUndefined();
+      });
+    });
+
+    // Independent security-hotfix review, directive §2/§4: the strengthened
+    // design is DENY-BY-DEFAULT (an explicit safe-field allowlist) for the
+    // five known secret-bearing collections, not just a denylist of
+    // secret-shaped names. This proves that property directly: a field
+    // that is NOT secret-shaped by name, and that nobody anticipated, is
+    // still dropped simply because it isn't on the allowlist.
+    it('deny-by-default: an unanticipated, non-secret-shaped field on a known secret-bearing collection is still redacted', async () => {
+      seedFullUser();
+      seedDoc(`users/${USER}/integration_tokens/slack`, {
+        accessToken: SENTINEL,
+        expiresAt: '2026-01-01T00:00:00Z',
+        updatedAt: '2026-01-01T00:00:00Z',
+        // A hypothetical future provider field that is not secret-shaped
+        // by name at all, and was never added to the safe-field allowlist.
+        somethingNobodyAnticipated: 'unexpected but not itself a secret',
+      });
+      const res = await request(app).get('/api/user/export').set(auth(USER));
+      expect(res.status).toBe(200);
+      const tok = res.body.collections.integration_tokens[0];
+      expect(tok.somethingNobodyAnticipated).toBeUndefined();
+      expect(tok.redactedForSecurity).toBe(true);
+      // The genuinely safe, allowlisted fields are still present - this is
+      // deny-by-default, not "redact everything".
+      expect(tok.expiresAt).toBe('2026-01-01T00:00:00Z');
+    });
+
+    // Independent security-hotfix review, directive §4: account isolation
+    // for the secret-bearing collections specifically, not just the
+    // generic collections already covered above.
+    it('account isolation: never returns another user\'s secrets from any secret-bearing collection', async () => {
+      seedFullUser();
+      seedSecrets();
+      seedDoc(`users/${OTHER}/integration_tokens/slack`, { accessToken: SENTINEL, refreshToken: SENTINEL, expiresAt: '2099-01-01T00:00:00Z', updatedAt: '2099-01-01T00:00:00Z' });
+      seedDoc(`users/${OTHER}/recovery_ally/state`, { isInvited: true, allyName: 'Other Ally', allyEmail: 'other-ally@example.com', shareToken: SENTINEL, invitedAt: '2099-01-01T00:00:00Z', consentStatus: 'pending', inviteExpiresAt: '2099-01-08T00:00:00Z' });
+      const res = await request(app).get('/api/user/export').set(auth(USER));
+      expect(res.status).toBe(200);
+      // OTHER's data genuinely exists in the store (so this is a real
+      // isolation check), but none of it - secret or otherwise - appears
+      // in USER's export.
+      expect(getDocRaw(`users/${OTHER}/integration_tokens/slack`)).toBeDefined();
+      expect(JSON.stringify(res.body)).not.toContain('other-ally@example.com');
+      expect(res.body.collections.recovery_ally).toHaveLength(1);
+      expect(res.body.collections.recovery_ally[0].allyName).toBe('Jordan');
+    });
   });
 });
 

@@ -38,7 +38,7 @@ import { effectiveConsentStatus, canRespondToConsent, computeInviteExpiresAt, is
 import { guardianSupportInvitationEnabled, validateGuardianSupportOffer, isValidGuardianSupportEventType, isValidGuardianSupportTemplateId, buildGuardianSupportMessage } from './guardian-support-invitation';
 import { quietHoursCheckPasses } from './ally-nudge-quiet-hours';
 import { collectionsForExport, collectionsForErasure, userIdFieldsFor } from './user-data-collections';
-import { sanitiseExportDoc, sanitiseExportCollectionsMap } from './export-credential-sanitiser';
+import { sanitiseExportDoc, sanitiseExportCollectionsMap, extractOAuthFailureDiagnostics } from './export-credential-sanitiser';
 import { quarantineTemporaryBeforeWordsContextForPrompt } from './nova-before-words-temporary-context';
 // Phase 3C-2A section 8 wired exportAllNheiData (read-only GDPR export).
 // Phase 5C (directive §2, "implement real NHEI consent-writing
@@ -5272,20 +5272,28 @@ app.get("/api/integrations/callback/:service", async (req, res) => {
     }
 
     const tokenBody = await tokenResponse.json();
-    // Phase 5F, directive §2 (PRIORITY ZERO - diagnostic-output audit):
-    // this is the provider's raw token-endpoint response - by definition
-    // the one payload in this whole flow most likely to carry a real
-    // access/refresh token, even on a response shaped like a failure (a
-    // provider can return a short-lived token alongside an error, or omit
-    // only one of the two expected fields). Never log it unsanitised.
+    // Phase 5F, directive §2 (PRIORITY ZERO - diagnostic-output audit),
+    // strengthened by the independent security-hotfix review (directive
+    // §3): this is the provider's raw token-endpoint response - by
+    // definition the one payload in this whole flow most likely to carry
+    // a real access/refresh token, even on a response shaped like a
+    // failure (a provider can return a short-lived token alongside an
+    // error, or omit only one of the two expected fields). Never log it
+    // unsanitised - and never log the full payload with secrets merely
+    // subtracted out, either: extractOAuthFailureDiagnostics collects
+    // ONLY a fixed, known-safe set of standard OAuth2 diagnostic fields
+    // (plus Slack's own `ok` flag) and reduces everything else to its
+    // field NAME, never its value - see that function's own header
+    // comment for why this is strictly safer than redacting an arbitrary
+    // payload after the fact.
     if (!tokenResponse.ok || tokenBody?.ok === false || tokenBody?.error) {
-      logger.error(`[Integrations] ${service} token exchange failed`, { responseBody: sanitiseExportDoc(tokenBody || {}).doc });
+      logger.error(`[Integrations] ${service} token exchange failed`, extractOAuthFailureDiagnostics(tokenBody));
       return failRedirect("token_exchange_failed");
     }
 
     const { accessToken, refreshToken, expiresIn } = provider.extractTokens(tokenBody);
     if (!accessToken) {
-      logger.error(`[Integrations] ${service} response had no access token`, { responseBody: sanitiseExportDoc(tokenBody || {}).doc });
+      logger.error(`[Integrations] ${service} response had no access token`, extractOAuthFailureDiagnostics(tokenBody));
       return failRedirect("no_access_token");
     }
 
@@ -5544,10 +5552,11 @@ async function getValidAccessToken(uid: string, service: string): Promise<string
 
     const body = await tokenResponse.json();
     if (!tokenResponse.ok || body?.error) {
-      // See the §2 diagnostic-output note above the /callback route's own
-      // identical pattern - a refresh response can carry a real token
-      // alongside an error shape, so it's never logged unsanitised.
-      logger.error(`[Integrations] ${service} token refresh failed`, { responseBody: sanitiseExportDoc(body || {}).doc });
+      // See the §2/§3 diagnostic-output note above the /callback route's
+      // own identical pattern - a refresh response can carry a real token
+      // alongside an error shape, so only the bounded, known-safe
+      // diagnostic fields are ever logged, never the raw payload.
+      logger.error(`[Integrations] ${service} token refresh failed`, extractOAuthFailureDiagnostics(body));
       // Phase 5E (directive §2, "expired or revoked token handling"): a
       // refresh that fails with the OAuth2-standard `invalid_grant` means
       // the refresh token itself is dead (revoked at the provider, or the
