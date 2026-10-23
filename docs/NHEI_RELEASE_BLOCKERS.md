@@ -138,6 +138,46 @@ settled" — the whole point of this register is that they are not.
     safeguarding audit log — two different retention regimes that must
     not be assumed to share one answer. *Not started.*
 
+## Blocking the Recovery Intelligence Bridge (Phase 4, in addition to the Educational/Reflection/Longitudinal items above as relevant)
+
+12. **Wiring `nhei-recovery-bridge.ts` into a real conversation turn.**
+    *Decided and implemented offline; wiring is not started and is a
+    separate, future approval.* `buildNheiRecoverySuggestions` is a pure,
+    fully-tested function with no call site anywhere in this codebase —
+    not imported by `server.ts` or any route. Before any future phase
+    wires it in, that phase must independently re-confirm every
+    prerequisite below is actually satisfied at the real call site, not
+    merely that this file's types require it.
+13. **The `routing_insights` consent purpose has no user-facing consent
+    UI**, same gap as `reflection_storage` (item 7) and
+    `longitudinal_tracking` (item 9) — `isNheiPurposeConsented(state,
+    'routing_insights')` is enforced in code but no screen anywhere
+    presents this choice to a user. *Not started.*
+14. **The independent safeguarding system** (item 5) blocks the bridge
+    identically to Personal Reflection Mode — the bridge takes the full
+    `NheiSafeguardingClearance` as a required input and only
+    `UNINTEGRATED_SAFEGUARDING_GATE` exists today, which always returns
+    `cleared: false`. A future wiring phase gets `safeguarding_not_cleared`
+    for every real user until this is built — this is intentional, not a
+    bug to work around.
+15. **Energy Delta Management has no entry in `recovery-signal-candidates.ts`'s
+    `MODULE_ROUTE_MAP`**, discovered during the Phase 4 audit. The
+    bridge's Physical-dimension rule targets `recovery_fuel` instead,
+    documented in `docs/NHEI_ARCHITECTURE.md`. *Proposed, not approved*:
+    whether Energy Delta Management should ever become a routable
+    Recovery Routing module is a separate, future product/engineering
+    decision this register does not make — it would require editing
+    `recovery-signal-candidates.ts`, which this phase deliberately never
+    touches.
+16. **Independent human review of how `NheiRecoverySuggestion`'s
+    user-facing text (`reason`, `explanationForUser`) would actually read
+    to a real user**, including in a youth age band. *Not started.* This
+    phase wrote and unit-tested that text for tone (no causal claims, no
+    promised outcomes, no resistance framing on decline) but no product/
+    clinical/safeguarding reviewer has read it as a real user would see
+    it — the same category of review item 1 and item 6 already require
+    for knowledge content and youth safeguarding respectively.
+
 ## Explicitly not a blocker (confirmed working, independent of any NHEI activation)
 
 - Data export, correction, and deletion already work today through this

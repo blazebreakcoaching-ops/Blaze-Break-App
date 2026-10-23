@@ -170,6 +170,92 @@ Mode would eventually retrieve from. Not accessible to ordinary users.
   (`nhei-safeguarding-contract.ts`), which unconditionally returns
   `cleared: false`. Not imported by `server.ts` or any route.
 
+## Recovery Intelligence Bridge (Phase 4, offline/unwired today)
+
+`nhei-recovery-bridge-types.ts` and `nhei-recovery-bridge.ts` connect
+NHEI's already-interpreted output to Blaze Break's existing Recovery
+Routing vocabulary — not a new recommendation engine, and not a rewrite
+of any existing recovery file. Neither file is imported by `server.ts` or
+any live route; `buildNheiRecoverySuggestions` has no call site in this
+codebase today. Wiring it into a real conversation turn is future work,
+gated on its own approval.
+
+- **Input**: a single `NheiRecoveryBridgeInput` — the existing
+  `NheiPersonalContextSummary` (already consent-gated, already
+  interpreted by Phase 1's Trifecta/Dimensions/Adaptive-Behaviour
+  engines), an optional user-stated goal expressed in existing
+  `RouteType`/`BandwidthBand` vocabulary, the existing capacity band
+  (`recovery-capacity-gate.ts`, `null` is a real value, never defaulted),
+  any Recovery Routing candidates already generated independently for
+  the same turn (`recovery-signal-candidates.ts`), the caller's own
+  `isNheiPurposeConsented(state, 'routing_insights')` result (the
+  Phase-2-reserved consent purpose this phase implements), and the full
+  `NheiSafeguardingClearance` object (not a bare boolean) from
+  `nhei-safeguarding-contract.ts`.
+- **Output**: a `NheiRecoveryBridgeResult` — zero or more
+  `NheiRecoverySuggestion` objects, each inspectable data (never an
+  execution command, no deep link, no "run this" method) carrying the
+  target module, route type, a plain-language reason and user-facing
+  explanation, evidence-record IDs only (never raw content),
+  self-systems/dimensions, a `confirmed | tentative | educational`
+  interpretation-kind flag, safety restrictions, the fixed
+  `routing_insights` consent prerequisite, a `suitable | unsuitable |
+  unknown` capacity-suitability flag, whether it matches a stated goal,
+  a cross-reference to any existing Recovery Routing candidate for the
+  same route, and alternative modules — or an explicit
+  `NheiRecoveryNoSuggestionReason` (`consent_not_granted`,
+  `safeguarding_not_cleared`, `insufficient_evidence`,
+  `no_relevant_pattern`) when nothing fires. Never silence.
+- **Fail-closed order**: consent, then safeguarding, then
+  `insufficientEvidence`, all checked before any mapping rule runs. Since
+  `UNINTEGRATED_SAFEGUARDING_GATE` always returns `cleared: false`, every
+  real call today — once this is ever wired in — would stop at
+  `safeguarding_not_cleared`; the full `NheiSafeguardingClearance` type is
+  threaded through specifically so that remains true structurally, not by
+  convention.
+- **Mapping rules** (mirroring `recovery-signal-candidates.ts`'s own
+  pattern: independent builder functions returning a suggestion or
+  `null`, combined by filtering): a recurring Relational-Self behavioural
+  pattern → Boundary Architect (PROTECT); confirmed Emotional-dimension
+  evidence → Reset Studio (STABILISE); an explicit short-effort stated
+  goal plus any Emotional signal → Anxiety Reset (STABILISE,
+  low-bandwidth only); a recurring pattern plus an explicit stated ACT
+  goal → Action Engine (ACT — never fires on pattern evidence alone);
+  Physical-dimension evidence → Recovery Fuel (RECOVER); any other
+  recurring pattern → My Patterns (UNDERSTAND). Every rule validates its
+  target via `isKnownRoutingModule` before emitting — a suggestion naming
+  a module that isn't a real, already-routable destination is structurally
+  impossible, not just avoided by convention.
+- **Audit finding (Phase 4 §2)**: `recovery-signal-candidates.ts`'s
+  `MODULE_ROUTE_MAP` has no entry for Energy Delta Management — it is
+  reachable today only as its own standalone page (`EnergyBudget.tsx`),
+  never through Recovery Routing. The directive's own worked example
+  ("energy and recovery management questions → Energy Delta Management")
+  is therefore not a verified, routable mapping today; the Physical-
+  dimension rule targets `recovery_fuel` instead (the nearest module that
+  both exists in the registry and addresses the same depleted-foundation
+  signal) rather than inventing a route Recovery Routing cannot actually
+  reach. Wiring Energy Delta Management into Recovery Routing, if ever
+  wanted, is a separate, future `recovery-signal-candidates.ts` change —
+  explicitly out of scope here, since this phase never edits that file.
+- **Capacity suitability never invents a score**: `null` capacityBand
+  (no reliable information) yields `'unknown'`, distinct from
+  `'unsuitable'` (a real band exists but `isEffortWithinBandwidth` says
+  the required effort doesn't fit) — the same `band === null` discipline
+  `recovery-capacity-gate.ts` already enforces, never defaulted here.
+- **Tests**: `nhei-recovery-bridge.test.ts` — the fail-closed gates, all
+  16 named synthetic scenarios from the Phase 4 directive (leave-guilt/
+  rest struggle, workplace boundary request, overload+short-action
+  request, unexplained fatigue, a single relational anecdote producing no
+  boundary suggestion, improved-outcome non-overpromising, disputed-
+  evidence absence, no resistance-tracking field, no-relevant-evidence,
+  multiple pathways without ACT defaulting, low-quality-evidence
+  rejection, repeated-episodes-with-goal → Action Engine, youth age-band
+  pass-through, consent/safeguarding denial under strong evidence, and
+  the structural "every suggestion names only a verified module"
+  invariant), capacity-suitability, candidate cross-referencing, and the
+  Energy Delta finding.
+
 ## Feature governance (both default OFF, AND-combined)
 
 1. `NHEI_EDUCATIONAL_MODE_ENABLED` — a server-only `process.env` read
