@@ -218,6 +218,48 @@ describe('GET /api/integrations/callback/:service - token exchange', () => {
     const res = await request(app).get(`/api/integrations/callback/jira?code=weird-response&state=${encodeURIComponent(state)}`);
     expect(res.headers.location).toContain('reason=no_access_token');
   });
+
+  // SECURITY HOTFIX (independent review, see
+  // SECURITY_HOTFIX_INDEPENDENT_REVIEW_REPORT.md): the failure-path
+  // logger.error calls used to log the provider's response body verbatim
+  // ({ responseBody: tokenBody }) - a response shaped like a failure can
+  // still carry a real access_token/client_secret alongside the error.
+  it('never logs a real token that arrives alongside a failure-shaped token response', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const state = await getSignedState('jira_user', 'jira');
+    fetchMock.mockImplementationOnce(async () => ({
+      ok: false,
+      json: async () => ({ error: 'invalid_grant', access_token: 'LEAKED_TOKEN_MUST_NOT_BE_LOGGED', client_secret: 'LEAKED_SECRET_MUST_NOT_BE_LOGGED' }),
+    }));
+
+    const res = await request(app).get(`/api/integrations/callback/jira?code=bad-code&state=${encodeURIComponent(state)}`);
+    expect(res.headers.location).toContain('reason=token_exchange_failed');
+
+    const loggedText = JSON.stringify(errorSpy.mock.calls);
+    expect(loggedText).not.toContain('LEAKED_TOKEN_MUST_NOT_BE_LOGGED');
+    expect(loggedText).not.toContain('LEAKED_SECRET_MUST_NOT_BE_LOGGED');
+    errorSpy.mockRestore();
+  });
+
+  it('logs only the bounded OAuth diagnostic shape on failure - the real error reason plus field NAMES, never field values, for anything else', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const state = await getSignedState('jira_user', 'jira');
+    fetchMock.mockImplementationOnce(async () => ({
+      ok: false,
+      json: async () => ({ error: 'invalid_grant', error_description: 'The provided authorization grant is invalid.', access_token: 'LEAKED_TOKEN_MUST_NOT_BE_LOGGED', client_secret: 'LEAKED_SECRET_MUST_NOT_BE_LOGGED' }),
+    }));
+
+    await request(app).get(`/api/integrations/callback/jira?code=bad-code&state=${encodeURIComponent(state)}`);
+
+    // logger.error writes one JSON-stringified line per call, not
+    // separate (message, fields) console.error args - see logger.ts.
+    const loggedLine = errorSpy.mock.calls.map(([line]) => String(line)).find((line) => line.includes('token exchange failed'));
+    expect(loggedLine).toBeDefined();
+    const logged = JSON.parse(loggedLine!);
+    expect(logged).toMatchObject({ error: 'invalid_grant', errorDescription: 'The provided authorization grant is invalid.' });
+    expect(logged.otherFieldNames.sort()).toEqual(['access_token', 'client_secret']);
+    errorSpy.mockRestore();
+  });
 });
 
 describe('POST /api/integrations/:service/disconnect and GET /api/integrations/status', () => {
@@ -361,6 +403,34 @@ describe('getValidAccessToken (via POST /api/signals/jira/refresh)', () => {
     const res = await request(app).post('/api/signals/jira/refresh').set(auth('refresh_fails_user'));
     expect(res.status).toBe(200);
     expect(getDocRaw('users/refresh_fails_user/integration_tokens/jira')).toMatchObject({ accessToken: 'old_at' });
+  });
+
+  // SECURITY HOTFIX (independent review): same adversarial sentinel as
+  // the /callback route's own test, exercised through the token-REFRESH
+  // path instead - a separate code path with its own call to the same
+  // diagnostic-extraction logic.
+  it('never logs a real token that arrives alongside a failure-shaped token-refresh response', async () => {
+    seedJiraToken('refresh_leak_user', { accessToken: 'old_at', refreshToken: 'old_rt', expiresAt: new Date(Date.now() + 1000).toISOString() });
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    fetchMock.mockImplementation(async (url: string, opts: any) => {
+      if (url === 'https://auth.atlassian.com/oauth/token') {
+        return { ok: false, json: async () => ({ error: 'invalid_scope', access_token: 'LEAKED_REFRESH_TOKEN_MUST_NOT_BE_LOGGED', refresh_token: 'LEAKED_NEW_REFRESH_TOKEN_MUST_NOT_BE_LOGGED' }) };
+      }
+      if (url.includes('accessible-resources')) {
+        expect(opts.headers.Authorization).toBe('Bearer old_at');
+        return { ok: true, json: async () => ([{ id: 'cloud_1', name: 'Test Site' }]) };
+      }
+      return { ok: true, json: async () => ({ issues: [] }) };
+    });
+
+    const res = await request(app).post('/api/signals/jira/refresh').set(auth('refresh_leak_user'));
+    expect(res.status).toBe(200);
+
+    const loggedText = JSON.stringify(errorSpy.mock.calls);
+    expect(loggedText).not.toContain('LEAKED_REFRESH_TOKEN_MUST_NOT_BE_LOGGED');
+    expect(loggedText).not.toContain('LEAKED_NEW_REFRESH_TOKEN_MUST_NOT_BE_LOGGED');
+    errorSpy.mockRestore();
   });
 
   // QA Batch 10: the defensive catch block behind the happy paths above -

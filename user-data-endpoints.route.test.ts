@@ -110,6 +110,93 @@ describe('GET /api/user/export — portability (GDPR Art. 15/20)', () => {
     restore();
     errorSpy.mockRestore();
   });
+
+  // SECURITY HOTFIX (independent review, see
+  // SECURITY_HOTFIX_INDEPENDENT_REVIEW_REPORT.md): this generic export
+  // route's own listCollections() dump copied integration_tokens,
+  // security, recovery_ally, and push_subscriptions into the response
+  // VERBATIM - nothing here ever excluded them. A deliberately injected
+  // sentinel value, distinctive enough that its presence anywhere in the
+  // raw response body is unambiguous, proves the fix at the one boundary
+  // that actually matters: the real HTTP response this route sends.
+  describe('credential-bearing collections are sanitised, never exported verbatim', () => {
+    const SENTINEL = 'SENTINEL_SECRET_MUST_NEVER_LEAK_9f3a7c';
+
+    function seedSecrets() {
+      seedDoc(`users/${USER}/integration_tokens/slack`, { accessToken: SENTINEL, refreshToken: SENTINEL, expiresAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z' });
+      seedDoc(`users/${USER}/security/mfa_totp`, {
+        secretEncrypted: SENTINEL, pendingSecretEncrypted: SENTINEL,
+        recoveryCodesHashed: [{ hash: SENTINEL, usedAt: null }],
+        enabled: true, enrolledAt: '2026-01-01T00:00:00Z', failedAttempts: 0, lockedUntil: null, updatedAt: '2026-01-01T00:00:00Z',
+      });
+      seedDoc(`users/${USER}/recovery_ally/state`, {
+        isInvited: true, allyName: 'Jordan', allyEmail: 'jordan@example.com', shareToken: SENTINEL,
+        invitedAt: '2026-01-01T00:00:00Z', consentStatus: 'pending', inviteExpiresAt: '2026-01-08T00:00:00Z',
+      });
+      seedDoc(`users/${USER}/push_subscriptions/sub1`, {
+        endpoint: 'https://fcm.googleapis.com/fcm/send/abc123', expirationTime: null,
+        keys: { p256dh: 'PUBLIC_KEY_NOT_SECRET', auth: SENTINEL }, subscribedAt: '2026-01-01T00:00:00Z',
+      });
+    }
+
+    it('never returns the sentinel secret anywhere in the response body', async () => {
+      seedFullUser();
+      seedSecrets();
+      const res = await request(app).get('/api/user/export').set(auth(USER));
+      expect(res.status).toBe(200);
+      expect(JSON.stringify(res.body)).not.toContain(SENTINEL);
+    });
+
+    it('still includes safe, non-secret metadata for each of those collections', async () => {
+      seedFullUser();
+      seedSecrets();
+      const res = await request(app).get('/api/user/export').set(auth(USER));
+
+      expect(res.body.collections.integration_tokens[0]).toMatchObject({ id: 'slack', expiresAt: '2026-01-01T00:00:00Z', redactedForSecurity: true });
+      expect(res.body.collections.integration_tokens[0].accessToken).toBeUndefined();
+
+      expect(res.body.collections.security[0]).toMatchObject({ id: 'mfa_totp', enabled: true, failedAttempts: 0, redactedForSecurity: true });
+      expect(res.body.collections.security[0].secretEncrypted).toBeUndefined();
+      expect(res.body.collections.security[0].recoveryCodesHashed).toBeUndefined();
+
+      expect(res.body.collections.recovery_ally[0]).toMatchObject({ id: 'state', allyName: 'Jordan', consentStatus: 'pending', redactedForSecurity: true });
+      expect(res.body.collections.recovery_ally[0].shareToken).toBeUndefined();
+
+      expect(res.body.collections.push_subscriptions[0]).toMatchObject({ id: 'sub1', endpoint: 'https://fcm.googleapis.com/fcm/send/abc123', redactedForSecurity: true });
+      expect(res.body.collections.push_subscriptions[0].keys).toBeUndefined();
+    });
+
+    it('a collection with nothing secret in it is completely unaffected (no redactedForSecurity marker)', async () => {
+      seedFullUser();
+      seedSecrets();
+      const res = await request(app).get('/api/user/export').set(auth(USER));
+      expect(res.body.collections.mood_pulses[0].redactedForSecurity).toBeUndefined();
+    });
+
+    it('deny-by-default: an unanticipated, non-secret-shaped field on a known secret-bearing collection is still redacted', async () => {
+      seedFullUser();
+      seedDoc(`users/${USER}/integration_tokens/slack`, {
+        accessToken: SENTINEL, expiresAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z',
+        somethingNobodyAnticipated: 'unexpected but not itself a secret',
+      });
+      const res = await request(app).get('/api/user/export').set(auth(USER));
+      const tok = res.body.collections.integration_tokens[0];
+      expect(tok.somethingNobodyAnticipated).toBeUndefined();
+      expect(tok.redactedForSecurity).toBe(true);
+      expect(tok.expiresAt).toBe('2026-01-01T00:00:00Z');
+    });
+
+    it('account isolation: never returns another user\'s secrets from any secret-bearing collection', async () => {
+      seedFullUser();
+      seedSecrets();
+      seedDoc(`users/${OTHER}/integration_tokens/slack`, { accessToken: SENTINEL, refreshToken: SENTINEL, expiresAt: '2099-01-01T00:00:00Z', updatedAt: '2099-01-01T00:00:00Z' });
+      seedDoc(`users/${OTHER}/recovery_ally/state`, { isInvited: true, allyName: 'Other Ally', allyEmail: 'other-ally@example.com', shareToken: SENTINEL, invitedAt: '2099-01-01T00:00:00Z', consentStatus: 'pending', inviteExpiresAt: '2099-01-08T00:00:00Z' });
+      const res = await request(app).get('/api/user/export').set(auth(USER));
+      expect(res.status).toBe(200);
+      expect(getDocRaw(`users/${OTHER}/integration_tokens/slack`)).toBeDefined();
+      expect(JSON.stringify(res.body)).not.toContain('other-ally@example.com');
+    });
+  });
 });
 
 describe('POST /api/user/delete-account — erasure (GDPR Art. 17)', () => {
