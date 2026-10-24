@@ -615,14 +615,23 @@ rather than duplicating ~20 phases of detail.
   Protection/Task Deferral UIs — this file has no function that calls
   either `prepare*` function for the caller, no scheduling/cron/queue,
   and zero `nhei-` imports. 16 new unit/route tests.
+- **Phase 5G Experience Integration addition (directive §2)**: the
+  possible-suggestion stage now has a real screen —
+  `NovaProactiveSuggestions.tsx`, mounted as `NovaAgenticJourney.tsx`'s new
+  `proactive_options` step. Each suggestion card renders all six
+  explanatory fields the directive required (what, based-on, why it might
+  help, whether permission/integration is required, what happens if the
+  user proceeds, what Nova can't do yet) and offers accept/edit/dismiss —
+  never an auto-advance. "Use this" hands the (possibly user-edited) text
+  straight to the real Calendar Protection or Task Deferral screen via a
+  plain callback prop; this file has zero internal approval/state-machine
+  logic of its own, so no second approval engine was created.
 - **Next work**: as a separate, later, explicitly-approved decision —
   flipping `CALENDAR_PROTECTION_EXECUTION_ENABLED` to `true` and wiring
   the real connector into `server.ts`, which this phase deliberately does
   not do. Also unstarted: the equivalent OAuth/connector work for
   task_deferral's own categories (deliberately out of scope — see
-  workstream E); surfacing the new possible-suggestion stage in
-  `NovaAgenticJourney.tsx`'s own UI (the contract and route exist; no
-  screen calls the route yet).
+  workstream E).
 
 ## M. Personal Recovery Outcomes and Coaching Review — **PARTIAL**
 
@@ -650,12 +659,25 @@ rather than duplicating ~20 phases of detail.
   plain fact, never surfaced as a trait of the user. One record per
   (workflow, itemId) — a resubmission replaces the prior answer. Covered
   by the Task Deferral route tests (workstream E).
+- **Phase 5G Experience Integration addition (directive §8)**: the same
+  contract is now also wired to Calendar Protection —
+  `POST /api/nova/calendar-protection/:proposalId/outcome` and
+  `NovaTakeTheLoad.tsx`'s own post-confirmation prompt, reachable only
+  once `proposal.state === 'confirmed'` (a REAL applied action there,
+  unlike Task Deferral's `confirmed`, which only ever means a simulation
+  completed — see workstream E). `NovaTaskAssistanceWorkflow` widened to
+  `'task_deferral' | 'calendar_protection'`, exactly the additive path
+  this entry's own prior "next work" note anticipated. The journey's full
+  state vocabulary (suggestion received / proposal prepared / proposal
+  approved / simulation completed / real action completed / outcome
+  confirmed by the user) was re-verified distinct and accurate across
+  both workflows; no code anywhere infers wellbeing from an approval,
+  simulation, or state transition alone.
 - **Next work**: a coach-facing review surface, if this workstream is
   meant to include one — not built this phase (no request for it in
-  directive §4's specific scope). The new task-assistance outcome
-  contract is workflow-scoped to `task_deferral` only today — extending it
-  to other practical-assistance workflows (e.g. an Invisible Load action)
-  is additive, future work.
+  directive §4's specific scope). Extending the outcome contract to a
+  third practical-assistance workflow (e.g. an Invisible Load action) is
+  additive, future work.
 
 ## N. Identity, Values and Purpose-Based Support — **BUILT AND INTEGRATED**
 

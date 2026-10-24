@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { NovaInvisibleLoad } from './NovaInvisibleLoad';
+import { initNovaInvisibleLoadContext, type NovaInvisibleLoadContext } from '../../nova-invisible-load-contract';
 
 async function addItem(text: string) {
   await userEvent.type(screen.getByLabelText(/describe an obligation/i), text);
@@ -106,5 +107,31 @@ describe('NovaInvisibleLoad', () => {
     expect(removeButton).toHaveFocus();
     await userEvent.keyboard('{Enter}');
     expect(screen.queryByText('To be removed')).not.toBeInTheDocument();
+  });
+
+  // Phase 5G, directive §3/§7 - regression coverage for a real bug this
+  // phase's own Playwright journey surfaced: NovaAgenticJourney mounts this
+  // component only while `step === 'invisible_load'`, so without lifted
+  // state, navigating away (e.g. to Task Deferral) and back would unmount
+  // and remount it, silently discarding every item the user had added.
+  it('with a controlled `context`/`onContextChange` pair, an added item is reported upward rather than kept only in local state', async () => {
+    let lifted: NovaInvisibleLoadContext = initNovaInvisibleLoadContext();
+    const onContextChange = vi.fn((next: NovaInvisibleLoadContext) => { lifted = next; });
+    render(<NovaInvisibleLoad context={lifted} onContextChange={onContextChange} />);
+    await addItem('Finish the quarterly board deck');
+    expect(onContextChange).toHaveBeenCalled();
+    expect(lifted.items.some((i) => i.description === 'Finish the quarterly board deck')).toBe(true);
+  });
+
+  it('remounting with the previously-lifted `context` restores the items the user already added', () => {
+    const existing: NovaInvisibleLoadContext = {
+      optedOut: false,
+      items: [{
+        id: 'item_1', description: 'Finish the quarterly board deck', category: 'obligation',
+        source: 'user_reported', userCertain: true, deferred: false, corrections: [], breakdownSteps: [],
+      }],
+    };
+    render(<NovaInvisibleLoad context={existing} onContextChange={vi.fn()} />);
+    expect(screen.getByText('Finish the quarterly board deck')).toBeInTheDocument();
   });
 });

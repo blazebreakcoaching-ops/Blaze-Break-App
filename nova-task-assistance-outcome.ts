@@ -23,13 +23,19 @@
 //    anywhere as a negative trait of the user.
 //
 // Workflow-scoped and additive by design (`NovaTaskAssistanceWorkflow`):
-// `task_deferral` is the only workflow wired to a route today (directive
-// §7 specifically asks to connect "the new offline task-assistance
-// workflow" — Task Deferral — to this contract), but the type is a union
-// so a future practical-assistance workflow (e.g. an Invisible Load
-// action) can reuse this file without a breaking change.
+// `task_deferral` was the first workflow wired to a route (directive §7
+// specifically asked to connect "the new offline task-assistance
+// workflow" — Task Deferral — to this contract). Phase 5G, directive §8
+// ("verify the user can distinguish... an outcome confirmed by the
+// user", across the whole journey, not just one workflow) adds
+// `calendar_protection` as the second — POST
+// /api/nova/calendar-protection/:proposalId/outcome, wired only after a
+// REAL `confirmed` state (see NovaTakeTheLoad.tsx's own STATE_LABEL -
+// unlike Task Deferral's `confirmed`, which only ever means a simulation
+// completed). The type remains a union so a future practical-assistance
+// workflow can reuse this file the same way, without a breaking change.
 
-export type NovaTaskAssistanceWorkflow = 'task_deferral';
+export type NovaTaskAssistanceWorkflow = 'task_deferral' | 'calendar_protection';
 
 export type NovaTaskAssistanceOutcome = 'helped' | 'changed_plan' | 'not_used' | 'need_another_approach';
 

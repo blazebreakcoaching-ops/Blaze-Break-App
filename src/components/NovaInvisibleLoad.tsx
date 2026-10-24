@@ -193,12 +193,29 @@ export const NovaInvisibleLoad = ({
   capacityBand = null,
   onProtectTime,
   onDeferTask,
+  context: controlledContext,
+  onContextChange,
 }: {
   capacityBand?: NovaStatedPracticalProblem['capacityBand'];
   onProtectTime?: (problem: NovaStatedPracticalProblem) => void;
   onDeferTask?: (taskDescription: string) => void;
+  // Phase 5G, directive §3 ("exiting without losing appropriate saved
+  // progress") - optional, backward-compatible lifted state. A caller that
+  // mounts/unmounts this component as part of a larger sequence (e.g.
+  // NovaAgenticJourney, which conditionally renders it per journey step)
+  // should pass both, so items the user typed survive a round trip through
+  // another step instead of being silently discarded on remount. Omitting
+  // both keeps the original self-contained, uncontrolled behaviour.
+  context?: NovaInvisibleLoadContext;
+  onContextChange?: (context: NovaInvisibleLoadContext) => void;
 }) => {
-  const [context, setContext] = useState<NovaInvisibleLoadContext>(initNovaInvisibleLoadContext);
+  const [internalContext, setInternalContext] = useState<NovaInvisibleLoadContext>(initNovaInvisibleLoadContext);
+  const context = controlledContext ?? internalContext;
+  const setContext = (updater: NovaInvisibleLoadContext | ((prev: NovaInvisibleLoadContext) => NovaInvisibleLoadContext)) => {
+    const next = typeof updater === 'function' ? (updater as (prev: NovaInvisibleLoadContext) => NovaInvisibleLoadContext)(context) : updater;
+    setInternalContext(next);
+    onContextChange?.(next);
+  };
   const [draftText, setDraftText] = useState('');
   const [draftCategory, setDraftCategory] = useState<NovaInvisibleLoadCategory>('obligation');
   const [draftUncertain, setDraftUncertain] = useState(false);

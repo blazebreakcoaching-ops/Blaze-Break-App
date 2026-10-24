@@ -75,6 +75,48 @@ describe('NovaTakeTheLoad', () => {
     expect(await screen.findByText(/nothing was actually sent to your calendar/i)).toBeInTheDocument();
   });
 
+  // Phase 5G, directive §8 - "an outcome confirmed by the user" needs to
+  // be reachable here too, the same as it already is in Task Deferral,
+  // but only once a REAL action (not a disabled/simulated one) actually
+  // completed.
+  it('once confirmed (a real applied action), offers optional outcome feedback and reports it on its own endpoint', async () => {
+    const PROPOSAL = {
+      proposalId: 'cpp_confirmed', state: 'prepared', startIso: '2026-03-01T10:00:00.000Z', endIso: '2026-03-01T10:30:00.000Z',
+      title: 'Protected block', approvalFingerprint: 'fp123', failureReason: null, retryCount: 0, externalEventId: null,
+    };
+    vi.mocked(secureApiFetch).mockResolvedValueOnce(jsonResponse(NOT_GRANTED)); // permission load
+    vi.mocked(secureApiFetch).mockResolvedValueOnce(jsonResponse({ proposal: PROPOSAL })); // propose
+    vi.mocked(secureApiFetch).mockResolvedValueOnce(jsonResponse({ proposal: { ...PROPOSAL, state: 'awaiting_approval' } })); // present
+    vi.mocked(secureApiFetch).mockResolvedValueOnce(jsonResponse({ status: 'approved', proposal: { ...PROPOSAL, state: 'approved' } })); // approve
+    vi.mocked(secureApiFetch).mockResolvedValueOnce(jsonResponse({ status: 'confirmed', proposal: { ...PROPOSAL, state: 'confirmed', externalEventId: 'evt_real' } })); // execute
+    vi.mocked(secureApiFetch).mockResolvedValueOnce(jsonResponse({ record: { workflow: 'calendar_protection', itemId: 'cpp_confirmed', outcome: 'helped', recordedAt: '2026-03-01T10:40:00.000Z' } })); // outcome
+
+    render(<NovaTakeTheLoad initialTitle="Protected block" />);
+    await screen.findByText('Not granted');
+
+    await userEvent.type(screen.getByLabelText(/start time/i), '2026-03-01T10:00');
+    await userEvent.type(screen.getByLabelText(/end time/i), '2026-03-01T10:30');
+    await userEvent.click(screen.getByRole('button', { name: /prepare this proposal/i }));
+
+    const presentButton = screen.queryByRole('button', { name: /show for approval/i });
+    if (presentButton) await userEvent.click(presentButton);
+
+    const approveButton = await screen.findByRole('button', { name: /approve exactly this/i });
+    await userEvent.click(approveButton);
+
+    const applyButton = await screen.findByRole('button', { name: /try to apply this/i });
+    await userEvent.click(applyButton);
+
+    expect(await screen.findByText(/this was actually applied to your calendar/i)).toBeInTheDocument();
+    const helpedButton = await screen.findByRole('button', { name: /^this helped$/i });
+    await userEvent.click(helpedButton);
+
+    await waitFor(() => expect(secureApiFetch).toHaveBeenCalledWith(
+      '/api/nova/calendar-protection/cpp_confirmed/outcome', { method: 'POST', data: { outcome: 'helped' } },
+    ));
+    expect(await screen.findByText(/thanks - noted/i)).toBeInTheDocument();
+  });
+
   it('a fingerprint mismatch on approve shows a clear error instead of silently approving', async () => {
     const PROPOSAL = {
       proposalId: 'cpp_test2', state: 'awaiting_approval', startIso: '2026-03-01T10:00:00.000Z', endIso: '2026-03-01T10:30:00.000Z',

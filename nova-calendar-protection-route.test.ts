@@ -136,6 +136,35 @@ describe('full prepare -> present -> approve -> execute flow', () => {
   });
 });
 
+// Phase 5G, directive §8 - the same simple, optional, user-confirmed
+// outcome feedback Task Deferral's own route test already covers (see
+// nova-task-deferral-route.test.ts), now also offered here.
+describe('POST /api/nova/calendar-protection/:proposalId/outcome', () => {
+  it('accepts user-confirmed outcome feedback, recorded under this workflow', async () => {
+    await connectCalendar();
+    const prepared = await request(app).post('/api/nova/calendar-protection/propose').set(auth('user_a')).send(CHANGE);
+    const proposalId = prepared.body.proposal.proposalId;
+    const res = await request(app).post(`/api/nova/calendar-protection/${proposalId}/outcome`).set(auth('user_a')).send({ outcome: 'helped' });
+    expect(res.status).toBe(200);
+    expect(res.body.record.workflow).toBe('calendar_protection');
+    expect(res.body.record.itemId).toBe(proposalId);
+    expect(res.body.record.outcome).toBe('helped');
+  });
+
+  it('rejects an invalid outcome value', async () => {
+    await connectCalendar();
+    const prepared = await request(app).post('/api/nova/calendar-protection/propose').set(auth('user_a')).send(CHANGE);
+    const proposalId = prepared.body.proposal.proposalId;
+    const res = await request(app).post(`/api/nova/calendar-protection/${proposalId}/outcome`).set(auth('user_a')).send({ outcome: 'not_a_real_option' });
+    expect(res.status).toBe(400);
+  });
+
+  it('rejects an unauthenticated request', async () => {
+    const res = await request(app).post('/api/nova/calendar-protection/some_id/outcome').send({ outcome: 'helped' });
+    expect(res.status).toBeGreaterThanOrEqual(400);
+  });
+});
+
 describe('allowCalendarActions - the separate external-action permission boundary (Phase 5D, directive §3)', () => {
   it('defaults to not granted', async () => {
     const res = await request(app).get('/api/nova/calendar-protection/action-permission').set(auth('user_a'));

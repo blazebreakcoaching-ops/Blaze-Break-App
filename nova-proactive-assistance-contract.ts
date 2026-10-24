@@ -98,10 +98,22 @@ export interface NovaProactiveSuggestion {
   readonly suggestionId: string;
   readonly stage: 'possible_suggestion';
   readonly category: NovaProactiveSuggestionCategory;
-  /** Plain language - never a diagnosis, never a judgement of the user. */
+  /** Plain language - never a diagnosis, never a judgement of the user. What Nova is suggesting. */
   readonly description: string;
   /** Transparent list of exactly which supplied inputs this suggestion drew from - nothing hidden. */
   readonly basedOn: string[];
+  /**
+   * Phase 5G (directive §2) - the explanatory fields a real suggestion UI
+   * needs so a person can actually decide, not just see a bare sentence:
+   */
+  /** Why this might help, in plain terms - distinct from `description` ("what"), this is the "so what". */
+  readonly whyItMightHelp: string;
+  /** Exactly what's required to act on this, and its current real state - never assumed, always named. */
+  readonly requiresPermissionOrIntegration: string;
+  /** What concretely happens if the user proceeds - always honest about simulation vs. a real effect. */
+  readonly whatHappensIfYouProceed: string;
+  /** What Nova cannot currently do here - named explicitly, never left implicit. */
+  readonly whatNovaCannotDoYet: string;
 }
 
 let suggestionCounter = 0;
@@ -133,6 +145,10 @@ export function generateProactiveSuggestions(input: NovaProactiveSuggestionInput
       category: 'calendar_protection',
       description: `You could protect a block of time for "${obligationOrGoal}" on your calendar.`,
       basedOn,
+      whyItMightHelp: 'Having an actual block of protected time can make it harder for other things to crowd this out, rather than relying on remembering to make time for it.',
+      requiresPermissionOrIntegration: 'Calendar action permission - already granted on your account, but you will be asked to confirm the exact time before anything is proposed.',
+      whatHappensIfYouProceed: "You'll be taken to Calendar Protection, where you choose the exact time yourself and review the proposal before approving it - nothing is created yet.",
+      whatNovaCannotDoYet: 'Real calendar execution is turned off platform-wide right now, so even an approved proposal will not actually reach your calendar yet.',
     });
   }
 
@@ -147,6 +163,10 @@ export function generateProactiveSuggestions(input: NovaProactiveSuggestionInput
       category: 'task_deferral',
       description: `You could look at moving or reprioritising "${obligationOrGoal}".`,
       basedOn,
+      whyItMightHelp: "If this can genuinely wait, moving it can free up attention for what's more pressing right now.",
+      requiresPermissionOrIntegration: "A connected task tool - you already have one, but having it connected is not the same as agreeing to change anything in it. You'll be asked two direct questions about who actually controls this before any proposal is prepared.",
+      whatHappensIfYouProceed: "You'll be taken to Task Deferral, where you answer those questions and review an exact proposed change before approving it - nothing is changed yet.",
+      whatNovaCannotDoYet: 'Task Deferral only ever applies a change to a practice/mocked task list in this preview - no real Asana, Monday, or Jira task is ever modified.',
     });
   }
 
@@ -158,6 +178,10 @@ export function generateProactiveSuggestions(input: NovaProactiveSuggestionInput
       category: 'task_deferral',
       description: `Given your capacity right now, you could reconsider the timing of "${input.priorUserConfirmedPlan}".`,
       basedOn,
+      whyItMightHelp: 'A plan made at a different capacity level does not always still fit - revisiting it now is a chance to adjust before it becomes a problem.',
+      requiresPermissionOrIntegration: 'None beyond answering the same control/ownership questions Task Deferral always asks first.',
+      whatHappensIfYouProceed: "You'll be taken to Task Deferral to review and, if you choose, propose a change - nothing is changed yet.",
+      whatNovaCannotDoYet: 'Task Deferral only ever applies a change to a practice/mocked task list in this preview - no real provider task is ever modified.',
     });
   }
 

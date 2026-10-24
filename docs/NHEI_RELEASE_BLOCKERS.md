@@ -355,6 +355,38 @@ component is still not mounted into `App.tsx`'s live navigation.
   persisted as a standing consent — it has no relationship to
   `nhei-persistence-service.ts`'s consent model.
 
+## Phase 5G Experience Integration findings (not NHEI consent itself — recorded here for completeness since this phase re-verified the boundary)
+
+- **No item in this file's numbered list changed state.** This phase's
+  work (the proactive-suggestions UI, the Calendar Protection/Task
+  Deferral journey polish, the Invisible Load state-lift fix below, the
+  Calendar Protection outcome-feedback extension, two new Playwright
+  end-to-end tests) is entirely Agentic Nova/non-NHEI code, confirmed by
+  the same grep this file already ran for Phase 5F: zero
+  `from '...nhei-...'` imports in `NovaProactiveSuggestions.tsx`,
+  `nova-task-deferral-safe-assistance.ts`, or the widened
+  `nova-task-assistance-outcome.ts`. NHEI personal modes remain disabled;
+  no NHEI knowledge/safeguarding feature was activated; no real
+  calendar/task-provider write was introduced (Calendar Protection
+  execution stays off platform-wide — confirmed by this phase's own
+  route test asserting every `/execute` call still returns
+  `execution_disabled`); no unattended Guardian/Recovery Ally/other
+  outbound communication was added or touched.
+- **A real, non-NHEI UX bug was found and fixed by this phase's own
+  Playwright coverage**: `NovaAgenticJourney.tsx` conditionally rendered
+  `NovaInvisibleLoad` only while `step === 'invisible_load'`, so a user
+  who added an item, then used it to reach Calendar Protection or Task
+  Deferral, then returned to add something else, found their original
+  item silently gone (the component had remounted with fresh internal
+  state). Fixed by lifting `NovaInvisibleLoadContext` into
+  `NovaAgenticJourney` as controlled state, passed down via new optional
+  `context`/`onContextChange` props on `NovaInvisibleLoad` (uncontrolled
+  usage, and every existing test of it, keeps working unchanged). This
+  has no NHEI relationship either way — it is in-session UI state only,
+  never persisted.
+- **PR #140 was not touched.** No file this phase changed overlaps any
+  file in that PR, and no commit in this phase's history references it.
+
 ## Explicitly not a blocker (confirmed working, independent of any NHEI activation)
 
 - Data export, correction, and deletion already work today through this

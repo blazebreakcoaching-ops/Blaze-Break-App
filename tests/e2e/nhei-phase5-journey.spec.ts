@@ -77,6 +77,78 @@ async function mockApis(page: Page, opts: { consent?: typeof CONSENT_DEFAULT; ca
     await route.fulfill({ json: { text: 'Thanks for sharing that - I hear you.', planTrace: [] } });
   });
 
+  // Phase 5G, directive §7/§10 - Task Deferral mocks for the full
+  // integrated-journey browser test below. A single, stateful mock
+  // proposal, the same real workflow shape nova-task-deferral-service.ts
+  // actually returns.
+  let tdState = 'identified';
+  let tdFingerprint = '';
+  const tdProposal = () => ({
+    proposalId: 'tdp_e2e_test_1', state: tdState,
+    identification: { taskDescription: 'Finish the quarterly board deck', currentDueDescription: 'Friday' },
+    controlClarification: tdState === 'identified' ? null : { userControlsDeadline: 'yes', userControlsOwnership: 'yes' },
+    postponementConsideration: ['prepared', 'awaiting_approval', 'approved', 'executing', 'confirmed', 'failed'].includes(tdState) ? { reasonablyPostponable: true, reasoning: 'Nobody is blocked on this right now.' } : null,
+    proposedChange: ['prepared', 'awaiting_approval', 'approved', 'executing', 'confirmed', 'failed'].includes(tdState) ? { proposedNewDueDescription: 'next Friday', proposedNewPriority: null } : null,
+    consequences: ['prepared', 'awaiting_approval', 'approved', 'executing', 'confirmed', 'failed'].includes(tdState) ? { consequences: ['Lands a week later.'], uncertainties: [] } : null,
+    approvalFingerprint: tdFingerprint,
+    failureReason: tdState === 'failed' ? 'simulated task update failure' : null,
+    retryCount: 0,
+  });
+
+  await page.route('**/api/nova/task-deferral/identify', async (route) => {
+    tdState = 'identified';
+    await route.fulfill({ json: { proposal: tdProposal() } });
+  });
+  await page.route('**/api/nova/task-deferral/*/clarify-control', async (route) => {
+    const body = route.request().postDataJSON();
+    tdState = (body.userControlsDeadline === 'yes' && body.userControlsOwnership === 'yes') ? 'clarified' : 'requires_other_person';
+    await route.fulfill({ json: { status: tdState, proposal: tdProposal() } });
+  });
+  await page.route('**/api/nova/task-deferral/*/prepare', async (route) => {
+    tdState = 'prepared';
+    tdFingerprint = 'td-fingerprint-e2e';
+    await route.fulfill({ json: { proposal: tdProposal() } });
+  });
+  await page.route('**/api/nova/task-deferral/*/present', async (route) => {
+    tdState = 'awaiting_approval';
+    await route.fulfill({ json: { proposal: tdProposal() } });
+  });
+  await page.route('**/api/nova/task-deferral/*/approve', async (route) => {
+    const body = route.request().postDataJSON();
+    tdState = body.approved ? 'approved' : 'declined';
+    await route.fulfill({ json: { status: tdState, proposal: tdProposal() } });
+  });
+  await page.route('**/api/nova/task-deferral/*/execute', async (route) => {
+    tdState = 'confirmed';
+    await route.fulfill({ json: { status: tdState, proposal: tdProposal() } });
+  });
+  await page.route('**/api/nova/task-deferral/*/outcome', async (route) => {
+    const body = route.request().postDataJSON();
+    await route.fulfill({ json: { record: { workflow: 'task_deferral', itemId: 'tdp_e2e_test_1', outcome: body.outcome, recordedAt: new Date().toISOString() } } });
+  });
+  await page.route('**/api/nova/task-deferral/history', async (route) => {
+    await route.fulfill({ json: { proposals: [] } });
+  });
+
+  // Phase 5G, directive §2 - the possible-suggestion route.
+  await page.route('**/api/nova/proactive-suggestions', async (route) => {
+    const body = route.request().postDataJSON();
+    const obligation = body.voluntarilySharedObligation ?? body.statedGoal ?? 'this';
+    await route.fulfill({
+      json: {
+        suggestions: [{
+          suggestionId: 'sugg_e2e_1', category: 'calendar_protection',
+          description: `You could protect a block of time for "${obligation}" on your calendar.`,
+          basedOn: ['the obligation you shared', 'your calendar action permission is currently granted'],
+          whyItMightHelp: 'Having protected time can help.',
+          requiresPermissionOrIntegration: 'Calendar action permission - already granted.',
+          whatHappensIfYouProceed: "You'll review and approve an exact proposal - nothing is created yet.",
+          whatNovaCannotDoYet: 'Real calendar execution is turned off platform-wide right now.',
+        }],
+      },
+    });
+  });
+
   return {
     setExecuteOutcome(outcome: { status: string; state?: string }) {
       proposalState = outcome.state ?? outcome.status;
@@ -157,7 +229,16 @@ test.describe('NHEI Phase 5E integrated journey (directive §8)', () => {
     await expect(beforeWords.getByText('Actually, two separate things happened.')).toBeVisible();
 
     await beforeWords.getByRole('button', { name: /Done for now/i }).click();
-    await expect(beforeWords.getByText(/available to Nova for this conversation only/i)).toBeVisible();
+    // Phase 5G §6 investigation: this assertion previously read "...this
+    // conversation only", which never matched NheiBeforeWords.tsx's real,
+    // intentional 'decided'-step copy ("available to Nova for this ONE
+    // REPLY only" - directive §5's own "temporary, not saved" framing,
+    // unchanged since Phase 5D). Confirmed by reproducing the failure
+    // against the unmodified Phase 5F baseline and reading the component
+    // source directly: this was a stale/incorrect test assertion, not a
+    // UI regression, a state-transition bug, or a timing issue - the
+    // component has never rendered the phrase the old assertion expected.
+    await expect(beforeWords.getByText(/available to Nova for this one reply only/i)).toBeVisible();
   });
 
   test('Nova Chat modal: the clear-conversation confirm dialog is a real focus-trapped modal, closable with Escape', async ({ page }) => {
@@ -320,5 +401,93 @@ test.describe('NHEI Phase 5E integrated journey (directive §8)', () => {
     await journey.getByRole('button', { name: /Just talk to Nova/i }).click();
     await expect(journey.getByRole('button', { name: "Start whenever you're ready" })).toHaveCount(0);
     await expect(journey.getByPlaceholder(/./).first()).toBeVisible(); // directly on the Nova Chat step
+  });
+
+  // Phase 5G Experience Integration (directive §2/§7/§10, acceptance
+  // criterion) - the complete journey in a real browser: describing
+  // overload, identifying a specific obligation, seeing an explainable
+  // proactive suggestion, choosing Calendar Protection, reviewing and
+  // approving a proposal, and receiving an accurate (execution-disabled)
+  // status.
+  test('full journey: Nova chat -> Invisible Load -> Proactive Options -> Calendar Protection -> review -> approve -> accurate status', async ({ page }) => {
+    await mockApis(page);
+    await mockExecuteOnce(page, { status: 'execution_disabled' });
+    await enterMockAuthAndGoto(page);
+    const journey = page.locator('text=6. Integrated Agentic Nova Journey').locator('xpath=ancestor::section[1]');
+
+    await journey.getByRole('button', { name: /Just talk to Nova/i }).click();
+    await journey.getByRole('button', { name: /Continue to what's on your plate/i }).click();
+
+    await journey.getByRole('button', { name: /See what Nova might proactively suggest/i }).click();
+    await journey.getByLabel(/obligation or goal for proactive suggestions/i).fill('Finish the quarterly board deck');
+    await journey.getByRole('button', { name: /See what Nova can suggest/i }).click();
+
+    // The suggestion explains what/why/requirement/consequence/limit (directive §2).
+    await expect(journey.getByText(/you could protect a block of time/i)).toBeVisible();
+    await expect(journey.getByText(/why this might help/i)).toBeVisible();
+    await expect(journey.getByText(/what's required/i)).toBeVisible();
+    await expect(journey.getByText(/if you proceed/i)).toBeVisible();
+    await expect(journey.getByText(/nova can't yet/i)).toBeVisible();
+
+    await journey.getByRole('button', { name: /^use this$/i }).click();
+
+    // Now on Calendar Protection, pre-filled from the accepted suggestion.
+    await expect(journey.getByPlaceholder('What should this protected time be called?')).toHaveValue(/Finish the quarterly board deck/);
+    await journey.getByLabel(/start time/i).fill('2026-03-02T14:00');
+    await journey.getByLabel(/end time/i).fill('2026-03-02T14:30');
+    await journey.getByRole('button', { name: /prepare this proposal/i }).click();
+    await journey.getByRole('button', { name: /show for approval/i }).click();
+    await journey.getByRole('button', { name: /approve exactly this/i }).click();
+    await journey.getByRole('button', { name: /try to apply this/i }).click();
+
+    // An accurate status that never implies a real calendar write occurred.
+    await expect(journey.getByText(/nothing was actually sent to your calendar/i)).toBeVisible();
+  });
+
+  // Phase 5G acceptance criterion, Task Deferral path: identifying an
+  // obligation, choosing Task Deferral specifically, reviewing/approving
+  // a proposal, an accurate simulated-execution status, and an optional
+  // outcome-feedback record.
+  test('full journey: Invisible Load -> Task Deferral -> review -> approve -> accurate simulation status -> optional outcome', async ({ page }) => {
+    await mockApis(page);
+    await enterMockAuthAndGoto(page);
+    const journey = page.locator('text=6. Integrated Agentic Nova Journey').locator('xpath=ancestor::section[1]');
+
+    await journey.getByRole('button', { name: /Just talk to Nova/i }).click();
+    await journey.getByRole('button', { name: /Continue to what's on your plate/i }).click();
+
+    await journey.getByLabel(/describe an obligation, commitment, or friction/i).fill('Finish the quarterly board deck');
+    await journey.getByRole('button', { name: /^add$/i }).click();
+    await journey.getByRole('button', { name: /get help with this/i }).click();
+    await journey.getByRole('button', { name: /defer or reprioritise it/i }).click();
+
+    // Now on Task Deferral, pre-filled from the Invisible Load item.
+    await expect(journey.getByLabel(/task description/i)).toHaveValue(/Finish the quarterly board deck/);
+    await journey.getByRole('button', { name: /tell nova about this task/i }).click();
+
+    await expect(journey.getByText(/do you control when this is due/i)).toBeVisible();
+    const deadlineGroup = journey.getByText(/do you control when this is due/i).locator('xpath=following-sibling::div[1]');
+    await deadlineGroup.getByRole('button', { name: /^yes$/i }).click();
+    const ownershipGroup = journey.getByText(/is this task yours alone to move/i).locator('xpath=following-sibling::div[1]');
+    await ownershipGroup.getByRole('button', { name: /^yes$/i }).click();
+    await journey.getByRole('button', { name: /^continue$/i }).click();
+
+    await journey.getByLabel(/proposed new due date/i).fill('next Friday');
+    await journey.getByPlaceholder(/why \(or why not\)/i).fill('Nobody is blocked on this right now.');
+    await journey.getByRole('button', { name: /prepare this proposal/i }).click();
+    await journey.getByRole('button', { name: /show for approval/i }).click();
+    await journey.getByRole('button', { name: /approve exactly this/i }).click();
+    await journey.getByRole('button', { name: /run the simulation/i }).click();
+
+    // Accurate status - a simulation, never described as a real task change.
+    await expect(journey.getByText(/no real asana, monday, or jira task was modified/i)).toBeVisible();
+
+    // Optional, user-confirmed outcome feedback.
+    await journey.getByRole('button', { name: /^this helped$/i }).click();
+    await expect(journey.getByText(/thanks - noted/i)).toBeVisible();
+
+    // Optional follow-up: returning to what's on your plate without losing the result above.
+    await journey.getByRole('button', { name: /something else is on your plate too/i }).click();
+    await expect(journey.getByText('Finish the quarterly board deck')).toBeVisible();
   });
 });

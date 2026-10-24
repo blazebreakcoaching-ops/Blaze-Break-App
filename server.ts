@@ -6155,6 +6155,33 @@ app.get("/api/nova/calendar-protection/:proposalId", verifyAppCheck, authenticat
   }
 });
 
+// Phase 5G, directive §8 - the same simple, optional, user-confirmed
+// outcome feedback Task Deferral already has (see
+// nova-task-assistance-outcome.ts's own header: no causal claim, no
+// inferred improvement from approval/completion alone), now also offered
+// here. Calendar Protection's own `confirmed` state is a REAL applied
+// action (unlike Task Deferral's, which only ever means a simulation
+// completed) - so this is reachable only once that already happened,
+// matching NovaTakeTheLoad.tsx's own gating on `proposal.state === 'confirmed'`.
+app.post("/api/nova/calendar-protection/:proposalId/outcome", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const uid = requireAuth(req).uid;
+    const parsed = NovaTaskAssistanceOutcomeSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: "\"outcome\" must be one of 'helped', 'changed_plan', 'not_used', 'need_another_approach'." });
+    }
+    const record = await recordTaskAssistanceOutcome(getDb(), uid, {
+      workflow: 'calendar_protection',
+      itemId: req.params.proposalId,
+      outcome: parsed.data.outcome,
+    });
+    res.json({ record });
+  } catch (err: any) {
+    logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+    res.status(500).json({ error: GENERIC_SERVER_ERROR });
+  }
+});
+
 app.post("/api/nova/calendar-protection/:proposalId/retry", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
   try {
     const uid = requireAuth(req).uid;

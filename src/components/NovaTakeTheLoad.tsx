@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { CalendarClock, ShieldCheck, ShieldOff, History, Undo2, RotateCcw, AlertTriangle, CheckCircle2, XCircle, HelpCircle } from 'lucide-react';
+import { CalendarClock, ShieldCheck, ShieldOff, History, Undo2, RotateCcw, AlertTriangle, CheckCircle2, XCircle, HelpCircle, ThumbsUp } from 'lucide-react';
 import { secureApiFetch, SecureApiError } from '../lib/secure-api.ts';
 
 // Nova Take the Load - Calendar Protection UI (Phase 5D, directive §2).
@@ -75,6 +75,7 @@ export const NovaTakeTheLoad = ({ initialTitle = '' }: { initialTitle?: string }
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [executeOutcome, setExecuteOutcome] = useState<string | null>(null);
+  const [outcomeRecorded, setOutcomeRecorded] = useState<string | null>(null);
 
   useEffect(() => { if (initialTitle) setTitle(initialTitle); }, [initialTitle]);
 
@@ -217,6 +218,20 @@ export const NovaTakeTheLoad = ({ initialTitle = '' }: { initialTitle?: string }
     }
   };
 
+  // Phase 5G, directive §8 — the same simple, optional, user-confirmed
+  // outcome feedback Task Deferral already has (see NovaTaskDeferral.tsx's
+  // own copy of this). Never required, never shown as anything but a
+  // plain record of what happened; no causal claim is made either way.
+  const recordOutcome = async (outcome: 'helped' | 'changed_plan' | 'not_used' | 'need_another_approach') => {
+    if (!proposal) return;
+    try {
+      await secureApiFetch(`/api/nova/calendar-protection/${proposal.proposalId}/outcome`, { method: 'POST', data: { outcome } });
+      setOutcomeRecorded(outcome);
+    } catch {
+      // Feedback is optional - a failed write here is not shown as an error.
+    }
+  };
+
   const loadHistory = async () => {
     try {
       const res = await secureApiFetch('/api/nova/calendar-protection/history');
@@ -350,11 +365,24 @@ export const NovaTakeTheLoad = ({ initialTitle = '' }: { initialTitle?: string }
           )}
 
           {proposal.state === 'confirmed' && (
-            <div className="space-y-2">
+            <div className="space-y-3">
               <p className="text-xs text-success flex items-center gap-1.5"><CheckCircle2 className="w-3.5 h-3.5" /> This was actually applied to your calendar.</p>
               <button onClick={undo} disabled={busy} className="text-xs font-bold text-primary hover:underline flex items-center gap-1.5">
                 <Undo2 className="w-3.5 h-3.5" /> Undo
               </button>
+              {!outcomeRecorded ? (
+                <div className="space-y-1.5">
+                  <p className="text-xs text-text-muted flex items-center gap-1.5"><ThumbsUp className="w-3.5 h-3.5" /> Optional - how did this go?</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    <button onClick={() => recordOutcome('helped')} className="text-xs px-2.5 py-1.5 rounded-lg border border-border text-text-muted hover:text-text-main">This helped</button>
+                    <button onClick={() => recordOutcome('changed_plan')} className="text-xs px-2.5 py-1.5 rounded-lg border border-border text-text-muted hover:text-text-main">I changed the plan</button>
+                    <button onClick={() => recordOutcome('not_used')} className="text-xs px-2.5 py-1.5 rounded-lg border border-border text-text-muted hover:text-text-main">I didn't use it</button>
+                    <button onClick={() => recordOutcome('need_another_approach')} className="text-xs px-2.5 py-1.5 rounded-lg border border-border text-text-muted hover:text-text-main">I need another approach</button>
+                  </div>
+                </div>
+              ) : (
+                <p className="text-xs text-text-muted italic">Thanks - noted.</p>
+              )}
             </div>
           )}
 

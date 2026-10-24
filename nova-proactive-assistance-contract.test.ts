@@ -59,6 +59,31 @@ describe('generateProactiveSuggestions', () => {
     expect(suggestions.every((s) => s.stage === 'possible_suggestion')).toBe(true);
   });
 
+  it('Phase 5G: every suggestion carries all six explanatory fields a real UI needs - nothing left implicit', () => {
+    const suggestions = generateProactiveSuggestions({ ...BASE, voluntarilySharedObligation: 'x', hasAuthorisedCalendarActionContext: true, hasAuthorisedTaskContext: true });
+    for (const s of suggestions) {
+      expect(s.description.length).toBeGreaterThan(0);
+      expect(s.basedOn.length).toBeGreaterThan(0);
+      expect(s.whyItMightHelp.length).toBeGreaterThan(0);
+      expect(s.requiresPermissionOrIntegration.length).toBeGreaterThan(0);
+      expect(s.whatHappensIfYouProceed.length).toBeGreaterThan(0);
+      expect(s.whatNovaCannotDoYet.length).toBeGreaterThan(0);
+    }
+  });
+
+  it('a connected task integration is explicitly distinguished from consent to modify it', () => {
+    const suggestions = generateProactiveSuggestions({ ...BASE, voluntarilySharedObligation: 'x', hasAuthorisedTaskContext: true });
+    const taskSuggestion = suggestions.find((s) => s.category === 'task_deferral')!;
+    expect(taskSuggestion.requiresPermissionOrIntegration).toMatch(/not the same as agreeing to change/i);
+  });
+
+  it('every suggestion is honest that execution is simulated/disabled, never implying a real action', () => {
+    const suggestions = generateProactiveSuggestions({ ...BASE, voluntarilySharedObligation: 'x', hasAuthorisedCalendarActionContext: true, hasAuthorisedTaskContext: true });
+    for (const s of suggestions) {
+      expect(s.whatNovaCannotDoYet).toMatch(/not|turned off|no real/i);
+    }
+  });
+
   it('has zero import statements - no persistence, no connector, no model call', async () => {
     const fs = await import('node:fs');
     const content = fs.readFileSync(new URL('./nova-proactive-assistance-contract.ts', import.meta.url), 'utf8');

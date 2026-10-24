@@ -29,6 +29,15 @@ vi.mock('./NovaInvisibleLoad', () => ({
 }));
 vi.mock('./NovaTakeTheLoad', () => ({ NovaTakeTheLoad: ({ initialTitle }: { initialTitle: string }) => <div data-testid="calendar-protection">{initialTitle}</div> }));
 vi.mock('./NovaTaskDeferral', () => ({ NovaTaskDeferral: ({ initialTaskDescription }: { initialTaskDescription: string }) => <div data-testid="task-deferral">{initialTaskDescription}</div> }));
+vi.mock('./NovaProactiveSuggestions', () => ({
+  NovaProactiveSuggestions: ({ initialObligationOrGoal, onUseForCalendarProtection, onUseForTaskDeferral }: { initialObligationOrGoal: string; onUseForCalendarProtection: (d: string) => void; onUseForTaskDeferral: (d: string) => void }) => (
+    <div data-testid="proactive-suggestions">
+      <span>{initialObligationOrGoal}</span>
+      <button onClick={() => onUseForCalendarProtection('Use calendar protection for this')}>Use for calendar</button>
+      <button onClick={() => onUseForTaskDeferral('Use task deferral for this')}>Use for deferral</button>
+    </div>
+  ),
+}));
 
 describe('NovaAgenticJourney - sequencing', () => {
   it('the entry step offers both Before Words and direct chat, with no step forced', () => {
@@ -75,6 +84,41 @@ describe('NovaAgenticJourney - sequencing', () => {
     expect(screen.getByTestId('invisible-load')).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: /^back$/i }));
     expect(screen.getByTestId('nova-chat')).toBeInTheDocument();
+  });
+
+  it('"See what Nova might proactively suggest" reaches the Proactive Options step from Invisible Load', async () => {
+    render(<NovaAgenticJourney />);
+    await userEvent.click(screen.getByRole('button', { name: /just talk to nova/i }));
+    await userEvent.click(screen.getByRole('button', { name: /continue to what's on your plate/i }));
+    await userEvent.click(screen.getByRole('button', { name: /see what nova might proactively suggest/i }));
+    expect(screen.getByTestId('proactive-suggestions')).toBeInTheDocument();
+  });
+
+  it('accepting a proactive suggestion for Calendar Protection routes there, pre-filled with the suggestion text', async () => {
+    render(<NovaAgenticJourney />);
+    await userEvent.click(screen.getByRole('button', { name: /just talk to nova/i }));
+    await userEvent.click(screen.getByRole('button', { name: /continue to what's on your plate/i }));
+    await userEvent.click(screen.getByRole('button', { name: /see what nova might proactively suggest/i }));
+    await userEvent.click(screen.getByRole('button', { name: /use for calendar/i }));
+    expect(screen.getByTestId('calendar-protection')).toHaveTextContent('Use calendar protection for this');
+  });
+
+  it('accepting a proactive suggestion for Task Deferral routes there, pre-filled with the suggestion text', async () => {
+    render(<NovaAgenticJourney />);
+    await userEvent.click(screen.getByRole('button', { name: /just talk to nova/i }));
+    await userEvent.click(screen.getByRole('button', { name: /continue to what's on your plate/i }));
+    await userEvent.click(screen.getByRole('button', { name: /see what nova might proactively suggest/i }));
+    await userEvent.click(screen.getByRole('button', { name: /use for deferral/i }));
+    expect(screen.getByTestId('task-deferral')).toHaveTextContent('Use task deferral for this');
+  });
+
+  it('Proactive Options can be left via "Back to what\'s on your plate" without choosing anything (ignore)', async () => {
+    render(<NovaAgenticJourney />);
+    await userEvent.click(screen.getByRole('button', { name: /just talk to nova/i }));
+    await userEvent.click(screen.getByRole('button', { name: /continue to what's on your plate/i }));
+    await userEvent.click(screen.getByRole('button', { name: /see what nova might proactively suggest/i }));
+    await userEvent.click(screen.getByRole('button', { name: /back to what's on your plate/i }));
+    expect(screen.getByTestId('invisible-load')).toBeInTheDocument();
   });
 
   it('Start over resets all the way back to the entry step', async () => {

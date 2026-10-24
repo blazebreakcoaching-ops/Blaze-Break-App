@@ -554,10 +554,12 @@ service cloud.firestore {
         allow read, write: if false;
       }
       // task_assistance_outcomes (Phase 5F Agentic Expansion, directive
-      // §7) - simple user-confirmed outcome feedback ("this helped" etc.)
-      // for a practical-assistance workflow. Server-only so a client
-      // cannot forge a feedback record under another workflow/item id;
-      // written only via POST /api/nova/task-deferral/:proposalId/outcome.
+      // §7; Phase 5G, directive §8) - simple user-confirmed outcome
+      // feedback ("this helped" etc.) for a practical-assistance
+      // workflow. Server-only so a client cannot forge a feedback record
+      // under another workflow/item id; written only via
+      // POST /api/nova/task-deferral/:proposalId/outcome or
+      // POST /api/nova/calendar-protection/:proposalId/outcome.
       match /task_assistance_outcomes/{recordId} {
         allow read, write: if false;
       }

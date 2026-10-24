@@ -17,5 +17,24 @@ export default defineConfig({
     // the in-memory fake the rest of the suite uses.
     testTimeout: 30_000,
     hookTimeout: 30_000,
+    // Phase 5G, directive §7 - a REAL finding this suite's own growth
+    // surfaced: every emulator test file's `beforeEach` wipes the ENTIRE
+    // project's Firestore data (via the emulator's bulk-delete endpoint),
+    // because each file was written assuming it was the only one running
+    // against the shared, single live emulator process. With a second
+    // file added (nova-task-deferral-service.emulator.test.ts), vitest's
+    // default file-level parallelism let both files' test runs interleave
+    // against that SAME emulator instance - one file's beforeEach wipe
+    // could delete documents a concurrently-running test in the OTHER
+    // file had just written moments earlier, producing exactly the
+    // "No such proposal" failures a real concurrent-access bug would
+    // produce, in files whose own tests are each internally correct.
+    // Scoping every file's wipe to only its own uid prefixes would also
+    // fix this, but disabling cross-FILE parallelism here is the more
+    // honest fix: these files already share one real external resource
+    // (the live emulator), the same reason a real production Firestore
+    // database would need equivalent test isolation, and sequential
+    // execution is cheap for a suite this small.
+    fileParallelism: false,
   },
 });
